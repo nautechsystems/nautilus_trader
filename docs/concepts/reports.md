@@ -51,15 +51,15 @@ orders_report = ReportProvider.generate_orders_report(cache.orders())
 | `strategy_id`     | Strategy that created the order.                   |
 | `trader_id`       | Trader identifier.                                 |
 | `account_id`      | Account identifier (if assigned).                  |
-| `venue_order_id`  | Venue‑assigned order ID (if accepted).             |
+| `venue_order_id`  | Venue-assigned order ID (if accepted).             |
 | `side`            | BUY or SELL.                                       |
 | `type`            | MARKET, LIMIT, etc.                                |
 | `status`          | Current order status.                              |
 | `quantity`        | Original order quantity (string).                  |
 | `filled_qty`      | Amount filled (string).                            |
-| `price`           | Limit price (string, order‑type dependent).        |
+| `price`           | Limit price (string, order-type dependent).        |
 | `avg_px`          | Average fill price (string, if filled).            |
-| `time_in_force`   | Time‑in‑force instruction.                         |
+| `time_in_force`   | Time-in-force instruction.                         |
 | `ts_init`         | Order initialization timestamp (Unix nanoseconds). |
 | `ts_last`         | Last update timestamp (Unix nanoseconds).          |
 
@@ -100,7 +100,7 @@ fills_report = ReportProvider.generate_fills_report(cache.orders())
 | ----------------- | ---------------------------------------- |
 | `client_order_id` | Index - order identifier.                |
 | `trade_id`        | Unique trade/fill identifier.            |
-| `venue_order_id`  | Venue‑assigned order ID.                 |
+| `venue_order_id`  | Venue-assigned order ID.                 |
 | `instrument_id`   | Trading instrument.                      |
 | `strategy_id`     | Strategy that created the order.         |
 | `account_id`      | Account identifier.                      |
@@ -198,7 +198,7 @@ yields an empty DataFrame.
 | `currency`      | Currency of the balance.                   |
 | `reported`      | Whether balance was reported by venue.     |
 | `margins`       | Margin information (list, if applicable).  |
-| `info`          | Additional venue‑specific information.     |
+| `info`          | Additional venue-specific information.     |
 
 Each row represents a balance entry; accounts with multiple currencies produce multiple rows
 per account state event.
@@ -213,7 +213,7 @@ Accurate PnL accounting requires careful consideration of several factors:
 - **Unrealized PnL**: Marked-to-market using current prices. `Position.unrealized_pnl(last)` marks
   an open position at a given `Price`.
 - **Commission impact**: Only included when in the position's cost currency. See
-  [Positions](positions.md) for how base‑currency commissions on spot pairs adjust position size
+  [Positions](positions.md) for how base-currency commissions on spot pairs adjust position size
   instead.
 
 :::warning

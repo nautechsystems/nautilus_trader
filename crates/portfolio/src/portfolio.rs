@@ -1276,7 +1276,7 @@ impl Portfolio {
             let sign = match position.side {
                 PositionSide::Long => Decimal::ONE,
                 PositionSide::Short => Decimal::NEGATIVE_ONE,
-                PositionSide::Flat | PositionSide::NoPositionSide => continue,
+                PositionSide::Flat => continue,
             };
 
             let instrument = match cache.instrument(&position.instrument_id) {
@@ -1391,7 +1391,7 @@ impl Portfolio {
             let sign = match position.side {
                 PositionSide::Long => Decimal::ONE,
                 PositionSide::Short => Decimal::NEGATIVE_ONE,
-                _ => {
+                PositionSide::Flat => {
                     log::error!(
                         "Cannot calculate net exposure: position is flat for {}",
                         position.instrument_id
@@ -2949,7 +2949,7 @@ impl Portfolio {
         let price_type = match position.side {
             PositionSide::Long => PriceType::Bid,
             PositionSide::Short => PriceType::Ask,
-            _ => {
+            PositionSide::Flat => {
                 log::error!(
                     "Cannot get price for invalid position side {}",
                     position.side

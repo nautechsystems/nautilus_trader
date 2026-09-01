@@ -6,6 +6,9 @@
 #  You may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
 # -------------------------------------------------------------------------------------------------
+"""
+Example of IB with Databento.
+"""
 
 from __future__ import annotations
 
@@ -17,20 +20,22 @@ from _common import default_cl_future_instrument_id
 from _common import default_es_future_instrument_id
 from _common import env_bool
 from _common import env_int
-from _common import ib_account_id
 from _common import instrument_provider_config
 from _common import resolve_ib_endpoint
 from _common import schedule_node_stop
 
 from nautilus_trader.adapters import interactive_brokers
+from nautilus_trader.adapters.databento import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento import DatabentoDataClientFactory
-from nautilus_trader.adapters.databento import DatabentoLiveClientConfig
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
 from nautilus_trader.model import TraderId
 
 
 def default_publishers_filepath() -> str:
+    """
+    Default publishers filepath.
+    """
     return str(
         Path(__file__).resolve().parents[3]
         / "crates"
@@ -41,6 +46,13 @@ def default_publishers_filepath() -> str:
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
+    api_key = os.getenv("DATABENTO_API_KEY")
+    if not api_key:
+        raise SystemExit("DATABENTO_API_KEY must be set")
+
     host, port = resolve_ib_endpoint()
     trader_id = TraderId.from_str("IB-V2-DATABENTO-001")
     account_id = os.getenv("TWS_ACCOUNT") if env_bool("IB_V2_ENABLE_EXECUTION") else None
@@ -60,12 +72,12 @@ def main() -> None:
         Environment.LIVE,
     )
     builder = builder.with_timeout_connection(env_int("IB_V2_NODE_CONNECTION_TIMEOUT", 15))
-    builder = builder.with_reconciliation(False)
+    builder = builder.with_reconciliation(reconciliation=False)
     builder = builder.add_data_client(
         "DATABENTO",
         DatabentoDataClientFactory(),
-        DatabentoLiveClientConfig(
-            api_key=os.getenv("DATABENTO_API_KEY", "0" * 32),
+        DatabentoDataClientConfig(
+            api_key=api_key,
             publishers_filepath=os.getenv(
                 "DATABENTO_PUBLISHERS_FILE",
                 default_publishers_filepath(),
@@ -77,8 +89,8 @@ def main() -> None:
         ib = interactive_brokers
         builder = builder.add_exec_client(
             None,
-            ib.InteractiveBrokersExecutionClientFactory(trader_id, ib_account_id(account_id)),
-            ib.InteractiveBrokersExecClientConfig(
+            ib.InteractiveBrokersExecutionClientFactory(),
+            ib.InteractiveBrokersExecutionClientConfig(
                 host=host,
                 port=port,
                 client_id=env_int("IB_V2_EXEC_CLIENT_ID", 1312),

@@ -1,0 +1,16 @@
+{
+  "jsonrpc": "2.0",
+  "error": {
+    "code": -32099,
+    "message": "AANGX-0001",
+    "data": {
+      "AccountAPINGException": {
+        "requestUUID": "SANITIZED",
+        "errorCode": "INVALID_INPUT_DATA",
+        "errorDetails": "The request was not valid."
+      },
+      "exceptionname": "AccountAPINGException"
+    }
+  },
+  "id": 1
+}

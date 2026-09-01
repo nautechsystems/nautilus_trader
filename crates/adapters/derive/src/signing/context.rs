@@ -25,7 +25,7 @@ use crate::{
         consts::{ACTION_TYPEHASH, domain_separator_for, trade_module_address_for},
         credential::DeriveCredential,
     },
-    config::DeriveExecClientConfig,
+    config::DeriveExecutionClientConfig,
     signing::encoding::{parse_address_const, parse_b256_const},
 };
 
@@ -44,7 +44,7 @@ pub(crate) struct SigningContext {
 
 pub(crate) fn resolve_signing_context(
     credential: &DeriveCredential,
-    config: &DeriveExecClientConfig,
+    config: &DeriveExecutionClientConfig,
 ) -> anyhow::Result<SigningContext> {
     let wallet_address: Address = credential
         .wallet_address()

@@ -31,7 +31,7 @@
 
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce},
+    enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
     events::OrderEventAny,
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
@@ -83,11 +83,8 @@ fn order_side_strategy() -> impl Strategy<Value = OrderSide> {
     prop_oneof![Just(OrderSide::Buy), Just(OrderSide::Sell)]
 }
 
-fn position_side_strategy() -> impl Strategy<Value = PositionSideSpecified> {
-    prop_oneof![
-        Just(PositionSideSpecified::Long),
-        Just(PositionSideSpecified::Short),
-    ]
+fn position_side_strategy() -> impl Strategy<Value = PositionSide> {
+    prop_oneof![Just(PositionSide::Long), Just(PositionSide::Short),]
 }
 
 fn qty_decimal() -> impl Strategy<Value = Decimal> {
@@ -360,7 +357,7 @@ proptest! {
     #[rstest]
     fn prop_adjust_fills_flat_venue_is_no_adjustment(fills in fill_sequence_strategy(0, 10)) {
         let venue = VenuePositionSnapshot {
-            side: PositionSideSpecified::Long,
+            side: PositionSide::Long,
             qty: Decimal::ZERO,
             avg_px: Decimal::ZERO,
         };
@@ -388,7 +385,7 @@ proptest! {
         let sim_avg = sim_value / sim_qty;
 
         let venue = VenuePositionSnapshot {
-            side: PositionSideSpecified::Long,
+            side: PositionSide::Long,
             qty: sim_qty,
             avg_px: sim_avg,
         };
@@ -433,7 +430,7 @@ proptest! {
         let target_avg = target_value / target_qty;
 
         let venue = VenuePositionSnapshot {
-            side: PositionSideSpecified::Long,
+            side: PositionSide::Long,
             qty: target_qty,
             avg_px: target_avg,
         };
@@ -594,7 +591,7 @@ fn status_report_for(
         instrument_id,
         Some(client_order_id),
         venue_order_id,
-        OrderSide::Buy,
+        OrderSide::Buy.into(),
         OrderType::Market,
         TimeInForce::Gtc,
         status,

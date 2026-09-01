@@ -15,11 +15,11 @@ Add the live crate, your venue adapter, and supporting crates to
 
 ```toml
 [dependencies]
-nautilus-common = "0.61"
-nautilus-live = "0.61"
-nautilus-model = "0.61"
-nautilus-okx = "0.61"
-nautilus-trading = { version = "0.61", features = ["examples"] }
+nautilus-common = "0.62"
+nautilus-live = "0.62"
+nautilus-model = "0.62"
+nautilus-okx = "0.62"
+nautilus-trading = { version = "0.62", features = ["examples"] }
 
 anyhow = "1"
 dotenvy = "0.15"
@@ -39,7 +39,7 @@ use nautilus_live::node::LiveNode;
 use nautilus_model::identifiers::{AccountId, TraderId};
 use nautilus_okx::{
     common::enums::OKXInstrumentType,
-    config::{OKXDataClientConfig, OKXExecClientConfig},
+    config::{OKXDataClientConfig, OKXExecutionClientConfig},
     factories::{OKXDataClientFactory, OKXExecutionClientFactory},
 };
 
@@ -50,8 +50,7 @@ let data_config = OKXDataClientConfig::builder()
     .instrument_types(vec![OKXInstrumentType::Swap])
     .build();
 
-let exec_config = OKXExecClientConfig::builder()
-    .trader_id(trader_id)
+let exec_config = OKXExecutionClientConfig::builder()
     .account_id(account_id)
     .instrument_types(vec![OKXInstrumentType::Swap])
     .build();

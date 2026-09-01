@@ -650,6 +650,12 @@ pub struct GetTransactionDetailsParams {
     /// Pagination of data to return records newer than the requested ID (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub before: Option<String>,
+    /// Filter with a begin timestamp in milliseconds (optional).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub begin: Option<String>,
+    /// Filter with an end timestamp in milliseconds (optional).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end: Option<String>,
     /// Number of results per request (optional, default 100, max 100).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,

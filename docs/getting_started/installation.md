@@ -50,7 +50,7 @@ uv pip install nautilus_trader
 
 ### Release-candidate wheels
 
-NautilusTrader publishes release‑candidate wheels to PyPI using
+NautilusTrader publishes release-candidate wheels to PyPI using
 `2.0.0rcN` versions while final validation is in progress.
 
 ```bash
@@ -70,7 +70,7 @@ a debug build, or a platform wheel that is not available.
 
 ## Extras
 
-Install the optional dependencies for Plotly‑based interactive tearsheets and charts with the
+Install the optional dependencies for Plotly-based interactive tearsheets and charts with the
 `visualization` extra:
 
 ```bash
@@ -105,7 +105,7 @@ This process also helps preserve compute resources and provides easy access to t
 while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standards:
 
 - `develop` wheels use the version suffix `.devYYYYMMDD+run`.
-- `nightly` wheels use `.devYYYYMMDD` when the base version is already a pre‑release, and
+- `nightly` wheels use `.devYYYYMMDD` when the base version is already a pre-release, and
   `aYYYYMMDD` otherwise.
 
 | Platform           | Develop | Nightly |
@@ -255,7 +255,7 @@ The `--depth 1` flag fetches just the latest commit for a faster, lightweight cl
 
 Install [Cap'n Proto](https://capnproto.org/) if you plan to enable the `capnp` Rust feature,
 regenerate serialization schemas, or work on serialization code. Use the repository script on
-Linux or macOS to install the pinned version from `tools.toml`:
+Linux or macOS to install the pinned version from `.nautilus-engineering/tools.toml`:
 
 ```bash
 ./scripts/install-capnp.sh
@@ -312,7 +312,7 @@ Run a Python example with the project environment:
 .venv/bin/python examples/live/lighter/data_tester.py
 ```
 
-The script connects to the Lighter testnet and starts streaming market data; stop it with Ctrl+C.
+The script connects to Lighter Testnet and starts streaming market data; stop it with Ctrl+C.
 
 For direct commands and test targets, see the [Python package README][python-readme].
 
@@ -377,7 +377,7 @@ which differ in their internal bit-width and maximum decimal precision.
 - **Standard-precision**: 64-bit integers with up to 9 decimals of precision, and a smaller value range.
 
 :::note
-By default, the official Python wheels ship in high‑precision (128‑bit) mode on all supported platforms.
+By default, the official Python wheels ship in high-precision (128-bit) mode on all supported platforms.
 
 For pure Rust crates, high-precision works on all platforms (including Windows) since Rust handles
 `i128`/`u128` via software emulation. The default is standard-precision unless you explicitly enable

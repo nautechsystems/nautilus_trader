@@ -19,9 +19,10 @@
 //!
 //! Run with: `cargo run --example blockchain-data-tester --package nautilus-blockchain --features hypersync`
 //!
-//! Required credential environment variables (RPC node endpoints the user must supply):
-//! - `RPC_WSS_URL`.
-//! - `RPC_HTTP_URL`.
+//! Required environment variables:
+//! - `ENVIO_API_TOKEN`
+//! - `RPC_WSS_URL`
+//! - `RPC_HTTP_URL`
 
 use std::{sync::Arc, time::Duration};
 
@@ -71,6 +72,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone();
     let wss_rpc_url = get_env_var("RPC_WSS_URL")?;
     let http_rpc_url = get_env_var("RPC_HTTP_URL")?;
+    let _ = get_env_var("ENVIO_API_TOKEN")?;
 
     let dex_pool_filter = DexPoolFilters::builder()
         .remove_pools_with_empty_erc20fields(true)

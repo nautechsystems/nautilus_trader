@@ -13,63 +13,53 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Example of architect ax mean reversion.
+"""
 
+import sys
 from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
 
-from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
-from nautilus_trader.config import LoggingConfig
-from nautilus_trader.examples.strategies.bb_mean_reversion import BBMeanReversion
-from nautilus_trader.examples.strategies.bb_mean_reversion import BBMeanReversionConfig
-from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data import BarType
-from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import OmsType
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instruments import PerpetualContract
-from nautilus_trader.model.objects import Money
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
+from nautilus_trader.model import AccountType
+from nautilus_trader.model import AssetClass
+from nautilus_trader.model import BarType
+from nautilus_trader.model import Currency
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Money
+from nautilus_trader.model import OmsType
+from nautilus_trader.model import PerpetualContract
+from nautilus_trader.model import Price
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import Symbol
+from nautilus_trader.model import TraderId
+from nautilus_trader.model import Venue
+from nautilus_trader.testkit.providers import TestDataProvider
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "live" / "architect_ax"))
+
+from strategies import BBMeanReversion
+from strategies import BBMeanReversionConfig
+
+
+USD = Currency.from_str("USD")
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 if __name__ == "__main__":
-    instrument_id = InstrumentId.from_str("EURUSD-PERP.AX")
+    instrument_id = InstrumentId.from_str("AUDUSD-PERP.AX")
 
-    # Download free CSV data from https://www.truefx.com/truefx-historical-downloads/
-    # The raw format has no headers: pair,timestamp,bid,ask
-    data_path = Path("EURUSD-2025-12.csv")
-
-    if not data_path.exists():
-        raise FileNotFoundError(
-            f"TrueFX data file not found: {data_path}\n"
-            "Download free EUR/USD tick data from https://www.truefx.com/truefx-historical-downloads/\n"
-            "and place the CSV file in the current directory.",
-        )
-
-    df = pd.read_csv(
-        data_path,
-        header=None,
-        names=["pair", "timestamp", "bid", "ask"],
-    )
-    df["timestamp"] = pd.to_datetime(df["timestamp"], format="%Y%m%d %H:%M:%S.%f")
-    df = df.set_index("timestamp")
-    df = df[["bid", "ask"]]
-
-    EURUSD_PERP = PerpetualContract(
+    AUDUSD_PERP = PerpetualContract(
         instrument_id=instrument_id,
-        raw_symbol=Symbol("EURUSD-PERP"),
-        underlying="EUR",
+        raw_symbol=Symbol("AUDUSD-PERP"),
+        underlying="AUD",
         asset_class=AssetClass.FX,
         quote_currency=USD,
         settlement_currency=USD,
@@ -88,13 +78,12 @@ if __name__ == "__main__":
         ts_init=0,
     )
 
-    wrangler = QuoteTickDataWrangler(instrument=EURUSD_PERP)
-    ticks = wrangler.process(df)
-
-    config = BacktestEngineConfig(
-        trader_id=TraderId("BACKTESTER-001"),
-        logging=LoggingConfig(log_level="INFO"),
+    ticks = TestDataProvider.quotes_from_truefx_csv(
+        instrument=AUDUSD_PERP,
+        csv_name="truefx/audusd-ticks.csv",
     )
+
+    config = BacktestEngineConfig(trader_id=TraderId.from_str("BACKTESTER-001"))
 
     engine = BacktestEngine(config=config)
 
@@ -104,13 +93,13 @@ if __name__ == "__main__":
         oms_type=OmsType.NETTING,
         account_type=AccountType.MARGIN,
         base_currency=USD,
-        starting_balances=[Money(100_000, USD)],
+        starting_balances=[Money.from_str("100000 USD")],
     )
 
-    engine.add_instrument(EURUSD_PERP)
+    engine.add_instrument(AUDUSD_PERP)
     engine.add_data(ticks)
 
-    bar_type = BarType.from_str("EURUSD-PERP.AX-1-MINUTE-MID-INTERNAL")
+    bar_type = BarType.from_str("AUDUSD-PERP.AX-1-MINUTE-MID-INTERNAL")
 
     strategy_config = BBMeanReversionConfig(
         instrument_id=instrument_id,
@@ -136,9 +125,9 @@ if __name__ == "__main__":
         "display.width",
         300,
     ):
-        print(engine.trader.generate_account_report(AX))
-        print(engine.trader.generate_order_fills_report())
-        print(engine.trader.generate_positions_report())
+        print(engine.generate_account_report(venue=AX))
+        print(engine.generate_order_fills_report())
+        print(engine.generate_positions_report())
 
     engine.reset()
     engine.dispose()

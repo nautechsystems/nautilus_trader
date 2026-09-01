@@ -112,7 +112,7 @@ impl MarketOrder {
             None,
             None,
             None,
-            Some(TriggerType::NoTrigger),
+            None,
             None,
             None,
             None,

@@ -1,6 +1,6 @@
 [project]
 name = "nautilus-trader"
-version = "2.0.0rc3"
+version = "2.0.0rc4"
 description = "Production-grade Rust-native trading engine with deterministic event-driven architecture"
 authors = [{ name = "Nautech Systems", email = "info@nautechsystems.io" }]
 classifiers = [
@@ -30,7 +30,7 @@ visualization = [
   "pandas>=2.3.3,<4.0.0",
   "plotly>=6.9.0,<7.0.0",
   "kaleido>=1.3.0,<2.0.0",
-  "simplejson==3.20.2",
+  "simplejson>=4.1.1,<5.0.0",
 ]
 
 [project.urls]
@@ -40,7 +40,7 @@ docs = "https://nautilustrader.io/docs"
 
 [build-system]
 # Keep the maturin pin exact; scripts/maturin-version.bash uses it for CI wheel builds.
-requires = ["maturin==1.14.1", "patchelf"]
+requires = ["maturin==1.15.0", "patchelf"]
 build-backend = "maturin"
 
 [tool.maturin]
@@ -65,7 +65,10 @@ include = ["**/*.pyi"]
 
 [tool.uv]
 required-version = ">=0.12,<0.13"
+environments = ["sys_platform != 'win32' or platform_machine == 'AMD64'"]
 exclude-newer = "7 days"
+# Remove after maturin 1.15.0 clears the global release cooldown
+exclude-newer-package = { maturin = "2026-08-24T12:12:00Z" }
 # Block sdist builds for every third-party package in python/uv.lock so
 # unexpected loss of wheel publishing fails `uv lock` instead of silently
 # building from source. Kept in sync with python/uv.lock by
@@ -92,7 +95,6 @@ no-build-package = [
   "iniconfig",
   "jinja2",
   "kaleido",
-  "librt",
   "linkify-it-py",
   "logistro",
   "markdown-it-py",
@@ -100,15 +102,13 @@ no-build-package = [
   "maturin",
   "mdit-py-plugins",
   "mdurl",
-  "mypy",
-  "mypy-extensions",
+  "memray",
   "myst-parser",
   "narwhals",
   "numpy",
   "orjson",
   "packaging",
   "pandas",
-  "pathspec",
   "platformdirs",
   "plotly",
   "pluggy",
@@ -117,10 +117,12 @@ no-build-package = [
   "pytest",
   "pytest-asyncio",
   "pytest-cov",
+  "pytest-memray",
   "pytest-xdist",
   "python-dateutil",
   "pyyaml",
   "requests",
+  "rich",
   "roman-numerals",
   "ruff",
   "simplejson",
@@ -136,6 +138,8 @@ no-build-package = [
   "sphinxcontrib-jsmath",
   "sphinxcontrib-qthelp",
   "sphinxcontrib-serializinghtml",
+  "textual",
+  "ty",
   "typing-extensions",
   "tzdata",
   "uc-micro-py",
@@ -145,13 +149,14 @@ no-build-package = [
 ]
 
 [dependency-groups]
-dev = ["maturin==1.14.1", "mypy>=1.20.2,<2.0.0", "ruff>=0.16.1"]
+dev = ["maturin==1.15.0", "ruff>=0.16.4", "ty>=0.0.74"]
 test = [
   "pytest>=9.1.1",
   "pytest-asyncio>=1.4.0",
   "pytest-cov>=7.1.0",
+  "pytest-memray>=1.10.0; sys_platform == 'darwin' or sys_platform == 'linux'",
   "pytest-xdist[psutil]>=3.8.0",
-  "uvicorn>=0.52.1",
+  "uvicorn>=0.52.4",
   "uvloop>=0.22.1; sys_platform != 'win32'",
 ]
 docs = [
@@ -177,71 +182,16 @@ exclude = [
 ]
 
 [tool.ruff.lint]
-select = [
-  "C4", # flake8-comprehensions
-  "E", # pycodestyle errors
-  "F", # pyflakes
-  "W", # pycodestyle warnings
-  "C90", # mccabe complexity
-  "D", # pydocstyle
-  "DTZ", # flake8-datetimez
-  "UP", # pyupgrade
-  "S", # flake8-bandit (security)
-  "T10", # flake8-debugger
-  "ICN", # flake8-import-conventions
-  "PIE", # flake8-pie
-  "PT", # flake8-pytest-style
-  "PYI", # flake8-pyi (stubs)
-  "Q", # flake8-quotes
-  "I", # isort
-  "RSE", # flake8-raise
-  "TID", # flake8-tidy-imports
-  "SIM", # flake8-simplify
-  "B", # flake8-bugbear
-  "PERF", # Perflint
-  "FURB", # refurb
-  "ISC", # flake8-implicit-str-concat
-  "FLY", # flynt
-  "LOG", # flake8-logging
-  "ASYNC", # flake8-async
-  # "ARG", # flake8-unused-arguments
-  # "ERA", # eradicate (commented code)
-  "PD", # pandas-vet
-  "PGH", # pygrep-hooks
-  "PLE", # pylint errors
-  "PLW", # pylint warnings
-  "NPY", # NumPy-specific rules
-  "RUF", # Ruff-specific rules
-]
+select = ["ALL"]
 
 ignore = [
-  "D100", # Missing docstring in public module  **fix**
-  "D101",
-  "D102", # Missing docstring in public method  **fix**
-  "D103", # Missing docstring in public function  **fix**
-  "D104", # Missing docstring in public package  **fix**
-  "D105",
-  "D107",
-  "D200", # One-line docstring should fit on one line with quotes (optional style)
-  "D203", # 1 blank line required before class docstring (optional style)
-  "D205", # 1 blank line required between summary line and description (optional style)
-  "D212", # Multi-line docstring summary should start at the first line (optional style)
-  "D400", # First line should end with a period (not always a first line)
-  "D413", # Missing blank line after last section ('Parameters')
-  "D415", # First line should end with a period, question mark, or exclamation point (not always a first line)
-  "D416", # Section name should end with a colon ('Warnings:', not 'Warnings') (incorrect?)
-  "E501", # Line too long (linted separately)
-  "E741", # Ambiguous variable name (single char)
-  "FURB110", # if-exp-instead-of-or-operator (ternary is often clearer than or)
-  "ISC004", # multi-line string concatenation in collections is intentional for wrapped messages
-  "PYI021", # Docstrings should not be included in stubs (OK as this is the natural place for them)
-  "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
-  "S101", # Use of assert detected (OK in test suite)
-  "S105", # Use of hardcoded password (spurious)
-  "S106", # Use of hardcoded password (spurious)
-  "S113", # Probable use of requests call without timeout **fix**
-  "S603", # `subprocess` call: check for execution of untrusted input **fix**
-  "SIM108", # Use ternary operator instead of if-else-block (opinionated style)
+  "COM812", # Ruff formatter controls trailing commas
+  "D200", # One-line docstrings use the multi-line form by convention (docformatter --make-summary-multi-line)
+  "D203", # Conflicts with D211; ruff ignores D203 automatically, listed here to silence the warning
+  "D212", # Multi-line docstring summaries start on the second line by convention (docformatter --pre-summary-newline); D213 applies instead
+  "EM101", # Exception messages stay inline
+  "EM102", # Exception messages stay inline
+  "TRY003", # Exception messages stay inline
 ]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided
@@ -251,72 +201,256 @@ fixable = ["ALL"]
 # E501 = line too long
 # UP006 = Use list instead of List for type annotation (field name 'list' shadows built-in in Bybit schemas)
 # UP035 = typing.List is deprecated (field name 'list' shadows built-in in Bybit schemas)
-# These are ignored and linted separately (see .pre-commit-config.yaml)
+# Autofix is disabled for these rules; any violations are fixed manually
 unfixable = ["E4", "E501", "UP006", "UP035"]
 # Allow unused variables when underscore-prefixed.
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 [tool.ruff.lint.per-file-ignores]
 "nautilus_trader/**/*.pyi" = [
-  "PYI011",
+  "A002",
+  "ANN401",
+  "CPY001",
   "D",
+  "E501",
+  "F401",
+  "N802",
+  "PYI011",
   "RUF002",
-] # Generated stubs use explicit default values from #[pyo3(signature)] and inherit Rust docstrings
+  "RUF100",
+] # Generated stubs mirror Rust API names and types; E501 stays in the generator header too
 "nautilus_trader/adapters/*/__init__.py" = [
   "F405",
 ] # Adapter facades re-export star-imported names in __all__
 "python/nautilus_trader/**/*.pyi" = [
-  "PYI011",
+  "A002",
+  "ANN401",
+  "CPY001",
   "D",
+  "E501",
+  "F401",
+  "N802",
+  "PYI011",
   "RUF002",
+  "RUF100",
 ] # Root-relative form used by repository-wide checks
 "python/nautilus_trader/adapters/*/__init__.py" = [
   "F405",
 ] # Root-relative form used by repository-wide checks
 "docs/getting_started/**/*.py" = [
+  "B018",
+  "CPY001",
   "D",
   "E402",
+  "E501",
   "I001",
+  "INP001",
+  "PLR0913",
+  "PLR0917",
   "S101",
   "T20",
-  "B018",
 ] # TODO: Remove Jupytext exemptions as these guides are updated
 "docs/tutorials/**/*.py" = [
+  "ANN001",
+  "B018",
+  "CPY001",
   "D",
   "E402",
+  "E501",
+  "ERA001",
+  "FBT002",
   "I001",
+  "INP001",
+  "N806",
+  "PLR0913",
+  "PLR0917",
+  "PLR2004",
+  "PLW2901",
   "S101",
   "T20",
-  "B018",
-  "PLW2901",
+  "TC003",
 ] # TODO: Remove Jupytext exemptions as these tutorials are updated
 "docs/how_to/**/*.py" = [
+  "B018",
+  "CPY001",
   "D",
   "E402",
+  "E501",
+  "ERA001",
   "I001",
+  "INP001",
   "S101",
   "T20",
-  "B018",
 ] # TODO: Remove Jupytext exemptions as these guides are updated
+"docs/api_reference/conf.py" = [
+  "A001",
+  "D100",
+  "INP001",
+] # Sphinx requires the `copyright` config variable name; a Sphinx config script is not a package
 "examples/**/*.py" = [
+  "A002",
+  "ANN001",
+  "ANN401",
+  "CPY001",
   "DTZ",
+  "E501",
+  "FBT001",
+  "FBT002",
+  "FBT003",
+  "INP001",
+  "N806",
+  "PLR0913",
+  "PLR0917",
+  "PLR2004",
   "S101",
   "S105",
   "S106",
-] # TODO: Remove deferred example lint exemptions as examples are updated
-"examples/backtest/notebooks/databento_option_greeks.py" = ["B018"]
-"examples/backtest/synthetic_data_pnl_test.py" = ["FURB171"]
-"examples/other/state_machine/run_example.py" = ["B904"]
+  "T20",
+  "TC003",
+] # Examples are exempt from copyright headers (see check_copyright_year.sh) and can use asserts, mock credentials, and print
+"examples/backtest/notebooks/**/*.py" = [
+  "ERA001",
+] # Jupytext notebook headers are not commented-out code
+"examples/backtest/model_configs_example.py" = [
+  "ERA001",
+] # `node.run()` is left commented because the example ships no catalog data
+"examples/backtest/synthetic_data_pnl_test.py" = ["FURB171", "N802"]
+"examples/live/blockchain/actors.py" = [
+  "ERA001",
+  "FIX002",
+  "TD002",
+  "TD003",
+] # Optional timer demo is left commented on purpose
+"examples/live/interactive_brokers/_common.py" = ["S603"]
+"examples/live/polymarket/updown_smoke_tester.py" = ["TRY004"]
 "tests/**/*.py" = [
+  "A002",
+  "ANN001",
+  "ANN202",
+  "ANN401",
+  "ARG001",
+  "ARG004",
+  "ARG005",
+  "ASYNC110",
+  "BLE001",
+  "E402",
+  "E501",
+  "E711",
+  "FBT001",
+  "FBT002",
+  "FBT003",
+  "INP001",
+  "ISC004",
+  "PLC0206",
+  "PLC0415",
+  "PLR0124",
+  "PLR0913",
+  "PLR0915",
+  "PLR0917",
+  "PLR2004",
+  "PT019",
+  "PTH103",
   "S101",
   "S105",
   "S106",
-] # Tests can use asserts and mock credentials
+  "S301",
+  "S603",
+  "SLF001",
+  "TC001",
+  "TC003",
+] # Tests can use asserts, mock credentials, private access, literal comparisons, and local imports
 "python/tests/**/*.py" = [
+  "A002",
+  "ANN001",
+  "ANN202",
+  "ANN401",
+  "ARG001",
+  "ARG004",
+  "ARG005",
+  "ASYNC110",
+  "BLE001",
+  "E402",
+  "E501",
+  "E711",
+  "FBT001",
+  "FBT002",
+  "FBT003",
+  "INP001",
+  "ISC004",
+  "PLC0206",
+  "PLC0415",
+  "PLR0124",
+  "PLR0913",
+  "PLR0915",
+  "PLR0917",
+  "PLR2004",
+  "PT019",
+  "PTH103",
   "S101",
   "S105",
   "S106",
+  "S301",
+  "S603",
+  "SLF001",
+  "TC001",
+  "TC003",
 ] # Root-relative form used by repository-wide checks
+"memray_tests/**/*.py" = [
+  "S101",
+] # Memory tests use assertions like the main test suite
+"python/memray_tests/**/*.py" = [
+  "S101",
+] # Root-relative form used by repository-wide checks
+"tests/unit/persistence/test_option_greeks_replay.py" = ["ERA001"]
+"python/tests/unit/persistence/test_option_greeks_replay.py" = [
+  "ERA001",
+] # Comment mentions `__init__`; it is not commented-out code
+"nautilus_trader/analysis/tearsheet.py" = [
+  "ANN401",
+  "PLC0415",
+  "PLR0913",
+  "PLR0917",
+  "TRY004",
+]
+"python/nautilus_trader/analysis/tearsheet.py" = [
+  "ANN401",
+  "PLC0415",
+  "PLR0913",
+  "PLR0917",
+  "TRY004",
+] # Optional pandas import, chart callbacks, and ValueError for argument checks
+"nautilus_trader/analysis/reporter.py" = ["ANN401", "PLC0415"]
+"python/nautilus_trader/analysis/reporter.py" = ["ANN401", "PLC0415"]
+"nautilus_trader/core/datetime.py" = ["PLC0415"]
+"python/nautilus_trader/core/datetime.py" = ["PLC0415"]
+"nautilus_trader/testkit/providers.py" = ["ANN401", "PLC0415"]
+"python/nautilus_trader/testkit/providers.py" = ["ANN401", "PLC0415"]
+"generate_stubs.py" = ["S603", "T201"]
+"python/generate_stubs.py" = ["S603", "T201"]
+"generate_docstrings.py" = ["ARG001", "PLR0912", "PLR0915", "T201"]
+"python/generate_docstrings.py" = ["ARG001", "PLR0912", "PLR0915", "T201"]
+".pre-commit-hooks/check_pyo3_names.py" = ["PLR0912", "PLR0915", "S603", "T201"]
+"scripts/check-example-imports.py" = ["T201"]
+"scripts/check-markdown-tables.py" = ["INP001"]
+"scripts/security-audit.py" = ["INP001"]
+"scripts/ci/check_commit_message.py" = ["S603", "T201"]
+"scripts/ci/test_*.py" = [
+  "S101",
+  "S105",
+  "S106",
+  "S603",
+  "T201",
+] # Tests can use asserts and mock credentials
+"crates/adapters/*/tests/oracle-py/generate_oracle.py" = [
+  "PLR0913",
+  "PLR0917",
+  "SLF001",
+  "T201",
+]
+
+[tool.ruff.lint.flake8-annotations]
+# Renderer and callback signatures forward heterogeneous keyword arguments
+allow-star-arg-any = true
 
 [tool.ruff.lint.isort]
 force-single-line = true
@@ -329,19 +463,6 @@ docstring-code-format = true
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10
-
-[tool.mypy]
-python_version = "3.12"
-disallow_incomplete_defs = true
-explicit_package_bases = true
-ignore_missing_imports = true
-namespace_packages = true
-strict_optional = true
-warn_no_return = true
-warn_unused_configs = true
-warn_unused_ignores = true
-mypy_path = ["."]
-exclude = "^nautilus_trader/.*__init__\\.py$"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

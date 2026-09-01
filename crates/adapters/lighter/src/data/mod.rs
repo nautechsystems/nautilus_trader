@@ -29,13 +29,9 @@ use dashmap::{DashMap, DashSet, mapref::entry::Entry};
 use nautilus_common::{
     cache::InstrumentLookupError,
     clients::DataClient,
-    live::{
-        runner::{get_data_event_sender, try_get_system_event_sender},
-        runtime::get_runtime,
-        task::TaskHandles,
-    },
+    live::runner::get_data_event_sender,
     messages::{
-        DataEvent, SystemEvent,
+        DataEvent,
         data::{
             BarsResponse, BookResponse, DataResponse, FundingRatesResponse, InstrumentResponse,
             InstrumentsResponse, RequestBars, RequestBookDepth, RequestBookSnapshot,
@@ -55,22 +51,24 @@ use nautilus_core::{
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+use nautilus_live::{
+    SocketControlFactory,
+    task::{TaskGroup, TaskGroupGuard, TaskJoinOutcome, TaskSlot, finish_task},
+};
 use nautilus_model::{
     data::{Data, InstrumentStatus, TradeTick},
     enums::{BookType, MarketStatusAction},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
 };
-use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     common::{
-        consts::{DISCONNECT_TIMEOUT, LIGHTER_VENUE},
+        consts::DISCONNECT_TIMEOUT,
         credential::Credential,
         enums::{LighterCandleResolution, LighterMarketStatus},
         rate_limit::resolve_quota,
-        socket::{DATA_STREAMS_ENDPOINT, socket_state_sink},
         symbol::MarketRegistry,
     },
     config::LighterDataClientConfig,
@@ -80,7 +78,8 @@ use crate::{
         query::LighterOrderBookOrdersQuery,
     },
     websocket::{
-        client::LighterWebSocketClient,
+        DATA_STREAMS_ENDPOINT, LighterWsError,
+        client::{LighterWebSocketClient, RetainedTaskSlot, TaskRetentionGuard},
         messages::{LighterMarketSelection, LighterWsChannel, NautilusWsMessage},
     },
 };
@@ -106,11 +105,14 @@ pub struct LighterDataClient {
     http_client: LighterHttpClient,
     ws_client: LighterWebSocketClient,
     registry: Arc<MarketRegistry>,
+    socket_factory: SocketControlFactory,
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
-    tasks: TaskHandles,
+    tasks: TaskGroup,
+    ws_disconnect_handle: TaskSlot<Result<(), LighterWsError>>,
+    ws_handler_retained: Arc<RetainedTaskSlot>,
+    shutdown_errors: Vec<String>,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
-    system_sender: Option<tokio::sync::mpsc::UnboundedSender<SystemEvent>>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     instrument_statuses: Arc<DashMap<InstrumentId, LighterMarketStatus>>,
     instrument_status_subscriptions: Arc<DashSet<InstrumentId>>,
@@ -128,7 +130,9 @@ impl LighterDataClient {
     pub fn new(client_id: ClientId, config: LighterDataClientConfig) -> anyhow::Result<Self> {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
-        let system_sender = try_get_system_event_sender();
+        let venue = config.resolved_venue();
+        let settlement_currency = config.settlement_currency();
+        let socket_factory = SocketControlFactory::new(client_id, Some(venue));
 
         let credential = if config.has_credentials() {
             // Mirror `has_credentials()`: a blank or whitespace-only `private_key`
@@ -138,10 +142,11 @@ impl LighterDataClient {
                 .as_deref()
                 .filter(|s| !s.trim().is_empty())
                 .map(str::to_string);
-            Credential::resolve(
+            Credential::resolve_for_deployment(
                 private_key,
                 config.account_index,
                 config.api_key_index,
+                config.deployment,
                 config.environment,
             )
             .context("failed to resolve Lighter data credentials")?
@@ -149,26 +154,27 @@ impl LighterDataClient {
             None
         };
 
-        let registry = Arc::new(MarketRegistry::new());
+        let registry = Arc::new(MarketRegistry::new_with_venue_and_settlement_currency(
+            venue,
+            settlement_currency,
+        ));
 
         let raw_http = LighterRawHttpClient::new_with_quotas(
             config.environment,
-            config.base_url_http.clone(),
+            Some(config.http_url()),
             config.http_timeout_secs,
             config.proxy_url.clone(),
             resolve_quota(config.rest_quota_per_min),
             None,
         )
         .context("failed to construct Lighter raw HTTP client")?;
+
         let http_client =
             LighterHttpClient::from_raw_with_registry(raw_http, Arc::clone(&registry));
 
-        let ws_client = Self::create_ws_client(
-            &config,
-            Arc::clone(&registry),
-            client_id,
-            system_sender.as_ref(),
-        );
+        let ws_client = Self::create_ws_client(&config, Arc::clone(&registry), &socket_factory);
+
+        let tasks = TaskGroup::new();
 
         Ok(Self {
             clock,
@@ -178,11 +184,14 @@ impl LighterDataClient {
             http_client,
             ws_client,
             registry,
+            socket_factory,
             is_connected: AtomicBool::new(false),
-            cancellation_token: CancellationToken::new(),
-            tasks: TaskHandles::default(),
+            cancellation_token: tasks.cancellation_token(),
+            tasks,
+            ws_disconnect_handle: TaskSlot::new(),
+            ws_handler_retained: Arc::new(RetainedTaskSlot::new()),
+            shutdown_errors: Vec::new(),
             data_sender,
-            system_sender,
             instruments: Arc::new(AtomicMap::new()),
             instrument_statuses: Arc::new(DashMap::new()),
             instrument_status_subscriptions: Arc::new(DashSet::new()),
@@ -193,7 +202,7 @@ impl LighterDataClient {
     }
 
     fn venue(&self) -> Venue {
-        *LIGHTER_VENUE
+        self.config.resolved_venue()
     }
 
     /// Returns `true` when the data client holds resolved Lighter credentials.
@@ -205,8 +214,7 @@ impl LighterDataClient {
     fn create_ws_client(
         config: &LighterDataClientConfig,
         registry: Arc<MarketRegistry>,
-        client_id: ClientId,
-        system_sender: Option<&tokio::sync::mpsc::UnboundedSender<SystemEvent>>,
+        socket_factory: &SocketControlFactory,
     ) -> LighterWebSocketClient {
         let ws_client = LighterWebSocketClient::new(
             Some(config.ws_url()),
@@ -217,14 +225,7 @@ impl LighterDataClient {
             config.proxy_url.clone(),
         );
 
-        match system_sender {
-            Some(sender) => ws_client.with_state_sink(socket_state_sink(
-                client_id,
-                DATA_STREAMS_ENDPOINT,
-                sender.clone(),
-            )),
-            None => ws_client,
-        }
+        ws_client.with_socket_control(socket_factory.control(DATA_STREAMS_ENDPOINT))
     }
 
     fn take_ws_client(&mut self) -> LighterWebSocketClient {
@@ -233,20 +234,24 @@ impl LighterDataClient {
             Self::create_ws_client(
                 &self.config,
                 Arc::clone(&self.registry),
-                self.client_id,
-                self.system_sender.as_ref(),
+                &self.socket_factory,
             ),
         )
     }
 
     fn spawn_ws_disconnect(&mut self) {
+        if self.ws_disconnect_handle.is_some() {
+            return;
+        }
+        self.ws_client.begin_shutdown();
         let ws_client = self.take_ws_client();
-        get_runtime().spawn(Self::disconnect_ws_client(ws_client));
-    }
+        let retained = Arc::clone(&self.ws_handler_retained);
 
-    async fn disconnect_ws_client(mut ws_client: LighterWebSocketClient) {
-        if let Err(e) = ws_client.disconnect().await {
-            log::warn!("Error disconnecting Lighter WebSocket client: {e}");
+        if let Err(e) = self
+            .ws_disconnect_handle
+            .spawn(ws_client.disconnect_with_task_retention(retained))
+        {
+            log::error!("Failed to start Lighter WebSocket disconnect task: {e}");
         }
     }
 
@@ -257,47 +262,75 @@ impl LighterDataClient {
     {
         let cancellation_token = self.cancellation_token.clone();
 
-        let handle = get_runtime().spawn(async move {
+        let future = async move {
             tokio::select! {
                 biased;
                 () = cancellation_token.cancelled() => {}
                 () = fut => {}
             }
-        });
+        };
 
-        self.tasks.push(handle);
+        if let Err(e) = self.tasks.spawn(future) {
+            log::debug!("Skipping Lighter data task after shutdown began: {e}");
+        }
     }
 
     fn abort_tasks(&self) {
-        self.tasks.abort_all();
+        self.tasks.begin_shutdown();
     }
 
-    async fn shutdown_tasks(&self) {
-        let handles = self.tasks.take_all();
-
-        if handles.is_empty() {
-            return;
+    async fn shutdown_tasks(&mut self) -> anyhow::Result<()> {
+        self.tasks.begin_shutdown();
+        if let Err(e) = self
+            .tasks
+            .finish_shutdown(Duration::from_secs(1), DISCONNECT_TIMEOUT)
+            .await
+        {
+            self.shutdown_errors.push(format!("data tasks failed: {e}"));
         }
 
-        let abort_handles: Vec<_> = handles.iter().map(JoinHandle::abort_handle).collect();
-        let drain = async {
-            for handle in handles {
-                match handle.await {
-                    Ok(()) => {}
-                    Err(e) if e.is_cancelled() => {}
-                    Err(e) => log::error!("Error waiting for Lighter task to complete: {e}"),
-                }
-            }
+        Self::finish_owned_task(
+            &mut self.ws_disconnect_handle,
+            "WebSocket disconnect",
+            &mut self.shutdown_errors,
+        )
+        .await;
+
+        if let Err(e) = self.ws_handler_retained.finish().await {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        self.take_shutdown_result("Failed to terminate Lighter tasks")
+    }
+
+    fn take_shutdown_result(&mut self, context: &str) -> anyhow::Result<()> {
+        if self.shutdown_errors.is_empty() {
+            Ok(())
+        } else {
+            let errors = std::mem::take(&mut self.shutdown_errors);
+            anyhow::bail!("{context}: {}", errors.join("; "))
+        }
+    }
+
+    async fn finish_owned_task(
+        slot: &mut TaskSlot<Result<(), LighterWsError>>,
+        description: &str,
+        errors: &mut Vec<String>,
+    ) {
+        let Some(outcome) = finish_task(slot, DISCONNECT_TIMEOUT, DISCONNECT_TIMEOUT).await else {
+            return;
         };
 
-        if tokio::time::timeout(DISCONNECT_TIMEOUT, drain)
-            .await
-            .is_err()
-        {
-            log::warn!("Timeout waiting for Lighter data tasks, aborting");
-
-            for abort in abort_handles {
-                abort.abort();
+        match outcome {
+            TaskJoinOutcome::Completed(Ok(())) | TaskJoinOutcome::Aborted => {}
+            TaskJoinOutcome::Completed(Err(e)) => {
+                errors.push(format!("{description} failed: {e}"));
+            }
+            TaskJoinOutcome::Failed(e) => {
+                errors.push(format!("{description} task failed: {e}"));
+            }
+            TaskJoinOutcome::Incomplete => {
+                errors.push(format!("{description} task did not stop after abort"));
             }
         }
     }
@@ -350,32 +383,51 @@ impl LighterDataClient {
         // Connect on a clone so the resulting `out_rx` (and inner handler
         // task handle) live on the consumer; transfer the handle back to
         // `self.ws_client` so disconnect() can await it.
-        let mut ws_client = self.ws_client.clone();
-        ws_client
-            .connect()
+        let mut ws_guard = TaskRetentionGuard::new(
+            self.ws_client.clone(),
+            Arc::clone(&self.ws_handler_retained),
+        );
+        ws_guard
+            .client_mut()
+            .connect_with_cancellation(self.cancellation_token.clone())
             .await
             .context("failed to connect to Lighter WebSocket")?;
 
-        if let Err(e) = ws_client.wait_until_active().await {
-            if let Err(disconnect_error) = ws_client.disconnect().await {
-                log::warn!(
-                    "Error disconnecting Lighter WebSocket after readiness failure: {disconnect_error}",
-                );
+        if let Err(e) = ws_guard.client_mut().wait_until_active().await {
+            let ws_client = ws_guard.disarm();
+            let mut rollback_errors = Vec::new();
+
+            if let Err(e) = ws_client
+                .disconnect_with_task_retention(Arc::clone(&self.ws_handler_retained))
+                .await
+            {
+                rollback_errors.push(e.to_string());
             }
-            return Err(
-                anyhow::Error::new(e).context("Lighter WebSocket did not reach active state")
-            );
+
+            if let Err(e) = self.ws_handler_retained.finish().await {
+                rollback_errors.push(e.to_string());
+            }
+
+            let readiness_error =
+                anyhow::Error::new(e).context("Lighter WebSocket did not reach active state");
+
+            if rollback_errors.is_empty() {
+                return Err(readiness_error);
+            }
+            return Err(readiness_error.context(format!(
+                "Lighter WebSocket readiness rollback failed: {}",
+                rollback_errors.join("; ")
+            )));
         }
 
-        if let Some(handle) = ws_client.take_task_handle() {
-            self.ws_client.set_task_handle(handle);
-        }
+        let mut ws_client = ws_guard.disarm();
+        self.ws_client.set_task_slot(ws_client.take_task_slot());
 
         let cancellation_token = self.cancellation_token.clone();
         let data_sender = self.data_sender.clone();
         let market_stats_subscriptions = Arc::clone(&self.market_stats_subscriptions);
 
-        let task = get_runtime().spawn(async move {
+        let future = async move {
             log::debug!("Lighter WebSocket consumption loop started");
 
             loop {
@@ -468,19 +520,21 @@ impl LighterDataClient {
             }
 
             log::debug!("Lighter WebSocket consumption loop finished");
-        });
+        };
 
-        self.tasks.push(task);
+        self.tasks
+            .spawn(future)
+            .context("failed to register Lighter WebSocket consumption task")?;
         log::debug!("Lighter WebSocket consumption task spawned");
 
         Ok(())
     }
 
-    fn spawn_instrument_refresh(&self) {
+    fn spawn_instrument_refresh(&self) -> anyhow::Result<()> {
         let minutes = self.config.update_instruments_interval_mins;
         if minutes == 0 {
             log::debug!("Lighter instrument refresh disabled (interval=0)");
-            return;
+            return Ok(());
         }
 
         let interval = Duration::from_secs(minutes.saturating_mul(60));
@@ -495,7 +549,7 @@ impl LighterDataClient {
         let client_id = self.client_id;
         let clock = self.clock;
 
-        let handle = get_runtime().spawn(async move {
+        let future = async move {
             loop {
                 let sleep = tokio::time::sleep(interval);
                 tokio::pin!(sleep);
@@ -575,9 +629,35 @@ impl LighterDataClient {
                     }
                 }
             }
-        });
+        };
 
-        self.tasks.push(handle);
+        self.tasks
+            .spawn(future)
+            .context("failed to register Lighter instrument refresh task")?;
+        Ok(())
+    }
+
+    async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
+        self.tasks.begin_shutdown();
+        self.ws_client.begin_shutdown();
+
+        if let Err(e) = self.shutdown_tasks().await {
+            self.shutdown_errors.push(e.to_string());
+        }
+        let ws_client = self.take_ws_client();
+        if let Err(e) = ws_client
+            .disconnect_with_task_retention(Arc::clone(&self.ws_handler_retained))
+            .await
+        {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if let Err(e) = self.ws_handler_retained.finish().await {
+            self.shutdown_errors.push(e.to_string());
+        }
+        self.is_connected.store(false, Ordering::Release);
+
+        self.take_shutdown_result("Failed to roll back Lighter data startup")
     }
 
     fn clear_market_stats_subscriptions(&self) {
@@ -844,24 +924,21 @@ impl DataClient for LighterDataClient {
 
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping Lighter data client {}", self.client_id);
-        self.cancellation_token.cancel();
         self.abort_tasks();
         self.spawn_ws_disconnect();
+        self.is_connected.store(false, Ordering::Release);
         self.clear_instrument_status_subscriptions();
         self.clear_market_stats_subscriptions();
-        self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
         log::debug!("Resetting Lighter data client {}", self.client_id);
-        self.cancellation_token.cancel();
         self.abort_tasks();
         self.spawn_ws_disconnect();
+        self.is_connected.store(false, Ordering::Release);
         self.clear_instrument_status_subscriptions();
         self.clear_market_stats_subscriptions();
-        self.is_connected.store(false, Ordering::Relaxed);
-        self.cancellation_token = CancellationToken::new();
         Ok(())
     }
 
@@ -879,17 +956,33 @@ impl DataClient for LighterDataClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.is_connected() {
+        if self.is_connected()
+            && self.tasks.is_open()
+            && self.ws_disconnect_handle.is_none()
+            && self.ws_handler_retained.is_empty()
+        {
             return Ok(());
         }
 
-        // `stop()` and `disconnect()` cancel `cancellation_token` to tear down
-        // the consumer task. Without rotating it here, a subsequent connect()
-        // would clone an already-cancelled token into the new consumer, which
-        // would exit immediately while we still mark the client connected.
-        if self.cancellation_token.is_cancelled() {
-            self.cancellation_token = CancellationToken::new();
+        if !self.tasks.is_open()
+            || !self.tasks.is_empty()
+            || self.ws_disconnect_handle.is_some()
+            || !self.ws_handler_retained.is_empty()
+        {
+            self.teardown_partial_connect().await?;
         }
+
+        if !self.tasks.is_open() {
+            self.tasks.start_generation().map_err(|e| {
+                anyhow::anyhow!("Failed to start Lighter data task generation: {e}")
+            })?;
+            self.cancellation_token = self.tasks.cancellation_token();
+        }
+
+        let ws_client = self.ws_client.clone();
+        let setup_guard = TaskGroupGuard::new(&[&self.tasks], move || {
+            ws_client.begin_shutdown();
+        });
 
         let instruments = self
             .bootstrap_instruments()
@@ -902,11 +995,25 @@ impl DataClient for LighterDataClient {
             }
         }
 
-        self.spawn_ws()
-            .await
-            .context("failed to spawn Lighter WebSocket consumer")?;
-        self.spawn_instrument_refresh();
+        let session_result = async {
+            self.spawn_ws()
+                .await
+                .context("failed to spawn Lighter WebSocket consumer")?;
+            self.spawn_instrument_refresh()?;
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
 
+        if let Err(e) = session_result {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Lighter data startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e);
+        }
+
+        setup_guard.disarm();
         self.is_connected.store(true, Ordering::Relaxed);
         log::info!("Connected: client_id={}", self.client_id);
 
@@ -914,18 +1021,36 @@ impl DataClient for LighterDataClient {
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if !self.is_connected() {
+        if !self.is_connected()
+            && self.tasks.is_empty()
+            && self.tasks.is_open()
+            && self.ws_disconnect_handle.is_none()
+            && self.ws_handler_retained.is_empty()
+            && self.shutdown_errors.is_empty()
+        {
             return Ok(());
         }
 
-        self.cancellation_token.cancel();
+        self.tasks.begin_shutdown();
+        self.ws_client.begin_shutdown();
         self.clear_instrument_status_subscriptions();
         self.clear_market_stats_subscriptions();
 
-        self.shutdown_tasks().await;
+        if let Err(e) = self.shutdown_tasks().await {
+            self.shutdown_errors.push(e.to_string());
+        }
 
         let ws_client = self.take_ws_client();
-        Self::disconnect_ws_client(ws_client).await;
+        if let Err(e) = ws_client
+            .disconnect_with_task_retention(Arc::clone(&self.ws_handler_retained))
+            .await
+        {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if let Err(e) = self.ws_handler_retained.finish().await {
+            self.shutdown_errors.push(e.to_string());
+        }
 
         self.instruments.store(AHashMap::new());
         self.instrument_statuses.clear();
@@ -934,7 +1059,7 @@ impl DataClient for LighterDataClient {
         self.is_connected.store(false, Ordering::Relaxed);
         log::info!("Disconnected: client_id={}", self.client_id);
 
-        Ok(())
+        self.take_shutdown_result("Failed to disconnect Lighter data client")
     }
 
     fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
@@ -1751,7 +1876,10 @@ mod tests {
         *,
     };
     use crate::{
-        common::enums::{LighterFundingResolution, LighterProductType},
+        common::{
+            consts::LIGHTER_VENUE,
+            enums::{LighterFundingResolution, LighterProductType},
+        },
         http::query::{LighterFundingsQuery, LighterRecentTradesQuery},
     };
 
@@ -2724,7 +2852,9 @@ mod tests {
         let (client, _receiver) = create_data_client_with_receiver_and_config_for_test(config);
 
         assert!(client.tasks.is_empty());
-        client.spawn_instrument_refresh();
+        client
+            .spawn_instrument_refresh()
+            .expect("instrument refresh remains disabled");
         assert!(client.tasks.is_empty());
     }
 
@@ -2734,16 +2864,16 @@ mod tests {
             update_instruments_interval_mins: 60,
             ..Default::default()
         };
-        let (client, _receiver) = create_data_client_with_receiver_and_config_for_test(config);
+        let (mut client, _receiver) = create_data_client_with_receiver_and_config_for_test(config);
 
         assert!(client.tasks.is_empty());
-        client.spawn_instrument_refresh();
+        client
+            .spawn_instrument_refresh()
+            .expect("instrument refresh task registration");
         assert_eq!(client.tasks.len(), 1);
 
-        client.cancellation_token.cancel();
-        for task in client.tasks.take_all() {
-            task.await.unwrap();
-        }
+        client.tasks.begin_shutdown();
+        client.shutdown_tasks().await.expect("task shutdown");
     }
 
     #[tokio::test]
@@ -2761,25 +2891,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_reset_aborts_registered_tasks_before_rotating_token() {
+    async fn test_reset_closes_registered_task_generation_until_drain() {
         let (mut client, _receiver) = create_data_client_with_receiver_for_test();
         let old_token = client.cancellation_token.clone();
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
         let (dropped_tx, dropped_rx) = tokio::sync::oneshot::channel();
 
-        let handle = get_runtime().spawn(async move {
-            let _drop_signal = DropSignal(Some(dropped_tx));
-            let _ = started_tx.send(());
-            std::future::pending::<()>().await;
-        });
-        client.tasks.push(handle);
+        client
+            .tasks
+            .spawn(async move {
+                let _drop_signal = DropSignal(Some(dropped_tx));
+                let _ = started_tx.send(());
+                std::future::pending::<()>().await;
+            })
+            .expect("registered task spawn");
         started_rx.await.expect("registered task started");
 
         client.reset().expect("reset");
 
         assert!(old_token.is_cancelled());
+        assert_eq!(client.tasks.len(), 1);
+        assert!(!client.tasks.is_open());
+        assert!(client.cancellation_token.is_cancelled());
+        client.shutdown_tasks().await.expect("reset task shutdown");
         assert!(client.tasks.is_empty());
-        assert!(!client.cancellation_token.is_cancelled());
         tokio::time::timeout(Duration::from_secs(2), dropped_rx)
             .await
             .expect("registered task was not aborted")
@@ -2870,13 +3005,15 @@ mod tests {
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
         let (dropped_tx, dropped_rx) = tokio::sync::oneshot::channel();
 
-        // Raw task that ignores cancellation, so shutdown_tasks must abort it after the timeout
-        let handle = get_runtime().spawn(async move {
-            let _drop_signal = DropSignal(Some(dropped_tx));
-            let _ = started_tx.send(());
-            std::future::pending::<()>().await;
-        });
-        client.tasks.push(handle);
+        // The task ignores cancellation, so shutdown_tasks must abort it after the grace timeout.
+        client
+            .tasks
+            .spawn(async move {
+                let _drop_signal = DropSignal(Some(dropped_tx));
+                let _ = started_tx.send(());
+                std::future::pending::<()>().await;
+            })
+            .expect("uncancellable task spawn");
         started_rx.await.expect("task started");
 
         client.disconnect().await.expect("disconnect");
@@ -3068,63 +3205,41 @@ mod tests {
     }
 
     fn test_perp_instrument(instrument_id: InstrumentId, venue_symbol: &str) -> InstrumentAny {
-        InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            instrument_id,
-            Symbol::new(format!("{venue_symbol}-PERP")),
-            Currency::from(venue_symbol),
-            Currency::from("USDC"),
-            Currency::from("USDC"),
-            false,
-            2,
-            4,
-            Price::from("0.01"),
-            Quantity::from("0.0001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        ))
+        InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new(format!("{venue_symbol}-PERP")))
+                .base_currency(Currency::from(venue_symbol))
+                .quote_currency(Currency::from("USDC"))
+                .settlement_currency(Currency::from("USDC"))
+                .is_inverse(false)
+                .price_precision(2)
+                .size_precision(4)
+                .price_increment(Price::from("0.01"))
+                .size_increment(Quantity::from("0.0001"))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
     }
 
     fn test_spot_instrument(instrument_id: InstrumentId, venue_symbol: &str) -> InstrumentAny {
-        InstrumentAny::CurrencyPair(CurrencyPair::new(
-            instrument_id,
-            Symbol::new(format!("{venue_symbol}-SPOT")),
-            Currency::from(venue_symbol),
-            Currency::from("USDC"),
-            2,
-            4,
-            Price::from("0.01"),
-            Quantity::from("0.0001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        ))
+        InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new(format!("{venue_symbol}-SPOT")))
+                .base_currency(Currency::from(venue_symbol))
+                .quote_currency(Currency::from("USDC"))
+                .price_precision(2)
+                .size_precision(4)
+                .price_increment(Price::from("0.01"))
+                .size_increment(Quantity::from("0.0001"))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
     }
 
     fn unsupported_three_minute_bar_type() -> BarType {

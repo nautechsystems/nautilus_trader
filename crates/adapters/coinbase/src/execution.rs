@@ -19,7 +19,7 @@ use std::{
     collections::VecDeque,
     future::Future,
     str::FromStr,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -28,7 +28,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender, task::TaskHandles},
+    live::runner::get_exec_event_sender,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
@@ -37,13 +37,16 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED, Params, UnixNanos,
+    Params, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
+use nautilus_live::{
+    ExecutionClientCore, ExecutionEventEmitter, SocketControl,
+    task::{TaskGroup, TaskGroupGuard},
+};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TriggerType},
+    enums::{AccountType, LiquiditySide, OmsType, OrderStatus, OrderType, TriggerType},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, Venue,
         VenueOrderId,
@@ -54,8 +57,8 @@ use nautilus_model::{
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
 use nautilus_network::retry::RetryConfig;
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
-use tokio::task::JoinHandle;
 use ustr::Ustr;
 
 use crate::{
@@ -64,7 +67,7 @@ use crate::{
         credential::CoinbaseCredential,
         enums::{CoinbaseProductType, CoinbaseWsChannel},
     },
-    config::CoinbaseExecClientConfig,
+    config::CoinbaseExecutionClientConfig,
     http::{
         client::CoinbaseHttpClient,
         error::Error as CoinbaseHttpError,
@@ -272,12 +275,13 @@ impl CumulativeStateMap {
 pub struct CoinbaseExecutionClient {
     core: ExecutionClientCore,
     clock: &'static AtomicTime,
-    config: CoinbaseExecClientConfig,
+    config: CoinbaseExecutionClientConfig,
     emitter: ExecutionEventEmitter,
     http_client: CoinbaseHttpClient,
     ws_user: CoinbaseWebSocketClient,
-    ws_stream_handle: Option<JoinHandle<()>>,
-    pending_tasks: TaskHandles,
+    session_tasks: TaskGroup,
+    pending_tasks: TaskGroup,
+    shutdown_errors: Vec<String>,
     instruments_cache: Arc<AHashMap<String, InstrumentAny>>,
     fill_dedup: Arc<Mutex<FillDedup>>,
     cumulative_state: Arc<Mutex<CumulativeStateMap>>,
@@ -300,7 +304,7 @@ impl CoinbaseExecutionClient {
     /// HTTP / WebSocket client cannot be constructed.
     pub fn new(
         core: ExecutionClientCore,
-        config: CoinbaseExecClientConfig,
+        config: CoinbaseExecutionClientConfig,
     ) -> anyhow::Result<Self> {
         let credential =
             CoinbaseCredential::resolve(config.api_key.as_deref(), config.api_secret.as_deref())
@@ -340,7 +344,12 @@ impl CoinbaseExecutionClient {
             credential,
             config.transport_backend,
             config.proxy_url.clone(),
-        );
+        )
+        .with_socket_control(SocketControl::new(
+            core.client_id,
+            Some(*COINBASE_VENUE),
+            "coinbase-user-streams",
+        ));
 
         let clock = get_atomic_clock_realtime();
         let emitter = ExecutionEventEmitter::new(
@@ -351,6 +360,9 @@ impl CoinbaseExecutionClient {
             None,
         );
 
+        let session_tasks = TaskGroup::new();
+        let pending_tasks = TaskGroup::new();
+
         Ok(Self {
             core,
             clock,
@@ -358,8 +370,9 @@ impl CoinbaseExecutionClient {
             emitter,
             http_client,
             ws_user,
-            ws_stream_handle: None,
-            pending_tasks: TaskHandles::default(),
+            session_tasks,
+            pending_tasks,
+            shutdown_errors: Vec::new(),
             instruments_cache: Arc::new(AHashMap::new()),
             fill_dedup: Arc::new(Mutex::new(FillDedup::new(FILL_DEDUP_CAPACITY))),
             cumulative_state: Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
@@ -374,18 +387,67 @@ impl CoinbaseExecutionClient {
     where
         F: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        let runtime = get_runtime();
-        let handle = runtime.spawn(async move {
+        let future = async move {
             if let Err(e) = fut.await {
                 log::warn!("{description} failed: {e:?}");
             }
-        });
+        };
 
-        self.pending_tasks.push(handle);
+        if let Err(e) = self.pending_tasks.spawn(future) {
+            log::warn!("Skipping Coinbase {description} after shutdown began: {e}");
+        }
     }
 
     fn abort_pending_tasks(&self) {
-        self.pending_tasks.abort_all();
+        self.pending_tasks.begin_shutdown();
+    }
+
+    fn abort_session_tasks(&self) {
+        self.session_tasks.begin_shutdown();
+        self.ws_user.begin_shutdown();
+    }
+
+    async fn await_pending_tasks(&self) -> anyhow::Result<()> {
+        self.pending_tasks.begin_shutdown();
+        self.pending_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to terminate Coinbase execution tasks: {e}"))?;
+        Ok(())
+    }
+
+    async fn await_session_tasks(&self) -> anyhow::Result<()> {
+        self.session_tasks.begin_shutdown();
+        self.session_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to terminate Coinbase session tasks: {e}"))?;
+        Ok(())
+    }
+
+    async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
+        self.abort_session_tasks();
+        self.abort_pending_tasks();
+
+        if let Err(e) = self.ws_user.disconnect().await {
+            self.shutdown_errors.push(e.to_string());
+        }
+        let (session_result, pending_result) =
+            tokio::join!(self.await_session_tasks(), self.await_pending_tasks());
+        self.core.set_disconnected();
+
+        if let Err(e) = session_result {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if let Err(e) = pending_result {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if !self.shutdown_errors.is_empty() {
+            anyhow::bail!(std::mem::take(&mut self.shutdown_errors).join("; "));
+        }
+        Ok(())
     }
 
     // Returns true when the exec client was created with a Margin account,
@@ -464,9 +526,34 @@ impl ExecutionClient for CoinbaseExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_connected() {
+        if self.core.is_connected() && self.pending_tasks.is_open() && self.session_tasks.is_open()
+        {
             return Ok(());
         }
+
+        if !self.pending_tasks.is_open() {
+            self.await_pending_tasks().await?;
+            self.pending_tasks
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start Coinbase task generation: {e}"))?;
+        }
+
+        if !self.session_tasks.is_open() || !self.session_tasks.is_empty() {
+            self.abort_session_tasks();
+            self.ws_user
+                .disconnect()
+                .await
+                .context("failed to close stale Coinbase user WebSocket")?;
+            self.await_session_tasks().await?;
+            self.session_tasks
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start Coinbase session generation: {e}"))?;
+        }
+        let ws_user = self.ws_user.clone();
+        let setup_guard =
+            TaskGroupGuard::new(&[&self.session_tasks, &self.pending_tasks], move || {
+                ws_user.begin_shutdown();
+            });
 
         // If the underlying WS is still alive from a prior stop() that did not
         // explicitly disconnect, tear it down before reconnecting. The
@@ -476,12 +563,10 @@ impl ExecutionClient for CoinbaseExecutionClient {
         // pairs and a fresh signal.
         if self.ws_user.is_active() || self.ws_user.is_reconnecting() {
             log::debug!("Tearing down stale user WS before reconnect");
-            self.ws_user.disconnect().await;
-            // Abort any prior consumer task; the rebuilt ws_user gets a fresh
-            // out_rx so the previous task is otherwise leaked.
-            if let Some(handle) = self.ws_stream_handle.take() {
-                handle.abort();
-            }
+            self.ws_user
+                .disconnect()
+                .await
+                .context("failed to close stale Coinbase user WebSocket")?;
             let credential = CoinbaseCredential::resolve(
                 self.config.api_key.as_deref(),
                 self.config.api_secret.as_deref(),
@@ -545,35 +630,36 @@ impl ExecutionClient for CoinbaseExecutionClient {
             self.core.set_instruments_initialized();
         }
 
-        self.ws_user.set_account_id(self.core.account_id).await;
-        self.ws_user.connect().await?;
+        let session_result = async {
+            self.ws_user.set_account_id(self.core.account_id).await;
+            self.ws_user.connect().await?;
 
-        // Subscribe to the user channel (product-agnostic). User channel with
-        // an empty product list returns events for all products.
-        self.ws_user
-            .subscribe(CoinbaseWsChannel::User, &[])
-            .await
-            .context("failed to subscribe to Coinbase user channel")?;
-
-        if self.is_margin() {
+            // Subscribe to the user channel (product-agnostic). User channel with
+            // an empty product list returns events for all products.
             self.ws_user
-                .subscribe(CoinbaseWsChannel::FuturesBalanceSummary, &[])
+                .subscribe(CoinbaseWsChannel::User, &[])
                 .await
-                .context("failed to subscribe to Coinbase futures_balance_summary channel")?;
-        }
+                .context("failed to subscribe to Coinbase user channel")?;
 
-        if let Some(mut rx) = self.ws_user.take_out_rx() {
-            let fill_dedup = Arc::clone(&self.fill_dedup);
-            let cumulative_state = Arc::clone(&self.cumulative_state);
-            let order_contexts = Arc::clone(&self.order_contexts);
-            let external_order_contexts = Arc::clone(&self.external_order_contexts);
-            let emitter = self.emitter.clone();
-            let http_client = self.http_client.clone();
-            let account_id = self.core.account_id;
-            let clock = self.clock;
-            let is_margin = self.is_margin();
+            if self.is_margin() {
+                self.ws_user
+                    .subscribe(CoinbaseWsChannel::FuturesBalanceSummary, &[])
+                    .await
+                    .context("failed to subscribe to Coinbase futures_balance_summary channel")?;
+            }
 
-            let handle = get_runtime().spawn(async move {
+            if let Some(mut rx) = self.ws_user.take_out_rx() {
+                let fill_dedup = Arc::clone(&self.fill_dedup);
+                let cumulative_state = Arc::clone(&self.cumulative_state);
+                let order_contexts = Arc::clone(&self.order_contexts);
+                let external_order_contexts = Arc::clone(&self.external_order_contexts);
+                let emitter = self.emitter.clone();
+                let http_client = self.http_client.clone();
+                let account_id = self.core.account_id;
+                let clock = self.clock;
+                let is_margin = self.is_margin();
+
+                self.session_tasks.spawn(async move {
                 while let Some(message) = rx.recv().await {
                     match message {
                         NautilusWsMessage::UserOrder(carrier) => {
@@ -624,51 +710,53 @@ impl ExecutionClient for CoinbaseExecutionClient {
                         _ => {}
                     }
                 }
-            });
-            self.ws_stream_handle = Some(handle);
+            })?;
+            }
+
+            let account_state = if self.is_margin() {
+                self.http_client
+                    .request_cfm_account_state(self.core.account_id)
+                    .await
+                    .context("failed to request Coinbase CFM account state")?
+            } else {
+                self.http_client
+                    .request_account_state(self.core.account_id)
+                    .await
+                    .context("failed to request Coinbase account state")?
+            };
+
+            if !account_state.balances.is_empty() {
+                log::debug!(
+                    "Received account state with {} balance(s)",
+                    account_state.balances.len()
+                );
+            }
+            self.emitter.send_account_state(account_state);
+
+            self.await_account_registered(ACCOUNT_REGISTERED_TIMEOUT_SECS)
+                .await?;
+
+            Ok::<(), anyhow::Error>(())
         }
+        .await;
 
-        let account_state = if self.is_margin() {
-            self.http_client
-                .request_cfm_account_state(self.core.account_id)
-                .await
-                .context("failed to request Coinbase CFM account state")?
-        } else {
-            self.http_client
-                .request_account_state(self.core.account_id)
-                .await
-                .context("failed to request Coinbase account state")?
-        };
-
-        if !account_state.balances.is_empty() {
-            log::debug!(
-                "Received account state with {} balance(s)",
-                account_state.balances.len()
-            );
+        if let Err(e) = session_result {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Coinbase execution startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e);
         }
-        self.emitter.send_account_state(account_state);
-
-        self.await_account_registered(ACCOUNT_REGISTERED_TIMEOUT_SECS)
-            .await?;
 
         self.core.set_connected();
+        setup_guard.disarm();
         log::info!("Connected: client_id={}", self.core.client_id);
         Ok(())
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_disconnected() {
-            return Ok(());
-        }
-
-        self.abort_pending_tasks();
-        self.ws_user.disconnect().await;
-
-        if let Some(handle) = self.ws_stream_handle.take() {
-            handle.abort();
-        }
-
-        self.core.set_disconnected();
+        self.teardown_partial_connect().await?;
         log::info!("Disconnected: client_id={}", self.core.client_id);
         Ok(())
     }
@@ -700,9 +788,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
         self.core.set_stopped();
         self.core.set_disconnected();
 
-        if let Some(handle) = self.ws_stream_handle.take() {
-            handle.abort();
-        }
+        self.abort_session_tasks();
         self.abort_pending_tasks();
         log::info!("Stopped: client_id={}", self.core.client_id);
         Ok(())
@@ -997,7 +1083,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
         // is `post_only`, so without this the engine reconciler would clear
         // the local price and synthesized fills would lack `LiquiditySide`.
         {
-            let mut map = self.order_contexts.lock().expect(MUTEX_POISONED);
+            let mut map = self.order_contexts.lock();
             map.insert(
                 client_order_id.to_string(),
                 OrderContext {
@@ -1076,10 +1162,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
                         // Order never made it to the venue: drop the cached
                         // metadata so the map does not grow unbounded with
                         // dead entries.
-                        order_contexts
-                            .lock()
-                            .expect(MUTEX_POISONED)
-                            .remove(client_order_id.as_str());
+                        order_contexts.lock().remove(client_order_id.as_str());
                         let ts_event = clock.get_time_ns();
                         emitter.emit_order_rejected_event(
                             strategy_id,
@@ -1176,7 +1259,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
                         // these fields, so a stale cache would let the
                         // reconciler revert the local order to the pre-edit
                         // values).
-                        let mut map = order_contexts.lock().expect(MUTEX_POISONED);
+                        let mut map = order_contexts.lock();
                         if let Some(meta) = map.get_mut(client_order_id.as_str()) {
                             if price.is_some() {
                                 meta.price = price;
@@ -1327,7 +1410,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
                             | OrderStatus::PartiallyFilled
                     )
                 })
-                .filter(|r| side_filter == OrderSide::NoOrderSide || r.order_side == side_filter)
+                .filter(|r| side_filter.is_none_or(|side| r.order_side == side.into()))
                 .map(|r| (r.client_order_id, r.venue_order_id))
                 .collect();
 
@@ -1482,10 +1565,7 @@ fn handle_coinbase_submit_failure(
     ts_event: UnixNanos,
 ) {
     if is_coinbase_local_submit_failure(err) {
-        order_contexts
-            .lock()
-            .expect(MUTEX_POISONED)
-            .remove(client_order_id.as_str());
+        order_contexts.lock().remove(client_order_id.as_str());
         emitter.emit_order_rejected_event(
             strategy_id,
             instrument_id,
@@ -1495,10 +1575,7 @@ fn handle_coinbase_submit_failure(
             false,
         );
     } else if is_coinbase_explicit_submit_rejection(err) {
-        order_contexts
-            .lock()
-            .expect(MUTEX_POISONED)
-            .remove(client_order_id.as_str());
+        order_contexts.lock().remove(client_order_id.as_str());
         emitter.emit_order_rejected_event(
             strategy_id,
             instrument_id,
@@ -1512,10 +1589,7 @@ fn handle_coinbase_submit_failure(
             "Ambiguous submit failure for {client_order_id}, awaiting reconciliation: {err}"
         );
     } else {
-        order_contexts
-            .lock()
-            .expect(MUTEX_POISONED)
-            .remove(client_order_id.as_str());
+        order_contexts.lock().remove(client_order_id.as_str());
         log::warn!(
             "Submit command failed without venue-declared outcome for {client_order_id}: {err}"
         );
@@ -1616,15 +1690,9 @@ async fn handle_user_order_update(
     // `process_user_order_update`.
     if is_terminal {
         if !client_order_id.is_empty() {
-            order_contexts
-                .lock()
-                .expect(MUTEX_POISONED)
-                .remove(&client_order_id);
+            order_contexts.lock().remove(&client_order_id);
         }
-        external_order_contexts
-            .lock()
-            .expect(MUTEX_POISONED)
-            .remove(&venue_order_id);
+        external_order_contexts.lock().remove(&venue_order_id);
     }
 }
 
@@ -1749,7 +1817,7 @@ fn process_user_order_update(
     // Snapshot previous state under lock; update immediately to avoid races
     // between concurrent handler tasks for the same order.
     let (delta_qty, delta_fees, last_fill_price_decimal, restored_quantity) = {
-        let mut state = cumulative_state.lock().expect(MUTEX_POISONED);
+        let mut state = cumulative_state.lock();
         let entry = state.entry_or_default(&order_id);
         let prev_qty = entry
             .filled_qty
@@ -1858,14 +1926,14 @@ fn process_user_order_update(
                 let trade_id_str = trade_id.as_str().to_string();
 
                 let is_new = {
-                    let mut dedup = fill_dedup.lock().expect(MUTEX_POISONED);
+                    let mut dedup = fill_dedup.lock();
                     dedup.insert((update.order_id.clone(), trade_id_str))
                 };
 
                 if is_new {
                     let commission_currency = instrument.quote_currency();
                     match Money::from_decimal(delta_fees, commission_currency) {
-                        Ok(commission) => Some(parse_ws_user_event_to_fill_report(
+                        Ok(commission) => match parse_ws_user_event_to_fill_report(
                             &update,
                             delta_qty,
                             last_px,
@@ -1876,7 +1944,16 @@ fn process_user_order_update(
                             fill_liquidity_side,
                             ts_event,
                             ts_init,
-                        )),
+                        ) {
+                            Ok(report) => Some(report),
+                            Err(e) => {
+                                log::warn!(
+                                    "Failed to parse fill for order {}: {e}",
+                                    update.order_id
+                                );
+                                None
+                            }
+                        },
                         Err(e) => {
                             log::warn!(
                                 "Failed to build commission Money for order {}: {e}",
@@ -1962,17 +2039,13 @@ async fn resolve_order_context(
     account_id: AccountId,
 ) -> Option<OrderContext> {
     if !update.client_order_id.is_empty() {
-        let map = order_contexts.lock().expect(MUTEX_POISONED);
+        let map = order_contexts.lock();
         if let Some(meta) = map.get(&update.client_order_id) {
             return Some(meta.clone());
         }
     }
 
-    if let Some(meta) = external_order_contexts
-        .lock()
-        .expect(MUTEX_POISONED)
-        .get(&update.order_id)
-    {
+    if let Some(meta) = external_order_contexts.lock().get(&update.order_id) {
         return Some(meta.clone());
     }
 
@@ -2007,7 +2080,6 @@ async fn resolve_order_context(
             };
             external_order_contexts
                 .lock()
-                .expect(MUTEX_POISONED)
                 .insert(update.order_id.clone(), meta.clone());
             Some(meta)
         }
@@ -2117,7 +2189,6 @@ mod tests {
         };
         order_contexts
             .lock()
-            .unwrap()
             .insert("client-1".to_string(), context.clone());
         let err = anyhow::Error::new(CoinbaseHttpError::rate_limit(Some(1_000)))
             .context("failed to submit order");
@@ -2134,7 +2205,7 @@ mod tests {
 
         assert!(rx.try_recv().is_err());
         {
-            let map = order_contexts.lock().unwrap();
+            let map = order_contexts.lock();
             let retained = map.get("client-1").expect("submit context retained");
             assert_eq!(retained.price, context.price);
             assert_eq!(retained.trigger_price, context.trigger_price);
@@ -2157,7 +2228,7 @@ mod tests {
         )
         .await;
 
-        assert!(order_contexts.lock().unwrap().is_empty());
+        assert!(order_contexts.lock().is_empty());
         let (orders, fills) = drain_all_reports(&mut rx);
         assert_eq!(orders.len(), 1);
         assert_eq!(
@@ -2223,7 +2294,7 @@ mod tests {
             UnixNanos::from(42_u64),
         );
 
-        assert!(order_contexts.lock().unwrap().is_empty());
+        assert!(order_contexts.lock().is_empty());
         let event = rx.try_recv().expect("order rejection emitted");
         let ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) = event else {
             panic!("expected OrderRejected event, was {event:?}");
@@ -2402,32 +2473,22 @@ mod tests {
 
     fn test_instrument() -> InstrumentAny {
         let instrument_id = InstrumentId::new(Symbol::new("BTC-USD"), *COINBASE_VENUE);
-        InstrumentAny::CurrencyPair(CurrencyPair::new(
-            instrument_id,
-            Symbol::new("BTC-USD"),
-            Currency::get_or_create_crypto("BTC"),
-            Currency::get_or_create_crypto("USD"),
-            2,
-            8,
-            Price::from("0.01"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            Some(Quantity::from("0.00000001")),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        ))
+        InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new("BTC-USD"))
+                .base_currency(Currency::get_or_create_crypto("BTC"))
+                .quote_currency(Currency::get_or_create_crypto("USD"))
+                .price_precision(2)
+                .size_precision(8)
+                .price_increment(Price::from("0.01"))
+                .size_increment(Quantity::from("0.00000001"))
+                .min_quantity(Quantity::from("0.00000001"))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
     }
 
     fn make_emitter() -> (
@@ -2653,7 +2714,7 @@ mod tests {
         // the same cumulative=0.5 snapshot. The fill_dedup must drop the
         // synthesized fill because the trade_id matches the prior emission.
         {
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock();
             s.clear();
         }
         process_user_order_update(make_carrier(update), None, &emitter, &dedup, &state, None);
@@ -2688,7 +2749,7 @@ mod tests {
         // Drain emitted events.
         let _ = drain_fill_reports(&mut rx);
 
-        let s = state.lock().unwrap();
+        let s = state.lock();
         assert!(
             s.get("venue-1").is_none(),
             "terminal status should remove cumulative state entry"
@@ -2743,7 +2804,7 @@ mod tests {
 
         // The snapshot must seed cumulative_state so that the next live update
         // computes a correct delta.
-        let s = state.lock().unwrap();
+        let s = state.lock();
         let entry = s.get("venue-1").expect("snapshot should seed state");
         assert_eq!(entry.filled_qty.unwrap(), Quantity::from("0.50000000"));
     }

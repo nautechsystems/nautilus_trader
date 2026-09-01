@@ -32,7 +32,7 @@ from nautilus_trader.adapters.coinbase import COINBASE
 from nautilus_trader.adapters.coinbase import CoinbaseDataClientConfig
 from nautilus_trader.adapters.coinbase import CoinbaseDataClientFactory
 from nautilus_trader.adapters.coinbase import CoinbaseEnvironment
-from nautilus_trader.adapters.coinbase import CoinbaseExecClientConfig
+from nautilus_trader.adapters.coinbase import CoinbaseExecutionClientConfig
 from nautilus_trader.adapters.coinbase import CoinbaseExecutionClientFactory
 from nautilus_trader.common import Environment
 from nautilus_trader.config import LiveRiskEngineConfig
@@ -48,6 +48,10 @@ from nautilus_trader.model import TraderId
 from nautilus_trader.testkit import ExecTesterConfig
 
 
+# WARNING: With DRY_RUN = False, this tester submits orders to the configured
+# environment and may use real funds. Set DRY_RUN = True to connect without
+# submitting orders or sending shutdown cancel/close commands.
+DRY_RUN = False
 TRADER_ID = TraderId.from_str("TESTER-001")
 ACCOUNT_ID = AccountId.from_str("COINBASE-001")
 STRATEGY_ID = StrategyId.from_str("EXEC_TESTER-001")
@@ -60,9 +64,12 @@ TOB_OFFSET_TICKS = 500
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     node = (
         LiveNode.builder("COINBASE-EXEC-TESTER-001", TRADER_ID, Environment.LIVE)
-        .with_reconciliation(True)
+        .with_reconciliation(reconciliation=True)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
         .add_data_client(
             None,
@@ -71,8 +78,9 @@ def main() -> None:
         )
         .add_exec_client(
             None,
-            CoinbaseExecutionClientFactory(TRADER_ID, ACCOUNT_ID),
-            CoinbaseExecClientConfig(
+            CoinbaseExecutionClientFactory(),
+            CoinbaseExecutionClientConfig(
+                account_id=ACCOUNT_ID,
                 environment=COINBASE_ENVIRONMENT,
                 account_type=ACCOUNT_TYPE,
                 retail_portfolio_id=RETAIL_PORTFOLIO_ID,
@@ -100,7 +108,7 @@ def main() -> None:
             cancel_orders_on_stop=True,
             close_positions_on_stop=True,
             reduce_only_on_stop=False,
-            dry_run=False,  # Set True to log intended order flow without submitting orders
+            dry_run=DRY_RUN,
             log_data=False,
         ),
     )

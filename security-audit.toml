@@ -1,0 +1,40 @@
+version = 1
+
+[[cargo.audit]]
+lockfile = "Cargo.lock"
+
+[[cargo.audit]]
+lockfile = "crates/adapters/lighter/fuzz/pornin/Cargo.lock"
+
+[[cargo.deny]]
+manifest = "Cargo.toml"
+all-features = true
+checks = ["advisories", "licenses", "sources", "bans"]
+
+[[cargo.deny]]
+manifest = "crates/adapters/lighter/fuzz/pornin/Cargo.toml"
+config = ".cargo/deny-fuzz.toml"
+all-features = true
+checks = ["advisories", "licenses", "sources", "bans"]
+
+[[cargo.vet]]
+manifest = "Cargo.toml"
+
+[[cargo.vet]]
+manifest = "crates/adapters/lighter/fuzz/pornin/Cargo.toml"
+store = ".supply-chain"
+
+[[python]]
+project = "python"
+python = "3.14"
+all-extras = true
+all-groups = true
+
+[osv]
+config = "osv-scanner.toml"
+lockfiles = [
+  "Cargo.lock",
+  "crates/adapters/lighter/fuzz/pornin/Cargo.lock",
+  "python/uv.lock",
+]
+report = true

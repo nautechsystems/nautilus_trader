@@ -1061,7 +1061,6 @@ impl From<OrderSide> for BetfairSide {
         match value {
             OrderSide::Buy => Self::Lay,
             OrderSide::Sell => Self::Back,
-            _ => panic!("Invalid `OrderSide` for Betfair: {value}"),
         }
     }
 }
@@ -1229,12 +1228,6 @@ mod tests {
     #[case(OrderSide::Sell, BetfairSide::Back)]
     fn test_order_side_to_betfair_side(#[case] input: OrderSide, #[case] expected: BetfairSide) {
         assert_eq!(BetfairSide::from(input), expected);
-    }
-
-    #[rstest]
-    #[should_panic(expected = "Invalid `OrderSide`")]
-    fn test_order_side_no_order_side_panics() {
-        let _ = BetfairSide::from(OrderSide::NoOrderSide);
     }
 
     #[rstest]

@@ -31,8 +31,8 @@
 use log::LevelFilter;
 use nautilus_bitmex::{
     common::enums::BitmexEnvironment,
-    config::{BitmexDataClientConfig, BitmexExecClientConfig},
-    factories::{BitmexDataClientFactory, BitmexExecFactoryConfig, BitmexExecutionClientFactory},
+    config::{BitmexDataClientConfig, BitmexExecutionClientConfig},
+    factories::{BitmexDataClientFactory, BitmexExecutionClientFactory},
 };
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_live::node::LiveNode;
@@ -66,14 +66,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = BitmexExecFactoryConfig::new(
-        trader_id,
-        BitmexExecClientConfig {
-            environment: BITMEX_ENVIRONMENT,
-            deadmans_switch_timeout_secs: Some(DEADMANS_SWITCH_TIMEOUT_SECS),
-            ..Default::default()
-        },
-    );
+    let exec_config = BitmexExecutionClientConfig {
+        environment: BITMEX_ENVIRONMENT,
+        deadmans_switch_timeout_secs: Some(DEADMANS_SWITCH_TIMEOUT_SECS),
+        ..Default::default()
+    };
 
     let data_factory = BitmexDataClientFactory::new();
     let exec_factory = BitmexExecutionClientFactory::new();

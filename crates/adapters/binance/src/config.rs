@@ -20,7 +20,7 @@ use std::{any::Any, collections::HashMap, str::FromStr};
 use nautilus_common::factories::ClientConfig;
 use nautilus_model::{
     enums::OmsType,
-    identifiers::{AccountId, InstrumentId, TraderId},
+    identifiers::{AccountId, InstrumentId},
     types::Currency,
 };
 use nautilus_network::websocket::TransportBackend;
@@ -289,10 +289,7 @@ impl ClientConfig for BinanceDataClientConfig {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.binance")
 )]
-pub struct BinanceExecClientConfig {
-    /// Trader ID for the client.
-    #[builder(default = TraderId::from("TRADER-001"))]
-    pub trader_id: TraderId,
+pub struct BinanceExecutionClientConfig {
     /// Account ID for the client.
     #[builder(default = AccountId::from("BINANCE-001"))]
     pub account_id: AccountId,
@@ -330,12 +327,12 @@ pub struct BinanceExecClientConfig {
     /// to GTC and the strategy must enable `manage_gtd_expiry`.
     #[builder(default = true)]
     pub use_gtd: bool,
-    /// Whether to use Binance Futures hedging position IDs.
+    /// Whether to use canonical Binance Futures position IDs.
     ///
-    /// When true, fill reports include a `venue_position_id` derived from
-    /// the instrument and position side (e.g. `ETHUSDT-PERP.BINANCE-LONG`).
-    /// When false, `venue_position_id` is None, allowing virtual positions
-    /// with `OmsType::Hedging`.
+    /// When true, Futures hedge-mode order and fill reports include a `venue_position_id` derived
+    /// from the instrument and Binance position side (e.g. `ETHUSDT-PERP.BINANCE-LONG`). Hedge-mode
+    /// REST position reports use the same IDs. One-way `BOTH` reports remain unkeyed. When false,
+    /// `venue_position_id` is None, allowing virtual positions with `OmsType::Hedging`.
     #[builder(default = true)]
     pub use_position_ids: bool,
     /// Optional OMS type override for Binance Futures accounts.
@@ -386,8 +383,7 @@ pub struct BinanceExecClientConfig {
 }
 
 #[cfg(feature = "python")]
-nautilus_core::impl_pyo3_config_getters!(BinanceExecClientConfig {
-    trader_id: TraderId,
+nautilus_core::impl_pyo3_config_getters!(BinanceExecutionClientConfig {
     account_id: AccountId,
     product_type: BinanceProductType,
     environment: BinanceEnvironment,
@@ -412,13 +408,13 @@ nautilus_core::impl_pyo3_config_getters!(BinanceExecClientConfig {
     transport_backend: TransportBackend,
 });
 
-impl Default for BinanceExecClientConfig {
+impl Default for BinanceExecutionClientConfig {
     fn default() -> Self {
         Self::builder().build()
     }
 }
 
-impl BinanceExecClientConfig {
+impl BinanceExecutionClientConfig {
     /// Validates Binance execution client configuration.
     ///
     /// # Errors
@@ -457,7 +453,7 @@ fn validate_recv_window(recv_window_ms: u64) -> anyhow::Result<()> {
     Ok(())
 }
 
-impl ClientConfig for BinanceExecClientConfig {
+impl ClientConfig for BinanceExecutionClientConfig {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -515,8 +511,8 @@ product_types = ["SPOT", "USD_M"]
 
     #[rstest]
     fn test_exec_config_toml_empty_uses_defaults() {
-        let config: BinanceExecClientConfig = toml::from_str("").unwrap();
-        let expected = BinanceExecClientConfig::default();
+        let config: BinanceExecutionClientConfig = toml::from_str("").unwrap();
+        let expected = BinanceExecutionClientConfig::default();
 
         assert_eq!(config.environment, expected.environment);
         assert_eq!(config.product_type, expected.product_type);
@@ -544,7 +540,7 @@ product_types = ["SPOT", "USD_M"]
 
     #[rstest]
     fn test_exec_config_toml_oms_type_override() {
-        let config: BinanceExecClientConfig = toml::from_str(
+        let config: BinanceExecutionClientConfig = toml::from_str(
             r#"
 oms_type = "Hedging"
 "#,
@@ -556,14 +552,14 @@ oms_type = "Hedging"
 
     #[rstest]
     fn test_exec_config_toml_use_gtd_override() {
-        let config: BinanceExecClientConfig = toml::from_str("use_gtd = false").unwrap();
+        let config: BinanceExecutionClientConfig = toml::from_str("use_gtd = false").unwrap();
 
         assert!(!config.use_gtd);
     }
 
     #[rstest]
     fn test_exec_config_toml_ws_trading_setup_timeout_override() {
-        let config: BinanceExecClientConfig =
+        let config: BinanceExecutionClientConfig =
             toml::from_str("ws_trading_setup_timeout_ms = 250").unwrap();
 
         assert_eq!(config.ws_trading_setup_timeout_ms, 250);
@@ -590,7 +586,7 @@ oms_type = "Hedging"
 
     #[rstest]
     fn test_exec_config_rejects_zero_ws_trading_setup_timeout() {
-        let config = BinanceExecClientConfig {
+        let config = BinanceExecutionClientConfig {
             ws_trading_setup_timeout_ms: 0,
             ..Default::default()
         };
@@ -607,7 +603,7 @@ oms_type = "Hedging"
     #[case(1)]
     #[case(60_000)]
     fn test_exec_config_accepts_recv_window_bounds(#[case] recv_window_ms: u64) {
-        let config = BinanceExecClientConfig {
+        let config = BinanceExecutionClientConfig {
             recv_window_ms,
             ..Default::default()
         };
@@ -667,7 +663,7 @@ oms_type = "Hedging"
         #[case] environment: BinanceEnvironment,
         #[case] expected: &str,
     ) {
-        let config = BinanceExecClientConfig {
+        let config = BinanceExecutionClientConfig {
             product_type,
             environment,
             us: true,

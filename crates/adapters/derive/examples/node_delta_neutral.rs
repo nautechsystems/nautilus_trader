@@ -29,15 +29,15 @@
 //!
 //! Required credential environment variables (testnet variants used when
 //! `DERIVE_ENVIRONMENT` is `DeriveEnvironment::Testnet`):
-//! - `DERIVE_WALLET_ADDRESS` / `DERIVE_TESTNET_WALLET_ADDRESS`.
-//! - `DERIVE_SESSION_PRIVATE_KEY` / `DERIVE_TESTNET_SESSION_PRIVATE_KEY`.
-//! - `DERIVE_SUBACCOUNT_ID` / `DERIVE_TESTNET_SUBACCOUNT_ID`.
+//! - `DERIVE_WALLET_ADDRESS` / `DERIVE_TESTNET_WALLET_ADDRESS`
+//! - `DERIVE_SESSION_PRIVATE_KEY` / `DERIVE_TESTNET_SESSION_PRIVATE_KEY`
+//! - `DERIVE_SUBACCOUNT_ID` / `DERIVE_TESTNET_SUBACCOUNT_ID`
 
 use nautilus_common::enums::Environment;
 use nautilus_derive::{
     common::{consts::DERIVE_CLIENT_ID, enums::DeriveEnvironment},
-    config::{DeriveDataClientConfig, DeriveExecClientConfig},
-    factories::{DeriveDataClientFactory, DeriveExecFactoryConfig, DeriveExecutionClientFactory},
+    config::{DeriveDataClientConfig, DeriveExecutionClientConfig},
+    factories::{DeriveDataClientFactory, DeriveExecutionClientFactory},
 };
 use nautilus_live::node::LiveNode;
 use nautilus_model::identifiers::{AccountId, InstrumentId, TraderId};
@@ -94,16 +94,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = DeriveExecClientConfig {
+    let exec_config = DeriveExecutionClientConfig {
+        account_id,
         environment: derive_environment,
         max_fee_per_contract: Some(Decimal::from_str_exact(MAX_FEE_PER_CONTRACT)?),
         market_order_slippage_bps: MARKET_ORDER_SLIPPAGE_BPS,
         ..Default::default()
-    };
-    let exec_factory_config = DeriveExecFactoryConfig {
-        trader_id,
-        account_id,
-        config: exec_config,
     };
 
     let data_factory = DeriveDataClientFactory::new();
@@ -132,7 +128,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut node = LiveNode::builder(trader_id, environment)?
         .with_name(NODE_NAME.to_string())
         .add_data_client(None, Box::new(data_factory), Box::new(data_config))?
-        .add_exec_client(None, Box::new(exec_factory), Box::new(exec_factory_config))?
+        .add_exec_client(None, Box::new(exec_factory), Box::new(exec_config))?
         .with_reconciliation(true)
         .with_delay_post_stop_secs(5)
         .build()?;

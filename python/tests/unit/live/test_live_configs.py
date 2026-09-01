@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test live configs behavior.
+"""
 
 import re
 
@@ -21,11 +24,11 @@ from nautilus_trader.common import CacheConfig
 from nautilus_trader.common import LoggerConfig
 from nautilus_trader.common import MessageBusConfig
 from nautilus_trader.core import UUID4
+from nautilus_trader.live import DataClientConfig
+from nautilus_trader.live import ExecutionClientConfig
 from nautilus_trader.live import InstrumentProviderConfig
-from nautilus_trader.live import LiveDataClientConfig
 from nautilus_trader.live import LiveDataEngineConfig
-from nautilus_trader.live import LiveExecClientConfig
-from nautilus_trader.live import LiveExecEngineConfig
+from nautilus_trader.live import LiveExecutionEngineConfig
 from nautilus_trader.live import LiveNodeConfig
 from nautilus_trader.live import LiveRiskEngineConfig
 from nautilus_trader.live import PluginConfig
@@ -34,9 +37,13 @@ from nautilus_trader.live import QueueMonitorConfig
 from nautilus_trader.live import RoutingConfig
 from nautilus_trader.model import BarIntervalType
 from nautilus_trader.model import ClientId
+from nautilus_trader.model import Venue
 
 
-def test_instrument_provider_config_defaults():
+def test_instrument_provider_config_defaults() -> None:
+    """
+    Test instrument provider config defaults.
+    """
     config = InstrumentProviderConfig()
 
     assert config.load_all is False
@@ -46,7 +53,10 @@ def test_instrument_provider_config_defaults():
     assert config.log_warnings is True
 
 
-def test_instrument_provider_config_explicit():
+def test_instrument_provider_config_explicit() -> None:
+    """
+    Test instrument provider config explicit.
+    """
     config = InstrumentProviderConfig(
         load_all=True,
         load_ids=["BTCUSDT-PERP.BINANCE"],
@@ -62,29 +72,41 @@ def test_instrument_provider_config_explicit():
     assert config.log_warnings is False
 
 
-def test_routing_config_defaults():
+def test_routing_config_defaults() -> None:
+    """
+    Test routing config defaults.
+    """
     config = RoutingConfig()
 
     assert config.default is False
     assert config.venues is None
 
 
-def test_routing_config_explicit():
+def test_routing_config_explicit() -> None:
+    """
+    Test routing config explicit.
+    """
     config = RoutingConfig(default=True, venues=["BINANCE", "BYBIT"])
 
     assert config.default is True
     assert config.venues == ["BINANCE", "BYBIT"]
 
 
-def test_live_data_client_config_defaults():
-    config = LiveDataClientConfig()
+def test_data_client_config_defaults() -> None:
+    """
+    Test data client config defaults.
+    """
+    config = DataClientConfig()
 
     assert config.handle_revised_bars is False
     assert isinstance(config.instrument_provider, InstrumentProviderConfig)
     assert isinstance(config.routing, RoutingConfig)
 
 
-def test_plugin_config_explicit():
+def test_plugin_config_explicit() -> None:
+    """
+    Test plugin config explicit.
+    """
     config = PluginConfig(
         path="./target/debug/examples/libruntime_smoke_plugin.so",
         type_name="RuntimeSmokeActor",
@@ -106,7 +128,10 @@ def test_plugin_config_explicit():
     assert config.sha256 == "0" * 64
 
 
-def test_queue_monitor_config_explicit():
+def test_queue_monitor_config_explicit() -> None:
+    """
+    Test queue monitor config explicit.
+    """
     config = QueueMonitorConfig(
         queue_depth_trigger=1_000,
         queue_depth_clear=500,
@@ -120,10 +145,13 @@ def test_queue_monitor_config_explicit():
     assert config.mean_dispatch_ns_clear == 150_000
 
 
-def test_live_data_client_config_explicit():
+def test_data_client_config_explicit() -> None:
+    """
+    Test data client config explicit.
+    """
     ip = InstrumentProviderConfig(load_all=True)
     rc = RoutingConfig(default=True)
-    config = LiveDataClientConfig(
+    config = DataClientConfig(
         handle_revised_bars=True,
         instrument_provider=ip,
         routing=rc,
@@ -134,13 +162,19 @@ def test_live_data_client_config_explicit():
     assert config.routing.default is True
 
 
-def test_live_data_engine_config_defaults():
+def test_live_data_engine_config_defaults() -> None:
+    """
+    Test live data engine config defaults.
+    """
     config = LiveDataEngineConfig()
 
     assert isinstance(config, LiveDataEngineConfig)
 
 
-def test_live_data_engine_config_explicit():
+def test_live_data_engine_config_explicit() -> None:
+    """
+    Test live data engine config explicit.
+    """
     client_id = ClientId("DATA-001")
     config = LiveDataEngineConfig(
         time_bars_build_with_no_updates=False,
@@ -171,53 +205,79 @@ def test_live_data_engine_config_explicit():
     assert config.debug is True
 
 
-def test_live_data_engine_config_accepts_string_interval_type():
+def test_live_data_engine_config_accepts_string_interval_type() -> None:
+    """
+    Test live data engine config accepts string interval type.
+    """
     config = LiveDataEngineConfig(time_bars_interval_type="left-open")
 
     assert isinstance(config, LiveDataEngineConfig)
 
 
-def test_live_data_engine_config_accepts_right_open_string():
+def test_live_data_engine_config_accepts_right_open_string() -> None:
+    """
+    Test live data engine config accepts right open string.
+    """
     config = LiveDataEngineConfig(time_bars_interval_type="right-open")
 
     assert isinstance(config, LiveDataEngineConfig)
 
 
-def test_live_data_engine_config_rejects_invalid_interval_type():
+def test_live_data_engine_config_rejects_invalid_interval_type() -> None:
+    """
+    Test live data engine config rejects invalid interval type.
+    """
     with pytest.raises(ValueError, match="time_bars_interval_type"):
         LiveDataEngineConfig(time_bars_interval_type="invalid")
 
 
-def test_live_data_engine_config_rejects_unsupported_args():
+def test_live_data_engine_config_rejects_unsupported_args() -> None:
+    """
+    Test live data engine config rejects unsupported args.
+    """
     with pytest.raises(TypeError, match="qsize"):
         LiveDataEngineConfig(qsize=50_000)
 
 
-def test_live_exec_client_config_defaults():
-    config = LiveExecClientConfig()
+def test_execution_client_config_defaults() -> None:
+    """
+    Test execution client config defaults.
+    """
+    config = ExecutionClientConfig()
 
     assert isinstance(config.instrument_provider, InstrumentProviderConfig)
     assert isinstance(config.routing, RoutingConfig)
 
 
-def test_live_exec_client_config_explicit():
+def test_execution_client_config_explicit() -> None:
+    """
+    Test execution client config explicit.
+    """
     ip = InstrumentProviderConfig(load_all=True)
     rc = RoutingConfig(default=True)
-    config = LiveExecClientConfig(instrument_provider=ip, routing=rc)
+    config = ExecutionClientConfig(instrument_provider=ip, routing=rc)
 
     assert config.instrument_provider.load_all is True
     assert config.routing.default is True
 
 
-def test_live_exec_engine_config_defaults():
-    config = LiveExecEngineConfig()
+def test_live_exec_engine_config_defaults() -> None:
+    """
+    Test live exec engine config defaults.
+    """
+    config = LiveExecutionEngineConfig()
 
-    assert isinstance(config, LiveExecEngineConfig)
+    assert isinstance(config, LiveExecutionEngineConfig)
+    assert config.snapshot_orders is False
+    assert config.snapshot_positions is False
 
 
-def test_live_exec_engine_config_readback():
+def test_live_exec_engine_config_readback() -> None:
+    """
+    Test live exec engine config readback.
+    """
     client_id = ClientId("EXEC-001")
-    config = LiveExecEngineConfig(
+    config = LiveExecutionEngineConfig(
         load_cache=False,
         manage_own_order_books=True,
         snapshot_positions_interval_secs=1.5,
@@ -253,6 +313,8 @@ def test_live_exec_engine_config_readback():
         purge_account_events_lookback_mins=22,
         own_books_audit_interval_secs=23.5,
         debug=True,
+        snapshot_orders=True,
+        snapshot_positions=True,
     )
 
     assert config.load_cache is False
@@ -290,39 +352,44 @@ def test_live_exec_engine_config_readback():
     assert config.purge_account_events_lookback_mins == 22
     assert config.own_books_audit_interval_secs == 23.5
     assert config.debug is True
+    assert config.snapshot_orders is True
+    assert config.snapshot_positions is True
 
 
-def test_live_exec_engine_config_rejects_unsupported_args():
-    with pytest.raises(TypeError, match="snapshot_orders"):
-        LiveExecEngineConfig(snapshot_orders=True)
-
-    with pytest.raises(TypeError, match="snapshot_positions"):
-        LiveExecEngineConfig(snapshot_positions=True)
-
+def test_live_exec_engine_config_rejects_unsupported_args() -> None:
+    """
+    Test live exec engine config rejects unsupported args.
+    """
     with pytest.raises(TypeError, match="purge_from_database"):
-        LiveExecEngineConfig(purge_from_database=True)
+        LiveExecutionEngineConfig(purge_from_database=True)
 
     with pytest.raises(TypeError, match="qsize"):
-        LiveExecEngineConfig(qsize=1)
+        LiveExecutionEngineConfig(qsize=1)
 
 
-def test_live_exec_engine_config_rejects_invalid_reconciliation_instrument_ids():
+def test_live_exec_engine_config_rejects_invalid_reconciliation_instrument_ids() -> None:
+    """
+    Test live exec engine config rejects invalid reconciliation instrument ids.
+    """
     expected_err = (
-        "invalid LiveExecEngineConfig.reconciliation_instrument_ids[0] reference instrument ID: "
+        "invalid LiveExecutionEngineConfig.reconciliation_instrument_ids[0] reference instrument ID: "
         "invalid `InstrumentId` value 'INVALID': "
         "missing '.' separator between symbol and venue components"
     )
 
     with pytest.raises(ValueError, match=re.escape(expected_err)) as exc_info:
-        LiveExecEngineConfig(reconciliation_instrument_ids=["INVALID"])
+        LiveExecutionEngineConfig(reconciliation_instrument_ids=["INVALID"])
 
     assert str(exc_info.value) == expected_err
 
 
 @pytest.mark.parametrize("value", [-1.0, float("nan"), float("inf"), float("-inf")])
-def test_live_exec_engine_config_rejects_hostile_startup_delay(value):
+def test_live_exec_engine_config_rejects_hostile_startup_delay(value: object) -> None:
+    """
+    Test live exec engine config rejects hostile startup delay.
+    """
     with pytest.raises(ValueError, match="reconciliation_startup_delay_secs"):
-        LiveExecEngineConfig(reconciliation_startup_delay_secs=value)
+        LiveExecutionEngineConfig(reconciliation_startup_delay_secs=value)
 
 
 @pytest.mark.parametrize(
@@ -338,12 +405,18 @@ def test_live_exec_engine_config_rejects_hostile_startup_delay(value):
     "value",
     [0.0, 0.5e-9, -1.0, float("nan"), float("inf"), float("-inf"), 1e300],
 )
-def test_live_exec_engine_config_rejects_invalid_intervals(field, value):
+def test_live_exec_engine_config_rejects_invalid_intervals(field: object, value: object) -> None:
+    """
+    Test live exec engine config rejects invalid intervals.
+    """
     with pytest.raises(ValueError, match=field):
-        LiveExecEngineConfig(**{field: value})
+        LiveExecutionEngineConfig(**{field: value})
 
 
-def test_live_node_config_defaults():
+def test_live_node_config_defaults() -> None:
+    """
+    Test live node config defaults.
+    """
     config = LiveNodeConfig()
 
     assert isinstance(config, LiveNodeConfig)
@@ -354,7 +427,10 @@ def test_live_node_config_defaults():
     assert config.queue_monitor is None
 
 
-def test_live_node_config_accepts_queue_monitor_config_argument():
+def test_live_node_config_accepts_queue_monitor_config_argument() -> None:
+    """
+    Test live node config accepts queue monitor config argument.
+    """
     queue_monitor = QueueMonitorConfig(
         queue_depth_trigger=1_000,
         queue_depth_clear=500,
@@ -371,7 +447,10 @@ def test_live_node_config_accepts_queue_monitor_config_argument():
     assert resolved.mean_dispatch_ns_clear == 150_000
 
 
-def test_live_node_config_rejects_invalid_timeout_duration():
+def test_live_node_config_rejects_invalid_timeout_duration() -> None:
+    """
+    Test live node config rejects invalid timeout duration.
+    """
     expected_err = (
         "invalid timeout_connection_secs: -1 (must be finite, non-negative, and <= 86400)"
     )
@@ -382,7 +461,10 @@ def test_live_node_config_rejects_invalid_timeout_duration():
     assert str(exc_info.value) == expected_err
 
 
-def test_live_node_config_accepts_portfolio_config_argument():
+def test_live_node_config_accepts_portfolio_config_argument() -> None:
+    """
+    Test live node config accepts portfolio config argument.
+    """
     portfolio = PortfolioConfig()
     cache = CacheConfig()
     msgbus = MessageBusConfig()
@@ -390,7 +472,7 @@ def test_live_node_config_accepts_portfolio_config_argument():
     instance_id = UUID4()
     data_engine = LiveDataEngineConfig(debug=True)
     risk_engine = LiveRiskEngineConfig(bypass=True)
-    exec_engine = LiveExecEngineConfig(load_cache=False)
+    exec_engine = LiveExecutionEngineConfig(load_cache=False)
     config = LiveNodeConfig(
         logging=logging,
         instance_id=instance_id,
@@ -414,18 +496,26 @@ def test_live_node_config_accepts_portfolio_config_argument():
     assert config.exec_engine.load_cache is False
 
 
-def test_live_risk_engine_config_defaults():
+def test_live_risk_engine_config_defaults() -> None:
+    """
+    Test live risk engine config defaults.
+    """
     config = LiveRiskEngineConfig()
 
     assert isinstance(config, LiveRiskEngineConfig)
+    assert config.full_position_exit_venues == []
 
 
-def test_live_risk_engine_config_explicit():
+def test_live_risk_engine_config_explicit() -> None:
+    """
+    Test live risk engine config explicit.
+    """
     config = LiveRiskEngineConfig(
         bypass=True,
         max_order_submit_rate="10/00:00:01",
         max_order_modify_rate="20/00:00:02",
         max_notional_per_order={"BTCUSDT.BINANCE": 100_000},
+        full_position_exit_venues=[Venue("BINANCE")],
         debug=True,
     )
 
@@ -433,15 +523,22 @@ def test_live_risk_engine_config_explicit():
     assert config.max_order_submit_rate == "10/00:00:01"
     assert config.max_order_modify_rate == "20/00:00:02"
     assert config.max_notional_per_order == {"BTCUSDT.BINANCE": "100000"}
+    assert config.full_position_exit_venues == [Venue("BINANCE")]
     assert config.debug is True
 
 
-def test_live_risk_engine_config_rejects_unsupported_args():
+def test_live_risk_engine_config_rejects_unsupported_args() -> None:
+    """
+    Test live risk engine config rejects unsupported args.
+    """
     with pytest.raises(TypeError, match="qsize"):
         LiveRiskEngineConfig(qsize=25_000)
 
 
-def test_live_risk_engine_config_rejects_invalid_rate_limit():
+def test_live_risk_engine_config_rejects_invalid_rate_limit() -> None:
+    """
+    Test live risk engine config rejects invalid rate limit.
+    """
     expected_err = "invalid LiveRiskEngineConfig.max_order_submit_rate: expected 'limit/HH:MM:SS'"
 
     with pytest.raises(ValueError, match=re.escape(expected_err)) as exc_info:
@@ -450,7 +547,10 @@ def test_live_risk_engine_config_rejects_invalid_rate_limit():
     assert str(exc_info.value) == expected_err
 
 
-def test_live_risk_engine_config_rejects_zero_rate_limit_values():
+def test_live_risk_engine_config_rejects_zero_rate_limit_values() -> None:
+    """
+    Test live risk engine config rejects zero rate limit values.
+    """
     with pytest.raises(ValueError, match="Invalid limit: 0"):
         LiveRiskEngineConfig(max_order_submit_rate="0/00:00:01")
 
@@ -458,19 +558,28 @@ def test_live_risk_engine_config_rejects_zero_rate_limit_values():
         LiveRiskEngineConfig(max_order_modify_rate="100/00:00:00")
 
 
-def test_live_risk_engine_config_accepts_int_notional_values():
+def test_live_risk_engine_config_accepts_int_notional_values() -> None:
+    """
+    Test live risk engine config accepts int notional values.
+    """
     config = LiveRiskEngineConfig(max_notional_per_order={"ETHUSDT.BINANCE": 100_000})
 
     assert isinstance(config, LiveRiskEngineConfig)
 
 
-def test_live_risk_engine_config_accepts_str_notional_values():
+def test_live_risk_engine_config_accepts_str_notional_values() -> None:
+    """
+    Test live risk engine config accepts str notional values.
+    """
     config = LiveRiskEngineConfig(max_notional_per_order={"ETHUSDT.BINANCE": "100000.50"})
 
     assert isinstance(config, LiveRiskEngineConfig)
 
 
-def test_live_risk_engine_config_rejects_invalid_max_notional_per_order():
+def test_live_risk_engine_config_rejects_invalid_max_notional_per_order() -> None:
+    """
+    Test live risk engine config rejects invalid max notional per order.
+    """
     expected_err = (
         "invalid LiveRiskEngineConfig.max_notional_per_order[INVALID] reference instrument ID: "
         "invalid `InstrumentId` value 'INVALID': "
@@ -483,13 +592,19 @@ def test_live_risk_engine_config_rejects_invalid_max_notional_per_order():
     assert str(exc_info.value) == expected_err
 
 
-def test_portfolio_config_defaults():
+def test_portfolio_config_defaults() -> None:
+    """
+    Test portfolio config defaults.
+    """
     config = PortfolioConfig()
 
     assert config.bar_updates is True
 
 
-def test_portfolio_config_properties():
+def test_portfolio_config_properties() -> None:
+    """
+    Test portfolio config properties.
+    """
     config = PortfolioConfig()
 
     assert config.convert_to_account_base_currency is True

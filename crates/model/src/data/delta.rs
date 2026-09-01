@@ -32,7 +32,6 @@ use crate::{
 };
 
 /// Represents a single change/delta in an order book.
-#[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[cfg_attr(
@@ -242,7 +241,7 @@ mod tests {
 
         assert_eq!(delta.instrument_id, InstrumentId::from("EURUSD.SIM"));
         assert_eq!(delta.action, BookAction::Add);
-        assert_eq!(delta.order.side, OrderSide::Buy);
+        assert_eq!(delta.order.side, OrderSide::Buy.into());
         assert_eq!(delta.order.price, Price::from("1.0500"));
         assert_eq!(delta.order.size, Quantity::from("100000"));
         assert_eq!(delta.order.order_id, 12345);
@@ -274,7 +273,7 @@ mod tests {
         let delta = result.unwrap();
         assert_eq!(delta.instrument_id, InstrumentId::from("GBPUSD.SIM"));
         assert_eq!(delta.action, BookAction::Update);
-        assert_eq!(delta.order.side, OrderSide::Sell);
+        assert_eq!(delta.order.side, OrderSide::Sell.into());
         assert_eq!(delta.flags, 16);
     }
 
@@ -373,7 +372,7 @@ mod tests {
         assert_eq!(delta.action, BookAction::Clear);
         assert!(delta.order.price.is_zero());
         assert!(delta.order.size.is_zero());
-        assert_eq!(delta.order.side, OrderSide::NoOrderSide);
+        assert_eq!(delta.order.side, None);
         assert_eq!(delta.order.order_id, 0);
         assert_eq!(delta.flags, RecordFlag::F_SNAPSHOT as u8);
         assert_eq!(delta.sequence, sequence);
@@ -481,7 +480,7 @@ mod tests {
             UnixNanos::from(2_000_000_000),
         );
 
-        assert_eq!(delta.order.side, side);
+        assert_eq!(delta.order.side, side.into());
     }
 
     #[rstest]
@@ -581,7 +580,7 @@ mod tests {
         assert_eq!(delta.action, action);
         assert_eq!(delta.order.price, price);
         assert_eq!(delta.order.size, size);
-        assert_eq!(delta.order.side, side);
+        assert_eq!(delta.order.side, side.into());
         assert_eq!(delta.order.order_id, order_id);
         assert_eq!(delta.flags, flags);
         assert_eq!(delta.sequence, sequence);
@@ -602,7 +601,7 @@ mod tests {
         assert_eq!(delta.action, BookAction::Clear);
         assert!(delta.order.price.is_zero());
         assert!(delta.order.size.is_zero());
-        assert_eq!(delta.order.side, OrderSide::NoOrderSide);
+        assert_eq!(delta.order.side, None);
         assert_eq!(delta.order.order_id, 0);
         assert_eq!(delta.flags, 32);
         assert_eq!(delta.sequence, sequence);

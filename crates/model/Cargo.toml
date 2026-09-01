@@ -31,14 +31,14 @@ extension-module = [
 ffi = ["nautilus-core/ffi"]
 python = ["nautilus-core/python", "pyo3", "pyo3-stub-gen"]
 python-arrow = ["python", "arrow"]
-stubs = ["rstest"]
+test-support = ["rstest"]
 high-precision = []
 # DeFi domain model requires 18-decimal wei precision, implying `high-precision`
 defi = ["alloy-primitives", "high-precision"]
 
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
-features = ["arrow", "defi", "ffi", "high-precision", "stubs"]
+features = ["arrow", "defi", "ffi", "high-precision", "test-support"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
@@ -53,6 +53,7 @@ implied-vol = { workspace = true }
 indexmap = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
+parking_lot = { workspace = true }
 ruint = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }

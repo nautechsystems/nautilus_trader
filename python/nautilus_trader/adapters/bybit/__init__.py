@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Integration adapter for the Bybit exchange.
+"""
 
 from __future__ import annotations
 
@@ -26,7 +29,7 @@ __all__ = [
     "BybitDataClientConfig",
     "BybitDataClientFactory",
     "BybitEnvironment",
-    "BybitExecClientConfig",
+    "BybitExecutionClientConfig",
     "BybitExecutionClientFactory",
     "BybitMarginAction",
     "BybitMarginBorrowResult",

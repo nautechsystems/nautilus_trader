@@ -13,31 +13,31 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! WebSocket transport with runtime backend selection and adapter‑facing lifecycle policy.
+//! WebSocket transport with runtime backend selection and adapter-facing lifecycle policy.
 //!
 //! # Architecture
 //!
 //! [`WebSocketClient`] coordinates a controller, one serialized writer, an optional heartbeat, and
-//! either a managed reader or a caller‑owned stream. Application text and binary sends can await
+//! either a managed reader or a caller-owned stream. Application text and binary sends can await
 //! default or keyed quotas from a shared [`RateLimiter`](crate::ratelimiter::RateLimiter).
 //!
 //! [`client`] manages connection lifecycle and concurrent tasks. [`auth`] coordinates
-//! adapter‑driven authentication and optional replay gating, while [`subscription`] records
-//! adapter‑driven subscription intent and acknowledgments. [`config`], [`types`], and [`proxy`]
+//! adapter-driven authentication and optional replay gating, while [`subscription`] records
+//! adapter-driven subscription intent and acknowledgments. [`config`], [`types`], and [`proxy`]
 //! define connection policy and transport boundaries.
 //!
 //! # Operating modes
 //!
 //! [`WebSocketClient`] supports handler and stream modes. Handler mode owns the reader and replaces
 //! it during automatic reconnects. Stream mode returns the reader to the caller and disables
-//! automatic reconnects because the client cannot replace caller‑owned state.
+//! automatic reconnects because the client cannot replace caller-owned state.
 //!
 //! # Liveness
 //!
 //! A configured heartbeat sends either a protocol Ping or a text message at a fixed interval; it
 //! does not imply a response timeout. Handler mode can separately reconnect when no frame arrives
 //! before a heartbeat timeout or when no text or binary application data arrives before the idle
-//! timeout. Ping and Pong reset the frame timeout but not the application‑data idle timeout.
+//! timeout. Ping and Pong reset the frame timeout but not the application-data idle timeout.
 //!
 //! # State reporting and explicit reconnect
 //!
@@ -53,16 +53,16 @@
 //! The writer task serializes sends and is the sole owner of the active sink. Ordinary application
 //! sends retain FIFO buffering and replay across reconnects. A control frame belongs to the
 //! connection it was issued on, so a failed Ping, Pong, or Close is dropped instead of replayed.
-//! Ownership‑bound sends carry an expected connection epoch and never enter that replay buffer.
+//! Ownership-bound sends carry an expected connection epoch and never enter that replay buffer.
 //!
 //! The initial connection has epoch `0`. The writer advances the epoch when it installs a
-//! replacement sink. Epoch‑aware handlers receive that epoch on messages from the replacement
+//! replacement sink. Epoch-aware handlers receive that epoch on messages from the replacement
 //! reader and on its reconnect notification. Epochs identify transport ownership; they do not
 //! order application authentication or subscription recovery.
 //!
 //! # Transport backends
 //!
-//! The backend‑neutral [`Message`](crate::transport::Message) and
+//! The backend-neutral [`Message`](crate::transport::Message) and
 //! [`TransportError`](crate::transport::TransportError) types keep lifecycle code independent of
 //! the concrete library. [`tokio-tungstenite`](https://github.com/snapview/tokio-tungstenite) is
 //! always available. [`sockudo-ws`](https://github.com/sockudo/sockudo-ws) is enabled and selected
@@ -82,9 +82,9 @@ pub use auth::AuthTracker;
 pub use client::{
     ReconnectHeaders, WebSocketClient, WebSocketClientInner, WebSocketReconnectHandle,
 };
-pub use config::{TransportBackend, WebSocketConfig};
+pub use config::{InitialConnectRetryPolicy, TransportBackend, WebSocketConfig};
 pub use consts::{AUTHENTICATION_TIMEOUT_SECS, TEXT_PING, TEXT_PONG};
-pub use subscription::{SubscriptionState, split_topic};
+pub use subscription::{SubscriptionSnapshot, SubscriptionState, split_topic};
 pub use types::{
     EpochMessageHandler, EpochPingHandler, MessageHandler, MessageReader, PingHandler,
     channel_epoch_message_handler, channel_message_handler,

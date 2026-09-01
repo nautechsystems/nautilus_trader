@@ -212,7 +212,6 @@ impl UnixNanos {
     /// # Panics
     ///
     /// Panics if Jiff's supported timestamp range no longer includes all `u64` nanosecond values.
-    ///
     #[must_use]
     pub fn to_datetime_utc(&self) -> Timestamp {
         Timestamp::from_nanosecond(i128::from(self.0))
@@ -905,10 +904,8 @@ mod tests {
         let later_nanos = UnixNanos::from(later);
 
         // Calculate expected duration in nanoseconds
-        let expected_duration = 60 * 60 * 1_000_000_000 + // 1 hour
-        30 * 60 * 1_000_000_000 + // 30 minutes
-        45 * 1_000_000_000 + // 45 seconds
-        500_000_000; // 500 million nanoseconds
+        let expected_duration =
+            (60 * 60 + 30 * 60 + 45) * NANOSECONDS_IN_SECOND + 500 * NANOSECONDS_IN_MILLISECOND;
 
         assert_eq!(
             later_nanos.duration_since(&earlier_nanos),

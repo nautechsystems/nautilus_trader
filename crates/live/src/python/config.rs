@@ -22,7 +22,7 @@ use nautilus_common::{
 use nautilus_core::{UUID4, python::to_pyvalue_err};
 use nautilus_model::{
     enums::BarIntervalType,
-    identifiers::{ClientId, TraderId},
+    identifiers::{ClientId, TraderId, Venue},
 };
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_trading::ImportableControllerConfig;
@@ -32,9 +32,10 @@ use pyo3::{
 };
 
 use crate::config::{
-    InstrumentProviderConfig, LiveDataClientConfig, LiveDataEngineConfig, LiveExecClientConfig,
-    LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig, PluginConfig, QueueMonitorConfig,
-    RoutingConfig, duration_from_secs_f64, parse_rate_limit, validate_max_notional_per_order,
+    DataClientConfig, ExecutionClientConfig, InstrumentProviderConfig, LiveDataEngineConfig,
+    LiveExecutionEngineConfig, LiveNodeConfig, LiveRiskEngineConfig, PluginConfig,
+    QueueMonitorConfig, RoutingConfig, duration_from_secs_f64, parse_rate_limit,
+    validate_max_notional_per_order,
 };
 
 // Coerces a PyO3 input into `BarIntervalType`, accepting both the enum (modern Rust
@@ -301,12 +302,13 @@ impl LiveDataEngineConfig {
 impl LiveRiskEngineConfig {
     /// Configuration for live risk engines.
     #[new]
-    #[pyo3(signature = (bypass=None, max_order_submit_rate=None, max_order_modify_rate=None, max_notional_per_order=None, debug=None))]
+    #[pyo3(signature = (bypass=None, max_order_submit_rate=None, max_order_modify_rate=None, max_notional_per_order=None, full_position_exit_venues=None, debug=None))]
     fn py_new(
         bypass: Option<bool>,
         max_order_submit_rate: Option<String>,
         max_order_modify_rate: Option<String>,
         max_notional_per_order: Option<HashMap<String, Py<PyAny>>>,
+        full_position_exit_venues: Option<Vec<Venue>>,
         debug: Option<bool>,
     ) -> PyResult<Self> {
         let default = Self::default();
@@ -318,6 +320,7 @@ impl LiveRiskEngineConfig {
             Some(raw) => coerce_max_notional_per_order(raw)?,
             None => HashMap::new(),
         };
+        let full_position_exit_venues = full_position_exit_venues.unwrap_or_default();
 
         parse_rate_limit(
             "LiveRiskEngineConfig.max_order_submit_rate",
@@ -340,6 +343,7 @@ impl LiveRiskEngineConfig {
             max_order_submit_rate,
             max_order_modify_rate,
             max_notional_per_order,
+            full_position_exit_venues,
             debug: debug.unwrap_or(default.debug),
             qsize: default.qsize,
         })
@@ -370,6 +374,12 @@ impl LiveRiskEngineConfig {
     }
 
     #[getter]
+    #[pyo3(name = "full_position_exit_venues")]
+    fn py_full_position_exit_venues(&self) -> Vec<Venue> {
+        self.full_position_exit_venues.clone()
+    }
+
+    #[getter]
     #[pyo3(name = "debug")]
     const fn py_debug(&self) -> bool {
         self.debug
@@ -386,11 +396,11 @@ impl LiveRiskEngineConfig {
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
-impl LiveExecEngineConfig {
+impl LiveExecutionEngineConfig {
     /// Configuration for live execution engines.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (load_cache=None, manage_own_order_books=None, snapshot_positions_interval_secs=None, external_clients=None, allow_overfills=None, reconciliation=None, reconciliation_startup_delay_secs=None, reconciliation_lookback_mins=None, reconciliation_instrument_ids=None, filter_unclaimed_external_orders=None, filter_position_reports=None, filtered_client_order_ids=None, generate_missing_orders=None, inflight_check_interval_ms=None, inflight_check_threshold_ms=None, inflight_check_retries=None, open_check_interval_secs=None, open_check_lookback_mins=None, open_check_threshold_ms=None, open_check_missing_retries=None, open_check_open_only=None, max_single_order_queries_per_cycle=None, single_order_query_delay_ms=None, position_check_interval_secs=None, position_check_lookback_mins=None, position_check_threshold_ms=None, position_check_retries=None, purge_closed_orders_interval_mins=None, purge_closed_orders_buffer_mins=None, purge_closed_positions_interval_mins=None, purge_closed_positions_buffer_mins=None, purge_account_events_interval_mins=None, purge_account_events_lookback_mins=None, own_books_audit_interval_secs=None, debug=None))]
+    #[pyo3(signature = (load_cache=None, manage_own_order_books=None, snapshot_positions_interval_secs=None, external_clients=None, allow_overfills=None, reconciliation=None, reconciliation_startup_delay_secs=None, reconciliation_lookback_mins=None, reconciliation_instrument_ids=None, filter_unclaimed_external_orders=None, filter_position_reports=None, filtered_client_order_ids=None, generate_missing_orders=None, inflight_check_interval_ms=None, inflight_check_threshold_ms=None, inflight_check_retries=None, open_check_interval_secs=None, open_check_lookback_mins=None, open_check_threshold_ms=None, open_check_missing_retries=None, open_check_open_only=None, max_single_order_queries_per_cycle=None, single_order_query_delay_ms=None, position_check_interval_secs=None, position_check_lookback_mins=None, position_check_threshold_ms=None, position_check_retries=None, purge_closed_orders_interval_mins=None, purge_closed_orders_buffer_mins=None, purge_closed_positions_interval_mins=None, purge_closed_positions_buffer_mins=None, purge_account_events_interval_mins=None, purge_account_events_lookback_mins=None, own_books_audit_interval_secs=None, debug=None, snapshot_orders=None, snapshot_positions=None))]
     fn py_new(
         load_cache: Option<bool>,
         manage_own_order_books: Option<bool>,
@@ -427,6 +437,8 @@ impl LiveExecEngineConfig {
         purge_account_events_lookback_mins: Option<u32>,
         own_books_audit_interval_secs: Option<f64>,
         debug: Option<bool>,
+        snapshot_orders: Option<bool>,
+        snapshot_positions: Option<bool>,
     ) -> PyResult<Self> {
         let default = Self::default();
 
@@ -434,8 +446,8 @@ impl LiveExecEngineConfig {
             load_cache: load_cache.unwrap_or(default.load_cache),
             manage_own_order_books: manage_own_order_books
                 .unwrap_or(default.manage_own_order_books),
-            snapshot_orders: default.snapshot_orders,
-            snapshot_positions: default.snapshot_positions,
+            snapshot_orders: snapshot_orders.unwrap_or(default.snapshot_orders),
+            snapshot_positions: snapshot_positions.unwrap_or(default.snapshot_positions),
             snapshot_positions_interval_secs,
             external_clients,
             allow_overfills: allow_overfills.unwrap_or(default.allow_overfills),
@@ -502,6 +514,18 @@ impl LiveExecEngineConfig {
     #[pyo3(name = "manage_own_order_books")]
     const fn py_manage_own_order_books(&self) -> bool {
         self.manage_own_order_books
+    }
+
+    #[getter]
+    #[pyo3(name = "snapshot_orders")]
+    const fn py_snapshot_orders(&self) -> bool {
+        self.snapshot_orders
+    }
+
+    #[getter]
+    #[pyo3(name = "snapshot_positions")]
+    const fn py_snapshot_positions(&self) -> bool {
+        self.snapshot_positions
     }
 
     #[getter]
@@ -815,8 +839,8 @@ impl InstrumentProviderConfig {
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
-impl LiveDataClientConfig {
-    /// Configuration for live data clients.
+impl DataClientConfig {
+    /// Shared configuration for data clients registered with a live node.
     #[new]
     #[pyo3(signature = (handle_revised_bars=None, instrument_provider=None, routing=None))]
     fn py_new(
@@ -857,8 +881,8 @@ impl LiveDataClientConfig {
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
-impl LiveExecClientConfig {
-    /// Configuration for live execution clients.
+impl ExecutionClientConfig {
+    /// Shared configuration for execution clients registered with a live node.
     #[new]
     #[pyo3(signature = (instrument_provider=None, routing=None))]
     fn py_new(
@@ -1016,7 +1040,7 @@ impl LiveNodeConfig {
         loop_debug: Option<bool>,
         data_engine: Option<LiveDataEngineConfig>,
         risk_engine: Option<LiveRiskEngineConfig>,
-        exec_engine: Option<LiveExecEngineConfig>,
+        exec_engine: Option<LiveExecutionEngineConfig>,
         controller: Option<ImportableControllerConfig>,
         plugins: Option<Vec<PluginConfig>>,
     ) -> PyResult<Self> {
@@ -1195,7 +1219,7 @@ impl LiveNodeConfig {
 
     #[getter]
     #[pyo3(name = "exec_engine")]
-    fn py_exec_engine(&self) -> LiveExecEngineConfig {
+    fn py_exec_engine(&self) -> LiveExecutionEngineConfig {
         self.exec_engine.clone()
     }
 

@@ -1,0 +1,26 @@
+[package]
+name = "arrow"
+version = "57.3.1"
+edition = "2024"
+publish = false
+license = "LGPL-3.0-only"
+description = "Arrow 59 compatibility facade for dependencies constrained to Arrow 57"
+
+[features]
+default = ["csv", "ipc", "json"]
+async = ["arrow-upstream/async"]
+canonical_extension_types = ["arrow-upstream/canonical_extension_types"]
+chrono-tz = ["arrow-upstream/chrono-tz"]
+csv = ["arrow-upstream/csv"]
+ffi = ["arrow-upstream/ffi"]
+force_validate = ["arrow-upstream/force_validate"]
+ipc = ["arrow-upstream/ipc"]
+ipc_compression = ["arrow-upstream/ipc_compression"]
+json = ["arrow-upstream/json"]
+pool = ["arrow-upstream/pool"]
+prettyprint = ["arrow-upstream/prettyprint"]
+pyarrow = ["arrow-upstream/pyarrow"]
+test_utils = ["arrow-upstream/test_utils"]
+
+[dependencies]
+arrow-upstream = { package = "arrow", version = "=59.2.0", default-features = false }

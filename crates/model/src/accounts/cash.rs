@@ -82,6 +82,15 @@ impl CashAccount {
         }
     }
 
+    #[must_use]
+    pub(crate) fn clone_without_events(&self) -> Self {
+        Self {
+            base: self.base.clone_without_events(),
+            allow_borrowing: self.allow_borrowing,
+            balances_locked: self.balances_locked.clone(),
+        }
+    }
+
     /// Updates the locked balance for the given instrument and currency.
     /// Leaves the existing balance and reservations unchanged if their precision differs.
     ///
@@ -149,7 +158,6 @@ impl CashAccount {
     ///
     /// Sums all per-instrument locked amounts for the currency and updates the balance.
     /// If the total locked exceeds the total balance, clamps to total (free = 0).
-    ///
     pub fn recalculate_balance(&mut self, currency: Currency) {
         base::recalculate_balance(&mut self.base.balances, &self.balances_locked, currency);
     }

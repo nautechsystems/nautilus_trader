@@ -101,19 +101,20 @@ This pulls one trading day. The file is reused on subsequent runs.
 
 ### Load into Nautilus quote ticks
 
-`DatabentoDataLoader.from_dbn_file` parses the `.dbn.zst` archive and
+`DatabentoDataLoader.load_quotes` parses the `.dbn.zst` archive and
 emits `QuoteTick` objects. The `instrument_id` argument overrides the
 Databento symbology so every tick appears to come from `XAU-PERP.AX`.
 
 ```python
 from nautilus_trader.adapters.databento import DatabentoDataLoader
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model import InstrumentId
 
 instrument_id = InstrumentId.from_str("XAU-PERP.AX")
 
-loader = DatabentoDataLoader()
-quotes = loader.from_dbn_file(
-    path="gc_gold_quotes.dbn.zst",
+publishers_path = Path("crates/adapters/databento/publishers.json")
+loader = DatabentoDataLoader(publishers_path)
+quotes = loader.load_quotes(
+    filepath=data_path,
     instrument_id=instrument_id,
 )
 ```
@@ -127,12 +128,14 @@ conditions.
 ```python
 from decimal import Decimal
 
-from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.instruments import PerpetualContract
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model import AssetClass
+from nautilus_trader.model import Currency
+from nautilus_trader.model import PerpetualContract
+from nautilus_trader.model import Price
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import Symbol
+
+USD = Currency.from_str("USD")
 
 XAU_PERP = PerpetualContract(
     instrument_id=instrument_id,
@@ -199,18 +202,18 @@ strategy = OrderBookImbalance(
 
 ```python
 from nautilus_trader.common import LogLevel
-from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.backtest import BacktestEngine
+from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import LoggerConfig
-from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import OmsType
-from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.objects import Money
+from nautilus_trader.model import AccountType
+from nautilus_trader.model import Money
+from nautilus_trader.model import OmsType
+from nautilus_trader.model import TraderId
+from nautilus_trader.model import Venue
 
 engine = BacktestEngine(
     BacktestEngineConfig(
-        trader_id=TraderId("BACKTESTER-001"),
+        trader_id=TraderId.from_str("BACKTESTER-001"),
         logging=LoggerConfig(stdout_level=LogLevel.INFO),
     ),
 )
@@ -221,7 +224,7 @@ engine.add_venue(
     oms_type=OmsType.NETTING,
     account_type=AccountType.MARGIN,
     base_currency=USD,
-    starting_balances=[Money(100_000, USD)],
+    starting_balances=[Money.from_str("100000 USD")],
 )
 
 engine.add_instrument(XAU_PERP)
@@ -233,7 +236,7 @@ engine.run()
 Reports are on the engine:
 
 ```python
-print(engine.generate_account_report(AX))
+print(engine.generate_account_report(venue=AX))
 print(engine.generate_order_fills_report())
 print(engine.generate_positions_report())
 

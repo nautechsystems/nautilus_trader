@@ -133,10 +133,13 @@ pub enum OrderDeniedReason {
         value: Decimal,
     },
     /// The order side is invalid for this operation.
-    #[error("INVALID_ORDER_SIDE: {order_side}")]
+    #[error(
+        "INVALID_ORDER_SIDE: {}",
+        order_side.as_ref().map_or("NO_ORDER_SIDE", AsRef::as_ref)
+    )]
     InvalidOrderSide {
         /// The offending order side.
-        order_side: OrderSide,
+        order_side: Option<OrderSide>,
     },
     /// A GTD order is missing its expire time.
     #[error("MISSING_EXPIRE_TIME")]
@@ -421,7 +424,7 @@ impl OrderDeniedCode {
             Self::MissingTriggerType => "The order is missing a required trigger type.",
             Self::MissingTrailingOffset => "The order is missing a required trailing offset.",
             Self::InstrumentNotFound => "The instrument was not found in the cache.",
-            Self::PositionNotFound => "The position for a reduce‑only order was not found.",
+            Self::PositionNotFound => "The position for a reduce-only order was not found.",
             Self::MarketPriceUnavailable => {
                 "No market price is available for the order risk check."
             }
@@ -456,7 +459,7 @@ impl OrderDeniedCode {
                 "The cumulative initial margin exceeds the account free balance."
             }
             Self::ReduceOnlyWouldIncreasePosition => {
-                "A reduce‑only order would increase the position."
+                "A reduce-only order would increase the position."
             }
             Self::OrderListIncomplete => "The order list is missing orders in the cache.",
             Self::OrderListDenied => {
@@ -479,7 +482,7 @@ impl OrderDeniedCode {
             Self::UnsupportedOrderType => "The order type is not supported.",
             Self::UnsupportedTimeInForce => "The order's time in force is not supported.",
             Self::UnsupportedTpSl => {
-                "The venue does not support the requested take‑profit/stop‑loss parameters."
+                "The venue does not support the requested take-profit/stop-loss parameters."
             }
             Self::ValidationFailed => "The order failed validation before submission.",
         }
@@ -653,9 +656,7 @@ mod tests {
         let not_found = OrderDeniedReason::InstrumentNotFound {
             instrument_id: InstrumentId::from("AUD/USD.SIM"),
         };
-        let bad_side = OrderDeniedReason::InvalidOrderSide {
-            order_side: OrderSide::NoOrderSide,
-        };
+        let bad_side = OrderDeniedReason::InvalidOrderSide { order_side: None };
         let reducing = OrderDeniedReason::TradingStateReducing {
             order_side: OrderSide::Buy,
             instrument_id: InstrumentId::from("AUD/USD.SIM"),
@@ -833,9 +834,7 @@ mod tests {
                 instrument_id: InstrumentId::from("AUD/USD.SIM"),
                 value: Decimal::ONE,
             },
-            OrderDeniedReason::InvalidOrderSide {
-                order_side: OrderSide::NoOrderSide,
-            },
+            OrderDeniedReason::InvalidOrderSide { order_side: None },
             OrderDeniedReason::MissingExpireTime,
             OrderDeniedReason::ExpireTimeInPast {
                 expire_time: "1970-01-01T00:00:00Z".to_string(),
@@ -992,8 +991,7 @@ mod tests {
             .map(|code| (format!("`{code}`"), code.description()))
             .collect();
         // Width counts characters, matching the padding applied by `format!` and the
-        // column width the Markdown table hook normalizes to. Descriptions carry
-        // non-breaking hyphens, so byte length would over-pad the column.
+        // column width the Markdown table hook normalizes to.
         let code_w = rows
             .iter()
             .map(|(code, _)| code.chars().count())

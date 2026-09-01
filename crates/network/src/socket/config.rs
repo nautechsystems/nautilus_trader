@@ -18,14 +18,14 @@
 //! # Reconnection strategy
 //!
 //! The default configuration uses unlimited reconnection attempts (`reconnect_max_attempts: None`).
-//! This suits long‑lived trading connections because:
+//! This suits long-lived trading connections because:
 //!
 //! - Venues may remain unavailable for an extended period and later recover.
 //! - Exponential backoff bounds retry frequency during the outage.
 //! - Automatic recovery avoids requiring manual intervention for a transient failure.
 //!
 //! A connection active for at least 10 seconds resets the attempt count and backoff delay.
-//! Shorter‑lived connections remain part of the same reconnect cycle. Use `Some(n)` primarily for
+//! Shorter-lived connections remain part of the same reconnect cycle. Use `Some(n)` primarily for
 //! tests, development, or connections that should stop retrying without intervention.
 
 use std::fmt::Debug;
@@ -50,7 +50,7 @@ pub struct SocketHeartbeat {
 }
 
 /// Configuration for a TCP socket connection.
-#[derive(bon::Builder)]
+#[derive(Clone, bon::Builder)]
 #[builder(finish_fn(name = build_inner, vis = ""))]
 pub struct SocketConfig {
     /// The server address as `host:port` or a URL.
@@ -244,27 +244,6 @@ impl Debug for SocketConfig {
             .field("heartbeat_timeout_secs", &self.heartbeat_timeout_secs)
             .field("certs_dir", &self.certs_dir)
             .finish()
-    }
-}
-
-impl Clone for SocketConfig {
-    fn clone(&self) -> Self {
-        Self {
-            url: self.url.clone(),
-            mode: self.mode,
-            suffix: self.suffix.clone(),
-            message_handler: self.message_handler.clone(),
-            heartbeat: self.heartbeat.clone(),
-            connect_timeout_ms: self.connect_timeout_ms,
-            reconnect_delay_initial_ms: self.reconnect_delay_initial_ms,
-            reconnect_delay_max_ms: self.reconnect_delay_max_ms,
-            reconnect_backoff_factor: self.reconnect_backoff_factor,
-            reconnect_jitter_ms: self.reconnect_jitter_ms,
-            connection_max_retries: self.connection_max_retries,
-            reconnect_max_attempts: self.reconnect_max_attempts,
-            heartbeat_timeout_secs: self.heartbeat_timeout_secs,
-            certs_dir: self.certs_dir.clone(),
-        }
     }
 }
 

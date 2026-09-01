@@ -226,7 +226,7 @@ pub fn parse_order_status_to_report(
 
     // Map order type from IB order if available
     let order_type = order
-        .map(|order| map_ib_order_type(&order.order_type))
+        .map(|order| map_ib_order_type(&order.order_type, order.limit_price))
         .unwrap_or(OrderType::Market);
 
     // Map time in force from IB order if available
@@ -247,7 +247,7 @@ pub fn parse_order_status_to_report(
         instrument_id,
         client_order_id,
         venue_order_id,
-        order_side,
+        order_side.into(),
         order_type,
         time_in_force,
         nautilus_status,
@@ -293,8 +293,13 @@ pub fn parse_order_status_to_report(
     Ok(report)
 }
 
-fn map_ib_order_type(order_type: &str) -> OrderType {
-    IbOrderType::from_str(order_type).map_or(OrderType::Market, IbOrderType::nautilus_order_type)
+fn map_ib_order_type(order_type: &str, limit_price: Option<f64>) -> OrderType {
+    if order_type == "IBALGO" && limit_price.is_some_and(|price| price != 0.0) {
+        OrderType::Limit
+    } else {
+        IbOrderType::from_str(order_type)
+            .map_or(OrderType::Market, IbOrderType::nautilus_order_type)
+    }
 }
 
 fn parse_ib_order_pricing_fields(
@@ -485,6 +490,11 @@ mod tests {
     }
 
     use rstest::rstest;
+
+    #[rstest]
+    fn test_ibalgo_with_zero_limit_price_maps_to_market() {
+        assert_eq!(map_ib_order_type("IBALGO", Some(0.0)), OrderType::Market);
+    }
 
     #[rstest]
     fn test_parse_execution_time_hyphenated_format() {
@@ -816,7 +826,7 @@ mod tests {
         None,
         None,
         None,
-        TrailingOffsetType::NoTrailingOffset
+        None
     )]
     #[case(
         "LMT",
@@ -829,7 +839,33 @@ mod tests {
         None,
         None,
         None,
-        TrailingOffsetType::NoTrailingOffset
+        None
+    )]
+    #[case(
+        "IBALGO",
+        Some(185.0),
+        None,
+        None,
+        None,
+        OrderType::Limit,
+        Some(Price::new(185.0, 0)),
+        None,
+        None,
+        None,
+        None
+    )]
+    #[case(
+        "IBALGO",
+        None,
+        None,
+        None,
+        None,
+        OrderType::Market,
+        None,
+        None,
+        None,
+        None,
+        None
     )]
     #[case(
         "MIT",
@@ -842,7 +878,7 @@ mod tests {
         Some(Price::new(180.0, 0)),
         None,
         None,
-        TrailingOffsetType::NoTrailingOffset
+        None
     )]
     #[case(
         "LIT",
@@ -855,7 +891,7 @@ mod tests {
         Some(Price::new(180.0, 0)),
         None,
         None,
-        TrailingOffsetType::NoTrailingOffset
+        None
     )]
     #[case(
         "STP",
@@ -868,7 +904,7 @@ mod tests {
         Some(Price::new(180.0, 0)),
         None,
         None,
-        TrailingOffsetType::NoTrailingOffset
+        None
     )]
     #[case(
         "STP LMT",
@@ -881,7 +917,7 @@ mod tests {
         Some(Price::new(180.0, 0)),
         None,
         None,
-        TrailingOffsetType::NoTrailingOffset
+        None
     )]
     #[case(
         "TRAIL LIMIT",
@@ -894,7 +930,7 @@ mod tests {
         Some(Price::new(185.0, 0)),
         Some(Decimal::from_str("0.25").unwrap()),
         Some(Decimal::from_str("2.5").unwrap()),
-        TrailingOffsetType::Price,
+        Some(TrailingOffsetType::Price),
     )]
     fn test_parse_order_status_to_report_maps_pricing_fields_by_order_type(
         #[case] ib_order_type: &str,
@@ -907,7 +943,7 @@ mod tests {
         #[case] expected_trigger_price: Option<Price>,
         #[case] expected_limit_offset: Option<Decimal>,
         #[case] expected_trailing_offset: Option<Decimal>,
-        #[case] expected_trailing_offset_type: TrailingOffsetType,
+        #[case] expected_trailing_offset_type: Option<TrailingOffsetType>,
     ) {
         let instrument_provider = create_test_instrument_provider();
         let instrument_id = create_test_instrument_id();
@@ -1003,7 +1039,10 @@ mod tests {
             report.trailing_offset,
             Some(Decimal::from_str("250").unwrap())
         );
-        assert_eq!(report.trailing_offset_type, TrailingOffsetType::BasisPoints);
+        assert_eq!(
+            report.trailing_offset_type,
+            Some(TrailingOffsetType::BasisPoints),
+        );
         assert_eq!(report.limit_offset, None);
     }
 

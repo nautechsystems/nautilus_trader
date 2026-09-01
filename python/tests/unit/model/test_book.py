@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test book behavior.
+"""
 
 import pickle
 from decimal import Decimal
@@ -46,7 +49,10 @@ from nautilus_trader.model import update_book_with_trade_tick
 
 
 @pytest.fixture
-def bid_order():
+def bid_order() -> object:
+    """
+    Bid order.
+    """
     return BookOrder(
         side=OrderSide.BUY,
         price=Price.from_str("100.50"),
@@ -56,7 +62,10 @@ def bid_order():
 
 
 @pytest.fixture
-def ask_order():
+def ask_order() -> object:
+    """
+    Ask order.
+    """
     return BookOrder(
         side=OrderSide.SELL,
         price=Price.from_str("100.60"),
@@ -65,14 +74,37 @@ def ask_order():
     )
 
 
-def test_book_order_construction(bid_order):
+def test_book_order_construction(bid_order: object) -> None:
+    """
+    Test book order construction.
+    """
     assert bid_order.side == OrderSide.BUY
     assert bid_order.price == Price.from_str("100.50")
     assert bid_order.size == Quantity.from_str("10.0")
     assert bid_order.order_id == 1
 
 
-def test_book_order_equality():
+def test_book_order_construction_with_legacy_no_order_side() -> None:
+    """
+    Test book order construction with the legacy no-order-side alias.
+    """
+    order = BookOrder(
+        OrderSide.NO_ORDER_SIDE,
+        Price.from_str("0"),
+        Quantity.from_str("0"),
+        0,
+    )
+
+    assert order.side is None
+    assert order.price == Price.from_str("0")
+    assert order.size == Quantity.from_str("0")
+    assert order.order_id == 0
+
+
+def test_book_order_equality() -> None:
+    """
+    Test book order equality.
+    """
     order1 = BookOrder(OrderSide.BUY, Price.from_str("100.50"), Quantity.from_str("10.0"), 1)
     order2 = BookOrder(OrderSide.BUY, Price.from_str("100.50"), Quantity.from_str("10.0"), 1)
     order3 = BookOrder(OrderSide.SELL, Price.from_str("100.60"), Quantity.from_str("5.0"), 2)
@@ -81,25 +113,37 @@ def test_book_order_equality():
     assert order1 != order3
 
 
-def test_book_order_hash():
+def test_book_order_hash() -> None:
+    """
+    Test book order hash.
+    """
     order1 = BookOrder(OrderSide.BUY, Price.from_str("100.50"), Quantity.from_str("10.0"), 1)
     order2 = BookOrder(OrderSide.BUY, Price.from_str("100.50"), Quantity.from_str("10.0"), 1)
 
     assert hash(order1) == hash(order2)
 
 
-def test_book_order_repr(bid_order):
+def test_book_order_repr(bid_order: object) -> None:
+    """
+    Test book order repr.
+    """
     r = repr(bid_order)
     assert "100.50" in r
     assert "10.0" in r
 
 
-def test_book_order_exposure(bid_order):
+def test_book_order_exposure(bid_order: object) -> None:
+    """
+    Test book order exposure.
+    """
     exposure = bid_order.exposure()
     assert exposure == pytest.approx(100.50 * 10.0)
 
 
-def test_book_order_signed_size():
+def test_book_order_signed_size() -> None:
+    """
+    Test book order signed size.
+    """
     buy = BookOrder(OrderSide.BUY, Price.from_str("100.00"), Quantity.from_str("10.0"), 1)
     sell = BookOrder(OrderSide.SELL, Price.from_str("100.00"), Quantity.from_str("10.0"), 2)
 
@@ -107,8 +151,11 @@ def test_book_order_signed_size():
     assert sell.signed_size() == pytest.approx(-10.0)
 
 
-def test_book_order_pickle_roundtrip(bid_order):
-    restored = pickle.loads(pickle.dumps(bid_order))  # noqa: S301
+def test_book_order_pickle_roundtrip(bid_order: object) -> None:
+    """
+    Test book order pickle roundtrip.
+    """
+    restored = pickle.loads(pickle.dumps(bid_order))
 
     assert restored == bid_order
     assert restored.side == bid_order.side
@@ -117,7 +164,10 @@ def test_book_order_pickle_roundtrip(bid_order):
     assert restored.order_id == bid_order.order_id
 
 
-def test_book_order_to_dict_and_from_dict(bid_order):
+def test_book_order_to_dict_and_from_dict(bid_order: object) -> None:
+    """
+    Test book order to dict and from dict.
+    """
     d = BookOrder.to_dict(bid_order)
     restored = BookOrder.from_dict(d)
 
@@ -125,7 +175,10 @@ def test_book_order_to_dict_and_from_dict(bid_order):
 
 
 @pytest.fixture
-def delta(audusd_id, bid_order):
+def delta(audusd_id: InstrumentId, bid_order: object) -> object:
+    """
+    Delta.
+    """
     return OrderBookDelta(
         instrument_id=audusd_id,
         action=BookAction.ADD,
@@ -137,7 +190,10 @@ def delta(audusd_id, bid_order):
     )
 
 
-def test_order_book_delta_construction(delta, audusd_id):
+def test_order_book_delta_construction(delta: object, audusd_id: InstrumentId) -> None:
+    """
+    Test order book delta construction.
+    """
     assert delta.instrument_id == audusd_id
     assert delta.action == BookAction.ADD
     assert delta.flags == 0
@@ -146,27 +202,39 @@ def test_order_book_delta_construction(delta, audusd_id):
     assert delta.ts_init == 1_000_000_001
 
 
-def test_order_book_delta_equality(audusd_id, bid_order):
+def test_order_book_delta_equality(audusd_id: InstrumentId, bid_order: object) -> None:
+    """
+    Test order book delta equality.
+    """
     delta1 = OrderBookDelta(audusd_id, BookAction.ADD, bid_order, 0, 1, 0, 0)
     delta2 = OrderBookDelta(audusd_id, BookAction.ADD, bid_order, 0, 1, 0, 0)
 
     assert delta1 == delta2
 
 
-def test_order_book_delta_hash(audusd_id, bid_order):
+def test_order_book_delta_hash(audusd_id: InstrumentId, bid_order: object) -> None:
+    """
+    Test order book delta hash.
+    """
     delta1 = OrderBookDelta(audusd_id, BookAction.ADD, bid_order, 0, 1, 0, 0)
     delta2 = OrderBookDelta(audusd_id, BookAction.ADD, bid_order, 0, 1, 0, 0)
 
     assert hash(delta1) == hash(delta2)
 
 
-def test_order_book_delta_repr(delta):
+def test_order_book_delta_repr(delta: object) -> None:
+    """
+    Test order book delta repr.
+    """
     r = repr(delta)
     assert "AUD/USD.SIM" in r
 
 
-def test_order_book_delta_pickle_roundtrip(delta):
-    restored = pickle.loads(pickle.dumps(delta))  # noqa: S301
+def test_order_book_delta_pickle_roundtrip(delta: object) -> None:
+    """
+    Test order book delta pickle roundtrip.
+    """
+    restored = pickle.loads(pickle.dumps(delta))
 
     assert restored == delta
     assert restored.instrument_id == delta.instrument_id
@@ -174,31 +242,36 @@ def test_order_book_delta_pickle_roundtrip(delta):
     assert restored.ts_event == delta.ts_event
 
 
-def test_order_book_delta_to_dict_and_from_dict(delta):
+def test_order_book_delta_to_dict_and_from_dict(delta: object) -> None:
+    """
+    Test order book delta to dict and from dict.
+    """
     d = OrderBookDelta.to_dict(delta)
     restored = OrderBookDelta.from_dict(d)
 
     assert restored == delta
 
 
-def test_order_book_delta_clear(audusd_id):
-    null_order = BookOrder(OrderSide.NO_ORDER_SIDE, Price.from_str("0"), Quantity.from_str("0"), 0)
-    delta = OrderBookDelta(
-        instrument_id=audusd_id,
-        action=BookAction.CLEAR,
-        order=null_order,
-        flags=0,
-        sequence=5,
-        ts_event=0,
-        ts_init=0,
-    )
+def test_order_book_delta_clear(audusd_id: InstrumentId) -> None:
+    """
+    Test order book delta clear.
+    """
+    delta = OrderBookDelta.clear(audusd_id, sequence=5, ts_event=0, ts_init=0)
 
     assert delta.instrument_id == audusd_id
     assert delta.action == BookAction.CLEAR
+    assert delta.order.side is None
     assert delta.sequence == 5
 
 
-def test_order_book_deltas_construction(audusd_id, bid_order, ask_order):
+def test_order_book_deltas_construction(
+    audusd_id: InstrumentId,
+    bid_order: object,
+    ask_order: object,
+) -> None:
+    """
+    Test order book deltas construction.
+    """
     d1 = OrderBookDelta(audusd_id, BookAction.ADD, bid_order, 0, 1, 0, 0)
     d2 = OrderBookDelta(audusd_id, BookAction.ADD, ask_order, 0, 2, 0, 0)
 
@@ -213,7 +286,14 @@ def test_order_book_deltas_construction(audusd_id, bid_order, ask_order):
     assert deltas.deltas[1].action == BookAction.ADD
 
 
-def test_order_book_deltas_pickle_roundtrip(audusd_id, bid_order, ask_order):
+def test_order_book_deltas_pickle_roundtrip(
+    audusd_id: InstrumentId,
+    bid_order: object,
+    ask_order: object,
+) -> None:
+    """
+    Test order book deltas pickle roundtrip.
+    """
     d1 = OrderBookDelta(audusd_id, BookAction.ADD, bid_order, 0, 1, 0, 0)
     d2 = OrderBookDelta(audusd_id, BookAction.ADD, ask_order, 0, 2, 0, 0)
 
@@ -222,7 +302,7 @@ def test_order_book_deltas_pickle_roundtrip(audusd_id, bid_order, ask_order):
         deltas=[d1, d2],
     )
 
-    restored = pickle.loads(pickle.dumps(deltas))  # noqa: S301
+    restored = pickle.loads(pickle.dumps(deltas))
 
     assert restored.instrument_id == deltas.instrument_id
     assert len(restored.deltas) == 2
@@ -230,7 +310,10 @@ def test_order_book_deltas_pickle_roundtrip(audusd_id, bid_order, ask_order):
     assert restored.deltas[1] == d2
 
 
-def test_order_book_construction(audusd_id):
+def test_order_book_construction(audusd_id: InstrumentId) -> None:
+    """
+    Test order book construction.
+    """
     book = OrderBook(instrument_id=audusd_id, book_type=BookType.L2_MBP)
 
     assert book.instrument_id == audusd_id
@@ -238,7 +321,10 @@ def test_order_book_construction(audusd_id):
     assert book.update_count == 0
 
 
-def test_order_book_add_and_query(audusd_id):
+def test_order_book_add_and_query(audusd_id: InstrumentId) -> None:
+    """
+    Test order book add and query.
+    """
     book = OrderBook(instrument_id=audusd_id, book_type=BookType.L2_MBP)
 
     bid = BookOrder(OrderSide.BUY, Price.from_str("100.50"), Quantity.from_str("10.0"), 1)
@@ -256,7 +342,10 @@ def test_order_book_add_and_query(audusd_id):
     assert book.best_ask_size() == Quantity.from_str("5.0")
 
 
-def test_order_book_spread(audusd_id):
+def test_order_book_spread(audusd_id: InstrumentId) -> None:
+    """
+    Test order book spread.
+    """
     book = OrderBook(instrument_id=audusd_id, book_type=BookType.L2_MBP)
 
     bid = BookOrder(OrderSide.BUY, Price.from_str("100.50"), Quantity.from_str("10.0"), 1)
@@ -268,7 +357,10 @@ def test_order_book_spread(audusd_id):
     assert book.spread() == pytest.approx(0.10, abs=0.001)
 
 
-def test_order_book_midpoint(audusd_id):
+def test_order_book_midpoint(audusd_id: InstrumentId) -> None:
+    """
+    Test order book midpoint.
+    """
     book = OrderBook(instrument_id=audusd_id, book_type=BookType.L2_MBP)
 
     bid = BookOrder(OrderSide.BUY, Price.from_str("100.00"), Quantity.from_str("10.0"), 1)
@@ -280,7 +372,10 @@ def test_order_book_midpoint(audusd_id):
     assert book.midpoint() == pytest.approx(100.50)
 
 
-def test_update_book_with_quote_tick(audusd_id):
+def test_update_book_with_quote_tick(audusd_id: InstrumentId) -> None:
+    """
+    Test update book with quote tick.
+    """
     book = OrderBook(instrument_id=audusd_id, book_type=BookType.L1_MBP)
     quote = QuoteTick(
         instrument_id=audusd_id,
@@ -301,7 +396,10 @@ def test_update_book_with_quote_tick(audusd_id):
     assert book.update_count == 1
 
 
-def test_update_book_with_trade_tick(audusd_id):
+def test_update_book_with_trade_tick(audusd_id: InstrumentId) -> None:
+    """
+    Test update book with trade tick.
+    """
     book = OrderBook(instrument_id=audusd_id, book_type=BookType.L1_MBP)
     trade = TradeTick(
         instrument_id=audusd_id,
@@ -322,7 +420,10 @@ def test_update_book_with_trade_tick(audusd_id):
     assert book.update_count == 1
 
 
-def test_order_book_reset(audusd_id):
+def test_order_book_reset(audusd_id: InstrumentId) -> None:
+    """
+    Test order book reset.
+    """
     book = OrderBook(instrument_id=audusd_id, book_type=BookType.L2_MBP)
 
     bid = BookOrder(OrderSide.BUY, Price.from_str("100.50"), Quantity.from_str("10.0"), 1)
@@ -333,7 +434,10 @@ def test_order_book_reset(audusd_id):
     assert book.best_ask_price() is None
 
 
-def test_order_book_repr(audusd_id):
+def test_order_book_repr(audusd_id: InstrumentId) -> None:
+    """
+    Test order book repr.
+    """
     book = OrderBook(instrument_id=audusd_id, book_type=BookType.L2_MBP)
     r = repr(book)
 
@@ -342,11 +446,17 @@ def test_order_book_repr(audusd_id):
 
 
 @pytest.fixture
-def depth10():
+def depth10() -> object:
+    """
+    Depth10.
+    """
     return OrderBookDepth10.get_stub()
 
 
-def test_depth10_get_stub(depth10):
+def test_depth10_get_stub(depth10: object) -> None:
+    """
+    Test depth10 get stub.
+    """
     assert depth10.instrument_id == InstrumentId.from_str("AAPL.XNAS")
     assert len(depth10.bids) == 10
     assert len(depth10.asks) == 10
@@ -354,14 +464,20 @@ def test_depth10_get_stub(depth10):
     assert len(depth10.ask_counts) == 10
 
 
-def test_depth10_properties(depth10):
+def test_depth10_properties(depth10: object) -> None:
+    """
+    Test depth10 properties.
+    """
     assert depth10.flags == 0
     assert depth10.sequence == 0
     assert depth10.ts_event == 1
     assert depth10.ts_init == 2
 
 
-def test_depth10_bid_ask_structure(depth10):
+def test_depth10_bid_ask_structure(depth10: object) -> None:
+    """
+    Test depth10 bid ask structure.
+    """
     for bid in depth10.bids:
         assert bid.side == OrderSide.BUY
     for ask in depth10.asks:
@@ -371,16 +487,25 @@ def test_depth10_bid_ask_structure(depth10):
     assert depth10.asks[0].price < depth10.asks[1].price
 
 
-def test_depth10_hash(depth10):
+def test_depth10_hash(depth10: object) -> None:
+    """
+    Test depth10 hash.
+    """
     assert isinstance(hash(depth10), int)
 
 
-def test_depth10_str_and_repr(depth10):
+def test_depth10_str_and_repr(depth10: object) -> None:
+    """
+    Test depth10 str and repr.
+    """
     assert "AAPL.XNAS" in str(depth10)
     assert "OrderBookDepth10" in repr(depth10)
 
 
-def test_depth10_to_dict_and_from_dict_roundtrip(depth10):
+def test_depth10_to_dict_and_from_dict_roundtrip(depth10: object) -> None:
+    """
+    Test depth10 to dict and from dict roundtrip.
+    """
     d = depth10.to_dict()
     restored = OrderBookDepth10.from_dict(d)
 
@@ -390,32 +515,47 @@ def test_depth10_to_dict_and_from_dict_roundtrip(depth10):
     assert restored == depth10
 
 
-def test_depth10_fully_qualified_name():
+def test_depth10_fully_qualified_name() -> None:
+    """
+    Test depth10 fully qualified name.
+    """
     assert OrderBookDepth10.fully_qualified_name() == "nautilus_trader.model:OrderBookDepth10"
 
 
-def test_depth10_json_roundtrip(depth10):
+def test_depth10_json_roundtrip(depth10: object) -> None:
+    """
+    Test depth10 json roundtrip.
+    """
     json_bytes = depth10.to_json_bytes()
     restored = OrderBookDepth10.from_json(json_bytes)
 
     assert restored == depth10
 
 
-def test_depth10_msgpack_roundtrip(depth10):
+def test_depth10_msgpack_roundtrip(depth10: object) -> None:
+    """
+    Test depth10 msgpack roundtrip.
+    """
     msgpack_bytes = depth10.to_msgpack_bytes()
     restored = OrderBookDepth10.from_msgpack(msgpack_bytes)
 
     assert restored == depth10
 
 
-def test_depth10_get_metadata():
+def test_depth10_get_metadata() -> None:
+    """
+    Test depth10 get metadata.
+    """
     instrument_id = InstrumentId.from_str("AAPL.XNAS")
     metadata = OrderBookDepth10.get_metadata(instrument_id, 2, 0)
 
     assert metadata["instrument_id"] == "AAPL.XNAS"
 
 
-def test_depth10_get_fields():
+def test_depth10_get_fields() -> None:
+    """
+    Test depth10 get fields.
+    """
     fields = OrderBookDepth10.get_fields()
 
     assert "flags" in fields
@@ -424,7 +564,10 @@ def test_depth10_get_fields():
     assert "ts_init" in fields
 
 
-def test_order_book_apply_depth_updates_best_prices(depth10):
+def test_order_book_apply_depth_updates_best_prices(depth10: object) -> None:
+    """
+    Test order book apply depth updates best prices.
+    """
     book = OrderBook(instrument_id=depth10.instrument_id, book_type=BookType.L2_MBP)
 
     book.apply_depth(depth10)
@@ -444,7 +587,10 @@ def test_order_book_apply_depth_updates_best_prices(depth10):
     }
 
 
-def test_book_level_properties(audusd_id):
+def test_book_level_properties(audusd_id: InstrumentId) -> None:
+    """
+    Test book level properties.
+    """
     book = OrderBook(instrument_id=audusd_id, book_type=BookType.L2_MBP)
     bid = BookOrder(OrderSide.BUY, Price.from_str("100.50"), Quantity.from_str("10"), 1)
 
@@ -465,7 +611,10 @@ def test_book_level_properties(audusd_id):
     assert len(level.get_orders()) == 1
 
 
-def test_order_book_grouped_views(audusd_id):
+def test_order_book_grouped_views(audusd_id: InstrumentId) -> None:
+    """
+    Test order book grouped views.
+    """
     book = OrderBook(instrument_id=audusd_id, book_type=BookType.L2_MBP)
 
     book.apply_delta(
@@ -517,7 +666,10 @@ def test_order_book_grouped_views(audusd_id):
     assert book.group_asks(Decimal("0.10")) == {Decimal("100.70"): Decimal(15)}
 
 
-def test_order_book_filtered_view_excludes_own_orders(audusd_id):
+def test_order_book_filtered_view_excludes_own_orders(audusd_id: InstrumentId) -> None:
+    """
+    Test order book filtered view excludes own orders.
+    """
     book = OrderBook(instrument_id=audusd_id, book_type=BookType.L2_MBP)
     own_book = OwnOrderBook(instrument_id=audusd_id)
 
@@ -610,7 +762,10 @@ def test_order_book_filtered_view_excludes_own_orders(audusd_id):
     assert filtered.asks_to_dict() == expected_asks
 
 
-def test_order_book_get_quantity_methods(audusd_id):
+def test_order_book_get_quantity_methods(audusd_id: InstrumentId) -> None:
+    """
+    Test order book get quantity methods.
+    """
     book = OrderBook(instrument_id=audusd_id, book_type=BookType.L2_MBP)
 
     book.apply_delta(
@@ -666,7 +821,10 @@ def test_order_book_get_quantity_methods(audusd_id):
     ) == Quantity.from_str("10.0")
 
 
-def test_order_book_get_avg_px_qty_for_exposure(depth10):
+def test_order_book_get_avg_px_qty_for_exposure(depth10: object) -> None:
+    """
+    Test order book get avg px qty for exposure.
+    """
     book = OrderBook(instrument_id=depth10.instrument_id, book_type=BookType.L2_MBP)
 
     book.apply_depth(depth10)
@@ -681,7 +839,10 @@ def test_order_book_get_avg_px_qty_for_exposure(depth10):
     assert worst_px == pytest.approx(100.0)
 
 
-def test_order_book_simulate_fills(audusd_id):
+def test_order_book_simulate_fills(audusd_id: InstrumentId) -> None:
+    """
+    Test order book simulate fills.
+    """
     book = OrderBook(instrument_id=audusd_id, book_type=BookType.L2_MBP)
 
     book.apply_delta(
@@ -732,7 +893,10 @@ def test_order_book_simulate_fills(audusd_id):
     assert [(str(px), str(qty)) for px, qty in sell_fills] == [("100.50", "7")]
 
 
-def test_order_book_clear_stale_levels_removes_crossed_market(audusd_id):
+def test_order_book_clear_stale_levels_removes_crossed_market(audusd_id: InstrumentId) -> None:
+    """
+    Test order book clear stale levels removes crossed market.
+    """
     book = OrderBook(instrument_id=audusd_id, book_type=BookType.L2_MBP)
 
     book.add(
@@ -757,7 +921,10 @@ def test_order_book_clear_stale_levels_removes_crossed_market(audusd_id):
     assert book.best_ask_price() is None
 
 
-def test_order_book_check_integrity_on_valid_book(audusd_id):
+def test_order_book_check_integrity_on_valid_book(audusd_id: InstrumentId) -> None:
+    """
+    Test order book check integrity on valid book.
+    """
     book = OrderBook(instrument_id=audusd_id, book_type=BookType.L2_MBP)
 
     book.apply_delta(

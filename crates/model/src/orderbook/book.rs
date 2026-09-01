@@ -28,7 +28,7 @@ use super::{
 };
 use crate::{
     data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick},
-    enums::{BookAction, BookType, OrderSide, OrderSideSpecified, OrderStatus, RecordFlag},
+    enums::{BookAction, BookType, OrderSide, OrderStatus, RecordFlag},
     identifiers::InstrumentId,
     orderbook::{
         BookIntegrityError, InvalidBookOperation,
@@ -102,8 +102,8 @@ impl OrderBook {
             sequence: 0,
             ts_last: UnixNanos::default(),
             update_count: 0,
-            bids: BookLadder::new(OrderSideSpecified::Buy, book_type),
-            asks: BookLadder::new(OrderSideSpecified::Sell, book_type),
+            bids: BookLadder::new(OrderSide::Buy, book_type),
+            asks: BookLadder::new(OrderSide::Sell, book_type),
         }
     }
 
@@ -117,33 +117,45 @@ impl OrderBook {
     }
 
     /// Adds an order to the book after preprocessing based on book type.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `order.side` is `None`.
     pub fn add(&mut self, order: BookOrder, flags: u8, sequence: u64, ts_event: UnixNanos) {
         let order = pre_process_order(self.book_type, order, flags);
-        match order.side.as_specified() {
-            OrderSideSpecified::Buy => self.bids.add(order, flags),
-            OrderSideSpecified::Sell => self.asks.add(order, flags),
+        match order.side.expect("BookOrder side must be Buy or Sell") {
+            OrderSide::Buy => self.bids.add(order, flags),
+            OrderSide::Sell => self.asks.add(order, flags),
         }
 
         self.increment(sequence, ts_event, flags);
     }
 
     /// Updates an existing order in the book after preprocessing based on book type.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `order.side` is `None`.
     pub fn update(&mut self, order: BookOrder, flags: u8, sequence: u64, ts_event: UnixNanos) {
         let order = pre_process_order(self.book_type, order, flags);
-        match order.side.as_specified() {
-            OrderSideSpecified::Buy => self.bids.update(order, flags),
-            OrderSideSpecified::Sell => self.asks.update(order, flags),
+        match order.side.expect("BookOrder side must be Buy or Sell") {
+            OrderSide::Buy => self.bids.update(order, flags),
+            OrderSide::Sell => self.asks.update(order, flags),
         }
 
         self.increment(sequence, ts_event, flags);
     }
 
     /// Deletes an order from the book after preprocessing based on book type.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `order.side` is `None`.
     pub fn delete(&mut self, order: BookOrder, flags: u8, sequence: u64, ts_event: UnixNanos) {
         let order = pre_process_order(self.book_type, order, flags);
-        match order.side.as_specified() {
-            OrderSideSpecified::Buy => self.bids.delete(order, sequence, ts_event),
-            OrderSideSpecified::Sell => self.asks.delete(order, sequence, ts_event),
+        match order.side.expect("BookOrder side must be Buy or Sell") {
+            OrderSide::Buy => self.bids.delete(order, sequence, ts_event),
+            OrderSide::Sell => self.asks.delete(order, sequence, ts_event),
         }
 
         self.increment(sequence, ts_event, flags);
@@ -176,7 +188,7 @@ impl OrderBook {
     ///
     /// - Acts only when both sides exist and the book is crossed.
     /// - Deletes by removing whole price levels via the ladder API to preserve invariants.
-    /// - `side=None` or `NoOrderSide` clears both overlapped ranges (conservative, may widen spread).
+    /// - `side=None` clears both overlapped ranges (conservative, may widen spread).
     /// - `side=Buy` clears crossed bids only; side=Sell clears crossed asks only.
     /// - Returns removed price levels (crossed bids first, then crossed asks), or None if nothing removed.
     pub fn clear_stale_levels(&mut self, side: Option<OrderSide>) -> Option<Vec<BookLevel>> {
@@ -195,17 +207,11 @@ impl OrderBook {
         }
 
         let mut removed_levels = Vec::new();
-        let mut clear_bids = false;
-        let mut clear_asks = false;
-
-        match side {
-            Some(OrderSide::Buy) => clear_bids = true,
-            Some(OrderSide::Sell) => clear_asks = true,
-            _ => {
-                clear_bids = true;
-                clear_asks = true;
-            }
-        }
+        let (clear_bids, clear_asks) = match side {
+            Some(OrderSide::Buy) => (true, false),
+            Some(OrderSide::Sell) => (false, true),
+            None => (true, true),
+        };
 
         // Collect prices to remove for asks (prices <= best_bid)
         let mut ask_prices_to_remove = Vec::new();
@@ -282,13 +288,13 @@ impl OrderBook {
     ///
     /// Returns an error if:
     /// - The delta's instrument ID does not match this book's instrument ID.
-    /// - An `Add` is given with `NoOrderSide` (either explicitly or because the cache lookup failed).
-    /// - An `Add` with `NoOrderSide` matches an order ID on both sides of the book.
-    /// - After resolution the delta still has `NoOrderSide` but its action is not `Clear`.
+    /// - An `Add` is given with no side, either explicitly or because the cache lookup failed.
+    /// - An `Add` with no side matches an order ID on both sides of the book.
+    /// - After resolution the delta still has no side but its action is not `Clear`.
     ///
     /// # Notes
     ///
-    /// An ambiguous `NoOrderSide` `Update` or `Delete` is skipped with a warning.
+    /// An ambiguous no-side `Update` or `Delete` is skipped with a warning.
     pub fn apply_delta(&mut self, delta: &OrderBookDelta) -> Result<(), BookIntegrityError> {
         if delta.instrument_id != self.instrument_id {
             return Err(BookIntegrityError::InstrumentMismatch(
@@ -309,13 +315,13 @@ impl OrderBook {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - An `Add` is given with `NoOrderSide` (either explicitly or because the cache lookup failed).
-    /// - An `Add` with `NoOrderSide` matches an order ID on both sides of the book.
-    /// - After resolution the delta still has `NoOrderSide` but its action is not `Clear`.
+    /// - An `Add` is given with no side, either explicitly or because the cache lookup failed.
+    /// - An `Add` with no side matches an order ID on both sides of the book.
+    /// - After resolution the delta still has no side but its action is not `Clear`.
     ///
     /// # Notes
     ///
-    /// An ambiguous `NoOrderSide` `Update` or `Delete` is skipped with a warning.
+    /// An ambiguous no-side `Update` or `Delete` is skipped with a warning.
     pub fn apply_delta_unchecked(
         &mut self,
         delta: &OrderBookDelta,
@@ -328,7 +334,7 @@ impl OrderBook {
     fn apply_delta_inner(&mut self, delta: &OrderBookDelta) -> Result<(), BookIntegrityError> {
         let mut order = delta.order;
 
-        if order.side == OrderSide::NoOrderSide && order.order_id != 0 {
+        if order.side.is_none() && order.order_id != 0 {
             match self.resolve_no_side_order(order) {
                 Ok(resolved) => order = resolved,
                 Err(BookIntegrityError::OrderNotFoundForSideResolution(order_id)) => {
@@ -364,7 +370,7 @@ impl OrderBook {
             }
         }
 
-        if order.side == OrderSide::NoOrderSide && delta.action != BookAction::Clear {
+        if order.side.is_none() && delta.action != BookAction::Clear {
             return Err(BookIntegrityError::NoOrderSide);
         }
 
@@ -494,30 +500,7 @@ impl OrderBook {
 
         let mut order_count = 0;
 
-        // Add bid orders
-        for level in self.bids(None) {
-            for order in level.iter() {
-                order_count += 1;
-                let flags = if order_count == total_orders {
-                    RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
-                } else {
-                    RecordFlag::F_SNAPSHOT as u8
-                };
-
-                deltas.push(OrderBookDelta::new(
-                    self.instrument_id,
-                    BookAction::Add,
-                    *order,
-                    flags,
-                    self.sequence,
-                    ts_event,
-                    ts_init,
-                ));
-            }
-        }
-
-        // Add ask orders
-        for level in self.asks(None) {
+        for level in self.bids(None).chain(self.asks(None)) {
             for order in level.iter() {
                 order_count += 1;
                 let flags = if order_count == total_orders {
@@ -572,14 +555,14 @@ impl OrderBook {
 
         for order in depth.bids {
             // Skip padding entries
-            if order.side == OrderSide::NoOrderSide || !order.size.is_positive() {
+            if order.side.is_none() || !order.size.is_positive() {
                 continue;
             }
 
-            if order.side != OrderSide::Buy {
+            if order.side != Some(OrderSide::Buy) {
                 debug_assert_eq!(
                     order.side,
-                    OrderSide::Buy,
+                    Some(OrderSide::Buy),
                     "Bid order must have Buy side, was {:?}",
                     order.side
                 );
@@ -597,14 +580,14 @@ impl OrderBook {
 
         for order in depth.asks {
             // Skip padding entries
-            if order.side == OrderSide::NoOrderSide || !order.size.is_positive() {
+            if order.side.is_none() || !order.size.is_positive() {
                 continue;
             }
 
-            if order.side != OrderSide::Sell {
+            if order.side != Some(OrderSide::Sell) {
                 debug_assert_eq!(
                     order.side,
-                    OrderSide::Sell,
+                    Some(OrderSide::Sell),
                     "Ask order must have Sell side, was {:?}",
                     order.side
                 );
@@ -645,10 +628,7 @@ impl OrderBook {
             }
         };
 
-        order.side = match book_price.side {
-            OrderSideSpecified::Buy => OrderSide::Buy,
-            OrderSideSpecified::Sell => OrderSide::Sell,
-        };
+        order.side = book_price.side.into();
 
         Ok(order)
     }
@@ -989,9 +969,9 @@ impl OrderBook {
     /// Calculates the average price to fill the specified quantity.
     #[must_use]
     pub fn get_avg_px_for_quantity(&self, qty: Quantity, order_side: OrderSide) -> f64 {
-        let levels = match order_side.as_specified() {
-            OrderSideSpecified::Buy => &self.asks.levels,
-            OrderSideSpecified::Sell => &self.bids.levels,
+        let levels = match order_side {
+            OrderSide::Buy => &self.asks.levels,
+            OrderSide::Sell => &self.bids.levels,
         };
 
         analysis::get_avg_px_for_quantity(qty, levels)
@@ -1000,9 +980,9 @@ impl OrderBook {
     /// Calculates the worst (last-touched) price to fill the specified quantity.
     #[must_use]
     pub fn get_worst_px_for_quantity(&self, qty: Quantity, order_side: OrderSide) -> Option<Price> {
-        let levels = match order_side.as_specified() {
-            OrderSideSpecified::Buy => &self.asks.levels,
-            OrderSideSpecified::Sell => &self.bids.levels,
+        let levels = match order_side {
+            OrderSide::Buy => &self.asks.levels,
+            OrderSide::Sell => &self.bids.levels,
         };
 
         analysis::get_worst_px_for_quantity(qty, levels)
@@ -1015,9 +995,9 @@ impl OrderBook {
         target_exposure: Quantity,
         order_side: OrderSide,
     ) -> (f64, f64, f64) {
-        let levels = match order_side.as_specified() {
-            OrderSideSpecified::Buy => &self.asks.levels,
-            OrderSideSpecified::Sell => &self.bids.levels,
+        let levels = match order_side {
+            OrderSide::Buy => &self.asks.levels,
+            OrderSide::Sell => &self.bids.levels,
         };
 
         analysis::get_avg_px_qty_for_exposure(target_exposure, levels)
@@ -1029,13 +1009,12 @@ impl OrderBook {
     /// For a SELL order, sums bid levels at or above the price.
     #[must_use]
     pub fn get_quantity_for_price(&self, price: Price, order_side: OrderSide) -> f64 {
-        let side = order_side.as_specified();
-        let levels = match side {
-            OrderSideSpecified::Buy => &self.asks.levels,
-            OrderSideSpecified::Sell => &self.bids.levels,
+        let levels = match order_side {
+            OrderSide::Buy => &self.asks.levels,
+            OrderSide::Sell => &self.bids.levels,
         };
 
-        analysis::get_quantity_for_price(price, side, levels)
+        analysis::get_quantity_for_price(price, order_side, levels)
     }
 
     /// Returns the quantity at a specific price level only, or 0 if no level exists.
@@ -1049,13 +1028,11 @@ impl OrderBook {
         order_side: OrderSide,
         size_precision: u8,
     ) -> Quantity {
-        let side = order_side.as_specified();
-
         // For a BUY order, we look in asks (sell side); for SELL order, we look in bids (buy side)
         // BookPrice keys use the side of orders IN the book, not the incoming order side
-        let (levels, book_side) = match side {
-            OrderSideSpecified::Buy => (&self.asks.levels, OrderSideSpecified::Sell),
-            OrderSideSpecified::Sell => (&self.bids.levels, OrderSideSpecified::Buy),
+        let (levels, book_side) = match order_side {
+            OrderSide::Buy => (&self.asks.levels, OrderSide::Sell),
+            OrderSide::Sell => (&self.bids.levels, OrderSide::Buy),
         };
 
         let book_price = BookPrice::new(price, book_side);
@@ -1073,11 +1050,9 @@ impl OrderBook {
     /// order this reads the asks (sell side), for a SELL order the bids.
     #[must_use]
     pub fn get_orders_at_level(&self, price: Price, order_side: OrderSide) -> Vec<BookOrder> {
-        let side = order_side.as_specified();
-
-        let (levels, book_side) = match side {
-            OrderSideSpecified::Buy => (&self.asks.levels, OrderSideSpecified::Sell),
-            OrderSideSpecified::Sell => (&self.bids.levels, OrderSideSpecified::Buy),
+        let (levels, book_side) = match order_side {
+            OrderSide::Buy => (&self.asks.levels, OrderSide::Sell),
+            OrderSide::Sell => (&self.bids.levels, OrderSide::Buy),
         };
 
         let book_price = BookPrice::new(price, book_side);
@@ -1088,11 +1063,15 @@ impl OrderBook {
     }
 
     /// Simulates fills for an order, returning list of (price, quantity) tuples.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `order.side` is `None`.
     #[must_use]
     pub fn simulate_fills(&self, order: &BookOrder) -> Vec<(Price, Quantity)> {
-        match order.side.as_specified() {
-            OrderSideSpecified::Buy => self.asks.simulate_fills(order),
-            OrderSideSpecified::Sell => self.bids.simulate_fills(order),
+        match order.side.expect("BookOrder side must be Buy or Sell") {
+            OrderSide::Buy => self.asks.simulate_fills(order),
+            OrderSide::Sell => self.bids.simulate_fills(order),
         }
     }
 
@@ -1108,13 +1087,12 @@ impl OrderBook {
         price: Price,
         size_precision: u8,
     ) -> Vec<(Price, Quantity)> {
-        let side = order_side.as_specified();
-        let levels = match side {
-            OrderSideSpecified::Buy => &self.asks.levels,
-            OrderSideSpecified::Sell => &self.bids.levels,
+        let levels = match order_side {
+            OrderSide::Buy => &self.asks.levels,
+            OrderSide::Sell => &self.bids.levels,
         };
 
-        analysis::get_levels_for_price(price, side, levels, size_precision)
+        analysis::get_levels_for_price(price, order_side, levels, size_precision)
     }
 
     /// Return a formatted string representation of the order book.
@@ -1208,8 +1186,8 @@ impl OrderBook {
             OrderSide::Sell as u64,
         );
 
-        self.update_book_bid(bid, quote.ts_event);
-        self.update_book_ask(ask, quote.ts_event);
+        self.update_book_bid(bid);
+        self.update_book_ask(ask);
 
         self.increment(self.sequence.saturating_add(1), quote.ts_event, 0);
 
@@ -1264,30 +1242,20 @@ impl OrderBook {
             OrderSide::Sell as u64,
         );
 
-        self.update_book_bid(bid, trade.ts_event);
-        self.update_book_ask(ask, trade.ts_event);
+        self.update_book_bid(bid);
+        self.update_book_ask(ask);
 
         self.increment(self.sequence.saturating_add(1), trade.ts_event, 0);
 
         Ok(())
     }
 
-    fn update_book_bid(&mut self, order: BookOrder, ts_event: UnixNanos) {
-        if let Some(top_bids) = self.bids.top()
-            && let Some(top_bid) = top_bids.first()
-        {
-            self.bids.remove_order(top_bid.order_id, 0, ts_event);
-        }
-        self.bids.add(order, 0); // Internal replacement, no F_MBP flags
+    fn update_book_bid(&mut self, order: BookOrder) {
+        self.bids.replace_l1(order);
     }
 
-    fn update_book_ask(&mut self, order: BookOrder, ts_event: UnixNanos) {
-        if let Some(top_asks) = self.asks.top()
-            && let Some(top_ask) = top_asks.first()
-        {
-            self.asks.remove_order(top_ask.order_id, 0, ts_event);
-        }
-        self.asks.add(order, 0); // Internal replacement, no F_MBP flags
+    fn update_book_ask(&mut self, order: BookOrder) {
+        self.asks.replace_l1(order);
     }
 
     /// Replays `deltas` through a fresh book of the given type and returns
@@ -1303,43 +1271,38 @@ impl OrderBook {
         let instrument_id = deltas[0].instrument_id;
         let mut book = Self::new(instrument_id, book_type);
         let mut quotes = Vec::new();
-        let mut last_bid: Option<Price> = None;
-        let mut last_ask: Option<Price> = None;
+        let mut last_bbo: Option<(Price, Price)> = None;
 
         for delta in deltas {
             book.apply_delta(delta).unwrap();
-            let bid = book.best_bid_price();
-            let ask = book.best_ask_price();
+            let Some((bid_px, ask_px)) = book.best_bid_price().zip(book.best_ask_price()) else {
+                last_bbo = None;
+                continue;
+            };
 
-            // Reset cached BBO when one side disappears so that a
-            // recovery to the same prices emits a fresh quote
-            if bid.is_none() || ask.is_none() {
-                last_bid = None;
-                last_ask = None;
+            let bbo = (bid_px, ask_px);
+
+            if last_bbo == Some(bbo) {
+                continue;
             }
 
-            if let (Some(bid_px), Some(ask_px)) = (bid, ask)
-                && (bid != last_bid || ask != last_ask)
-            {
-                last_bid = bid;
-                last_ask = ask;
-                let bid_level = book.bids.top().unwrap();
-                let ask_level = book.asks.top().unwrap();
-                let precision = bid_level.first().unwrap().size.precision;
-                let bid_sz = Quantity::from_raw(bid_level.size_raw(), precision);
-                let ask_sz = Quantity::from_raw(ask_level.size_raw(), precision);
-                let quote = QuoteTick::new(
-                    instrument_id,
-                    bid_px,
-                    ask_px,
-                    bid_sz,
-                    ask_sz,
-                    delta.ts_event,
-                    delta.ts_init,
-                );
+            last_bbo = Some(bbo);
+            let bid_level = book.bids.top().unwrap();
+            let ask_level = book.asks.top().unwrap();
+            let precision = bid_level.first().unwrap().size.precision;
+            let bid_sz = Quantity::from_raw(bid_level.size_raw(), precision);
+            let ask_sz = Quantity::from_raw(ask_level.size_raw(), precision);
+            let quote = QuoteTick::new(
+                instrument_id,
+                bid_px,
+                ask_px,
+                bid_sz,
+                ask_sz,
+                delta.ts_event,
+                delta.ts_init,
+            );
 
-                quotes.push(quote);
-            }
+            quotes.push(quote);
         }
 
         quotes

@@ -181,7 +181,10 @@ fn test_turmoil_real_sockudo_basic_connect(websocket_config: WebSocketConfig) {
     sim.client("client", async move {
         let (handler, mut rx) = channel_message_handler();
 
-        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+        let client = WebSocketClient::builder()
+            .config(websocket_config)
+            .message_handler(handler)
+            .connect()
             .await
             .expect("Should connect");
 
@@ -227,7 +230,10 @@ fn test_turmoil_sockudo_repeated_drops_preserve_message_order(
     sim.client("client", async move {
         let (handler, mut rx) = channel_message_handler();
 
-        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+        let client = WebSocketClient::builder()
+            .config(websocket_config)
+            .message_handler(handler)
+            .connect()
             .await
             .expect("Should connect");
 
@@ -319,7 +325,10 @@ fn test_turmoil_real_sockudo_reconnection(mut websocket_config: WebSocketConfig)
     sim.client("client", async move {
         let (handler, mut rx) = channel_message_handler();
 
-        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+        let client = WebSocketClient::builder()
+            .config(websocket_config)
+            .message_handler(handler)
+            .connect()
             .await
             .expect("Should connect");
 
@@ -362,7 +371,10 @@ fn test_turmoil_real_sockudo_network_partition(mut websocket_config: WebSocketCo
     sim.client("client", async move {
         let (handler, mut rx) = channel_message_handler();
 
-        let client = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+        let client = WebSocketClient::builder()
+            .config(websocket_config)
+            .message_handler(handler)
+            .connect()
             .await
             .expect("Should connect");
 
@@ -415,7 +427,10 @@ fn test_turmoil_sockudo_rejects_proxy_url(mut websocket_config: WebSocketConfig)
     sim.host("server", ws_echo_server);
     sim.client("client", async move {
         let (handler, _rx) = channel_message_handler();
-        let err = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+        let err = WebSocketClient::builder()
+            .config(websocket_config)
+            .message_handler(handler)
+            .connect()
             .await
             .expect_err("sockudo should reject proxy_url");
         let msg = err.to_string();
@@ -439,7 +454,10 @@ fn test_turmoil_sockudo_rejects_wss(mut websocket_config: WebSocketConfig) {
     let mut sim = seeded_builder(WSS_REJECTION_SEED).build();
     sim.client("client", async move {
         let (handler, _rx) = channel_message_handler();
-        let err = WebSocketClient::connect(websocket_config, Some(handler), None, vec![], None)
+        let err = WebSocketClient::builder()
+            .config(websocket_config)
+            .message_handler(handler)
+            .connect()
             .await
             .expect_err("turmoil should reject wss");
         let msg = err.to_string();

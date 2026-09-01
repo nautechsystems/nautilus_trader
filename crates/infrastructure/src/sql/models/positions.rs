@@ -24,12 +24,12 @@ use nautilus_model::{
 };
 use sqlx::{FromRow, Row, postgres::PgRow};
 
-use crate::sql::models::i64_to_u64;
+use crate::sql::models::decode_error;
 
 #[derive(Debug)]
-pub struct PositionSnapshotModel(pub PositionSnapshot);
+pub struct PositionSnapshotRow(pub PositionSnapshot);
 
-impl<'r> FromRow<'r, PgRow> for PositionSnapshotModel {
+impl<'r> FromRow<'r, PgRow> for PositionSnapshotRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row.try_get::<&str, _>("id").map(PositionId::from)?;
         let trader_id = row.try_get::<&str, _>("trader_id").map(TraderId::from)?;
@@ -82,8 +82,12 @@ impl<'r> FromRow<'r, PgRow> for PositionSnapshotModel {
                 c.into_iter().map(|s| Money::from(&s)).collect()
             });
         let duration_ns: Option<u64> = row
-            .try_get::<Option<i64>, _>("duration_ns")?
-            .map(|value| i64_to_u64(value, "duration_ns"))
+            .try_get::<Option<&str>, _>("duration_ns")?
+            .map(|value| {
+                value
+                    .parse()
+                    .map_err(|e| decode_error("duration_ns", value, e))
+            })
             .transpose()?;
         let ts_opened = row.try_get::<String, _>("ts_opened").map(UnixNanos::from)?;
         let ts_closed: Option<UnixNanos> = row

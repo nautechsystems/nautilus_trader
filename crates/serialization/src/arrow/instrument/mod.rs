@@ -752,32 +752,22 @@ mod tests {
     #[rstest]
     fn test_encode_decode_round_trip() {
         let instrument_id = InstrumentId::from("EUR/USD.SIM");
-        let currency_pair = CurrencyPair::new(
-            instrument_id,
-            Symbol::from("EUR/USD"),
-            Currency::from("EUR"),
-            Currency::from("USD"),
-            5,
-            0, // size_precision must match size_increment precision (0)
-            Price::new(0.00001, 5),
-            Quantity::new(1.0, 0), // precision 0
-            None,                  // multiplier
-            None,                  // lot_size
-            None,                  // max_quantity
-            None,                  // min_quantity
-            None,                  // max_notional
-            None,                  // min_notional
-            None,                  // max_price
-            None,                  // min_price
-            None,                  // margin_init
-            None,                  // margin_maint
-            None,                  // maker_fee
-            None,                  // taker_fee
-            Some(Ustr::from("FOREX_5DECIMAL")),
-            None, // info
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let currency_pair = CurrencyPair::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::from("EUR/USD"))
+            .base_currency(Currency::from("EUR"))
+            .quote_currency(Currency::from("USD"))
+            .price_precision(5)
+            // size_precision must match size_increment precision (0)
+            .size_precision(0)
+            .price_increment(Price::new(0.00001, 5))
+            // precision 0
+            .size_increment(Quantity::new(1.0, 0))
+            .tick_scheme(Ustr::from("FOREX_5DECIMAL"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
         let instrument = InstrumentAny::CurrencyPair(currency_pair);
 
         let metadata = instrument.metadata();
@@ -812,32 +802,20 @@ mod tests {
     #[rstest]
     fn test_decode_currency_pair_without_tick_scheme_column_defaults_none() {
         let instrument_id = InstrumentId::from("EUR/USD.SIM");
-        let currency_pair = CurrencyPair::new(
-            instrument_id,
-            Symbol::from("EUR/USD"),
-            Currency::from("EUR"),
-            Currency::from("USD"),
-            5,
-            0,
-            Price::new(0.00001, 5),
-            Quantity::new(1.0, 0),
-            None, // multiplier
-            None, // lot_size
-            None, // max_quantity
-            None, // min_quantity
-            None, // max_notional
-            None, // min_notional
-            None, // max_price
-            None, // min_price
-            None, // margin_init
-            None, // margin_maint
-            None, // maker_fee
-            None, // taker_fee
-            Some(Ustr::from("FOREX_5DECIMAL")),
-            None, // info
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let currency_pair = CurrencyPair::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::from("EUR/USD"))
+            .base_currency(Currency::from("EUR"))
+            .quote_currency(Currency::from("USD"))
+            .price_precision(5)
+            .size_precision(0)
+            .price_increment(Price::new(0.00001, 5))
+            .size_increment(Quantity::new(1.0, 0))
+            .tick_scheme(Ustr::from("FOREX_5DECIMAL"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
         let instrument = InstrumentAny::CurrencyPair(currency_pair);
 
         let metadata = instrument.metadata();
@@ -861,27 +839,16 @@ mod tests {
         use nautilus_model::instruments::{Instrument, equity::Equity};
 
         let instrument_id = InstrumentId::from("AAPL.NASDAQ");
-        let equity = Equity::new(
-            instrument_id,
-            Symbol::from("AAPL"),
-            None, // isin
-            Currency::from("USD"),
-            2,
-            Price::new(0.01, 2),
-            None, // lot_size
-            None, // max_quantity
-            None, // min_quantity
-            None, // max_price
-            None, // min_price
-            None, // margin_init
-            None, // margin_maint
-            None, // maker_fee
-            None, // taker_fee
-            None, // tick_scheme
-            None, // info
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let equity = Equity::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::from("AAPL"))
+            .currency(Currency::from("USD"))
+            .price_precision(2)
+            .price_increment(Price::new(0.01, 2))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
         let instrument = InstrumentAny::Equity(equity);
 
         let metadata = instrument.metadata();
@@ -916,27 +883,28 @@ mod tests {
         let mut info = Params::new();
         info.insert("sector".to_string(), serde_json::json!("technology"));
 
-        let equity = Equity::new(
-            InstrumentId::from("AAPL.NASDAQ"),
-            Symbol::from("AAPL"),
-            Some(Ustr::from("US0378331005")),
-            Currency::from("USD"),
-            2,
-            Price::from("0.01"),
-            Some(Quantity::from("100")),
-            Some(Quantity::from("10000")),
-            Some(Quantity::from("1")),
-            Some(Price::from("9999.99")),
-            Some(Price::from("0.01")),
-            Some(dec!(0.01)),
-            Some(dec!(0.02)),
-            Some(dec!(0.0002)),
-            Some(dec!(0.0004)),
-            Some(Ustr::from("TOPIX100")),
-            Some(info),
-            1.into(),
-            2.into(),
-        );
+        let equity = Equity::builder()
+            .instrument_id(InstrumentId::from("AAPL.NASDAQ"))
+            .raw_symbol(Symbol::from("AAPL"))
+            .isin(Ustr::from("US0378331005"))
+            .currency(Currency::from("USD"))
+            .price_precision(2)
+            .price_increment(Price::from("0.01"))
+            .lot_size(Quantity::from("100"))
+            .max_quantity(Quantity::from("10000"))
+            .min_quantity(Quantity::from("1"))
+            .max_price(Price::from("9999.99"))
+            .min_price(Price::from("0.01"))
+            .margin_init(dec!(0.01))
+            .margin_maint(dec!(0.02))
+            .maker_fee(dec!(0.0002))
+            .taker_fee(dec!(0.0004))
+            .tick_scheme(Ustr::from("TOPIX100"))
+            .info(info)
+            .ts_event(1.into())
+            .ts_init(2.into())
+            .build()
+            .unwrap();
         let instrument = InstrumentAny::Equity(equity.clone());
 
         let metadata = instrument.metadata();
@@ -962,32 +930,31 @@ mod tests {
 
     #[rstest]
     fn test_encode_decode_round_trip_futures_contract_all_fields() {
-        let contract = FuturesContract::new(
-            InstrumentId::from("ESZ4.XCME"),
-            Symbol::from("ESZ4"),
-            AssetClass::Index,
-            Some(Ustr::from("XCME")),
-            Ustr::from("ES"),
-            1.into(),
-            2.into(),
-            Currency::from("USD"),
-            2,
-            Price::from("0.01"),
-            Quantity::from("1"),
-            Quantity::from("1"),
-            Some(Quantity::from("10000")),
-            Some(Quantity::from("5")),
-            Some(Price::from("9999.99")),
-            Some(Price::from("0.01")),
-            Some(dec!(0.01)),
-            Some(dec!(0.02)),
-            Some(dec!(0.0002)),
-            Some(dec!(0.0004)),
-            None,
-            None,
-            1.into(),
-            2.into(),
-        );
+        let contract = FuturesContract::builder()
+            .instrument_id(InstrumentId::from("ESZ4.XCME"))
+            .raw_symbol(Symbol::from("ESZ4"))
+            .asset_class(AssetClass::Index)
+            .exchange(Ustr::from("XCME"))
+            .underlying(Ustr::from("ES"))
+            .activation_ns(1.into())
+            .expiration_ns(2.into())
+            .currency(Currency::from("USD"))
+            .price_precision(2)
+            .price_increment(Price::from("0.01"))
+            .multiplier(Quantity::from("1"))
+            .lot_size(Quantity::from("1"))
+            .max_quantity(Quantity::from("10000"))
+            .min_quantity(Quantity::from("5"))
+            .max_price(Price::from("9999.99"))
+            .min_price(Price::from("0.01"))
+            .margin_init(dec!(0.01))
+            .margin_maint(dec!(0.02))
+            .maker_fee(dec!(0.0002))
+            .taker_fee(dec!(0.0004))
+            .ts_event(1.into())
+            .ts_init(2.into())
+            .build()
+            .unwrap();
 
         let decoded = encode_decode_instrument(&InstrumentAny::FuturesContract(contract.clone()));
         let InstrumentAny::FuturesContract(decoded) = decoded else {
@@ -1002,34 +969,33 @@ mod tests {
 
     #[rstest]
     fn test_encode_decode_round_trip_option_contract_all_fields() {
-        let contract = OptionContract::new(
-            InstrumentId::from("AAPL_C100.OPRA"),
-            Symbol::from("AAPL_C100"),
-            AssetClass::Equity,
-            Some(Ustr::from("OPRA")),
-            Ustr::from("AAPL"),
-            OptionKind::Call,
-            Price::from("100.00"),
-            Currency::from("USD"),
-            1.into(),
-            2.into(),
-            2,
-            Price::from("0.01"),
-            Quantity::from("100"),
-            Quantity::from("1"),
-            Some(Quantity::from("10000")),
-            Some(Quantity::from("5")),
-            Some(Price::from("9999.99")),
-            Some(Price::from("0.01")),
-            Some(dec!(0.01)),
-            Some(dec!(0.02)),
-            Some(dec!(0.0002)),
-            Some(dec!(0.0004)),
-            None,
-            None,
-            1.into(),
-            2.into(),
-        );
+        let contract = OptionContract::builder()
+            .instrument_id(InstrumentId::from("AAPL_C100.OPRA"))
+            .raw_symbol(Symbol::from("AAPL_C100"))
+            .asset_class(AssetClass::Equity)
+            .exchange(Ustr::from("OPRA"))
+            .underlying(Ustr::from("AAPL"))
+            .option_kind(OptionKind::Call)
+            .strike_price(Price::from("100.00"))
+            .currency(Currency::from("USD"))
+            .activation_ns(1.into())
+            .expiration_ns(2.into())
+            .price_precision(2)
+            .price_increment(Price::from("0.01"))
+            .multiplier(Quantity::from("100"))
+            .lot_size(Quantity::from("1"))
+            .max_quantity(Quantity::from("10000"))
+            .min_quantity(Quantity::from("5"))
+            .max_price(Price::from("9999.99"))
+            .min_price(Price::from("0.01"))
+            .margin_init(dec!(0.01))
+            .margin_maint(dec!(0.02))
+            .maker_fee(dec!(0.0002))
+            .taker_fee(dec!(0.0004))
+            .ts_event(1.into())
+            .ts_init(2.into())
+            .build()
+            .unwrap();
 
         let decoded = encode_decode_instrument(&InstrumentAny::OptionContract(contract.clone()));
         let InstrumentAny::OptionContract(decoded) = decoded else {
@@ -1044,34 +1010,33 @@ mod tests {
 
     #[rstest]
     fn test_encode_decode_round_trip_binary_option_all_fields() {
-        let option = BinaryOption::new(
-            InstrumentId::from("ELECTION.POLYMARKET"),
-            Symbol::from("ELECTION"),
-            AssetClass::Alternative,
-            Currency::from("USDC"),
-            1.into(),
-            2.into(),
-            2,
-            0,
-            Price::from("0.01"),
-            Quantity::from("1"),
-            Some(Ustr::from("YES")),
-            Some(Ustr::from("Election outcome")),
-            Some(Quantity::from("10000")),
-            Some(Quantity::from("5")),
-            Some(Money::from("50000 USDC")),
-            Some(Money::from("5 USDC")),
-            Some(Price::from("0.99")),
-            Some(Price::from("0.01")),
-            Some(dec!(0.01)),
-            Some(dec!(0.02)),
-            Some(dec!(0.0002)),
-            Some(dec!(0.0004)),
-            None,
-            None,
-            1.into(),
-            2.into(),
-        );
+        let option = BinaryOption::builder()
+            .instrument_id(InstrumentId::from("ELECTION.POLYMARKET"))
+            .raw_symbol(Symbol::from("ELECTION"))
+            .asset_class(AssetClass::Alternative)
+            .currency(Currency::from("USDC"))
+            .activation_ns(1.into())
+            .expiration_ns(2.into())
+            .price_precision(2)
+            .size_precision(0)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("1"))
+            .outcome(Ustr::from("YES"))
+            .description(Ustr::from("Election outcome"))
+            .max_quantity(Quantity::from("10000"))
+            .min_quantity(Quantity::from("5"))
+            .max_notional(Money::from("50000 USDC"))
+            .min_notional(Money::from("5 USDC"))
+            .max_price(Price::from("0.99"))
+            .min_price(Price::from("0.01"))
+            .margin_init(dec!(0.01))
+            .margin_maint(dec!(0.02))
+            .maker_fee(dec!(0.0002))
+            .taker_fee(dec!(0.0004))
+            .ts_event(1.into())
+            .ts_init(2.into())
+            .build()
+            .unwrap();
 
         let decoded = encode_decode_instrument(&InstrumentAny::BinaryOption(option.clone()));
         let InstrumentAny::BinaryOption(decoded) = decoded else {

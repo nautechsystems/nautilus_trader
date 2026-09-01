@@ -95,7 +95,7 @@ use ustr::Ustr;
 
 use crate::strategy::{
     BatchModifyOrder, ImportableStrategyConfig, Strategy, StrategyConfig, StrategyCore,
-    StrategyNative,
+    StrategyNative, route_time_event,
 };
 
 #[pyo3::pymethods]
@@ -1102,7 +1102,7 @@ impl DataActor for PyStrategyInner {
     }
 
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
-        Strategy::on_time_event(self, event)?;
+        route_time_event(self, event);
         self.dispatch_on_time_event(event)
             .map_err(|e| anyhow::anyhow!("Python on_time_event failed: {e}"))
     }
@@ -1488,9 +1488,7 @@ impl PyStrategy {
         let actor_id = inner.core.actor.actor_id.inner();
         let callback = TimeEventCallback::from(move |event: TimeEvent| {
             if let Some(mut strategy) = try_get_actor_unchecked::<PyStrategyInner>(&actor_id) {
-                if let Err(e) = DataActor::on_time_event(&mut *strategy, &event) {
-                    log::error!("Python time event handler failed for strategy {actor_id}: {e}");
-                }
+                strategy.handle_time_event(&event);
             } else {
                 log::error!("Strategy {actor_id} not found for time event handling");
             }
@@ -2026,12 +2024,13 @@ impl PyStrategy {
     }
 
     #[pyo3(name = "cancel_all_orders")]
-    #[pyo3(signature = (instrument_id, order_side=None, client_id=None, params=None))]
+    #[pyo3(signature = (instrument_id, order_side=None, client_id=None, strategy_only=true, params=None))]
     fn py_cancel_all_orders(
         &mut self,
         instrument_id: InstrumentId,
         order_side: Option<OrderSide>,
         client_id: Option<ClientId>,
+        strategy_only: bool,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
@@ -2045,6 +2044,7 @@ impl PyStrategy {
             instrument_id,
             order_side,
             client_id,
+            strategy_only,
             params_map,
         )
         .map_err(to_pyruntime_err)
@@ -3537,10 +3537,11 @@ mod tests {
 
     use indexmap::IndexMap;
     use nautilus_common::{
-        actor::{DataActor, registry::actor_exists},
+        actor::{DataActor, DataActorNative, registry::actor_exists},
         cache::Cache,
         clock::{Clock, TestClock},
         component::{Component, get_component},
+        enums::ComponentState,
         live::runner::replace_system_command_sender,
         messages::{
             SystemCommand,
@@ -4209,6 +4210,98 @@ class IndicatorEventStrategy:
     }
 
     #[rstest::rstest]
+    fn test_registered_python_strategy_routes_time_events_by_state() {
+        pyo3::Python::initialize();
+
+        Python::attach(|py| {
+            let (py_strategy, rust_strategy) = create_registered_tracking_strategy_with_config(
+                py,
+                Some(StrategyConfig {
+                    strategy_id: Some(StrategyId::from("StoppedTimer-001")),
+                    manage_gtd_expiry: true,
+                    ..Default::default()
+                }),
+            );
+            rust_strategy.register_in_global_registries().unwrap();
+            Component::start(rust_strategy.inner_mut()).unwrap();
+
+            let running_client_order_id = ClientOrderId::from("O-RUNNING-001");
+            let running_timer_name = format!("GTD-EXPIRY:{running_client_order_id}");
+            let clock = DataActorNative::clock_rc(rust_strategy.inner());
+            clock
+                .borrow_mut()
+                .set_time_alert_ns(&running_timer_name, UnixNanos::from(1), None, None)
+                .unwrap();
+            rust_strategy
+                .inner_mut()
+                .core
+                .gtd_timers
+                .insert(running_client_order_id, Ustr::from(&running_timer_name));
+            let running_dispatched = dispatch_time_events(&clock, UnixNanos::from(1));
+
+            assert_eq!(running_dispatched, 1);
+            assert!(
+                !rust_strategy
+                    .inner_mut()
+                    .has_gtd_expiry_timer(&running_client_order_id)
+            );
+            assert_eq!(
+                python_method_call_count(&py_strategy, py, "on_time_event"),
+                1
+            );
+
+            let client_order_id = ClientOrderId::from("O-STOPPED-001");
+            let timer_name = format!("GTD-EXPIRY:{client_order_id}");
+            clock
+                .borrow_mut()
+                .set_time_alert_ns(&timer_name, UnixNanos::from(2), None, None)
+                .unwrap();
+            rust_strategy
+                .inner_mut()
+                .core
+                .gtd_timers
+                .insert(client_order_id, Ustr::from(&timer_name));
+            Component::stop(rust_strategy.inner_mut()).unwrap();
+
+            let stopped_dispatched = dispatch_time_events(&clock, UnixNanos::from(2));
+
+            assert_eq!(stopped_dispatched, 1);
+            assert_eq!(
+                Component::state(rust_strategy.inner()),
+                ComponentState::Stopped
+            );
+            assert!(
+                rust_strategy
+                    .inner_mut()
+                    .has_gtd_expiry_timer(&client_order_id)
+            );
+            assert_eq!(
+                python_method_call_count(&py_strategy, py, "on_time_event"),
+                1
+            );
+        });
+    }
+
+    fn dispatch_time_events(clock: &Rc<RefCell<dyn Clock>>, to_time_ns: UnixNanos) -> usize {
+        let handlers = {
+            let mut clock_ref = clock.borrow_mut();
+            let test_clock = clock_ref
+                .as_any_mut()
+                .downcast_mut::<TestClock>()
+                .expect("strategy clock must be TestClock");
+            let events = test_clock.advance_time(to_time_ns, true);
+            test_clock.match_handlers(events)
+        };
+        let dispatched = handlers.len();
+
+        for handler in handlers {
+            handler.run();
+        }
+
+        dispatched
+    }
+
+    #[rstest::rstest]
     fn test_register_in_global_registries_rejects_missing_python_wrapper() {
         pyo3::Python::initialize();
 
@@ -4738,27 +4831,29 @@ class IndicatorEventStrategy:
             let comp2 = InstrumentId::from_str("ETH-USD.VENUE").unwrap();
             let symbol = Symbol::from("SYN");
             let original_formula = format!("({comp1} + {comp2}) / 2.0");
-            let synthetic = SyntheticInstrument::new(
-                symbol,
-                2,
-                vec![comp1, comp2],
-                &original_formula,
-                UnixNanos::default(),
-                UnixNanos::default(),
-            );
+            let synthetic = SyntheticInstrument::builder()
+                .symbol(symbol)
+                .price_precision(2)
+                .components(vec![comp1, comp2])
+                .formula(&original_formula)
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap();
             let synthetic_id = synthetic.id;
 
             rust_strategy.py_add_synthetic(synthetic).unwrap();
 
             let updated_formula = format!("{comp1} + {comp2}");
-            let updated = SyntheticInstrument::new(
-                symbol,
-                2,
-                vec![comp1, comp2],
-                &updated_formula,
-                UnixNanos::default(),
-                UnixNanos::default(),
-            );
+            let updated = SyntheticInstrument::builder()
+                .symbol(symbol)
+                .price_precision(2)
+                .components(vec![comp1, comp2])
+                .formula(&updated_formula)
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap();
             rust_strategy.py_update_synthetic(updated).unwrap();
 
             let cache = DataActor::cache(rust_strategy.inner());

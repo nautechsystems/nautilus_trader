@@ -90,34 +90,21 @@ fn quote_tick(instrument_id: InstrumentId, bid: &str, ask: &str) -> QuoteTick {
 /// The configured hedge instrument, sized in whole contracts (`size_precision` 0), so a
 /// fractional delta cannot be expressed as a quantity.
 fn hedge_swap_integer_sized() -> CryptoPerpetual {
-    CryptoPerpetual::new(
-        InstrumentId::from("BTC-USD-SWAP.OKX"),
-        Symbol::from("BTC-USD-SWAP"),
-        Currency::BTC(),
-        Currency::USD(),
-        Currency::USD(),
-        false,
-        1,
-        0,
-        Price::from("0.1"),
-        Quantity::from(1),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        0.into(),
-        0.into(),
-    )
+    CryptoPerpetual::builder()
+        .instrument_id(InstrumentId::from("BTC-USD-SWAP.OKX"))
+        .raw_symbol(Symbol::from("BTC-USD-SWAP"))
+        .base_currency(Currency::BTC())
+        .quote_currency(Currency::USD())
+        .settlement_currency(Currency::USD())
+        .is_inverse(false)
+        .price_precision(1)
+        .size_precision(0)
+        .price_increment(Price::from("0.1"))
+        .size_increment(Quantity::from(1))
+        .ts_event(0.into())
+        .ts_init(0.into())
+        .build()
+        .unwrap()
 }
 
 fn register_strategy(strategy: &mut DeltaNeutralVol) {

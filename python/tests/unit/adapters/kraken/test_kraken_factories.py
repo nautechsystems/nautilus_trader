@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test kraken factories behavior.
+"""
 
 import pytest
 from unit.adapters.example_modules import capture_data_tester_main
@@ -20,7 +23,7 @@ from unit.adapters.example_modules import load_example_module
 
 from nautilus_trader.adapters.kraken import KrakenDataClientConfig
 from nautilus_trader.adapters.kraken import KrakenDataClientFactory
-from nautilus_trader.adapters.kraken import KrakenExecClientConfig
+from nautilus_trader.adapters.kraken import KrakenExecutionClientConfig
 from nautilus_trader.adapters.kraken import KrakenExecutionClientFactory
 from nautilus_trader.adapters.kraken import KrakenProductType
 from nautilus_trader.common import Environment
@@ -38,11 +41,17 @@ kraken_exec_tester = load_example_module("kraken", "exec_tester")
 
 
 def test_kraken_factories_expose_python_names() -> None:
+    """
+    Test kraken factories expose python names.
+    """
     assert KrakenDataClientFactory().name() == KRAKEN
     assert KrakenExecutionClientFactory().name() == KRAKEN
 
 
 def test_live_node_builder_accepts_kraken_data_factory() -> None:
+    """
+    Test live node builder accepts kraken data factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
 
     node = (
@@ -60,6 +69,9 @@ def test_live_node_builder_accepts_kraken_data_factory() -> None:
 
 
 def test_live_node_builder_accepts_kraken_exec_factory() -> None:
+    """
+    Test live node builder accepts kraken exec factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
     account_id = AccountId.from_str("KRAKEN-001")
 
@@ -74,11 +86,10 @@ def test_live_node_builder_accepts_kraken_exec_factory() -> None:
         .add_exec_client(
             None,
             KrakenExecutionClientFactory(),
-            KrakenExecClientConfig(
-                trader_id,
-                account_id,
-                SMOKE_API_KEY,
-                SMOKE_API_SECRET,
+            KrakenExecutionClientConfig(
+                account_id=account_id,
+                api_key=SMOKE_API_KEY,
+                api_secret=SMOKE_API_SECRET,
                 product_type=KrakenProductType.FUTURES,
             ),
         )
@@ -90,6 +101,9 @@ def test_live_node_builder_accepts_kraken_exec_factory() -> None:
 
 
 def test_kraken_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test kraken data tester runs.
+    """
     captured = capture_data_tester_main(monkeypatch, kraken_data_tester)
     kwargs = captured["data_tester_kwargs"]
 
@@ -99,6 +113,11 @@ def test_kraken_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_kraken_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test kraken exec tester runs live orders.
+    """
+    monkeypatch.setenv("KRAKEN_API_KEY", SMOKE_API_KEY)
+    monkeypatch.setenv("KRAKEN_API_SECRET", SMOKE_API_SECRET)
     captured = capture_exec_tester_main(monkeypatch, kraken_exec_tester)
     kwargs = captured["exec_tester_kwargs"]
 
@@ -107,3 +126,14 @@ def test_kraken_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatch) ->
     assert kwargs["enable_limit_buys"] is True
     assert kwargs["enable_limit_sells"] is True
     assert captured["run_called"] is True
+
+
+def test_kraken_exec_tester_requires_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test kraken exec tester requires credentials.
+    """
+    monkeypatch.delenv("KRAKEN_API_KEY", raising=False)
+    monkeypatch.delenv("KRAKEN_API_SECRET", raising=False)
+
+    with pytest.raises(SystemExit, match="KRAKEN_API_KEY and KRAKEN_API_SECRET must be set"):
+        kraken_exec_tester.main()

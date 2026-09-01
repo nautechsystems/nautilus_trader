@@ -56,6 +56,27 @@ documentation feel natural to end-users.
 
 3. **Error messages and logs**: Use full words for clarity (e.g., "price precision" not "price prec"). The user should never see abbreviated terminology.
 
+4. **Execution terminology**: Use `Execution` in public, project-owned PascalCase type names, such
+   as `BinanceExecutionClientConfig`. Internal implementation types may retain established `Exec`
+   names. Also reserve `Exec` for the `ExecAlgorithmId` and `ExecTester` families, established
+   `exec_*` names, and venue or protocol terms such as `BitmexExecType`. Name protocol-specific
+   wire models after the venue concept, such as `HyperliquidExchangeAction`. Preserve shipped names
+   on legacy v1 compatibility surfaces, in historical release entries, and on the source side of
+   migration tables.
+
+5. **Runtime qualifiers**: Use `Live` when a type selects or configures real-time runtime semantics,
+   such as `LiveNode` versus `BacktestNode`, `LiveClock` versus `TestClock`, and the
+   `LiveDataEngineConfig`, `LiveRiskEngineConfig`, and `LiveExecutionEngineConfig` family versus
+   reusable core engine configs. Omit `Live` from the ordinary adapter client family because a
+   connected client is the default. Qualify alternate implementations by their behavior, such as
+   `SandboxExecutionClient` or `DatabentoHistoricalClient`. An explicit live/historical protocol
+   pair may retain `Live` to distinguish the two implementations.
+
+6. **Adapter factory configs**: Name the data and execution inputs `<Venue>DataClientConfig` and
+   `<Venue>ExecutionClientConfig`. Factories consume these client configs directly rather than a
+   separate factory config wrapper. `LiveNodeConfig` owns `trader_id`; venue-specific `account_id`
+   values belong on execution client configs.
+
 #### Data loading APIs
 
 Use free functions for stateless data ingestion. Use a class only when instances retain reusable
@@ -127,12 +148,12 @@ explaining the change.
   `Add`, `Fix`, `Improve`, `Refine`, `Update`, `Remove`, `Refactor`, and `Standardize` cover most of the history.
 - Name the affected surface (crate, adapter, subsystem, or type) so the log stays scannable.
 - Keep the subject at 10 characters or more so it can name the affected surface clearly.
-- Aim for 60 characters or fewer for clear GitHub rendering and concise text. The commit‑message
+- Aim for 60 characters or fewer for clear GitHub rendering and concise text. The commit-message
   hook warns without failing when the subject exceeds this target. The project plans to enforce
   this limit in the future.
 - Do not end the subject with a period.
 - Do not put an issue or pull request number in the subject. GitHub appends the pull request number
-  on squash merge, and any other reference belongs in the body. The commit‑message hook rejects a
+  on squash merge, and any other reference belongs in the body. The commit-message hook rejects a
   subject containing `#<number>` in any position.
 
 ```text
@@ -180,5 +201,5 @@ restate the diff.
   do not reference a pull request or issue anywhere else in the subject either. The subject has no
   room for detail the body carries better, and a hand-written number duplicates or contradicts the
   appended one.
-- Aim to keep the pull request title short enough for the appended suffix to leave the squash‑merged
+- Aim to keep the pull request title short enough for the appended suffix to leave the squash-merged
   subject at 60 characters or fewer.

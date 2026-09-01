@@ -151,7 +151,7 @@ impl Display for FuzzyCandle {
         write!(
             f,
             "{}({},{},{},{})",
-            self.direction, self.size, self.body_size, self.lower_wick_size, self.upper_wick_size
+            self.direction, self.size, self.body_size, self.upper_wick_size, self.lower_wick_size
         )
     }
 }
@@ -518,6 +518,22 @@ mod tests {
         stubs::{fuzzy_candlesticks_1, fuzzy_candlesticks_3, fuzzy_candlesticks_10},
         volatility::fuzzy::FuzzyCandlesticks,
     };
+
+    #[rstest]
+    fn test_fuzzy_candle_display_orders_wicks_upper_then_lower() {
+        // Regression: `Display` emitted the wick sizes in the opposite order to the
+        // struct definition, the constructor and `__repr__`, so an upper-heavy candle
+        // rendered as a lower-heavy one.
+        let candle = FuzzyCandle::new(
+            CandleDirection::Bull,
+            CandleSize::Medium,
+            CandleBodySize::Small,
+            CandleWickSize::Large,
+            CandleWickSize::None,
+        );
+
+        assert_eq!(format!("{candle}"), "BULL(MEDIUM,SMALL,LARGE,NONE)");
+    }
 
     #[rstest]
     fn test_psl_initialized(fuzzy_candlesticks_10: FuzzyCandlesticks) {

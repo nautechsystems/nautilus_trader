@@ -1329,27 +1329,16 @@ fn publish_typed<T: 'static>(
 
 /// Sends a message to an endpoint handler using runtime type dispatch (Any).
 pub fn send_any(endpoint: MStr<Endpoint>, message: &dyn Any) {
-    dispatch_tap_send(endpoint, message);
-
-    let handler = {
-        let bus = get_message_bus();
-        let mut bus = bus.borrow_mut();
-        let handler = bus.get_endpoint(endpoint).cloned();
-        if handler.is_some() {
-            bus.increment_sent_count();
-        }
-        handler
-    };
-
-    if let Some(handler) = handler {
-        handler.0.handle(message);
-    } else {
-        log::error!("send_any: no registered endpoint '{endpoint}'");
-    }
+    send_any_inner(endpoint, message, "send_any");
 }
 
 /// Sends a message to an endpoint, converting to Any (convenience wrapper).
 pub fn send_any_value<T: 'static>(endpoint: MStr<Endpoint>, message: &T) {
+    send_any_inner(endpoint, message, "send_any_value");
+}
+
+#[inline]
+fn send_any_inner(endpoint: MStr<Endpoint>, message: &dyn Any, fn_name: &str) {
     dispatch_tap_send(endpoint, message);
 
     let handler = {
@@ -1365,7 +1354,7 @@ pub fn send_any_value<T: 'static>(endpoint: MStr<Endpoint>, message: &T) {
     if let Some(handler) = handler {
         handler.0.handle(message);
     } else {
-        log::error!("send_any_value: no registered endpoint '{endpoint}'");
+        log::error!("{fn_name}: no registered endpoint '{endpoint}'");
     }
 }
 
@@ -3140,10 +3129,7 @@ mod tests {
 
     #[rstest]
     fn test_send_trading_command_allows_reentrant_topic_access() {
-        use nautilus_model::{
-            enums::OrderSide,
-            identifiers::{StrategyId, TraderId},
-        };
+        use nautilus_model::identifiers::{StrategyId, TraderId};
 
         use crate::{
             messages::execution::{TradingCommand, cancel::CancelAllOrders},
@@ -3168,7 +3154,7 @@ mod tests {
             None,
             StrategyId::new("S-001"),
             InstrumentId::from("TEST.VENUE"),
-            OrderSide::NoOrderSide,
+            None,
             UUID4::new(),
             0.into(),
             None,
@@ -3642,7 +3628,7 @@ mod tests {
                 None,
                 StrategyId::new("S-001"),
                 InstrumentId::from("TEST.VENUE"),
-                OrderSide::Buy,
+                Some(OrderSide::Buy),
                 UUID4::new(),
                 0.into(),
                 None,
@@ -3742,7 +3728,7 @@ mod tests {
             None,
             StrategyId::new("S-001"),
             InstrumentId::from("TEST.VENUE"),
-            OrderSide::Buy,
+            Some(OrderSide::Buy),
             UUID4::new(),
             0.into(),
             None,
@@ -3792,7 +3778,7 @@ mod tests {
                 None,
                 StrategyId::new("S-001"),
                 InstrumentId::from("TEST.VENUE"),
-                OrderSide::Buy,
+                Some(OrderSide::Buy),
                 UUID4::new(),
                 0.into(),
                 None,
@@ -3966,6 +3952,43 @@ mod tests {
     }
 
     #[rstest]
+    fn send_any_variants_update_tap_and_count_before_handler() {
+        let msgbus = Rc::new(RefCell::new(MessageBus::default()));
+        set_message_bus(msgbus.clone());
+        clear_bus_tap();
+
+        let endpoint: MStr<Endpoint> = "endpoint.send.any.order.test".into();
+        let tap = Rc::new(RecordingTap::default());
+        set_bus_tap(tap.clone());
+
+        let observations = Rc::new(RefCell::new(Vec::new()));
+        let observations_clone = observations.clone();
+        let handler = ShareableMessageHandler::from_any(move |message| {
+            let value = *message.downcast_ref::<u32>().unwrap();
+            observations_clone.borrow_mut().push((
+                value,
+                tap.send_endpoints(),
+                get_message_bus().borrow().sent_count(),
+            ));
+        });
+        register_any(endpoint, handler);
+
+        send_any(endpoint, &11_u32);
+        send_any_value(endpoint, &22_u32);
+
+        clear_bus_tap();
+
+        assert_eq!(
+            *observations.borrow(),
+            vec![
+                (11, vec![endpoint.to_string()], 1),
+                (22, vec![endpoint.to_string(), endpoint.to_string()], 2),
+            ]
+        );
+        assert_eq!(msgbus.borrow().sent_count(), 2);
+    }
+
+    #[rstest]
     fn set_bus_tap_then_send_endpoint_owned_invokes_tap() {
         // send_trading_command (and the other owned send helpers) reach the tap
         // through send_endpoint_owned_counted. Without this site instrumented, real
@@ -3979,7 +4002,7 @@ mod tests {
             Some(ClientId::from("BINANCE")),
             StrategyId::from("S-001"),
             InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-            OrderSide::Buy,
+            Some(OrderSide::Buy),
             UUID4::new(),
             nautilus_core::UnixNanos::from(1),
             None,

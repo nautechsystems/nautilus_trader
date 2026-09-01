@@ -201,7 +201,7 @@ mod tests {
 
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
-        enums::{OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce},
+        enums::{OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
         identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, VenueOrderId},
         reports::{OrderStatusReport, PositionStatusReport},
         types::{Price, Quantity},
@@ -218,7 +218,7 @@ mod tests {
             InstrumentId::from("AUDUSD.SIM"),
             Some(ClientOrderId::from("O-19700101-000000-001-001-1")),
             VenueOrderId::from("1"),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
@@ -252,7 +252,7 @@ mod tests {
         let report = PositionStatusReport {
             account_id: AccountId::from("SIM-001"),
             instrument_id: InstrumentId::from("AUDUSD.SIM"),
-            position_side: PositionSideSpecified::Long,
+            position_side: PositionSide::Long,
             quantity: Quantity::from("100.25"),
             signed_decimal_qty: Decimal::from_str("100.250000000123456789").unwrap(),
             report_id: UUID4::default(),

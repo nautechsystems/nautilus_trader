@@ -67,6 +67,7 @@ where
 /// # Errors
 ///
 /// Returns `PyErr` if value extraction fails (but not if the key is missing or value is None).
+#[inline]
 pub fn get_optional<T>(dict: &Bound<'_, PyDict>, key: &str) -> PyResult<Option<T>>
 where
     T: for<'a, 'py> FromPyObject<'a, 'py>,
@@ -119,19 +120,10 @@ pub fn get_optional_parsed<T, F>(
 where
     F: FnOnce(String) -> Result<T, String>,
 {
-    match dict.get_item(key)? {
-        Some(value) => {
-            if value.is_none() {
-                Ok(None)
-            } else {
-                let value_str: String = value.extract()?;
-                parser(value_str)
-                    .map(Some)
-                    .map_err(|e| to_pyvalue_err(format!("Failed to parse '{key}': {e}")))
-            }
-        }
-        None => Ok(None),
-    }
+    get_optional::<String>(dict, key)?
+        .map(parser)
+        .transpose()
+        .map_err(|e| to_pyvalue_err(format!("Failed to parse '{key}': {e}")))
 }
 
 /// Helper function to get a required `PyList` from a Python dictionary.
@@ -151,4 +143,77 @@ pub fn get_required_list<'py>(
         .ok_or_else(|| to_pykey_err(format!("Missing required key: {key}")))?
         .cast_into()
         .map_err(Into::into)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Once;
+
+    use pyo3::exceptions::{PyKeyError, PyValueError};
+    use rstest::rstest;
+
+    use super::*;
+
+    fn ensure_python_initialized() {
+        static INIT: Once = Once::new();
+        INIT.call_once(Python::initialize);
+    }
+
+    #[rstest]
+    fn test_get_required_string() {
+        ensure_python_initialized();
+
+        Python::attach(|py| {
+            let dict = PyDict::new(py);
+            dict.set_item("name", "nautilus").unwrap();
+
+            let value = get_required_string(&dict, "name").unwrap();
+            let error = get_required_string(&dict, "missing").unwrap_err();
+
+            assert_eq!(value, "nautilus");
+            assert!(error.is_instance_of::<PyKeyError>(py));
+            assert_eq!(
+                error.value(py).to_string(),
+                "'Missing required key: missing'"
+            );
+        });
+    }
+
+    #[rstest]
+    fn test_get_optional_parsed() {
+        ensure_python_initialized();
+
+        Python::attach(|py| {
+            let dict = PyDict::new(py);
+            dict.set_item("value", "42").unwrap();
+            let parsed = get_optional_parsed(&dict, "value", |value| {
+                value.parse::<u64>().map_err(|e| e.to_string())
+            })
+            .unwrap();
+            let missing = get_optional_parsed(&dict, "missing", |value| {
+                value.parse::<u64>().map_err(|e| e.to_string())
+            })
+            .unwrap();
+
+            dict.set_item("value", py.None()).unwrap();
+            let none = get_optional_parsed(&dict, "value", |value| {
+                value.parse::<u64>().map_err(|e| e.to_string())
+            })
+            .unwrap();
+
+            dict.set_item("value", "invalid").unwrap();
+            let error =
+                get_optional_parsed::<u64, _>(&dict, "value", |_| Err("not a number".to_string()))
+                    .unwrap_err();
+
+            assert_eq!(parsed, Some(42));
+            assert_eq!(missing, None);
+            assert_eq!(none, None);
+            assert!(error.is_instance_of::<PyValueError>(py));
+            assert_eq!(
+                error.value(py).to_string(),
+                "Failed to parse 'value': not a number"
+            );
+        });
+    }
 }

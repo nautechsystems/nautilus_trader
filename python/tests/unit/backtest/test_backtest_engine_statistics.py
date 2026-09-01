@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test backtest engine statistics behavior.
+"""
 
 import math
 
@@ -63,7 +66,10 @@ def _engine_with_account() -> BacktestEngine:
     return engine
 
 
-def test_engine_exposes_portfolio_statistics():
+def test_engine_exposes_portfolio_statistics() -> None:
+    """
+    Test engine exposes portfolio statistics.
+    """
     engine = _engine_with_account()
     engine.run()
     stats = engine.portfolio.statistics()
@@ -73,7 +79,10 @@ def test_engine_exposes_portfolio_statistics():
     engine.dispose()
 
 
-def test_engine_portfolio_statistics_equals_result():
+def test_engine_portfolio_statistics_equals_result() -> None:
+    """
+    Test engine portfolio statistics equals result.
+    """
     engine = _engine_with_account()
     engine.run()
     stats = engine.portfolio.statistics()

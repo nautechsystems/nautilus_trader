@@ -379,15 +379,6 @@ fn parse_order_type(order_type: Option<KrakenOrderType>) -> OrderType {
     }
 }
 
-/// Parses Kraken order side to Nautilus order side.
-fn parse_order_side(side: Option<KrakenOrderSide>) -> OrderSide {
-    match side {
-        Some(KrakenOrderSide::Buy) => OrderSide::Buy,
-        Some(KrakenOrderSide::Sell) => OrderSide::Sell,
-        None => OrderSide::Buy,
-    }
-}
-
 /// Parses Kraken time-in-force to Nautilus time-in-force.
 fn parse_time_in_force(
     time_in_force: Option<KrakenTimeInForce>,
@@ -425,7 +416,7 @@ pub fn parse_ws_order_status_report(
 ) -> anyhow::Result<OrderStatusReport> {
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(&exec.order_id);
-    let order_side = parse_order_side(exec.side);
+    let order_side = exec.side.map(Into::into);
     let order_type = parse_order_type(exec.order_type);
     let time_in_force = parse_time_in_force(exec.time_in_force, exec.post_only);
     let order_status = parse_order_status(exec.exec_type, exec.order_status);
@@ -563,7 +554,10 @@ pub fn parse_ws_fill_report(
     let trade_id =
         TradeId::new_checked(exec_id).context("Invalid exec_id in Kraken trade execution")?;
 
-    let order_side = parse_order_side(exec.side);
+    let order_side = exec
+        .side
+        .map(Into::into)
+        .context("Missing side for trade execution")?;
 
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
@@ -680,32 +674,21 @@ mod tests {
         use nautilus_model::instruments::currency_pair::CurrencyPair;
 
         let instrument_id = InstrumentId::new(Symbol::new("BTC/USD"), *KRAKEN_VENUE);
-        InstrumentAny::CurrencyPair(CurrencyPair::new(
-            instrument_id,
-            Symbol::new("XBTUSDT"),
-            Currency::BTC(),
-            Currency::USDT(),
-            1, // price_precision
-            8, // size_precision
-            Price::from("0.1"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None, // info
-            TS,
-            TS,
-        ))
+        InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new("XBTUSDT"))
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USDT())
+                .price_precision(1)
+                .size_precision(8)
+                .price_increment(Price::from("0.1"))
+                .size_increment(Quantity::from("0.00000001"))
+                .ts_event(TS)
+                .ts_init(TS)
+                .build()
+                .unwrap(),
+        )
     }
 
     #[rstest]
@@ -765,11 +748,11 @@ mod tests {
 
         let bid_count = deltas
             .iter()
-            .filter(|d| d.order.side == OrderSide::Buy)
+            .filter(|d| d.order.side == OrderSide::Buy.into())
             .count();
         let ask_count = deltas
             .iter()
-            .filter(|d| d.order.side == OrderSide::Sell)
+            .filter(|d| d.order.side == OrderSide::Sell.into())
             .count();
 
         assert!(bid_count > 0);
@@ -813,7 +796,7 @@ mod tests {
         let first_delta = &deltas[0];
         assert_eq!(first_delta.instrument_id, instrument.id());
         assert_eq!(first_delta.action, BookAction::Update);
-        assert_eq!(first_delta.order.side, OrderSide::Buy);
+        assert_eq!(first_delta.order.side, OrderSide::Buy.into());
         assert_eq!(first_delta.order.price, Price::from("105944.20"));
         assert!(RecordFlag::F_MBP.matches(first_delta.flags));
         assert!(RecordFlag::F_LAST.matches(first_delta.flags));
@@ -852,7 +835,7 @@ mod tests {
         let add = &deltas[1];
         assert_eq!(add.action, BookAction::Add);
         assert_eq!(add.sequence, 8);
-        assert_eq!(add.order.side, OrderSide::Sell);
+        assert_eq!(add.order.side, OrderSide::Sell.into());
         assert_eq!(add.order.price, Price::from("101.0"));
         assert!(RecordFlag::F_MBP.matches(add.flags));
         assert!(RecordFlag::F_SNAPSHOT.matches(add.flags));
@@ -879,7 +862,7 @@ mod tests {
         let delete = &deltas[0];
         assert_eq!(delete.action, BookAction::Delete);
         assert_eq!(delete.sequence, 11);
-        assert_eq!(delete.order.side, OrderSide::Buy);
+        assert_eq!(delete.order.side, OrderSide::Buy.into());
         assert_eq!(delete.order.price, Price::from("100.0"));
         assert_eq!(delete.order.size.raw, 0);
         assert!(RecordFlag::F_MBP.matches(delete.flags));
@@ -889,12 +872,62 @@ mod tests {
 
     #[rstest]
     fn test_parse_ws_order_status_report_preserves_decimal_avg_px() {
-        let execution = KrakenWsExecutionData {
+        let execution = ws_execution_data(Some(KrakenOrderSide::Buy));
+
+        let report = parse_ws_order_status_report(
+            &execution,
+            &create_mock_instrument(),
+            AccountId::from("KRAKEN-001"),
+            None,
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.avg_px, Some(dec!(0.1234567890123456789012345678)));
+    }
+
+    #[rstest]
+    fn test_parse_ws_order_status_report_preserves_missing_side() {
+        let execution = ws_execution_data(None);
+
+        let report = parse_ws_order_status_report(
+            &execution,
+            &create_mock_instrument(),
+            AccountId::from("KRAKEN-001"),
+            None,
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.order_side, None);
+    }
+
+    #[rstest]
+    fn test_parse_ws_fill_report_rejects_missing_side() {
+        let mut execution = ws_execution_data(None);
+        execution.exec_type = KrakenExecType::Trade;
+        execution.exec_id = Some("TRADE-1".to_string());
+        execution.last_qty = Some(dec!(1));
+        execution.last_price = Some(dec!(100));
+
+        let error = parse_ws_fill_report(
+            &execution,
+            &create_mock_instrument(),
+            AccountId::from("KRAKEN-001"),
+            TS,
+        )
+        .expect_err("a trade execution without a side must be rejected");
+
+        assert_eq!(error.to_string(), "Missing side for trade execution");
+    }
+
+    fn ws_execution_data(side: Option<KrakenOrderSide>) -> KrakenWsExecutionData {
+        KrakenWsExecutionData {
             exec_type: KrakenExecType::Status,
             order_id: "ORDER-1".to_string(),
             cl_ord_id: Some("CLIENT-1".to_string()),
             symbol: Some("BTC/USD".to_string()),
-            side: Some(KrakenOrderSide::Buy),
+            side,
             order_type: Some(KrakenOrderType::Limit),
             order_qty: Some(dec!(3)),
             limit_price: None,
@@ -914,18 +947,7 @@ mod tests {
             fees: None,
             fee_usd_equiv: None,
             reason: None,
-        };
-
-        let report = parse_ws_order_status_report(
-            &execution,
-            &create_mock_instrument(),
-            AccountId::from("KRAKEN-001"),
-            None,
-            TS,
-        )
-        .unwrap();
-
-        assert_eq!(report.avg_px, Some(dec!(0.1234567890123456789012345678)));
+        }
     }
 
     #[rstest]

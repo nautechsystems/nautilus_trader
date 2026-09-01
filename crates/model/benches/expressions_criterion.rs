@@ -23,7 +23,15 @@ use nautilus_model::{
 
 fn make_synth(components: &[&str], formula: &str) -> SyntheticInstrument {
     let ids: Vec<InstrumentId> = components.iter().map(|s| InstrumentId::from(*s)).collect();
-    SyntheticInstrument::new(Symbol::from("BENCH"), 8, ids, formula, 0.into(), 0.into())
+    SyntheticInstrument::builder()
+        .symbol(Symbol::from("BENCH"))
+        .price_precision(8)
+        .components(ids)
+        .formula(formula)
+        .ts_event(0.into())
+        .ts_init(0.into())
+        .build()
+        .unwrap()
 }
 
 pub fn bench_compile(c: &mut Criterion) {

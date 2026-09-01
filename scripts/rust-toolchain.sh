@@ -1,11 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
-# Resolve rust-toolchain.toml relative to this script's location
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TOOLCHAIN_FILE="${SCRIPT_DIR}/../rust-toolchain.toml"
 
-# Check that rust-toolchain.toml exists
 if [[ ! -f "$TOOLCHAIN_FILE" ]]; then
   echo "Error: rust-toolchain.toml not found at $TOOLCHAIN_FILE" >&2
   exit 1
@@ -22,5 +20,4 @@ if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 1
 fi
 
-# Output version (without trailing newline for consistency)
-echo -n "$VERSION"
+printf '%s' "$VERSION"

@@ -19,12 +19,11 @@ use nautilus_core::{
 };
 
 use crate::{
-    data::{OrderBookDelta, OrderBookDeltas},
-    enums::BookAction,
+    data::OrderBookDeltas, enums::BookAction, ffi::data::delta::OrderBookDeltaFfi,
     identifiers::InstrumentId,
 };
 
-/// Creates a new `OrderBookDeltas` instance from a `CVec` of `OrderBookDelta`.
+/// Creates a new `OrderBookDeltas` instance from a `CVec` of `OrderBookDeltaFfi`.
 ///
 /// The data is cloned into Rust-managed memory and remains owned by the caller.
 ///
@@ -33,14 +32,18 @@ use crate::{
 ///
 /// # Safety
 ///
-/// `deltas` must describe initialized `OrderBookDelta` values that remain valid and immutable for
+/// `deltas` must describe initialized `OrderBookDeltaFfi` values that remain valid and immutable for
 /// the duration of this call. The caller remains responsible for deallocating its buffer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn orderbook_deltas_new(
     instrument_id: InstrumentId,
     deltas: &CVec,
 ) -> *mut OrderBookDeltas {
-    let cloned_deltas = unsafe { deltas.as_slice::<OrderBookDelta>() }.to_vec();
+    let cloned_deltas = unsafe { deltas.as_slice::<OrderBookDeltaFfi>() }
+        .iter()
+        .copied()
+        .map(Into::into)
+        .collect();
     Box::into_raw(Box::new(OrderBookDeltas::new(instrument_id, cloned_deltas)))
 }
 
@@ -77,7 +80,13 @@ pub extern "C" fn orderbook_deltas_instrument_id(deltas: &OrderBookDeltas) -> In
 
 #[unsafe(no_mangle)]
 pub extern "C" fn orderbook_deltas_vec_deltas(deltas: &OrderBookDeltas) -> CVec {
-    deltas.deltas.clone().into()
+    deltas
+        .deltas
+        .iter()
+        .copied()
+        .map(OrderBookDeltaFfi::from)
+        .collect::<Vec<_>>()
+        .into()
 }
 
 /// Returns `1` if the first delta is a `Clear` action (snapshot), `0` otherwise.
@@ -111,14 +120,14 @@ pub extern "C" fn orderbook_deltas_ts_init(deltas: &OrderBookDeltas) -> UnixNano
     deltas.ts_init
 }
 
-/// Drops a `CVec` of `OrderBookDelta` values.
+/// Drops a `CVec` of `OrderBookDeltaFfi` values.
 ///
 /// # Safety
 ///
-/// `v` must uniquely own a valid `Vec<OrderBookDelta>` allocation transferred from Rust.
+/// `v` must uniquely own a valid `Vec<OrderBookDeltaFfi>` allocation transferred from Rust.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn orderbook_deltas_vec_drop(v: CVec) {
-    let deltas = unsafe { v.into_vec::<OrderBookDelta>() };
+    let deltas = unsafe { v.into_vec::<OrderBookDeltaFfi>() };
     drop(deltas); // Memory freed here
 }
 
@@ -137,7 +146,7 @@ mod tests {
     #[rstest]
     fn test_orderbook_deltas_new_clones_borrowed_buffer() {
         let delta = stub_delta();
-        let mut caller_owned = vec![delta];
+        let mut caller_owned = vec![OrderBookDeltaFfi::from(delta)];
         let cvec = CVec {
             ptr: caller_owned.as_mut_ptr().cast(),
             len: caller_owned.len(),
@@ -148,9 +157,9 @@ mod tests {
 
         // SAFETY: `deltas_ptr` was just returned by `orderbook_deltas_new`
         let deltas = unsafe { &*deltas_ptr };
-        assert_eq!(deltas.deltas, caller_owned);
+        assert_eq!(deltas.deltas, vec![delta]);
         caller_owned[0].sequence += 1;
-        assert_ne!(deltas.deltas, caller_owned);
+        assert_ne!(deltas.deltas[0].sequence, caller_owned[0].sequence);
 
         unsafe { orderbook_deltas_drop(deltas_ptr) };
     }

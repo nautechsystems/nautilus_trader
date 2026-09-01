@@ -1,0 +1,63 @@
+[package]
+name = "parquet"
+version = "57.3.1"
+edition = "2024"
+publish = false
+license = "LGPL-3.0-only"
+description = "Parquet 59 compatibility facade for dependencies constrained to Parquet 57"
+
+[features]
+default = [
+  "arrow",
+  "snap",
+  "brotli",
+  "flate2-zlib-rs",
+  "lz4",
+  "zstd",
+  "base64",
+  "simdutf8",
+]
+arrow = ["parquet-upstream/arrow"]
+arrow-array = ["parquet-upstream/arrow-array"]
+arrow-buffer = ["parquet-upstream/arrow-buffer"]
+arrow-csv = ["parquet-upstream/arrow-csv"]
+arrow-data = ["parquet-upstream/arrow-data"]
+arrow-ipc = ["parquet-upstream/arrow-ipc"]
+arrow-schema = ["parquet-upstream/arrow-schema"]
+arrow-select = ["parquet-upstream/arrow-select"]
+arrow_canonical_extension_types = [
+  "parquet-upstream/arrow_canonical_extension_types",
+]
+async = ["parquet-upstream/async"]
+base64 = ["parquet-upstream/base64"]
+brotli = ["parquet-upstream/brotli"]
+clap = ["parquet-upstream/clap"]
+cli = ["parquet-upstream/cli"]
+crc = ["parquet-upstream/crc"]
+encryption = ["parquet-upstream/encryption"]
+experimental = ["parquet-upstream/experimental"]
+flate2 = ["parquet-upstream/flate2"]
+flate2-rust_backend = ["parquet-upstream/flate2-rust_backend"]
+flate2-rust_backened = ["parquet-upstream/flate2-rust_backened"]
+flate2-zlib-rs = ["parquet-upstream/flate2-zlib-rs"]
+futures = ["parquet-upstream/futures"]
+geospatial = ["parquet-upstream/geospatial"]
+json = ["parquet-upstream/json"]
+lz4 = ["parquet-upstream/lz4"]
+lz4_flex = ["parquet-upstream/lz4_flex"]
+object_store = ["parquet-upstream/object_store"]
+parquet-geospatial = ["parquet-upstream/parquet-geospatial"]
+parquet-variant = ["parquet-upstream/parquet-variant"]
+parquet-variant-compute = ["parquet-upstream/parquet-variant-compute"]
+parquet-variant-json = ["parquet-upstream/parquet-variant-json"]
+serde = ["parquet-upstream/serde"]
+serde_json = ["parquet-upstream/serde_json"]
+simdutf8 = ["parquet-upstream/simdutf8"]
+snap = ["parquet-upstream/snap"]
+test_common = ["parquet-upstream/test_common"]
+tokio = ["parquet-upstream/tokio"]
+variant_experimental = ["parquet-upstream/variant_experimental"]
+zstd = ["parquet-upstream/zstd"]
+
+[dependencies]
+parquet-upstream = { package = "parquet", version = "=59.2.0", default-features = false }

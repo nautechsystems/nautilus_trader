@@ -205,6 +205,7 @@ impl FeedHandler {
             Message::Text(txt) => {
                 if txt == RECONNECTED {
                     self.clear_state();
+                    self.subscriptions.reset_after_reconnect();
 
                     if let Err(e) = self.replay_subscriptions().await {
                         log::error!("Failed to replay subscriptions after reconnect: {e}");
@@ -678,6 +679,10 @@ impl FeedHandler {
     }
 
     fn topic_from_msg(&self, channel: &DydxWsChannel, id: &Option<String>) -> String {
+        if matches!(channel, DydxWsChannel::BlockHeight) {
+            return channel.as_ref().to_string();
+        }
+
         match id {
             Some(id) => format!(
                 "{}{}{}",
@@ -761,6 +766,7 @@ impl FeedHandler {
             DydxWsMessage::Error(err) => Ok(vec![DydxWsOutputMessage::Error(err)]),
             DydxWsMessage::Reconnected => {
                 self.clear_state();
+                self.subscriptions.reset_after_reconnect();
 
                 if let Err(e) = self.replay_subscriptions().await {
                     log::error!("Failed to replay subscriptions after reconnect message: {e}");

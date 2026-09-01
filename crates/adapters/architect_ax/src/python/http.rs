@@ -477,7 +477,7 @@ impl AxHttpClient {
                     instrument_id,
                     client_order_id,
                     venue_order_id,
-                    order_side,
+                    Some(order_side),
                     order_type,
                     time_in_force,
                 )
@@ -620,7 +620,7 @@ impl AxHttpClient {
         side: OrderSide,
     ) -> PyResult<Bound<'py, PyAny>> {
         let symbol = instrument_id.symbol.inner();
-        let ax_side = AxOrderSide::try_from(side).map_err(to_pyvalue_err)?;
+        let ax_side = AxOrderSide::from(side);
         let qty_contracts = quantity_to_contracts(quantity).map_err(to_pyvalue_err)?;
 
         let client = self.clone();

@@ -539,7 +539,7 @@ mod tests {
             .client_id(None)
             .strategy_id(strategy_id)
             .instrument_id(instrument_id)
-            .order_side(OrderSide::Buy)
+            .order_side(Some(OrderSide::Buy))
             .command_id(command_id)
             .ts_init(ts_init)
             .params(None)

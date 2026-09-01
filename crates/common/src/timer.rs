@@ -14,6 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Real-time and test timers for use with `Clock` implementations.
+//!
+//! Defines [`TimeEvent`] values, callback and handler types, heap scheduling order, and the
+//! deterministic [`TestTimer`] iterator. The event and callback primitives are shared by test and
+//! live clock implementations.
 
 use std::{
     cmp::Ordering,
@@ -31,9 +35,7 @@ use nautilus_core::{
 use pyo3::{Py, PyAny, Python};
 use ustr::Ustr;
 
-/// Creates a valid nanoseconds interval that is guaranteed to be positive.
-///
-/// Coerces zero to one to ensure a valid `NonZeroU64`.
+/// Returns a positive nanosecond interval, coercing zero to one nanosecond.
 #[must_use]
 pub fn create_valid_interval(interval_ns: u64) -> NonZeroU64 {
     NonZeroU64::new(interval_ns).unwrap_or(NonZeroU64::MIN)
@@ -49,23 +51,23 @@ pub fn create_valid_interval(interval_ns: u64) -> NonZeroU64 {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")
 )]
-/// Represents a time event occurring at the event timestamp.
+/// Represents a named timer event.
 ///
-/// A `TimeEvent` carries metadata such as the event's name, a unique event ID,
-/// and timestamps indicating when the event was scheduled to occur and when it was initialized.
+/// `ts_event` records the scheduled event time, while `ts_init` records
+/// when the event instance was initialized.
 pub struct TimeEvent {
-    /// The event name, identifying the nature or purpose of the event.
+    /// The timer event name.
     pub name: Ustr,
     /// The unique identifier for the event.
     pub event_id: UUID4,
-    /// UNIX timestamp (nanoseconds) when the event occurred.
+    /// UNIX timestamp (nanoseconds) when the event is scheduled to occur.
     pub ts_event: UnixNanos,
-    /// UNIX timestamp (nanoseconds) when the instance was created.
+    /// UNIX timestamp (nanoseconds) when the instance was initialized.
     pub ts_init: UnixNanos,
 }
 
 impl TimeEvent {
-    /// Creates a new [`TimeEvent`] instance.
+    /// Creates a time event with the supplied identity and timestamps.
     #[must_use]
     pub const fn new(name: Ustr, event_id: UUID4, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
         Self {
@@ -91,23 +93,26 @@ impl Display for TimeEvent {
     }
 }
 
-/// Wrapper for [`TimeEvent`] that implements ordering by timestamp for heap scheduling.
+/// Orders a [`TimeEvent`] for earliest-first scheduling in a
+/// [`BinaryHeap`](std::collections::BinaryHeap).
 ///
-/// This newtype allows time events to be ordered in a priority queue (max heap) by their
-/// timestamp while keeping [`TimeEvent`] itself clean with standard field-based equality.
-/// Events are ordered in reverse (earlier timestamps have higher priority).
+/// The reversed ordering makes the heap pop events in ascending order by `ts_event`, then `name`,
+/// `ts_init`, and `event_id`.
 #[repr(transparent)] // Guarantees zero-cost abstraction with identical memory layout
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ScheduledTimeEvent(pub TimeEvent);
+pub struct ScheduledTimeEvent(
+    /// The time event to schedule.
+    pub TimeEvent,
+);
 
 impl ScheduledTimeEvent {
-    /// Creates a new scheduled time event.
+    /// Creates a scheduled wrapper for `event`.
     #[must_use]
     pub const fn new(event: TimeEvent) -> Self {
         Self(event)
     }
 
-    /// Extracts the inner time event.
+    /// Returns the wrapped time event.
     #[must_use]
     pub fn into_inner(self) -> TimeEvent {
         self.0
@@ -123,31 +128,27 @@ impl PartialOrd for ScheduledTimeEvent {
 impl Ord for ScheduledTimeEvent {
     fn cmp(&self, other: &Self) -> Ordering {
         // Reverse order for max heap: earlier timestamps have higher priority
-        other
-            .0
-            .ts_event
-            .cmp(&self.0.ts_event)
-            .then_with(|| other.0.name.cmp(&self.0.name))
-            .then_with(|| other.0.ts_init.cmp(&self.0.ts_init))
-            .then_with(|| other.0.event_id.as_str().cmp(self.0.event_id.as_str()))
+        cmp_time_events(&other.0, &self.0)
     }
 }
 
 #[cfg(feature = "python")]
-/// Python callback for time events.
+/// Wraps a Python callable that handles time events.
 pub struct PythonTimeEventCallback {
     callback: Py<PyAny>,
 }
 
 #[cfg(feature = "python")]
 impl PythonTimeEventCallback {
-    /// Creates a new [`PythonTimeEventCallback`] instance.
+    /// Wraps a Python callable as a time event callback.
     #[must_use]
     pub const fn new(callback: Py<PyAny>) -> Self {
         Self { callback }
     }
 
-    /// Invokes the Python callback for the given `TimeEvent`.
+    /// Invokes the Python callback for `event`.
+    ///
+    /// Logs and suppresses any exception raised by the callback.
     pub fn call(&self, event: TimeEvent) {
         Python::attach(|py| {
             if let Err(e) = self.callback.call1(py, (event,)) {
@@ -165,7 +166,8 @@ impl Debug for PythonTimeEventCallback {
     }
 }
 
-/// Callback type for time events.
+#[derive(Clone)]
+/// Represents a callback invoked for time events.
 ///
 /// # Variants
 ///
@@ -176,7 +178,7 @@ impl Debug for PythonTimeEventCallback {
 /// # Choosing Between `Rust` and `RustLocal`
 ///
 /// Use `Rust` (thread-safe) when:
-/// - The callback doesn't capture `Rc<RefCell<...>>` or other non-`Send` types.
+/// - The callback does not capture `Rc<RefCell<...>>` or other non-`Send` types.
 /// - The closure is `Send + Sync` (most simple closures qualify).
 ///
 /// Use `RustLocal` when:
@@ -199,17 +201,6 @@ pub enum TimeEventCallback {
     Rust(Arc<dyn Fn(TimeEvent) + Send + Sync>),
     /// Local Rust callback using `Rc` (not `Send`/`Sync`).
     RustLocal(Rc<dyn Fn(TimeEvent)>),
-}
-
-impl Clone for TimeEventCallback {
-    fn clone(&self) -> Self {
-        match self {
-            #[cfg(feature = "python")]
-            Self::Python(callback) => Self::Python(callback.clone()),
-            Self::Rust(cb) => Self::Rust(cb.clone()),
-            Self::RustLocal(cb) => Self::RustLocal(cb.clone()),
-        }
-    }
 }
 
 impl Debug for TimeEventCallback {
@@ -236,6 +227,10 @@ impl TimeEventCallback {
     /// Invokes the callback for the given `TimeEvent`.
     ///
     /// For Python callbacks, exceptions are logged as errors rather than panicking.
+    ///
+    /// # Panics
+    ///
+    /// Panics from Rust callbacks propagate to the caller.
     pub fn call(&self, event: TimeEvent) {
         match self {
             #[cfg(feature = "python")]
@@ -285,10 +280,9 @@ impl TimeEventCallback {
 
 #[repr(C)]
 #[derive(Clone, Debug)]
-/// Represents a time event and its associated handler.
+/// Pairs a [`TimeEvent`] with its callback for ordered dispatch.
 ///
-/// `TimeEventHandler` associates a `TimeEvent` with a callback function that is triggered
-/// when the event's timestamp is reached.
+/// Natural ordering is ascending by `ts_event`, then `name`, `ts_init`, and `event_id`.
 pub struct TimeEventHandler {
     /// The time event.
     pub event: TimeEvent,
@@ -297,27 +291,17 @@ pub struct TimeEventHandler {
 }
 
 impl TimeEventHandler {
-    /// Creates a new [`TimeEventHandler`] instance.
+    /// Creates a handler for `event` and `callback`.
     #[must_use]
     pub const fn new(event: TimeEvent, callback: TimeEventCallback) -> Self {
         Self { event, callback }
     }
 
-    fn cmp_event(&self, other: &Self) -> Ordering {
-        self.event
-            .ts_event
-            .cmp(&other.event.ts_event)
-            .then_with(|| self.event.name.cmp(&other.event.name))
-            .then_with(|| self.event.ts_init.cmp(&other.event.ts_init))
-            .then_with(|| {
-                self.event
-                    .event_id
-                    .as_str()
-                    .cmp(other.event.event_id.as_str())
-            })
-    }
-
-    /// Executes the handler by invoking its callback for the associated event.
+    /// Dispatches the event to the installed message-bus tap, then invokes its callback.
+    ///
+    /// # Panics
+    ///
+    /// Panics from the message-bus tap or a Rust callback propagate to the caller.
     pub fn run(self) {
         let Self { event, callback } = self;
         crate::msgbus::dispatch_tap_time_event(&event);
@@ -333,7 +317,7 @@ impl PartialOrd for TimeEventHandler {
 
 impl PartialEq for TimeEventHandler {
     fn eq(&self, other: &Self) -> bool {
-        self.cmp_event(other).is_eq()
+        self.cmp(other).is_eq()
     }
 }
 
@@ -341,8 +325,16 @@ impl Eq for TimeEventHandler {}
 
 impl Ord for TimeEventHandler {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.cmp_event(other)
+        cmp_time_events(&self.event, &other.event)
     }
+}
+
+fn cmp_time_events(left: &TimeEvent, right: &TimeEvent) -> Ordering {
+    left.ts_event
+        .cmp(&right.ts_event)
+        .then_with(|| left.name.cmp(&right.name))
+        .then_with(|| left.ts_init.cmp(&right.ts_init))
+        .then_with(|| left.event_id.as_str().cmp(right.event_id.as_str()))
 }
 
 pub(crate) trait Timer {
@@ -350,14 +342,10 @@ pub(crate) trait Timer {
     fn cancel(&mut self);
 }
 
-/// A test timer for user with a `TestClock`.
+/// A deterministic interval timer for use with a [`TestClock`](crate::clock::TestClock).
 ///
-/// `TestTimer` simulates time progression in a controlled environment,
-/// allowing for precise control over event generation in test scenarios.
-///
-/// # Threading
-///
-/// The timer mutates its internal state and should only be used from its owning thread.
+/// The timer generates scheduled events through an optional inclusive stop time as its iterator is
+/// consumed.
 #[derive(Clone, Debug)]
 pub struct TestTimer {
     /// The name of the timer.
@@ -366,20 +354,23 @@ pub struct TestTimer {
     pub interval_ns: NonZeroU64,
     /// The start time of the timer in UNIX nanoseconds.
     pub start_time_ns: UnixNanos,
-    /// The optional stop time of the timer in UNIX nanoseconds.
+    /// The optional inclusive stop time of the timer in UNIX nanoseconds.
     pub stop_time_ns: Option<UnixNanos>,
-    /// If the timer should fire immediately at start time.
+    /// Whether the first event fires at the start time instead of after one interval.
     pub fire_immediately: bool,
     next_time_ns: UnixNanos,
     is_expired: bool,
 }
 
 impl TestTimer {
-    /// Creates a new [`TestTimer`] instance.
+    /// Creates a test timer with the supplied schedule.
     ///
     /// # Panics
     ///
-    /// Panics if `name` is not a valid string.
+    /// Panics if:
+    /// - `name` is not a valid string.
+    /// - `fire_immediately` is `false` and `start_time_ns + interval_ns` exceeds the
+    ///   [`UnixNanos`] range.
     #[must_use]
     pub fn new(
         name: Ustr,
@@ -419,11 +410,10 @@ impl TestTimer {
         self.is_expired
     }
 
-    /// Advance the test timer forward to the given time, generating a sequence
-    /// of events. A [`TimeEvent`] is appended for each time a next event is
-    /// <= the given `to_time_ns`.
+    /// Returns a lazy iterator over events scheduled at or before `to_time_ns`.
     ///
-    /// This allows testing of multiple time intervals within a single step.
+    /// Consuming the iterator advances the timer. Events at `to_time_ns` and at the configured stop
+    /// time are included.
     pub fn advance(&mut self, to_time_ns: UnixNanos) -> impl Iterator<Item = TimeEvent> + '_ {
         // Calculate how many events should fire up to and including to_time_ns
         let advances = if self.next_time_ns <= to_time_ns {
@@ -435,9 +425,7 @@ impl TestTimer {
         self.take(advances as usize).map(|(event, _)| event)
     }
 
-    /// Cancels the timer (the timer will not generate an event).
-    ///
-    /// Used to stop the timer before its scheduled stop time.
+    /// Cancels the timer so it produces no further events.
     pub const fn cancel(&mut self) {
         self.is_expired = true;
     }
@@ -445,11 +433,11 @@ impl TestTimer {
 
 impl Timer for TestTimer {
     fn is_expired(&self) -> bool {
-        self.is_expired
+        Self::is_expired(self)
     }
 
     fn cancel(&mut self) {
-        self.is_expired = true;
+        Self::cancel(self);
     }
 }
 
@@ -458,40 +446,40 @@ impl Iterator for TestTimer {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.is_expired {
-            None
-        } else {
-            // Check if current event would exceed stop time before creating the event
-            if let Some(stop_time_ns) = self.stop_time_ns
-                && self.next_time_ns > stop_time_ns
-            {
-                self.is_expired = true;
-                return None;
-            }
-
-            let event_time_ns = self.next_time_ns;
-
-            let item = (
-                TimeEvent {
-                    name: self.name,
-                    event_id: UUID4::new(),
-                    ts_event: event_time_ns,
-                    ts_init: event_time_ns,
-                },
-                event_time_ns,
-            );
-
-            if let Some(following_time_ns) = event_time_ns.checked_add(self.interval_ns.get()) {
-                self.next_time_ns = following_time_ns;
-            } else {
-                self.is_expired = true;
-            }
-
-            if self.stop_time_ns == Some(event_time_ns) {
-                self.is_expired = true;
-            }
-
-            Some(item)
+            return None;
         }
+
+        // Check if current event would exceed stop time before creating the event
+        if let Some(stop_time_ns) = self.stop_time_ns
+            && self.next_time_ns > stop_time_ns
+        {
+            self.is_expired = true;
+            return None;
+        }
+
+        let event_time_ns = self.next_time_ns;
+
+        let item = (
+            TimeEvent {
+                name: self.name,
+                event_id: UUID4::new(),
+                ts_event: event_time_ns,
+                ts_init: event_time_ns,
+            },
+            event_time_ns,
+        );
+
+        if let Some(following_time_ns) = event_time_ns.checked_add(self.interval_ns.get()) {
+            self.next_time_ns = following_time_ns;
+        } else {
+            self.is_expired = true;
+        }
+
+        if self.stop_time_ns == Some(event_time_ns) {
+            self.is_expired = true;
+        }
+
+        Some(item)
     }
 }
 

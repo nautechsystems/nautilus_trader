@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test pricing behavior.
+"""
 
 import re
 
@@ -28,13 +31,17 @@ from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import QuoteTick
 from nautilus_trader.model import StrikeRange
+from nautilus_trader.model import Venue
 from nautilus_trader.model import black_scholes_greeks
 from nautilus_trader.model import imply_vol
 from nautilus_trader.model import imply_vol_and_greeks
 from nautilus_trader.model import refine_vol_and_greeks
 
 
-def test_forward_price_properties():
+def test_forward_price_properties() -> None:
+    """
+    Test forward price properties.
+    """
     value = ForwardPrice(
         instrument_id=InstrumentId.from_str("BTCUSDT.BINANCE"),
         forward_price="50123.4",
@@ -50,7 +57,10 @@ def test_forward_price_properties():
     assert value.ts_init == 8
 
 
-def test_option_series_id_from_expiry_and_from_str():
+def test_option_series_id_from_expiry_and_from_str() -> None:
+    """
+    Test option series id from expiry and from str.
+    """
     series_id = OptionSeriesId.from_expiry("DERIBIT", "BTC", "USD", "2024-03-29")
     restored = OptionSeriesId.from_str(series_id.value)
 
@@ -81,7 +91,10 @@ def test_option_series_id_from_expiry_and_from_str():
         ),
     ],
 )
-def test_option_series_id_from_str_when_invalid(value, expected_err):
+def test_option_series_id_from_str_when_invalid(value: object, expected_err: object) -> None:
+    """
+    Test option series id from str when invalid.
+    """
     with pytest.raises(ValueError, match=re.escape(expected_err)) as exc_info:
         OptionSeriesId.from_str(value)
 
@@ -105,14 +118,24 @@ def test_option_series_id_from_str_when_invalid(value, expected_err):
         ),
     ],
 )
-def test_option_series_id_from_expiry_when_invalid(venue, date_str, expected_err):
+def test_option_series_id_from_expiry_when_invalid(
+    venue: Venue,
+    date_str: object,
+    expected_err: object,
+) -> None:
+    """
+    Test option series id from expiry when invalid.
+    """
     with pytest.raises(ValueError, match=re.escape(expected_err)) as exc_info:
         OptionSeriesId.from_expiry(venue, "BTC", "USD", date_str)
 
     assert str(exc_info.value) == expected_err
 
 
-def test_option_greeks_and_strike_data_properties():
+def test_option_greeks_and_strike_data_properties() -> None:
+    """
+    Test option greeks and strike data properties.
+    """
     instrument_id = InstrumentId.from_str("BTC-20240329-50000-C.DERIBIT")
     quote = QuoteTick(
         instrument_id=instrument_id,
@@ -151,7 +174,10 @@ def test_option_greeks_and_strike_data_properties():
     assert strike.greeks.mark_iv == pytest.approx(0.6)
 
 
-def test_option_chain_slice_empty_state_and_lookups():
+def test_option_chain_slice_empty_state_and_lookups() -> None:
+    """
+    Test option chain slice empty state and lookups.
+    """
     series_id = OptionSeriesId.from_expiry("DERIBIT", "BTC", "USD", "2024-03-29")
     chain = OptionChainSlice(
         series_id=series_id,
@@ -184,7 +210,15 @@ def test_option_chain_slice_empty_state_and_lookups():
         (False, 5.5735168457, -0.3631694317, -0.0045390302),
     ],
 )
-def test_black_scholes_greeks_result_properties(is_call, price, delta, theta):
+def test_black_scholes_greeks_result_properties(
+    is_call: object,
+    price: object,
+    delta: object,
+    theta: object,
+) -> None:
+    """
+    Test black scholes greeks result properties.
+    """
     result = black_scholes_greeks(100.0, 0.05, 0.05, 0.2, is_call, 100.0, 1.0)
 
     assert isinstance(result, BlackScholesGreeksResult)
@@ -196,41 +230,81 @@ def test_black_scholes_greeks_result_properties(is_call, price, delta, theta):
     assert result.theta == pytest.approx(theta, abs=1e-5)
 
 
-def test_black_scholes_greeks_itm_probability_uses_d2():
-    call = black_scholes_greeks(100.0, 0.05, 0.05, 0.2, True, 100.0, 1.0)
-    put = black_scholes_greeks(100.0, 0.05, 0.05, 0.2, False, 100.0, 1.0)
+def test_black_scholes_greeks_itm_probability_uses_d2() -> None:
+    """
+    Test black scholes greeks itm probability uses d2.
+    """
+    call = black_scholes_greeks(100.0, 0.05, 0.05, 0.2, is_call=True, k=100.0, t=1.0)
+    put = black_scholes_greeks(100.0, 0.05, 0.05, 0.2, is_call=False, k=100.0, t=1.0)
 
     assert 0.0 < call.itm_prob < call.delta
     assert 0.0 < put.itm_prob < 1.0
     assert call.itm_prob + put.itm_prob == pytest.approx(1.0)
 
 
-def test_imply_vol_and_greeks_matches_input_price():
-    baseline = black_scholes_greeks(100.0, 0.01, 0.01, 0.2, True, 100.0, 0.5)
-    implied = imply_vol_and_greeks(100.0, 0.01, 0.01, True, 100.0, 0.5, baseline.price)
+def test_imply_vol_and_greeks_matches_input_price() -> None:
+    """
+    Test imply vol and greeks matches input price.
+    """
+    baseline = black_scholes_greeks(100.0, 0.01, 0.01, 0.2, is_call=True, k=100.0, t=0.5)
+    implied = imply_vol_and_greeks(
+        100.0,
+        0.01,
+        0.01,
+        is_call=True,
+        k=100.0,
+        t=0.5,
+        price=baseline.price,
+    )
 
     assert implied.vol == pytest.approx(0.2, rel=1e-5)
     assert implied.delta == pytest.approx(baseline.delta)
 
 
-def test_imply_vol_and_greeks_matches_put_price():
-    baseline = black_scholes_greeks(100.0, 0.05, 0.05, 0.25, False, 105.0, 0.5)
-    implied = imply_vol_and_greeks(100.0, 0.05, 0.05, False, 105.0, 0.5, baseline.price)
+def test_imply_vol_and_greeks_matches_put_price() -> None:
+    """
+    Test imply vol and greeks matches put price.
+    """
+    baseline = black_scholes_greeks(100.0, 0.05, 0.05, 0.25, is_call=False, k=105.0, t=0.5)
+    implied = imply_vol_and_greeks(
+        100.0,
+        0.05,
+        0.05,
+        is_call=False,
+        k=105.0,
+        t=0.5,
+        price=baseline.price,
+    )
 
     assert implied.vol == pytest.approx(0.25, abs=1e-2)
     assert implied.price == pytest.approx(baseline.price, abs=1e-2)
 
 
-def test_imply_vol_matches_baseline_vol():
-    baseline = black_scholes_greeks(100.0, 0.01, 0.01, 0.2, True, 100.0, 0.5)
-    implied_vol = imply_vol(100.0, 0.01, 0.01, True, 100.0, 0.5, baseline.price)
+def test_imply_vol_matches_baseline_vol() -> None:
+    """
+    Test imply vol matches baseline vol.
+    """
+    baseline = black_scholes_greeks(100.0, 0.01, 0.01, 0.2, is_call=True, k=100.0, t=0.5)
+    implied_vol = imply_vol(100.0, 0.01, 0.01, is_call=True, k=100.0, t=0.5, price=baseline.price)
 
     assert implied_vol == pytest.approx(0.2, rel=1e-5)
 
 
-def test_refine_vol_and_greeks_matches_input_price():
-    baseline = black_scholes_greeks(100.0, 0.01, 0.01, 0.2, True, 100.0, 0.5)
-    refined = refine_vol_and_greeks(100.0, 0.01, 0.01, True, 100.0, 0.5, baseline.price, 0.3)
+def test_refine_vol_and_greeks_matches_input_price() -> None:
+    """
+    Test refine vol and greeks matches input price.
+    """
+    baseline = black_scholes_greeks(100.0, 0.01, 0.01, 0.2, is_call=True, k=100.0, t=0.5)
+    refined = refine_vol_and_greeks(
+        100.0,
+        0.01,
+        0.01,
+        is_call=True,
+        k=100.0,
+        t=0.5,
+        target_price=baseline.price,
+        initial_vol=0.3,
+    )
 
     assert refined.vol == pytest.approx(0.2, rel=2e-4)
     assert refined.price == pytest.approx(baseline.price, rel=2e-4)
@@ -245,14 +319,20 @@ def test_refine_vol_and_greeks_matches_input_price():
         ("delta", (0.25, 0.05)),
     ],
 )
-def test_strike_range_factories(factory_name, args):
+def test_strike_range_factories(factory_name: object, args: tuple[object, ...]) -> None:
+    """
+    Test strike range factories.
+    """
     factory = getattr(StrikeRange, factory_name)
     strike_range = factory(*args)
 
     assert isinstance(strike_range, StrikeRange)
 
 
-def test_strike_range_delta_kind():
+def test_strike_range_delta_kind() -> None:
+    """
+    Test strike range delta kind.
+    """
     strike_range = StrikeRange.delta(0.25, 0.05)
 
     assert strike_range.kind == "Delta"

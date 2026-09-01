@@ -147,14 +147,7 @@ if [[ "$*" == *"/actions/runs/"*"/jobs"* ]]; then
   printf '%s\n' "${MOCK_GH_JOBS_RESPONSE:-}"
   exit 0
 fi
-if [[ -n "${MOCK_GH_RESPONSES:-}" ]]; then
-  count="$(cat "${MOCK_GH_COUNT:?}")"
-  count=$((count + 1))
-  echo "$count" > "${MOCK_GH_COUNT:?}"
-  sed -n "${count}p" "$MOCK_GH_RESPONSES"
-  exit 0
-fi
-printf '%s\n' "${MOCK_GH_RESPONSE:-}"
+exit 1
 MOCK
   cat > "${mock_bin}/date" << 'MOCK'
 #!/usr/bin/env bash
@@ -184,25 +177,18 @@ case "$timestamp" in
   *) exit 1 ;;
 esac
 MOCK
-  cat > "${mock_bin}/sleep" << 'MOCK'
-#!/usr/bin/env bash
-set -euo pipefail
-exit 0
-MOCK
-  chmod +x "${mock_bin}/date" "${mock_bin}/gh" "${mock_bin}/sleep"
+  chmod +x "${mock_bin}/date" "${mock_bin}/gh"
 
   run_audit_check() {
     PATH="${mock_bin}:$PATH" \
       MOCK_GH_ARGS_LOG="${case_dir}/gh-args" \
-      MOCK_GH_RESPONSE="${1:-}" \
       MOCK_GH_JOBS_RESPONSE="${4:-}" \
       GITHUB_REPOSITORY=nautechsystems/nautilus_trader \
+      GITHUB_RUN_ID=123 \
       GITHUB_SHA=1111111111111111111111111111111111111111 \
-      GITHUB_REF_NAME=develop \
       GITHUB_EVENT_NAME="${2:-push}" \
+      SECURITY_AUDIT_RESULT="${1:-}" \
       SECURITY_GATE_OVERRIDE="${3:-}" \
-      SECURITY_AUDIT_TIMEOUT_SECONDS=0 \
-      SECURITY_AUDIT_POLL_SECONDS=1 \
       bash "${repo_root}/scripts/ci/check-security-audit-result.sh"
   }
 
@@ -214,68 +200,36 @@ MOCK
       bash "${repo_root}/scripts/ci/check-security-gate-result.bash"
   }
 
-  local audit_steps_failure='zizmor|Run zizmor|failure
-cargo-audit|Run cargo-audit|success
-cargo-deny|Run cargo-deny (advisories, licenses, sources, bans)|success
-cargo-vet|Run cargo-vet|success
-pip-audit|Run pip-audit|success
-osv-scanner|Run osv-scanner|success'
+  local audit_steps_failure='security audit / zizmor|Run zizmor|failure
+security audit / supply-chain|Run supply-chain audits|success'
   local audit_steps_success="${audit_steps_failure/failure/success}"
 
-  run_audit_check '123|completed|success|https://example.invalid/run|2026-08-03T00:00:00Z'
-  grep -Fq 'branch=develop' "${case_dir}/gh-args" || fail "Audit query did not bind the branch"
-  grep -Fq 'event=push' "${case_dir}/gh-args" || fail "Audit query did not bind the push event"
-  grep -Fq 'head_sha=1111111111111111111111111111111111111111' "${case_dir}/gh-args" ||
-    fail "Audit query did not bind the commit SHA"
-
-  printf '%s\n' \
-    '123|in_progress||https://example.invalid/run|2026-08-03T00:00:00Z' \
-    '123|completed|success|https://example.invalid/run|2026-08-03T00:00:00Z' \
-    > "${case_dir}/responses"
-  echo 0 > "${case_dir}/count"
-  PATH="${mock_bin}:$PATH" \
-    MOCK_GH_ARGS_LOG="${case_dir}/gh-args" \
-    MOCK_GH_RESPONSES="${case_dir}/responses" \
-    MOCK_GH_COUNT="${case_dir}/count" \
-    GITHUB_REPOSITORY=nautechsystems/nautilus_trader \
-    GITHUB_SHA=1111111111111111111111111111111111111111 \
-    GITHUB_REF_NAME=develop \
-    GITHUB_EVENT_NAME=push \
-    SECURITY_AUDIT_TIMEOUT_SECONDS=5 \
-    SECURITY_AUDIT_POLL_SECONDS=1 \
-    bash "${repo_root}/scripts/ci/check-security-audit-result.sh"
-  [[ "$(cat "${case_dir}/count")" == "2" ]] || fail "Audit checker did not wait for completion"
-
-  run_expect_failure "$output" run_audit_check ''
-  grep -Fq "last state was missing" "$output" || fail "Missing audit must time out closed"
-  run_expect_failure "$output" run_audit_check \
-    '123|in_progress||https://example.invalid/run|2026-08-03T00:00:00Z'
-  grep -Fq "in_progress/none" "$output" || fail "Incomplete audit state was not preserved"
-  run_expect_failure "$output" run_audit_check \
-    '123|completed|neutral|https://example.invalid/run|2026-08-03T00:00:00Z'
-  run_expect_failure "$output" run_audit_check \
-    '123|completed|failure|https://example.invalid/run|2026-08-03T00:00:00Z'
+  run_audit_check success
+  run_expect_failure "$output" run_audit_check failure push "" "$audit_steps_failure"
+  grep -Fq "blocking publish" "$output" || fail "Failed audit must block publication"
   run_expect_success "$output" run_audit_check \
-    '123|completed|failure|https://example.invalid/run|2026-08-03T00:00:00Z' \
+    failure \
     push \
     "$accepted_override" \
     "$audit_steps_failure"
   assert_line "$output" "$accepted_override_warning"
+  grep -Fq 'repos/nautechsystems/nautilus_trader/actions/runs/123/jobs' \
+    "${case_dir}/gh-args" || fail "Audit query did not bind the current build run"
   run_expect_failure "$output" run_audit_check \
-    '123|completed|failure|https://example.invalid/run|2026-08-03T00:00:00Z' \
+    failure \
     push \
     "$accepted_override" \
     "${audit_steps_failure%$'\n'*}"
   grep -Fq "did not complete" "$output" || fail "Incomplete audit must not be overridden"
   run_expect_failure "$output" run_audit_check \
-    '123|completed|failure|https://example.invalid/run|2026-08-03T00:00:00Z' \
+    failure \
     push \
     "$accepted_override" \
     "$audit_steps_success"
   grep -Fq "No completed audit step reported a failure" "$output" ||
     fail "Non-audit workflow failure must not be overridden"
-  run_expect_failure "$output" run_audit_check \
-    '123|completed|success|https://example.invalid/run|2026-08-03T00:00:00Z' pull_request
+  run_expect_failure "$output" run_audit_check neutral push "$accepted_override"
+  run_expect_failure "$output" run_audit_check failure pull_request "$accepted_override"
 
   run_gate_check success malformed
   run_expect_success "$output" run_gate_check failure "$accepted_override"
@@ -298,6 +252,57 @@ osv-scanner|Run osv-scanner|success'
     FORCE_SECURITY_AUDIT=true \
     GITHUB_OUTPUT="$output" \
     bash "${repo_root}/scripts/ci/security-audit-gate.sh"
+  assert_line "$output" "audit_needed=true"
+
+  : > "$output"
+  EVENT_NAME=push \
+    SKIP_SECURITY_AUDIT=true \
+    GITHUB_OUTPUT="$output" \
+    bash "${repo_root}/scripts/ci/security-audit-gate.sh"
+  assert_line "$output" "audit_needed=false"
+
+  local gate_repo="${case_dir}/gate-repo"
+  local base
+  local head
+
+  git init -q "$gate_repo"
+  git -C "$gate_repo" config user.name Test
+  git -C "$gate_repo" config user.email test@example.com
+  git -C "$gate_repo" config commit.gpgsign false
+  printf 'base\n' > "${gate_repo}/README.md"
+  git -C "$gate_repo" add README.md
+  git -C "$gate_repo" commit -qm base
+  base="$(git -C "$gate_repo" rev-parse HEAD)"
+  printf 'documentation change\n' >> "${gate_repo}/README.md"
+  git -C "$gate_repo" commit -qam documentation
+  head="$(git -C "$gate_repo" rev-parse HEAD)"
+
+  : > "$output"
+  (
+    cd "$gate_repo"
+    EVENT_NAME=push \
+      PUSH_BEFORE_SHA="$base" \
+      PUSH_AFTER_SHA="$head" \
+      GITHUB_OUTPUT="$output" \
+      bash "${repo_root}/scripts/ci/security-audit-gate.sh"
+  )
+  assert_line "$output" "audit_needed=false"
+
+  base="$head"
+  printf 'version = 1\n' > "${gate_repo}/tools.toml"
+  git -C "$gate_repo" add tools.toml
+  git -C "$gate_repo" commit -qm tooling
+  head="$(git -C "$gate_repo" rev-parse HEAD)"
+
+  : > "$output"
+  (
+    cd "$gate_repo"
+    EVENT_NAME=push \
+      PUSH_BEFORE_SHA="$base" \
+      PUSH_AFTER_SHA="$head" \
+      GITHUB_OUTPUT="$output" \
+      bash "${repo_root}/scripts/ci/security-audit-gate.sh"
+  )
   assert_line "$output" "audit_needed=true"
 }
 

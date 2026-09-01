@@ -44,10 +44,10 @@ use nautilus_core::{
     Params, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
+use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControl};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, OmsType, OrderSide, OrderType, TrailingOffsetType},
+    enums::{AccountType, OmsType, OrderType, TrailingOffsetType},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
@@ -66,10 +66,11 @@ use crate::{
         submitter::{DEFINITIVE_SUBMIT_REJECTION, SubmitBroadcaster, SubmitBroadcasterConfig},
     },
     common::{
+        consts::BITMEX_VENUE,
         enums::{BitmexContingencyType, BitmexOrderType, BitmexPegPriceType, BitmexTimeInForce},
         parse::{parse_peg_offset_value, parse_peg_price_type},
     },
-    config::BitmexExecClientConfig,
+    config::BitmexExecutionClientConfig,
     http::{client::BitmexHttpClient, error::BitmexHttpError},
     websocket::{
         client::BitmexWebSocketClient,
@@ -81,7 +82,7 @@ use crate::{
 pub struct BitmexExecutionClient {
     core: ExecutionClientCore,
     clock: &'static AtomicTime,
-    config: BitmexExecClientConfig,
+    config: BitmexExecutionClientConfig,
     emitter: ExecutionEventEmitter,
     http_client: BitmexHttpClient,
     ws_client: BitmexWebSocketClient,
@@ -116,7 +117,7 @@ impl BitmexExecutionClient {
     /// Returns an error if either the HTTP or WebSocket client fail to construct.
     pub fn new(
         mut core: ExecutionClientCore,
-        config: BitmexExecClientConfig,
+        config: BitmexExecutionClientConfig,
     ) -> anyhow::Result<Self> {
         if !config.has_api_credentials() {
             anyhow::bail!("BitMEX execution client requires API key and secret");
@@ -157,7 +158,12 @@ impl BitmexExecutionClient {
             config.transport_backend,
             config.proxy_url.clone(),
         )
-        .context("failed to construct BitMEX execution websocket client")?;
+        .context("failed to construct BitMEX execution websocket client")?
+        .with_socket_control(SocketControl::new(
+            core.client_id,
+            Some(*BITMEX_VENUE),
+            "bitmex-user-streams",
+        ));
 
         let pool_size = config.submitter_pool_size.unwrap_or(1);
         let submitter_proxy_urls = match &config.submitter_proxy_urls {
@@ -264,12 +270,13 @@ impl BitmexExecutionClient {
         }
 
         let cache = self.core.cache();
-        let (order_side, order_type) = cache
+        let order_identity = cache
             .order(&client_order_id)
-            .map_or((OrderSide::NoOrderSide, OrderType::Market), |o| {
-                (o.order_side(), o.order_type())
-            });
+            .map(|order| (order.order_side(), order.order_type()));
         drop(cache);
+        let Some((order_side, order_type)) = order_identity else {
+            return;
+        };
 
         self.ws_dispatch_state.order_identities.insert(
             client_order_id,
@@ -1104,14 +1111,7 @@ impl ExecutionClient for BitmexExecutionClient {
         let emitter = self.emitter.clone();
         let dispatch_state = Arc::clone(&self.ws_dispatch_state);
         let instrument_id = cmd.instrument_id;
-        let order_side = if cmd.order_side == OrderSide::NoOrderSide {
-            log::debug!(
-                "BitMEX cancel_all_orders received NoOrderSide for {instrument_id}, using unfiltered cancel-all",
-            );
-            None
-        } else {
-            Some(cmd.order_side)
-        };
+        let order_side = cmd.order_side;
 
         self.spawn_task("cancel_all_orders", async move {
             match canceller
@@ -1279,10 +1279,6 @@ fn validate_order_for_bitmex_submit(
     peg_price_type: Option<BitmexPegPriceType>,
     peg_offset_value: Option<f64>,
 ) -> anyhow::Result<()> {
-    if order.order_side() == OrderSide::NoOrderSide {
-        anyhow::bail!("Order side must be Buy or Sell");
-    }
-
     BitmexOrderType::try_from_order_type(order.order_type())?;
     BitmexTimeInForce::try_from_time_in_force(order.time_in_force())?;
 
@@ -1368,7 +1364,7 @@ mod tests {
     };
     use nautilus_core::{Params, UUID4};
     use nautilus_model::{
-        enums::TimeInForce,
+        enums::{OrderSide, TimeInForce},
         events::OrderEventAny,
         identifiers::{Symbol, TraderId},
         instruments::crypto_perpetual::CryptoPerpetual,
@@ -1412,7 +1408,7 @@ mod tests {
             None,
             cache.clone(),
         );
-        let config = BitmexExecClientConfig {
+        let config = BitmexExecutionClientConfig {
             api_key: Some("test_key".to_string()),
             api_secret: Some("test_secret".to_string()),
             base_url_http: Some("http://127.0.0.1:9/api/v1".to_string()),
@@ -1455,34 +1451,23 @@ mod tests {
     }
 
     fn test_perpetual_instrument() -> InstrumentAny {
-        InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            InstrumentId::from("XBTUSD.BITMEX"),
-            Symbol::new("XBTUSD"),
-            Currency::BTC(),
-            Currency::USD(),
-            Currency::BTC(),
-            true,
-            1,
-            0,
-            Price::new(0.5, 1),
-            Quantity::new(1.0, 0),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        ))
+        InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(InstrumentId::from("XBTUSD.BITMEX"))
+                .raw_symbol(Symbol::new("XBTUSD"))
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USD())
+                .settlement_currency(Currency::BTC())
+                .is_inverse(true)
+                .price_precision(1)
+                .size_precision(0)
+                .price_increment(Price::new(0.5, 1))
+                .size_increment(Quantity::new(1.0, 0))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
     }
 
     fn market_order() -> OrderAny {
@@ -1579,7 +1564,7 @@ mod tests {
             None,
             cache,
         );
-        let config = BitmexExecClientConfig {
+        let config = BitmexExecutionClientConfig {
             api_key: Some("test_key".to_string()),
             api_secret: Some("test_secret".to_string()),
             account_id: Some(AccountId::from("BITMEX-319111")),

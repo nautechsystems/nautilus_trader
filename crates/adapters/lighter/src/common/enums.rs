@@ -25,6 +25,46 @@ use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
+/// Lighter protocol deployment.
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    Display,
+    PartialEq,
+    Eq,
+    Hash,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "lowercase")]
+#[strum(ascii_case_insensitive, serialize_all = "lowercase")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        eq,
+        eq_int,
+        module = "nautilus_trader.adapters.lighter",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.lighter")
+)]
+pub enum LighterDeployment {
+    /// The Lighter deployment.
+    #[default]
+    Lighter,
+    /// The Robinhood Chain deployment of the Lighter protocol.
+    Robinhood,
+}
+
 /// Lighter API environment.
 #[derive(
     Copy,
@@ -730,7 +770,7 @@ impl LighterAccountTier {
         match self {
             Self::Standard => Some(60),
             Self::Premium => Some(24_000),
-            Self::Plus => Some(120_000),
+            Self::Plus => Some(24_000),
             Self::Builder => Some(240_000),
             Self::Unknown(_) => None,
         }
@@ -760,15 +800,10 @@ impl Display for LighterAccountTier {
 ///
 /// Lighter's tx body encodes the side as `is_ask`: `false` for a bid (buy)
 /// and `true` for an ask (sell).
-///
-/// # Errors
-///
-/// Returns an error if `side` is [`OrderSide::NoOrderSide`].
-pub fn is_ask_from_order_side(side: OrderSide) -> anyhow::Result<bool> {
+pub fn is_ask_from_order_side(side: OrderSide) -> bool {
     match side {
-        OrderSide::Buy => Ok(false),
-        OrderSide::Sell => Ok(true),
-        OrderSide::NoOrderSide => Err(anyhow::anyhow!("Lighter requires a specified order side")),
+        OrderSide::Buy => false,
+        OrderSide::Sell => true,
     }
 }
 
@@ -1164,16 +1199,10 @@ mod tests {
 
     #[rstest]
     fn test_is_ask_round_trip() {
-        assert!(!is_ask_from_order_side(OrderSide::Buy).unwrap());
-        assert!(is_ask_from_order_side(OrderSide::Sell).unwrap());
+        assert!(!is_ask_from_order_side(OrderSide::Buy));
+        assert!(is_ask_from_order_side(OrderSide::Sell));
         assert_eq!(order_side_from_is_ask(false), OrderSide::Buy);
         assert_eq!(order_side_from_is_ask(true), OrderSide::Sell);
-    }
-
-    #[rstest]
-    fn test_is_ask_rejects_unspecified_side() {
-        let err = is_ask_from_order_side(OrderSide::NoOrderSide).unwrap_err();
-        assert!(err.to_string().contains("specified order side"));
     }
 
     #[rstest]
@@ -1236,7 +1265,7 @@ mod tests {
     #[rstest]
     #[case(LighterAccountTier::Standard, Some(60))]
     #[case(LighterAccountTier::Premium, Some(24_000))]
-    #[case(LighterAccountTier::Plus, Some(120_000))]
+    #[case(LighterAccountTier::Plus, Some(24_000))]
     #[case(LighterAccountTier::Builder, Some(240_000))]
     #[case(LighterAccountTier::Unknown(9), None)]
     fn test_account_tier_documented_rest_quota(

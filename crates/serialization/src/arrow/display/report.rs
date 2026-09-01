@@ -121,7 +121,12 @@ pub fn encode_order_status_reports(data: &[OrderStatusReport]) -> Result<RecordB
         instrument_id.append_value(report.instrument_id.to_string());
         client_order_id.append_option(report.client_order_id.map(|v| v.to_string()));
         venue_order_id.append_value(report.venue_order_id);
-        order_side.append_value(format!("{}", report.order_side));
+        order_side.append_value(
+            report
+                .order_side
+                .as_ref()
+                .map_or("NO_ORDER_SIDE", AsRef::as_ref),
+        );
         order_type.append_value(format!("{}", report.order_type));
         time_in_force.append_value(format!("{}", report.time_in_force));
         order_status.append_value(format!("{}", report.order_status));
@@ -138,7 +143,12 @@ pub fn encode_order_status_reports(data: &[OrderStatusReport]) -> Result<RecordB
             serde_json::to_string(&values).unwrap_or_default()
         }));
         parent_order_id.append_option(report.parent_order_id.map(|v| v.to_string()));
-        contingency_type.append_value(format!("{}", report.contingency_type));
+        contingency_type.append_value(
+            report
+                .contingency_type
+                .as_ref()
+                .map_or("NO_CONTINGENCY", AsRef::as_ref),
+        );
         expire_time.append_option(report.expire_time.map(|v| unix_nanos_to_i64(v.as_u64())));
         price.append_option(report.price.map(|v| v.as_f64()));
         activation_price.append_option(report.activation_price.map(|v| v.as_f64()));
@@ -146,7 +156,12 @@ pub fn encode_order_status_reports(data: &[OrderStatusReport]) -> Result<RecordB
         trigger_type.append_option(report.trigger_type.map(|v| format!("{v}")));
         limit_offset.append_option(report.limit_offset.and_then(|v| v.to_f64()));
         trailing_offset.append_option(report.trailing_offset.and_then(|v| v.to_f64()));
-        trailing_offset_type.append_value(format!("{}", report.trailing_offset_type));
+        trailing_offset_type.append_value(
+            report
+                .trailing_offset_type
+                .as_ref()
+                .map_or("NO_TRAILING_OFFSET", AsRef::as_ref),
+        );
         avg_px.append_option(report.avg_px.and_then(|v| v.to_f64()));
         display_qty.append_option(report.display_qty.map(|v| quantity_to_f64(&v)));
         post_only.append_value(report.post_only);
@@ -203,9 +218,7 @@ mod tests {
     };
     use nautilus_core::UUID4;
     use nautilus_model::{
-        enums::{
-            ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TrailingOffsetType,
-        },
+        enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
         identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
         types::{Price, Quantity},
     };
@@ -219,7 +232,7 @@ mod tests {
             instrument_id: InstrumentId::from(instrument_id),
             client_order_id: Some(ClientOrderId::from("O-001")),
             venue_order_id: VenueOrderId::from("V-001"),
-            order_side: OrderSide::Buy,
+            order_side: Some(OrderSide::Buy),
             order_type: OrderType::Limit,
             time_in_force: TimeInForce::Gtc,
             order_status: OrderStatus::Accepted,
@@ -233,7 +246,7 @@ mod tests {
             venue_position_id: None,
             linked_order_ids: None,
             parent_order_id: None,
-            contingency_type: ContingencyType::NoContingency,
+            contingency_type: None,
             expire_time: None,
             price: Some(Price::from("100.50")),
             activation_price: None,
@@ -241,7 +254,7 @@ mod tests {
             trigger_type: None,
             limit_offset: None,
             trailing_offset: None,
-            trailing_offset_type: TrailingOffsetType::NoTrailingOffset,
+            trailing_offset_type: None,
             avg_px: None,
             display_qty: None,
             post_only: true,
@@ -362,6 +375,21 @@ mod tests {
 
         assert!(trigger_price_col.is_null(0));
         assert!(expire_time_col.is_null(0));
+    }
+
+    #[rstest]
+    fn test_encode_order_status_reports_no_order_side() {
+        let mut report = make_report("AAPL.XNAS", 1_000);
+        report.order_side = None;
+
+        let batch = encode_order_status_reports(&[report]).unwrap();
+        let order_side_col = batch
+            .column(4)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+
+        assert_eq!(order_side_col.value(0), "NO_ORDER_SIDE");
     }
 
     #[rstest]

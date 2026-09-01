@@ -133,7 +133,6 @@ impl From<OrderSide> for HyperliquidSide {
         match value {
             OrderSide::Buy => Self::Buy,
             OrderSide::Sell => Self::Sell,
-            _ => panic!("Invalid `OrderSide`"),
         }
     }
 }
@@ -1140,8 +1139,8 @@ mod tests {
     #[rstest]
     fn test_order_side_from_hyperliquid_side() {
         // Test conversion from HyperliquidSide to OrderSide
-        assert_eq!(OrderSide::from(HyperliquidSide::Buy), OrderSide::Buy);
-        assert_eq!(OrderSide::from(HyperliquidSide::Sell), OrderSide::Sell);
+        assert_eq!(OrderSide::from(HyperliquidSide::Buy), OrderSide::Buy,);
+        assert_eq!(OrderSide::from(HyperliquidSide::Sell), OrderSide::Sell,);
     }
 
     #[rstest]

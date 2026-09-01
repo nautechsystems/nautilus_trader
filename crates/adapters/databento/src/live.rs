@@ -1005,10 +1005,9 @@ fn handle_system_msg(msg: &dbn::SystemMsg, ts_received: UnixNanos) -> Option<Sub
 fn parse_ack_message(message: &str) -> String {
     // Format: "Subscription request N for <schema> data succeeded"
     message
-        .strip_prefix("Subscription request ")
+        .strip_circumfix("Subscription request ", " data succeeded")
         .and_then(|rest| rest.split_once(" for "))
-        .and_then(|(_, after_num)| after_num.strip_suffix(" data succeeded"))
-        .map(|schema| schema.trim().to_string())
+        .map(|(_, schema)| schema.trim().to_string())
         .unwrap_or_default()
 }
 

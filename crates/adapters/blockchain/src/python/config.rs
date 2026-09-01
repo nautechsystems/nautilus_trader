@@ -17,16 +17,20 @@
 
 use std::sync::Arc;
 
-use nautilus_core::string::secret::REDACTED;
+use nautilus_core::{python::to_pyvalue_err, string::secret::REDACTED};
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::{
     defi::{Chain, DexType},
-    identifiers::{AccountId, TraderId},
+    identifiers::AccountId,
 };
 use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
 
-use crate::config::{BlockchainDataClientConfig, BlockchainExecutionClientConfig, DexPoolFilters};
+use crate::config::{
+    BlockchainChainAnchorConfig, BlockchainDataClientConfig, BlockchainExecutionClientConfig,
+    BlockchainProviderIdentity, BlockchainVerificationConfig, BlockchainVerificationProviderConfig,
+    DexPoolFilters, QuoteSpendLimit,
+};
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods(module = "nautilus_trader.adapters.blockchain")]
@@ -38,6 +42,126 @@ impl DexPoolFilters {
         Self::builder()
             .maybe_remove_pools_with_empty_erc20fields(remove_pools_with_empty_erc20_fields)
             .build()
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods(module = "nautilus_trader.adapters.blockchain")]
+impl QuoteSpendLimit {
+    /// Defines the maximum quote-token spend for a directed BUY swap pair.
+    #[new]
+    #[must_use]
+    fn py_new(
+        token_in: String,
+        token_out: String,
+        spend_token: String,
+        spend_token_decimals: u8,
+        max_amount: String,
+    ) -> Self {
+        Self::builder()
+            .token_in(token_in)
+            .token_out(token_out)
+            .spend_token(spend_token)
+            .spend_token_decimals(spend_token_decimals)
+            .max_amount(max_amount)
+            .build()
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods(module = "nautilus_trader.adapters.blockchain")]
+impl BlockchainProviderIdentity {
+    /// Stable local identity for one RPC provider and its failure domains.
+    #[new]
+    #[must_use]
+    fn py_new(provider_id: String, operator_id: String, failure_domain_ids: Vec<String>) -> Self {
+        Self::builder()
+            .provider_id(provider_id)
+            .operator_id(operator_id)
+            .failure_domain_ids(failure_domain_ids)
+            .build()
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods(module = "nautilus_trader.adapters.blockchain")]
+impl BlockchainVerificationProviderConfig {
+    /// Configuration for one read-only verification RPC provider.
+    #[new]
+    #[must_use]
+    fn py_new(identity: BlockchainProviderIdentity, http_rpc_url: String) -> Self {
+        Self::builder()
+            .identity(identity)
+            .http_rpc_url(http_rpc_url)
+            .build()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "BlockchainVerificationProviderConfig(identity={:?}, http_rpc_url={REDACTED})",
+            self.identity
+        )
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods(module = "nautilus_trader.adapters.blockchain")]
+impl BlockchainChainAnchorConfig {
+    /// Locally trusted finalized chain checkpoint and freshness policy.
+    #[new]
+    #[expect(clippy::too_many_arguments)]
+    #[must_use]
+    fn py_new(
+        chain_id: u32,
+        chain_name: String,
+        checkpoint_height: u64,
+        checkpoint_hash: String,
+        checkpoint_timestamp: u64,
+        max_head_skew_blocks: u64,
+        max_head_age_secs: u64,
+        max_future_drift_secs: u64,
+    ) -> Self {
+        Self::builder()
+            .chain_id(chain_id)
+            .chain_name(chain_name)
+            .checkpoint_height(checkpoint_height)
+            .checkpoint_hash(checkpoint_hash)
+            .checkpoint_timestamp(checkpoint_timestamp)
+            .max_head_skew_blocks(max_head_skew_blocks)
+            .max_head_age_secs(max_head_age_secs)
+            .max_future_drift_secs(max_future_drift_secs)
+            .build()
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods(module = "nautilus_trader.adapters.blockchain")]
+impl BlockchainVerificationConfig {
+    /// Independent verification topology and reviewed local deployment identity.
+    #[new]
+    fn py_new(
+        authoritative: BlockchainProviderIdentity,
+        verifiers: Vec<BlockchainVerificationProviderConfig>,
+        chain_anchor: BlockchainChainAnchorConfig,
+        manifest_version: String,
+        manifest_digest: String,
+        deployment_manifest_json: String,
+    ) -> PyResult<Self> {
+        let deployment_manifest = serde_json::from_str(&deployment_manifest_json)
+            .map_err(|_| to_pyvalue_err("Invalid deployment manifest JSON"))?;
+        Ok(Self::builder()
+            .authoritative(authoritative)
+            .verifiers(verifiers)
+            .chain_anchor(chain_anchor)
+            .manifest_version(manifest_version)
+            .manifest_digest(manifest_digest)
+            .deployment_manifest(deployment_manifest)
+            .build())
+    }
+
+    #[getter]
+    fn deployment_manifest_json(&self) -> PyResult<String> {
+        serde_json::to_string(&self.deployment_manifest).map_err(to_pyvalue_err)
     }
 }
 
@@ -152,9 +276,8 @@ impl BlockchainDataClientConfig {
     /// Returns a string representation of the configuration.
     fn __repr__(&self) -> String {
         format!(
-            "BlockchainDataClientConfig(chain={:?}, http_rpc_url={}, wss_rpc_url={:?}, use_hypersync_for_live_data={}, from_block={:?})",
+            "BlockchainDataClientConfig(chain={:?}, http_rpc_url={REDACTED}, wss_rpc_url={:?}, use_hypersync_for_live_data={}, from_block={:?})",
             self.chain.name,
-            REDACTED,
             self.wss_rpc_url.as_ref().map(|_| REDACTED),
             self.use_hypersync_for_live_data,
             self.from_block
@@ -168,9 +291,8 @@ impl BlockchainExecutionClientConfig {
     /// Configuration for blockchain execution clients.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (trader_id, client_id, chain, wallet_address, http_rpc_url, signer_private_key_env, router_addresses, weth_address, max_fee_per_gas_wei, base_fee_buffer_bps, gas_limit, gas_buffer_bps, tokens=None, rpc_requests_per_second=None, unlimited_approval=false, postgres_cache_database_config=None, transport_backend=None, *, allowed_token_pairs=None, slippage_bps=None, max_slippage_bps=None, max_order_amount=None, deadline_seconds=None, max_quote_age_blocks=None, receipt_timeout_secs=None))]
+    #[pyo3(signature = (client_id, chain, wallet_address, http_rpc_url, signer_private_key_env, router_addresses, weth_address, max_fee_per_gas_wei, base_fee_buffer_bps, gas_limit, gas_buffer_bps, tokens=None, rpc_requests_per_second=None, unlimited_approval=false, postgres_cache_database_config=None, transport_backend=None, *, allowed_token_pairs=None, quote_spend_limits=None, slippage_bps=None, max_slippage_bps=None, max_order_amount=None, deadline_seconds=None, max_quote_age_blocks=None, receipt_timeout_secs=None, payload_key_env=None, payload_key_retired_env=None, payload_deployment_id=None, verification=None))]
     fn py_new(
-        trader_id: TraderId,
         client_id: AccountId,
         #[gen_stub(
             override_type(
@@ -200,15 +322,19 @@ impl BlockchainExecutionClientConfig {
         postgres_cache_database_config: Option<PostgresConnectOptions>,
         transport_backend: Option<TransportBackend>,
         allowed_token_pairs: Option<Vec<(String, String)>>,
+        quote_spend_limits: Option<Vec<QuoteSpendLimit>>,
         slippage_bps: Option<u32>,
         max_slippage_bps: Option<u32>,
         max_order_amount: Option<u64>,
         deadline_seconds: Option<u64>,
         max_quote_age_blocks: Option<u64>,
         receipt_timeout_secs: Option<u64>,
+        payload_key_env: Option<String>,
+        payload_key_retired_env: Option<Vec<String>>,
+        payload_deployment_id: Option<String>,
+        verification: Option<BlockchainVerificationConfig>,
     ) -> Self {
         Self::builder()
-            .trader_id(trader_id)
             .client_id(client_id)
             .chain(chain.clone())
             .wallet_address(wallet_address)
@@ -221,12 +347,17 @@ impl BlockchainExecutionClientConfig {
             .gas_limit(gas_limit)
             .gas_buffer_bps(gas_buffer_bps)
             .maybe_allowed_token_pairs(allowed_token_pairs)
+            .maybe_quote_spend_limits(quote_spend_limits)
             .maybe_slippage_bps(slippage_bps)
             .maybe_max_slippage_bps(max_slippage_bps)
             .maybe_max_order_amount(max_order_amount)
             .maybe_deadline_seconds(deadline_seconds)
             .maybe_max_quote_age_blocks(max_quote_age_blocks)
             .maybe_receipt_timeout_secs(receipt_timeout_secs)
+            .maybe_payload_key_env(payload_key_env)
+            .payload_key_retired_env(payload_key_retired_env.unwrap_or_default())
+            .maybe_payload_deployment_id(payload_deployment_id)
+            .maybe_verification(verification)
             .maybe_tokens(tokens)
             .maybe_rpc_requests_per_second(rpc_requests_per_second)
             .unlimited_approval(unlimited_approval)
@@ -240,12 +371,6 @@ impl BlockchainExecutionClientConfig {
     #[gen_stub(override_return_type(type_repr = "list[tuple[str, str]] | None",))]
     fn allowed_token_pairs(&self) -> Option<Vec<(String, String)>> {
         self.allowed_token_pairs.clone()
-    }
-
-    /// Returns the trader ID.
-    #[getter]
-    const fn trader_id(&self) -> TraderId {
-        self.trader_id
     }
 
     /// Returns the account ID.
@@ -280,8 +405,8 @@ impl BlockchainExecutionClientConfig {
     /// Returns a string representation of the configuration.
     fn __repr__(&self) -> String {
         format!(
-            "BlockchainExecutionClientConfig(chain={:?}, wallet_address={}, http_rpc_url={})",
-            self.chain.name, self.wallet_address, REDACTED
+            "BlockchainExecutionClientConfig(chain={:?}, wallet_address={}, http_rpc_url={REDACTED})",
+            self.chain.name, self.wallet_address
         )
     }
 }

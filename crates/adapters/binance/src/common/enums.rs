@@ -171,7 +171,6 @@ impl TryFrom<OrderSide> for BinanceSide {
         match value {
             OrderSide::Buy => Ok(Self::Buy),
             OrderSide::Sell => Ok(Self::Sell),
-            _ => anyhow::bail!("Unsupported `OrderSide` for Binance: {value:?}"),
         }
     }
 }

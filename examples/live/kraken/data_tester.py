@@ -40,6 +40,9 @@ INSTRUMENT_ID = InstrumentId.from_str(f"PF_XBTUSD.{KRAKEN}")
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     node = (
         LiveNode.builder("KRAKEN-DATA-TESTER-001", TRADER_ID, Environment.LIVE)
         .add_data_client(

@@ -13,13 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use pyo3::pymethods;
 
 use crate::{
     common::enums::AxEnvironment,
-    config::{AxDataClientConfig, AxExecClientConfig},
+    config::{AxDataClientConfig, AxExecutionClientConfig},
 };
 
 #[pymethods]
@@ -88,13 +88,12 @@ impl AxDataClientConfig {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl AxExecClientConfig {
+impl AxExecutionClientConfig {
     /// Configuration for the AX Exchange live execution client.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (trader_id=None, account_id=None, api_key=None, api_secret=None, environment=None, base_url_http=None, base_url_orders=None, base_url_ws_private=None, proxy_url=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, heartbeat_interval_secs=None, recv_window_ms=None, cancel_on_disconnect=None, transport_backend=None))]
+    #[pyo3(signature = (account_id=None, api_key=None, api_secret=None, environment=None, base_url_http=None, base_url_orders=None, base_url_ws_private=None, proxy_url=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, heartbeat_interval_secs=None, recv_window_ms=None, cancel_on_disconnect=None, transport_backend=None))]
     fn py_new(
-        trader_id: Option<TraderId>,
         account_id: Option<AccountId>,
         api_key: Option<String>,
         api_secret: Option<String>,
@@ -114,7 +113,6 @@ impl AxExecClientConfig {
     ) -> Self {
         let default = Self::default();
         Self {
-            trader_id: trader_id.unwrap_or(default.trader_id),
             account_id: account_id.unwrap_or(default.account_id),
             api_key,
             api_secret,
@@ -142,10 +140,10 @@ impl AxExecClientConfig {
     }
 
     fn __repr__(&self) -> String {
-        stringify!(AxExecClientConfig).to_string()
+        stringify!(AxExecutionClientConfig).to_string()
     }
 
     fn __str__(&self) -> String {
-        stringify!(AxExecClientConfig).to_string()
+        stringify!(AxExecutionClientConfig).to_string()
     }
 }

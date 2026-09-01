@@ -25,6 +25,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::Duration,
 };
 
 use ahash::AHashMap;
@@ -34,9 +35,11 @@ use ibapi::{
     market_data::{IgnoreSize, historical::ToDuration},
     prelude::{StreamExt, SubscriptionItemStreamExt},
 };
+#[cfg(test)]
+use nautilus_common::live::get_runtime;
 use nautilus_common::{
     clients::DataClient,
-    live::{get_runtime, runner::get_data_event_sender},
+    live::runner::get_data_event_sender,
     messages::{
         DataEvent, DataResponse,
         data::{
@@ -53,12 +56,12 @@ use nautilus_core::{
     params::Params,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+use nautilus_live::task::{TaskGroup, TaskJoinOutcome, TaskSlot, finish_task};
 use nautilus_model::{
     enums::BookType,
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, any::InstrumentAny},
 };
-use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use self::streams::{
@@ -93,37 +96,22 @@ use crate::{
     pyo3::pyclass(module = "nautilus_trader.adapters.interactive_brokers")
 )]
 pub struct InteractiveBrokersDataClient {
-    /// Client identifier.
     client_id: ClientId,
-    /// Configuration for the client.
     config: InteractiveBrokersDataClientConfig,
-    /// Instrument provider.
     instrument_provider: Arc<InteractiveBrokersInstrumentProvider>,
-    /// Connection state.
     is_connected: AtomicBool,
-    /// Cancellation token for stopping tasks.
     cancellation_token: CancellationToken,
-    /// Active task handles.
-    tasks: Vec<JoinHandle<()>>,
-    /// Data event sender.
+    session_tasks: TaskGroup,
+    command_tasks: TaskGroup,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
-    /// Active subscriptions mapped by instrument ID.
     subscriptions: Arc<tokio::sync::Mutex<AHashMap<InstrumentId, SubscriptionInfo>>>,
-    /// Active option greeks subscriptions mapped by instrument ID.
     option_greeks_subscriptions: Arc<tokio::sync::Mutex<AHashMap<InstrumentId, CancellationToken>>>,
-    /// Quote cache for accumulating tick updates.
     quote_cache: Arc<tokio::sync::Mutex<QuoteCache>>,
-    /// Option greeks cache for merging IB option-computation ticks.
     option_greeks_cache: Arc<tokio::sync::Mutex<OptionGreeksCache>>,
-    /// Clock for timestamping.
     clock: &'static AtomicTime,
-    /// IB API client (shared per host/port/client_id when both data and execution connect).
     ib_client: Option<SharedClientHandle>,
-    /// Last bar for each bar type (for bar completion timeout tracking).
     last_bars: Arc<tokio::sync::Mutex<AHashMap<String, ibapi::market_data::realtime::Bar>>>,
-    /// Active timeout tasks for bar completion.
-    bar_timeout_tasks: Arc<tokio::sync::Mutex<AHashMap<String, tokio::task::JoinHandle<()>>>>,
-    /// Shared data-farm state used to resubscribe data feeds without tearing down the IB socket.
+    bar_timeout_tasks: Arc<tokio::sync::Mutex<AHashMap<String, TaskSlot<()>>>>,
     data_farm_state: Arc<DataFarmConnectionState>,
 }
 
@@ -283,13 +271,17 @@ impl InteractiveBrokersDataClient {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
 
+        let session_tasks = TaskGroup::new();
+        let command_tasks = TaskGroup::new();
+
         Ok(Self {
             client_id,
             config,
             instrument_provider,
             is_connected: AtomicBool::new(false),
-            cancellation_token: CancellationToken::new(),
-            tasks: Vec::new(),
+            cancellation_token: session_tasks.cancellation_token(),
+            session_tasks,
+            command_tasks,
             data_sender,
             subscriptions: Arc::new(tokio::sync::Mutex::new(AHashMap::new())),
             option_greeks_subscriptions: Arc::new(tokio::sync::Mutex::new(AHashMap::new())),
@@ -326,6 +318,70 @@ impl InteractiveBrokersDataClient {
         }
 
         Ok(())
+    }
+
+    fn spawn_command<F>(&self, future: F)
+    where
+        F: std::future::Future<Output = ()> + Send + 'static,
+    {
+        if let Err(e) = self.command_tasks.spawn(future) {
+            tracing::warn!("Skipping IB data command after shutdown began: {e}");
+        }
+    }
+
+    async fn finish_tasks(&self) -> anyhow::Result<()> {
+        let (session_result, command_result) = tokio::join!(
+            self.session_tasks
+                .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2)),
+            self.command_tasks
+                .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2)),
+        );
+        self.finish_bar_timeout_tasks().await;
+        session_result.context("failed to finish IB data session tasks")?;
+        command_result.context("failed to finish IB data command tasks")?;
+        Ok(())
+    }
+
+    async fn prepare_task_groups(&mut self) -> anyhow::Result<()> {
+        if !self.session_tasks.is_open() || !self.command_tasks.is_open() {
+            self.session_tasks.begin_shutdown();
+            self.command_tasks.begin_shutdown();
+            self.finish_tasks().await?;
+            self.session_tasks
+                .start_generation()
+                .context("failed to start IB data session task generation")?;
+            self.command_tasks
+                .start_generation()
+                .context("failed to start IB data command task generation")?;
+            self.cancellation_token = self.session_tasks.cancellation_token();
+        }
+        Ok(())
+    }
+
+    async fn finish_bar_timeout_tasks(&self) {
+        let mut tasks = self.bar_timeout_tasks.lock().await;
+        let bar_types = tasks.keys().cloned().collect::<Vec<_>>();
+
+        for bar_type in bar_types {
+            let handle = tasks
+                .get_mut(&bar_type)
+                .expect("bar timeout task key collected from map");
+
+            match finish_task(handle, Duration::ZERO, Duration::from_secs(1)).await {
+                None => {}
+                Some(TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted) => {}
+                Some(TaskJoinOutcome::Failed(e)) => {
+                    tracing::warn!("IB bar timeout task join failed: {e}");
+                }
+                Some(TaskJoinOutcome::Incomplete) => {
+                    tracing::warn!("IB bar timeout task did not stop within one second");
+                }
+            }
+
+            if handle.is_none() {
+                tasks.remove(&bar_type);
+            }
+        }
     }
 
     /// Get a reference to the IB client if connected.
@@ -578,16 +634,12 @@ impl DataClient for InteractiveBrokersDataClient {
             "Stopping Interactive Brokers data client {id}",
             id = self.client_id
         );
-        self.cancellation_token.cancel();
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
         self.cancel_active_subscriptions()?;
         self.is_connected.store(false, Ordering::Relaxed);
 
-        for task in &self.tasks {
-            task.abort();
-        }
-        self.tasks.clear();
         self.clear_bar_tracking_state();
-        self.cancellation_token = CancellationToken::new();
 
         Ok(())
     }
@@ -597,10 +649,10 @@ impl DataClient for InteractiveBrokersDataClient {
             "Resetting Interactive Brokers data client {id}",
             id = self.client_id
         );
-        self.is_connected.store(false, Ordering::Relaxed);
         self.cancel_active_subscriptions()?;
-        self.cancellation_token = CancellationToken::new();
-        self.tasks.clear();
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
+        self.is_connected.store(false, Ordering::Relaxed);
         self.clear_bar_tracking_state();
 
         {
@@ -627,6 +679,8 @@ impl DataClient for InteractiveBrokersDataClient {
 
     async fn connect(&mut self) -> anyhow::Result<()> {
         tracing::debug!("Connecting Interactive Brokers data client...");
+
+        self.prepare_task_groups().await?;
 
         let handle = crate::common::shared_client::get_or_connect(
             &self.config.host,
@@ -680,13 +734,23 @@ impl DataClient for InteractiveBrokersDataClient {
         let cancellation_token = self.cancellation_token.child_token();
         let clock = self.clock;
 
-        self.tasks.push(get_runtime().spawn(async move {
+        if let Err(e) = self.session_tasks.spawn(async move {
             if let Err(e) =
                 monitor_data_farm_notices(client, data_farm_state, clock, cancellation_token).await
             {
                 tracing::warn!("IB data farm notice monitor stopped: {e:?}");
             }
-        }));
+        }) {
+            self.session_tasks.begin_shutdown();
+            self.command_tasks.begin_shutdown();
+            self.ib_client = None;
+
+            if let Err(teardown_error) = self.finish_tasks().await {
+                return Err(anyhow::Error::new(e)
+                    .context(format!("IB data startup teardown failed: {teardown_error}")));
+            }
+            return Err(anyhow::Error::new(e).context("failed to register IB data farm monitor"));
+        }
         self.is_connected.store(true, Ordering::Relaxed);
 
         let instrument_count = self.instrument_provider.count();
@@ -711,11 +775,14 @@ impl DataClient for InteractiveBrokersDataClient {
     async fn disconnect(&mut self) -> anyhow::Result<()> {
         tracing::debug!("Disconnecting Interactive Brokers data client...");
 
-        self.stop()?;
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
+        self.cancel_active_subscriptions()?;
         self.ib_client = None;
+        let tasks_result = self.finish_tasks().await;
         self.is_connected.store(false, Ordering::Relaxed);
         tracing::info!("Disconnected Interactive Brokers data client");
-        Ok(())
+        tasks_result
     }
 
     fn is_connected(&self) -> bool {
@@ -783,7 +850,7 @@ impl DataClient for InteractiveBrokersDataClient {
         let ignore_size_updates = self.config.ignore_quote_tick_size_updates;
         let data_farm_state = Arc::clone(&self.data_farm_state);
 
-        let task = get_runtime().spawn(async move {
+        let task = async move {
             if use_market_data {
                 // Use market_data (reqMktData) for BAG contracts or when batch_quotes is requested
                 tracing::debug!(
@@ -871,9 +938,11 @@ impl DataClient for InteractiveBrokersDataClient {
                     }
                 }
             }
-        });
+        };
 
-        self.tasks.push(task);
+        self.session_tasks
+            .spawn(task)
+            .context("failed to register IB data subscription task")?;
 
         // Record subscription
         let mut subscriptions = self
@@ -945,7 +1014,7 @@ impl DataClient for InteractiveBrokersDataClient {
         let subscription_token_clone = subscription_token.clone();
         let data_farm_state = Arc::clone(&self.data_farm_state);
 
-        let task = get_runtime().spawn(async move {
+        let task = async move {
             if let Err(e) = handle_index_price_subscription(
                 client_clone,
                 contract,
@@ -965,9 +1034,11 @@ impl DataClient for InteractiveBrokersDataClient {
                     e
                 );
             }
-        });
+        };
 
-        self.tasks.push(task);
+        self.session_tasks
+            .spawn(task)
+            .context("failed to register IB data subscription task")?;
 
         let mut subscriptions = self
             .subscriptions
@@ -1034,7 +1105,7 @@ impl DataClient for InteractiveBrokersDataClient {
         let client_clone = client.as_arc().clone();
         let data_farm_state = Arc::clone(&self.data_farm_state);
 
-        let task = get_runtime().spawn(async move {
+        let task = async move {
             if let Err(e) = handle_option_greeks_subscription(
                 client_clone,
                 contract,
@@ -1053,9 +1124,11 @@ impl DataClient for InteractiveBrokersDataClient {
                     e
                 );
             }
-        });
+        };
 
-        self.tasks.push(task);
+        self.session_tasks
+            .spawn(task)
+            .context("failed to register IB data subscription task")?;
 
         let mut subscriptions = self
             .option_greeks_subscriptions
@@ -1185,7 +1258,7 @@ impl DataClient for InteractiveBrokersDataClient {
         let subscription_token_clone = subscription_token.clone();
         let data_farm_state = Arc::clone(&self.data_farm_state);
 
-        let task = get_runtime().spawn(async move {
+        let task = async move {
             if let Err(e) = handle_trade_subscription(
                 client_clone,
                 contract,
@@ -1201,9 +1274,11 @@ impl DataClient for InteractiveBrokersDataClient {
             {
                 tracing::error!("Trade subscription error for {}: {:?}", instrument_id, e);
             }
-        });
+        };
 
-        self.tasks.push(task);
+        self.session_tasks
+            .spawn(task)
+            .context("failed to register IB data subscription task")?;
 
         // Record subscription
         let mut subscriptions = self
@@ -1291,7 +1366,7 @@ impl DataClient for InteractiveBrokersDataClient {
         let subscription_token_clone = subscription_token.clone();
         let data_farm_state = Arc::clone(&self.data_farm_state);
 
-        let task = get_runtime().spawn(async move {
+        let task = async move {
             let result = if bar_type.spec().timedelta().as_secs() == 5 {
                 handle_realtime_bars_subscription(
                     client_clone,
@@ -1340,9 +1415,11 @@ impl DataClient for InteractiveBrokersDataClient {
             if let Err(e) = result {
                 tracing::error!("Bars subscription error for {}: {:?}", bar_type, e);
             }
-        });
+        };
 
-        self.tasks.push(task);
+        self.session_tasks
+            .spawn(task)
+            .context("failed to register IB data subscription task")?;
 
         // Record subscription
         let mut subscriptions = self
@@ -1436,7 +1513,7 @@ impl DataClient for InteractiveBrokersDataClient {
         let subscription_token_clone = subscription_token.clone();
         let data_farm_state = Arc::clone(&self.data_farm_state);
 
-        let task = get_runtime().spawn(async move {
+        let task = async move {
             if let Err(e) = handle_market_depth_subscription(
                 client_clone,
                 contract,
@@ -1458,9 +1535,11 @@ impl DataClient for InteractiveBrokersDataClient {
                     e
                 );
             }
-        });
+        };
 
-        self.tasks.push(task);
+        self.session_tasks
+            .spawn(task)
+            .context("failed to register IB data subscription task")?;
 
         // Record subscription
         let mut subscriptions = self
@@ -1547,7 +1626,7 @@ impl DataClient for InteractiveBrokersDataClient {
 
                 let client_clone = client.as_arc().clone();
 
-                get_runtime().spawn(async move {
+                self.spawn_command(async move {
                     let filters = params_to_string_filters(params.as_ref());
                     if let Err(e) = instrument_provider
                         .fetch_contract_details(&client_clone, instrument_id, force_update, filters)
@@ -1691,7 +1770,7 @@ impl DataClient for InteractiveBrokersDataClient {
             let contract_specs_to_load_clone = contract_specs_to_load;
             let return_loaded_only = !contract_specs_to_load_clone.is_empty();
 
-            get_runtime().spawn(async move {
+            self.spawn_command(async move {
                 let mut loaded_instrument_ids = Vec::new();
 
                 // Load instruments from contracts if provided
@@ -1852,7 +1931,7 @@ impl DataClient for InteractiveBrokersDataClient {
         let trading_hours = request_trading_hours(self.config.use_regular_trading_hours);
         let price_magnifier = self.instrument_provider.get_price_magnifier(&instrument_id);
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             let mut all_quotes = Vec::new();
             // Work backwards from end_date, updating end to the earliest tick received
             let mut current_end_date = cmd_end;
@@ -2041,7 +2120,7 @@ impl DataClient for InteractiveBrokersDataClient {
         let trading_hours = request_trading_hours(self.config.use_regular_trading_hours);
         let price_magnifier = self.instrument_provider.get_price_magnifier(&instrument_id);
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             let mut all_trades = Vec::new();
             // Work backwards from end_date, updating end to the earliest tick received
             let mut current_end_date = cmd_end;
@@ -2245,7 +2324,7 @@ impl DataClient for InteractiveBrokersDataClient {
         let client_clone = client.as_arc().clone();
         let trading_hours = request_trading_hours(self.config.use_regular_trading_hours);
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             let mut all_bars = Vec::new();
 
             for (seg_end, seg_duration) in segments {
@@ -2337,10 +2416,9 @@ impl DataClient for InteractiveBrokersDataClient {
 impl InteractiveBrokersDataClient {
     fn clear_bar_tracking_state(&self) {
         if let Ok(mut tasks) = self.bar_timeout_tasks.try_lock() {
-            for task in tasks.values() {
+            for task in tasks.values_mut() {
                 task.abort();
             }
-            tasks.clear();
         } else {
             tracing::warn!("Failed to lock IB bar timeout tasks for cleanup");
         }
@@ -2448,7 +2526,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_stop_refreshes_cancellation_token_for_restart() {
+    fn test_stop_closes_tasks_until_async_generation_preparation() {
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
         nautilus_common::live::runner::replace_data_event_sender(sender);
 
@@ -2461,12 +2539,23 @@ mod tests {
 
         client.stop().unwrap();
 
+        assert!(client.cancellation_token.is_cancelled());
+        assert!(client.cancellation_token.child_token().is_cancelled());
+        assert!(!client.session_tasks.is_open());
+        assert!(!client.command_tasks.is_open());
+
+        get_runtime()
+            .block_on(client.prepare_task_groups())
+            .expect("prepare replacement task generation");
+
         assert!(!client.cancellation_token.is_cancelled());
         assert!(!client.cancellation_token.child_token().is_cancelled());
+        assert!(client.session_tasks.is_open());
+        assert!(client.command_tasks.is_open());
     }
 
     #[rstest]
-    fn test_stop_clears_bar_tracking_state() {
+    fn test_stop_retains_bar_timeout_handle_until_async_finish() {
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
         nautilus_common::live::runner::replace_data_event_sender(sender);
 
@@ -2487,7 +2576,7 @@ mod tests {
                 .bar_timeout_tasks
                 .lock()
                 .await
-                .insert(bar_type.clone(), task);
+                .insert(bar_type.clone(), TaskSlot::from_handle(task));
             client.last_bars.lock().await.insert(
                 bar_type.clone(),
                 ibapi::market_data::realtime::Bar {
@@ -2506,8 +2595,15 @@ mod tests {
         client.stop().unwrap();
 
         get_runtime().block_on(async {
-            assert!(client.bar_timeout_tasks.lock().await.is_empty());
+            assert_eq!(client.bar_timeout_tasks.lock().await.len(), 1);
             assert!(client.last_bars.lock().await.is_empty());
+
+            client
+                .prepare_task_groups()
+                .await
+                .expect("finish stopped task generation");
+
+            assert!(client.bar_timeout_tasks.lock().await.is_empty());
         });
     }
 }

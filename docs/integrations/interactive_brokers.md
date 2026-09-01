@@ -11,7 +11,7 @@ Dockerized IB Gateway management through the same Rust implementation and Python
 
 Install NautilusTrader using the [installation guide](../getting_started/installation.md). The
 Interactive Brokers adapter and Docker gateway support are included in the Python package; no
-adapter‑specific extra is required.
+adapter-specific extra is required.
 
 ## Examples
 
@@ -30,7 +30,7 @@ IB uses different default ports for each application and trading mode:
 | TWS         |        `7497` |       `7496` |
 | IB Gateway  |        `4002` |       `4001` |
 
-The adapter defaults to `127.0.0.1:4002`, which matches a local paper‑trading IB Gateway. Set the
+The adapter defaults to `127.0.0.1:4002`, which matches a local paper-trading IB Gateway. Set the
 port explicitly when using TWS or a live account.
 
 ### Connect to TWS or IB Gateway
@@ -39,7 +39,7 @@ Import the public configuration types from `nautilus_trader.adapters.interactive
 
 ```python
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersDataClientConfig
-from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersExecClientConfig
+from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersExecutionClientConfig
 from nautilus_trader.adapters.interactive_brokers import MarketDataType
 
 
@@ -50,7 +50,7 @@ data_config = InteractiveBrokersDataClientConfig(
     market_data_type=MarketDataType.DELAYED,
 )
 
-exec_config = InteractiveBrokersExecClientConfig(
+exec_config = InteractiveBrokersExecutionClientConfig(
     host="127.0.0.1",
     port=7497,
     client_id=101,
@@ -166,7 +166,7 @@ contract resolution and instrument IDs consistent across both clients.
 ### Derivative chains and spreads
 
 Set chain flags on a contract dictionary to use that contract as the underlying or chain seed.
-The provider‑level `min_expiry_days` and `max_expiry_days` values limit the contracts loaded:
+The provider-level `min_expiry_days` and `max_expiry_days` values limit the contracts loaded:
 
 ```python
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersInstrumentProviderConfig
@@ -221,13 +221,13 @@ Its async Python methods support:
 
 - `request_instruments` for contract and instrument discovery.
 - `request_bars` for one or more bar specifications.
-- `request_ticks` for historical trade or bid‑ask ticks.
+- `request_ticks` for historical trade or bid-ask ticks.
 
 For `CONTFUT` bar requests, the client omits `end_date_time` because IB rejects an explicit end
 date. It requests only the first duration segment, anchored to the current time, so returned bars
 may fall outside the requested start and end range.
 
-IB controls historical availability, pacing, bar sizes, durations, and regular‑trading‑hours
+IB controls historical availability, pacing, bar sizes, durations, and regular-trading-hours
 filtering. Check the
 [official historical bars](https://ibkrcampus.com/campus/ibkr-api-page/twsapi-doc/#historical-bars)
 and [historical time and sales](https://ibkrcampus.com/campus/ibkr-api-page/twsapi-doc/#historical-time-sales)
@@ -243,9 +243,9 @@ the cached exchange:
 self.submit_order(order, params={"exchange": "IEX"})
 ```
 
-Pass IB‑specific order attributes as a tag prefixed with `IBOrderTags:` and followed by a JSON
+Pass IB-specific order attributes as a tag prefixed with `IBOrderTags:` and followed by a JSON
 object. The adapter overlays recognized IB order fields and supports price, time, margin, execution,
-volume, and percent‑change conditions:
+volume, and percent-change conditions:
 
 ```python
 import json
@@ -284,12 +284,12 @@ for the supported order attributes.
 | `port`                           | `4002`        | TWS or IB Gateway socket port.                        |
 | `client_id`                      | `1`           | IB API client ID.                                     |
 | `use_regular_trading_hours`      | `True`        | Restrict requests to regular trading hours.           |
-| `market_data_type`               | `REALTIME`    | Select real‑time, frozen, delayed, or delayed frozen. |
+| `market_data_type`               | `REALTIME`    | Select real-time, frozen, delayed, or delayed frozen. |
 | `ignore_quote_tick_size_updates` | `False`       | Ignore quote updates that change size only.           |
 | `connection_timeout`             | `300` seconds | Set the socket connection timeout.                    |
 | `request_timeout`                | `60` seconds  | Set the IB API request timeout.                       |
-| `handle_revised_bars`            | `False`       | Process revised real‑time bars.                       |
-| `batch_quotes`                   | `True`        | Use `reqMktData` instead of tick‑by‑tick quotes.      |
+| `handle_revised_bars`            | `False`       | Process revised real-time bars.                       |
+| `batch_quotes`                   | `True`        | Use `reqMktData` instead of tick-by-tick quotes.      |
 | `instrument_provider`            | Default       | Configure contract and instrument loading.            |
 
 ### Execution client

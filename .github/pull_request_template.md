@@ -4,7 +4,7 @@
 high standard for correctness, reliability, testing, clarity, and maintainability.**
 
 > External contributions must not modify files under `.github/workflows` or `.github/actions`;
-> workflow changes are maintainer‑only.
+> workflow changes are maintainer-only.
 
 <!-- PR title: use a capitalized, imperative subject naming the affected surface, for example
      "Fix Bybit post-only rejection flag". Do NOT use Conventional Commits (`feat:`, `fix:`) syntax.
@@ -12,7 +12,7 @@ high standard for correctness, reliability, testing, clarity, and maintainabilit
      yourself. Aim to keep the resulting subject at 60 characters or fewer. -->
 
 - [ ] A maintainer agreed on the problem and approach in an issue, or this is a small,
-  self‑contained fix that does not need prior discussion
+  self-contained fix that does not need prior discussion
 - [ ] I have read and followed
   [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md)
   and, if I used AI,

@@ -202,7 +202,9 @@ fn dispatch_order_update(
             venue_order_id,
             local_client_order_id,
             report.quantity,
-            report.order_side,
+            report
+                .order_side
+                .expect("WebSocket order report side must be Buy or Sell"),
         )
     } else if is_accepted {
         ctx.fill_tracker
@@ -751,7 +753,7 @@ fn build_ws_order_status_report(
         instrument.id(),
         None,
         venue_order_id,
-        order_side,
+        order_side.into(),
         OrderType::Limit,
         time_in_force,
         order_status,
@@ -1173,7 +1175,7 @@ mod tests {
     use nautilus_common::messages::{ExecutionEvent, ExecutionReport};
     use nautilus_core::time::AtomicTime;
     use nautilus_model::{
-        enums::{AccountType, OrderStatus},
+        enums::{AccountType, OrderSide, OrderStatus},
         events::OrderEventAny,
         identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId},
         orders::{Order, builder::OrderTestBuilder},
@@ -1298,7 +1300,7 @@ mod tests {
             ts_init,
         );
 
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, Some(OrderSide::Buy));
         assert_eq!(report.order_type, OrderType::Limit);
         // A resting BUY already reports shares, so its size passes through unconverted
         assert_eq!(report.quantity.as_decimal(), dec!(100));
@@ -1525,7 +1527,7 @@ mod tests {
         };
 
         assert_eq!(report.venue_order_id, venue_order_id);
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, Some(OrderSide::Buy));
         assert_eq!(report.time_in_force, TimeInForce::Fok);
         assert_eq!(report.order_status, OrderStatus::Canceled);
         assert_eq!(report.quantity.as_decimal(), dec!(101));

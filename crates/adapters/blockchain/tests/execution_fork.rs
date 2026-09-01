@@ -32,13 +32,15 @@ use alloy::{
     signers::local::PrivateKeySigner,
 };
 use harness::{
-    CHAIN_ID, FORK_BLOCK, FUND_AMOUNT_WEI, ROUTER, SIGNER_ENV, SLIPPAGE_BPS, SWAP_AMOUNT, USDC,
-    WETH, WRAP_AMOUNT_WEI, anvil_mine, anvil_set_automine, anvil_set_interval_mining,
-    build_full_range_snapshot, ensure_execution_schema, fund_anvil_wallet, git_diff_sha256,
-    start_anvil, start_anvil_at, weth_usdc_pool,
+    CHAIN_ID, ExecutionRpcTopology, FORK_BLOCK, FUND_AMOUNT_WEI, PAYLOAD_DEPLOYMENT_ID,
+    PAYLOAD_KEY_ENV, PAYLOAD_KEY_HEX, ROUTER, SIGNER_ENV, SLIPPAGE_BPS, SWAP_AMOUNT, USDC, WETH,
+    WRAP_AMOUNT_WEI, anvil_drop_transaction, anvil_mine, anvil_set_automine,
+    anvil_set_interval_mining, build_full_range_snapshot, ensure_execution_schema,
+    fund_anvil_wallet, git_diff_sha256, quote_buy_amount_in, start_anvil, start_anvil_at,
+    start_execution_rpc_topology, weth_usdc_pool,
 };
 use nautilus_blockchain::{
-    config::BlockchainExecutionClientConfig,
+    config::{BlockchainExecutionClientConfig, QuoteSpendLimit},
     constants::BLOCKCHAIN_VENUE,
     contracts::erc20::Erc20Contract,
     execution::{
@@ -62,7 +64,7 @@ use nautilus_model::{
     events::OrderEventAny,
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     orders::{Order, OrderAny, OrderTestBuilder},
-    types::{Price, Quantity},
+    types::{Price, Quantity, fixed::FIXED_PRECISION},
 };
 use sqlx::{
     PgPool,
@@ -71,6 +73,7 @@ use sqlx::{
 
 const PANCAKE_WETH_USDC_POOL: Address = address!("d9e2a1a61b6e61b275cec326465d417e52c1b95c");
 const RECOVERY_SIGNER_ENV: &str = "BLOCKCHAIN_FORK_TEST_PRIVATE_KEY_RECOVERY";
+const REPLACEMENT_SCAN_BLOCKS: u64 = 4_096;
 
 #[tokio::test]
 async fn anvil_fork_wrap_approve_preflight_and_swap() {
@@ -108,6 +111,7 @@ async fn anvil_fork_wrap_approve_preflight_and_swap() {
         .await
         .expect("Anvil must start when BLOCKCHAIN_FORK_TESTS=1");
     let anvil_url = format!("http://127.0.0.1:{}", startup.port);
+    let rpc_topology = start_execution_rpc_topology(&anvil_url).await;
     let signer = PrivateKeySigner::random();
     let wallet = signer.address();
     let signer_private_key = nautilus_core::hex::encode_prefixed(signer.to_bytes());
@@ -141,11 +145,11 @@ async fn anvil_fork_wrap_approve_preflight_and_swap() {
         cache.clone(),
     );
     let config = BlockchainExecutionClientConfig::builder()
-        .trader_id(TraderId::from("TRADER-001"))
         .client_id(AccountId::from("BLOCKCHAIN-FORK-001"))
         .chain(chains::ARBITRUM.clone())
         .wallet_address(wallet.to_string())
-        .http_rpc_url(anvil_url.clone())
+        .http_rpc_url(rpc_topology.authoritative_url())
+        .verification(rpc_topology.verification())
         .signer_private_key_env(SIGNER_ENV.to_string())
         .router_addresses(vec![ROUTER.to_string()])
         .weth_address(WETH.to_string())
@@ -161,16 +165,21 @@ async fn anvil_fork_wrap_approve_preflight_and_swap() {
         .deadline_seconds(300)
         .max_quote_age_blocks(100)
         .receipt_timeout_secs(60)
+        .payload_key_env(PAYLOAD_KEY_ENV.to_string())
+        .payload_deployment_id(PAYLOAD_DEPLOYMENT_ID.to_string())
         .postgres_cache_database_config(pg_config)
         .build();
 
     // SAFETY: this opt-in test runs in its own process and no other thread reads this variable.
     unsafe { std::env::set_var(SIGNER_ENV, signer_private_key) };
+    // SAFETY: the same process isolation applies to this variable
+    unsafe { std::env::set_var(PAYLOAD_KEY_ENV, PAYLOAD_KEY_HEX) };
 
     let mut client = BlockchainExecutionClient::new(core, config).unwrap();
     let (event_sender, mut event_receiver) = tokio::sync::mpsc::unbounded_channel();
     replace_exec_event_sender(event_sender);
     client.start().unwrap();
+    client.protect_payload_storage().await.unwrap();
     client.connect().await.unwrap();
 
     // Build a live pool profiler from the fork's current on-chain state so submit_order can
@@ -257,7 +266,7 @@ async fn anvil_fork_wrap_approve_preflight_and_swap() {
         &admin_pool,
         wallet,
         buy_order,
-        "only Sell is supported",
+        "not in the `allowed_token_pairs` allowlist",
     )
     .await;
 
@@ -461,15 +470,9 @@ async fn anvil_fork_wrap_approve_preflight_and_swap() {
     .fetch_all(&admin_pool)
     .await
     .unwrap();
-    assert!(
-        finality_transitions
-            .iter()
-            .any(|status| status == "included")
-    );
-    assert!(
-        finality_transitions
-            .iter()
-            .any(|status| status == "finalized")
+    assert_eq!(
+        finality_transitions,
+        ["prepared", "signed", "broadcast", "finalized"]
     );
 
     // Reconnect after the terminal marker. Reconciliation must emit no duplicate order event
@@ -606,7 +609,305 @@ async fn anvil_fork_wrap_approve_preflight_and_swap() {
         evidence_dir.display()
     );
 
-    unsafe { std::env::remove_var(SIGNER_ENV) };
+    rpc_topology.assert_broadcast_isolation();
+    unsafe {
+        // SAFETY: this opt-in test owns this variable for the process
+        std::env::remove_var(SIGNER_ENV);
+    }
+    unsafe {
+        // SAFETY: this opt-in test owns this variable for the process
+        std::env::remove_var(PAYLOAD_KEY_ENV);
+    }
+}
+
+#[tokio::test]
+async fn anvil_fork_usdc_to_weth_market_buy() {
+    if std::env::var("BLOCKCHAIN_FORK_TESTS").as_deref() != Ok("1") {
+        eprintln!("BLOCKCHAIN_FORK_TESTS is not 1; skipping fork test");
+        return;
+    }
+
+    let fork_rpc_url = std::env::var("BLOCKCHAIN_FORK_RPC_URL")
+        .expect("BLOCKCHAIN_FORK_RPC_URL must be set when BLOCKCHAIN_FORK_TESTS=1");
+    let pg_config = get_postgres_connect_options(None, None, None, None, None);
+    let admin_options: PgConnectOptions = pg_config.clone().into();
+    let admin_pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect_with(admin_options)
+        .await
+        .expect("Postgres must be reachable when BLOCKCHAIN_FORK_TESTS=1");
+
+    let (_anvil, startup) = start_anvil(&fork_rpc_url)
+        .await
+        .expect("Anvil must start when BLOCKCHAIN_FORK_TESTS=1");
+    let anvil_url = format!("http://127.0.0.1:{}", startup.port);
+    let rpc_topology = start_execution_rpc_topology(&anvil_url).await;
+    let signer = PrivateKeySigner::random();
+    let wallet = signer.address();
+    let signer_private_key = nautilus_core::hex::encode_prefixed(signer.to_bytes());
+    let setup_sell_order_id = format!("O-FORK-BUY-SETUP-SELL-{}", UUID4::new());
+    let buy_order_id = format!("O-FORK-BUY-SWAP-{}", UUID4::new());
+    fund_anvil_wallet(&anvil_url, wallet).await;
+    ensure_execution_schema(&admin_pool).await;
+
+    let usdc_address: Address = USDC.parse().unwrap();
+    let weth_address: Address = WETH.parse().unwrap();
+    let rpc_client = Arc::new(BlockchainHttpRpcClient::new(anvil_url.clone(), None, None));
+    let erc20 = Erc20Contract::new(rpc_client.clone(), true);
+
+    let pool = weth_usdc_pool();
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    cache.borrow_mut().add_pool(pool.clone()).unwrap();
+    let core = ExecutionClientCore::new(
+        TraderId::from("TRADER-001"),
+        ClientId::from("BLOCKCHAIN-FORK-001"),
+        *BLOCKCHAIN_VENUE,
+        OmsType::Netting,
+        AccountId::from("BLOCKCHAIN-FORK-001"),
+        AccountType::Wallet,
+        None,
+        cache.clone(),
+    );
+    let config = BlockchainExecutionClientConfig::builder()
+        .client_id(AccountId::from("BLOCKCHAIN-FORK-001"))
+        .chain(chains::ARBITRUM.clone())
+        .wallet_address(wallet.to_string())
+        .http_rpc_url(rpc_topology.authoritative_url())
+        .verification(rpc_topology.verification())
+        .signer_private_key_env(SIGNER_ENV.to_string())
+        .router_addresses(vec![ROUTER.to_string()])
+        .weth_address(WETH.to_string())
+        .unlimited_approval(true)
+        .max_fee_per_gas_wei(100_000_000_000)
+        .base_fee_buffer_bps(2_000)
+        .gas_limit(5_000_000)
+        .gas_buffer_bps(2_000)
+        .allowed_token_pairs(vec![
+            (WETH.to_string(), USDC.to_string()),
+            (USDC.to_string(), WETH.to_string()),
+        ])
+        .quote_spend_limits(vec![
+            QuoteSpendLimit::builder()
+                .token_in(USDC.to_string())
+                .token_out(WETH.to_string())
+                .spend_token(USDC.to_string())
+                .spend_token_decimals(6)
+                .max_amount("1000000000".to_string())
+                .build(),
+        ])
+        .slippage_bps(SLIPPAGE_BPS)
+        .max_slippage_bps(200)
+        .max_order_amount(1_000_000_000_000_000_000)
+        .deadline_seconds(300)
+        .max_quote_age_blocks(100)
+        .receipt_timeout_secs(60)
+        .payload_key_env(PAYLOAD_KEY_ENV.to_string())
+        .payload_deployment_id(PAYLOAD_DEPLOYMENT_ID.to_string())
+        .postgres_cache_database_config(pg_config)
+        .build();
+
+    // SAFETY: this opt-in test runs in its own process and no other thread reads this variable.
+    unsafe { std::env::set_var(SIGNER_ENV, signer_private_key) };
+    // SAFETY: the same process isolation applies to this variable
+    unsafe { std::env::set_var(PAYLOAD_KEY_ENV, PAYLOAD_KEY_HEX) };
+
+    let mut client = BlockchainExecutionClient::new(core, config).unwrap();
+    let (event_sender, mut event_receiver) = tokio::sync::mpsc::unbounded_channel();
+    replace_exec_event_sender(event_sender);
+    client.start().unwrap();
+    client.protect_payload_storage().await.unwrap();
+    client.connect().await.unwrap();
+
+    let setup_sell_amount_wei = U256::from(WRAP_AMOUNT_WEI) * U256::from(2);
+    let wrap_hash = client.wrap(setup_sell_amount_wei).await.unwrap();
+    assert!(
+        rpc_client
+            .get_transaction_receipt(&wrap_hash)
+            .await
+            .unwrap()
+            .unwrap()
+            .status
+    );
+    let approve_weth_hash = client
+        .approve(weth_address, setup_sell_amount_wei, ROUTER.parse().unwrap())
+        .await
+        .unwrap();
+    assert!(
+        rpc_client
+            .get_transaction_receipt(&approve_weth_hash)
+            .await
+            .unwrap()
+            .unwrap()
+            .status
+    );
+
+    let (sell_snapshot, _) = build_full_range_snapshot(&rpc_client, &pool).await;
+    let mut sell_profiler = PoolProfiler::new(Arc::new(pool.clone()));
+    sell_profiler.restore_from_snapshot(sell_snapshot).unwrap();
+    cache.borrow_mut().add_pool_profiler(sell_profiler).unwrap();
+
+    let setup_sell = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(pool.instrument_id)
+        .client_order_id(ClientOrderId::new_checked(&setup_sell_order_id).unwrap())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("0.002"))
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(setup_sell.clone(), None, None, false)
+        .unwrap();
+    client.submit_order(submit_command(&setup_sell)).unwrap();
+    wait_for_finalized_fill(&admin_pool, &setup_sell_order_id).await;
+
+    while event_receiver.try_recv().is_ok() {}
+
+    let (snapshot, _) = build_full_range_snapshot(&rpc_client, &pool).await;
+    let amount_in = quote_buy_amount_in(&snapshot, &pool);
+    assert!(amount_in > U256::ZERO);
+    let usdc_balance = erc20.balance_of(&usdc_address, &wallet).await.unwrap();
+    assert!(
+        usdc_balance >= amount_in,
+        "setup SELL USDC {usdc_balance} is below BUY input {amount_in}"
+    );
+    let min_amount_out =
+        U256::from(WRAP_AMOUNT_WEI) * U256::from(10_000 - SLIPPAGE_BPS) / U256::from(10_000);
+    let mut profiler = PoolProfiler::new(Arc::new(pool.clone()));
+    profiler.restore_from_snapshot(snapshot).unwrap();
+    cache.borrow_mut().add_pool_profiler(profiler).unwrap();
+
+    let approve_hash = client
+        .approve(usdc_address, amount_in, ROUTER.parse().unwrap())
+        .await
+        .unwrap();
+    let approve_receipt = rpc_client
+        .get_transaction_receipt(&approve_hash)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(approve_receipt.status);
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(pool.instrument_id)
+        .client_order_id(ClientOrderId::new_checked(&buy_order_id).unwrap())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(SWAP_AMOUNT))
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    let weth_before = erc20.balance_of(&weth_address, &wallet).await.unwrap();
+    let usdc_before = erc20.balance_of(&usdc_address, &wallet).await.unwrap();
+
+    client.submit_order(submit_command(&order)).unwrap();
+
+    let swap_hash_string = wait_for_finalized_fill(&admin_pool, &buy_order_id).await;
+
+    let swap_receipt = rpc_client
+        .get_transaction_receipt(&swap_hash_string.parse().unwrap())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(swap_receipt.status);
+    assert!(swap_receipt.gas_used > 0);
+
+    let mut saw_submitted = false;
+    let mut fill_qty = None;
+
+    while let Ok(event) = event_receiver.try_recv() {
+        match event {
+            ExecutionEvent::Order(OrderEventAny::Submitted(e)) => {
+                assert_eq!(e.client_order_id.as_str(), buy_order_id);
+                saw_submitted = true;
+            }
+            ExecutionEvent::Order(OrderEventAny::Filled(e)) => {
+                assert_eq!(e.client_order_id.as_str(), buy_order_id);
+                assert_eq!(e.order_side, OrderSide::Buy);
+                assert_eq!(e.venue_order_id.as_str(), swap_hash_string);
+                assert!(e.commission.is_some(), "gas commission missing");
+                fill_qty = Some(e.last_qty);
+            }
+            _ => {}
+        }
+    }
+    assert!(saw_submitted, "expected an OrderSubmitted event");
+    let fill_qty = fill_qty.expect("expected an OrderFilled event after finality");
+
+    let weth_after = erc20.balance_of(&weth_address, &wallet).await.unwrap();
+    let usdc_after = erc20.balance_of(&usdc_address, &wallet).await.unwrap();
+    let weth_received = weth_after.checked_sub(weth_before).unwrap();
+    let usdc_spent = usdc_before.checked_sub(usdc_after).unwrap();
+    assert_eq!(usdc_spent, amount_in);
+    assert!(weth_received >= min_amount_out);
+    assert!(weth_received > U256::ZERO);
+    let scale = U256::from(10u64).pow(U256::from(18 - u32::from(FIXED_PRECISION)));
+    assert_eq!(U256::from(fill_qty.raw), weth_received / scale);
+
+    let nonce_before_reconnect = rpc_client
+        .get_transaction_count_latest(&wallet)
+        .await
+        .unwrap();
+    client.disconnect().await.unwrap();
+    client.connect().await.unwrap();
+    let nonce_after_reconnect = rpc_client
+        .get_transaction_count_latest(&wallet)
+        .await
+        .unwrap();
+    assert_eq!(nonce_after_reconnect, nonce_before_reconnect);
+
+    while let Ok(event) = event_receiver.try_recv() {
+        assert!(
+            !matches!(event, ExecutionEvent::Order(_)),
+            "reconciliation emitted a duplicate order event: {event:?}"
+        );
+    }
+
+    eprintln!(
+        "BUY fork proof: hash={swap_hash_string} usdc_spent={usdc_spent} weth_received={weth_received} anvil={}",
+        startup.version
+    );
+    rpc_topology.assert_broadcast_isolation();
+    unsafe {
+        // SAFETY: this opt-in test owns this variable for the process
+        std::env::remove_var(SIGNER_ENV);
+    }
+    unsafe {
+        // SAFETY: this opt-in test owns this variable for the process
+        std::env::remove_var(PAYLOAD_KEY_ENV);
+    }
+}
+
+async fn wait_for_finalized_fill(admin_pool: &PgPool, client_order_id: &str) -> String {
+    tokio::time::timeout(Duration::from_secs(60), async {
+        loop {
+            let row: Option<(String, String, bool)> = sqlx::query_as(
+                "SELECT hash.transaction_hash, intent.status, intent.fill_emitted \
+                 FROM execution_intent AS intent \
+                 JOIN execution_transaction_hash AS hash \
+                   ON hash.intent_id = intent.id AND hash.current \
+                 WHERE intent.chain_id = 42161 AND intent.client_order_id = $1",
+            )
+            .bind(client_order_id)
+            .fetch_optional(admin_pool)
+            .await
+            .unwrap();
+
+            if let Some((hash, status, fill_emitted)) = row
+                && status == "finalized"
+                && fill_emitted
+            {
+                break hash;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .unwrap()
 }
 
 #[expect(
@@ -714,6 +1015,7 @@ async fn anvil_fork_restart_recovers_operator_transactions() {
         .await
         .expect("Anvil must start when BLOCKCHAIN_FORK_TESTS=1");
     let anvil_url = format!("http://127.0.0.1:{}", startup.port);
+    let rpc_topology = start_execution_rpc_topology(&anvil_url).await;
     let signer = PrivateKeySigner::random();
     let wallet = signer.address();
     let signer_private_key = nautilus_core::hex::encode_prefixed(signer.to_bytes());
@@ -722,6 +1024,8 @@ async fn anvil_fork_restart_recovers_operator_transactions() {
 
     // SAFETY: this opt-in test uses a distinct env var from the sibling fork test.
     unsafe { std::env::set_var(RECOVERY_SIGNER_ENV, &signer_private_key) };
+    // SAFETY: this opt-in test runs in its own process
+    unsafe { std::env::set_var(PAYLOAD_KEY_ENV, PAYLOAD_KEY_HEX) };
 
     let rpc_client = Arc::new(BlockchainHttpRpcClient::new(anvil_url.clone(), None, None));
     let erc20 = Erc20Contract::new(rpc_client.clone(), true);
@@ -730,7 +1034,7 @@ async fn anvil_fork_restart_recovers_operator_transactions() {
     pause_mining(&anvil_url).await;
     {
         let mut client = connected_fork_client(
-            &anvil_url,
+            &rpc_topology,
             wallet,
             pg_config.clone(),
             3,
@@ -749,7 +1053,7 @@ async fn anvil_fork_restart_recovers_operator_transactions() {
     let recovered_wrap;
     {
         let mut client = connected_fork_client(
-            &anvil_url,
+            &rpc_topology,
             wallet,
             pg_config.clone(),
             30,
@@ -768,7 +1072,7 @@ async fn anvil_fork_restart_recovers_operator_transactions() {
     pause_mining(&anvil_url).await;
     {
         let mut client = connected_fork_client(
-            &anvil_url,
+            &rpc_topology,
             wallet,
             pg_config.clone(),
             3,
@@ -793,7 +1097,7 @@ async fn anvil_fork_restart_recovers_operator_transactions() {
     let recovered_approve;
     {
         let mut client = connected_fork_client(
-            &anvil_url,
+            &rpc_topology,
             wallet,
             pg_config.clone(),
             30,
@@ -814,9 +1118,11 @@ async fn anvil_fork_restart_recovers_operator_transactions() {
 
     pause_mining(&anvil_url).await;
     let wrap_nonce;
+    let original_hash;
+    let created_block;
     {
         let mut client = connected_fork_client(
-            &anvil_url,
+            &rpc_topology,
             wallet,
             pg_config.clone(),
             3,
@@ -832,8 +1138,12 @@ async fn anvil_fork_restart_recovers_operator_transactions() {
             error.to_string().contains("Timed out awaiting finality"),
             "was: {error}"
         );
+        (original_hash, created_block) =
+            intent_hash_and_creation_block(&admin_pool, wallet, "wrap").await;
         client.disconnect().await.unwrap();
     }
+    anvil_drop_transaction(&anvil_url, &original_hash).await;
+    anvil_mine(&anvil_url, REPLACEMENT_SCAN_BLOCKS).await;
     let replacement = build_eip1559_transaction(
         CHAIN_ID,
         wrap_nonce,
@@ -852,7 +1162,25 @@ async fn anvil_fork_restart_recovers_operator_transactions() {
         .await
         .unwrap();
     anvil_mine(&anvil_url, 4).await;
-    let mut mismatch_client = fork_client(&anvil_url, wallet, pg_config, 30, RECOVERY_SIGNER_ENV);
+
+    {
+        let mut first_window_client = connected_fork_client(
+            &rpc_topology,
+            wallet,
+            pg_config.clone(),
+            30,
+            RECOVERY_SIGNER_ENV,
+        )
+        .await;
+        assert_eq!(
+            replacement_cursor(&admin_pool, wallet).await,
+            created_block + REPLACEMENT_SCAN_BLOCKS - 1
+        );
+        first_window_client.disconnect().await.unwrap();
+    }
+
+    let mut mismatch_client =
+        fork_client(&rpc_topology, wallet, pg_config, 30, RECOVERY_SIGNER_ENV);
     let (event_sender, _event_receiver) = tokio::sync::mpsc::unbounded_channel();
     replace_exec_event_sender(event_sender);
     mismatch_client.start().unwrap();
@@ -860,7 +1188,7 @@ async fn anvil_fork_restart_recovers_operator_transactions() {
     assert!(
         error
             .to_string()
-            .contains("does not match the persisted wrap intent"),
+            .contains("has no authenticated retained payload"),
         "was: {error}"
     );
 
@@ -882,7 +1210,15 @@ async fn anvil_fork_restart_recovers_operator_transactions() {
     )
     .unwrap();
 
-    unsafe { std::env::remove_var(RECOVERY_SIGNER_ENV) };
+    rpc_topology.assert_broadcast_isolation();
+    unsafe {
+        // SAFETY: this opt-in test owns this variable for the process
+        std::env::remove_var(RECOVERY_SIGNER_ENV);
+    }
+    unsafe {
+        // SAFETY: this opt-in test owns this variable for the process
+        std::env::remove_var(PAYLOAD_KEY_ENV);
+    }
 }
 
 async fn pause_mining(anvil_url: &str) {
@@ -891,14 +1227,14 @@ async fn pause_mining(anvil_url: &str) {
 }
 
 async fn connected_fork_client(
-    anvil_url: &str,
+    rpc_topology: &ExecutionRpcTopology,
     wallet: Address,
     pg_config: PostgresConnectOptions,
     receipt_timeout_secs: u64,
     signer_env: &str,
 ) -> BlockchainExecutionClient {
     let mut client = fork_client(
-        anvil_url,
+        rpc_topology,
         wallet,
         pg_config,
         receipt_timeout_secs,
@@ -907,12 +1243,13 @@ async fn connected_fork_client(
     let (event_sender, _event_receiver) = tokio::sync::mpsc::unbounded_channel();
     replace_exec_event_sender(event_sender);
     client.start().unwrap();
+    client.protect_payload_storage().await.unwrap();
     client.connect().await.unwrap();
     client
 }
 
 fn fork_client(
-    anvil_url: &str,
+    rpc_topology: &ExecutionRpcTopology,
     wallet: Address,
     pg_config: PostgresConnectOptions,
     receipt_timeout_secs: u64,
@@ -931,11 +1268,11 @@ fn fork_client(
         cache,
     );
     let config = BlockchainExecutionClientConfig::builder()
-        .trader_id(TraderId::from("TRADER-001"))
         .client_id(AccountId::from("BLOCKCHAIN-FORK-001"))
         .chain(chains::ARBITRUM.clone())
         .wallet_address(wallet.to_string())
-        .http_rpc_url(anvil_url.to_string())
+        .http_rpc_url(rpc_topology.authoritative_url())
+        .verification(rpc_topology.verification())
         .signer_private_key_env(signer_env.to_string())
         .router_addresses(vec![ROUTER.to_string()])
         .weth_address(WETH.to_string())
@@ -951,6 +1288,8 @@ fn fork_client(
         .deadline_seconds(300)
         .max_quote_age_blocks(100)
         .receipt_timeout_secs(receipt_timeout_secs)
+        .payload_key_env(PAYLOAD_KEY_ENV.to_string())
+        .payload_deployment_id(PAYLOAD_DEPLOYMENT_ID.to_string())
         .postgres_cache_database_config(pg_config)
         .build();
     BlockchainExecutionClient::new(core, config).unwrap()
@@ -967,4 +1306,39 @@ async fn intent_status(admin_pool: &PgPool, wallet: Address, purpose: &str) -> S
     .fetch_one(admin_pool)
     .await
     .unwrap()
+}
+
+async fn intent_hash_and_creation_block(
+    admin_pool: &PgPool,
+    wallet: Address,
+    purpose: &str,
+) -> (String, u64) {
+    let (transaction_hash, created_block): (String, i64) = sqlx::query_as(
+        "SELECT h.transaction_hash, i.created_block \
+         FROM execution_intent AS i \
+         JOIN execution_transaction_hash AS h ON h.intent_id = i.id AND h.current \
+         WHERE i.chain_id = 42161 AND i.wallet_address = $1 AND i.purpose = $2 \
+         ORDER BY i.id DESC LIMIT 1",
+    )
+    .bind(wallet.to_string())
+    .bind(purpose)
+    .fetch_one(admin_pool)
+    .await
+    .unwrap();
+    (transaction_hash, u64::try_from(created_block).unwrap())
+}
+
+async fn replacement_cursor(admin_pool: &PgPool, wallet: Address) -> u64 {
+    let cursor: i64 = sqlx::query_scalar(
+        "SELECT s.finalized_cursor_number \
+         FROM execution_replacement_scan AS s \
+         JOIN execution_intent AS i ON i.id = s.intent_id \
+         WHERE i.chain_id = 42161 AND i.wallet_address = $1 \
+         ORDER BY i.id DESC LIMIT 1",
+    )
+    .bind(wallet.to_string())
+    .fetch_one(admin_pool)
+    .await
+    .unwrap();
+    u64::try_from(cursor).unwrap()
 }

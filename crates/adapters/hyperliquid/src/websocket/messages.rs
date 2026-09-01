@@ -36,7 +36,7 @@ use crate::{
         HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidSide,
         HyperliquidTimeInForce, HyperliquidTpSl, HyperliquidTwapStatus,
     },
-    http::models::{HyperliquidExchangeRequest, HyperliquidExecAction},
+    http::models::{HyperliquidExchangeAction, HyperliquidExchangeRequest},
 };
 
 /// Represents an outbound WebSocket message from client to Hyperliquid.
@@ -135,7 +135,7 @@ pub enum PostRequest {
     Info { payload: serde_json::Value },
     /// Action request (requires signature).
     Action {
-        payload: HyperliquidExchangeRequest<HyperliquidExecAction>,
+        payload: HyperliquidExchangeRequest<HyperliquidExchangeAction>,
     },
 }
 

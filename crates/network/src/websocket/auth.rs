@@ -24,18 +24,20 @@
 //! # Client integration
 //!
 //! Registering a tracker with the client invalidates it on reconnectable connection loss and fails
-//! it on terminal shutdown. When authentication‑gated replay is enabled, ordinary buffered sends
+//! it on terminal shutdown. When authentication-gated replay is enabled, ordinary buffered sends
 //! wait for `Authenticated` and are discarded on `Failed`. The adapter remains responsible for
 //! sending authentication, interpreting the response, and ordering resubscription.
 
 use std::{
     pin::pin,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicU8, Ordering},
     },
     time::Duration,
 };
+
+use parking_lot::Mutex;
 
 pub type AuthResultSender = tokio::sync::oneshot::Sender<Result<(), String>>;
 pub type AuthResultReceiver = tokio::sync::oneshot::Receiver<Result<(), String>>;
@@ -99,7 +101,7 @@ impl AuthState {
 ///
 /// # Thread safety
 ///
-/// Clones share the pending attempt and session state. All operations are thread‑safe and can run
+/// Clones share the pending attempt and session state. All operations are thread-safe and can run
 /// concurrently from multiple tasks.
 #[derive(Clone, Debug)]
 pub struct AuthTracker {
@@ -166,15 +168,14 @@ impl AuthTracker {
         self.state
             .store(AuthState::Unauthenticated.as_u8(), Ordering::Release);
 
-        if let Ok(mut guard) = self.tx.lock() {
-            if let Some(old) = guard.take() {
-                log::warn!("New authentication request superseding previous pending request");
-                let _ = old.send(Err("Authentication attempt superseded".to_string()));
-            } else {
-                log::debug!("Starting new authentication request");
-            }
-            *guard = Some(sender);
+        let mut guard = self.tx.lock();
+        if let Some(old) = guard.take() {
+            log::warn!("New authentication request superseding previous pending request");
+            let _ = old.send(Err("Authentication attempt superseded".to_string()));
+        } else {
+            log::debug!("Starting new authentication request");
         }
+        *guard = Some(sender);
 
         receiver
     }
@@ -192,9 +193,7 @@ impl AuthTracker {
             .store(AuthState::Authenticated.as_u8(), Ordering::Release);
         self.state_notify.notify_waiters();
 
-        if let Ok(mut guard) = self.tx.lock()
-            && let Some(sender) = guard.take()
-        {
+        if let Some(sender) = self.tx.lock().take() {
             let _ = sender.send(Ok(()));
         }
     }
@@ -213,9 +212,7 @@ impl AuthTracker {
         self.state_notify.notify_waiters();
         let message = error.into();
 
-        if let Ok(mut guard) = self.tx.lock()
-            && let Some(sender) = guard.take()
-        {
+        if let Some(sender) = self.tx.lock().take() {
             let _ = sender.send(Err(message));
         }
     }

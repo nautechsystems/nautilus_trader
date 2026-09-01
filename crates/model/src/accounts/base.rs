@@ -78,6 +78,20 @@ impl BaseAccount {
         }
     }
 
+    #[must_use]
+    pub(crate) fn clone_without_events(&self) -> Self {
+        Self {
+            id: self.id,
+            account_type: self.account_type,
+            base_currency: self.base_currency,
+            calculate_account_state: self.calculate_account_state,
+            events: Vec::new(),
+            commissions: self.commissions.clone(),
+            balances: self.balances.clone(),
+            balances_starting: self.balances_starting.clone(),
+        }
+    }
+
     /// Returns a reference to the `AccountBalance` for the specified currency, or `None` if absent.
     ///
     /// # Panics
@@ -267,7 +281,6 @@ impl BaseAccount {
     /// # Errors
     ///
     /// Returns an error if the locked amount cannot be represented in the target currency.
-    ///
     pub fn base_calculate_balance_locked(
         &mut self,
         instrument: &InstrumentAny,
@@ -289,19 +302,16 @@ impl BaseAccount {
                 .as_decimal()
                 .max(Decimal::ZERO),
             OrderSide::Sell => quantity.as_decimal(),
-            OrderSide::NoOrderSide => {
-                anyhow::bail!("Invalid `OrderSide` in `base_calculate_balance_locked`: {side}")
-            }
         };
 
         if instrument.is_inverse() && !use_quote_for_inverse.unwrap_or(false) {
             Ok(Money::from_decimal(amount, base_currency)?)
-        } else if side == OrderSide::Buy {
-            Ok(Money::from_decimal(amount, quote_currency)?)
-        } else if side == OrderSide::Sell {
-            Ok(Money::from_decimal(amount, base_currency)?)
         } else {
-            anyhow::bail!("Invalid `OrderSide` in `base_calculate_balance_locked`: {side}")
+            let currency = match side {
+                OrderSide::Buy => quote_currency,
+                OrderSide::Sell => base_currency,
+            };
+            Ok(Money::from_decimal(amount, currency)?)
         }
     }
 
@@ -317,7 +327,6 @@ impl BaseAccount {
     /// # Errors
     ///
     /// Returns an error if a PnL amount cannot be represented in the target currency.
-    ///
     pub fn base_calculate_pnls(
         &self,
         instrument: &InstrumentAny,
@@ -339,7 +348,7 @@ impl BaseAccount {
                 );
             }
             pnls.insert(notional.currency, -notional);
-        } else if fill.order_side == OrderSide::Sell {
+        } else {
             if let (Some(base_currency_value), None) = (base_currency, self.base_currency) {
                 pnls.insert(
                     base_currency_value,
@@ -347,11 +356,6 @@ impl BaseAccount {
                 );
             }
             pnls.insert(notional.currency, notional);
-        } else {
-            anyhow::bail!(
-                "Invalid `OrderSide` in base_calculate_pnls: {}",
-                fill.order_side
-            );
         }
         Ok(pnls.into_values().collect())
     }
@@ -539,7 +543,7 @@ fn non_spendable_balance(current_balance: AccountBalance) -> AccountBalance {
     }
 }
 
-#[cfg(all(test, feature = "stubs"))]
+#[cfg(all(test, feature = "test-support"))]
 mod tests {
     use rstest::rstest;
 

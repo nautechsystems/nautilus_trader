@@ -211,16 +211,11 @@ static FIXED_PRECISION_TICK_SCHEMES: LazyLock<Vec<FixedTickScheme>> = LazyLock::
         .collect()
 });
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FixedTickScheme {
     tick: f64,
 }
 
-impl PartialEq for FixedTickScheme {
-    fn eq(&self, other: &Self) -> bool {
-        self.tick == other.tick
-    }
-}
 impl Eq for FixedTickScheme {}
 
 impl FixedTickScheme {
@@ -256,7 +251,7 @@ impl TickSchemeRule for FixedTickScheme {
 
 impl Display for FixedTickScheme {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "FIXED")
+        f.write_str(FIXED_TICK_SCHEME_NAME)
     }
 }
 
@@ -265,18 +260,11 @@ impl Display for FixedTickScheme {
 /// Stores expanded ticks as raw fixed-point integers for exact comparison
 /// and fast binary search. Each tier defines a (start, stop, step) range
 /// that is expanded at construction.
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TieredTickScheme {
     ticks: Vec<PriceRaw>,
     precision: u8,
 }
-
-impl PartialEq for TieredTickScheme {
-    fn eq(&self, other: &Self) -> bool {
-        self.precision == other.precision && self.ticks == other.ticks
-    }
-}
-impl Eq for TieredTickScheme {}
 
 impl TieredTickScheme {
     /// Creates a new [`TieredTickScheme`] from tier definitions.
@@ -554,7 +542,7 @@ impl TickSchemeRule for TickScheme {
 impl Display for TickScheme {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Fixed(_) => write!(f, "FIXED"),
+            Self::Fixed(scheme) => write!(f, "{scheme}"),
             Self::Tiered(scheme) => write!(f, "{scheme}"),
             Self::Betfair => write!(f, "{BETFAIR_TICK_SCHEME_NAME}"),
             Self::Crypto => write!(f, "{CRYPTO_0_01_TICK_SCHEME_NAME}"),
@@ -658,10 +646,7 @@ fn parse_fixed_precision_name_ignore_ascii_case(name: &str) -> Option<u8> {
 }
 
 fn fixed_next_bid_price(tick: f64, value: f64, n: i32, precision: u8) -> Option<Price> {
-    let n = PriceRaw::from(n);
-    if n < 0 {
-        return None;
-    }
+    let n = PriceRaw::from(u32::try_from(n).ok()?);
     let tick_raw = fixed_tick_raw(tick, precision)?;
     let value_raw = value_to_raw(value)?;
     let base = value_raw
@@ -672,10 +657,7 @@ fn fixed_next_bid_price(tick: f64, value: f64, n: i32, precision: u8) -> Option<
 }
 
 fn fixed_next_ask_price(tick: f64, value: f64, n: i32, precision: u8) -> Option<Price> {
-    let n = PriceRaw::from(n);
-    if n < 0 {
-        return None;
-    }
+    let n = PriceRaw::from(u32::try_from(n).ok()?);
     let tick_raw = fixed_tick_raw(tick, precision)?;
     let value_raw = value_to_raw(value)?;
     let base = value_raw

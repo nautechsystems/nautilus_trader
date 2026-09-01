@@ -28,9 +28,8 @@ use std::{
 };
 
 use async_stream::stream;
-use futures_util::{Sink, SinkExt, Stream, StreamExt};
+use futures_util::{Sink, SinkExt, Stream, StreamExt, pin_mut};
 use message::WsMessage;
-use nautilus_common::live::get_runtime;
 use nautilus_core::string::urlencoding;
 use tokio_tungstenite::{
     connect_async,
@@ -134,7 +133,9 @@ async fn stream_from_websocket(
     Ok(stream! {
         let (writer, mut reader) = ws_stream.split();
         let cancel = CancellationToken::new();
-        get_runtime().spawn(heartbeat(writer, cancel.child_token()));
+        let heartbeat = heartbeat(writer, cancel.child_token());
+        pin_mut!(heartbeat);
+        let mut heartbeat_active = true;
         let _cancel_heartbeat = cancel.drop_guard();
 
         // Timeout awaiting the next record before checking signal
@@ -148,7 +149,13 @@ async fn stream_from_websocket(
                 break;
             }
 
-            let result = tokio::time::timeout(timeout, reader.next()).await;
+            let result = tokio::select! {
+                result = tokio::time::timeout(timeout, reader.next()) => result,
+                () = &mut heartbeat, if heartbeat_active => {
+                    heartbeat_active = false;
+                    continue;
+                }
+            };
             let msg = match result {
                 Ok(msg) => msg,
                 Err(_) => continue, // Timeout

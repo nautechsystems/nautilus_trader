@@ -15,7 +15,10 @@
 
 //! Configuration structures for the OKX adapter.
 
-use nautilus_model::identifiers::{AccountId, TraderId};
+use std::fmt::Debug;
+
+use nautilus_core::string::secret::REDACTED;
+use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
 
@@ -31,7 +34,7 @@ use crate::common::{
 };
 
 /// Configuration for the OKX data client.
-#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[derive(Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
@@ -85,7 +88,10 @@ pub struct OKXDataClientConfig {
     /// Maximum retry delay in milliseconds.
     #[builder(default = 10_000)]
     pub retry_delay_max_ms: u64,
-    /// Interval for refreshing instruments in minutes.
+    /// Interval for reconciling instruments from the REST API in minutes.
+    ///
+    /// Set to 0 to disable periodic reconciliation. WebSocket instrument
+    /// updates are always applied regardless of this interval.
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
     /// Interval for checking order book feed staleness in seconds.
@@ -131,6 +137,48 @@ nautilus_core::impl_pyo3_config_getters!(OKXDataClientConfig {
 impl Default for OKXDataClientConfig {
     fn default() -> Self {
         Self::builder().build()
+    }
+}
+
+impl Debug for OKXDataClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(OKXDataClientConfig))
+            .field("api_key", &self.api_key.as_ref().map(|_| REDACTED))
+            .field("api_secret", &self.api_secret.as_ref().map(|_| REDACTED))
+            .field(
+                "api_passphrase",
+                &self.api_passphrase.as_ref().map(|_| REDACTED),
+            )
+            .field("instrument_types", &self.instrument_types)
+            .field("contract_types", &self.contract_types)
+            .field("load_spreads", &self.load_spreads)
+            .field("instrument_families", &self.instrument_families)
+            .field("base_url_http", &self.base_url_http)
+            .field("base_url_ws_public", &self.base_url_ws_public)
+            .field("base_url_ws_business", &self.base_url_ws_business)
+            .field("proxy_url", &self.proxy_url)
+            .field("environment", &self.environment)
+            .field("region", &self.region)
+            .field("http_timeout_secs", &self.http_timeout_secs)
+            .field("max_retries", &self.max_retries)
+            .field("retry_delay_initial_ms", &self.retry_delay_initial_ms)
+            .field("retry_delay_max_ms", &self.retry_delay_max_ms)
+            .field(
+                "update_instruments_interval_mins",
+                &self.update_instruments_interval_mins,
+            )
+            .field(
+                "book_stale_check_interval_secs",
+                &self.book_stale_check_interval_secs,
+            )
+            .field("book_stale_threshold_secs", &self.book_stale_threshold_secs)
+            .field(
+                "book_snapshot_timeout_secs",
+                &self.book_snapshot_timeout_secs,
+            )
+            .field("vip_level", &self.vip_level)
+            .field("transport_backend", &self.transport_backend)
+            .finish()
     }
 }
 
@@ -186,7 +234,7 @@ impl OKXDataClientConfig {
 }
 
 /// Configuration for the OKX execution client.
-#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[derive(Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
@@ -196,10 +244,7 @@ impl OKXDataClientConfig {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.okx")
 )]
-pub struct OKXExecClientConfig {
-    /// The trader ID for the client.
-    #[builder(default = TraderId::from("TRADER-001"))]
-    pub trader_id: TraderId,
+pub struct OKXExecutionClientConfig {
     /// The account ID for the client.
     #[builder(default = AccountId::from("OKX-001"))]
     pub account_id: AccountId,
@@ -263,8 +308,7 @@ pub struct OKXExecClientConfig {
 }
 
 #[cfg(feature = "python")]
-nautilus_core::impl_pyo3_config_getters!(OKXExecClientConfig {
-    trader_id: TraderId,
+nautilus_core::impl_pyo3_config_getters!(OKXExecutionClientConfig {
     account_id: AccountId,
     instrument_types: Vec<OKXInstrumentType>,
     environment: OKXEnvironment,
@@ -282,13 +326,46 @@ nautilus_core::impl_pyo3_config_getters!(OKXExecClientConfig {
     transport_backend: TransportBackend,
 });
 
-impl Default for OKXExecClientConfig {
+impl Default for OKXExecutionClientConfig {
     fn default() -> Self {
         Self::builder().build()
     }
 }
 
-impl OKXExecClientConfig {
+impl Debug for OKXExecutionClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(OKXExecutionClientConfig))
+            .field("account_id", &self.account_id)
+            .field("api_key", &self.api_key.as_ref().map(|_| REDACTED))
+            .field("api_secret", &self.api_secret.as_ref().map(|_| REDACTED))
+            .field(
+                "api_passphrase",
+                &self.api_passphrase.as_ref().map(|_| REDACTED),
+            )
+            .field("instrument_types", &self.instrument_types)
+            .field("contract_types", &self.contract_types)
+            .field("instrument_families", &self.instrument_families)
+            .field("base_url_http", &self.base_url_http)
+            .field("base_url_ws_private", &self.base_url_ws_private)
+            .field("base_url_ws_business", &self.base_url_ws_business)
+            .field("proxy_url", &self.proxy_url)
+            .field("environment", &self.environment)
+            .field("region", &self.region)
+            .field("http_timeout_secs", &self.http_timeout_secs)
+            .field("load_spreads", &self.load_spreads)
+            .field("use_mm_mass_cancel", &self.use_mm_mass_cancel)
+            .field("max_retries", &self.max_retries)
+            .field("retry_delay_initial_ms", &self.retry_delay_initial_ms)
+            .field("retry_delay_max_ms", &self.retry_delay_max_ms)
+            .field("margin_mode", &self.margin_mode)
+            .field("use_spot_margin", &self.use_spot_margin)
+            .field("auth_timeout_secs", &self.auth_timeout_secs)
+            .field("transport_backend", &self.transport_backend)
+            .finish()
+    }
+}
+
+impl OKXExecutionClientConfig {
     /// Creates a new configuration with default settings.
     #[must_use]
     pub fn new() -> Self {
@@ -335,6 +412,80 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    const DATA_API_KEY: &str = "okx-data-api-key-sentinel";
+    const DATA_API_SECRET: &str = "okx-data-api-secret-sentinel";
+    const DATA_API_PASSPHRASE: &str = "okx-data-api-passphrase-sentinel";
+    const EXEC_API_KEY: &str = "okx-exec-api-key-sentinel";
+    const EXEC_API_SECRET: &str = "okx-exec-api-secret-sentinel";
+    const EXEC_API_PASSPHRASE: &str = "okx-exec-api-passphrase-sentinel";
+
+    #[rstest]
+    fn test_data_config_debug_redacts_credentials() {
+        let config = OKXDataClientConfig {
+            api_key: Some(DATA_API_KEY.to_string()),
+            api_secret: Some(DATA_API_SECRET.to_string()),
+            api_passphrase: Some(DATA_API_PASSPHRASE.to_string()),
+            environment: OKXEnvironment::Demo,
+            http_timeout_secs: 71,
+            ..Default::default()
+        };
+
+        let debug_output = format!("{config:?}");
+        let redacted = format!("Some({REDACTED:?})");
+
+        assert!(!debug_output.contains(DATA_API_KEY));
+        assert!(!debug_output.contains(DATA_API_SECRET));
+        assert!(!debug_output.contains(DATA_API_PASSPHRASE));
+        assert!(debug_output.contains(&format!("api_key: {redacted}")));
+        assert!(debug_output.contains(&format!("api_secret: {redacted}")));
+        assert!(debug_output.contains(&format!("api_passphrase: {redacted}")));
+        assert!(debug_output.contains("environment: Demo"));
+        assert!(debug_output.contains("http_timeout_secs: 71"));
+    }
+
+    #[rstest]
+    fn test_exec_config_debug_redacts_credentials() {
+        let config = OKXExecutionClientConfig {
+            account_id: AccountId::from("OKX-042"),
+            api_key: Some(EXEC_API_KEY.to_string()),
+            api_secret: Some(EXEC_API_SECRET.to_string()),
+            api_passphrase: Some(EXEC_API_PASSPHRASE.to_string()),
+            max_retries: 13,
+            ..Default::default()
+        };
+
+        let debug_output = format!("{config:?}");
+        let redacted = format!("Some({REDACTED:?})");
+
+        assert!(!debug_output.contains(EXEC_API_KEY));
+        assert!(!debug_output.contains(EXEC_API_SECRET));
+        assert!(!debug_output.contains(EXEC_API_PASSPHRASE));
+        assert!(debug_output.contains(&format!("api_key: {redacted}")));
+        assert!(debug_output.contains(&format!("api_secret: {redacted}")));
+        assert!(debug_output.contains(&format!("api_passphrase: {redacted}")));
+        assert!(debug_output.contains("OKX-042"));
+        assert!(debug_output.contains("max_retries: 13"));
+    }
+
+    #[rstest]
+    fn test_config_debug_handles_unset_and_partial_credentials() {
+        let data_debug = format!("{:?}", OKXDataClientConfig::default());
+        let exec_debug = format!(
+            "{:?}",
+            OKXExecutionClientConfig {
+                api_secret: Some(String::new()),
+                ..Default::default()
+            }
+        );
+
+        assert!(data_debug.contains("api_key: None"));
+        assert!(data_debug.contains("api_secret: None"));
+        assert!(data_debug.contains("api_passphrase: None"));
+        assert!(exec_debug.contains("api_key: None"));
+        assert!(exec_debug.contains(&format!("api_secret: Some({REDACTED:?})")));
+        assert!(exec_debug.contains("api_passphrase: None"));
+    }
 
     #[rstest]
     fn test_data_config_toml_minimal() {
@@ -389,10 +540,8 @@ book_snapshot_timeout_secs = 4
 
     #[rstest]
     fn test_exec_config_toml_empty_uses_defaults() {
-        let config: OKXExecClientConfig = toml::from_str("").unwrap();
-        let expected = OKXExecClientConfig::default();
-
-        assert_eq!(config.trader_id, expected.trader_id);
+        let config: OKXExecutionClientConfig = toml::from_str("").unwrap();
+        let expected = OKXExecutionClientConfig::default();
         assert_eq!(config.account_id, expected.account_id);
         assert_eq!(config.environment, expected.environment);
         assert_eq!(config.instrument_types, expected.instrument_types);
@@ -405,13 +554,14 @@ book_snapshot_timeout_secs = 4
     #[rstest]
     fn test_exec_config_toml_rejects_removed_fills_channel_key() {
         // use_fills_channel was removed: strict decoding must reject stale configs
-        let result: Result<OKXExecClientConfig, _> = toml::from_str("use_fills_channel = true\n");
+        let result: Result<OKXExecutionClientConfig, _> =
+            toml::from_str("use_fills_channel = true\n");
         assert!(result.is_err());
     }
 
     #[rstest]
     fn test_exec_config_toml_load_spreads() {
-        let config: OKXExecClientConfig = toml::from_str(
+        let config: OKXExecutionClientConfig = toml::from_str(
             "
 load_spreads = true
 ",
@@ -449,7 +599,7 @@ load_spreads = true
 
     #[rstest]
     fn test_exec_config_eea_region_urls() {
-        let config = OKXExecClientConfig::builder()
+        let config = OKXExecutionClientConfig::builder()
             .region(OKXRegion::Eea)
             .build();
 
@@ -488,12 +638,14 @@ region = "eea"
 
     #[rstest]
     fn test_exec_config_auth_timeout_secs() {
-        assert_eq!(OKXExecClientConfig::default().auth_timeout_secs, None);
+        assert_eq!(OKXExecutionClientConfig::default().auth_timeout_secs, None);
 
-        let exec = OKXExecClientConfig::builder().auth_timeout_secs(4).build();
+        let exec = OKXExecutionClientConfig::builder()
+            .auth_timeout_secs(4)
+            .build();
         assert_eq!(exec.auth_timeout_secs, Some(4));
 
-        let exec: OKXExecClientConfig = toml::from_str("auth_timeout_secs = 8\n").unwrap();
+        let exec: OKXExecutionClientConfig = toml::from_str("auth_timeout_secs = 8\n").unwrap();
         assert_eq!(exec.auth_timeout_secs, Some(8));
     }
 }

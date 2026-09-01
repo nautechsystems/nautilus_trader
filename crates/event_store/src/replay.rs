@@ -46,7 +46,7 @@ use nautilus_model::{
     position::{Position, PositionReplayEvent},
     types::{Money, Quantity},
 };
-use serde::de::DeserializeOwned;
+use serde::{Deserialize, de::DeserializeOwned};
 
 #[cfg(test)]
 use crate::capture::builtins::{
@@ -1419,16 +1419,14 @@ fn apply_order_filled(
     entry: &EventStoreEntry,
     context: &mut CacheReplayContext,
 ) -> Result<bool, CacheReplayError> {
-    let fill = decode_payload::<OrderFilled>(entry)?;
-    // The fill side panics deep inside Position/Order application; the hash
-    // proves the bytes match what was written, not that the producer wrote a
-    // semantically valid fill, so guard before the model invariants fire.
-    if matches!(fill.order_side, OrderSide::NoOrderSide) {
+    let replay_side = decode_payload::<OrderFilledReplaySide>(entry)?;
+    if replay_side.order_side.is_none() {
         return Err(apply_error(
             entry,
             "OrderFilled.order_side must be Buy or Sell, was NoOrderSide",
         ));
     }
+    let fill = decode_payload::<OrderFilled>(entry)?;
     let event = OrderEventAny::Filled(fill.clone());
     let orderless_leg_fill = is_orderless_leg_fill(cache, &fill);
     if !orderless_leg_fill {
@@ -1443,6 +1441,12 @@ fn apply_order_filled(
     }
 
     apply_fill_to_position(cache, entry, &fill, orderless_leg_fill)
+}
+
+#[derive(Deserialize)]
+struct OrderFilledReplaySide {
+    #[serde(with = "nautilus_model::enums::serde_option_order_side")]
+    order_side: Option<OrderSide>,
 }
 
 fn apply_orderless_flip_fill(
@@ -2002,7 +2006,7 @@ mod tests {
         data::{Bar, BarSpecification, BarType, FundingRateUpdate, QuoteTick, TradeTick},
         enums::{
             AggregationSource, AggressorSide, BarAggregation, OrderSide, OrderStatus,
-            PositionAdjustmentType, PriceType,
+            PositionAdjustmentType, PositionSide, PriceType,
         },
         events::{
             PositionEvent,
@@ -2578,6 +2582,11 @@ mod tests {
                 PAYLOAD_TYPE_POSITION_CLOSED,
                 PAYLOAD_TYPE_POSITION_ADJUSTED,
             ],
+        ),
+        cache_mutation(
+            "update_position_from_fill",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_ORDER_FILLED],
         ),
         cache_mutation(
             "snapshot_position",
@@ -4412,13 +4421,10 @@ mod tests {
     #[rstest]
     fn order_filled_with_no_order_side_is_an_apply_error_not_a_panic() {
         // The entry hash proves the stored bytes match what was written, not that the
-        // producer wrote a valid fill; OrderSide::NoOrderSide deserializes cleanly and
+        // producer wrote a valid fill; the legacy sentinel deserializes cleanly and
         // without the guard panics deep inside Position/Order application.
-        let mut fill = OrderFilledSpec::builder()
-            .position_id(PositionId::from("P-001"))
-            .build();
-        fill.order_side = OrderSide::NoOrderSide;
-        let entry = append_serde_payload(1, PAYLOAD_TYPE_ORDER_FILLED, &fill).entry;
+        let payload = IndexMap::from([("order_side", "NO_ORDER_SIDE")]);
+        let entry = append_serde_payload(1, PAYLOAD_TYPE_ORDER_FILLED, &payload).entry;
         let mut cache = Cache::default();
 
         let err = apply_cache_replay_entry(&mut cache, &entry).expect_err("must reject");

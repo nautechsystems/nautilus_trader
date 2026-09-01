@@ -106,64 +106,38 @@ pub fn parse_runner_book_deltas(
         deltas.push(clear);
     }
 
-    // Buy side (bid): atb (available to back) is price-keyed
-    for pv in rc.atb.as_deref().unwrap_or(&[]) {
-        if is_snapshot && pv.volume == Decimal::ZERO {
-            continue;
+    for (levels, side) in [
+        (rc.atb.as_deref().unwrap_or(&[]), OrderSide::Buy),
+        (rc.atl.as_deref().unwrap_or(&[]), OrderSide::Sell),
+    ] {
+        for pv in levels {
+            if is_snapshot && pv.volume == Decimal::ZERO {
+                continue;
+            }
+
+            let action = if is_snapshot {
+                BookAction::Add
+            } else if pv.volume == Decimal::ZERO {
+                BookAction::Delete
+            } else {
+                BookAction::Update
+            };
+
+            deltas.push(OrderBookDelta::new(
+                instrument_id,
+                action,
+                BookOrder::new(
+                    side,
+                    parse_betfair_price(pv.price)?,
+                    parse_betfair_quantity(pv.volume)?,
+                    0,
+                ),
+                snapshot_flags,
+                sequence,
+                ts_event,
+                ts_init,
+            ));
         }
-
-        let action = if is_snapshot {
-            BookAction::Add
-        } else if pv.volume == Decimal::ZERO {
-            BookAction::Delete
-        } else {
-            BookAction::Update
-        };
-
-        deltas.push(OrderBookDelta::new(
-            instrument_id,
-            action,
-            BookOrder::new(
-                OrderSide::Buy,
-                parse_betfair_price(pv.price)?,
-                parse_betfair_quantity(pv.volume)?,
-                0,
-            ),
-            snapshot_flags,
-            sequence,
-            ts_event,
-            ts_init,
-        ));
-    }
-
-    // Sell side (ask): atl (available to lay) is price-keyed
-    for pv in rc.atl.as_deref().unwrap_or(&[]) {
-        if is_snapshot && pv.volume == Decimal::ZERO {
-            continue;
-        }
-
-        let action = if is_snapshot {
-            BookAction::Add
-        } else if pv.volume == Decimal::ZERO {
-            BookAction::Delete
-        } else {
-            BookAction::Update
-        };
-
-        deltas.push(OrderBookDelta::new(
-            instrument_id,
-            action,
-            BookOrder::new(
-                OrderSide::Sell,
-                parse_betfair_price(pv.price)?,
-                parse_betfair_quantity(pv.volume)?,
-                0,
-            ),
-            snapshot_flags,
-            sequence,
-            ts_event,
-            ts_init,
-        ));
     }
 
     // Set F_LAST on the final delta
@@ -249,12 +223,7 @@ pub fn parse_instrument_statuses(
                     (MarketStatus::Unknown, _) => MarketStatusAction::None,
                 },
             };
-            let is_trading = matches!(status, MarketStatus::Open)
-                && in_play
-                && !matches!(
-                    rd.status,
-                    Some(RunnerStatus::Removed | RunnerStatus::RemovedVacant)
-                );
+            let is_trading = action == MarketStatusAction::Trading;
             Some(InstrumentStatus::new(
                 instrument_id,
                 action,
@@ -285,7 +254,7 @@ pub fn make_trade_id(uo: &UnmatchedOrder) -> TradeId {
 /// Betfair provides cumulative `sm` (size matched) and `avp` (average price
 /// matched) on each order update. This tracker maintains per-bet state to
 /// derive individual fill quantities and prices for each update.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct FillTracker {
     filled_qty: AHashMap<String, Decimal>,
     voided_qty: AHashMap<String, Decimal>,
@@ -567,6 +536,24 @@ impl FillTracker {
             .copied()
             .unwrap_or(Decimal::ZERO);
         cumulative > previous
+    }
+
+    /// Returns whether a cumulative Betfair fill update has not yet been applied.
+    #[must_use]
+    pub fn has_unseen_fill(&self, uo: &UnmatchedOrder) -> bool {
+        let size_matched = normalize_betfair_quantity(uo.sm.unwrap_or(Decimal::ZERO));
+        let cumulative = if self.has_fill_lots(&uo.id) {
+            size_matched + normalize_betfair_quantity(uo.sv.unwrap_or(Decimal::ZERO))
+        } else {
+            size_matched
+        };
+        let previous = self
+            .filled_qty
+            .get(&uo.id)
+            .copied()
+            .unwrap_or(Decimal::ZERO);
+        let order_qty = normalize_betfair_quantity(resolve_stream_order_quantity(uo.s, uo));
+        cumulative > previous && cumulative <= order_qty
     }
 
     pub(crate) fn sync_fill_lot(
@@ -868,7 +855,7 @@ pub fn parse_order_status_report(
         instrument_id,
         client_order_id,
         venue_order_id,
-        order_side,
+        order_side.into(),
         order_type,
         time_in_force,
         order_status,
@@ -1055,42 +1042,27 @@ pub fn parse_bsp_book_deltas(
 
     let mut result = Vec::with_capacity(spb_len + spl_len);
 
-    // spb (starting price back) -> Sell side (Betfair convention)
-    for pv in rc.spb.as_deref().unwrap_or(&[]) {
-        let action = if pv.volume == Decimal::ZERO {
-            BookAction::Delete as u32
-        } else {
-            BookAction::Update as u32
-        };
+    for (levels, side) in [
+        (rc.spb.as_deref().unwrap_or(&[]), OrderSide::Sell),
+        (rc.spl.as_deref().unwrap_or(&[]), OrderSide::Buy),
+    ] {
+        for pv in levels {
+            let action = if pv.volume == Decimal::ZERO {
+                BookAction::Delete as u32
+            } else {
+                BookAction::Update as u32
+            };
 
-        result.push(BetfairBspBookDelta::new(
-            instrument_id,
-            action,
-            OrderSide::Sell as u32,
-            pv.price,
-            pv.volume,
-            ts_event,
-            ts_init,
-        ));
-    }
-
-    // spl (starting price lay) -> Buy side (Betfair convention)
-    for pv in rc.spl.as_deref().unwrap_or(&[]) {
-        let action = if pv.volume == Decimal::ZERO {
-            BookAction::Delete as u32
-        } else {
-            BookAction::Update as u32
-        };
-
-        result.push(BetfairBspBookDelta::new(
-            instrument_id,
-            action,
-            OrderSide::Buy as u32,
-            pv.price,
-            pv.volume,
-            ts_event,
-            ts_init,
-        ));
+            result.push(BetfairBspBookDelta::new(
+                instrument_id,
+                action,
+                side as u32,
+                pv.price,
+                pv.volume,
+                ts_event,
+                ts_init,
+            ));
+        }
     }
 
     result
@@ -1286,12 +1258,12 @@ mod tests {
             let buy_count = deltas
                 .deltas
                 .iter()
-                .filter(|d| d.order.side == OrderSide::Buy)
+                .filter(|d| d.order.side == Some(OrderSide::Buy))
                 .count();
             let sell_count = deltas
                 .deltas
                 .iter()
-                .filter(|d| d.order.side == OrderSide::Sell)
+                .filter(|d| d.order.side == Some(OrderSide::Sell))
                 .count();
             assert_eq!(buy_count, atb_len);
             assert_eq!(sell_count, atl_len);
@@ -1670,7 +1642,7 @@ mod tests {
 
             // Partially filled: sm=4.75, sr=0.25, status=E
             assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
-            assert_eq!(report.order_side, OrderSide::Sell); // Back → Sell
+            assert_eq!(report.order_side, Some(OrderSide::Sell)); // Back → Sell
             assert_eq!(report.order_type, OrderType::Limit);
             assert_eq!(report.filled_qty.as_f64(), 4.75);
             assert_eq!(report.quantity.as_f64(), 5.0);
@@ -1703,7 +1675,7 @@ mod tests {
             .unwrap();
 
             assert_eq!(report.order_status, OrderStatus::Filled);
-            assert_eq!(report.order_side, OrderSide::Buy); // Lay → Buy
+            assert_eq!(report.order_side, Some(OrderSide::Buy)); // Lay → Buy
             assert_eq!(report.filled_qty.as_f64(), 10.0);
             assert_eq!(report.quantity.as_f64(), 10.0);
 
@@ -1736,7 +1708,7 @@ mod tests {
             .unwrap();
 
             assert_eq!(report.order_status, OrderStatus::Canceled);
-            assert_eq!(report.order_side, OrderSide::Sell); // Back → Sell
+            assert_eq!(report.order_side, Some(OrderSide::Sell)); // Back → Sell
             assert_eq!(report.filled_qty.as_f64(), 0.0);
             assert_eq!(report.quantity.as_f64(), 10.0);
         } else {
@@ -1767,7 +1739,7 @@ mod tests {
 
             // Partially filled: sm=1.12, status=E
             assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
-            assert_eq!(report.order_side, OrderSide::Buy); // Lay → Buy
+            assert_eq!(report.order_side, Some(OrderSide::Buy)); // Lay → Buy
             assert_eq!(report.filled_qty.as_f64(), 1.12);
         } else {
             panic!("expected OrderChange");
@@ -1797,7 +1769,7 @@ mod tests {
 
             // Partially filled: sm=16.19, status=E, has rfo
             assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
-            assert_eq!(report.order_side, OrderSide::Sell); // Back → Sell
+            assert_eq!(report.order_side, Some(OrderSide::Sell)); // Back → Sell
             assert_eq!(report.filled_qty.as_f64(), 16.19);
             assert!(report.client_order_id.is_some());
             assert!(report.avg_px.is_some());

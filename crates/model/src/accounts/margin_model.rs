@@ -15,6 +15,8 @@
 
 //! Pluggable margin calculation models for [`MarginAccount`](super::MarginAccount).
 
+use std::{fmt::Debug, sync::Arc};
+
 use rust_decimal::Decimal;
 
 use crate::{
@@ -23,7 +25,11 @@ use crate::{
 };
 
 /// Determines how margin requirements are calculated for leveraged positions.
-pub trait MarginModel {
+pub trait MarginModel: Send + Sync {
+    /// Returns the stable model name used in canonical backtest results.
+    #[must_use]
+    fn name(&self) -> &'static str;
+
     /// Calculates the initial (order) margin requirement.
     ///
     /// # Errors
@@ -53,6 +59,75 @@ pub trait MarginModel {
     ) -> anyhow::Result<Money>;
 }
 
+/// Shared runtime handle for a margin model.
+#[derive(Clone)]
+pub struct MarginModelHandle(Arc<dyn MarginModel>);
+
+impl MarginModelHandle {
+    /// Creates a new [`MarginModelHandle`] from a margin model.
+    #[must_use]
+    pub fn new<T>(model: T) -> Self
+    where
+        T: MarginModel + 'static,
+    {
+        Self(Arc::new(model))
+    }
+
+    /// Creates a new [`MarginModelHandle`] from an existing atomically reference-counted model.
+    #[must_use]
+    pub fn from_arc(model: Arc<dyn MarginModel>) -> Self {
+        Self(model)
+    }
+}
+
+impl Debug for MarginModelHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple(stringify!(MarginModelHandle))
+            .field(&"<dyn MarginModel>")
+            .finish()
+    }
+}
+
+impl MarginModel for MarginModelHandle {
+    fn name(&self) -> &'static str {
+        self.0.name()
+    }
+
+    fn calculate_initial_margin(
+        &self,
+        instrument: &dyn Instrument,
+        quantity: Quantity,
+        price: Price,
+        leverage: Decimal,
+        use_quote_for_inverse: Option<bool>,
+    ) -> anyhow::Result<Money> {
+        self.0.calculate_initial_margin(
+            instrument,
+            quantity,
+            price,
+            leverage,
+            use_quote_for_inverse,
+        )
+    }
+
+    fn calculate_maintenance_margin(
+        &self,
+        instrument: &dyn Instrument,
+        quantity: Quantity,
+        price: Price,
+        leverage: Decimal,
+        use_quote_for_inverse: Option<bool>,
+    ) -> anyhow::Result<Money> {
+        self.0.calculate_maintenance_margin(
+            instrument,
+            quantity,
+            price,
+            leverage,
+            use_quote_for_inverse,
+        )
+    }
+}
+
 /// Enum dispatch for [`MarginModel`] implementations.
 #[derive(Debug, Clone)]
 pub enum MarginModelAny {
@@ -61,6 +136,13 @@ pub enum MarginModelAny {
 }
 
 impl MarginModel for MarginModelAny {
+    fn name(&self) -> &'static str {
+        match self {
+            Self::Standard(model) => model.name(),
+            Self::Leveraged(model) => model.name(),
+        }
+    }
+
     fn calculate_initial_margin(
         &self,
         instrument: &dyn Instrument,
@@ -120,6 +202,18 @@ impl Default for MarginModelAny {
     }
 }
 
+impl Default for MarginModelHandle {
+    fn default() -> Self {
+        MarginModelAny::default().into()
+    }
+}
+
+impl From<MarginModelAny> for MarginModelHandle {
+    fn from(model: MarginModelAny) -> Self {
+        Self::new(model)
+    }
+}
+
 /// Resolves the margin currency based on instrument properties.
 fn margin_currency(
     instrument: &dyn Instrument,
@@ -154,6 +248,10 @@ fn margin_currency(
 pub struct StandardMarginModel;
 
 impl MarginModel for StandardMarginModel {
+    fn name(&self) -> &'static str {
+        "standard"
+    }
+
     fn calculate_initial_margin(
         &self,
         instrument: &dyn Instrument,
@@ -212,6 +310,10 @@ impl MarginModel for StandardMarginModel {
 pub struct LeveragedMarginModel;
 
 impl MarginModel for LeveragedMarginModel {
+    fn name(&self) -> &'static str {
+        "leveraged"
+    }
+
     fn calculate_initial_margin(
         &self,
         instrument: &dyn Instrument,
@@ -275,6 +377,39 @@ mod tests {
         },
         types::{Currency, Price, Quantity},
     };
+
+    struct FixedMarginModel {
+        initial: Money,
+        maintenance: Money,
+    }
+
+    impl MarginModel for FixedMarginModel {
+        fn name(&self) -> &'static str {
+            "fixed"
+        }
+
+        fn calculate_initial_margin(
+            &self,
+            _instrument: &dyn Instrument,
+            _quantity: Quantity,
+            _price: Price,
+            _leverage: Decimal,
+            _use_quote_for_inverse: Option<bool>,
+        ) -> anyhow::Result<Money> {
+            Ok(self.initial)
+        }
+
+        fn calculate_maintenance_margin(
+            &self,
+            _instrument: &dyn Instrument,
+            _quantity: Quantity,
+            _price: Price,
+            _leverage: Decimal,
+            _use_quote_for_inverse: Option<bool>,
+        ) -> anyhow::Result<Money> {
+            Ok(self.maintenance)
+        }
+    }
 
     fn ethusdt() -> CryptoPerpetual {
         crypto_perpetual_ethusdt()
@@ -428,6 +563,44 @@ mod tests {
     fn test_margin_model_any_default_is_leveraged() {
         let model = MarginModelAny::default();
         assert!(matches!(model, MarginModelAny::Leveraged(_)));
+        assert_eq!(model.name(), "leveraged");
+    }
+
+    #[rstest]
+    fn test_margin_model_handle_calls_custom_model() {
+        let initial = Money::from("12.34 USDT");
+        let maintenance = Money::from("5.67 USDT");
+        let model: Arc<dyn MarginModel> = Arc::new(FixedMarginModel {
+            initial,
+            maintenance,
+        });
+        let handle = MarginModelHandle::from_arc(model);
+        let cloned_handle = handle.clone();
+        drop(handle);
+        let instrument = ethusdt();
+
+        let initial_result = cloned_handle
+            .calculate_initial_margin(
+                &instrument,
+                Quantity::from("1.000"),
+                Price::from("5000.00"),
+                dec!(10),
+                None,
+            )
+            .unwrap();
+        let maintenance_result = cloned_handle
+            .calculate_maintenance_margin(
+                &instrument,
+                Quantity::from("1.000"),
+                Price::from("5000.00"),
+                dec!(10),
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(cloned_handle.name(), "fixed");
+        assert_eq!(initial_result, initial);
+        assert_eq!(maintenance_result, maintenance);
     }
 
     #[rstest]

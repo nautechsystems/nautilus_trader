@@ -74,11 +74,6 @@ pub enum NautilusWsMessage {
 
 /// Represents an OKX WebSocket error.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyo3::pyclass(from_py_object))]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.okx")
-)]
 pub struct OKXWebSocketError {
     /// Error code from OKX (e.g., "50101").
     pub code: String,
@@ -150,9 +145,16 @@ pub enum OKXWsMessage {
     /// A WebSocket send failed without a structured venue response.
     SendFailed {
         request_id: String,
-        client_order_id: Option<ClientOrderId>,
+        client_order_ids: Vec<ClientOrderId>,
         op: Option<OKXWsOperation>,
         error: super::error::OKXWsError,
+    },
+    /// The venue rejected a subscribe request, so no data will flow for it.
+    SubscriptionFailed {
+        channel: OKXWsChannel,
+        inst_id: Option<Ustr>,
+        code: String,
+        msg: String,
     },
     /// Error received from OKX.
     Error(OKXWebSocketError),
@@ -285,6 +287,7 @@ pub enum OKXWsFrame {
         data: serde_json::Value,
     },
     Error {
+        arg: Option<OKXWebSocketArg>,
         code: String,
         msg: String,
     },
@@ -491,7 +494,14 @@ fn parse_data<E: serde::de::Error>(
 fn parse_error<E: serde::de::Error>(
     obj: &mut serde_json::Map<String, serde_json::Value>,
 ) -> Result<OKXWsFrame, E> {
+    let arg = obj
+        .remove("arg")
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|e| E::custom(format!("invalid arg: {e}")))?;
+
     Ok(OKXWsFrame::Error {
+        arg,
         code: take_str(obj, "code")?,
         msg: take_str(obj, "msg")?,
     })
@@ -1124,6 +1134,9 @@ pub struct OKXAlgoOrderMsg {
     pub cl_ord_id: String,
     /// Order ID (empty until algo order is triggered).
     pub ord_id: String,
+    /// Triggered child order IDs.
+    #[serde(default)]
+    pub ord_id_list: Vec<String>,
     /// Instrument ID.
     pub inst_id: Ustr,
     /// Instrument type.
@@ -1194,6 +1207,9 @@ pub struct OKXAlgoOrderMsg {
     /// Trigger time (empty until triggered).
     #[serde(default)]
     pub trigger_time: String,
+    /// Failure code for rejected algo orders.
+    #[serde(default)]
+    pub fail_code: String,
     /// Tag.
     #[serde(default)]
     pub tag: String,
@@ -1830,7 +1846,8 @@ mod tests {
         let parsed: OKXWsFrame = serde_json::from_str(error_json).unwrap();
 
         match parsed {
-            OKXWsFrame::Error { code, msg } => {
+            OKXWsFrame::Error { arg, code, msg } => {
+                assert!(arg.is_none());
                 assert_eq!(code, "60012");
                 assert_eq!(msg, "Invalid request");
             }
@@ -1850,7 +1867,8 @@ mod tests {
         let parsed: OKXWsFrame = serde_json::from_str(error_json).unwrap();
 
         match parsed {
-            OKXWsFrame::Error { code, msg } => {
+            OKXWsFrame::Error { arg, code, msg } => {
+                assert!(arg.is_none());
                 assert_eq!(code, "60018");
                 assert_eq!(msg, "Invalid sign");
             }
@@ -1872,7 +1890,10 @@ mod tests {
         let parsed: OKXWsFrame = serde_json::from_str(error_json).unwrap();
 
         match parsed {
-            OKXWsFrame::Error { code, msg } => {
+            OKXWsFrame::Error { arg, code, msg } => {
+                let arg = arg.expect("subscription error arg");
+                assert_eq!(arg.channel, OKXWsChannel::Tickers);
+                assert_eq!(arg.inst_id, Some(Ustr::from("INVALID-INST")));
                 assert_eq!(code, "60012");
                 assert_eq!(msg, "Invalid request: channel not found");
             }

@@ -81,7 +81,9 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
-nautilus-model = { workspace = true, features = ["stubs"], optional = true }
+nautilus-model = { workspace = true, features = [
+  "test-support",
+], optional = true }
 nautilus-network = { workspace = true, optional = true }
 nautilus-serialization = { workspace = true, features = [
   "arrow",
@@ -98,6 +100,7 @@ indexmap = { workspace = true, optional = true }
 itchy = { workspace = true, optional = true }
 jiff = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
+parking_lot = { workspace = true }
 parquet = { workspace = true, features = ["zstd"], optional = true }
 rand = { workspace = true, optional = true }
 reqwest = { workspace = true, features = ["blocking"], optional = true }
@@ -111,7 +114,7 @@ pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
-nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-model = { workspace = true, features = ["test-support"] }
 nautilus-portfolio = { workspace = true }
 
 arrow = { workspace = true }

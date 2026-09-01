@@ -16,11 +16,11 @@
 //! Shared test infrastructure for Betfair integration tests.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     net::SocketAddr,
     path::PathBuf,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
@@ -45,8 +45,12 @@ use nautilus_betfair::{
     http::client::BetfairHttpClient,
     stream::config::BetfairStreamConfig,
 };
-use nautilus_common::testing::wait_until_async;
+use nautilus_common::{
+    messages::{SystemEvent, system::SocketStateChange},
+    testing::wait_until_async,
+};
 use nautilus_network::http::HttpClient;
+use parking_lot::Mutex;
 use serde_json::Value;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -63,6 +67,31 @@ pub(crate) fn load_fixture(path: &str) -> String {
         .unwrap_or_else(|_| panic!("failed to read {path}"))
 }
 
+#[allow(dead_code)]
+pub(crate) fn load_json_fixture(path: &str) -> Value {
+    serde_json::from_str(&load_fixture(path))
+        .unwrap_or_else(|_| panic!("failed to deserialize {path}"))
+}
+
+#[allow(dead_code)]
+pub(crate) fn betting_api_error(error_code: &str) -> Value {
+    let mut response = load_json_fixture("rest/betting_jsonrpc_error_invalid_session_live.json");
+    let value = response
+        .pointer_mut("/error/data/APINGException/errorCode")
+        .expect("live API error fixture must contain APINGException.errorCode");
+    assert!(value.is_string());
+    *value = Value::String(error_code.to_string());
+    response
+}
+
+#[allow(dead_code)]
+pub(crate) fn jsonrpc_error(code: i64, message: &str) -> Value {
+    let mut response = load_json_fixture("rest/betting_jsonrpc_error_invalid_params_live.json");
+    response["error"]["code"] = Value::from(code);
+    response["error"]["message"] = Value::String(message.to_string());
+    response
+}
+
 pub(crate) fn test_credential() -> BetfairCredential {
     BetfairCredential::new(
         "testuser".to_string(),
@@ -75,8 +104,8 @@ pub(crate) fn plain_stream_config(port: u16) -> BetfairStreamConfig {
     BetfairStreamConfig {
         host: "127.0.0.1".to_string(),
         port,
-        heartbeat_secs: 5,
-        heartbeat_timeout_secs: 60,
+        heartbeat_secs: None,
+        heartbeat_timeout_secs: Some(60),
         reconnect_delay_initial_ms: 200,
         reconnect_delay_max_ms: 1_000,
         use_tls: false,
@@ -84,7 +113,7 @@ pub(crate) fn plain_stream_config(port: u16) -> BetfairStreamConfig {
 }
 
 #[derive(Clone)]
-pub(crate) struct BettingResponseGate {
+pub(crate) struct MockResponseGate {
     pub method: String,
     pub waiters: Arc<AtomicUsize>,
     pub semaphore: Arc<Semaphore>,
@@ -96,23 +125,32 @@ pub(crate) struct MockState {
     pub keep_alive_count: Arc<AtomicUsize>,
     pub betting_request_count: Arc<AtomicUsize>,
     pub betting_overrides: Arc<Mutex<HashMap<String, Value>>>,
-    /// Forces the betting endpoint to return a JSON-RPC error envelope for a method.
-    /// Maps `method -> (code, message)`.
-    pub betting_error_overrides: Arc<Mutex<HashMap<String, (i64, String)>>>,
+    pub betting_response_sequences: Arc<Mutex<HashMap<String, VecDeque<Value>>>>,
+    /// Forces the betting endpoint to return a complete JSON-RPC error response for a method.
+    pub betting_error_overrides: Arc<Mutex<HashMap<String, Value>>>,
     /// Like `betting_error_overrides` but consumed on first hit; subsequent
     /// requests for the same method fall through to the default success path.
     /// Used to exercise session-recovery flows where the venue returns
     /// `NO_SESSION` once and accepts the retry.
-    pub betting_error_one_shot_overrides: Arc<Mutex<HashMap<String, (i64, String)>>>,
+    pub betting_error_one_shot_overrides: Arc<Mutex<HashMap<String, Value>>>,
     /// Forces the betting endpoint to return a non-2xx HTTP status for a method.
     pub betting_status_overrides: Arc<Mutex<HashMap<String, u16>>>,
+    /// Like `betting_status_overrides` but consumed on first hit.
+    pub betting_status_one_shot_overrides: Arc<Mutex<HashMap<String, u16>>>,
+    /// Records the request as applied, then returns the configured HTTP status once.
+    /// Retries with the same `customerRef` fall through without applying again.
+    pub betting_apply_then_status_one_shot_overrides: Arc<Mutex<HashMap<String, u16>>>,
+    /// Mutating request params applied by `betting_apply_then_status_one_shot_overrides`.
+    pub betting_applied_request_params: Arc<Mutex<Vec<(String, Value)>>>,
     pub betting_methods: Arc<Mutex<Vec<String>>>,
     /// Records the `params` payload of each betting request, indexed by call order.
     pub betting_request_params: Arc<Mutex<Vec<(String, Value)>>>,
     /// Per-method response delay; lets tests widen reconciliation windows.
     pub betting_response_delays: Arc<Mutex<HashMap<String, Duration>>>,
-    pub betting_response_gate: Arc<Mutex<Option<BettingResponseGate>>>,
+    pub betting_response_gate: Arc<Mutex<Option<MockResponseGate>>>,
+    pub accounts_response_gate: Arc<Mutex<Option<MockResponseGate>>>,
     pub accounts_overrides: Arc<Mutex<HashMap<String, Value>>>,
+    pub accounts_error_overrides: Arc<Mutex<HashMap<String, Value>>>,
     pub login_response_override: Arc<Mutex<Option<String>>>,
     pub keep_alive_response_override: Arc<Mutex<Option<String>>>,
     pub keep_alive_status_override: Arc<Mutex<Option<u16>>>,
@@ -123,7 +161,6 @@ async fn handle_login(State(state): State<MockState>) -> impl IntoResponse {
     let body = state
         .login_response_override
         .lock()
-        .unwrap()
         .clone()
         .unwrap_or_else(|| load_fixture("rest/login_success.json"));
     (
@@ -137,13 +174,11 @@ async fn handle_keep_alive(State(state): State<MockState>) -> Response {
     let body = state
         .keep_alive_response_override
         .lock()
-        .unwrap()
         .clone()
         .unwrap_or_else(|| load_fixture("rest/login_success.json"));
     let status = state
         .keep_alive_status_override
         .lock()
-        .unwrap()
         .map(|status| StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR))
         .unwrap_or(StatusCode::OK);
     (
@@ -170,19 +205,14 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> Response
     let params = request.get("params").cloned().unwrap_or(Value::Null);
 
     if !method.is_empty() {
-        state
-            .betting_methods
-            .lock()
-            .unwrap()
-            .push(method.to_string());
+        state.betting_methods.lock().push(method.to_string());
         state
             .betting_request_params
             .lock()
-            .unwrap()
-            .push((method.to_string(), params));
+            .push((method.to_string(), params.clone()));
     }
 
-    let response_gate = state.betting_response_gate.lock().unwrap().clone();
+    let response_gate = state.betting_response_gate.lock().clone();
     if let Some(gate) = response_gate
         && gate.method == method
     {
@@ -194,60 +224,58 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> Response
             .forget();
     }
 
-    let delay = state
-        .betting_response_delays
-        .lock()
-        .unwrap()
-        .get(method)
-        .copied();
+    let delay = state.betting_response_delays.lock().get(method).copied();
 
     if let Some(delay) = delay {
         tokio::time::sleep(delay).await;
     }
 
     if let Some(status) = state
-        .betting_status_overrides
+        .betting_apply_then_status_one_shot_overrides
         .lock()
-        .unwrap()
-        .get(method)
-        .copied()
+        .remove(method)
+    {
+        state
+            .betting_applied_request_params
+            .lock()
+            .push((method.to_string(), params));
+        let code = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        return (code, "").into_response();
+    }
+
+    if let Some(status) = state
+        .betting_status_one_shot_overrides
+        .lock()
+        .remove(method)
     {
         let code = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
         return (code, "").into_response();
     }
 
-    if let Some((code, message)) = state
+    if let Some(status) = state.betting_status_overrides.lock().get(method).copied() {
+        let code = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        return (code, "").into_response();
+    }
+
+    let error_response = state
         .betting_error_one_shot_overrides
         .lock()
-        .unwrap()
         .remove(method)
-    {
-        let response = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "error": {"code": code, "message": message},
-        });
+        .or_else(|| state.betting_error_overrides.lock().get(method).cloned());
+
+    if let Some(mut response) = error_response {
+        response["id"] = Value::from(id);
         return axum::Json(response).into_response();
     }
 
-    if let Some((code, message)) = state
-        .betting_error_overrides
+    let sequence_result = state
+        .betting_response_sequences
         .lock()
-        .unwrap()
-        .get(method)
-        .cloned()
-    {
-        let response = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "error": {"code": code, "message": message},
-        });
-        return axum::Json(response).into_response();
-    }
+        .get_mut(method)
+        .and_then(VecDeque::pop_front);
+    let override_result = state.betting_overrides.lock().get(method).cloned();
 
-    let override_result = state.betting_overrides.lock().unwrap().get(method).cloned();
-
-    let result = if let Some(value) = override_result {
+    let result = if let Some(value) = sequence_result.or(override_result) {
         value
     } else {
         match method {
@@ -287,12 +315,24 @@ async fn handle_accounts(State(state): State<MockState>, body: Bytes) -> impl In
     let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
     let id = request.get("id").and_then(|i| i.as_u64()).unwrap_or(0);
 
-    let override_result = state
-        .accounts_overrides
-        .lock()
-        .unwrap()
-        .get(method)
-        .cloned();
+    let response_gate = state.accounts_response_gate.lock().clone();
+    if let Some(gate) = response_gate
+        && gate.method == method
+    {
+        gate.waiters.fetch_add(1, Ordering::Relaxed);
+        gate.semaphore
+            .acquire()
+            .await
+            .expect("accounts response gate must remain open")
+            .forget();
+    }
+
+    if let Some(mut response) = state.accounts_error_overrides.lock().get(method).cloned() {
+        response["id"] = Value::from(id);
+        return axum::Json(response);
+    }
+
+    let override_result = state.accounts_overrides.lock().get(method).cloned();
 
     let result = if let Some(value) = override_result {
         value
@@ -329,15 +369,10 @@ pub(crate) async fn start_mock_http() -> (SocketAddr, MockState) {
         axum::serve(listener, router).await.unwrap();
     });
 
-    let health_client = HttpClient::new(
-        std::collections::HashMap::new(),
-        Vec::new(),
-        Vec::new(),
-        None,
-        None,
-        None,
-    )
-    .unwrap();
+    let health_client = HttpClient::builder()
+        .headers(std::collections::HashMap::new())
+        .build()
+        .unwrap();
 
     wait_until_async(
         || {
@@ -364,6 +399,55 @@ pub(crate) async fn accept_and_auth(
     BufReader<tokio::net::tcp::OwnedReadHalf>,
     tokio::net::tcp::OwnedWriteHalf,
 ) {
+    let (reader, write_half, _) = accept_and_capture_auth(listener).await;
+    (reader, write_half)
+}
+
+#[allow(dead_code)]
+pub(crate) async fn accept_and_activate(
+    listener: &TcpListener,
+) -> (
+    BufReader<tokio::net::tcp::OwnedReadHalf>,
+    tokio::net::tcp::OwnedWriteHalf,
+) {
+    let (mut reader, mut write_half) = accept_and_auth(listener).await;
+    let mut line = String::new();
+    reader.read_line(&mut line).await.unwrap();
+    if line.is_empty() {
+        return (reader, write_half);
+    }
+
+    let subscription: Value = serde_json::from_str(line.trim()).unwrap();
+    let id = subscription["id"].as_u64().unwrap();
+    let change = match subscription["op"].as_str() {
+        Some("marketSubscription") => {
+            format!("{{\"op\":\"mcm\",\"id\":{id},\"pt\":1000,\"ct\":\"SUB_IMAGE\",\"mc\":[]}}\r\n",)
+        }
+        Some("orderSubscription") => {
+            format!("{{\"op\":\"ocm\",\"id\":{id},\"pt\":1000,\"ct\":\"SUB_IMAGE\",\"oc\":[]}}\r\n",)
+        }
+        other => panic!("unexpected stream subscription: {other:?}"),
+    };
+    write_half
+        .write_all(
+            format!(
+                "{{\"op\":\"status\",\"id\":{id},\"statusCode\":\"SUCCESS\",\"connectionClosed\":false}}\r\n{change}",
+            )
+            .as_bytes(),
+        )
+        .await
+        .unwrap();
+
+    (reader, write_half)
+}
+
+pub(crate) async fn accept_and_capture_auth(
+    listener: &TcpListener,
+) -> (
+    BufReader<tokio::net::tcp::OwnedReadHalf>,
+    tokio::net::tcp::OwnedWriteHalf,
+    String,
+) {
     let (socket, _) = listener.accept().await.unwrap();
     let (read_half, mut write_half) = socket.into_split();
     let mut reader = BufReader::new(read_half);
@@ -375,8 +459,36 @@ pub(crate) async fn accept_and_auth(
 
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
+    if line.is_empty() {
+        return (reader, write_half, line);
+    }
+    let auth: Value = serde_json::from_str(line.trim()).unwrap();
+    if let Some(id) = auth["id"].as_u64() {
+        write_half
+            .write_all(
+                format!(
+                    "{{\"op\":\"status\",\"id\":{id},\"statusCode\":\"SUCCESS\",\"connectionClosed\":false}}\r\n",
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+    }
 
-    (reader, write_half)
+    (reader, write_half, line)
+}
+
+#[allow(dead_code)]
+pub(crate) async fn next_socket_state(
+    receiver: &mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
+) -> SocketStateChange {
+    let event = tokio::time::timeout(Duration::from_secs(5), receiver.recv())
+        .await
+        .expect("timed out waiting for socket state change")
+        .expect("system event channel closed");
+    let SystemEvent::SocketState(change) = event;
+
+    change
 }
 
 pub(crate) fn create_test_http_client(addr: SocketAddr) -> BetfairHttpClient {

@@ -21,7 +21,7 @@ use std::{
     num::NonZeroUsize,
     str::FromStr,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
@@ -71,6 +71,7 @@ use nautilus_common::{
     testing::wait_until_async,
 };
 use nautilus_core::{Params, UUID4, UnixNanos};
+use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::{
         BarType, BookOrder, CustomData, Data, DataType, OrderBookDelta, OrderBookDeltas, QuoteTick,
@@ -80,6 +81,7 @@ use nautilus_model::{
     instruments::InstrumentAny,
 };
 use nautilus_network::http::HttpClient;
+use parking_lot::Mutex;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -237,7 +239,7 @@ async fn handle_ws_connection(mut socket: WebSocket, state: DataTestServerState)
                     .unwrap_or_default();
 
                 if !streams.is_empty() {
-                    state.subscriptions.lock().unwrap().push(streams.clone());
+                    state.subscriptions.lock().push(streams.clone());
                 }
 
                 for stream in streams {
@@ -399,7 +401,7 @@ async fn handle_ws_connection(mut socket: WebSocket, state: DataTestServerState)
                     .unwrap_or_default();
 
                 if !streams.is_empty() {
-                    state.unsubscriptions.lock().unwrap().push(streams);
+                    state.unsubscriptions.lock().push(streams);
                 }
             }
         }
@@ -575,11 +577,7 @@ fn futures_agg_trades_response(
         .or_else(|| query.get("endTime"))
         .and_then(|value| value.parse().ok())
         .unwrap_or_else(|| jiff::Timestamp::now().as_millisecond());
-    state
-        .market_queries
-        .lock()
-        .unwrap()
-        .push((path.to_string(), query));
+    state.market_queries.lock().push((path.to_string(), query));
     let quantity = if path.starts_with("/dapi") {
         "2"
     } else {
@@ -623,11 +621,7 @@ fn futures_klines_response(
         .get("endTime")
         .and_then(|value| value.parse::<i64>().ok())
         .unwrap_or_else(|| jiff::Timestamp::now().as_millisecond() - 1_000);
-    state
-        .market_queries
-        .lock()
-        .unwrap()
-        .push((path.to_string(), query));
+    state.market_queries.lock().push((path.to_string(), query));
     json_response(&json!([[
         close_time - 59_999,
         "50000.00",
@@ -702,8 +696,7 @@ async fn start_data_test_server_with_state(state: DataTestServerState) -> Socket
     });
 
     let health_url = format!("http://{addr}/fapi/v1/ping");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();
@@ -908,7 +901,9 @@ async fn test_connect_emits_socket_state_changes() {
     let base_url_ws = format!("ws://{addr}/ws");
     let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
     set_system_event_sender(system_tx);
-    let (mut client, _data_rx) = create_test_data_client(base_url_http, base_url_ws);
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, _data_rx) =
+        registry.scope(|| create_test_data_client(base_url_http, base_url_ws));
 
     client.connect().await.unwrap();
 
@@ -942,9 +937,51 @@ async fn test_connect_emits_socket_state_changes() {
     );
     assert_eq!(changes[1].state, SocketState::Connected);
 
-    client.disconnect().await.unwrap();
+    let market_endpoint = ustr::Ustr::from("binance-futures-market-streams");
+    let public_endpoint = ustr::Ustr::from("binance-futures-public-streams");
+    let market_handle = registry
+        .handle(*BINANCE_CLIENT_ID, market_endpoint)
+        .unwrap();
+    let public_handle = registry
+        .handle(*BINANCE_CLIENT_ID, public_endpoint)
+        .unwrap();
+    assert_eq!(
+        market_handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    assert_eq!(
+        public_handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
 
-    assert!(system_rx.try_recv().is_err());
+    let mut disconnected = std::collections::HashSet::new();
+    wait_until_async(
+        || {
+            while let Ok(event) = system_rx.try_recv() {
+                let SystemEvent::SocketState(change) = event;
+                if change.state == SocketState::Disconnected {
+                    disconnected.insert(change.endpoint);
+                }
+            }
+            let done =
+                disconnected.contains(&market_endpoint) && disconnected.contains(&public_endpoint);
+            async move { done }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    client.disconnect().await.unwrap();
+    assert!(
+        registry
+            .handle(*BINANCE_CLIENT_ID, market_endpoint)
+            .is_none()
+    );
+    assert!(
+        registry
+            .handle(*BINANCE_CLIENT_ID, public_endpoint)
+            .is_none()
+    );
 }
 
 #[rstest]
@@ -1432,7 +1469,7 @@ async fn test_request_bounded_aggregate_trades_routes_futures_product(
     let DataEvent::Response(DataResponse::Trades(response)) = event else {
         panic!("expected trades response");
     };
-    let queries = state.market_queries.lock().unwrap();
+    let queries = state.market_queries.lock();
     let (path, query) = &queries[0];
     assert_eq!(path, expected_path);
     assert_eq!(
@@ -1520,7 +1557,7 @@ async fn test_request_historical_binance_bars_routes_futures_product(
         .as_ref()
         .downcast_ref::<Vec<BinanceBar>>()
         .expect("expected BinanceBar vector");
-    let queries = state.market_queries.lock().unwrap();
+    let queries = state.market_queries.lock();
     let (path, query) = &queries[0];
     assert_eq!(path, expected_path);
     assert_eq!(
@@ -1841,7 +1878,6 @@ async fn test_top_of_book_reference_count_shares_quote_and_l1_stream() {
             let count = state
                 .subscriptions
                 .lock()
-                .unwrap()
                 .iter()
                 .flatten()
                 .filter(|stream| stream.as_str() == "btcusdt@bookTicker")
@@ -2031,11 +2067,11 @@ async fn test_subscribe_book_deltas() {
     assert_eq!(snapshot.deltas.len(), 5);
     assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
     assert_eq!(snapshot.deltas[1].action, BookAction::Add);
-    assert_eq!(snapshot.deltas[1].order.side, OrderSide::Buy);
+    assert_eq!(snapshot.deltas[1].order.side, Some(OrderSide::Buy));
     assert_eq!(snapshot.deltas[1].order.price.as_decimal(), dec!(50000.00));
     assert_eq!(snapshot.deltas[1].order.size.as_decimal(), dec!(1.000));
     assert_eq!(snapshot.deltas[4].action, BookAction::Add);
-    assert_eq!(snapshot.deltas[4].order.side, OrderSide::Sell);
+    assert_eq!(snapshot.deltas[4].order.side, Some(OrderSide::Sell));
     assert_eq!(snapshot.deltas[4].order.price.as_decimal(), dec!(50002.00));
     assert_eq!(snapshot.deltas[4].order.size.as_decimal(), dec!(1.500));
     assert_eq!(snapshot.deltas[4].flags, RecordFlag::F_LAST as u8);
@@ -2043,11 +2079,11 @@ async fn test_subscribe_book_deltas() {
     assert_eq!(replayed.sequence, 1027025);
     assert_eq!(replayed.deltas.len(), 4);
     assert_eq!(replayed.deltas[0].action, BookAction::Update);
-    assert_eq!(replayed.deltas[0].order.side, OrderSide::Buy);
+    assert_eq!(replayed.deltas[0].order.side, Some(OrderSide::Buy));
     assert_eq!(replayed.deltas[0].order.price.as_decimal(), dec!(50000.00));
     assert_eq!(replayed.deltas[0].order.size.as_decimal(), dec!(1.000));
     assert_eq!(replayed.deltas[3].action, BookAction::Update);
-    assert_eq!(replayed.deltas[3].order.side, OrderSide::Sell);
+    assert_eq!(replayed.deltas[3].order.side, Some(OrderSide::Sell));
     assert_eq!(replayed.deltas[3].order.price.as_decimal(), dec!(50002.00));
     assert_eq!(replayed.deltas[3].order.size.as_decimal(), dec!(1.500));
     assert_eq!(replayed.deltas[3].flags, RecordFlag::F_LAST as u8);
@@ -3332,7 +3368,6 @@ fn ticker_data_type_for_instrument(instrument_id: InstrumentId) -> DataType {
 fn recorded_streams_include(records: &Arc<Mutex<Vec<Vec<String>>>>, stream: &str) -> bool {
     records
         .lock()
-        .unwrap()
         .iter()
         .any(|streams| streams.iter().any(|recorded| recorded == stream))
 }

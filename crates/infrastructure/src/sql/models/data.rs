@@ -24,20 +24,20 @@ use nautilus_model::{
 use sqlx::{Error, FromRow, Row, postgres::PgRow};
 
 use crate::sql::models::{
-    enums::{AggregationSourceModel, AggressorSideModel, BarAggregationModel, PriceTypeModel},
+    enums::{AggregationSourcePg, AggressorSidePg, BarAggregationPg, PriceTypePg},
     read_usize,
 };
 
 #[derive(Debug)]
-pub struct QuoteTickModel(pub QuoteTick);
+pub struct QuoteTickRow(pub QuoteTick);
 
 #[derive(Debug)]
-pub struct TradeTickModel(pub TradeTick);
+pub struct TradeTickRow(pub TradeTick);
 
 #[derive(Debug)]
-pub struct BarModel(pub Bar);
+pub struct BarRow(pub Bar);
 
-impl<'r> FromRow<'r, PgRow> for QuoteTickModel {
+impl<'r> FromRow<'r, PgRow> for QuoteTickRow {
     fn from_row(row: &'r PgRow) -> Result<Self, Error> {
         let instrument_id = row
             .try_get::<&str, _>("instrument_id")
@@ -61,7 +61,7 @@ impl<'r> FromRow<'r, PgRow> for QuoteTickModel {
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for TradeTickModel {
+impl<'r> FromRow<'r, PgRow> for TradeTickRow {
     fn from_row(row: &'r PgRow) -> Result<Self, Error> {
         let instrument_id = row
             .try_get::<&str, _>("instrument_id")
@@ -69,7 +69,7 @@ impl<'r> FromRow<'r, PgRow> for TradeTickModel {
         let price = row.try_get::<&str, _>("price").map(Price::from)?;
         let size = row.try_get::<&str, _>("quantity").map(Quantity::from)?;
         let aggressor_side = row
-            .try_get::<AggressorSideModel, _>("aggressor_side")
+            .try_get::<AggressorSidePg, _>("aggressor_side")
             .map(|x| x.0)?;
         let trade_id = row
             .try_get::<&str, _>("venue_trade_id")
@@ -89,7 +89,7 @@ impl<'r> FromRow<'r, PgRow> for TradeTickModel {
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for BarModel {
+impl<'r> FromRow<'r, PgRow> for BarRow {
     fn from_row(row: &'r PgRow) -> Result<Self, Error> {
         fn decode<T: FromStr>(row: &PgRow, column: &str) -> Result<T, Error>
         where
@@ -102,14 +102,12 @@ impl<'r> FromRow<'r, PgRow> for BarModel {
 
         let instrument_id: InstrumentId = decode(row, "instrument_id")?;
         let step = read_usize(row, "step")?;
-        let price_type = row
-            .try_get::<PriceTypeModel, _>("price_type")
-            .map(|x| x.0)?;
+        let price_type = row.try_get::<PriceTypePg, _>("price_type").map(|x| x.0)?;
         let bar_aggregation = row
-            .try_get::<BarAggregationModel, _>("bar_aggregation")
+            .try_get::<BarAggregationPg, _>("bar_aggregation")
             .map(|x| x.0)?;
         let aggregation_source = row
-            .try_get::<AggregationSourceModel, _>("aggregation_source")
+            .try_get::<AggregationSourcePg, _>("aggregation_source")
             .map(|x| x.0)?;
         let spec = BarSpecification::new_checked(step, bar_aggregation, price_type)
             .map_err(|e| Error::Decode(format!("Invalid bar specification in row: {e}").into()))?;

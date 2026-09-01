@@ -528,7 +528,7 @@ fn test_run_clears_data_after_suppressed_error(crypto_perpetual_ethusdt: CryptoP
     assert!(failed_results.is_empty());
 
     let engine = node.get_engine_mut(&config_id).unwrap();
-    engine.reset();
+    engine.reset().unwrap();
     engine.clear_strategies().unwrap();
 
     let results = node.run().unwrap();

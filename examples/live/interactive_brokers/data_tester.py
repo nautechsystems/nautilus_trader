@@ -46,6 +46,9 @@ BAR_TYPE = BarType.from_str(f"{INSTRUMENT_ID}-1-MINUTE-LAST-EXTERNAL")
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     provider_config = InteractiveBrokersInstrumentProviderConfig(
         symbology_method=SymbologyMethod.RAW,
         load_ids={INSTRUMENT_ID},

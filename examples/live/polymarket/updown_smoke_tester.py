@@ -37,7 +37,7 @@ from typing import Any
 
 from nautilus_trader.adapters.polymarket import PolymarketDataClientConfig
 from nautilus_trader.adapters.polymarket import PolymarketDataClientFactory
-from nautilus_trader.adapters.polymarket import PolymarketExecClientConfig
+from nautilus_trader.adapters.polymarket import PolymarketExecutionClientConfig
 from nautilus_trader.adapters.polymarket import PolymarketExecutionClientFactory
 from nautilus_trader.adapters.polymarket import PolymarketInstrumentProviderConfig
 from nautilus_trader.adapters.polymarket import PolymarketUpDownEventSlugConfig
@@ -54,6 +54,10 @@ from nautilus_trader.model import TraderId
 from nautilus_trader.testkit import ExecTesterConfig
 
 
+# WARNING: With DRY_RUN = False, this tester submits orders to the configured
+# environment and may use real funds. Set DRY_RUN = True to connect without
+# submitting orders or sending shutdown cancel/close commands.
+DRY_RUN = False
 POLYMARKET = "POLYMARKET"
 DEFAULT_GAMMA_URL = "https://gamma-api.polymarket.com"
 TRADER_ID = TraderId.from_str("TESTER-001")
@@ -74,6 +78,9 @@ TOB_OFFSET_TICKS = 5
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     instrument_id = resolve_updown_instrument_id(
         assets=ASSETS,
         interval_mins=INTERVAL_MINS,
@@ -96,7 +103,7 @@ def main() -> None:
 
     node = (
         LiveNode.builder("POLYMARKET-UPDOWN-SMOKE-001", TRADER_ID, Environment.LIVE)
-        .with_reconciliation(True)
+        .with_reconciliation(reconciliation=True)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
         .add_data_client(
             None,
@@ -111,8 +118,7 @@ def main() -> None:
         .add_exec_client(
             None,
             PolymarketExecutionClientFactory(),
-            PolymarketExecClientConfig(
-                trader_id=str(TRADER_ID),
+            PolymarketExecutionClientConfig(
                 account_id=ACCOUNT_ID,
                 signature_type=SIGNATURE_TYPE,
             ),
@@ -143,7 +149,7 @@ def main() -> None:
             close_positions_qty_precision=2,
             close_positions_time_in_force=TimeInForce.IOC,
             reduce_only_on_stop=False,
-            dry_run=False,  # Set True to log intended order flow without submitting orders
+            dry_run=DRY_RUN,
             log_data=False,
         ),
     )
@@ -161,6 +167,9 @@ def resolve_updown_instrument_id(
     base_url_gamma: str,
     timeout_secs: int,
 ) -> InstrumentId:
+    """
+    Resolve updown instrument id.
+    """
     slugs = build_updown_event_slugs(
         assets=assets,
         interval_mins=interval_mins,
@@ -189,6 +198,9 @@ def build_updown_event_slugs(
     start_offset_periods: int,
     unix_secs: int | None = None,
 ) -> list[str]:
+    """
+    Build updown event slugs.
+    """
     normalized_assets = []
 
     for asset in assets:
@@ -221,6 +233,9 @@ def request_gamma_events_by_slug(
     slug: str,
     timeout_secs: int,
 ) -> list[dict[str, Any]]:
+    """
+    Request gamma events by slug.
+    """
     parsed_base_url = urllib.parse.urlparse(base_url_gamma)
     if parsed_base_url.scheme not in {"http", "https"}:
         raise ValueError("base_url_gamma must use http or https")
@@ -246,6 +261,9 @@ def find_updown_instrument_id(
     events: list[dict[str, Any]],
     outcome: str,
 ) -> InstrumentId | None:
+    """
+    Find updown instrument id.
+    """
     expected_outcome = outcome.lower()
 
     for event in events:
@@ -272,6 +290,9 @@ def find_updown_instrument_id(
 
 
 def market_is_tradable(market: dict[str, Any]) -> bool:
+    """
+    Market is tradable.
+    """
     return (
         bool(market.get("active"))
         and not bool(market.get("closed"))
@@ -284,6 +305,9 @@ def token_id_for_outcome(
     market: dict[str, Any],
     expected_outcome: str,
 ) -> str | None:
+    """
+    Token id for outcome.
+    """
     outcomes = json_array_field(market.get("outcomes"))
     token_ids = json_array_field(market.get("clobTokenIds"))
 
@@ -298,6 +322,9 @@ def token_id_for_outcome(
 
 
 def json_array_field(value: Any) -> list[Any]:
+    """
+    Json array field.
+    """
     if isinstance(value, list):
         return value
 

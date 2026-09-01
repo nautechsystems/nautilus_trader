@@ -53,8 +53,16 @@ pub enum RpcEventType {
     PoolFeeProtocolCollect(DexType),
 }
 
+/// Result of an explicit-height `eth_call` before contract-specific output decoding.
+#[cfg(feature = "hypersync")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum RpcCallResult {
+    Success(Bytes),
+    Reverted,
+}
+
 /// Represents the minimal block view required for execution fee derivation.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RpcBlock {
     /// The block number.
@@ -62,6 +70,8 @@ pub struct RpcBlock {
     pub number: u64,
     /// The canonical hash of the block.
     pub hash: B256,
+    /// The canonical hash of the parent block.
+    pub parent_hash: B256,
     /// The block timestamp in seconds since the Unix epoch.
     #[serde(deserialize_with = "deserialize_hex_u64")]
     pub timestamp: u64,
@@ -82,7 +92,7 @@ pub(crate) struct RpcBlockResponse {
 }
 
 /// Represents the transaction identity required for signer-nonce reconciliation.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RpcTransaction {
     /// The transaction hash.
@@ -92,12 +102,25 @@ pub struct RpcTransaction {
     /// The signer nonce.
     #[serde(deserialize_with = "deserialize_hex_u64")]
     pub nonce: u64,
+    /// The chain ID authenticated by the transaction signature.
+    #[serde(default, deserialize_with = "deserialize_hex_u64_opt")]
+    pub chain_id: Option<u64>,
+    /// The EIP-2718 transaction type.
+    #[serde(default, rename = "type", deserialize_with = "deserialize_hex_u8_opt")]
+    pub transaction_type: Option<u8>,
     /// The destination address, or `None` for contract creation.
     pub to: Option<Address>,
     /// The transaction calldata.
     pub input: Bytes,
     /// The native value in wei.
     pub value: U256,
+    /// The transaction gas limit.
+    #[serde(default, deserialize_with = "deserialize_hex_u64_opt")]
+    pub gas: Option<u64>,
+    /// The EIP-1559 maximum fee per gas in wei.
+    pub max_fee_per_gas: Option<U256>,
+    /// The EIP-1559 maximum priority fee per gas in wei.
+    pub max_priority_fee_per_gas: Option<U256>,
 }
 
 /// Represents the minimal transaction receipt view required for inclusion observation.
@@ -127,6 +150,53 @@ pub struct RpcTransactionReceipt {
     pub logs: Vec<RpcLog>,
 }
 
+/// The call operation reported by Geth's `callTracer`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum RpcCallType {
+    Call,
+    Callcode,
+    Delegatecall,
+    Staticcall,
+    Create,
+    Create2,
+    Selfdestruct,
+}
+
+/// A normalized frame from Geth's `callTracer`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RpcCallTrace {
+    /// The EVM call operation.
+    #[serde(rename = "type")]
+    pub call_type: RpcCallType,
+    /// The frame caller.
+    pub from: Address,
+    /// The frame target, when the operation has one.
+    pub to: Option<Address>,
+    /// The native value supplied to the frame.
+    #[serde(default)]
+    pub value: U256,
+    /// The frame gas allowance.
+    #[serde(deserialize_with = "deserialize_hex_u64")]
+    pub gas: u64,
+    /// The gas consumed by the frame.
+    #[serde(deserialize_with = "deserialize_hex_u64")]
+    pub gas_used: u64,
+    /// The input bytes supplied to the frame.
+    #[serde(default)]
+    pub input: Bytes,
+    /// The output bytes returned by the frame.
+    #[serde(default)]
+    pub output: Bytes,
+    /// Whether the frame reported an execution error.
+    #[serde(default)]
+    pub error: Option<String>,
+    /// Child frames in execution order.
+    #[serde(default)]
+    pub calls: Vec<Self>,
+}
+
 fn deserialize_hex_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -134,6 +204,34 @@ where
     let s = String::deserialize(deserializer)?;
     let value = parse_hex_quantity(&s).map_err(serde::de::Error::custom)?;
     u64::try_from(value).map_err(serde::de::Error::custom)
+}
+
+fn deserialize_hex_u64_opt<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<String>::deserialize(deserializer)?
+        .map(|value| parse_hex_quantity(&value))
+        .transpose()
+        .map_err(serde::de::Error::custom)?;
+    value
+        .map(u64::try_from)
+        .transpose()
+        .map_err(serde::de::Error::custom)
+}
+
+fn deserialize_hex_u8_opt<'de, D>(deserializer: D) -> Result<Option<u8>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<String>::deserialize(deserializer)?
+        .map(|value| parse_hex_quantity(&value))
+        .transpose()
+        .map_err(serde::de::Error::custom)?;
+    value
+        .map(u8::try_from)
+        .transpose()
+        .map_err(serde::de::Error::custom)
 }
 
 fn deserialize_hex_u128_opt<'de, D>(deserializer: D) -> Result<Option<u128>, D::Error>

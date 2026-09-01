@@ -201,6 +201,10 @@ pub fn parse_instrument_any(
 /// # Errors
 ///
 /// Returns an error if values are out of valid range or cannot be parsed.
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 pub fn parse_index_instrument(
     definition: &BitmexInstrument,
     ts_init: UnixNanos,
@@ -215,34 +219,23 @@ pub fn parse_index_instrument(
     let price_increment = Price::from(definition.tick_size.to_string());
     let size_increment = Quantity::from(1); // Indices don't have tradeable sizes
 
-    Ok(InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-        instrument_id,
-        raw_symbol,
-        base_currency,
-        quote_currency,
-        settlement_currency,
-        false, // is_inverse
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        None, // multiplier
-        None, // lot_size
-        None, // max_quantity
-        None, // min_quantity
-        None, // max_notional
-        None, // min_notional
-        None, // max_price
-        None, // min_price
-        None, // margin_init
-        None, // margin_maint
-        None, // maker_fee
-        None, // taker_fee
-        None, // tick_scheme
-        None, // info
-        ts_init,
-        ts_init,
-    )))
+    Ok(InstrumentAny::CryptoPerpetual(
+        CryptoPerpetual::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(raw_symbol)
+            .base_currency(base_currency)
+            .quote_currency(quote_currency)
+            .settlement_currency(settlement_currency)
+            .is_inverse(false)
+            .price_precision(price_increment.precision)
+            .size_precision(size_increment.precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .ts_event(ts_init)
+            .ts_init(ts_init)
+            .build()
+            .unwrap(),
+    ))
 }
 
 /// Parse a BitMEX spot instrument into a Nautilus `InstrumentAny`.
@@ -250,6 +243,10 @@ pub fn parse_index_instrument(
 /// # Errors
 ///
 /// Returns an error if values are out of valid range or cannot be parsed.
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 pub fn parse_spot_instrument(
     definition: &BitmexInstrument,
     ts_init: UnixNanos,
@@ -310,32 +307,30 @@ pub fn parse_spot_instrument(
         .map(|price| Price::from(price.to_string()));
     let ts_event = UnixNanos::from(definition.timestamp);
 
-    let instrument = CurrencyPair::new(
-        instrument_id,
-        raw_symbol,
-        base_currency,
-        quote_currency,
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        None, // multiplier
-        lot_size,
-        max_quantity,
-        min_quantity,
-        max_notional,
-        min_notional,
-        max_price,
-        min_price,
-        Some(margin_init),
-        Some(margin_maint),
-        Some(maker_fee),
-        Some(taker_fee),
-        None,
-        None, // info
-        ts_event,
-        ts_init,
-    );
+    let instrument = CurrencyPair::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .base_currency(base_currency)
+        .quote_currency(quote_currency)
+        .price_precision(price_increment.precision)
+        .size_precision(size_increment.precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .maybe_lot_size(lot_size)
+        .maybe_max_quantity(max_quantity)
+        .maybe_min_quantity(min_quantity)
+        .maybe_max_notional(max_notional)
+        .maybe_min_notional(min_notional)
+        .maybe_max_price(max_price)
+        .maybe_min_price(min_price)
+        .margin_init(margin_init)
+        .margin_maint(margin_maint)
+        .maker_fee(maker_fee)
+        .taker_fee(taker_fee)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::CurrencyPair(instrument))
 }
@@ -345,6 +340,10 @@ pub fn parse_spot_instrument(
 /// # Errors
 ///
 /// Returns an error if values are out of valid range or cannot be parsed.
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 pub fn parse_perpetual_instrument(
     definition: &BitmexInstrument,
     ts_init: UnixNanos,
@@ -409,34 +408,33 @@ pub fn parse_perpetual_instrument(
         .map(|price| Price::from(price.to_string()));
     let ts_event = UnixNanos::from(definition.timestamp);
 
-    let instrument = CryptoPerpetual::new(
-        instrument_id,
-        raw_symbol,
-        base_currency,
-        quote_currency,
-        settlement_currency,
-        is_inverse,
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        multiplier,
-        lot_size,
-        max_quantity,
-        min_quantity,
-        max_notional,
-        min_notional,
-        max_price,
-        min_price,
-        Some(margin_init),
-        Some(margin_maint),
-        Some(maker_fee),
-        Some(taker_fee),
-        None,
-        None, // info
-        ts_event,
-        ts_init,
-    );
+    let instrument = CryptoPerpetual::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .base_currency(base_currency)
+        .quote_currency(quote_currency)
+        .settlement_currency(settlement_currency)
+        .is_inverse(is_inverse)
+        .price_precision(price_increment.precision)
+        .size_precision(size_increment.precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .maybe_multiplier(multiplier)
+        .maybe_lot_size(lot_size)
+        .maybe_max_quantity(max_quantity)
+        .maybe_min_quantity(min_quantity)
+        .maybe_max_notional(max_notional)
+        .maybe_min_notional(min_notional)
+        .maybe_max_price(max_price)
+        .maybe_min_price(min_price)
+        .margin_init(margin_init)
+        .margin_maint(margin_maint)
+        .maker_fee(maker_fee)
+        .taker_fee(taker_fee)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::CryptoPerpetual(instrument))
 }
@@ -446,6 +444,10 @@ pub fn parse_perpetual_instrument(
 /// # Errors
 ///
 /// Returns an error if values are out of valid range or cannot be parsed.
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 pub fn parse_futures_instrument(
     definition: &BitmexInstrument,
     ts_init: UnixNanos,
@@ -516,36 +518,35 @@ pub fn parse_futures_instrument(
         .min_price
         .map(|price| Price::from(price.to_string()));
 
-    let instrument = CryptoFuture::new(
-        instrument_id,
-        raw_symbol,
-        underlying,
-        quote_currency,
-        settlement_currency,
-        is_inverse,
-        activation_ns,
-        expiration_ns,
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        multiplier,
-        lot_size,
-        max_quantity,
-        min_quantity,
-        max_notional,
-        min_notional,
-        max_price,
-        min_price,
-        Some(margin_init),
-        Some(margin_maint),
-        Some(maker_fee),
-        Some(taker_fee),
-        None,
-        None, // info
-        ts_event,
-        ts_init,
-    );
+    let instrument = CryptoFuture::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .underlying(underlying)
+        .quote_currency(quote_currency)
+        .settlement_currency(settlement_currency)
+        .is_inverse(is_inverse)
+        .activation_ns(activation_ns)
+        .expiration_ns(expiration_ns)
+        .price_precision(price_increment.precision)
+        .size_precision(size_increment.precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .maybe_multiplier(multiplier)
+        .maybe_lot_size(lot_size)
+        .maybe_max_quantity(max_quantity)
+        .maybe_min_quantity(min_quantity)
+        .maybe_max_notional(max_notional)
+        .maybe_min_notional(min_notional)
+        .maybe_max_price(max_price)
+        .maybe_min_price(min_price)
+        .margin_init(margin_init)
+        .margin_maint(margin_maint)
+        .maker_fee(maker_fee)
+        .taker_fee(taker_fee)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::CryptoFuture(instrument))
 }
@@ -577,6 +578,10 @@ fn parse_instrument_multiplier(
 /// # Errors
 ///
 /// Returns an error if values are out of valid range or cannot be parsed.
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 pub fn parse_crypto_futures_spread_instrument(
     definition: &BitmexInstrument,
     ts_init: UnixNanos,
@@ -643,37 +648,36 @@ pub fn parse_crypto_futures_spread_instrument(
         .min_price
         .map(|price| Price::from(price.to_string()));
 
-    let instrument = CryptoFuturesSpread::new(
-        instrument_id,
-        raw_symbol,
-        underlying,
-        quote_currency,
-        settlement_currency,
-        is_inverse,
-        Ustr::from("FS"),
-        activation_ns,
-        expiration_ns,
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        multiplier,
-        lot_size,
-        max_quantity,
-        min_quantity,
-        max_notional,
-        min_notional,
-        max_price,
-        min_price,
-        Some(margin_init),
-        Some(margin_maint),
-        Some(maker_fee),
-        Some(taker_fee),
-        None,
-        None,
-        ts_event,
-        ts_init,
-    );
+    let instrument = CryptoFuturesSpread::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .underlying(underlying)
+        .quote_currency(quote_currency)
+        .settlement_currency(settlement_currency)
+        .is_inverse(is_inverse)
+        .strategy_type(Ustr::from("FS"))
+        .activation_ns(activation_ns)
+        .expiration_ns(expiration_ns)
+        .price_precision(price_increment.precision)
+        .size_precision(size_increment.precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .maybe_multiplier(multiplier)
+        .maybe_lot_size(lot_size)
+        .maybe_max_quantity(max_quantity)
+        .maybe_min_quantity(min_quantity)
+        .maybe_max_notional(max_notional)
+        .maybe_min_notional(min_notional)
+        .maybe_max_price(max_price)
+        .maybe_min_price(min_price)
+        .margin_init(margin_init)
+        .margin_maint(margin_maint)
+        .maker_fee(maker_fee)
+        .taker_fee(taker_fee)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::CryptoFuturesSpread(instrument))
 }
@@ -775,7 +779,6 @@ pub fn parse_trade_bin(
 /// Returns an error if:
 /// - Order is missing `ord_status` and status cannot be inferred from quantity fields.
 /// - Order is missing `order_qty` and cannot be reconstructed from `cum_qty` + `leaves_qty`.
-///
 pub fn parse_order_status_report(
     order: &BitmexOrder,
     instrument: &InstrumentAny,
@@ -785,9 +788,7 @@ pub fn parse_order_status_report(
     let instrument_id = instrument.id();
     let account_id = bitmex_account_id(order.account);
     let venue_order_id = VenueOrderId::new(order.order_id.to_string());
-    let order_side: OrderSide = order
-        .side
-        .map_or(OrderSide::NoOrderSide, |side| side.into());
+    let order_side = order.side.map(OrderSide::from);
 
     // BitMEX omits ord_type in some responses (e.g. cancels, fills),
     // first try cache lookup, then infer from price/stop_px fields.
@@ -1011,13 +1012,13 @@ pub fn parse_order_status_report(
         }
     }
 
-    if let Some(contingency_type) = order.contingency_type {
-        report = report.with_contingency_type(contingency_type.into());
+    if let Some(contingency_type) = order.contingency_type.and_then(Into::into) {
+        report = report.with_contingency_type(contingency_type);
     }
 
     if matches!(
         report.contingency_type,
-        ContingencyType::Oco | ContingencyType::Oto | ContingencyType::Ouo
+        Some(ContingencyType::Oco | ContingencyType::Oto | ContingencyType::Ouo)
     ) && report.order_list_id.is_none()
     {
         log::debug!(
@@ -1107,7 +1108,7 @@ pub fn parse_fill_report(
     let Some(side) = exec.side else {
         anyhow::bail!("Skipping execution without side: {:?}", exec.exec_type);
     };
-    let order_side: OrderSide = side.into();
+    let order_side = OrderSide::from(side);
     let last_qty = parse_signed_contracts_quantity(exec.last_qty, instrument);
     let last_px = Price::new(exec.last_px, instrument.price_precision());
 
@@ -1152,7 +1153,7 @@ pub fn parse_position_report(
 ) -> anyhow::Result<PositionStatusReport> {
     let account_id = bitmex_account_id(position.account);
     let instrument_id = instrument.id();
-    let position_side = parse_position_side(position.current_qty).as_specified();
+    let position_side = parse_position_side(position.current_qty);
     let quantity = parse_signed_contracts_quantity(position.current_qty.unwrap_or(0), instrument);
     let venue_position_id = None; // Not applicable on BitMEX
     let avg_px_open = position
@@ -2226,7 +2227,7 @@ mod tests {
 
         assert_eq!(report.account_id.to_string(), "BITMEX-789012");
         assert_eq!(report.instrument_id.to_string(), "XBTUSD.BITMEX");
-        assert_eq!(report.position_side.as_position_side(), PositionSide::Long);
+        assert_eq!(report.position_side, PositionSide::Long);
         assert_eq!(report.quantity.as_f64(), 1000.0);
     }
 
@@ -2330,7 +2331,7 @@ mod tests {
 
         let report = parse_position_report(&position, &instrument, UnixNanos::from(1)).unwrap();
 
-        assert_eq!(report.position_side.as_position_side(), PositionSide::Short);
+        assert_eq!(report.position_side, PositionSide::Short);
         assert_eq!(report.quantity.as_f64(), 500.0); // Should be absolute value
     }
 
@@ -2433,7 +2434,7 @@ mod tests {
 
         let report = parse_position_report(&position, &instrument, UnixNanos::from(1)).unwrap();
 
-        assert_eq!(report.position_side.as_position_side(), PositionSide::Flat);
+        assert_eq!(report.position_side, PositionSide::Flat);
         assert_eq!(report.quantity.as_f64(), 0.0);
     }
 
@@ -2536,7 +2537,7 @@ mod tests {
 
         let report = parse_position_report(&position, &instrument, UnixNanos::from(1)).unwrap();
 
-        assert_eq!(report.position_side.as_position_side(), PositionSide::Long);
+        assert_eq!(report.position_side, PositionSide::Long);
         assert!((report.quantity.as_f64() - 0.1).abs() < 1e-9);
     }
 

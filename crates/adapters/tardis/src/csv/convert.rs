@@ -394,38 +394,28 @@ fn create_crypto_option_from_options_chain_record(
     let expiration = parse_timestamp(record.expiration);
     let option_kind = option_kind(record.option_type);
 
-    Ok(InstrumentAny::CryptoOption(CryptoOption::new_checked(
-        instrument_id,
-        Symbol::from_ustr_unchecked(record.symbol),
-        underlying_currency,
-        quote_currency,
-        settlement_currency,
-        is_inverse,
-        option_kind,
-        strike_price,
-        activation,
-        expiration,
-        instrument_price_precision,
-        precision.size,
-        price_increment,
-        size_increment,
-        None,
-        Some(size_increment),
-        None,
-        Some(size_increment),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        parse_timestamp(record.timestamp),
-        parse_timestamp(record.local_timestamp),
-    )?))
+    Ok(InstrumentAny::CryptoOption(
+        CryptoOption::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::from_ustr_unchecked(record.symbol))
+            .underlying(underlying_currency)
+            .quote_currency(quote_currency)
+            .settlement_currency(settlement_currency)
+            .is_inverse(is_inverse)
+            .option_kind(option_kind)
+            .strike_price(strike_price)
+            .activation_ns(activation)
+            .expiration_ns(expiration)
+            .price_precision(instrument_price_precision)
+            .size_precision(precision.size)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .lot_size(size_increment)
+            .min_quantity(size_increment)
+            .ts_event(parse_timestamp(record.timestamp))
+            .ts_init(parse_timestamp(record.local_timestamp))
+            .build()?,
+    ))
 }
 
 fn option_currency_mapping(

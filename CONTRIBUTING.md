@@ -1,7 +1,7 @@
 # Contributing to NautilusTrader
 
-Thank you for helping improve NautilusTrader. High‑quality contributions from the trading
-community are welcome. This guide explains how to prepare a complete, review‑ready pull request.
+Thank you for helping improve NautilusTrader. High-quality contributions from the trading
+community are welcome. This guide explains how to prepare a complete, review-ready pull request.
 For questions, ask in
 [GitHub Discussions](https://github.com/nautechsystems/nautilus_trader/discussions) or on
 [Discord](https://discord.gg/NautilusTrader).
@@ -16,7 +16,7 @@ For questions, ask in
 all pull requests are held to a very high standard for correctness, reliability, testing, clarity,
 and maintainability.**
 
-Maintainers appreciate the time and care a high‑quality pull request requires, with or without AI.
+Maintainers appreciate the time and care a high-quality pull request requires, with or without AI.
 They review complete, locally validated pull requests thoroughly. Merge decisions still depend on
 evidence that the change meets this standard. When a contribution's expected review and maintenance
 cost is disproportionate to its value to the project, maintainers may decline it. Contributors must
@@ -33,7 +33,7 @@ communication, and attribution.
 
 Before starting a substantial change, such as a new feature, integration, or design change,
 **open a GitHub issue or comment on a relevant existing issue, then wait for a maintainer to agree
-on the problem and approach**. **Small, self‑contained fixes, such as typos, obvious documentation
+on the problem and approach**. **Small, self-contained fixes, such as typos, obvious documentation
 corrections, or narrowly scoped bug fixes with focused tests, do not need prior agreement.** Pull
 requests for substantial changes without prior discussion and agreement may be closed without
 review. Early agreement is the quickest way to avoid work that can't be merged.
@@ -80,7 +80,8 @@ prek install
 
 `prek install` installs both hook types configured by the repository.
 
-`make install-tools` reads pinned versions from `Cargo.toml` and `tools.toml`. See
+`make install-tools` reads shared pins from `.nautilus-engineering/tools.toml` and
+NautilusTrader-specific pins from `Cargo.toml` and `tools.toml`. See
 [Install development tools](docs/developer_guide/environment_setup.md#2-install-development-tools)
 for the full list, what each tool does, and which tools install separately.
 
@@ -103,10 +104,10 @@ below).
 
 ## Before you open a PR
 
-### Prepare a review‑ready change
+### Prepare a review-ready change
 
 Open a pull request only when the change is complete, locally validated, and ready for maintainer
-review, unless a maintainer asks for an early draft. Do not use draft or work‑in‑progress pull
+review, unless a maintainer asks for an early draft. Do not use draft or work-in-progress pull
 requests as a development workspace. Develop and iterate on your branch before opening the pull
 request.
 

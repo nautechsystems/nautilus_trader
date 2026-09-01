@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test synthetic behavior.
+"""
 
 import pytest
 from tests.providers import TestInstrumentProvider
@@ -26,7 +29,10 @@ BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
-def test_synthetic_instrument_init():
+def test_synthetic_instrument_init() -> None:
+    """
+    Test synthetic instrument init.
+    """
     symbol = Symbol("BTC-ETH")
     components = [BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id]
     formula = "(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2"
@@ -49,7 +55,10 @@ def test_synthetic_instrument_init():
     assert synthetic.ts_init == 1
 
 
-def test_synthetic_instrument_equality():
+def test_synthetic_instrument_equality() -> None:
+    """
+    Test synthetic instrument equality.
+    """
     components = [BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id]
     formula = "(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2"
 
@@ -65,7 +74,10 @@ def test_synthetic_instrument_equality():
     assert synthetic == synthetic
 
 
-def test_synthetic_instrument_invalid_formula():
+def test_synthetic_instrument_invalid_formula() -> None:
+    """
+    Test synthetic instrument invalid formula.
+    """
     with pytest.raises(ValueError, match="Unexpected character"):
         SyntheticInstrument(
             symbol=Symbol("BTC-ETH"),
@@ -77,7 +89,10 @@ def test_synthetic_instrument_invalid_formula():
         )
 
 
-def test_synthetic_instrument_calculate():
+def test_synthetic_instrument_calculate() -> None:
+    """
+    Test synthetic instrument calculate.
+    """
     synthetic = SyntheticInstrument(
         symbol=Symbol("BTC-ETH"),
         price_precision=8,
@@ -103,7 +118,10 @@ def test_synthetic_instrument_calculate():
         [100.0] * 3,
     ],
 )
-def test_synthetic_instrument_calculate_invalid_inputs(inputs):
+def test_synthetic_instrument_calculate_invalid_inputs(inputs: object) -> None:
+    """
+    Test synthetic instrument calculate invalid inputs.
+    """
     synthetic = SyntheticInstrument(
         symbol=Symbol("BTC-ETH"),
         price_precision=8,
@@ -117,7 +135,10 @@ def test_synthetic_instrument_calculate_invalid_inputs(inputs):
         synthetic.calculate(inputs)
 
 
-def test_synthetic_instrument_calculate_from_map():
+def test_synthetic_instrument_calculate_from_map() -> None:
+    """
+    Test synthetic instrument calculate from map.
+    """
     synthetic = SyntheticInstrument(
         symbol=Symbol("BTC-ETH"),
         price_precision=8,
@@ -138,7 +159,10 @@ def test_synthetic_instrument_calculate_from_map():
     assert price == 150.0
 
 
-def test_synthetic_instrument_is_valid_formula():
+def test_synthetic_instrument_is_valid_formula() -> None:
+    """
+    Test synthetic instrument is valid formula.
+    """
     synthetic = SyntheticInstrument(
         symbol=Symbol("BTC-ETH"),
         price_precision=8,
@@ -152,7 +176,10 @@ def test_synthetic_instrument_is_valid_formula():
     assert synthetic.is_valid_formula("z)(?,") is False
 
 
-def test_synthetic_instrument_change_formula():
+def test_synthetic_instrument_change_formula() -> None:
+    """
+    Test synthetic instrument change formula.
+    """
     synthetic = SyntheticInstrument(
         symbol=Symbol("BTC-ETH"),
         price_precision=8,
@@ -172,7 +199,10 @@ def test_synthetic_instrument_change_formula():
     assert synthetic.formula == new_formula
 
 
-def test_synthetic_instrument_change_formula_invalid():
+def test_synthetic_instrument_change_formula_invalid() -> None:
+    """
+    Test synthetic instrument change formula invalid.
+    """
     synthetic = SyntheticInstrument(
         symbol=Symbol("BTC-ETH"),
         price_precision=8,

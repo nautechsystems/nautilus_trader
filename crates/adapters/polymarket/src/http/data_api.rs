@@ -246,17 +246,14 @@ impl PolymarketDataApiHttpClient {
         proxy_url: Option<ProxyUrl>,
     ) -> StdResult<Self, HttpClientError> {
         Ok(Self {
-            client: HttpClient::new(
-                HashMap::from([
+            client: HttpClient::builder()
+                .headers(HashMap::from([
                     (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
                     ("Content-Type".to_string(), "application/json".to_string()),
-                ]),
-                vec![],
-                vec![],
-                None,
-                Some(timeout_secs),
-                proxy_url.map(|url| url.expose().to_string()),
-            )?,
+                ]))
+                .timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url.map(|url| url.expose().to_string()))
+                .build()?,
             base_url: base_url
                 .unwrap_or_else(|| POLYMARKET_DATA_API_URL.to_string())
                 .trim_end_matches('/')
@@ -267,8 +264,11 @@ impl PolymarketDataApiHttpClient {
     /// Fetches all positions for a user from the Data API.
     ///
     /// Paginates through `GET /positions?user={address}&sizeThreshold=0`
-    /// until a partial page is returned.
+    /// until a partial page is returned. Fails if the venue's maximum supported offset is
+    /// exhausted before the response is complete.
     pub async fn get_positions(&self, user_address: &str) -> Result<Vec<DataApiPosition>> {
+        // Polymarket defines the `/positions` maximum offset as 10,000 inclusive
+        const MAX_OFFSET: u32 = 10_000;
         const PAGE_SIZE: usize = 100;
 
         let protocol = OffsetProtocol::<DataApiPosition, Infallible>::new(
@@ -281,6 +281,12 @@ impl PolymarketDataApiHttpClient {
         let completed = paginator
             .run(
                 |offset| async move {
+                    if offset > MAX_OFFSET {
+                        return Err(Error::decode(format!(
+                            "/positions pagination exhausted the maximum supported offset {MAX_OFFSET}"
+                        )));
+                    }
+
                     let params = vec![
                         ("user".to_string(), user_address.to_string()),
                         ("limit".to_string(), PAGE_SIZE.to_string()),
@@ -592,19 +598,12 @@ fn parse_trade_ticks(
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::{
-        enums::AggressorSide,
-        identifiers::{AccountId, InstrumentId},
-    };
+    use nautilus_model::{enums::AggressorSide, identifiers::InstrumentId};
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
     use super::*;
-    use crate::{
-        common::consts::USDC_DECIMALS,
-        execution::reconciliation::build_position_reports,
-        http::models::{DataApiPosition, DataApiTrade},
-    };
+    use crate::http::models::{DataApiPosition, DataApiTrade};
 
     fn load_positions() -> Vec<DataApiPosition> {
         let path = "test_data/data_api_positions_response.json";
@@ -630,64 +629,6 @@ mod tests {
             positions[0].condition_id,
             "0xc8f1cf5d4f26e0fd9c8fe89f2a7b3263b902cf14fde7bfccef525753bb492e47"
         );
-    }
-
-    #[rstest]
-    fn test_build_position_reports_filters_dust_and_zero() {
-        let positions = load_positions();
-        let account_id = AccountId::from("POLYMARKET-001");
-        let ts_now = nautilus_core::UnixNanos::from(1_000_000_000u64);
-
-        let reports = build_position_reports(&positions, account_id, ts_now);
-
-        // 4 positions: 150.5, 0.0, 42.0, 0.005 (dust)
-        // Only 150.5 and 42.0 pass the DUST_POSITION_THRESHOLD (0.01)
-        assert_eq!(reports.len(), 2);
-        assert!(reports[0].is_long());
-        assert!(reports[1].is_long());
-    }
-
-    #[rstest]
-    fn test_build_position_reports_carries_avg_price() {
-        let positions = load_positions();
-        let account_id = AccountId::from("POLYMARKET-001");
-        let ts_now = nautilus_core::UnixNanos::from(1_000_000_000u64);
-
-        let reports = build_position_reports(&positions, account_id, ts_now);
-
-        assert_eq!(reports.len(), 2);
-        assert_eq!(reports[0].avg_px_open, Some(dec!(0.55)));
-        assert_eq!(reports[1].avg_px_open, Some(dec!(0.3)));
-    }
-
-    #[rstest]
-    fn test_build_position_reports_uses_usdc_precision() {
-        let positions = load_positions();
-        let account_id = AccountId::from("POLYMARKET-001");
-        let ts_now = nautilus_core::UnixNanos::from(1_000_000_000u64);
-
-        let reports = build_position_reports(&positions, account_id, ts_now);
-
-        assert_eq!(reports.len(), 2);
-        assert_eq!(reports[0].quantity.precision, USDC_DECIMALS as u8);
-        assert_eq!(reports[1].quantity.precision, USDC_DECIMALS as u8);
-    }
-
-    #[rstest]
-    fn test_build_position_reports_handles_missing_avg_price() {
-        let positions = vec![DataApiPosition {
-            asset: "123".to_string(),
-            condition_id: "0xabc".to_string(),
-            size: dec!(10),
-            avg_price: None,
-        }];
-        let account_id = AccountId::from("POLYMARKET-001");
-        let ts_now = nautilus_core::UnixNanos::from(1_000_000_000u64);
-
-        let reports = build_position_reports(&positions, account_id, ts_now);
-
-        assert_eq!(reports.len(), 1);
-        assert_eq!(reports[0].avg_px_open, None);
     }
 
     #[rstest]

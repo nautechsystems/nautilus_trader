@@ -188,11 +188,11 @@ write_rs "$valid_modules_case/crates/common/src/mod.rs" \
   'pub(super) mod parent_api;' \
   'pub(in crate::common) mod scoped_api;' \
   '' \
-  '#[cfg(all(feature = "python", any(test, feature = "stubs")))]' \
+  '#[cfg(all(feature = "python", any(test, feature = "test-support")))]' \
   'mod cfg_nested;' \
   '#[cfg(feature = "python")]' \
   'pub mod cfg_public;' \
-  '#[cfg(any(test, feature = "stubs"))]' \
+  '#[cfg(any(test, feature = "test-support"))]' \
   'mod cfg_stubs;' \
   '' \
   'mod internal;' \

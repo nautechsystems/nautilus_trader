@@ -25,10 +25,7 @@ use nautilus_common::{
     messages::execution::{BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder},
     msgbus::{
         self, MessagingSwitchboard, TypedIntoHandler,
-        stubs::{
-            TypedIntoMessageSavingHandler, TypedMessageSavingHandler,
-            get_typed_into_message_saving_handler, get_typed_message_saving_handler,
-        },
+        stubs::{TypedIntoMessageSavingHandler, get_typed_into_message_saving_handler},
     },
 };
 use nautilus_core::{UUID4, UnixNanos};
@@ -1506,6 +1503,116 @@ fn test_process_limit_post_only_order_that_would_be_a_taker(
 }
 
 #[rstest]
+fn test_l2_delete_final_ask_does_not_fill_resting_bid_from_stale_touch(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let mut engine =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+
+    let resting_bid_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut resting_bid = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1500.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(resting_bid_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut resting_bid, account_id);
+    clear_order_event_handler_messages(&order_event_handler);
+
+    process_stale_ask_deletion(&mut engine, instrument_eth_usdt.id());
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    assert!(
+        saved_messages.is_empty(),
+        "deleting the final ask must not fill from a stale touch, was {saved_messages:?}",
+    );
+    assert!(engine.order_exists(resting_bid_id));
+    assert_eq!(engine.best_ask_price(), None);
+    assert_eq!(engine.get_core().ask, None);
+}
+
+#[rstest]
+fn test_l2_delete_final_ask_does_not_trigger_stop_limit_from_stale_touch(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let config = OrderMatchingEngineConfig {
+        reject_stop_orders: false,
+        ..Default::default()
+    };
+    let mut engine =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, Some(config));
+
+    let stop_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut stop_order = OrderTestBuilder::new(OrderType::StopLimit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from("1500.00"))
+        .price(Price::from("1490.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(stop_order_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut stop_order, account_id);
+    clear_order_event_handler_messages(&order_event_handler);
+
+    process_stale_ask_deletion(&mut engine, instrument_eth_usdt.id());
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let resting = engine
+        .get_core()
+        .get_order(stop_order_id)
+        .copied()
+        .expect("stop-limit should remain in the matching core");
+    assert!(
+        saved_messages.is_empty(),
+        "deleting the final ask must not trigger from a stale touch, was {saved_messages:?}",
+    );
+    assert_eq!(resting.trigger_price, Some(Price::from("1500.00")));
+    assert_eq!(resting.limit_price, Some(Price::from("1490.00")));
+    assert_eq!(engine.best_ask_price(), None);
+    assert_eq!(engine.get_core().ask, None);
+}
+
+fn process_stale_ask_deletion(engine: &mut OrderMatchingEngine, instrument_id: InstrumentId) {
+    // While paused, publish an opposing touch. The iteration cannot match,
+    // but its final synchronization stores the ask in the matching core.
+    engine.process_status(MarketStatusAction::Pause);
+    let add_ask = OrderBookDeltaTestBuilder::new(instrument_id)
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .sequence(1)
+        .build();
+    engine.process_order_book_delta(&add_ask).unwrap();
+    assert_eq!(engine.get_core().ask, Some(Price::from("1500.00")));
+
+    // Reopen without iterating, then delete the final ask. The delete invokes
+    // one iteration and must clear the stale ask before matching.
+    engine.process_status(MarketStatusAction::Trading);
+    let delete_ask = OrderBookDeltaTestBuilder::new(instrument_id)
+        .book_action(BookAction::Delete)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("0.000"),
+            1,
+        ))
+        .sequence(2)
+        .build();
+    engine.process_order_book_delta(&delete_ask).unwrap();
+}
+
+#[rstest]
 fn test_process_limit_order_not_matched_and_canceled_fok_order(
     instrument_eth_usdt: InstrumentAny,
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
@@ -2587,7 +2694,7 @@ fn test_process_cancel_command_order_not_found(
 }
 
 #[rstest]
-fn test_process_cancel_all_command(instrument_eth_usdt: InstrumentAny, account_id: AccountId) {
+fn test_process_cancel_all_command(instrument_eth_usdt: InstrumentAny) {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let order_event_handler = order_event_handler_with_cache(cache.clone());
     let mut engine_l2 = get_order_matching_engine_l2(
@@ -2624,6 +2731,7 @@ fn test_process_cancel_all_command(instrument_eth_usdt: InstrumentAny, account_i
         .client_order_id(client_order_id_1)
         .submit(true)
         .build();
+    let account_id = limit_order_1.account_id().unwrap();
     cache
         .borrow_mut()
         .add_order(limit_order_1.clone(), None, None, false)
@@ -2666,7 +2774,7 @@ fn test_process_cancel_all_command(instrument_eth_usdt: InstrumentAny, account_i
         Some(ClientId::from("CLIENT-001")),
         StrategyId::test_default(),
         instrument_eth_usdt.id(),
-        OrderSide::Buy,
+        Some(OrderSide::Buy),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -2985,7 +3093,6 @@ fn test_iterate_purges_already_canceled_order_from_core(
 #[rstest]
 fn test_process_cancel_all_skips_orders_closed_by_contingent_cascade(
     instrument_eth_usdt: InstrumentAny,
-    account_id: AccountId,
     engine_config: OrderMatchingEngineConfig,
 ) {
     // Two OUO-linked limit orders. Cancelling the first leg cascades through
@@ -3028,6 +3135,7 @@ fn test_process_cancel_all_skips_orders_closed_by_contingent_cascade(
         .linked_order_ids(vec![client_order_id_2])
         .submit(true)
         .build();
+    let account_id = limit_order_1.account_id().unwrap();
 
     let mut limit_order_2 = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(instrument_eth_usdt.id())
@@ -3059,7 +3167,7 @@ fn test_process_cancel_all_skips_orders_closed_by_contingent_cascade(
         Some(ClientId::from("CLIENT-001")),
         StrategyId::test_default(),
         instrument_eth_usdt.id(),
-        OrderSide::Buy,
+        Some(OrderSide::Buy),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -9213,125 +9321,6 @@ fn test_price_protection_exact_boundary_fills(
 }
 
 #[rstest]
-fn test_settlement_price_used_on_contract_expiration(
-    instrument_es: InstrumentAny,
-    account_id: AccountId,
-) {
-    let cache = Rc::new(RefCell::new(Cache::default()));
-    let order_event_handler = order_event_handler_with_cache(cache.clone());
-
-    // Set clock past instrument activation (2022-04-08)
-    let clock = Rc::new(RefCell::new(TestClock::new()));
-    clock
-        .borrow_mut()
-        .set_time(UnixNanos::from(1_680_000_000_000_000_000u64));
-
-    let config = OrderMatchingEngineConfig {
-        use_position_ids: true,
-        ..Default::default()
-    };
-
-    let fee_model =
-        FeeModelAny::Fixed(FixedFeeModel::new(Money::new(0.0, Currency::USD()), None).unwrap());
-
-    let mut engine = OrderMatchingEngine::new(
-        instrument_es.clone(),
-        1,
-        FillModelHandle::default(),
-        fee_model.into(),
-        BookType::L2_MBP,
-        OmsType::Netting,
-        AccountType::Margin,
-        clock,
-        cache.clone(),
-        config,
-    );
-
-    let delta = OrderBookDeltaTestBuilder::new(instrument_es.id())
-        .book_action(BookAction::Add)
-        .book_order(BookOrder::new(
-            OrderSide::Sell,
-            Price::from("4501.00"),
-            Quantity::from(10),
-            1,
-        ))
-        .build();
-    engine.process_order_book_delta(&delta).unwrap();
-
-    let mut buy_order = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument_es.id())
-        .side(OrderSide::Buy)
-        .quantity(Quantity::from(1))
-        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
-        .submit(true)
-        .build();
-
-    cache
-        .borrow_mut()
-        .add_order(buy_order.clone(), None, None, false)
-        .unwrap();
-    engine.process_order(&mut buy_order, account_id);
-
-    let messages = get_order_event_handler_messages(&order_event_handler);
-    let mut fill = messages
-        .iter()
-        .find_map(|e| match e {
-            OrderEventAny::Filled(f) => Some(f.clone()),
-            _ => None,
-        })
-        .expect("Expected a fill event from the market order");
-
-    fill.position_id = Some(PositionId::new("P-001"));
-    let position = Position::new(&instrument_es, fill);
-    let strategy_id = position.strategy_id;
-    cache
-        .borrow_mut()
-        .add_position(&position, OmsType::Netting)
-        .unwrap();
-
-    clear_order_event_handler_messages(&order_event_handler);
-    let topic = format!("events.order.{strategy_id}");
-    let (published_handler, published_events): (_, TypedMessageSavingHandler<OrderEventAny>) =
-        get_typed_message_saving_handler(None);
-    msgbus::subscribe_order_events(topic.clone().into(), published_handler.clone(), None);
-
-    // Set settlement price (different from close price and market price)
-    let settlement = Price::from("4600.00");
-    engine.set_settlement_price(settlement);
-
-    // Process contract expiration with a different close price
-    let close = InstrumentClose::new(
-        instrument_es.id(),
-        Price::from("4550.00"),
-        InstrumentCloseType::ContractExpired,
-        UnixNanos::from(2),
-        UnixNanos::from(2),
-    );
-    engine.process_instrument_close(close);
-
-    msgbus::unsubscribe_order_events(topic.into(), &published_handler);
-
-    let published_messages = published_events.get_messages();
-    assert_eq!(published_messages.len(), 1);
-    assert!(matches!(
-        published_messages.first(),
-        Some(OrderEventAny::Initialized(init))
-            if init.client_order_id.as_str().starts_with("EXPIRATION-")
-    ));
-
-    let messages = get_order_event_handler_messages(&order_event_handler);
-    let expiration_fill = messages
-        .iter()
-        .find_map(|e| match e {
-            OrderEventAny::Filled(f) => Some(f.clone()),
-            _ => None,
-        })
-        .expect("Expected a fill event from contract expiration");
-
-    assert_eq!(expiration_fill.last_px, settlement);
-}
-
-#[rstest]
 fn test_trade_tick_seeds_liquidity_consumption_for_stop_market_fill(
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
@@ -12884,109 +12873,77 @@ fn option_contract(
         OptionKind::Call => format!("{underlying}211217C00150000"),
         OptionKind::Put => format!("{underlying}211217P00150000"),
     };
-    OptionContract::new(
-        InstrumentId::from(format!("{symbol}.{venue}").as_str()),
-        Symbol::from(symbol.as_str()),
-        AssetClass::Equity,
-        Some(Ustr::from(venue)),
-        Ustr::from(underlying),
-        kind,
-        Price::from("149.00"),
-        Currency::USD(),
-        UnixNanos::from(0),
-        expiration_ns,
-        2,
-        Price::from("0.01"),
-        Quantity::from(1),
-        Quantity::from(1),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    OptionContract::builder()
+        .instrument_id(InstrumentId::from(format!("{symbol}.{venue}").as_str()))
+        .raw_symbol(Symbol::from(symbol.as_str()))
+        .asset_class(AssetClass::Equity)
+        .exchange(Ustr::from(venue))
+        .underlying(Ustr::from(underlying))
+        .option_kind(kind)
+        .strike_price(Price::from("149.00"))
+        .currency(Currency::USD())
+        .activation_ns(UnixNanos::from(0))
+        .expiration_ns(expiration_ns)
+        .price_precision(2)
+        .price_increment(Price::from("0.01"))
+        .multiplier(Quantity::from(1))
+        .lot_size(Quantity::from(1))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 fn crypto_option_call_btc(venue: &str, expiration_ns: UnixNanos, strike: Price) -> CryptoOption {
-    CryptoOption::new(
-        InstrumentId::from(format!("BTC-OPT-CALL.{venue}").as_str()),
-        Symbol::from("BTC-OPT-CALL"),
-        Currency::from("BTC"),
-        Currency::from("USD"),
-        Currency::from("BTC"),
-        false,
-        OptionKind::Call,
-        strike,
-        UnixNanos::from(0),
-        expiration_ns,
-        2,
-        1,
-        Price::from("0.01"),
-        Quantity::from("0.1"),
-        Some(Quantity::from(1)),
-        Some(Quantity::from(1)),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    CryptoOption::builder()
+        .instrument_id(InstrumentId::from(format!("BTC-OPT-CALL.{venue}").as_str()))
+        .raw_symbol(Symbol::from("BTC-OPT-CALL"))
+        .underlying(Currency::from("BTC"))
+        .quote_currency(Currency::from("USD"))
+        .settlement_currency(Currency::from("BTC"))
+        .is_inverse(false)
+        .option_kind(OptionKind::Call)
+        .strike_price(strike)
+        .activation_ns(UnixNanos::from(0))
+        .expiration_ns(expiration_ns)
+        .price_precision(2)
+        .size_precision(1)
+        .price_increment(Price::from("0.01"))
+        .size_increment(Quantity::from("0.1"))
+        .multiplier(Quantity::from(1))
+        .lot_size(Quantity::from(1))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 fn underlying_index(venue: &str) -> IndexInstrument {
-    IndexInstrument::new(
-        InstrumentId::from(format!("SPX.{venue}").as_str()),
-        Symbol::from("SPX"),
-        Currency::USD(),
-        2,
-        0,
-        Price::from("0.01"),
-        Quantity::from(1),
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    IndexInstrument::builder()
+        .instrument_id(InstrumentId::from(format!("SPX.{venue}").as_str()))
+        .raw_symbol(Symbol::from("SPX"))
+        .currency(Currency::USD())
+        .price_precision(2)
+        .size_precision(0)
+        .price_increment(Price::from("0.01"))
+        .size_increment(Quantity::from(1))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 fn underlying_equity(venue: &str) -> Equity {
-    Equity::new(
-        InstrumentId::from(format!("AAPL.{venue}").as_str()),
-        Symbol::from("AAPL"),
-        None,
-        Currency::USD(),
-        2,
-        Price::from("0.01"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    Equity::builder()
+        .instrument_id(InstrumentId::from(format!("AAPL.{venue}").as_str()))
+        .raw_symbol(Symbol::from("AAPL"))
+        .currency(Currency::USD())
+        .price_precision(2)
+        .price_increment(Price::from("0.01"))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 fn open_long_option_position(
@@ -13280,7 +13237,13 @@ fn test_reset_restores_market_status_after_option_expiry(account_id: AccountId) 
 }
 
 #[rstest]
-fn test_option_physical_settlement_delivers_underlying(account_id: AccountId) {
+#[case(None, "0.00")]
+#[case(Some("7.50"), "7.50")]
+fn test_option_physical_settlement_delivers_underlying(
+    account_id: AccountId,
+    #[case] close_price: Option<&str>,
+    #[case] expected_option_price: &str,
+) {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
@@ -13338,7 +13301,17 @@ fn test_option_physical_settlement_delivers_underlying(account_id: AccountId) {
         OrderMatchingEngineConfig::default(),
     );
 
-    engine.iterate(expiration_ns, AggressorSide::NoAggressor);
+    if let Some(close_price) = close_price {
+        engine.process_instrument_close(InstrumentClose::new(
+            option.id(),
+            Price::from(close_price),
+            InstrumentCloseType::ContractExpired,
+            expiration_ns,
+            expiration_ns,
+        ));
+    } else {
+        engine.iterate(expiration_ns, AggressorSide::NoAggressor);
+    }
 
     let events = get_order_event_handler_messages(&order_event_handler);
     let close_client_order_id =
@@ -13375,11 +13348,10 @@ fn test_option_physical_settlement_delivers_underlying(account_id: AccountId) {
         .find(|f| f.client_order_id == open_client_order_id)
         .expect("Expected underlying open fill");
 
-    // Option leg closes worthless on physical settlement (no custom price set).
     assert_eq!(close_fill.instrument_id, option.id());
     assert_eq!(close_fill.order_side, OrderSide::Sell);
     assert_eq!(close_fill.last_qty, position.quantity);
-    assert_eq!(close_fill.last_px, Price::from("0.00"));
+    assert_eq!(close_fill.last_px, Price::from(expected_option_price));
     assert_eq!(close_fill.position_id, Some(position.id));
 
     // Underlying leg buys at strike (long call exercise: receive underlying).
@@ -13775,7 +13747,13 @@ fn test_marketable_resting_limit_at_expiration_boundary_fills_before_close(accou
     }
 }
 
-fn run_otm_expiry_case(kind: OptionKind, spot: Price, account_id: AccountId) {
+fn run_otm_expiry_case(
+    kind: OptionKind,
+    spot: Price,
+    close_price: Option<Price>,
+    expected_close_price: Price,
+    account_id: AccountId,
+) {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
@@ -13827,7 +13805,17 @@ fn run_otm_expiry_case(kind: OptionKind, spot: Price, account_id: AccountId) {
         OrderMatchingEngineConfig::default(),
     );
 
-    engine.iterate(expiration_ns, AggressorSide::NoAggressor);
+    if let Some(close_price) = close_price {
+        engine.process_instrument_close(InstrumentClose::new(
+            option.id(),
+            close_price,
+            InstrumentCloseType::ContractExpired,
+            expiration_ns,
+            expiration_ns,
+        ));
+    } else {
+        engine.iterate(expiration_ns, AggressorSide::NoAggressor);
+    }
 
     let events = get_order_event_handler_messages(&order_event_handler);
     let client_order_id = settlement_client_order_id(&cache, &format!("EXPIRATION_{venue}_OTM"));
@@ -13848,7 +13836,7 @@ fn run_otm_expiry_case(kind: OptionKind, spot: Price, account_id: AccountId) {
     assert_eq!(otm_fill.instrument_id, option.id());
     assert_eq!(otm_fill.order_side, OrderSide::Sell);
     assert_eq!(otm_fill.last_qty, position.quantity);
-    assert_eq!(otm_fill.last_px, Price::from("0.00"));
+    assert_eq!(otm_fill.last_px, expected_close_price);
     assert_eq!(otm_fill.position_id, Some(position.id));
 
     assert_eq!(
@@ -13859,14 +13847,22 @@ fn run_otm_expiry_case(kind: OptionKind, spot: Price, account_id: AccountId) {
 }
 
 #[rstest]
-#[case::call_otm(OptionKind::Call, Price::from("140.00"))]
-#[case::put_otm(OptionKind::Put, Price::from("160.00"))]
-fn test_option_otm_expiry_closes_at_zero(
+#[case::call_metadata(OptionKind::Call, Price::from("140.00"), None, Price::from("0.00"))]
+#[case::put_metadata(OptionKind::Put, Price::from("160.00"), None, Price::from("0.00"))]
+#[case::call_instrument_close(
+    OptionKind::Call,
+    Price::from("140.00"),
+    Some(Price::from("7.50")),
+    Price::from("7.50")
+)]
+fn test_option_otm_expiry_does_not_exercise(
     #[case] kind: OptionKind,
     #[case] spot: Price,
+    #[case] close_price: Option<Price>,
+    #[case] expected_close_price: Price,
     account_id: AccountId,
 ) {
-    run_otm_expiry_case(kind, spot, account_id);
+    run_otm_expiry_case(kind, spot, close_price, expected_close_price, account_id);
 }
 
 #[rstest]
@@ -14115,7 +14111,7 @@ fn test_check_instrument_expiration_fallback_uses_book(account_id: AccountId) {
 
     clear_order_event_handler_messages(&order_event_handler);
 
-    // Expire via timestamp with no settlement_price and no InstrumentClose.
+    // Expire via timestamp with no InstrumentClose
     // The fallback goes through fill_market_order -> book bid 4499.
     let trigger_delta = OrderBookDeltaTestBuilder::new(instrument.id())
         .book_action(BookAction::Update)
@@ -14160,8 +14156,8 @@ fn test_check_instrument_expiration_fallback_uses_book(account_id: AccountId) {
     assert_eq!(fill.order_side, OrderSide::Sell);
     assert_eq!(fill.last_qty, Quantity::from(1));
     assert_eq!(fill.last_px, Price::from("4499.00"));
-    // Netting OMS nulls position_id in apply_fills, matching the existing
-    // settlement-price test; only the fill price proves the book was consulted.
+    // Netting OMS nulls position_id in apply_fills; only the fill price proves
+    // the book was consulted.
     let _ = position;
 }
 
@@ -14606,7 +14602,7 @@ fn test_check_instrument_expiration_idempotent_after_processed(account_id: Accou
 }
 
 #[rstest]
-fn test_check_instrument_expiration_uses_close_price_fallback(account_id: AccountId) {
+fn test_instrument_close_price_used_on_contract_expiration(account_id: AccountId) {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
@@ -14682,7 +14678,6 @@ fn test_check_instrument_expiration_uses_close_price_fallback(account_id: Accoun
 
     clear_order_event_handler_messages(&order_event_handler);
 
-    // No settlement_price set; the InstrumentClose carries the close_price fallback.
     let close_price = Price::from("4550.00");
     let close = InstrumentClose::new(
         instrument.id(),
@@ -14701,7 +14696,7 @@ fn test_check_instrument_expiration_uses_close_price_fallback(account_id: Accoun
             }
             _ => None,
         })
-        .expect("Expected EXPIRATION close fill from close_price fallback");
+        .expect("Expected expiration fill at the instrument close price");
     assert_eq!(fill.last_px, close_price);
     let _ = position;
 }
@@ -15047,19 +15042,20 @@ fn test_crypto_option_cash_settlement(account_id: AccountId) {
     let strike = Price::from("50000.00");
     let option = InstrumentAny::CryptoOption(crypto_option_call_btc(venue, expiration_ns, strike));
 
-    let underlying = InstrumentAny::IndexInstrument(IndexInstrument::new(
-        InstrumentId::from(format!("BTC.{venue}").as_str()),
-        Symbol::from("BTC"),
-        Currency::USD(),
-        2,
-        0,
-        Price::from("0.01"),
-        Quantity::from(1),
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ));
+    let underlying = InstrumentAny::IndexInstrument(
+        IndexInstrument::builder()
+            .instrument_id(InstrumentId::from(format!("BTC.{venue}").as_str()))
+            .raw_symbol(Symbol::from("BTC"))
+            .currency(Currency::USD())
+            .price_precision(2)
+            .size_precision(0)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from(1))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    );
 
     cache.borrow_mut().add_instrument(option.clone()).unwrap();
     cache
@@ -15283,7 +15279,7 @@ fn test_capped_option_fee_uses_option_greeks_underlying_price(
 }
 
 #[rstest]
-fn test_option_cash_settlement_with_custom_settlement_price(account_id: AccountId) {
+fn test_option_cash_settlement_uses_instrument_close_price(account_id: AccountId) {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let order_event_handler = order_event_handler_with_cache(cache.clone());
 
@@ -15325,7 +15321,7 @@ fn test_option_cash_settlement_with_custom_settlement_price(account_id: AccountI
     clock.borrow_mut().set_time(expiration_ns);
 
     let mut engine = OrderMatchingEngine::new(
-        option,
+        option.clone(),
         1,
         FillModelHandle::default(),
         FeeModelAny::default().into(),
@@ -15337,11 +15333,14 @@ fn test_option_cash_settlement_with_custom_settlement_price(account_id: AccountI
         OrderMatchingEngineConfig::default(),
     );
 
-    // Override the intrinsic value (would be 11.00) with an explicit settlement price.
-    let custom = Price::from("7.50");
-    engine.set_settlement_price(custom);
-
-    engine.iterate(expiration_ns, AggressorSide::NoAggressor);
+    let close_price = Price::from("7.50");
+    engine.process_instrument_close(InstrumentClose::new(
+        option.id(),
+        close_price,
+        InstrumentCloseType::ContractExpired,
+        expiration_ns,
+        expiration_ns,
+    ));
 
     let client_order_id = settlement_client_order_id(&cache, &format!("EXPIRATION_{venue}_CASH"));
     let settlement_fill = get_order_event_handler_messages(&order_event_handler)
@@ -15351,7 +15350,7 @@ fn test_option_cash_settlement_with_custom_settlement_price(account_id: AccountI
             _ => None,
         })
         .expect("Expected cash settlement fill");
-    assert_eq!(settlement_fill.last_px, custom);
+    assert_eq!(settlement_fill.last_px, close_price);
 }
 
 #[rstest]

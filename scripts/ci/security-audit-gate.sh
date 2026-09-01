@@ -28,13 +28,13 @@ set -euo pipefail
 #                               python/uv.lock
 #   - Manifests                 Cargo.toml, crates/(...)?Cargo.toml,
 #                               python/pyproject.toml
-#   - Audit policy              deny.toml, .cargo/deny-fuzz.toml, osv-scanner.toml,
+#   - Audit policy              security-audit.toml, deny.toml,
+#                               .cargo/deny-fuzz.toml, osv-scanner.toml,
 #                               .cargo/audit.toml, .supply-chain/*
 #   - Toolchain config          .cargo/config.toml, rust-toolchain.toml,
-#                               tools.toml
-#   - Audit helpers             scripts/{cargo-tool-version,rust-toolchain,
-#                               uv-version}.sh,
-#                               .github/actions/*
+#                               .nautilus-engineering/tools.toml, tools.toml
+#   - Audit scripts             selected scripts/ci release, publication,
+#                               workflow, and validation scripts
 #   - CI config                 .pre-commit-config.yaml, .github/workflows/*
 
 emit() {
@@ -42,8 +42,13 @@ emit() {
   echo "audit_needed=$1 ($2)"
 }
 
+if [[ "$EVENT_NAME" == "push" && "${SKIP_SECURITY_AUDIT:-false}" == "true" ]]; then
+  emit false "skipped by caller"
+  exit 0
+fi
+
 if [[ "$EVENT_NAME" == "push" && "${FORCE_SECURITY_AUDIT:-false}" == "true" ]]; then
-  emit true "required for wheel publication"
+  emit true "forced by caller"
   exit 0
 fi
 
@@ -91,13 +96,18 @@ pattern+='|crates/(.*/)?Cargo\.toml'
 pattern+='|crates/.*/fuzz/Cargo\.lock'
 pattern+='|\.pre-commit-config\.yaml'
 pattern+='|python/(uv\.lock|pyproject\.toml)'
-pattern+='|deny\.toml|\.cargo/deny-fuzz\.toml|osv-scanner\.toml|\.supply-chain/.*'
-pattern+='|tools\.toml|\.cargo/(config|audit)\.toml|rust-toolchain\.toml'
-pattern+='|scripts/(cargo-tool-version|rust-toolchain|uv-version)\.sh'
+pattern+='|security-audit\.toml|deny\.toml|\.cargo/deny-fuzz\.toml|osv-scanner\.toml'
+pattern+='|\.supply-chain/.*'
+pattern+='|(\.nautilus-engineering/)?tools\.toml|\.cargo/(config|audit)\.toml|rust-toolchain\.toml'
+pattern+='|scripts/(cargo-tool-version|install-osv-scanner|install-security-tools)\.sh'
+pattern+='|scripts/(rust-toolchain|tool-version|uv-version)\.sh|scripts/security-audit\.py'
 pattern+='|scripts/purge-orphan-dev-wheels\.sh'
 pattern+='|scripts/ci/('
-pattern+='check-security-audit-result|check-security-gate-result|plan-wheel-publication|publish-wheels.*'
-pattern+='|security-audit-gate|test-publish-wheels|update-pyproject-version|validate-wheel-artifacts'
+pattern+='check-security-audit-result|check-security-gate-result|configure-r2-aws'
+pattern+='|create-docker-manifest|merge-nightly|package-cli-artifact|plan-nightly-merge'
+pattern+='|plan-wheel-publication|publish-wheels.*|save-docker-digest|security-audit-gate'
+pattern+='|select-attestation-bundle|test-publish-wheels|update-pyproject-version'
+pattern+='|validate-wheel-artifacts|validate-wheel-upload'
 pattern+=')\.(sh|bash)'
 pattern+='|\.github/actions/.*'
 pattern+='|\.github/workflows/.*'

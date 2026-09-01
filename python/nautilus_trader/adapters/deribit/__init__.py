@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Integration adapter for the Deribit exchange.
+"""
 
 from __future__ import annotations
 
@@ -28,10 +31,9 @@ __all__ = [
     "DeribitDataClientConfig",
     "DeribitDataClientFactory",
     "DeribitEnvironment",
-    "DeribitExecClientConfig",
+    "DeribitExecutionClientConfig",
     "DeribitExecutionClientFactory",
     "DeribitProductType",
-    "DeribitUpdateInterval",
     "DeribitVolatilityIndex",
 ]
 

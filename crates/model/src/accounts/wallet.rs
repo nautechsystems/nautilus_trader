@@ -111,6 +111,14 @@ impl WalletAccount {
         Self::new_checked(event, calculate_account_state).expect_display(FAILED)
     }
 
+    #[must_use]
+    pub(crate) fn clone_without_events(&self) -> Self {
+        Self {
+            base: self.base.clone_without_events(),
+            balances_locked: self.balances_locked.clone(),
+        }
+    }
+
     /// Updates the locked balance for the given instrument and currency.
     ///
     /// # Errors
@@ -698,12 +706,11 @@ impl Account for WalletAccount {
         let source_currency = if instrument.is_inverse() && !use_quote_for_inverse.unwrap_or(false)
         {
             base_currency
-        } else if side == OrderSide::Buy {
-            instrument.quote_currency()
-        } else if side == OrderSide::Sell {
-            base_currency
         } else {
-            anyhow::bail!("Invalid `OrderSide` in `calculate_balance_locked`: {side}")
+            match side {
+                OrderSide::Buy => instrument.quote_currency(),
+                OrderSide::Sell => base_currency,
+            }
         };
         let current_balance = self
             .base
@@ -1724,32 +1731,19 @@ mod tests {
 
     #[cfg(feature = "defi")]
     fn test_currency_pair(base: Currency, quote: Currency) -> CurrencyPair {
-        CurrencyPair::new(
-            InstrumentId::from("WBASEWQUOTE.BLOCKCHAIN"),
-            Symbol::from("WBASEWQUOTE"),
-            base,
-            quote,
-            16,
-            16,
-            Price::from_raw(1, 16),
-            Quantity::from_raw(1, 16),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            0.into(),
-            0.into(),
-        )
+        CurrencyPair::builder()
+            .instrument_id(InstrumentId::from("WBASEWQUOTE.BLOCKCHAIN"))
+            .raw_symbol(Symbol::from("WBASEWQUOTE"))
+            .base_currency(base)
+            .quote_currency(quote)
+            .price_precision(16)
+            .size_precision(16)
+            .price_increment(Price::from_raw(1, 16))
+            .size_increment(Quantity::from_raw(1, 16))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap()
     }
 
     fn wallet_with_total(currency: Currency, raw: MoneyRaw) -> WalletAccount {

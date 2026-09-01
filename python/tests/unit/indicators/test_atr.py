@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test atr behavior.
+"""
 
 import sys
 
@@ -23,31 +26,49 @@ from tests.stubs import TestDataProviderPyo3
 
 @pytest.fixture
 def atr() -> AverageTrueRange:
+    """
+    Atr.
+    """
     return AverageTrueRange(10)
 
 
 def test_name_returns_expected_string(atr: AverageTrueRange) -> None:
+    """
+    Test name returns expected string.
+    """
     # Arrange, Act, Assert
     assert atr.name == "AverageTrueRange"
 
 
 def test_str_repr_returns_expected_string(atr: AverageTrueRange) -> None:
+    """
+    Test str repr returns expected string.
+    """
     # Arrange, Act, Assert
     assert str(atr) == "AverageTrueRange(10,SIMPLE,true,0)"
     assert repr(atr) == "AverageTrueRange(10,SIMPLE,true,0)"
 
 
 def test_period(atr: AverageTrueRange) -> None:
+    """
+    Test period.
+    """
     # Arrange, Act, Assert
     assert atr.period == 10
 
 
 def test_initialized_without_inputs_returns_false(atr: AverageTrueRange) -> None:
+    """
+    Test initialized without inputs returns false.
+    """
     # Arrange, Act, Assert
     assert not atr.initialized
 
 
 def test_initialized_with_required_inputs_returns_true(atr: AverageTrueRange) -> None:
+    """
+    Test initialized with required inputs returns true.
+    """
     # Arrange, Act
     for _i in range(10):
         atr.update_raw(1.00000, 1.00000, 1.00000)
@@ -57,6 +78,9 @@ def test_initialized_with_required_inputs_returns_true(atr: AverageTrueRange) ->
 
 
 def test_handle_bar_updates_indicator(atr: AverageTrueRange) -> None:
+    """
+    Test handle bar updates indicator.
+    """
     # Arrange
     bar = TestDataProviderPyo3.bar_5decimal()
 
@@ -69,11 +93,17 @@ def test_handle_bar_updates_indicator(atr: AverageTrueRange) -> None:
 
 
 def test_value_with_no_inputs_returns_zero(atr: AverageTrueRange) -> None:
+    """
+    Test value with no inputs returns zero.
+    """
     # Arrange, Act, Assert
     assert atr.value == 0.0
 
 
 def test_value_with_epsilon_input(atr: AverageTrueRange) -> None:
+    """
+    Test value with epsilon input.
+    """
     # Arrange
     epsilon = sys.float_info.epsilon
     atr.update_raw(epsilon, epsilon, epsilon)
@@ -83,6 +113,9 @@ def test_value_with_epsilon_input(atr: AverageTrueRange) -> None:
 
 
 def test_value_with_one_ones_input(atr: AverageTrueRange) -> None:
+    """
+    Test value with one ones input.
+    """
     # Arrange
     atr.update_raw(1.00000, 1.00000, 1.00000)
 
@@ -91,6 +124,9 @@ def test_value_with_one_ones_input(atr: AverageTrueRange) -> None:
 
 
 def test_value_with_one_input(atr: AverageTrueRange) -> None:
+    """
+    Test value with one input.
+    """
     # Arrange
     atr.update_raw(1.00020, 1.00000, 1.00010)
 
@@ -99,6 +135,9 @@ def test_value_with_one_input(atr: AverageTrueRange) -> None:
 
 
 def test_value_with_three_inputs(atr: AverageTrueRange) -> None:
+    """
+    Test value with three inputs.
+    """
     # Arrange
     atr.update_raw(1.00020, 1.00000, 1.00010)
     atr.update_raw(1.00020, 1.00000, 1.00010)
@@ -109,6 +148,9 @@ def test_value_with_three_inputs(atr: AverageTrueRange) -> None:
 
 
 def test_value_with_close_on_high(atr: AverageTrueRange) -> None:
+    """
+    Test value with close on high.
+    """
     # Arrange
     high = 1.00010
     low = 1.00000
@@ -125,6 +167,9 @@ def test_value_with_close_on_high(atr: AverageTrueRange) -> None:
 
 
 def test_value_with_close_on_low(atr: AverageTrueRange) -> None:
+    """
+    Test value with close on low.
+    """
     # Arrange
     high = 1.00010
     low = 1.00000
@@ -141,6 +186,9 @@ def test_value_with_close_on_low(atr: AverageTrueRange) -> None:
 
 
 def test_floor_with_ten_ones_inputs() -> None:
+    """
+    Test floor with ten ones inputs.
+    """
     # Arrange
     floor = 0.00005
     floored_atr = AverageTrueRange(10, value_floor=floor)
@@ -153,6 +201,9 @@ def test_floor_with_ten_ones_inputs() -> None:
 
 
 def test_floor_with_exponentially_decreasing_high_inputs() -> None:
+    """
+    Test floor with exponentially decreasing high inputs.
+    """
     # Arrange
     floor = 0.00005
     floored_atr = AverageTrueRange(10, value_floor=floor)
@@ -170,6 +221,9 @@ def test_floor_with_exponentially_decreasing_high_inputs() -> None:
 
 
 def test_reset_successfully_returns_indicator_to_fresh_state(atr: AverageTrueRange) -> None:
+    """
+    Test reset successfully returns indicator to fresh state.
+    """
     # Arrange
     for _i in range(1000):
         atr.update_raw(1.00010, 1.00000, 1.00005)

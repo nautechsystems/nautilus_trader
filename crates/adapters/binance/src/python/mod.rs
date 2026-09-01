@@ -42,7 +42,7 @@ use crate::{
         enums::{BinanceEnvironment, BinanceMarginType, BinancePositionSide, BinanceProductType},
     },
     config::{
-        BinanceDataClientConfig, BinanceExecClientConfig, BinanceInstrumentProviderConfig,
+        BinanceDataClientConfig, BinanceExecutionClientConfig, BinanceInstrumentProviderConfig,
         BinanceSpotMarketDataMode,
     },
     data_types::{
@@ -97,10 +97,10 @@ fn extract_binance_exec_config(
     py: Python<'_>,
     config: Py<PyAny>,
 ) -> PyResult<Box<dyn ClientConfig>> {
-    match config.extract::<BinanceExecClientConfig>(py) {
+    match config.extract::<BinanceExecutionClientConfig>(py) {
         Ok(c) => Ok(Box::new(c)),
         Err(e) => Err(to_pyvalue_err(format!(
-            "Failed to extract BinanceExecClientConfig: {e}"
+            "Failed to extract BinanceExecutionClientConfig: {e}"
         ))),
     }
 }
@@ -167,11 +167,11 @@ pub fn binance(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
     m.add_class::<BinanceDataClientConfig>()?;
-    m.add_class::<BinanceExecClientConfig>()?;
+    m.add_class::<BinanceDataClientFactory>()?;
+    m.add_class::<BinanceExecutionClientConfig>()?;
+    m.add_class::<BinanceExecutionClientFactory>()?;
     m.add_class::<BinanceInstrumentProviderConfig>()?;
     m.add_class::<BinanceSpotMarketDataMode>()?;
-    m.add_class::<BinanceDataClientFactory>()?;
-    m.add_class::<BinanceExecutionClientFactory>()?;
     m.add_function(wrap_pyfunction!(py_decode_binance_spot_client_order_id, m)?)?;
     m.add_function(wrap_pyfunction!(
         py_decode_binance_futures_client_order_id,
@@ -225,7 +225,7 @@ pub fn binance(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     if let Err(e) = registry.register_config_extractor(
-        "BinanceExecClientConfig".to_string(),
+        "BinanceExecutionClientConfig".to_string(),
         extract_binance_exec_config,
     ) {
         return Err(to_pyruntime_err(format!(

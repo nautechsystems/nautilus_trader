@@ -13,12 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-NautilusTrader (https://nautilustrader.io) is an open-source, production-grade, Rust-native
-engine for multi-asset, multi-venue trading systems.
+Open-source, production-grade, Rust-native engine for multi-asset, multi-venue trading.
 
-The system spans research, deterministic simulation, and live execution within a single
-event-driven architecture, with Python serving as the control plane for strategy logic,
-configuration, and orchestration.
+NautilusTrader (https://nautilustrader.io) spans research, deterministic simulation, and live
+execution within a single event-driven architecture, with Python serving as the control plane
+for strategy logic, configuration, and orchestration.
+
 """
 
 import importlib.metadata as _metadata

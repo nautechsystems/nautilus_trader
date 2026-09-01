@@ -17,11 +17,14 @@
 Stream Arbitrum DEX pool data with the built-in DataTester actor.
 
 Running this example connects to the configured RPC endpoint and starts subscriptions
-for the configured pool immediately, logging all received data. No orders are placed.
+for the configured pool immediately, logging all received data. Set `ENVIO_API_TOKEN`
+for HyperSync access. No orders are placed.
 
 """
 
 from __future__ import annotations
+
+import os
 
 from nautilus_trader.adapters.blockchain import BlockchainDataClientConfig
 from nautilus_trader.adapters.blockchain import BlockchainDataClientFactory
@@ -45,6 +48,12 @@ USE_HYPERSYNC = True
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
+    if not os.getenv("ENVIO_API_TOKEN"):
+        raise SystemExit("ENVIO_API_TOKEN must be set for HyperSync access")
+
     node = (
         LiveNode.builder("BLOCKCHAIN-DATA-TESTER-001", TRADER_ID, Environment.LIVE)
         .add_data_client(

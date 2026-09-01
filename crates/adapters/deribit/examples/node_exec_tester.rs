@@ -28,11 +28,11 @@
 use nautilus_common::enums::Environment;
 use nautilus_deribit::{
     common::{consts::DERIBIT_CLIENT_ID, enums::DeribitEnvironment},
-    config::{DeribitDataClientConfig, DeribitExecClientConfig},
+    config::{DeribitDataClientConfig, DeribitExecutionClientConfig},
     factories::{DeribitDataClientFactory, DeribitExecutionClientFactory},
     http::models::DeribitProductType,
 };
-use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
+use nautilus_live::{config::LiveExecutionEngineConfig, node::LiveNode};
 use nautilus_model::{
     identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
@@ -40,6 +40,10 @@ use nautilus_model::{
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
+// WARNING: With `DRY_RUN = false`, this tester submits orders to the configured
+// environment and may use real funds. Set `DRY_RUN = true` to connect without
+// submitting orders or sending shutdown cancel/close commands.
+const DRY_RUN: bool = false;
 const USE_TESTNET: bool = true;
 const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "DERIBIT-001";
@@ -73,8 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = DeribitExecClientConfig {
-        trader_id,
+    let exec_config = DeribitExecutionClientConfig {
         account_id,
         api_key: None,    // Will use env var
         api_secret: None, // Will use env var
@@ -85,7 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let data_factory = DeribitDataClientFactory::new();
     let exec_factory = DeribitExecutionClientFactory::new();
-    let exec_engine_config = LiveExecEngineConfig {
+    let exec_engine_config = LiveExecutionEngineConfig {
         open_check_interval_secs: Some(10.0),
         position_check_interval_secs: Some(30.0),
         ..Default::default()
@@ -110,6 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
+        .dry_run(DRY_RUN)
         .open_position_on_start_qty(order_qty.as_decimal())
         .use_post_only(true)
         .log_data(false)

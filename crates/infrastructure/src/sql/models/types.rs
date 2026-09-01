@@ -19,33 +19,33 @@ use nautilus_model::types::Currency;
 use sqlx::{FromRow, Row, postgres::PgRow};
 use ustr::Ustr;
 
-use crate::sql::models::{enums::CurrencyTypeModel, read_u8, read_u16};
+use crate::sql::models::{enums::CurrencyTypePg, read_u8, read_u16};
 
 #[derive(Debug)]
-pub struct CurrencyModel(pub Currency);
+pub struct CurrencyRow(pub Currency);
 
 #[derive(Debug)]
-pub struct SignalModel(pub Signal);
+pub struct SignalRow(pub Signal);
 
-impl<'r> FromRow<'r, PgRow> for CurrencyModel {
+impl<'r> FromRow<'r, PgRow> for CurrencyRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row.try_get::<String, _>("id")?;
         let precision = read_u8(row, "precision")?;
         let iso4217 = read_u16(row, "iso4217")?;
         let name = row.try_get::<String, _>("name")?;
-        let currency_type_model = row.try_get::<CurrencyTypeModel, _>("currency_type")?;
+        let currency_type = row.try_get::<CurrencyTypePg, _>("currency_type")?;
         let currency = Currency::new(
             id.as_str(),
             precision,
             iso4217,
             name.as_str(),
-            currency_type_model.0,
+            currency_type.0,
         );
         Ok(Self(currency))
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for SignalModel {
+impl<'r> FromRow<'r, PgRow> for SignalRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let name = row.try_get::<&str, _>("name").map(Ustr::from)?;
         let value = row.try_get::<String, _>("value")?;

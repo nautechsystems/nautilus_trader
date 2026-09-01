@@ -12,39 +12,108 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test efficiency ratio behavior.
+"""
+
+import sys
 
 import pytest
 
+from nautilus_trader.indicators import AdaptiveMovingAverage
 from nautilus_trader.indicators import EfficiencyRatio
+from nautilus_trader.model import Bar
+from nautilus_trader.model import Currency
+from nautilus_trader.model import CurrencyType
+from nautilus_trader.model import Money
+from nautilus_trader.model import Price
+from nautilus_trader.model import Quantity
 from tests.stubs import TestDataProviderPyo3
+
+
+HIGH_PRECISION_CURRENCY = Currency(
+    code="ERP",
+    precision=18,
+    iso4217=0,
+    name="Efficiency ratio precision test",
+    currency_type=CurrencyType.CRYPTO,
+)
 
 
 @pytest.fixture
 def er() -> EfficiencyRatio:
+    """
+    Er.
+    """
     return EfficiencyRatio(10)
 
 
 def test_er(er: EfficiencyRatio) -> None:
+    """
+    Test er.
+    """
     assert er.name == "EfficiencyRatio"
 
 
+@pytest.mark.parametrize("period", [0, 1])
+def test_invalid_period_raises_value_error(period: int) -> None:
+    """
+    Test invalid period raises value error.
+    """
+    with pytest.raises(ValueError, match="`period` must be at least 2"):
+        EfficiencyRatio(period)
+
+
+@pytest.mark.parametrize("period", [0, 1])
+def test_adaptive_moving_average_rejects_invalid_er_period(period: int) -> None:
+    """
+    Test adaptive moving average rejects invalid er period.
+    """
+    with pytest.raises(ValueError, match="`period` must be at least 2"):
+        AdaptiveMovingAverage(period, 2, 30)
+
+
+def test_adaptive_moving_average_rejects_max_slow_period() -> None:
+    """
+    Test adaptive moving average rejects max slow period.
+    """
+    maximum = 2 * sys.maxsize + 1
+
+    with pytest.raises(ValueError, match="`period_slow` must be less") as exc_info:
+        AdaptiveMovingAverage(2, maximum - 1, maximum)
+
+    assert str(exc_info.value) == "`period_slow` must be less than `usize::MAX`"
+
+
 def test_str_repr_returns_expected_string(er: EfficiencyRatio) -> None:
+    """
+    Test str repr returns expected string.
+    """
     # Arrange, Act, Assert
     assert str(er) == "EfficiencyRatio(10)"
     assert repr(er) == "EfficiencyRatio(10)"
 
 
 def test_period_returns_expected_value(er: EfficiencyRatio) -> None:
+    """
+    Test period returns expected value.
+    """
     # Arrange, Act, Assert
     assert er.period == 10
 
 
 def test_initialized_without_inputs_returns_false(er: EfficiencyRatio) -> None:
+    """
+    Test initialized without inputs returns false.
+    """
     # Arrange, Act, Assert
     assert not er.initialized
 
 
 def test_initialized_with_required_inputs_returns_true(er: EfficiencyRatio) -> None:
+    """
+    Test initialized with required inputs returns true.
+    """
     # Arrange, Act
     for _ in range(10):
         er.update_raw(1.00000)
@@ -54,6 +123,9 @@ def test_initialized_with_required_inputs_returns_true(er: EfficiencyRatio) -> N
 
 
 def test_handle_bar_updates_indicator(er: EfficiencyRatio) -> None:
+    """
+    Test handle bar updates indicator.
+    """
     # Arrange
     er = EfficiencyRatio(10)
 
@@ -67,7 +139,57 @@ def test_handle_bar_updates_indicator(er: EfficiencyRatio) -> None:
     assert er.value == 0
 
 
+def test_handle_bar_rejects_price_above_float_precision(er: EfficiencyRatio) -> None:
+    """
+    Test handle bar rejects price above float precision.
+    """
+    source = TestDataProviderPyo3.bar_5decimal()
+    price = Price.from_raw(1_000_000_000_000_000_000, 18)
+    bar = Bar(
+        bar_type=source.bar_type,
+        open=price,
+        high=price,
+        low=price,
+        close=price,
+        volume=source.volume,
+        ts_event=source.ts_event,
+        ts_init=source.ts_init,
+    )
+
+    with pytest.raises(ValueError, match="maximum float precision") as exc_info:
+        er.handle_bar(bar)
+
+    assert str(exc_info.value) == "Fixed-point precision 18 exceeds maximum float precision 16"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param(Price.from_raw(1_000_000_000_000_000_000, 18), id="price"),
+        pytest.param(Quantity.from_raw(1_000_000_000_000_000_000, 18), id="quantity"),
+        pytest.param(
+            Money.from_raw(1_000_000_000_000_000_000, HIGH_PRECISION_CURRENCY),
+            id="money",
+        ),
+    ],
+)
+def test_update_raw_rejects_fixed_value_above_float_precision(
+    er: EfficiencyRatio,
+    value: Price | Quantity | Money,
+) -> None:
+    """
+    Test update raw rejects fixed value above float precision.
+    """
+    with pytest.raises(ValueError, match="maximum float precision") as exc_info:
+        er.update_raw(value)
+
+    assert str(exc_info.value) == "Fixed-point precision 18 exceeds maximum float precision 16"
+
+
 def test_value_with_one_input(er: EfficiencyRatio) -> None:
+    """
+    Test value with one input.
+    """
     # Arrange
     er.update_raw(1.00000)
 
@@ -76,6 +198,9 @@ def test_value_with_one_input(er: EfficiencyRatio) -> None:
 
 
 def test_value_with_efficient_higher_inputs(er: EfficiencyRatio) -> None:
+    """
+    Test value with efficient higher inputs.
+    """
     # Arrange
     initial_price = 1.00000
 
@@ -89,6 +214,9 @@ def test_value_with_efficient_higher_inputs(er: EfficiencyRatio) -> None:
 
 
 def test_value_with_efficient_lower_inputs(er: EfficiencyRatio) -> None:
+    """
+    Test value with efficient lower inputs.
+    """
     # Arrange
     initial_price = 1.00000
 
@@ -102,6 +230,9 @@ def test_value_with_efficient_lower_inputs(er: EfficiencyRatio) -> None:
 
 
 def test_value_with_oscillating_inputs_returns_zero(er: EfficiencyRatio) -> None:
+    """
+    Test value with oscillating inputs returns zero.
+    """
     # Arrange
     er.update_raw(1.00000)
     er.update_raw(1.00010)
@@ -114,6 +245,9 @@ def test_value_with_oscillating_inputs_returns_zero(er: EfficiencyRatio) -> None
 
 
 def test_value_with_half_oscillating_inputs_returns_zero(er: EfficiencyRatio) -> None:
+    """
+    Test value with half oscillating inputs returns zero.
+    """
     # Arrange
     er.update_raw(1.00000)
     er.update_raw(1.00020)
@@ -126,6 +260,9 @@ def test_value_with_half_oscillating_inputs_returns_zero(er: EfficiencyRatio) ->
 
 
 def test_value_with_noisy_inputs(er: EfficiencyRatio) -> None:
+    """
+    Test value with noisy inputs.
+    """
     # Arrange
     er.update_raw(1.00000)
     er.update_raw(1.00010)
@@ -139,7 +276,32 @@ def test_value_with_noisy_inputs(er: EfficiencyRatio) -> None:
     assert er.value == 0.42857142857215363
 
 
+@pytest.mark.parametrize(
+    ("prices", "expected"),
+    [
+        ([10.0, 11.0, 12.0, 13.0, 14.0, 15.0], 1.0),
+        ([15.0, 14.0, 13.0, 12.0, 11.0, 10.0], 1.0),
+        ([10.0, 12.0, 10.0, 12.0, 10.0, 12.0], 0.2),
+        ([10.0, 11.0, 10.5, 12.0, 11.5, 13.0], 0.6),
+        ([10.0, 10.0, 10.0, 10.0, 10.0, 10.0], 0.0),
+    ],
+)
+def test_value_uses_period_deltas(prices: list[float], expected: float) -> None:
+    """
+    Test value uses period deltas.
+    """
+    er = EfficiencyRatio(5)
+
+    for price in prices:
+        er.update_raw(price)
+
+    assert er.value == expected
+
+
 def test_reset_successfully_returns_indicator_to_fresh_state(er: EfficiencyRatio) -> None:
+    """
+    Test reset successfully returns indicator to fresh state.
+    """
     # Arrange
     for _ in range(10):
         er.update_raw(1.00000)

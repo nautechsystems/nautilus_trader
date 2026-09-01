@@ -119,9 +119,9 @@ impl Display for RetryError {
 
 impl std::error::Error for RetryError {}
 
-/// A stateless, thread‑safe retry manager for network operations.
+/// A stateless, thread-safe retry manager for network operations.
 ///
-/// Each execution maintains independent backoff and elapsed‑time state.
+/// Each execution maintains independent backoff and elapsed-time state.
 #[derive(Clone, Debug)]
 pub struct RetryManager<E> {
     config: RetryConfig,
@@ -160,7 +160,7 @@ where
     /// - During retry delays.
     ///
     /// Cancellation mid-execution takes effect immediately by dropping the in-flight
-    /// operation future. For non‑idempotent operations (e.g. an order already on the
+    /// operation future. For non-idempotent operations (e.g. an order already on the
     /// wire) the outcome of the abandoned attempt is unknown to the caller.
     ///
     /// # Errors
@@ -576,7 +576,6 @@ mod tests {
 
     #[cfg(all(feature = "simulation", madsim))]
     use madsim::task::{spawn, yield_now};
-    use nautilus_core::MUTEX_POISONED;
     use rstest::rstest;
     #[cfg(not(all(feature = "simulation", madsim)))]
     use tokio::task::{spawn, yield_now};
@@ -1168,18 +1167,19 @@ mod tests {
         assert!(error_msg.contains("Retry budget exceeded"));
         assert!(error_msg.contains("/6)"));
 
-        if let Some(captures) = error_msg.strip_prefix("Timeout error: Retry budget exceeded (")
-            && let Some(nums) = captures.strip_suffix(")")
-        {
-            let parts: Vec<&str> = nums.split('/').collect();
-            assert_eq!(parts.len(), 2);
-            let current: u32 = parts[0].parse().unwrap();
-            let total: u32 = parts[1].parse().unwrap();
+        let prefix = "Timeout error: Retry budget exceeded (";
+        let nums = error_msg
+            .strip_circumfix(prefix, ")")
+            .or_else(|| error_msg.strip_circumfix(prefix, "): last error: Retryable error: test"))
+            .expect("error message should match retry budget format");
+        let parts: Vec<&str> = nums.split('/').collect();
+        assert_eq!(parts.len(), 2);
+        let current: u32 = parts[0].parse().unwrap();
+        let total: u32 = parts[1].parse().unwrap();
 
-            assert_eq!(total, 6, "Total should be max_retries + 1");
-            assert!(current <= total, "Current attempt should not exceed total");
-            assert!(current >= 1, "Current attempt should be at least 1");
-        }
+        assert_eq!(total, 6, "Total should be max_retries + 1");
+        assert!(current <= total, "Current attempt should not exceed total");
+        assert!(current >= 1, "Current attempt should be at least 1");
     }
 
     #[cfg_attr(
@@ -1420,7 +1420,7 @@ mod tests {
         };
         let manager = RetryManager::new(config);
 
-        let attempt_times = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let attempt_times = Arc::new(parking_lot::Mutex::new(Vec::new()));
         let times_clone = attempt_times.clone();
         let start = time::Instant::now();
 
@@ -1433,7 +1433,7 @@ mod tests {
                         move || {
                             let times = times_clone.clone();
                             async move {
-                                times.lock().expect(MUTEX_POISONED).push(start.elapsed());
+                                times.lock().push(start.elapsed());
                                 Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
                             }
                         },
@@ -1445,18 +1445,18 @@ mod tests {
         });
 
         // Allow initial attempt and immediate retry to run without advancing time
-        yield_until(|| attempt_times.lock().expect(MUTEX_POISONED).len() >= 2).await;
+        yield_until(|| attempt_times.lock().len() >= 2).await;
 
         // Advance time for the next backoff interval
         advance_clock(Duration::from_millis(100)).await;
         yield_now().await;
 
         // Wait for the final retry to be recorded
-        yield_until(|| attempt_times.lock().expect(MUTEX_POISONED).len() >= 3).await;
+        yield_until(|| attempt_times.lock().len() >= 3).await;
 
         handle.await.unwrap();
 
-        let times = attempt_times.lock().expect(MUTEX_POISONED);
+        let times = attempt_times.lock();
         assert_eq!(times.len(), 3); // Initial + 2 retries
 
         // First retry should be immediate (within 1ms tolerance)
@@ -1557,9 +1557,9 @@ mod tests {
         };
         let manager = RetryManager::new(config);
 
-        let delays = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let delays = Arc::new(parking_lot::Mutex::new(Vec::new()));
         let delays_clone = delays.clone();
-        let last_time = Arc::new(std::sync::Mutex::new(time::Instant::now()));
+        let last_time = Arc::new(parking_lot::Mutex::new(time::Instant::now()));
         let last_time_clone = last_time.clone();
 
         let handle = spawn({
@@ -1574,12 +1574,12 @@ mod tests {
                             async move {
                                 let now = time::Instant::now();
                                 let delay = {
-                                    let mut last = last_time.lock().expect(MUTEX_POISONED);
+                                    let mut last = last_time.lock();
                                     let d = now.duration_since(*last);
                                     *last = now;
                                     d
                                 };
-                                delays.lock().expect(MUTEX_POISONED).push(delay);
+                                delays.lock().push(delay);
                                 Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
                             }
                         },
@@ -1590,13 +1590,13 @@ mod tests {
             }
         });
 
-        yield_until(|| !delays.lock().expect(MUTEX_POISONED).is_empty()).await;
-        advance_until(|| delays.lock().expect(MUTEX_POISONED).len() >= 2).await;
-        advance_until(|| delays.lock().expect(MUTEX_POISONED).len() >= 3).await;
+        yield_until(|| !delays.lock().is_empty()).await;
+        advance_until(|| delays.lock().len() >= 2).await;
+        advance_until(|| delays.lock().len() >= 3).await;
 
         handle.await.unwrap();
 
-        let delays = delays.lock().expect(MUTEX_POISONED);
+        let delays = delays.lock();
         // Skip the first delay (initial attempt)
         for delay in delays.iter().skip(1) {
             // Each delay should be at least the base delay (50ms for first retry)
@@ -1843,7 +1843,6 @@ mod proptest_tests {
 
     #[cfg(all(feature = "simulation", madsim))]
     use madsim::task::spawn;
-    use nautilus_core::MUTEX_POISONED;
     use proptest::prelude::*;
     // Import rstest attribute macro used within proptest! tests
     use rstest::rstest;
@@ -2148,7 +2147,7 @@ mod proptest_tests {
             };
 
             let manager = RetryManager::new(config);
-            let attempt_times = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let attempt_times = Arc::new(parking_lot::Mutex::new(Vec::new()));
             let attempt_times_for_block = attempt_times.clone();
 
             rt.block_on(async move {
@@ -2167,7 +2166,6 @@ mod proptest_tests {
                                     async move {
                                         attempt_times_inner
                                             .lock()
-                                            .unwrap()
                                             .push(start_time.elapsed());
                                         Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
                                     }
@@ -2185,15 +2183,15 @@ mod proptest_tests {
                 // so awaiting the handle is enough and yields exact timings.
                 #[cfg(not(all(feature = "simulation", madsim)))]
                 {
-                    yield_until(|| !attempt_times_for_wait.lock().expect(MUTEX_POISONED).is_empty()).await;
-                    advance_until(|| attempt_times_for_wait.lock().expect(MUTEX_POISONED).len() >= 2).await;
-                    advance_until(|| attempt_times_for_wait.lock().expect(MUTEX_POISONED).len() >= 3).await;
+                    yield_until(|| !attempt_times_for_wait.lock().is_empty()).await;
+                    advance_until(|| attempt_times_for_wait.lock().len() >= 2).await;
+                    advance_until(|| attempt_times_for_wait.lock().len() >= 3).await;
                 }
 
                 handle.await.unwrap();
             });
 
-            let times = attempt_times.lock().expect(MUTEX_POISONED);
+            let times = attempt_times.lock();
 
             // We expect at least 2 attempts total (initial + at least 1 retry)
             prop_assert!(times.len() >= 2);
@@ -2246,7 +2244,7 @@ mod proptest_tests {
             };
 
             let manager = RetryManager::new(config);
-            let attempt_times = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let attempt_times = Arc::new(parking_lot::Mutex::new(Vec::new()));
             let attempt_times_for_block = attempt_times.clone();
 
             rt.block_on(async move {
@@ -2264,7 +2262,7 @@ mod proptest_tests {
                                     let attempt_times_inner = attempt_times_for_task.clone();
                                     async move {
                                         let elapsed = start.elapsed();
-                                        attempt_times_inner.lock().expect(MUTEX_POISONED).push(elapsed);
+                                        attempt_times_inner.lock().push(elapsed);
                                         Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
                                     }
                                 },
@@ -2280,15 +2278,15 @@ mod proptest_tests {
                 // and avoids the 1ms-tick driver's added scheduler overhead.
                 #[cfg(not(all(feature = "simulation", madsim)))]
                 {
-                    yield_until(|| !attempt_times_for_wait.lock().expect(MUTEX_POISONED).is_empty()).await;
-                    advance_until(|| attempt_times_for_wait.lock().expect(MUTEX_POISONED).len() >= 2).await;
-                    advance_until(|| attempt_times_for_wait.lock().expect(MUTEX_POISONED).len() >= 3).await;
+                    yield_until(|| !attempt_times_for_wait.lock().is_empty()).await;
+                    advance_until(|| attempt_times_for_wait.lock().len() >= 2).await;
+                    advance_until(|| attempt_times_for_wait.lock().len() >= 3).await;
                 }
 
                 handle.await.unwrap();
             });
 
-            let times = attempt_times.lock().expect(MUTEX_POISONED);
+            let times = attempt_times.lock();
             prop_assert!(times.len() >= 2);
 
             if immediate_first {

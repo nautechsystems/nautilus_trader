@@ -44,6 +44,9 @@ INSTRUMENT_ID = InstrumentId.from_str(
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     node = (
         LiveNode.builder("POLYMARKET-DATA-TESTER-001", TRADER_ID, Environment.LIVE)
         .add_data_client(

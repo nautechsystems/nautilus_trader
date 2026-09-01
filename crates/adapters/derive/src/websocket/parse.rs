@@ -860,10 +860,10 @@ mod tests {
         assert_eq!(deltas.instrument_id, InstrumentId::from("ETH-PERP.DERIVE"));
         assert_eq!(deltas.deltas.len(), 4);
         assert_eq!(deltas.deltas[0].action, BookAction::Clear);
-        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
+        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy.into());
         assert_eq!(deltas.deltas[1].order.price, price("3499.50"));
         assert_eq!(deltas.deltas[1].order.size, quantity("1.20"));
-        assert_eq!(deltas.deltas[3].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[3].order.side, OrderSide::Sell.into());
         assert_eq!(
             deltas.deltas[3].flags,
             RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
@@ -945,10 +945,10 @@ mod tests {
         assert_eq!(deltas.instrument_id, InstrumentId::from("ETH-USDC.DERIVE"));
         assert_eq!(deltas.deltas.len(), 4);
         assert_eq!(deltas.deltas[0].action, BookAction::Clear);
-        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
+        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy.into());
         assert_eq!(deltas.deltas[1].order.price, price("2050.0"));
         assert_eq!(deltas.deltas[1].order.size, quantity("1.20"));
-        assert_eq!(deltas.deltas[3].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[3].order.side, OrderSide::Sell.into());
         assert_eq!(
             deltas.deltas[3].flags,
             RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
@@ -1132,7 +1132,7 @@ mod tests {
                 .unwrap();
 
         assert_eq!(deltas.deltas.len(), 2);
-        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
+        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy.into());
         assert_eq!(deltas.deltas[1].order.price, price("3499.00"));
         assert_eq!(deltas.deltas[1].order.size, quantity("0.40"));
         assert_eq!(deltas.deltas[1].order.order_id, 1);

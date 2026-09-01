@@ -24,11 +24,12 @@ use std::{
     num::NonZeroU32,
     sync::{
         Arc, LazyLock,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 
 use ahash::{AHashMap, AHashSet};
+use arc_swap::ArcSwap;
 use jiff::Timestamp;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
@@ -37,7 +38,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{Bar, BarType, FundingRateUpdate, OrderBookDeltas, TradeTick},
-    enums::{MarketStatusAction, OrderSide, OrderType, PositionSideSpecified, TimeInForce},
+    enums::{MarketStatusAction, OrderSide, OrderType, PositionSide, TimeInForce},
     events::account::state::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
@@ -104,6 +105,12 @@ use crate::common::{
         parse_position_status_report, parse_spot_instrument, parse_trade_tick, spot_leverage,
         spot_market_unit, trigger_direction,
     },
+    rate_limit::{
+        BYBIT_RATE_LIMIT_HEADER, BYBIT_RATE_LIMIT_RESET_HEADER, BYBIT_RATE_LIMIT_STATUS_HEADER,
+        BybitRateLimiter, batch_call_limit, batch_endpoint_limit, batch_send_limit, batch_weight,
+        category_from_payload,
+    },
+    retry::should_retry_http,
     symbol::BybitSymbol,
     urls::bybit_http_base_url,
 };
@@ -123,24 +130,15 @@ impl<T, E: Display> BuilderResultExt<T> for Result<T, E> {
 const BYBIT_ORDER_REALTIME: &str = "/v5/order/realtime";
 const BYBIT_ORDER_HISTORY: &str = "/v5/order/history";
 
-/// Default Bybit REST API rate limit.
-///
-/// Bybit implements rate limiting per endpoint with varying limits.
-/// We use a conservative 10 requests per second as a general default.
+/// Legacy conservative Bybit REST quota retained for source compatibility.
 pub static BYBIT_REST_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
     Quota::per_second(NonZeroU32::new(10).expect("non-zero")).expect("valid constant")
 });
 
-/// Bybit repay endpoint rate limit.
-///
-/// Conservative limit to avoid hitting API restrictions when repaying small borrows.
+/// Legacy Bybit repayment quota retained for source compatibility.
 pub static BYBIT_REPAY_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
     Quota::per_second(NonZeroU32::new(1).expect("non-zero")).expect("valid constant")
 });
-
-const BYBIT_GLOBAL_RATE_KEY: &str = "bybit:global";
-const BYBIT_REPAY_ROUTE_KEY: &str = "bybit:/v5/account/repay";
-const BYBIT_NO_CONVERT_REPAY_ROUTE_KEY: &str = "bybit:/v5/account/no-convert-repay";
 
 /// Raw HTTP client for low-level Bybit API operations.
 ///
@@ -157,11 +155,15 @@ const BYBIT_NO_CONVERT_REPAY_ROUTE_KEY: &str = "bybit:/v5/account/no-convert-rep
 #[derive(Clone)]
 pub struct BybitRawHttpClient {
     base_url: String,
-    client: HttpClient,
+    client: Arc<ArcSwap<HttpClient>>,
+    rate_limiter: BybitRateLimiter,
     credential: Option<Credential>,
     recv_window_ms: u64,
+    timeout_secs: u64,
+    proxy_url: Option<String>,
+    session_generation: Arc<AtomicU64>,
     retry_manager: RetryManager<BybitHttpError>,
-    cancellation_token: Arc<std::sync::Mutex<CancellationToken>>,
+    cancellation_token: Arc<parking_lot::Mutex<CancellationToken>>,
 }
 
 impl Default for BybitRawHttpClient {
@@ -183,32 +185,20 @@ impl Debug for BybitRawHttpClient {
 
 impl BybitRawHttpClient {
     /// Cancels all pending HTTP requests.
-    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn cancel_all_requests(&self) {
-        self.cancellation_token
-            .lock()
-            .expect("cancellation token lock poisoned")
-            .cancel();
+        self.cancellation_token.lock().cancel();
     }
 
     /// Replaces the cancelled token with a fresh one so subsequent
     /// requests are not immediately short-circuited.
-    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn reset_cancellation_token(&self) {
-        let mut guard = self
-            .cancellation_token
-            .lock()
-            .expect("cancellation token lock poisoned");
+        let mut guard = self.cancellation_token.lock();
         *guard = CancellationToken::new();
     }
 
     /// Returns a clone of the current cancellation token.
-    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn cancellation_token(&self) -> CancellationToken {
-        self.cancellation_token
-            .lock()
-            .expect("cancellation token lock poisoned")
-            .clone()
+        self.cancellation_token.lock().clone()
     }
 
     /// Creates a new [`BybitRawHttpClient`] using the default Bybit HTTP URL.
@@ -237,25 +227,23 @@ impl BybitRawHttpClient {
         };
 
         let retry_manager = RetryManager::new(retry_config);
+        let base_url =
+            base_url.unwrap_or_else(|| bybit_http_base_url(BybitEnvironment::Mainnet).to_string());
+        let rate_limiter = BybitRateLimiter::for_http(&base_url, None, proxy_url.as_deref());
+        let client = Self::build_http_client(timeout_secs, proxy_url.clone())?;
+        let session_generation = rate_limiter.http_session_generation();
 
         Ok(Self {
-            base_url: base_url
-                .unwrap_or_else(|| bybit_http_base_url(BybitEnvironment::Mainnet).to_string()),
-            client: HttpClient::new(
-                Self::default_headers(),
-                vec![],
-                Self::rate_limiter_quotas(),
-                Some(*BYBIT_REST_QUOTA),
-                Some(timeout_secs),
-                proxy_url,
-            )
-            .map_err(|e| {
-                BybitHttpError::NetworkError(format!("Failed to create HTTP client: {e}"))
-            })?,
+            base_url,
+            client: Arc::new(ArcSwap::from_pointee(client)),
+            rate_limiter,
             credential: None,
             recv_window_ms,
+            timeout_secs,
+            proxy_url,
+            session_generation: Arc::new(AtomicU64::new(session_generation)),
             retry_manager,
-            cancellation_token: Arc::new(std::sync::Mutex::new(CancellationToken::new())),
+            cancellation_token: Arc::new(parking_lot::Mutex::new(CancellationToken::new())),
         })
     }
 
@@ -288,25 +276,25 @@ impl BybitRawHttpClient {
         };
 
         let retry_manager = RetryManager::new(retry_config);
+        let base_url =
+            base_url.unwrap_or_else(|| bybit_http_base_url(BybitEnvironment::Mainnet).to_string());
+        let credential = Credential::new(api_key, api_secret);
+        let rate_limiter =
+            BybitRateLimiter::for_http(&base_url, Some(credential.api_key()), proxy_url.as_deref());
+        let client = Self::build_http_client(timeout_secs, proxy_url.clone())?;
+        let session_generation = rate_limiter.http_session_generation();
 
         Ok(Self {
-            base_url: base_url
-                .unwrap_or_else(|| bybit_http_base_url(BybitEnvironment::Mainnet).to_string()),
-            client: HttpClient::new(
-                Self::default_headers(),
-                vec![],
-                Self::rate_limiter_quotas(),
-                Some(*BYBIT_REST_QUOTA),
-                Some(timeout_secs),
-                proxy_url,
-            )
-            .map_err(|e| {
-                BybitHttpError::NetworkError(format!("Failed to create HTTP client: {e}"))
-            })?,
-            credential: Some(Credential::new(api_key, api_secret)),
+            base_url,
+            client: Arc::new(ArcSwap::from_pointee(client)),
+            rate_limiter,
+            credential: Some(credential),
             recv_window_ms,
+            timeout_secs,
+            proxy_url,
+            session_generation: Arc::new(AtomicU64::new(session_generation)),
             retry_manager,
-            cancellation_token: Arc::new(std::sync::Mutex::new(CancellationToken::new())),
+            cancellation_token: Arc::new(parking_lot::Mutex::new(CancellationToken::new())),
         })
     }
 
@@ -342,6 +330,8 @@ impl BybitRawHttpClient {
         } else {
             BybitEnvironment::Mainnet
         };
+        let base_url =
+            Some(base_url.unwrap_or_else(|| bybit_http_base_url(environment).to_string()));
         let (key_var, secret_var) = credential_env_vars(environment);
         let key = get_or_env_var_opt(api_key, key_var);
         let secret = get_or_env_var_opt(api_secret, secret_var);
@@ -381,22 +371,80 @@ impl BybitRawHttpClient {
         ])
     }
 
-    fn rate_limiter_quotas() -> Vec<(String, Quota)> {
-        vec![
-            (BYBIT_GLOBAL_RATE_KEY.to_string(), *BYBIT_REST_QUOTA),
-            (BYBIT_REPAY_ROUTE_KEY.to_string(), *BYBIT_REPAY_QUOTA),
-            (
-                BYBIT_NO_CONVERT_REPAY_ROUTE_KEY.to_string(),
-                *BYBIT_REPAY_QUOTA,
-            ),
-        ]
+    fn build_http_client(
+        timeout_secs: u64,
+        proxy_url: Option<String>,
+    ) -> Result<HttpClient, BybitHttpError> {
+        HttpClient::builder()
+            .headers(Self::default_headers())
+            .header_keys(vec![
+                BYBIT_RATE_LIMIT_HEADER.to_string(),
+                BYBIT_RATE_LIMIT_STATUS_HEADER.to_string(),
+                BYBIT_RATE_LIMIT_RESET_HEADER.to_string(),
+            ])
+            .timeout_secs(timeout_secs)
+            .maybe_proxy_url(proxy_url)
+            .rate_limiters(Vec::new())
+            .build()
+            .map_err(|e| BybitHttpError::NetworkError(format!("Failed to create HTTP client: {e}")))
     }
 
-    fn rate_limit_keys(endpoint: &str) -> Vec<String> {
-        let normalized = endpoint.split('?').next().unwrap_or(endpoint);
-        let route = format!("bybit:{normalized}");
+    fn refresh_http_session(&self, generation: u64) -> Result<(), BybitHttpError> {
+        let current = self.session_generation.load(Ordering::Acquire);
+        if current == generation {
+            return Ok(());
+        }
 
-        vec![BYBIT_GLOBAL_RATE_KEY.to_string(), route]
+        let client = Self::build_http_client(self.timeout_secs, self.proxy_url.clone())?;
+        self.client.store(Arc::new(client));
+        self.session_generation.store(generation, Ordering::Release);
+        Ok(())
+    }
+
+    fn request_rate_limit(
+        endpoint: &str,
+        payload: Option<&str>,
+    ) -> (Option<BybitProductType>, u32) {
+        let category = category_from_payload(payload);
+        let weight = if endpoint.ends_with("-batch") {
+            let order_count = payload
+                .and_then(|payload| serde_json::from_str::<serde_json::Value>(payload).ok())
+                .and_then(|value| value.get("request")?.as_array().map(Vec::len))
+                .unwrap_or(1);
+            category.map_or(1, |category| batch_weight(category, order_count))
+        } else {
+            1
+        };
+        (category, weight)
+    }
+
+    fn observe_rate_limit_headers(
+        &self,
+        endpoint: &str,
+        category: Option<BybitProductType>,
+        headers: &HashMap<String, String>,
+    ) {
+        let Some(limit) = headers
+            .get(BYBIT_RATE_LIMIT_HEADER)
+            .and_then(|value| value.parse::<u32>().ok())
+        else {
+            return;
+        };
+        let Some(remaining) = headers
+            .get(BYBIT_RATE_LIMIT_STATUS_HEADER)
+            .and_then(|value| value.parse::<u32>().ok())
+        else {
+            return;
+        };
+        let reset_timestamp_ms = headers
+            .get(BYBIT_RATE_LIMIT_RESET_HEADER)
+            .and_then(|value| value.parse::<i64>().ok());
+        self.rate_limiter
+            .observe_account(endpoint, category, limit, remaining, reset_timestamp_ms);
+    }
+
+    fn is_rate_limit_403(status: u16, body: &str) -> bool {
+        status == 403 && body.to_ascii_lowercase().contains("access too frequent")
     }
 
     fn sign_request(
@@ -459,25 +507,6 @@ impl BybitRawHttpClient {
             let params_str = params_str.clone();
 
             async move {
-                let mut headers = Self::default_headers();
-
-                if authenticate {
-                    let timestamp = get_atomic_clock_realtime().get_time_ms().to_string();
-
-                    let sign_payload = if method == Method::GET {
-                        params_str.as_deref()
-                    } else {
-                        body.as_ref().and_then(|b| std::str::from_utf8(b).ok())
-                    };
-
-                    let auth_headers = self.sign_request(&timestamp, sign_payload)?;
-                    headers.extend(auth_headers);
-                }
-
-                if method == Method::POST || method == Method::PUT {
-                    headers.insert("Content-Type".to_string(), "application/json".to_string());
-                }
-
                 let full_url = if let Some(ref query) = params_str {
                     if query.is_empty() {
                         url
@@ -488,23 +517,49 @@ impl BybitRawHttpClient {
                     url
                 };
 
-                let rate_limit_keys = Self::rate_limit_keys(&endpoint);
+                let sign_payload = if method == Method::GET {
+                    params_str.as_deref()
+                } else {
+                    body.as_ref()
+                        .and_then(|body| std::str::from_utf8(body).ok())
+                };
+                let (category, weight) = Self::request_rate_limit(&endpoint, sign_payload);
+
+                let generation = self.rate_limiter.http_session_generation();
+                self.refresh_http_session(generation)?;
+                self.rate_limiter
+                    .acquire_http(&endpoint, category, weight, authenticate)
+                    .await
+                    .map_err(BybitHttpError::ValidationError)?;
+                let generation = self.rate_limiter.http_session_generation();
+                self.refresh_http_session(generation)?;
+
+                let mut headers = Self::default_headers();
+
+                if authenticate {
+                    let timestamp = get_atomic_clock_realtime().get_time_ms().to_string();
+                    let auth_headers = self.sign_request(&timestamp, sign_payload)?;
+                    headers.extend(auth_headers);
+                }
+
+                if method == Method::POST || method == Method::PUT {
+                    headers.insert("Content-Type".to_string(), "application/json".to_string());
+                }
 
                 let response = self
                     .client
-                    .request(
-                        method,
-                        full_url,
-                        None,
-                        Some(headers),
-                        body,
-                        None,
-                        Some(rate_limit_keys),
-                    )
+                    .load()
+                    .request(method, full_url, None, Some(headers), body, None, None)
                     .await?;
+
+                self.observe_rate_limit_headers(&endpoint, category, &response.headers);
 
                 if response.status.as_u16() >= 400 {
                     let body = String::from_utf8_lossy(&response.body).to_string();
+                    if Self::is_rate_limit_403(response.status.as_u16(), &body) {
+                        let generation = self.rate_limiter.reset_http_sessions();
+                        self.refresh_http_session(generation)?;
+                    }
                     return Err(BybitHttpError::UnexpectedStatus {
                         status: response.status.as_u16(),
                         body,
@@ -542,14 +597,6 @@ impl BybitRawHttpClient {
             }
         };
 
-        let should_retry = |error: &BybitHttpError| -> bool {
-            match error {
-                BybitHttpError::NetworkError(_) => true,
-                BybitHttpError::UnexpectedStatus { status, .. } => *status == 429 || *status >= 500,
-                _ => false,
-            }
-        };
-
         let create_error = |error: RetryError| -> BybitHttpError {
             match error {
                 RetryError::Canceled => {
@@ -565,7 +612,7 @@ impl BybitRawHttpClient {
             .execute_with_retry_with_cancel(
                 endpoint.as_str(),
                 operation,
-                should_retry,
+                should_retry_http,
                 create_error,
                 &token,
             )
@@ -1665,39 +1712,25 @@ impl BybitHttpClient {
         recv_window_ms: u64,
         proxy_url: Option<String>,
     ) -> Result<Self, BybitHttpError> {
-        let environment = if demo {
-            BybitEnvironment::Demo
-        } else if testnet {
-            BybitEnvironment::Testnet
-        } else {
-            BybitEnvironment::Mainnet
-        };
-        let (key_var, secret_var) = credential_env_vars(environment);
-        let key = get_or_env_var_opt(api_key, key_var);
-        let secret = get_or_env_var_opt(api_secret, secret_var);
-
-        match (key, secret) {
-            (Some(k), Some(s)) => Self::with_credentials(
-                k,
-                s,
+        Ok(Self {
+            inner: Arc::new(BybitRawHttpClient::new_with_env(
+                api_key,
+                api_secret,
                 base_url,
+                demo,
+                testnet,
                 timeout_secs,
                 max_retries,
                 retry_delay_ms,
                 retry_delay_max_ms,
                 recv_window_ms,
                 proxy_url,
-            ),
-            _ => Self::new(
-                base_url,
-                timeout_secs,
-                max_retries,
-                retry_delay_ms,
-                retry_delay_max_ms,
-                recv_window_ms,
-                proxy_url,
-            ),
-        }
+            )?),
+            instruments_cache: Arc::new(AtomicMap::new()),
+            cache_initialized: Arc::new(AtomicBool::new(false)),
+            use_spot_position_reports: Arc::new(AtomicBool::new(false)),
+            clock: get_atomic_clock_realtime(),
+        })
     }
 
     #[must_use]
@@ -2385,7 +2418,7 @@ impl BybitHttpClient {
     async fn generate_spot_position_reports_from_wallet(
         &self,
         account_id: AccountId,
-        instrument_id: Option<InstrumentId>,
+        instrument_id: InstrumentId,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
         let params = BybitWalletBalanceParams {
             account_type: BybitAccountType::Unified,
@@ -2408,92 +2441,40 @@ impl BybitHttpClient {
 
         let mut reports = Vec::new();
 
-        if let Some(instrument_id) = instrument_id {
-            if let Some(instrument) = self
-                .instruments_cache
-                .get_cloned(&instrument_id.symbol.inner())
-            {
-                let base_currency = instrument
-                    .base_currency()
-                    .expect("SPOT instrument should have base currency");
-                let coin = base_currency.code;
-                let wallet_balance = wallet_by_coin.get(&coin).copied().unwrap_or(Decimal::ZERO);
+        if let Some(instrument) = self
+            .instruments_cache
+            .get_cloned(&instrument_id.symbol.inner())
+        {
+            let base_currency = instrument
+                .base_currency()
+                .expect("SPOT instrument should have base currency");
+            let coin = base_currency.code;
+            let wallet_balance = wallet_by_coin.get(&coin).copied().unwrap_or(Decimal::ZERO);
 
-                let side = if wallet_balance > Decimal::ZERO {
-                    PositionSideSpecified::Long
-                } else if wallet_balance < Decimal::ZERO {
-                    PositionSideSpecified::Short
-                } else {
-                    PositionSideSpecified::Flat
-                };
+            let side = if wallet_balance > Decimal::ZERO {
+                PositionSide::Long
+            } else if wallet_balance < Decimal::ZERO {
+                PositionSide::Short
+            } else {
+                PositionSide::Flat
+            };
 
-                let abs_balance = wallet_balance.abs();
-                let quantity = Quantity::from_decimal_dp(abs_balance, instrument.size_precision())?;
+            let abs_balance = wallet_balance.abs();
+            let quantity = Quantity::from_decimal_dp(abs_balance, instrument.size_precision())?;
 
-                let report = PositionStatusReport::new(
-                    account_id,
-                    instrument_id,
-                    side,
-                    quantity,
-                    ts_init,
-                    ts_init,
-                    None,
-                    None,
-                    None,
-                );
+            let report = PositionStatusReport::new(
+                account_id,
+                instrument_id,
+                side,
+                quantity,
+                ts_init,
+                ts_init,
+                None,
+                None,
+                None,
+            );
 
-                reports.push(report);
-            }
-        } else {
-            // Generate reports for all SPOT instruments with non-zero balance
-            let instruments_guard = self.instruments_cache.load();
-            for (symbol, instrument) in instruments_guard.iter() {
-                // Only consider SPOT instruments
-                if !symbol.as_str().ends_with("-SPOT") {
-                    continue;
-                }
-
-                let base_currency = match instrument.base_currency() {
-                    Some(currency) => currency,
-                    None => continue,
-                };
-
-                let coin = base_currency.code;
-                let wallet_balance = wallet_by_coin.get(&coin).copied().unwrap_or(Decimal::ZERO);
-
-                if wallet_balance.is_zero() {
-                    continue;
-                }
-
-                let side = if wallet_balance > Decimal::ZERO {
-                    PositionSideSpecified::Long
-                } else if wallet_balance < Decimal::ZERO {
-                    PositionSideSpecified::Short
-                } else {
-                    PositionSideSpecified::Flat
-                };
-
-                let abs_balance = wallet_balance.abs();
-                let quantity = Quantity::from_decimal_dp(abs_balance, instrument.size_precision())?;
-
-                if quantity.is_zero() {
-                    continue;
-                }
-
-                let report = PositionStatusReport::new(
-                    account_id,
-                    instrument.id(),
-                    side,
-                    quantity,
-                    ts_init,
-                    ts_init,
-                    None,
-                    None,
-                    None,
-                );
-
-                reports.push(report);
-            }
+            reports.push(report);
         }
 
         Ok(reports)
@@ -2537,7 +2518,6 @@ impl BybitHttpClient {
         let bybit_side = match order_side {
             OrderSide::Buy => BybitOrderSide::Buy,
             OrderSide::Sell => BybitOrderSide::Sell,
-            _ => anyhow::bail!("Invalid order side: {order_side:?}"),
         };
 
         // For stop/conditional orders, Bybit uses Market/Limit with trigger parameters
@@ -2783,8 +2763,12 @@ impl BybitHttpClient {
             return Ok(Vec::new());
         }
 
-        if instrument_ids.len() > 20 {
-            anyhow::bail!("Batch cancel limit is 20 orders per request");
+        let call_limit = batch_call_limit(product_type);
+        if instrument_ids.len() > call_limit {
+            anyhow::bail!(
+                "Batch cancel limit is {call_limit} orders for {}",
+                product_type.as_str()
+            );
         }
 
         let mut cancel_entries = Vec::new();
@@ -2811,23 +2795,26 @@ impl BybitHttpClient {
             cancel_entries.push(cancel_entry.build().build_anyhow()?);
         }
 
-        let mut params = BybitBatchCancelOrderParamsBuilder::default();
-        params.category(product_type);
-        params.request(cancel_entries);
+        let chunk_limit = batch_endpoint_limit(product_type).min(batch_send_limit(product_type));
+        for chunk in cancel_entries.chunks(chunk_limit) {
+            let mut params = BybitBatchCancelOrderParamsBuilder::default();
+            params.category(product_type);
+            params.request(chunk.to_vec());
 
-        let params = params.build().build_anyhow()?;
-        let body = serde_json::to_vec(&params)?;
+            let params = params.build().build_anyhow()?;
+            let body = serde_json::to_vec(&params)?;
 
-        let _response: BybitPlaceOrderResponse = self
-            .inner
-            .send_request::<_, ()>(
-                Method::POST,
-                "/v5/order/cancel-batch",
-                None,
-                Some(body),
-                true,
-            )
-            .await?;
+            let _response: BybitPlaceOrderResponse = self
+                .inner
+                .send_request::<_, ()>(
+                    Method::POST,
+                    "/v5/order/cancel-batch",
+                    None,
+                    Some(body),
+                    true,
+                )
+                .await?;
+        }
 
         // Query each order to get full details after cancellation
         let mut reports = Vec::new();
@@ -4685,7 +4672,8 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function returns an error if the request fails.
+    /// This function returns an error if the request fails, or if SPOT position reports are enabled
+    /// and no instrument is specified, because wallet balances carry no pair identity.
     ///
     /// # References
     ///
@@ -4699,6 +4687,11 @@ impl BybitHttpClient {
         // Handle SPOT position reports via wallet balances if flag is enabled
         if product_type == BybitProductType::Spot {
             if self.use_spot_position_reports.load(Ordering::Relaxed) {
+                let Some(instrument_id) = instrument_id else {
+                    anyhow::bail!(
+                        "SPOT wallet balances carry no pair identity and cannot be attributed for a bulk position report request"
+                    );
+                };
                 return self
                     .generate_spot_position_reports_from_wallet(account_id, instrument_id)
                     .await;
@@ -4977,6 +4970,21 @@ mod tests {
         assert!(query1.contains("category=spot"));
         assert!(query1.contains("symbol=BTCUSDT"));
         assert!(query1.contains("limit=50"));
+    }
+
+    #[rstest]
+    #[case(403, "Access too frequent", true)]
+    #[case(403, "Forbidden", false)]
+    #[case(429, "Access too frequent", false)]
+    fn test_rate_limit_403_detection(
+        #[case] status: u16,
+        #[case] body: &str,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(
+            BybitRawHttpClient::is_rate_limit_403(status, body),
+            expected
+        );
     }
 
     #[rstest]

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Read version from tools.toml (single source of truth)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CAPNP_VERSION="$(bash "$SCRIPT_DIR/tool-version.sh" capnp)"
 CURL_RETRIES="${CURL_RETRIES:-5}"

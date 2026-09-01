@@ -55,7 +55,7 @@ use std::{path::Path, time::Duration};
 #[cfg(feature = "mimalloc")]
 use mimalloc::MiMalloc;
 use nautilus_common::live::runtime::shutdown_runtime;
-use nautilus_system::python::controller::PyController;
+use nautilus_system::{config::StreamingConfig, python::controller::PyController};
 use pyo3::{prelude::*, pyfunction};
 
 #[cfg(feature = "mimalloc")]
@@ -145,6 +145,9 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     let n = "persistence";
     let submodule = pyo3::wrap_pymodule!(nautilus_persistence::python::persistence);
     m.add_wrapped(submodule)?;
+    m.getattr(n)?
+        .cast::<PyModule>()?
+        .add_class::<StreamingConfig>()?;
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
 
     let n = "portfolio";

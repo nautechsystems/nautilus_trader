@@ -15,13 +15,7 @@
 
 //! Integration tests for dYdX data client.
 
-use std::{
-    collections::HashMap,
-    net::SocketAddr,
-    path::PathBuf,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::{collections::HashMap, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use axum::{
     Router,
@@ -56,6 +50,7 @@ use nautilus_model::{
     instruments::Instrument,
 };
 use nautilus_network::{http::HttpClient, retry::RetryConfig, websocket::TransportBackend};
+use parking_lot::Mutex;
 use rstest::rstest;
 use serde_json::{Value, json};
 
@@ -97,8 +92,7 @@ static DATA_CLIENT_CREATION_LOCK: Mutex<()> = Mutex::new(());
 
 async fn wait_for_server(addr: SocketAddr, path: &str) {
     let health_url = format!("http://{addr}{path}");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();
@@ -259,7 +253,7 @@ async fn create_dydx_data_client(
         ..Default::default()
     };
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    let creation_lock = DATA_CLIENT_CREATION_LOCK.lock().unwrap();
+    let creation_lock = DATA_CLIENT_CREATION_LOCK.lock();
     replace_data_event_sender(sender);
 
     let client = DydxDataClient::new(*DYDX_CLIENT_ID, config, http_client, ws_client).unwrap();

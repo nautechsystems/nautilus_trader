@@ -185,7 +185,7 @@ pub struct PortfolioGreeksParams {
     pub instrument_id: Option<InstrumentId>,
     /// Strategy ID to filter positions by
     pub strategy_id: Option<StrategyId>,
-    /// Position side to filter by (default: `NoPositionSide`)
+    /// Position side to filter by (default: `None`)
     pub side: Option<PositionSide>,
     /// Flat interest rate (default: 0.0425)
     #[builder(default = 0.0425)]
@@ -931,7 +931,6 @@ impl GreeksCalculator {
     /// # Errors
     ///
     /// Returns an error if any underlying greeks calculation fails.
-    ///
     #[expect(clippy::too_many_arguments)]
     pub fn portfolio_greeks(
         &self,
@@ -971,15 +970,13 @@ impl GreeksCalculator {
         let cache_greeks = cache_greeks.unwrap_or(false);
         let publish_greeks = publish_greeks.unwrap_or(false);
         let percent_greeks = percent_greeks.unwrap_or(false);
-        let side = side.unwrap_or(PositionSide::NoPositionSide);
-
         let cache = self.cache.borrow();
         let open_positions = cache.positions_open(
             venue.as_ref(),
             instrument_id.as_ref(),
             strategy_id.as_ref(),
             None, // account_id
-            Some(side),
+            side,
         );
         let open_positions: Vec<Position> =
             open_positions.iter().map(PositionRef::cloned).collect();
@@ -1750,58 +1747,39 @@ mod tests {
 
     fn option_with_expiration(instrument_id: &str, expiration_ns: UnixNanos) -> OptionContract {
         let activation_ns = UnixNanos::from(utc_timestamp(2021, 9, 17, 0, 0, 0));
-        OptionContract::new(
-            InstrumentId::from(instrument_id),
-            Symbol::from("AAPL211217C00150000"),
-            AssetClass::Equity,
-            Some(Ustr::from("GMNI")),
-            Ustr::from("AAPL"),
-            OptionKind::Call,
-            Price::from("149.0"),
-            Currency::from("USD"),
-            activation_ns,
-            expiration_ns,
-            2,
-            Price::from("0.01"),
-            Quantity::from(100),
-            Quantity::from(1),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        )
+        OptionContract::builder()
+            .instrument_id(InstrumentId::from(instrument_id))
+            .raw_symbol(Symbol::from("AAPL211217C00150000"))
+            .asset_class(AssetClass::Equity)
+            .exchange(Ustr::from("GMNI"))
+            .underlying(Ustr::from("AAPL"))
+            .option_kind(OptionKind::Call)
+            .strike_price(Price::from("149.0"))
+            .currency(Currency::from("USD"))
+            .activation_ns(activation_ns)
+            .expiration_ns(expiration_ns)
+            .price_precision(2)
+            .price_increment(Price::from("0.01"))
+            .multiplier(Quantity::from(100))
+            .lot_size(Quantity::from(1))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap()
     }
 
     fn equity_aapl_opra() -> Equity {
-        Equity::new(
-            InstrumentId::from("AAPL.OPRA"),
-            Symbol::from("AAPL"),
-            Some(Ustr::from("US0378331005")),
-            Currency::from("USD"),
-            2,
-            Price::from("0.01"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        )
+        Equity::builder()
+            .instrument_id(InstrumentId::from("AAPL.OPRA"))
+            .raw_symbol(Symbol::from("AAPL"))
+            .isin(Ustr::from("US0378331005"))
+            .currency(Currency::from("USD"))
+            .price_precision(2)
+            .price_increment(Price::from("0.01"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap()
     }
 
     #[rstest]
@@ -1824,32 +1802,23 @@ mod tests {
         underlying: &str,
         expiration_ns: UnixNanos,
     ) -> FuturesContract {
-        FuturesContract::new(
-            InstrumentId::from(instrument_id),
-            Symbol::from(underlying),
-            AssetClass::Index,
-            Some(Ustr::from("XCME")),
-            Ustr::from(underlying),
-            UnixNanos::default(),
-            expiration_ns,
-            Currency::from("USD"),
-            2,
-            Price::from("0.25"),
-            Quantity::from(1),
-            Quantity::from(1),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        )
+        FuturesContract::builder()
+            .instrument_id(InstrumentId::from(instrument_id))
+            .raw_symbol(Symbol::from(underlying))
+            .asset_class(AssetClass::Index)
+            .exchange(Ustr::from("XCME"))
+            .underlying(Ustr::from(underlying))
+            .activation_ns(UnixNanos::default())
+            .expiration_ns(expiration_ns)
+            .currency(Currency::from("USD"))
+            .price_precision(2)
+            .price_increment(Price::from("0.25"))
+            .multiplier(Quantity::from(1))
+            .lot_size(Quantity::from(1))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap()
     }
 
     fn future_option_with_expiration(
@@ -1860,34 +1829,25 @@ mod tests {
         strike: &str,
         expiration_ns: UnixNanos,
     ) -> OptionContract {
-        OptionContract::new(
-            InstrumentId::from(instrument_id),
-            Symbol::from(raw_symbol),
-            AssetClass::Index,
-            Some(Ustr::from("XCME")),
-            Ustr::from(underlying),
-            option_kind,
-            Price::from(strike),
-            Currency::from("USD"),
-            UnixNanos::default(),
-            expiration_ns,
-            2,
-            Price::from("0.01"),
-            Quantity::from(1),
-            Quantity::from(1),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        )
+        OptionContract::builder()
+            .instrument_id(InstrumentId::from(instrument_id))
+            .raw_symbol(Symbol::from(raw_symbol))
+            .asset_class(AssetClass::Index)
+            .exchange(Ustr::from("XCME"))
+            .underlying(Ustr::from(underlying))
+            .option_kind(option_kind)
+            .strike_price(Price::from(strike))
+            .currency(Currency::from("USD"))
+            .activation_ns(UnixNanos::default())
+            .expiration_ns(expiration_ns)
+            .price_precision(2)
+            .price_increment(Price::from("0.01"))
+            .multiplier(Quantity::from(1))
+            .lot_size(Quantity::from(1))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap()
     }
 
     fn setup_cache_with_option_and_quotes(

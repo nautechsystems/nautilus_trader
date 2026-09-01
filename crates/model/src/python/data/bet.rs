@@ -25,7 +25,6 @@ use rust_decimal::Decimal;
 use crate::{
     data::bet::{
         Bet, BetPosition, calc_bets_pnl_checked, inverse_probability_to_bet, probability_to_bet,
-        specified_order_side,
     },
     enums::{BetSide, OrderSide},
 };
@@ -272,12 +271,7 @@ pub fn py_probability_to_bet(
     volume: Decimal,
     side: OrderSide,
 ) -> PyResult<Bet> {
-    probability_to_bet(
-        probability,
-        volume,
-        specified_order_side(side).map_err(to_pyvalue_err)?,
-    )
-    .map_err(to_pyvalue_err)
+    probability_to_bet(probability, volume, side).map_err(to_pyvalue_err)
 }
 
 /// Converts a probability and volume into a Bet using the inverse probability.
@@ -295,10 +289,5 @@ pub fn py_inverse_probability_to_bet(
     volume: Decimal,
     side: OrderSide,
 ) -> PyResult<Bet> {
-    inverse_probability_to_bet(
-        probability,
-        volume,
-        specified_order_side(side).map_err(to_pyvalue_err)?,
-    )
-    .map_err(to_pyvalue_err)
+    inverse_probability_to_bet(probability, volume, side).map_err(to_pyvalue_err)
 }

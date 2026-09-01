@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Integration adapter for the Hyperliquid exchange.
+"""
 
 from nautilus_trader._fixup import fixup_module_names
 from nautilus_trader._libnautilus.hyperliquid import *  # noqa: F403 (undefined-local-with-import-star)
@@ -26,8 +29,7 @@ __all__ = [
     "HyperliquidDataClientConfig",
     "HyperliquidDataClientFactory",
     "HyperliquidEnvironment",
-    "HyperliquidExecClientConfig",
-    "HyperliquidExecFactoryConfig",
+    "HyperliquidExecutionClientConfig",
     "HyperliquidExecutionClientFactory",
     "HyperliquidOpenInterest",
     "HyperliquidProductType",

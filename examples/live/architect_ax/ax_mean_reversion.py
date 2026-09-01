@@ -31,10 +31,10 @@ from nautilus_trader.adapters.architect_ax import AX
 from nautilus_trader.adapters.architect_ax import AxDataClientConfig
 from nautilus_trader.adapters.architect_ax import AxDataClientFactory
 from nautilus_trader.adapters.architect_ax import AxEnvironment
-from nautilus_trader.adapters.architect_ax import AxExecClientConfig
+from nautilus_trader.adapters.architect_ax import AxExecutionClientConfig
 from nautilus_trader.adapters.architect_ax import AxExecutionClientFactory
 from nautilus_trader.common import Environment
-from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecutionEngineConfig
 from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.live import LiveNode
 from nautilus_trader.model import AccountId
@@ -58,14 +58,17 @@ RSI_SELL_THRESHOLD = 0.70
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     node = (
         LiveNode.builder("AX-MEAN-REVERSION-001", TRADER_ID, Environment.LIVE)
         .with_exec_engine_config(
-            LiveExecEngineConfig(
+            LiveExecutionEngineConfig(
                 reconciliation_instrument_ids=[str(INSTRUMENT_ID)],
             ),
         )
-        .with_reconciliation(True)
+        .with_reconciliation(reconciliation=True)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
         .with_timeout_connection(20)
         .with_timeout_reconciliation(10)
@@ -80,8 +83,7 @@ def main() -> None:
         .add_exec_client(
             None,
             AxExecutionClientFactory(),
-            AxExecClientConfig(
-                trader_id=TRADER_ID,
+            AxExecutionClientConfig(
                 account_id=ACCOUNT_ID,
                 environment=AxEnvironment.SANDBOX,
             ),

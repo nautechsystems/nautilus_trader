@@ -15,11 +15,15 @@
 
 //! WebSocket message handler for the Polymarket CLOB API.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
 };
 
+use ahash::AHashMap;
 use nautilus_network::{
     RECONNECTED,
     websocket::{AuthTracker, SubscriptionState, WebSocketClient},
@@ -27,9 +31,10 @@ use nautilus_network::{
 use serde_json::value::RawValue;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender}; // tokio-import-ok
 use tokio_tungstenite::tungstenite::Message;
+use ustr::Ustr;
 
 use super::{
-    client::WsChannel,
+    client::{POLYMARKET_HEARTBEAT_PAYLOAD, POLYMARKET_HEARTBEAT_SECS, WsChannel},
     messages::{
         MarketInitialSubscribeRequest, MarketSubscribeRequest, MarketUnsubscribeRequest,
         MarketWsMessage, PolymarketWsAuth, PolymarketWsMessage, UserSubscribeRequest,
@@ -71,6 +76,9 @@ pub(super) struct FeedHandler {
     user_subscribed: bool,
     // True once the current market-channel session has sent its initial subscribe payload.
     market_subscription_initialized: bool,
+    market_heartbeat_next: Option<(tokio::time::Instant, u64)>,
+    // Assets awaiting first authoritative data, keyed by the connection that wrote the subscribe.
+    market_subscription_epochs: AHashMap<String, u64>,
     // Overflow buffer for batched frames, drained before reading the next raw message
     message_buffer: Vec<PolymarketWsMessage>,
     // Whether to include `custom_feature_enabled: true` in the initial subscribe
@@ -108,6 +116,8 @@ impl FeedHandler {
             auth_tracker,
             user_subscribed,
             market_subscription_initialized: false,
+            market_heartbeat_next: None,
+            market_subscription_epochs: AHashMap::new(),
             message_buffer: Vec::new(),
             subscribe_new_markets,
         }
@@ -129,7 +139,10 @@ impl FeedHandler {
             return;
         };
 
+        let connection_epoch = connection_epoch.unwrap_or_else(|| client.connection_epoch());
+
         for id in asset_ids {
+            self.market_subscription_epochs.remove(id);
             self.subscriptions.mark_subscribe(id);
         }
 
@@ -151,30 +164,33 @@ impl FeedHandler {
 
         match payload {
             Ok(payload) => {
-                let result = match connection_epoch {
-                    Some(connection_epoch) => {
-                        client
-                            .send_text_on_connection(payload, None, connection_epoch)
-                            .await
-                    }
-                    None => client.send_text(payload, None).await,
-                };
+                let result = client
+                    .send_text_on_connection(payload, None, connection_epoch)
+                    .await;
 
                 if let Err(e) = result {
                     for id in asset_ids {
+                        self.market_subscription_epochs.remove(id);
                         self.subscriptions.mark_failure(id);
                     }
                     log::error!("Failed to send market subscribe: {e}");
                 } else {
-                    self.market_subscription_initialized = true;
-                    // Polymarket has no server ACK, treat successful send as confirmation
                     for id in asset_ids {
-                        self.subscriptions.confirm_subscribe(id);
+                        if self.market_subscription_pending(id) {
+                            self.market_subscription_epochs
+                                .insert(id.clone(), connection_epoch);
+                        }
+                    }
+
+                    if !self.market_subscription_initialized {
+                        self.market_subscription_initialized = true;
+                        self.schedule_market_heartbeat(connection_epoch);
                     }
                 }
             }
             Err(e) => {
                 for id in asset_ids {
+                    self.market_subscription_epochs.remove(id);
                     self.subscriptions.mark_failure(id);
                 }
                 log::error!("Failed to serialize market subscribe request: {e}");
@@ -219,8 +235,6 @@ impl FeedHandler {
                 secret: cred.api_secret(),
                 passphrase: cred.passphrase().to_string(),
             },
-            markets: vec![],
-            assets_ids: vec![],
             msg_type: "user",
         };
 
@@ -248,7 +262,7 @@ impl FeedHandler {
     async fn resubscribe_all(&mut self, connection_epoch: u64) {
         match self.channel {
             WsChannel::Market => {
-                let ids = self.subscriptions.all_topics();
+                let ids = self.subscriptions.reset_after_reconnect();
                 if ids.is_empty() && !self.discovery_subscribed.load(Ordering::Relaxed) {
                     return;
                 }
@@ -336,7 +350,20 @@ impl FeedHandler {
         }
 
         loop {
+            let market_heartbeat_next = self.market_heartbeat_next;
+
             tokio::select! {
+                connection_epoch = async move {
+                    if let Some((deadline, connection_epoch)) = market_heartbeat_next {
+                        tokio::time::sleep_until(deadline).await;
+                        connection_epoch
+                    } else {
+                        std::future::pending::<u64>().await
+                    }
+                } => {
+                    self.send_market_heartbeat(connection_epoch).await;
+                    self.schedule_market_heartbeat(connection_epoch);
+                }
                 Some(cmd) = self.cmd_rx.recv() => {
                     match cmd {
                         HandlerCommand::SetClient(client) => {
@@ -360,6 +387,7 @@ impl FeedHandler {
                         }
                         HandlerCommand::UnsubscribeMarket(ids) => {
                             for id in &ids {
+                                self.market_subscription_epochs.remove(id);
                                 self.subscriptions.mark_unsubscribe(id);
                             }
                             self.send_unsubscribe_market(&ids).await;
@@ -378,6 +406,7 @@ impl FeedHandler {
                         Message::Text(text) => {
                             if text == RECONNECTED {
                                 self.market_subscription_initialized = false;
+                                self.market_heartbeat_next = None;
                                 self.resubscribe_all(connection_epoch).await;
                                 return Some(PolymarketWsMessage::Reconnected);
                             }
@@ -385,9 +414,12 @@ impl FeedHandler {
                             if msgs.is_empty() {
                                 continue;
                             }
-                            // Receiving any user-channel data confirms the server accepted the
-                            // credentials; mark auth as successful on the first delivery.
-                            if self.channel == WsChannel::User {
+
+                            if self.channel == WsChannel::Market {
+                                self.confirm_market_subscriptions(connection_epoch, &msgs);
+                            } else {
+                                // Receiving any user-channel data confirms the server accepted the
+                                // credentials; mark auth as successful on the first delivery.
                                 self.auth_tracker.succeed();
                             }
                             // Buffer msgs[1..] so they are returned in order on subsequent
@@ -415,20 +447,83 @@ impl FeedHandler {
             }
         }
     }
+
+    fn schedule_market_heartbeat(&mut self, connection_epoch: u64) {
+        self.market_heartbeat_next = Some((
+            tokio::time::Instant::now() + Duration::from_secs(POLYMARKET_HEARTBEAT_SECS),
+            connection_epoch,
+        ));
+    }
+
+    async fn send_market_heartbeat(&self, connection_epoch: u64) {
+        let Some(ref client) = self.client else {
+            return;
+        };
+
+        if let Err(e) = client
+            .send_text_on_connection(
+                POLYMARKET_HEARTBEAT_PAYLOAD.to_string(),
+                None,
+                connection_epoch,
+            )
+            .await
+        {
+            log::debug!("Failed to send market heartbeat: {e}");
+        }
+    }
+
+    fn confirm_market_subscriptions(
+        &mut self,
+        connection_epoch: u64,
+        messages: &[PolymarketWsMessage],
+    ) {
+        for message in messages {
+            let asset_id = match message {
+                PolymarketWsMessage::Market(MarketWsMessage::Book(book)) => &book.asset_id,
+                PolymarketWsMessage::Market(MarketWsMessage::LastTradePrice(trade)) => {
+                    &trade.asset_id
+                }
+                _ => continue,
+            };
+
+            let was_sent_on_connection = self
+                .market_subscription_epochs
+                .get(asset_id.as_str())
+                .is_some_and(|epoch| *epoch == connection_epoch);
+
+            if was_sent_on_connection && self.market_subscription_pending(asset_id.as_str()) {
+                self.subscriptions.confirm_subscribe(asset_id.as_str());
+                self.market_subscription_epochs.remove(asset_id.as_str());
+            }
+        }
+    }
+
+    fn market_subscription_pending(&self, asset_id: &str) -> bool {
+        let channel_level = Ustr::from("");
+        let asset_id = Ustr::from(asset_id);
+        self.subscriptions
+            .pending_subscribe()
+            .get(&asset_id)
+            .is_some_and(|symbols| symbols.contains(&channel_level))
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Mutex, time::Duration};
+    use std::time::Duration;
 
     use futures_util::StreamExt;
     use nautilus_common::testing::wait_until_async;
     use nautilus_network::websocket::{TransportBackend, WebSocketConfig, channel_message_handler};
+    use parking_lot::Mutex;
     use rstest::{fixture, rstest};
     use serde_json::{Value, json};
 
     use super::*;
     use crate::common::enums::PolymarketOrderSide;
+
+    const MARKET_ASSET_ID: &str =
+        "71321045679252212594626385532706912750332728571942532289631379312455583992563";
 
     #[fixture]
     fn market_handler() -> FeedHandler {
@@ -478,10 +573,7 @@ mod tests {
 
             while let Some(message) = socket.next().await {
                 match message.expect("read websocket message") {
-                    Message::Text(text) => received
-                        .lock()
-                        .expect("recording mutex poisoned")
-                        .push(text.to_string()),
+                    Message::Text(text) => received.lock().push(text.to_string()),
                     Message::Close(_) => break,
                     _ => {}
                 }
@@ -491,19 +583,56 @@ mod tests {
         (format!("ws://{addr}"), messages)
     }
 
-    #[rstest]
-    #[tokio::test]
-    async fn initial_market_replay_recovers_on_current_connection_epoch() {
-        let (url, messages) = recording_server().await;
+    async fn recording_client(url: String) -> WebSocketClient {
         let config = WebSocketConfig::builder()
             .url(url)
             .backend(TransportBackend::Tungstenite)
             .build()
             .expect("valid websocket config");
         let (message_handler, _message_rx) = channel_message_handler();
-        let client = WebSocketClient::connect(config, Some(message_handler), None, vec![], None)
+        WebSocketClient::builder()
+            .config(config)
+            .message_handler(message_handler)
+            .connect()
             .await
-            .expect("connect websocket client");
+            .expect("connect websocket client")
+    }
+
+    fn market_handler_with(
+        client: WebSocketClient,
+    ) -> (
+        FeedHandler,
+        UnboundedSender<(u64, Message)>,
+        SubscriptionState,
+    ) {
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let subscriptions = SubscriptionState::new(':');
+        let handler = FeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            WsChannel::Market,
+            Some(client),
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            None,
+            subscriptions.clone(),
+            Arc::new(AtomicBool::new(false)),
+            None,
+            AuthTracker::new(),
+            false,
+            false,
+        );
+
+        (handler, raw_tx, subscriptions)
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn initial_market_replay_recovers_on_current_connection_epoch() {
+        let (url, messages) = recording_server().await;
+        let client = recording_client(url).await;
 
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
         let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -542,14 +671,14 @@ mod tests {
         wait_until_async(
             || {
                 let messages = Arc::clone(&messages);
-                async move { messages.lock().expect("recording mutex poisoned").len() >= 2 }
+                async move { messages.lock().len() >= 2 }
             },
             Duration::from_secs(1),
         )
         .await;
 
         {
-            let messages = messages.lock().expect("recording mutex poisoned");
+            let messages = messages.lock();
             assert_eq!(messages.len(), 2);
             assert_eq!(
                 serde_json::from_str::<Value>(&messages[0]).expect("valid subscribe payload"),
@@ -562,6 +691,408 @@ mod tests {
             );
             assert_eq!(messages[1], "barrier");
         }
+
+        handler
+            .client
+            .as_ref()
+            .expect("websocket client")
+            .disconnect()
+            .await;
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn market_text_heartbeat_follows_initial_subscription() {
+        let (url, messages) = recording_server().await;
+        let client = recording_client(url).await;
+        let connection_epoch = client.connection_epoch();
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut handler = FeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            WsChannel::Market,
+            Some(client),
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            None,
+            SubscriptionState::new(':'),
+            Arc::new(AtomicBool::new(false)),
+            None,
+            AuthTracker::new(),
+            false,
+            false,
+        );
+
+        handler
+            .send_subscribe_market(&[MARKET_ASSET_ID.to_string()], None)
+            .await;
+        wait_for_recorded_messages(&messages, 1).await;
+
+        let task = tokio::spawn(async move {
+            let message = handler.next().await;
+            (handler, message)
+        });
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_secs(POLYMARKET_HEARTBEAT_SECS)).await;
+        wait_for_recorded_messages(&messages, 2).await;
+
+        raw_tx
+            .send((connection_epoch, Message::Text(RECONNECTED.into())))
+            .expect("queue reconnect notification");
+        let (mut handler, message) = task.await.expect("join handler task");
+        assert!(matches!(message, Some(PolymarketWsMessage::Reconnected)));
+        wait_for_recorded_messages(&messages, 3).await;
+
+        let task = tokio::spawn(async move {
+            let message = handler.next().await;
+            (handler, message)
+        });
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_secs(POLYMARKET_HEARTBEAT_SECS)).await;
+        wait_for_recorded_messages(&messages, 4).await;
+
+        cmd_tx
+            .send(HandlerCommand::Disconnect)
+            .expect("queue disconnect");
+        let (_, message) = task.await.expect("join handler task");
+        assert!(message.is_none());
+
+        let messages = messages.lock().clone();
+        let expected_subscription = json!({
+            "assets_ids": [MARKET_ASSET_ID],
+            "type": "market",
+            "initial_dump": true,
+        });
+        assert_eq!(messages.len(), 4);
+        assert_eq!(
+            serde_json::from_str::<Value>(&messages[0]).expect("valid subscribe payload"),
+            expected_subscription,
+        );
+        assert_eq!(messages[1], POLYMARKET_HEARTBEAT_PAYLOAD);
+        assert_eq!(
+            serde_json::from_str::<Value>(&messages[2]).expect("valid replay payload"),
+            expected_subscription,
+        );
+        assert_eq!(messages[3], POLYMARKET_HEARTBEAT_PAYLOAD);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn market_heartbeat_stays_bound_to_subscribed_connection() {
+        let (url, messages) = recording_server().await;
+        let client = recording_client(url).await;
+        let connection_epoch = client.connection_epoch();
+        let connection_epoch_atomic = client.connection_epoch_atomic();
+        let (mut handler, raw_tx, _) = market_handler_with(client);
+
+        handler
+            .send_subscribe_market(&[MARKET_ASSET_ID.to_string()], None)
+            .await;
+        wait_for_recorded_messages(&messages, 1).await;
+
+        let replacement_epoch = connection_epoch + 1;
+        connection_epoch_atomic.store(replacement_epoch, Ordering::Release);
+        handler.send_market_heartbeat(connection_epoch).await;
+        raw_tx
+            .send((replacement_epoch, Message::Text(RECONNECTED.into())))
+            .expect("queue reconnect notification");
+
+        assert!(matches!(
+            handler.next().await,
+            Some(PolymarketWsMessage::Reconnected),
+        ));
+        handler
+            .client
+            .as_ref()
+            .expect("websocket client")
+            .send_text_on_connection("barrier".to_string(), None, replacement_epoch)
+            .await
+            .expect("send barrier on replacement connection");
+        wait_until_async(
+            || {
+                let messages = Arc::clone(&messages);
+                async move {
+                    messages
+                        .lock()
+                        .last()
+                        .is_some_and(|message| message == "barrier")
+                }
+            },
+            Duration::from_secs(1),
+        )
+        .await;
+
+        let messages = messages.lock().clone();
+        let expected_subscription = json!({
+            "assets_ids": [MARKET_ASSET_ID],
+            "type": "market",
+            "initial_dump": true,
+        });
+        assert_eq!(messages.len(), 3);
+        assert_eq!(
+            serde_json::from_str::<Value>(&messages[0]).expect("valid subscribe payload"),
+            expected_subscription,
+        );
+        assert_eq!(
+            serde_json::from_str::<Value>(&messages[1]).expect("valid replay payload"),
+            expected_subscription,
+        );
+        assert_eq!(messages[2], "barrier");
+
+        handler
+            .client
+            .as_ref()
+            .expect("websocket client")
+            .disconnect()
+            .await;
+    }
+
+    async fn wait_for_recorded_messages(messages: &Arc<Mutex<Vec<String>>>, expected: usize) {
+        wait_until_async(
+            || {
+                let messages = Arc::clone(messages);
+                async move { messages.lock().len() == expected }
+            },
+            Duration::from_secs(1),
+        )
+        .await;
+    }
+
+    #[rstest]
+    #[case(include_str!("../../test_data/ws_market_book_msg.json"))]
+    #[case(include_str!("../../test_data/ws_market_last_trade_msg.json"))]
+    #[tokio::test]
+    async fn market_subscription_confirms_from_first_book_or_trade(#[case] payload: &str) {
+        let (url, messages) = recording_server().await;
+        let client = recording_client(url).await;
+        let (mut handler, raw_tx, subscriptions) = market_handler_with(client);
+
+        handler
+            .send_subscribe_market(&[MARKET_ASSET_ID.to_string()], None)
+            .await;
+        wait_until_async(
+            || {
+                let messages = Arc::clone(&messages);
+                async move { !messages.lock().is_empty() }
+            },
+            Duration::from_secs(1),
+        )
+        .await;
+
+        assert_eq!(
+            subscriptions.pending_subscribe_topics(),
+            vec![MARKET_ASSET_ID]
+        );
+        assert_eq!(subscriptions.len(), 0);
+
+        raw_tx
+            .send((0, Message::Text(payload.into())))
+            .expect("queue market data");
+        assert!(matches!(
+            handler.next().await,
+            Some(PolymarketWsMessage::Market(_)),
+        ));
+
+        assert!(subscriptions.pending_subscribe_topics().is_empty());
+        assert_eq!(subscriptions.len(), 1);
+
+        handler
+            .client
+            .as_ref()
+            .expect("websocket client")
+            .disconnect()
+            .await;
+    }
+
+    #[rstest]
+    fn unsolicited_market_data_does_not_create_subscription(mut market_handler: FeedHandler) {
+        let messages =
+            market_handler.parse_messages(include_str!("../../test_data/ws_market_book_msg.json"));
+
+        market_handler.confirm_market_subscriptions(0, &messages);
+
+        assert!(market_handler.subscriptions.is_empty());
+    }
+
+    #[rstest]
+    fn market_batch_confirms_trade_but_not_price_change(mut market_handler: FeedHandler) {
+        let price_change_asset_id = "101";
+        let trade_asset_id = "202";
+        market_handler
+            .subscriptions
+            .mark_subscribe(price_change_asset_id);
+        market_handler.subscriptions.mark_subscribe(trade_asset_id);
+        market_handler
+            .market_subscription_epochs
+            .insert(price_change_asset_id.to_string(), 0);
+        market_handler
+            .market_subscription_epochs
+            .insert(trade_asset_id.to_string(), 0);
+        let messages = market_handler.parse_messages(include_str!(
+            "../../test_data/ws_market_mixed_known_unknown.json"
+        ));
+
+        market_handler.confirm_market_subscriptions(0, &messages);
+
+        assert_eq!(
+            market_handler.subscriptions.pending_subscribe_topics(),
+            vec![price_change_asset_id]
+        );
+        assert_eq!(market_handler.subscriptions.len(), 1);
+    }
+
+    #[rstest]
+    fn market_subscription_confirmation_requires_sent_current_epoch(
+        mut market_handler: FeedHandler,
+    ) {
+        market_handler.subscriptions.mark_subscribe(MARKET_ASSET_ID);
+        let messages =
+            market_handler.parse_messages(include_str!("../../test_data/ws_market_book_msg.json"));
+
+        market_handler.confirm_market_subscriptions(0, &messages);
+        assert_eq!(
+            market_handler.subscriptions.pending_subscribe_topics(),
+            vec![MARKET_ASSET_ID]
+        );
+        assert_eq!(market_handler.subscriptions.len(), 0);
+
+        market_handler
+            .market_subscription_epochs
+            .insert(MARKET_ASSET_ID.to_string(), 1);
+        market_handler.confirm_market_subscriptions(0, &messages);
+        assert_eq!(
+            market_handler.subscriptions.pending_subscribe_topics(),
+            vec![MARKET_ASSET_ID]
+        );
+        assert_eq!(market_handler.subscriptions.len(), 0);
+
+        market_handler.confirm_market_subscriptions(1, &messages);
+        assert!(
+            market_handler
+                .subscriptions
+                .pending_subscribe_topics()
+                .is_empty()
+        );
+        assert_eq!(market_handler.subscriptions.len(), 1);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn reconnect_replay_requires_current_connection_data() {
+        let cancelled_asset_id = "cancelled-asset";
+        let (url, _) = recording_server().await;
+        let client = recording_client(url).await;
+        let connection_epoch = client.connection_epoch();
+        let (mut handler, raw_tx, subscriptions) = market_handler_with(client);
+        subscriptions.mark_subscribe(MARKET_ASSET_ID);
+        subscriptions.confirm_subscribe(MARKET_ASSET_ID);
+        subscriptions.mark_subscribe(cancelled_asset_id);
+        subscriptions.confirm_subscribe(cancelled_asset_id);
+        subscriptions.mark_unsubscribe(cancelled_asset_id);
+
+        handler.resubscribe_all(connection_epoch).await;
+
+        assert_eq!(
+            subscriptions.pending_subscribe_topics(),
+            vec![MARKET_ASSET_ID]
+        );
+        assert!(subscriptions.pending_unsubscribe_topics().is_empty());
+        assert_eq!(subscriptions.len(), 0);
+
+        raw_tx
+            .send((
+                connection_epoch,
+                Message::Text(include_str!("../../test_data/ws_market_book_msg.json").into()),
+            ))
+            .expect("queue market data");
+        assert!(matches!(
+            handler.next().await,
+            Some(PolymarketWsMessage::Market(_)),
+        ));
+
+        assert!(subscriptions.pending_subscribe_topics().is_empty());
+        assert_eq!(subscriptions.len(), 1);
+
+        handler
+            .client
+            .as_ref()
+            .expect("websocket client")
+            .disconnect()
+            .await;
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn failed_market_subscribe_stays_pending_for_reconnect_replay() {
+        let (url, _) = recording_server().await;
+        let client = recording_client(url).await;
+        client.disconnect().await;
+        let (mut handler, raw_tx, subscriptions) = market_handler_with(client);
+        subscriptions.mark_subscribe(MARKET_ASSET_ID);
+        subscriptions.confirm_subscribe(MARKET_ASSET_ID);
+
+        assert!(subscriptions.pending_subscribe_topics().is_empty());
+        assert_eq!(subscriptions.len(), 1);
+
+        handler
+            .send_subscribe_market(&[MARKET_ASSET_ID.to_string()], None)
+            .await;
+
+        assert_eq!(
+            subscriptions.pending_subscribe_topics(),
+            vec![MARKET_ASSET_ID]
+        );
+        assert_eq!(subscriptions.len(), 0);
+
+        raw_tx
+            .send((
+                0,
+                Message::Text(include_str!("../../test_data/ws_market_book_msg.json").into()),
+            ))
+            .expect("queue stale market data");
+        assert!(matches!(
+            handler.next().await,
+            Some(PolymarketWsMessage::Market(_)),
+        ));
+        assert_eq!(
+            subscriptions.pending_subscribe_topics(),
+            vec![MARKET_ASSET_ID]
+        );
+        assert_eq!(subscriptions.len(), 0);
+
+        let (replay_url, messages) = recording_server().await;
+        let replay_client = recording_client(replay_url).await;
+        let connection_epoch = replay_client.connection_epoch();
+        handler.client = Some(replay_client);
+        handler.resubscribe_all(connection_epoch).await;
+        wait_until_async(
+            || {
+                let messages = Arc::clone(&messages);
+                async move { !messages.lock().is_empty() }
+            },
+            Duration::from_secs(1),
+        )
+        .await;
+
+        {
+            let messages = messages.lock();
+            assert_eq!(messages.len(), 1);
+            assert_eq!(
+                serde_json::from_str::<Value>(&messages[0]).expect("valid subscribe payload"),
+                json!({
+                    "assets_ids": [MARKET_ASSET_ID],
+                    "type": "market",
+                    "initial_dump": true,
+                }),
+            );
+        }
+        assert_eq!(
+            subscriptions.pending_subscribe_topics(),
+            vec![MARKET_ASSET_ID]
+        );
+        assert_eq!(subscriptions.len(), 0);
 
         handler
             .client

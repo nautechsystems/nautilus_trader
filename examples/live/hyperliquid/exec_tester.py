@@ -32,8 +32,7 @@ from decimal import Decimal
 from nautilus_trader.adapters.hyperliquid import HyperliquidDataClientConfig
 from nautilus_trader.adapters.hyperliquid import HyperliquidDataClientFactory
 from nautilus_trader.adapters.hyperliquid import HyperliquidEnvironment
-from nautilus_trader.adapters.hyperliquid import HyperliquidExecClientConfig
-from nautilus_trader.adapters.hyperliquid import HyperliquidExecFactoryConfig
+from nautilus_trader.adapters.hyperliquid import HyperliquidExecutionClientConfig
 from nautilus_trader.adapters.hyperliquid import HyperliquidExecutionClientFactory
 from nautilus_trader.common import Environment
 from nautilus_trader.config import LiveRiskEngineConfig
@@ -48,6 +47,10 @@ from nautilus_trader.model import TraderId
 from nautilus_trader.testkit import ExecTesterConfig
 
 
+# WARNING: With DRY_RUN = False, this tester submits orders to the configured
+# environment and may use real funds. Set DRY_RUN = True to connect without
+# submitting orders or sending shutdown cancel/close commands.
+DRY_RUN = False
 HYPERLIQUID = "HYPERLIQUID"
 TRADER_ID = TraderId.from_str("TESTER-001")
 ACCOUNT_ID = AccountId.from_str("HYPERLIQUID-001")
@@ -58,9 +61,12 @@ TOB_OFFSET_TICKS = 500
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     node = (
         LiveNode.builder("HYPERLIQUID-EXEC-TESTER-001", TRADER_ID, Environment.LIVE)
-        .with_reconciliation(True)
+        .with_reconciliation(reconciliation=True)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
         .add_data_client(
             None,
@@ -70,12 +76,9 @@ def main() -> None:
         .add_exec_client(
             None,
             HyperliquidExecutionClientFactory(),
-            HyperliquidExecFactoryConfig(
-                TRADER_ID,
-                ACCOUNT_ID,
-                HyperliquidExecClientConfig(
-                    environment=HyperliquidEnvironment.MAINNET,
-                ),
+            HyperliquidExecutionClientConfig(
+                account_id=ACCOUNT_ID,
+                environment=HyperliquidEnvironment.MAINNET,
             ),
         )
         .build()
@@ -100,7 +103,7 @@ def main() -> None:
             cancel_orders_on_stop=True,
             close_positions_on_stop=True,
             reduce_only_on_stop=False,
-            dry_run=False,  # Set True to log intended order flow without submitting orders
+            dry_run=DRY_RUN,
             log_data=False,
         ),
     )

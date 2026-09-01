@@ -23,8 +23,9 @@ use nautilus_common::{
 };
 use nautilus_databento::{
     common::DATABENTO,
+    data::DatabentoDataClientConfig,
     enums::{DatabentoStatisticType, DatabentoStatisticUpdateAction},
-    factories::{DatabentoDataClientFactory, DatabentoLiveClientConfig},
+    factories::DatabentoDataClientFactory,
     python,
     types::{DatabentoImbalance, DatabentoStatistics},
 };
@@ -124,7 +125,7 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
     let factory = Py::new(py, DatabentoDataClientFactory::new())
         .expect("factory should convert to Python object")
         .into_any();
-    let mut config_inner = DatabentoLiveClientConfig::new(
+    let mut config_inner = DatabentoDataClientConfig::new(
         "00000000000000000000000000000000",
         publishers_filepath.clone(),
         false,
@@ -145,7 +146,7 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("data config should extract");
     let databento_config = extracted_config
         .as_any()
-        .downcast_ref::<DatabentoLiveClientConfig>()
+        .downcast_ref::<DatabentoDataClientConfig>()
         .expect("data config should downcast");
     let cache = Rc::new(RefCell::new(Cache::default()));
     let clock = Rc::new(RefCell::new(TestClock::new()));
@@ -159,7 +160,7 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("extracted factory should create data client");
 
     assert_eq!(extracted_factory.name(), DATABENTO);
-    assert_eq!(extracted_factory.config_type(), "DatabentoLiveClientConfig");
+    assert_eq!(extracted_factory.config_type(), "DatabentoDataClientConfig");
     assert_eq!(databento_config.publishers_filepath, publishers_filepath);
     assert_eq!(
         databento_config.venue_dataset_map.get("EQUS"),
@@ -179,7 +180,7 @@ fn test_imbalance() -> DatabentoImbalance {
         Price::from("100.55"),
         Quantity::from("1000"),
         Quantity::from("500"),
-        OrderSide::Buy,
+        OrderSide::Buy.into(),
         b'Y' as std::ffi::c_char,
         1.into(),
         2.into(),

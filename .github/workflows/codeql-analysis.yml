@@ -22,7 +22,7 @@ jobs:
         language: ["python", "rust"]
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -31,7 +31,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 1
@@ -45,23 +45,27 @@ jobs:
       - name: Get Rust toolchain version
         if: matrix.language == 'rust'
         id: rust-toolchain
-        run: | # zizmor: ignore[github-env] Version comes from repository toolchain metadata
+        run: |
           TOOLCHAIN="$(bash scripts/rust-toolchain.sh)"
-          echo "TOOLCHAIN=$TOOLCHAIN" >> "$GITHUB_ENV"
+          printf 'toolchain=%s\n' "$TOOLCHAIN" >> "$GITHUB_OUTPUT"
 
       - name: Set up Rust toolchain
         if: matrix.language == 'rust'
         # https://github.com/actions-rust-lang/setup-rust-toolchain
         uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
         with:
-          toolchain: ${{ env.TOOLCHAIN }}
+          toolchain: ${{ steps.rust-toolchain.outputs.toolchain }}
           override: true
 
       - name: Initialize CodeQL
         # https://github.com/github/codeql-action
-        uses: github/codeql-action/init@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
+        uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
         with:
           languages: ${{ matrix.language }}
+          # Pin 2.26.3 because CodeQL 2.26.4 severely regresses Rust analysis time:
+          # https://github.com/github/codeql/issues/22463
+          tools: >-
+            https://github.com/github/codeql-action/releases/download/codeql-bundle-v2.26.3/codeql-bundle-linux64.tar.zst
           # If you wish to specify custom queries, you can do so here or in a config file.
           # By default, queries listed here will override any specified in a config file.
           # Prefix the list here with "+" to use these queries and those in the config file.
@@ -70,8 +74,8 @@ jobs:
       - name: Autobuild
         if: matrix.language == 'rust'
         # https://github.com/github/codeql-action
-        uses: github/codeql-action/autobuild@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
+        uses: github/codeql-action/autobuild@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
 
       - name: Perform CodeQL Analysis
         # https://github.com/github/codeql-action
-        uses: github/codeql-action/analyze@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
+        uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6

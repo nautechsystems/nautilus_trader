@@ -39,17 +39,18 @@ use nautilus_model::{
     instruments::SyntheticInstrument,
 };
 
-let synthetic = SyntheticInstrument::new(
-    Symbol::from("BTC-LTC"),
-    2,
-    vec![
+let synthetic = SyntheticInstrument::builder()
+    .symbol(Symbol::from("BTC-LTC"))
+    .price_precision(2)
+    .components(vec![
         InstrumentId::from("BTC.BINANCE"),
         InstrumentId::from("LTC.BINANCE"),
-    ],
-    "(BTC.BINANCE + LTC.BINANCE) / 2.0",
-    UnixNanos::default(),
-    UnixNanos::default(),
-);
+    ])
+    .formula("(BTC.BINANCE + LTC.BINANCE) / 2.0")
+    .ts_event(UnixNanos::default())
+    .ts_init(UnixNanos::default())
+    .build()
+    .unwrap();
 ```
 
 ```python tab="Python"

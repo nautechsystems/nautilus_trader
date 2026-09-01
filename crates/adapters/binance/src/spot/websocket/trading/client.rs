@@ -27,14 +27,15 @@ use std::{
     fmt::Debug,
     num::NonZeroU32,
     sync::{
-        Arc, LazyLock, Mutex,
+        Arc, LazyLock,
         atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
+    time::Duration,
 };
 
 use arc_swap::ArcSwap;
-use nautilus_common::live::get_runtime;
 use nautilus_core::string::secret::REDACTED;
+use nautilus_live::{SocketControl, task::TaskGroup};
 use nautilus_network::{
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
@@ -43,6 +44,7 @@ use nautilus_network::{
         channel_message_handler,
     },
 };
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -96,12 +98,14 @@ pub struct BinanceSpotWsTradingClient {
     cmd_tx:
         Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<BinanceSpotWsTradingCommand>>>,
     out_rx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<BinanceSpotWsTradingMessage>>>>,
-    task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
+    handler_tasks: Arc<TaskGroup>,
+    connect_lock: Arc<tokio::sync::Mutex<()>>,
     request_id_counter: Arc<AtomicU64>,
-    cancellation_token: CancellationToken,
+    cancellation_token: Arc<Mutex<CancellationToken>>,
     transport_backend: TransportBackend,
     proxy_url: Option<String>,
     recv_window_ms: Option<u64>,
+    socket_control: Option<SocketControl>,
 }
 
 impl Debug for BinanceSpotWsTradingClient {
@@ -140,12 +144,14 @@ impl BinanceSpotWsTradingClient {
             user_data_tracker: AuthTracker::new(),
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: Arc::new(Mutex::new(None)),
-            task_handle: None,
+            handler_tasks: Arc::new(TaskGroup::new()),
+            connect_lock: Arc::new(tokio::sync::Mutex::new(())),
             request_id_counter: Arc::new(AtomicU64::new(1)),
-            cancellation_token: CancellationToken::new(),
+            cancellation_token: Arc::new(Mutex::new(CancellationToken::new())),
             transport_backend,
             proxy_url: None,
             recv_window_ms: None,
+            socket_control: None,
         }
     }
 
@@ -153,6 +159,13 @@ impl BinanceSpotWsTradingClient {
     #[must_use]
     pub fn with_proxy(mut self, proxy_url: Option<String>) -> Self {
         self.proxy_url = proxy_url;
+        self
+    }
+
+    /// Configures socket state reporting and reconnect control.
+    #[must_use]
+    pub fn with_socket_control(mut self, control: SocketControl) -> Self {
+        self.socket_control = Some(control);
         self
     }
 
@@ -244,12 +257,26 @@ impl BinanceSpotWsTradingClient {
     /// # Errors
     ///
     /// Returns an error if connection fails.
-    // Mutex poisoning is not documented individually
-    #[expect(clippy::missing_panics_doc)]
     pub async fn connect(&mut self) -> BinanceWsApiResult<()> {
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _connect_guard = connect_lock.lock().await;
+
+        if !self.handler_tasks.is_open() || !self.handler_tasks.is_empty() {
+            self.disconnect_handler().await?;
+            self.handler_tasks.start_generation().map_err(|e| {
+                BinanceWsApiError::ClientError(format!(
+                    "failed to start WebSocket handler task generation: {e}"
+                ))
+            })?;
+        }
+        let handler_spawner = self.handler_tasks.spawner().map_err(|e| {
+            BinanceWsApiError::ClientError(format!(
+                "failed to acquire WebSocket handler task spawner: {e}"
+            ))
+        })?;
         self.signal.store(false, Ordering::Relaxed);
         self.user_data_tracker.invalidate();
-        self.cancellation_token = CancellationToken::new();
+        *self.cancellation_token.lock() = CancellationToken::new();
 
         let (raw_handler, raw_rx) = channel_message_handler();
         let ping_handler: PingHandler = Arc::new(move |_| {});
@@ -282,24 +309,26 @@ impl BinanceSpotWsTradingClient {
             binance_ws_order_quota(),
         )];
 
-        let client = WebSocketClient::connect(
-            config,
-            Some(raw_handler),
-            Some(ping_handler),
-            keyed_quotas,
-            Some(binance_ws_order_quota()), // Default quota for all operations
-        )
-        .await
-        .map_err(|e| BinanceWsApiError::ConnectionError(e.to_string()))?;
+        let client = WebSocketClient::builder()
+            .config(config)
+            .message_handler(raw_handler)
+            .ping_handler(ping_handler)
+            .keyed_quotas(keyed_quotas)
+            .default_quota(binance_ws_order_quota())
+            .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
+            .connect()
+            .await
+            .map_err(|e| BinanceWsApiError::ConnectionError(e.to_string()))?;
 
         client.set_auth_tracker(self.user_data_tracker.clone(), true);
         self.connection_mode.store(client.connection_mode_atomic());
+        let reconnect_handle = client.reconnect_handle();
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel();
 
         {
-            let mut rx_guard = self.out_rx.lock().expect("Mutex poisoned");
+            let mut rx_guard = self.out_rx.lock();
             *rx_guard = Some(out_rx);
         }
 
@@ -319,10 +348,13 @@ impl BinanceSpotWsTradingClient {
             .await
             .send(BinanceSpotWsTradingCommand::SetClient(client))
             .map_err(|e| BinanceWsApiError::HandlerUnavailable(e.to_string()))?;
+        if let Some(control) = &self.socket_control {
+            control.register(move || reconnect_handle.request_reconnect());
+        }
 
-        let cancellation_token = self.cancellation_token.clone();
+        let cancellation_token = self.cancellation_token.lock().clone();
 
-        let handle = get_runtime().spawn(async move {
+        let handler_task = async move {
             tokio::select! {
                 () = cancellation_token.cancelled() => {
                     log::debug!("Handler task cancelled");
@@ -331,15 +363,41 @@ impl BinanceSpotWsTradingClient {
                     log::debug!("Handler run completed");
                 }
             }
-        });
+        };
 
-        self.task_handle = Some(Arc::new(handle));
+        if let Err(e) = handler_spawner.spawn(handler_task) {
+            if let Some(control) = &self.socket_control {
+                control.deregister();
+            }
+            self.out_rx.lock().take();
+            return Err(BinanceWsApiError::HandlerUnavailable(format!(
+                "failed to register handler task: {e}"
+            )));
+        }
 
         Ok(())
     }
 
     /// Disconnects from the WebSocket API server.
-    pub async fn disconnect(&mut self) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the handler task fails or does not stop after abort.
+    pub async fn disconnect(&mut self) -> BinanceWsApiResult<()> {
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _connect_guard = connect_lock.lock().await;
+
+        self.disconnect_handler().await
+    }
+
+    pub(crate) fn begin_shutdown(&self) {
+        self.handler_tasks.begin_shutdown();
+        self.signal.store(true, Ordering::Relaxed);
+        self.cancellation_token.lock().cancel();
+    }
+
+    async fn disconnect_handler(&self) -> BinanceWsApiResult<()> {
+        self.handler_tasks.begin_shutdown();
         self.signal.store(true, Ordering::Relaxed);
 
         if let Err(e) = self
@@ -351,13 +409,20 @@ impl BinanceSpotWsTradingClient {
             log::debug!("Failed to send disconnect command: {e}");
         }
 
-        self.cancellation_token.cancel();
+        self.cancellation_token.lock().cancel();
 
-        if let Some(handle) = self.task_handle.take()
-            && let Ok(handle) = Arc::try_unwrap(handle)
-        {
-            let _result = handle.await;
+        let result = self
+            .handler_tasks
+            .finish_shutdown(Duration::from_secs(2), Duration::from_secs(2))
+            .await
+            .map_err(|e| {
+                BinanceWsApiError::ClientError(format!("handler task shutdown failed: {e}"))
+            });
+
+        if let Some(control) = &self.socket_control {
+            control.deregister();
         }
+        result
     }
 
     /// Places a new order via WebSocket API.
@@ -457,21 +522,17 @@ impl BinanceSpotWsTradingClient {
     /// Receives the next message from the handler.
     ///
     /// Returns `None` if the receiver is closed or not initialized.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal output receiver mutex is poisoned.
     pub async fn recv(&self) -> Option<BinanceSpotWsTradingMessage> {
         // Take the receiver out of the mutex to avoid holding it across await
         let rx_opt = {
-            let mut rx_guard = self.out_rx.lock().expect("Mutex poisoned");
+            let mut rx_guard = self.out_rx.lock();
             rx_guard.take()
         };
 
         if let Some(mut rx) = rx_opt {
             let result = rx.recv().await;
 
-            let mut rx_guard = self.out_rx.lock().expect("Mutex poisoned");
+            let mut rx_guard = self.out_rx.lock();
             *rx_guard = Some(rx);
             result
         } else {

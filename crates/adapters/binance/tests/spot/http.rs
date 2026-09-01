@@ -592,20 +592,20 @@ fn build_cancel_open_orders_response(orders: &[(i64, &str, &str, &str, i64, i64)
 
 #[derive(Clone, Default)]
 struct TestServerState {
-    request_count: Arc<std::sync::Mutex<usize>>,
+    request_count: Arc<parking_lot::Mutex<usize>>,
     rate_limit_after: usize,
 }
 
 impl TestServerState {
     fn with_rate_limit(limit: usize) -> Self {
         Self {
-            request_count: Arc::new(std::sync::Mutex::new(0)),
+            request_count: Arc::new(parking_lot::Mutex::new(0)),
             rate_limit_after: limit,
         }
     }
 
     fn increment_and_check(&self) -> bool {
-        let mut count = self.request_count.lock().unwrap();
+        let mut count = self.request_count.lock();
         *count += 1;
         self.rate_limit_after > 0 && *count > self.rate_limit_after
     }
@@ -617,8 +617,7 @@ fn has_auth_headers(headers: &HeaderMap) -> bool {
 
 async fn wait_for_server(addr: SocketAddr, path: &str) {
     let health_url = format!("http://{addr}{path}");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();

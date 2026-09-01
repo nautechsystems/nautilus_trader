@@ -21,7 +21,7 @@ jobs:
       has_changes: ${{ steps.check-workflow.outputs.has_changes }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -30,49 +30,17 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           token: ${{ secrets.NIGHTLY_TOKEN }}
           fetch-depth: 0 # Fetch all history for all tags and branches
 
-      - name: Fetch latest successful develop build
-        id: fetch-workflows
-        run: |
-          set -eo pipefail
-          url="https://api.github.com/repos/nautechsystems/nautilus_trader/actions/workflows/build.yml/runs"
-          url="${url}?branch=develop&event=push&status=success&per_page=1"
-          echo "Fetching workflows from: $url"
-          if ! curl -sS -L \
-               --retry 5 --retry-delay 2 --retry-all-errors \
-               --connect-timeout 5 --max-time 60 --fail-with-body \
-               -H "Accept: application/vnd.github+json" \
-               -H "Authorization: Bearer ${{ secrets.NIGHTLY_TOKEN }}" \
-               -H "X-GitHub-Api-Version: 2022-11-28" \
-               "$url" > workflow_runs.json; then
-              echo "Failed to fetch workflows, exiting"
-              exit 1
-          fi
-          echo "Fetched workflow runs:"
-          jq '.' workflow_runs.json
-
-      - name: Check develop branch workflow status
+      - name: Plan nightly merge
         id: check-workflow
-        run: |
-          set -eo pipefail
-
-          if ! git ls-remote --exit-code --heads origin nightly; then
-            echo "ERROR: nightly branch does not exist"
-            exit 1
-          fi
-
-          git fetch origin \
-            +refs/heads/nightly:refs/remotes/origin/nightly \
-            +refs/heads/develop:refs/remotes/origin/develop
-          bash scripts/ci/check-nightly-merge-status.bash workflow_runs.json
-
-      - name: Cleanup temporary files
-        run: rm -f workflow_runs.json
+        env:
+          NIGHTLY_TOKEN: ${{ secrets.NIGHTLY_TOKEN }}
+        run: bash scripts/ci/plan-nightly-merge.bash
 
   nightly-merge:
     needs: check-develop-status
@@ -80,7 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -89,7 +57,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: true
           token: ${{ secrets.NIGHTLY_TOKEN }}
@@ -101,38 +69,6 @@ jobs:
           git config --global user.email "bot@nautechsystems.io"
 
       - name: Merge last successful develop commit into nightly
-        id: merge
-        run: | # zizmor: ignore[template-injection] SHA comes from the checked GitHub API response
-          set -eo pipefail
-          develop_sha="${{ needs.check-develop-status.outputs.develop_sha }}"
-          echo "Merging develop commit $develop_sha into nightly"
-
-          if ! git ls-remote --exit-code --heads origin nightly; then
-            echo "ERROR: nightly branch does not exist"
-            exit 1
-          fi
-
-          git fetch origin nightly:nightly
-          git fetch origin develop
-          git checkout nightly
-
-          # Fast-forward merge from the successful develop commit
-          if git merge --ff-only "$develop_sha"; then
-            echo "Successfully merged $develop_sha into nightly"
-            git push origin nightly
-            echo "Changes pushed to nightly"
-          else
-            echo "ERROR: Fast-forward merge failed - nightly may have diverged from develop"
-            exit 1
-          fi
-
-      - name: Check merge result
-        run: |- # zizmor: ignore[template-injection] SHA comes from the checked GitHub API response
-          develop_sha="${{ needs.check-develop-status.outputs.develop_sha }}"
-          nightly_sha=$(git rev-parse HEAD)
-          if [[ "$nightly_sha" == "$develop_sha" ]]; then
-            echo "Nightly is now at develop commit $develop_sha"
-          else
-            echo "Warning: Nightly HEAD does not match expected develop commit"
-            exit 1
-          fi
+        env:
+          DEVELOP_SHA: ${{ needs.check-develop-status.outputs.develop_sha }}
+        run: bash scripts/ci/merge-nightly.bash "$DEVELOP_SHA"

@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test backtest engine exec algorithms behavior.
+"""
 
 import inspect
 
@@ -39,70 +42,106 @@ from nautilus_trader.model import TimeInForce
 from nautilus_trader.model import TraderId
 from nautilus_trader.trading import ExecutionAlgorithm
 from nautilus_trader.trading import ExecutionAlgorithmConfig
-from nautilus_trader.trading import ImportableExecAlgorithmConfig
+from nautilus_trader.trading import ImportableExecutionAlgorithmConfig
 
 
 DATA_PUBLISHING_REGISTRATION_ERROR = "ExecutionAlgorithm must be registered before publishing data"
 
 
-class RequiredConfigBacktestExecAlgorithmConfig(DataActorConfig):
+class RequiredConfigBacktestExecutionAlgorithmConfig(DataActorConfig):
+    """
+    Collect required config backtest execution algorithm config tests.
+    """
+
     def __init__(
         self,
         exec_algorithm_id: str,
-        actor_id=None,
+        actor_id: object = None,
         log_events: bool = True,
         log_commands: bool = True,
-    ):
+    ) -> None:
+        """
+        Initialize the helper.
+        """
         self.actor_id = actor_id
         self.exec_algorithm_id = exec_algorithm_id
         self.log_events = log_events
         self.log_commands = log_commands
 
 
-class RequiredConfigBacktestExecAlgorithm(DataActor):
+class RequiredConfigBacktestExecutionAlgorithm(DataActor):
+    """
+    Collect required config backtest execution algorithm tests.
+    """
+
     received_exec_algorithm_id: str | None = None
 
-    def __init__(self, config: RequiredConfigBacktestExecAlgorithmConfig):
+    def __init__(self, config: RequiredConfigBacktestExecutionAlgorithmConfig) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__()
         type(self).received_exec_algorithm_id = config.exec_algorithm_id
 
 
 class CustomExecutionAlgorithmConfig(ExecutionAlgorithmConfig):
+    """
+    Collect custom execution algorithm config tests.
+    """
+
     def __init__(
         self,
         horizon_secs: str,
         interval_secs: str,
-        **_kwargs,
-    ):
+        **_kwargs: object,
+    ) -> None:
+        """
+        Initialize the helper.
+        """
         self.horizon_secs = horizon_secs
         self.interval_secs = interval_secs
 
 
 class CustomExecutionAlgorithm(ExecutionAlgorithm):
+    """
+    Collect custom execution algorithm tests.
+    """
+
     received_config: CustomExecutionAlgorithmConfig | None = None
 
-    def __init__(self, config: CustomExecutionAlgorithmConfig):
+    def __init__(self, config: CustomExecutionAlgorithmConfig) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
         type(self).received_config = config
 
 
 class FirstDefaultExecutionAlgorithm(ExecutionAlgorithm):
-    pass
+    """
+    Collect first default execution algorithm tests.
+    """
 
 
 class SecondDefaultExecutionAlgorithm(ExecutionAlgorithm):
-    pass
+    """
+    Collect second default execution algorithm tests.
+    """
 
 
-def _custom_data():
+def _custom_data() -> object:
     class Payload:
+        """
+        Collect payload tests.
+        """
+
         ts_event = 3
         ts_init = 4
 
     return CustomData(DataType("Payload"), Payload())
 
 
-def _data_publishing_registration_cases():
+def _data_publishing_registration_cases() -> object:
     custom_data = _custom_data()
 
     return [
@@ -112,12 +151,26 @@ def _data_publishing_registration_cases():
 
 
 class NonForwardingExecutionAlgorithm(ExecutionAlgorithm):
-    def __init__(self, config):
+    """
+    Collect non forwarding execution algorithm tests.
+    """
+
+    def __init__(self, _config: object) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__()
 
 
 class InternalConfigExecutionAlgorithm(ExecutionAlgorithm):
-    def __init__(self):
+    """
+    Collect internal config execution algorithm tests.
+    """
+
+    def __init__(self) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(
             ExecutionAlgorithmConfig(
                 exec_algorithm_id=ExecAlgorithmId("INTERNAL-CONFIG"),
@@ -126,7 +179,14 @@ class InternalConfigExecutionAlgorithm(ExecutionAlgorithm):
 
 
 class InternalActorIdExecutionAlgorithm(ExecutionAlgorithm):
-    def __init__(self):
+    """
+    Collect internal actor id execution algorithm tests.
+    """
+
+    def __init__(self) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(
             DataActorConfig(
                 actor_id=ActorId("INTERNAL-ACTOR-ID"),
@@ -237,14 +297,23 @@ class InternalActorIdExecutionAlgorithm(ExecutionAlgorithm):
         ("fault", ["self"]),
     ],
 )
-def test_execution_algorithm_authoring_surface_parameters(method_name, parameter_names):
+def test_execution_algorithm_authoring_surface_parameters(
+    method_name: str,
+    parameter_names: object,
+) -> None:
+    """
+    Test execution algorithm authoring surface parameters.
+    """
     method = getattr(ExecutionAlgorithm, method_name)
 
     assert list(inspect.signature(method).parameters) == parameter_names
 
 
 @pytest.mark.parametrize("method_name", ["subscribe_queue_state", "subscribe_socket_state"])
-def test_execution_algorithm_state_subscription_priority_defaults_to_none(method_name):
+def test_execution_algorithm_state_subscription_priority_defaults_to_none(method_name: str) -> None:
+    """
+    Test execution algorithm state subscription priority defaults to none.
+    """
     signature = inspect.signature(getattr(ExecutionAlgorithm, method_name))
 
     assert signature.parameters["priority"].default is None
@@ -267,11 +336,17 @@ def test_execution_algorithm_state_subscription_priority_defaults_to_none(method
         "register",
     ],
 )
-def test_execution_algorithm_keeps_routed_order_surface(attribute):
+def test_execution_algorithm_keeps_routed_order_surface(attribute: object) -> None:
+    """
+    Test execution algorithm keeps routed order surface.
+    """
     assert not hasattr(ExecutionAlgorithm, attribute)
 
 
-def test_execution_algorithm_pre_registration_surface():
+def test_execution_algorithm_pre_registration_surface() -> None:
+    """
+    Test execution algorithm pre registration surface.
+    """
     exec_algorithm = ExecutionAlgorithm(
         ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("PY-PRE-REGISTRATION")),
     )
@@ -306,7 +381,13 @@ def test_execution_algorithm_pre_registration_surface():
         ("unsubscribe_socket_state", ()),
     ],
 )
-def test_execution_algorithm_subscriptions_require_registration(method_name, args):
+def test_execution_algorithm_subscriptions_require_registration(
+    method_name: str,
+    args: tuple[object, ...],
+) -> None:
+    """
+    Test execution algorithm subscriptions require registration.
+    """
     exec_algorithm = ExecutionAlgorithm(
         ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("PY-PRE-REGISTRATION")),
     )
@@ -323,7 +404,13 @@ def test_execution_algorithm_subscriptions_require_registration(method_name, arg
     ("method_name", "args"),
     _data_publishing_registration_cases(),
 )
-def test_execution_algorithm_data_publishing_requires_registration(method_name, args):
+def test_execution_algorithm_data_publishing_requires_registration(
+    method_name: str,
+    args: tuple[object, ...],
+) -> None:
+    """
+    Test execution algorithm data publishing requires registration.
+    """
     exec_algorithm = ExecutionAlgorithm(
         ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("PY-PRE-REGISTRATION")),
     )
@@ -334,9 +421,20 @@ def test_execution_algorithm_data_publishing_requires_registration(method_name, 
     assert str(exc_info.value) == DATA_PUBLISHING_REGISTRATION_ERROR
 
 
-def test_execution_algorithm_registration_precedes_publish_signal_conversion():
+def test_execution_algorithm_registration_precedes_publish_signal_conversion() -> None:
+    """
+    Test execution algorithm registration precedes publish signal conversion.
+    """
+
     class InvalidSignalValue:
-        def __str__(self):
+        """
+        Collect invalid signal value tests.
+        """
+
+        def __str__(self) -> str:
+            """
+            Str.
+            """
             raise ValueError("invalid signal value")
 
     exec_algorithm = ExecutionAlgorithm(
@@ -349,7 +447,10 @@ def test_execution_algorithm_registration_precedes_publish_signal_conversion():
     assert str(exc_info.value) == DATA_PUBLISHING_REGISTRATION_ERROR
 
 
-def test_execution_algorithm_data_publishing_succeeds_when_registered():
+def test_execution_algorithm_data_publishing_succeeds_when_registered() -> None:
+    """
+    Test execution algorithm data publishing succeeds when registered.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     exec_algorithm = ExecutionAlgorithm(
         ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("PY-PUBLISH")),
@@ -368,7 +469,12 @@ def test_execution_algorithm_data_publishing_succeeds_when_registered():
     "method_name",
     ["start", "stop", "resume", "reset", "dispose", "degrade", "fault"],
 )
-def test_execution_algorithm_lifecycle_methods_reject_pre_initialized_state(method_name):
+def test_execution_algorithm_lifecycle_methods_reject_pre_initialized_state(
+    method_name: str,
+) -> None:
+    """
+    Test execution algorithm lifecycle methods reject pre initialized state.
+    """
     exec_algorithm = ExecutionAlgorithm(
         ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("PY-LIFECYCLE")),
     )
@@ -377,7 +483,10 @@ def test_execution_algorithm_lifecycle_methods_reject_pre_initialized_state(meth
         getattr(exec_algorithm, method_name)()
 
 
-def test_execution_algorithm_config_defaults():
+def test_execution_algorithm_config_defaults() -> None:
+    """
+    Test execution algorithm config defaults.
+    """
     config = ExecutionAlgorithmConfig()
 
     assert config.exec_algorithm_id is None
@@ -385,7 +494,10 @@ def test_execution_algorithm_config_defaults():
     assert config.log_commands is True
 
 
-def test_execution_algorithm_config_supports_custom_fields():
+def test_execution_algorithm_config_supports_custom_fields() -> None:
+    """
+    Test execution algorithm config supports custom fields.
+    """
     config = CustomExecutionAlgorithmConfig(
         horizon_secs="73.5",
         interval_secs="2.25",
@@ -401,7 +513,10 @@ def test_execution_algorithm_config_supports_custom_fields():
     assert config.log_commands is True
 
 
-def test_execution_algorithm_to_importable_config_round_trips_custom_config():
+def test_execution_algorithm_to_importable_config_round_trips_custom_config() -> None:
+    """
+    Test execution algorithm to importable config round trips custom config.
+    """
     CustomExecutionAlgorithm.received_config = None
     config = CustomExecutionAlgorithmConfig(
         horizon_secs="91.5",
@@ -441,7 +556,10 @@ def test_execution_algorithm_to_importable_config_round_trips_custom_config():
     engine.dispose()
 
 
-def test_execution_algorithm_to_importable_config_round_trips_without_config():
+def test_execution_algorithm_to_importable_config_round_trips_without_config() -> None:
+    """
+    Test execution algorithm to importable config round trips without config.
+    """
     exec_algorithm = FirstDefaultExecutionAlgorithm()
 
     importable = exec_algorithm.to_importable_config()
@@ -463,7 +581,10 @@ def test_execution_algorithm_to_importable_config_round_trips_without_config():
     engine.dispose()
 
 
-def test_execution_algorithm_config_with_explicit_values():
+def test_execution_algorithm_config_with_explicit_values() -> None:
+    """
+    Test execution algorithm config with explicit values.
+    """
     config = ExecutionAlgorithmConfig(
         exec_algorithm_id=ExecAlgorithmId("TWAP-001"),
         log_events=False,
@@ -475,7 +596,10 @@ def test_execution_algorithm_config_with_explicit_values():
     assert config.log_commands is False
 
 
-def test_execution_algorithm_derives_default_id_from_runtime_class():
+def test_execution_algorithm_derives_default_id_from_runtime_class() -> None:
+    """
+    Test execution algorithm derives default id from runtime class.
+    """
     base = ExecutionAlgorithm()
     first = FirstDefaultExecutionAlgorithm()
     second = SecondDefaultExecutionAlgorithm(
@@ -487,7 +611,10 @@ def test_execution_algorithm_derives_default_id_from_runtime_class():
     assert second.exec_algorithm_id == ExecAlgorithmId("SecondDefaultExecutionAlgorithm")
 
 
-def test_execution_algorithm_preserves_explicit_id_without_forwarding_config():
+def test_execution_algorithm_preserves_explicit_id_without_forwarding_config() -> None:
+    """
+    Test execution algorithm preserves explicit id without forwarding config.
+    """
     exec_algorithm_id = ExecAlgorithmId("NON-FORWARDING")
     exec_algorithm = NonForwardingExecutionAlgorithm(
         ExecutionAlgorithmConfig(exec_algorithm_id=exec_algorithm_id),
@@ -496,26 +623,38 @@ def test_execution_algorithm_preserves_explicit_id_without_forwarding_config():
     assert exec_algorithm.exec_algorithm_id == exec_algorithm_id
 
 
-def test_execution_algorithm_preserves_explicit_id_created_inside_subclass():
+def test_execution_algorithm_preserves_explicit_id_created_inside_subclass() -> None:
+    """
+    Test execution algorithm preserves explicit id created inside subclass.
+    """
     exec_algorithm = InternalConfigExecutionAlgorithm()
 
     assert exec_algorithm.exec_algorithm_id == ExecAlgorithmId("INTERNAL-CONFIG")
 
 
-def test_execution_algorithm_uses_actor_id_created_inside_subclass():
+def test_execution_algorithm_uses_actor_id_created_inside_subclass() -> None:
+    """
+    Test execution algorithm uses actor id created inside subclass.
+    """
     exec_algorithm = InternalActorIdExecutionAlgorithm()
 
     assert exec_algorithm.exec_algorithm_id == ExecAlgorithmId("INTERNAL-ACTOR-ID")
 
 
-def test_execution_algorithm_rejects_non_ascii_derived_id():
+def test_execution_algorithm_rejects_non_ascii_derived_id() -> None:
+    """
+    Test execution algorithm rejects non ascii derived id.
+    """
     non_ascii_algorithm = type("Strategy\u00e9", (ExecutionAlgorithm,), {})
 
     with pytest.raises(ValueError, match="non-ASCII char"):
         non_ascii_algorithm()
 
 
-def test_add_exec_algorithms_registers_distinct_class_derived_ids():
+def test_add_exec_algorithms_registers_distinct_class_derived_ids() -> None:
+    """
+    Test add exec algorithms registers distinct class derived ids.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     first = FirstDefaultExecutionAlgorithm()
     second = SecondDefaultExecutionAlgorithm()
@@ -529,7 +668,10 @@ def test_add_exec_algorithms_registers_distinct_class_derived_ids():
     engine.dispose()
 
 
-def test_execution_algorithm_deny_order_updates_cache_once():
+def test_execution_algorithm_deny_order_updates_cache_once() -> None:
+    """
+    Test execution algorithm deny order updates cache once.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     exec_algorithm = ExecutionAlgorithm(
         ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("PY-DENY")),
@@ -550,7 +692,10 @@ def test_execution_algorithm_deny_order_updates_cache_once():
     engine.dispose()
 
 
-def test_add_native_exec_algorithm_rejects_unknown_type():
+def test_add_native_exec_algorithm_rejects_unknown_type() -> None:
+    """
+    Test add native exec algorithm rejects unknown type.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     config = ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("TWAP-UNKNOWN-TYPE"))
 
@@ -560,7 +705,10 @@ def test_add_native_exec_algorithm_rejects_unknown_type():
     engine.dispose()
 
 
-def test_add_native_exec_algorithm_requires_exec_algorithm_id():
+def test_add_native_exec_algorithm_requires_exec_algorithm_id() -> None:
+    """
+    Test add native exec algorithm requires exec algorithm id.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
 
     with pytest.raises(ValueError, match="TwapAlgorithm config requires `exec_algorithm_id`"):
@@ -569,7 +717,10 @@ def test_add_native_exec_algorithm_requires_exec_algorithm_id():
     engine.dispose()
 
 
-def test_add_native_exec_algorithm_rejects_duplicate_registration():
+def test_add_native_exec_algorithm_rejects_duplicate_registration() -> None:
+    """
+    Test add native exec algorithm rejects duplicate registration.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     config = ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("TWAP-DUPLICATE"))
     engine.add_native_exec_algorithm("TwapAlgorithm", config)
@@ -580,30 +731,39 @@ def test_add_native_exec_algorithm_rejects_duplicate_registration():
     engine.dispose()
 
 
-def test_add_exec_algorithm_from_config_registers_importable_algorithm():
-    RequiredConfigBacktestExecAlgorithm.received_exec_algorithm_id = None
+def test_add_exec_algorithm_from_config_registers_importable_algorithm() -> None:
+    """
+    Test add exec algorithm from config registers importable algorithm.
+    """
+    RequiredConfigBacktestExecutionAlgorithm.received_exec_algorithm_id = None
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
-    config = ImportableExecAlgorithmConfig(
+    config = ImportableExecutionAlgorithmConfig(
         exec_algorithm_path=(
             "tests.unit.backtest.test_backtest_engine_exec_algorithms:"
-            "RequiredConfigBacktestExecAlgorithm"
+            "RequiredConfigBacktestExecutionAlgorithm"
         ),
         config_path=(
             "tests.unit.backtest.test_backtest_engine_exec_algorithms:"
-            "RequiredConfigBacktestExecAlgorithmConfig"
+            "RequiredConfigBacktestExecutionAlgorithmConfig"
         ),
         config={"exec_algorithm_id": "BACKTEST-ALGO-CONFIG"},
     )
 
     engine.add_exec_algorithm_from_config(config)
 
-    assert RequiredConfigBacktestExecAlgorithm.received_exec_algorithm_id == "BACKTEST-ALGO-CONFIG"
+    assert (
+        RequiredConfigBacktestExecutionAlgorithm.received_exec_algorithm_id
+        == "BACKTEST-ALGO-CONFIG"
+    )
     engine.dispose()
 
 
-def test_add_exec_algorithm_from_config_rejects_invalid_path():
+def test_add_exec_algorithm_from_config_rejects_invalid_path() -> None:
+    """
+    Test add exec algorithm from config rejects invalid path.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
-    config = ImportableExecAlgorithmConfig(
+    config = ImportableExecutionAlgorithmConfig(
         exec_algorithm_path="invalid_path_no_colon",
         config_path="module:Config",
         config={},
@@ -615,9 +775,12 @@ def test_add_exec_algorithm_from_config_rejects_invalid_path():
     engine.dispose()
 
 
-def test_add_exec_algorithm_from_config_rejects_nonexistent_module():
+def test_add_exec_algorithm_from_config_rejects_nonexistent_module() -> None:
+    """
+    Test add exec algorithm from config rejects nonexistent module.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
-    config = ImportableExecAlgorithmConfig(
+    config = ImportableExecutionAlgorithmConfig(
         exec_algorithm_path="nonexistent.module:SomeClass",
         config_path="nonexistent.module:SomeConfig",
         config={},
@@ -629,11 +792,14 @@ def test_add_exec_algorithm_from_config_rejects_nonexistent_module():
     engine.dispose()
 
 
-def test_add_exec_algorithm_from_config_rejects_duplicate_registration():
+def test_add_exec_algorithm_from_config_rejects_duplicate_registration() -> None:
+    """
+    Test add exec algorithm from config rejects duplicate registration.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
-    config = ImportableExecAlgorithmConfig(
-        exec_algorithm_path="tests.unit.common.actor:TestExecAlgorithm",
-        config_path="tests.unit.common.actor:TestExecAlgorithmConfig",
+    config = ImportableExecutionAlgorithmConfig(
+        exec_algorithm_path="tests.unit.common.actor:TestExecutionAlgorithm",
+        config_path="tests.unit.common.actor:TestExecutionAlgorithmConfig",
         config={"actor_id": "BACKTEST-ALGO-DUPLICATE"},
     )
     engine.add_exec_algorithm_from_config(config)
@@ -644,17 +810,20 @@ def test_add_exec_algorithm_from_config_rejects_duplicate_registration():
     engine.dispose()
 
 
-def test_add_exec_algorithm_from_config_rejects_running_engine():
-    RequiredConfigBacktestExecAlgorithm.received_exec_algorithm_id = None
+def test_add_exec_algorithm_from_config_rejects_running_engine() -> None:
+    """
+    Test add exec algorithm from config rejects running engine.
+    """
+    RequiredConfigBacktestExecutionAlgorithm.received_exec_algorithm_id = None
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
-    config = ImportableExecAlgorithmConfig(
+    config = ImportableExecutionAlgorithmConfig(
         exec_algorithm_path=(
             "tests.unit.backtest.test_backtest_engine_exec_algorithms:"
-            "RequiredConfigBacktestExecAlgorithm"
+            "RequiredConfigBacktestExecutionAlgorithm"
         ),
         config_path=(
             "tests.unit.backtest.test_backtest_engine_exec_algorithms:"
-            "RequiredConfigBacktestExecAlgorithmConfig"
+            "RequiredConfigBacktestExecutionAlgorithmConfig"
         ),
         config={"exec_algorithm_id": "BACKTEST-ALGO-RUNNING"},
     )
@@ -664,21 +833,24 @@ def test_add_exec_algorithm_from_config_rejects_running_engine():
         with pytest.raises(RuntimeError, match="Cannot add execution algorithms to running trader"):
             engine.add_exec_algorithm_from_config(config)
         # Guard runs before constructing the user class, so the constructor never fires
-        assert RequiredConfigBacktestExecAlgorithm.received_exec_algorithm_id is None
+        assert RequiredConfigBacktestExecutionAlgorithm.received_exec_algorithm_id is None
     finally:
         engine.dispose()
 
 
-def test_add_exec_algorithm_from_config_registers_non_forwarding_subclass_under_config_id():
+def test_add_exec_algorithm_from_config_registers_non_forwarding_subclass_under_config_id() -> None:
+    """
+    Register a non-forwarding subclass under the config id.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
-    config = ImportableExecAlgorithmConfig(
+    config = ImportableExecutionAlgorithmConfig(
         exec_algorithm_path=(
             "tests.unit.backtest.test_backtest_engine_exec_algorithms:"
-            "RequiredConfigBacktestExecAlgorithm"
+            "RequiredConfigBacktestExecutionAlgorithm"
         ),
         config_path=(
             "tests.unit.backtest.test_backtest_engine_exec_algorithms:"
-            "RequiredConfigBacktestExecAlgorithmConfig"
+            "RequiredConfigBacktestExecutionAlgorithmConfig"
         ),
         config={"exec_algorithm_id": "BACKTEST-ALGO-NOFORWARD"},
     )
@@ -692,7 +864,10 @@ def test_add_exec_algorithm_from_config_registers_non_forwarding_subclass_under_
     engine.dispose()
 
 
-def test_add_exec_algorithm_registers_constructed_v2_instance():
+def test_add_exec_algorithm_registers_constructed_v2_instance() -> None:
+    """
+    Test add exec algorithm registers constructed v2 instance.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     exec_algorithm_id = ExecAlgorithmId("BACKTEST-V2-INSTANCE")
     exec_algorithm = ExecutionAlgorithm(
@@ -708,11 +883,16 @@ def test_add_exec_algorithm_registers_constructed_v2_instance():
     engine.dispose()
 
 
-def test_add_exec_algorithm_registers_non_forwarding_instance_under_config_id():
+def test_add_exec_algorithm_registers_non_forwarding_instance_under_config_id() -> None:
+    """
+    Test add exec algorithm registers non forwarding instance under config id.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     engine.add_exec_algorithm(
-        RequiredConfigBacktestExecAlgorithm(
-            RequiredConfigBacktestExecAlgorithmConfig(exec_algorithm_id="BACKTEST-ALGO-INSTANCE"),
+        RequiredConfigBacktestExecutionAlgorithm(
+            RequiredConfigBacktestExecutionAlgorithmConfig(
+                exec_algorithm_id="BACKTEST-ALGO-INSTANCE",
+            ),
         ),
     )
 
@@ -720,8 +900,8 @@ def test_add_exec_algorithm_registers_non_forwarding_instance_under_config_id():
     # instance registers under the configured id.
     with pytest.raises(RuntimeError, match="'BACKTEST-ALGO-INSTANCE' is already registered"):
         engine.add_exec_algorithm(
-            RequiredConfigBacktestExecAlgorithm(
-                RequiredConfigBacktestExecAlgorithmConfig(
+            RequiredConfigBacktestExecutionAlgorithm(
+                RequiredConfigBacktestExecutionAlgorithmConfig(
                     exec_algorithm_id="BACKTEST-ALGO-INSTANCE",
                 ),
             ),
@@ -730,16 +910,19 @@ def test_add_exec_algorithm_registers_non_forwarding_instance_under_config_id():
     engine.dispose()
 
 
-def test_add_exec_algorithm_from_config_rejects_disposed_engine():
+def test_add_exec_algorithm_from_config_rejects_disposed_engine() -> None:
+    """
+    Test add exec algorithm from config rejects disposed engine.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
-    config = ImportableExecAlgorithmConfig(
+    config = ImportableExecutionAlgorithmConfig(
         exec_algorithm_path=(
             "tests.unit.backtest.test_backtest_engine_exec_algorithms:"
-            "RequiredConfigBacktestExecAlgorithm"
+            "RequiredConfigBacktestExecutionAlgorithm"
         ),
         config_path=(
             "tests.unit.backtest.test_backtest_engine_exec_algorithms:"
-            "RequiredConfigBacktestExecAlgorithmConfig"
+            "RequiredConfigBacktestExecutionAlgorithmConfig"
         ),
         config={"exec_algorithm_id": "BACKTEST-ALGO-DISPOSED"},
     )
@@ -751,17 +934,20 @@ def test_add_exec_algorithm_from_config_rejects_disposed_engine():
         engine.add_exec_algorithm_from_config(config)
 
 
-def test_add_exec_algorithms_from_configs_registers_multiple_algorithms():
+def test_add_exec_algorithms_from_configs_registers_multiple_algorithms() -> None:
+    """
+    Test add exec algorithms from configs registers multiple algorithms.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     configs = [
-        ImportableExecAlgorithmConfig(
-            exec_algorithm_path="tests.unit.common.actor:TestExecAlgorithm",
-            config_path="tests.unit.common.actor:TestExecAlgorithmConfig",
+        ImportableExecutionAlgorithmConfig(
+            exec_algorithm_path="tests.unit.common.actor:TestExecutionAlgorithm",
+            config_path="tests.unit.common.actor:TestExecutionAlgorithmConfig",
             config={"actor_id": "BACKTEST-ALGO-A"},
         ),
-        ImportableExecAlgorithmConfig(
-            exec_algorithm_path="tests.unit.common.actor:TestExecAlgorithm",
-            config_path="tests.unit.common.actor:TestExecAlgorithmConfig",
+        ImportableExecutionAlgorithmConfig(
+            exec_algorithm_path="tests.unit.common.actor:TestExecutionAlgorithm",
+            config_path="tests.unit.common.actor:TestExecutionAlgorithmConfig",
             config={"actor_id": "BACKTEST-ALGO-B"},
         ),
     ]
@@ -775,7 +961,10 @@ def test_add_exec_algorithms_from_configs_registers_multiple_algorithms():
     engine.dispose()
 
 
-def create_market_order():
+def create_market_order() -> object:
+    """
+    Create market order.
+    """
     return MarketOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("DENY-001"),

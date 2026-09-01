@@ -33,6 +33,7 @@ use nautilus_network::{
 };
 use rust_decimal::Decimal;
 use serde::{Serialize, de::DeserializeOwned};
+use url::form_urlencoded;
 
 use crate::{
     common::{
@@ -85,6 +86,7 @@ const ENDPOINT_ORDER_BOOK_DETAILS: &str = "/api/v1/orderBookDetails";
 const ENDPOINT_ORDER_BOOK_ORDERS: &str = "/api/v1/orderBookOrders";
 const ENDPOINT_ORDER_BOOKS: &str = "/api/v1/orderBooks";
 const ENDPOINT_RECENT_TRADES: &str = "/api/v1/recentTrades";
+const ENDPOINT_REFERRAL_USE: &str = "/api/v1/referral/use";
 const ENDPOINT_SEND_TX: &str = "/api/v1/sendTx";
 const ENDPOINT_SEND_TX_BATCH: &str = "/api/v1/sendTxBatch";
 const ENDPOINT_TRADES: &str = "/api/v1/trades";
@@ -216,14 +218,12 @@ impl LighterRawHttpClient {
         Ok(Self {
             base_url,
             environment,
-            client: HttpClient::new(
-                Self::default_headers(),
-                vec![],
-                vec![],
-                Some(default_quota),
-                Some(timeout_secs),
-                proxy_url,
-            )?,
+            client: HttpClient::builder()
+                .headers(Self::default_headers())
+                .default_quota(default_quota)
+                .timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url)
+                .build()?,
             retry_manager: create_http_retry_manager(),
             tx_rate_limiter,
         })
@@ -418,6 +418,22 @@ impl LighterRawHttpClient {
             .await
     }
 
+    /// Calls `POST /api/v1/referral/use`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response is invalid.
+    pub async fn use_referral(
+        &self,
+        l1_address: &str,
+        referral_code: &str,
+        auth_token: &str,
+    ) -> LighterHttpResult<LighterResultCode> {
+        let fields = [("l1_address", l1_address), ("referral_code", referral_code)];
+        self.send_post_urlencoded(ENDPOINT_REFERRAL_USE, &fields, auth_token)
+            .await
+    }
+
     /// Calls `POST /api/v1/sendTx`.
     ///
     /// # Errors
@@ -532,6 +548,46 @@ impl LighterRawHttpClient {
                 Some(multipart_form_bytes(fields)),
                 None,
                 rate_keys,
+            )
+            .await?;
+
+        Self::parse_response(&response)
+    }
+
+    // Single-shot because referral use changes account-level state and the API
+    // does not document idempotency for a response lost after submission.
+    async fn send_post_urlencoded<T>(
+        &self,
+        endpoint: &str,
+        fields: &[(&str, &str)],
+        auth_token: &str,
+    ) -> LighterHttpResult<T>
+    where
+        T: DeserializeOwned + LighterResponseCheck,
+    {
+        let mut serializer = form_urlencoded::Serializer::new(String::new());
+        serializer.extend_pairs(fields.iter().copied());
+        let body = serializer.finish().into_bytes();
+
+        let headers = HashMap::from([
+            ("Accept".to_string(), "application/json".to_string()),
+            (
+                "Content-Type".to_string(),
+                "application/x-www-form-urlencoded".to_string(),
+            ),
+            (HEADER_AUTHORIZATION.to_string(), auth_token.to_string()),
+        ]);
+
+        let response = self
+            .client
+            .request(
+                Method::POST,
+                self.url(endpoint),
+                None,
+                Some(headers),
+                Some(body),
+                None,
+                Some(Self::rate_limit_keys(endpoint)),
             )
             .await?;
 
@@ -921,6 +977,22 @@ impl LighterHttpClient {
             account_index,
         };
         self.inner.get_maker_only_api_keys(&query).await
+    }
+
+    /// Applies `referral_code` to the L1 address.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response is invalid.
+    pub async fn use_referral(
+        &self,
+        l1_address: &str,
+        referral_code: &str,
+        auth_token: &str,
+    ) -> LighterHttpResult<LighterResultCode> {
+        self.inner
+            .use_referral(l1_address, referral_code, auth_token)
+            .await
     }
 
     /// Calls `POST /api/v1/sendTx`.

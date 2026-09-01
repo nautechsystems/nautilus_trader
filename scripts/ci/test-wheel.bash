@@ -33,7 +33,6 @@ uv pip install --only-binary :all: "pyarrow==25.0.0" # Test-only pending runtime
 
 unset PYTHONPATH
 unset VIRTUAL_ENV
-unset MYPYPATH
 TEST_DATA_ROOT_PATH="$(
   uv run --project "$pkg_dir" --no-sync python -c \
     'from pathlib import Path; print(Path.cwd().resolve().parent)'
@@ -61,10 +60,10 @@ uv run --project "$pkg_dir" --no-sync pytest \
 
 bash "$pkg_dir/../scripts/ci/test-python-doctests.bash" "$pkg_dir"
 
-mypy_dir="$neutral_dir/mypy"
-mkdir "$mypy_dir"
-cp -R "$pkg_dir/../examples" "$mypy_dir/examples"
+types_dir="$neutral_dir/types"
+mkdir "$types_dir"
+cp -R "$pkg_dir/../examples" "$types_dir/examples"
 
-bash "$pkg_dir/../scripts/ci/test-python-types.bash" \
+bash "$pkg_dir/../scripts/ci/check-python-types.bash" \
   "$pkg_dir" \
-  "$mypy_dir/examples"
+  "$types_dir/examples"

@@ -417,28 +417,28 @@ pub fn decode_equity_batch(
 
         let tick_scheme = optional_ustr_value(tick_scheme_values, i);
 
-        let equity = Equity::new_checked(
-            id,
-            raw_symbol,
-            isin,
-            currency,
-            price_prec,
-            price_increment,
-            lot_size,
-            max_quantity,
-            min_quantity,
-            max_price,
-            min_price,
-            Some(margin_init),
-            Some(margin_maint),
-            Some(maker_fee),
-            Some(taker_fee),
-            tick_scheme,
-            info,
-            ts_event,
-            ts_init,
-        )
-        .map_err(|e| super::instrument_validation_error::<Equity>(i, e))?;
+        let equity = Equity::builder()
+            .instrument_id(id)
+            .raw_symbol(raw_symbol)
+            .maybe_isin(isin)
+            .currency(currency)
+            .price_precision(price_prec)
+            .price_increment(price_increment)
+            .maybe_lot_size(lot_size)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_max_price(max_price)
+            .maybe_min_price(min_price)
+            .margin_init(margin_init)
+            .margin_maint(margin_maint)
+            .maker_fee(maker_fee)
+            .taker_fee(taker_fee)
+            .maybe_tick_scheme(tick_scheme)
+            .maybe_info(info)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .map_err(|e| super::instrument_validation_error::<Equity>(i, e))?;
 
         result.push(equity);
     }

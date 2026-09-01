@@ -22,7 +22,6 @@
 use pyo3::{Bound, prelude::*, types::PyTuple};
 
 /// Retrieves the Python interpreter version as a string.
-///
 #[must_use]
 pub fn get_python_version() -> String {
     Python::attach(|py| {

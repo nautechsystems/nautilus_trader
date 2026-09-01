@@ -71,7 +71,7 @@ pub const BINANCE_OPTIONS_TESTNET_HTTP_URL: &str = "https://testnet.binancefutur
 pub const BINANCE_SPOT_TESTNET_HTTP_URL: &str = "https://testnet.binance.vision";
 
 /// Binance USD-M Futures API base URL (testnet).
-pub const BINANCE_FUTURES_USD_TESTNET_HTTP_URL: &str = "https://demo-fapi.binance.com";
+pub const BINANCE_FUTURES_USD_TESTNET_HTTP_URL: &str = "https://testnet.binancefuture.com";
 
 /// Binance COIN-M Futures API base URL (testnet).
 pub const BINANCE_FUTURES_COIN_TESTNET_HTTP_URL: &str = "https://testnet.binancefuture.com";

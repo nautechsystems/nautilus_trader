@@ -117,7 +117,7 @@ large instrument load or a shutdown backlog can hold the loop for the length of 
 
 :::warning[One LiveNode per process]
 Run one concurrent `LiveNode` per process. The runner binds its channel senders and message bus into
-thread‑local storage, and other runtime state is process‑wide. `run_async()` also rejects a second
+thread-local storage, and other runtime state is process-wide. `run_async()` also rejects a second
 hosted node on the same event loop. Run additional nodes in separate processes.
 
 When an ASGI application lifespan constructs the node, run that application with one worker. Do not
@@ -127,7 +127,7 @@ handling with processes that do not construct a trading node.
 
 A node configured with a cache database backing is rejected on a host loop. Those backings wait for
 their worker task by blocking the calling thread, which stalls the host loop rather than slowing it.
-Use `run()` for a database‑backed node.
+Use `run()` for a database-backed node.
 
 ## Configuration
 
@@ -144,7 +144,7 @@ For how submit, modify, and cancel commands resolve, see
 [Command outcomes](execution.md#command-outcomes).
 
 At startup, reconciliation aligns cached order and position state with venue reports before trader
-components start. Continuous checks can then monitor in‑flight orders, open orders, positions, and
+components start. Continuous checks can then monitor in-flight orders, open orders, positions, and
 own order books while the node runs.
 
 When an adapter declares bounded historical reports, startup reconciliation applies their fill
@@ -226,7 +226,7 @@ snapshots with saturating deltas. Counters reset when `LiveNode::run` enters ste
 
 `LiveNode` converts runner queue samples into typed state transitions when
 `LiveNodeConfig.queue_monitor` is set. The monitor is disabled by default and publishes no
-queue‑state events while the field is unset.
+queue-state events while the field is unset.
 
 ### Configure thresholds
 
@@ -276,13 +276,13 @@ equal or inverted thresholds.
 ### State transitions
 
 The live runner evaluates the monitor on its 100 ms maintenance tick, after sampling current queue
-depths. Queue depth is a point‑in‑time value. Mean dispatch time uses the messages and dispatch busy
+depths. Queue depth is a point-in-time value. Mean dispatch time uses the messages and dispatch busy
 time accumulated since the previous metrics snapshot.
 
 | Condition    | Measure                                               | `Triggered`                                    | `Cleared`                                    |
 | ------------ | ----------------------------------------------------- | ---------------------------------------------- | -------------------------------------------- |
-| `Backlogged` | Point‑in‑time queue depth.                            | `queue_depth >= queue_depth_trigger`           | `queue_depth <= queue_depth_clear`           |
-| `Slow`       | Per‑channel mean dispatch time for the sample window. | `mean_dispatch_ns >= mean_dispatch_ns_trigger` | `mean_dispatch_ns <= mean_dispatch_ns_clear` |
+| `Backlogged` | Point-in-time queue depth.                            | `queue_depth >= queue_depth_trigger`           | `queue_depth <= queue_depth_clear`           |
+| `Slow`       | Per-channel mean dispatch time for the sample window. | `mean_dispatch_ns >= mean_dispatch_ns_trigger` | `mean_dispatch_ns <= mean_dispatch_ns_clear` |
 
 Each channel tracks `Backlogged` and `Slow` independently. A value between the clear and trigger
 thresholds retains the prior state, so it does not publish another event. If both conditions cross
@@ -299,8 +299,8 @@ crossing, a fresh event ID, and event timestamps.
 
 Actors subscribe with `subscribe_queue_state(...)` and receive events through
 `on_queue_state(...)`. The Python API exposes `SystemChannel`, `QueueCondition`, `QueueState`, and
-`QueueStateChanged` from `nautilus_trader.common`. Publication stays on the in‑process typed message
-bus, and the event has no wire representation for external message‑bus streaming. See
+`QueueStateChanged` from `nautilus_trader.common`. Publication stays on the in-process typed message
+bus, and the event has no wire representation for external message-bus streaming. See
 [Queue pressure state](actors.md#queue-pressure-state) for actor examples.
 
 ## Socket transport state
@@ -308,12 +308,12 @@ bus, and the event has no wire representation for external message‑bus streami
 ### Publication and routing
 
 Actors can observe transport availability for adapters that opt into socket state reporting.
-Binance Futures, Hyperliquid, Lighter, and Polymarket report live transport state. `LiveNode` publishes
-`SocketStateChanged` on `events.system.SocketStateChanged` with the trader ID, client ID, optional
-venue, stable endpoint label, state, fresh event ID, and event timestamps. It sets both timestamps
-from the kernel clock when it handles the transport's neutral state notification. Adapters send the
-notification through the runner's system‑event channel, separately from market data. The internal
-channel is not part of queue‑pressure monitoring.
+`LiveNode` publishes `SocketStateChanged` on `events.system.SocketStateChanged` with the trader ID,
+client ID, optional venue, stable endpoint label, state, fresh event ID, and event timestamps. The
+endpoint label identifies one logical adapter transport without exposing its URL. `LiveNode` sets
+both timestamps from the kernel clock when it handles the transport's neutral state notification.
+Adapters send the notification through the runner's system-event channel, separately from market
+data. The internal channel is not part of queue-pressure monitoring.
 
 ### State semantics
 
@@ -323,8 +323,8 @@ lost. Failed connection and retry attempts do not publish events, and deliberate
 publish a disconnect event. Reconnect exhaustion also adds no event after the transport loss was
 reported.
 
-Socket state is operational evidence, not an execution‑command outcome. A disconnect by itself does
-not reject, cancel, or resolve an in‑flight command; stream updates, queries, or reconciliation
+Socket state is operational evidence, not an execution-command outcome. A disconnect by itself does
+not reject, cancel, or resolve an in-flight command; stream updates, queries, or reconciliation
 provide that evidence under the [command outcome policy](execution.md#command-outcomes).
 
 ### Dead-peer detection
@@ -343,31 +343,15 @@ That second window suits a venue which pushes data on a known cadence. Where the
 keepalive with a text payload, its reply refreshes the idle timeout exactly like real data does, so
 the window means something only when it sits below the heartbeat interval.
 
-### Endpoint labels
-
-Endpoint labels identify one logical adapter transport without exposing its URL. The Binance
-Futures data client uses `binance-futures-market-streams` and
-`binance-futures-public-streams`. Polymarket uses `polymarket-market-streams` for the primary pooled
-CLOB market connection and numbered labels such as `polymarket-market-streams-1` for additional
-pool shards. It uses `polymarket-rtds-streams` for RTDS data and `polymarket-user-streams` for
-execution events. Each Polymarket WebSocket has its own state sink and reconnect handle under the
-same label.
-
-Hyperliquid uses `hyperliquid-data-streams` for the data client and `hyperliquid-user-streams` for
-the execution client. Both report transport state and register reconnect handles, so
-`reconnect_socket` can target those endpoints. Lighter uses `lighter-data-streams` for the data
-client and `lighter-user-streams` for the execution client. Lighter reports transport state and does
-not register a reconnect handle, so `reconnect_socket` does not target a Lighter endpoint.
-
 ### Adapter and actor integration
 
-Adapter integrations construct a `SocketStateSink` and pass it through `connect_with_state_sink` or
-`connect_stream_with_state_sink`. Publication requires the `LiveNode` runner; the standalone
-`AsyncRunner` does not publish these events.
+Adapter integrations construct a `SocketStateSink` and set it through the network client's
+`state_sink` builder option. Publication requires the `LiveNode` runner; the standalone `AsyncRunner`
+does not publish these events.
 
 Actors subscribe with `subscribe_socket_state(...)` and receive events through
 `on_socket_state(...)`. The Python API exposes `SocketState` and `SocketStateChanged` from
-`nautilus_trader.common`. Delivery stays on the typed in‑process bus; external message‑bus streaming
+`nautilus_trader.common`. Delivery stays on the typed in-process bus; external message-bus streaming
 and wire formats do not expose these events.
 
 ### Endpoint reconnect commands
@@ -377,11 +361,12 @@ state event. The runner routes the typed command through the kernel and the engi
 registered endpoint. The engine invokes only that transport's reconnect handle. It does not call
 the containing `DataClient` or `ExecutionClient` disconnect and connect lifecycle.
 
-The API is fire‑and‑observe. A successful return means the command passed local validation and was
+The API is fire-and-observe. A successful return means the command passed local validation and was
 queued. It does not acknowledge kernel acceptance or completed recovery. An accepted request emits
 `SocketStateChanged` with `SocketState.DISCONNECTED` for the selected endpoint as it enters reconnect
-mode. A later `SocketState.CONNECTED` event reports transport recovery. The normal WebSocket
-controller preserves its authentication, subscription replay, and adapter recovery behavior.
+mode. A later `SocketState.CONNECTED` event reports transport recovery. The transport's normal
+reconnect controller preserves its authentication, subscription replay, and adapter recovery
+behavior.
 
 The kernel logs unknown clients, unsupported clients, unknown or ambiguous endpoints, duplicate
 requests, disconnecting transports, and closed transports. These rejections emit no socket state
@@ -420,5 +405,5 @@ node/kernel level instead. Shutdown-on-error observes Rust `log` records, not Py
 - [Run live trading with Rust](../how_to/run_rust_live_trading.md) - Rust node setup and venue connection.
 - [Adapters](adapters.md) - Venue connectivity.
 - [Execution](execution.md) - Command outcomes and order execution.
-- [Message bus](message_bus.md) - Typed in‑process publish and subscribe behavior.
+- [Message bus](message_bus.md) - Typed in-process publish and subscribe behavior.
 - [Backtesting](backtesting/) - Testing strategies before deployment.

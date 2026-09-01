@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test data behavior.
+"""
 
 import json
 
@@ -24,14 +27,20 @@ from nautilus_trader.model import deserialize_custom_from_json
 from nautilus_trader.model import register_custom_data_class
 
 
-def test_data_type_construction():
+def test_data_type_construction() -> None:
+    """
+    Test data type construction.
+    """
     dt = DataType("QuoteTick", metadata={"instrument_id": "AUD/USD.SIM"})
 
     assert dt.type_name == "QuoteTick"
     assert dt.metadata == {"instrument_id": "AUD/USD.SIM"}
 
 
-def test_data_type_equality():
+def test_data_type_equality() -> None:
+    """
+    Test data type equality.
+    """
     dt1 = DataType("QuoteTick", metadata={"instrument_id": "AUD/USD.SIM"})
     dt2 = DataType("QuoteTick", metadata={"instrument_id": "AUD/USD.SIM"})
     dt3 = DataType("QuoteTick", metadata={"instrument_id": "GBP/USD.SIM"})
@@ -40,32 +49,52 @@ def test_data_type_equality():
     assert dt1 != dt3
 
 
-def test_data_type_hash():
+def test_data_type_hash() -> None:
+    """
+    Test data type hash.
+    """
     dt1 = DataType("QuoteTick", metadata={"instrument_id": "AUD/USD.SIM"})
     dt2 = DataType("QuoteTick", metadata={"instrument_id": "AUD/USD.SIM"})
 
     assert hash(dt1) == hash(dt2)
 
 
-def test_data_type_topic():
+def test_data_type_topic() -> None:
+    """
+    Test data type topic.
+    """
     dt = DataType("QuoteTick", metadata={"instrument_id": "AUD/USD.SIM"})
 
     assert "QuoteTick" in dt.topic
     assert "AUD/USD.SIM" in dt.topic
 
 
-def test_data_type_identifier():
+def test_data_type_identifier() -> None:
+    """
+    Test data type identifier.
+    """
     dt = DataType("QuoteTick", identifier="alpha")
 
     assert dt.identifier == "alpha"
 
 
-def test_custom_data_python_backend_and_json_bytes():
+def test_custom_data_python_backend_and_json_bytes() -> None:
+    """
+    Test custom data python backend and json bytes.
+    """
+
     class Dummy:
+        """
+        Collect dummy tests.
+        """
+
         ts_event = 1
         ts_init = 2
 
-        def __repr__(self):
+        def __repr__(self) -> str:
+            """
+            Repr.
+            """
             return "Dummy()"
 
     custom = CustomData(DataType("Example"), Dummy())
@@ -78,9 +107,20 @@ def test_custom_data_python_backend_and_json_bytes():
     assert b'"type":"Dummy"' in payload
 
 
-def test_custom_data_python_backend_equality_uses_identity():
+def test_custom_data_python_backend_equality_uses_identity() -> None:
+    """
+    Test custom data python backend equality uses identity.
+    """
+
     class Dummy:
-        def __init__(self, value):
+        """
+        Collect dummy tests.
+        """
+
+        def __init__(self, value: object) -> None:
+            """
+            Initialize the helper.
+            """
             self.value = value
             self.ts_event = 1
             self.ts_init = 2
@@ -92,36 +132,70 @@ def test_custom_data_python_backend_equality_uses_identity():
     assert CustomData(data_type, first) != CustomData(data_type, Dummy(7))
 
 
-def test_register_custom_data_class_accepts_surface_compatible_class():
+def test_register_custom_data_class_accepts_surface_compatible_class() -> None:
+    """
+    Test register custom data class accepts surface compatible class.
+    """
+
     class SurfaceCustomData:
+        """
+        Collect surface custom data tests.
+        """
+
         @classmethod
         def type_name_static(cls) -> str:
+            """
+            Type name static.
+            """
             return "SurfaceCustomData"
 
         @classmethod
-        def from_json(cls, data):
+        def from_json(cls, _data: object) -> object:
+            """
+            From json.
+            """
             return cls()
 
         @classmethod
-        def decode_record_batch_py(cls, metadata, batch):
+        def decode_record_batch_py(cls, _metadata: object, _batch: object) -> object:
+            """
+            Decode record batch py.
+            """
             return []
 
     assert register_custom_data_class(SurfaceCustomData) is None
 
 
-def test_deserialize_custom_from_json():
+def test_deserialize_custom_from_json() -> None:
+    """
+    Test deserialize custom from json.
+    """
+
     class SurfaceCustomDataJson:
-        def __init__(self, value=0, ts_event=0, ts_init=0):
+        """
+        Collect surface custom data json tests.
+        """
+
+        def __init__(self, value: object = 0, ts_event: object = 0, ts_init: object = 0) -> None:
+            """
+            Initialize the helper.
+            """
             self.value = value
             self.ts_event = ts_event
             self.ts_init = ts_init
 
         @classmethod
         def type_name_static(cls) -> str:
+            """
+            Type name static.
+            """
             return "SurfaceCustomDataJson"
 
         @classmethod
-        def from_json(cls, data):
+        def from_json(cls, data: object) -> object:
+            """
+            From json.
+            """
             return cls(
                 value=data.get("value", 0),
                 ts_event=data.get("ts_event", 0),
@@ -129,7 +203,10 @@ def test_deserialize_custom_from_json():
             )
 
         @classmethod
-        def decode_record_batch_py(cls, metadata, batch):
+        def decode_record_batch_py(cls, _metadata: object, _batch: object) -> object:
+            """
+            Decode record batch py.
+            """
             return []
 
     register_custom_data_class(SurfaceCustomDataJson)
@@ -158,20 +235,42 @@ def test_deserialize_custom_from_json():
     assert custom.data_type.identifier == "feed-a"
 
 
-def test_register_custom_data_class_requires_decoder():
+def test_register_custom_data_class_requires_decoder() -> None:
+    """
+    Test register custom data class requires decoder.
+    """
+
     class MissingDecoder:
+        """
+        Collect missing decoder tests.
+        """
+
         @classmethod
-        def from_json(cls, data):
+        def from_json(cls, _data: object) -> object:
+            """
+            From json.
+            """
             return cls()
 
     with pytest.raises(TypeError, match="decode_record_batch_py"):
         register_custom_data_class(MissingDecoder)
 
 
-def test_register_custom_data_class_requires_from_json():
+def test_register_custom_data_class_requires_from_json() -> None:
+    """
+    Test register custom data class requires from json.
+    """
+
     class MissingFromJson:
+        """
+        Collect missing from json tests.
+        """
+
         @classmethod
-        def decode_record_batch_py(cls, metadata, batch):
+        def decode_record_batch_py(cls, _metadata: object, _batch: object) -> object:
+            """
+            Decode record batch py.
+            """
             return []
 
     with pytest.raises(TypeError, match="from_json"):

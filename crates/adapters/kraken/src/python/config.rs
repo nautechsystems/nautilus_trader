@@ -16,16 +16,13 @@
 //! Python bindings for Kraken configuration.
 
 use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::{
-    enums::AccountType,
-    identifiers::{AccountId, TraderId},
-};
+use nautilus_model::{enums::AccountType, identifiers::AccountId};
 use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
 
 use crate::{
     common::enums::{KrakenEnvironment, KrakenProductType},
-    config::{KrakenDataClientConfig, KrakenExecClientConfig},
+    config::{KrakenDataClientConfig, KrakenExecutionClientConfig},
 };
 
 #[pymethods]
@@ -119,11 +116,10 @@ impl KrakenDataClientConfig {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl KrakenExecClientConfig {
+impl KrakenExecutionClientConfig {
     /// Configuration for the Kraken execution client.
     #[new]
     #[pyo3(signature = (
-        trader_id,
         account_id,
         api_key,
         api_secret,
@@ -147,7 +143,6 @@ impl KrakenExecClientConfig {
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
-        trader_id: TraderId,
         account_id: AccountId,
         api_key: String,
         api_secret: String,
@@ -177,7 +172,6 @@ impl KrakenExecClientConfig {
             ));
         }
         Ok(Self {
-            trader_id,
             account_id,
             api_key,
             api_secret,
@@ -217,6 +211,6 @@ impl KrakenExecClientConfig {
     }
 
     fn __repr__(&self) -> String {
-        stringify!(KrakenExecClientConfig).to_string()
+        stringify!(KrakenExecutionClientConfig).to_string()
     }
 }

@@ -21,17 +21,17 @@
 //!
 //! Required credential environment variables (testnet variants used when
 //! `DERIVE_ENVIRONMENT` is `DeriveEnvironment::Testnet`):
-//! - `DERIVE_WALLET_ADDRESS` / `DERIVE_TESTNET_WALLET_ADDRESS`.
-//! - `DERIVE_SESSION_PRIVATE_KEY` / `DERIVE_TESTNET_SESSION_PRIVATE_KEY`.
-//! - `DERIVE_SUBACCOUNT_ID` / `DERIVE_TESTNET_SUBACCOUNT_ID`.
+//! - `DERIVE_WALLET_ADDRESS` / `DERIVE_TESTNET_WALLET_ADDRESS`
+//! - `DERIVE_SESSION_PRIVATE_KEY` / `DERIVE_TESTNET_SESSION_PRIVATE_KEY`
+//! - `DERIVE_SUBACCOUNT_ID` / `DERIVE_TESTNET_SUBACCOUNT_ID`
 
 use nautilus_common::enums::Environment;
 use nautilus_derive::{
     common::{consts::DERIVE_CLIENT_ID, enums::DeriveEnvironment},
-    config::{DeriveDataClientConfig, DeriveExecClientConfig},
-    factories::{DeriveDataClientFactory, DeriveExecFactoryConfig, DeriveExecutionClientFactory},
+    config::{DeriveDataClientConfig, DeriveExecutionClientConfig},
+    factories::{DeriveDataClientFactory, DeriveExecutionClientFactory},
 };
-use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
+use nautilus_live::{config::LiveExecutionEngineConfig, node::LiveNode};
 use nautilus_model::{
     enums::TimeInForce,
     identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
@@ -41,6 +41,10 @@ use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 use rust_decimal::Decimal;
 
+// WARNING: With `DRY_RUN = false`, this tester submits orders to the configured
+// environment and may use real funds. Set `DRY_RUN = true` to connect without
+// submitting orders or sending shutdown cancel/close commands.
+const DRY_RUN: bool = false;
 const DERIVE_ENVIRONMENT: DeriveEnvironment = DeriveEnvironment::Mainnet;
 const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "DERIVE-001";
@@ -69,20 +73,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = DeriveExecClientConfig {
+    let exec_config = DeriveExecutionClientConfig {
+        account_id,
         environment: derive_environment,
         max_fee_per_contract: Some(Decimal::from_str_exact(MAX_FEE_PER_CONTRACT)?),
         ..Default::default()
     };
-    let exec_factory_config = DeriveExecFactoryConfig {
-        trader_id,
-        account_id,
-        config: exec_config,
-    };
 
     let data_factory = DeriveDataClientFactory::new();
     let exec_factory = DeriveExecutionClientFactory::new();
-    let exec_engine_config = LiveExecEngineConfig {
+    let exec_engine_config = LiveExecutionEngineConfig {
         open_check_interval_secs: Some(10.0),
         position_check_interval_secs: Some(30.0),
         ..Default::default()
@@ -92,7 +92,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_name(node_name)
         .with_exec_engine_config(exec_engine_config)
         .add_data_client(None, Box::new(data_factory), Box::new(data_config))?
-        .add_exec_client(None, Box::new(exec_factory), Box::new(exec_factory_config))?
+        .add_exec_client(None, Box::new(exec_factory), Box::new(exec_config))?
         .with_reconciliation(true)
         .with_delay_post_stop_secs(5)
         .build()?;
@@ -108,6 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
+        .dry_run(DRY_RUN)
         .log_data(false)
         .open_position_on_start_qty(order_qty.as_decimal())
         .open_position_on_first_quote(true)

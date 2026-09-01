@@ -819,6 +819,11 @@ where
 }
 
 #[cfg(test)]
+fn fixed_size_binary<const N: usize>(values: Vec<&[u8; N]>) -> FixedSizeBinaryArray {
+    FixedSizeBinaryArray::try_from_iter(values.into_iter()).unwrap()
+}
+
+#[cfg(test)]
 mod tests {
     use nautilus_model::{
         data::{

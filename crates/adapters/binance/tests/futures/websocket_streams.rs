@@ -34,11 +34,19 @@ use axum::{
     routing::get,
 };
 use nautilus_binance::{
-    common::enums::{BinanceEnvironment, BinanceProductType},
+    common::{
+        consts::{BINANCE_CLIENT_ID, BINANCE_VENUE},
+        enums::{BinanceEnvironment, BinanceProductType},
+    },
     futures::websocket::streams::client::BinanceFuturesWebSocketClient,
 };
-use nautilus_common::testing::wait_until_async;
-use nautilus_network::{SocketState, SocketStateSink, websocket::TransportBackend};
+use nautilus_common::{
+    live::runner::replace_system_event_sender,
+    messages::{SystemEvent, system::SocketState},
+    testing::wait_until_async,
+};
+use nautilus_live::{SocketControlFactory, SocketReconnectRegistry, SocketReconnectRequestOutcome};
+use nautilus_network::websocket::TransportBackend;
 use rstest::rstest;
 use serde_json::json;
 
@@ -51,6 +59,7 @@ struct TestServerState {
     disconnect_trigger: Arc<AtomicBool>,
     drop_next_connection: Arc<AtomicBool>,
     fail_next_subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
+    delay_next_subscription_response: Arc<AtomicBool>,
     ping_count: Arc<AtomicUsize>,
 }
 
@@ -64,6 +73,7 @@ impl Default for TestServerState {
             disconnect_trigger: Arc::new(AtomicBool::new(false)),
             drop_next_connection: Arc::new(AtomicBool::new(false)),
             fail_next_subscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            delay_next_subscription_response: Arc::new(AtomicBool::new(false)),
             ping_count: Arc::new(AtomicUsize::new(0)),
         }
     }
@@ -93,6 +103,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
         *count += 1;
     }
     state.total_connections.fetch_add(1, Ordering::Relaxed);
+    let mut delayed_subscription_response = None;
 
     loop {
         if state.disconnect_trigger.load(Ordering::Relaxed) {
@@ -164,7 +175,12 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                             "id": id
                         });
 
-                        if socket
+                        if state
+                            .delay_next_subscription_response
+                            .swap(false, Ordering::Relaxed)
+                        {
+                            delayed_subscription_response = Some(response);
+                        } else if socket
                             .send(Message::Text(response.to_string().into()))
                             .await
                             .is_err()
@@ -199,6 +215,15 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                             .send(Message::Text(response.to_string().into()))
                             .await
                             .is_err()
+                        {
+                            break;
+                        }
+
+                        if let Some(delayed_response) = delayed_subscription_response.take()
+                            && socket
+                                .send(Message::Text(delayed_response.to_string().into()))
+                                .await
+                                .is_err()
                         {
                             break;
                         }
@@ -475,6 +500,66 @@ async fn test_unsubscribe_stream() {
 
 #[rstest]
 #[tokio::test]
+async fn test_delayed_subscribe_response_does_not_restore_unsubscribed_stream() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let mut client = create_test_client(&addr);
+
+    client.connect().await.unwrap();
+    wait_until_async(
+        || async { *state.connection_count.lock().await > 0 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    state
+        .delay_next_subscription_response
+        .store(true, Ordering::Relaxed);
+
+    client
+        .subscribe(vec!["btcusdt@aggTrade".to_string()])
+        .await
+        .unwrap();
+    wait_until_async(
+        || async { state.received_messages().await.len() == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    client
+        .unsubscribe(vec!["btcusdt@aggTrade".to_string()])
+        .await
+        .unwrap();
+    client
+        .subscribe(vec!["ethusdt@aggTrade".to_string()])
+        .await
+        .unwrap();
+
+    wait_until_async(
+        || async { state.received_messages().await.len() == 3 },
+        Duration::from_secs(5),
+    )
+    .await;
+    wait_until_async(
+        || async { client.subscription_count() == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let messages = state.received_messages().await;
+    let methods: Vec<_> = messages
+        .iter()
+        .map(|message| message["method"].as_str().unwrap())
+        .collect();
+    assert_eq!(methods, ["SUBSCRIBE", "UNSUBSCRIBE", "SUBSCRIBE"]);
+    assert_eq!(state.subscribed_streams().await, ["ethusdt@aggTrade"]);
+    assert_eq!(client.subscription_count(), 1);
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_subscription_count() {
     let (addr, state) = start_test_server().await.unwrap();
     let mut client = create_test_client(&addr);
@@ -693,7 +778,11 @@ async fn test_invalid_product_type_rejected() {
 #[tokio::test]
 async fn test_pool_creates_second_connection_on_overflow() {
     let (addr, state) = start_test_server().await.unwrap();
-    let mut client = create_test_client(&addr);
+    let registry = SocketReconnectRegistry::default();
+    let endpoint = "binance-futures-pool-streams";
+    let factory =
+        SocketControlFactory::with_registry(*BINANCE_CLIENT_ID, Some(*BINANCE_VENUE), &registry);
+    let mut client = create_test_client(&addr).with_socket_control(factory, endpoint);
 
     client.connect().await.unwrap();
 
@@ -716,9 +805,40 @@ async fn test_pool_creates_second_connection_on_overflow() {
     )
     .await;
 
+    let primary = registry
+        .handle(*BINANCE_CLIENT_ID, ustr::Ustr::from(endpoint))
+        .unwrap();
+    let secondary = registry
+        .handle(
+            *BINANCE_CLIENT_ID,
+            ustr::Ustr::from("binance-futures-pool-streams-1"),
+        )
+        .unwrap();
+
     assert_eq!(*state.connection_count.lock().await, 2);
+    assert_eq!(
+        primary.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    assert_eq!(
+        secondary.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
 
     client.close().await.unwrap();
+    assert!(
+        registry
+            .handle(*BINANCE_CLIENT_ID, ustr::Ustr::from(endpoint))
+            .is_none()
+    );
+    assert!(
+        registry
+            .handle(
+                *BINANCE_CLIENT_ID,
+                ustr::Ustr::from("binance-futures-pool-streams-1"),
+            )
+            .is_none()
+    );
 }
 
 #[rstest]
@@ -900,13 +1020,14 @@ async fn test_subscribe_futures_specific_streams() {
 #[tokio::test]
 async fn test_reconnection_after_server_drop() {
     let (addr, state) = start_test_server().await.unwrap();
-    let socket_states = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let socket_states_callback = Arc::clone(&socket_states);
-    let sink = SocketStateSink::new(move |socket_state| {
-        socket_states_callback.lock().unwrap().push(socket_state);
-    });
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
+    let registry = SocketReconnectRegistry::default();
+    let endpoint = ustr::Ustr::from("binance-futures-test-streams");
+    let factory =
+        SocketControlFactory::with_registry(*BINANCE_CLIENT_ID, Some(*BINANCE_VENUE), &registry);
 
-    let mut client = create_test_client(&addr).with_state_sink(sink);
+    let mut client = create_test_client(&addr).with_socket_control(factory, endpoint.as_str());
 
     client.connect().await.unwrap();
 
@@ -944,22 +1065,35 @@ async fn test_reconnection_after_server_drop() {
         state.total_connections() > initial_total,
         "Expected at least one reconnection"
     );
+    let mut socket_states = Vec::new();
     wait_until_async(
-        || async { socket_states.lock().unwrap().len() == 3 },
+        || {
+            while let Ok(event) = system_rx.try_recv() {
+                let SystemEvent::SocketState(change) = event;
+                assert_eq!(change.client_id, *BINANCE_CLIENT_ID);
+                assert_eq!(change.venue, Some(*BINANCE_VENUE));
+                assert_eq!(change.endpoint, endpoint);
+                socket_states.push(change.state);
+            }
+            let done = socket_states.len() == 3;
+            async move { done }
+        },
         Duration::from_secs(5),
     )
     .await;
     assert_eq!(
-        *socket_states.lock().unwrap(),
+        socket_states,
         vec![
             SocketState::Connected,
             SocketState::Disconnected,
             SocketState::Connected,
         ]
     );
+    assert!(registry.handle(*BINANCE_CLIENT_ID, endpoint).is_some());
 
     client.close().await.unwrap();
-    assert_eq!(socket_states.lock().unwrap().len(), 3);
+    assert!(system_rx.try_recv().is_err());
+    assert!(registry.handle(*BINANCE_CLIENT_ID, endpoint).is_none());
 }
 
 #[rstest]

@@ -21,7 +21,7 @@ use pyo3::prelude::*;
 
 use crate::{
     common::enums::BitmexEnvironment,
-    config::{BitmexDataClientConfig, BitmexExecClientConfig},
+    config::{BitmexDataClientConfig, BitmexExecutionClientConfig},
 };
 
 #[pymethods]
@@ -108,7 +108,7 @@ impl BitmexDataClientConfig {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl BitmexExecClientConfig {
+impl BitmexExecutionClientConfig {
     /// Configuration for the BitMEX live execution client.
     #[new]
     #[pyo3(signature = (
@@ -210,6 +210,6 @@ impl BitmexExecClientConfig {
     }
 
     fn __repr__(&self) -> String {
-        stringify!(BitmexExecClientConfig).to_string()
+        stringify!(BitmexExecutionClientConfig).to_string()
     }
 }

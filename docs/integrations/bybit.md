@@ -19,13 +19,13 @@ This guide assumes a trader is setting up for both live market data feeds and tr
 The Bybit adapter includes multiple components, which can be used together or separately depending
 on the use case.
 
-- `BybitDataClientConfig` and `BybitExecClientConfig`: Live client configuration.
+- `BybitDataClientConfig` and `BybitExecutionClientConfig`: Live client configuration.
 - `BybitDataClientFactory` and `BybitExecutionClientFactory`: Trading node client factories.
 - `BybitDataClient`: A market data feed manager, built by the data client factory.
 - `BybitExecutionClient`: An account management and trade execution gateway, built by the execution
   client factory.
 - `BybitHttpClient`: Low-level HTTP API connectivity.
-- `BybitWebSocketClient`: Low-level WebSocket API connectivity.
+- `BybitWebSocketClient`: Low-level WebSocket API connectivity for Rust callers.
 - `BYBIT`, `BYBIT_CLIENT_ID`, `BYBIT_VENUE`: Public identifiers.
 - `BybitEnvironment`, `BybitProductType`, `BybitMarginMode`, `BybitPositionIdx`,
   `BybitPositionMode`: Public enums used by the configurations and order params.
@@ -54,9 +54,9 @@ The following product types are supported on Bybit:
 | --------------------------- | --------- | ----------------------------------------- |
 | Spot cryptocurrencies       | ✓         | Native spot markets with margin support.  |
 | Linear perpetual contracts  | ✓         | USDT/USDC margined perpetual swaps.       |
-| Linear futures contracts    | ✓         | Delivery‑settled linear futures.          |
-| Inverse perpetual contracts | ✓         | Coin‑margined perpetual swaps.            |
-| Inverse futures contracts   | ✓         | Coin‑margined delivery futures.           |
+| Linear futures contracts    | ✓         | Delivery-settled linear futures.          |
+| Inverse perpetual contracts | ✓         | Coin-margined perpetual swaps.            |
+| Inverse futures contracts   | ✓         | Coin-margined delivery futures.           |
 | Option contracts            | ✓         | European options settled in USDT or USDC. |
 
 ## Symbology
@@ -105,9 +105,9 @@ The default environment for live trading with real funds.
 
 ```python
 from nautilus_trader.adapters.bybit import BybitEnvironment
-from nautilus_trader.adapters.bybit import BybitExecClientConfig
+from nautilus_trader.adapters.bybit import BybitExecutionClientConfig
 
-config = BybitExecClientConfig(
+config = BybitExecutionClientConfig(
     api_key="YOUR_API_KEY",
     api_secret="YOUR_API_SECRET",
     environment=BybitEnvironment.MAINNET,
@@ -124,9 +124,9 @@ Create demo API keys from the
 
 ```python
 from nautilus_trader.adapters.bybit import BybitEnvironment
-from nautilus_trader.adapters.bybit import BybitExecClientConfig
+from nautilus_trader.adapters.bybit import BybitExecutionClientConfig
 
-config = BybitExecClientConfig(
+config = BybitExecutionClientConfig(
     api_key="YOUR_DEMO_API_KEY",
     api_secret="YOUR_DEMO_API_SECRET",
     environment=BybitEnvironment.DEMO,
@@ -151,9 +151,9 @@ A separate test network for development and integration testing.
 
 ```python
 from nautilus_trader.adapters.bybit import BybitEnvironment
-from nautilus_trader.adapters.bybit import BybitExecClientConfig
+from nautilus_trader.adapters.bybit import BybitExecutionClientConfig
 
-config = BybitExecClientConfig(
+config = BybitExecutionClientConfig(
     api_key="YOUR_TESTNET_API_KEY",
     api_secret="YOUR_TESTNET_API_SECRET",
     environment=BybitEnvironment.TESTNET,
@@ -261,12 +261,18 @@ Batch submit and batch cancel use the trade WebSocket on mainnet and testnet. In
 adapter falls back to individual HTTP requests, because the demo environment has no trade
 WebSocket.
 
+Bybit accepts at most 10 Spot orders, 20 Linear or Inverse orders, or 5 Option orders in one batch
+request. Linear, Inverse, and Spot batches consume UID quota per order, while an Option batch
+consumes one request. The adapter splits Spot, Linear, and Inverse batches into groups of 10 by
+default so one request cannot exceed the standard rolling UID allowance. It splits Option batches
+into groups of five. The HTTP batch-cancel method accepts up to 20 Option operations in one call.
+
 ### Position management
 
 | Feature          | Spot | Linear | Inverse | Option | Notes                                                       |
 | ---------------- | ---- | ------ | ------- | ------ | ----------------------------------------------------------- |
-| Query positions  | -    | ✓      | ✓       | ✓      | Real‑time position updates.                                 |
-| Position mode    | -    | ✓      | ✓       | -      | One‑Way only for Options.                                   |
+| Query positions  | -    | ✓      | ✓       | ✓      | Real-time position updates.                                 |
+| Position mode    | -    | ✓      | ✓       | -      | One-Way only for Options.                                   |
 | Leverage control | -    | ✓      | ✓       | -      | Not applicable for Options.                                 |
 | Margin mode      | -    | ✓      | ✓       | ✓      | `ISOLATED_MARGIN`, `REGULAR_MARGIN`, or `PORTFOLIO_MARGIN`. |
 
@@ -277,7 +283,7 @@ the client connects.
 
 Bybit only accepts Both Sides mode on USDT linear perpetuals. Configure the position mode at Bybit,
 then pass `position_idx` through the order `params`: `1` for the long side or `2` for the short side.
-Use `0` or omit the parameter for one‑way mode.
+Use `0` or omit the parameter for one-way mode.
 
 Bybit documents these values in the V5 [switch position mode](https://bybit-exchange.github.io/docs/v5/position/position-mode)
 and [place order](https://bybit-exchange.github.io/docs/v5/order/create-order#request-parameters)
@@ -301,8 +307,8 @@ params = {"position_idx": 1}  # 0 one-way, 1 long, 2 short
 
 | Feature              | Spot | Linear | Inverse | Option | Notes                                                 |
 | -------------------- | ---- | ------ | ------- | ------ | ----------------------------------------------------- |
-| Liquidation handling | -    | ✓      | ✓       | ✓      | Takeover fills flagged as exchange‑generated.         |
-| ADL handling         | -    | ✓      | ✓       | ✓      | Auto‑deleveraging fills flagged and logged.           |
+| Liquidation handling | -    | ✓      | ✓       | ✓      | Takeover fills flagged as exchange-generated.         |
+| ADL handling         | -    | ✓      | ✓       | ✓      | Auto-deleveraging fills flagged and logged.           |
 | ADL rank warnings    | -    | ✓      | ✓       | ✓      | Position reports logged when `adlRankIndicator >= 4`. |
 
 Bybit emits venue-initiated fills with `execType` set to:
@@ -340,7 +346,7 @@ Upstream references:
 | -------------------- | ---- | ------ | ------- | ------ | ------------------------------ |
 | Query open orders    | ✓    | ✓      | ✓       | ✓      | List all active orders.        |
 | Query order history  | ✓    | ✓      | ✓       | ✓      | Historical order data.         |
-| Order status updates | ✓    | ✓      | ✓       | ✓      | Real‑time order state changes. |
+| Order status updates | ✓    | ✓      | ✓       | ✓      | Real-time order state changes. |
 | Trade history        | ✓    | ✓      | ✓       | ✓      | Execution and fill reports.    |
 
 ### Contingent orders
@@ -350,7 +356,7 @@ Upstream references:
 | Order lists        | ✓    | ✓      | ✓       | ✓      | Submitted as a batch via WebSocket.    |
 | OCO orders         | -    | -      | -       | -      | Not implemented; submit legs yourself. |
 | Bracket orders     | -    | -      | -       | -      | Not implemented; submit legs yourself. |
-| Conditional orders | ✓    | ✓      | ✓       | -      | Stop and limit‑if‑touched orders.      |
+| Conditional orders | ✓    | ✓      | ✓       | -      | Stop and limit-if-touched orders.      |
 
 An order list is validated as a unit before any leg is sent. When one leg fails validation, that
 leg is denied with its specific reason and the remaining legs are denied with `ORDER_LIST_DENIED`,
@@ -375,11 +381,18 @@ Individual orders can be customized using the `params` dictionary when submittin
 | `sl_trigger_price` | `str` or `float` | Explicit SL trigger price sent alongside `stop_loss`.               |
 | `tpsl_mode`        | `str`            | TP/SL mode: `"Full"` or `"Partial"`.                                |
 | `close_on_trigger` | `bool`           | Close the position when TP/SL triggers.                             |
-| `position_idx`     | `int`            | Hedge‑mode position index. See [Hedge mode](#hedge-mode-bothsides). |
+| `position_idx`     | `int`            | Hedge-mode position index. See [Hedge mode](#hedge-mode-bothsides). |
 | `bbo_side_type`    | `str`            | Linear/inverse BBO side: `"Queue"` or `"Counterparty"`.             |
 | `bbo_level`        | `str` or `int`   | Linear/inverse BBO book level: `"1"` through `"5"`.                 |
 
 Parameters left unset are omitted from the request, so Bybit's own defaults apply.
+
+:::warning
+Bybit's `close_on_trigger` parameter is not the generic `close_position` whole-position exit
+contract used by the risk engine. The adapter sends the order quantity, and it ignores an unknown
+`close_position` parameter. Do not add `BYBIT` to `full_position_exit_venues` based on
+`close_on_trigger`; leave the venue unlisted so ordinary quantity and notional checks apply.
+:::
 
 The adapter validates these params before emitting `OrderSubmitted` and denies the order with a
 `VALIDATION_FAILED` reason when a rule is broken:
@@ -478,12 +491,12 @@ channel:
 
 | Data type                  | Description                                                              |
 | -------------------------- | ------------------------------------------------------------------------ |
-| Quotes (bid/ask)           | Top‑of‑book prices and sizes for each option contract.                   |
+| Quotes (bid/ask)           | Top-of-book prices and sizes for each option contract.                   |
 | Greeks                     | Delta, gamma, vega, theta, plus bid/ask/mark IV. Bybit publishes no rho. |
 | Mark price                 | Exchange mark price for each option contract.                            |
 | Index price                | Underlying index price.                                                  |
-| Underlying (forward) price | Per‑expiry forward price, used for ATM determination.                    |
-| Open interest              | Per‑contract open interest.                                              |
+| Underlying (forward) price | Per-expiry forward price, used for ATM determination.                    |
+| Open interest              | Per-contract open interest.                                              |
 | Order book deltas          | L2 MBP updates from the option orderbook stream.                         |
 
 Subscribe to per-instrument Greeks or aggregate them into option chain
@@ -562,9 +575,9 @@ on Spot instruments. This feature is disabled by default, so set
 **Example:**
 
 ```python
-from nautilus_trader.adapters.bybit import BybitExecClientConfig
+from nautilus_trader.adapters.bybit import BybitExecutionClientConfig
 
-config = BybitExecClientConfig(
+config = BybitExecutionClientConfig(
     api_key="YOUR_API_KEY",
     api_secret="YOUR_API_SECRET",
     product_types=[BybitProductType.SPOT],
@@ -610,24 +623,46 @@ so its interval is unset.
 
 ## Rate limiting
 
-Every HTTP call consumes the global token bucket as well as its per-endpoint bucket. When usage
-exceeds a bucket, requests are queued automatically, so manual throttling is rarely required.
+The adapter queues requests against exact rolling windows before it creates an authentication
+timestamp or signature. HTTP clients and the trade WebSocket share UID state for the same API key
+and environment. Data and execution clients also share IP state when they use the same origin and
+proxy.
 
-| Key                                  | Limit (requests/sec) | Applies to                                |
-| ------------------------------------ | -------------------- | ----------------------------------------- |
-| `bybit:global`                       | 10                   | Every HTTP request, across all endpoints. |
-| `bybit:/v5/account/repay`            | 1                    | Converting spot margin repayment.         |
-| `bybit:/v5/account/no-convert-repay` | 1                    | No‑convert spot margin repayment.         |
-| `bybit:<endpoint>`                   | 10                   | Default bucket for every other endpoint.  |
+| Scope                         | Bybit limit                           | Adapter behavior                              |
+| ----------------------------- | ------------------------------------- | --------------------------------------------- |
+| HTTP IP                       | 600 requests per 5 seconds            | Shared by origin and proxy                    |
+| HTTP and trade WebSocket UID  | Varies by endpoint and product        | Shared by API key and environment             |
+| Trade WebSocket IP            | 3,000 requests per second             | Shared by WebSocket origin and proxy          |
+| WebSocket connection attempts | 500 attempts per 5 minutes per domain | Shared across initial connects and reconnects |
+| Option subscriptions          | 2,000 arguments per connection        | Rejected before subscription state changes    |
 
-The global bucket is the binding constraint: the adapter never issues more than 10 requests per
-second in total, well below Bybit's IP ceiling.
+The UID limiter includes the documented lower-rate account and user routes, 50-request read
+routes, product-specific order routes, cancel-all limits, and weighted batch operations. HTTP and
+trade WebSocket responses update the configured UID limit from `X-Bapi-Limit`, track
+`X-Bapi-Limit-Status`, and honor a future `X-Bapi-Limit-Reset-Timestamp` when the remaining count
+reaches zero.
+
+The execution client's `recv_window_ms` applies to signed REST requests and trade WebSocket order
+commands. A queued WebSocket order gets its timestamp and receive-window header only after all
+applicable quotas allow the send. A reconnect retry rebuilds the command with a fresh header and
+uses a connection-bound write, so the transport cannot replay a stale order payload.
 
 :::warning
 Bybit returns `retCode` `10006` ("Too many visits") when the API rate limit is exceeded.
 Exceeding the IP ceiling of 600 requests per 5 seconds returns HTTP 403 and bans the IP for at
-least 10 minutes.
+least 10 minutes. A matching 403 discards the affected pooled HTTP session and starts a shared
+10-minute cooldown. Other 403 responses do not activate the cooldown.
 :::
+
+:::warning
+Coordination is process-local. Another process or host using the same API key or public IP can
+consume venue quota that this adapter cannot reserve in advance. Response headers reduce this
+gap for UID limits, but separate processes still require operational coordination.
+:::
+
+Explicit venue rate-limit responses are terminal rejections for the affected order operation.
+Transport timeouts, service restarts, and duplicate request identifiers remain subject to order
+reconciliation because they do not prove whether the venue accepted the order.
 
 :::info
 For more details on rate limiting, see the official documentation: <https://bybit-exchange.github.io/docs/v5/rate-limit>.
@@ -763,9 +798,9 @@ The product types for each client must be specified in the configurations.
 | `retry_delay_max_ms`        | `10,000`   | Maximum retry delay (milliseconds).                                                                             |
 | `heartbeat_interval_secs`   | `5`        | Heartbeat interval (seconds) for WebSocket clients.                                                             |
 | `auth_timeout_secs`         | `None`     | Optional WebSocket authentication timeout (seconds).                                                            |
-| `recv_window_ms`            | `5,000`    | Receive window (milliseconds) for signed REST requests.                                                         |
+| `recv_window_ms`            | `5,000`    | Receive window (milliseconds) for signed REST and trade WebSocket requests.                                     |
 | `account_id`                | `None`     | Optional account ID associated with this client.                                                                |
-| `use_spot_position_reports` | `False`    | Report Spot wallet balances as positions when `True`.                                                           |
+| `use_spot_position_reports` | `False`    | Report Spot wallet balances as positions for scoped requests; bulk reports omit Spot (no pair attribution).     |
 | `auto_repay_spot_borrows`   | `False`    | Automatically repay tracked Spot margin borrows after BUY orders fully fill.                                    |
 | `margin_mode`               | `None`     | Unified margin mode setting for the account.                                                                    |
 | `transport_backend`         | `Sockudo`  | WebSocket transport backend.                                                                                    |
@@ -773,7 +808,7 @@ The product types for each client must be specified in the configurations.
 The compiled default is Sockudo when the `transport-sockudo` Cargo feature is enabled and
 Tungstenite otherwise.
 
-Use `BybitDataClientConfig` with `BybitDataClientFactory` and `BybitExecClientConfig` with
+Use `BybitDataClientConfig` with `BybitDataClientFactory` and `BybitExecutionClientConfig` with
 `BybitExecutionClientFactory`. The current Python examples show the complete
 `LiveNode.builder(...)` configuration for data and execution clients.
 

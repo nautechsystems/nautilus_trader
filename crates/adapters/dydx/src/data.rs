@@ -21,6 +21,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::Duration,
 };
 
 use anyhow::Context;
@@ -28,7 +29,7 @@ use dashmap::DashMap;
 use futures_util::{Stream, StreamExt, pin_mut};
 use nautilus_common::{
     clients::DataClient,
-    live::{runner::get_data_event_sender, runtime::get_runtime},
+    live::runner::get_data_event_sender,
     messages::{
         DataEvent, DataResponse,
         data::{
@@ -49,6 +50,10 @@ use nautilus_core::{
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+use nautilus_live::{
+    SocketControlFactory,
+    task::{TaskGroup, TaskGroupGuard, TaskSpawner},
+};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, Data as NautilusData, FundingRateUpdate,
@@ -62,8 +67,6 @@ use nautilus_model::{
     types::Quantity,
 };
 use rust_decimal::Decimal;
-use tokio::{task::JoinHandle, time::Duration};
-use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use crate::{
@@ -104,6 +107,7 @@ struct WsMessageContext {
     bars_timestamp_on_close: bool,
     pending_bars: Arc<DashMap<String, Bar>>,
     seen_tickers: Arc<AtomicSet<Ustr>>,
+    command_spawner: TaskSpawner,
 }
 
 /// dYdX data client for live market data streaming and historical data requests.
@@ -121,8 +125,9 @@ pub struct DydxDataClient {
     http_client: DydxHttpClient,
     ws_client: DydxWebSocketClient,
     is_connected: AtomicBool,
-    cancellation_token: CancellationToken,
-    tasks: Vec<JoinHandle<()>>,
+    session_tasks: TaskGroup,
+    command_tasks: TaskGroup,
+    shutdown_errors: Vec<String>,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instrument_cache: Arc<InstrumentCache>,
     order_books: Arc<DashMap<InstrumentId, OrderBook>>,
@@ -159,8 +164,12 @@ impl DydxDataClient {
     ) -> anyhow::Result<Self> {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
+        let ws_client =
+            ws_client.with_socket_factory(SocketControlFactory::new(client_id, Some(*DYDX_VENUE)));
 
         let instrument_cache = Arc::clone(http_client.instrument_cache());
+        let session_tasks = TaskGroup::new();
+        let command_tasks = TaskGroup::new();
 
         Ok(Self {
             clock,
@@ -169,8 +178,9 @@ impl DydxDataClient {
             http_client,
             ws_client,
             is_connected: AtomicBool::new(false),
-            cancellation_token: CancellationToken::new(),
-            tasks: Vec::new(),
+            session_tasks,
+            command_tasks,
+            shutdown_errors: Vec::new(),
             data_sender,
             instrument_cache,
             order_books: Arc::new(DashMap::new()),
@@ -211,21 +221,34 @@ impl DydxDataClient {
     where
         F: std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        get_runtime().spawn(async move {
+        let future = async move {
             if let Err(e) = fut.await {
                 log::error!("{context}: {e:?}");
             }
-        });
+        };
+
+        if let Err(e) = self.command_tasks.spawn(future) {
+            log::warn!("Skipping dYdX {context} after shutdown began: {e}");
+        }
+    }
+
+    fn spawn_command<F>(&self, future: F)
+    where
+        F: std::future::Future<Output = ()> + Send + 'static,
+    {
+        if let Err(e) = self.command_tasks.spawn(future) {
+            log::warn!("Skipping dYdX data command after shutdown began: {e}");
+        }
     }
 
     fn spawn_ws_stream_handler(
-        &mut self,
+        &self,
         stream: impl Stream<Item = DydxWsOutputMessage> + Send + 'static,
         ctx: WsMessageContext,
-    ) {
-        let cancellation = self.cancellation_token.clone();
+    ) -> anyhow::Result<()> {
+        let cancellation = self.session_tasks.cancellation_token();
 
-        let handle = get_runtime().spawn(async move {
+        let future = async move {
             log::debug!("Message processing task started");
             pin_mut!(stream);
 
@@ -247,15 +270,69 @@ impl DydxDataClient {
                 }
             }
             log::debug!("WebSocket stream handler ended");
-        });
+        };
 
-        self.tasks.push(handle);
+        self.session_tasks
+            .spawn(future)
+            .context("failed to register dYdX WebSocket stream task")?;
+        Ok(())
     }
 
-    async fn await_tasks_with_timeout(&mut self, timeout: Duration) {
-        for handle in self.tasks.drain(..) {
-            let _ = tokio::time::timeout(timeout, handle).await;
+    async fn finish_tasks(&self) -> anyhow::Result<()> {
+        let (session_result, command_result) = tokio::join!(
+            self.session_tasks
+                .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2)),
+            self.command_tasks
+                .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2)),
+        );
+        session_result.context("failed to finish dYdX data session tasks")?;
+        command_result.context("failed to finish dYdX data command tasks")?;
+        Ok(())
+    }
+
+    async fn prepare_task_groups(&mut self) -> anyhow::Result<()> {
+        if !self.session_tasks.is_open() || !self.command_tasks.is_open() {
+            self.session_tasks.begin_shutdown();
+            self.command_tasks.begin_shutdown();
+            self.ws_client.begin_shutdown();
+            self.finish_shutdown().await?;
+            self.session_tasks
+                .start_generation()
+                .context("failed to start dYdX data session task generation")?;
+            self.command_tasks
+                .start_generation()
+                .context("failed to start dYdX data command task generation")?;
         }
+        Ok(())
+    }
+
+    async fn finish_shutdown(&mut self) -> anyhow::Result<()> {
+        if let Err(e) = self
+            .ws_client
+            .disconnect()
+            .await
+            .context("failed to disconnect dYdX websocket")
+        {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if let Err(e) = self.finish_tasks().await {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if !self.shutdown_errors.is_empty() {
+            anyhow::bail!(std::mem::take(&mut self.shutdown_errors).join("; "));
+        }
+        Ok(())
+    }
+
+    async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
+        self.ws_client.begin_shutdown();
+        let shutdown_result = self.finish_shutdown().await;
+        self.is_connected.store(false, Ordering::Release);
+        shutdown_result
     }
 
     async fn bootstrap_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
@@ -310,19 +387,19 @@ impl DataClient for DydxDataClient {
 
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping {}", self.client_id);
-        self.cancellation_token.cancel();
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
+        self.ws_client.begin_shutdown();
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
         log::debug!("Resetting {}", self.client_id);
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
+        self.ws_client.begin_shutdown();
         self.is_connected.store(false, Ordering::Relaxed);
-        self.cancellation_token = CancellationToken::new();
-        // Abort remaining tasks instead of just dropping handles to prevent resource leaks
-        for handle in self.tasks.drain(..) {
-            handle.abort();
-        }
         Ok(())
     }
 
@@ -332,80 +409,96 @@ impl DataClient for DydxDataClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.is_connected() {
+        if self.is_connected() && self.session_tasks.is_open() && self.command_tasks.is_open() {
             return Ok(());
         }
 
         log::info!("Connecting");
 
+        self.prepare_task_groups().await?;
+        let ws_client = self.ws_client.clone();
+        let setup_guard =
+            TaskGroupGuard::new(&[&self.session_tasks, &self.command_tasks], move || {
+                ws_client.begin_shutdown();
+            });
+
         self.bootstrap_instruments().await?;
 
-        self.ws_client
-            .connect()
-            .await
-            .context("failed to connect dYdX websocket")?;
+        let session_result = async {
+            self.ws_client
+                .connect()
+                .await
+                .context("failed to connect dYdX websocket")?;
 
-        self.ws_client
-            .subscribe_markets()
-            .await
-            .context("failed to subscribe to markets channel")?;
+            self.ws_client
+                .subscribe_markets()
+                .await
+                .context("failed to subscribe to markets channel")?;
 
-        let seen_tickers: Arc<AtomicSet<Ustr>> = Arc::new(AtomicSet::new());
+            let seen_tickers: Arc<AtomicSet<Ustr>> = Arc::new(AtomicSet::new());
 
-        for instrument in self.instrument_cache.all_instruments() {
-            let id = instrument.id();
-            let ticker = extract_raw_symbol(id.symbol.as_str());
-            seen_tickers.insert(Ustr::from(ticker));
+            for instrument in self.instrument_cache.all_instruments() {
+                let id = instrument.id();
+                let ticker = extract_raw_symbol(id.symbol.as_str());
+                seen_tickers.insert(Ustr::from(ticker));
+            }
+
+            let command_spawner = self
+                .command_tasks
+                .spawner()
+                .context("dYdX data command task admission is closed")?;
+            let ctx = WsMessageContext {
+                clock: self.clock,
+                data_sender: self.data_sender.clone(),
+                instrument_cache: self.instrument_cache.clone(),
+                order_books: self.order_books.clone(),
+                last_quotes: self.last_quotes.clone(),
+                ws_client: self.ws_client.clone(),
+                http_client: self.http_client.clone(),
+                active_quote_subs: self.active_quote_subs.clone(),
+                active_delta_subs: self.active_delta_subs.clone(),
+                active_trade_subs: self.active_trade_subs.clone(),
+                active_bar_subs: self.active_bar_subs.clone(),
+                incomplete_bars: self.incomplete_bars.clone(),
+                bar_type_mappings: self.bar_type_mappings.clone(),
+                active_mark_price_subs: self.active_mark_price_subs.clone(),
+                active_index_price_subs: self.active_index_price_subs.clone(),
+                active_funding_rate_subs: self.active_funding_rate_subs.clone(),
+                active_instrument_status_subs: self.active_instrument_status_subs.clone(),
+                last_instrument_statuses: self.last_instrument_statuses.clone(),
+                bars_timestamp_on_close: self.ws_client.bars_timestamp_on_close(),
+                pending_bars: Arc::new(DashMap::new()),
+                seen_tickers,
+                command_spawner,
+            };
+
+            let stream = self.ws_client.stream();
+            self.spawn_ws_stream_handler(stream, ctx)?;
+
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+
+        if let Err(e) = session_result {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "dYdX data startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e);
         }
 
-        let ctx = WsMessageContext {
-            clock: self.clock,
-            data_sender: self.data_sender.clone(),
-            instrument_cache: self.instrument_cache.clone(),
-            order_books: self.order_books.clone(),
-            last_quotes: self.last_quotes.clone(),
-            ws_client: self.ws_client.clone(),
-            http_client: self.http_client.clone(),
-            active_quote_subs: self.active_quote_subs.clone(),
-            active_delta_subs: self.active_delta_subs.clone(),
-            active_trade_subs: self.active_trade_subs.clone(),
-            active_bar_subs: self.active_bar_subs.clone(),
-            incomplete_bars: self.incomplete_bars.clone(),
-            bar_type_mappings: self.bar_type_mappings.clone(),
-            active_mark_price_subs: self.active_mark_price_subs.clone(),
-            active_index_price_subs: self.active_index_price_subs.clone(),
-            active_funding_rate_subs: self.active_funding_rate_subs.clone(),
-            active_instrument_status_subs: self.active_instrument_status_subs.clone(),
-            last_instrument_statuses: self.last_instrument_statuses.clone(),
-            bars_timestamp_on_close: self.ws_client.bars_timestamp_on_close(),
-            pending_bars: Arc::new(DashMap::new()),
-            seen_tickers,
-        };
-
-        let stream = self.ws_client.stream();
-        self.spawn_ws_stream_handler(stream, ctx);
-
         self.is_connected.store(true, Ordering::Relaxed);
+        setup_guard.disarm();
         log::info!("Connected");
 
         Ok(())
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if !self.is_connected() {
-            return Ok(());
-        }
-
         log::info!("Disconnecting");
 
-        self.cancellation_token.cancel();
-
-        self.await_tasks_with_timeout(Duration::from_secs(5)).await;
-
-        self.ws_client
-            .disconnect()
-            .await
-            .context("failed to disconnect dYdX websocket")?;
+        self.teardown_partial_connect().await?;
 
         self.last_instrument_statuses.clear();
         self.is_connected.store(false, Ordering::Relaxed);
@@ -731,7 +824,7 @@ impl DataClient for DydxDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             let instrument = match http.request_instruments(None, None, None).await {
                 Ok(instruments) => {
                     for inst in &instruments {
@@ -782,7 +875,7 @@ impl DataClient for DydxDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match http.request_instruments(None, None, None).await {
                 Ok(instruments) => {
                     log::debug!("Fetched {} instruments from dYdX", instruments.len());
@@ -846,7 +939,7 @@ impl DataClient for DydxDataClient {
         let params = request.params;
         let clock = self.clock;
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
 
             match http_client.request_orderbook_snapshot(instrument_id).await {
@@ -894,7 +987,7 @@ impl DataClient for DydxDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match http_client
                 .request_trade_ticks(instrument_id, start, end, limit)
                 .await
@@ -954,7 +1047,7 @@ impl DataClient for DydxDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match http_client
                 .request_bars(bar_type, start, end, limit, true)
                 .await
@@ -1014,7 +1107,7 @@ impl DataClient for DydxDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match http_client
                 .request_funding_rates(instrument_id, start, end, limit)
                 .await
@@ -1488,7 +1581,7 @@ impl DydxDataClient {
         let data_sender = ctx.data_sender.clone();
         let ticker = ticker.to_string();
 
-        get_runtime().spawn(async move {
+        if let Err(e) = ctx.command_spawner.spawn(async move {
             match http_client.fetch_and_cache_single_instrument(&ticker).await {
                 Ok(Some(instrument)) => {
                     ws_client.cache_instrument(instrument.clone());
@@ -1504,7 +1597,9 @@ impl DydxDataClient {
                     log::error!("Failed to fetch new instrument {ticker}: {e}");
                 }
             }
-        });
+        }) {
+            log::warn!("Skipping new dYdX instrument fetch after shutdown began: {e}");
+        }
     }
 
     fn handle_data_message(
@@ -1847,34 +1942,24 @@ mod tests {
 
     fn test_instrument() -> InstrumentAny {
         let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
-        InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            instrument_id,
-            instrument_id.symbol,
-            Currency::BTC(),
-            Currency::USD(),
-            Currency::USD(),
-            false,
-            2,                   // price_precision
-            8,                   // size_precision (wide enough to reveal f64 rounding)
-            Price::new(0.01, 2), // price_increment
-            Quantity::new(0.00000001, 8),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        ))
+        InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(instrument_id.symbol)
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USD())
+                .settlement_currency(Currency::USD())
+                .is_inverse(false)
+                .price_precision(2)
+                // size_precision (wide enough to reveal f64 rounding)
+                .size_precision(8)
+                .price_increment(Price::new(0.01, 2))
+                .size_increment(Quantity::new(0.00000001, 8))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
     }
 
     fn seed_book_with_levels(
@@ -1980,7 +2065,7 @@ mod tests {
             .iter()
             .find(|d| {
                 d.action == BookAction::Update
-                    && d.order.side == OrderSide::Buy
+                    && d.order.side == Some(OrderSide::Buy)
                     && d.order.price.as_decimal() == dec!(100.10)
             })
             .expect("expected a Buy Update delta from crossed-book resolution");

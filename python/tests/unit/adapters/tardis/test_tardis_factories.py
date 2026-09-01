@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test tardis factories behavior.
+"""
 
 import pytest
 from unit.adapters.example_modules import capture_data_tester_main
@@ -33,10 +36,16 @@ tardis_data_tester = load_example_module("tardis", "data_tester")
 
 
 def test_tardis_data_factory_exposes_python_name() -> None:
+    """
+    Test tardis data factory exposes python name.
+    """
     assert TardisDataClientFactory().name() == TARDIS
 
 
 def test_live_node_builder_accepts_tardis_data_factory() -> None:
+    """
+    Test live node builder accepts tardis data factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
 
     node = (
@@ -54,16 +63,26 @@ def test_live_node_builder_accepts_tardis_data_factory() -> None:
 
 
 def test_tardis_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test tardis data tester runs.
+    """
     captured = capture_data_tester_main(monkeypatch, tardis_data_tester)
     kwargs = captured["data_tester_kwargs"]
+    _, _, config = captured["data_client_args"]
 
     assert isinstance(kwargs, dict)
+    assert isinstance(config, TardisDataClientConfig)
+    assert config.options == []
+    assert len(config.stream_options) == 1
     assert kwargs["subscribe_funding_rates"] is True
     assert "exec_client_args" not in captured
     assert captured["run_called"] is True
 
 
 def test_tardis_instrument_mini_info_rejects_invalid_exchange() -> None:
+    """
+    Test tardis instrument mini info rejects invalid exchange.
+    """
     with pytest.raises(ValueError, match="Matching variant not found"):
         TardisInstrumentMiniInfo(
             InstrumentId.from_str("BTC-USDT.BINANCE"),
@@ -82,6 +101,9 @@ def test_tardis_instrument_mini_info_rejects_invalid_exchange() -> None:
     ],
 )
 def test_tardis_request_options_reject_invalid_json(options_type: type) -> None:
+    """
+    Test tardis request options reject invalid json.
+    """
     with pytest.raises(ValueError, match="EOF while parsing"):
         options_type.from_json(b"{")
 

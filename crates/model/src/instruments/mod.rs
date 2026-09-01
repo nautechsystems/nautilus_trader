@@ -37,7 +37,7 @@ pub mod synthetic;
 pub mod tick_scheme;
 pub mod tokenized_asset;
 
-#[cfg(any(test, feature = "stubs"))]
+#[cfg(any(test, feature = "test-support"))]
 pub mod stubs;
 
 use std::{fmt::Display, str::FromStr};
@@ -956,32 +956,19 @@ mod tests {
 
     #[rstest]
     fn try_normalize_price_rejects_sub_increment_value() {
-        let instrument = CurrencyPair::new(
-            InstrumentId::from("TEST.VENUE"),
-            Symbol::from("TEST"),
-            Currency::from("BTC"),
-            Currency::from("USD"),
-            2,
-            2,
-            Price::from("0.50"),
-            Quantity::from("0.01"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None, // info
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let instrument = CurrencyPair::builder()
+            .instrument_id(InstrumentId::from("TEST.VENUE"))
+            .raw_symbol(Symbol::from("TEST"))
+            .base_currency(Currency::from("BTC"))
+            .quote_currency(Currency::from("USD"))
+            .price_precision(2)
+            .size_precision(2)
+            .price_increment(Price::from("0.50"))
+            .size_increment(Quantity::from("0.01"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
 
         assert_eq!(
             instrument.try_normalize_price(Price::from("1.500")),
@@ -1053,32 +1040,19 @@ mod tests {
         let price_increment = Price::from_raw(PriceRaw::from(5) * PriceRaw::pow(10, 17), 18);
         let size_increment =
             Quantity::from_raw(QuantityRaw::from(5_u8) * QuantityRaw::pow(10, 17), 18);
-        let instrument = CurrencyPair::new(
-            InstrumentId::from("TEST.VENUE"),
-            Symbol::from("TEST"),
-            Currency::from("BTC"),
-            Currency::from("USD"),
-            defi_precision,
-            defi_precision,
-            price_increment,
-            size_increment,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None, // info
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let instrument = CurrencyPair::builder()
+            .instrument_id(InstrumentId::from("TEST.VENUE"))
+            .raw_symbol(Symbol::from("TEST"))
+            .base_currency(Currency::from("BTC"))
+            .quote_currency(Currency::from("USD"))
+            .price_precision(defi_precision)
+            .size_precision(defi_precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
         let fixed_scale = u32::from(FIXED_PRECISION);
         let fixed_price = Price::from_raw(
             PriceRaw::pow(10, fixed_scale) * PriceRaw::from(100),
@@ -1106,32 +1080,19 @@ mod tests {
 
     #[rstest]
     fn try_normalize_qty_rejects_sub_increment_value() {
-        let instrument = CurrencyPair::new(
-            InstrumentId::from("TEST.VENUE"),
-            Symbol::from("TEST"),
-            Currency::from("BTC"),
-            Currency::from("USD"),
-            2,
-            2,
-            Price::from("0.01"),
-            Quantity::from("0.50"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None, // info
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let instrument = CurrencyPair::builder()
+            .instrument_id(InstrumentId::from("TEST.VENUE"))
+            .raw_symbol(Symbol::from("TEST"))
+            .base_currency(Currency::from("BTC"))
+            .quote_currency(Currency::from("USD"))
+            .price_precision(2)
+            .size_precision(2)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.50"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
 
         assert_eq!(
             instrument.try_normalize_qty(Quantity::from("1.500")),
@@ -1182,32 +1143,20 @@ mod tests {
 
     #[rstest]
     fn tick_navigation_uses_tick_scheme() {
-        let instrument = CurrencyPair::new(
-            InstrumentId::from("TEST.VENUE"),
-            Symbol::from("TEST"),
-            Currency::from("BTC"),
-            Currency::from("USD"),
-            2,
-            2,
-            Price::new(0.01, 2),
-            Quantity::from("0.01"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some(Ustr::from("FIXED_PRECISION_1")),
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let instrument = CurrencyPair::builder()
+            .instrument_id(InstrumentId::from("TEST.VENUE"))
+            .raw_symbol(Symbol::from("TEST"))
+            .base_currency(Currency::from("BTC"))
+            .quote_currency(Currency::from("USD"))
+            .price_precision(2)
+            .size_precision(2)
+            .price_increment(Price::new(0.01, 2))
+            .size_increment(Quantity::from("0.01"))
+            .tick_scheme(Ustr::from("FIXED_PRECISION_1"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
 
         assert_eq!(
             instrument.tick_scheme(),
@@ -1221,33 +1170,20 @@ mod tests {
     #[case("BOGUS")]
     #[case("FIXED_PRECISION_99")]
     fn invalid_tick_scheme_returns_error(#[case] tick_scheme: &str) {
-        let err = CurrencyPair::new_checked(
-            InstrumentId::from("TEST.VENUE"),
-            Symbol::from("TEST"),
-            Currency::from("BTC"),
-            Currency::from("USD"),
-            2,
-            2,
-            Price::new(0.01, 2),
-            Quantity::from("0.01"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some(Ustr::from(tick_scheme)),
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        )
-        .expect_err("invalid tick scheme must fail");
+        let err = CurrencyPair::builder()
+            .instrument_id(InstrumentId::from("TEST.VENUE"))
+            .raw_symbol(Symbol::from("TEST"))
+            .base_currency(Currency::from("BTC"))
+            .quote_currency(Currency::from("USD"))
+            .price_precision(2)
+            .size_precision(2)
+            .price_increment(Price::new(0.01, 2))
+            .size_increment(Quantity::from("0.01"))
+            .tick_scheme(Ustr::from(tick_scheme))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .expect_err("invalid tick scheme must fail");
 
         assert!(
             err.to_string()
@@ -1307,16 +1243,15 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "'margin_init' not positive")]
     fn validate_negative_max_qty() {
         let quantity = Quantity::new(0.0, 0);
-        validate_instrument_common(
+        let error = validate_instrument_common(
             2,
             2,
             Quantity::new(0.01, 2),
             Quantity::new(1.0, 0),
-            dec!(0),
-            dec!(0),
+            dec!(0.01),
+            dec!(0.01),
             None,
             None,
             Some(quantity),
@@ -1326,7 +1261,16 @@ mod tests {
             None,
             None,
         )
-        .expect_display(FAILED);
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::NotPositive {
+                param: "max_quantity".to_string(),
+                value: "0".to_string(),
+                type_name: "`Quantity`",
+            }
+        );
     }
 
     #[rstest]
@@ -1402,18 +1346,33 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "'margin_init' not positive")]
+    #[case::bid(true)]
+    #[case::ask(false)]
+    fn tick_navigation_rejects_negative_offset(
+        currency_pair_btcusdt: CurrencyPair,
+        #[case] bid: bool,
+    ) {
+        let price = if bid {
+            currency_pair_btcusdt.next_bid_price(10_000.0, -1)
+        } else {
+            currency_pair_btcusdt.next_ask_price(10_000.0, -1)
+        };
+
+        assert_eq!(price, None);
+    }
+
+    #[rstest]
     fn validate_price_increment_precision_mismatch() {
         let size_increment = Quantity::new(0.01, 2);
         let multiplier = Quantity::new(1.0, 0);
         let price_increment = Price::new(0.001, 3);
-        validate_instrument_common(
+        let error = validate_instrument_common(
             2,
             2,
             size_increment,
             multiplier,
-            dec!(0),
-            dec!(0),
+            dec!(0.01),
+            dec!(0.01),
             Some(price_increment),
             None,
             None,
@@ -1423,23 +1382,33 @@ mod tests {
             None,
             None,
         )
-        .expect_display(FAILED);
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::EqualityMismatch {
+                lhs_param: "price_increment.precision".to_string(),
+                rhs_param: "price_precision".to_string(),
+                lhs: "3".to_string(),
+                rhs: "2".to_string(),
+                type_name: "u8",
+            }
+        );
     }
 
     #[rstest]
-    #[should_panic(expected = "'margin_init' not positive")]
     fn validate_min_price_exceeds_max_price() {
         let size_increment = Quantity::new(0.01, 2);
         let multiplier = Quantity::new(1.0, 0);
         let min_price = Price::new(10.0, 2);
         let max_price = Price::new(5.0, 2);
-        validate_instrument_common(
+        let error = validate_instrument_common(
             2,
             2,
             size_increment,
             multiplier,
-            dec!(0),
-            dec!(0),
+            dec!(0.01),
+            dec!(0.01),
             None,
             None,
             None,
@@ -1449,7 +1418,14 @@ mod tests {
             Some(max_price),
             Some(min_price),
         )
-        .expect_display(FAILED);
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::PredicateViolation {
+                message: "min_price exceeds max_price".to_string(),
+            }
+        );
     }
 
     #[rstest]
@@ -1671,18 +1647,17 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "'margin_init' not positive")]
     fn validate_non_positive_max_price() {
         let size_increment = Quantity::new(0.01, 2);
         let multiplier = Quantity::new(1.0, 0);
         let max_price = Price::new(0.0, 2);
-        validate_instrument_common(
+        let error = validate_instrument_common(
             2,
             2,
             size_increment,
             multiplier,
-            dec!(0),
-            dec!(0),
+            dec!(0.01),
+            dec!(0.01),
             None,
             None,
             None,
@@ -1692,22 +1667,30 @@ mod tests {
             Some(max_price),
             None,
         )
-        .expect_display(FAILED);
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::NotPositive {
+                param: "max_price".to_string(),
+                value: "0.00".to_string(),
+                type_name: "`Price`",
+            }
+        );
     }
 
     #[rstest]
-    #[should_panic(expected = "'margin_init' not positive")]
     fn validate_non_positive_max_notional(currency_pair_btcusdt: CurrencyPair) {
         let size_increment = Quantity::new(0.01, 2);
         let multiplier = Quantity::new(1.0, 0);
         let max_notional = Money::new(0.0, currency_pair_btcusdt.quote_currency());
-        validate_instrument_common(
+        let error = validate_instrument_common(
             2,
             2,
             size_increment,
             multiplier,
-            dec!(0),
-            dec!(0),
+            dec!(0.01),
+            dec!(0.01),
             None,
             None,
             None,
@@ -1717,23 +1700,31 @@ mod tests {
             None,
             None,
         )
-        .expect_display(FAILED);
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::NotPositive {
+                param: "max_notional".to_string(),
+                value: "0.00000000 USDT".to_string(),
+                type_name: "`Money`",
+            }
+        );
     }
 
     #[rstest]
-    #[should_panic(expected = "'margin_init' not positive")]
     fn validate_price_increment_min_price_precision_mismatch() {
         let size_increment = Quantity::new(0.01, 2);
         let multiplier = Quantity::new(1.0, 0);
         let price_increment = Price::new(0.01, 2);
         let min_price = Price::new(1.0, 3);
-        validate_instrument_common(
+        let error = validate_instrument_common(
             2,
             2,
             size_increment,
             multiplier,
-            dec!(0),
-            dec!(0),
+            dec!(0.01),
+            dec!(0.01),
             Some(price_increment),
             None,
             None,
@@ -1743,23 +1734,33 @@ mod tests {
             None,
             Some(min_price),
         )
-        .expect_display(FAILED);
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::EqualityMismatch {
+                lhs_param: "min_price.precision".to_string(),
+                rhs_param: "price_precision".to_string(),
+                lhs: "3".to_string(),
+                rhs: "2".to_string(),
+                type_name: "u8",
+            }
+        );
     }
 
     #[rstest]
-    #[should_panic(expected = "'margin_init' not positive")]
     fn validate_negative_min_notional(currency_pair_btcusdt: CurrencyPair) {
         let size_increment = Quantity::new(0.01, 2);
         let multiplier = Quantity::new(1.0, 0);
         let min_notional = Money::new(-1.0, currency_pair_btcusdt.quote_currency());
         let max_notional = Money::new(1.0, currency_pair_btcusdt.quote_currency());
-        validate_instrument_common(
+        let error = validate_instrument_common(
             2,
             2,
             size_increment,
             multiplier,
-            dec!(0),
-            dec!(0),
+            dec!(0.01),
+            dec!(0.01),
             None,
             None,
             None,
@@ -1769,7 +1770,16 @@ mod tests {
             None,
             None,
         )
-        .expect_display(FAILED);
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::NotPositive {
+                param: "min_notional".to_string(),
+                value: "-1.00000000 USDT".to_string(),
+                type_name: "`Money`",
+            }
+        );
     }
 
     #[rstest]
@@ -1881,18 +1891,18 @@ mod tests {
     }
 
     #[rstest]
-    fn pyo3_failure_validate_price_increment_max_price_precision_mismatch() {
+    fn validate_price_increment_max_price_precision_mismatch() {
         let size_increment = Quantity::new(0.01, 2);
         let multiplier = Quantity::new(1.0, 0);
         let price_increment = Price::new(0.01, 2);
         let max_price = Price::new(1.0, 3);
-        let res = validate_instrument_common(
+        let error = validate_instrument_common(
             2,
             2,
             size_increment,
             multiplier,
-            dec!(0),
-            dec!(0),
+            dec!(0.01),
+            dec!(0.01),
             Some(price_increment),
             None,
             None,
@@ -1901,8 +1911,19 @@ mod tests {
             None,
             Some(max_price),
             None,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::EqualityMismatch {
+                lhs_param: "max_price.precision".to_string(),
+                rhs_param: "price_precision".to_string(),
+                lhs: "3".to_string(),
+                rhs: "2".to_string(),
+                type_name: "u8",
+            }
         );
-        assert!(res.is_err());
     }
 
     #[rstest]
@@ -1959,68 +1980,43 @@ mod tests {
         quote_currency: Currency,
         settlement_currency: Currency,
     ) -> CryptoFuture {
-        CryptoFuture::new(
-            InstrumentId::from("ETHUSD-QUANTO-TEST.BINANCE"),
-            Symbol::from("ETHUSD-QUANTO-TEST"),
-            Currency::ETH(),
-            quote_currency,
-            settlement_currency,
-            false,
-            0.into(),
-            0.into(),
-            2,
-            0,
-            Price::from("0.01"),
-            Quantity::from("1"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            0.into(),
-            0.into(),
-        )
+        CryptoFuture::builder()
+            .instrument_id(InstrumentId::from("ETHUSD-QUANTO-TEST.BINANCE"))
+            .raw_symbol(Symbol::from("ETHUSD-QUANTO-TEST"))
+            .underlying(Currency::ETH())
+            .quote_currency(quote_currency)
+            .settlement_currency(settlement_currency)
+            .is_inverse(false)
+            .activation_ns(0.into())
+            .expiration_ns(0.into())
+            .price_precision(2)
+            .size_precision(0)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("1"))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap()
     }
 
     #[rstest]
     fn make_price_with_trailing_zeros_in_increment() {
         // Test instrument with price_increment 0.50 (precision 2, but min_increment_precision 1)
         // This verifies that trailing zeros in price_increment are handled correctly
-        let instrument = CurrencyPair::new(
-            InstrumentId::from("TEST.VENUE"),
-            Symbol::from("TEST"),
-            Currency::from("BTC"),
-            Currency::from("USD"),
-            2,                   // price_precision
-            2,                   // size_precision
-            Price::new(0.50, 2), // price_increment with trailing zero
-            Quantity::from("0.01"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None, // info
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let instrument = CurrencyPair::builder()
+            .instrument_id(InstrumentId::from("TEST.VENUE"))
+            .raw_symbol(Symbol::from("TEST"))
+            .base_currency(Currency::from("BTC"))
+            .quote_currency(Currency::from("USD"))
+            .price_precision(2)
+            .size_precision(2)
+            // price_increment with trailing zero
+            .price_increment(Price::new(0.50, 2))
+            .size_increment(Quantity::from("0.01"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
 
         // Verify min_increment_precision is 1 (ignoring trailing zero)
         assert_eq!(instrument.min_price_increment_precision(), 1);
@@ -2045,32 +2041,20 @@ mod tests {
     #[rstest]
     fn make_qty_with_trailing_zeros_in_increment() {
         // Test instrument with size_increment 0.50 (precision 2, but min_increment_precision 1)
-        let instrument = CurrencyPair::new(
-            InstrumentId::from("TEST.VENUE"),
-            Symbol::from("TEST"),
-            Currency::from("BTC"),
-            Currency::from("USD"),
-            2, // price_precision
-            2, // size_precision
-            Price::new(0.01, 2),
-            Quantity::new(0.50, 2), // size_increment with trailing zero
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None, // info
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let instrument = CurrencyPair::builder()
+            .instrument_id(InstrumentId::from("TEST.VENUE"))
+            .raw_symbol(Symbol::from("TEST"))
+            .base_currency(Currency::from("BTC"))
+            .quote_currency(Currency::from("USD"))
+            .price_precision(2)
+            .size_precision(2)
+            .price_increment(Price::new(0.01, 2))
+            // size_increment with trailing zero
+            .size_increment(Quantity::new(0.50, 2))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
 
         // Verify min_increment_precision is 1 (ignoring trailing zero)
         assert_eq!(instrument.min_size_increment_precision(), 1);

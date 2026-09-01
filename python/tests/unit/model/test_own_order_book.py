@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test own order book behavior.
+"""
 
 from decimal import Decimal
 
@@ -19,6 +22,8 @@ import pytest
 from tests.unit.model.factories import make_own_order
 
 from nautilus_trader.model import ClientOrderId
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import OrderBook
 from nautilus_trader.model import OrderSide
 from nautilus_trader.model import OrderStatus
 from nautilus_trader.model import OwnOrderBook
@@ -27,16 +32,25 @@ from nautilus_trader.model import Quantity
 
 
 @pytest.fixture
-def book(audusd_id):
+def book(audusd_id: InstrumentId) -> object:
+    """
+    Book.
+    """
     return OwnOrderBook(instrument_id=audusd_id)
 
 
-def test_own_order_book_construction(book, audusd_id):
+def test_own_order_book_construction(book: OrderBook, audusd_id: InstrumentId) -> None:
+    """
+    Test own order book construction.
+    """
     assert book.instrument_id == audusd_id
     assert book.update_count == 0
 
 
-def test_own_book_order_construction():
+def test_own_book_order_construction() -> None:
+    """
+    Test own book order construction.
+    """
     order = make_own_order()
 
     assert order.client_order_id == ClientOrderId("O-001")
@@ -45,13 +59,19 @@ def test_own_book_order_construction():
     assert order.size == Quantity.from_int(100_000)
 
 
-def test_own_book_order_hash():
+def test_own_book_order_hash() -> None:
+    """
+    Test own book order hash.
+    """
     order = make_own_order()
 
     assert isinstance(hash(order), int)
 
 
-def test_add_and_query(book):
+def test_add_and_query(book: OrderBook) -> None:
+    """
+    Test add and query.
+    """
     bid = make_own_order(side=OrderSide.BUY, price="1.00000", client_order_id="O-001")
     ask = make_own_order(side=OrderSide.SELL, price="1.00010", client_order_id="O-002")
 
@@ -66,7 +86,10 @@ def test_add_and_query(book):
     assert len(book.asks_to_list()) == 1
 
 
-def test_bid_and_ask_client_order_ids(book):
+def test_bid_and_ask_client_order_ids(book: OrderBook) -> None:
+    """
+    Test bid and ask client order ids.
+    """
     bid = make_own_order(side=OrderSide.BUY, client_order_id="O-001")
     ask = make_own_order(side=OrderSide.SELL, price="1.00010", client_order_id="O-002")
 
@@ -77,7 +100,10 @@ def test_bid_and_ask_client_order_ids(book):
     assert book.ask_client_order_ids() == [ClientOrderId("O-002")]
 
 
-def test_delete(book):
+def test_delete(book: OrderBook) -> None:
+    """
+    Test delete.
+    """
     order = make_own_order()
     book.add(order)
 
@@ -89,7 +115,10 @@ def test_delete(book):
     assert len(book.orders_to_list()) == 0
 
 
-def test_clear(book):
+def test_clear(book: OrderBook) -> None:
+    """
+    Test clear.
+    """
     book.add(make_own_order(client_order_id="O-001"))
     book.add(make_own_order(side=OrderSide.SELL, price="1.00010", client_order_id="O-002"))
 
@@ -98,7 +127,10 @@ def test_clear(book):
     assert len(book.orders_to_list()) == 0
 
 
-def test_reset(book):
+def test_reset(book: OrderBook) -> None:
+    """
+    Test reset.
+    """
     book.add(make_own_order())
 
     book.reset()
@@ -106,7 +138,10 @@ def test_reset(book):
     assert len(book.orders_to_list()) == 0
 
 
-def test_update(book):
+def test_update(book: OrderBook) -> None:
+    """
+    Test update.
+    """
     book.add(make_own_order(client_order_id="O-001"))
 
     book.update(
@@ -125,7 +160,10 @@ def test_update(book):
     assert updated.status == OrderStatus.PARTIALLY_FILLED
 
 
-def test_bids_and_asks_to_dict(book):
+def test_bids_and_asks_to_dict(book: OrderBook) -> None:
+    """
+    Test bids and asks to dict.
+    """
     book.add(make_own_order(client_order_id="O-001"))
     book.add(make_own_order(side=OrderSide.SELL, price="1.00010", client_order_id="O-002"))
 
@@ -142,7 +180,10 @@ def test_bids_and_asks_to_dict(book):
     ]
 
 
-def test_bids_to_dict_filters_status_and_accepted_buffer(book):
+def test_bids_to_dict_filters_status_and_accepted_buffer(book: OrderBook) -> None:
+    """
+    Test bids to dict filters status and accepted buffer.
+    """
     book.add(
         make_own_order(
             client_order_id="O-001",
@@ -176,7 +217,10 @@ def test_bids_to_dict_filters_status_and_accepted_buffer(book):
     assert buffered == {}
 
 
-def test_bid_and_ask_quantity_views(book):
+def test_bid_and_ask_quantity_views(book: OrderBook) -> None:
+    """
+    Test bid and ask quantity views.
+    """
     book.add(make_own_order(client_order_id="O-001"))
     book.add(make_own_order(price="0.99990", size=50_000, client_order_id="O-002"))
     book.add(
@@ -200,7 +244,13 @@ def test_bid_and_ask_quantity_views(book):
     }
 
 
-def test_combined_with_opposite_uses_primary_instrument(audusd_id, usdjpy_id):
+def test_combined_with_opposite_uses_primary_instrument(
+    audusd_id: InstrumentId,
+    usdjpy_id: object,
+) -> None:
+    """
+    Test combined with opposite uses primary instrument.
+    """
     primary = OwnOrderBook(instrument_id=audusd_id)
     opposite = OwnOrderBook(instrument_id=usdjpy_id)
 
@@ -223,7 +273,10 @@ def test_combined_with_opposite_uses_primary_instrument(audusd_id, usdjpy_id):
     }
 
 
-def test_audit_open_orders_removes_missing_orders(book):
+def test_audit_open_orders_removes_missing_orders(book: OrderBook) -> None:
+    """
+    Test audit open orders removes missing orders.
+    """
     book.add(make_own_order(client_order_id="O-001"))
     book.add(make_own_order(price="0.99990", client_order_id="O-002"))
 
@@ -236,7 +289,10 @@ def test_audit_open_orders_removes_missing_orders(book):
     assert book.orders_to_list() == []
 
 
-def test_pprint(book):
+def test_pprint(book: OrderBook) -> None:
+    """
+    Test pprint.
+    """
     book.add(make_own_order(client_order_id="O-001"))
     book.add(make_own_order(side=OrderSide.SELL, price="1.00010", client_order_id="O-002"))
 

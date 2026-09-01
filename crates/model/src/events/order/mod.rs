@@ -54,9 +54,9 @@ pub mod submitted_batch;
 pub mod triggered;
 pub mod updated;
 
-#[cfg(any(test, feature = "stubs"))]
+#[cfg(any(test, feature = "test-support"))]
 pub mod spec;
-#[cfg(any(test, feature = "stubs"))]
+#[cfg(any(test, feature = "test-support"))]
 pub mod stubs;
 
 /// Represents a type of [`OrderEvent`].

@@ -211,11 +211,9 @@ impl LoggerConfig {
                 continue;
             }
 
-            let kv_lower = kv.to_lowercase();
-
-            // Handle bare flags (without =)
-            if !kv.contains('=') {
-                match kv_lower.as_str() {
+            let Some((k, v)) = kv.split_once('=') else {
+                // Handle bare flags (without =)
+                match kv.to_lowercase().as_str() {
                     "log_components_only" => config.log_components_only = true,
                     "is_colored" => config.is_colored = true,
                     "print_config" => config.print_config = true,
@@ -226,15 +224,10 @@ impl LoggerConfig {
                     _ => anyhow::bail!("Invalid spec pair: {kv}"),
                 }
                 continue;
-            }
+            };
 
-            let parts: Vec<&str> = kv.splitn(2, '=').collect();
-            if parts.len() != 2 {
-                anyhow::bail!("Invalid spec pair: {kv}");
-            }
-
-            let k = parts[0].trim();
-            let v = parts[1].trim();
+            let k = k.trim();
+            let v = v.trim();
             let k_lower = k.to_lowercase();
 
             match k_lower.as_str() {

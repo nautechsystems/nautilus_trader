@@ -48,7 +48,7 @@ use nautilus_hyperliquid::{
 };
 use nautilus_model::{
     data::BarType,
-    enums::{OrderStatus, OrderType, PositionSideSpecified, TimeInForce},
+    enums::{OrderStatus, OrderType, PositionSide, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId},
 };
 use nautilus_network::http::{HttpClient, Method};
@@ -96,8 +96,7 @@ fn load_json(filename: &str) -> Value {
 
 async fn wait_for_server(addr: SocketAddr, path: &str) {
     let health_url = format!("http://{addr}{path}");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();
@@ -705,32 +704,19 @@ async fn test_request_spot_position_status_reports_emits_for_cached_instrument()
     let usdc = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
     let ts = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
 
-    let instrument = CurrencyPair::new(
-        InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID"),
-        Symbol::new("PURR/USDC"),
-        purr,
-        usdc,
-        5,
-        0,
-        Price::from("0.00001"),
-        Quantity::from("1"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        ts,
-        ts,
-    );
+    let instrument = CurrencyPair::builder()
+        .instrument_id(InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID"))
+        .raw_symbol(Symbol::new("PURR/USDC"))
+        .base_currency(purr)
+        .quote_currency(usdc)
+        .price_precision(5)
+        .size_precision(0)
+        .price_increment(Price::from("0.00001"))
+        .size_increment(Quantity::from("1"))
+        .ts_event(ts)
+        .ts_init(ts)
+        .build()
+        .unwrap();
     client.cache_instrument(&InstrumentAny::CurrencyPair(instrument));
 
     let reports = client
@@ -746,7 +732,7 @@ async fn test_request_spot_position_status_reports_emits_for_cached_instrument()
     );
     assert_eq!(report.quantity.as_f64(), 2000.0);
     // Spot holdings are always Long on Hyperliquid (no spot shorting)
-    assert_eq!(report.position_side, PositionSideSpecified::Long);
+    assert_eq!(report.position_side, PositionSide::Long);
     // entryNtl=1234.56 / total=2000 = 0.61728
     assert_eq!(
         report.avg_px_open.unwrap(),
@@ -776,32 +762,19 @@ async fn test_request_spot_position_status_reports_skips_usdc() {
 
     let purr = Currency::new("PURR", 8, 0, "PURR", CurrencyType::Crypto);
     let usdc = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
-    let instrument = CurrencyPair::new(
-        InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID"),
-        Symbol::new("PURR/USDC"),
-        purr,
-        usdc,
-        5,
-        0,
-        Price::from("0.00001"),
-        Quantity::from("1"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        ts,
-        ts,
-    );
+    let instrument = CurrencyPair::builder()
+        .instrument_id(InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID"))
+        .raw_symbol(Symbol::new("PURR/USDC"))
+        .base_currency(purr)
+        .quote_currency(usdc)
+        .price_precision(5)
+        .size_precision(0)
+        .price_increment(Price::from("0.00001"))
+        .size_increment(Quantity::from("1"))
+        .ts_event(ts)
+        .ts_init(ts)
+        .build()
+        .unwrap();
     client.cache_instrument(&InstrumentAny::CurrencyPair(instrument));
 
     let reports = client
@@ -838,62 +811,36 @@ async fn test_request_spot_position_status_reports_filters_by_instrument_id() {
 
     // Cache PURR/USDC (fixture contains total=2000)
     let purr = Currency::new("PURR", 8, 0, "PURR", CurrencyType::Crypto);
-    let purr_inst = CurrencyPair::new(
-        InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID"),
-        Symbol::new("PURR/USDC"),
-        purr,
-        usdc,
-        5,
-        0,
-        Price::from("0.00001"),
-        Quantity::from("1"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        ts,
-        ts,
-    );
+    let purr_inst = CurrencyPair::builder()
+        .instrument_id(InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID"))
+        .raw_symbol(Symbol::new("PURR/USDC"))
+        .base_currency(purr)
+        .quote_currency(usdc)
+        .price_precision(5)
+        .size_precision(0)
+        .price_increment(Price::from("0.00001"))
+        .size_increment(Quantity::from("1"))
+        .ts_event(ts)
+        .ts_init(ts)
+        .build()
+        .unwrap();
     client.cache_instrument(&InstrumentAny::CurrencyPair(purr_inst));
 
     // Cache HYPE/USDC (fixture contains total=5.2)
     let hype = Currency::new("HYPE", 8, 0, "HYPE", CurrencyType::Crypto);
-    let hype_inst = CurrencyPair::new(
-        InstrumentId::from("HYPE-USDC-SPOT.HYPERLIQUID"),
-        Symbol::new("@150"),
-        hype,
-        usdc,
-        5,
-        2,
-        Price::from("0.00001"),
-        Quantity::from("0.01"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        ts,
-        ts,
-    );
+    let hype_inst = CurrencyPair::builder()
+        .instrument_id(InstrumentId::from("HYPE-USDC-SPOT.HYPERLIQUID"))
+        .raw_symbol(Symbol::new("@150"))
+        .base_currency(hype)
+        .quote_currency(usdc)
+        .price_precision(5)
+        .size_precision(2)
+        .price_increment(Price::from("0.00001"))
+        .size_increment(Quantity::from("0.01"))
+        .ts_event(ts)
+        .ts_init(ts)
+        .build()
+        .unwrap();
     client.cache_instrument(&InstrumentAny::CurrencyPair(hype_inst));
 
     let reports = client
@@ -951,32 +898,19 @@ async fn test_request_position_status_reports_skips_perp_fetch_for_spot_filter()
 
     let purr = Currency::new("PURR", 8, 0, "PURR", CurrencyType::Crypto);
     let usdc = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
-    let instrument = CurrencyPair::new(
-        InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID"),
-        Symbol::new("PURR/USDC"),
-        purr,
-        usdc,
-        5,
-        0,
-        Price::from("0.00001"),
-        Quantity::from("1"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        ts,
-        ts,
-    );
+    let instrument = CurrencyPair::builder()
+        .instrument_id(InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID"))
+        .raw_symbol(Symbol::new("PURR/USDC"))
+        .base_currency(purr)
+        .quote_currency(usdc)
+        .price_precision(5)
+        .size_precision(0)
+        .price_increment(Price::from("0.00001"))
+        .size_increment(Quantity::from("1"))
+        .ts_event(ts)
+        .ts_init(ts)
+        .build()
+        .unwrap();
     client.cache_instrument(&InstrumentAny::CurrencyPair(instrument));
 
     let reports = client
@@ -1023,34 +957,21 @@ async fn test_request_spot_position_status_reports_resolves_outcome_side_token()
     let ts = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
     let usdc = Currency::from("USDC");
 
-    let outcome = BinaryOption::new(
-        InstrumentId::from("1-YES-OUTCOME.HYPERLIQUID"),
-        Symbol::new("#10"),
-        AssetClass::Alternative,
-        usdc,
-        UnixNanos::default(),
-        UnixNanos::default(),
-        4,
-        2,
-        Price::from("0.0001"),
-        Quantity::from("0.01"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        ts,
-        ts,
-    );
+    let outcome = BinaryOption::builder()
+        .instrument_id(InstrumentId::from("1-YES-OUTCOME.HYPERLIQUID"))
+        .raw_symbol(Symbol::new("#10"))
+        .asset_class(AssetClass::Alternative)
+        .currency(usdc)
+        .activation_ns(UnixNanos::default())
+        .expiration_ns(UnixNanos::default())
+        .price_precision(4)
+        .size_precision(2)
+        .price_increment(Price::from("0.0001"))
+        .size_increment(Quantity::from("0.01"))
+        .ts_event(ts)
+        .ts_init(ts)
+        .build()
+        .unwrap();
     client.cache_instrument(&InstrumentAny::BinaryOption(outcome));
 
     let reports = client
@@ -1062,7 +983,7 @@ async fn test_request_spot_position_status_reports_resolves_outcome_side_token()
         .iter()
         .find(|r| r.instrument_id == InstrumentId::from("1-YES-OUTCOME.HYPERLIQUID"))
         .expect("outcome side token must surface as a position report");
-    assert_eq!(outcome_report.position_side, PositionSideSpecified::Long);
+    assert_eq!(outcome_report.position_side, PositionSide::Long);
     assert_eq!(outcome_report.quantity.as_f64(), 25.0);
     // entryNtl=12.5 / total=25 = 0.5
     assert_eq!(
@@ -1089,34 +1010,21 @@ async fn test_request_position_status_reports_skips_perp_fetch_for_outcome_filte
     let ts = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
     let usdc = Currency::from("USDC");
 
-    let outcome = BinaryOption::new(
-        InstrumentId::from("1-YES-OUTCOME.HYPERLIQUID"),
-        Symbol::new("#10"),
-        AssetClass::Alternative,
-        usdc,
-        UnixNanos::default(),
-        UnixNanos::default(),
-        4,
-        2,
-        Price::from("0.0001"),
-        Quantity::from("0.01"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        ts,
-        ts,
-    );
+    let outcome = BinaryOption::builder()
+        .instrument_id(InstrumentId::from("1-YES-OUTCOME.HYPERLIQUID"))
+        .raw_symbol(Symbol::new("#10"))
+        .asset_class(AssetClass::Alternative)
+        .currency(usdc)
+        .activation_ns(UnixNanos::default())
+        .expiration_ns(UnixNanos::default())
+        .price_precision(4)
+        .size_precision(2)
+        .price_increment(Price::from("0.0001"))
+        .size_increment(Quantity::from("0.01"))
+        .ts_event(ts)
+        .ts_init(ts)
+        .build()
+        .unwrap();
     client.cache_instrument(&InstrumentAny::BinaryOption(outcome));
 
     let reports = client
@@ -1217,7 +1125,7 @@ async fn test_submit_orders_resolves_outcome_response_instrument() {
     // loop, so a separate regression test guards against the two call sites
     // drifting apart.
     use nautilus_model::{
-        enums::{ContingencyType, OrderSide},
+        enums::OrderSide,
         identifiers::{InstrumentId, StrategyId, TraderId},
         orders::{LimitOrder, OrderAny},
         types::{Price, Quantity},
@@ -1262,7 +1170,7 @@ async fn test_submit_orders_resolves_outcome_response_instrument() {
         None,
         None,
         None,
-        Some(ContingencyType::NoContingency),
+        None,
         None,
         None,
         None,
@@ -1422,15 +1330,13 @@ struct TestHttpClient {
 
 impl TestHttpClient {
     fn new(base_url: String) -> Self {
-        let client = HttpClient::new(
-            HashMap::from([("Content-Type".to_string(), "application/json".to_string())]),
-            vec![],
-            vec![],
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let client = HttpClient::builder()
+            .headers(HashMap::from([(
+                "Content-Type".to_string(),
+                "application/json".to_string(),
+            )]))
+            .build()
+            .unwrap();
 
         Self { client, base_url }
     }
@@ -1550,35 +1456,22 @@ fn cache_perp_instrument(client: &HyperliquidHttpClient, instrument_id: &str, sy
     let usdc = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
     let ts = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
 
-    let instrument = CryptoPerpetual::new_checked(
-        InstrumentId::from(instrument_id),
-        Symbol::new(symbol),
-        base,
-        usd,
-        usdc,
-        false,
-        1,
-        5,
-        Price::from("0.1"),
-        Quantity::from("0.00001"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(Money::from("0.1 USDC")),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        ts,
-        ts,
-    )
-    .unwrap();
+    let instrument = CryptoPerpetual::builder()
+        .instrument_id(InstrumentId::from(instrument_id))
+        .raw_symbol(Symbol::new(symbol))
+        .base_currency(base)
+        .quote_currency(usd)
+        .settlement_currency(usdc)
+        .is_inverse(false)
+        .price_precision(1)
+        .size_precision(5)
+        .price_increment(Price::from("0.1"))
+        .size_increment(Quantity::from("0.00001"))
+        .min_notional(Money::from("0.1 USDC"))
+        .ts_event(ts)
+        .ts_init(ts)
+        .build()
+        .unwrap();
 
     client.cache_instrument(&InstrumentAny::CryptoPerpetual(instrument));
 }
@@ -1779,7 +1672,7 @@ async fn test_request_position_status_reports_aggregates_all_cached_dexs() {
 
     assert_eq!(reports.len(), 3);
     assert_eq!(reports[0].instrument_id, "BTC-USD-PERP.HYPERLIQUID".into());
-    assert_eq!(reports[0].position_side, PositionSideSpecified::Long);
+    assert_eq!(reports[0].position_side, PositionSide::Long);
     assert_eq!(
         reports[0].quantity.as_decimal(),
         rust_decimal_macros::dec!(0.1)
@@ -1788,7 +1681,7 @@ async fn test_request_position_status_reports_aggregates_all_cached_dexs() {
         reports[1].instrument_id,
         "flx:TEST-USD-PERP.HYPERLIQUID".into()
     );
-    assert_eq!(reports[1].position_side, PositionSideSpecified::Long);
+    assert_eq!(reports[1].position_side, PositionSide::Long);
     assert_eq!(
         reports[1].quantity.as_decimal(),
         rust_decimal_macros::dec!(0.2)
@@ -1797,7 +1690,7 @@ async fn test_request_position_status_reports_aggregates_all_cached_dexs() {
         reports[2].instrument_id,
         "xyz:XYZ100-USD-PERP.HYPERLIQUID".into()
     );
-    assert_eq!(reports[2].position_side, PositionSideSpecified::Short);
+    assert_eq!(reports[2].position_side, PositionSide::Short);
     assert_eq!(
         reports[2].quantity.as_decimal(),
         rust_decimal_macros::dec!(0.3)
@@ -1809,20 +1702,20 @@ async fn test_request_position_status_reports_aggregates_all_cached_dexs() {
 #[case(
     "flx:TEST-USD-PERP.HYPERLIQUID",
     "flx",
-    PositionSideSpecified::Long,
+    PositionSide::Long,
     rust_decimal_macros::dec!(0.2)
 )]
 #[case(
     "xyz:XYZ100-USD-PERP.HYPERLIQUID",
     "xyz",
-    PositionSideSpecified::Short,
+    PositionSide::Short,
     rust_decimal_macros::dec!(0.3)
 )]
 #[tokio::test]
 async fn test_request_position_status_reports_routes_builder_dex_filter(
     #[case] instrument_id: InstrumentId,
     #[case] expected_dex: &str,
-    #[case] expected_side: PositionSideSpecified,
+    #[case] expected_side: PositionSide,
     #[case] expected_quantity: rust_decimal::Decimal,
 ) {
     let state = TestServerState::default();

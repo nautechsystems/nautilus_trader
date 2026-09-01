@@ -17,7 +17,7 @@ use std::{cmp, fmt::Display, time::Duration};
 
 use super::{StateStore, clock, nanos::Nanos, quota::Quota};
 
-/// Rate‑limiting parameters captured for a rejected decision.
+/// Rate-limiting parameters captured for a rejected decision.
 ///
 /// `t` is one cell's weight in time, `tau` is the burst capacity in time, and `tat` is the
 /// theoretical arrival time used to calculate the next admissible request.
@@ -52,7 +52,7 @@ pub struct NotUntil<P: clock::Reference> {
 }
 
 impl<P: clock::Reference> NotUntil<P> {
-    /// Creates a `NotUntil` as a negative rate‑limiting result.
+    /// Creates a `NotUntil` as a negative rate-limiting result.
     #[inline]
     pub(crate) const fn new(state: StateSnapshot, start: P) -> Self {
         Self { state, start }
@@ -75,8 +75,7 @@ impl<P: clock::Reference> NotUntil<P> {
     /// `wait_time_from` returns a zero `Duration`.
     #[inline]
     pub fn wait_time_from(&self, from: P) -> Duration {
-        let earliest = self.earliest_possible();
-        earliest.duration_since(earliest.min(from)).into()
+        self.earliest_possible().duration_since(from).into()
     }
 
     /// Returns the rate limiting [`Quota`] used to reach the decision.
@@ -130,21 +129,27 @@ impl Gcra {
         state: &S,
         t0: P,
     ) -> Result<(), NotUntil<P>> {
+        state.measure_and_replace(key, |tat| self.test(start, tat, t0).map(|next| ((), next)))
+    }
+
+    /// Tests a single cell and returns its next state without updating the state store.
+    pub(crate) fn test<P: clock::Reference>(
+        &self,
+        start: P,
+        tat: Option<Nanos>,
+        t0: P,
+    ) -> Result<Nanos, NotUntil<P>> {
         let t0 = t0.duration_since(start);
-        let tau = self.tau;
-        let t = self.t;
-        state.measure_and_replace(key, |tat| {
-            let tat = tat.unwrap_or_else(|| self.starting_state(t0));
-            let earliest_time = tat.saturating_sub(tau);
-            if t0 < earliest_time {
-                Err(NotUntil::new(
-                    StateSnapshot::new(self.t, self.tau, earliest_time),
-                    start,
-                ))
-            } else {
-                let next = cmp::max(tat, t0) + t;
-                Ok(((), next))
-            }
-        })
+        let tat = tat.unwrap_or_else(|| self.starting_state(t0));
+        let earliest_time = tat.saturating_sub(self.tau);
+
+        if t0 < earliest_time {
+            Err(NotUntil::new(
+                StateSnapshot::new(self.t, self.tau, earliest_time),
+                start,
+            ))
+        } else {
+            Ok(cmp::max(tat, t0) + self.t)
+        }
     }
 }

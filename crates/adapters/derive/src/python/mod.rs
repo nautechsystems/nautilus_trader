@@ -29,8 +29,8 @@ use crate::{
         consts::{DERIVE, DERIVE_CLIENT_ID, DERIVE_VENUE},
         enums::DeriveEnvironment,
     },
-    config::{DeriveDataClientConfig, DeriveExecClientConfig},
-    factories::{DeriveDataClientFactory, DeriveExecFactoryConfig, DeriveExecutionClientFactory},
+    config::{DeriveDataClientConfig, DeriveExecutionClientConfig},
+    factories::{DeriveDataClientFactory, DeriveExecutionClientFactory},
 };
 
 #[expect(clippy::needless_pass_by_value)]
@@ -77,10 +77,10 @@ fn extract_derive_exec_config(
     py: Python<'_>,
     config: Py<PyAny>,
 ) -> PyResult<Box<dyn ClientConfig>> {
-    match config.extract::<DeriveExecFactoryConfig>(py) {
+    match config.extract::<DeriveExecutionClientConfig>(py) {
         Ok(c) => Ok(Box::new(c)),
         Err(e) => Err(to_pyvalue_err(format!(
-            "Failed to extract DeriveExecFactoryConfig: {e}"
+            "Failed to extract DeriveExecutionClientConfig: {e}"
         ))),
     }
 }
@@ -97,9 +97,8 @@ pub fn derive(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(DERIVE_VENUE), *DERIVE_VENUE)?;
     m.add_class::<DeriveEnvironment>()?;
     m.add_class::<DeriveDataClientConfig>()?;
-    m.add_class::<DeriveExecClientConfig>()?;
     m.add_class::<DeriveDataClientFactory>()?;
-    m.add_class::<DeriveExecFactoryConfig>()?;
+    m.add_class::<DeriveExecutionClientConfig>()?;
     m.add_class::<DeriveExecutionClientFactory>()?;
 
     let registry = get_global_pyo3_registry();
@@ -130,7 +129,7 @@ pub fn derive(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     if let Err(e) = registry.register_config_extractor(
-        "DeriveExecFactoryConfig".to_string(),
+        "DeriveExecutionClientConfig".to_string(),
         extract_derive_exec_config,
     ) {
         return Err(to_pyruntime_err(format!(

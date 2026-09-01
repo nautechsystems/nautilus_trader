@@ -67,8 +67,7 @@ async fn start_test_server(state: TestServerState) -> SocketAddr {
 
 async fn wait_for_server(addr: SocketAddr) {
     let health_url = format!("http://{addr}/health");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, Some(1), None).unwrap();
+    let http_client = HttpClient::builder().timeout_secs(1).build().unwrap();
 
     wait_until_async(
         || {
@@ -257,8 +256,7 @@ async fn test_get_account_summaries_authorization_required() {
 
     // Create a custom HTTP request without authentication
     let base_url = format!("http://{addr}/api/v2");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, Some(5), None).unwrap();
+    let http_client = HttpClient::builder().timeout_secs(5).build().unwrap();
 
     let body = json!({
         "jsonrpc": "2.0",

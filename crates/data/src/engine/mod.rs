@@ -71,7 +71,6 @@ use handlers::{
 use indexmap::IndexMap;
 use nautilus_common::{
     cache::Cache,
-    clients::SocketReconnectLookup,
     clock::Clock,
     logging::{RECV, RES},
     messages::data::{
@@ -107,7 +106,7 @@ use nautilus_model::{
     },
     enums::{
         AggregationSource, BarAggregation, BookType, InstrumentClass, MarketStatusAction,
-        OrderSide, PriceType, RecordFlag,
+        PriceType, RecordFlag,
     },
     identifiers::{
         ClientId, GENERIC_SPREAD_ID_SEPARATOR, InstrumentId, OptionSeriesId, Symbol, Venue,
@@ -818,26 +817,6 @@ impl DataEngine {
     #[must_use]
     pub fn get_clients_mut(&mut self) -> Vec<&mut DataClientAdapter> {
         self.clients.values_mut().collect()
-    }
-
-    /// Resolves a reconnectable socket endpoint owned by a registered data client.
-    #[must_use]
-    pub fn socket_reconnect_lookup(
-        &self,
-        client_id: &ClientId,
-        endpoint: Ustr,
-    ) -> SocketReconnectLookup {
-        let Some(client) = self.clients.get(client_id) else {
-            return SocketReconnectLookup::ClientNotFound;
-        };
-        let Some(registry) = client.socket_reconnect_registry() else {
-            return SocketReconnectLookup::Unsupported;
-        };
-
-        registry.get(endpoint).map_or(
-            SocketReconnectLookup::EndpointNotFound,
-            SocketReconnectLookup::Handle,
-        )
     }
 
     pub fn get_client(
@@ -5393,16 +5372,12 @@ fn datetime_to_unix_nanos(datetime: jiff::Timestamp) -> anyhow::Result<UnixNanos
 }
 
 // Top-of-book `QuoteTick` from an `OrderBookDepth10`. Returns `None` for
-// `NoOrderSide` padding or zero size.
+// missing-side padding or zero size.
 fn derive_quote_from_depth(depth: &OrderBookDepth10) -> Option<QuoteTick> {
     let bid = depth.bids.first()?;
     let ask = depth.asks.first()?;
 
-    if bid.side == OrderSide::NoOrderSide
-        || ask.side == OrderSide::NoOrderSide
-        || bid.size.raw == 0
-        || ask.size.raw == 0
-    {
+    if bid.side.is_none() || ask.side.is_none() || bid.size.raw == 0 || ask.size.raw == 0 {
         return None;
     }
 

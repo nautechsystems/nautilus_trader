@@ -36,6 +36,7 @@ use nautilus_core::{
     consts::NAUTILUS_USER_AGENT,
     env::{get_env_var, get_or_env_var_opt},
 };
+use nautilus_live::SocketControl;
 use nautilus_model::{
     data::bar::BarType,
     identifiers::{AccountId, InstrumentId},
@@ -90,6 +91,7 @@ pub struct BitmexWebSocketClient {
     instruments: Arc<DashMap<Ustr, InstrumentAny>>,
     transport_backend: TransportBackend,
     proxy_url: Option<String>,
+    socket_control: Option<SocketControl>,
 }
 
 impl BitmexWebSocketClient {
@@ -140,7 +142,15 @@ impl BitmexWebSocketClient {
             instruments: Arc::new(DashMap::new()),
             transport_backend,
             proxy_url,
+            socket_control: None,
         })
+    }
+
+    /// Configures socket state reporting and reconnect control.
+    #[must_use]
+    pub fn with_socket_control(mut self, control: SocketControl) -> Self {
+        self.socket_control = Some(control);
+        self
     }
 
     /// Creates a new [`BitmexWebSocketClient`] with environment variable credential resolution.
@@ -278,7 +288,6 @@ impl BitmexWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the WebSocket connection fails or authentication fails (if credentials provided).
-    ///
     pub async fn connect(&mut self) -> Result<(), BitmexWsError> {
         let (client, raw_rx) = self.connect_inner().await?;
 
@@ -287,6 +296,7 @@ impl BitmexWebSocketClient {
 
         // Replace connection state so all clones see the underlying WebSocketClient's state
         self.connection_mode.store(client.connection_mode_atomic());
+        let reconnect_handle = client.reconnect_handle();
 
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<BitmexWsMessage>();
         self.out_rx = Some(Arc::new(out_rx));
@@ -299,6 +309,10 @@ impl BitmexWebSocketClient {
             return Err(BitmexWsError::ClientError(format!(
                 "Failed to send WebSocketClient to handler: {e}"
             )));
+        }
+
+        if let Some(control) = &self.socket_control {
+            control.register(move || reconnect_handle.request_reconnect());
         }
 
         let signal = self.signal.clone();
@@ -367,40 +381,7 @@ impl BitmexWebSocketClient {
 
                         log::info!("WebSocket reconnected");
 
-                        // Mark all confirmed subscriptions as failed so they transition to pending state
-                        let confirmed_topics: Vec<String> = {
-                            let confirmed = subscriptions.confirmed();
-                            let mut topics = Vec::new();
-
-                            for entry in confirmed.iter() {
-                                let (channel, symbols) = entry.pair();
-
-                                if *channel == BitmexWsTopic::Instrument.as_ref() {
-                                    continue;
-                                }
-
-                                for symbol in symbols {
-                                    if symbol.is_empty() {
-                                        topics.push(channel.to_string());
-                                    } else {
-                                        topics.push(format!("{channel}:{symbol}"));
-                                    }
-                                }
-                            }
-
-                            topics
-                        };
-
-                        if !confirmed_topics.is_empty() {
-                            log::debug!(
-                                "Marking confirmed subscriptions as pending for replay: count={}",
-                                confirmed_topics.len()
-                            );
-
-                            for topic in confirmed_topics {
-                                subscriptions.mark_failure(&topic);
-                            }
-                        }
+                        subscriptions.reset_after_reconnect();
 
                         if let Some(cred) = &credential {
                             log::debug!("Re-authenticating after reconnection");
@@ -553,15 +534,14 @@ impl BitmexWebSocketClient {
         };
 
         let keyed_quotas = vec![];
-        let client = WebSocketClient::connect(
-            config,
-            Some(message_handler),
-            None,
-            keyed_quotas,
-            None, // default_quota
-        )
-        .await
-        .map_err(|e| BitmexWsError::ClientError(e.to_string()))?;
+        let client = WebSocketClient::builder()
+            .config(config)
+            .message_handler(message_handler)
+            .keyed_quotas(keyed_quotas)
+            .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
+            .connect()
+            .await
+            .map_err(|e| BitmexWsError::ClientError(e.to_string()))?;
 
         Ok((client, rx))
     }
@@ -703,6 +683,10 @@ impl BitmexWebSocketClient {
 
         log::debug!("Closed");
 
+        if let Some(control) = &self.socket_control {
+            control.deregister();
+        }
+
         Ok(())
     }
 
@@ -792,8 +776,7 @@ impl BitmexWebSocketClient {
         let confirmed = self.subscriptions.confirmed();
         let mut channels = Vec::with_capacity(confirmed.len());
 
-        for entry in confirmed.iter() {
-            let (channel, symbols) = entry.pair();
+        for (channel, symbols) in confirmed.iter() {
             if symbols.contains(&symbol) {
                 // Return the full topic string (e.g., "orderBookL2:XBTUSD")
                 channels.push(format!("{channel}:{symbol}"));
@@ -1261,9 +1244,7 @@ impl BitmexWebSocketClient {
 
 #[cfg(test)]
 mod tests {
-    use ahash::AHashSet;
     use rstest::rstest;
-    use ustr::Ustr;
 
     use super::*;
 
@@ -1283,45 +1264,19 @@ mod tests {
         .unwrap();
 
         // Populate subscriptions like they would be during normal operation
-        let subs = client.subscriptions.confirmed();
-        subs.insert(Ustr::from(BitmexWsTopic::Trade.as_ref()), {
-            let mut set = AHashSet::new();
-            set.insert(Ustr::from("XBTUSD"));
-            set.insert(Ustr::from("ETHUSD"));
-            set
-        });
-
-        subs.insert(Ustr::from(BitmexWsTopic::OrderBookL2.as_ref()), {
-            let mut set = AHashSet::new();
-            set.insert(Ustr::from("XBTUSD"));
-            set
-        });
-
-        // Private channels (no symbols)
-        subs.insert(Ustr::from(BitmexWsAuthChannel::Order.as_ref()), {
-            let mut set = AHashSet::new();
-            set.insert(Ustr::from(""));
-            set
-        });
-        subs.insert(Ustr::from(BitmexWsAuthChannel::Position.as_ref()), {
-            let mut set = AHashSet::new();
-            set.insert(Ustr::from(""));
-            set
-        });
+        for topic in [
+            format!("{}:XBTUSD", BitmexWsTopic::Trade.as_ref()),
+            format!("{}:ETHUSD", BitmexWsTopic::Trade.as_ref()),
+            format!("{}:XBTUSD", BitmexWsTopic::OrderBookL2.as_ref()),
+            BitmexWsAuthChannel::Order.as_ref().to_string(),
+            BitmexWsAuthChannel::Position.as_ref().to_string(),
+        ] {
+            client.subscriptions.mark_subscribe(&topic);
+            client.subscriptions.confirm_subscribe(&topic);
+        }
 
         // Test the actual reconnection topic building logic
-        let mut topics_to_restore = Vec::new();
-
-        for entry in subs.iter() {
-            let (channel, symbols) = entry.pair();
-            for symbol in symbols {
-                if symbol.is_empty() {
-                    topics_to_restore.push(channel.to_string());
-                } else {
-                    topics_to_restore.push(format!("{channel}:{symbol}"));
-                }
-            }
-        }
+        let topics_to_restore = client.subscriptions.all_topics();
 
         // Verify it builds the correct restoration topics
         assert!(topics_to_restore.contains(&format!("{}:XBTUSD", BitmexWsTopic::Trade.as_ref())));
@@ -1400,45 +1355,22 @@ mod tests {
         .unwrap();
 
         // Set up initial subscriptions
-        let subs = client.subscriptions.confirmed();
-        subs.insert(Ustr::from(BitmexWsTopic::Trade.as_ref()), {
-            let mut set = AHashSet::new();
-            set.insert(Ustr::from("XBTUSD"));
-            set.insert(Ustr::from("ETHUSD"));
-            set
-        });
-
-        subs.insert(Ustr::from(BitmexWsTopic::OrderBookL2.as_ref()), {
-            let mut set = AHashSet::new();
-            set.insert(Ustr::from("XBTUSD"));
-            set
-        });
-
-        // Simulate unsubscribe logic (like from unsubscribe() method lines 586-599)
-        let topic = format!("{}:ETHUSD", BitmexWsTopic::Trade.as_ref());
-        if let Some((channel, symbol)) = topic.split_once(':')
-            && let Some(mut entry) = subs.get_mut(&Ustr::from(channel))
-        {
-            entry.remove(&Ustr::from(symbol));
-            if entry.is_empty() {
-                drop(entry);
-                subs.remove(&Ustr::from(channel));
-            }
+        for topic in [
+            format!("{}:XBTUSD", BitmexWsTopic::Trade.as_ref()),
+            format!("{}:ETHUSD", BitmexWsTopic::Trade.as_ref()),
+            format!("{}:XBTUSD", BitmexWsTopic::OrderBookL2.as_ref()),
+        ] {
+            client.subscriptions.mark_subscribe(&topic);
+            client.subscriptions.confirm_subscribe(&topic);
         }
+
+        // Simulate unsubscribe logic
+        let topic = format!("{}:ETHUSD", BitmexWsTopic::Trade.as_ref());
+        client.subscriptions.mark_unsubscribe(&topic);
+        client.subscriptions.confirm_unsubscribe(&topic);
 
         // Build restoration topics after unsubscribe
-        let mut topics_to_restore = Vec::new();
-
-        for entry in subs.iter() {
-            let (channel, symbols) = entry.pair();
-            for symbol in symbols {
-                if symbol.is_empty() {
-                    topics_to_restore.push(channel.to_string());
-                } else {
-                    topics_to_restore.push(format!("{channel}:{symbol}"));
-                }
-            }
-        }
+        let topics_to_restore = client.subscriptions.all_topics();
 
         // Should have XBTUSD trade but not ETHUSD trade
         let trade_xbt = format!("{}:XBTUSD", BitmexWsTopic::Trade.as_ref());

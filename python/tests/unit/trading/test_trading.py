@@ -12,10 +12,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test trading behavior.
+"""
+
+from __future__ import annotations
 
 import datetime as dt
 import inspect
 from decimal import Decimal
+from typing import ClassVar
 
 import pytest
 
@@ -131,10 +137,17 @@ DATA_OPERATION_REGISTRATION_ERROR = (
 
 
 class HistoricalRequestProbeStrategy(Strategy):
-    observed_request_ids = {}
+    """
+    Collect historical request probe strategy tests.
+    """
+
+    observed_request_ids: ClassVar[dict[str, object]] = {}
     request_time = dt.datetime(1970, 1, 1, tzinfo=dt.UTC)
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         instrument_id = InstrumentId.from_str("AUD/USD.SIM")
         client_id = ClientId("SIM")
         venue = Venue("SIM")
@@ -205,28 +218,38 @@ class HistoricalRequestProbeStrategy(Strategy):
 
 
 class FirstDefaultStrategy(Strategy):
-    pass
+    """
+    Collect first default strategy tests.
+    """
 
 
 class SecondDefaultStrategy(Strategy):
-    pass
+    """
+    Collect second default strategy tests.
+    """
 
 
 class TaggedDefaultStrategy(Strategy):
-    pass
+    """
+    Collect tagged default strategy tests.
+    """
 
 
 class ConfiguredDefaultStrategy(Strategy):
-    pass
+    """
+    Collect configured default strategy tests.
+    """
 
 
 class PlainStrategyConfig:
     """
-    A config which cannot be extracted as a `StrategyConfig`, so its values only reach
-    the strategy at registration.
+    Hold values that only reach the strategy at registration.
     """
 
-    def __init__(self, strategy_id=None, order_id_tag=None):
+    def __init__(self, strategy_id: StrategyId = None, order_id_tag: object = None) -> None:
+        """
+        Initialize the helper.
+        """
         self.strategy_id = strategy_id
         self.order_id_tag = order_id_tag
         self.log_events = True
@@ -234,19 +257,33 @@ class PlainStrategyConfig:
 
 
 class PlainConfigStrategy(Strategy):
-    pass
+    """
+    Collect plain config strategy tests.
+    """
 
 
 class RepeatedDefaultStrategy(Strategy):
-    pass
+    """
+    Collect repeated default strategy tests.
+    """
 
 
 class NonForwardingStrategy(Strategy):
-    def __init__(self, config=None):
-        pass  # Deliberately does not forward to `super().__init__()`
+    """
+    Collect non forwarding strategy tests.
+    """
+
+    def __init__(self, config: object = None) -> None:
+        """
+        Initialize the helper.
+        """
+        # Deliberately does not forward to `super().__init__()`
 
 
-def test_strategy_derives_default_id_from_runtime_class():
+def test_strategy_derives_default_id_from_runtime_class() -> None:
+    """
+    Test strategy derives default id from runtime class.
+    """
     base = Strategy()
     first = FirstDefaultStrategy()
     tagged = TaggedDefaultStrategy(StrategyConfig(order_id_tag="007"))
@@ -259,7 +296,10 @@ def test_strategy_derives_default_id_from_runtime_class():
     assert configured.strategy_id == StrategyId("MINE-042")
 
 
-def test_registered_strategies_receive_class_derived_ids_and_positional_tags():
+def test_registered_strategies_receive_class_derived_ids_and_positional_tags() -> None:
+    """
+    Test registered strategies receive class derived ids and positional tags.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     first = FirstDefaultStrategy()
     second = SecondDefaultStrategy()
@@ -300,10 +340,13 @@ def test_registered_strategies_receive_class_derived_ids_and_positional_tags():
     ],
 )
 def test_registered_strategy_applies_identity_from_unextractable_config(
-    config,
-    expected_strategy_id,
-    expected_client_order_id,
-):
+    config: object,
+    expected_strategy_id: object,
+    expected_client_order_id: object,
+) -> None:
+    """
+    Test registered strategy applies identity from unextractable config.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     strategy = PlainConfigStrategy(config)
 
@@ -317,7 +360,12 @@ def test_registered_strategy_applies_identity_from_unextractable_config(
 
 
 @pytest.mark.parametrize("order_id_tag", ["", "None"])
-def test_registered_strategy_retains_configured_id_with_an_unset_order_id_tag(order_id_tag):
+def test_registered_strategy_retains_configured_id_with_an_unset_order_id_tag(
+    order_id_tag: object,
+) -> None:
+    """
+    Test registered strategy retains configured id with an unset order id tag.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     strategy = ConfiguredDefaultStrategy(
         StrategyConfig(strategy_id=StrategyId("MyStrategy-001"), order_id_tag=order_id_tag),
@@ -335,7 +383,10 @@ def test_registered_strategy_retains_configured_id_with_an_unset_order_id_tag(or
 
 
 @pytest.mark.parametrize("order_id_tag", ["A-B", "XNAS-T01"])
-def test_strategy_config_rejects_an_order_id_tag_with_a_separator(order_id_tag):
+def test_strategy_config_rejects_an_order_id_tag_with_a_separator(order_id_tag: object) -> None:
+    """
+    Test strategy config rejects an order id tag with a separator.
+    """
     with pytest.raises(
         ValueError,
         match=f"`order_id_tag` cannot contain the '-' strategy ID separator, was '{order_id_tag}'",
@@ -344,7 +395,12 @@ def test_strategy_config_rejects_an_order_id_tag_with_a_separator(order_id_tag):
 
 
 @pytest.mark.parametrize("order_id_tag", ["A-B", "XNAS-T01"])
-def test_registering_a_strategy_with_a_separator_in_its_order_id_tag_is_rejected(order_id_tag):
+def test_registering_a_strategy_with_a_separator_in_its_order_id_tag_is_rejected(
+    order_id_tag: object,
+) -> None:
+    """
+    Test registering a strategy with a separator in its order id tag is rejected.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     strategy = PlainConfigStrategy(PlainStrategyConfig(order_id_tag=order_id_tag))
 
@@ -360,7 +416,10 @@ def test_registering_a_strategy_with_a_separator_in_its_order_id_tag_is_rejected
         engine.dispose()
 
 
-def test_registered_instances_of_one_strategy_class_receive_sequential_tags():
+def test_registered_instances_of_one_strategy_class_receive_sequential_tags() -> None:
+    """
+    Test registered instances of one strategy class receive sequential tags.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     first = RepeatedDefaultStrategy()
     second = RepeatedDefaultStrategy()
@@ -381,7 +440,10 @@ def test_registered_instances_of_one_strategy_class_receive_sequential_tags():
         engine.dispose()
 
 
-def test_registered_strategy_derives_its_id_from_the_runtime_class():
+def test_registered_strategy_derives_its_id_from_the_runtime_class() -> None:
+    """
+    Test registered strategy derives its id from the runtime class.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     strategy = NonForwardingStrategy()
 
@@ -393,7 +455,10 @@ def test_registered_strategy_derives_its_id_from_the_runtime_class():
         engine.dispose()
 
 
-def test_registering_the_same_strategy_twice_is_rejected():
+def test_registering_the_same_strategy_twice_is_rejected() -> None:
+    """
+    Test registering the same strategy twice is rejected.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     strategy = FirstDefaultStrategy()
 
@@ -409,7 +474,10 @@ def test_registering_the_same_strategy_twice_is_rejected():
         engine.dispose()
 
 
-def test_strategy_default_construction():
+def test_strategy_default_construction() -> None:
+    """
+    Test strategy default construction.
+    """
     strategy = Strategy()
 
     assert strategy.trader_id is None
@@ -423,7 +491,10 @@ def test_strategy_default_construction():
     assert strategy.is_faulted() is False
 
 
-def test_strategy_construction_with_config():
+def test_strategy_construction_with_config() -> None:
+    """
+    Test strategy construction with config.
+    """
     config = StrategyConfig(
         StrategyId("S-001"),
         "001",
@@ -447,35 +518,50 @@ def test_strategy_construction_with_config():
     assert strategy.strategy_id == StrategyId("S-001")
 
 
-def test_strategy_clock_requires_registration():
+def test_strategy_clock_requires_registration() -> None:
+    """
+    Test strategy clock requires registration.
+    """
     strategy = Strategy()
 
     with pytest.raises(RuntimeError, match="registered with a trader"):
         _ = strategy.clock
 
 
-def test_strategy_cache_requires_registration():
+def test_strategy_cache_requires_registration() -> None:
+    """
+    Test strategy cache requires registration.
+    """
     strategy = Strategy()
 
     with pytest.raises(RuntimeError, match="registered with a trader"):
         _ = strategy.cache
 
 
-def test_strategy_portfolio_requires_registration():
+def test_strategy_portfolio_requires_registration() -> None:
+    """
+    Test strategy portfolio requires registration.
+    """
     strategy = Strategy()
 
     with pytest.raises(RuntimeError, match="registered with a trader"):
         _ = strategy.portfolio
 
 
-def test_strategy_order_factory_requires_registration():
+def test_strategy_order_factory_requires_registration() -> None:
+    """
+    Test strategy order factory requires registration.
+    """
     strategy = Strategy()
 
     with pytest.raises(RuntimeError, match="registered with a trader"):
         _ = strategy.order_factory
 
 
-def test_strategy_order_factory_returns_registered_factory():
+def test_strategy_order_factory_returns_registered_factory() -> None:
+    """
+    Test strategy order factory returns registered factory.
+    """
     usd = Currency.from_str("USD")
     venue = Venue("SIM")
     OrderFactoryProbeStrategy.observed_order = None
@@ -526,9 +612,12 @@ def test_strategy_order_factory_returns_registered_factory():
     ],
 )
 def test_registered_strategy_order_factory_uses_configured_identity_and_id_format(
-    use_uuid_client_order_ids,
-    expected_client_order_id,
-):
+    use_uuid_client_order_ids: object,
+    expected_client_order_id: object,
+) -> None:
+    """
+    Test registered strategy order factory uses configured identity and id format.
+    """
     OrderFactoryConfigProbeStrategy.reset()
     usd = Currency.from_str("USD")
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
@@ -568,7 +657,10 @@ def test_registered_strategy_order_factory_uses_configured_identity_and_id_forma
         engine.dispose()
 
 
-def test_strategy_can_recover_order_list_id_from_cache():
+def test_strategy_can_recover_order_list_id_from_cache() -> None:
+    """
+    Test strategy can recover order list id from cache.
+    """
     usd = Currency.from_str("USD")
     venue = Venue("SIM")
     instrument = TestInstrumentProvider.audusd_sim()
@@ -623,7 +715,10 @@ def test_strategy_can_recover_order_list_id_from_cache():
         engine.dispose()
 
 
-def test_strategy_portfolio_returns_registered_kernel_portfolio():
+def test_strategy_portfolio_returns_registered_kernel_portfolio() -> None:
+    """
+    Test strategy portfolio returns registered kernel portfolio.
+    """
     usd = Currency.from_str("USD")
     venue = Venue("SIM")
     PortfolioProbeStrategy.observed_portfolio = None
@@ -756,7 +851,10 @@ def test_strategy_portfolio_returns_registered_kernel_portfolio():
         engine.dispose()
 
 
-def test_strategy_portfolio_accepts_price_and_target_currency_queries():
+def test_strategy_portfolio_accepts_price_and_target_currency_queries() -> None:
+    """
+    Test strategy portfolio accepts price and target currency queries.
+    """
     usd = Currency.from_str("USD")
     venue = Venue("SIM")
     PortfolioProbeStrategy.observed_portfolio = None
@@ -821,7 +919,10 @@ def test_strategy_portfolio_accepts_price_and_target_currency_queries():
         engine.dispose()
 
 
-def test_strategy_portfolio_flat_methods_net_hedged_positions():
+def test_strategy_portfolio_flat_methods_net_hedged_positions() -> None:
+    """
+    Test strategy portfolio flat methods net hedged positions.
+    """
     usd = Currency.from_str("USD")
     venue = Venue("SIM")
     instrument = TestInstrumentProvider.audusd_sim()
@@ -890,7 +991,10 @@ def test_strategy_portfolio_flat_methods_net_hedged_positions():
         engine.dispose()
 
 
-def test_strategy_portfolio_price_overrides_and_currency_conversion_are_fresh():
+def test_strategy_portfolio_price_overrides_and_currency_conversion_are_fresh() -> None:
+    """
+    Test strategy portfolio price overrides and currency conversion are fresh.
+    """
     usd = Currency.from_str("USD")
     eur = Currency.from_str("EUR")
     jpy = Currency.from_str("JPY")
@@ -1146,7 +1250,10 @@ def test_strategy_portfolio_price_overrides_and_currency_conversion_are_fresh():
         engine.dispose()
 
 
-def test_strategy_portfolio_aggregates_multiple_venues_atomically():
+def test_strategy_portfolio_aggregates_multiple_venues_atomically() -> None:
+    """
+    Test strategy portfolio aggregates multiple venues atomically.
+    """
     usd = Currency.from_str("USD")
     eur = Currency.from_str("EUR")
     jpy = Currency.from_str("JPY")
@@ -1339,7 +1446,13 @@ MODIFY_ORDER_PARAMETERS = (
 CANCEL_ORDER_PARAMETERS = ("client_order_id", "client_id", "params")
 CANCEL_GTD_EXPIRY_PARAMETERS = ("order",)
 CANCEL_ORDERS_PARAMETERS = ("client_order_ids", "client_id", "params")
-CANCEL_ALL_ORDERS_PARAMETERS = ("instrument_id", "order_side", "client_id", "params")
+CANCEL_ALL_ORDERS_PARAMETERS = (
+    "instrument_id",
+    "order_side",
+    "client_id",
+    "strategy_only",
+    "params",
+)
 CLOSE_POSITION_PARAMETERS = (
     "position",
     "client_id",
@@ -1530,7 +1643,10 @@ CALLBACK_SIGNATURES = (
 
 
 @pytest.mark.parametrize("method_name", LIFECYCLE_METHODS)
-def test_strategy_lifecycle_methods_reject_pre_initialized(method_name):
+def test_strategy_lifecycle_methods_reject_pre_initialized(method_name: str) -> None:
+    """
+    Test strategy lifecycle methods reject pre initialized.
+    """
     strategy = Strategy()
 
     with pytest.raises(RuntimeError, match="Invalid state trigger PRE_INITIALIZED"):
@@ -1538,15 +1654,36 @@ def test_strategy_lifecycle_methods_reject_pre_initialized(method_name):
 
 
 @pytest.mark.parametrize(("method_name", "parameter_names"), EXECUTION_SIGNATURES)
-def test_strategy_execution_methods_expose_expected_signatures(method_name, parameter_names):
+def test_strategy_execution_methods_expose_expected_signatures(
+    method_name: str,
+    parameter_names: object,
+) -> None:
+    """
+    Test strategy execution methods expose expected signatures.
+    """
     strategy = Strategy()
     signature = inspect.signature(getattr(strategy, method_name))
 
     assert tuple(signature.parameters) == parameter_names
 
 
+def test_strategy_cancel_all_orders_defaults_to_strategy_only() -> None:
+    """
+    Test strategy cancel all orders defaults to strategy only.
+    """
+    signature = inspect.signature(Strategy().cancel_all_orders)
+
+    assert signature.parameters["strategy_only"].default is True
+
+
 @pytest.mark.parametrize(("method_name", "parameter_names"), DATA_SURFACE_SIGNATURES)
-def test_strategy_data_surface_methods_expose_expected_signatures(method_name, parameter_names):
+def test_strategy_data_surface_methods_expose_expected_signatures(
+    method_name: str,
+    parameter_names: object,
+) -> None:
+    """
+    Test strategy data surface methods expose expected signatures.
+    """
     strategy = Strategy()
     signature = inspect.signature(getattr(strategy, method_name))
 
@@ -1554,13 +1691,19 @@ def test_strategy_data_surface_methods_expose_expected_signatures(method_name, p
 
 
 @pytest.mark.parametrize("method_name", ["subscribe_queue_state", "subscribe_socket_state"])
-def test_strategy_state_subscription_priority_defaults_to_none(method_name):
+def test_strategy_state_subscription_priority_defaults_to_none(method_name: str) -> None:
+    """
+    Test strategy state subscription priority defaults to none.
+    """
     signature = inspect.signature(getattr(Strategy(), method_name))
 
     assert signature.parameters["priority"].default is None
 
 
-def test_strategy_shutdown_system_exposes_actor_signature():
+def test_strategy_shutdown_system_exposes_actor_signature() -> None:
+    """
+    Test strategy shutdown system exposes actor signature.
+    """
     strategy = Strategy()
     signature = inspect.signature(strategy.shutdown_system)
 
@@ -1568,14 +1711,17 @@ def test_strategy_shutdown_system_exposes_actor_signature():
     assert signature.parameters["reason"].default is None
 
 
-def test_strategy_shutdown_system_requires_registration():
+def test_strategy_shutdown_system_requires_registration() -> None:
+    """
+    Test strategy shutdown system requires registration.
+    """
     strategy = Strategy()
 
     with pytest.raises(RuntimeError, match="registered"):
         strategy.shutdown_system("unit test shutdown")
 
 
-def _subscription_registration_cases():
+def _subscription_registration_cases() -> object:
     instrument_id = InstrumentId.from_str("AUD/USD.SIM")
     bar_type = BarType.from_str("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL")
     series_id = OptionSeriesId.from_expiry("DERIBIT", "BTC", "USD", "2024-03-29")
@@ -1623,7 +1769,7 @@ def _subscription_registration_cases():
     ]
 
 
-def _data_operation_registration_cases():
+def _data_operation_registration_cases() -> object:
     instrument_id = InstrumentId.from_str("AUD/USD.SIM")
     bar_type = BarType.from_str("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL")
     custom_data = _model_custom_data()
@@ -1647,15 +1793,19 @@ def _data_operation_registration_cases():
     ]
 
 
-def _model_custom_data():
+def _model_custom_data() -> object:
     class Payload:
+        """
+        Collect payload tests.
+        """
+
         ts_event = 3
         ts_init = 4
 
     return nautilus_trader.model.CustomData(DataType("Payload"), Payload())
 
 
-def _synthetic(formula):
+def _synthetic(formula: object) -> object:
     return SyntheticInstrument(
         symbol=Symbol("BTC-ETH"),
         price_precision=8,
@@ -1670,7 +1820,13 @@ def _synthetic(formula):
 
 
 @pytest.mark.parametrize(("method_name", "args"), _subscription_registration_cases())
-def test_strategy_subscriptions_require_registration(method_name, args):
+def test_strategy_subscriptions_require_registration(
+    method_name: str,
+    args: tuple[object, ...],
+) -> None:
+    """
+    Test strategy subscriptions require registration.
+    """
     strategy = Strategy()
 
     with pytest.raises(RuntimeError) as exc_info:
@@ -1680,7 +1836,13 @@ def test_strategy_subscriptions_require_registration(method_name, args):
 
 
 @pytest.mark.parametrize(("method_name", "args"), _data_operation_registration_cases())
-def test_strategy_data_operations_require_registration(method_name, args):
+def test_strategy_data_operations_require_registration(
+    method_name: str,
+    args: tuple[object, ...],
+) -> None:
+    """
+    Test strategy data operations require registration.
+    """
     strategy = Strategy()
 
     with pytest.raises(RuntimeError) as exc_info:
@@ -1689,9 +1851,20 @@ def test_strategy_data_operations_require_registration(method_name, args):
     assert str(exc_info.value) == DATA_OPERATION_REGISTRATION_ERROR
 
 
-def test_strategy_registration_precedes_publish_signal_conversion():
+def test_strategy_registration_precedes_publish_signal_conversion() -> None:
+    """
+    Test strategy registration precedes publish signal conversion.
+    """
+
     class InvalidSignalValue:
-        def __str__(self):
+        """
+        Collect invalid signal value tests.
+        """
+
+        def __str__(self) -> str:
+            """
+            Str.
+            """
             raise ValueError("invalid signal value")
 
     with pytest.raises(RuntimeError) as exc_info:
@@ -1700,14 +1873,20 @@ def test_strategy_registration_precedes_publish_signal_conversion():
     assert str(exc_info.value) == DATA_OPERATION_REGISTRATION_ERROR
 
 
-def test_strategy_registration_precedes_request_params_conversion():
+def test_strategy_registration_precedes_request_params_conversion() -> None:
+    """
+    Test strategy registration precedes request params conversion.
+    """
     with pytest.raises(RuntimeError) as exc_info:
         Strategy().request_instruments(params={"invalid": object()})
 
     assert str(exc_info.value) == DATA_OPERATION_REGISTRATION_ERROR
 
 
-def test_strategy_data_operations_succeed_when_registered():
+def test_strategy_data_operations_succeed_when_registered() -> None:
+    """
+    Test strategy data operations succeed when registered.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     strategy = Strategy()
     custom_data = _model_custom_data()
@@ -1725,7 +1904,10 @@ def test_strategy_data_operations_succeed_when_registered():
         engine.dispose()
 
 
-def test_strategy_subscription_validation_precedes_registration():
+def test_strategy_subscription_validation_precedes_registration() -> None:
+    """
+    Test strategy subscription validation precedes registration.
+    """
     strategy = Strategy()
     instrument_id = InstrumentId.from_str("AUD/USD.SIM")
 
@@ -1738,7 +1920,10 @@ def test_strategy_subscription_validation_precedes_registration():
         )
 
 
-def test_strategy_registration_precedes_params_conversion():
+def test_strategy_registration_precedes_params_conversion() -> None:
+    """
+    Test strategy registration precedes params conversion.
+    """
     strategy = Strategy()
 
     with pytest.raises(RuntimeError) as exc_info:
@@ -1748,14 +1933,23 @@ def test_strategy_registration_precedes_params_conversion():
 
 
 @pytest.mark.parametrize("method_name", REMOVED_ORDER_EVENT_SUBSCRIPTION_METHODS)
-def test_strategy_order_event_subscription_methods_are_not_exposed(method_name):
+def test_strategy_order_event_subscription_methods_are_not_exposed(method_name: str) -> None:
+    """
+    Test strategy order event subscription methods are not exposed.
+    """
     strategy = Strategy()
 
     assert not hasattr(strategy, method_name)
 
 
 @pytest.mark.parametrize(("method_name", "parameter_names"), CALLBACK_SIGNATURES)
-def test_strategy_callback_methods_expose_expected_signatures(method_name, parameter_names):
+def test_strategy_callback_methods_expose_expected_signatures(
+    method_name: str,
+    parameter_names: object,
+) -> None:
+    """
+    Test strategy callback methods expose expected signatures.
+    """
     strategy = Strategy()
     signature = inspect.signature(getattr(strategy, method_name))
 
@@ -1763,7 +1957,12 @@ def test_strategy_callback_methods_expose_expected_signatures(method_name, param
 
 
 @pytest.mark.parametrize("request_time", HISTORICAL_REQUEST_DATETIME_CASES)
-def test_strategy_historical_requests_accept_datetimes_when_registered(request_time):
+def test_strategy_historical_requests_accept_datetimes_when_registered(
+    request_time: object,
+) -> None:
+    """
+    Test strategy historical requests accept datetimes when registered.
+    """
     HistoricalRequestProbeStrategy.observed_request_ids = {}
     HistoricalRequestProbeStrategy.request_time = _historical_request_time(request_time)
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
@@ -1797,7 +1996,7 @@ def test_strategy_historical_requests_accept_datetimes_when_registered(request_t
         engine.dispose()
 
 
-def _historical_request_time(request_time):
+def _historical_request_time(request_time: object) -> object:
     if request_time == "datetime-utc":
         return dt.datetime(1970, 1, 1, tzinfo=dt.UTC)
 
@@ -1812,7 +2011,10 @@ def _historical_request_time(request_time):
     raise ValueError(f"Unknown historical request datetime case: {request_time}")
 
 
-def test_strategy_config_defaults():
+def test_strategy_config_defaults() -> None:
+    """
+    Test strategy config defaults.
+    """
     config = StrategyConfig()
 
     assert config.strategy_id is None
@@ -1833,7 +2035,10 @@ def test_strategy_config_defaults():
     assert config.log_rejected_due_post_only_as_warning is True
 
 
-def test_strategy_config_with_explicit_values():
+def test_strategy_config_with_explicit_values() -> None:
+    """
+    Test strategy config with explicit values.
+    """
     external_order_claims = [InstrumentId.from_str("ETH/USDT.BINANCE")]
     config = StrategyConfig(
         StrategyId("S-002"),
@@ -1872,7 +2077,10 @@ def test_strategy_config_with_explicit_values():
     assert config.log_rejected_due_post_only_as_warning is True
 
 
-def test_forex_session_variants():
+def test_forex_session_variants() -> None:
+    """
+    Test forex session variants.
+    """
     variants = list(ForexSession.variants())
 
     assert len(variants) == 4
@@ -1886,7 +2094,10 @@ NOW_UTC = dt.datetime(2024, 6, 15, 12, 0, 0, tzinfo=dt.UTC)
 
 
 @pytest.mark.parametrize("session", list(ForexSession.variants()))
-def test_fx_next_start_returns_future_datetime(session):
+def test_fx_next_start_returns_future_datetime(session: object) -> None:
+    """
+    Test fx next start returns future datetime.
+    """
     result = fx_next_start(session, NOW_UTC)
 
     assert isinstance(result, dt.datetime)
@@ -1894,7 +2105,10 @@ def test_fx_next_start_returns_future_datetime(session):
 
 
 @pytest.mark.parametrize("session", list(ForexSession.variants()))
-def test_fx_next_end_returns_future_datetime(session):
+def test_fx_next_end_returns_future_datetime(session: object) -> None:
+    """
+    Test fx next end returns future datetime.
+    """
     result = fx_next_end(session, NOW_UTC)
 
     assert isinstance(result, dt.datetime)
@@ -1902,7 +2116,10 @@ def test_fx_next_end_returns_future_datetime(session):
 
 
 @pytest.mark.parametrize("session", list(ForexSession.variants()))
-def test_fx_prev_start_returns_past_datetime(session):
+def test_fx_prev_start_returns_past_datetime(session: object) -> None:
+    """
+    Test fx prev start returns past datetime.
+    """
     result = fx_prev_start(session, NOW_UTC)
 
     assert isinstance(result, dt.datetime)
@@ -1910,7 +2127,10 @@ def test_fx_prev_start_returns_past_datetime(session):
 
 
 @pytest.mark.parametrize("session", list(ForexSession.variants()))
-def test_fx_prev_end_returns_past_datetime(session):
+def test_fx_prev_end_returns_past_datetime(session: object) -> None:
+    """
+    Test fx prev end returns past datetime.
+    """
     result = fx_prev_end(session, NOW_UTC)
 
     assert isinstance(result, dt.datetime)
@@ -1918,7 +2138,10 @@ def test_fx_prev_end_returns_past_datetime(session):
 
 
 @pytest.mark.parametrize("session", list(ForexSession.variants()))
-def test_fx_local_from_utc_returns_string(session):
+def test_fx_local_from_utc_returns_string(session: object) -> None:
+    """
+    Test fx local from utc returns string.
+    """
     result = fx_local_from_utc(session, NOW_UTC)
 
     assert isinstance(result, str)
@@ -1989,14 +2212,17 @@ POSITION_CALLBACKS = [
 ]
 
 
-def _make_recording_method(method_name):
-    def method(self, *args):
+def _make_recording_method(method_name: str) -> object:
+    def method(self: object, *args: object) -> None:
+        """
+        Run the helper method.
+        """
         self.calls.append((method_name, args))
 
     return method
 
 
-def _create_recording_strategy_type():
+def _create_recording_strategy_type() -> object:
     attrs = {}
 
     for method_name in HOOK_METHODS:
@@ -2012,19 +2238,28 @@ RecordingStrategy = _create_recording_strategy_type()
 
 
 @pytest.fixture
-def strategy():
+def strategy() -> object:
+    """
+    Strategy.
+    """
     return Strategy()
 
 
 @pytest.fixture
-def recording_strategy():
+def recording_strategy() -> object:
+    """
+    Record strategy events.
+    """
     strategy = RecordingStrategy()
     strategy.calls = []
     return strategy
 
 
 @pytest.fixture
-def strategy_sample_objects():
+def strategy_sample_objects() -> object:
+    """
+    Strategy sample objects.
+    """
     instrument = TestInstrumentProvider.audusd_sim()
     quote = _make_quote(instrument.id)
     trade = _make_trade(instrument.id)
@@ -2102,7 +2337,13 @@ def strategy_sample_objects():
 
 
 @pytest.mark.parametrize("method_name", HOOK_METHODS)
-def test_strategy_lifecycle_hooks_can_be_overridden(recording_strategy, method_name):
+def test_strategy_lifecycle_hooks_can_be_overridden(
+    recording_strategy: object,
+    method_name: str,
+) -> None:
+    """
+    Test strategy lifecycle hooks can be overridden.
+    """
     assert getattr(recording_strategy, method_name)() is None
 
     assert recording_strategy.calls[-1] == (method_name, ())
@@ -2113,11 +2354,14 @@ def test_strategy_lifecycle_hooks_can_be_overridden(recording_strategy, method_n
     DATA_CALLBACKS + ORDER_CALLBACKS + POSITION_CALLBACKS,
 )
 def test_strategy_callbacks_accept_runtime_objects(
-    strategy,
-    strategy_sample_objects,
-    method_name,
-    sample_name,
-):
+    strategy: object,
+    strategy_sample_objects: object,
+    method_name: str,
+    sample_name: object,
+) -> None:
+    """
+    Test strategy callbacks accept runtime objects.
+    """
     assert getattr(strategy, method_name)(strategy_sample_objects[sample_name]) is None
 
 
@@ -2126,11 +2370,14 @@ def test_strategy_callbacks_accept_runtime_objects(
     DATA_CALLBACKS + ORDER_CALLBACKS + POSITION_CALLBACKS,
 )
 def test_strategy_overridden_callbacks_receive_runtime_objects(
-    recording_strategy,
-    strategy_sample_objects,
-    method_name,
-    sample_name,
-):
+    recording_strategy: object,
+    strategy_sample_objects: object,
+    method_name: str,
+    sample_name: object,
+) -> None:
+    """
+    Test strategy overridden callbacks receive runtime objects.
+    """
     payload = strategy_sample_objects[sample_name]
 
     assert getattr(recording_strategy, method_name)(payload) is None
@@ -2141,7 +2388,7 @@ def test_strategy_overridden_callbacks_receive_runtime_objects(
     assert call_args[0] is payload
 
 
-def _make_quote(instrument_id):
+def _make_quote(instrument_id: InstrumentId) -> object:
     return QuoteTick(
         instrument_id,
         Price.from_str("1.00000"),
@@ -2153,7 +2400,7 @@ def _make_quote(instrument_id):
     )
 
 
-def _make_trade(instrument_id):
+def _make_trade(instrument_id: InstrumentId) -> object:
     return TradeTick(
         instrument_id,
         Price.from_str("1.00000"),
@@ -2165,7 +2412,7 @@ def _make_trade(instrument_id):
     )
 
 
-def _make_bar(instrument_id):
+def _make_bar(instrument_id: InstrumentId) -> object:
     bar_type = BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL")
     return Bar(
         bar_type,
@@ -2179,7 +2426,7 @@ def _make_bar(instrument_id):
     )
 
 
-def _make_book_deltas(instrument_id):
+def _make_book_deltas(instrument_id: InstrumentId) -> object:
     bid = BookOrder(OrderSide.BUY, Price.from_str("1.00000"), Quantity.from_int(1), 1)
     ask = BookOrder(OrderSide.SELL, Price.from_str("1.10000"), Quantity.from_int(2), 2)
     delta1 = OrderBookDelta(instrument_id, BookAction.ADD, bid, 0, 1, 1, 2)
@@ -2187,7 +2434,7 @@ def _make_book_deltas(instrument_id):
     return OrderBookDeltas(instrument_id, [delta1, delta2])
 
 
-def _make_option_greeks():
+def _make_option_greeks() -> object:
     instrument_id = InstrumentId.from_str("BTC-20240329-50000-C.DERIBIT")
     return OptionGreeks(
         instrument_id,
@@ -2206,12 +2453,12 @@ def _make_option_greeks():
     )
 
 
-def _make_option_chain():
+def _make_option_chain() -> object:
     series_id = OptionSeriesId.from_expiry("DERIBIT", "BTC", "USD", "2024-03-29")
     return OptionChainSlice(series_id, Price.from_str("50000.0"), 5, 6)
 
 
-def _make_order_events(instrument):
+def _make_order_events(instrument: object) -> object:
     trader_id = TraderId("TRADER-001")
     strategy_id = StrategyId("S-001")
     account_id = AccountId("SIM-001")
@@ -2412,7 +2659,7 @@ def _make_order_events(instrument):
     }
 
 
-def _make_position_events(instrument):
+def _make_position_events(instrument: object) -> object:
     position_id = "P-101"
     opening_fill = _make_order_filled_event(
         instrument,
@@ -2463,30 +2710,36 @@ def _make_position_events(instrument):
     }
 
 
-def test_position_change_and_close_events_expose_peak_qty():
+def test_position_change_and_close_events_expose_peak_qty() -> None:
+    """
+    Test position change and close events expose peak qty.
+    """
     events = _make_position_events(TestInstrumentProvider.audusd_sim())
 
     assert events["position_changed"].peak_qty == Quantity.from_int(150_000)
     assert events["position_closed"].peak_qty == Quantity.from_int(150_000)
 
 
-def test_position_opened_exposes_realized_pnl():
+def test_position_opened_exposes_realized_pnl() -> None:
+    """
+    Test position opened exposes realized pnl.
+    """
     events = _make_position_events(TestInstrumentProvider.audusd_sim())
 
     assert events["position_opened"].realized_pnl == Money.from_str("-2.00 USD")
 
 
 def _make_order_filled_event(
-    instrument,
-    client_order_id,
-    venue_order_id,
-    trade_id,
-    order_side,
-    last_qty,
-    last_px,
-    ts_event,
-    position_id=None,
-):
+    instrument: object,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    trade_id: object,
+    order_side: object,
+    last_qty: object,
+    last_px: object,
+    ts_event: object,
+    position_id: object = None,
+) -> object:
     return OrderFilled(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),

@@ -5,7 +5,7 @@ NautilusTrader exposes a C foreign function interface (FFI) only from `nautilus-
 exported modules under `crates/core/src/ffi/` and `crates/model/src/ffi/`.
 
 Other workspace crates use Rust APIs or PyO3 bindings. The separate `nautilus-plugin` crate defines
-the public guest plug‑in ABI and does not share this memory contract.
+the public guest plug-in ABI and does not share this memory contract.
 
 The rules below are strict. Violating them can cause undefined behavior, including double frees,
 memory leaks, and invalid pointer access.
@@ -18,16 +18,16 @@ and aborts the process before unwinding crosses the C boundary.
 
 ## `CVec` ownership
 
-`CVec` is a C‑compatible representation of Rust vector allocation metadata. A `CVec` created from
+`CVec` is a C-compatible representation of Rust vector allocation metadata. A `CVec` created from
 `Vec<T>` transfers unique ownership of the allocation to the foreign caller. It is intentionally
 neither `Copy` nor `Clone` in Rust, but C can still copy its fields, so callers must enforce the
-same exactly‑once ownership rule.
+same exactly-once ownership rule.
 
 | Step | Owner   | Action                                                                                        |
 | ---- | ------- | --------------------------------------------------------------------------------------------- |
 | 1    | Rust    | Convert `Vec<T>` into `CVec`, transferring the allocation to the caller.                      |
 | 2    | Foreign | Read the elements without changing `ptr`, `len`, or `cap`.                                    |
-| 3    | Foreign | Call the matching type‑specific `vec_drop_*` function exactly once to release the allocation. |
+| 3    | Foreign | Call the matching type-specific `vec_drop_*` function exactly once to release the allocation. |
 
 Forgetting the drop leaks the allocation. Dropping the same allocation more than once can corrupt
 the allocator and crash the process.
@@ -37,12 +37,12 @@ be dereferenced. Rust consumers must use `CVec::into_vec`, which handles the emp
 inspects the pointer. Borrowing consumers must use `CVec::as_slice` for the same reason.
 
 Both methods are unsafe because the public metadata cannot prove allocation provenance, alignment,
-initialization, or exclusive ownership. Any exported function that accepts a caller‑provided
+initialization, or exclusive ownership. Any exported function that accepts a caller-provided
 `CVec` and invokes either method must:
 
 - Be an `unsafe extern "C" fn`.
 - Document the caller obligations in a `# Safety` section.
-- Validate `len`, `cap`, and null‑pointer invariants before reconstructing or borrowing data.
+- Validate `len`, `cap`, and null-pointer invariants before reconstructing or borrowing data.
 - Use a concrete element type that matches the original `Vec<T>` allocation.
 
 ## Type-specific drop functions
@@ -64,7 +64,7 @@ ownership and must release the original buffer with the allocator that created i
 ## Opaque pointers
 
 Model objects whose layout is not `repr(C)` cross the ABI as opaque owning pointers. The generated
-header forward‑declares the type, so foreign callers handle it only through exported functions.
+header forward-declares the type, so foreign callers handle it only through exported functions.
 Constructors return an owning `*mut T` from `Box::into_raw`, pure accessors take `&T` or `&mut T`
 references, and every constructor must have a matching drop function:
 
@@ -102,6 +102,6 @@ For each new or changed FFI export:
 - Keep the implementation in `nautilus-core` or `nautilus-model`.
 - Use `repr(C)` for every type whose layout crosses the boundary.
 - Prevent panics from unwinding across the boundary.
-- Pair each owned allocation with one type‑specific release path.
+- Pair each owned allocation with one type-specific release path.
 - State complete pointer and ownership obligations in `# Safety` documentation.
 - Add focused tests for the ownership and validation rules.

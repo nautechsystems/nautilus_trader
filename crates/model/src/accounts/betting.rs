@@ -64,6 +64,14 @@ impl BettingAccount {
         }
     }
 
+    #[must_use]
+    pub(crate) fn clone_without_events(&self) -> Self {
+        Self {
+            base: self.base.clone_without_events(),
+            balances_locked: self.balances_locked.clone(),
+        }
+    }
+
     /// Updates the locked balance for the given instrument and currency.
     /// Leaves the existing balance and reservations unchanged if their precision differs.
     ///
@@ -120,8 +128,7 @@ impl BettingAccount {
     ///
     /// # Panics
     ///
-    /// Panics if `order_side` is `NoOrderSide`, or if the impact cannot be represented in the
-    /// quote currency.
+    /// Panics if the impact cannot be represented in the quote currency.
     #[must_use]
     pub fn balance_impact(
         &self,
@@ -134,7 +141,6 @@ impl BettingAccount {
         let impact = match order_side {
             OrderSide::Sell => -quantity.as_decimal(),
             OrderSide::Buy => -(quantity.as_decimal() * (price.as_decimal() - Decimal::ONE)),
-            OrderSide::NoOrderSide => panic!("invalid `OrderSide`, was {order_side}"),
         };
         Money::from_decimal(impact, currency).expect("invalid betting balance impact")
     }
@@ -266,9 +272,6 @@ impl Account for BettingAccount {
         let locked = match side {
             OrderSide::Sell => quantity.as_decimal(),
             OrderSide::Buy => quantity.as_decimal() * (price.as_decimal() - Decimal::ONE),
-            OrderSide::NoOrderSide => {
-                anyhow::bail!("Invalid `OrderSide` in `calculate_balance_locked`: {side}")
-            }
         };
 
         Ok(Money::from_decimal(locked, instrument.quote_currency())?)
@@ -324,9 +327,6 @@ impl Account for BettingAccount {
                     );
                 }
                 pnls.insert(quote_currency, quote_pnl);
-            }
-            OrderSide::NoOrderSide => {
-                anyhow::bail!("Invalid `OrderSide` in calculate_pnls: {}", fill.order_side)
             }
         }
 

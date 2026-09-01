@@ -33,7 +33,7 @@ from nautilus_trader.adapters.okx import OKX
 from nautilus_trader.adapters.okx import OKXDataClientConfig
 from nautilus_trader.adapters.okx import OKXDataClientFactory
 from nautilus_trader.adapters.okx import OKXEnvironment
-from nautilus_trader.adapters.okx import OKXExecClientConfig
+from nautilus_trader.adapters.okx import OKXExecutionClientConfig
 from nautilus_trader.adapters.okx import OKXExecutionClientFactory
 from nautilus_trader.adapters.okx import OKXInstrumentType
 from nautilus_trader.adapters.okx import OKXMarginMode
@@ -50,6 +50,10 @@ from nautilus_trader.model import TraderId
 from nautilus_trader.testkit import ExecTesterConfig
 
 
+# WARNING: With DRY_RUN = False, this tester submits orders to the configured
+# environment and may use real funds. Set DRY_RUN = True to connect without
+# submitting orders or sending shutdown cancel/close commands.
+DRY_RUN = False
 OKX_ENVIRONMENT = OKXEnvironment.LIVE
 TRADER_ID = TraderId.from_str("TESTER-001")
 ACCOUNT_ID = AccountId.from_str("OKX-001")
@@ -64,9 +68,12 @@ TOB_OFFSET_TICKS = 500
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     node = (
         LiveNode.builder("OKX-EXEC-TESTER-001", TRADER_ID, Environment.LIVE)
-        .with_reconciliation(True)
+        .with_reconciliation(reconciliation=True)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
         .add_data_client(
             None,
@@ -79,8 +86,7 @@ def main() -> None:
         .add_exec_client(
             None,
             OKXExecutionClientFactory(),
-            OKXExecClientConfig(
-                trader_id=TRADER_ID,
+            OKXExecutionClientConfig(
                 account_id=ACCOUNT_ID,
                 instrument_types=INSTRUMENT_TYPES,
                 environment=OKX_ENVIRONMENT,
@@ -110,7 +116,7 @@ def main() -> None:
             cancel_orders_on_stop=True,
             close_positions_on_stop=True,
             reduce_only_on_stop=True,
-            dry_run=False,  # Set True to log intended order flow without submitting orders
+            dry_run=DRY_RUN,
             log_data=False,
         ),
     )

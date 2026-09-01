@@ -26,14 +26,17 @@
 
 use nautilus_binance::{
     common::{
-        consts::BINANCE_CLIENT_ID,
+        consts::{BINANCE_CLIENT_ID, BINANCE_VENUE},
         enums::{BinanceEnvironment, BinanceProductType},
     },
-    config::{BinanceDataClientConfig, BinanceExecClientConfig},
+    config::{BinanceDataClientConfig, BinanceExecutionClientConfig},
     factories::{BinanceDataClientFactory, BinanceExecutionClientFactory},
 };
 use nautilus_common::enums::Environment;
-use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
+use nautilus_live::{
+    config::{LiveExecutionEngineConfig, LiveRiskEngineConfig},
+    node::LiveNode,
+};
 use nautilus_model::{
     identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
@@ -41,6 +44,10 @@ use nautilus_model::{
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
+// WARNING: With `DRY_RUN = false`, this tester submits orders to the configured
+// environment and may use real funds. Set `DRY_RUN = true` to connect without
+// submitting orders or sending shutdown cancel/close commands.
+const DRY_RUN: bool = false;
 const BINANCE_ENVIRONMENT: BinanceEnvironment = BinanceEnvironment::Testnet;
 const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "BINANCE-FUTURES-001";
@@ -68,8 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = BinanceExecClientConfig {
-        trader_id,
+    let exec_config = BinanceExecutionClientConfig {
         account_id,
         product_type: BinanceProductType::UsdM,
         environment: BINANCE_ENVIRONMENT,
@@ -78,15 +84,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let data_factory = BinanceDataClientFactory::new();
     let exec_factory = BinanceExecutionClientFactory::new();
-    let exec_engine_config = LiveExecEngineConfig {
+    let exec_engine_config = LiveExecutionEngineConfig {
         open_check_interval_secs: Some(10.0),
         position_check_interval_secs: Some(30.0),
+        ..Default::default()
+    };
+    let risk_engine_config = LiveRiskEngineConfig {
+        full_position_exit_venues: vec![*BINANCE_VENUE],
         ..Default::default()
     };
 
     let mut node = LiveNode::builder(trader_id, environment)?
         .with_name(node_name)
         .with_exec_engine_config(exec_engine_config)
+        .with_risk_engine_config(risk_engine_config)
         .add_data_client(None, Box::new(data_factory), Box::new(data_config))?
         .add_exec_client(None, Box::new(exec_factory), Box::new(exec_config))?
         .with_reconciliation(true)
@@ -105,6 +116,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
+        .dry_run(DRY_RUN)
         .log_data(false)
         .open_position_on_start_qty(order_qty.as_decimal())
         .use_post_only(true)

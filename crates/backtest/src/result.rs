@@ -21,7 +21,7 @@ use ahash::AHashMap;
 use nautilus_analysis::PortfolioStatistics;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
-    accounts::{AccountAny, margin_model::MarginModelAny},
+    accounts::{AccountAny, margin_model::MarginModel},
     events::{OrderEventAny, PortfolioSnapshot, PositionAdjusted},
     identifiers::InstrumentId,
     orders::{Order, OrderAny},
@@ -194,7 +194,7 @@ impl CanonicalBacktestResult {
             normalized == document,
             "canonical backtest result violates the version 1 encoding rules"
         );
-        let canonical = serde_json::to_vec(&document)?;
+        let canonical = serde_json::to_vec(&normalized)?;
         anyhow::ensure!(
             canonical == bytes,
             "canonical backtest result bytes do not use the canonical encoding"
@@ -612,10 +612,7 @@ fn canonical_account(account: &AccountAny) -> anyhow::Result<Value> {
                     )
                 })
                 .collect::<Map<_, _>>();
-            let margin_model = match margin.margin_model() {
-                MarginModelAny::Standard(_) => "standard",
-                MarginModelAny::Leveraged(_) => "leveraged",
-            };
+            let margin_model = margin.margin_model().name();
             payload.insert(
                 "default_leverage".to_string(),
                 Value::String(canonical_decimal(margin.default_leverage)),
@@ -773,12 +770,14 @@ fn canonical_value<T: Serialize>(source: &T) -> anyhow::Result<Value> {
 }
 
 fn canonicalize_value(value: &mut Value) -> anyhow::Result<()> {
+    value.sort_all_objects();
     sort_named_arrays(value, false);
     stringify_numbers(value)?;
     Ok(())
 }
 
 fn canonicalize_document(value: &mut Value) -> anyhow::Result<()> {
+    value.sort_all_objects();
     sort_named_arrays(value, false);
     normalize_identities(value);
     sort_named_arrays(value, true);
@@ -1072,7 +1071,10 @@ fn escape_pointer_token(token: &str) -> String {
 mod tests {
     use ahash::AHashMap;
     use nautilus_model::{
-        accounts::WalletAccount,
+        accounts::{
+            MarginAccount, WalletAccount,
+            margin_model::{LeveragedMarginModel, MarginModelAny, StandardMarginModel},
+        },
         enums::{AccountType, OrderType, TrailingOffsetType},
         events::AccountState,
         identifiers::{AccountId, InstrumentId},
@@ -1177,6 +1179,36 @@ mod tests {
         assert_eq!(locks[0]["currency"], "ETH");
         assert_eq!(locks[0]["instrument_id"], "WETHUSDC.BLOCKCHAIN");
         assert_eq!(locks[0]["money"], "2.00000000 ETH");
+    }
+
+    #[rstest]
+    fn test_canonical_margin_account_preserves_builtin_model_names() {
+        let state = AccountState::new(
+            AccountId::from("SIM-001"),
+            AccountType::Margin,
+            vec![AccountBalance::new(
+                Money::from("1_000_000 USD"),
+                Money::zero(Currency::USD()),
+                Money::from("1_000_000 USD"),
+            )],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+        let mut account = MarginAccount::new(state, true);
+
+        for (model, expected_name) in [
+            (MarginModelAny::Standard(StandardMarginModel), "standard"),
+            (MarginModelAny::Leveraged(LeveragedMarginModel), "leveraged"),
+        ] {
+            account.set_margin_model(model.into());
+            let value = canonical_account(&AccountAny::Margin(account.clone())).unwrap();
+
+            assert_eq!(value["Margin"]["margin_model"], expected_name);
+        }
     }
 
     #[rstest]

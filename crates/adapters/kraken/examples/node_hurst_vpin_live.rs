@@ -22,8 +22,8 @@
 //! Run with: `cargo run -p nautilus-kraken --features examples --example kraken-hurst-vpin-live`
 //!
 //! Required credential environment variables:
-//! - `KRAKEN_FUTURES_API_KEY`.
-//! - `KRAKEN_FUTURES_API_SECRET`.
+//! - `KRAKEN_FUTURES_API_KEY`
+//! - `KRAKEN_FUTURES_API_SECRET`
 //!
 //! Point at [demo-futures.kraken.com](https://demo-futures.kraken.com) for
 //! paper trading by setting `demo=true` on `resolve_futures` or by using a
@@ -32,7 +32,7 @@
 use nautilus_common::enums::Environment;
 use nautilus_kraken::{
     common::{consts::KRAKEN_CLIENT_ID, credential::KrakenCredential, enums::KrakenProductType},
-    config::{KrakenDataClientConfig, KrakenExecClientConfig},
+    config::{KrakenDataClientConfig, KrakenExecutionClientConfig},
     factories::{KrakenDataClientFactory, KrakenExecutionClientFactory},
 };
 use nautilus_live::node::LiveNode;
@@ -81,8 +81,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = KrakenExecClientConfig {
-        trader_id,
+    let exec_config = KrakenExecutionClientConfig {
         account_id,
         api_key,
         api_secret,

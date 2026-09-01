@@ -22,7 +22,6 @@
 //! headers built by [`crate::signing::auth`].
 
 use std::{
-    collections::HashMap,
     fmt::Debug,
     sync::{
         Arc,
@@ -791,13 +790,11 @@ fn build_client(
     // Pacing runs caller-side in `dispatch` (before auth headers are built),
     // so the network client carries no limiter of its own and never sleeps
     // inside its request path.
-    let client = HttpClient::new_with_rate_limiters(
-        HashMap::new(),
-        Vec::new(),
-        Some(timeout_secs),
-        proxy_url,
-        Vec::new(),
-    )?;
+    let client = HttpClient::builder()
+        .timeout_secs(timeout_secs)
+        .maybe_proxy_url(proxy_url)
+        .rate_limiters(Vec::new())
+        .build()?;
     Ok((client, rate_limiter))
 }
 
@@ -879,6 +876,8 @@ fn truncate(s: String, max: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use nautilus_network::http::{HttpStatus, StatusCode};
     use rstest::rstest;
 

@@ -1,7 +1,7 @@
 # Lighter Rust Data Client Starter
 
 This quickstart builds a minimal Rust `LiveNode` with the Lighter data client and the built-in
-`DataTester` actor. `cargo run` connects to Lighter testnet public streams.
+`DataTester` actor. `cargo run` connects to Lighter Testnet public streams.
 
 ## Run
 

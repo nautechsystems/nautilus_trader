@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Integration adapter for the Betfair betting exchange.
+"""
 
 from __future__ import annotations
 
@@ -23,9 +26,9 @@ __all__ = [
     "BETFAIR",
     "BETFAIR_CLIENT_ID",
     "BETFAIR_VENUE",
+    "BetfairDataClientConfig",
     "BetfairDataClientFactory",
-    "BetfairDataConfig",
-    "BetfairExecConfig",
+    "BetfairExecutionClientConfig",
     "BetfairExecutionClientFactory",
 ]
 

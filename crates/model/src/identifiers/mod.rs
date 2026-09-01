@@ -47,7 +47,7 @@ pub mod trader_id;
 pub mod venue;
 pub mod venue_order_id;
 
-#[cfg(any(test, feature = "stubs"))]
+#[cfg(any(test, feature = "test-support"))]
 pub mod stubs;
 
 // Re-exports
@@ -117,8 +117,5 @@ impl_as_ref_for_identifier!(venue_order_id::VenueOrderId);
 
 /// Print interned string cache statistics for debugging purposes.
 pub fn interned_string_stats() {
-    ustr::total_allocated();
-    ustr::total_capacity();
-
     ustr::string_cache_iter().for_each(|s| println!("{s}"));
 }

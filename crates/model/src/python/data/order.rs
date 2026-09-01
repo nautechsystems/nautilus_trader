@@ -43,7 +43,7 @@ use crate::{
 impl BookOrder {
     /// Represents an order in a book.
     #[new]
-    fn py_new(side: OrderSide, price: Price, size: Quantity, order_id: OrderId) -> Self {
+    fn py_new(side: Option<OrderSide>, price: Price, size: Quantity, order_id: OrderId) -> Self {
         Self::new(side, price, size, order_id)
     }
 
@@ -71,7 +71,7 @@ impl BookOrder {
 
     #[getter]
     #[pyo3(name = "side")]
-    fn py_side(&self) -> OrderSide {
+    const fn py_side(&self) -> Option<OrderSide> {
         self.side
     }
 

@@ -10,7 +10,7 @@
 use std::{
     collections::{HashMap, VecDeque},
     fmt::Debug,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::Duration,
 };
 
@@ -35,12 +35,14 @@ use ibapi::{
 };
 use nautilus_common::messages::DataEvent;
 use nautilus_core::{UnixNanos, time::AtomicTime};
+use nautilus_live::task::TaskSlot;
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, Data, OrderBookDelta, QuoteTick, option_chain::OptionGreeks},
     enums::OrderSide,
     identifiers::InstrumentId,
     types::{Price, Quantity},
 };
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::data::{
@@ -228,7 +230,7 @@ impl DataFarmConnectionState {
         generation: u64,
         degraded_since_ns: UnixNanos,
     ) {
-        let mut state = self.state.lock().expect("data farm state mutex poisoned");
+        let mut state = self.state.lock();
 
         if state.recovery(scope).recovery_generation != generation {
             return;
@@ -242,7 +244,7 @@ impl DataFarmConnectionState {
     }
 
     fn mark_farm_degraded(&self, farm: DataFarmIdentity, degraded_since_ns: UnixNanos) {
-        let mut state = self.state.lock().expect("data farm state mutex poisoned");
+        let mut state = self.state.lock();
 
         state
             .degraded_farms
@@ -252,7 +254,7 @@ impl DataFarmConnectionState {
     }
 
     fn mark_ok(&self, farm: &DataFarmIdentity) -> bool {
-        let mut state = self.state.lock().expect("data farm state mutex poisoned");
+        let mut state = self.state.lock();
 
         let family_scope = DataFarmRecoveryScope::from(farm.kind);
         let farm_degraded_since_ns = state.degraded_farms.remove(farm);
@@ -294,11 +296,7 @@ impl DataFarmConnectionState {
     }
 
     fn recovery_generation_for(&self, scope: DataFarmRecoveryScope) -> u64 {
-        self.state
-            .lock()
-            .expect("data farm state mutex poisoned")
-            .recovery(scope)
-            .recovery_generation
+        self.state.lock().recovery(scope).recovery_generation
     }
 
     fn recovery_since_ns_after_for(
@@ -308,7 +306,6 @@ impl DataFarmConnectionState {
     ) -> Option<UnixNanos> {
         self.state
             .lock()
-            .expect("data farm state mutex poisoned")
             .recovery(scope)
             .recoveries
             .iter()
@@ -1162,7 +1159,7 @@ pub(super) async fn handle_realtime_bars_subscription(
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     clock: &'static AtomicTime,
     last_bars: Arc<tokio::sync::Mutex<AHashMap<String, RealtimeBar>>>,
-    bar_timeout_tasks: Arc<tokio::sync::Mutex<AHashMap<String, tokio::task::JoinHandle<()>>>>,
+    bar_timeout_tasks: Arc<tokio::sync::Mutex<AHashMap<String, TaskSlot<()>>>>,
     handle_revised_bars: bool,
     use_rth: bool,
     cancellation_token: CancellationToken,
@@ -1220,11 +1217,11 @@ async fn update_revised_bar_tracking(
     bar_type_str: &str,
     bar: RealtimeBar,
     last_bars: &Arc<tokio::sync::Mutex<AHashMap<String, RealtimeBar>>>,
-    bar_timeout_tasks: &Arc<tokio::sync::Mutex<AHashMap<String, tokio::task::JoinHandle<()>>>>,
+    bar_timeout_tasks: &Arc<tokio::sync::Mutex<AHashMap<String, TaskSlot<()>>>>,
 ) {
     last_bars.lock().await.insert(bar_type_str.to_string(), bar);
 
-    if let Some(existing) = bar_timeout_tasks.lock().await.remove(bar_type_str) {
+    if let Some(mut existing) = bar_timeout_tasks.lock().await.remove(bar_type_str) {
         existing.abort();
     }
 }
@@ -1325,7 +1322,7 @@ async fn process_realtime_bar_stream(
     size_precision: u8,
     data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
     last_bars: &Arc<tokio::sync::Mutex<AHashMap<String, RealtimeBar>>>,
-    bar_timeout_tasks: &Arc<tokio::sync::Mutex<AHashMap<String, tokio::task::JoinHandle<()>>>>,
+    bar_timeout_tasks: &Arc<tokio::sync::Mutex<AHashMap<String, TaskSlot<()>>>>,
     handle_revised_bars: bool,
     cancellation_token: &CancellationToken,
     data_farm_state: &DataFarmConnectionState,
@@ -2034,6 +2031,7 @@ mod tests {
     };
     use nautilus_common::messages::DataEvent;
     use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
+    use nautilus_live::task::TaskSlot;
     use nautilus_model::{
         data::{BarType, Data},
         identifiers::{InstrumentId, Symbol, Venue},
@@ -2254,10 +2252,7 @@ mod tests {
             clock,
         );
 
-        let state = data_farm_state
-            .state
-            .lock()
-            .expect("data farm state mutex poisoned");
+        let state = data_farm_state.state.lock();
         assert_eq!(state.historical_bars.recovery_generation, 1);
         assert_eq!(
             state.historical_bars.recoveries.front(),
@@ -2445,10 +2440,7 @@ mod tests {
         );
         data_farm_state.mark_degraded(initial_generation, UnixNanos::from(20));
 
-        let state = data_farm_state
-            .state
-            .lock()
-            .expect("data farm state mutex poisoned");
+        let state = data_farm_state.state.lock();
         assert_eq!(state.market_data.recovery_generation, 1);
         assert!(state.degraded_farms.is_empty());
         assert!(state.degraded_scopes.is_empty());
@@ -3070,7 +3062,7 @@ mod tests {
         bar_timeout_tasks
             .lock()
             .await
-            .insert(bar_type.clone(), stale_task);
+            .insert(bar_type.clone(), TaskSlot::from_handle(stale_task));
 
         let bar = RealtimeBar {
             date: time::OffsetDateTime::UNIX_EPOCH,
@@ -3166,7 +3158,6 @@ mod tests {
                 if state_for_recovery
                     .state
                     .lock()
-                    .expect("data farm state mutex poisoned")
                     .degraded_scopes
                     .contains_key(&DataFarmRecoveryScope::MarketData)
                 {

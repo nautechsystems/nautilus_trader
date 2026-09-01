@@ -64,6 +64,8 @@ pub struct BlockchainCache {
     chain: SharedChain,
     /// Map of block numbers to their corresponding timestamp
     block_timestamps: BTreeMap<u64, UnixNanos>,
+    /// Map of block numbers to the hashes observed with those timestamps.
+    block_hashes: BTreeMap<u64, String>,
     /// Map of DEX identifiers to their corresponding DEX objects.
     dexes: HashMap<DexType, SharedDex>,
     /// Map of token addresses to their corresponding `Token` objects.
@@ -87,6 +89,7 @@ impl BlockchainCache {
             invalid_tokens: HashSet::new(),
             pools: HashMap::new(),
             block_timestamps: BTreeMap::new(),
+            block_hashes: BTreeMap::new(),
             database: None,
         }
     }
@@ -118,12 +121,24 @@ impl BlockchainCache {
         self.block_timestamps.get(&block_number)
     }
 
+    /// Returns the observed hash for the specified block number, if cached.
+    #[must_use]
+    pub fn get_block_hash(&self, block_number: u64) -> Option<&str> {
+        self.block_hashes.get(&block_number).map(String::as_str)
+    }
+
     /// Records a block timestamp in the in-memory cache without persisting it.
     ///
     /// Used while streaming pool events so event conversion can resolve `ts_event` for blocks
     /// that have not been persisted via [`Self::add_block`].
     pub fn cache_block_timestamp(&mut self, number: u64, timestamp: UnixNanos) {
         self.block_timestamps.insert(number, timestamp);
+    }
+
+    /// Records the hash and timestamp observed for one block without persisting it.
+    pub fn cache_block_metadata(&mut self, block: &Block) {
+        self.block_timestamps.insert(block.number, block.timestamp);
+        self.block_hashes.insert(block.number, block.hash.clone());
     }
 
     /// Initializes the database connection for persistent storage.
@@ -261,6 +276,11 @@ impl BlockchainCache {
                 return;
             }
             log::debug!("Chain seeded in the database");
+
+            if let Err(e) = database.ensure_pool_event_block_hash_schema().await {
+                log::error!("Error adding pool event block hash storage: {e}");
+                return;
+            }
 
             match database.create_block_partition(&self.chain).await {
                 Ok(message) => log::debug!("Executing block partition creation: {message}"),
@@ -439,13 +459,11 @@ impl BlockchainCache {
             dex.clone(),
             pool_row.address,
             pool_identifier,
-            pool_row.creation_block as u64,
+            pool_row.creation_block,
             token0.clone(),
             token1.clone(),
-            pool_row.fee.map(|fee| fee as u32),
-            pool_row
-                .tick_spacing
-                .map(|tick_spacing| tick_spacing as u32),
+            pool_row.fee,
+            pool_row.tick_spacing,
             ts_init,
         );
 
@@ -512,7 +530,7 @@ impl BlockchainCache {
     /// Returns an error if adding the block to the database fails.
     pub async fn add_block(&mut self, block: Block) -> anyhow::Result<()> {
         // Populate in-memory first so the timestamp resolves even if persistence fails
-        self.block_timestamps.insert(block.number, block.timestamp);
+        self.cache_block_metadata(&block);
         if let Some(database) = &self.database {
             database.add_block(self.chain.chain_id, &block).await?;
         }
@@ -548,6 +566,7 @@ impl BlockchainCache {
         // Update in-memory cache
         for block in blocks {
             self.block_timestamps.insert(block.number, block.timestamp);
+            self.block_hashes.insert(block.number, block.hash);
         }
 
         Ok(())
@@ -571,6 +590,7 @@ impl BlockchainCache {
 
         for block in blocks {
             self.block_timestamps.insert(block.number, block.timestamp);
+            self.block_hashes.insert(block.number, block.hash);
         }
 
         Ok(())
@@ -1202,7 +1222,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn add_block_populates_timestamp_without_database() {
+    async fn add_block_populates_metadata_without_database() {
         let mut cache = test_cache();
         let block = Block::new(
             "0x1".to_string(),
@@ -1221,10 +1241,49 @@ mod tests {
             cache.get_block_timestamp(42),
             Some(&UnixNanos::from(1_700_000_000_000_000_000))
         );
+        assert_eq!(cache.get_block_hash(42), Some("0x1"));
     }
 
     #[tokio::test]
-    async fn stream_pool_events_uses_pool_event_block_timestamp_without_full_block()
+    async fn pool_event_block_hash_schema_upgrades_legacy_table() -> anyhow::Result<()> {
+        let Some((database, schema)) = connect_cache_test_database().await? else {
+            return Ok(());
+        };
+        execute_schema_statement(
+            &schema.admin_pool,
+            format!(
+                "ALTER TABLE {}.pool_event_block DROP COLUMN hash",
+                schema.name
+            ),
+        )
+        .await?;
+
+        database.ensure_pool_event_block_hash_schema().await?;
+        database
+            .add_pool_event_blocks_batch(
+                1,
+                &[test_block(42, UnixNanos::from(1_700_000_000_000_000_000))],
+            )
+            .await?;
+
+        let hash: String = sqlx::query_scalar(AssertSqlSafe(format!(
+            "SELECT hash FROM {}.pool_event_block WHERE chain_id = 1 AND number = 42",
+            schema.name
+        )))
+        .fetch_one(&schema.admin_pool)
+        .await?;
+        let expected_hash = format!("0x{:064x}", 42);
+        anyhow::ensure!(
+            hash == expected_hash,
+            "Unexpected persisted pool event block hash: {hash}"
+        );
+
+        schema.cleanup().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn stream_pool_events_uses_pool_event_block_metadata_without_full_block()
     -> anyhow::Result<()> {
         let Some((database, schema)) = connect_cache_test_database().await? else {
             return Ok(());
@@ -1256,15 +1315,17 @@ mod tests {
         schema.cleanup().await?;
 
         let events = events_result?;
-        let observed_timestamps = match events.as_slice() {
-            [DexPoolData::Swap(swap)] => Some((swap.ts_event, swap.ts_init)),
+        let observed_metadata = match events.as_slice() {
+            [DexPoolData::Swap(swap)] => {
+                Some((swap.ts_event, swap.ts_init, swap.block_hash.clone()))
+            }
             _ => None,
         };
 
-        let expected_timestamps = Some((expected_ts, expected_ts));
-        if observed_timestamps != expected_timestamps {
+        let expected_metadata = Some((expected_ts, expected_ts, Some(format!("0x{:064x}", 12))));
+        if observed_metadata != expected_metadata {
             anyhow::bail!(
-                "unexpected stream timestamps: expected {expected_timestamps:?}, observed {observed_timestamps:?}"
+                "unexpected stream metadata: expected {expected_metadata:?}, observed {observed_metadata:?}"
             );
         }
         Ok(())
@@ -1521,7 +1582,7 @@ mod tests {
             .await?;
         }
 
-        let (update, collect) = protocol_fee_events(&clean);
+        let (mut update, mut collect) = protocol_fee_events(&clean);
         clean
             .database()
             .add_pool_fee_protocol_updates_batch(
@@ -1623,8 +1684,12 @@ mod tests {
             .await?;
         let clean_events = clean.events(target_block).await?;
         let migrated_events = migrated.events(target_block).await?;
+        let mut swap = expected_swap(&clean);
+        swap.block_hash = Some(blocks[0].hash.clone());
+        update.block_hash = Some(blocks[1].hash.clone());
+        collect.block_hash = Some(blocks[2].hash.clone());
         let expected_events = vec![
-            DexPoolData::Swap(expected_swap(&clean)),
+            DexPoolData::Swap(swap),
             DexPoolData::FeeProtocolUpdate(update),
             DexPoolData::FeeProtocolCollect(collect),
         ];
@@ -1903,7 +1968,12 @@ mod tests {
         cache.database = None;
         schema.cleanup().await?;
 
-        let latest_valid_block = latest_valid?.map(|s| s.block_position.number);
+        let latest_valid_metadata = latest_valid?.map(|snapshot| {
+            (
+                snapshot.block_position.number,
+                snapshot.block_position.block_hash,
+            )
+        });
         let latest_any_block = latest_any?.map(|s| s.block_position.number);
         let stored_invalid = stored_invalid?;
         let stored_on_chain = stored_on_chain?;
@@ -1911,13 +1981,13 @@ mod tests {
         // require_valid excludes 'invalid', so the latest usable snapshot is on_chain@150; without
         // the filter the newest row (invalid@200) wins. The stored verdict stays readable by primary
         // key and untouched by the load filter.
-        if latest_valid_block != Some(150)
+        if latest_valid_metadata != Some((150, Some(format!("0x{:064x}", 150))))
             || latest_any_block != Some(200)
             || stored_invalid.as_deref() != Some("invalid")
             || stored_on_chain.as_deref() != Some("on_chain")
         {
             anyhow::bail!(
-                "unexpected load filter result: latest_valid_block={latest_valid_block:?}, latest_any_block={latest_any_block:?}, stored_invalid={stored_invalid:?}, stored_on_chain={stored_on_chain:?}"
+                "unexpected load filter result: latest_valid_metadata={latest_valid_metadata:?}, latest_any_block={latest_any_block:?}, stored_invalid={stored_invalid:?}, stored_on_chain={stored_on_chain:?}"
             );
         }
 
@@ -2374,7 +2444,7 @@ mod tests {
             create_cache_test_schema(&admin_pool, &schema_name).await?;
         }
 
-        let database = BlockchainCacheDatabase::connect(
+        let database = crate::cache::database::tests::connect_test_database(
             connect_options.options([("search_path", format!("{schema_name},public"))]),
         )
         .await?;
@@ -2490,6 +2560,7 @@ mod tests {
                 CREATE TABLE {schema}."pool_event_block" (
                     chain_id INTEGER NOT NULL,
                     number BIGINT NOT NULL,
+                    hash TEXT,
                     timestamp TEXT NOT NULL,
                     PRIMARY KEY (chain_id, number)
                 )

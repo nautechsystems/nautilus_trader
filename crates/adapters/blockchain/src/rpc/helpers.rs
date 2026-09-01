@@ -108,6 +108,12 @@ pub fn extract_log_index(log: &RpcLog) -> anyhow::Result<u32> {
 /// Returns an error if the address is invalid.
 pub fn extract_address(log: &RpcLog) -> anyhow::Result<Address> {
     let bytes = decode_hex(&log.address)?;
+    anyhow::ensure!(
+        bytes.len() == Address::len_bytes(),
+        "Invalid contract address length: expected {} bytes, was {}",
+        Address::len_bytes(),
+        bytes.len()
+    );
     Ok(Address::from_slice(&bytes))
 }
 
@@ -269,6 +275,25 @@ mod tests {
         assert_eq!(
             address.to_string().to_lowercase(),
             "0x1f98431c8ad98523631ae4a59f267346ea31f984"
+        );
+    }
+
+    #[rstest]
+    #[case("0x", 0)]
+    #[case("0x00112233445566778899aabbccddeeff001122", 19)]
+    #[case("0x00112233445566778899aabbccddeeff0011223344", 21)]
+    fn test_extract_address_rejects_wrong_length(
+        mut log: RpcLog,
+        #[case] address: &str,
+        #[case] actual: usize,
+    ) {
+        log.address = address.to_string();
+
+        let error = extract_address(&log).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("Invalid contract address length: expected 20 bytes, was {actual}")
         );
     }
 

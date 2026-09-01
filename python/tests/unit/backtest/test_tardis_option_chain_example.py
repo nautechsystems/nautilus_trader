@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test tardis option chain example behavior.
+"""
 
 import importlib.util
 import sys
@@ -28,6 +31,9 @@ Price = _model.Price
 
 
 def load_example() -> ModuleType:
+    """
+    Load example.
+    """
     example_path = (
         Path(__file__).resolve().parents[4] / "examples" / "backtest" / "tardis_option_chain.py"
     )
@@ -47,7 +53,10 @@ def option_metadata(
     settlement_currency: str,
     expiration_ns: int,
     strike: str,
-):
+) -> object:
+    """
+    Option metadata.
+    """
     return module.OptionMetadata(
         instrument_id=InstrumentId.from_str(f"{raw_symbol}.DERIBIT"),
         underlying=underlying,
@@ -57,7 +66,10 @@ def option_metadata(
     )
 
 
-def mixed_series_options(module: ModuleType):
+def mixed_series_options(module: ModuleType) -> object:
+    """
+    Mixed series options.
+    """
     nearest_expiry_ns = 1_704_067_200_000_000_000
     later_expiry_ns = 1_706_745_600_000_000_000
     return [
@@ -97,6 +109,9 @@ def mixed_series_options(module: ModuleType):
 
 
 def test_example_imports() -> None:
+    """
+    Test example imports.
+    """
     module = load_example()
 
     assert module.OptionChainBacktest.__name__ == "OptionChainBacktest"
@@ -104,6 +119,9 @@ def test_example_imports() -> None:
 
 
 def test_nearest_series_filters_strikes_to_selected_series() -> None:
+    """
+    Test nearest series filters strikes to selected series.
+    """
     module = load_example()
     options = mixed_series_options(module)
 
@@ -118,6 +136,9 @@ def test_nearest_series_filters_strikes_to_selected_series() -> None:
 
 
 def test_default_strike_uses_selected_series_strikes() -> None:
+    """
+    Test default strike uses selected series strikes.
+    """
     module = load_example()
     selection = module.nearest_series(mixed_series_options(module))
 

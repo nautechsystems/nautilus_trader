@@ -39,7 +39,7 @@ The following adapter classes are available:
 - `DatabentoHistoricalClient`: Fetches historical market data and instrument definitions via the Databento HTTP API.
 - `DatabentoLiveClient`: Subscribes to real-time data feeds via Databento's raw TCP API.
 - `DatabentoDataClient`: Data client for live trading nodes, wrapping the historical and live clients.
-- `DatabentoDataClientFactory`: Builds the data client from a `DatabentoLiveClientConfig` for `LiveNode`.
+- `DatabentoDataClientFactory`: Builds the data client from a `DatabentoDataClientConfig` for `LiveNode`.
 
 :::info
 Most users configure a live trading node (covered below) and do not work with
@@ -89,8 +89,8 @@ The following Databento schemas are supported by NautilusTrader:
 | [CMBP_1](https://databento.com/docs/schemas-and-data-formats/cmbp-1)         | `(QuoteTick, TradeTick \| None)` | Consolidated MBP across venues. |
 | [CBBO_1S](https://databento.com/docs/schemas-and-data-formats/cbbo-1s)       | `QuoteTick`                      | Consolidated 1-second BBO.      |
 | [CBBO_1M](https://databento.com/docs/schemas-and-data-formats/cbbo-1m)       | `QuoteTick`                      | Consolidated 1-minute BBO.      |
-| [TCBBO](https://databento.com/docs/schemas-and-data-formats/tcbbo)           | `(QuoteTick, TradeTick)`         | Trade‑sampled consolidated BBO. |
-| [TBBO](https://databento.com/docs/schemas-and-data-formats/tbbo)             | `(QuoteTick, TradeTick)`         | Trade‑sampled best bid/offer.   |
+| [TCBBO](https://databento.com/docs/schemas-and-data-formats/tcbbo)           | `(QuoteTick, TradeTick)`         | Trade-sampled consolidated BBO. |
+| [TBBO](https://databento.com/docs/schemas-and-data-formats/tbbo)             | `(QuoteTick, TradeTick)`         | Trade-sampled best bid/offer.   |
 | [TRADES](https://databento.com/docs/schemas-and-data-formats/trades)         | `TradeTick`                      | Trade ticks.                    |
 | [OHLCV_1S](https://databento.com/docs/schemas-and-data-formats/ohlcv-1s)     | `Bar`                            | 1-second bars.                  |
 | [OHLCV_1M](https://databento.com/docs/schemas-and-data-formats/ohlcv-1m)     | `Bar`                            | 1-minute bars.                  |
@@ -764,7 +764,7 @@ catalog.write_trade_ticks(trades)
 Use the schema-specific methods for files whose schema is not the default for that output type:
 
 - `load_bbo_quotes` for BBO interval quotes.
-- `load_cmbp_quotes` for CMBP‑1 quotes.
+- `load_cmbp_quotes` for CMBP-1 quotes.
 - `load_cbbo_quotes` for CBBO quotes.
 - `load_tbbo_trades` for TBBO trades.
 - `load_tcbbo_trades` for TCBBO trades.
@@ -795,17 +795,17 @@ from stored subscriptions so a reconnect never replays history a second time.
 
 ## Configuration
 
-Create `DatabentoLiveClientConfig` from the adapter's public Python module. The API key and
+Create `DatabentoDataClientConfig` from the adapter's public Python module. The API key and
 `publishers.json` path are required:
 
 ```python
 import os
 from pathlib import Path
 
-from nautilus_trader.adapters.databento import DatabentoLiveClientConfig
+from nautilus_trader.adapters.databento import DatabentoDataClientConfig
 
 
-config = DatabentoLiveClientConfig(
+config = DatabentoDataClientConfig(
     api_key=os.environ["DATABENTO_API_KEY"],
     publishers_filepath=Path("publishers.json"),
     use_exchange_as_venue=False,
@@ -822,9 +822,9 @@ and point `publishers_filepath` at the local copy.
 | `publishers_filepath`     | Required | Local path to Databento publisher metadata.             |
 | `use_exchange_as_venue`   | `False`  | Use exchange MIC venues for GLBX instruments.           |
 | `bars_timestamp_on_close` | `True`   | Timestamp bars on close instead of the interval open.   |
-| `venue_dataset_map`       | `None`   | Override venue‑to‑dataset mappings from publisher data. |
+| `venue_dataset_map`       | `None`   | Override venue-to-dataset mappings from publisher data. |
 
-Use `DatabentoLiveClientConfig` with `DatabentoDataClientFactory`. The current
+Use `DatabentoDataClientConfig` with `DatabentoDataClientFactory`. The current
 [Python example](https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/live/databento/data_tester.py)
 shows the complete `LiveNode.builder(...)` configuration.
 
@@ -840,9 +840,9 @@ The live client reconnects automatically on:
 #### Reconnection strategy
 
 The factory-backed live client uses an internal 10-minute reconnection window with exponential
-backoff from 1 second, capped at 60 seconds. `DatabentoLiveClientConfig` does not expose a
-reconnection timeout. Once the window elapses without a successful session, the client gives up and
-reports an error rather than retrying indefinitely.
+backoff from 1 second, capped at 60 seconds. The Python `DatabentoDataClientConfig` constructor does
+not expose a reconnection timeout. Once the window elapses without a successful session, the client
+gives up and reports an error rather than retrying indefinitely.
 
 Stalled connections are detected by the upstream Databento client, which raises a heartbeat timeout
 when no data arrives within the heartbeat interval plus 5 seconds. The feed handler treats that as a

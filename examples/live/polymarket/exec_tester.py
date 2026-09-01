@@ -30,12 +30,12 @@ from decimal import Decimal
 
 from nautilus_trader.adapters.polymarket import PolymarketDataClientConfig
 from nautilus_trader.adapters.polymarket import PolymarketDataClientFactory
-from nautilus_trader.adapters.polymarket import PolymarketExecClientConfig
+from nautilus_trader.adapters.polymarket import PolymarketExecutionClientConfig
 from nautilus_trader.adapters.polymarket import PolymarketExecutionClientFactory
 from nautilus_trader.adapters.polymarket import PolymarketInstrumentProviderConfig
 from nautilus_trader.adapters.polymarket import SignatureType
 from nautilus_trader.common import Environment
-from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecutionEngineConfig
 from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.live import LiveNode
 from nautilus_trader.model import ClientId
@@ -47,6 +47,10 @@ from nautilus_trader.model import TraderId
 from nautilus_trader.testkit import ExecTesterConfig
 
 
+# WARNING: With DRY_RUN = False, this tester submits orders to the configured
+# environment and may use real funds. Set DRY_RUN = True to connect without
+# submitting orders or sending shutdown cancel/close commands.
+DRY_RUN = False
 POLYMARKET = "POLYMARKET"
 TRADER_ID = TraderId.from_str("TESTER-001")
 ACCOUNT_ID = "POLYMARKET-001"
@@ -61,6 +65,9 @@ TOB_OFFSET_TICKS = 5
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     instrument_config = PolymarketInstrumentProviderConfig(
         event_slugs=[EVENT_SLUG],
         load_ids=[INSTRUMENT_ID],
@@ -69,9 +76,9 @@ def main() -> None:
 
     node = (
         LiveNode.builder("POLYMARKET-EXEC-TESTER-001", TRADER_ID, Environment.LIVE)
-        .with_reconciliation(True)
+        .with_reconciliation(reconciliation=True)
         .with_exec_engine_config(
-            LiveExecEngineConfig(
+            LiveExecutionEngineConfig(
                 reconciliation_instrument_ids=[str(INSTRUMENT_ID)],
                 open_check_interval_secs=10,
                 position_check_interval_secs=30,
@@ -90,8 +97,7 @@ def main() -> None:
         .add_exec_client(
             None,
             PolymarketExecutionClientFactory(),
-            PolymarketExecClientConfig(
-                trader_id=str(TRADER_ID),
+            PolymarketExecutionClientConfig(
                 account_id=ACCOUNT_ID,
                 signature_type=SignatureType.PolyGnosisSafe,
                 instrument_config=instrument_config,
@@ -125,7 +131,7 @@ def main() -> None:
             close_positions_qty_precision=2,
             close_positions_time_in_force=TimeInForce.IOC,
             reduce_only_on_stop=False,
-            dry_run=False,  # Set True to log intended order flow without submitting orders
+            dry_run=DRY_RUN,
             log_data=False,
         ),
     )

@@ -28,7 +28,7 @@ use nautilus_kraken::{
         consts::KRAKEN,
         enums::{KrakenEnvironment, KrakenProductType},
     },
-    config::{KrakenDataClientConfig, KrakenExecClientConfig},
+    config::{KrakenDataClientConfig, KrakenExecutionClientConfig},
     factories::{KrakenDataClientFactory, KrakenExecutionClientFactory},
     python,
 };
@@ -120,14 +120,13 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .into_any();
     let config = Py::new(
         py,
-        KrakenExecClientConfig {
-            trader_id,
+        KrakenExecutionClientConfig {
             account_id,
             api_key: SMOKE_API_KEY.to_string(),
             api_secret: SMOKE_API_SECRET.to_string(),
             product_type: KrakenProductType::Futures,
             environment: KrakenEnvironment::Demo,
-            ..KrakenExecClientConfig::default()
+            ..KrakenExecutionClientConfig::default()
         },
     )
     .expect("config should convert to Python object")
@@ -142,11 +141,12 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("exec config should extract");
     let kraken_config = extracted_config
         .as_any()
-        .downcast_ref::<KrakenExecClientConfig>()
+        .downcast_ref::<KrakenExecutionClientConfig>()
         .expect("exec config should downcast");
     let cache = Rc::new(RefCell::new(Cache::default()));
     let client = extracted_factory
         .create(
+            trader_id,
             "KRAKEN-EXEC-EXTRACTED",
             extracted_config.as_ref(),
             cache.into(),
@@ -154,8 +154,10 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("extracted factory should create exec client");
 
     assert_eq!(extracted_factory.name(), KRAKEN);
-    assert_eq!(extracted_factory.config_type(), "KrakenExecClientConfig");
-    assert_eq!(kraken_config.trader_id, trader_id);
+    assert_eq!(
+        extracted_factory.config_type(),
+        "KrakenExecutionClientConfig"
+    );
     assert_eq!(kraken_config.account_id, account_id);
     assert_eq!(kraken_config.product_type, KrakenProductType::Futures);
     assert_eq!(client.client_id(), ClientId::from("KRAKEN-EXEC-EXTRACTED"));

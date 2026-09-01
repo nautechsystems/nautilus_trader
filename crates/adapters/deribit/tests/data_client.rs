@@ -19,11 +19,10 @@
 //! parsing to event emission via the data event channel.
 
 use std::{
-    collections::HashMap,
     net::SocketAddr,
     path::PathBuf,
     sync::{
-        Arc,
+        Arc, OnceLock,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
@@ -39,28 +38,34 @@ use axum::{
     response::{IntoResponse, Json, Response},
     routing::{get, post},
 };
+use log::{Level, LevelFilter, Log, Metadata, Record};
 use nautilus_common::{
     clients::DataClient,
-    live::runner::{replace_data_event_sender, set_data_event_sender},
+    live::runner::{replace_data_event_sender, replace_system_event_sender, set_data_event_sender},
     messages::{
-        DataEvent, DataResponse,
+        DataEvent, DataResponse, SystemEvent,
         data::{
             InstrumentResponse, RequestCustomData, RequestInstrument, SubscribeBars,
             SubscribeBookDeltas, SubscribeBookDepth10, SubscribeFundingRates, SubscribeIndexPrices,
             SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
             UnsubscribeTrades,
         },
+        system::SocketState,
     },
     testing::wait_until_async,
 };
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_deribit::{
-    common::{consts::DERIBIT_CLIENT_ID, enums::DeribitEnvironment},
+    common::{
+        consts::{DERIBIT_CLIENT_ID, DERIBIT_VENUE},
+        enums::DeribitEnvironment,
+    },
     config::DeribitDataClientConfig,
     data::DeribitDataClient,
     data_types::DeribitBookSummary,
     http::models::DeribitProductType,
 };
+use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::{BarType, CustomData, Data, DataType, TradeTick},
     enums::BookType,
@@ -68,9 +73,11 @@ use nautilus_model::{
 };
 use nautilus_network::http::HttpClient;
 use nautilus_testkit::events::drain_data_events;
+use parking_lot::Mutex;
 use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
+use ustr::Ustr;
 
 const TEST_TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -187,6 +194,56 @@ struct TestServerState {
     // exercising the lazy-load HTTP-failure path.
     fail_get_instrument: Arc<AtomicBool>,
     get_instrument_request_count: Arc<AtomicUsize>,
+}
+
+#[derive(Default)]
+struct CapturingDebugLogger {
+    messages: Mutex<Vec<String>>,
+}
+
+impl CapturingDebugLogger {
+    fn clear(&self) {
+        self.messages.lock().clear();
+    }
+
+    fn contains(&self, needle: &str) -> bool {
+        self.messages
+            .lock()
+            .iter()
+            .any(|message| message.contains(needle))
+    }
+}
+
+impl Log for CapturingDebugLogger {
+    fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+        metadata.level() <= Level::Debug
+    }
+
+    fn log(&self, record: &Record<'_>) {
+        if self.enabled(record.metadata()) {
+            self.messages.lock().push(record.args().to_string());
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+static CAPTURING_DEBUG_LOGGER: OnceLock<CapturingDebugLogger> = OnceLock::new();
+static LOG_CAPTURE_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+
+async fn lock_log_capture() -> tokio::sync::MutexGuard<'static, ()> {
+    LOG_CAPTURE_LOCK
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .lock()
+        .await
+}
+
+fn install_capturing_debug_logger() -> &'static CapturingDebugLogger {
+    let logger = CAPTURING_DEBUG_LOGGER.get_or_init(CapturingDebugLogger::default);
+    let _ = log::set_logger(logger);
+    log::set_max_level(LevelFilter::Debug);
+    logger.clear();
+    logger
 }
 
 async fn handle_jsonrpc_request(
@@ -619,8 +676,7 @@ async fn start_test_server()
     });
 
     let health_url = format!("http://{addr}/health");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();
@@ -725,9 +781,14 @@ async fn test_data_client_connect_disconnect() {
     let (addr, state) = start_test_server().await.unwrap();
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     set_data_event_sender(tx);
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
 
     let config = create_test_config(addr);
-    let mut client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, config).unwrap();
+    let registry = SocketReconnectRegistry::default();
+    let mut client = registry
+        .scope(|| DeribitDataClient::new(*DERIBIT_CLIENT_ID, config))
+        .unwrap();
     assert!(!client.is_connected());
 
     client.connect().await.unwrap();
@@ -738,10 +799,34 @@ async fn test_data_client_connect_disconnect() {
         TEST_TIMEOUT,
     )
     .await;
+    let event = tokio::time::timeout(TEST_TIMEOUT, system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    let endpoint = Ustr::from("deribit-data-streams");
+    let handle = registry.handle(*DERIBIT_CLIENT_ID, endpoint).unwrap();
+
     assert_eq!(*state.connection_count.lock().await, 1);
+    assert_eq!(change.client_id, *DERIBIT_CLIENT_ID);
+    assert_eq!(change.venue, Some(*DERIBIT_VENUE));
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Connected);
+    assert_eq!(
+        handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    let event = tokio::time::timeout(TEST_TIMEOUT, system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Disconnected);
 
     client.disconnect().await.unwrap();
     assert!(!client.is_connected());
+    assert!(registry.handle(*DERIBIT_CLIENT_ID, endpoint).is_none());
 }
 
 #[rstest]
@@ -956,6 +1041,8 @@ async fn test_data_client_subscribe_combo_legs_delivers_parent_and_leg_trades() 
 #[rstest]
 #[tokio::test]
 async fn test_data_client_subscribe_combo_legs_repeated_unsubscribes_last_reference() {
+    let _capture_guard = lock_log_capture().await;
+    let logger = install_capturing_debug_logger();
     let (addr, state) = start_test_server().await.unwrap();
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     set_data_event_sender(tx);
@@ -977,15 +1064,17 @@ async fn test_data_client_subscribe_combo_legs_repeated_unsubscribes_last_refere
     let mut params = Params::new();
     params.insert("subscribe_combo_legs".to_string(), json!(true));
 
+    let first_command_id = UUID4::new();
     let first_subscribe = SubscribeTrades::new(
         instrument_id,
         Some(*DERIBIT_CLIENT_ID),
         None,
-        UUID4::new(),
+        first_command_id,
         UnixNanos::default(),
         None,
         Some(params.clone()),
     );
+    logger.clear();
     client.subscribe_trades(first_subscribe).unwrap();
 
     wait_until_async(
@@ -996,35 +1085,67 @@ async fn test_data_client_subscribe_combo_legs_repeated_unsubscribes_last_refere
         TEST_TIMEOUT,
     )
     .await;
+    wait_until_async(
+        || async {
+            logger.contains(&format!(
+                "Processed trade subscription batch: command_id={first_command_id}, \
+                 requests=3, instrument=BTC-COMBO-1.DERIBIT"
+            ))
+        },
+        TEST_TIMEOUT,
+    )
+    .await;
 
     state.subscription_events.lock().await.clear();
 
+    let second_command_id = UUID4::new();
     let second_subscribe = SubscribeTrades::new(
         instrument_id,
         Some(*DERIBIT_CLIENT_ID),
         None,
-        UUID4::new(),
+        second_command_id,
         UnixNanos::default(),
         None,
         Some(params),
     );
+    logger.clear();
     client.subscribe_trades(second_subscribe).unwrap();
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    wait_until_async(
+        || async {
+            logger.contains(&format!(
+                "Processed trade subscription batch: command_id={second_command_id}, \
+                 requests=3, instrument=BTC-COMBO-1.DERIBIT"
+            ))
+        },
+        TEST_TIMEOUT,
+    )
+    .await;
     assert!(state.subscription_events.lock().await.is_empty());
 
+    let unsubscribe_command_id = UUID4::new();
     let unsubscribe = UnsubscribeTrades::new(
         instrument_id,
         Some(*DERIBIT_CLIENT_ID),
         None,
-        UUID4::new(),
+        unsubscribe_command_id,
         UnixNanos::default(),
         None,
         None,
     );
+    logger.clear();
     client.unsubscribe_trades(&unsubscribe).unwrap();
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    wait_until_async(
+        || async {
+            logger.contains(&format!(
+                "Processed trade unsubscription batch: command_id={unsubscribe_command_id}, \
+                 requests=3, instrument=BTC-COMBO-1.DERIBIT"
+            ))
+        },
+        TEST_TIMEOUT,
+    )
+    .await;
     assert!(state.subscription_events.lock().await.is_empty());
 
     client.unsubscribe_trades(&unsubscribe).unwrap();
@@ -1046,6 +1167,8 @@ async fn test_data_client_subscribe_combo_legs_repeated_unsubscribes_last_refere
 #[case(Some(false))]
 #[tokio::test]
 async fn test_data_client_subscribe_combo_legs_requires_opt_in(#[case] opt_in: Option<bool>) {
+    let _capture_guard = lock_log_capture().await;
+    let logger = install_capturing_debug_logger();
     let (addr, state) = start_test_server().await.unwrap();
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     set_data_event_sender(tx);
@@ -1070,15 +1193,17 @@ async fn test_data_client_subscribe_combo_legs_requires_opt_in(#[case] opt_in: O
         params
     });
 
+    let command_id = UUID4::new();
     let subscribe = SubscribeTrades::new(
         instrument_id,
         Some(*DERIBIT_CLIENT_ID),
         None,
-        UUID4::new(),
+        command_id,
         UnixNanos::default(),
         None,
         params,
     );
+    logger.clear();
     client.subscribe_trades(subscribe).unwrap();
 
     wait_until_async(
@@ -1091,8 +1216,16 @@ async fn test_data_client_subscribe_combo_legs_requires_opt_in(#[case] opt_in: O
         TEST_TIMEOUT,
     )
     .await;
-
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    wait_until_async(
+        || async {
+            logger.contains(&format!(
+                "Processed trade subscription batch: command_id={command_id}, \
+                 requests=1, instrument=BTC-COMBO-1.DERIBIT"
+            ))
+        },
+        TEST_TIMEOUT,
+    )
+    .await;
     let events = state.subscription_events.lock().await;
     let subscribed = events
         .iter()
@@ -1368,25 +1501,21 @@ async fn test_subscribe_quotes_uncached_instrument_lazy_loads() {
         .subscribe_quotes(cmd)
         .expect("subscribe should accept uncached instrument when auto_load is enabled");
 
-    // The strongest assertion: a Quote DataEvent for the option arrives. This
-    // proves lazy-load fetched the option, seeded the WebSocket handler cache,
-    // and the handler matched the inbound frame against the option (not the
-    // already-cached BTC-PERPETUAL).
-    let mut received_option_quote = false;
-    let deadline = std::time::Instant::now() + TEST_TIMEOUT;
-    while std::time::Instant::now() < deadline {
-        if let Ok(Some(DataEvent::Data(Data::Quote(q)))) =
-            tokio::time::timeout(Duration::from_millis(250), rx.recv()).await
-            && q.instrument_id == option_id
-        {
-            received_option_quote = true;
-            break;
+    let quote = tokio::time::timeout(TEST_TIMEOUT, async {
+        loop {
+            let event = rx.recv().await.expect("channel closed");
+
+            if let DataEvent::Data(Data::Quote(quote)) = event
+                && quote.instrument_id == option_id
+            {
+                break quote;
+            }
         }
-    }
-    assert!(
-        received_option_quote,
-        "expected a Quote for the lazy-loaded option to flow through the handler"
-    );
+    })
+    .await
+    .expect("timeout waiting for lazy-loaded option quote");
+
+    assert_eq!(quote.instrument_id, option_id);
 
     client.disconnect().await.unwrap();
 }
@@ -1394,6 +1523,8 @@ async fn test_subscribe_quotes_uncached_instrument_lazy_loads() {
 #[rstest]
 #[tokio::test]
 async fn test_subscribe_quotes_lazy_load_http_failure_skips_ws_subscribe() {
+    let _capture_guard = lock_log_capture().await;
+    let logger = install_capturing_debug_logger();
     // Bug #4035: when lazy-load fails (HTTP error), the WS subscribe must be
     // skipped. Otherwise Deribit would ack the subscribe and stream frames the
     // handler cannot match, reintroducing the silent-drop behavior.
@@ -1416,22 +1547,32 @@ async fn test_subscribe_quotes_lazy_load_http_failure_skips_ws_subscribe() {
     state.fail_get_instrument.store(true, Ordering::Relaxed);
 
     let option_id = InstrumentId::from("BTC-27DEC24-100000-C.DERIBIT");
+    let command_id = UUID4::new();
     let cmd = SubscribeQuotes::new(
         option_id,
         Some(*DERIBIT_CLIENT_ID),
         None,
-        UUID4::new(),
+        command_id,
         UnixNanos::default(),
         None,
         None,
     );
 
+    logger.clear();
     client
         .subscribe_quotes(cmd)
         .expect("subscribe returns Ok; the failure is logged on the spawned task");
 
-    // Allow the spawned lazy-load task to run and fail
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    wait_until_async(
+        || async {
+            logger.contains(&format!(
+                "Lazy-load failed for BTC-27DEC24-100000-C.DERIBIT \
+                 (quotes, command_id={command_id}):"
+            ))
+        },
+        TEST_TIMEOUT,
+    )
+    .await;
 
     let saw_quote_channel = state
         .subscription_events
@@ -1439,6 +1580,11 @@ async fn test_subscribe_quotes_lazy_load_http_failure_skips_ws_subscribe() {
         .await
         .iter()
         .any(|(topic, _)| topic.starts_with("quote."));
+
+    assert_eq!(
+        state.get_instrument_request_count.load(Ordering::Relaxed),
+        1
+    );
     assert!(
         !saw_quote_channel,
         "lazy-load HTTP failure must not forward the WebSocket subscribe"
@@ -1595,6 +1741,8 @@ async fn test_subscribe_uncached_instrument_fails_fast(#[case] kind: SubscribeKi
 #[rstest]
 #[tokio::test]
 async fn test_subscribe_funding_rates_rejects_non_perpetual() {
+    let _capture_guard = lock_log_capture().await;
+    let logger = install_capturing_debug_logger();
     // Funding rates are perpetual-only; subscribing for a future must log a
     // warning and skip the WS subscribe rather than emit a perpetual.* channel.
     let (addr, state) = start_test_server().await.unwrap();
@@ -1612,22 +1760,32 @@ async fn test_subscribe_funding_rates_rejects_non_perpetual() {
     .await;
 
     let future_id = InstrumentId::from("BTC-27DEC24.DERIBIT");
+    let command_id = UUID4::new();
     let cmd = SubscribeFundingRates::new(
         future_id,
         Some(*DERIBIT_CLIENT_ID),
         None,
-        UUID4::new(),
+        command_id,
         UnixNanos::default(),
         None,
         None,
     );
 
+    logger.clear();
     client
         .subscribe_funding_rates(cmd)
         .expect("subscribe returns Ok; rejection is async + logged");
 
-    // Allow the spawned task to run, then assert no perpetual channel reached the server
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    wait_until_async(
+        || async {
+            logger.contains(&format!(
+                "Funding rates subscription rejected for BTC-27DEC24.DERIBIT \
+                 (command_id={command_id}): only available for perpetual instruments"
+            ))
+        },
+        TEST_TIMEOUT,
+    )
+    .await;
 
     let saw_perpetual_channel = state
         .subscription_events

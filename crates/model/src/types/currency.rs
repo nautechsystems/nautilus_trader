@@ -24,8 +24,7 @@ use std::{
 };
 
 use nautilus_core::correctness::{
-    CorrectnessError, CorrectnessResult, CorrectnessResultExt, FAILED, check_nonempty_string,
-    check_valid_string_utf8,
+    CorrectnessResult, CorrectnessResultExt, FAILED, check_nonempty_string, check_valid_string_utf8,
 };
 use serde::{Deserialize, Serialize, Serializer};
 use thiserror::Error;
@@ -38,10 +37,12 @@ use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
 /// Error returned when a currency cannot be resolved from the model currency map.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum CurrencyLookupError {
-    /// The currency map lock could not be acquired.
+    /// A legacy currency-map lock failure.
+    ///
+    /// Current lookup methods use infallible locks and do not return this variant.
     #[error("Failed to acquire lock on `CURRENCY_MAP`: {reason}")]
     LockFailure {
-        /// The lock failure reason.
+        /// The legacy lock failure reason.
         reason: String,
     },
     /// The requested currency code is not present in the currency map.
@@ -134,13 +135,9 @@ impl Currency {
     ///
     /// # Errors
     ///
-    /// Returns an error if there is a failure acquiring the lock on the currency map.
+    /// This function does not currently return an error.
     pub fn register(currency: Self, overwrite: bool) -> CorrectnessResult<()> {
-        let mut map = CURRENCY_MAP
-            .lock()
-            .map_err(|e| CorrectnessError::PredicateViolation {
-                message: format!("Failed to acquire lock on `CURRENCY_MAP`: {e}"),
-            })?;
+        let mut map = CURRENCY_MAP.lock();
 
         if !overwrite && map.contains_key(currency.code.as_str()) {
             // If overwrite is false and the currency already exists, simply return
@@ -154,7 +151,7 @@ impl Currency {
 
     /// Attempts to parse a [`Currency`] from a string, returning `None` if not found.
     pub fn try_from_str(s: &str) -> Option<Self> {
-        let map_guard = CURRENCY_MAP.lock().ok()?;
+        let map_guard = CURRENCY_MAP.lock();
         map_guard.get(s).copied()
     }
 
@@ -162,9 +159,7 @@ impl Currency {
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - A currency with the given `code` does not exist.
-    /// - There is a failure acquiring the lock on the currency map.
+    /// Returns an error if a currency with the given `code` does not exist.
     pub fn is_fiat(code: &str) -> Result<bool, CurrencyLookupError> {
         let currency = Self::from_str(code)?;
         Ok(currency.currency_type == CurrencyType::Fiat)
@@ -174,9 +169,7 @@ impl Currency {
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - If a currency with the given `code` does not exist.
-    /// - If there is a failure acquiring the lock on the currency map.
+    /// Returns an error if a currency with the given `code` does not exist.
     pub fn is_crypto(code: &str) -> Result<bool, CurrencyLookupError> {
         let currency = Self::from_str(code)?;
         Ok(currency.currency_type == CurrencyType::Crypto)
@@ -187,9 +180,7 @@ impl Currency {
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - A currency with the given `code` does not exist.
-    /// - There is a failure acquiring the lock on the currency map.
+    /// Returns an error if a currency with the given `code` does not exist.
     pub fn is_commodity_backed(code: &str) -> Result<bool, CurrencyLookupError> {
         let currency = Self::from_str(code)?;
         Ok(currency.currency_type == CurrencyType::CommodityBacked)
@@ -288,11 +279,7 @@ impl FromStr for Currency {
     type Err = CurrencyLookupError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let map_guard = CURRENCY_MAP
-            .lock()
-            .map_err(|e| CurrencyLookupError::LockFailure {
-                reason: e.to_string(),
-            })?;
+        let map_guard = CURRENCY_MAP.lock();
         map_guard
             .get(s)
             .copied()
@@ -550,20 +537,20 @@ mod tests {
     }
 
     #[rstest]
-    fn test_currency_lookup_error_lock_failure_display() {
+    fn test_currency_lookup_error_legacy_lock_failure_display() {
         let err = CurrencyLookupError::LockFailure {
-            reason: "poisoned lock".to_string(),
+            reason: "legacy lock failure".to_string(),
         };
 
         assert_eq!(
             err,
             CurrencyLookupError::LockFailure {
-                reason: "poisoned lock".to_string()
+                reason: "legacy lock failure".to_string()
             }
         );
         assert_eq!(
             err.to_string(),
-            "Failed to acquire lock on `CURRENCY_MAP`: poisoned lock"
+            "Failed to acquire lock on `CURRENCY_MAP`: legacy lock failure"
         );
     }
 

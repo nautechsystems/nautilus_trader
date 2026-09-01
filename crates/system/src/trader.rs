@@ -37,6 +37,7 @@ use nautilus_common::{
         register_component_actor, reset_component, start_component, stop_component,
     },
     enums::{ComponentState, ComponentTrigger, Environment},
+    logging::RECV,
     messages::execution::TradingCommand,
     msgbus,
     msgbus::{
@@ -57,7 +58,7 @@ use nautilus_model::{
 use nautilus_portfolio::portfolio::Portfolio;
 use nautilus_trading::{
     ExecutionAlgorithm, ExecutionAlgorithmNative,
-    strategy::{Strategy, StrategyNative},
+    strategy::{Strategy, StrategyNative, route_time_event},
 };
 use ustr::Ustr;
 
@@ -74,7 +75,7 @@ pub(crate) enum StrategyCommand {
     ExitMarket,
 }
 
-type ExecAlgorithmSubscriptionFn = Box<dyn FnMut() -> anyhow::Result<()>>;
+type ExecutionAlgorithmSubscriptionFn = Box<dyn FnMut() -> anyhow::Result<()>>;
 type PersistedComponentState = IndexMap<String, Vec<u8>>;
 type ComponentStateLoadFn = fn(Ustr, PersistedComponentState) -> anyhow::Result<()>;
 type ComponentStateSaveFn = fn(Ustr) -> anyhow::Result<PersistedComponentState>;
@@ -130,9 +131,9 @@ pub struct Trader {
     /// Registered exec algorithm IDs (algorithms stored in global registry).
     pub(crate) exec_algorithm_ids: Vec<ExecAlgorithmId>,
     /// Restores strategy event subscriptions for concrete execution algorithms.
-    exec_algorithm_restore_fns: AHashMap<ExecAlgorithmId, ExecAlgorithmSubscriptionFn>,
+    exec_algorithm_restore_fns: AHashMap<ExecAlgorithmId, ExecutionAlgorithmSubscriptionFn>,
     /// Removes strategy event subscriptions for concrete execution algorithms.
-    exec_algorithm_cleanup_fns: AHashMap<ExecAlgorithmId, ExecAlgorithmSubscriptionFn>,
+    exec_algorithm_cleanup_fns: AHashMap<ExecAlgorithmId, ExecutionAlgorithmSubscriptionFn>,
     /// Component clocks for individual components.
     pub(crate) clocks: IndexMap<ComponentId, Rc<RefCell<dyn Clock>>>,
     /// Timestamp when the trader was created.
@@ -622,8 +623,18 @@ impl Trader {
         // Register default time event handler for this strategy
         let actor_id = strategy.actor_id().inner();
         let callback = TimeEventCallback::from(move |event: TimeEvent| {
-            if let Some(mut actor) = try_get_actor_unchecked::<T>(&actor_id) {
-                actor.handle_time_event(&event);
+            if let Some(mut strategy) = try_get_actor_unchecked::<T>(&actor_id) {
+                log::debug!("{RECV} {event:?}");
+
+                if strategy.not_running() {
+                    log::trace!("Received message when not running - skipping {event:?}");
+                    return;
+                }
+
+                route_time_event(&mut *strategy, &event);
+                if let Err(e) = DataActor::on_time_event(&mut *strategy, &event) {
+                    log::error!("{e}");
+                }
             } else {
                 log::error!("Strategy {actor_id} not found for time event handling");
             }
@@ -747,7 +758,7 @@ impl Trader {
         // route TradingCommands to this algorithm via msgbus::send_any
         let actor_id = exec_algorithm_id.inner();
         let restore_actor_id = actor_id;
-        let restore_fn: ExecAlgorithmSubscriptionFn = Box::new(move || {
+        let restore_fn: ExecutionAlgorithmSubscriptionFn = Box::new(move || {
             let Some(mut algo) = try_get_actor_unchecked::<T>(&restore_actor_id) else {
                 anyhow::bail!(
                     "Execution algorithm {restore_actor_id} not found while restoring subscriptions"
@@ -775,7 +786,7 @@ impl Trader {
             Ok(())
         });
         let cleanup_actor_id = actor_id;
-        let cleanup_fn: ExecAlgorithmSubscriptionFn = Box::new(move || {
+        let cleanup_fn: ExecutionAlgorithmSubscriptionFn = Box::new(move || {
             let Some(mut algo) = try_get_actor_unchecked::<T>(&cleanup_actor_id) else {
                 anyhow::bail!(
                     "Execution algorithm {cleanup_actor_id} not found while cleaning subscriptions"
@@ -1826,7 +1837,7 @@ mod tests {
     use nautilus_execution::engine::{ExecutionEngine, config::ExecutionEngineConfig};
     use nautilus_model::{
         data::{Bar, DataType, stubs::stub_bar},
-        enums::{BookType, OrderSide, OrderStatus, OrderType, PositionAdjustmentType},
+        enums::{BookType, OrderSide, OrderStatus, OrderType, PositionAdjustmentType, TimeInForce},
         events::{
             OrderAccepted, OrderDenied, OrderFilled, OrderRejected, OrderUpdated, PositionAdjusted,
             order::spec::{
@@ -1841,7 +1852,7 @@ mod tests {
         instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
         orders::{OrderAny, OrderTestBuilder},
         stubs::TestDefault,
-        types::Quantity,
+        types::{Price, Quantity},
     };
     use nautilus_portfolio::portfolio::Portfolio;
     use nautilus_risk::engine::{RiskEngine, config::RiskEngineConfig};
@@ -1901,7 +1912,7 @@ mod tests {
 
     // Simple ExecutionAlgorithm wrapper for testing
     #[derive(Debug)]
-    struct TestExecAlgorithm {
+    struct TestExecutionAlgorithm {
         core: ExecutionAlgorithmCore,
         fail_start: bool,
         submit_on_accept: Option<OrderAny>,
@@ -1913,7 +1924,7 @@ mod tests {
         position_events: usize,
     }
 
-    impl TestExecAlgorithm {
+    impl TestExecutionAlgorithm {
         fn new(config: ExecutionAlgorithmConfig) -> Self {
             Self {
                 core: ExecutionAlgorithmCore::new(config),
@@ -1929,7 +1940,7 @@ mod tests {
         }
     }
 
-    impl DataActor for TestExecAlgorithm {
+    impl DataActor for TestExecutionAlgorithm {
         fn on_start(&mut self) -> anyhow::Result<()> {
             if self.fail_start {
                 anyhow::bail!("test execution algorithm start failure");
@@ -1938,7 +1949,7 @@ mod tests {
         }
     }
 
-    nautilus_execution_algorithm!(TestExecAlgorithm, {
+    nautilus_execution_algorithm!(TestExecutionAlgorithm, {
         fn on_order(&mut self, _order: OrderAny) -> anyhow::Result<()> {
             Ok(())
         }
@@ -2032,6 +2043,57 @@ mod tests {
     impl DataActor for TestStrategy {}
 
     nautilus_strategy!(TestStrategy);
+
+    #[derive(Debug)]
+    struct TimerRoutingStrategy {
+        core: StrategyCore,
+        time_events: usize,
+        strategy_time_events: usize,
+        post_market_exits: usize,
+        post_market_exits_on_callback: Option<usize>,
+        gtd_timer_active_on_callback: Option<bool>,
+    }
+
+    impl TimerRoutingStrategy {
+        fn new(config: StrategyConfig) -> Self {
+            Self {
+                core: StrategyCore::new(config),
+                time_events: 0,
+                strategy_time_events: 0,
+                post_market_exits: 0,
+                post_market_exits_on_callback: None,
+                gtd_timer_active_on_callback: None,
+            }
+        }
+    }
+
+    impl DataActor for TimerRoutingStrategy {
+        fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
+            self.time_events += 1;
+
+            if event.name.as_str().starts_with("MARKET_EXIT_CHECK:") {
+                self.post_market_exits_on_callback = Some(self.post_market_exits);
+            }
+
+            if let Some(client_order_id) = event.name.as_str().strip_prefix("GTD-EXPIRY:") {
+                self.gtd_timer_active_on_callback =
+                    Some(self.has_gtd_expiry_timer(&ClientOrderId::from(client_order_id)));
+            }
+
+            Ok(())
+        }
+    }
+
+    nautilus_strategy!(TimerRoutingStrategy, {
+        fn on_time_event(&mut self, _event: &TimeEvent) -> anyhow::Result<()> {
+            self.strategy_time_events += 1;
+            Ok(())
+        }
+
+        fn post_market_exit(&mut self) {
+            self.post_market_exits += 1;
+        }
+    });
 
     #[expect(clippy::type_complexity)]
     fn create_trader_components() -> (
@@ -2591,10 +2653,10 @@ mod tests {
         );
 
         let config = ExecutionAlgorithmConfig {
-            exec_algorithm_id: Some(ExecAlgorithmId::from("TestExecAlgorithm")),
+            exec_algorithm_id: Some(ExecAlgorithmId::from("TestExecutionAlgorithm")),
             ..Default::default()
         };
-        let exec_algorithm = TestExecAlgorithm::new(config);
+        let exec_algorithm = TestExecutionAlgorithm::new(config);
         let exec_algorithm_id = exec_algorithm.id();
 
         let result = trader.add_exec_algorithm(exec_algorithm);
@@ -2666,8 +2728,8 @@ mod tests {
                 .strategy_id(strategy_id)
                 .instrument_id(instrument_id)
                 .client_order_id(child_order_id)
-                .side(OrderSide::NoOrderSide)
-                .quantity(Quantity::from("100"))
+                .side(OrderSide::Buy)
+                .quantity(Quantity::from("100000000"))
                 .exec_algorithm_id(exec_algorithm_id)
                 .exec_spawn_id(child_order_id)
                 .build();
@@ -2676,7 +2738,7 @@ mod tests {
                 exec_algorithm_id: Some(exec_algorithm_id),
                 ..Default::default()
             };
-            let mut exec_algorithm = TestExecAlgorithm::new(config);
+            let mut exec_algorithm = TestExecutionAlgorithm::new(config);
             exec_algorithm.submit_on_accept = Some(child);
             let mut trader = Trader::new(
                 trader_id,
@@ -2707,7 +2769,7 @@ mod tests {
                 clock.borrow().timestamp_ns(),
                 None,
             );
-            get_actor_unchecked::<TestExecAlgorithm>(&exec_algorithm_id.inner())
+            get_actor_unchecked::<TestExecutionAlgorithm>(&exec_algorithm_id.inner())
                 .execute(TradingCommand::SubmitOrder(submit))
                 .unwrap();
 
@@ -2738,7 +2800,7 @@ mod tests {
                 let parent = cache.order(&parent.client_order_id()).unwrap();
                 let child = cache.order(&child_order_id).unwrap();
                 let exec_algorithm =
-                    get_actor_unchecked::<TestExecAlgorithm>(&exec_algorithm_id.inner());
+                    get_actor_unchecked::<TestExecutionAlgorithm>(&exec_algorithm_id.inner());
 
                 assert!(!trading_cmd_queue_is_empty());
                 assert_eq!(risk_engine.borrow().command_count(), 0);
@@ -2759,7 +2821,7 @@ mod tests {
                 let parent = cache.order(&parent.client_order_id()).unwrap();
                 let child = cache.order(&child_order_id).unwrap();
                 let exec_algorithm =
-                    get_actor_unchecked::<TestExecAlgorithm>(&exec_algorithm_id.inner());
+                    get_actor_unchecked::<TestExecutionAlgorithm>(&exec_algorithm_id.inner());
 
                 assert!(trading_cmd_queue_is_empty());
                 assert_eq!(risk_engine.borrow().command_count(), 1);
@@ -2770,7 +2832,7 @@ mod tests {
                 assert_eq!(child.event_count(), 2);
                 assert_eq!(
                     child.last_event().message(),
-                    Some("INVALID_ORDER_SIDE: NO_ORDER_SIDE".into())
+                    Some("QUANTITY_EXCEEDS_MAXIMUM: effective=100000000, max=1000000".into())
                 );
                 assert_eq!(exec_algorithm.accepted_events, 1);
                 assert_eq!(exec_algorithm.denied_events, 1);
@@ -2851,14 +2913,15 @@ mod tests {
             ..Default::default()
         };
         trader
-            .add_exec_algorithm(TestExecAlgorithm::new(config))
+            .add_exec_algorithm(TestExecutionAlgorithm::new(config))
             .unwrap();
 
         trader.start_components().unwrap();
 
         assert_eq!(order_a.exec_spawn_id(), Some(order_a.client_order_id()));
         {
-            let registered = get_actor_unchecked::<TestExecAlgorithm>(&exec_algorithm_id.inner());
+            let registered =
+                get_actor_unchecked::<TestExecutionAlgorithm>(&exec_algorithm_id.inner());
             assert!(registered.core.is_strategy_subscribed(&strategy_a));
             assert!(registered.core.is_strategy_subscribed(&strategy_b));
             assert!(!registered.core.is_strategy_subscribed(&terminal_strategy));
@@ -2913,7 +2976,8 @@ mod tests {
         msgbus::publish_position_event(format!("events.position.{strategy_a}").into(), &position);
 
         {
-            let registered = get_actor_unchecked::<TestExecAlgorithm>(&exec_algorithm_id.inner());
+            let registered =
+                get_actor_unchecked::<TestExecutionAlgorithm>(&exec_algorithm_id.inner());
             assert_eq!(registered.rejected_events, 1);
             assert_eq!(registered.updated_events, 1);
             assert_eq!(registered.filled_events, 1);
@@ -2923,14 +2987,16 @@ mod tests {
         trader.stop_components().unwrap();
         trader.reset_components().unwrap();
         {
-            let registered = get_actor_unchecked::<TestExecAlgorithm>(&exec_algorithm_id.inner());
+            let registered =
+                get_actor_unchecked::<TestExecutionAlgorithm>(&exec_algorithm_id.inner());
             assert!(!registered.core.is_strategy_subscribed(&strategy_a));
             assert!(!registered.core.is_strategy_subscribed(&strategy_b));
         }
 
         trader.start_components().unwrap();
         {
-            let registered = get_actor_unchecked::<TestExecAlgorithm>(&exec_algorithm_id.inner());
+            let registered =
+                get_actor_unchecked::<TestExecutionAlgorithm>(&exec_algorithm_id.inner());
             assert!(registered.core.is_strategy_subscribed(&strategy_a));
             assert!(registered.core.is_strategy_subscribed(&strategy_b));
         }
@@ -2980,13 +3046,13 @@ mod tests {
             ..Default::default()
         };
         trader
-            .add_exec_algorithm(TestExecAlgorithm::new(running_config))
+            .add_exec_algorithm(TestExecutionAlgorithm::new(running_config))
             .unwrap();
         let failing_config = ExecutionAlgorithmConfig {
             exec_algorithm_id: Some(failing_algorithm_id),
             ..Default::default()
         };
-        let mut failing_algorithm = TestExecAlgorithm::new(failing_config);
+        let mut failing_algorithm = TestExecutionAlgorithm::new(failing_config);
         failing_algorithm.fail_start = true;
         trader.add_exec_algorithm(failing_algorithm).unwrap();
         trader.initialize().unwrap();
@@ -3000,15 +3066,17 @@ mod tests {
                 .contains("test execution algorithm start failure")
         );
         {
-            let running = get_actor_unchecked::<TestExecAlgorithm>(&running_algorithm_id.inner());
-            let failing = get_actor_unchecked::<TestExecAlgorithm>(&failing_algorithm_id.inner());
+            let running =
+                get_actor_unchecked::<TestExecutionAlgorithm>(&running_algorithm_id.inner());
+            let failing =
+                get_actor_unchecked::<TestExecutionAlgorithm>(&failing_algorithm_id.inner());
             assert!(!running.core.is_strategy_subscribed(&running_strategy_id));
             assert!(!failing.core.is_strategy_subscribed(&failing_strategy_id));
         }
 
         trader.borrow_mut().stop_after_start_failure().unwrap();
 
-        let running = get_actor_unchecked::<TestExecAlgorithm>(&running_algorithm_id.inner());
+        let running = get_actor_unchecked::<TestExecutionAlgorithm>(&running_algorithm_id.inner());
         assert!(!running.core.is_strategy_subscribed(&running_strategy_id));
     }
 
@@ -3047,12 +3115,12 @@ mod tests {
             portfolio,
         );
         trader
-            .add_exec_algorithm(TestExecAlgorithm::new(ExecutionAlgorithmConfig {
+            .add_exec_algorithm(TestExecutionAlgorithm::new(ExecutionAlgorithmConfig {
                 exec_algorithm_id: Some(running_algorithm_id),
                 ..Default::default()
             }))
             .unwrap();
-        let mut failing_algorithm = TestExecAlgorithm::new(ExecutionAlgorithmConfig {
+        let mut failing_algorithm = TestExecutionAlgorithm::new(ExecutionAlgorithmConfig {
             exec_algorithm_id: Some(failing_algorithm_id),
             ..Default::default()
         });
@@ -3066,8 +3134,8 @@ mod tests {
                 .to_string()
                 .contains("test execution algorithm start failure")
         );
-        let running = get_actor_unchecked::<TestExecAlgorithm>(&running_algorithm_id.inner());
-        let failing = get_actor_unchecked::<TestExecAlgorithm>(&failing_algorithm_id.inner());
+        let running = get_actor_unchecked::<TestExecutionAlgorithm>(&running_algorithm_id.inner());
+        let failing = get_actor_unchecked::<TestExecutionAlgorithm>(&failing_algorithm_id.inner());
         assert!(!running.core.is_strategy_subscribed(&running_strategy_id));
         assert!(!failing.core.is_strategy_subscribed(&failing_strategy_id));
     }
@@ -3090,10 +3158,10 @@ mod tests {
         trader.state = ComponentState::Running;
 
         let config = ExecutionAlgorithmConfig {
-            exec_algorithm_id: Some(ExecAlgorithmId::from("TestExecAlgorithm")),
+            exec_algorithm_id: Some(ExecAlgorithmId::from("TestExecutionAlgorithm")),
             ..Default::default()
         };
-        let exec_algorithm = TestExecAlgorithm::new(config);
+        let exec_algorithm = TestExecutionAlgorithm::new(config);
 
         let result = trader.add_exec_algorithm(exec_algorithm);
         assert!(result.is_err());
@@ -3130,10 +3198,10 @@ mod tests {
         let strategy = TestStrategy::new(strategy_config);
 
         let exec_algorithm_config = ExecutionAlgorithmConfig {
-            exec_algorithm_id: Some(ExecAlgorithmId::from("TestExecAlgorithm")),
+            exec_algorithm_id: Some(ExecAlgorithmId::from("TestExecutionAlgorithm")),
             ..Default::default()
         };
-        let exec_algorithm = TestExecAlgorithm::new(exec_algorithm_config);
+        let exec_algorithm = TestExecutionAlgorithm::new(exec_algorithm_config);
 
         assert!(trader.add_actor(actor).is_ok());
         assert!(trader.add_strategy(strategy).is_ok());
@@ -3153,6 +3221,194 @@ mod tests {
         // Test dispose components
         assert!(trader.dispose_components().is_ok());
         assert_eq!(trader.component_count(), 0);
+    }
+
+    #[rstest]
+    fn test_native_strategy_timer_routes_market_exit_before_user_callback() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+        let strategy_id = StrategyId::from("TimerRouting-001");
+        let strategy = TimerRoutingStrategy::new(StrategyConfig {
+            strategy_id: Some(strategy_id),
+            manage_stop: true,
+            market_exit_interval_ms: 1,
+            ..Default::default()
+        });
+
+        trader.add_strategy(strategy).unwrap();
+        trader.start_components().unwrap();
+        trader.stop_components().unwrap();
+
+        let clock = trader.get_component_clocks().into_iter().next().unwrap();
+        let dispatched = dispatch_component_time_events(&clock, UnixNanos::from(1_000_000));
+        let strategy = get_actor_unchecked::<TimerRoutingStrategy>(&strategy_id.inner());
+
+        assert_eq!(dispatched, 1);
+        assert_eq!(strategy.time_events, 1);
+        assert_eq!(strategy.strategy_time_events, 0);
+        assert_eq!(strategy.post_market_exits, 1);
+        assert_eq!(strategy.post_market_exits_on_callback, Some(1));
+        assert!(!strategy.is_exiting());
+        assert_eq!(strategy.state(), ComponentState::Stopped);
+    }
+
+    #[rstest]
+    fn test_native_strategy_timer_routes_gtd_expiry_before_user_callback() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let trader_id = TraderId::test_default();
+        let mut trader = Trader::new(
+            trader_id,
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache.clone(),
+            portfolio,
+        );
+        let (strategy_id, client_order_id) = register_gtd_timer(&mut trader, &cache, trader_id);
+
+        let clock = trader.get_component_clocks().into_iter().next().unwrap();
+        let dispatched = dispatch_component_time_events(&clock, UnixNanos::from(1_000_000));
+        let mut strategy = get_actor_unchecked::<TimerRoutingStrategy>(&strategy_id.inner());
+        let strategy_state = (
+            strategy.time_events,
+            strategy.strategy_time_events,
+            strategy.gtd_timer_active_on_callback,
+            strategy.has_gtd_expiry_timer(&client_order_id),
+        );
+        drop(strategy);
+        let cache_ref = cache.borrow();
+        let cached_order = cache_ref.order(&client_order_id).unwrap();
+
+        assert_eq!(dispatched, 1);
+        assert_eq!(strategy_state, (1, 0, Some(false), false));
+        assert_eq!(cached_order.status(), OrderStatus::PendingCancel);
+        assert_eq!(cached_order.event_count(), 4);
+    }
+
+    #[rstest]
+    fn test_native_strategy_timer_skips_gtd_expiry_when_stopped() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let trader_id = TraderId::test_default();
+        let mut trader = Trader::new(
+            trader_id,
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache.clone(),
+            portfolio,
+        );
+        let (strategy_id, client_order_id) = register_gtd_timer(&mut trader, &cache, trader_id);
+        trader.stop_components().unwrap();
+
+        let clock = trader.get_component_clocks().into_iter().next().unwrap();
+        let dispatched = dispatch_component_time_events(&clock, UnixNanos::from(1_000_000));
+        let mut strategy = get_actor_unchecked::<TimerRoutingStrategy>(&strategy_id.inner());
+        let strategy_state = (
+            strategy.time_events,
+            strategy.strategy_time_events,
+            strategy.has_gtd_expiry_timer(&client_order_id),
+            strategy.state(),
+        );
+        drop(strategy);
+        let cache_ref = cache.borrow();
+        let cached_order = cache_ref.order(&client_order_id).unwrap();
+
+        assert_eq!(dispatched, 1);
+        assert_eq!(strategy_state, (0, 0, true, ComponentState::Stopped));
+        assert_eq!(cached_order.status(), OrderStatus::Accepted);
+        assert_eq!(cached_order.event_count(), 3);
+    }
+
+    fn dispatch_component_time_events(
+        clock: &Rc<RefCell<dyn Clock>>,
+        to_time_ns: UnixNanos,
+    ) -> usize {
+        let handlers = {
+            let mut clock_ref = clock.borrow_mut();
+            let test_clock = clock_ref
+                .as_any_mut()
+                .downcast_mut::<TestClock>()
+                .expect("component clock must be TestClock");
+            let events = test_clock.advance_time(to_time_ns, true);
+            test_clock.match_handlers(events)
+        };
+        let dispatched = handlers.len();
+
+        for handler in handlers {
+            handler.run();
+        }
+
+        dispatched
+    }
+
+    fn register_gtd_timer(
+        trader: &mut Trader,
+        cache: &Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+    ) -> (StrategyId, ClientOrderId) {
+        let strategy_id = StrategyId::from("TimerRouting-001");
+        let strategy = TimerRoutingStrategy::new(StrategyConfig {
+            strategy_id: Some(strategy_id),
+            manage_gtd_expiry: true,
+            ..Default::default()
+        });
+        let client_order_id = ClientOrderId::from("O-GTD-001");
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(InstrumentId::test_default())
+            .client_order_id(client_order_id)
+            .quantity(Quantity::from(1))
+            .price(Price::from("1.00"))
+            .time_in_force(TimeInForce::Gtd)
+            .expire_time(UnixNanos::from(1_000_000))
+            .build();
+
+        trader.add_strategy(strategy).unwrap();
+        trader.start_components().unwrap();
+        cache_accepted_order(cache, &order);
+        get_actor_unchecked::<TimerRoutingStrategy>(&strategy_id.inner())
+            .set_gtd_expiry(&order)
+            .unwrap();
+
+        (strategy_id, client_order_id)
+    }
+
+    fn cache_accepted_order(cache: &Rc<RefCell<Cache>>, order: &OrderAny) {
+        let account_id = AccountId::test_default();
+        let submitted = OrderEventAny::Submitted(
+            OrderSubmittedSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(order.instrument_id())
+                .client_order_id(order.client_order_id())
+                .account_id(account_id)
+                .build(),
+        );
+        let accepted = OrderEventAny::Accepted(
+            OrderAcceptedSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(order.instrument_id())
+                .client_order_id(order.client_order_id())
+                .venue_order_id(VenueOrderId::from("V-GTD-001"))
+                .account_id(account_id)
+                .build(),
+        );
+        let mut cache = cache.borrow_mut();
+        cache.add_order(order.clone(), None, None, false).unwrap();
+        cache.update_order(&submitted).unwrap();
+        cache.update_order(&accepted).unwrap();
     }
 
     #[rstest]
@@ -3810,7 +4066,7 @@ class StateComponent:
         let second_id = ExecAlgorithmId::from("EXEC-ALGO-2");
         for exec_algorithm_id in [first_id, second_id] {
             trader
-                .add_exec_algorithm(TestExecAlgorithm::new(ExecutionAlgorithmConfig {
+                .add_exec_algorithm(TestExecutionAlgorithm::new(ExecutionAlgorithmConfig {
                     exec_algorithm_id: Some(exec_algorithm_id),
                     ..Default::default()
                 }))
@@ -4529,8 +4785,8 @@ class ModuleStrategy(Strategy):
         AddStrategy(u8),
         RemoveStrategy(u8),
         ClearStrategies,
-        AddExecAlgorithm(u8),
-        ClearExecAlgorithms,
+        AddExecutionAlgorithm(u8),
+        ClearExecutionAlgorithms,
         DisposeComponents,
     }
 
@@ -4574,14 +4830,15 @@ class ModuleStrategy(Strategy):
             TraderOp::ClearStrategies => {
                 let _ = trader.clear_strategies();
             }
-            TraderOp::AddExecAlgorithm(slot) => {
-                let _ =
-                    trader.add_exec_algorithm(TestExecAlgorithm::new(ExecutionAlgorithmConfig {
+            TraderOp::AddExecutionAlgorithm(slot) => {
+                let _ = trader.add_exec_algorithm(TestExecutionAlgorithm::new(
+                    ExecutionAlgorithmConfig {
                         exec_algorithm_id: Some(prop_exec_algorithm_id(slot)),
                         ..Default::default()
-                    }));
+                    },
+                ));
             }
-            TraderOp::ClearExecAlgorithms => {
+            TraderOp::ClearExecutionAlgorithms => {
                 let _ = trader.clear_exec_algorithms();
             }
             TraderOp::DisposeComponents => {
@@ -4662,8 +4919,8 @@ class ModuleStrategy(Strategy):
                     (0u8..3).prop_map(TraderOp::AddStrategy),
                     (0u8..3).prop_map(TraderOp::RemoveStrategy),
                     proptest::prelude::Just(TraderOp::ClearStrategies),
-                    (0u8..3).prop_map(TraderOp::AddExecAlgorithm),
-                    proptest::prelude::Just(TraderOp::ClearExecAlgorithms),
+                    (0u8..3).prop_map(TraderOp::AddExecutionAlgorithm),
+                    proptest::prelude::Just(TraderOp::ClearExecutionAlgorithms),
                     proptest::prelude::Just(TraderOp::DisposeComponents),
                 ],
                 1..12usize,

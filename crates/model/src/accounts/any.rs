@@ -44,6 +44,17 @@ pub enum AccountAny {
 }
 
 impl AccountAny {
+    /// Returns a copy without stored account state events.
+    #[must_use]
+    pub fn clone_without_events(&self) -> Self {
+        match self {
+            Self::Margin(margin) => Self::Margin(margin.clone_without_events()),
+            Self::Cash(cash) => Self::Cash(cash.clone_without_events()),
+            Self::Betting(betting) => Self::Betting(betting.clone_without_events()),
+            Self::Wallet(wallet) => Self::Wallet(wallet.clone_without_events()),
+        }
+    }
+
     #[must_use]
     pub fn id(&self) -> AccountId {
         match self {
@@ -269,11 +280,16 @@ impl PartialEq for AccountAny {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal::Decimal;
 
     use crate::{
-        accounts::{Account, AccountAny},
+        accounts::{
+            Account, AccountAny,
+            margin_model::{MarginModel, MarginModelAny, StandardMarginModel},
+        },
         events::{AccountState, account::stubs::*},
-        identifiers::AccountId,
+        identifiers::{AccountId, InstrumentId},
+        types::Money,
     };
 
     #[rstest]
@@ -312,6 +328,87 @@ mod tests {
         let result = AccountAny::from_events(&[margin_account_state]);
         assert!(result.is_ok());
         assert!(matches!(result.unwrap(), AccountAny::Margin(_)));
+    }
+
+    #[rstest]
+    #[case::cash(cash_account_state())]
+    #[case::margin(margin_account_state())]
+    #[case::betting(betting_account_state())]
+    #[case::wallet(wallet_account_state())]
+    fn test_clone_without_events_preserves_current_state(#[case] state: AccountState) {
+        let currency = state.balances[0].currency;
+        let instrument_id = InstrumentId::from("CLONE-TEST.SIM");
+        let locked = Money::from_decimal(Decimal::new(725, 2), currency).unwrap();
+        let commission = Money::from_decimal(Decimal::new(135, 2), currency).unwrap();
+        let mut account = AccountAny::try_from_state(state.clone()).unwrap();
+        account.apply(state).unwrap();
+
+        let base = match &mut account {
+            AccountAny::Margin(account) => &mut account.base,
+            AccountAny::Cash(account) => &mut account.base,
+            AccountAny::Betting(account) => &mut account.base,
+            AccountAny::Wallet(account) => &mut account.base,
+        };
+        base.calculate_account_state = true;
+        base.commissions.insert(currency, commission);
+
+        match &mut account {
+            AccountAny::Margin(account) => {
+                account.set_default_leverage(Decimal::new(7, 0));
+                account.set_leverage(instrument_id, Decimal::new(3, 0));
+                account.set_margin_model(MarginModelAny::Standard(StandardMarginModel).into());
+            }
+            AccountAny::Cash(account) => {
+                account.allow_borrowing = true;
+                account
+                    .balances_locked
+                    .insert((instrument_id, currency), locked);
+            }
+            AccountAny::Betting(account) => {
+                account
+                    .balances_locked
+                    .insert((instrument_id, currency), locked);
+            }
+            AccountAny::Wallet(account) => {
+                account
+                    .balances_locked
+                    .insert((instrument_id, currency), locked);
+            }
+        }
+
+        let cloned = account.clone_without_events();
+        let mut expected = account.clone();
+
+        match &mut expected {
+            AccountAny::Margin(account) => account.base.events.clear(),
+            AccountAny::Cash(account) => account.base.events.clear(),
+            AccountAny::Betting(account) => account.base.events.clear(),
+            AccountAny::Wallet(account) => account.base.events.clear(),
+        }
+
+        assert_eq!(account.event_count(), 2);
+        assert_eq!(cloned.event_count(), 0);
+        match (&account, &cloned) {
+            (AccountAny::Margin(source), AccountAny::Margin(cloned)) => {
+                assert_eq!(cloned.margin_model().name(), source.margin_model().name());
+                assert_eq!(cloned.margin_model().name(), "standard");
+            }
+            (AccountAny::Cash(source), AccountAny::Cash(cloned)) => {
+                assert_eq!(cloned.balances_locked, source.balances_locked);
+                assert!(cloned.allow_borrowing);
+            }
+            (AccountAny::Betting(source), AccountAny::Betting(cloned)) => {
+                assert_eq!(cloned.balances_locked, source.balances_locked);
+            }
+            (AccountAny::Wallet(source), AccountAny::Wallet(cloned)) => {
+                assert_eq!(cloned.balances_locked, source.balances_locked);
+            }
+            _ => panic!("cloned account variant changed"),
+        }
+        assert_eq!(
+            serde_json::to_value(&cloned).unwrap(),
+            serde_json::to_value(&expected).unwrap()
+        );
     }
 
     #[rstest]

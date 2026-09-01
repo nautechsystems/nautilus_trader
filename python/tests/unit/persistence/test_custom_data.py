@@ -12,6 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test custom data behavior.
+"""
+
+from pathlib import Path
 
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import BarType
@@ -30,7 +35,10 @@ from nautilus_trader.persistence import RustTestPriceMapCustomData
 from nautilus_trader.persistence import RustTestTypedMapCustomData
 
 
-def test_yield_curve_custom_data_catalog_and_json_roundtrip(tmp_path):
+def test_yield_curve_custom_data_catalog_and_json_roundtrip(tmp_path: Path) -> None:
+    """
+    Test yield curve custom data catalog and json roundtrip.
+    """
     data_type = DataType(
         "MacroYieldCurveData",
         {"currency": "USD", "curve": "government"},
@@ -62,7 +70,10 @@ def test_yield_curve_custom_data_catalog_and_json_roundtrip(tmp_path):
     assert restored.ts_init == 12
 
 
-def test_params_custom_data_catalog_and_json_roundtrip(tmp_path):
+def test_params_custom_data_catalog_and_json_roundtrip(tmp_path: Path) -> None:
+    """
+    Test params custom data catalog and json roundtrip.
+    """
     data_type = DataType(
         "RustTestParamsCustomData",
         {"source": "python", "kind": "params"},
@@ -92,7 +103,10 @@ def test_params_custom_data_catalog_and_json_roundtrip(tmp_path):
     assert restored.ts_init == 22
 
 
-def test_price_map_custom_data_catalog_and_json_roundtrip(tmp_path):
+def test_price_map_custom_data_catalog_and_json_roundtrip(tmp_path: Path) -> None:
+    """
+    Test price map custom data catalog and json roundtrip.
+    """
     audusd_id = InstrumentId.from_str("AUD/USD.SIM")
     btcusdt_id = InstrumentId.from_str("BTCUSDT.BINANCE")
     prices = {
@@ -121,7 +135,10 @@ def test_price_map_custom_data_catalog_and_json_roundtrip(tmp_path):
     assert restored.ts_init == 32
 
 
-def test_typed_map_custom_data_catalog_and_json_roundtrip(tmp_path):
+def test_typed_map_custom_data_catalog_and_json_roundtrip(tmp_path: Path) -> None:
+    """
+    Test typed map custom data catalog and json roundtrip.
+    """
     instrument_id = InstrumentId.from_str("AUD/USD.SIM")
     account_id = AccountId.from_str("SIM-001")
     currency = Currency.from_str("USD")
@@ -189,7 +206,7 @@ def test_typed_map_custom_data_catalog_and_json_roundtrip(tmp_path):
     assert restored.ts_init == 42
 
 
-def _roundtrip(tmp_path, data_type, original):
+def _roundtrip(tmp_path: Path, data_type: object, original: object) -> object:
     register_custom_data_class(type(original))
     catalog_path = tmp_path / data_type.type_name
     catalog_path.mkdir()
@@ -207,15 +224,15 @@ def _roundtrip(tmp_path, data_type, original):
 
 
 def _assert_typed_maps(
-    value,
-    instrument_id,
-    account_id,
-    currency,
-    bar_type,
-    price,
-    quantity,
-    money,
-):
+    value: object,
+    instrument_id: InstrumentId,
+    account_id: AccountId,
+    currency: object,
+    bar_type: object,
+    price: object,
+    quantity: object,
+    money: object,
+) -> None:
     assert isinstance(value, RustTestTypedMapCustomData)
     assert value.name == "typed"
     assert value.instrument_ids == {"primary": instrument_id}

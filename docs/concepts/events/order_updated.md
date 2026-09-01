@@ -15,7 +15,7 @@ Beyond the [common Python order event fields](index.md#common-python-order-event
 
 | Field               | Python type              | Required/default | Description                                                 |
 | ------------------- | ------------------------ | ---------------- | ----------------------------------------------------------- |
-| `venue_order_id`    | `VenueOrderId` or `None` | `None`           | The venue‑assigned order identifier, if known.              |
+| `venue_order_id`    | `VenueOrderId` or `None` | `None`           | The venue-assigned order identifier, if known.              |
 | `account_id`        | `AccountId` or `None`    | `None`           | The account associated with the order, if known.            |
 | `quantity`          | `Quantity`               | Required         | The order's current quantity.                               |
 | `price`             | `Price` or `None`        | `None`           | The order's current price.                                  |

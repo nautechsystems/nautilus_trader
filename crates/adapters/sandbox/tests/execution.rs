@@ -24,7 +24,7 @@ use nautilus_common::{
     live::set_exec_event_sender,
     messages::{
         ExecutionEvent,
-        execution::{SubmitOrder, SubmitOrderList, TradingCommand},
+        execution::{CancelAllOrders, SubmitOrder, SubmitOrderList, TradingCommand},
     },
     msgbus::{
         self, MessageBus, MessagingSwitchboard, TypedHandler,
@@ -33,10 +33,15 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::DataEngine;
+#[cfg(feature = "python")]
+use nautilus_execution::python::fee::PythonFeeModel;
 use nautilus_execution::{
     client::core::ExecutionClientCore,
     engine::ExecutionEngine,
-    models::fee::{FeeModelAny, ProbabilityPriceFeeModel},
+    models::{
+        fee::{FeeModelAny, ProbabilityPriceFeeModel},
+        fill::{DefaultFillModel, FillModel, FillModelAny, FillModelHandle},
+    },
 };
 use nautilus_model::{
     accounts::AccountAny,
@@ -47,18 +52,20 @@ use nautilus_model::{
     },
     events::{AccountState, OrderEventAny, OrderFilled, PositionClosed, PositionEvent},
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, TradeId,
-        TraderId, Venue,
+        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
+        TradeId, TraderId, Venue,
     },
     instruments::{
         CryptoPerpetual, Instrument, InstrumentAny,
         stubs::{binary_option, crypto_perpetual_ethusdt},
     },
-    orders::{Order, OrderAny, OrderList, OrderTestBuilder},
+    orders::{Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
     types::{Currency, Money, Price, Quantity},
 };
 use nautilus_sandbox::{SandboxExecutionClient, SandboxExecutionClientConfig};
+#[cfg(feature = "python")]
+use pyo3::{IntoPyObjectExt, Python, ffi::c_str, types::PyAnyMethods};
 use rstest::{fixture, rstest};
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -89,13 +96,12 @@ fn instrument(crypto_perpetual_ethusdt: CryptoPerpetual) -> InstrumentAny {
 }
 
 fn create_config(
-    trader_id: TraderId,
+    _trader_id: TraderId,
     account_id: AccountId,
     venue: Venue,
 ) -> SandboxExecutionClientConfig {
     let usd = Currency::USD();
     SandboxExecutionClientConfig {
-        trader_id,
         account_id,
         venue,
         starting_balances: vec![Money::new(100_000.0, usd)],
@@ -106,6 +112,7 @@ fn create_config(
         leverages: ahash::AHashMap::new(),
         book_type: BookType::L1_MBP,
         fee_model: None,
+        fill_model: None,
         frozen_account: false,
         bar_execution: false,
         trade_execution: false,
@@ -115,6 +122,12 @@ fn create_config(
         use_position_ids: true,
         use_random_ids: false,
         use_reduce_only: true,
+        queue_position: false,
+        liquidity_consumption: false,
+        bar_adaptive_high_low_ordering: false,
+        use_market_order_acks: false,
+        oto_full_trigger: false,
+        price_protection_points: 0,
     }
 }
 
@@ -159,7 +172,7 @@ fn create_test_context_with(
     customize(&mut config);
 
     let core = ExecutionClientCore::new(
-        config.trader_id,
+        trader_id,
         ClientId::new("SANDBOX"),
         config.venue,
         config.oms_type,
@@ -479,7 +492,7 @@ fn setup_binary_option_lifecycle_harness(
     let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
     let config = create_config(trader_id, account_id, venue);
     let core = ExecutionClientCore::new(
-        config.trader_id,
+        trader_id,
         ClientId::new("SANDBOX"),
         config.venue,
         config.oms_type,
@@ -558,7 +571,7 @@ fn setup_pending_resolution_harness(
     config.base_currency = Some(Currency::USDC());
     config.starting_balances = vec![Money::new(100_000.0, Currency::USDC())];
     let core = ExecutionClientCore::new(
-        config.trader_id,
+        trader_id,
         ClientId::new("SANDBOX"),
         config.venue,
         config.oms_type,
@@ -730,7 +743,6 @@ fn setup_account_state_handler(cache: Rc<RefCell<Cache>>) {
 fn test_config_default() {
     let config = SandboxExecutionClientConfig::default();
 
-    assert_eq!(config.trader_id, TraderId::from("SANDBOX-001"));
     assert_eq!(config.account_id, AccountId::from("SANDBOX-001"));
     assert_eq!(config.venue, Venue::new("SANDBOX"));
     assert!(config.starting_balances.is_empty());
@@ -740,6 +752,7 @@ fn test_config_default() {
     assert_eq!(config.default_leverage, Decimal::ONE);
     assert_eq!(config.book_type, BookType::L1_MBP);
     assert!(config.fee_model.is_none());
+    assert!(config.fill_model.is_none());
     assert!(!config.frozen_account);
     assert!(config.bar_execution);
     assert!(config.trade_execution);
@@ -749,6 +762,12 @@ fn test_config_default() {
     assert!(config.use_position_ids);
     assert!(!config.use_random_ids);
     assert!(config.use_reduce_only);
+    assert!(!config.queue_position);
+    assert!(!config.liquidity_consumption);
+    assert!(!config.bar_adaptive_high_low_ordering);
+    assert!(!config.use_market_order_acks);
+    assert!(!config.oto_full_trigger);
+    assert_eq!(config.price_protection_points, 0);
 }
 
 #[rstest]
@@ -759,6 +778,63 @@ fn test_probability_price_fee_model_config_drives_sandbox_commission(
     #[case] taker_fee: &str,
     #[case] price: &str,
     #[case] expected: &str,
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    assert_fee_model_config_drives_sandbox_commission(
+        FeeModelAny::ProbabilityPrice(ProbabilityPriceFeeModel),
+        taker_fee,
+        price,
+        expected,
+        trader_id,
+        account_id,
+    );
+}
+
+#[cfg(feature = "python")]
+#[rstest]
+fn test_python_fee_model_config_drives_sandbox_commission(
+    trader_id: TraderId,
+    account_id: AccountId,
+) {
+    Python::initialize();
+
+    let expected = "1.234567";
+    let fee_model = Python::attach(|py| {
+        let model = py
+            .eval(
+                c_str!(
+                    "type('CustomFeeModel', (), {\
+                        'get_commission': \
+                            lambda self, order, fill_quantity, fill_px, instrument: self.commission\
+                    })()"
+                ),
+                None,
+                None,
+            )
+            .unwrap();
+        model
+            .setattr(
+                "commission",
+                Money::from(format!("{expected} USDC").as_str())
+                    .into_py_any(py)
+                    .unwrap(),
+            )
+            .unwrap();
+
+        FeeModelAny::Python(PythonFeeModel::new(model.unbind()))
+    });
+
+    assert_fee_model_config_drives_sandbox_commission(
+        fee_model, "0.03", "0.500", expected, trader_id, account_id,
+    );
+}
+
+fn assert_fee_model_config_drives_sandbox_commission(
+    fee_model: FeeModelAny,
+    taker_fee: &str,
+    price: &str,
+    expected: &str,
     trader_id: TraderId,
     account_id: AccountId,
 ) {
@@ -774,10 +850,10 @@ fn test_probability_price_fee_model_config_drives_sandbox_commission(
     let mut config = create_config(trader_id, account_id, venue);
     config.base_currency = Some(Currency::USDC());
     config.starting_balances = vec![Money::new(100_000.0, Currency::USDC())];
-    config.fee_model = Some(FeeModelAny::ProbabilityPrice(ProbabilityPriceFeeModel));
+    config.fee_model = Some(fee_model);
 
     let core = ExecutionClientCore::new(
-        config.trader_id,
+        trader_id,
         ClientId::new("SANDBOX"),
         config.venue,
         config.oms_type,
@@ -829,18 +905,16 @@ fn test_probability_price_fee_model_config_drives_sandbox_commission(
 }
 
 #[rstest]
-fn test_config_builder(trader_id: TraderId, account_id: AccountId, venue: Venue) {
+fn test_config_builder(account_id: AccountId, venue: Venue) {
     let usd = Currency::USD();
     let starting_balances = vec![Money::new(50_000.0, usd)];
 
     let config = SandboxExecutionClientConfig::builder()
-        .trader_id(trader_id)
         .account_id(account_id)
         .venue(venue)
         .starting_balances(starting_balances)
         .build();
 
-    assert_eq!(config.trader_id, trader_id);
     assert_eq!(config.account_id, account_id);
     assert_eq!(config.venue, venue);
     assert_eq!(config.starting_balances.len(), 1);
@@ -848,12 +922,11 @@ fn test_config_builder(trader_id: TraderId, account_id: AccountId, venue: Venue)
 }
 
 #[rstest]
-fn test_config_builder_with_overrides(trader_id: TraderId, account_id: AccountId, venue: Venue) {
+fn test_config_builder_with_overrides(account_id: AccountId, venue: Venue) {
     let usd = Currency::USD();
     let starting_balances = vec![Money::new(50_000.0, usd)];
 
     let config = SandboxExecutionClientConfig::builder()
-        .trader_id(trader_id)
         .account_id(account_id)
         .venue(venue)
         .starting_balances(starting_balances)
@@ -889,6 +962,411 @@ fn test_config_to_matching_engine_config(config: SandboxExecutionClientConfig) {
     assert!(engine_config.use_position_ids);
     assert!(!engine_config.use_random_ids);
     assert!(engine_config.use_reduce_only);
+    assert!(!engine_config.queue_position);
+    assert!(!engine_config.liquidity_consumption);
+    assert!(!engine_config.bar_adaptive_high_low_ordering);
+    assert!(!engine_config.use_market_order_acks);
+    assert!(!engine_config.oto_full_trigger);
+    assert_eq!(engine_config.price_protection_points, None);
+}
+
+#[rstest]
+#[case::queue_on(true, false)]
+#[case::queue_off(false, true)]
+fn test_queue_position_gates_trade_driven_limit_fill(
+    #[case] queue_position: bool,
+    #[case] expect_fill: bool,
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    setup_order_event_handler();
+
+    let venue = instrument.id().venue;
+    let mut test_context = create_test_context_with(trader_id, account_id, venue, |config| {
+        config.trade_execution = true;
+        config.queue_position = queue_position;
+    });
+    let cache = test_context.cache.clone();
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    test_context.client.start().unwrap();
+
+    let quote = create_quote_tick(instrument.id(), 1000.0, 1001.0);
+    test_context.client.process_quote_tick(&quote).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("QUEUE-LIMIT-001"))
+        .side(OrderSide::Buy)
+        .price(Price::from("1000.00"))
+        .quantity(Quantity::from("1.000"))
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(ClientId::new("SANDBOX")), false)
+        .unwrap();
+    test_context
+        .client
+        .submit_order(SubmitOrder::from_order(
+            &order,
+            trader_id,
+            Some(test_context.client.client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        ))
+        .unwrap();
+
+    let accepted_events = apply_order_events_from_channel(&cache, &mut rx);
+    assert!(
+        accepted_events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Accepted(_))),
+        "expected limit order acceptance before the queue-reducing trade",
+    );
+    assert!(
+        accepted_events
+            .iter()
+            .all(|event| !matches!(event, OrderEventAny::Filled(_))),
+        "limit order must rest behind displayed bid size",
+    );
+
+    let trade = TradeTick::new(
+        instrument.id(),
+        Price::from("1000.00"),
+        Quantity::from("10.000"),
+        AggressorSide::Sell,
+        TradeId::new("T-QUEUE-1"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    test_context.client.process_trade_tick(&trade).unwrap();
+
+    let trade_events = apply_order_events_from_channel(&cache, &mut rx);
+    let filled = trade_events
+        .iter()
+        .any(|event| matches!(event, OrderEventAny::Filled(_)));
+
+    assert_eq!(
+        filled, expect_fill,
+        "queue_position={queue_position}: a 10-unit sell into 100 displayed bid units \
+         must fill the resting 1-unit buy only when queue tracking is off",
+    );
+}
+
+#[rstest]
+#[case::consumption_on(true, 1)]
+#[case::consumption_off(false, 2)]
+fn test_liquidity_consumption_shares_trade_size_across_limits(
+    #[case] liquidity_consumption: bool,
+    #[case] expected_fills: usize,
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    setup_order_event_handler();
+
+    let venue = instrument.id().venue;
+    let mut test_context = create_test_context_with(trader_id, account_id, venue, |config| {
+        config.trade_execution = true;
+        config.liquidity_consumption = liquidity_consumption;
+    });
+    let cache = test_context.cache.clone();
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    test_context.client.start().unwrap();
+
+    let quote = create_quote_tick(instrument.id(), 1000.0, 1001.0);
+    test_context.client.process_quote_tick(&quote).unwrap();
+
+    for (idx, client_order_id) in ["CONS-LIMIT-001", "CONS-LIMIT-002"].iter().enumerate() {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(trader_id)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from(*client_order_id))
+            .side(OrderSide::Buy)
+            .price(Price::from("1000.00"))
+            .quantity(Quantity::from("1.000"))
+            .submit(true)
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(ClientId::new("SANDBOX")), false)
+            .unwrap();
+        test_context
+            .client
+            .submit_order(SubmitOrder::from_order(
+                &order,
+                trader_id,
+                Some(test_context.client.client_id()),
+                None,
+                UUID4::new(),
+                UnixNanos::from(idx as u64),
+            ))
+            .unwrap();
+    }
+
+    let accepted_events = apply_order_events_from_channel(&cache, &mut rx);
+    assert_eq!(
+        accepted_events
+            .iter()
+            .filter(|event| matches!(event, OrderEventAny::Accepted(_)))
+            .count(),
+        2,
+        "expected both limit orders to rest before the shared trade",
+    );
+
+    let trade = TradeTick::new(
+        instrument.id(),
+        Price::from("1000.00"),
+        Quantity::from("1.000"),
+        AggressorSide::Sell,
+        TradeId::new("T-CONS-1"),
+        UnixNanos::from(10),
+        UnixNanos::from(10),
+    );
+    test_context.client.process_trade_tick(&trade).unwrap();
+
+    let fill_count = apply_order_events_from_channel(&cache, &mut rx)
+        .iter()
+        .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+        .count();
+
+    assert_eq!(
+        fill_count, expected_fills,
+        "liquidity_consumption={liquidity_consumption}: a 1-unit sell must fill \
+         one resting 1-unit buy when consumption is on, and both when it is off",
+    );
+}
+
+#[rstest]
+fn test_fill_model_can_block_limit_touch_fills(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    setup_order_event_handler();
+
+    let venue = instrument.id().venue;
+    let mut test_context = create_test_context_with(trader_id, account_id, venue, |config| {
+        config.trade_execution = true;
+        config.fill_model = Some(FillModelAny::Default(
+            DefaultFillModel::new(0.0, 0.0, Some(1)).unwrap(),
+        ));
+    });
+    let cache = test_context.cache.clone();
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    test_context.client.start().unwrap();
+
+    let quote = create_quote_tick(instrument.id(), 1000.0, 1001.0);
+    test_context.client.process_quote_tick(&quote).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("FILL-MODEL-LIMIT-001"))
+        .side(OrderSide::Buy)
+        .price(Price::from("1000.00"))
+        .quantity(Quantity::from("1.000"))
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(ClientId::new("SANDBOX")), false)
+        .unwrap();
+    test_context
+        .client
+        .submit_order(SubmitOrder::from_order(
+            &order,
+            trader_id,
+            Some(test_context.client.client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        ))
+        .unwrap();
+    let _ = apply_order_events_from_channel(&cache, &mut rx);
+
+    let trade = TradeTick::new(
+        instrument.id(),
+        Price::from("1000.00"),
+        Quantity::from("1.000"),
+        AggressorSide::Sell,
+        TradeId::new("T-FILL-MODEL-1"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    test_context.client.process_trade_tick(&trade).unwrap();
+
+    let trade_events = apply_order_events_from_channel(&cache, &mut rx);
+    assert!(
+        trade_events
+            .iter()
+            .all(|event| !matches!(event, OrderEventAny::Filled(_))),
+        "prob_fill_on_limit=0 must not fill a limit order on touch",
+    );
+}
+
+fn first_two_shared_limit_fills(seed: u64) -> [bool; 2] {
+    let mut handle = FillModelHandle::from(FillModelAny::Default(
+        DefaultFillModel::new(0.5, 0.0, Some(seed)).unwrap(),
+    ));
+
+    [
+        handle.is_limit_filled().unwrap(),
+        handle.is_limit_filled().unwrap(),
+    ]
+}
+
+fn first_fills_from_independent_handles(seed: u64) -> [bool; 2] {
+    let model = DefaultFillModel::new(0.5, 0.0, Some(seed)).unwrap();
+    let mut first = FillModelHandle::from(FillModelAny::Default(model.clone()));
+    let mut second = FillModelHandle::from(FillModelAny::Default(model));
+
+    [
+        first.is_limit_filled().unwrap(),
+        second.is_limit_filled().unwrap(),
+    ]
+}
+
+fn process_limit_touch_fill(
+    test_context: &TestContext,
+    trader_id: TraderId,
+    instrument: &InstrumentAny,
+    client_order_id: &str,
+    trade_id: &str,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+) -> bool {
+    let cache = test_context.cache.clone();
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    let quote = create_quote_tick(instrument.id(), 1000.0, 1001.0);
+    test_context.client.process_quote_tick(&quote).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from(client_order_id))
+        .side(OrderSide::Buy)
+        .price(Price::from("1000.00"))
+        .quantity(Quantity::from("1.000"))
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(ClientId::new("SANDBOX")), false)
+        .unwrap();
+    test_context
+        .client
+        .submit_order(SubmitOrder::from_order(
+            &order,
+            trader_id,
+            Some(test_context.client.client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        ))
+        .unwrap();
+    let _ = apply_order_events_from_channel(&cache, rx);
+
+    let trade = TradeTick::new(
+        instrument.id(),
+        Price::from("1000.00"),
+        Quantity::from("1.000"),
+        AggressorSide::Sell,
+        TradeId::new(trade_id),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+    test_context.client.process_trade_tick(&trade).unwrap();
+
+    apply_order_events_from_channel(&cache, rx)
+        .iter()
+        .any(|event| matches!(event, OrderEventAny::Filled(_)))
+}
+
+#[rstest]
+fn test_seeded_fill_model_is_shared_across_instruments(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    setup_order_event_handler();
+
+    // Seed 42's first two draws match; pick a seed where shared vs cloned From() diverge.
+    let seed = (0u64..64)
+        .find(|&seed| {
+            first_two_shared_limit_fills(seed) != first_fills_from_independent_handles(seed)
+        })
+        .expect("a seed in 0..64 must discriminate shared vs cloned From() draws");
+    let expected_shared = first_two_shared_limit_fills(seed);
+    let expected_independent = first_fills_from_independent_handles(seed);
+
+    assert_ne!(expected_shared, expected_independent);
+
+    let venue = instrument.id().venue;
+    let other = match instrument.clone() {
+        InstrumentAny::CryptoPerpetual(mut perp) => {
+            perp.id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+            InstrumentAny::CryptoPerpetual(perp)
+        }
+        other => panic!("expected crypto perpetual fixture, was {other:?}"),
+    };
+
+    let mut test_context = create_test_context_with(trader_id, account_id, venue, |config| {
+        config.trade_execution = true;
+        config.fill_model = Some(FillModelAny::Default(
+            DefaultFillModel::new(0.5, 0.0, Some(seed)).unwrap(),
+        ));
+    });
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    test_context.client.start().unwrap();
+
+    let first_filled = process_limit_touch_fill(
+        &test_context,
+        trader_id,
+        &instrument,
+        "SHARED-FILL-ETH-001",
+        "T-SHARED-ETH-1",
+        &mut rx,
+    );
+    let second_filled = process_limit_touch_fill(
+        &test_context,
+        trader_id,
+        &other,
+        "SHARED-FILL-BTC-001",
+        "T-SHARED-BTC-1",
+        &mut rx,
+    );
+    let observed = [first_filled, second_filled];
+
+    assert_eq!(test_context.client.matching_engine_count(), 2);
+    assert_eq!(observed, expected_shared);
+    assert_ne!(observed, expected_independent);
 }
 
 #[rstest]
@@ -1940,7 +2418,6 @@ fn test_instrument_close_sync_cleanup_handles_synchronous_position_closed_reentr
 
         let usd = Currency::USD();
         let config = SandboxExecutionClientConfig {
-            trader_id,
             account_id,
             venue,
             starting_balances: vec![Money::new(100_000.0, usd)],
@@ -1951,6 +2428,7 @@ fn test_instrument_close_sync_cleanup_handles_synchronous_position_closed_reentr
             leverages: ahash::AHashMap::new(),
             book_type: BookType::L1_MBP,
             fee_model: None,
+            fill_model: None,
             frozen_account: false,
             bar_execution: false,
             trade_execution: false,
@@ -1960,6 +2438,12 @@ fn test_instrument_close_sync_cleanup_handles_synchronous_position_closed_reentr
             use_position_ids: true,
             use_random_ids: false,
             use_reduce_only: true,
+            queue_position: false,
+            liquidity_consumption: false,
+            bar_adaptive_high_low_ordering: false,
+            use_market_order_acks: false,
+            oto_full_trigger: false,
+            price_protection_points: 0,
         };
         let core = ExecutionClientCore::new(
             trader_id,
@@ -2209,7 +2693,7 @@ fn test_paper_binary_option_multiple_instruments_close_settlement_via_data_engin
     config.base_currency = Some(Currency::USDC());
     config.starting_balances = vec![Money::new(100_000.0, Currency::USDC())];
     let core = ExecutionClientCore::new(
-        config.trader_id,
+        trader_id,
         ClientId::new("SANDBOX"),
         config.venue,
         config.oms_type,
@@ -2572,7 +3056,7 @@ fn test_process_bar_drops_precision_mismatch(
     config.bar_execution = true;
 
     let core = ExecutionClientCore::new(
-        config.trader_id,
+        trader_id,
         ClientId::new("SANDBOX"),
         config.venue,
         config.oms_type,
@@ -2620,7 +3104,7 @@ fn test_message_handler_drops_precision_mismatched_bar(
     config.bar_execution = true;
 
     let core = ExecutionClientCore::new(
-        config.trader_id,
+        trader_id,
         ClientId::new("SANDBOX"),
         config.venue,
         config.oms_type,
@@ -2810,6 +3294,287 @@ fn test_initialized_ioc_market_order_cancels_remainder_through_live_runner(
     context.client.stop().unwrap();
 }
 
+#[rstest]
+#[case(None, None)]
+#[case(Some("SANDBOX-A"), Some(OrderSide::Buy))]
+#[case(Some("SANDBOX-B"), Some(OrderSide::Sell))]
+fn test_cancel_all_orders_routes_by_client_account_and_side(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] selected_client: Option<&str>,
+    #[case] selected_side: Option<OrderSide>,
+) {
+    struct SeededOrder {
+        client_order_id: ClientOrderId,
+        client_id: ClientId,
+        account_id: AccountId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        side: OrderSide,
+        status: OrderStatus,
+    }
+
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let InstrumentAny::CryptoPerpetual(mut other) = instrument.clone() else {
+        panic!("Expected crypto perpetual fixture");
+    };
+    other.id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    other.raw_symbol = "BTCUSDT".into();
+    let other = InstrumentAny::CryptoPerpetual(other);
+    let instrument_id = instrument.id();
+    let other_instrument_id = other.id();
+    let venue = instrument_id.venue;
+    let client_a_id = ClientId::new("SANDBOX-A");
+    let client_b_id = ClientId::new("SANDBOX-B");
+    let account_a_id = AccountId::from("BINANCE-001");
+    let account_b_id = AccountId::from("BINANCE-002");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+
+    {
+        let mut cache = cache.borrow_mut();
+        cache.add_instrument(instrument).unwrap();
+        cache.add_instrument(other).unwrap();
+        cache
+            .add_quote(create_quote_tick(instrument_id, 1000.0, 1001.0))
+            .unwrap();
+        cache
+            .add_quote(create_quote_tick(other_instrument_id, 2000.0, 2001.0))
+            .unwrap();
+    }
+
+    let create_client = |client_id: ClientId, account_id: AccountId| {
+        let config = create_config(trader_id, account_id, venue);
+        let core = ExecutionClientCore::new(
+            trader_id,
+            client_id,
+            venue,
+            config.oms_type,
+            config.account_id,
+            config.account_type,
+            config.base_currency,
+            cache.clone(),
+        );
+        SandboxExecutionClient::new(core, config, clock.clone(), cache.clone())
+    };
+    let mut client_a = create_client(client_a_id, account_a_id);
+    let mut client_b = create_client(client_b_id, account_b_id);
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    client_a.start().unwrap();
+    client_b.start().unwrap();
+
+    let mut orders = Vec::new();
+    let resting_orders = [
+        (
+            &client_a,
+            client_a_id,
+            account_a_id,
+            StrategyId::from("STRATEGY-A-001"),
+            instrument_id,
+            OrderSide::Buy,
+            ClientOrderId::from("O-A-BUY-ACCEPTED"),
+        ),
+        (
+            &client_a,
+            client_a_id,
+            account_a_id,
+            StrategyId::from("STRATEGY-A-002"),
+            instrument_id,
+            OrderSide::Sell,
+            ClientOrderId::from("O-A-SELL-ACCEPTED"),
+        ),
+        (
+            &client_a,
+            client_a_id,
+            account_a_id,
+            StrategyId::from("STRATEGY-A-001"),
+            other_instrument_id,
+            OrderSide::Buy,
+            ClientOrderId::from("O-A-OTHER-BUY-ACCEPTED"),
+        ),
+        (
+            &client_b,
+            client_b_id,
+            account_b_id,
+            StrategyId::from("STRATEGY-B-001"),
+            instrument_id,
+            OrderSide::Buy,
+            ClientOrderId::from("O-B-BUY-ACCEPTED"),
+        ),
+        (
+            &client_b,
+            client_b_id,
+            account_b_id,
+            StrategyId::from("STRATEGY-B-002"),
+            instrument_id,
+            OrderSide::Sell,
+            ClientOrderId::from("O-B-SELL-ACCEPTED"),
+        ),
+    ];
+
+    for (client, client_id, account_id, strategy_id, order_instrument_id, side, order_id) in
+        resting_orders
+    {
+        let price = match side {
+            OrderSide::Buy => Price::from("900.00"),
+            OrderSide::Sell => Price::from("1100.00"),
+        };
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(order_instrument_id)
+            .client_order_id(order_id)
+            .side(side)
+            .price(price)
+            .quantity(Quantity::from("1.000"))
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(client_id), false)
+            .unwrap();
+        client
+            .submit_order(SubmitOrder::from_order(
+                &order,
+                trader_id,
+                Some(client_id),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+            ))
+            .unwrap();
+        let events = apply_order_events_from_channel(&cache, &mut rx);
+        assert_eq!(events.len(), 2);
+        assert!(matches!(events[0], OrderEventAny::Submitted(_)));
+        assert!(matches!(events[1], OrderEventAny::Accepted(_)));
+        orders.push(SeededOrder {
+            client_order_id: order_id,
+            client_id,
+            account_id,
+            strategy_id,
+            instrument_id: order_instrument_id,
+            side,
+            status: OrderStatus::Accepted,
+        });
+    }
+
+    for (client_id, account_id, strategy_id, side, order_id) in [
+        (
+            client_a_id,
+            account_a_id,
+            StrategyId::from("STRATEGY-A-002"),
+            OrderSide::Buy,
+            ClientOrderId::from("O-A-BUY-SUBMITTED"),
+        ),
+        (
+            client_b_id,
+            account_b_id,
+            StrategyId::from("STRATEGY-B-001"),
+            OrderSide::Sell,
+            ClientOrderId::from("O-B-SELL-SUBMITTED"),
+        ),
+    ] {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(order_id)
+            .side(side)
+            .price(Price::from("950.00"))
+            .quantity(Quantity::from("2.000"))
+            .build();
+        let submitted = TestOrderEventStubs::submitted(&order, account_id);
+        let mut cache = cache.borrow_mut();
+        cache
+            .add_order(order, None, Some(client_id), false)
+            .unwrap();
+        cache.update_order(&submitted).unwrap();
+        orders.push(SeededOrder {
+            client_order_id: order_id,
+            client_id,
+            account_id,
+            strategy_id,
+            instrument_id,
+            side,
+            status: OrderStatus::Submitted,
+        });
+    }
+
+    let mut engine = ExecutionEngine::new(clock, cache.clone(), None);
+    engine.register_client(Box::new(client_a)).unwrap();
+    engine.register_default_client(Box::new(client_b));
+    let command_client = selected_client.map(ClientId::new);
+    let routed_client = command_client.unwrap_or(client_a_id);
+    let routed_account = if routed_client == client_a_id {
+        account_a_id
+    } else {
+        account_b_id
+    };
+    let command = CancelAllOrders::new(
+        trader_id,
+        command_client,
+        StrategyId::from("CANCEL-CALLER-001"),
+        instrument_id,
+        selected_side,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    engine.execute(TradingCommand::CancelAllOrders(command));
+
+    let events = apply_order_events_from_channel(&cache, &mut rx);
+    let canceled: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Canceled(canceled) => Some(canceled),
+            _ => None,
+        })
+        .collect();
+    let expected_ids: ahash::AHashSet<_> = orders
+        .iter()
+        .filter(|order| {
+            order.client_id == routed_client
+                && order.account_id == routed_account
+                && order.instrument_id == instrument_id
+                && selected_side.is_none_or(|side| order.side == side)
+        })
+        .map(|order| order.client_order_id)
+        .collect();
+    let actual_ids: ahash::AHashSet<_> =
+        canceled.iter().map(|event| event.client_order_id).collect();
+
+    assert_eq!(actual_ids, expected_ids);
+
+    for event in canceled {
+        let order = orders
+            .iter()
+            .find(|order| order.client_order_id == event.client_order_id)
+            .unwrap();
+        assert_eq!(event.strategy_id, order.strategy_id);
+        assert_eq!(event.account_id, Some(routed_account));
+    }
+    let cache = cache.borrow();
+    for order in &orders {
+        let cached = cache.order(&order.client_order_id).unwrap();
+        let expected_status = if expected_ids.contains(&order.client_order_id) {
+            OrderStatus::Canceled
+        } else {
+            order.status
+        };
+        assert_eq!(cached.status(), expected_status);
+        assert_eq!(cached.strategy_id(), order.strategy_id);
+        assert_eq!(cached.account_id(), Some(order.account_id));
+        assert_eq!(
+            cache.client_id(&order.client_order_id),
+            Some(&order.client_id)
+        );
+    }
+    drop(cache);
+    engine.stop();
+}
+
 // Regression test for https://github.com/nautechsystems/nautilus_trader/issues/3732
 //
 // The exec_engine_execute handler holds an immutable borrow on the ExecutionEngine.
@@ -2855,7 +3620,6 @@ fn test_submit_order_through_exec_engine_no_reentrant_panic(
     // Create and register the sandbox client (venue must match the instrument)
     let usd = Currency::USD();
     let config = SandboxExecutionClientConfig {
-        trader_id,
         account_id,
         venue,
         starting_balances: vec![Money::new(100_000.0, usd)],
@@ -2866,6 +3630,7 @@ fn test_submit_order_through_exec_engine_no_reentrant_panic(
         leverages: ahash::AHashMap::new(),
         book_type: BookType::L1_MBP,
         fee_model: None,
+        fill_model: None,
         frozen_account: false,
         bar_execution: false,
         trade_execution: false,
@@ -2875,6 +3640,12 @@ fn test_submit_order_through_exec_engine_no_reentrant_panic(
         use_position_ids: true,
         use_random_ids: false,
         use_reduce_only: true,
+        queue_position: false,
+        liquidity_consumption: false,
+        bar_adaptive_high_low_ordering: false,
+        use_market_order_acks: false,
+        oto_full_trigger: false,
+        price_protection_points: 0,
     };
     let core = ExecutionClientCore::new(
         trader_id,

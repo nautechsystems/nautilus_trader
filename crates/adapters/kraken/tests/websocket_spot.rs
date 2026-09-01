@@ -31,14 +31,23 @@ use axum::{
     routing::get,
 };
 use futures_util::{SinkExt, StreamExt, stream::SplitSink};
-use nautilus_common::testing::wait_until_async;
+use nautilus_common::{
+    live::runner::replace_system_event_sender,
+    messages::{SystemEvent, system::SocketState},
+    testing::wait_until_async,
+};
 use nautilus_kraken::{
     config::KrakenDataClientConfig, websocket::spot_v2::client::KrakenSpotWebSocketClient,
 };
-use nautilus_model::{data::BarType, identifiers::InstrumentId};
+use nautilus_live::{SocketControl, SocketReconnectRegistry, SocketReconnectRequestOutcome};
+use nautilus_model::{
+    data::BarType,
+    identifiers::{ClientId, InstrumentId, Venue},
+};
 use rstest::rstest;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
+use ustr::Ustr;
 
 #[derive(Clone, Default)]
 struct TestServerState {
@@ -214,24 +223,63 @@ async fn start_test_server(state: Arc<TestServerState>) -> String {
 }
 
 #[rstest]
+#[case("kraken-spot-data-streams")]
+#[case("kraken-spot-l3-data-streams")]
+#[case("kraken-spot-user-streams")]
 #[tokio::test]
-async fn test_websocket_connection() {
+async fn test_websocket_connection(#[case] endpoint: &str) {
     let state = Arc::new(TestServerState::default());
     let url = start_test_server(state.clone()).await;
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
+    let registry = SocketReconnectRegistry::default();
+    let endpoint = Ustr::from(endpoint);
 
     let config = KrakenDataClientConfig {
         ws_public_url: Some(url),
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None)
+        .with_socket_control(SocketControl::with_registry(
+            ClientId::from("KRAKEN"),
+            Some(Venue::from("KRAKEN")),
+            endpoint,
+            &registry,
+        ));
 
     let result = client.connect().await;
     assert!(result.is_ok(), "Failed to connect: {result:?}");
 
     assert!(*state.connection_count.lock().await > 0);
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    let handle = registry.handle(ClientId::from("KRAKEN"), endpoint).unwrap();
+    assert_eq!(change.client_id, ClientId::from("KRAKEN"));
+    assert_eq!(change.venue, Some(Venue::from("KRAKEN")));
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Connected);
+    assert_eq!(
+        handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Disconnected);
 
     client.disconnect().await.unwrap();
+    assert!(
+        registry
+            .handle(ClientId::from("KRAKEN"), endpoint)
+            .is_none()
+    );
 }
 
 #[rstest]

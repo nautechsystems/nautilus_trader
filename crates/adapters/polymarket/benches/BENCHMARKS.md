@@ -6,7 +6,7 @@ Numbers measured 2026-08-14 at `0ea286ec6d` on AMD Ryzen Threadripper 9980X unde
 for each benchmark process.
 
 Refresh on substantive perf change or before release; bump the date.
-Absolute numbers vary by machine; only same‑machine deltas are meaningful.
+Absolute numbers vary by machine; only same-machine deltas are meaningful.
 
 ## How to reproduce
 
@@ -18,12 +18,12 @@ CARGO_BUILD_JOBS=16 setarch "$(uname -m)" -R \
 sudo cpupower frequency-set -g powersave  # restore default
 ```
 
-For policy and the general noise‑reduction recipe see
+For policy and the general noise-reduction recipe see
 [`BENCHMARKING.md`](../../../../BENCHMARKING.md) at the repo root.
 
-## Price‑change dispatch (`data.rs`)
+## Price-change dispatch (`data.rs`)
 
-Decoded six‑change frame with alternating changes across two instruments -> two atomic
+Decoded six-change frame with alternating changes across two instruments -> two atomic
 `OrderBookDeltas` batches. Covers the frame timestamp parse, instrument lookup, grouping, decimal
 parse, and domain construction. It excludes JSON decode, subscription state, book application,
 channel emission, and network I/O.
@@ -38,12 +38,12 @@ Raw WS frame bytes (market channel) or REST row (user channel) -> Nautilus
 domain type. Covers decode + parse + cache lookup + Nautilus type
 construction. No I/O, no async runtime, no channel.
 
-Rows ordered from the most fundamental market‑data stream (book deltas)
-down through the snapshot variant, the derived top‑of‑book quote
-streams, trades, and finally the user‑channel reports. `order_event`
+Rows ordered from the most fundamental market-data stream (book deltas)
+down through the snapshot variant, the derived top-of-book quote
+streams, trades, and finally the user-channel reports. `order_event`
 and `order_fill` use the REST `GET /orders` and `GET /trades` parse
-paths because the WS user‑channel -> report conversion is private to
-the dispatch loop; both paths share the string‑decimal + status logic.
+paths because the WS user-channel -> report conversion is private to
+the dispatch loop; both paths share the string-decimal + status logic.
 
 | Bench                                      | Median  | Throughput |
 | ------------------------------------------ | ------- | ---------- |
@@ -73,15 +73,15 @@ contains 200 price levels.
 
 ## Execution pipeline (`exec.rs`)
 
-Resolved order inputs -> per‑request JSON body + L2 HMAC‑SHA256 signature.
-Covers market‑book crossing‑price calculation, maker/taker amount math,
-EIP‑712 order signing (submits only), JSON body serialization, and the HMAC
+Resolved order inputs -> per-request JSON body + L2 HMAC-SHA256 signature.
+Covers market-book crossing-price calculation, maker/taker amount math,
+EIP-712 order signing (submits only), JSON body serialization, and the HMAC
 body signature `auth_headers` attaches via `Credential::sign`. The market row
 starts from decoded realistic CLOB book levels; remote fetch and JSON decode
-are omitted. The fixed‑cost work `auth_headers` does around the signature
+are omitted. The fixed-cost work `auth_headers` does around the signature
 (timestamp string format + the five `POLY_*` header entries) is also omitted;
 it's constant overhead unrelated to the regressions these benches are meant
-to catch. Polymarket has no in‑place modify on the CLOB (cancel‑replace is two
+to catch. Polymarket has no in-place modify on the CLOB (cancel-replace is two
 independent ops), so there is no `modify` row.
 
 | Bench                                 | Median  | Throughput |
@@ -93,7 +93,7 @@ independent ops), so there is no `modify` row.
 
 ## Crypto path (`signing.rs`)
 
-Decomposes the exec‑pipeline signature cost into its components and
+Decomposes the exec-pipeline signature cost into its components and
 covers the L2 HMAC path used by every authenticated REST call.
 
 | Bench                  | Median  |
@@ -140,37 +140,37 @@ to localise where time goes when a pipeline bench regresses.
 - **Inbound decode avoids Serde's tagged content buffer.** Field order varies:
   the market fixtures and synthetic user fixtures put `event_type` first,
   while the captured FOK order puts it last. The production parser decodes
-  tag‑first messages in one pass and uses a tag scan plus direct typed decode
+  tag-first messages in one pass and uses a tag scan plus direct typed decode
   for reordered single messages. The LTO market pipelines improve by 26% to
-  36%. Against same‑session baselines, the tag‑first user order and trade
-  fixtures improve by about 39% to 40%; the captured tag‑last order improves
+  36%. Against same-session baselines, the tag-first user order and trade
+  fixtures improve by about 39% to 40%; the captured tag-last order improves
   by 9.5%, and its handler dispatch path improves by 16.7%. The user batch
-  row uses tag‑last elements and the generic derived batch parser. Decimal,
+  row uses tag-last elements and the generic derived batch parser. Decimal,
   Price, Quantity, UUID, and TradeId construction remain small in the absolute
   pipeline numbers.
-- **String -> Price / Quantity is Decimal‑direct.** `parse_price` and
+- **String -> Price / Quantity is Decimal-direct.** `parse_price` and
   `parse_quantity` in `websocket::parse` route through `Decimal::from_str`
-  then `Price::from_decimal_dp` (matches hyperliquid). All Decimal‑typed
+  then `Price::from_decimal_dp` (matches hyperliquid). All Decimal-typed
   REST fields (`PolymarketOpenOrder`, `PolymarketTradeReport`,
-  `PolymarketMakerOrder`) and the WS user‑channel string fields skip the
-  intermediate `f64` parse entirely. The combined string‑to‑Price path is
-  about 18.7 ns and avoids float‑rounding risk.
-- **Fee‑bearing fills are now measured.** `order_fill` uses a non‑zero taker
+  `PolymarketMakerOrder`) and the WS user-channel string fields skip the
+  intermediate `f64` parse entirely. The combined string-to-Price path is
+  about 18.7 ns and avoids float-rounding risk.
+- **Fee-bearing fills are now measured.** `order_fill` uses a non-zero taker
   rate and exponent, so it includes the current fee curve. `compute_commission`
   is about 119 ns. `order_fill_maker` covers one maker leg and its composite
   trade ID, but not the private WS dispatch tracker and emitter work.
-- **Exec submits are EIP‑712‑bound.** `sign_order` is about 47 µs and dominates
-  every `exec_pipeline/submit_*` row; LTO collapses the per‑shape differences
-  so limit, market, and neg‑risk converge near 48 to 49 µs. The market row also
-  includes the decoded‑book price walk and fee‑aware BUY sizing. The remaining
+- **Exec submits are EIP-712-bound.** `sign_order` is about 47 µs and dominates
+  every `exec_pipeline/submit_*` row; LTO collapses the per-shape differences
+  so limit, market, and neg-risk converge near 48 to 49 µs. The market row also
+  includes the decoded-book price walk and fee-aware BUY sizing. The remaining
   work is maker/taker amount math, builder state, JSON body serialization, and
-  the L2 HMAC step. Optimizations that do not change the EIP‑712 + keccak +
+  the L2 HMAC step. Optimizations that do not change the EIP-712 + keccak +
   secp256k1 path won't move these numbers.
 - **POLY_1271 has its own signing baseline.** Its extended signature encoding
   adds little beside the shared secp256k1 cost.
-- **`cancel` is HMAC‑bound.** REST cancels do not need an EIP‑712 signature,
-  so the client‑side cost is the JSON body serialization plus the L2
-  HMAC‑SHA256 signature `auth_headers` attaches via `Credential::sign`.
+- **`cancel` is HMAC-bound.** REST cancels do not need an EIP-712 signature,
+  so the client-side cost is the JSON body serialization plus the L2
+  HMAC-SHA256 signature `auth_headers` attaches via `Credential::sign`.
   `Credential` initializes the HMAC key once and streams the four message
   segments without allocating a combined string. The network round trip still
   dominates wall time in production.
@@ -180,16 +180,16 @@ to localise where time goes when a pipeline bench regresses.
   signing. This path is cold (only used by the CLOB `/auth/api-key`
   and `/auth/derive-api-key` flows at credential bootstrap), so the
   overhead is not a production hotspot. If `sign_clob_auth` ever ends
-  up on a hot path, accept a pre‑constructed signer instead.
-- **`trade_id_determine` (108 ns)** is the FNV‑1a hash over
+  up on a hot path, accept a pre-constructed signer instead.
+- **`trade_id_determine` (108 ns)** is the FNV-1a hash over
   `(asset_id, side, price, size, timestamp)` used to make trade IDs
   deterministic across reconnects.
-- **Interleaved price‑change dispatch avoids per‑change clones.** Against the optimization parent
-  `c6bb45e0a7`, the same six‑change fixture and controls improve from 638 ns and 9.40 M changes/s to
+- **Interleaved price-change dispatch avoids per-change clones.** Against the optimization parent
+  `c6bb45e0a7`, the same six-change fixture and controls improve from 638 ns and 9.40 M changes/s to
   367 ns and 16.3 M changes/s. This is 42.5% lower latency and 73.9% higher throughput. The result
-  covers grouping and parsing, not end‑to‑end adapter or network latency. Parent session estimates
+  covers grouping and parsing, not end-to-end adapter or network latency. Parent session estimates
   span 597 to 641 ns; optimized session estimates span 365 to 369 ns.
-- **Actual user WS dispatch remains a profiling boundary.** The price‑change row mirrors the
-  production grouping and parsing work but does not call the crate‑private router, retained state,
-  book application, or emitter. The suite measures user‑message decoding and both public report
+- **Actual user WS dispatch remains a profiling boundary.** The price-change row mirrors the
+  production grouping and parsing work but does not call the crate-private router, retained state,
+  book application, or emitter. The suite measures user-message decoding and both public report
   builders separately.

@@ -89,11 +89,11 @@ The Nautilus crates are published to
 
 ```toml
 [dependencies]
-nautilus-backtest = "0.61"
-nautilus-common = "0.61"
-nautilus-execution = "0.61"
-nautilus-model = { version = "0.61", features = ["stubs"] }
-nautilus-trading = { version = "0.61", features = ["examples"] }
+nautilus-backtest = "0.62"
+nautilus-common = "0.62"
+nautilus-execution = "0.62"
+nautilus-model = { version = "0.62", features = ["test-support"] }
+nautilus-trading = { version = "0.62", features = ["examples"] }
 
 anyhow = "1"
 log = "0.4"
@@ -103,8 +103,8 @@ For live trading, add the live crate and the adapter for your venue:
 
 ```toml
 [dependencies]
-nautilus-live = "0.61"
-nautilus-okx = "0.61"
+nautilus-live = "0.62"
+nautilus-okx = "0.62"
 ```
 
 To track the latest development branch, point all Nautilus dependencies at the
@@ -115,20 +115,20 @@ same git source to avoid type mismatches between crates.io and git versions:
 nautilus-backtest = { git = "https://github.com/nautechsystems/nautilus_trader.git", branch = "develop" }
 nautilus-common = { git = "https://github.com/nautechsystems/nautilus_trader.git", branch = "develop" }
 nautilus-execution = { git = "https://github.com/nautechsystems/nautilus_trader.git", branch = "develop" }
-nautilus-model = { git = "https://github.com/nautechsystems/nautilus_trader.git", branch = "develop", features = ["stubs"] }
+nautilus-model = { git = "https://github.com/nautechsystems/nautilus_trader.git", branch = "develop", features = ["test-support"] }
 nautilus-trading = { git = "https://github.com/nautechsystems/nautilus_trader.git", branch = "develop", features = ["examples"] }
 ```
 
-The minimum supported Rust version (MSRV) is **1.97.1**.
+The minimum supported Rust version (MSRV) is **1.98.0**.
 
 ### Feature flags
 
 | Flag             | Crate               | Effect                                                        |
 | ---------------- | ------------------- | ------------------------------------------------------------- |
 | `high-precision` | `nautilus-model`    | 16-digit fixed precision (default is 9). Required for crypto. |
-| `stubs`          | `nautilus-model`    | Test instrument stubs (`audusd_sim`, etc.).                   |
+| `test-support`   | `nautilus-model`    | Test fixtures, builders, specs, and defaults.                 |
 | `examples`       | `nautilus-trading`  | Example strategies (`EmaCross`, `GridMarketMaker`).           |
-| `streaming`      | `nautilus-backtest` | Catalog‑based data streaming via `BacktestNode`.              |
+| `streaming`      | `nautilus-backtest` | Catalog-based data streaming via `BacktestNode`.              |
 | `defi`           | `nautilus-model`    | DeFi data types. Implies `high-precision`.                    |
 
 :::tip
@@ -286,7 +286,7 @@ latency-sensitive native Rust code, not the portable authoring path.
 | ------------------------- | ---------------- | ----------------------------------- |
 | Native Rust binary        | Only when needed | `Strategy` and `DataActor` facades. |
 | Rust launched from Python | Only when needed | Same as native Rust.                |
-| Python‑authored component | No               | Facades only.                       |
+| Python-authored component | No               | Facades only.                       |
 
 Native traits expose borrowed core state, `Rc<RefCell<_>>`, and runtime
 references. Use them when native Rust code intentionally accepts those borrow
@@ -314,7 +314,7 @@ for normal strategy order construction. Reach for
 | `core_mut()`  | `&mut DataActorCore`     | Mutate actor internals.         |
 | `clock_mut()` | `RefMut<'_, dyn Clock>`  | Need a mutable clock borrow.    |
 | `clock_rc()`  | `Rc<RefCell<dyn Clock>>` | Store or pass the shared clock. |
-| `cache_ref()` | `Ref<'_, Cache>`         | Need short live‑cache reads.    |
+| `cache_ref()` | `Ref<'_, Cache>`         | Need short live-cache reads.    |
 | `cache_rc()`  | `Rc<RefCell<Cache>>`     | Mutate, store, or pass cache.   |
 
 #### `StrategyNative` methods

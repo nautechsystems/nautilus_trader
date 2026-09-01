@@ -1,12 +1,10 @@
 #![no_main]
 
-use std::{
-    collections::BTreeMap,
-    sync::{LazyLock, Mutex, PoisonError},
-};
+use std::{collections::BTreeMap, sync::LazyLock};
 
 use nautilus_derive::signing::nonce::{NonceError, NonceManager};
 use nautilus_live::fuzz::fuzz_target;
+use parking_lot::Mutex;
 
 const CHUNK_LEN: usize = 17;
 const MAX_DOMAIN_NOW_MS: u64 = 4_102_444_800_000;
@@ -23,7 +21,7 @@ static EXPECTED_LAST: LazyLock<Mutex<BTreeMap<(String, u64), u64>>> =
 
 fuzz_target!(|data: &[u8]| {
     let managers = [NonceManager::new(), NonceManager::new()];
-    let mut expected_last = EXPECTED_LAST.lock().unwrap_or_else(PoisonError::into_inner);
+    let mut expected_last = EXPECTED_LAST.lock();
 
     let (chunks, _remainder) = data.as_chunks::<CHUNK_LEN>();
 

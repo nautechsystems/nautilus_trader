@@ -6,6 +6,15 @@ sys_includes = ["stdint.h"]
 no_includes = true
 tab_width = 4
 after_includes = "\n#ifdef __SIZEOF_INT128__\n    typedef __uint128_t uint128_t;\n    typedef __int128_t int128_t;\n#elif defined(_MSC_VER)\n    // MSVC doesn't support 128-bit integers, use 64-bit fallbacks\n    typedef uint64_t uint128_t;\n    typedef int64_t int128_t;\n    #undef HIGH_PRECISION\n#endif"
+trailer = '''
+#define NULL_ORDER \
+    ((BookOrder_t){ \
+        .side = ORDER_SIDE_NO_ORDER_SIDE, \
+        .price = (Price_t){ .raw = 0, .precision = 0 }, \
+        .size = (Quantity_t){ .raw = 0, .precision = 0 }, \
+        .order_id = 0 \
+    })
+'''
 
 [defines]
 "feature = high-precision" = "HIGH_PRECISION"
@@ -17,7 +26,7 @@ rename_variants = "ScreamingSnakeCase"
 prefix_with_name = true
 
 [export]
-exclude = ["OrderId"]
+exclude = ["BookOrder", "OrderId"]
 
 [export.rename]
 "u128" = "uint128_t"
@@ -29,20 +38,22 @@ exclude = ["OrderId"]
 "Bar" = "Bar_t"
 "BarSpecification" = "BarSpecification_t"
 "BarType" = "BarType_t"
-"BookOrder" = "BookOrder_t"
+"BookOrderFfi" = "BookOrder_t"
 "OwnBookOrder" = "OwnBookOrder_t"
 "ClientId" = "ClientId_t"
 "ClientOrderId" = "ClientOrderId_t"
 "ComponentId" = "ComponentId_t"
+"ContingencyTypeOptional" = "ContingencyType"
 "Currency" = "Currency_t"
 "ExecAlgorithmId" = "ExecAlgorithmId_t"
 "InstrumentId" = "InstrumentId_t"
 "Money" = "Money_t"
 "NonZeroUsize" = "uintptr_t"
 "OrderId" = "uint64_t"
-"OrderBookDelta" = "OrderBookDelta_t"
+"OrderBookDeltaFfi" = "OrderBookDelta_t"
 "OrderBookDeltas" = "OrderBookDeltas_t"
-"OrderBookDepth10" = "OrderBookDepth10_t"
+"OrderBookDepth10Ffi" = "OrderBookDepth10_t"
+"OrderSideOptional" = "OrderSide"
 "OrderInitialized" = "OrderInitialized_t"
 "OrderDeniedFfi" = "OrderDenied_t"
 "OrderEmulatedFfi" = "OrderEmulated_t"
@@ -53,15 +64,18 @@ exclude = ["OrderId"]
 "OrderCanceled" = "OrderCanceled_t"
 "OrderListId" = "OrderListId_t"
 "PositionId" = "PositionId_t"
+"PositionSideOptional" = "PositionSide"
 "Price" = "Price_t"
 "Quantity" = "Quantity_t"
 "QuoteTick" = "QuoteTick_t"
 "StrategyId" = "StrategyId_t"
 "Symbol" = "Symbol_t"
 "TimedeltaNanos" = "int64_t"
+"TrailingOffsetTypeOptional" = "TrailingOffsetType"
 "TradeId" = "TradeId_t"
 "TradeTick" = "TradeTick_t"
 "TraderId" = "TraderId_t"
+"TriggerTypeOptional" = "TriggerType"
 "UnixNanos" = "uint64_t"
 "UUID4" = "UUID4_t"
 "Venue" = "Venue_t"

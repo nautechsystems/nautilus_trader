@@ -77,7 +77,13 @@ pub fn encode_deltas(data: &[OrderBookDelta]) -> Result<RecordBatch, ArrowError>
     for delta in data {
         instrument_id_builder.append_value(delta.instrument_id.to_string());
         action_builder.append_value(format!("{}", delta.action));
-        side_builder.append_value(format!("{}", delta.order.side));
+        side_builder.append_value(
+            delta
+                .order
+                .side
+                .as_ref()
+                .map_or("NO_ORDER_SIDE", AsRef::as_ref),
+        );
 
         // A `Clear` delta carries a `NULL_ORDER` (zero price/size) and has no
         // meaningful order to render; emit `NaN` so dashboards show empty
@@ -144,7 +150,7 @@ mod tests {
             instrument_id: InstrumentId::from(instrument_id),
             action,
             order: BookOrder {
-                side,
+                side: Some(side),
                 price: Price::from(price),
                 size: Quantity::from(100),
                 order_id,
@@ -278,6 +284,11 @@ mod tests {
         let clear = OrderBookDelta::clear(InstrumentId::from("AAPL.XNAS"), 1, 1.into(), 2.into());
 
         let batch = encode_deltas(&[clear]).unwrap();
+        let side_col = batch
+            .column(2)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
         let price_col = batch
             .column(3)
             .as_any()
@@ -289,6 +300,7 @@ mod tests {
             .downcast_ref::<Float64Array>()
             .unwrap();
 
+        assert_eq!(side_col.value(0), "NO_ORDER_SIDE");
         assert!(
             price_col.value(0).is_nan(),
             "live clear price should be NaN"
@@ -302,7 +314,7 @@ mod tests {
             instrument_id: InstrumentId::from("AAPL.XNAS"),
             action: BookAction::Clear,
             order: BookOrder {
-                side: OrderSide::NoOrderSide,
+                side: None,
                 price: Price::from_raw(PRICE_UNDEF, 0),
                 size: Quantity::from_raw(QUANTITY_UNDEF, 0),
                 order_id: 0,

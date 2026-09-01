@@ -25,7 +25,7 @@ use nautilus_common::{
 };
 use nautilus_deribit::{
     common::{consts::DERIBIT, enums::DeribitEnvironment},
-    config::{DeribitDataClientConfig, DeribitExecClientConfig},
+    config::{DeribitDataClientConfig, DeribitExecutionClientConfig},
     factories::{DeribitDataClientFactory, DeribitExecutionClientFactory},
     http::models::DeribitProductType,
     python,
@@ -115,12 +115,11 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .into_any();
     let config = Py::new(
         py,
-        DeribitExecClientConfig {
-            trader_id,
+        DeribitExecutionClientConfig {
             account_id,
             product_types: vec![DeribitProductType::Future],
             environment: DeribitEnvironment::Testnet,
-            ..DeribitExecClientConfig::default()
+            ..DeribitExecutionClientConfig::default()
         },
     )
     .expect("config should convert to Python object")
@@ -135,11 +134,12 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("exec config should extract");
     let deribit_config = extracted_config
         .as_any()
-        .downcast_ref::<DeribitExecClientConfig>()
+        .downcast_ref::<DeribitExecutionClientConfig>()
         .expect("exec config should downcast");
     let cache = Rc::new(RefCell::new(Cache::default()));
     let client = extracted_factory
         .create(
+            trader_id,
             "DERIBIT-EXEC-EXTRACTED",
             extracted_config.as_ref(),
             cache.into(),
@@ -147,8 +147,10 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("extracted factory should create exec client");
 
     assert_eq!(extracted_factory.name(), DERIBIT);
-    assert_eq!(extracted_factory.config_type(), "DeribitExecClientConfig");
-    assert_eq!(deribit_config.trader_id, trader_id);
+    assert_eq!(
+        extracted_factory.config_type(),
+        "DeribitExecutionClientConfig"
+    );
     assert_eq!(deribit_config.account_id, account_id);
     assert_eq!(client.client_id(), ClientId::from("DERIBIT-EXEC-EXTRACTED"));
     assert_eq!(client.account_id(), account_id);

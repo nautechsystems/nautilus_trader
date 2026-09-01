@@ -36,15 +36,17 @@ use nautilus_architect_ax::{
 };
 use nautilus_common::{
     clients::DataClient as DataClientTrait,
-    live::runner::set_data_event_sender,
+    live::runner::{replace_system_event_sender, set_data_event_sender},
     messages::{
-        DataEvent, DataResponse,
+        DataEvent, DataResponse, SystemEvent,
         data::{
             RequestInstrument, SubscribeBars, SubscribeBookDeltas, SubscribeQuotes, SubscribeTrades,
         },
+        system::SocketState,
     },
 };
 use nautilus_core::UUID4;
+use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::{BarType, Data},
     enums::BookType,
@@ -53,6 +55,7 @@ use nautilus_model::{
 };
 use nautilus_network::websocket::TransportBackend;
 use rstest::rstest;
+use ustr::Ustr;
 
 use crate::common::server::{start_test_server, wait_for_connection};
 
@@ -97,7 +100,7 @@ async fn test_handler_emits_l1_md_message() {
         Err(_) => panic!("Timeout waiting for L1 message"),
     }
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -139,7 +142,7 @@ async fn test_handler_emits_trade_md_message() {
     .expect("Timeout waiting for trade message");
 
     assert_eq!(trade.s.as_str(), "EURUSD-PERP");
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -177,7 +180,7 @@ async fn test_handler_emits_l2_md_message() {
         Err(_) => panic!("Timeout waiting for order book message"),
     }
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -218,7 +221,7 @@ async fn test_handler_emits_candle_md_message() {
 
     assert_eq!(candle.symbol.as_str(), "EURUSD-PERP");
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -260,7 +263,7 @@ async fn test_handler_forwards_raw_message_even_when_instrument_missing() {
         other => panic!("expected BookL1, was {other:?}"),
     }
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -394,6 +397,8 @@ async fn test_data_client_emits_trade_tick_via_channel() {
 #[tokio::test]
 async fn test_data_client_connect_disconnect() {
     let _rx = setup_data_channel();
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
 
     let (addr, state) = start_test_server().await.unwrap();
     let http_url = format!("http://{addr}");
@@ -410,17 +415,42 @@ async fn test_data_client_connect_disconnect() {
 
     let config = AxDataClientConfig::default();
     let client_id = ClientId::from("AX-TEST");
-    let mut client = AxDataClient::new(client_id, config, http_client, ws_client)
+    let registry = SocketReconnectRegistry::default();
+    let mut client = registry
+        .scope(|| AxDataClient::new(client_id, config, http_client, ws_client))
         .expect("Failed to create data client");
 
     assert!(!client.is_connected());
 
     client.connect().await.expect("Failed to connect");
     wait_for_connection(&state).await;
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    let endpoint = Ustr::from("architect-ax-data-streams");
+    let handle = registry.handle(client_id, endpoint).unwrap();
+
     assert!(client.is_connected());
+    assert_eq!(change.client_id, client_id);
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Connected);
+    assert_eq!(
+        handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Disconnected);
 
     client.disconnect().await.expect("Failed to disconnect");
     assert!(!client.is_connected());
+    assert!(registry.handle(client_id, endpoint).is_none());
 }
 
 #[rstest]

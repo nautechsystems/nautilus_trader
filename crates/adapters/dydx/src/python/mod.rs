@@ -30,7 +30,6 @@ pub mod submitter;
 pub mod types;
 pub mod urls;
 pub mod wallet;
-pub mod websocket;
 
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
@@ -39,7 +38,7 @@ use pyo3::prelude::*;
 
 use crate::{
     common::consts::{DYDX, DYDX_CLIENT_ID, DYDX_VENUE},
-    config::{DydxDataClientConfig, DydxExecClientConfig},
+    config::{DydxDataClientConfig, DydxExecutionClientConfig},
     factories::{DydxDataClientFactory, DydxExecutionClientFactory},
 };
 
@@ -81,10 +80,10 @@ fn extract_dydx_data_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<d
 
 #[expect(clippy::needless_pass_by_value)]
 fn extract_dydx_exec_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<dyn ClientConfig>> {
-    match config.extract::<DydxExecClientConfig>(py) {
+    match config.extract::<DydxExecutionClientConfig>(py) {
         Ok(c) => Ok(Box::new(c)),
         Err(e) => Err(to_pyvalue_err(format!(
-            "Failed to extract DydxExecClientConfig: {e}"
+            "Failed to extract DydxExecutionClientConfig: {e}"
         ))),
     }
 }
@@ -95,7 +94,6 @@ pub fn dydx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(DYDX_CLIENT_ID), *DYDX_CLIENT_ID)?;
     m.add(stringify!(DYDX_VENUE), *DYDX_VENUE)?;
     m.add_class::<crate::http::client::DydxHttpClient>()?;
-    m.add_class::<crate::websocket::client::DydxWebSocketClient>()?;
     m.add_class::<crate::common::enums::DydxNetwork>()?;
     m.add_class::<crate::common::enums::DydxOrderSide>()?;
     m.add_class::<crate::common::enums::DydxOrderType>()?;
@@ -105,8 +103,8 @@ pub fn dydx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<submitter::PyDydxOrderSubmitter>()?;
     m.add_class::<encoder::PyDydxClientOrderIdEncoder>()?;
     m.add_class::<DydxDataClientConfig>()?;
-    m.add_class::<DydxExecClientConfig>()?;
     m.add_class::<DydxDataClientFactory>()?;
+    m.add_class::<DydxExecutionClientConfig>()?;
     m.add_class::<DydxExecutionClientFactory>()?;
     m.add_function(wrap_pyfunction!(urls::py_get_dydx_grpc_urls, m)?)?;
     m.add_function(wrap_pyfunction!(urls::py_get_dydx_grpc_url, m)?)?;
@@ -138,9 +136,10 @@ pub fn dydx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         )));
     }
 
-    if let Err(e) = registry
-        .register_config_extractor("DydxExecClientConfig".to_string(), extract_dydx_exec_config)
-    {
+    if let Err(e) = registry.register_config_extractor(
+        "DydxExecutionClientConfig".to_string(),
+        extract_dydx_exec_config,
+    ) {
         return Err(to_pyruntime_err(format!(
             "Failed to register dYdX exec config extractor: {e}"
         )));

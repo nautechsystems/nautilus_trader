@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test ema behavior.
+"""
 
 import pytest
 
@@ -22,36 +25,57 @@ from tests.stubs import TestDataProviderPyo3
 
 @pytest.fixture
 def ema() -> ExponentialMovingAverage:
+    """
+    Ema.
+    """
     return ExponentialMovingAverage(10)
 
 
 def test_name_returns_expected_string(ema: ExponentialMovingAverage) -> None:
+    """
+    Test name returns expected string.
+    """
     # Arrange, Act, Assert
     assert ema.name == "ExponentialMovingAverage"
 
 
 def test_str_repr_returns_expected_string(ema: ExponentialMovingAverage) -> None:
+    """
+    Test str repr returns expected string.
+    """
     # Arrange, Act, Assert
     assert str(ema) == "ExponentialMovingAverage(10)"
     assert repr(ema) == "ExponentialMovingAverage(10)"
 
 
 def test_period_returns_expected_value(ema: ExponentialMovingAverage) -> None:
+    """
+    Test period returns expected value.
+    """
     # Arrange, Act, Assert
     assert ema.period == 10
 
 
 def test_multiplier_returns_expected_value(ema: ExponentialMovingAverage) -> None:
+    """
+    Test multiplier returns expected value.
+    """
     # Arrange, Act, Assert
     assert ema.alpha == 0.18181818181818182
 
 
 def test_initialized_without_inputs_returns_false(ema: ExponentialMovingAverage) -> None:
+    """
+    Test initialized without inputs returns false.
+    """
     # Arrange, Act, Assert
     assert not ema.initialized
 
 
 def test_initialized_with_required_inputs_returns_true(ema: ExponentialMovingAverage) -> None:
+    """
+    Test initialized with required inputs returns true.
+    """
     # Arrange
     ema.update_raw(1.00000)
     ema.update_raw(2.00000)
@@ -71,6 +95,9 @@ def test_initialized_with_required_inputs_returns_true(ema: ExponentialMovingAve
 
 
 def test_handle_quote_tick_updates_indicator() -> None:
+    """
+    Test handle quote tick updates indicator.
+    """
     # Arrange
     indicator = ExponentialMovingAverage(10, PriceType.MID)
 
@@ -85,6 +112,9 @@ def test_handle_quote_tick_updates_indicator() -> None:
 
 
 def test_handle_trade_tick_updates_indicator(ema: ExponentialMovingAverage) -> None:
+    """
+    Test handle trade tick updates indicator.
+    """
     # Arrange
 
     tick = TestDataProviderPyo3.trade_tick()
@@ -98,6 +128,9 @@ def test_handle_trade_tick_updates_indicator(ema: ExponentialMovingAverage) -> N
 
 
 def test_handle_bar_updates_indicator(ema: ExponentialMovingAverage) -> None:
+    """
+    Test handle bar updates indicator.
+    """
     # Arrange
     bar = TestDataProviderPyo3.bar_5decimal()
 
@@ -110,6 +143,9 @@ def test_handle_bar_updates_indicator(ema: ExponentialMovingAverage) -> None:
 
 
 def test_value_with_one_input_returns_expected_value(ema: ExponentialMovingAverage) -> None:
+    """
+    Test value with one input returns expected value.
+    """
     # Arrange
     ema.update_raw(1.00000)
 
@@ -118,6 +154,9 @@ def test_value_with_one_input_returns_expected_value(ema: ExponentialMovingAvera
 
 
 def test_value_with_three_inputs_returns_expected_value(ema: ExponentialMovingAverage) -> None:
+    """
+    Test value with three inputs returns expected value.
+    """
     # Arrange
     ema.update_raw(1.00000)
     ema.update_raw(2.00000)
@@ -128,6 +167,9 @@ def test_value_with_three_inputs_returns_expected_value(ema: ExponentialMovingAv
 
 
 def test_reset_successfully_returns_indicator_to_fresh_state(ema: ExponentialMovingAverage) -> None:
+    """
+    Test reset successfully returns indicator to fresh state.
+    """
     # Arrange
     for _i in range(1000):
         ema.update_raw(1.00000)

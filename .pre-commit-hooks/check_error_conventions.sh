@@ -98,6 +98,7 @@ while IFS=: read -r file line_num line_content; do
   fi
 done < <(rg -n '^[[:space:]]*except[*]?.*[[:space:]]as[[:space:]]+[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*:' \
   --type py \
+  --glob '!scripts/security-audit.py' \
   . 2> /dev/null || true)
 
 ################################################################################

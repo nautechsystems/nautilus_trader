@@ -21,6 +21,7 @@ On start it opens a position with an IOC order, then maintains post-only limit
 quotes on both sides of the book. On stop it cancels all orders and closes all
 positions. Run only against a funded account you intend to test. The strategy has
 no alpha advantage whatsoever and is not intended for production trading.
+Set `KRAKEN_API_KEY` and `KRAKEN_API_SECRET` before running the example.
 
 """
 
@@ -31,7 +32,7 @@ from decimal import Decimal
 
 from nautilus_trader.adapters.kraken import KrakenDataClientConfig
 from nautilus_trader.adapters.kraken import KrakenDataClientFactory
-from nautilus_trader.adapters.kraken import KrakenExecClientConfig
+from nautilus_trader.adapters.kraken import KrakenExecutionClientConfig
 from nautilus_trader.adapters.kraken import KrakenExecutionClientFactory
 from nautilus_trader.adapters.kraken import KrakenProductType
 from nautilus_trader.common import Environment
@@ -47,6 +48,10 @@ from nautilus_trader.model import TraderId
 from nautilus_trader.testkit import ExecTesterConfig
 
 
+# WARNING: With DRY_RUN = False, this tester submits orders to the configured
+# environment and may use real funds. Set DRY_RUN = True to connect without
+# submitting orders or sending shutdown cancel/close commands.
+DRY_RUN = False
 KRAKEN = "KRAKEN"
 TRADER_ID = TraderId.from_str("TESTER-001")
 ACCOUNT_ID = AccountId.from_str("KRAKEN-001")
@@ -58,9 +63,17 @@ TOB_OFFSET_TICKS = 500
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
+    api_key = os.getenv("KRAKEN_API_KEY")
+    api_secret = os.getenv("KRAKEN_API_SECRET")
+    if not api_key or not api_secret:
+        raise SystemExit("KRAKEN_API_KEY and KRAKEN_API_SECRET must be set")
+
     node = (
         LiveNode.builder("KRAKEN-EXEC-TESTER-001", TRADER_ID, Environment.LIVE)
-        .with_reconciliation(True)
+        .with_reconciliation(reconciliation=True)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
         .add_data_client(
             None,
@@ -70,11 +83,10 @@ def main() -> None:
         .add_exec_client(
             None,
             KrakenExecutionClientFactory(),
-            KrakenExecClientConfig(
-                TRADER_ID,
-                ACCOUNT_ID,
-                os.getenv("KRAKEN_API_KEY", ""),
-                os.getenv("KRAKEN_API_SECRET", ""),
+            KrakenExecutionClientConfig(
+                account_id=ACCOUNT_ID,
+                api_key=api_key,
+                api_secret=api_secret,
                 product_type=PRODUCT_TYPE,
             ),
         )
@@ -100,7 +112,7 @@ def main() -> None:
             cancel_orders_on_stop=True,
             close_positions_on_stop=True,
             reduce_only_on_stop=False,
-            dry_run=False,  # Set True to log intended order flow without submitting orders
+            dry_run=DRY_RUN,
             log_data=False,
         ),
     )

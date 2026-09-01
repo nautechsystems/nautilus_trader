@@ -63,13 +63,11 @@ pub(crate) fn determine_position_side(
         match order_side {
             OrderSide::Buy => BinancePositionSide::Short,
             OrderSide::Sell => BinancePositionSide::Long,
-            _ => BinancePositionSide::Both,
         }
     } else {
         match order_side {
             OrderSide::Buy => BinancePositionSide::Long,
             OrderSide::Sell => BinancePositionSide::Short,
-            _ => BinancePositionSide::Both,
         }
     })
 }
@@ -200,7 +198,6 @@ mod tests {
     #[case::hedge_open_sell(true, OrderSide::Sell, false, Some(BinancePositionSide::Short))]
     #[case::hedge_close_buy(true, OrderSide::Buy, true, Some(BinancePositionSide::Short))]
     #[case::hedge_close_sell(true, OrderSide::Sell, true, Some(BinancePositionSide::Long))]
-    #[case::hedge_no_side(true, OrderSide::NoOrderSide, false, Some(BinancePositionSide::Both))]
     fn test_determine_position_side(
         #[case] is_hedge_mode: bool,
         #[case] order_side: OrderSide,

@@ -27,7 +27,7 @@ use nautilus_model::{
     },
     enums::{
         AccountType, AggressorSide, BookAction, GreeksConvention, LiquiditySide, OrderSide,
-        OrderStatus, PositionSideSpecified, RecordFlag, TimeInForce, TriggerType,
+        OrderStatus, PositionSide, RecordFlag, TimeInForce, TriggerType,
     },
     events::account::state::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId},
@@ -734,7 +734,7 @@ pub fn parse_ws_order_status_report(
 ) -> anyhow::Result<OrderStatusReport> {
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(order.order_id.as_str());
-    let order_side: OrderSide = order.side.into();
+    let order_side: Option<OrderSide> = order.side.into();
 
     let order_type = parse_bybit_order_type(
         order.order_type,
@@ -879,7 +879,7 @@ pub fn parse_ws_fill_report(
     let trade_id = TradeId::new_checked(execution.exec_id.as_str())
         .context("invalid execId in Bybit WebSocket execution payload")?;
 
-    let order_side: OrderSide = execution.side.into();
+    let order_side = OrderSide::try_from(execution.side)?;
     let last_qty = parse_quantity_with_precision(
         &execution.exec_qty,
         instrument.size_precision(),
@@ -961,7 +961,7 @@ pub fn parse_ws_fill_report_fast(
     let trade_id = TradeId::new_checked(execution.exec_id.as_str())
         .context("invalid execId in Bybit WebSocket fast-execution payload")?;
 
-    let order_side: OrderSide = execution.side.into();
+    let order_side = OrderSide::try_from(execution.side)?;
     let last_qty = parse_quantity_with_precision(
         &execution.exec_qty,
         instrument.size_precision(),
@@ -1030,9 +1030,9 @@ pub fn parse_ws_position_status_report(
     )?;
 
     let position_side = match position.side {
-        BybitPositionSide::Buy => PositionSideSpecified::Long,
-        BybitPositionSide::Sell => PositionSideSpecified::Short,
-        BybitPositionSide::Flat => PositionSideSpecified::Flat,
+        BybitPositionSide::Buy => PositionSide::Long,
+        BybitPositionSide::Sell => PositionSide::Short,
+        BybitPositionSide::Flat => PositionSide::Flat,
     };
 
     // Bybit ranks open positions 1-5 by ADL priority (5 = next to be deleveraged);
@@ -1220,7 +1220,7 @@ mod tests {
             instrument.make_qty(0.500, None)
         );
         let last = deltas.deltas.last().unwrap();
-        assert_eq!(last.order.side, OrderSide::Sell);
+        assert_eq!(last.order.side, OrderSide::Sell.into());
         assert_eq!(last.order.price, instrument.make_price(27451.50));
         assert_eq!(
             last.flags & RecordFlag::F_LAST as u8,
@@ -1239,12 +1239,12 @@ mod tests {
         assert_eq!(deltas.deltas.len(), 2);
         let bid = &deltas.deltas[0];
         assert_eq!(bid.action, BookAction::Update);
-        assert_eq!(bid.order.side, OrderSide::Buy);
+        assert_eq!(bid.order.side, OrderSide::Buy.into());
         assert_eq!(bid.order.size, instrument.make_qty(0.400, None));
 
         let ask = &deltas.deltas[1];
         assert_eq!(ask.action, BookAction::Delete);
-        assert_eq!(ask.order.side, OrderSide::Sell);
+        assert_eq!(ask.order.side, OrderSide::Sell.into());
         assert_eq!(ask.order.size, instrument.make_qty(0.0, None));
         assert_eq!(
             ask.flags & RecordFlag::F_LAST as u8,
@@ -1361,7 +1361,7 @@ mod tests {
 
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id, instrument.id());
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, OrderSide::Buy.into());
         assert_eq!(report.order_type, OrderType::Limit);
         assert_eq!(report.time_in_force, TimeInForce::Gtc);
         assert_eq!(report.order_status, OrderStatus::Filled);
@@ -1680,7 +1680,7 @@ mod tests {
 
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id, instrument.id());
-        assert_eq!(report.position_side.as_position_side(), PositionSide::Short);
+        assert_eq!(report.position_side, PositionSide::Short);
         assert_eq!(report.quantity, instrument.make_qty(0.01, None));
         assert_eq!(
             report.avg_px_open,
@@ -1736,7 +1736,7 @@ mod tests {
 
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id.symbol.as_str(), "ETHUSDT-LINEAR");
-        assert_eq!(report.position_side.as_position_side(), PositionSide::Short);
+        assert_eq!(report.position_side, PositionSide::Short);
         assert_eq!(report.quantity, instrument.make_qty(0.01, None));
         assert_eq!(
             report.avg_px_open,
@@ -1938,7 +1938,7 @@ mod tests {
 
         // Verify sell StopMarket: orderType=Market + stopOrderType=Stop + triggerDirection=2 (falls to)
         assert_eq!(report.order_type, OrderType::StopMarket);
-        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_side, OrderSide::Sell.into());
         assert_eq!(report.order_status, OrderStatus::Accepted); // Untriggered maps to Accepted
         assert_eq!(report.trigger_price, Some(instrument.make_price(45000.00)));
         assert_eq!(report.trigger_type, Some(TriggerType::LastPrice));
@@ -1961,7 +1961,7 @@ mod tests {
 
         // Verify buy StopMarket: orderType=Market + stopOrderType=Stop + triggerDirection=1 (rises to)
         assert_eq!(report.order_type, OrderType::StopMarket);
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, OrderSide::Buy.into());
         assert_eq!(report.order_status, OrderStatus::Accepted);
         assert_eq!(report.trigger_price, Some(instrument.make_price(55000.00)));
         assert_eq!(report.trigger_type, Some(TriggerType::LastPrice));
@@ -1984,7 +1984,7 @@ mod tests {
 
         // Verify buy MIT: orderType=Market + stopOrderType=Stop + triggerDirection=2 (falls to)
         assert_eq!(report.order_type, OrderType::MarketIfTouched);
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, OrderSide::Buy.into());
         assert_eq!(report.order_status, OrderStatus::Accepted); // Untriggered maps to Accepted
         assert_eq!(report.trigger_price, Some(instrument.make_price(55000.00)));
         assert_eq!(report.trigger_type, Some(TriggerType::LastPrice));
@@ -2007,7 +2007,7 @@ mod tests {
 
         // Verify sell MIT: orderType=Market + stopOrderType=Stop + triggerDirection=1 (rises to)
         assert_eq!(report.order_type, OrderType::MarketIfTouched);
-        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_side, OrderSide::Sell.into());
         assert_eq!(report.order_status, OrderStatus::Accepted);
         assert_eq!(report.trigger_price, Some(instrument.make_price(55000.00)));
         assert_eq!(
@@ -2030,7 +2030,7 @@ mod tests {
         // Verify StopLimit order type is correctly parsed
         // orderType=Limit + stopOrderType=Stop + triggerDirection=2 (falls to)
         assert_eq!(report.order_type, OrderType::StopLimit);
-        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_side, OrderSide::Sell.into());
         assert_eq!(report.order_status, OrderStatus::Accepted); // Untriggered maps to Accepted
         assert_eq!(report.price, Some(instrument.make_price(44500.00)));
         assert_eq!(report.trigger_price, Some(instrument.make_price(45000.00)));
@@ -2054,7 +2054,7 @@ mod tests {
         // Verify LimitIfTouched order type is correctly parsed
         // orderType=Limit + stopOrderType=Stop + triggerDirection=1 (rises to)
         assert_eq!(report.order_type, OrderType::LimitIfTouched);
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, OrderSide::Buy.into());
         assert_eq!(report.order_status, OrderStatus::Accepted); // Untriggered maps to Accepted
         assert_eq!(report.price, Some(instrument.make_price(55500.00)));
         assert_eq!(report.trigger_price, Some(instrument.make_price(55000.00)));
@@ -2097,7 +2097,7 @@ mod tests {
         let report = parse_ws_order_status_report(order, &instrument, account_id, TS).unwrap();
 
         assert_eq!(report.order_type, OrderType::MarketIfTouched);
-        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_side, OrderSide::Sell.into());
         assert_eq!(report.trigger_price, Some(instrument.make_price(55000.00)));
         assert_eq!(report.trigger_type, Some(TriggerType::LastPrice));
         assert!(report.reduce_only);
@@ -2115,7 +2115,7 @@ mod tests {
         let report = parse_ws_order_status_report(order, &instrument, account_id, TS).unwrap();
 
         assert_eq!(report.order_type, OrderType::StopMarket);
-        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_side, OrderSide::Sell.into());
         assert_eq!(report.trigger_price, Some(instrument.make_price(48000.00)));
         assert_eq!(report.trigger_type, Some(TriggerType::LastPrice));
         assert!(report.reduce_only);

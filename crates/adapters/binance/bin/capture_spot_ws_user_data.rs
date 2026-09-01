@@ -191,15 +191,13 @@ async fn main() -> anyhow::Result<()> {
         proxy_url: None,
     };
 
-    let client = WebSocketClient::connect(
-        ws_config,
-        Some(raw_handler),
-        Some(ping_handler),
-        vec![],
-        None,
-    )
-    .await
-    .map_err(|e| anyhow::anyhow!("Connection failed: {e}"))?;
+    let client = WebSocketClient::builder()
+        .config(ws_config)
+        .message_handler(raw_handler)
+        .ping_handler(ping_handler)
+        .connect()
+        .await
+        .map_err(|e| anyhow::anyhow!("Connection failed: {e}"))?;
 
     println!("Connected");
 

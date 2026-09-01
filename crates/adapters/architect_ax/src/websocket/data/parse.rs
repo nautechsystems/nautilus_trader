@@ -482,36 +482,28 @@ mod tests {
             Quantity::from_decimal_dp(Decimal::new(1, size_precision as u32), size_precision)
                 .unwrap();
 
-        let instrument = PerpetualContract::new(
-            InstrumentId::new(Symbol::new(symbol), *AX_VENUE),
-            Symbol::new(symbol),
-            underlying,
-            AssetClass::Cryptocurrency,
-            None,
-            Currency::USD(),
-            Currency::USD(),
-            false,
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            None,
-            Some(size_increment),
-            None,
-            Some(size_increment),
-            None,
-            None,
-            None,
-            None,
-            Some(Decimal::new(1, 2)),
-            Some(Decimal::new(5, 3)),
-            Some(Decimal::new(2, 4)),
-            Some(Decimal::new(5, 4)),
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let instrument = PerpetualContract::builder()
+            .instrument_id(InstrumentId::new(Symbol::new(symbol), *AX_VENUE))
+            .raw_symbol(Symbol::new(symbol))
+            .underlying(underlying)
+            .asset_class(AssetClass::Cryptocurrency)
+            .quote_currency(Currency::USD())
+            .settlement_currency(Currency::USD())
+            .is_inverse(false)
+            .price_precision(price_precision)
+            .size_precision(size_precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .lot_size(size_increment)
+            .min_quantity(size_increment)
+            .margin_init(Decimal::new(1, 2))
+            .margin_maint(Decimal::new(5, 3))
+            .maker_fee(Decimal::new(2, 4))
+            .taker_fee(Decimal::new(5, 4))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
         InstrumentAny::PerpetualContract(instrument)
     }
 
@@ -653,8 +645,8 @@ mod tests {
         // 1 clear + 4 levels
         assert_eq!(deltas.deltas.len(), 5);
         assert_eq!(deltas.deltas[0].action, BookAction::Clear);
-        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
-        assert_eq!(deltas.deltas[3].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy.into());
+        assert_eq!(deltas.deltas[3].order.side, OrderSide::Sell.into());
 
         // Every delta in the snapshot sequence carries F_SNAPSHOT, and only the last F_LAST
         for delta in &deltas.deltas {
@@ -774,13 +766,13 @@ mod tests {
 
         // Check first bid level
         let first_bid = &deltas.deltas[1];
-        assert_eq!(first_bid.order.side, OrderSide::Buy);
+        assert_eq!(first_bid.order.side, OrderSide::Buy.into());
         assert_eq!(first_bid.order.price.as_f64(), 1.1712);
         assert_eq!(first_bid.order.size.as_f64(), 300.0);
 
         // Check first ask level (after 13 bids + 1 clear = index 14)
         let first_ask = &deltas.deltas[14];
-        assert_eq!(first_ask.order.side, OrderSide::Sell);
+        assert_eq!(first_ask.order.side, OrderSide::Sell.into());
         assert_eq!(first_ask.order.price.as_f64(), 1.1719);
         assert_eq!(first_ask.order.size.as_f64(), 400.0);
 
@@ -813,7 +805,7 @@ mod tests {
 
         // Check first bid order
         let first_bid = &deltas.deltas[1];
-        assert_eq!(first_bid.order.side, OrderSide::Buy);
+        assert_eq!(first_bid.order.side, OrderSide::Buy.into());
         assert_eq!(first_bid.order.price.as_f64(), 1.1714);
         assert_eq!(first_bid.order.size.as_f64(), 100.0);
 

@@ -1,7 +1,7 @@
 # InstrumentClose
 
 `InstrumentClose` represents a closing price event for an instrument at a venue. It covers
-end‑of‑session closes and contract‑expiry close events.
+end-of-session closes and contract-expiry close events.
 
 ## Fields
 
@@ -15,8 +15,8 @@ end‑of‑session closes and contract‑expiry close events.
 
 ## Behavior
 
-- End‑of‑session closes provide session‑level close prices.
-- Contract‑expiry closes mark expiration events for dated contracts.
+- End-of-session closes provide session-level close prices.
+- Contract-expiry closes mark expiration events for dated contracts.
 - The close price is reference data; it does not imply a trade occurred at that price.
 
 ## Example

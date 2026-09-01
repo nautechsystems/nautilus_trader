@@ -20,8 +20,8 @@
 //! Run with: `cargo run --example ax-data-tester --package nautilus-architect-ax --features examples`
 //!
 //! Credentials are read from the environment when set:
-//! - `AX_API_KEY`.
-//! - `AX_API_SECRET`.
+//! - `AX_API_KEY`
+//! - `AX_API_SECRET`
 
 use nautilus_architect_ax::{
     common::{consts::AX_CLIENT_ID, enums::AxEnvironment},

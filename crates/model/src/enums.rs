@@ -15,7 +15,7 @@
 
 //! Enumerations for the trading domain model.
 
-use std::str::FromStr;
+use std::{borrow::Cow, fmt::Display, marker::PhantomData, str::FromStr};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
@@ -426,16 +426,10 @@ impl BetSide {
 }
 
 impl From<OrderSide> for BetSide {
-    /// Returns the equivalent [`BetSide`] for a given [`OrderSide`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if `side` is [`OrderSide::NoOrderSide`].
     fn from(side: OrderSide) -> Self {
         match side {
             OrderSide::Buy => Self::Back,
             OrderSide::Sell => Self::Lay,
-            OrderSide::NoOrderSide => panic!("Invalid `OrderSide` for `BetSide`, was {side}"),
         }
     }
 }
@@ -555,12 +549,14 @@ impl FromU8 for BookType {
 /// The order contingency type which specifies the behavior of linked orders.
 ///
 /// [FIX 5.0 SP2 : ContingencyType <1385> field](https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_1385.html).
+///
+/// Python retains `NO_CONTINGENCY` as a compatibility alias for `None`. The alias is not an enum
+/// variant and may be removed in a future version.
 #[repr(C)]
 #[derive(
     Copy,
     Clone,
     Debug,
-    Default,
     Display,
     Hash,
     PartialEq,
@@ -590,9 +586,6 @@ impl FromU8 for BookType {
     pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.model")
 )]
 pub enum ContingencyType {
-    /// Not a contingent order.
-    #[default]
-    NoContingency = 0,
     /// One-Cancels-the-Other.
     Oco = 1,
     /// One-Triggers-the-Other.
@@ -1037,7 +1030,7 @@ pub enum MarketStatusAction {
     NotAvailableForTrading = 15,
 }
 
-/// Convert the given `value` to an [`OrderSide`].
+/// Convert the given `value` to a [`MarketStatusAction`].
 impl FromU16 for MarketStatusAction {
     fn from_u16(value: u16) -> Option<Self> {
         match value {
@@ -1246,13 +1239,15 @@ pub enum OtoTriggerMode {
     Full = 1,
 }
 
-/// The order side for a specific order, or action related to orders.
+/// The order side (BUY or SELL).
+///
+/// Python retains `NO_ORDER_SIDE` as a compatibility alias for `None`. The alias is not an enum
+/// variant and may be removed in a future version.
 #[repr(C)]
 #[derive(
     Copy,
     Clone,
     Debug,
-    Default,
     Display,
     Hash,
     PartialEq,
@@ -1282,9 +1277,6 @@ pub enum OtoTriggerMode {
     pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.model")
 )]
 pub enum OrderSide {
-    /// No order side is specified.
-    #[default]
-    NoOrderSide = 0,
     /// The order is a BUY.
     Buy = 1,
     /// The order is a SELL.
@@ -1292,75 +1284,12 @@ pub enum OrderSide {
 }
 
 impl OrderSide {
-    /// Returns the specified [`OrderSideSpecified`] (BUY or SELL) for this side.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `self` is [`OrderSide::NoOrderSide`].
-    #[must_use]
-    pub fn as_specified(&self) -> OrderSideSpecified {
-        match &self {
-            Self::Buy => OrderSideSpecified::Buy,
-            Self::Sell => OrderSideSpecified::Sell,
-            Self::NoOrderSide => panic!("Order invariant failed: side must be `Buy` or `Sell`"),
-        }
-    }
-}
-
-/// Convert the given `value` to an [`OrderSide`].
-impl FromU8 for OrderSide {
-    fn from_u8(value: u8) -> Option<Self> {
-        match value {
-            0 => Some(Self::NoOrderSide),
-            1 => Some(Self::Buy),
-            2 => Some(Self::Sell),
-            _ => None,
-        }
-    }
-}
-
-/// The specified order side (BUY or SELL).
-#[repr(C)]
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Display,
-    Hash,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    AsRefStr,
-    FromRepr,
-    EnumIter,
-    EnumString,
-)]
-#[strum(ascii_case_insensitive)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-pub enum OrderSideSpecified {
-    /// The order is a BUY.
-    Buy = 1,
-    /// The order is a SELL.
-    Sell = 2,
-}
-
-impl OrderSideSpecified {
     /// Returns the opposite order side.
     #[must_use]
     pub fn opposite(&self) -> Self {
         match &self {
             Self::Buy => Self::Sell,
             Self::Sell => Self::Buy,
-        }
-    }
-
-    /// Converts this specified side into an [`OrderSide`].
-    #[must_use]
-    pub fn as_order_side(&self) -> OrderSide {
-        match &self {
-            Self::Buy => OrderSide::Buy,
-            Self::Sell => OrderSide::Sell,
         }
     }
 }
@@ -1597,13 +1526,15 @@ impl FromU8 for PositionAdjustmentType {
     }
 }
 
-/// The market side for a specific position, or action related to positions.
+/// The position side (FLAT, LONG, or SHORT).
+///
+/// Python retains `NO_POSITION_SIDE` as a compatibility alias for `None`. The alias is not an enum
+/// variant and may be removed in a future version.
 #[repr(C)]
 #[derive(
     Copy,
     Clone,
     Debug,
-    Default,
     Display,
     Hash,
     PartialEq,
@@ -1633,10 +1564,7 @@ impl FromU8 for PositionAdjustmentType {
     pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.model")
 )]
 pub enum PositionSide {
-    /// No position side is specified (only valid in the context of a filter for actions involving positions).
-    #[default]
-    NoPositionSide = 0,
-    /// A neural/flat position, where no position is currently held in the market.
+    /// A neutral/flat position, where no position is currently held in the market.
     Flat = 1,
     /// A long position in the market, typically acquired through one or many BUY orders.
     Long = 2,
@@ -1644,63 +1572,252 @@ pub enum PositionSide {
     Short = 3,
 }
 
-impl PositionSide {
-    /// Returns the specified [`PositionSideSpecified`] (`Long`, `Short`, or `Flat`) for this side.
+/// Serde compatibility for an optional order side previously encoded with `NO_ORDER_SIDE`.
+pub mod serde_option_order_side {
+    use serde::{Deserializer, Serializer};
+
+    use super::{OrderSide, deserialize_optional_enum, serialize_optional_enum};
+
+    /// Serializes an optional order side using the legacy no-side token.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `self` is [`PositionSide::NoPositionSide`].
-    #[must_use]
-    pub fn as_specified(&self) -> PositionSideSpecified {
-        match &self {
-            Self::Long => PositionSideSpecified::Long,
-            Self::Short => PositionSideSpecified::Short,
-            Self::Flat => PositionSideSpecified::Flat,
-            Self::NoPositionSide => {
-                panic!("Position invariant failed: side must be `Long`, `Short`, or `Flat`")
+    /// Returns an error if the serializer cannot encode the value.
+    pub fn serialize<S>(value: &Option<OrderSide>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serialize_optional_enum(value.as_ref(), serializer, "NO_ORDER_SIDE")
+    }
+
+    /// Deserializes an optional order side from a side token or null.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the input is not a valid order side.
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<OrderSide>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserialize_optional_enum(
+            deserializer,
+            "NO_ORDER_SIDE",
+            "BUY, SELL, NO_ORDER_SIDE, or null",
+        )
+    }
+}
+
+/// Serde compatibility for an optional position side previously encoded with `NO_POSITION_SIDE`.
+pub mod serde_option_position_side {
+    use serde::{Deserializer, Serializer};
+
+    use super::{PositionSide, deserialize_optional_enum, serialize_optional_enum};
+
+    /// Serializes an optional position side using the legacy no-side token.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the serializer cannot encode the value.
+    pub fn serialize<S>(value: &Option<PositionSide>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serialize_optional_enum(value.as_ref(), serializer, "NO_POSITION_SIDE")
+    }
+
+    /// Deserializes an optional position side from a side token or null.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the input is not a valid position side.
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<PositionSide>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserialize_optional_enum(
+            deserializer,
+            "NO_POSITION_SIDE",
+            "FLAT, LONG, SHORT, NO_POSITION_SIDE, or null",
+        )
+    }
+}
+
+/// Serde compatibility for an optional contingency type previously encoded with `NO_CONTINGENCY`.
+pub mod serde_option_contingency_type {
+    use serde::{Deserializer, Serializer};
+
+    use super::{ContingencyType, deserialize_optional_enum, serialize_optional_enum};
+
+    /// Serializes an optional contingency type using the legacy no-contingency token.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the serializer cannot encode the value.
+    pub fn serialize<S>(value: &Option<ContingencyType>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serialize_optional_enum(value.as_ref(), serializer, "NO_CONTINGENCY")
+    }
+
+    /// Deserializes an optional contingency type from a contingency token or null.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the input is not a valid contingency type.
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<ContingencyType>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserialize_optional_enum(
+            deserializer,
+            "NO_CONTINGENCY",
+            "OCO, OTO, OUO, NO_CONTINGENCY, or null",
+        )
+    }
+}
+
+/// Serde compatibility for an optional trailing offset type previously encoded with
+/// `NO_TRAILING_OFFSET`.
+pub mod serde_option_trailing_offset_type {
+    use serde::{Deserializer, Serializer};
+
+    use super::{TrailingOffsetType, deserialize_optional_enum, serialize_optional_enum};
+
+    /// Serializes an optional trailing offset type using the legacy no-offset token.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the serializer cannot encode the value.
+    pub fn serialize<S>(
+        value: &Option<TrailingOffsetType>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serialize_optional_enum(value.as_ref(), serializer, "NO_TRAILING_OFFSET")
+    }
+
+    /// Deserializes an optional trailing offset type from an offset token or null.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the input is not a valid trailing offset type.
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<TrailingOffsetType>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserialize_optional_enum(
+            deserializer,
+            "NO_TRAILING_OFFSET",
+            "PRICE, BASIS_POINTS, TICKS, PRICE_TIER, NO_TRAILING_OFFSET, or null",
+        )
+    }
+}
+
+/// Serde compatibility for an optional trigger type previously encoded with `NO_TRIGGER`.
+pub mod serde_option_trigger_type {
+    use serde::{Deserializer, Serializer};
+
+    use super::{TriggerType, deserialize_optional_enum, serialize_optional_enum};
+
+    /// Serializes an optional trigger type using the legacy no-trigger token.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the serializer cannot encode the value.
+    pub fn serialize<S>(value: &Option<TriggerType>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serialize_optional_enum(value.as_ref(), serializer, "NO_TRIGGER")
+    }
+
+    /// Deserializes an optional trigger type from a trigger token or null.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the input is not a valid trigger type.
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<TriggerType>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserialize_optional_enum(
+            deserializer,
+            "NO_TRIGGER",
+            "a trigger type, NO_TRIGGER, or null",
+        )
+    }
+}
+
+fn serialize_optional_enum<S, T>(
+    value: Option<&T>,
+    serializer: S,
+    none_token: &'static str,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+    T: AsRef<str>,
+{
+    serializer.serialize_str(value.map_or(none_token, AsRef::as_ref))
+}
+
+fn deserialize_optional_enum<'de, D, T>(
+    deserializer: D,
+    none_token: &'static str,
+    expected: &'static str,
+) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: FromStr,
+    T::Err: Display,
+{
+    struct OptionalEnumVisitor<T> {
+        none_token: &'static str,
+        expected: &'static str,
+        marker: PhantomData<T>,
+    }
+
+    impl<'de, T> serde::de::Visitor<'de> for OptionalEnumVisitor<T>
+    where
+        T: FromStr,
+        T::Err: Display,
+    {
+        type Value = Option<T>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str(self.expected)
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let value = Cow::<'de, str>::deserialize(deserializer)?;
+            if value.eq_ignore_ascii_case(self.none_token) {
+                Ok(None)
+            } else {
+                T::from_str(&value)
+                    .map(Some)
+                    .map_err(serde::de::Error::custom)
             }
         }
     }
-}
 
-/// The specified position side (FLAT, LONG, or SHORT).
-#[repr(C)]
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Display,
-    Hash,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    AsRefStr,
-    FromRepr,
-    EnumIter,
-    EnumString,
-)]
-#[strum(ascii_case_insensitive)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-pub enum PositionSideSpecified {
-    /// A neural/flat position, where no position is currently held in the market.
-    Flat = 1,
-    /// A long position in the market, typically acquired through one or many BUY orders.
-    Long = 2,
-    /// A short position in the market, typically acquired through one or many SELL orders.
-    Short = 3,
-}
-
-impl PositionSideSpecified {
-    /// Converts this specified side into a [`PositionSide`].
-    #[must_use]
-    pub fn as_position_side(&self) -> PositionSide {
-        match &self {
-            Self::Long => PositionSide::Long,
-            Self::Short => PositionSide::Short,
-            Self::Flat => PositionSide::Flat,
-        }
-    }
+    deserializer.deserialize_option(OptionalEnumVisitor {
+        none_token,
+        expected,
+        marker: PhantomData,
+    })
 }
 
 /// The type of price for an instrument in a market.
@@ -1909,12 +2026,14 @@ pub enum TradingState {
 }
 
 /// The trailing offset type for an order type which specifies a trailing stop/trigger or limit price.
+///
+/// Python retains `NO_TRAILING_OFFSET` as a compatibility alias for `None`. The alias is not an enum
+/// variant and may be removed in a future version.
 #[repr(C)]
 #[derive(
     Copy,
     Clone,
     Debug,
-    Default,
     Display,
     Hash,
     PartialEq,
@@ -1944,9 +2063,6 @@ pub enum TradingState {
     pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.model")
 )]
 pub enum TrailingOffsetType {
-    /// No trailing offset type is specified (invalid for trailing type orders).
-    #[default]
-    NoTrailingOffset = 0,
     /// The trailing offset is based on a market price.
     Price = 1,
     /// The trailing offset is based on a percentage represented in basis points, of a market price.
@@ -1958,12 +2074,14 @@ pub enum TrailingOffsetType {
 }
 
 /// The trigger type for the stop/trigger price of an order.
+///
+/// Python retains `NO_TRIGGER` as a compatibility alias for `None`. The alias is not an enum variant
+/// and may be removed in a future version.
 #[repr(C)]
 #[derive(
     Copy,
     Clone,
     Debug,
-    Default,
     Display,
     Hash,
     PartialEq,
@@ -1993,9 +2111,6 @@ pub enum TrailingOffsetType {
     pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.model")
 )]
 pub enum TriggerType {
-    /// No trigger type is specified (invalid for orders with a trigger).
-    #[default]
-    NoTrigger = 0,
     /// The default trigger type set by the trading venue.
     Default = 1,
     /// Based on the last traded price for the instrument.
@@ -2036,12 +2151,10 @@ enum_strum_serde!(MarketStatusAction);
 enum_strum_serde!(OmsType);
 enum_strum_serde!(OptionKind);
 enum_strum_serde!(OrderSide);
-enum_strum_serde!(OrderSideSpecified);
 enum_strum_serde!(OrderStatus);
 enum_strum_serde!(OrderType);
 enum_strum_serde!(PositionAdjustmentType);
 enum_strum_serde!(PositionSide);
-enum_strum_serde!(PositionSideSpecified);
 enum_strum_serde!(PriceType);
 enum_strum_serde!(RecordFlag);
 enum_strum_serde!(TimeInForce);
@@ -2054,6 +2167,98 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+    struct OptionalSides {
+        #[serde(with = "serde_option_order_side")]
+        order: Option<OrderSide>,
+        #[serde(with = "serde_option_position_side")]
+        position: Option<PositionSide>,
+    }
+
+    #[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+    struct OptionalOrderTypes {
+        #[serde(with = "serde_option_contingency_type")]
+        contingency: Option<ContingencyType>,
+        #[serde(with = "serde_option_trailing_offset_type")]
+        trailing_offset: Option<TrailingOffsetType>,
+        #[serde(with = "serde_option_trigger_type")]
+        trigger: Option<TriggerType>,
+    }
+
+    #[rstest]
+    fn test_optional_sides_serde_preserves_legacy_none_tokens() {
+        let value = OptionalSides {
+            order: None,
+            position: None,
+        };
+
+        let json = serde_json::to_string(&value).unwrap();
+        let decoded: OptionalSides = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(
+            json,
+            r#"{"order":"NO_ORDER_SIDE","position":"NO_POSITION_SIDE"}"#
+        );
+        assert_eq!(decoded, value);
+    }
+
+    #[rstest]
+    fn test_optional_sides_serde_accepts_null_and_valid_sides() {
+        let json = r#"{"order":null,"position":"LONG"}"#;
+        let decoded: OptionalSides = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            decoded,
+            OptionalSides {
+                order: None,
+                position: Some(PositionSide::Long),
+            }
+        );
+    }
+
+    #[rstest]
+    fn test_optional_order_types_serde_preserves_legacy_none_tokens() {
+        let value = OptionalOrderTypes {
+            contingency: None,
+            trailing_offset: None,
+            trigger: None,
+        };
+
+        let json = serde_json::to_string(&value).unwrap();
+        let decoded: OptionalOrderTypes = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(
+            json,
+            r#"{"contingency":"NO_CONTINGENCY","trailing_offset":"NO_TRAILING_OFFSET","trigger":"NO_TRIGGER"}"#,
+        );
+        assert_eq!(decoded, value);
+    }
+
+    #[rstest]
+    fn test_optional_order_types_serde_accepts_null_and_valid_values() {
+        let json = r#"{"contingency":null,"trailing_offset":"PRICE","trigger":"LAST_PRICE"}"#;
+        let decoded: OptionalOrderTypes = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            decoded,
+            OptionalOrderTypes {
+                contingency: None,
+                trailing_offset: Some(TrailingOffsetType::Price),
+                trigger: Some(TriggerType::LastPrice),
+            },
+        );
+    }
+
+    #[rstest]
+    #[case(r#"{"contingency":"INVALID","trailing_offset":"NO_TRAILING_OFFSET","trigger":"NO_TRIGGER"}"#)]
+    #[case(
+        r#"{"contingency":"NO_CONTINGENCY","trailing_offset":"INVALID","trigger":"NO_TRIGGER"}"#
+    )]
+    #[case(r#"{"contingency":"NO_CONTINGENCY","trailing_offset":"NO_TRAILING_OFFSET","trigger":"INVALID"}"#)]
+    fn test_optional_order_types_serde_rejects_invalid_values(#[case] json: &str) {
+        assert!(serde_json::from_str::<OptionalOrderTypes>(json).is_err());
+    }
 
     #[rstest]
     #[case::no_aggressor(0, Some(AggressorSide::NoAggressor))]

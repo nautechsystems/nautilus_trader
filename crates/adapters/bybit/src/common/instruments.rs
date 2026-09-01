@@ -99,34 +99,27 @@ mod tests {
         size_increment: Quantity,
         min_notional: Option<Money>,
     ) -> InstrumentAny {
-        InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            InstrumentId::from("BTCUSDT-LINEAR.BYBIT"),
-            Symbol::from("BTCUSDT-LINEAR"),
-            Currency::BTC(),
-            Currency::USDT(),
-            Currency::USDT(),
-            false, // is_inverse
-            1,     // price_precision
-            3,     // size_precision
-            Price::from("0.1"),
-            size_increment,
-            None,                          // multiplier
-            None,                          // lot_size
-            None,                          // max_quantity
-            Some(Quantity::from("0.001")), // min_quantity
-            None,                          // max_notional
-            min_notional,
-            None, // max_price
-            None, // min_price
-            None, // margin_init
-            None, // margin_maint
-            Some(maker_fee),
-            Some(taker_fee),
-            None,                 // tick_scheme
-            None,                 // info
-            UnixNanos::default(), // ts_event
-            UnixNanos::default(), // ts_init
-        ))
+        InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(InstrumentId::from("BTCUSDT-LINEAR.BYBIT"))
+                .raw_symbol(Symbol::from("BTCUSDT-LINEAR"))
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USDT())
+                .settlement_currency(Currency::USDT())
+                .is_inverse(false)
+                .price_precision(1)
+                .size_precision(3)
+                .price_increment(Price::from("0.1"))
+                .size_increment(size_increment)
+                .min_quantity(Quantity::from("0.001"))
+                .maybe_min_notional(min_notional)
+                .maker_fee(maker_fee)
+                .taker_fee(taker_fee)
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
     }
 
     fn default_perp() -> InstrumentAny {

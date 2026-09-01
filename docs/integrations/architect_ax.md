@@ -17,8 +17,8 @@ The AX Exchange adapter includes multiple components, which can be used together
 depending on the use case.
 
 - `AxHttpClient`: Low-level HTTP API connectivity.
-- `AxMdWebSocketClient`: Market data WebSocket connectivity.
-- `AxOrdersWebSocketClient`: Orders WebSocket connectivity.
+- `AxMdWebSocketClient` and `AxOrdersWebSocketClient`: Low-level WebSocket connectivity for Rust
+  callers.
 - `AxDataClient`: A market data feed manager.
 - `AxExecutionClient`: An account management and trade execution gateway.
 - `AxDataClientFactory`: Factory for AX data clients.
@@ -142,7 +142,7 @@ for complete `LiveNode` setup.
 For live trading with real funds. Requires a verified AX Exchange account.
 
 ```python
-config = AxExecClientConfig(
+config = AxExecutionClientConfig(
     environment=AxEnvironment.PRODUCTION,
 )
 ```
@@ -161,10 +161,10 @@ for historical data backfill.
 
 | AX Data           | Nautilus Data Type  | Notes                                                          |
 | ----------------- | ------------------- | -------------------------------------------------------------- |
-| Order book (L1)   | `QuoteTick`         | Best bid/ask top‑of‑book from L1 book subscription.            |
+| Order book (L1)   | `QuoteTick`         | Best bid/ask top-of-book from L1 book subscription.            |
 | Order book (L2)   | `OrderBookDelta`    | Aggregated price levels.                                       |
-| Order book (L3)   | `OrderBookDelta`    | Per‑snapshot order quantities with synthetic IDs.              |
-| Trades            | `TradeTick`         | Real‑time trade events from trade‑only WebSocket subscription. |
+| Order book (L3)   | `OrderBookDelta`    | Per-snapshot order quantities with synthetic IDs.              |
+| Trades            | `TradeTick`         | Real-time trade events from trade-only WebSocket subscription. |
 | Mark price        | `MarkPriceUpdate`   | Extracted from L1 ticker subscription.                         |
 | Bars/candles      | `Bar`               | OHLCV data (total volume only, no buy/sell breakdown).         |
 | Funding rates     | `FundingRateUpdate` | Polled via HTTP; interval configurable.                        |
@@ -174,11 +174,11 @@ AX instrument states map to `MarketStatusAction` as follows:
 
 | AX state                            | `MarketStatusAction`        |
 | ----------------------------------- | --------------------------- |
-| Pre‑open                            | `PRE_OPEN`                  |
+| Pre-open                            | `PRE_OPEN`                  |
 | Open                                | `TRADING`                   |
-| Closed, closed‑frozen               | `CLOSE`                     |
+| Closed, closed-frozen               | `CLOSE`                     |
 | Halted                              | `HALT`                      |
-| Match‑and‑close auction             | `CROSS`                     |
+| Match-and-close auction             | `CROSS`                     |
 | Suspended                           | `SUSPEND`                   |
 | Delisted, or any unrecognized state | `NOT_AVAILABLE_FOR_TRADING` |
 
@@ -273,7 +273,7 @@ configured trigger, then sends a plain limit order to this adapter.
 
 | Order Type             | Supported | Notes                                           |
 | ---------------------- | --------- | ----------------------------------------------- |
-| `MARKET`               | ✓         | Adapter‑simulated with an aggressive IOC price. |
+| `MARKET`               | ✓         | Adapter-simulated with an aggressive IOC price. |
 | `LIMIT`                | ✓         | Maps to the native AX priced order shape.       |
 | `STOP_LIMIT`           | -         | *Not supported by AX Exchange*.                 |
 | `LIMIT_IF_TOUCHED`     | -         | *Not supported by AX Exchange*.                 |
@@ -285,8 +285,8 @@ configured trigger, then sends a plain limit order to this adapter.
 
 | Instruction      | Supported | Notes                                                         |
 | ---------------- | --------- | ------------------------------------------------------------- |
-| `post_only`      | ✓         | Maker‑only; rejected if the order would take.                 |
-| `reduce_only`    | -         | Rejected locally; AX exposes no reduce‑only field.            |
+| `post_only`      | ✓         | Maker-only; rejected if the order would take.                 |
+| `reduce_only`    | -         | Rejected locally; AX exposes no reduce-only field.            |
 | `quote_quantity` | -         | Rejected locally; the adapter wire path encodes base only.    |
 | `display_qty`    | -         | Rejected locally; the adapter wire path has no display field. |
 
@@ -322,15 +322,15 @@ The venue deprecates `DAY` and recommends `GTC` instead.
 | Cancel order       | ✓         | Single order cancellation.                                         |
 | Cancel all orders  | ✓         | Cancel all open orders for an instrument.                          |
 | Batch cancel       | -         | The adapter sends individual cancels.                              |
-| Order lists        | ✓         | Sequential submission (orders submitted individually, non‑atomic). |
+| Order lists        | ✓         | Sequential submission (orders submitted individually, non-atomic). |
 
 ### Position management
 
 | Feature         | Supported | Notes                                |
 | --------------- | --------- | ------------------------------------ |
-| Query positions | ✓         | Real‑time position updates.          |
+| Query positions | ✓         | Real-time position updates.          |
 | Position mode   | -         | Netting mode only.                   |
-| Cross margin    | ✓         | Cross‑margin across all instruments. |
+| Cross margin    | ✓         | Cross-margin across all instruments. |
 
 ### Order querying
 
@@ -338,7 +338,7 @@ The venue deprecates `DAY` and recommends `GTC` instead.
 | -------------------- | --------- | ------------------------------------------------------- |
 | Query open orders    | ✓         | List all active orders.                                 |
 | Query single order   | ✓         | By venue order ID or client order ID (any order state). |
-| Order status reports | ✓         | Open‑order checks and historical startup mass status.   |
+| Order status reports | ✓         | Open-order checks and historical startup mass status.   |
 | Fill reports         | ✓         | Execution and fill history.                             |
 
 :::note
@@ -402,30 +402,29 @@ API base URL. The adapter resolves both from the configured environment.
 
 ### Execution client configuration options
 
-| Option                    | Default      | Description                                                         |
-| ------------------------- | ------------ | ------------------------------------------------------------------- |
-| `trader_id`               | `TRADER-001` | Trader ID for the execution client.                                 |
-| `account_id`              | `AX-001`     | Account ID for the execution client.                                |
-| `api_key`                 | `None`       | API key; loaded from `AX_API_KEY` env var when omitted.             |
-| `api_secret`              | `None`       | API secret; loaded from `AX_API_SECRET` env var when omitted.       |
-| `environment`             | `SANDBOX`    | Trading environment (`SANDBOX` or `PRODUCTION`).                    |
-| `base_url_http`           | `None`       | Override for the API REST base URL.                                 |
-| `base_url_orders`         | `None`       | Override for the orders REST base URL.                              |
-| `base_url_ws_private`     | `None`       | Override for the orders WebSocket URL.                              |
-| `proxy_url`               | `None`       | Optional proxy URL for HTTP and WebSocket transports.               |
-| `http_timeout_secs`       | `60`         | Timeout (seconds) for REST requests.                                |
-| `max_retries`             | `3`          | Maximum retry attempts for REST requests.                           |
-| `retry_delay_initial_ms`  | `1,000`      | Initial delay (milliseconds) between retries.                       |
-| `retry_delay_max_ms`      | `10,000`     | Maximum delay (milliseconds) between retries (exponential backoff). |
-| `heartbeat_interval_secs` | `30`         | Heartbeat interval (seconds) for WebSocket connections.             |
-| `recv_window_ms`          | `5,000`      | Reserved; AX uses bearer tokens and the adapter sends no window.    |
-| `cancel_on_disconnect`    | `False`      | Cancel this WebSocket session's open orders on disconnect.          |
-| `transport_backend`       | `Sockudo`    | WebSocket transport backend.                                        |
+| Option                    | Default   | Description                                                         |
+| ------------------------- | --------- | ------------------------------------------------------------------- |
+| `account_id`              | `AX-001`  | Account ID for the execution client.                                |
+| `api_key`                 | `None`    | API key; loaded from `AX_API_KEY` env var when omitted.             |
+| `api_secret`              | `None`    | API secret; loaded from `AX_API_SECRET` env var when omitted.       |
+| `environment`             | `SANDBOX` | Trading environment (`SANDBOX` or `PRODUCTION`).                    |
+| `base_url_http`           | `None`    | Override for the API REST base URL.                                 |
+| `base_url_orders`         | `None`    | Override for the orders REST base URL.                              |
+| `base_url_ws_private`     | `None`    | Override for the orders WebSocket URL.                              |
+| `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.               |
+| `http_timeout_secs`       | `60`      | Timeout (seconds) for REST requests.                                |
+| `max_retries`             | `3`       | Maximum retry attempts for REST requests.                           |
+| `retry_delay_initial_ms`  | `1,000`   | Initial delay (milliseconds) between retries.                       |
+| `retry_delay_max_ms`      | `10,000`  | Maximum delay (milliseconds) between retries (exponential backoff). |
+| `heartbeat_interval_secs` | `30`      | Heartbeat interval (seconds) for WebSocket connections.             |
+| `recv_window_ms`          | `5,000`   | Reserved; AX uses bearer tokens and the adapter sends no window.    |
+| `cancel_on_disconnect`    | `False`   | Cancel this WebSocket session's open orders on disconnect.          |
+| `transport_backend`       | `Sockudo` | WebSocket transport backend.                                        |
 
 When `transport_backend=None`, the compiled Rust default selects Sockudo when the
 `transport-sockudo` Cargo feature is enabled and Tungstenite otherwise.
 
-Use `AxDataClientConfig` with `AxDataClientFactory` and `AxExecClientConfig` with
+Use `AxDataClientConfig` with `AxDataClientFactory` and `AxExecutionClientConfig` with
 `AxExecutionClientFactory`. The Python examples show the complete `LiveNode.builder(...)`
 configuration for data and execution clients.
 
@@ -486,6 +485,10 @@ credentials are valid and have trading permissions.
   inconsistent classification.
 - **Unfilled IOC/FOK**: AX reports an unfilled immediate order as an expiry; the adapter maps
   it to `OrderCanceled` to match NautilusTrader semantics.
+- **One-tick quotes**: Example testers place post-only limits one tick from top of book.
+  Those quotes can still fill. Flatten leftovers with
+  `cargo run --bin ax-flatten -p nautilus-architect-ax` (`AX_IS_SANDBOX` defaults to true).
+  That binary cancels all open orders on the account, then closes every position.
 
 ## Contributing
 

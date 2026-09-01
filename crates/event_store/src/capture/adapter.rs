@@ -36,13 +36,14 @@ use std::{
     collections::VecDeque,
     fmt::Debug,
     sync::{
-        Arc, Mutex, PoisonError,
+        Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 
 use ahash::AHashSet;
 use nautilus_core::{UUID4, UnixNanos};
+use parking_lot::Mutex;
 
 use crate::{
     capture::{encoder::EncodeError, registry::EncoderRegistry},
@@ -268,12 +269,7 @@ impl BusCaptureAdapter {
     }
 
     fn note_fresh_identity(&self, identity: UUID4) -> bool {
-        // The dedup window is a cache: on the (panic-only) poisoned path the prior state
-        // is still internally consistent, so recover the guard rather than propagate.
-        self.recent_identities
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .note_fresh(identity)
+        self.recent_identities.lock().note_fresh(identity)
     }
 
     fn fail_stop(&self, err: &SubmitError) {
@@ -311,7 +307,7 @@ fn halt_reason_from_submit(err: &SubmitError) -> HaltReason {
 mod tests {
     use std::{
         sync::{
-            Arc, Mutex,
+            Arc,
             atomic::{AtomicU64, AtomicUsize, Ordering},
         },
         time::Duration,
@@ -320,6 +316,7 @@ mod tests {
     use bytes::Bytes;
     use indexmap::IndexMap;
     use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_static};
+    use parking_lot::Mutex;
     use rstest::{fixture, rstest};
     use ustr::Ustr;
 
@@ -409,10 +406,7 @@ mod tests {
         let captured: Arc<Mutex<Vec<HaltReason>>> = Arc::new(Mutex::new(Vec::new()));
         let captured_for_cb = Arc::clone(&captured);
         let halt: HaltCallback = Arc::new(move |reason| {
-            captured_for_cb
-                .lock()
-                .expect("captured halt poisoned")
-                .push(reason);
+            captured_for_cb.lock().push(reason);
         });
         (halt, captured)
     }
@@ -424,7 +418,6 @@ mod tests {
         let backend_arc: Arc<Mutex<MemoryBackend>> = Arc::new(Mutex::new(MemoryBackend::new()));
         backend_arc
             .lock()
-            .expect("inner")
             .open_run(manifest(run_id))
             .expect("open run");
 
@@ -450,7 +443,7 @@ mod tests {
         }
 
         fn append_batch(&mut self, entries: &[AppendEntry]) -> Result<u64, EventStoreError> {
-            self.0.lock().expect("shared").append_batch(entries)
+            self.0.lock().append_batch(entries)
         }
 
         fn scan_range(
@@ -459,34 +452,31 @@ mod tests {
             to: u64,
             direction: ScanDirection,
         ) -> Result<Vec<EventStoreEntry>, EventStoreError> {
-            self.0
-                .lock()
-                .expect("shared")
-                .scan_range(from, to, direction)
+            self.0.lock().scan_range(from, to, direction)
         }
 
         fn scan_seq(&self, seq: u64) -> Result<Option<EventStoreEntry>, EventStoreError> {
-            self.0.lock().expect("shared").scan_seq(seq)
+            self.0.lock().scan_seq(seq)
         }
 
         fn lookup(&self, kind: IndexKind, key: &str) -> Result<Option<u64>, EventStoreError> {
-            self.0.lock().expect("shared").lookup(kind, key)
+            self.0.lock().lookup(kind, key)
         }
 
         fn iter_index_keys(&self, kind: IndexKind) -> Result<Vec<(String, u64)>, EventStoreError> {
-            self.0.lock().expect("shared").iter_index_keys(kind)
+            self.0.lock().iter_index_keys(kind)
         }
 
         fn seal(&mut self, status: RunStatus) -> Result<(), EventStoreError> {
-            self.0.lock().expect("shared").seal(status)
+            self.0.lock().seal(status)
         }
 
         fn manifest(&self) -> Result<RunManifest, EventStoreError> {
-            self.0.lock().expect("shared").manifest()
+            self.0.lock().manifest()
         }
 
         fn high_watermark(&self) -> Result<u64, EventStoreError> {
-            self.0.lock().expect("shared").high_watermark()
+            self.0.lock().high_watermark()
         }
     }
 
@@ -528,7 +518,7 @@ mod tests {
         assert!(captured_flag);
         drain(&writer, 1);
 
-        let backend = backend.lock().expect("backend");
+        let backend = backend.lock();
         let entry = backend.scan_seq(1).expect("scan").expect("present");
         assert_eq!(entry.payload_type.as_str(), "StubCommand");
         assert_eq!(entry.topic.as_ref(), "exec.command.SubmitOrder");
@@ -540,7 +530,7 @@ mod tests {
             .expect("indexed");
         assert_eq!(seq, 1);
 
-        assert!(captured.lock().expect("captured").is_empty());
+        assert!(captured.lock().is_empty());
         assert!(!adapter.is_halted());
     }
 
@@ -631,7 +621,7 @@ mod tests {
             .expect("capture");
         drain(&writer, 1);
 
-        let backend = backend.lock().expect("backend");
+        let backend = backend.lock();
         let by_client = backend
             .lookup(IndexKind::ClientOrderId, "O-2")
             .expect("lookup")
@@ -674,7 +664,7 @@ mod tests {
             !adapter.is_halted(),
             "encoder failure must not fail-stop the adapter",
         );
-        assert!(captured.lock().expect("captured").is_empty());
+        assert!(captured.lock().is_empty());
 
         // Subsequent capture for a registered type still works.
         adapter
@@ -688,7 +678,7 @@ mod tests {
             )
             .expect("capture after encoder error");
         drain(&writer, 1);
-        let backend = backend.lock().expect("backend");
+        let backend = backend.lock();
         assert_eq!(backend.high_watermark().expect("hwm"), 1);
     }
 
@@ -736,7 +726,7 @@ mod tests {
             "second dispatch hop of the same identity must dedupe"
         );
         drain(&writer, 1);
-        let backend = backend.lock().expect("backend");
+        let backend = backend.lock();
         assert_eq!(backend.high_watermark().expect("hwm"), 1);
     }
 
@@ -793,7 +783,7 @@ mod tests {
         assert!(retried, "encode retry must capture, was deduped");
         assert_eq!(attempts.load(Ordering::Acquire), 2);
         drain(&writer, 1);
-        let backend = backend.lock().expect("backend");
+        let backend = backend.lock();
         assert_eq!(backend.high_watermark().expect("hwm"), 1);
     }
 
@@ -880,7 +870,7 @@ mod tests {
             .expect_err("first submit fails");
         assert!(matches!(err, CaptureError::Submit(SubmitError::Closed)));
         assert!(stub_adapter.is_halted());
-        assert_eq!(captured.lock().expect("captured").len(), 1);
+        assert_eq!(captured.lock().len(), 1);
 
         let err2 = stub_adapter
             .capture::<StubCommand>(
@@ -894,7 +884,7 @@ mod tests {
             .expect_err("second submit short-circuits");
         assert!(matches!(err2, CaptureError::Halted));
         assert_eq!(
-            captured.lock().expect("captured").len(),
+            captured.lock().len(),
             1,
             "halt callback must not refire after the first failure",
         );
@@ -906,10 +896,7 @@ mod tests {
     fn adapter_halt_for(captured: &Arc<Mutex<Vec<HaltReason>>>) -> HaltCallback {
         let captured_for_cb = Arc::clone(captured);
         Arc::new(move |reason| {
-            captured_for_cb
-                .lock()
-                .expect("captured halt poisoned")
-                .push(reason);
+            captured_for_cb.lock().push(reason);
         })
     }
 

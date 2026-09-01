@@ -15,8 +15,6 @@
 
 //! Parsers from Lighter streaming payloads to Nautilus domain types.
 
-use std::sync::LazyLock;
-
 use anyhow::Context;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
@@ -27,7 +25,7 @@ use nautilus_model::{
     },
     enums::{
         AccountType, AggregationSource, BookAction, LiquiditySide, OrderSide, OrderStatus,
-        OrderType, PositionSideSpecified, RecordFlag, TimeInForce, TriggerType,
+        OrderType, PositionSide, RecordFlag, TimeInForce, TriggerType,
     },
     events::{
         AccountState, OrderAccepted, OrderCanceled, OrderExpired, OrderFilled, OrderRejected,
@@ -63,16 +61,26 @@ use crate::{
     },
 };
 
-/// Lighter encodes per-trade fees as integer micro-USDC ticks (1 unit = `1e-6` USDC),
-/// matching the venue's quote-decimal precision. The fee scale (6) lets us
+/// Lighter encodes per-trade fees as integer micro-currency ticks (1 unit = `1e-6`),
+/// matching the deployment's quote-decimal precision. The fee scale (6) lets us
 /// build the commission Decimal via `Decimal::new(ticks, FEE_DECIMALS)` -
 /// directly populating mantissa+scale, avoiding the heavier division path
 /// the prior implementation used.
 const FEE_DECIMALS: u32 = 6;
 
-/// Pre-built USDC `Currency` handle; the per-fill commission path used to
-/// look up this currency on every call.
-static FEE_USDC: LazyLock<Currency> = LazyLock::new(|| Currency::get_or_create_crypto("USDC"));
+#[derive(Debug, thiserror::Error)]
+#[error("failed to construct Lighter commission: {detail}")]
+pub(crate) struct LighterCommissionError {
+    detail: String,
+}
+
+impl LighterCommissionError {
+    pub(crate) fn new(detail: impl Into<String>) -> Self {
+        Self {
+            detail: detail.into(),
+        }
+    }
+}
 
 /// Parses a Lighter trade stream item into a Nautilus [`TradeTick`].
 ///
@@ -500,7 +508,7 @@ pub fn parse_ws_order_status_report(
         instrument_id,
         None, // client_order_id set below when present
         venue_order_id,
-        order_side,
+        order_side.into(),
         order_type,
         time_in_force,
         order_status,
@@ -617,7 +625,7 @@ pub fn parse_ws_fill_report(
     } else {
         trade.taker_fee
     };
-    let commission = lighter_fee_to_commission(fee_value)?;
+    let commission = lighter_fee_to_commission(fee_value, instrument.quote_currency())?;
 
     let client_order_id = if user_is_bidder {
         client_order_id_from(trade.bid_client_id_str.as_deref(), trade.bid_client_id)
@@ -987,7 +995,7 @@ pub(crate) fn parse_lighter_order_filled(
     } else {
         trade.taker_fee
     };
-    let commission = lighter_fee_to_commission(fee_value)?;
+    let commission = lighter_fee_to_commission(fee_value, instrument.quote_currency())?;
 
     let timestamp_ms =
         u64::try_from(trade.timestamp).context("negative Lighter trade timestamp")?;
@@ -1034,14 +1042,14 @@ pub fn parse_ws_position_status_report(
 ) -> anyhow::Result<PositionStatusReport> {
     let quantity = quantity_from_decimal(position.position, instrument.size_precision())?;
     let position_side = if quantity.is_zero() {
-        PositionSideSpecified::Flat
+        PositionSide::Flat
     } else if position.sign < 0 {
-        PositionSideSpecified::Short
+        PositionSide::Short
     } else {
-        PositionSideSpecified::Long
+        PositionSide::Long
     };
 
-    let avg_px_open = if position_side == PositionSideSpecified::Flat {
+    let avg_px_open = if position_side == PositionSide::Flat {
         None
     } else {
         Some(position.avg_entry_price)
@@ -1095,8 +1103,10 @@ pub fn account_balance_from_lighter_asset(asset: &LighterAsset) -> anyhow::Resul
 
 /// Builds the cross-margin [`MarginBalance`] from a `user_stats` frame.
 ///
-/// Lighter is USDC-collateralized end-to-end. `user_stats` is the perp-side
-/// rollup; we derive:
+/// This compatibility entry point uses USDC. Deployment-aware clients call
+/// [`margin_balance_from_user_stats_with_currency`].
+///
+/// `user_stats` is the deployment's perp-side settlement-currency rollup. We derive:
 /// - `initial = max(collateral - available_balance, 0)`: collateral
 ///   currently allocated to open positions/orders
 /// - `maintenance = 0`: Lighter does not publish maintenance margin on
@@ -1115,11 +1125,22 @@ pub fn account_balance_from_lighter_asset(asset: &LighterAsset) -> anyhow::Resul
 ///
 /// Returns an error if either `Money::from_decimal` call rejects the value.
 pub fn margin_balance_from_user_stats(stats: &LighterUserStats) -> anyhow::Result<MarginBalance> {
-    let usdc = Currency::get_or_create_crypto("USDC");
+    margin_balance_from_user_stats_with_currency(stats, Currency::get_or_create_crypto("USDC"))
+}
+
+/// Builds the cross-margin [`MarginBalance`] in the supplied settlement currency.
+///
+/// # Errors
+///
+/// Returns an error if either `Money::from_decimal` call rejects the value.
+pub fn margin_balance_from_user_stats_with_currency(
+    stats: &LighterUserStats,
+    settlement_currency: Currency,
+) -> anyhow::Result<MarginBalance> {
     let initial_dec = (stats.collateral - stats.available_balance).max(Decimal::ZERO);
-    let initial = Money::from_decimal(initial_dec, usdc)
+    let initial = Money::from_decimal(initial_dec, settlement_currency)
         .map_err(|e| anyhow::anyhow!("failed to construct initial margin: {e}"))?;
-    let maintenance = Money::from_decimal(Decimal::ZERO, usdc)
+    let maintenance = Money::from_decimal(Decimal::ZERO, settlement_currency)
         .map_err(|e| anyhow::anyhow!("failed to construct maintenance margin: {e}"))?;
     Ok(MarginBalance::new(initial, maintenance, None))
 }
@@ -1180,11 +1201,13 @@ fn parse_optional_price(value: Decimal, precision: u8) -> anyhow::Result<Option<
         .map_err(|e| anyhow::anyhow!("invalid price `{value}` at precision {precision}: {e}"))
 }
 
-fn lighter_fee_to_commission(fee_ticks: Option<i32>) -> anyhow::Result<Money> {
+fn lighter_fee_to_commission(
+    fee_ticks: Option<i32>,
+    currency: Currency,
+) -> Result<Money, LighterCommissionError> {
     let ticks = fee_ticks.unwrap_or(0);
     let amount = Decimal::new(i64::from(ticks), FEE_DECIMALS);
-    Money::from_decimal(amount, *FEE_USDC)
-        .map_err(|e| anyhow::anyhow!("failed to construct Lighter commission: {e}"))
+    Money::from_decimal(amount, currency).map_err(|e| LighterCommissionError::new(e.to_string()))
 }
 
 fn nautilus_order_side(side: LighterOrderSide) -> OrderSide {
@@ -1285,7 +1308,7 @@ mod tests {
     use std::str::FromStr;
 
     use nautilus_model::{
-        enums::{BarAggregation, ContingencyType, PriceType},
+        enums::{BarAggregation, PriceType},
         identifiers::{InstrumentId, StrategyId, Symbol, Venue},
         instruments::CryptoPerpetual,
         types::{Price, Quantity, currency::Currency},
@@ -1301,36 +1324,29 @@ mod tests {
     };
 
     fn create_test_instrument() -> InstrumentAny {
-        let instrument_id = InstrumentId::new(Symbol::new("ETH-PERP"), Venue::new("LIGHTER"));
+        create_test_instrument_with_quote(Venue::new("LIGHTER"), Currency::from("USDC"))
+    }
 
-        InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            instrument_id,
-            Symbol::new("ETH-PERP"),
-            Currency::from("ETH"),
-            Currency::from("USDC"),
-            Currency::from("USDC"),
-            false,
-            2,
-            4,
-            Price::from("0.01"),
-            Quantity::from("0.0001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        ))
+    fn create_test_instrument_with_quote(venue: Venue, quote_currency: Currency) -> InstrumentAny {
+        let instrument_id = InstrumentId::new(Symbol::new("ETH-PERP"), venue);
+
+        InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new("ETH-PERP"))
+                .base_currency(Currency::from("ETH"))
+                .quote_currency(quote_currency)
+                .settlement_currency(quote_currency)
+                .is_inverse(false)
+                .price_precision(2)
+                .size_precision(4)
+                .price_increment(Price::from("0.01"))
+                .size_increment(Quantity::from("0.0001"))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
     }
 
     fn stub_book() -> LighterWsOrderBook {
@@ -1401,10 +1417,10 @@ mod tests {
         assert_eq!(deltas.deltas.len(), 3);
         assert_eq!(deltas.deltas[0].action, BookAction::Clear);
         assert_eq!(deltas.deltas[1].action, BookAction::Add);
-        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
+        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy.into());
         assert_eq!(deltas.deltas[1].order.price, Price::from("2064.30"));
         assert_eq!(deltas.deltas[1].order.size, Quantity::from("1.0392"));
-        assert_eq!(deltas.deltas[2].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[2].order.side, OrderSide::Sell.into());
         assert_eq!(deltas.deltas[2].order.price, Price::from("2064.54"));
         assert_eq!(deltas.deltas[2].order.size, Quantity::from("0.3285"));
         assert_eq!(deltas.deltas[0].sequence, 9_182_390_020);
@@ -1434,10 +1450,10 @@ mod tests {
 
         assert_eq!(deltas.deltas.len(), 2);
         assert_eq!(deltas.deltas[0].action, BookAction::Update);
-        assert_eq!(deltas.deltas[0].order.side, OrderSide::Buy);
+        assert_eq!(deltas.deltas[0].order.side, OrderSide::Buy.into());
         assert_eq!(deltas.deltas[0].order.price, Price::from("2064.30"));
         assert_eq!(deltas.deltas[1].action, BookAction::Delete);
-        assert_eq!(deltas.deltas[1].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[1].order.side, OrderSide::Sell.into());
         assert_eq!(deltas.deltas[1].order.price, Price::from("2064.54"));
     }
 
@@ -1716,10 +1732,10 @@ mod tests {
         // future refactor that swaps fields or drops precision would not
         // be caught by this test.
         assert_eq!(depth.bids[0].size, Quantity::from("1.0392"));
-        assert_eq!(depth.bids[0].side, OrderSide::Buy);
+        assert_eq!(depth.bids[0].side, OrderSide::Buy.into());
         assert_eq!(depth.asks[0].price, Price::from("2064.54"));
         assert_eq!(depth.asks[0].size, Quantity::from("0.3285"));
-        assert_eq!(depth.asks[0].side, OrderSide::Sell);
+        assert_eq!(depth.asks[0].side, OrderSide::Sell.into());
         assert_eq!(depth.sequence, 9_182_390_020);
         assert_eq!(depth.bid_counts[0], 1);
         assert_eq!(depth.ask_counts[0], 1);
@@ -1883,7 +1899,7 @@ mod tests {
 
         assert_eq!(report.venue_order_id.to_string(), "281476929510110");
         assert_eq!(report.client_order_id.unwrap().to_string(), "42");
-        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_side, OrderSide::Sell.into());
         assert_eq!(report.order_type, OrderType::Limit);
         // Open + filled_qty > 0 must surface as PartiallyFilled.
         assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
@@ -1959,7 +1975,7 @@ mod tests {
             parse_ws_order_status_report(&order, &instrument, account_id(), UnixNanos::from(7))
                 .unwrap();
 
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, OrderSide::Buy.into());
     }
 
     #[rstest]
@@ -1978,7 +1994,7 @@ mod tests {
                 .unwrap();
 
         assert!(report.parent_order_id.is_none());
-        assert_eq!(report.contingency_type, ContingencyType::NoContingency);
+        assert_eq!(report.contingency_type, None);
     }
 
     #[rstest]
@@ -2229,6 +2245,22 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_ws_fill_report_uses_instrument_quote_currency_for_fee() {
+        let currency = Currency::USDG();
+        let instrument =
+            create_test_instrument_with_quote(Venue::new("LIGHTER_ROBINHOOD"), currency);
+
+        let trade = stub_account_trade(1234, true, true);
+
+        let report =
+            parse_ws_fill_report(&trade, 1234, &instrument, account_id(), UnixNanos::from(1))
+                .unwrap()
+                .expect("user-side fill");
+
+        assert_eq!(report.commission, Money::from("0.000196 USDG"));
+    }
+
+    #[rstest]
     fn test_parse_ws_position_status_report_long_position() {
         let instrument = create_test_instrument();
         let position = LighterPosition {
@@ -2260,7 +2292,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(report.position_side, PositionSideSpecified::Long);
+        assert_eq!(report.position_side, PositionSide::Long);
         assert_eq!(report.quantity, Quantity::from("1.5000"));
         assert_eq!(report.signed_decimal_qty, Decimal::new(15, 1));
         assert_eq!(report.avg_px_open, Some(Decimal::new(235010, 2)));
@@ -2299,7 +2331,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(report.position_side, PositionSideSpecified::Short);
+        assert_eq!(report.position_side, PositionSide::Short);
         assert_eq!(report.quantity, Quantity::from("0.7500"));
         assert_eq!(report.signed_decimal_qty, Decimal::new(-75, 2));
     }
@@ -2336,7 +2368,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(report.position_side, PositionSideSpecified::Flat);
+        assert_eq!(report.position_side, PositionSide::Flat);
         assert!(report.quantity.is_zero());
         assert_eq!(report.signed_decimal_qty, Decimal::ZERO);
         assert!(report.avg_px_open.is_none());

@@ -230,7 +230,10 @@ async fn websocket_client_routes_through_http_connect_proxy(#[case] backend: Tra
         proxy_url: Some(proxy_url),
     };
 
-    let client = WebSocketClient::connect(config, Some(handler), None, vec![], None)
+    let client = WebSocketClient::builder()
+        .config(config)
+        .message_handler(handler)
+        .connect()
         .await
         .expect("connect through proxy");
 
@@ -283,7 +286,10 @@ async fn websocket_client_without_proxy_connects_directly(#[case] backend: Trans
     };
 
     let handler: MessageHandler = Arc::new(|_| {});
-    let client = WebSocketClient::connect(config, Some(handler), None, vec![], None)
+    let client = WebSocketClient::builder()
+        .config(config)
+        .message_handler(handler)
+        .connect()
         .await
         .expect("direct WebSocket connection");
     client
@@ -334,7 +340,10 @@ async fn websocket_client_invalid_proxy_error_redacts_credentials(
     };
 
     let handler: MessageHandler = Arc::new(|_| {});
-    let error = WebSocketClient::connect(config, Some(handler), None, vec![], None)
+    let error = WebSocketClient::builder()
+        .config(config)
+        .message_handler(handler)
+        .connect()
         .await
         .expect_err("malformed proxy should fail");
 
@@ -378,7 +387,10 @@ async fn websocket_client_unreachable_proxy_error_redacts_credentials(
     };
 
     let handler: MessageHandler = Arc::new(|_| {});
-    let error = WebSocketClient::connect(config, Some(handler), None, vec![], None)
+    let error = WebSocketClient::builder()
+        .config(config)
+        .message_handler(handler)
+        .connect()
         .await
         .expect_err("unreachable proxy should fail");
 
@@ -426,7 +438,10 @@ async fn websocket_client_falls_back_to_direct_for_socks_proxy(#[case] backend: 
     };
 
     let handler: MessageHandler = Arc::new(|_| {});
-    let client = WebSocketClient::connect(config, Some(handler), None, vec![], None)
+    let client = WebSocketClient::builder()
+        .config(config)
+        .message_handler(handler)
+        .connect()
         .await
         .expect("connect should succeed via direct fallback when SOCKS is requested");
     client.send_text("ping".to_string(), None).await.unwrap();
@@ -525,7 +540,10 @@ async fn websocket_client_emits_proxy_authorization_header(#[case] backend: Tran
     };
 
     let handler: MessageHandler = Arc::new(|_| {});
-    let client = WebSocketClient::connect(config, Some(handler), None, vec![], None)
+    let client = WebSocketClient::builder()
+        .config(config)
+        .message_handler(handler)
+        .connect()
         .await
         .expect("connect through authenticated proxy");
     client.disconnect().await;
@@ -574,7 +592,10 @@ async fn websocket_client_reuses_proxy_url_on_reconnect(#[case] backend: Transpo
     };
 
     let handler: MessageHandler = Arc::new(|_| {});
-    let client = WebSocketClient::connect(config, Some(handler), None, vec![], None)
+    let client = WebSocketClient::builder()
+        .config(config)
+        .message_handler(handler)
+        .connect()
         .await
         .expect("initial connect through proxy");
 

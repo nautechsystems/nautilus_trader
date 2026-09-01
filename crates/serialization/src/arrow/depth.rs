@@ -374,6 +374,7 @@ mod tests {
     use arrow::datatypes::{DataType, Field};
     use nautilus_model::{
         data::stubs::stub_depth10,
+        enums::OrderSide,
         types::{Price, Quantity, fixed::FIXED_SCALAR, price::PriceRaw, quantity::QuantityRaw},
     };
     use pretty_assertions::assert_eq;
@@ -727,7 +728,7 @@ mod tests {
             original_bid.size
         };
         depth.bids[5] = BookOrder {
-            side: OrderSide::Buy,
+            side: OrderSide::Buy.into(),
             price: sentinel_bid_price,
             size: sentinel_bid_size,
             order_id: 0,
@@ -743,7 +744,7 @@ mod tests {
             original_ask.size
         };
         depth.asks[7] = BookOrder {
-            side: OrderSide::Sell,
+            side: OrderSide::Sell.into(),
             price: sentinel_ask_price,
             size: sentinel_ask_size,
             order_id: 0,
@@ -757,31 +758,31 @@ mod tests {
 
         let expect_null = price_undef || size_undef;
         if expect_null {
-            assert_eq!(decoded.bids[5].side, OrderSide::NoOrderSide);
+            assert_eq!(decoded.bids[5].side, None);
             assert_eq!(decoded.bids[5].price.raw, 0);
             assert_eq!(decoded.bids[5].price.precision, 0);
             assert_eq!(decoded.bids[5].size.raw, 0);
             assert_eq!(decoded.bids[5].size.precision, 0);
 
-            assert_eq!(decoded.asks[7].side, OrderSide::NoOrderSide);
+            assert_eq!(decoded.asks[7].side, None);
             assert_eq!(decoded.asks[7].price.raw, 0);
             assert_eq!(decoded.asks[7].price.precision, 0);
             assert_eq!(decoded.asks[7].size.raw, 0);
             assert_eq!(decoded.asks[7].size.precision, 0);
         } else {
-            assert_eq!(decoded.bids[5].side, OrderSide::Buy);
+            assert_eq!(decoded.bids[5].side, Some(OrderSide::Buy));
             assert_eq!(decoded.bids[5].price, original_bid.price);
             assert_eq!(decoded.bids[5].size, original_bid.size);
-            assert_eq!(decoded.asks[7].side, OrderSide::Sell);
+            assert_eq!(decoded.asks[7].side, Some(OrderSide::Sell));
             assert_eq!(decoded.asks[7].price, original_ask.price);
             assert_eq!(decoded.asks[7].size, original_ask.size);
         }
 
         // Surrounding defined levels always round-trip with the instrument precision
-        assert_eq!(decoded.bids[0].side, OrderSide::Buy);
+        assert_eq!(decoded.bids[0].side, Some(OrderSide::Buy));
         assert_eq!(decoded.bids[0].price.precision, price_precision);
         assert_eq!(decoded.bids[0].size.precision, size_precision);
-        assert_eq!(decoded.asks[0].side, OrderSide::Sell);
+        assert_eq!(decoded.asks[0].side, Some(OrderSide::Sell));
         assert_eq!(decoded.asks[0].price.precision, price_precision);
         assert_eq!(decoded.asks[0].size.precision, size_precision);
     }

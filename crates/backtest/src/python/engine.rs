@@ -22,7 +22,7 @@ use nautilus_common::{
     actor::data_actor::ImportableActorConfig,
     enums::ComponentState,
     python::{
-        actor::{PyDataActor, apply_class_derived_actor_id},
+        actor::{PyDataActor, prepare_python_actor},
         cache::PyCache,
         config_error_to_pyvalue_err,
     },
@@ -47,7 +47,7 @@ use nautilus_model::{
     enums::{AccountType, BookType, OmsType, OtoTriggerMode},
     identifiers::{AccountId, ActorId, ClientId, ExecAlgorithmId, InstrumentId, TraderId, Venue},
     python::instruments::pyobject_to_instrument_any,
-    types::{Currency, Money, Price},
+    types::{Currency, Money},
 };
 use nautilus_portfolio::python::PyPortfolio;
 #[cfg(feature = "examples")]
@@ -60,18 +60,17 @@ use nautilus_trading::examples::{
     },
 };
 use nautilus_trading::{
-    ImportableExecAlgorithmConfig, ImportableStrategyConfig,
+    ImportableExecutionAlgorithmConfig, ImportableStrategyConfig,
     algorithm::{TwapAlgorithm, TwapAlgorithmConfig},
     python::algorithm::PyExecutionAlgorithm,
 };
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
 
-use super::node::create_config_instance;
+use super::{modules::pyobject_to_simulation_module_handle, node::create_importable_component};
 use crate::{
     config::{BacktestEngineConfig, SimulatedVenueConfig},
     engine::BacktestEngine,
-    modules::{FXRolloverInterestModule, SimulationModuleAny},
     result::BacktestResult,
 };
 
@@ -164,7 +163,6 @@ impl PyBacktestEngine {
             frozen_account = false,
             oto_trigger_mode = OtoTriggerMode::Partial,
             price_protection_points = None,
-            settlement_prices = None,
             liquidation_enabled = false,
             liquidation_trigger_ratio = None,
             liquidation_cancel_open_orders = true,
@@ -208,7 +206,6 @@ impl PyBacktestEngine {
         frozen_account: bool,
         oto_trigger_mode: OtoTriggerMode,
         price_protection_points: Option<u32>,
-        settlement_prices: Option<HashMap<InstrumentId, Price>>,
         liquidation_enabled: bool,
         liquidation_trigger_ratio: Option<f64>,
         liquidation_cancel_open_orders: bool,
@@ -216,12 +213,10 @@ impl PyBacktestEngine {
         let leverages: AHashMap<InstrumentId, Decimal> = leverages
             .map(|m| m.into_iter().collect())
             .unwrap_or_default();
-        let settlement_prices: AHashMap<InstrumentId, Price> = settlement_prices
-            .map(|m| m.into_iter().collect())
-            .unwrap_or_default();
         let margin_model = margin_model
             .map(|obj| Python::attach(|py| pyobject_to_margin_model_any(py, obj.bind(py))))
-            .transpose()?;
+            .transpose()?
+            .map(Into::into);
         let fill_model = fill_model
             .map(|obj| Python::attach(|py| pyobject_to_fill_model_handle(obj.bind(py))))
             .transpose()?
@@ -238,15 +233,12 @@ impl PyBacktestEngine {
             .map(|objs| {
                 objs.into_iter()
                     .map(|obj| {
-                        Python::attach(|py| pyobject_to_simulation_module_any(py, obj.bind(py)))
+                        Python::attach(|py| pyobject_to_simulation_module_handle(py, obj.bind(py)))
                     })
                     .collect::<PyResult<Vec<_>>>()
             })
             .transpose()?
-            .unwrap_or_default()
-            .into_iter()
-            .map(Into::into)
-            .collect();
+            .unwrap_or_default();
 
         let sim_config = SimulatedVenueConfig::builder()
             .venue(venue)
@@ -287,12 +279,6 @@ impl PyBacktestEngine {
             .map_err(config_error_to_pyvalue_err)?;
 
         self.0.add_venue(sim_config).map_err(to_pyruntime_err)?;
-
-        for (instrument_id, price) in settlement_prices {
-            self.0
-                .set_settlement_price(venue, instrument_id, price)
-                .map_err(to_pyruntime_err)?;
-        }
 
         Ok(())
     }
@@ -348,7 +334,7 @@ impl PyBacktestEngine {
     #[pyo3(name = "add_actor")]
     fn py_add_actor(&mut self, actor: &Bound<'_, PyAny>) -> PyResult<()> {
         log::debug!("`add_actor` with a constructed instance");
-        self.add_python_actor(&actor.clone().unbind())
+        Self::add_python_actor(&mut self.0, &actor.clone().unbind())
     }
 
     /// Adds an actor from an importable config.
@@ -360,38 +346,15 @@ impl PyBacktestEngine {
         config: ImportableActorConfig,
     ) -> PyResult<()> {
         log::debug!("`add_actor_from_config` with: {config:?}");
+        let actor = create_importable_component(
+            &config.actor_path,
+            "actor_path",
+            &config.config_path,
+            &config.config,
+            "actor",
+        )?;
 
-        let parts: Vec<&str> = config.actor_path.split(':').collect();
-        if parts.len() != 2 {
-            return Err(to_pyvalue_err(
-                "actor_path must be in format 'module.path:ClassName'",
-            ));
-        }
-        let (module_name, class_name) = (parts[0], parts[1]);
-
-        log::info!("Importing actor from module: {module_name} class: {class_name}");
-
-        let actor = Python::attach(|py| -> anyhow::Result<Py<PyAny>> {
-            let actor_module = py
-                .import(module_name)
-                .map_err(|e| anyhow::anyhow!("Failed to import module {module_name}: {e}"))?;
-            let actor_class = actor_module
-                .getattr(class_name)
-                .map_err(|e| anyhow::anyhow!("Failed to get class {class_name}: {e}"))?;
-
-            let config_instance = create_config_instance(py, &config.config_path, &config.config)?;
-
-            let python_actor = if let Some(config_obj) = config_instance {
-                actor_class.call1((config_obj,))?
-            } else {
-                actor_class.call0()?
-            };
-
-            Ok(python_actor.unbind())
-        })
-        .map_err(to_pyruntime_err)?;
-
-        self.add_python_actor(&actor)
+        Self::add_python_actor(&mut self.0, &actor)
     }
 
     /// Adds a strategy from a constructed Python instance.
@@ -401,7 +364,7 @@ impl PyBacktestEngine {
     #[pyo3(name = "add_strategy")]
     fn py_add_strategy(&mut self, strategy: &Bound<'_, PyAny>) -> PyResult<()> {
         log::debug!("`add_strategy` with a constructed instance");
-        self.add_python_strategy(&strategy.clone().unbind())
+        Self::add_python_strategy(&mut self.0, &strategy.clone().unbind())
     }
 
     /// Adds a strategy from an importable config.
@@ -413,38 +376,15 @@ impl PyBacktestEngine {
         config: ImportableStrategyConfig,
     ) -> PyResult<()> {
         log::debug!("`add_strategy_from_config` with: {config:?}");
+        let strategy = create_importable_component(
+            &config.strategy_path,
+            "strategy_path",
+            &config.config_path,
+            &config.config,
+            "strategy",
+        )?;
 
-        let parts: Vec<&str> = config.strategy_path.split(':').collect();
-        if parts.len() != 2 {
-            return Err(to_pyvalue_err(
-                "strategy_path must be in format 'module.path:ClassName'",
-            ));
-        }
-        let (module_name, class_name) = (parts[0], parts[1]);
-
-        log::info!("Importing strategy from module: {module_name} class: {class_name}");
-
-        let strategy = Python::attach(|py| -> anyhow::Result<Py<PyAny>> {
-            let strategy_module = py
-                .import(module_name)
-                .map_err(|e| anyhow::anyhow!("Failed to import module {module_name}: {e}"))?;
-            let strategy_class = strategy_module
-                .getattr(class_name)
-                .map_err(|e| anyhow::anyhow!("Failed to get class {class_name}: {e}"))?;
-
-            let config_instance = create_config_instance(py, &config.config_path, &config.config)?;
-
-            let python_strategy = if let Some(config_obj) = config_instance {
-                strategy_class.call1((config_obj,))?
-            } else {
-                strategy_class.call0()?
-            };
-
-            Ok(python_strategy.unbind())
-        })
-        .map_err(to_pyruntime_err)?;
-
-        self.add_python_strategy(&strategy)
+        Self::add_python_strategy(&mut self.0, &strategy)
     }
 
     /// Adds an execution algorithm from a constructed Python instance.
@@ -454,7 +394,7 @@ impl PyBacktestEngine {
     #[pyo3(name = "add_exec_algorithm")]
     fn py_add_exec_algorithm(&mut self, exec_algorithm: &Bound<'_, PyAny>) -> PyResult<()> {
         log::debug!("`add_exec_algorithm` with a constructed instance");
-        self.add_python_exec_algorithm(&exec_algorithm.clone().unbind())
+        Self::add_python_exec_algorithm(&mut self.0, &exec_algorithm.clone().unbind())
     }
 
     /// Adds an execution algorithm from an importable config.
@@ -463,43 +403,20 @@ impl PyBacktestEngine {
     fn py_add_exec_algorithm_from_config(
         &mut self,
         _py: Python,
-        config: ImportableExecAlgorithmConfig,
+        config: ImportableExecutionAlgorithmConfig,
     ) -> PyResult<()> {
-        self.ensure_can_add_exec_algorithm()?;
+        Self::ensure_can_add_exec_algorithm(&self.0)?;
 
         log::debug!("`add_exec_algorithm_from_config` with: {config:?}");
+        let exec_algorithm = create_importable_component(
+            &config.exec_algorithm_path,
+            "exec_algorithm_path",
+            &config.config_path,
+            &config.config,
+            "exec algorithm",
+        )?;
 
-        let parts: Vec<&str> = config.exec_algorithm_path.split(':').collect();
-        if parts.len() != 2 {
-            return Err(to_pyvalue_err(
-                "exec_algorithm_path must be in format 'module.path:ClassName'",
-            ));
-        }
-        let (module_name, class_name) = (parts[0], parts[1]);
-
-        log::info!("Importing exec algorithm from module: {module_name} class: {class_name}");
-
-        let exec_algorithm = Python::attach(|py| -> anyhow::Result<Py<PyAny>> {
-            let algo_module = py
-                .import(module_name)
-                .map_err(|e| anyhow::anyhow!("Failed to import module {module_name}: {e}"))?;
-            let algo_class = algo_module
-                .getattr(class_name)
-                .map_err(|e| anyhow::anyhow!("Failed to get class {class_name}: {e}"))?;
-
-            let config_instance = create_config_instance(py, &config.config_path, &config.config)?;
-
-            let python_exec_algorithm = if let Some(config_obj) = config_instance {
-                algo_class.call1((config_obj,))?
-            } else {
-                algo_class.call0()?
-            };
-
-            Ok(python_exec_algorithm.unbind())
-        })
-        .map_err(to_pyruntime_err)?;
-
-        self.add_python_exec_algorithm(&exec_algorithm)
+        Self::add_python_exec_algorithm(&mut self.0, &exec_algorithm)
     }
 
     /// Adds a built-in example actor from its type name and config.
@@ -577,13 +494,13 @@ impl PyBacktestEngine {
     /// Ends the backtest run, finalizing results.
     #[pyo3(name = "end")]
     fn py_end(&mut self) -> PyResult<()> {
-        self.0.end_with_result().map_err(to_pyruntime_err)
+        self.0.end().map_err(to_pyruntime_err)
     }
 
     /// Resets the engine state for a new run.
     #[pyo3(name = "reset")]
-    fn py_reset(&mut self) {
-        self.0.reset();
+    fn py_reset(&mut self) -> PyResult<()> {
+        self.0.reset().map_err(to_pyruntime_err)
     }
 
     /// Disposes of the engine, releasing all resources.
@@ -653,7 +570,7 @@ impl PyBacktestEngine {
     fn py_add_exec_algorithms_from_configs(
         &mut self,
         py: Python,
-        configs: Vec<ImportableExecAlgorithmConfig>,
+        configs: Vec<ImportableExecutionAlgorithmConfig>,
     ) -> PyResult<()> {
         for config in configs {
             self.py_add_exec_algorithm_from_config(py, config)?;
@@ -665,7 +582,7 @@ impl PyBacktestEngine {
     #[pyo3(name = "add_actors")]
     fn py_add_actors(&mut self, actors: Vec<Py<PyAny>>) -> PyResult<()> {
         for actor in actors {
-            self.add_python_actor(&actor)?;
+            Self::add_python_actor(&mut self.0, &actor)?;
         }
         Ok(())
     }
@@ -674,7 +591,7 @@ impl PyBacktestEngine {
     #[pyo3(name = "add_strategies")]
     fn py_add_strategies(&mut self, strategies: Vec<Py<PyAny>>) -> PyResult<()> {
         for strategy in strategies {
-            self.add_python_strategy(&strategy)?;
+            Self::add_python_strategy(&mut self.0, &strategy)?;
         }
         Ok(())
     }
@@ -683,7 +600,7 @@ impl PyBacktestEngine {
     #[pyo3(name = "add_exec_algorithms")]
     fn py_add_exec_algorithms(&mut self, exec_algorithms: Vec<Py<PyAny>>) -> PyResult<()> {
         for exec_algorithm in exec_algorithms {
-            self.add_python_exec_algorithm(&exec_algorithm)?;
+            Self::add_python_exec_algorithm(&mut self.0, &exec_algorithm)?;
         }
         Ok(())
     }
@@ -943,9 +860,11 @@ impl PyBacktestEngine {
         unsafe_code,
         reason = "Required for Python strategy component registration"
     )]
-    fn add_python_strategy(&mut self, strategy: &Py<PyAny>) -> PyResult<()> {
-        let strategy_id = self
-            .0
+    pub(crate) fn add_python_strategy(
+        engine: &mut BacktestEngine,
+        strategy: &Py<PyAny>,
+    ) -> PyResult<()> {
+        let strategy_id = engine
             .kernel_mut()
             .trader
             .borrow_mut()
@@ -964,7 +883,7 @@ impl PyBacktestEngine {
         })?;
 
         if let Some(oms_type) = oms_type {
-            self.0
+            engine
                 .kernel()
                 .exec_engine
                 .borrow_mut()
@@ -979,7 +898,7 @@ impl PyBacktestEngine {
     /// Shared by `add_actor` (caller-constructed instance) and `add_actor_from_config`
     /// (imported and constructed here). The actor ID and logging flags are sourced from
     /// the instance's retained `.config`, so both entry points use a single config object.
-    fn add_python_actor(&mut self, actor: &Py<PyAny>) -> PyResult<()> {
+    pub(crate) fn add_python_actor(engine: &mut BacktestEngine, actor: &Py<PyAny>) -> PyResult<()> {
         let actor_id = Python::attach(|py| -> anyhow::Result<ActorId> {
             let bound = actor.bind(py);
 
@@ -988,48 +907,11 @@ impl PyBacktestEngine {
                 .ok()
                 .filter(|config| !config.is_none());
 
-            let mut py_data_actor_ref = bound
-                .extract::<PyRefMut<PyDataActor>>()
-                .map_err(Into::<PyErr>::into)
-                .map_err(|e| anyhow::anyhow!("Failed to extract PyDataActor: {e}"))?;
-
-            if let Some(config_obj) = config_instance.as_ref() {
-                if let Ok(actor_id) = config_obj.getattr("actor_id")
-                    && !actor_id.is_none()
-                {
-                    let actor_id_val = if let Ok(actor_id_val) = actor_id.extract::<ActorId>() {
-                        actor_id_val
-                    } else if let Ok(actor_id_str) = actor_id.extract::<String>() {
-                        ActorId::new_checked(&actor_id_str)?
-                    } else {
-                        anyhow::bail!("Invalid `actor_id` type");
-                    };
-                    py_data_actor_ref.set_actor_id(actor_id_val);
-                }
-
-                if let Ok(log_events) = config_obj.getattr("log_events")
-                    && let Ok(log_events_val) = log_events.extract::<bool>()
-                {
-                    py_data_actor_ref.set_log_events(log_events_val);
-                }
-
-                if let Ok(log_commands) = config_obj.getattr("log_commands")
-                    && let Ok(log_commands_val) = log_commands.extract::<bool>()
-                {
-                    py_data_actor_ref.set_log_commands(log_commands_val);
-                }
-            }
-
-            py_data_actor_ref.set_python_instance(bound)?;
-            apply_class_derived_actor_id(&mut py_data_actor_ref, bound)?;
-            let actor_id = py_data_actor_ref.actor_id();
-
-            Ok(actor_id)
+            prepare_python_actor(bound, config_instance.as_ref())
         })
         .map_err(to_pyruntime_err)?;
 
-        if self
-            .0
+        if engine
             .kernel()
             .trader
             .borrow()
@@ -1041,7 +923,7 @@ impl PyBacktestEngine {
             )));
         }
 
-        self.0
+        engine
             .kernel_mut()
             .trader
             .borrow_mut()
@@ -1057,10 +939,13 @@ impl PyBacktestEngine {
     /// Shared by `add_exec_algorithm` (caller-constructed instance) and
     /// `add_exec_algorithm_from_config` (imported and constructed here). The execution
     /// algorithm ID and logging flags are sourced from the instance's retained `.config`.
-    fn add_python_exec_algorithm(&mut self, exec_algorithm: &Py<PyAny>) -> PyResult<()> {
-        self.ensure_can_add_exec_algorithm()?;
+    pub(crate) fn add_python_exec_algorithm(
+        engine: &mut BacktestEngine,
+        exec_algorithm: &Py<PyAny>,
+    ) -> PyResult<()> {
+        Self::ensure_can_add_exec_algorithm(engine)?;
 
-        if self.try_add_py_execution_algorithm(exec_algorithm)? {
+        if Self::try_add_py_execution_algorithm(engine, exec_algorithm)? {
             return Ok(());
         }
 
@@ -1117,8 +1002,7 @@ impl PyBacktestEngine {
         })
         .map_err(to_pyruntime_err)?;
 
-        let exec_algorithm_id = self
-            .0
+        let exec_algorithm_id = engine
             .kernel_mut()
             .trader
             .borrow_mut()
@@ -1129,7 +1013,10 @@ impl PyBacktestEngine {
         Ok(())
     }
 
-    fn try_add_py_execution_algorithm(&mut self, exec_algorithm: &Py<PyAny>) -> PyResult<bool> {
+    fn try_add_py_execution_algorithm(
+        engine: &mut BacktestEngine,
+        exec_algorithm: &Py<PyAny>,
+    ) -> PyResult<bool> {
         let py_exec_algorithm =
             Python::attach(|py| -> anyhow::Result<Option<PyExecutionAlgorithm>> {
                 let bound = exec_algorithm.bind(py);
@@ -1159,8 +1046,7 @@ impl PyBacktestEngine {
             return Ok(false);
         };
 
-        let exec_algorithm_id = self
-            .0
+        let exec_algorithm_id = engine
             .kernel_mut()
             .trader
             .borrow_mut()
@@ -1175,8 +1061,8 @@ impl PyBacktestEngine {
     ///
     /// Checked before importing and constructing the Python class in the `from_config`
     /// path so a rejected addition never runs user constructor code.
-    fn ensure_can_add_exec_algorithm(&self) -> PyResult<()> {
-        match self.0.kernel().trader.borrow().state() {
+    pub(crate) fn ensure_can_add_exec_algorithm(engine: &BacktestEngine) -> PyResult<()> {
+        match engine.kernel().trader.borrow().state() {
             ComponentState::PreInitialized | ComponentState::Ready | ComponentState::Stopped => {
                 Ok(())
             }
@@ -1219,10 +1105,10 @@ fn builtin_strategy_register(type_name: &str) -> Option<BuiltinStrategyRegister>
     }
 }
 
-type NativeExecAlgorithmRegister =
+type NativeExecutionAlgorithmRegister =
     for<'py> fn(&mut BacktestEngine, &Bound<'py, PyAny>) -> PyResult<()>;
 
-fn native_exec_algorithm_register(type_name: &str) -> Option<NativeExecAlgorithmRegister> {
+fn native_exec_algorithm_register(type_name: &str) -> Option<NativeExecutionAlgorithmRegister> {
     match type_name {
         "TwapAlgorithm" => Some(register_twap_algorithm),
         _ => None,
@@ -1683,21 +1569,6 @@ mod tests {
     }
 }
 
-pub(crate) fn pyobject_to_simulation_module_any(
-    _py: Python,
-    obj: &Bound<'_, PyAny>,
-) -> PyResult<SimulationModuleAny> {
-    if let Ok(cell) = obj.cast::<FXRolloverInterestModule>() {
-        let module = cell.borrow().clone();
-        return Ok(SimulationModuleAny::FXRolloverInterest(module));
-    }
-
-    let type_name = obj.get_type().name()?;
-    Err(to_pytype_err(format!(
-        "Cannot convert {type_name} to SimulationModule"
-    )))
-}
-
 pub(crate) fn pyobject_to_latency_model_any(
     _py: Python,
     obj: &Bound<'_, PyAny>,
@@ -1935,7 +1806,6 @@ mod model_tests {
                     false,
                     false,
                     OtoTriggerMode::Partial,
-                    None,
                     None,
                     false,
                     None,

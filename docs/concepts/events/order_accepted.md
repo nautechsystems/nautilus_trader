@@ -14,7 +14,7 @@ Beyond the [common Python order event fields](index.md#common-python-order-event
 
 | Field            | Python type    | Required/default | Description                            |
 | ---------------- | -------------- | ---------------- | -------------------------------------- |
-| `venue_order_id` | `VenueOrderId` | Required         | The venue‑assigned order identifier.   |
+| `venue_order_id` | `VenueOrderId` | Required         | The venue-assigned order identifier.   |
 | `account_id`     | `AccountId`    | Required         | The account associated with the order. |
 | `reconciliation` | `bool`         | Required         | If generated during reconciliation.    |
 

@@ -12,8 +12,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test backtest engine custom data behavior.
+"""
 
 import json
+from pathlib import Path
 
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
@@ -31,13 +35,22 @@ from nautilus_trader.trading import StrategyConfig
 
 class _CustomDataStrategy(Strategy):
     def on_start(self) -> None:
+        """
+        On start.
+        """
         self.subscribe_data(self.data_type)
 
     def on_data(self, data: CustomData) -> None:
+        """
+        On data.
+        """
         self.received.append(data)
 
 
-def test_catalog_custom_data_reaches_backtest_strategy(tmp_path) -> None:
+def test_catalog_custom_data_reaches_backtest_strategy(tmp_path: Path) -> None:
+    """
+    Test catalog custom data reaches backtest strategy.
+    """
     register_custom_data_class(RustTestCustomData)
     catalog_path = tmp_path / "catalog"
     catalog_path.mkdir()

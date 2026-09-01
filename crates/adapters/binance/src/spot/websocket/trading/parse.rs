@@ -97,7 +97,7 @@ pub fn parse_spot_exec_report_to_order_status(
         instrument_id,
         Some(client_order_id),
         venue_order_id,
-        order_side,
+        order_side.into(),
         order_type,
         time_in_force,
         order_status,
@@ -326,7 +326,7 @@ mod tests {
 
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id, instrument_id());
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, OrderSide::Buy.into());
         assert_eq!(report.order_status, OrderStatus::Accepted);
         assert_eq!(report.order_type, OrderType::Limit);
         assert_eq!(report.time_in_force, TimeInForce::Gtc);
@@ -532,7 +532,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(report.order_type, OrderType::StopLimit);
-        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_side, OrderSide::Sell.into());
         assert_eq!(
             report.client_order_id,
             Some(ClientOrderId::from("O-20200101-000000-000-000-1")),

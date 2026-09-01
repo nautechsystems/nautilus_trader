@@ -56,20 +56,23 @@ pub fn init_logger_for_testing(stdout_level: Option<log::LevelFilter>) -> anyhow
 /// # Examples
 ///
 /// ```
-/// use std::time::Duration;
-/// use std::thread;
+/// use std::{thread, time::Duration};
+///
 /// use nautilus_common::testing::wait_until;
 ///
 /// let start_time = std::time::Instant::now();
 /// let timeout = Duration::from_secs(5);
 ///
-/// wait_until(|| {
-///     if start_time.elapsed().as_secs() > 2 {
-///         true
-///     } else {
-///         false
-///     }
-/// }, timeout);
+/// wait_until(
+///     || {
+///         if start_time.elapsed().as_secs() > 2 {
+///             true
+///         } else {
+///             false
+///         }
+///     },
+///     timeout,
+/// );
 /// ```
 ///
 /// In the above example, the `wait_until` function will block for at least 2 seconds, as that's how long

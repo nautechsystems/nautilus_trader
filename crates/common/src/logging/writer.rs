@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Stdout, stderr, and rotating file log writers.
+
 use std::{
     borrow::Cow,
     collections::VecDeque,
@@ -40,6 +42,7 @@ pub trait LogWriter {
     fn enabled(&self, line: &LogLine) -> bool;
 }
 
+/// Writes eligible log lines to stdout with optional buffering and ANSI colors.
 #[derive(Debug)]
 pub struct StdoutWriter {
     pub is_colored: bool,
@@ -78,9 +81,8 @@ impl LogWriter for StdoutWriter {
             StdoutSink::Buffered(io) => io.write_all(line.as_bytes()),
         };
 
-        match result {
-            Ok(()) => {}
-            Err(e) => eprintln!("Error writing to stdout: {e:?}"),
+        if let Err(e) = result {
+            eprintln!("Error writing to stdout: {e:?}");
         }
     }
 
@@ -90,9 +92,8 @@ impl LogWriter for StdoutWriter {
             StdoutSink::Buffered(io) => io.flush(),
         };
 
-        match result {
-            Ok(()) => {}
-            Err(e) => eprintln!("Error flushing stdout: {e:?}"),
+        if let Err(e) = result {
+            eprintln!("Error flushing stdout: {e:?}");
         }
     }
 
@@ -102,6 +103,7 @@ impl LogWriter for StdoutWriter {
     }
 }
 
+/// Writes error log lines to stderr.
 #[derive(Debug)]
 pub struct StderrWriter {
     pub is_colored: bool,
@@ -121,16 +123,14 @@ impl StderrWriter {
 
 impl LogWriter for StderrWriter {
     fn write(&mut self, line: &str) {
-        match self.io.write_all(line.as_bytes()) {
-            Ok(()) => {}
-            Err(e) => eprintln!("Error writing to stderr: {e:?}"),
+        if let Err(e) = self.io.write_all(line.as_bytes()) {
+            eprintln!("Error writing to stderr: {e:?}");
         }
     }
 
     fn flush(&mut self) {
-        match self.io.flush() {
-            Ok(()) => {}
-            Err(e) => eprintln!("Error flushing stderr: {e:?}"),
+        if let Err(e) = self.io.flush() {
+            eprintln!("Error flushing stderr: {e:?}");
         }
     }
 
@@ -139,7 +139,7 @@ impl LogWriter for StderrWriter {
     }
 }
 
-/// File rotation config.
+/// Configures size-based log file rotation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct FileRotateConfig {
@@ -199,6 +199,7 @@ impl From<(u64, u32)> for FileRotateConfig {
     }
 }
 
+/// Configures file log output.
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.common", from_py_object)
@@ -267,6 +268,7 @@ impl FileWriterConfig {
     }
 }
 
+/// Writes sanitized plain-text or JSON log lines with optional file rotation.
 #[derive(Debug)]
 pub struct FileWriter {
     pub json_format: bool,
@@ -326,37 +328,33 @@ impl FileWriter {
             eprintln!("{NAUTILUS_PREFIX} Error clearing log file: {e}");
         }
 
-        match File::options()
-            .create(true)
-            .append(true)
-            .open(file_path.clone())
-        {
-            Ok(file) => {
-                // Seed cur_file_size from existing file length if rotation is enabled
-                let mut file_config = file_config;
-                if let Some(ref mut rotate_config) = file_config.file_rotate
-                    && let Ok(metadata) = file.metadata()
-                {
-                    rotate_config.cur_file_size = metadata.len();
-                }
-
-                Some(Self {
-                    json_format,
-                    buf: BufWriter::new(file),
-                    path: file_path,
-                    file_config,
-                    trader_id,
-                    instance_id,
-                    level: fileout_level,
-                    cur_file_date: today_date(),
-                    sync_on_flush,
-                })
-            }
+        let file = match File::options().create(true).append(true).open(&file_path) {
+            Ok(file) => file,
             Err(e) => {
                 eprintln!("{NAUTILUS_PREFIX} Error creating log file: {e}");
-                None
+                return None;
             }
+        };
+
+        // Seed cur_file_size from existing file length if rotation is enabled
+        let mut file_config = file_config;
+        if let Some(ref mut rotate_config) = file_config.file_rotate
+            && let Ok(metadata) = file.metadata()
+        {
+            rotate_config.cur_file_size = metadata.len();
         }
+
+        Some(Self {
+            json_format,
+            buf: BufWriter::new(file),
+            path: file_path,
+            file_config,
+            trader_id,
+            instance_id,
+            level: fileout_level,
+            cur_file_date: today_date(),
+            sync_on_flush,
+        })
     }
 
     fn create_log_file_path(
@@ -439,29 +437,32 @@ impl FileWriter {
             return;
         }
 
-        match File::options().create(true).append(true).open(&new_path) {
-            Ok(new_file) => {
-                // Rotate existing file
-                if let Some(rotate_config) = &mut self.file_config.file_rotate {
-                    // Add current file to backup queue
-                    rotate_config.backup_files.push_back(self.path.clone());
-                    rotate_config.cur_file_size = 0;
-                    rotate_config.cur_file_creation_date = utc_date(utc_now);
-                    cleanup_backups(rotate_config);
-                } else {
-                    // Update creation date for date-based rotation
-                    self.cur_file_date = utc_date(utc_now);
-                }
-
-                self.buf = BufWriter::new(new_file);
-                self.path.clone_from(&new_path);
-                eprintln!(
-                    "{NAUTILUS_PREFIX} Rotated log file, now logging to: {}",
-                    new_path.display()
-                );
+        let new_file = match File::options().create(true).append(true).open(&new_path) {
+            Ok(file) => file,
+            Err(e) => {
+                eprintln!("{NAUTILUS_PREFIX} Error creating log file: {e}");
+                return;
             }
-            Err(e) => eprintln!("{NAUTILUS_PREFIX} Error creating log file: {e}"),
+        };
+
+        // Rotate existing file
+        if let Some(rotate_config) = &mut self.file_config.file_rotate {
+            // Add current file to backup queue
+            rotate_config.backup_files.push_back(self.path.clone());
+            rotate_config.cur_file_size = 0;
+            rotate_config.cur_file_creation_date = utc_date(utc_now);
+            cleanup_backups(rotate_config);
+        } else {
+            // Update creation date for date-based rotation
+            self.cur_file_date = utc_date(utc_now);
         }
+
+        self.buf = BufWriter::new(new_file);
+        self.path.clone_from(&new_path);
+        eprintln!(
+            "{NAUTILUS_PREFIX} Rotated log file, now logging to: {}",
+            new_path.display()
+        );
     }
 
     /// Flushes the userspace file buffer to the OS.
@@ -518,17 +519,17 @@ fn cleanup_backups(rotate_config: &mut FileRotateConfig) {
         .len()
         .saturating_sub(rotate_config.max_backup_count as usize);
     for _ in 0..excess {
-        if let Some(path) = rotate_config.backup_files.pop_front() {
-            if path.exists()
-                && let Err(e) = std::fs::remove_file(&path)
-            {
-                eprintln!(
-                    "{NAUTILUS_PREFIX} Failed to remove old log file {}: {e}",
-                    path.display()
-                );
-            }
-        } else {
+        let Some(path) = rotate_config.backup_files.pop_front() else {
             break;
+        };
+
+        if path.exists()
+            && let Err(e) = std::fs::remove_file(&path)
+        {
+            eprintln!(
+                "{NAUTILUS_PREFIX} Failed to remove old log file {}: {e}",
+                path.display()
+            );
         }
     }
 }
@@ -543,28 +544,26 @@ impl LogWriter for FileWriter {
             self.rotate_file();
         }
 
-        match self.buf.write_all(line.as_bytes()) {
-            Ok(()) => {
-                // Update current file size
-                if let Some(rotate_config) = &mut self.file_config.file_rotate {
-                    rotate_config.cur_file_size += line_size;
-                }
-            }
-            Err(e) => eprintln!("{NAUTILUS_PREFIX} Error writing to file: {e:?}"),
+        if let Err(e) = self.buf.write_all(line.as_bytes()) {
+            eprintln!("{NAUTILUS_PREFIX} Error writing to file: {e:?}");
+            return;
+        }
+
+        // Update current file size
+        if let Some(rotate_config) = &mut self.file_config.file_rotate {
+            rotate_config.cur_file_size += line_size;
         }
     }
 
     fn flush(&mut self) {
-        match self.flush_buffer() {
-            Ok(()) => {}
-            Err(e) => eprintln!("{NAUTILUS_PREFIX} Error flushing file: {e:?}"),
+        if let Err(e) = self.flush_buffer() {
+            eprintln!("{NAUTILUS_PREFIX} Error flushing file: {e:?}");
         }
 
-        if self.sync_on_flush {
-            match self.sync_to_disk() {
-                Ok(()) => {}
-                Err(e) => eprintln!("{NAUTILUS_PREFIX} Error syncing file: {e:?}"),
-            }
+        if self.sync_on_flush
+            && let Err(e) = self.sync_to_disk()
+        {
+            eprintln!("{NAUTILUS_PREFIX} Error syncing file: {e:?}");
         }
     }
 

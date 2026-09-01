@@ -26,7 +26,7 @@ use nautilus_common::{
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
-    identifiers::ClientId,
+    identifiers::{ClientId, TraderId},
 };
 
 use crate::{
@@ -34,7 +34,7 @@ use crate::{
         consts::{KRAKEN, KRAKEN_VENUE},
         enums::KrakenProductType,
     },
-    config::{KrakenDataClientConfig, KrakenExecClientConfig},
+    config::{KrakenDataClientConfig, KrakenExecutionClientConfig},
     data::{KrakenFuturesDataClient, KrakenSpotDataClient},
     execution::{KrakenFuturesExecutionClient, KrakenSpotExecutionClient},
 };
@@ -114,7 +114,7 @@ impl DataClientFactory for KrakenDataClientFactory {
     }
 }
 
-impl ClientConfig for KrakenExecClientConfig {
+impl ClientConfig for KrakenExecutionClientConfig {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -149,16 +149,17 @@ impl Default for KrakenExecutionClientFactory {
 impl ExecutionClientFactory for KrakenExecutionClientFactory {
     fn create(
         &self,
+        trader_id: TraderId,
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let kraken_config = config
             .as_any()
-            .downcast_ref::<KrakenExecClientConfig>()
+            .downcast_ref::<KrakenExecutionClientConfig>()
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Invalid config type for KrakenExecutionClientFactory. Expected KrakenExecClientConfig, was {config:?}",
+                    "Invalid config type for KrakenExecutionClientFactory. Expected KrakenExecutionClientConfig, was {config:?}",
                 )
             })?
             .clone();
@@ -173,7 +174,7 @@ impl ExecutionClientFactory for KrakenExecutionClientFactory {
 
         let client_id = ClientId::from(name);
         let core = ExecutionClientCore::new(
-            kraken_config.trader_id,
+            trader_id,
             client_id,
             *KRAKEN_VENUE,
             oms_type,
@@ -200,7 +201,7 @@ impl ExecutionClientFactory for KrakenExecutionClientFactory {
     }
 
     fn config_type(&self) -> &'static str {
-        "KrakenExecClientConfig"
+        "KrakenExecutionClientConfig"
     }
 }
 
@@ -276,13 +277,18 @@ mod tests {
     #[rstest]
     fn test_kraken_execution_client_factory_creates_spot_client_with_netting_oms() {
         let factory = KrakenExecutionClientFactory::new();
-        let config = KrakenExecClientConfig {
+        let config = KrakenExecutionClientConfig {
             product_type: KrakenProductType::Spot,
             ..Default::default()
         };
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create("KRAKEN-TEST", &config, cache.into());
+        let result = factory.create(
+            TraderId::from("TRADER-001"),
+            "KRAKEN-TEST",
+            &config,
+            cache.into(),
+        );
         assert!(result.is_ok());
 
         let client = result.unwrap();
@@ -294,13 +300,18 @@ mod tests {
     #[rstest]
     fn test_kraken_execution_client_factory_creates_futures_client_with_netting_oms() {
         let factory = KrakenExecutionClientFactory::new();
-        let config = KrakenExecClientConfig {
+        let config = KrakenExecutionClientConfig {
             product_type: KrakenProductType::Futures,
             ..Default::default()
         };
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create("KRAKEN-TEST", &config, cache.into());
+        let result = factory.create(
+            TraderId::from("TRADER-001"),
+            "KRAKEN-TEST",
+            &config,
+            cache.into(),
+        );
         assert!(result.is_ok());
 
         let client = result.unwrap();
@@ -312,7 +323,7 @@ mod tests {
     #[rstest]
     fn test_kraken_execution_client_factory_rejects_leverage_on_cash_account() {
         let factory = KrakenExecutionClientFactory::new();
-        let config = KrakenExecClientConfig {
+        let config = KrakenExecutionClientConfig {
             product_type: KrakenProductType::Spot,
             spot_account_type: AccountType::Cash,
             default_leverage: Some(3),
@@ -320,7 +331,12 @@ mod tests {
         };
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create("KRAKEN-TEST", &config, cache.into());
+        let result = factory.create(
+            TraderId::from("TRADER-001"),
+            "KRAKEN-TEST",
+            &config,
+            cache.into(),
+        );
         let err = match result {
             Ok(_) => panic!("expected validation error, factory returned Ok"),
             Err(e) => e.to_string(),
@@ -359,7 +375,7 @@ mod tests {
     #[rstest]
     fn test_kraken_execution_client_factory_accepts_leverage_on_margin_account() {
         let factory = KrakenExecutionClientFactory::new();
-        let config = KrakenExecClientConfig {
+        let config = KrakenExecutionClientConfig {
             product_type: KrakenProductType::Spot,
             spot_account_type: AccountType::Margin,
             default_leverage: Some(3),
@@ -367,7 +383,12 @@ mod tests {
         };
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create("KRAKEN-TEST", &config, cache.into());
+        let result = factory.create(
+            TraderId::from("TRADER-001"),
+            "KRAKEN-TEST",
+            &config,
+            cache.into(),
+        );
         assert!(result.is_ok());
     }
 }

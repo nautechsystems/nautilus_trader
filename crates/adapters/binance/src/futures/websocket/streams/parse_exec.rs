@@ -100,7 +100,7 @@ pub fn parse_futures_order_update_to_order_status(
         instrument_id,
         Some(client_order_id),
         venue_order_id,
-        order_side,
+        order_side.into(),
         order_type,
         time_in_force,
         order_status,
@@ -133,7 +133,7 @@ pub fn parse_futures_order_update_to_order_status(
         .and_then(parse_trailing_offset_basis_points)
     {
         report.trailing_offset = Some(offset);
-        report.trailing_offset_type = TrailingOffsetType::BasisPoints;
+        report.trailing_offset_type = Some(TrailingOffsetType::BasisPoints);
     }
 
     if let Some(activation_price) = order
@@ -322,7 +322,7 @@ pub fn parse_futures_algo_update_to_order_status(
         instrument_id,
         Some(client_order_id),
         venue_order_id,
-        order_side,
+        order_side.into(),
         order_type,
         time_in_force,
         order_status,
@@ -559,6 +559,7 @@ fn parse_time_in_force(tif: BinanceTimeInForce) -> TimeInForce {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::enums::OrderSide;
     use rstest::rstest;
     use serde::de::DeserializeOwned;
 
@@ -611,7 +612,7 @@ mod tests {
 
         assert_eq!(report.account_id, account_id());
         assert_eq!(report.instrument_id, instrument_id());
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, OrderSide::Buy.into());
         assert_eq!(report.order_status, OrderStatus::Accepted);
         assert_eq!(report.order_type, OrderType::TrailingStopMarket);
         assert_eq!(report.venue_order_id, VenueOrderId::new("8886774"));
@@ -978,7 +979,7 @@ mod tests {
             Some(ClientOrderId::new("Q5xaq5EGKgXXa0fD7fs0Ip")),
         );
         assert_eq!(report.venue_order_id, VenueOrderId::new("2148719"));
-        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_side, OrderSide::Sell.into());
         assert_eq!(report.order_type, OrderType::LimitIfTouched);
         assert_eq!(report.time_in_force, TimeInForce::Gtc);
         assert_eq!(report.order_status, OrderStatus::Canceled);
@@ -1241,7 +1242,7 @@ mod tests {
             Some(ClientOrderId::new("autoclose-1234567890"))
         );
         assert_eq!(status.venue_order_id, VenueOrderId::new("8886999"));
-        assert_eq!(status.order_side, OrderSide::Sell);
+        assert_eq!(status.order_side, OrderSide::Sell.into());
         assert_eq!(status.order_status, OrderStatus::Filled);
         assert_eq!(status.quantity, Quantity::new(0.014, SIZE_PRECISION));
         assert_eq!(status.filled_qty, Quantity::new(0.014, SIZE_PRECISION));
@@ -1472,7 +1473,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(status.order_status, OrderStatus::Filled);
-        assert_eq!(status.order_side, OrderSide::Sell);
+        assert_eq!(status.order_side, OrderSide::Sell.into());
         assert_eq!(status.quantity, Quantity::new(0.010, SIZE_PRECISION));
         assert_eq!(status.filled_qty, Quantity::new(0.010, SIZE_PRECISION));
     }

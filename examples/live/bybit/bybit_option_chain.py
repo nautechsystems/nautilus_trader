@@ -26,36 +26,88 @@ On start, this actor:
 
 """
 
+from __future__ import annotations
+
+from typing import Any
+from typing import Self
+
 from nautilus_trader.adapters.bybit import BYBIT
 from nautilus_trader.adapters.bybit import BybitDataClientConfig
+from nautilus_trader.adapters.bybit import BybitDataClientFactory
 from nautilus_trader.adapters.bybit import BybitEnvironment
-from nautilus_trader.adapters.bybit import BybitLiveDataClientFactory
 from nautilus_trader.adapters.bybit import BybitProductType
-from nautilus_trader.common.actor import Actor
-from nautilus_trader.config import ActorConfig
-from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.config import LoggingConfig
-from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.live.node import TradingNode
+from nautilus_trader.common import DataActor
+from nautilus_trader.common import Environment
+from nautilus_trader.config import DataActorConfig
+from nautilus_trader.config import ImportableActorConfig
+from nautilus_trader.live import LiveNode
+from nautilus_trader.model import ActorId
+from nautilus_trader.model import ClientId
+from nautilus_trader.model import OptionChainSlice
 from nautilus_trader.model import OptionSeriesId
 from nautilus_trader.model import StrikeRange
-from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model import TraderId
 
 
-class OptionChainTesterConfig(ActorConfig, frozen=True):
-    underlying: str = "BTC"
-    strikes_above: int = 3
-    strikes_below: int = 3
-    snapshot_interval_ms: int = 5_000
+TRADER_ID = TraderId.from_str("CHAIN-001")
+UNDERLYING = "BTC"
+STRIKES_ABOVE = 3
+STRIKES_BELOW = 3
+SNAPSHOT_INTERVAL_MS = 5_000
 
 
-class OptionChainTester(Actor):
+class OptionChainTesterConfig(DataActorConfig):
+    """
+    Collect option chain tester config tests.
+    """
+
+    _CUSTOM_FIELDS = (
+        "actor_id",
+        "underlying",
+        "strikes_above",
+        "strikes_below",
+        "snapshot_interval_ms",
+    )
+
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+        """
+        Create a new instance.
+        """
+        for key in cls._CUSTOM_FIELDS:
+            kwargs.pop(key, None)
+        return super().__new__(cls, *args, **kwargs)
+
+    def __init__(
+        self,
+        underlying: str = UNDERLYING,
+        strikes_above: int = STRIKES_ABOVE,
+        strikes_below: int = STRIKES_BELOW,
+        snapshot_interval_ms: int = SNAPSHOT_INTERVAL_MS,
+        actor_id: ActorId | str | None = None,
+        log_events: bool = True,
+        log_commands: bool = True,
+    ) -> None:
+        """
+        Initialize the helper.
+        """
+        self.actor_id = ActorId.from_str(actor_id) if isinstance(actor_id, str) else actor_id
+        self.log_events = log_events
+        self.log_commands = log_commands
+        self.underlying = underlying
+        self.strikes_above = strikes_above
+        self.strikes_below = strikes_below
+        self.snapshot_interval_ms = snapshot_interval_ms
+
+
+class OptionChainTester(DataActor):
     """
     Subscribes to an option chain and logs periodic snapshots.
     """
 
     def __init__(self, config: OptionChainTesterConfig) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
         self._underlying = config.underlying
         self._strikes_above = config.strikes_above
@@ -64,6 +116,9 @@ class OptionChainTester(Actor):
         self._series_id: OptionSeriesId | None = None
 
     def on_start(self) -> None:
+        """
+        On start.
+        """
         instruments = self.cache.instruments()
 
         # Collect option instruments: (instrument, settlement_currency, expiry_ns)
@@ -83,7 +138,8 @@ class OptionChainTester(Actor):
             options.append((inst, str(inst.settlement_currency), expiry))
 
         if not options:
-            self.log.warning(f"No {self._underlying} options found in cache")
+            log_msg = f"No {self._underlying} options found in cache"
+            self.log.warning(log_msg)
             return
 
         # Find the nearest (soonest) future expiry
@@ -99,10 +155,8 @@ class OptionChainTester(Actor):
         # Count options at nearest expiry with matching settlement
         count = sum(1 for _, s, exp in options if exp == nearest_expiry and s == settlement)
 
-        self.log.info(
-            f"Found {count} {self._underlying} options at nearest expiry "
-            f"(ts={nearest_expiry}, settlement={settlement})",
-        )
+        log_msg = f"Found {count} {self._underlying} options at nearest expiry (ts={nearest_expiry}, settlement={settlement})"
+        self.log.info(log_msg)
 
         # Build OptionSeriesId for the nearest expiry
         series_id = OptionSeriesId(
@@ -113,7 +167,8 @@ class OptionChainTester(Actor):
         )
         self._series_id = series_id
 
-        self.log.info(f"Subscribing to option chain: {series_id}")
+        log_msg = f"Subscribing to option chain: {series_id}"
+        self.log.info(log_msg)
 
         # Build StrikeRange
         strike_range = StrikeRange.atm_relative(
@@ -130,17 +185,17 @@ class OptionChainTester(Actor):
             client_id=client_id,
         )
 
-    def on_option_chain(self, chain_slice) -> None:
-        atm = chain_slice.atm_strike or "-"
-        self.log.info(
-            f"OPTION_CHAIN | {chain_slice.series_id} | atm={atm} | "
-            f"calls={chain_slice.call_count()} puts={chain_slice.put_count()} | "
-            f"strikes={chain_slice.strike_count()}",
-        )
+    def on_option_chain(self, slice: OptionChainSlice) -> None:
+        """
+        On option chain.
+        """
+        atm = slice.atm_strike or "-"
+        log_msg = f"OPTION_CHAIN | {slice.series_id} | atm={atm} | calls={slice.call_count()} puts={slice.put_count()} | strikes={slice.strike_count()}"
+        self.log.info(log_msg)
 
-        for strike in chain_slice.strikes():
-            call = chain_slice.get_call(strike)
-            put = chain_slice.get_put(strike)
+        for strike in slice.strikes():
+            call = slice.get_call(strike)
+            put = slice.get_put(strike)
 
             if call is not None:
                 q = call.quote
@@ -170,45 +225,54 @@ class OptionChainTester(Actor):
             else:
                 put_info = "-"
 
-            self.log.info(f"  K={strike} | CALL: {call_info} | PUT: {put_info}")
+            log_msg = f"  K={strike} | CALL: {call_info} | PUT: {put_info}"
+            self.log.info(log_msg)
 
     def on_stop(self) -> None:
+        """
+        On stop.
+        """
         if self._series_id is not None:
             self.unsubscribe_option_chain(
                 series_id=self._series_id,
                 client_id=ClientId(BYBIT),
             )
-            self.log.info(f"Unsubscribed from option chain {self._series_id}")
+            log_msg = f"Unsubscribed from option chain {self._series_id}"
+            self.log.info(log_msg)
 
 
-# Configure the trading node
-config_node = TradingNodeConfig(
-    trader_id=TraderId("CHAIN-001"),
-    logging=LoggingConfig(
-        log_level="INFO",
-        use_pyo3=True,
-    ),
-    data_clients={
-        BYBIT: BybitDataClientConfig(
-            environment=BybitEnvironment.MAINNET,
-            instrument_provider=InstrumentProviderConfig(load_all=True),
-            product_types=(BybitProductType.OPTION,),
+def main() -> None:
+    """
+    Run the example.
+    """
+    node = (
+        LiveNode.builder("BYBIT-OPTION-CHAIN-001", TRADER_ID, Environment.LIVE)
+        .add_data_client(
+            None,
+            BybitDataClientFactory(),
+            BybitDataClientConfig(
+                product_types=[BybitProductType.OPTION],
+                environment=BybitEnvironment.MAINNET,
+            ),
+        )
+        .build()
+    )
+    node.add_actor_from_config(
+        ImportableActorConfig(
+            actor_path="bybit_option_chain:OptionChainTester",
+            config_path="bybit_option_chain:OptionChainTesterConfig",
+            config={
+                "actor_id": "BYBIT-OPTION-CHAIN-001",
+                "underlying": UNDERLYING,
+                "strikes_above": STRIKES_ABOVE,
+                "strikes_below": STRIKES_BELOW,
+                "snapshot_interval_ms": SNAPSHOT_INTERVAL_MS,
+            },
         ),
-    },
-    timeout_connection=30.0,
-    timeout_reconciliation=10.0,
-    timeout_portfolio=10.0,
-    timeout_disconnection=10.0,
-    timeout_post_stop=2.0,
-)
+    )
 
-node = TradingNode(config=config_node)
-node.trader.add_actor(OptionChainTester(OptionChainTesterConfig()))
-
-node.add_data_client_factory(BYBIT, BybitLiveDataClientFactory)
-node.build()
-
-try:
     node.run()
-finally:
-    node.dispose()
+
+
+if __name__ == "__main__":
+    main()

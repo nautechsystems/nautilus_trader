@@ -18,6 +18,7 @@ use nautilus_core::time::AtomicTime;
 use nautilus_live::{ExecutionEventEmitter, execution::failure::CommandFailure};
 use nautilus_model::{
     identifiers::VenueOrderId,
+    instruments::Instrument,
     orders::{Order, OrderAny},
 };
 
@@ -121,22 +122,28 @@ impl PolymarketExecutionClient {
         });
     }
 
-    pub(super) fn cancel_all_orders_command(&self, cmd: &CancelAllOrders) {
+    pub(super) fn cancel_all_orders_command(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
         let cache = self.core.cache();
+        let side = cmd.order_side;
+        let asset_id = if side.is_none() {
+            let instrument = cache.instrument(&cmd.instrument_id).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Cannot cancel all orders: instrument not found in cache for {}",
+                    cmd.instrument_id
+                )
+            })?;
+            Some(instrument.raw_symbol().to_string())
+        } else {
+            None
+        };
         let open_orders = cache.orders_open(
             Some(&self.core.venue),
             Some(&cmd.instrument_id),
-            Some(&cmd.strategy_id),
             None,
-            Some(cmd.order_side),
+            Some(&self.core.account_id),
+            side,
         );
 
-        if open_orders.is_empty() {
-            log::debug!("No open orders to cancel for {}", cmd.instrument_id);
-            return;
-        }
-
-        let mut venue_order_ids = Vec::new();
         let mut orders = Vec::new();
 
         for order in open_orders {
@@ -144,7 +151,6 @@ impl PolymarketExecutionClient {
                 self.order_identities
                     .venue_order_id(&order.client_order_id())
             }) {
-                venue_order_ids.push(venue_order_id.to_string());
                 orders.push((venue_order_id, order.clone()));
             } else {
                 log::debug!(
@@ -155,32 +161,70 @@ impl PolymarketExecutionClient {
             }
         }
 
-        if venue_order_ids.is_empty() {
-            log::debug!("All matching orders are awaiting venue order IDs");
-            return;
-        }
-
         let clock = self.clock;
         let submitter = self.submitter.clone();
         let emitter = self.emitter.clone();
+        let instrument_id = cmd.instrument_id;
 
         self.spawn_task("cancel_all_orders", async move {
-            let order_id_refs: Vec<&str> = venue_order_ids.iter().map(String::as_str).collect();
-            match submitter.cancel_orders(&order_id_refs).await {
+            let response = match side {
+                None => {
+                    let asset_id = asset_id
+                        .as_deref()
+                        .expect("asset_id must be resolved for unsided cancellation");
+                    submitter.cancel_market_orders(asset_id).await
+                }
+                Some(side) => {
+                    let venue_order_ids = orders
+                        .iter()
+                        .map(|(venue_order_id, _)| venue_order_id.to_string())
+                        .collect::<Vec<_>>();
+
+                    if venue_order_ids.is_empty() {
+                        log::debug!(
+                            "No cached {side} orders to cancel for instrument_id={instrument_id}"
+                        );
+                        return Ok(());
+                    }
+
+                    let order_id_refs = venue_order_ids.iter().map(String::as_str).collect::<Vec<_>>();
+                    submitter.cancel_orders(&order_id_refs).await
+                }
+            };
+
+            match response {
                 Ok(response) => {
                     for (venue_order_id, order) in &orders {
                         let venue_order_id_str = venue_order_id.to_string();
-                        process_cancel_result(
-                            &response,
-                            &venue_order_id_str,
-                            order,
-                            *venue_order_id,
-                            &emitter,
-                            clock,
-                        );
+                        if side.is_some()
+                            || response.not_canceled.contains_key(&venue_order_id_str)
+                            || response
+                                .canceled
+                                .iter()
+                                .any(|order_id| order_id == &venue_order_id_str)
+                        {
+                            process_cancel_result(
+                                &response,
+                                &venue_order_id_str,
+                                order,
+                                *venue_order_id,
+                                &emitter,
+                                clock,
+                            );
+                        } else {
+                            log::debug!(
+                                "Cancel-all response omitted local order {} ({})",
+                                order.client_order_id(),
+                                venue_order_id
+                            );
+                        }
                     }
 
-                    log::debug!("Canceled {} orders", response.canceled.len());
+                    log::debug!(
+                        "Cancel-all completed for instrument_id={instrument_id}: canceled={}, not_canceled={}",
+                        response.canceled.len(),
+                        response.not_canceled.len()
+                    );
                     Ok(())
                 }
                 Err(e) => {
@@ -189,6 +233,8 @@ impl PolymarketExecutionClient {
                 }
             }
         });
+
+        Ok(())
     }
 
     pub(super) fn batch_cancel_orders_command(&self, cmd: &BatchCancelOrders) {

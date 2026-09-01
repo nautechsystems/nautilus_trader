@@ -22,7 +22,7 @@ use nautilus_model::defi::DexType;
 ///
 /// This manager tracks which pool addresses are subscribed for each event type
 /// and maintains the event signature encodings for efficient filtering.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct DefiDataSubscriptionManager {
     block_demand_explicit: bool,
     block_demand_pool_events: bool,
@@ -43,35 +43,11 @@ pub struct DefiDataSubscriptionManager {
     subscribed_pool_fee_protocol_collects: AHashMap<DexType, AHashSet<Address>>,
 }
 
-impl Default for DefiDataSubscriptionManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl DefiDataSubscriptionManager {
     /// Creates a new [`DefiDataSubscriptionManager`] instance.
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            block_demand_explicit: false,
-            block_demand_pool_events: false,
-            block_feed_backend: None,
-            pool_swap_event_encoded: AHashMap::new(),
-            pool_burn_event_encoded: AHashMap::new(),
-            pool_mint_event_encoded: AHashMap::new(),
-            pool_collect_event_encoded: AHashMap::new(),
-            pool_flash_event_encoded: AHashMap::new(),
-            pool_fee_protocol_update_event_encoded: AHashMap::new(),
-            pool_fee_protocol_collect_event_encoded: AHashMap::new(),
-            subscribed_pool_burns: AHashMap::new(),
-            subscribed_pool_mints: AHashMap::new(),
-            subscribed_pool_swaps: AHashMap::new(),
-            subscribed_pool_collects: AHashMap::new(),
-            subscribed_pool_flashes: AHashMap::new(),
-            subscribed_pool_fee_protocol_updates: AHashMap::new(),
-            subscribed_pool_fee_protocol_collects: AHashMap::new(),
-        }
+        Self::default()
     }
 
     pub(crate) fn add_block_demand(

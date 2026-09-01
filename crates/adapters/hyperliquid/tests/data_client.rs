@@ -25,7 +25,7 @@ use std::{
     net::SocketAddr,
     num::NonZeroUsize,
     path::PathBuf,
-    sync::{Arc, Mutex as StdMutex, OnceLock},
+    sync::{Arc, OnceLock},
     time::Duration,
 };
 
@@ -42,15 +42,16 @@ use futures_util::StreamExt;
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use nautilus_common::{
     clients::DataClient,
-    live::runner::set_data_event_sender,
+    live::runner::{replace_system_event_sender, set_data_event_sender},
     messages::{
-        DataEvent, DataResponse,
+        DataEvent, DataResponse, SystemEvent,
         data::{
             RequestBars, RequestBookSnapshot, RequestCustomData, RequestFundingRates,
             RequestInstrument, RequestInstruments, RequestTrades, SubscribeBookDeltas,
             SubscribeCustomData, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
             UnsubscribeCustomData, UnsubscribeMarkPrices,
         },
+        system::SocketState,
     },
     testing::wait_until_async,
 };
@@ -71,6 +72,7 @@ use nautilus_hyperliquid::{
         query::InfoRequest,
     },
 };
+use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::{BarType, CustomData, Data, DataType},
     enums::BookType,
@@ -78,8 +80,10 @@ use nautilus_model::{
     instruments::Instrument,
 };
 use nautilus_network::http::{HttpClient, Method};
+use parking_lot::Mutex;
 use rstest::rstest;
 use serde_json::{Value, json};
+use ustr::Ustr;
 
 #[derive(Clone, Default)]
 struct TestServerState {
@@ -100,22 +104,16 @@ struct TestServerState {
 
 #[derive(Default)]
 struct CapturingWarnLogger {
-    messages: StdMutex<Vec<String>>,
+    messages: Mutex<Vec<String>>,
 }
 
 impl CapturingWarnLogger {
     fn clear(&self) {
-        self.messages
-            .lock()
-            .expect("log collector mutex poisoned")
-            .clear();
+        self.messages.lock().clear();
     }
 
     fn messages(&self) -> Vec<String> {
-        self.messages
-            .lock()
-            .expect("log collector mutex poisoned")
-            .clone()
+        self.messages.lock().clone()
     }
 }
 
@@ -126,10 +124,7 @@ impl Log for CapturingWarnLogger {
 
     fn log(&self, record: &Record<'_>) {
         if self.enabled(record.metadata()) {
-            self.messages
-                .lock()
-                .expect("log collector mutex poisoned")
-                .push(record.args().to_string());
+            self.messages.lock().push(record.args().to_string());
         }
     }
 
@@ -182,8 +177,7 @@ fn spot_meta_fixture() -> Value {
 
 async fn wait_for_server(addr: SocketAddr, path: &str) {
     let health_url = format!("http://{addr}{path}");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();
@@ -336,15 +330,13 @@ struct TestHttpClient {
 
 impl TestHttpClient {
     fn new(base_url: String) -> Self {
-        let client = HttpClient::new(
-            HashMap::from([("Content-Type".to_string(), "application/json".to_string())]),
-            vec![],
-            vec![],
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let client = HttpClient::builder()
+            .headers(HashMap::from([(
+                "Content-Type".to_string(),
+                "application/json".to_string(),
+            )]))
+            .build()
+            .unwrap();
 
         Self { client, base_url }
     }
@@ -992,16 +984,47 @@ async fn test_data_client_connect_disconnect() {
     let addr = start_mock_server(state).await;
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     set_data_event_sender(tx);
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
 
     let config = create_data_client_config(addr);
-    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    let registry = SocketReconnectRegistry::default();
+    let mut client = registry
+        .scope(|| HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config))
+        .unwrap();
     assert!(!client.is_connected());
 
     client.connect().await.unwrap();
+    let event = tokio::time::timeout(Duration::from_secs(5), system_rx.recv())
+        .await
+        .expect("timed out waiting for socket state change")
+        .expect("system event channel closed");
+    let SystemEvent::SocketState(change) = event;
+    let endpoint = Ustr::from("hyperliquid-data-streams");
+    let handle = registry.handle(*HYPERLIQUID_CLIENT_ID, endpoint).unwrap();
+
     assert!(client.is_connected());
+    assert_eq!(change.client_id, *HYPERLIQUID_CLIENT_ID);
+    assert_eq!(change.venue, Some(*HYPERLIQUID_VENUE));
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Connected);
+    assert_eq!(
+        handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    let event = tokio::time::timeout(Duration::from_secs(5), system_rx.recv())
+        .await
+        .expect("timed out waiting for socket state change")
+        .expect("system event channel closed");
+    let SystemEvent::SocketState(change) = event;
+    assert_eq!(change.client_id, *HYPERLIQUID_CLIENT_ID);
+    assert_eq!(change.venue, Some(*HYPERLIQUID_VENUE));
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Disconnected);
 
     client.disconnect().await.unwrap();
     assert!(!client.is_connected());
+    assert!(registry.handle(*HYPERLIQUID_CLIENT_ID, endpoint).is_none());
 }
 
 #[rstest]

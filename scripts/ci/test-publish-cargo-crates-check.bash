@@ -21,8 +21,85 @@ write_mock_commands() {
 #!/usr/bin/env bash
 set -euo pipefail
 
+write_mock_package() {
+  local crate_name=$1
+  local crate_version=$2
+  local package_dir="${CARGO_TARGET_DIR:?}/package"
+  local source_dir="${package_dir}/${crate_name}-${crate_version}"
+
+  mkdir -p "${source_dir}/src"
+  cat > "${source_dir}/Cargo.toml" << TOML
+[package]
+name = "${crate_name}"
+version = "${crate_version}"
+edition = "2024"
+
+[features]
+defi = []
+hypersync = []
+turmoil = []
+
+[lib]
+path = "src/lib.rs"
+TOML
+  printf '\n' > "${source_dir}/src/lib.rs"
+  tar -czf "${package_dir}/${crate_name}-${crate_version}.crate" \
+    -C "$package_dir" "${crate_name}-${crate_version}"
+}
+
 if [[ "$*" == "metadata --no-deps --format-version=1" ]]; then
   cat "${MOCK_CARGO_METADATA:?}"
+  exit 0
+fi
+
+if [[ "${1:-}" == "metadata" && "$*" == "metadata --format-version=1 --manifest-path "* ]]; then
+  if [[ -n "${CARGO_REGISTRY_TOKEN:-}" || -n "${CARGO_REGISTRIES_CRATES_IO_TOKEN:-}" ]]; then
+    echo "consumer metadata inherited a crates.io token" >&2
+    exit 2
+  fi
+
+  registry_source='"registry+https://github.com/rust-lang/crates.io-index"'
+  arrow_source=$registry_source
+  thrift_package=',
+    {"name":"thrift","version":"0.17.0","source":'"${registry_source}"'}'
+  if [[ "${MOCK_CARGO_CONSUMER_GRAPH:-valid}" == "local-arrow" ]]; then
+    arrow_source=null
+  fi
+  if [[ "${MOCK_CARGO_CONSUMER_GRAPH:-valid}" == "missing-thrift" ]]; then
+    thrift_package=""
+  fi
+
+  cat << JSON
+{
+  "packages": [
+    {"name":"arrow","version":"57.3.1","source":${arrow_source}},
+    {"name":"arrow","version":"59.2.0","source":${registry_source}},
+    {"name":"parquet","version":"57.3.1","source":${registry_source}},
+    {"name":"parquet","version":"59.2.0","source":${registry_source}}${thrift_package}
+  ]
+}
+JSON
+  exit 0
+fi
+
+if [[ "${1:-}" == "check" && "$*" == "check --locked --manifest-path "* ]]; then
+  exit 0
+fi
+
+if [[ "$*" == "package --workspace --locked --no-verify" ]]; then
+  if [[ -n "${CARGO_REGISTRY_TOKEN:-}" || -n "${CARGO_REGISTRIES_CRATES_IO_TOKEN:-}" ]]; then
+    echo "cargo package inherited a crates.io token" >&2
+    exit 2
+  fi
+
+  if [[ -n "${MOCK_CARGO_LOG:-}" ]]; then
+    printf '%s\n' "$*" >> "$MOCK_CARGO_LOG"
+  fi
+  while IFS=$'\t' read -r package_name package_version; do
+    write_mock_package "$package_name" "$package_version"
+  done < <(jq -r \
+    '.packages[] | select(.source == null) | [.name, .version] | @tsv' \
+    "${MOCK_CARGO_METADATA:?}")
   exit 0
 fi
 
@@ -222,6 +299,20 @@ write_dev_build_metadata() {
       "source": null,
       "publish": null,
       "dependencies": []
+    },
+    {
+      "name": "nautilus-blockchain",
+      "version": "0.63.0",
+      "source": null,
+      "publish": null,
+      "dependencies": []
+    },
+    {
+      "name": "nautilus-cli",
+      "version": "0.63.0",
+      "source": null,
+      "publish": null,
+      "dependencies": []
     }
   ]
 }
@@ -365,6 +456,7 @@ run_publish_script() {
         PATH="${mock_bin}:${PATH}" \
         CARGO_PUBLISH_SUCCESS_DELAY_SECONDS=0 \
         CARGO_REGISTRY_TOKEN="$cargo_registry_token" \
+        CARGO_REGISTRIES_CRATES_IO_TOKEN="$cargo_registry_token" \
         MOCK_CARGO_LOG="$cargo_log" \
         MOCK_CARGO_METADATA="$metadata_file" \
         MOCK_CRATES_IO_ERROR_FILE="$error_file" \
@@ -379,6 +471,7 @@ run_publish_script() {
         PATH="${mock_bin}:${PATH}" \
         CARGO_PUBLISH_SUCCESS_DELAY_SECONDS=0 \
         CARGO_REGISTRY_TOKEN="$cargo_registry_token" \
+        CARGO_REGISTRIES_CRATES_IO_TOKEN="$cargo_registry_token" \
         MOCK_CARGO_LOG="$cargo_log" \
         MOCK_CARGO_METADATA="$metadata_file" \
         MOCK_CRATES_IO_ERROR_FILE="$error_file" \
@@ -449,7 +542,7 @@ assert_contains "$dev_build_output" $'1. mock-dev\t1.0.0' \
   "dev path dependency was not published before its dependent crate."
 assert_contains "$dev_build_output" $'2. mock-build\t1.0.0' \
   "build path dependency was not published before its dependent crate."
-assert_contains "$dev_build_output" $'3. mock-root\t1.0.0' \
+assert_contains "$dev_build_output" $'5. mock-root\t1.0.0' \
   "dependent crate was not published after its dev and build path dependencies."
 assert_contains "$dev_build_output" "Cargo crate publish plan is valid." \
   "dev/build dependency publish plan should pass."
@@ -473,11 +566,11 @@ dry_run_expected_cargo_log="${work_dir}/dry-run-expected-cargo.log"
 : > "$dry_run_curl_log"
 : > "$dry_run_cargo_log"
 run_publish_script "--dry-run" "$dev_build_metadata" "$dry_run_exists_file" \
-  "$dry_run_curl_log" "$dry_run_cargo_log" \
+  "$dry_run_curl_log" "$dry_run_cargo_log" "mock-token" \
   > "$dry_run_output" 2>&1
 
 cat > "$dry_run_expected_cargo_log" << 'EXPECTED'
-publish --dry-run --workspace --locked --no-verify
+package --workspace --locked --no-verify
 EXPECTED
 
 if ! cmp -s "$dry_run_expected_cargo_log" "$dry_run_cargo_log"; then
@@ -489,6 +582,8 @@ if ! cmp -s "$dry_run_expected_cargo_log" "$dry_run_cargo_log"; then
 fi
 assert_contains "$dry_run_output" "Finished dry-running Cargo crates." \
   "--dry-run mode did not finish successfully."
+assert_contains "$dry_run_output" "Cargo published consumer graph is valid" \
+  "--dry-run mode did not validate the published consumer graph."
 assert_not_contains "$dry_run_output" "CARGO_REGISTRY_TOKEN not set." \
   "--dry-run mode should not require CARGO_REGISTRY_TOKEN."
 
@@ -496,6 +591,36 @@ if [[ -s "$dry_run_curl_log" ]]; then
   cat "$dry_run_curl_log" >&2
   fail "--dry-run mode should not query crates.io versions for a publishable graph."
 fi
+
+local_arrow_output="${work_dir}/local-arrow-output.txt"
+set +e
+MOCK_CARGO_CONSUMER_GRAPH=local-arrow \
+  run_publish_script "--dry-run" "$dev_build_metadata" "$dry_run_exists_file" \
+  "$dry_run_curl_log" "$dry_run_cargo_log" \
+  > "$local_arrow_output" 2>&1
+local_arrow_status=$?
+set -e
+
+if [[ "$local_arrow_status" -eq 0 ]]; then
+  fail "--dry-run mode should reject a local Arrow package in the consumer graph."
+fi
+assert_contains "$local_arrow_output" "Published consumer graph resolved local arrow" \
+  "--dry-run mode did not report the local Arrow package."
+
+missing_thrift_output="${work_dir}/missing-thrift-output.txt"
+set +e
+MOCK_CARGO_CONSUMER_GRAPH=missing-thrift \
+  run_publish_script "--dry-run" "$dev_build_metadata" "$dry_run_exists_file" \
+  "$dry_run_curl_log" "$dry_run_cargo_log" \
+  > "$missing_thrift_output" 2>&1
+missing_thrift_status=$?
+set -e
+
+if [[ "$missing_thrift_status" -eq 0 ]]; then
+  fail "--dry-run mode should reject a consumer graph without thrift."
+fi
+assert_contains "$missing_thrift_output" "thrift 0 from crates.io is missing" \
+  "--dry-run mode did not report the missing thrift package."
 
 publish_no_token_exists_file="${work_dir}/publish-no-token-existing-crates.txt"
 publish_no_token_output="${work_dir}/publish-no-token-output.txt"
@@ -542,6 +667,8 @@ run_publish_script "" "$dev_build_metadata" "$publish_exists_file" \
 cat > "$publish_expected_cargo_log" << 'EXPECTED'
 publish --locked --no-verify --package mock-dev
 publish --locked --no-verify --package mock-build
+publish --locked --no-verify --package nautilus-blockchain
+publish --locked --no-verify --package nautilus-cli
 publish --locked --no-verify --package mock-root
 EXPECTED
 
@@ -554,8 +681,8 @@ if ! cmp -s "$publish_expected_cargo_log" "$publish_cargo_log"; then
 fi
 assert_contains "$publish_output" "Finished publishing Cargo crates." \
   "publish mode did not finish successfully."
-assert_not_contains "$publish_cargo_log" "--dry-run" \
-  "publish mode should not pass --dry-run to cargo publish."
+assert_not_contains "$publish_output" "Cargo published consumer graph is valid" \
+  "publish mode should rely on the required unprivileged preflight."
 
 git_only_metadata="${work_dir}/git-only-metadata.json"
 write_git_only_metadata "$git_only_metadata"

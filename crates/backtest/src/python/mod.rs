@@ -37,6 +37,11 @@ pub fn backtest(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::result::BacktestResult>()?;
     m.add_class::<crate::node::BacktestNode>()?;
     m.add_class::<engine::PyBacktestEngine>()?;
+    m.add_class::<modules::PySimulationModule>()?;
+    m.add_class::<modules::PySimulationModuleContext>()?;
+    m.add_class::<modules::PyAccountAdjustmentOutcome>()?;
+    m.add_class::<crate::modules::cfd_swap::CfdSwapRate>()?;
+    m.add_class::<crate::modules::cfd_swap::CfdSwapModule>()?;
     m.add_class::<crate::modules::fx_rollover::InterestRateRecord>()?;
     m.add_class::<crate::modules::fx_rollover::FXRolloverInterestModule>()?;
     Ok(())

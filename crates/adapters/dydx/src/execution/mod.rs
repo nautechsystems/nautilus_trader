@@ -39,7 +39,10 @@
 //! See <https://docs.dydx.xyz/concepts/trading/orders#short-term-vs-long-term> for details.
 
 use std::{
-    sync::{Arc, Mutex},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -50,7 +53,7 @@ use dashmap::DashMap;
 use futures_util::{Stream, StreamExt, pin_mut};
 use nautilus_common::{
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender},
+    live::runner::get_exec_event_sender,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
@@ -58,13 +61,16 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED, Params, UUID4, UnixNanos,
+    Params, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
+use nautilus_live::{
+    ExecutionClientCore, ExecutionEventEmitter, SocketControlFactory,
+    task::{TaskGroup, TaskGroupGuard},
+};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
+    enums::{AccountType, OmsType, OrderStatus, OrderType, TimeInForce},
     events::{AccountState, OrderAccepted, OrderCanceled, OrderEventAny, OrderExpired},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Symbol, Venue, VenueOrderId,
@@ -75,8 +81,8 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money},
 };
 use nautilus_network::retry::RetryConfig;
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
-use tokio::task::JoinHandle;
 
 use crate::{
     common::{
@@ -195,8 +201,11 @@ pub struct DydxExecutionClient {
     tx_manager: Option<Arc<TransactionManager>>,
     broadcaster: Option<Arc<TxBroadcaster>>,
     order_builder: Option<Arc<OrderMessageBuilder>>,
-    ws_stream_handle: Option<JoinHandle<()>>,
-    pending_tasks: Mutex<Vec<(&'static str, JoinHandle<()>)>>,
+    session_tasks: TaskGroup,
+    pending_tasks: TaskGroup,
+    shutdown_errors: Vec<String>,
+    pending_task_labels: Arc<Mutex<AHashMap<u64, &'static str>>>,
+    next_pending_task_id: AtomicU64,
 }
 
 impl DydxExecutionClient {
@@ -251,9 +260,13 @@ impl DydxExecutionClient {
             Some(20),
             config.transport_backend,
             config.proxy_url.clone(),
-        );
+        )
+        .with_socket_factory(SocketControlFactory::new(core.client_id, Some(*DYDX_VENUE)));
 
         let grpc_client = Arc::new(tokio::sync::RwLock::new(None));
+
+        let session_tasks = TaskGroup::new();
+        let pending_tasks = TaskGroup::new();
 
         Ok(Self {
             core,
@@ -275,8 +288,11 @@ impl DydxExecutionClient {
             tx_manager: None,
             broadcaster: None,
             order_builder: None,
-            ws_stream_handle: None,
-            pending_tasks: Mutex::new(Vec::new()),
+            session_tasks,
+            pending_tasks,
+            shutdown_errors: Vec::new(),
+            pending_task_labels: Arc::new(Mutex::new(AHashMap::new())),
+            next_pending_task_id: AtomicU64::new(0),
         })
     }
 
@@ -316,11 +332,11 @@ impl DydxExecutionClient {
     }
 
     fn spawn_ws_stream_handler(
-        &mut self,
+        &self,
         stream: impl Stream<Item = DydxWsOutputMessage> + Send + 'static,
-    ) {
-        if self.ws_stream_handle.is_some() {
-            return;
+    ) -> anyhow::Result<()> {
+        if !self.session_tasks.is_empty() {
+            anyhow::bail!("dYdX WebSocket stream task is already registered");
         }
 
         log::debug!("Starting execution WebSocket message processing task");
@@ -338,12 +354,11 @@ impl DydxExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
 
-        let handle = get_runtime().spawn(async move {
+        let future = async move {
             log::debug!("Execution WebSocket message loop started");
 
             // Cumulative fill totals per untracked order for avg_px computation
-            let mut cum_fill_totals: AHashMap<VenueOrderId, (Decimal, Decimal)> =
-                AHashMap::new();
+            let mut cum_fill_totals: AHashMap<VenueOrderId, (Decimal, Decimal)> = AHashMap::new();
 
             pin_mut!(stream);
             while let Some(msg) = stream.next().await {
@@ -362,64 +377,65 @@ impl DydxExecutionClient {
                         let ts_event = ts_init;
 
                         if let Some(ref subaccount) = msg.contents.subaccount {
-                        match parse_account_state(
-                            subaccount,
-                            account_id,
-                            &inst_map,
-                            &oracle_map,
-                            ts_event,
-                            ts_init,
-                        ) {
-                            Ok(account_state) => {
+                            match parse_account_state(
+                                subaccount,
+                                account_id,
+                                &inst_map,
+                                &oracle_map,
+                                ts_event,
+                                ts_init,
+                            ) {
+                                Ok(account_state) => {
+                                    log::debug!(
+                                        "Parsed account state: {} balance(s), {} margin(s)",
+                                        account_state.balances.len(),
+                                        account_state.margins.len()
+                                    );
+                                    emitter.send_account_state(account_state);
+                                }
+                                Err(e) => {
+                                    log::error!("Failed to parse account state: {e}");
+                                }
+                            }
+
+                            if let Some(ref positions) = subaccount.open_perpetual_positions {
                                 log::debug!(
-                                    "Parsed account state: {} balance(s), {} margin(s)",
-                                    account_state.balances.len(),
-                                    account_state.margins.len()
+                                    "Parsing {} position(s) from subscription",
+                                    positions.len()
                                 );
-                                emitter.send_account_state(account_state);
-                            }
-                            Err(e) => {
-                                log::error!("Failed to parse account state: {e}");
-                            }
-                        }
 
-                        if let Some(ref positions) =
-                            subaccount.open_perpetual_positions
-                        {
-                            log::debug!(
-                                "Parsing {} position(s) from subscription",
-                                positions.len()
-                            );
-
-                            for (market, ws_position) in positions {
-                                match parse_ws_position_report(
-                                    ws_position,
-                                    &instrument_cache,
-                                    account_id,
-                                    ts_init,
-                                ) {
-                                    Ok(report) => {
-                                        log::debug!(
-                                            "Parsed position report: {} {} {} {}",
-                                            report.instrument_id,
-                                            report.position_side,
-                                            report.quantity,
-                                            market
-                                        );
-                                        emitter.send_position_report(report);
-                                    }
-                                    Err(e) => {
-                                        log::error!(
-                                            "Failed to parse WebSocket position for {market}: {e}"
-                                        );
+                                for (market, ws_position) in positions {
+                                    match parse_ws_position_report(
+                                        ws_position,
+                                        &instrument_cache,
+                                        account_id,
+                                        ts_init,
+                                    ) {
+                                        Ok(report) => {
+                                            log::debug!(
+                                                "Parsed position report: {} {} {} {}",
+                                                report.instrument_id,
+                                                report.position_side,
+                                                report.quantity,
+                                                market
+                                            );
+                                            emitter.send_position_report(report);
+                                        }
+                                        Err(e) => {
+                                            log::error!(
+                                                "Failed to parse WebSocket position for {market}: {e}"
+                                            );
+                                        }
                                     }
                                 }
                             }
-                        }
                         } else {
-                            log::warn!("Subaccount subscription without initial state (new/empty subaccount)");
+                            log::warn!(
+                                "Subaccount subscription without initial state (new/empty subaccount)"
+                            );
 
-                            let currency = Currency::get_or_create_crypto_with_context("USDC", None);
+                            let currency =
+                                Currency::get_or_create_crypto_with_context("USDC", None);
                             let zero = Money::zero(currency);
                             let balance = AccountBalance::new_checked(zero, zero, zero)
                                 .expect("zero balance should always be valid");
@@ -459,11 +475,13 @@ impl DydxExecutionClient {
                                 );
 
                                 if let Ok(client_id_u32) = ws_order.client_id.parse::<u32>() {
-                                    let client_meta = ws_order.client_metadata
+                                    let client_meta = ws_order
+                                        .client_metadata
                                         .as_ref()
                                         .and_then(|s| s.parse::<u32>().ok())
                                         .unwrap_or(crate::grpc::DEFAULT_RUST_CLIENT_METADATA);
-                                    order_id_map.insert(ws_order.id.clone(), (client_id_u32, client_meta));
+                                    order_id_map
+                                        .insert(ws_order.id.clone(), (client_id_u32, client_meta));
                                 }
 
                                 match parse_ws_order_report(
@@ -478,16 +496,23 @@ impl DydxExecutionClient {
                                         if !report.order_status.is_open()
                                             && let Ok(cid) = ws_order.client_id.parse::<u32>()
                                         {
-                                            let meta = ws_order.client_metadata
+                                            let meta = ws_order
+                                                .client_metadata
                                                 .as_ref()
                                                 .and_then(|s| s.parse::<u32>().ok())
-                                                .unwrap_or(crate::grpc::DEFAULT_RUST_CLIENT_METADATA);
+                                                .unwrap_or(
+                                                    crate::grpc::DEFAULT_RUST_CLIENT_METADATA,
+                                                );
                                             terminal_orders.push((cid, meta, ws_order.id.clone()));
                                         }
+                                        let order_side = report
+                                            .order_side
+                                            .as_ref()
+                                            .map_or("NO_ORDER_SIDE", AsRef::as_ref);
                                         log::debug!(
                                             "Parsed order report: {} {} {:?} qty={} client_order_id={:?}",
                                             report.instrument_id,
-                                            report.order_side,
+                                            order_side,
                                             report.order_status,
                                             report.quantity,
                                             report.client_order_id
@@ -524,7 +549,10 @@ impl DydxExecutionClient {
                                         );
 
                                         let identity = report.client_order_id.and_then(|cid| {
-                                            dispatch_state.order_identities.get(&cid).map(|r| (cid, r.clone()))
+                                            dispatch_state
+                                                .order_identities
+                                                .get(&cid)
+                                                .map(|r| (cid, r.clone()))
                                         });
 
                                         if let Some((cid, ident)) = identity {
@@ -543,15 +571,23 @@ impl DydxExecutionClient {
                                                     ts_init,
                                                     false,
                                                 );
-                                                emitter.send_order_event(OrderEventAny::Accepted(accepted));
+                                                emitter.send_order_event(OrderEventAny::Accepted(
+                                                    accepted,
+                                                ));
                                             }
 
                                             dispatch_state.insert_filled(cid);
-                                            let instrument = instrument_cache.get(&report.instrument_id);
+                                            let instrument =
+                                                instrument_cache.get(&report.instrument_id);
                                             let quote_currency = instrument
-                                                .map_or_else(Currency::USD, |i: InstrumentAny| i.quote_currency());
+                                                .map_or_else(Currency::USD, |i: InstrumentAny| {
+                                                    i.quote_currency()
+                                                });
                                             let filled = fill_report_to_order_filled(
-                                                &report, trader_id, &ident, quote_currency,
+                                                &report,
+                                                trader_id,
+                                                &ident,
+                                                quote_currency,
                                             );
                                             emitter.send_order_event(OrderEventAny::Filled(filled));
                                         } else {
@@ -585,7 +621,10 @@ impl DydxExecutionClient {
 
                         for report in pending_order_reports {
                             let identity = report.client_order_id.and_then(|cid| {
-                                dispatch_state.order_identities.get(&cid).map(|r| (cid, r.clone()))
+                                dispatch_state
+                                    .order_identities
+                                    .get(&cid)
+                                    .map(|r| (cid, r.clone()))
                             });
 
                             if let Some((cid, ident)) = identity {
@@ -629,7 +668,9 @@ impl DydxExecutionClient {
                                                 ts_init,
                                                 false,
                                             );
-                                            emitter.send_order_event(OrderEventAny::Accepted(accepted));
+                                            emitter.send_order_event(OrderEventAny::Accepted(
+                                                accepted,
+                                            ));
                                         }
                                         // Map venue cancel-on-expiry to OrderExpired
                                         // (dYdX reports GTD expiry as a cancel event).
@@ -650,7 +691,8 @@ impl DydxExecutionClient {
                                                 Some(report.venue_order_id),
                                                 Some(account_id),
                                             );
-                                            emitter.send_order_event(OrderEventAny::Expired(expired));
+                                            emitter
+                                                .send_order_event(OrderEventAny::Expired(expired));
                                         } else {
                                             let canceled = OrderCanceled::new(
                                                 trader_id,
@@ -664,7 +706,9 @@ impl DydxExecutionClient {
                                                 Some(report.venue_order_id),
                                                 Some(account_id),
                                             );
-                                            emitter.send_order_event(OrderEventAny::Canceled(canceled));
+                                            emitter.send_order_event(OrderEventAny::Canceled(
+                                                canceled,
+                                            ));
                                         }
                                         dispatch_state.cleanup_terminal(&cid);
                                     }
@@ -692,7 +736,9 @@ impl DydxExecutionClient {
                                                 ts_init,
                                                 false,
                                             );
-                                            emitter.send_order_event(OrderEventAny::Accepted(accepted));
+                                            emitter.send_order_event(OrderEventAny::Accepted(
+                                                accepted,
+                                            ));
                                         }
                                         let expired = OrderExpired::new(
                                             trader_id,
@@ -740,10 +786,13 @@ impl DydxExecutionClient {
                                 };
 
                                 if instrument_cache.get(&instrument_id).is_some()
-                                    && let Ok(price_dec) = oracle_market.oracle_price.parse::<Decimal>()
+                                    && let Ok(price_dec) =
+                                        oracle_market.oracle_price.parse::<Decimal>()
                                 {
                                     oracle_prices.insert(instrument_id, price_dec);
-                                    log::trace!("Updated oracle price for {instrument_id}: {price_dec}");
+                                    log::trace!(
+                                        "Updated oracle price for {instrument_id}: {price_dec}"
+                                    );
                                 }
                             }
                         }
@@ -782,10 +831,13 @@ impl DydxExecutionClient {
                 }
             }
             log::debug!("WebSocket message processing task ended");
-        });
+        };
 
-        self.ws_stream_handle = Some(handle);
+        self.session_tasks
+            .spawn(future)
+            .context("failed to register dYdX execution WebSocket stream task")?;
         log::debug!("WebSocket stream handler started");
+        Ok(())
     }
 
     /// Marks instruments as initialized after HTTP client has fetched them.
@@ -848,16 +900,13 @@ impl DydxExecutionClient {
     where
         F: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        let handle = get_runtime().spawn(async move {
+        let future = async move {
             if let Err(e) = fut.await {
                 log::error!("{label}: {e:?}");
             }
-        });
+        };
 
-        self.pending_tasks
-            .lock()
-            .expect(MUTEX_POISONED)
-            .push((label, handle));
+        self.spawn_labeled(label, future);
     }
 
     /// Spawns an order submission task with error handling and rejection generation.
@@ -878,7 +927,7 @@ impl DydxExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
 
-        let handle = get_runtime().spawn(async move {
+        let future = async move {
             if let Err(e) = fut.await {
                 if is_definitive_broadcast_rejection(&e) {
                     let error_msg = format!("{label} failed: {e:?}");
@@ -899,41 +948,110 @@ impl DydxExecutionClient {
                     );
                 }
             }
-        });
+        };
 
-        self.pending_tasks
-            .lock()
-            .expect(MUTEX_POISONED)
-            .push((label, handle));
+        self.spawn_labeled(label, future);
     }
 
-    fn abort_pending_tasks(&self) {
-        let mut guard = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        let mut aborted_cancels = 0usize;
-        let mut aborted_other = 0usize;
+    fn spawn_labeled<F>(&self, label: &'static str, future: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        let id = self.next_pending_task_id.fetch_add(1, Ordering::Relaxed);
+        self.pending_task_labels.lock().insert(id, label);
 
-        for (label, handle) in guard.drain(..) {
-            if !handle.is_finished() {
-                if label.contains("cancel") {
-                    aborted_cancels += 1;
-                } else {
-                    aborted_other += 1;
-                }
-            }
-            handle.abort();
+        let label_guard = PendingTaskLabel {
+            id,
+            labels: Arc::clone(&self.pending_task_labels),
+        };
+        let wrapped = async move {
+            let _label = label_guard;
+            future.await;
+        };
+
+        if let Err(e) = self.pending_tasks.spawn(wrapped) {
+            self.pending_task_labels.lock().remove(&id);
+            log::warn!("Skipping dYdX {label} after shutdown began: {e}");
         }
+    }
 
-        if aborted_cancels > 0 {
-            log::error!(
-                "Aborted {aborted_cancels} in-flight cancel task(s) before completion; \
-                 orders may still be open on the venue; \
-                 increase shutdown grace period (`timeout_post_stop`) to allow cancels to finish",
+    fn begin_pending_shutdown(&self) {
+        let labels = self.pending_task_labels.lock();
+        let pending_cancels = labels
+            .values()
+            .filter(|label| label.contains("cancel"))
+            .count();
+        let pending_other = labels.len() - pending_cancels;
+
+        if pending_cancels > 0 {
+            log::warn!(
+                "Waiting for {pending_cancels} in-flight cancel task(s) before disconnect; orders may still be open on the venue"
             );
         }
 
-        if aborted_other > 0 {
-            log::warn!("Aborted {aborted_other} other in-flight task(s) on disconnect");
+        if pending_other > 0 {
+            log::debug!("Waiting for {pending_other} other in-flight task(s) before disconnect");
         }
+        drop(labels);
+
+        self.pending_tasks.begin_shutdown();
+    }
+
+    async fn finish_tasks(&self) -> anyhow::Result<()> {
+        let (session_result, pending_result) = tokio::join!(
+            self.session_tasks
+                .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2)),
+            self.pending_tasks
+                .finish_shutdown(Duration::from_secs(2), Duration::from_secs(2)),
+        );
+        session_result.context("failed to finish dYdX execution session tasks")?;
+        pending_result.context("failed to finish dYdX execution command tasks")?;
+        Ok(())
+    }
+
+    async fn prepare_task_groups(&mut self) -> anyhow::Result<()> {
+        if !self.session_tasks.is_open() || !self.pending_tasks.is_open() {
+            self.session_tasks.begin_shutdown();
+            self.begin_pending_shutdown();
+            self.ws_client.begin_shutdown();
+            self.finish_shutdown().await?;
+            self.session_tasks
+                .start_generation()
+                .context("failed to start dYdX execution session task generation")?;
+            self.pending_tasks
+                .start_generation()
+                .context("failed to start dYdX execution command task generation")?;
+        }
+        Ok(())
+    }
+
+    async fn finish_shutdown(&mut self) -> anyhow::Result<()> {
+        if let Err(e) = self
+            .ws_client
+            .disconnect()
+            .await
+            .context("failed to disconnect dYdX websocket")
+        {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if let Err(e) = self.finish_tasks().await {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if !self.shutdown_errors.is_empty() {
+            anyhow::bail!(std::mem::take(&mut self.shutdown_errors).join("; "));
+        }
+        Ok(())
+    }
+
+    async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
+        self.begin_pending_shutdown();
+        self.session_tasks.begin_shutdown();
+        self.ws_client.begin_shutdown();
+        let shutdown_result = self.finish_shutdown().await;
+        self.core.set_disconnected();
+        shutdown_result
     }
 
     /// Sends an OrderModifyRejected event.
@@ -1210,7 +1328,9 @@ impl ExecutionClient for DydxExecutionClient {
         }
 
         log::info!("Stopping dYdX execution client");
-        self.abort_pending_tasks();
+        self.session_tasks.begin_shutdown();
+        self.begin_pending_shutdown();
+        self.ws_client.begin_shutdown();
         self.core.set_stopped();
         self.core.set_disconnected();
         Ok(())
@@ -1748,12 +1868,10 @@ impl ExecutionClient for DydxExecutionClient {
                 order_params.len()
             );
 
-            let order_count = order_params.len();
-
-            let handle = get_runtime().spawn(async move {
+            self.spawn_labeled("batch_submit_short_term", async move {
                 // Build and broadcast all orders concurrently -- no sequence coordination needed.
                 // Short-term orders use cached sequence (not incremented) via broadcast_short_term.
-                let mut handles = Vec::with_capacity(order_count);
+                let mut handles = tokio::task::JoinSet::new();
 
                 for (params, (client_order_id, instrument_id, strategy_id)) in
                     order_params.into_iter().zip(order_info)
@@ -1763,7 +1881,7 @@ impl ExecutionClient for DydxExecutionClient {
                     let order_builder = order_builder.clone();
                     let emitter = emitter.clone();
 
-                    let handle = get_runtime().spawn(async move {
+                    handles.spawn(async move {
                         // Build order message
                         let msg = match order_builder
                             .build_limit_order_from_params(&params, block_height)
@@ -1805,21 +1923,17 @@ impl ExecutionClient for DydxExecutionClient {
                             }
                         }
                     });
-
-                    handles.push(handle);
                 }
 
                 // Wait for all orders to be submitted
-                for handle in handles {
-                    let _ = handle.await;
+                while let Some(result) = handles.join_next().await {
+                    if let Err(e) = result
+                        && !e.is_cancelled()
+                    {
+                        log::warn!("dYdX short-term order task failed: {e}");
+                    }
                 }
             });
-
-            // Track the task
-            self.pending_tasks
-                .lock()
-                .expect(MUTEX_POISONED)
-                .push(("batch_submit_short_term", handle));
         } else {
             // All orders are long-term - can batch in single transaction
             log::debug!(
@@ -1827,7 +1941,7 @@ impl ExecutionClient for DydxExecutionClient {
                 order_params.len()
             );
 
-            let handle = get_runtime().spawn(async move {
+            self.spawn_labeled("batch_submit_long_term", async move {
                 // Build all order messages
                 let msgs: Result<Vec<_>, _> = order_params
                     .iter()
@@ -1875,12 +1989,6 @@ impl ExecutionClient for DydxExecutionClient {
                     }
                 }
             });
-
-            // Track the task
-            self.pending_tasks
-                .lock()
-                .expect(MUTEX_POISONED)
-                .push(("batch_submit_long_term", handle));
         }
 
         Ok(())
@@ -2087,8 +2195,7 @@ impl ExecutionClient for DydxExecutionClient {
 
         let order_data: Vec<CancelAllOrderData> = {
             let cache = self.core.cache();
-            let side_filter =
-                (order_side_filter != OrderSide::NoOrderSide).then_some(order_side_filter);
+            let side_filter = order_side_filter;
             cache
                 .orders_open(None, Some(&instrument_id), None, None, side_filter)
                 .into_iter()
@@ -2348,12 +2455,20 @@ impl ExecutionClient for DydxExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_connected() {
+        if self.core.is_connected() && self.session_tasks.is_open() && self.pending_tasks.is_open()
+        {
             log::warn!("dYdX execution client already connected");
             return Ok(());
         }
 
         log::info!("Connecting to dYdX");
+
+        self.prepare_task_groups().await?;
+        let ws_client = self.ws_client.clone();
+        let setup_guard =
+            TaskGroupGuard::new(&[&self.session_tasks, &self.pending_tasks], move || {
+                ws_client.begin_shutdown();
+            });
 
         log::debug!("Loading instruments from HTTP API");
         self.http_client.fetch_and_cache_instruments().await?;
@@ -2426,52 +2541,65 @@ impl ExecutionClient for DydxExecutionClient {
         );
 
         // Connect WebSocket
-        self.ws_client.connect().await?;
-        log::debug!("WebSocket connected");
+        let session_result = async {
+            self.ws_client.connect().await?;
+            log::debug!("WebSocket connected");
 
-        // Subscribe to block height updates
-        self.ws_client.subscribe_block_height().await?;
-        log::debug!("Subscribed to block height updates");
+            self.ws_client.subscribe_block_height().await?;
+            log::debug!("Subscribed to block height updates");
 
-        // Subscribe to markets for instrument data
-        self.ws_client.subscribe_markets().await?;
-        log::debug!("Subscribed to markets");
+            self.ws_client.subscribe_markets().await?;
+            log::debug!("Subscribed to markets");
 
-        // Subscribe to subaccount updates (wallet is always initialized for execution client)
-        log::debug!(
-            "Using wallet address for queries: {} (subaccount {})",
-            self.wallet_address,
-            self.subaccount_number
-        );
-        self.ws_client
-            .subscribe_subaccount(&self.wallet_address, self.subaccount_number)
-            .await?;
-        log::debug!(
-            "Subscribed to subaccount updates: {}/{}",
-            self.wallet_address,
-            self.subaccount_number
-        );
+            log::debug!(
+                "Using wallet address for queries: {} (subaccount {})",
+                self.wallet_address,
+                self.subaccount_number
+            );
+            self.ws_client
+                .subscribe_subaccount(&self.wallet_address, self.subaccount_number)
+                .await?;
+            log::debug!(
+                "Subscribed to subaccount updates: {}/{}",
+                self.wallet_address,
+                self.subaccount_number
+            );
 
-        let stream = self.ws_client.stream();
-        self.spawn_ws_stream_handler(stream);
+            let stream = self.ws_client.stream();
+            self.spawn_ws_stream_handler(stream)?;
 
-        // Wait for account to be registered in cache before continuing.
-        // This ensures execution state reconciliation can process fills correctly
-        // (fills require the account to be registered for portfolio updates).
-        self.await_account_registered(30.0).await?;
+            // Wait for account to be registered in cache before continuing.
+            // This ensures execution state reconciliation can process fills correctly
+            // (fills require the account to be registered for portfolio updates).
+            self.await_account_registered(30.0).await?;
+
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+
+        if let Err(e) = session_result {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "dYdX execution startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e);
+        }
 
         self.core.set_connected();
+        setup_guard.disarm();
         log::info!("Connected: client_id={}", self.core.client_id);
         Ok(())
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_disconnected() {
-            log::warn!("dYdX execution client not connected");
-            return Ok(());
-        }
-
         log::info!("Disconnecting from dYdX");
+
+        self.begin_pending_shutdown();
+        let ws_client = self.ws_client.clone();
+        let disconnect_guard = TaskGroupGuard::new(&[&self.session_tasks], move || {
+            ws_client.begin_shutdown();
+        });
 
         // Unsubscribe from subaccount (execution client always has credentials)
         let _ = self
@@ -2495,18 +2623,9 @@ impl ExecutionClient for DydxExecutionClient {
             .map_err(|e| log::warn!("Failed to unsubscribe from block height: {e}"));
 
         // Disconnect WebSocket
-        self.ws_client.disconnect().await?;
-
-        // Abort WebSocket message processing task
-        if let Some(handle) = self.ws_stream_handle.take() {
-            handle.abort();
-            log::debug!("Aborted WebSocket message processing task");
-        }
-
-        // Abort any pending tasks
-        self.abort_pending_tasks();
-
-        self.core.set_disconnected();
+        let shutdown_result = self.teardown_partial_connect().await;
+        disconnect_guard.disarm();
+        shutdown_result?;
         log::info!("Disconnected: client_id={}", self.core.client_id);
         Ok(())
     }
@@ -2995,6 +3114,17 @@ impl ExecutionClient for DydxExecutionClient {
     }
 }
 
+struct PendingTaskLabel {
+    id: u64,
+    labels: Arc<Mutex<AHashMap<u64, &'static str>>>,
+}
+
+impl Drop for PendingTaskLabel {
+    fn drop(&mut self) {
+        self.labels.lock().remove(&self.id);
+    }
+}
+
 /// Iterates `orders` and returns the first report whose parsed fields match every active
 /// filter. Extracted from `generate_order_status_report` so the matching loop can be
 /// exercised in isolation.
@@ -3070,7 +3200,7 @@ mod tests {
         cache::Cache, clock::TestClock, factories::OrderFactory, messages::ExecutionEvent,
     };
     use nautilus_model::{
-        enums::OrderSide as NautilusOrderSide,
+        enums::OrderSide,
         identifiers::{Symbol, TraderId},
         instruments::{CryptoPerpetual, InstrumentAny},
         orders::{Order as _, OrderAny},
@@ -3090,34 +3220,23 @@ mod tests {
 
     fn test_instrument(symbol: &str, venue: &str) -> InstrumentAny {
         let instrument_id = InstrumentId::new(Symbol::new(symbol), Venue::new(venue));
-        InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            instrument_id,
-            instrument_id.symbol,
-            Currency::BTC(),
-            Currency::USD(),
-            Currency::USD(),
-            false,
-            2,
-            3,
-            Price::new(0.01, 2),
-            Quantity::new(0.001, 3),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        ))
+        InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(instrument_id.symbol)
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USD())
+                .settlement_currency(Currency::USD())
+                .is_inverse(false)
+                .price_precision(2)
+                .size_precision(3)
+                .price_increment(Price::new(0.01, 2))
+                .size_increment(Quantity::new(0.001, 3))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
     }
 
     fn test_order(id: &str, clob_pair_id: u32, client_id: &str) -> Order {
@@ -3126,7 +3245,7 @@ mod tests {
             subaccount_id: "sub-1".to_string(),
             client_id: client_id.to_string(),
             clob_pair_id,
-            side: NautilusOrderSide::Buy,
+            side: OrderSide::Buy,
             size: dec!(1.0),
             total_filled: dec!(0),
             price: dec!(50000),
@@ -3579,43 +3698,36 @@ mod tests {
         );
     }
 
-    // `abort_pending_tasks` should classify cancel-related tasks separately from
-    // other in-flight work and ERROR-log when a cancel was aborted before
-    // completion. This test pushes one of each into `pending_tasks` and asserts
-    // the queue is fully drained while the labels remain accessible to the
-    // classification branch.
+    // Shutdown should retain cancel-related labels until the registered task
+    // completes or its join is observed after forced abort.
     #[tokio::test]
-    async fn test_abort_pending_tasks_classifies_and_drains() {
+    async fn test_pending_task_labels_drain_with_scope() {
         let (client, _cache, _rx) = create_execution_client();
 
-        // Spawn two long-running tasks with different label categories so the
-        // is_finished() check inside `abort_pending_tasks` returns false for both.
-
-        let pending_cancel = tokio::spawn(async {
+        client.spawn_labeled("cancel_all_orders", async {
             tokio::time::sleep(std::time::Duration::from_secs(60)).await;
         });
-
-        let pending_other = tokio::spawn(async {
+        client.spawn_labeled("submit_order", async {
             tokio::time::sleep(std::time::Duration::from_secs(60)).await;
         });
 
         {
-            let mut guard = client.pending_tasks.lock().expect(MUTEX_POISONED);
-            guard.push(("cancel_all_orders", pending_cancel));
-            guard.push(("submit_order", pending_other));
-            assert_eq!(guard.len(), 2);
+            let labels = client.pending_task_labels.lock();
+            assert_eq!(labels.len(), 2);
         }
 
-        client.abort_pending_tasks();
+        client.begin_pending_shutdown();
+        client
+            .pending_tasks
+            .finish_shutdown(Duration::ZERO, Duration::from_secs(1))
+            .await
+            .unwrap();
 
-        let guard = client.pending_tasks.lock().expect(MUTEX_POISONED);
-        assert!(
-            guard.is_empty(),
-            "pending_tasks should be drained after abort",
-        );
+        assert!(client.pending_tasks.is_empty());
+        assert!(client.pending_task_labels.lock().is_empty());
     }
 
-    // The label substring used by `abort_pending_tasks` to recognise cancel
+    // The label substring used by `begin_pending_shutdown` to recognise cancel
     // tasks must match the labels actually used at spawn sites. Pin those
     // sites here so a rename in only one place is caught.
     #[rstest]
@@ -3624,7 +3736,7 @@ mod tests {
     #[case("Submit order", false)]
     #[case("batch_submit_short_term", false)]
     #[case("batch_submit_long_term", false)]
-    fn test_abort_pending_tasks_label_classification(
+    fn test_pending_task_label_classification(
         #[case] label: &'static str,
         #[case] is_cancel: bool,
     ) {

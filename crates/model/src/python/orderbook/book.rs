@@ -148,7 +148,7 @@ impl OrderBook {
     ///
     /// - Acts only when both sides exist and the book is crossed.
     /// - Deletes by removing whole price levels via the ladder API to preserve invariants.
-    /// - `side=None` or `NoOrderSide` clears both overlapped ranges (conservative, may widen spread).
+    /// - `side=None` clears both overlapped ranges (conservative, may widen spread).
     /// - `side=Buy` clears crossed bids only; side=Sell clears crossed asks only.
     /// - Returns removed price levels (crossed bids first, then crossed asks), or None if nothing removed.
     #[pyo3(name = "clear_stale_levels")]
@@ -163,13 +163,13 @@ impl OrderBook {
     ///
     /// Returns an error if:
     /// - The delta's instrument ID does not match this book's instrument ID.
-    /// - An `Add` is given with `NoOrderSide` (either explicitly or because the cache lookup failed).
-    /// - An `Add` with `NoOrderSide` matches an order ID on both sides of the book.
-    /// - After resolution the delta still has `NoOrderSide` but its action is not `Clear`.
+    /// - An `Add` is given with no side, either explicitly or because the cache lookup failed.
+    /// - An `Add` with no side matches an order ID on both sides of the book.
+    /// - After resolution the delta still has no side but its action is not `Clear`.
     ///
     /// # Notes
     ///
-    /// An ambiguous `NoOrderSide` `Update` or `Delete` is skipped with a warning.
+    /// An ambiguous no-side `Update` or `Delete` is skipped with a warning.
     #[pyo3(name = "apply_delta")]
     fn py_apply_delta(&mut self, delta: &OrderBookDelta) -> PyResult<()> {
         self.apply_delta_unchecked(delta).map_err(to_pyruntime_err)

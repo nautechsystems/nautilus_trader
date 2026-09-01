@@ -2,19 +2,19 @@
 
 `FIX OrdType <40>` no dedicated value (commonly `4` Stop Limit with a favorable trigger)
 
-A *Limit‑If‑Touched* order releases a *Limit* order at the specified price when its trigger price is
+A *Limit-If-Touched* order releases a *Limit* order at the specified price when its trigger price is
 reached.
 
 ## Use cases
 
-Use a *Limit‑If‑Touched* order to activate a price‑protected order only after a trigger is touched,
-for example to place a take‑profit *Limit* order as price approaches a target instead of resting it
-early. As with a *Stop‑Limit*, the order may not fill if the market moves through the limit after the
+Use a *Limit-If-Touched* order to activate a price-protected order only after a trigger is touched,
+for example to place a take-profit *Limit* order as price approaches a target instead of resting it
+early. As with a *Stop-Limit*, the order may not fill if the market moves through the limit after the
 trigger.
 
 ## Example
 
-The following example creates a *Limit‑If‑Touched* order to BUY 5 BTCUSDT-PERP perpetual futures
+The following example creates a *Limit-If-Touched* order to BUY 5 BTCUSDT-PERP perpetual futures
 contracts on Binance Futures at a limit price of 30,100 USDT once the market reaches 30,150 USDT.
 The order expires one hour after creation:
 

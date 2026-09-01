@@ -23,13 +23,13 @@
 //! Run with: `cargo run --example databento-cme-sandbox --package nautilus-sandbox --features example-databento`
 //!
 //! Required credential environment variables:
-//! - `DATABENTO_API_KEY`.
+//! - `DATABENTO_API_KEY`
 
 use std::path::PathBuf;
 
 use nautilus_common::enums::Environment;
 use nautilus_core::env::get_env_var;
-use nautilus_databento::factories::{DatabentoDataClientFactory, DatabentoLiveClientConfig};
+use nautilus_databento::{data::DatabentoDataClientConfig, factories::DatabentoDataClientFactory};
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
     enums::{AccountType, BookType, OmsType},
@@ -41,6 +41,10 @@ use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 use rust_decimal::Decimal;
 
+// WARNING: With `DRY_RUN = false`, this tester submits orders to the configured
+// environment and may use real funds. Set `DRY_RUN = true` to connect without
+// submitting orders or sending shutdown cancel/close commands.
+const DRY_RUN: bool = false;
 const TRADER_ID: &str = "SANDBOX-001";
 const NODE_NAME: &str = "DATABENTO-CME-SANDBOX";
 const VENUE: &str = "XCME";
@@ -74,7 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    let databento_config = DatabentoLiveClientConfig::new(
+    let databento_config = DatabentoDataClientConfig::new(
         api_key,
         publishers_filepath,
         true, // use_exchange_as_venue
@@ -87,7 +91,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let starting_balance = Money::new(STARTING_BALANCE, usd);
 
     let sandbox_config = SandboxExecutionClientConfig {
-        trader_id,
         account_id,
         venue: xcme_venue,
         starting_balances: vec![starting_balance],
@@ -98,6 +101,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         leverages: ahash::AHashMap::new(),
         book_type: BookType::L1_MBP,
         fee_model: None,
+        fill_model: None,
         frozen_account: false,
         bar_execution: true,
         trade_execution: false,
@@ -107,6 +111,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         use_position_ids: true,
         use_random_ids: false,
         use_reduce_only: true,
+        queue_position: false,
+        liquidity_consumption: false,
+        bar_adaptive_high_low_ordering: false,
+        use_market_order_acks: false,
+        oto_full_trigger: false,
+        price_protection_points: 0,
     };
 
     let databento_factory = DatabentoDataClientFactory::new();
@@ -142,6 +152,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
+        .dry_run(DRY_RUN)
         .build()?;
 
     let tester = ExecTester::new(tester_config);

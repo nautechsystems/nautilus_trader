@@ -64,7 +64,7 @@ impl Quota {
         })
     }
 
-    /// Constructs a quota for a number of cells per 60‑second period. The given number of cells
+    /// Constructs a quota for a number of cells per 60-second period. The given number of cells
     /// is also assumed to be the maximum burst size.
     #[must_use]
     pub const fn per_minute(max_burst: NonZeroU32) -> Self {
@@ -75,7 +75,7 @@ impl Quota {
         }
     }
 
-    /// Constructs a quota for a number of cells per 60‑minute period. The given number of cells
+    /// Constructs a quota for a number of cells per 60-minute period. The given number of cells
     /// is also assumed to be the maximum burst size.
     #[must_use]
     pub const fn per_hour(max_burst: NonZeroU32) -> Self {

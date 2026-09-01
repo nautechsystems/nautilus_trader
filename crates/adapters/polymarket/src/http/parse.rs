@@ -28,9 +28,9 @@ use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::models::{FeeSchedule, GammaMarket};
+use super::models::{CryptoMarketConfig, FeeSchedule, GammaMarket};
 use crate::common::{
-    consts::{POLYMARKET_VENUE, PUSD},
+    consts::{POLYMARKET_PRICE_PRECISION, POLYMARKET_VENUE, PUSD},
     enums::PolymarketOutcome,
 };
 
@@ -57,7 +57,7 @@ pub struct PolymarketInstrumentDef {
     pub question: String,
     /// Market description.
     pub description: Option<String>,
-    /// Price precision (decimal places).
+    /// Canonical price precision (four decimal places).
     pub price_precision: u8,
     /// Minimum tick size.
     pub tick_size: Decimal,
@@ -69,6 +69,8 @@ pub struct PolymarketInstrumentDef {
     pub taker_fee: Option<Decimal>,
     /// Market start timestamp (ISO 8601).
     pub start_date: Option<String>,
+    /// Event window start timestamp (ISO 8601).
+    pub event_start_time: Option<String>,
     /// Market end timestamp (ISO 8601).
     pub end_date: Option<String>,
     /// Whether the market is active and accepting orders.
@@ -80,6 +82,10 @@ pub struct PolymarketInstrumentDef {
     pub market_slug: Option<String>,
     /// Whether the market uses the neg-risk CTF exchange contract.
     pub neg_risk: Option<bool>,
+    /// Source used to resolve the market.
+    pub resolution_source: Option<String>,
+    /// Crypto market resolution configuration.
+    pub crypto_market_config: Option<CryptoMarketConfig>,
     /// Fee schedule for this market.
     pub fee_schedule: Option<FeeSchedule>,
     /// Game ID for sport markets, kept verbatim because Gamma emits both
@@ -121,7 +127,7 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
     let tick_size = market
         .order_price_min_tick_size
         .unwrap_or(DEFAULT_TICK_SIZE);
-    let price_precision = tick_size.scale() as u8;
+    let price_precision = POLYMARKET_PRICE_PRECISION;
 
     // Polymarket charges fees using `feeSchedule.rate` on the Gamma market.
     // Only takers pay; makers are always zero.
@@ -159,11 +165,14 @@ pub fn parse_gamma_market(market: &GammaMarket) -> anyhow::Result<Vec<Polymarket
             maker_fee,
             taker_fee,
             start_date: market.start_date.clone(),
+            event_start_time: market.event_start_time.clone(),
             end_date: market.end_date.clone(),
             active,
             closed: market.closed.unwrap_or(false),
             market_slug: market.market_slug.clone(),
             neg_risk,
+            resolution_source: market.resolution_source.clone(),
+            crypto_market_config: market.crypto_market_config.clone(),
             fee_schedule: market.fee_schedule.clone(),
             game_id: game_id.clone(),
         });
@@ -209,34 +218,29 @@ pub fn create_instrument_from_def(
 
     let info: Params = serde_json::from_value(build_info_json(def))?;
 
-    let binary_option = BinaryOption::new_checked(
-        instrument_id,
-        raw_symbol,
-        AssetClass::Alternative,
-        currency,
-        activation_ns,
-        expiration_ns,
-        def.price_precision,
-        6, // size_precision: 6-decimal collateral increments
-        price_increment,
-        size_increment,
-        Some(def.outcome.inner()),
-        Some(Ustr::from(def.question.as_str())),
-        None, // max_quantity
-        min_quantity,
-        None, // max_notional
-        None, // min_notional
-        Some(max_price),
-        Some(min_price),
-        None, // margin_init
-        None, // margin_maint
-        def.maker_fee,
-        def.taker_fee,
-        None,
-        Some(info),
-        ts_init,
-        ts_init,
-    )?;
+    let binary_option = BinaryOption::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .asset_class(AssetClass::Alternative)
+        .currency(currency)
+        .activation_ns(activation_ns)
+        .expiration_ns(expiration_ns)
+        .price_precision(POLYMARKET_PRICE_PRECISION)
+        // size_precision: 6-decimal collateral increments
+        .size_precision(6)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .outcome(def.outcome.inner())
+        .description(Ustr::from(def.question.as_str()))
+        .maybe_min_quantity(min_quantity)
+        .max_price(max_price)
+        .min_price(min_price)
+        .maybe_maker_fee(def.maker_fee)
+        .maybe_taker_fee(def.taker_fee)
+        .info(info)
+        .ts_event(ts_init)
+        .ts_init(ts_init)
+        .build()?;
 
     Ok(InstrumentAny::BinaryOption(binary_option))
 }
@@ -256,7 +260,7 @@ pub fn instruments_from_defs(
         .collect()
 }
 
-/// Rebuilds an instrument with a new tick size (price precision + price increment).
+/// Rebuilds an instrument with a new active tick size and canonical price precision.
 ///
 /// All other fields are preserved from `existing`. Returns a new `InstrumentAny`.
 pub fn rebuild_instrument_with_tick_size(
@@ -273,38 +277,36 @@ pub fn rebuild_instrument_with_tick_size(
     let tick_size: Decimal = new_tick_size
         .parse()
         .map_err(|e| anyhow::anyhow!("Failed to parse tick size '{new_tick_size}': {e}"))?;
-    let price_precision = tick_size.scale() as u8;
     let (min_price, max_price) = tick_relative_price_bounds(tick_size)?;
     let price_increment = min_price;
 
-    let rebuilt = BinaryOption::new_checked(
-        bo.id,
-        bo.raw_symbol,
-        bo.asset_class,
-        bo.currency,
-        bo.activation_ns,
-        bo.expiration_ns,
-        price_precision,
-        bo.size_precision,
-        price_increment,
-        bo.size_increment,
-        bo.outcome,
-        bo.description,
-        bo.max_quantity,
-        None, // min_quantity: see `create_instrument_from_def`
-        bo.max_notional,
-        bo.min_notional,
-        Some(max_price),
-        Some(min_price),
-        Some(bo.margin_init),
-        Some(bo.margin_maint),
-        Some(bo.maker_fee),
-        Some(bo.taker_fee),
-        None,
-        bo.info.clone(),
-        ts_event,
-        ts_init,
-    )?;
+    let rebuilt = BinaryOption::builder()
+        .instrument_id(bo.id)
+        .raw_symbol(bo.raw_symbol)
+        .asset_class(bo.asset_class)
+        .currency(bo.currency)
+        .activation_ns(bo.activation_ns)
+        .expiration_ns(bo.expiration_ns)
+        .price_precision(POLYMARKET_PRICE_PRECISION)
+        .size_precision(bo.size_precision)
+        .price_increment(price_increment)
+        .size_increment(bo.size_increment)
+        .maybe_outcome(bo.outcome)
+        .maybe_description(bo.description)
+        .maybe_max_quantity(bo.max_quantity)
+        // min_quantity: see `create_instrument_from_def`
+        .maybe_max_notional(bo.max_notional)
+        .maybe_min_notional(bo.min_notional)
+        .max_price(max_price)
+        .min_price(min_price)
+        .margin_init(bo.margin_init)
+        .margin_maint(bo.margin_maint)
+        .maker_fee(bo.maker_fee)
+        .taker_fee(bo.taker_fee)
+        .maybe_info(bo.info.clone())
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()?;
 
     Ok(InstrumentAny::BinaryOption(rebuilt))
 }
@@ -312,8 +314,18 @@ pub fn rebuild_instrument_with_tick_size(
 // Returns the tradeable price bounds `[tick_size, 1 - tick_size]` for a Polymarket outcome,
 // mirroring the venue range enforced in `PolymarketOrderBuilder::validate_limit_price`.
 pub(crate) fn tick_relative_price_bounds(tick_size: Decimal) -> anyhow::Result<(Price, Price)> {
-    let min_price = Price::from_decimal(tick_size)?;
-    let max_price = Price::from_decimal(Decimal::ONE - tick_size)?;
+    anyhow::ensure!(
+        tick_size > Decimal::ZERO,
+        "Tick size {tick_size} must be positive"
+    );
+
+    let min_price = Price::from_decimal_dp(tick_size, POLYMARKET_PRICE_PRECISION)?;
+    let max_price = Price::from_decimal_dp(Decimal::ONE - tick_size, POLYMARKET_PRICE_PRECISION)?;
+
+    anyhow::ensure!(
+        min_price.as_decimal() == tick_size,
+        "Tick size {tick_size} is not exactly representable at Polymarket price precision {POLYMARKET_PRICE_PRECISION}"
+    );
     Ok((min_price, max_price))
 }
 
@@ -346,8 +358,42 @@ fn build_info_json(def: &PolymarketInstrumentDef) -> serde_json::Value {
         );
     }
 
+    if let Some(description) = &def.description {
+        map.insert(
+            "description".to_string(),
+            serde_json::Value::String(description.clone()),
+        );
+    }
+
+    if let Some(event_start_time) = &def.event_start_time {
+        map.insert(
+            "event_start_time".to_string(),
+            serde_json::Value::String(event_start_time.clone()),
+        );
+    }
+
+    if let Some(end_date) = &def.end_date {
+        map.insert(
+            "end_date".to_string(),
+            serde_json::Value::String(end_date.clone()),
+        );
+    }
+
     if let Some(neg_risk) = def.neg_risk {
         map.insert("neg_risk".to_string(), serde_json::Value::Bool(neg_risk));
+    }
+
+    if let Some(resolution_source) = &def.resolution_source {
+        map.insert(
+            "resolution_source".to_string(),
+            serde_json::Value::String(resolution_source.clone()),
+        );
+    }
+
+    if let Some(crypto_market_config) = &def.crypto_market_config
+        && let Ok(value) = serde_json::to_value(crypto_market_config)
+    {
+        map.insert("crypto_market_config".to_string(), value);
     }
 
     if let Some(min_size) = def.min_size {
@@ -473,7 +519,7 @@ mod tests {
             "Bitcoin Up or Down - March 12, 5:20AM-5:25AM ET"
         );
         assert_eq!(yes_def.tick_size, dec!(0.01));
-        assert_eq!(yes_def.price_precision, 2);
+        assert_eq!(yes_def.price_precision, POLYMARKET_PRICE_PRECISION);
         assert_eq!(yes_def.min_size, Some(dec!(5.0)));
         assert!(yes_def.maker_fee.is_none());
         assert!(yes_def.taker_fee.is_none());
@@ -566,7 +612,7 @@ mod tests {
         let defs = parse_gamma_market(&market).unwrap();
 
         assert_eq!(defs[0].tick_size, dec!(0.001));
-        assert_eq!(defs[0].price_precision, 3);
+        assert_eq!(defs[0].price_precision, POLYMARKET_PRICE_PRECISION);
     }
 
     #[rstest]
@@ -600,7 +646,7 @@ mod tests {
         assert_eq!(binary.outcome, Some(Ustr::from("Up")));
         assert_eq!(binary.asset_class, AssetClass::Alternative);
         assert_eq!(binary.currency.code.as_str(), "pUSD");
-        assert_eq!(binary.price_precision, 2);
+        assert_eq!(binary.price_precision, POLYMARKET_PRICE_PRECISION);
         assert_eq!(binary.size_precision, 6);
         assert_eq!(binary.price_increment(), Price::from("0.01"));
         assert_eq!(binary.size_increment(), Quantity::from("0.000001"));
@@ -637,10 +683,71 @@ mod tests {
             info.get_str("market_slug"),
             Some("btc-updown-5m-1773307200")
         );
+        assert_eq!(
+            info.get_str("event_start_time"),
+            Some("2026-03-12T09:20:00Z")
+        );
         assert_eq!(info.get_str("game_id"), None);
         assert_eq!(info.get_str("min_order_size"), Some("5"));
         assert_eq!(info.get_bool("neg_risk"), Some(false));
         assert_eq!(info.get("fee_schedule"), None);
+    }
+
+    #[rstest]
+    #[case(
+        Some("Detailed resolution rules with https://example.com/source"),
+        Some("Detailed resolution rules with https://example.com/source")
+    )]
+    #[case(None, None)]
+    fn test_create_instrument_info_description(
+        #[case] description: Option<&str>,
+        #[case] expected: Option<&str>,
+    ) {
+        let mut market = load_gamma_market("gamma_market.json");
+        market.description = description.map(str::to_string);
+        market.resolution_source = None;
+        let defs = parse_gamma_market(&market).unwrap();
+
+        let instrument =
+            create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap();
+        let InstrumentAny::BinaryOption(binary) = instrument else {
+            panic!("Expected BinaryOption");
+        };
+        let info = binary.info.as_ref().expect("info should be Some");
+
+        assert_eq!(info.get_str("description"), expected);
+        assert_eq!(info.contains_key("description"), expected.is_some());
+        assert_eq!(info.get_str("resolution_source"), None);
+    }
+
+    #[rstest]
+    fn test_create_instrument_info_includes_resolution_and_crypto_market_config() {
+        let market = load_gamma_market("gamma_market_crypto_twap.json");
+
+        let defs = parse_gamma_market(&market).unwrap();
+        assert_eq!(defs[0].end_date.as_deref(), Some("2026-08-22T16:05:00Z"));
+        let instrument =
+            create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap();
+        let InstrumentAny::BinaryOption(binary) = instrument else {
+            panic!("Expected BinaryOption");
+        };
+        let info = binary.info.as_ref().expect("info should be Some");
+
+        assert_eq!(info.get_str("end_date"), Some("2026-08-22T16:05:00Z"));
+        assert_eq!(
+            info.get_str("resolution_source"),
+            Some("https://data.chain.link/streams/btc-usd-twap-60s-streams")
+        );
+        assert_eq!(
+            info.get("crypto_market_config"),
+            Some(&serde_json::json!({
+                "id": "btc-5m-twap-60",
+                "asset": "btc",
+                "duration": "5m",
+                "twapEnabled": true,
+                "twapLookbackSeconds": 60,
+            }))
+        );
     }
 
     #[rstest]
@@ -735,6 +842,20 @@ mod tests {
     }
 
     #[rstest]
+    #[case::zero("0")]
+    #[case::negative("-0.005")]
+    fn test_tick_relative_price_bounds_rejects_non_positive(#[case] tick_size: &str) {
+        let tick_size: Decimal = tick_size.parse().unwrap();
+
+        let error = tick_relative_price_bounds(tick_size).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("Tick size {tick_size} must be positive")
+        );
+    }
+
+    #[rstest]
     #[case("0.1", "0.1", "0.9", 1)]
     #[case("0.01", "0.01", "0.99", 2)]
     #[case("0.005", "0.005", "0.995", 3)]
@@ -745,7 +866,7 @@ mod tests {
         #[case] tick_size: &str,
         #[case] expected_min: &str,
         #[case] expected_max: &str,
-        #[case] expected_precision: u8,
+        #[case] expected_tick_decimals: u8,
     ) {
         let mut market = load_gamma_market("gamma_market.json");
         market.order_price_min_tick_size = Some(tick_size.parse().unwrap());
@@ -759,7 +880,20 @@ mod tests {
             other => panic!("Expected BinaryOption, was {other:?}"),
         };
 
-        assert_eq!(binary.price_precision, expected_precision);
+        assert_eq!(binary.price_precision, POLYMARKET_PRICE_PRECISION);
+        assert_eq!(binary.price_increment.precision, POLYMARKET_PRICE_PRECISION);
+        assert_eq!(
+            binary.min_price.unwrap().precision,
+            POLYMARKET_PRICE_PRECISION
+        );
+        assert_eq!(
+            binary.max_price.unwrap().precision,
+            POLYMARKET_PRICE_PRECISION
+        );
+        assert_eq!(
+            binary.min_price_increment_precision(),
+            expected_tick_decimals
+        );
         assert_eq!(binary.min_price, Some(Price::from(expected_min)));
         assert_eq!(binary.max_price, Some(Price::from(expected_max)));
         // The lower bound is exactly the price increment (one tick)
@@ -801,15 +935,20 @@ mod tests {
         let defs = parse_gamma_market(&market).unwrap();
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
-        // Original has tick_size 0.01 → price_precision 2
+        // The active tick changes independently of canonical price precision
         let instrument = create_instrument_from_def(&defs[0], ts_init).unwrap();
-        assert_eq!(instrument.price_precision(), 2);
+        assert_eq!(instrument.price_precision(), POLYMARKET_PRICE_PRECISION);
 
         let ts_event = UnixNanos::from(2_000_000_000u64);
         let rebuilt =
             rebuild_instrument_with_tick_size(&instrument, "0.001", ts_event, ts_event).unwrap();
 
-        assert_eq!(rebuilt.price_precision(), 3);
+        assert_eq!(rebuilt.price_precision(), POLYMARKET_PRICE_PRECISION);
+        assert_eq!(
+            rebuilt.price_increment().precision,
+            POLYMARKET_PRICE_PRECISION
+        );
+        assert_eq!(rebuilt.min_price_increment_precision(), 3);
         assert_eq!(rebuilt.price_increment(), Price::from("0.001"));
         // Bounds reflect the new tick, not the pre-change 0.01-tick range
         assert_eq!(rebuilt.min_price(), Some(Price::from("0.001")));
@@ -822,7 +961,7 @@ mod tests {
     fn test_rebuild_instrument_between_non_power_ticks(
         #[case] old_tick: &str,
         #[case] new_tick: &str,
-        #[case] expected_precision: u8,
+        #[case] expected_tick_decimals: u8,
         #[case] expected_max: &str,
     ) {
         let market = load_gamma_market("gamma_market.json");
@@ -836,7 +975,15 @@ mod tests {
             rebuild_instrument_with_tick_size(&instrument, new_tick, ts_init, ts_init).unwrap();
 
         assert_eq!(instrument.price_increment(), Price::from(old_tick));
-        assert_eq!(rebuilt.price_precision(), expected_precision);
+        assert_eq!(rebuilt.price_precision(), POLYMARKET_PRICE_PRECISION);
+        assert_eq!(
+            rebuilt.price_increment().precision,
+            POLYMARKET_PRICE_PRECISION
+        );
+        assert_eq!(
+            rebuilt.min_price_increment_precision(),
+            expected_tick_decimals
+        );
         assert_eq!(rebuilt.price_increment(), Price::from(new_tick));
         assert_eq!(rebuilt.min_price(), Some(Price::from(new_tick)));
         assert_eq!(rebuilt.max_price(), Some(Price::from(expected_max)));
@@ -848,14 +995,16 @@ mod tests {
         let defs = parse_gamma_market(&market).unwrap();
         let ts_init = UnixNanos::from(1_000_000_000u64);
         let instrument = create_instrument_from_def(&defs[0], ts_init).unwrap();
-        let tick_size: Decimal = UNSUPPORTED_TICK_SIZE.parse().unwrap();
-        let expected = Price::from_decimal(tick_size).unwrap_err();
-
         let error =
             rebuild_instrument_with_tick_size(&instrument, UNSUPPORTED_TICK_SIZE, ts_init, ts_init)
                 .unwrap_err();
 
-        assert_eq!(error.to_string(), expected.to_string());
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Tick size {UNSUPPORTED_TICK_SIZE} is not exactly representable at Polymarket price precision {POLYMARKET_PRICE_PRECISION}"
+            )
+        );
     }
 
     #[rstest]

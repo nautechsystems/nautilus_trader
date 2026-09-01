@@ -13,7 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::{data::Bar, enums::PriceType};
+use nautilus_core::python::to_pyvalue_err;
+use nautilus_model::{
+    data::Bar,
+    enums::PriceType,
+    types::{Money, Price, Quantity, fixed::MAX_FLOAT_PRECISION},
+};
 use pyo3::prelude::*;
 
 use crate::{indicator::Indicator, ratio::efficiency_ratio::EfficiencyRatio};
@@ -21,14 +26,29 @@ use crate::{indicator::Indicator, ratio::efficiency_ratio::EfficiencyRatio};
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl EfficiencyRatio {
-    /// An indicator which calculates the efficiency ratio across a rolling window.
+    /// Calculates Kaufman's Efficiency Ratio (ER) across a rolling window.
     ///
-    /// The Kaufman Efficiency measures the ratio of the relative market speed in
-    /// relation to the volatility, this could be thought of as a proxy for noise.
+    /// The period must be at least `2`.
+    ///
+    /// For period `n`, the ratio is:
+    ///
+    /// `ER(t) = |P(t) - P(t - n)| / sum(|P(i) - P(i - 1)|, i = t - n + 1 to t)`
+    ///
+    /// A full `n`-period window requires `n + 1` prices for `n` price changes. For
+    /// finite inputs within the model price range, values range from `0.0` to `1.0`:
+    /// lower values indicate more noise, while `1.0` indicates directional price
+    /// movement without reversals.
+    ///
+    /// For compatibility, `initialized` becomes true after `n` inputs, so the first
+    /// initialized value covers the `n - 1` available price changes.
+    ///
+    /// # References
+    ///
+    /// - Kaufman, P. J. (1995). *Smarter Trading*. McGraw-Hill.
     #[new]
     #[pyo3(signature = (period, price_type=None))]
-    fn py_new(period: usize, price_type: Option<PriceType>) -> Self {
-        Self::new(period, price_type)
+    fn py_new(period: usize, price_type: Option<PriceType>) -> PyResult<Self> {
+        Self::new_checked(period, price_type).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
@@ -66,17 +86,57 @@ impl EfficiencyRatio {
     }
 
     #[pyo3(name = "update_raw")]
-    fn py_update_raw(&mut self, value: f64) {
+    fn py_update_raw(
+        &mut self,
+        #[gen_stub(override_type(type_repr = "float"))] value: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
+        let value = extract_update_value(value)?;
         self.update_raw(value);
+        Ok(())
     }
 
     #[pyo3(name = "handle_bar")]
-    fn py_handle_bar(&mut self, bar: &Bar) {
+    fn py_handle_bar(&mut self, bar: &Bar) -> PyResult<()> {
+        check_float_precision(bar.close.precision)?;
+
         self.handle_bar(bar);
+        Ok(())
     }
 
     #[pyo3(name = "reset")]
     fn py_reset(&mut self) {
         self.reset();
     }
+}
+
+fn extract_update_value(value: &Bound<'_, PyAny>) -> PyResult<f64> {
+    if value.is_instance_of::<Price>() {
+        let price = value.extract::<Price>()?;
+        check_float_precision(price.precision)?;
+        return Ok(price.as_f64());
+    }
+
+    if value.is_instance_of::<Quantity>() {
+        let quantity = value.extract::<Quantity>()?;
+        check_float_precision(quantity.precision)?;
+        return Ok(quantity.as_f64());
+    }
+
+    if value.is_instance_of::<Money>() {
+        let money = value.extract::<Money>()?;
+        check_float_precision(money.currency.precision)?;
+        return Ok(money.as_f64());
+    }
+
+    value.extract()
+}
+
+fn check_float_precision(precision: u8) -> PyResult<()> {
+    if precision > MAX_FLOAT_PRECISION {
+        return Err(to_pyvalue_err(format!(
+            "Fixed-point precision {precision} exceeds maximum float precision {MAX_FLOAT_PRECISION}",
+        )));
+    }
+
+    Ok(())
 }

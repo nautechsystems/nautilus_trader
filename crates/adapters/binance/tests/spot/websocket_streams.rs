@@ -48,6 +48,7 @@ struct TestServerState {
     received_messages: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
     disconnect_trigger: Arc<AtomicBool>,
     drop_next_connection: Arc<AtomicBool>,
+    delay_next_subscription_response: Arc<AtomicBool>,
     ping_count: Arc<AtomicUsize>,
 }
 
@@ -60,6 +61,7 @@ impl Default for TestServerState {
             received_messages: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             disconnect_trigger: Arc::new(AtomicBool::new(false)),
             drop_next_connection: Arc::new(AtomicBool::new(false)),
+            delay_next_subscription_response: Arc::new(AtomicBool::new(false)),
             ping_count: Arc::new(AtomicUsize::new(0)),
         }
     }
@@ -90,6 +92,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
         *count += 1;
     }
     state.total_connections.fetch_add(1, Ordering::Relaxed);
+    let mut delayed_subscription_response = None;
 
     loop {
         if state.disconnect_trigger.load(Ordering::Relaxed) {
@@ -147,7 +150,12 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                             "id": id
                         });
 
-                        if socket
+                        if state
+                            .delay_next_subscription_response
+                            .swap(false, Ordering::Relaxed)
+                        {
+                            delayed_subscription_response = Some(response);
+                        } else if socket
                             .send(Message::Text(response.to_string().into()))
                             .await
                             .is_err()
@@ -184,6 +192,15 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                             .send(Message::Text(response.to_string().into()))
                             .await
                             .is_err()
+                        {
+                            break;
+                        }
+
+                        if let Some(delayed_response) = delayed_subscription_response.take()
+                            && socket
+                                .send(Message::Text(delayed_response.to_string().into()))
+                                .await
+                                .is_err()
                         {
                             break;
                         }
@@ -422,6 +439,66 @@ async fn test_unsubscribe_stream() {
     let streams = state.subscribed_streams().await;
     assert!(!streams.contains(&"btcusdt@trade".to_string()));
     assert!(streams.contains(&"ethusdt@trade".to_string()));
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_delayed_subscribe_response_does_not_restore_unsubscribed_stream() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let mut client = create_test_client(&addr);
+
+    client.connect().await.unwrap();
+    wait_until_async(
+        || async { *state.connection_count.lock().await > 0 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    state
+        .delay_next_subscription_response
+        .store(true, Ordering::Relaxed);
+
+    client
+        .subscribe(vec!["btcusdt@trade".to_string()])
+        .await
+        .unwrap();
+    wait_until_async(
+        || async { state.received_messages().await.len() == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    client
+        .unsubscribe(vec!["btcusdt@trade".to_string()])
+        .await
+        .unwrap();
+    client
+        .subscribe(vec!["ethusdt@trade".to_string()])
+        .await
+        .unwrap();
+
+    wait_until_async(
+        || async { state.received_messages().await.len() == 3 },
+        Duration::from_secs(5),
+    )
+    .await;
+    wait_until_async(
+        || async { client.subscription_count() == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let messages = state.received_messages().await;
+    let methods: Vec<_> = messages
+        .iter()
+        .map(|message| message["method"].as_str().unwrap())
+        .collect();
+    assert_eq!(methods, ["SUBSCRIBE", "UNSUBSCRIBE", "SUBSCRIBE"]);
+    assert_eq!(state.subscribed_streams().await, ["ethusdt@trade"]);
+    assert_eq!(client.subscription_count(), 1);
 
     client.close().await.unwrap();
 }

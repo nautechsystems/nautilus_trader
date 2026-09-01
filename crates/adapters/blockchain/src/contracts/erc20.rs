@@ -38,7 +38,7 @@ sol! {
     }
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
 pub enum Erc20Field {
     Name,
     Symbol,
@@ -293,17 +293,6 @@ impl Erc20Contract {
             .await
     }
 
-    #[cfg(feature = "hypersync")]
-    pub(crate) async fn balance_of_at(
-        &self,
-        token_address: &Address,
-        account: &Address,
-        block: u64,
-    ) -> Result<U256, BlockchainRpcClientError> {
-        self.balance_of_with_block(token_address, account, Some(block))
-            .await
-    }
-
     async fn balance_of_with_block(
         &self,
         token_address: &Address,
@@ -317,6 +306,30 @@ impl Erc20Contract {
             .await?;
 
         ERC20::balanceOfCall::abi_decode_returns(&result)
+            .map_err(|e| BlockchainRpcClientError::AbiDecodingError(e.to_string()))
+    }
+
+    /// Fetches the token decimal precision used to scale raw amounts.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the contract call fails or its result cannot be decoded.
+    pub async fn decimals(&self, token_address: &Address) -> Result<u8, BlockchainRpcClientError> {
+        self.decimals_with_block(token_address, None).await
+    }
+
+    async fn decimals_with_block(
+        &self,
+        token_address: &Address,
+        block: Option<u64>,
+    ) -> Result<u8, BlockchainRpcClientError> {
+        let call_data = ERC20::decimalsCall {}.abi_encode();
+        let result = self
+            .base
+            .execute_call(token_address, &call_data, block)
+            .await?;
+
+        ERC20::decimalsCall::abi_decode_returns(&result)
             .map_err(|e| BlockchainRpcClientError::AbiDecodingError(e.to_string()))
     }
 
@@ -334,18 +347,6 @@ impl Erc20Contract {
         spender: &Address,
     ) -> Result<U256, BlockchainRpcClientError> {
         self.allowance_with_block(token_address, owner, spender, None)
-            .await
-    }
-
-    #[cfg(feature = "hypersync")]
-    pub(crate) async fn allowance_at(
-        &self,
-        token_address: &Address,
-        owner: &Address,
-        spender: &Address,
-        block: u64,
-    ) -> Result<U256, BlockchainRpcClientError> {
-        self.allowance_with_block(token_address, owner, spender, Some(block))
             .await
     }
 
@@ -369,45 +370,6 @@ impl Erc20Contract {
         ERC20::allowanceCall::abi_decode_returns(&result)
             .map_err(|e| BlockchainRpcClientError::AbiDecodingError(e.to_string()))
     }
-
-    #[cfg(feature = "hypersync")]
-    pub(crate) async fn simulate_approve(
-        &self,
-        token_address: &Address,
-        owner: &Address,
-        spender: &Address,
-        amount: U256,
-    ) -> Result<bool, BlockchainRpcClientError> {
-        let call_data = ERC20::approveCall {
-            spender: *spender,
-            amount,
-        }
-        .abi_encode();
-        let result = self
-            .base
-            .execute_call_from(owner, token_address, &call_data, None)
-            .await?;
-
-        // Empty return data is the supported legacy ERC-20 success convention
-        if result.is_empty() {
-            return Ok(true);
-        }
-
-        ERC20::approveCall::abi_decode_returns_validate(&result)
-            .map_err(|e| BlockchainRpcClientError::AbiDecodingError(e.to_string()))
-    }
-}
-
-/// Attempts to decode a revert reason from failed call data.
-/// Returns a human-readable error message.
-fn decode_revert_reason(data: &Bytes) -> String {
-    // For now, just return a simple description
-    // Could be enhanced to decode actual revert reasons in the future
-    if data.is_empty() {
-        "Call failed without revert data".to_string()
-    } else {
-        format!("Call failed with data: {data}")
-    }
 }
 
 /// Generic parser for ERC20 string results (name, symbol)
@@ -416,40 +378,18 @@ fn parse_erc20_string_result(
     field_name: Erc20Field,
     token_address: &Address,
 ) -> Result<String, TokenInfoError> {
-    // Common validation
-    if !result.success {
-        let reason = if result.returnData.is_empty() {
-            "Call failed without revert data".to_string()
-        } else {
-            // Try to decode revert reason if present
-            decode_revert_reason(&result.returnData)
-        };
-
-        return Err(TokenInfoError::CallFailed {
-            field: field_name.to_string(),
-            address: *token_address,
-            reason,
-            raw_data: result.returnData.to_string(),
-        });
-    }
-
-    if result.returnData.is_empty() {
-        return Err(TokenInfoError::EmptyTokenField {
-            field: field_name,
-            address: *token_address,
-        });
-    }
+    let data = validate_multicall_result(result, field_name, token_address)?;
 
     match field_name {
-        Erc20Field::Name => ERC20::nameCall::abi_decode_returns(&result.returnData),
-        Erc20Field::Symbol => ERC20::symbolCall::abi_decode_returns(&result.returnData),
+        Erc20Field::Name => ERC20::nameCall::abi_decode_returns(data),
+        Erc20Field::Symbol => ERC20::symbolCall::abi_decode_returns(data),
         Erc20Field::Decimals => {
             return Err(TokenInfoError::DecodingError {
                 field: field_name.to_string(),
                 address: *token_address,
                 reason: "Expected Name or Symbol for parse_erc20_string_result function argument"
                     .to_string(),
-                raw_data: result.returnData.to_string(),
+                raw_data: data.to_string(),
             });
         }
     }
@@ -466,37 +406,49 @@ fn parse_erc20_decimals_result(
     result: &Multicall3::Result,
     token_address: &Address,
 ) -> Result<u8, TokenInfoError> {
-    // Common validation
-    if !result.success {
-        let reason = if result.returnData.is_empty() {
-            "Call failed without revert data".to_string()
-        } else {
-            decode_revert_reason(&result.returnData)
-        };
+    let data = validate_multicall_result(result, Erc20Field::Decimals, token_address)?;
 
+    ERC20::decimalsCall::abi_decode_returns(data).map_err(|e| TokenInfoError::DecodingError {
+        field: "decimals".to_string(),
+        address: *token_address,
+        reason: e.to_string(),
+        raw_data: result.returnData.to_string(),
+    })
+}
+
+fn validate_multicall_result<'a>(
+    result: &'a Multicall3::Result,
+    field: Erc20Field,
+    token_address: &Address,
+) -> Result<&'a Bytes, TokenInfoError> {
+    if !result.success {
         return Err(TokenInfoError::CallFailed {
-            field: "decimals".to_string(),
+            field: match field {
+                Erc20Field::Decimals => "decimals".to_string(),
+                _ => field.to_string(),
+            },
             address: *token_address,
-            reason,
+            reason: decode_revert_reason(&result.returnData),
             raw_data: result.returnData.to_string(),
         });
     }
 
     if result.returnData.is_empty() {
         return Err(TokenInfoError::EmptyTokenField {
-            field: Erc20Field::Decimals,
+            field,
             address: *token_address,
         });
     }
 
-    ERC20::decimalsCall::abi_decode_returns(&result.returnData).map_err(|e| {
-        TokenInfoError::DecodingError {
-            field: "decimals".to_string(),
-            address: *token_address,
-            reason: e.to_string(),
-            raw_data: result.returnData.to_string(),
-        }
-    })
+    Ok(&result.returnData)
+}
+
+fn decode_revert_reason(data: &Bytes) -> String {
+    if data.is_empty() {
+        "Call failed without revert data".to_string()
+    } else {
+        format!("Call failed with data: {data}")
+    }
 }
 
 /// Parses token information from a slice of 3 multicall results.
@@ -538,9 +490,6 @@ mod tests {
     const CALL_BALANCE: &str = include_str!("../../test_data/execution/rpc_eth_call_balance.json");
     const CALL_ALLOWANCE: &str =
         include_str!("../../test_data/execution/rpc_eth_call_allowance.json");
-    #[cfg(feature = "hypersync")]
-    const CALL_MAX: &str = include_str!("../../test_data/execution/rpc_eth_call_max.json");
-
     #[fixture]
     fn token_address() -> Address {
         address!("25b76A90E389bD644a29db919b136Dc63B174Ec7")
@@ -694,6 +643,28 @@ mod tests {
                 assert_eq!(address, empty_token_address);
             }
             _ => panic!("Expected EmptyTokenField error"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_erc20_decimals_result_failed(
+        failed_name_result: Multicall3::Result,
+        failed_token_address: Address,
+    ) {
+        let result = parse_erc20_decimals_result(&failed_name_result, &failed_token_address);
+        match result.unwrap_err() {
+            TokenInfoError::CallFailed {
+                field,
+                address,
+                reason,
+                raw_data,
+            } => {
+                assert_eq!(field, "decimals");
+                assert_eq!(address, failed_token_address);
+                assert_eq!(reason, "Call failed without revert data");
+                assert_eq!(raw_data, "0x");
+            }
+            _ => panic!("Expected CallFailed"),
         }
     }
 
@@ -865,27 +836,6 @@ mod tests {
         assert_eq!(requests[0]["params"][1], "latest");
     }
 
-    #[cfg(feature = "hypersync")]
-    #[tokio::test]
-    async fn test_balance_of_at_against_mock_rpc() {
-        let state = MockRpcState::default().with_call_response("0x70a08231", CALL_BALANCE);
-        let (contract, state) = erc20_contract_against(state).await;
-
-        let balance = contract
-            .balance_of_at(
-                &address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
-                &address!("f39Fd6e51aad88F6F4ce6aB8827279cffFb92266"),
-                30_346_561,
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(balance, U256::from(500_000_000_000_000_000u64));
-        let requests = state.recorded_requests();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0]["params"][1], "0x1cf0d41");
-    }
-
     #[tokio::test]
     async fn test_allowance_against_mock_rpc() {
         let state = MockRpcState::default().with_call_response("0xdd62ed3e", CALL_ALLOWANCE);
@@ -903,55 +853,6 @@ mod tests {
         assert_eq!(allowance, U256::from(1_000_000_000_000_000_000u64));
         let requests = state.recorded_requests();
         assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0]["params"][1], "latest");
-    }
-
-    #[cfg(feature = "hypersync")]
-    #[tokio::test]
-    async fn test_allowance_at_against_mock_rpc() {
-        let state = MockRpcState::default().with_call_response("0xdd62ed3e", CALL_ALLOWANCE);
-        let (contract, state) = erc20_contract_against(state).await;
-
-        let allowance = contract
-            .allowance_at(
-                &address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
-                &address!("f39Fd6e51aad88F6F4ce6aB8827279cffFb92266"),
-                &address!("E592427A0AEce92De3Edee1F18E0157C05861564"),
-                30_346_561,
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(allowance, U256::from(1_000_000_000_000_000_000u64));
-        let requests = state.recorded_requests();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0]["params"][1], "0x1cf0d41");
-    }
-
-    #[cfg(feature = "hypersync")]
-    #[tokio::test]
-    async fn test_simulate_approve_rejects_malformed_bool() {
-        let state = MockRpcState::default().with_response("eth_call", CALL_MAX);
-        let (contract, state) = erc20_contract_against(state).await;
-        let owner = address!("f39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
-
-        let error = contract
-            .simulate_approve(
-                &address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
-                &owner,
-                &address!("E592427A0AEce92De3Edee1F18E0157C05861564"),
-                U256::MAX,
-            )
-            .await
-            .unwrap_err();
-
-        assert!(
-            matches!(error, BlockchainRpcClientError::AbiDecodingError(_)),
-            "was: {error}"
-        );
-        let requests = state.recorded_requests();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0]["params"][0]["from"], owner.to_string());
         assert_eq!(requests[0]["params"][1], "latest");
     }
 }

@@ -122,7 +122,7 @@ pub fn parse_current_order_report(
         instrument_id,
         client_order_id,
         venue_order_id,
-        order_side,
+        order_side.into(),
         order_type,
         time_in_force,
         order_status,
@@ -202,7 +202,7 @@ pub fn parse_current_order_fill_report(
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        enums::OrderStatus,
+        enums::{OrderSide, OrderStatus},
         types::{Price, Quantity},
     };
     use rstest::rstest;
@@ -227,7 +227,7 @@ mod tests {
             report.venue_order_id,
             VenueOrderId::from(order.bet_id.as_str())
         );
-        assert_eq!(report.order_side, OrderSide::from(order.side));
+        assert_eq!(report.order_side, Some(OrderSide::from(order.side)),);
         assert!(report.price.is_some());
     }
 
@@ -304,7 +304,7 @@ mod tests {
             parse_current_order_report(order, AccountId::from("BETFAIR-001"), UnixNanos::default())
                 .unwrap();
 
-        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_side, Some(OrderSide::Sell));
         assert_eq!(report.order_status, OrderStatus::Canceled);
         assert_eq!(report.filled_qty, Quantity::from("0.00"));
         assert_eq!(report.quantity, Quantity::from("20.00"));
@@ -322,7 +322,7 @@ mod tests {
             parse_current_order_report(order, AccountId::from("BETFAIR-001"), UnixNanos::default())
                 .unwrap();
 
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, Some(OrderSide::Buy));
         assert_eq!(report.order_status, OrderStatus::Canceled);
         assert_eq!(report.filled_qty, Quantity::from("30.00"));
         assert_eq!(report.quantity, Quantity::from("50.00"));
@@ -590,7 +590,7 @@ mod tests {
         .unwrap();
         assert!(report.client_order_id.is_none());
         assert_eq!(report.venue_order_id, VenueOrderId::from("229430281400"));
-        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_side, Some(OrderSide::Sell));
         assert_eq!(report.quantity, Quantity::from("20.00"));
         assert_eq!(report.price.unwrap(), Price::from("6.00"));
 

@@ -22,10 +22,12 @@ use std::{
     cell::{Cell, RefCell},
     collections::HashSet,
     rc::Rc,
+    sync::Once,
 };
 
 use async_trait::async_trait;
 use indexmap::IndexSet;
+use log::{Level, LevelFilter, Log, Metadata, Record};
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
@@ -53,6 +55,7 @@ use nautilus_execution::{
     engine::ExecutionEngine,
     reconciliation::{
         create_position_reconciliation_venue_order_id, process_mass_status_for_reconciliation,
+        process_mass_status_for_reconciliation_without_synthetic_reports,
     },
 };
 use nautilus_live::manager::{ExecutionManager, ExecutionManagerConfig};
@@ -60,7 +63,7 @@ use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{
         AccountType, ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
-        PositionSideSpecified, TimeInForce, TriggerType,
+        PositionSide, TimeInForce, TriggerType,
     },
     events::{
         OrderEventAny, OrderFilled,
@@ -83,6 +86,7 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
+use parking_lot::Mutex;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -133,7 +137,8 @@ impl TestContext {
         let account = AccountAny::Margin(MarginAccount::new(account_state, true));
         cache.borrow_mut().add_account(account).unwrap();
 
-        let manager = ExecutionManager::new(clock.clone(), cache.clone(), config);
+        let manager =
+            ExecutionManager::new(clock.clone(), cache.clone(), config).expect("valid config");
         let mut engine = ExecutionEngine::new(clock.clone(), cache.clone(), None);
         engine
             .register_client(Box::new(MockExecutionClient::new(Vec::new())))
@@ -308,7 +313,7 @@ fn create_order_status_report_for_side(
         instrument_id,
         client_order_id,
         venue_order_id,
-        order_side,
+        order_side.into(),
         OrderType::Limit,
         TimeInForce::Gtc,
         status,
@@ -361,6 +366,39 @@ fn create_mass_status(
     mass_status.add_order_reports(order_reports);
     mass_status.add_fill_reports(fill_reports);
     mass_status
+}
+
+struct ManagerLogCapture {
+    messages: Mutex<Vec<String>>,
+}
+
+impl Log for ManagerLogCapture {
+    fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+        metadata.level() <= Level::Warn && metadata.target() == "nautilus_live::execution::manager"
+    }
+
+    fn log(&self, record: &Record<'_>) {
+        if self.enabled(record.metadata()) {
+            self.messages.lock().push(record.args().to_string());
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+static MANAGER_LOG_CAPTURE: ManagerLogCapture = ManagerLogCapture {
+    messages: Mutex::new(Vec::new()),
+};
+static MANAGER_LOG_INIT: Once = Once::new();
+static MANAGER_LOG_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+fn install_manager_log_capture() {
+    MANAGER_LOG_INIT.call_once(|| {
+        log::set_logger(&MANAGER_LOG_CAPTURE).expect("test logger already installed");
+        log::set_max_level(LevelFilter::Warn);
+    });
+
+    MANAGER_LOG_CAPTURE.messages.lock().clear();
 }
 
 #[rstest]
@@ -656,7 +694,7 @@ fn test_observe_position_report_records_activity() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("1.0"),
         UnixNanos::from(3_000_000),
         UnixNanos::from(3_000_000),
@@ -731,6 +769,98 @@ async fn test_reconcile_mass_status_creates_external_order_accepted() {
         ctx.cache.borrow().client_id(&client_order_id),
         Some(&client_id)
     );
+}
+
+#[tokio::test]
+async fn test_reconcile_mass_status_materializes_restored_close_position_order() {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("close-long");
+    ctx.add_instrument(test_instrument());
+
+    let report = OrderStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        Some(client_order_id),
+        VenueOrderId::from("123456790"),
+        OrderSide::Sell.into(),
+        OrderType::StopMarket,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        Quantity::from("0.005"),
+        Quantity::from("0.000"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    )
+    .with_trigger_price(Price::from("2500.00"))
+    .with_trigger_type(TriggerType::MarkPrice)
+    .with_reduce_only(true);
+    let mut mass_status = create_mass_status(vec![report], Vec::new());
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from("0.005"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3000.0)),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+    let order = ctx.get_order(&client_order_id).unwrap();
+
+    assert_eq!(
+        result
+            .events
+            .iter()
+            .filter(|event| matches!(
+                event,
+                OrderEventAny::Accepted(accepted)
+                    if accepted.client_order_id == client_order_id
+            ))
+            .count(),
+        1
+    );
+    assert_eq!(result.external_orders.len(), 1);
+    assert_eq!(order.order_type(), OrderType::StopMarket);
+    assert_eq!(order.order_side(), OrderSide::Sell);
+    assert_eq!(order.quantity(), Quantity::from("0.005"));
+    assert_eq!(order.trigger_price(), Some(Price::from("2500.00")));
+    assert!(order.is_reduce_only());
+}
+
+#[tokio::test]
+async fn test_reconcile_mass_status_rejects_external_order_with_zero_quantity() {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("ordinary-zero");
+    ctx.add_instrument(test_instrument());
+
+    let report = create_order_status_report(
+        Some(client_order_id),
+        VenueOrderId::from("123456792"),
+        instrument_id,
+        OrderStatus::Accepted,
+        Quantity::from("0.000"),
+        Quantity::from("0.000"),
+    );
+    let mass_status = create_mass_status(vec![report], Vec::new());
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert!(result.events.is_empty());
+    assert!(result.external_orders.is_empty());
+    assert!(ctx.get_order(&client_order_id).is_none());
 }
 
 #[rstest]
@@ -1589,7 +1719,8 @@ async fn test_external_order_filled_uses_real_fills() {
         ctx.clock.clone(),
         ctx.cache.clone(),
         ExecutionManagerConfig::default(),
-    );
+    )
+    .expect("valid config");
     let replay = ctx
         .manager
         .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
@@ -2702,7 +2833,7 @@ async fn test_retained_fill_projects_missing_order_without_reapplying(
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("1.000"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -2818,7 +2949,7 @@ async fn test_inferred_delta_for_retained_order_applies_new_economics(
         mass_status.add_position_reports(vec![PositionStatusReport::new(
             test_account_id(),
             instrument_id,
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from("10.000"),
             UnixNanos::from(2_000_000),
             UnixNanos::from(2_000_000),
@@ -3041,7 +3172,7 @@ async fn test_partially_known_fills_apply_only_new_economics(
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("3.000"),
         UnixNanos::from(2_000_000),
         UnixNanos::from(2_000_000),
@@ -3190,7 +3321,7 @@ async fn test_partial_window_known_fill_does_not_reapply_economics(
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("3.000"),
         UnixNanos::from(2_000_000),
         UnixNanos::from(2_000_000),
@@ -3253,7 +3384,7 @@ async fn test_split_lighter_reduce_only_lifecycle_does_not_apply_economics() {
         instrument_id,
         None,
         venue_order_id,
-        OrderSide::Sell,
+        OrderSide::Sell.into(),
         OrderType::Limit,
         TimeInForce::Gtc,
         OrderStatus::Filled,
@@ -3286,7 +3417,7 @@ async fn test_split_lighter_reduce_only_lifecycle_does_not_apply_economics() {
     let flat_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Flat,
+        PositionSide::Flat,
         Quantity::from("0"),
         close_ts,
         close_ts,
@@ -3442,7 +3573,7 @@ async fn test_bounded_complete_lifecycle_applies_beside_split_close() {
     let flat_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Flat,
+        PositionSide::Flat,
         Quantity::from("0"),
         split_ts,
         split_ts,
@@ -3572,7 +3703,7 @@ async fn test_bounded_hedge_fill_applies_economics_once() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("1.000"),
         fill_ts,
         fill_ts,
@@ -3789,7 +3920,7 @@ async fn test_bounded_reduce_only_fill_requires_sufficient_correlated_position(
     let flat_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Flat,
+        PositionSide::Flat,
         Quantity::from("0"),
         closing_ts,
         closing_ts,
@@ -3995,7 +4126,7 @@ async fn test_bounded_active_partial_order_keeps_order_without_economics() {
         instrument_id,
         None,
         venue_order_id,
-        OrderSide::Buy,
+        OrderSide::Buy.into(),
         OrderType::Limit,
         TimeInForce::Gtc,
         OrderStatus::PartiallyFilled,
@@ -4011,7 +4142,7 @@ async fn test_bounded_active_partial_order_keeps_order_without_economics() {
     let flat_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Flat,
+        PositionSide::Flat,
         Quantity::from("0"),
         fill_ts,
         fill_ts,
@@ -4106,7 +4237,7 @@ async fn test_bounded_nonflat_position_requires_coherent_historical_fill(
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("1.000"),
         fill_ts,
         fill_ts,
@@ -4214,7 +4345,7 @@ async fn test_bounded_complete_reports_require_unambiguous_position_coverage(
             PositionStatusReport::new(
                 test_account_id(),
                 instrument_id,
-                PositionSideSpecified::Flat,
+                PositionSide::Flat,
                 Quantity::zero(3),
                 fill_ts,
                 fill_ts,
@@ -4329,7 +4460,7 @@ async fn test_bounded_interleaved_multi_fill_orders_project_economics_order_only
     let flat_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Flat,
+        PositionSide::Flat,
         Quantity::zero(3),
         opening_ts_2,
         opening_ts_2,
@@ -4440,7 +4571,7 @@ async fn test_bounded_same_timestamp_orders_project_economics_order_only() {
     let flat_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Flat,
+        PositionSide::Flat,
         Quantity::zero(3),
         fill_ts,
         fill_ts,
@@ -4528,7 +4659,7 @@ fn create_bounded_fill_lifecycle(
         instrument_id,
         None,
         venue_order_id,
-        order_side,
+        order_side.into(),
         OrderType::Limit,
         TimeInForce::Gtc,
         OrderStatus::Filled,
@@ -4675,7 +4806,7 @@ async fn test_fill_before_retained_netting_lifecycle_projects_order_only() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("1.000"),
         UnixNanos::from(3_000_000),
         UnixNanos::from(3_000_000),
@@ -6117,7 +6248,7 @@ async fn test_market_order_inferred_fill_is_taker() {
         instrument_id,
         Some(client_order_id),
         venue_order_id,
-        OrderSide::Buy,
+        OrderSide::Buy.into(),
         OrderType::Market,
         TimeInForce::Ioc,
         OrderStatus::Filled,
@@ -6827,7 +6958,7 @@ async fn test_reconcile_mass_status_creates_position_from_position_report() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -6872,7 +7003,7 @@ async fn test_reconcile_mass_status_skips_flat_position_report() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Flat,
+        PositionSide::Flat,
         Quantity::from("0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -6912,7 +7043,7 @@ async fn test_reconcile_mass_status_skips_position_report_when_filtered() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -6949,7 +7080,7 @@ async fn test_reconcile_mass_status_creates_short_position_from_report() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Short,
+        PositionSide::Short,
         Quantity::from("3.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -7024,7 +7155,7 @@ async fn test_reconcile_mass_status_skips_position_report_when_fills_exist() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -7134,7 +7265,7 @@ async fn test_reconcile_mass_status_iterates_all_position_reports() {
     let position_report_long = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -7146,7 +7277,7 @@ async fn test_reconcile_mass_status_iterates_all_position_reports() {
     let position_report_short = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Short,
+        PositionSide::Short,
         Quantity::from("3.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -7205,7 +7336,7 @@ async fn test_reconcile_mass_status_routes_to_hedging_with_venue_position_id() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -7242,7 +7373,7 @@ async fn test_reconcile_mass_status_routes_to_netting_without_venue_position_id(
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -7262,9 +7393,7 @@ async fn test_reconcile_mass_status_routes_to_netting_without_venue_position_id(
 }
 
 #[tokio::test]
-async fn test_reconcile_mass_status_skips_hedge_position_when_fills_in_batch() {
-    // Tests that hedge position reconciliation is skipped when fills for the same
-    // venue_position_id exist in the batch (prevents duplicate synthetic orders)
+async fn test_reconcile_mass_status_reconciles_partial_hedge_fill_to_position_report() {
     let mut ctx = TestContext::new();
     let instrument_id = test_instrument_id();
     let client_order_id = ClientOrderId::from("O-001");
@@ -7272,7 +7401,7 @@ async fn test_reconcile_mass_status_skips_hedge_position_when_fills_in_batch() {
     let venue_position_id = PositionId::from("P-HEDGE-001");
 
     ctx.add_instrument(test_instrument());
-    let order = create_limit_order("O-001", instrument_id, OrderSide::Buy, "5.0", "3000.00");
+    let order = create_submitted_order("O-001", instrument_id, OrderSide::Buy, "5.0", "3000.00");
     ctx.add_order(order);
 
     let mut mass_status = ExecutionMassStatus::new(
@@ -7283,8 +7412,172 @@ async fn test_reconcile_mass_status_skips_hedge_position_when_fills_in_batch() {
         Some(UUID4::new()),
     );
 
-    // Add a fill report WITH venue_position_id
     let fill = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        venue_order_id,
+        TradeId::from("T-001"),
+        OrderSide::Buy,
+        Quantity::from("2.0"),
+        Price::from("3000.00"),
+        Money::from("0.50 USDT"),
+        LiquiditySide::Maker,
+        Some(client_order_id),
+        Some(venue_position_id),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    );
+
+    mass_status.add_fill_reports(vec![fill]);
+    mass_status.set_report_window(Some(UnixNanos::from(1)), false);
+
+    let position_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from("5.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        Some(venue_position_id),
+        Some(dec!(3000.00)),
+    );
+
+    mass_status.add_position_reports(vec![position_report]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(result.events.len(), 3);
+
+    assert_eq!(
+        result
+            .events
+            .iter()
+            .filter(|event| matches!(event, OrderEventAny::Accepted(_)))
+            .count(),
+        1,
+    );
+
+    assert_eq!(
+        result
+            .events
+            .iter()
+            .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+            .count(),
+        2,
+    );
+
+    let position = ctx
+        .cache
+        .borrow()
+        .position_owned(&venue_position_id)
+        .unwrap();
+    assert_eq!(position.quantity, Quantity::from("5.0"));
+    assert_eq!(position.avg_px_open, 3000.0);
+}
+
+#[tokio::test]
+async fn test_reconcile_mass_status_projects_partial_closing_hedge_history() {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let venue_position_id = PositionId::from("P-HEDGE-001");
+
+    ctx.add_instrument(test_instrument());
+    let order = create_submitted_order("O-001", instrument_id, OrderSide::Sell, "5.0", "3000.00");
+    ctx.add_order(order);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.set_report_window(Some(UnixNanos::from(1)), false);
+
+    mass_status.add_fill_reports(vec![FillReport::new(
+        test_account_id(),
+        instrument_id,
+        venue_order_id,
+        TradeId::from("T-001"),
+        OrderSide::Sell,
+        Quantity::from("5.0"),
+        Price::from("3100.00"),
+        Money::from("0.50 USDT"),
+        LiquiditySide::Maker,
+        Some(client_order_id),
+        Some(venue_position_id),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    )]);
+
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from("5.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        Some(venue_position_id),
+        Some(dec!(3000.00)),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(result.events.len(), 3);
+
+    let cache = ctx.cache.borrow();
+    let positions = cache.positions(None, None, None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].id, venue_position_id);
+    assert_eq!(positions[0].side, PositionSide::Long);
+    assert_eq!(positions[0].quantity, Quantity::from("5.0"));
+    assert_eq!(positions[0].avg_px_open, 3000.0);
+    assert_eq!(positions[0].realized_pnl, Some(Money::from("0 USDT")));
+}
+
+#[tokio::test]
+async fn test_reconcile_mass_status_skips_only_position_with_fill_position_id_conflict() {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-001");
+    let venue_order_id = VenueOrderId::from("V-001");
+    let legacy_position_id = PositionId::from("P-LEGACY-LONG");
+    let venue_position_id = PositionId::from("P-HEDGE-LONG");
+    let other_position_id = PositionId::from("P-HEDGE-SHORT");
+
+    ctx.add_instrument(test_instrument());
+    let order = create_submitted_order("O-001", instrument_id, OrderSide::Buy, "5.0", "3000.00");
+    ctx.cache
+        .borrow_mut()
+        .add_order(
+            order,
+            Some(legacy_position_id),
+            Some(test_client_id()),
+            false,
+        )
+        .unwrap();
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+
+    mass_status.add_fill_reports(vec![FillReport::new(
         test_account_id(),
         instrument_id,
         venue_order_id,
@@ -7299,37 +7592,68 @@ async fn test_reconcile_mass_status_skips_hedge_position_when_fills_in_batch() {
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
         None,
-    );
-    mass_status.add_fill_reports(vec![fill]);
+    )]);
 
-    // Add a hedge position report for the same venue_position_id
-    let position_report = PositionStatusReport::new(
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
         None,
         Some(venue_position_id),
         Some(dec!(3000.00)),
-    );
-    mass_status.add_position_reports(vec![position_report]);
+    )]);
+
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Short,
+        Quantity::from("3.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        Some(other_position_id),
+        Some(dec!(3100.00)),
+    )]);
 
     let result = ctx
         .manager
         .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
         .await;
 
-    // Should only have fill event, no synthetic order from position report
-    assert_eq!(result.events.len(), 1);
-    assert!(matches!(result.events[0], OrderEventAny::Filled(_)));
+    let [
+        OrderEventAny::Filled(conflicting_fill),
+        OrderEventAny::Accepted(_),
+        OrderEventAny::Filled(other_fill),
+    ] = result.events.as_slice()
+    else {
+        panic!("expected the conflicting fill followed by the synthetic position events");
+    };
+
+    assert_eq!(conflicting_fill.position_id, Some(venue_position_id));
+    assert_eq!(other_fill.position_id, Some(other_position_id));
+
+    let order = ctx.get_order(&client_order_id).unwrap();
+    assert_eq!(order.filled_qty(), Quantity::zero(3));
+    assert!(ctx.cache.borrow().position(&legacy_position_id).is_none());
+    assert!(ctx.cache.borrow().position(&venue_position_id).is_none());
+
+    let other_position = ctx
+        .cache
+        .borrow()
+        .position_owned(&other_position_id)
+        .unwrap();
+    assert_eq!(other_position.id, other_position_id);
+    assert_eq!(other_position.instrument_id, instrument_id);
+    assert_eq!(other_position.side, PositionSide::Short);
+    assert_eq!(other_position.quantity, Quantity::from("3.0"));
+    assert_eq!(other_position.avg_px_open, 3100.0);
 }
 
 #[tokio::test]
-async fn test_reconcile_mass_status_skips_hedge_position_when_filled_order_in_batch() {
-    // Tests that hedge position reconciliation is skipped when a filled order report
-    // with the same venue_position_id exists (even without explicit fill reports)
+async fn test_reconcile_mass_status_does_not_duplicate_matching_hedge_filled_order() {
     let mut ctx = TestContext::new();
     let instrument_id = test_instrument_id();
     let venue_order_id = VenueOrderId::from("V-001");
@@ -7345,13 +7669,12 @@ async fn test_reconcile_mass_status_skips_hedge_position_when_filled_order_in_ba
         Some(UUID4::new()),
     );
 
-    // Add a filled order report WITH venue_position_id (no explicit fill report)
     let order_report = OrderStatusReport::new(
         test_account_id(),
         instrument_id,
         None,
         venue_order_id,
-        OrderSide::Buy,
+        OrderSide::Buy.into(),
         OrderType::Market,
         TimeInForce::Gtc,
         OrderStatus::Filled,
@@ -7367,11 +7690,10 @@ async fn test_reconcile_mass_status_skips_hedge_position_when_filled_order_in_ba
 
     mass_status.add_order_reports(vec![order_report]);
 
-    // Add a hedge position report for the same venue_position_id
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -7379,6 +7701,7 @@ async fn test_reconcile_mass_status_skips_hedge_position_when_filled_order_in_ba
         Some(venue_position_id),
         Some(dec!(3000.00)),
     );
+
     mass_status.add_position_reports(vec![position_report]);
 
     let result = ctx
@@ -7386,13 +7709,12 @@ async fn test_reconcile_mass_status_skips_hedge_position_when_filled_order_in_ba
         .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
         .await;
 
-    // Should have events from the order report (initialized + filled), but no
-    // additional synthetic order from position report
     let filled_count = result
         .events
         .iter()
         .filter(|e| matches!(e, OrderEventAny::Filled(_)))
         .count();
+
     assert_eq!(filled_count, 1, "Expected exactly 1 fill event");
 }
 
@@ -7441,7 +7763,7 @@ async fn test_reconcile_mass_status_skips_hedge_position_when_fills_lack_positio
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -7511,7 +7833,7 @@ async fn test_reconcile_hedge_does_not_skip_unrelated_positions() {
     let position_report_1 = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -7522,7 +7844,7 @@ async fn test_reconcile_hedge_does_not_skip_unrelated_positions() {
     let position_report_2 = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Short,
+        PositionSide::Short,
         Quantity::from("3.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -7578,7 +7900,7 @@ async fn test_reconcile_hedge_position_matching_quantities() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -7630,7 +7952,7 @@ async fn test_reconcile_hedge_position_discrepancy_generates_order() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("8.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -7675,7 +7997,7 @@ async fn test_reconcile_missing_hedge_position_generates_order() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -7726,7 +8048,7 @@ async fn test_reconcile_hedge_position_discrepancy_disabled() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("8.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -7767,7 +8089,7 @@ async fn test_reconcile_hedge_position_both_flat() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Flat,
+        PositionSide::Flat,
         Quantity::from("0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -7809,7 +8131,7 @@ async fn test_reconcile_hedge_short_position() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Short,
+        PositionSide::Short,
         Quantity::from("3.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -7858,7 +8180,7 @@ async fn test_reconcile_mass_status_deduplicates_netting_reports_same_instrument
     let position_report_1 = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -7870,7 +8192,7 @@ async fn test_reconcile_mass_status_deduplicates_netting_reports_same_instrument
     let position_report_2 = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.0"),
         UnixNanos::from(1_000_001),
         UnixNanos::from(1_000_001),
@@ -7923,7 +8245,7 @@ async fn test_reconcile_mass_status_deduplicates_hedge_reports_same_position_id(
     let position_report_1 = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -7935,7 +8257,7 @@ async fn test_reconcile_mass_status_deduplicates_hedge_reports_same_position_id(
     let position_report_2 = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.0"),
         UnixNanos::from(1_000_001),
         UnixNanos::from(1_000_001),
@@ -7993,7 +8315,7 @@ async fn test_adjust_fills_creates_synthetic_for_partial_window() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.000"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -8072,6 +8394,68 @@ async fn test_adjust_fills_creates_synthetic_for_partial_window() {
     );
 }
 
+#[rstest]
+#[case::netting(false)]
+#[case::hedging(true)]
+#[tokio::test]
+async fn test_missing_orders_disabled_skips_synthetic_fill_recovery(#[case] hedging: bool) {
+    let config = ExecutionManagerConfig {
+        generate_missing_orders: false,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument_id = test_instrument_id();
+    ctx.add_instrument(test_instrument());
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    let venue_position_id = hedging.then(|| PositionId::from("ETHUSDT-PERP.BINANCE-LONG"));
+    mass_status.add_fill_reports(vec![FillReport::new(
+        test_account_id(),
+        instrument_id,
+        VenueOrderId::from("V-PARTIAL-DISABLED"),
+        TradeId::from("T-PARTIAL-DISABLED"),
+        OrderSide::Buy,
+        Quantity::from("2.000"),
+        Price::from("3100.00"),
+        Money::from("1.00 USDT"),
+        LiquiditySide::Taker,
+        None,
+        venue_position_id,
+        UnixNanos::from(1_000_001),
+        UnixNanos::from(1_000_001),
+        None,
+    )]);
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from("5.000"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        venue_position_id,
+        Some(dec!(3000.00)),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    let cache = ctx.cache.borrow();
+
+    assert!(result.events.is_empty());
+    assert!(result.external_orders.is_empty());
+    assert_eq!(cache.orders_total_count(None, None, None, None, None), 0);
+    assert!(cache.positions(None, None, None, None, None).is_empty());
+}
+
 #[tokio::test]
 async fn test_external_order_has_venue_tag() {
     let mut ctx = TestContext::new();
@@ -8140,7 +8524,7 @@ async fn test_external_order_with_fills_but_no_avg_px_applies_real_fills_only() 
         instrument_id,
         None, // External order
         venue_order_id,
-        OrderSide::Buy,
+        OrderSide::Buy.into(),
         OrderType::Market,
         TimeInForce::Gtc,
         OrderStatus::Filled,
@@ -8236,7 +8620,7 @@ async fn test_position_reconciliation_order_has_reconciliation_tag() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -8371,7 +8755,7 @@ async fn test_cross_zero_unbuildable_open_leg_has_no_side_effects() {
     let mut report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Short,
+        PositionSide::Short,
         Quantity::from("3.0"),
         venue_ts_last,
         venue_ts_last,
@@ -8460,7 +8844,7 @@ async fn test_cross_zero_unbuildable_open_leg_retries_without_poisoning_order_id
     let mut unbuildable_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Short,
+        PositionSide::Short,
         Quantity::from("3.0"),
         venue_ts_last,
         venue_ts_last,
@@ -8480,7 +8864,7 @@ async fn test_cross_zero_unbuildable_open_leg_retries_without_poisoning_order_id
     let valid_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Short,
+        PositionSide::Short,
         Quantity::from("3.0"),
         venue_ts_last,
         venue_ts_last,
@@ -8562,7 +8946,7 @@ async fn test_netting_position_cross_zero_long_to_short() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Short,
+        PositionSide::Short,
         Quantity::from("3.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -8641,7 +9025,7 @@ async fn test_netting_position_cross_zero_short_to_long() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("2.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -8720,7 +9104,7 @@ async fn test_netting_position_flat_report_closes_cached_position() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Flat,
+        PositionSide::Flat,
         Quantity::from("0.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -8919,7 +9303,7 @@ async fn test_partial_window_adjustment_skips_hedge_mode_instruments() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.0"),
         UnixNanos::from(1_000),
         UnixNanos::from(1_000),
@@ -9036,7 +9420,7 @@ async fn test_adjust_fills_multi_instrument_preserves_all_fills() {
     let position_report1 = PositionStatusReport::new(
         test_account_id(),
         instrument_id1,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("2.000"),
         UnixNanos::from(2_000),
         UnixNanos::from(2_000),
@@ -9102,7 +9486,7 @@ async fn test_adjust_fills_multi_instrument_preserves_all_fills() {
     let position_report2 = PositionStatusReport::new(
         test_account_id(),
         instrument_id2,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("100"),
         UnixNanos::from(2_500),
         UnixNanos::from(2_500),
@@ -9305,7 +9689,7 @@ async fn test_adjust_fills_missing_order_reports_uses_fill_side() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("0.050"),
         UnixNanos::from(2_000),
         UnixNanos::from(2_000),
@@ -9330,14 +9714,14 @@ async fn test_adjust_fills_missing_order_reports_uses_fill_side() {
     for order in result.orders.values() {
         assert_eq!(
             order.order_side,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             "Synthetic order side should be BUY (inferred from fill.order_side)"
         );
     }
 }
 
 #[tokio::test]
-async fn test_adjust_fills_filter_to_current_lifecycle_preserves_working_orders() {
+async fn test_adjust_fills_without_synthetic_reports_filters_to_current_lifecycle() {
     // Test FilterToCurrentLifecycle filters closed orders from previous lifecycles
     // while preserving working orders.
     //
@@ -9361,7 +9745,7 @@ async fn test_adjust_fills_filter_to_current_lifecycle_preserves_working_orders(
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("200"),
         UnixNanos::from(ts_now),
         UnixNanos::from(ts_now),
@@ -9405,7 +9789,7 @@ async fn test_adjust_fills_filter_to_current_lifecycle_preserves_working_orders(
         instrument_id,
         Some(ClientOrderId::from("C-002")),
         venue_order_id2,
-        OrderSide::Sell,
+        OrderSide::Sell.into(),
         OrderType::Limit,
         TimeInForce::Gtc,
         OrderStatus::Filled,
@@ -9466,7 +9850,12 @@ async fn test_adjust_fills_filter_to_current_lifecycle_preserves_working_orders(
     mass_status.add_fill_reports(vec![fill_o1, fill_o2, fill_o3]);
     mass_status.add_position_reports(vec![position_report]);
 
-    let result = process_mass_status_for_reconciliation(&mass_status, &instrument, None).unwrap();
+    let result = process_mass_status_for_reconciliation_without_synthetic_reports(
+        &mass_status,
+        &instrument,
+        None,
+    )
+    .unwrap();
 
     // O1 and O2 should be filtered out (closed orders from previous lifecycle)
     assert!(
@@ -9524,7 +9913,7 @@ async fn test_cross_zero_with_missing_cached_avg_px_returns_none() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Short,
+        PositionSide::Short,
         Quantity::from("3.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -9575,7 +9964,7 @@ async fn test_cross_zero_with_missing_venue_avg_px_closes_only() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Short,
+        PositionSide::Short,
         Quantity::from("3.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -9632,7 +10021,7 @@ async fn test_hedge_mode_multiple_positions_same_instrument() {
     let long_position = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("10.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -9644,7 +10033,7 @@ async fn test_hedge_mode_multiple_positions_same_instrument() {
     let short_position = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Short,
+        PositionSide::Short,
         Quantity::from("5.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -9706,7 +10095,7 @@ async fn test_hedge_mode_with_filter_unclaimed_external_allows_synthetic() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("10.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -9767,7 +10156,7 @@ async fn test_duplicate_order_reports_keeps_most_advanced_state() {
         instrument_id,
         Some(client_order_id),
         venue_order_id,
-        OrderSide::Buy,
+        OrderSide::Buy.into(),
         OrderType::Limit,
         TimeInForce::Gtc,
         OrderStatus::PartiallyFilled,
@@ -9784,7 +10173,7 @@ async fn test_duplicate_order_reports_keeps_most_advanced_state() {
         instrument_id,
         Some(client_order_id),
         venue_order_id,
-        OrderSide::Buy,
+        OrderSide::Buy.into(),
         OrderType::Limit,
         TimeInForce::Gtc,
         OrderStatus::Filled,
@@ -9879,7 +10268,7 @@ async fn test_reconciliation_order_skipped_on_restart() {
         instrument_id,
         Some(client_order_id),
         venue_order_id,
-        OrderSide::Buy,
+        OrderSide::Buy.into(),
         OrderType::Market,
         TimeInForce::Gtc,
         OrderStatus::Filled,
@@ -10085,7 +10474,6 @@ async fn test_working_order_with_new_fills_updates_correctly() {
 
 #[tokio::test]
 async fn test_orphan_fills_without_order_reports_processed() {
-    // Fills without matching order reports should still be processed
     let mut ctx = TestContext::new();
     let instrument_id = test_instrument_id();
     ctx.add_instrument(test_instrument());
@@ -10099,58 +10487,152 @@ async fn test_orphan_fills_without_order_reports_processed() {
     );
 
     let orphan_venue_order_id = VenueOrderId::from("V-ORPHAN-001");
+    let venue_position_id = PositionId::from("ETHUSDT-PERP.BINANCE-LONG");
     let orphan_fill = FillReport::new(
         test_account_id(),
         instrument_id,
         orphan_venue_order_id,
         TradeId::from("T-ORPHAN-001"),
         OrderSide::Buy,
-        Quantity::from("2.0"),
+        Quantity::from("0.75"),
         Price::from("3000.00"),
         Money::from("0.20 USDT"),
         LiquiditySide::Taker,
         None,
-        None,
+        Some(venue_position_id),
         UnixNanos::from(1_000),
         UnixNanos::from(1_000),
         None,
     );
 
-    let position_report = PositionStatusReport::new(
+    let second_fill = FillReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
-        Quantity::from("2.0"),
-        UnixNanos::from(1_000),
-        UnixNanos::from(1_000),
+        orphan_venue_order_id,
+        TradeId::from("T-ORPHAN-002"),
+        OrderSide::Buy,
+        Quantity::from("1.25"),
+        Price::from("3100.00"),
+        Money::from("0.30 USDT"),
+        LiquiditySide::Maker,
         None,
+        Some(venue_position_id),
+        UnixNanos::from(2_000),
+        UnixNanos::from(2_000),
         None,
-        Some(dec!(3000.00)),
     );
 
-    mass_status.add_fill_reports(vec![orphan_fill]);
-    mass_status.add_position_reports(vec![position_report]);
+    mass_status.add_fill_reports(vec![orphan_fill, second_fill]);
+
+    let replay_status = mass_status.clone();
 
     let result = ctx
         .manager
         .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
         .await;
 
-    // Orphan fills processed via position reconciliation (should not panic)
+    assert_eq!(result.events.len(), 3);
+    assert!(matches!(result.events[0], OrderEventAny::Accepted(_)));
+    assert!(matches!(result.events[1], OrderEventAny::Filled(_)));
+    assert!(matches!(result.events[2], OrderEventAny::Filled(_)));
+
+    let position = ctx
+        .cache
+        .borrow()
+        .position_owned(&venue_position_id)
+        .unwrap();
+
+    assert_eq!(position.id, venue_position_id);
+    assert_eq!(position.instrument_id, instrument_id);
+    assert_eq!(position.side, PositionSide::Long);
+    assert_eq!(position.quantity, Quantity::from("2.0"));
+    assert_eq!(position.avg_px_open, 3062.5);
+
+    let replay = ctx
+        .manager
+        .reconcile_execution_mass_status(replay_status, ctx.exec_engine.clone())
+        .await;
+
+    assert!(replay.events.is_empty());
+}
+
+#[tokio::test]
+async fn test_orphan_fill_group_validates_when_later_fill_has_position_id() {
+    let _log_guard = MANAGER_LOG_TEST_LOCK.lock().await;
+    install_manager_log_capture();
+
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    ctx.add_instrument(test_instrument());
+
+    let venue_order_id = VenueOrderId::from("V-MIXED-POSITION-001");
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+
+    mass_status.add_fill_reports(vec![
+        FillReport::new(
+            test_account_id(),
+            instrument_id,
+            venue_order_id,
+            TradeId::from("T-MIXED-POSITION-001"),
+            OrderSide::Buy,
+            Quantity::from("0.75"),
+            Price::from("3000.00"),
+            Money::from("0.20 USDT"),
+            LiquiditySide::Taker,
+            None,
+            None,
+            UnixNanos::from(1_000),
+            UnixNanos::from(1_000),
+            None,
+        ),
+        FillReport::new(
+            test_account_id(),
+            instrument_id,
+            venue_order_id,
+            TradeId::from("T-MIXED-POSITION-002"),
+            OrderSide::Buy,
+            Quantity::from("1.25"),
+            Price::from("3100.00"),
+            Money::from("0.30 USDT"),
+            LiquiditySide::Maker,
+            None,
+            Some(PositionId::from("ETHUSDT-PERP.BINANCE-LONG")),
+            UnixNanos::from(2_000),
+            UnixNanos::from(2_000),
+            None,
+        ),
+    ]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    let messages = MANAGER_LOG_CAPTURE.messages.lock().clone();
+    let cache = ctx.cache.borrow();
+
+    assert!(result.events.is_empty());
+    assert!(result.external_orders.is_empty());
+    assert_eq!(cache.orders_total_count(None, None, None, None, None), 0);
+    assert!(cache.positions(None, None, None, None, None).is_empty());
+
     assert!(
-        !result.events.is_empty()
-            || !ctx
-                .cache
-                .borrow()
-                .positions(None, None, None, None, None)
-                .is_empty(),
-        "Orphan fills should be processed in some way"
+        messages.iter().any(|message| message
+            == "Cannot materialize orphan fills for venue order V-MIXED-POSITION-001: venue position ID is missing")
     );
 }
 
 #[tokio::test]
 async fn test_orphan_fills_for_unknown_instrument_skipped() {
-    // Fills for instruments not in cache should be skipped gracefully
+    let _log_guard = MANAGER_LOG_TEST_LOCK.lock().await;
+    install_manager_log_capture();
+
     let mut ctx = TestContext::new();
     ctx.add_instrument(test_instrument());
 
@@ -10175,7 +10657,7 @@ async fn test_orphan_fills_for_unknown_instrument_skipped() {
         Money::from("0.10 USDT"),
         LiquiditySide::Taker,
         None,
-        None,
+        Some(PositionId::from("UNKNOWN-PERP.BINANCE-LONG")),
         UnixNanos::from(1_000),
         UnixNanos::from(1_000),
         None,
@@ -10188,17 +10670,18 @@ async fn test_orphan_fills_for_unknown_instrument_skipped() {
         .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
         .await;
 
-    let has_unknown_fills = result.events.iter().any(|e| {
-        if let OrderEventAny::Filled(f) = e {
-            f.instrument_id == unknown_instrument_id
-        } else {
-            false
-        }
-    });
+    let messages = MANAGER_LOG_CAPTURE.messages.lock().clone();
+    let cache = ctx.cache.borrow();
+
+    assert!(result.events.is_empty());
+    assert!(result.external_orders.is_empty());
+    assert_eq!(cache.orders_total_count(None, None, None, None, None), 0);
+    assert!(cache.positions(None, None, None, None, None).is_empty());
 
     assert!(
-        !has_unknown_fills,
-        "Fills for unknown instruments should be skipped"
+        messages
+            .iter()
+            .any(|message| message == "1 orders skipped (instrument not in cache)")
     );
 }
 
@@ -10491,7 +10974,7 @@ async fn test_reconciliation_instrument_ids_filters_position_reports() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         excluded_instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("10.0"),
         UnixNanos::from(1_000),
         UnixNanos::from(1_000),
@@ -12237,7 +12720,7 @@ async fn test_position_check_reconciles_venue_only_nonflat_report() {
     let venue_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("3.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -12255,6 +12738,126 @@ async fn test_position_check_reconciles_venue_only_nonflat_report() {
             .iter()
             .any(|event| matches!(event, OrderEventAny::Filled(_))),
         "Expected a synthetic fill for a non-flat venue-only position report"
+    );
+}
+
+#[tokio::test]
+async fn test_position_check_updates_reported_hedge_position() {
+    let config = ExecutionManagerConfig {
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let position_id = PositionId::from("P-CONTINUOUS-HEDGE-LONG");
+    let position = create_test_position(&instrument, position_id, OrderSide::Buy, "5.0", "3000.00");
+    let report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from("7.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        Some(position_id),
+        Some(dec!(3100.00)),
+    );
+    ctx.add_instrument(instrument);
+    ctx.add_position(&position);
+    let client = MockPositionExecutionClient::new(vec![], vec![report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+    let fill = events
+        .iter()
+        .find_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .expect("reconciliation fill is emitted");
+    assert_eq!(fill.position_id, Some(position_id));
+
+    for event in &events {
+        ctx.exec_engine.borrow_mut().process(event);
+    }
+
+    let cache = ctx.cache.borrow();
+    let positions = cache.positions_open(
+        None,
+        Some(&instrument_id),
+        None,
+        Some(&test_account_id()),
+        None,
+    );
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].id, position_id);
+    assert_eq!(positions[0].signed_decimal_qty(), dec!(7.0));
+}
+
+#[tokio::test]
+async fn test_position_check_cross_zero_preserves_both_hedge_position_ids() {
+    let config = ExecutionManagerConfig {
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let close_position_id = PositionId::from("P-CONTINUOUS-HEDGE-LONG");
+    let open_position_id = PositionId::from("P-CONTINUOUS-HEDGE-SHORT");
+    let position = create_test_position(
+        &instrument,
+        close_position_id,
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+    );
+    let report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Short,
+        Quantity::from("3.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        Some(open_position_id),
+        Some(dec!(3100.00)),
+    );
+    ctx.add_instrument(instrument);
+    ctx.add_position(&position);
+    let client = MockPositionExecutionClient::new(vec![], vec![report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+    let fills = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(fills.len(), 2);
+    assert_eq!(fills[0].position_id, Some(close_position_id));
+    assert_eq!(fills[1].position_id, Some(open_position_id));
+
+    for event in &events {
+        ctx.exec_engine.borrow_mut().process(event);
+    }
+
+    let cache = ctx.cache.borrow();
+    assert!(
+        cache
+            .position(&close_position_id)
+            .is_some_and(|position| position.is_closed())
+    );
+    assert_eq!(
+        cache
+            .position(&open_position_id)
+            .expect("short hedge position is created")
+            .signed_decimal_qty(),
+        dec!(-3.0),
     );
 }
 
@@ -12337,7 +12940,7 @@ async fn test_position_check_rereads_position_opened_during_request() {
     let venue_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("3.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -12385,7 +12988,7 @@ async fn test_position_check_uses_current_avg_px_after_request() {
     let venue_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("6.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -12473,7 +13076,7 @@ async fn test_position_check_preserves_retry_for_uncovered_position_opened_durin
     let venue_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("4.0"),
         UnixNanos::from(2_000_000),
         UnixNanos::from(2_000_000),
@@ -12900,7 +13503,7 @@ async fn test_position_check_uses_client_tolerance_for_observed_smoke_difference
     let venue_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.208000"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -12946,7 +13549,7 @@ async fn test_position_check_uses_routing_client_tolerance() {
     let venue_report = PositionStatusReport::new(
         account_id,
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.005000"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -13000,7 +13603,7 @@ async fn test_mass_status_netting_uses_routing_client_tolerance() {
     let matching_report = PositionStatusReport::new(
         account_id,
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.000000"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -13037,7 +13640,7 @@ async fn test_mass_status_netting_uses_routing_client_tolerance() {
     let drift_report = PositionStatusReport::new(
         account_id,
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.005000"),
         UnixNanos::from(2_000_000),
         UnixNanos::from(2_000_000),
@@ -13090,7 +13693,7 @@ async fn test_routing_clients_on_same_venue_use_account_tolerances_independently
     let tolerant_report = PositionStatusReport::new(
         tolerant_account_id,
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.005000"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -13101,7 +13704,7 @@ async fn test_routing_clients_on_same_venue_use_account_tolerances_independently
     let strict_report = PositionStatusReport::new(
         strict_account_id,
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.005000"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -13167,7 +13770,7 @@ async fn test_position_check_reconciles_at_client_tolerance_boundary() {
     let venue_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.210000"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -13382,7 +13985,7 @@ async fn test_position_check_aggregates_hedge_positions_before_comparing_report(
     let venue_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("2.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -13445,7 +14048,7 @@ async fn test_position_check_matching_hedge_reports_is_order_invariant(
     let report_long = create_test_position_report(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         "5.0",
         "P-MATCH-LONG",
         dec!(3000.00),
@@ -13453,7 +14056,7 @@ async fn test_position_check_matching_hedge_reports_is_order_invariant(
     let report_short = create_test_position_report(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Short,
+        PositionSide::Short,
         "2.0",
         "P-MATCH-SHORT",
         dec!(3100.00),
@@ -13502,7 +14105,7 @@ async fn test_position_check_equal_net_with_mismatched_hedge_legs_is_discrepant(
     let report_long = create_test_position_report(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         "4.0",
         "P-NET-MISMATCH-LONG",
         dec!(3000.00),
@@ -13510,7 +14113,7 @@ async fn test_position_check_equal_net_with_mismatched_hedge_legs_is_discrepant(
     let report_short = create_test_position_report(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Short,
+        PositionSide::Short,
         "1.0",
         "P-NET-MISMATCH-SHORT",
         dec!(3100.00),
@@ -13545,7 +14148,7 @@ async fn test_position_check_venue_only_offset_hedge_legs_are_discrepant() {
     let report_long = create_test_position_report(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         "2.0",
         "P-OFFSET-LONG",
         dec!(3000.00),
@@ -13553,7 +14156,7 @@ async fn test_position_check_venue_only_offset_hedge_legs_are_discrepant() {
     let report_short = create_test_position_report(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Short,
+        PositionSide::Short,
         "2.0",
         "P-OFFSET-SHORT",
         dec!(3100.00),
@@ -13593,7 +14196,7 @@ async fn test_position_check_flat_and_nonflat_reports_use_nonflat_report() {
     let nonflat_report = create_test_position_report(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         "5.0",
         "P-NONFLAT",
         dec!(3000.00),
@@ -13601,7 +14204,7 @@ async fn test_position_check_flat_and_nonflat_reports_use_nonflat_report() {
     let flat_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Flat,
+        PositionSide::Flat,
         Quantity::from("0"),
         UnixNanos::from(2_000_000),
         UnixNanos::from(2_000_000),
@@ -13652,7 +14255,7 @@ async fn test_position_check_multi_leg_discrepancy_defers_reconciliation() {
     let report_long = create_test_position_report(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         "5.0",
         "P-DEFER-LONG",
         dec!(3000.00),
@@ -13660,7 +14263,7 @@ async fn test_position_check_multi_leg_discrepancy_defers_reconciliation() {
     let report_short = create_test_position_report(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Short,
+        PositionSide::Short,
         "1.0",
         "P-DEFER-SHORT",
         dec!(3100.00),
@@ -13713,7 +14316,7 @@ async fn test_position_check_single_leg_gets_fresh_budget_after_multi_leg_exhaus
     let report_long = create_test_position_report(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         "4.0",
         "P-SHAPE-LONG",
         dec!(3000.00),
@@ -13721,7 +14324,7 @@ async fn test_position_check_single_leg_gets_fresh_budget_after_multi_leg_exhaus
     let report_short = create_test_position_report(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Short,
+        PositionSide::Short,
         "2.0",
         "P-SHAPE-SHORT",
         dec!(3100.00),
@@ -13742,7 +14345,7 @@ async fn test_position_check_single_leg_gets_fresh_budget_after_multi_leg_exhaus
     let single_report = create_test_position_report(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         "4.0",
         "P-SHAPE-NET",
         dec!(3200.00),
@@ -13814,7 +14417,7 @@ async fn test_position_check_multi_leg_reports_remain_isolated_by_account() {
         create_test_position_report(
             account_a,
             instrument_id,
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             "5.0",
             "P-A-LONG",
             dec!(3000.00),
@@ -13822,7 +14425,7 @@ async fn test_position_check_multi_leg_reports_remain_isolated_by_account() {
         create_test_position_report(
             account_a,
             instrument_id,
-            PositionSideSpecified::Short,
+            PositionSide::Short,
             "2.0",
             "P-A-SHORT",
             dec!(3100.00),
@@ -13839,7 +14442,7 @@ async fn test_position_check_multi_leg_reports_remain_isolated_by_account() {
         create_test_position_report(
             account_b,
             instrument_id,
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             "7.0",
             "P-B-LONG",
             dec!(3200.00),
@@ -13847,7 +14450,7 @@ async fn test_position_check_multi_leg_reports_remain_isolated_by_account() {
         create_test_position_report(
             account_b,
             instrument_id,
-            PositionSideSpecified::Short,
+            PositionSide::Short,
             "2.0",
             "P-B-SHORT",
             dec!(3300.00),
@@ -13890,7 +14493,7 @@ async fn test_position_check_single_report_reconciliation_is_unchanged() {
     let report = create_test_position_report(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         "5.0",
         "P-SINGLE",
         dec!(3100.00),
@@ -13920,7 +14523,7 @@ async fn test_position_check_single_report_reconciliation_is_unchanged() {
 fn create_test_position_report(
     account_id: AccountId,
     instrument_id: InstrumentId,
-    position_side: PositionSideSpecified,
+    position_side: PositionSide,
     quantity: &str,
     venue_position_id: &str,
     avg_px_open: Decimal,
@@ -14014,7 +14617,7 @@ async fn test_position_check_flat_venue_report_does_not_protect_stale_counter() 
     let flat_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Flat,
+        PositionSide::Flat,
         Quantity::from("0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -14097,7 +14700,7 @@ async fn test_position_check_nonflat_venue_report_protects_counter() {
     let venue_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("3.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -14323,7 +14926,7 @@ async fn test_position_check_grace_survives_accelerated_trading_clock() {
     let venue_report = PositionStatusReport::new(
         account,
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("0.06"),
         UnixNanos::from(accelerated_jump_ns),
         UnixNanos::from(accelerated_jump_ns),
@@ -14395,7 +14998,7 @@ async fn test_position_check_grace_expires_on_monotonic_clock() {
     let venue_report = PositionStatusReport::new(
         account,
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("0.06"),
         ts_event,
         ts_event,
@@ -14459,7 +15062,7 @@ async fn test_check_positions_consistency_processes_only_discrepant_account() {
     let report_a = PositionStatusReport::new(
         account_a,
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("5.0"),
         UnixNanos::from(1_000_000),
         UnixNanos::from(1_000_000),
@@ -14649,7 +15252,7 @@ async fn test_reconcile_mass_status_publishes_raw_reports_for_capture() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("1.0"),
         UnixNanos::from(3_000_000),
         UnixNanos::from(3_000_000),
@@ -14752,7 +15355,7 @@ async fn test_reconcile_mass_status_does_not_capture_synthetic_reports() {
     let position_report = PositionStatusReport::new(
         test_account_id(),
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("1.0"),
         UnixNanos::from(3_000_000),
         UnixNanos::from(3_000_000),

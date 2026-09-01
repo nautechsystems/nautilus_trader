@@ -8,9 +8,11 @@
 
 [NautilusTrader](https://nautilustrader.io) adapter for the [Lighter](https://lighter.xyz) decentralized spot and perpetuals exchange.
 
-The `nautilus-lighter` crate implements the Lighter adapter for NautilusTrader, including
+The `nautilus-lighter` crate implements the Lighter protocol adapter for NautilusTrader, including
 typed HTTP and WebSocket clients, REST and stream models, venue parsing, data and execution
-client wiring, and an in-tree L2 signer for the official **Lighter API**.
+client wiring, and an in-tree L2 signer for the official **Lighter API**. It supports the Lighter
+and Robinhood Chain deployments with deployment-specific endpoints, chain IDs, settlement
+currencies, and Nautilus venue defaults.
 
 Lighter is a high-throughput central-limit-order-book decentralized crypto exchange
 for spot and perpetual futures, settling on Ethereum via a custom zero-knowledge rollup.
@@ -43,25 +45,34 @@ trait surface.
 
 ## Integrator attribution
 
-Submitted create and modify order transactions carry the NautilusTrader integrator account index in
-Lighter's `L2TxAttributes`. This helps us gauge real usage of the integration and prioritize
-ongoing maintenance. Maker and taker integrator fees are set to zero, so attribution adds no trading
-cost.
+On Lighter Mainnet, submitted create and modify order transactions from Plus and Premium accounts
+carry the NautilusTrader integrator account index in Lighter's `L2TxAttributes`. This helps us gauge
+real usage of the integration and prioritize ongoing maintenance. Maker and taker integrator fees
+are set to zero, so attribution adds no trading cost. All other account tiers, sessions without an
+account snapshot, Lighter Testnet, and both Robinhood environments leave `L2TxAttributes` empty.
 
 Lighter requires an `ApproveIntegrator` approval before these attributes can be attached to orders.
-During startup, the execution client submits the required **zero-fee** approval for the configured
-L2 account. See the
-[Lighter integration guide](https://nautilustrader.io/docs/nightly/integrations/lighter.html#integrator-attribution)
-for approval and revocation details.
+During startup, the Lighter Mainnet execution client submits the required **zero-fee** approval for
+a configured Plus or Premium L2 account. Other Lighter account tiers, sessions without an account
+snapshot, Lighter Testnet, and Robinhood clients do not submit an approval.
+
+Robinhood Mainnet uses separate account-level referral attribution. During startup, the
+execution client applies the `NAUTILUS` code to the account's public L1 address. Selecting the
+Robinhood Mainnet opts the account into this attribution. Application failures log a
+warning and do not block trading. Robinhood Testnet does not apply a referral.
+
+See the [Lighter integration guide](https://nautilustrader.io/docs/nightly/integrations/lighter.html#integrator-attribution)
+for full attribution and revocation details.
 
 ### Maker-only API keys
 
-Lighter restricts maker-only API keys to the 0ms speed-bump lane (PostOnly orders, modifies on
-ALO orders, and cancels), so they cannot submit `ApproveIntegrator` themselves. The execution
-client detects maker-only keys at startup via `getMakerOnlyApiKeys` and skips the approval with
-a WARN log. Approval is account-scoped: a single `ApproveIntegrator` from any non-maker-only
-key on the same account permanently unlocks orders for every key on that account, including
-maker-only ones.
+On Lighter Mainnet, Lighter restricts maker-only API keys to the 0ms speed-bump lane (PostOnly
+orders, modifies on ALO orders, and cancels), so they cannot submit `ApproveIntegrator` themselves.
+The execution client detects maker-only keys at startup via `getMakerOnlyApiKeys` and skips the
+approval with a WARN log. Approval is account-scoped: a single `ApproveIntegrator` from any
+non-maker-only key on the same account permanently unlocks orders for every key on that account,
+including maker-only ones. Lighter Testnet and both Robinhood environments do not query
+`getMakerOnlyApiKeys` for integrator approval.
 
 ## L2 transaction signer
 

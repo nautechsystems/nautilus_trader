@@ -406,6 +406,31 @@ mod tests {
     }
 
     #[rstest]
+    fn test_deregister_actor_removes_only_requested_actor_and_retains_guard() {
+        clear_actor_registry();
+
+        let removed_id = Ustr::from("removed-actor");
+        let retained_id = Ustr::from("retained-actor");
+        register_actor(TestActor {
+            id: removed_id,
+            value: 7,
+        });
+        register_actor(TestActor {
+            id: retained_id,
+            value: 11,
+        });
+        let removed_guard = get_actor_unchecked::<TestActor>(&removed_id);
+
+        deregister_actor(&removed_id);
+
+        assert!(!actor_exists(&removed_id));
+        assert!(actor_exists(&retained_id));
+        assert_eq!(actor_count(), 1);
+        assert_eq!(removed_guard.value, 7);
+        assert_eq!(get_actor_unchecked::<TestActor>(&retained_id).value, 11);
+    }
+
+    #[rstest]
     fn test_actor_ref_survives_same_id_replacement() {
         clear_actor_registry();
 

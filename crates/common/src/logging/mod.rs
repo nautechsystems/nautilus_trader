@@ -205,6 +205,7 @@ pub fn init_logging(
     Logger::init_with_config(trader_id, instance_id, config, file_config)
 }
 
+/// Maps a [`LogLevel`] to a [`LevelFilter`].
 #[must_use]
 pub const fn map_log_level_to_filter(log_level: LogLevel) -> LevelFilter {
     match log_level {
@@ -223,7 +224,7 @@ pub const fn map_log_level_to_filter(log_level: LogLevel) -> LevelFilter {
 ///
 /// Returns an error if the provided string is not a valid `LevelFilter`.
 pub fn parse_level_filter_str(s: &str) -> anyhow::Result<LevelFilter> {
-    let mut log_level_str = s.to_string().to_uppercase();
+    let mut log_level_str = s.to_uppercase();
     if log_level_str == "WARNING" {
         log_level_str = "WARN".to_string();
     }
@@ -239,24 +240,18 @@ pub fn parse_level_filter_str(s: &str) -> anyhow::Result<LevelFilter> {
 pub fn parse_component_levels(
     original_map: Option<HashMap<String, serde_json::Value>>,
 ) -> anyhow::Result<AHashMap<Ustr, LevelFilter>> {
-    match original_map {
-        Some(map) => {
-            let mut new_map = AHashMap::new();
+    let mut new_map = AHashMap::new();
 
-            for (key, value) in map {
-                let ustr_key = Ustr::from(&key);
-                let s = value.as_str().ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Component log level for '{key}' must be a string, was: {value}"
-                    )
-                })?;
-                let lvl = parse_level_filter_str(s)?;
-                new_map.insert(ustr_key, lvl);
-            }
-            Ok(new_map)
-        }
-        None => Ok(AHashMap::new()),
+    for (key, value) in original_map.unwrap_or_default() {
+        let ustr_key = Ustr::from(&key);
+        let s = value.as_str().ok_or_else(|| {
+            anyhow::anyhow!("Component log level for '{key}' must be a string, was: {value}")
+        })?;
+        let lvl = parse_level_filter_str(s)?;
+        new_map.insert(ustr_key, lvl);
     }
+
+    Ok(new_map)
 }
 
 /// Logs that a task has started.

@@ -70,7 +70,7 @@ inside the same event-driven runtime.
 
 ## Prerequisites
 
-- A Rust toolchain (MSRV 1.97.1 or newer).
+- A Rust toolchain (MSRV 1.98.0 or newer).
 - A Cargo project with the Nautilus, Lighter, and Databento crates as
   dependencies (see [Project setup](#project-setup)).
 - Python 3.12+ to regenerate the rendered panels.
@@ -86,12 +86,14 @@ inside the same event-driven runtime.
 
 The example reads credentials from environment variables and keeps the strategy
 parameters as editable Rust constants. It defaults to
-`LighterEnvironment::Testnet`, so set the testnet Lighter credentials:
+`LighterEnvironment::Testnet`, so follow the
+[account and API key setup](../integrations/lighter.md#account-and-api-key-setup) and set the testnet
+Lighter credentials:
 
 ```bash
 export DATABENTO_API_KEY="your-databento-api-key"
 export LIGHTER_TESTNET_ACCOUNT_INDEX="123456"
-export LIGHTER_TESTNET_API_KEY_INDEX="0"
+export LIGHTER_TESTNET_API_KEY_INDEX="4"
 export LIGHTER_TESTNET_API_SECRET="your-lighter-api-secret"
 ```
 
@@ -139,7 +141,7 @@ Lighter traded market:
 
 | Role              | Instrument ID       | Source    | Notes                                 |
 | ----------------- | ------------------- | --------- | ------------------------------------- |
-| Signal instrument | `NVDA.EQUS`         | Databento | EQUS.MINI top‑of‑book quote updates.  |
+| Signal instrument | `NVDA.EQUS`         | Databento | EQUS.MINI top-of-book quote updates.  |
 | Target instrument | `NVDA-PERP.LIGHTER` | Lighter   | RWA perpetual traded through Lighter. |
 
 Subscribing to `NVDA.EQUS` requests top-of-book (`mbp-1`) quotes for `NVDA` from
@@ -148,7 +150,7 @@ stream. `EQUS.MINI` is the lowest-cost consolidated US equities tier; richer
 tiers such as `EQUS.PLUS` need a separate Databento license and can be selected
 with the client's `venue_dataset_map` (for example `{"EQUS": "EQUS.PLUS"}`) once
 your account is entitled. The adapter resolves the `EQUS` venue from a publishers
-file: the example points `DatabentoLiveClientConfig` at the `publishers.json`
+file: the example points `DatabentoDataClientConfig` at the `publishers.json`
 bundled with the Databento adapter. See [Instrument IDs and symbology][databento-symbology]
 for the mapping rules.
 
@@ -184,8 +186,14 @@ the crates from [Project setup](#project-setup). A Python counterpart also lives
 strategy through PyO3.
 
 From a checkout, with the credential variables set, the shipped binary connects
-the data and execution clients. It defaults to `DRY_RUN = true`, which starts
-the clients without adding the order-submitting strategy:
+the data and execution clients. It defaults to `DRY_RUN = false`, which adds the
+order-submitting strategy.
+
+:::warning
+This command can submit live orders. Start with the smallest accepted size on a funded test
+account or a mainnet account sized for loss. Confirm the active instrument ID, account ID,
+numeric account index, and Lighter credentials before running it.
+:::
 
 ```bash
 cargo run --bin lighter-nvda-composite-mm --package nautilus-tutorials --features examples
@@ -204,14 +212,13 @@ let account_id = AccountId::from(ACCOUNT_ID);
 let instrument_id = InstrumentId::from(INSTRUMENT_ID);
 let signal_instrument_id = InstrumentId::from(SIGNAL_INSTRUMENT_ID);
 
-let databento_api_key = get_env_var("DATABENTO_API_KEY")?;
+let api_key = get_env_var("DATABENTO_API_KEY")?;
 let databento_config =
-    DatabentoLiveClientConfig::new(databento_api_key, publishers_filepath, true, true);
+    DatabentoDataClientConfig::new(api_key, publishers_filepath, true, true);
 let lighter_data_config = LighterDataClientConfig::builder()
     .environment(lighter_environment)
     .build();
-let lighter_exec_config = LighterExecClientConfig::builder()
-    .trader_id(trader_id)
+let lighter_exec_config = LighterExecutionClientConfig::builder()
     .account_id(account_id)
     .environment(lighter_environment)
     .build();
@@ -255,10 +262,11 @@ if !DRY_RUN {
 }
 ```
 
-To allow order submission, edit the constant near the top of the example source:
+To connect without adding the order-submitting strategy, edit the constant near the top of the
+example source:
 
 ```rust
-const DRY_RUN: bool = false;
+const DRY_RUN: bool = true;
 ```
 
 Then run the same command:
@@ -266,12 +274,6 @@ Then run the same command:
 ```bash
 cargo run --bin lighter-nvda-composite-mm --package nautilus-tutorials --features examples
 ```
-
-:::warning
-This command can submit live orders when `DRY_RUN` is `false`. Start with the smallest accepted size
-on a funded test account or a mainnet account sized for loss. Confirm the active instrument ID,
-account ID, numeric account index, and Lighter credentials before changing it.
-:::
 
 For a testnet smoke run, keep `LIGHTER_ENVIRONMENT` as
 `LighterEnvironment::Testnet` and use the `LIGHTER_TESTNET_*` credential
@@ -287,11 +289,11 @@ Databento residual remains zero until the first `NVDA.EQUS` quote arrives.
 | `signal_instrument_id`  | `NVDA.EQUS`         | Databento US Equities Mini signal feed.                        |
 | `trade_size`            | `0.05`              | Size per bid or ask.                                           |
 | `max_position`          | `0.20`              | Hard cap on net Lighter exposure.                              |
-| `half_spread_bps`       | `25`                | Half‑spread around the Lighter anchor.                         |
+| `half_spread_bps`       | `25`                | Half-spread around the Lighter anchor.                         |
 | `inventory_skew_factor` | `2.0`               | Price units per unit of net position.                          |
 | `signal_skew_factor`    | `55.0`              | Price units per unit of normalized Databento residual.         |
 | `signal_baseline`       | First signal mid    | Optional reference price for the Databento residual.           |
-| `requote_threshold_bps` | `5`                 | Anchor or signal‑impact move that triggers cancel and requote. |
+| `requote_threshold_bps` | `5`                 | Anchor or signal-impact move that triggers cancel and requote. |
 
 With a Lighter mid of `207.00` and `half_spread_bps=25`, the unskewed half
 spread is `0.5175` USD. If Databento is 30 bps above its baseline, a

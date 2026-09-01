@@ -15,26 +15,30 @@
 
 //! Example demonstrating live execution testing with the Lighter adapter.
 //!
-//! Edit the constants below to change the environment, target instrument, and order size.
-//! By default this connects in dry-run mode. Set `DRY_RUN` to `false` to allow
-//! real orders.
+//! Edit the constants below to change the deployment, environment, target instrument, and order
+//! size.
 //!
 //! Run with: `cargo run --example lighter-exec-tester --package nautilus-lighter --features examples`
 //!
-//! Required credential environment variables:
-//! - `LIGHTER_ACCOUNT_INDEX`, `LIGHTER_API_KEY_INDEX`, and `LIGHTER_API_SECRET` when
-//!   `LIGHTER_ENVIRONMENT` is `LighterEnvironment::Mainnet`.
-//! - `LIGHTER_TESTNET_ACCOUNT_INDEX`, `LIGHTER_TESTNET_API_KEY_INDEX`, and
-//!   `LIGHTER_TESTNET_API_SECRET` when `LIGHTER_ENVIRONMENT` is `LighterEnvironment::Testnet`.
+//! Required credential environment variable prefixes:
+//! - Lighter Mainnet: `LIGHTER_*`
+//! - Lighter Testnet: `LIGHTER_TESTNET_*`
+//! - Robinhood Mainnet: `LIGHTER_ROBINHOOD_*`
+//! - Robinhood Testnet: `LIGHTER_ROBINHOOD_TESTNET_*`
+//!
+//! Each namespace supplies `ACCOUNT_INDEX`, `API_KEY_INDEX`, and `API_SECRET`.
 
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_lighter::{
-    common::enums::LighterEnvironment,
-    config::{LighterDataClientConfig, LighterExecClientConfig},
+    common::{
+        consts::{LIGHTER, LIGHTER_ROBINHOOD},
+        enums::{LighterDeployment, LighterEnvironment},
+    },
+    config::{LighterDataClientConfig, LighterExecutionClientConfig},
     factories::{LighterDataClientFactory, LighterExecutionClientFactory},
 };
-use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
+use nautilus_live::{config::LiveExecutionEngineConfig, node::LiveNode};
 use nautilus_model::{
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
@@ -42,16 +46,20 @@ use nautilus_model::{
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
-// DRY_RUN connects to the venue, but ExecTester skips order submission and
-// shutdown cancel/close commands.
+// WARNING: With `DRY_RUN = false`, this tester submits orders to the configured
+// environment and may use real funds. Set `DRY_RUN = true` to connect without
+// submitting orders or sending shutdown cancel/close commands.
 const DRY_RUN: bool = false;
 const LIGHTER_ENVIRONMENT: LighterEnvironment = LighterEnvironment::Mainnet;
+const LIGHTER_DEPLOYMENT: LighterDeployment = LighterDeployment::Lighter;
+const VENUE: &str = match LIGHTER_DEPLOYMENT {
+    LighterDeployment::Lighter => LIGHTER,
+    LighterDeployment::Robinhood => LIGHTER_ROBINHOOD,
+};
 const TRADER_ID: &str = "TESTER-001";
-const ACCOUNT_ID: &str = "LIGHTER-001";
 const NODE_NAME: &str = "LIGHTER-EXEC-TESTER-001";
-const CLIENT_ID: &str = "LIGHTER";
 const STRATEGY_ID: &str = "EXEC_TESTER-001";
-const INSTRUMENT_ID: &str = "BTC-PERP.LIGHTER";
+const INSTRUMENT_SYMBOL: &str = "BTC-PERP";
 const ORDER_QTY: &str = "0.001";
 
 #[tokio::main]
@@ -61,18 +69,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let environment = Environment::Live;
     let lighter_environment = LIGHTER_ENVIRONMENT;
     let trader_id = TraderId::from(TRADER_ID);
-    let account_id = AccountId::from(ACCOUNT_ID);
+    let account_id = AccountId::from(format!("{VENUE}-001").as_str());
     let node_name = NODE_NAME.to_string();
-    let client_id = ClientId::new(CLIENT_ID);
-    let instrument_id = InstrumentId::from(INSTRUMENT_ID);
+    let client_id = ClientId::new(VENUE);
+    let instrument_id = InstrumentId::from(format!("{INSTRUMENT_SYMBOL}.{VENUE}").as_str());
 
     let data_config = LighterDataClientConfig::builder()
         .environment(lighter_environment)
+        .deployment(LIGHTER_DEPLOYMENT)
         .build();
-    let exec_config = LighterExecClientConfig::builder()
-        .trader_id(trader_id)
+
+    let exec_config = LighterExecutionClientConfig::builder()
         .account_id(account_id)
         .environment(lighter_environment)
+        .deployment(LIGHTER_DEPLOYMENT)
         .build();
 
     let data_factory = LighterDataClientFactory::new();
@@ -82,9 +92,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         stdout_level: LevelFilter::Info,
         ..Default::default()
     };
-    let exec_engine_config = LiveExecEngineConfig {
+
+    let exec_engine_config = LiveExecutionEngineConfig {
         reconciliation_lookback_mins: Some(60),
-        reconciliation_instrument_ids: Some(vec![INSTRUMENT_ID.to_string()]),
+        reconciliation_instrument_ids: Some(vec![instrument_id.to_string()]),
         open_check_interval_secs: Some(10.0),
         position_check_interval_secs: Some(30.0),
         ..Default::default()
@@ -94,8 +105,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_name(node_name)
         .with_logging(log_config)
         .with_exec_engine_config(exec_engine_config)
-        .add_data_client(None, Box::new(data_factory), Box::new(data_config))?
-        .add_exec_client(None, Box::new(exec_factory), Box::new(exec_config))?
+        .add_data_client(
+            Some(VENUE.to_string()),
+            Box::new(data_factory),
+            Box::new(data_config),
+        )?
+        .add_exec_client(
+            Some(VENUE.to_string()),
+            Box::new(exec_factory),
+            Box::new(exec_config),
+        )?
         .with_reconciliation(true)
         .with_delay_post_stop_secs(5)
         .build()?;
@@ -111,6 +130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
+        .dry_run(DRY_RUN)
         .subscribe_quotes(true)
         .subscribe_trades(false)
         .subscribe_book(false)
@@ -123,7 +143,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .use_post_only(true)
         .cancel_orders_on_stop(true)
         .close_positions_on_stop(true)
-        .dry_run(DRY_RUN)
         .log_data(false)
         .build()?;
 

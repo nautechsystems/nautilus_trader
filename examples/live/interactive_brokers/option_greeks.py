@@ -6,6 +6,9 @@
 #  You may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
 # -------------------------------------------------------------------------------------------------
+"""
+Example of option greeks.
+"""
 
 from __future__ import annotations
 
@@ -28,6 +31,9 @@ from nautilus_trader.model import InstrumentId
 
 
 async def main() -> None:
+    """
+    Run the example.
+    """
     ib = interactive_brokers
     host, port = resolve_ib_endpoint()
     if not is_ib_endpoint_reachable(host, port):

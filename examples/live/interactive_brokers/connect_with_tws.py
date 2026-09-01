@@ -6,6 +6,9 @@
 #  You may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
 # -------------------------------------------------------------------------------------------------
+"""
+Example of connect with tws.
+"""
 
 from __future__ import annotations
 
@@ -21,6 +24,9 @@ from _common import schedule_node_stop
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     host, port = resolve_ib_endpoint()
     account_id = os.getenv("TWS_ACCOUNT") if env_bool("IB_V2_ENABLE_EXECUTION") else None
     os.environ.setdefault("IB_V2_SUBSCRIBE_INDEX_PRICES", "1")

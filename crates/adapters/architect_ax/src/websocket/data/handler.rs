@@ -134,12 +134,7 @@ impl AxMdWsFeedHandler {
 
     async fn replay_subscriptions(&mut self) {
         self.pending_subscription_requests.clear();
-
-        for topic in self.subscriptions.pending_unsubscribe_topics() {
-            self.subscriptions.confirm_unsubscribe(&topic);
-        }
-
-        let topics = self.subscriptions.all_topics();
+        let topics = self.subscriptions.reset_after_reconnect();
         if topics.is_empty() {
             log::debug!("No subscriptions to replay after reconnect");
             return;
@@ -148,8 +143,6 @@ impl AxMdWsFeedHandler {
         log::debug!("Replaying {} subscriptions after reconnect", topics.len());
 
         for topic in topics {
-            self.subscriptions.mark_subscribe(&topic);
-
             // Topic format: "symbol:Level:trades:ticker" or "candles:symbol:Width"
             if let Some(rest) = topic.strip_prefix("candles:") {
                 if let Some((symbol, width_str)) = rest.rsplit_once(':') {

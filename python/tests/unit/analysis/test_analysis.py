@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test analysis behavior.
+"""
 
 import math
 
@@ -125,28 +128,46 @@ EXPOSED_STATISTICS = sorted(
 
 
 @pytest.mark.parametrize(("cls", "expected_prefix"), NO_ARG_STATISTICS)
-def test_statistic_construction_and_name(cls, expected_prefix):
+def test_statistic_construction_and_name(cls: object, expected_prefix: object) -> None:
+    """
+    Test statistic construction and name.
+    """
     stat = cls()
 
     assert stat.name.startswith(expected_prefix)
 
 
 @pytest.mark.parametrize(("cls", "expected_prefix"), PERIOD_STATISTICS)
-def test_period_statistic_default_construction_and_name(cls, expected_prefix):
+def test_period_statistic_default_construction_and_name(
+    cls: object,
+    expected_prefix: object,
+) -> None:
+    """
+    Test period statistic default construction and name.
+    """
     stat = cls()
 
     assert stat.name.startswith(expected_prefix)
 
 
 @pytest.mark.parametrize(("cls", "expected_prefix"), PERIOD_STATISTICS)
-def test_period_statistic_custom_period(cls, expected_prefix):
+def test_period_statistic_custom_period(cls: object, expected_prefix: object) -> None:
+    """
+    Test period statistic custom period.
+    """
     stat = cls(period=30)
 
     assert "30" in stat.name
 
 
 @pytest.mark.parametrize(("cls", "expected_prefix"), THRESHOLD_STATISTICS)
-def test_threshold_statistic_default_construction_and_name(cls, expected_prefix):
+def test_threshold_statistic_default_construction_and_name(
+    cls: object,
+    expected_prefix: object,
+) -> None:
+    """
+    Test threshold statistic default construction and name.
+    """
     stat = cls()
 
     assert stat.name.startswith(expected_prefix)
@@ -154,7 +175,10 @@ def test_threshold_statistic_default_construction_and_name(cls, expected_prefix)
 
 @pytest.mark.parametrize("cls", [ValueAtRisk, ExpectedShortfall])
 @pytest.mark.parametrize("confidence", [0.0, 1.0, 1.5, -0.5, float("nan"), float("inf")])
-def test_confidence_statistic_rejects_invalid_confidence(cls, confidence):
+def test_confidence_statistic_rejects_invalid_confidence(cls: object, confidence: object) -> None:
+    """
+    Test confidence statistic rejects invalid confidence.
+    """
     # `confidence` must be finite and in the open interval (0, 1); otherwise the
     # historical percentile index would be out of range.
     with pytest.raises(ValueError, match="confidence must be finite"):
@@ -162,7 +186,10 @@ def test_confidence_statistic_rejects_invalid_confidence(cls, confidence):
 
 
 @pytest.mark.parametrize("threshold", [float("nan"), float("inf"), float("-inf")])
-def test_omega_ratio_rejects_non_finite_threshold(threshold):
+def test_omega_ratio_rejects_non_finite_threshold(threshold: object) -> None:
+    """
+    Test omega ratio rejects non finite threshold.
+    """
     # `threshold` has no natural range but must be finite; a non-finite value
     # would silently poison the gain/loss split.
     with pytest.raises(ValueError, match="threshold must be finite"):
@@ -173,7 +200,13 @@ def test_omega_ratio_rejects_non_finite_threshold(threshold):
     ("cls", "_expected_prefix"),
     ALL_STATISTICS,
 )
-def test_pyo3_statistic_exposes_full_calculate_surface(cls, _expected_prefix):
+def test_pyo3_statistic_exposes_full_calculate_surface(
+    cls: object,
+    _expected_prefix: object,
+) -> None:
+    """
+    Test pyo3 statistic exposes full calculate surface.
+    """
     stat = cls()
 
     # Every pyo3 statistic must expose all three calculate_from_* methods so the
@@ -184,13 +217,19 @@ def test_pyo3_statistic_exposes_full_calculate_surface(cls, _expected_prefix):
     assert callable(stat.calculate_from_positions)
 
 
-def test_long_ratio_custom_precision():
+def test_long_ratio_custom_precision() -> None:
+    """
+    Test long ratio custom precision.
+    """
     stat = LongRatio(precision=4)
 
     assert stat.name.startswith("Long Ratio")
 
 
-def test_portfolio_analyzer_construction():
+def test_portfolio_analyzer_construction() -> None:
+    """
+    Test portfolio analyzer construction.
+    """
     analyzer = PortfolioAnalyzer()
 
     assert analyzer.currencies() == []
@@ -199,7 +238,10 @@ def test_portfolio_analyzer_construction():
     assert analyzer.portfolio_returns() == {}
 
 
-def test_exposed_statistic_inventory_matches_constructor_matrix():
+def test_exposed_statistic_inventory_matches_constructor_matrix() -> None:
+    """
+    Test exposed statistic inventory matches constructor matrix.
+    """
     expected = {cls for cls, _expected_prefix in ALL_STATISTICS}
 
     assert EXPOSED_STATISTICS
@@ -207,7 +249,10 @@ def test_exposed_statistic_inventory_matches_constructor_matrix():
 
 
 @pytest.mark.parametrize("cls", EXPOSED_STATISTICS)
-def test_portfolio_analyzer_register_and_deregister_statistic(cls):
+def test_portfolio_analyzer_register_and_deregister_statistic(cls: object) -> None:
+    """
+    Test portfolio analyzer register and deregister statistic.
+    """
     analyzer = PortfolioAnalyzer()
     stat = cls()
 
@@ -220,7 +265,10 @@ def test_portfolio_analyzer_register_and_deregister_statistic(cls):
     assert analyzer.statistic(stat.name) is None
 
 
-def test_portfolio_analyzer_adds_native_position():
+def test_portfolio_analyzer_adds_native_position() -> None:
+    """
+    Test portfolio analyzer adds native position.
+    """
     analyzer = PortfolioAnalyzer()
     instrument = TestInstrumentProvider.audusd_sim()
     position = Position(instrument=instrument, fill=make_position_fill(instrument))
@@ -231,7 +279,10 @@ def test_portfolio_analyzer_adds_native_position():
     assert analyzer.get_performance_stats_general() == {"Long Ratio": 1.0}
 
 
-def test_long_ratio_calculates_from_native_positions():
+def test_long_ratio_calculates_from_native_positions() -> None:
+    """
+    Test long ratio calculates from native positions.
+    """
     instrument = TestInstrumentProvider.audusd_sim()
     position = Position(instrument=instrument, fill=make_position_fill(instrument))
 
@@ -247,18 +298,27 @@ class DuckTypedPosition:
     entry = 1  # `OrderSide.BUY`
 
 
-def test_long_ratio_rejects_non_position_objects():
+def test_long_ratio_rejects_non_position_objects() -> None:
+    """
+    Test long ratio rejects non position objects.
+    """
     with pytest.raises(TypeError, match="Position"):
         LongRatio().calculate_from_positions([DuckTypedPosition()])
 
 
 @pytest.mark.parametrize("cls", EXPOSED_STATISTICS)
-def test_statistic_calculate_from_positions_rejects_non_position_objects(cls):
+def test_statistic_calculate_from_positions_rejects_non_position_objects(cls: object) -> None:
+    """
+    Test statistic calculate from positions rejects non position objects.
+    """
     with pytest.raises(TypeError, match="Position"):
         cls().calculate_from_positions([DuckTypedPosition()])
 
 
-def test_undefined_cagr_and_calmar_ratio_return_nan():
+def test_undefined_cagr_and_calmar_ratio_return_nan() -> None:
+    """
+    Test undefined cagr and calmar ratio return nan.
+    """
     nanos_per_day = 86_400_000_000_000
     returns = {
         day * nanos_per_day: value for day, value in enumerate([-1.5, 0.0, 0.0, 0.0, 0.0], start=1)
@@ -271,7 +331,10 @@ def test_undefined_cagr_and_calmar_ratio_return_nan():
     assert math.isnan(calmar_ratio)
 
 
-def test_portfolio_analyzer_deregister_all_statistics():
+def test_portfolio_analyzer_deregister_all_statistics() -> None:
+    """
+    Test portfolio analyzer deregister all statistics.
+    """
     analyzer = PortfolioAnalyzer()
     analyzer.register_statistic(SharpeRatio())
     analyzer.register_statistic(WinRate())
@@ -281,7 +344,10 @@ def test_portfolio_analyzer_deregister_all_statistics():
     assert analyzer.get_performance_stats_returns() == {}
 
 
-def test_portfolio_analyzer_add_return_and_stats():
+def test_portfolio_analyzer_add_return_and_stats() -> None:
+    """
+    Test portfolio analyzer add return and stats.
+    """
     analyzer = PortfolioAnalyzer()
     analyzer.register_statistic(ReturnsAverage())
 
@@ -293,7 +359,10 @@ def test_portfolio_analyzer_add_return_and_stats():
     assert len(stats) > 0
 
 
-def test_portfolio_analyzer_add_position_return():
+def test_portfolio_analyzer_add_position_return() -> None:
+    """
+    Test portfolio analyzer add position return.
+    """
     analyzer = PortfolioAnalyzer()
 
     analyzer.add_position_return(1_000_000_000, 0.02)
@@ -301,7 +370,10 @@ def test_portfolio_analyzer_add_position_return():
     assert analyzer.position_returns() != {}
 
 
-def test_portfolio_analyzer_reset():
+def test_portfolio_analyzer_reset() -> None:
+    """
+    Test portfolio analyzer reset.
+    """
     analyzer = PortfolioAnalyzer()
     analyzer.add_return(1_000_000_000, 0.01)
 
@@ -311,7 +383,10 @@ def test_portfolio_analyzer_reset():
     assert analyzer.position_returns() == {}
 
 
-def test_portfolio_analyzer_formatted_stats_empty():
+def test_portfolio_analyzer_formatted_stats_empty() -> None:
+    """
+    Test portfolio analyzer formatted stats empty.
+    """
     analyzer = PortfolioAnalyzer()
 
     assert analyzer.get_stats_returns_formatted() == []
@@ -320,7 +395,10 @@ def test_portfolio_analyzer_formatted_stats_empty():
     assert analyzer.get_stats_general_formatted() == []
 
 
-def test_portfolio_analyzer_realized_pnls_drops_recorded_snapshot_alias():
+def test_portfolio_analyzer_realized_pnls_drops_recorded_snapshot_alias() -> None:
+    """
+    Test portfolio analyzer realized pnls drops recorded snapshot alias.
+    """
     analyzer = PortfolioAnalyzer()
     usd = Currency.from_str("USD")
     position_id = PositionId("P-1")
@@ -334,7 +412,10 @@ def test_portfolio_analyzer_realized_pnls_drops_recorded_snapshot_alias():
     assert pnls == [(position_id.value, 1, 10.0)]
 
 
-def test_portfolio_analyzer_realized_pnls_drops_recorded_snapshot_alias_without_timestamp():
+def test_portfolio_analyzer_realized_pnls_drops_recorded_snapshot_alias_without_timestamp() -> None:
+    """
+    Drop a recorded snapshot alias that has no timestamp.
+    """
     analyzer = PortfolioAnalyzer()
     usd = Currency.from_str("USD")
     position_id = PositionId("P-1")
@@ -348,7 +429,10 @@ def test_portfolio_analyzer_realized_pnls_drops_recorded_snapshot_alias_without_
     assert pnls == [(position_id.value, 0, 10.0)]
 
 
-def test_portfolio_analyzer_realized_pnls_keeps_unrecorded_snapshot_cycle():
+def test_portfolio_analyzer_realized_pnls_keeps_unrecorded_snapshot_cycle() -> None:
+    """
+    Test portfolio analyzer realized pnls keeps unrecorded snapshot cycle.
+    """
     analyzer = PortfolioAnalyzer()
     usd = Currency.from_str("USD")
     position_id = PositionId("P-1")

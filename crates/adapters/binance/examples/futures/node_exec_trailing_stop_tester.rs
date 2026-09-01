@@ -33,12 +33,12 @@ use std::{
 use anyhow::Context;
 use nautilus_binance::{
     common::{
-        consts::BINANCE_CLIENT_ID,
+        consts::{BINANCE_CLIENT_ID, BINANCE_VENUE},
         credential::resolve_credentials,
         enums::{BinanceEnvironment, BinanceFuturesOrderType, BinanceProductType},
         symbol::format_binance_symbol,
     },
-    config::{BinanceDataClientConfig, BinanceExecClientConfig},
+    config::{BinanceDataClientConfig, BinanceExecutionClientConfig},
     factories::{BinanceDataClientFactory, BinanceExecutionClientFactory},
     futures::{
         BinanceFuturesHttpClient,
@@ -47,7 +47,10 @@ use nautilus_binance::{
 };
 use nautilus_common::{enums::Environment, live::get_runtime};
 use nautilus_core::time::get_atomic_clock_realtime;
-use nautilus_live::node::{LiveNode, LiveNodeHandle};
+use nautilus_live::{
+    config::LiveRiskEngineConfig,
+    node::{LiveNode, LiveNodeHandle},
+};
 use nautilus_model::{
     enums::{OrderType, TrailingOffsetType, TriggerType},
     identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
@@ -57,6 +60,10 @@ use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 use rust_decimal::Decimal;
 
+// WARNING: With `DRY_RUN = false`, this tester submits orders to the configured
+// environment and may use real funds. Set `DRY_RUN = true` to connect without
+// submitting orders or sending shutdown cancel/close commands.
+const DRY_RUN: bool = false;
 const BINANCE_ENVIRONMENT: BinanceEnvironment = BinanceEnvironment::Testnet;
 const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "BINANCE-FUTURES-001";
@@ -96,7 +103,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         false,
     )?;
 
-    http_client.cancel_all_algo_orders(instrument_id).await?;
+    if !DRY_RUN {
+        http_client.cancel_all_algo_orders(instrument_id).await?;
+    }
 
     let data_config = BinanceDataClientConfig {
         product_type,
@@ -106,8 +115,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = BinanceExecClientConfig {
-        trader_id,
+    let exec_config = BinanceExecutionClientConfig {
         account_id,
         product_type,
         environment,
@@ -118,9 +126,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let data_factory = BinanceDataClientFactory::new();
     let exec_factory = BinanceExecutionClientFactory::new();
+    let risk_engine_config = LiveRiskEngineConfig {
+        full_position_exit_venues: vec![*BINANCE_VENUE],
+        ..Default::default()
+    };
 
     let mut node = LiveNode::builder(trader_id, Environment::Live)?
         .with_name(node_name)
+        .with_risk_engine_config(risk_engine_config)
         .add_data_client(None, Box::new(data_factory), Box::new(data_config))?
         .add_exec_client(None, Box::new(exec_factory), Box::new(exec_config))?
         .with_reconciliation(true)
@@ -137,6 +150,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
+        .dry_run(DRY_RUN)
         .log_data(false)
         .enable_limit_buys(false)
         .enable_limit_sells(false)
@@ -151,22 +165,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     node.add_strategy(ExecTester::new(tester_config))?;
 
-    let handle = node.handle();
-    let validation_client = http_client.clone();
-    let validation_task = get_runtime().spawn(async move {
-        let result = validate_trailing_stop_order(&validation_client, &handle, instrument_id).await;
-        let cancel_result = validation_client
-            .cancel_all_algo_orders(instrument_id)
-            .await;
-        handle.stop();
+    let validation_task = if DRY_RUN {
+        None
+    } else {
+        let handle = node.handle();
+        let validation_client = http_client.clone();
 
-        result?;
-        cancel_result?;
-        Ok::<(), anyhow::Error>(())
-    });
+        Some(get_runtime().spawn(async move {
+            let result =
+                validate_trailing_stop_order(&validation_client, &handle, instrument_id).await;
+            let cancel_result = validation_client
+                .cancel_all_algo_orders(instrument_id)
+                .await;
+            handle.stop();
+
+            result?;
+            cancel_result?;
+            Ok::<(), anyhow::Error>(())
+        }))
+    };
 
     node.run().await?;
-    validation_task.await??;
+
+    if let Some(validation_task) = validation_task {
+        validation_task.await??;
+    }
 
     Ok(())
 }

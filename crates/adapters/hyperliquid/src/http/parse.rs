@@ -20,7 +20,7 @@ use nautilus_model::{
     data::TradeTick,
     enums::{
         AggressorSide, AssetClass, CurrencyType, LiquiditySide, OrderSide, OrderStatus, OrderType,
-        PositionSideSpecified, TimeInForce, TriggerType,
+        PositionSide, TimeInForce, TriggerType,
     },
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
     instruments::{BinaryOption, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
@@ -269,8 +269,7 @@ pub(crate) fn resolve_perp_settlement_currency(
 /// Hyperliquid spot follows these rules:
 /// - Price decimals = max(0, 8 - base_sz_decimals) per venue docs
 /// - Size decimals from base token
-/// - All pairs are loaded (including non-canonical) to support parsing fills/positions
-///   for instruments that may have been traded
+/// - All pairs in the universe are active, including non-canonical pairs
 pub fn parse_spot_instruments(meta: &SpotMeta) -> Result<Vec<HyperliquidInstrumentDef>, String> {
     const SPOT_MAX_DECIMALS: i32 = 8; // Hyperliquid spot price decimal limit
     const SPOT_INDEX_OFFSET: u32 = 10000; // Spot assets use 10000 + index
@@ -283,10 +282,15 @@ pub fn parse_spot_instruments(meta: &SpotMeta) -> Result<Vec<HyperliquidInstrume
         tokens_by_index.insert(token.index, token);
     }
 
-    for pair in &meta.universe {
-        // Load all pairs (including non-canonical) to support parsing fills/positions
-        // for instruments that may have been traded but are not currently canonical
+    // Cache canonical pairs first because base-token aliases are first-write-wins
+    let mut pairs = meta.universe.iter().collect::<Vec<_>>();
+    pairs.sort_by(|a, b| {
+        b.is_canonical
+            .cmp(&a.is_canonical)
+            .then(a.index.cmp(&b.index))
+    });
 
+    for pair in pairs {
         let base_token = tokens_by_index
             .get(&pair.tokens[0])
             .ok_or_else(|| format!("Base token index {} not found", pair.tokens[0]))?;
@@ -328,23 +332,13 @@ pub fn parse_spot_instruments(meta: &SpotMeta) -> Result<Vec<HyperliquidInstrume
             max_leverage: None,
             only_isolated: false,
             is_hip3: false,
-            active: pair.is_canonical, // Use canonical status to indicate if pair is actively tradeable
+            active: true,
             outcome: None,
             raw_data: serde_json::to_string(pair).unwrap_or_default(),
         };
 
         defs.push(def);
     }
-
-    // Canonical pairs must be cached first so the base-token alias (e.g.
-    // "PURR" -> PURR-USDC-SPOT) resolves to the canonical instrument when
-    // non-canonical pairs share the same base. Secondary key keeps the
-    // order stable within each bucket.
-    defs.sort_by(|a, b| {
-        b.active
-            .cmp(&a.active)
-            .then(a.asset_index.cmp(&b.asset_index))
-    });
 
     Ok(defs)
 }
@@ -768,6 +762,10 @@ const HYPERLIQUID_MIN_ORDER_NOTIONAL: Decimal = Decimal::TEN;
 /// Converts a single Hyperliquid instrument definition into a Nautilus `InstrumentAny`.
 ///
 /// Returns `None` if the conversion fails (e.g., unsupported market type).
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 #[must_use]
 pub fn create_instrument_from_def(
     def: &HyperliquidInstrumentDef,
@@ -790,33 +788,26 @@ pub fn create_instrument_from_def(
             let base_currency = get_currency(&def.base);
             let quote_currency = get_currency(&def.quote);
             let min_notional = Some(min_order_notional(quote_currency)?);
+            let info = serde_json::from_str::<Params>(&def.raw_data).ok();
 
-            Some(InstrumentAny::CurrencyPair(CurrencyPair::new(
-                instrument_id,
-                raw_symbol,
-                base_currency,
-                quote_currency,
-                def.price_decimals as u8,
-                def.size_decimals as u8,
-                price_increment,
-                size_increment,
-                None,
-                None,
-                None,
-                None,
-                None,
-                min_notional,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                ts_init, // Identical to ts_init for now
-                ts_init,
-            )))
+            Some(InstrumentAny::CurrencyPair(
+                CurrencyPair::builder()
+                    .instrument_id(instrument_id)
+                    .raw_symbol(raw_symbol)
+                    .base_currency(base_currency)
+                    .quote_currency(quote_currency)
+                    .price_precision(def.price_decimals as u8)
+                    .size_precision(def.size_decimals as u8)
+                    .price_increment(price_increment)
+                    .size_increment(size_increment)
+                    .maybe_min_notional(min_notional)
+                    .maybe_info(info)
+                    // Identical to ts_init for now
+                    .ts_event(ts_init)
+                    .ts_init(ts_init)
+                    .build()
+                    .unwrap(),
+            ))
         }
         HyperliquidMarketType::Perp => {
             let base_currency = get_currency(&def.base);
@@ -832,67 +823,50 @@ pub fn create_instrument_from_def(
             };
             let min_notional = Some(min_order_notional(quote_currency)?);
 
-            Some(InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-                instrument_id,
-                raw_symbol,
-                base_currency,
-                quote_currency,
-                settlement_currency,
-                false,
-                def.price_decimals as u8,
-                def.size_decimals as u8,
-                price_increment,
-                size_increment,
-                None, // multiplier
-                None,
-                None,
-                None,
-                None,
-                min_notional,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                ts_init, // Identical to ts_init for now
-                ts_init,
-            )))
+            Some(InstrumentAny::CryptoPerpetual(
+                CryptoPerpetual::builder()
+                    .instrument_id(instrument_id)
+                    .raw_symbol(raw_symbol)
+                    .base_currency(base_currency)
+                    .quote_currency(quote_currency)
+                    .settlement_currency(settlement_currency)
+                    .is_inverse(false)
+                    .price_precision(def.price_decimals as u8)
+                    .size_precision(def.size_decimals as u8)
+                    .price_increment(price_increment)
+                    .size_increment(size_increment)
+                    .maybe_min_notional(min_notional)
+                    // Identical to ts_init for now
+                    .ts_event(ts_init)
+                    .ts_init(ts_init)
+                    .build()
+                    .unwrap(),
+            ))
         }
         HyperliquidMarketType::Outcome => {
             let outcome = def.outcome.as_ref()?;
             let currency = get_usdh_currency();
 
-            Some(InstrumentAny::BinaryOption(BinaryOption::new(
-                instrument_id,
-                raw_symbol,
-                AssetClass::Alternative,
-                currency,
-                outcome.activation_ns,
-                outcome.expiration_ns,
-                def.price_decimals as u8,
-                def.size_decimals as u8,
-                price_increment,
-                size_increment,
-                outcome.side_name,
-                outcome.description,
-                None, // max_quantity
-                None, // min_quantity
-                None, // max_notional
-                None, // min_notional
-                None, // max_price
-                None, // min_price
-                None, // margin_init
-                None, // margin_maint
-                None, // maker_fee
-                None, // taker_fee
-                None, // tick_scheme
-                outcome.info.clone(),
-                ts_init,
-                ts_init,
-            )))
+            Some(InstrumentAny::BinaryOption(
+                BinaryOption::builder()
+                    .instrument_id(instrument_id)
+                    .raw_symbol(raw_symbol)
+                    .asset_class(AssetClass::Alternative)
+                    .currency(currency)
+                    .activation_ns(outcome.activation_ns)
+                    .expiration_ns(outcome.expiration_ns)
+                    .price_precision(def.price_decimals as u8)
+                    .size_precision(def.size_decimals as u8)
+                    .price_increment(price_increment)
+                    .size_increment(size_increment)
+                    .maybe_outcome(outcome.side_name)
+                    .maybe_description(outcome.description)
+                    .maybe_info(outcome.info.clone())
+                    .ts_event(ts_init)
+                    .ts_init(ts_init)
+                    .build()
+                    .unwrap(),
+            ))
         }
     }
 }
@@ -1004,7 +978,7 @@ pub fn parse_order_status_report_from_basic(
         instrument_id,
         None, // client_order_id - will be set if present
         venue_order_id,
-        order_side,
+        order_side.into(),
         order_type,
         time_in_force,
         order_status,
@@ -1269,11 +1243,11 @@ pub fn parse_position_status_report(
 
     // Determine position side based on size (szi)
     let (position_side, quantity_value) = if position.szi.is_zero() {
-        (PositionSideSpecified::Flat, Decimal::ZERO)
+        (PositionSide::Flat, Decimal::ZERO)
     } else if position.szi.is_sign_positive() {
-        (PositionSideSpecified::Long, position.szi)
+        (PositionSide::Long, position.szi)
     } else {
-        (PositionSideSpecified::Short, position.szi.abs())
+        (PositionSide::Short, position.szi.abs())
     };
 
     let quantity = Quantity::from_decimal_dp(quantity_value, instrument.size_precision())
@@ -1312,9 +1286,9 @@ pub fn parse_spot_position_status_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<PositionStatusReport> {
     let (position_side, quantity_value) = if balance.total.is_zero() {
-        (PositionSideSpecified::Flat, Decimal::ZERO)
+        (PositionSide::Flat, Decimal::ZERO)
     } else {
-        (PositionSideSpecified::Long, balance.total)
+        (PositionSide::Long, balance.total)
     };
 
     let quantity = Quantity::from_decimal_dp(quantity_value, instrument.size_precision())
@@ -1348,8 +1322,8 @@ mod tests {
 
     #[rstest]
     fn test_parse_fill_side() {
-        assert_eq!(parse_fill_side(&HyperliquidSide::Buy), OrderSide::Buy);
-        assert_eq!(parse_fill_side(&HyperliquidSide::Sell), OrderSide::Sell);
+        assert_eq!(parse_fill_side(&HyperliquidSide::Buy), OrderSide::Buy,);
+        assert_eq!(parse_fill_side(&HyperliquidSide::Sell), OrderSide::Sell,);
     }
 
     #[rstest]
@@ -1687,7 +1661,7 @@ mod tests {
                 name: "ALIAS".to_string(),
                 tokens: [1, 0],
                 index: 1,
-                is_canonical: false, // Should be included but marked as inactive
+                is_canonical: false,
             },
         ];
 
@@ -1698,7 +1672,6 @@ mod tests {
 
         let defs = parse_spot_instruments(&meta).unwrap();
 
-        // Should have both PURR/USDC and ALIAS (non-canonical pairs are included for historical data)
         assert_eq!(defs.len(), 2);
 
         let purr_usdc = &defs[0];
@@ -1717,15 +1690,35 @@ mod tests {
         let alias = &defs[1];
         assert_eq!(alias.symbol, "PURR-USDC-SPOT");
         assert_eq!(alias.base, "PURR");
-        assert!(!alias.active); // Non-canonical pairs are marked as inactive
+        assert!(alias.active);
 
         let instrument = create_instrument_from_def(purr_usdc, UnixNanos::default()).unwrap();
 
         match instrument {
             InstrumentAny::CurrencyPair(pair) => {
                 let min_notional = pair.min_notional.unwrap();
+                let info = pair.info.unwrap();
                 assert_eq!(min_notional.currency, Currency::USDC());
                 assert_eq!(min_notional.as_decimal(), dec!(10));
+                assert_eq!(info.len(), 4);
+                assert_eq!(info.get_str("name"), Some("PURR/USDC"));
+                assert_eq!(info.get("tokens"), Some(&json!([1, 0])));
+                assert_eq!(info.get_u64("index"), Some(0));
+                assert_eq!(info.get_bool("isCanonical"), Some(true));
+            }
+            other => panic!("Expected CurrencyPair, was {other:?}"),
+        }
+
+        let instrument = create_instrument_from_def(alias, UnixNanos::default()).unwrap();
+
+        match instrument {
+            InstrumentAny::CurrencyPair(pair) => {
+                let info = pair.info.unwrap();
+                assert_eq!(info.len(), 4);
+                assert_eq!(info.get_str("name"), Some("ALIAS"));
+                assert_eq!(info.get("tokens"), Some(&json!([1, 0])));
+                assert_eq!(info.get_u64("index"), Some(1));
+                assert_eq!(info.get_bool("isCanonical"), Some(false));
             }
             other => panic!("Expected CurrencyPair, was {other:?}"),
         }
@@ -1783,9 +1776,11 @@ mod tests {
         .unwrap();
 
         assert_eq!(defs.len(), 2);
-        assert!(defs[0].active, "canonical must sort first");
+        assert!(defs[0].active);
+        assert_eq!(defs[0].raw_symbol, "@107");
         assert_eq!(defs[0].asset_index, 10000 + 107);
-        assert!(!defs[1].active);
+        assert!(defs[1].active);
+        assert_eq!(defs[1].raw_symbol, "@3");
         assert_eq!(defs[1].asset_index, 10000 + 3);
     }
 

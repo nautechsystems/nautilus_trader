@@ -64,6 +64,13 @@ impl OrderBookDelta {
         .map_err(to_pyvalue_err)
     }
 
+    /// Creates a new `OrderBookDelta` instance with a `Clear` action and NULL order.
+    #[staticmethod]
+    #[pyo3(name = "clear")]
+    fn py_clear(instrument_id: InstrumentId, sequence: u64, ts_event: u64, ts_init: u64) -> Self {
+        Self::clear(instrument_id, sequence, ts_event.into(), ts_init.into())
+    }
+
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
             CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),

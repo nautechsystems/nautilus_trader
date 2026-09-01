@@ -39,11 +39,11 @@ NautilusTrader provides two API levels for backtesting:
 
 | API level                             | Entry point      | Best for                                                              |
 | :------------------------------------ | :--------------- | :-------------------------------------------------------------------- |
-| [Low‑level API](backtest_low_level)   | `BacktestEngine` | Direct component access, library development                          |
-| [High‑level API](backtest_high_level) | `BacktestNode`   | Production workflows, easier transition to live trading (recommended) |
+| [Low-level API](backtest_low_level)   | `BacktestEngine` | Direct component access, library development                          |
+| [High-level API](backtest_high_level) | `BacktestNode`   | Production workflows, easier transition to live trading (recommended) |
 
-The high‑level API requires a Parquet‑based data catalog. The low‑level API works with
-in‑memory data but has no live‑trading path.
+The high-level API requires a Parquet-based data catalog. The low-level API works with
+in-memory data but has no live-trading path.
 
 :::warning[One node per process]
 Running multiple `BacktestNode` or `LiveNode` instances concurrently in the same

@@ -668,21 +668,28 @@ pub fn greeks_convention_from_capnp(value: enums_capnp::GreeksConvention) -> Gre
 }
 
 #[must_use]
-pub fn order_side_to_capnp(value: OrderSide) -> enums_capnp::OrderSide {
+pub fn order_side_to_capnp(value: Option<OrderSide>) -> enums_capnp::OrderSide {
     match value {
-        OrderSide::NoOrderSide => enums_capnp::OrderSide::NoOrderSide,
-        OrderSide::Buy => enums_capnp::OrderSide::Buy,
-        OrderSide::Sell => enums_capnp::OrderSide::Sell,
+        None => enums_capnp::OrderSide::NoOrderSide,
+        Some(OrderSide::Buy) => enums_capnp::OrderSide::Buy,
+        Some(OrderSide::Sell) => enums_capnp::OrderSide::Sell,
     }
 }
 
 #[must_use]
-pub fn order_side_from_capnp(value: enums_capnp::OrderSide) -> OrderSide {
+pub fn order_side_from_capnp(value: enums_capnp::OrderSide) -> Option<OrderSide> {
     match value {
-        enums_capnp::OrderSide::NoOrderSide => OrderSide::NoOrderSide,
-        enums_capnp::OrderSide::Buy => OrderSide::Buy,
-        enums_capnp::OrderSide::Sell => OrderSide::Sell,
+        enums_capnp::OrderSide::NoOrderSide => None,
+        enums_capnp::OrderSide::Buy => Some(OrderSide::Buy),
+        enums_capnp::OrderSide::Sell => Some(OrderSide::Sell),
     }
+}
+
+fn order_side_required_from_capnp(
+    value: enums_capnp::OrderSide,
+) -> Result<OrderSide, Box<dyn Error>> {
+    order_side_from_capnp(value)
+        .ok_or_else(|| "Cap'n Proto required order side was NO_ORDER_SIDE".into())
 }
 
 #[must_use]
@@ -784,75 +791,82 @@ pub fn time_in_force_from_capnp(value: enums_capnp::TimeInForce) -> TimeInForce 
 }
 
 #[must_use]
-pub fn trigger_type_to_capnp(value: TriggerType) -> enums_capnp::TriggerType {
+pub fn trigger_type_to_capnp(value: Option<TriggerType>) -> enums_capnp::TriggerType {
     match value {
-        TriggerType::NoTrigger => enums_capnp::TriggerType::NoTrigger,
-        TriggerType::Default => enums_capnp::TriggerType::Default,
-        TriggerType::LastPrice => enums_capnp::TriggerType::LastPrice,
-        TriggerType::MarkPrice => enums_capnp::TriggerType::MarkPrice,
-        TriggerType::IndexPrice => enums_capnp::TriggerType::IndexPrice,
-        TriggerType::BidAsk => enums_capnp::TriggerType::BidAsk,
-        TriggerType::DoubleLast => enums_capnp::TriggerType::DoubleLast,
-        TriggerType::DoubleBidAsk => enums_capnp::TriggerType::DoubleBidAsk,
-        TriggerType::LastOrBidAsk => enums_capnp::TriggerType::LastOrBidAsk,
-        TriggerType::MidPoint => enums_capnp::TriggerType::MidPoint,
+        None => enums_capnp::TriggerType::NoTrigger,
+        Some(TriggerType::Default) => enums_capnp::TriggerType::Default,
+        Some(TriggerType::LastPrice) => enums_capnp::TriggerType::LastPrice,
+        Some(TriggerType::MarkPrice) => enums_capnp::TriggerType::MarkPrice,
+        Some(TriggerType::IndexPrice) => enums_capnp::TriggerType::IndexPrice,
+        Some(TriggerType::BidAsk) => enums_capnp::TriggerType::BidAsk,
+        Some(TriggerType::DoubleLast) => enums_capnp::TriggerType::DoubleLast,
+        Some(TriggerType::DoubleBidAsk) => enums_capnp::TriggerType::DoubleBidAsk,
+        Some(TriggerType::LastOrBidAsk) => enums_capnp::TriggerType::LastOrBidAsk,
+        Some(TriggerType::MidPoint) => enums_capnp::TriggerType::MidPoint,
     }
 }
 
 #[must_use]
-pub fn trigger_type_from_capnp(value: enums_capnp::TriggerType) -> TriggerType {
+pub fn trigger_type_from_capnp(value: enums_capnp::TriggerType) -> Option<TriggerType> {
     match value {
-        enums_capnp::TriggerType::NoTrigger => TriggerType::NoTrigger,
-        enums_capnp::TriggerType::Default => TriggerType::Default,
-        enums_capnp::TriggerType::LastPrice => TriggerType::LastPrice,
-        enums_capnp::TriggerType::MarkPrice => TriggerType::MarkPrice,
-        enums_capnp::TriggerType::IndexPrice => TriggerType::IndexPrice,
-        enums_capnp::TriggerType::BidAsk => TriggerType::BidAsk,
-        enums_capnp::TriggerType::DoubleLast => TriggerType::DoubleLast,
-        enums_capnp::TriggerType::DoubleBidAsk => TriggerType::DoubleBidAsk,
-        enums_capnp::TriggerType::LastOrBidAsk => TriggerType::LastOrBidAsk,
-        enums_capnp::TriggerType::MidPoint => TriggerType::MidPoint,
+        enums_capnp::TriggerType::NoTrigger => None,
+        enums_capnp::TriggerType::Default => Some(TriggerType::Default),
+        enums_capnp::TriggerType::LastPrice => Some(TriggerType::LastPrice),
+        enums_capnp::TriggerType::MarkPrice => Some(TriggerType::MarkPrice),
+        enums_capnp::TriggerType::IndexPrice => Some(TriggerType::IndexPrice),
+        enums_capnp::TriggerType::BidAsk => Some(TriggerType::BidAsk),
+        enums_capnp::TriggerType::DoubleLast => Some(TriggerType::DoubleLast),
+        enums_capnp::TriggerType::DoubleBidAsk => Some(TriggerType::DoubleBidAsk),
+        enums_capnp::TriggerType::LastOrBidAsk => Some(TriggerType::LastOrBidAsk),
+        enums_capnp::TriggerType::MidPoint => Some(TriggerType::MidPoint),
     }
 }
 
 #[must_use]
-pub fn contingency_type_to_capnp(value: ContingencyType) -> enums_capnp::ContingencyType {
+pub fn contingency_type_to_capnp(value: Option<ContingencyType>) -> enums_capnp::ContingencyType {
     match value {
-        ContingencyType::NoContingency => enums_capnp::ContingencyType::NoContingency,
-        ContingencyType::Oco => enums_capnp::ContingencyType::Oco,
-        ContingencyType::Oto => enums_capnp::ContingencyType::Oto,
-        ContingencyType::Ouo => enums_capnp::ContingencyType::Ouo,
+        None => enums_capnp::ContingencyType::NoContingency,
+        Some(ContingencyType::Oco) => enums_capnp::ContingencyType::Oco,
+        Some(ContingencyType::Oto) => enums_capnp::ContingencyType::Oto,
+        Some(ContingencyType::Ouo) => enums_capnp::ContingencyType::Ouo,
     }
 }
 
 #[must_use]
-pub fn contingency_type_from_capnp(value: enums_capnp::ContingencyType) -> ContingencyType {
+pub fn contingency_type_from_capnp(value: enums_capnp::ContingencyType) -> Option<ContingencyType> {
     match value {
-        enums_capnp::ContingencyType::NoContingency => ContingencyType::NoContingency,
-        enums_capnp::ContingencyType::Oco => ContingencyType::Oco,
-        enums_capnp::ContingencyType::Oto => ContingencyType::Oto,
-        enums_capnp::ContingencyType::Ouo => ContingencyType::Ouo,
+        enums_capnp::ContingencyType::NoContingency => None,
+        enums_capnp::ContingencyType::Oco => Some(ContingencyType::Oco),
+        enums_capnp::ContingencyType::Oto => Some(ContingencyType::Oto),
+        enums_capnp::ContingencyType::Ouo => Some(ContingencyType::Ouo),
     }
 }
 
 #[must_use]
-pub fn position_side_to_capnp(value: PositionSide) -> enums_capnp::PositionSide {
+pub fn position_side_to_capnp(value: Option<PositionSide>) -> enums_capnp::PositionSide {
     match value {
-        PositionSide::NoPositionSide => enums_capnp::PositionSide::NoPositionSide,
-        PositionSide::Flat => enums_capnp::PositionSide::Flat,
-        PositionSide::Long => enums_capnp::PositionSide::Long,
-        PositionSide::Short => enums_capnp::PositionSide::Short,
+        None => enums_capnp::PositionSide::NoPositionSide,
+        Some(PositionSide::Flat) => enums_capnp::PositionSide::Flat,
+        Some(PositionSide::Long) => enums_capnp::PositionSide::Long,
+        Some(PositionSide::Short) => enums_capnp::PositionSide::Short,
     }
 }
 
 #[must_use]
-pub fn position_side_from_capnp(value: enums_capnp::PositionSide) -> PositionSide {
+pub fn position_side_from_capnp(value: enums_capnp::PositionSide) -> Option<PositionSide> {
     match value {
-        enums_capnp::PositionSide::NoPositionSide => PositionSide::NoPositionSide,
-        enums_capnp::PositionSide::Flat => PositionSide::Flat,
-        enums_capnp::PositionSide::Long => PositionSide::Long,
-        enums_capnp::PositionSide::Short => PositionSide::Short,
+        enums_capnp::PositionSide::NoPositionSide => None,
+        enums_capnp::PositionSide::Flat => Some(PositionSide::Flat),
+        enums_capnp::PositionSide::Long => Some(PositionSide::Long),
+        enums_capnp::PositionSide::Short => Some(PositionSide::Short),
     }
+}
+
+fn position_side_required_from_capnp(
+    value: enums_capnp::PositionSide,
+) -> Result<PositionSide, Box<dyn Error>> {
+    position_side_from_capnp(value)
+        .ok_or_else(|| "Cap'n Proto required position side was NO_POSITION_SIDE".into())
 }
 
 #[must_use]
@@ -1042,26 +1056,28 @@ pub fn bar_aggregation_from_capnp(value: enums_capnp::BarAggregation) -> BarAggr
 }
 
 #[must_use]
-pub fn trailing_offset_type_to_capnp(value: TrailingOffsetType) -> enums_capnp::TrailingOffsetType {
+pub fn trailing_offset_type_to_capnp(
+    value: Option<TrailingOffsetType>,
+) -> enums_capnp::TrailingOffsetType {
     match value {
-        TrailingOffsetType::NoTrailingOffset => enums_capnp::TrailingOffsetType::NoTrailingOffset,
-        TrailingOffsetType::Price => enums_capnp::TrailingOffsetType::Price,
-        TrailingOffsetType::BasisPoints => enums_capnp::TrailingOffsetType::BasisPoints,
-        TrailingOffsetType::Ticks => enums_capnp::TrailingOffsetType::Ticks,
-        TrailingOffsetType::PriceTier => enums_capnp::TrailingOffsetType::PriceTier,
+        None => enums_capnp::TrailingOffsetType::NoTrailingOffset,
+        Some(TrailingOffsetType::Price) => enums_capnp::TrailingOffsetType::Price,
+        Some(TrailingOffsetType::BasisPoints) => enums_capnp::TrailingOffsetType::BasisPoints,
+        Some(TrailingOffsetType::Ticks) => enums_capnp::TrailingOffsetType::Ticks,
+        Some(TrailingOffsetType::PriceTier) => enums_capnp::TrailingOffsetType::PriceTier,
     }
 }
 
 #[must_use]
 pub fn trailing_offset_type_from_capnp(
     value: enums_capnp::TrailingOffsetType,
-) -> TrailingOffsetType {
+) -> Option<TrailingOffsetType> {
     match value {
-        enums_capnp::TrailingOffsetType::NoTrailingOffset => TrailingOffsetType::NoTrailingOffset,
-        enums_capnp::TrailingOffsetType::Price => TrailingOffsetType::Price,
-        enums_capnp::TrailingOffsetType::BasisPoints => TrailingOffsetType::BasisPoints,
-        enums_capnp::TrailingOffsetType::Ticks => TrailingOffsetType::Ticks,
-        enums_capnp::TrailingOffsetType::PriceTier => TrailingOffsetType::PriceTier,
+        enums_capnp::TrailingOffsetType::NoTrailingOffset => None,
+        enums_capnp::TrailingOffsetType::Price => Some(TrailingOffsetType::Price),
+        enums_capnp::TrailingOffsetType::BasisPoints => Some(TrailingOffsetType::BasisPoints),
+        enums_capnp::TrailingOffsetType::Ticks => Some(TrailingOffsetType::Ticks),
+        enums_capnp::TrailingOffsetType::PriceTier => Some(TrailingOffsetType::PriceTier),
     }
 }
 
@@ -3645,7 +3661,7 @@ impl<'a> ToCapnp<'a> for OrderFilled {
         let trade_id_builder = builder.reborrow().init_trade_id();
         self.trade_id.to_capnp(trade_id_builder);
 
-        builder.set_order_side(order_side_to_capnp(self.order_side));
+        builder.set_order_side(order_side_to_capnp(self.order_side.into()));
         builder.set_order_type(order_type_to_capnp(self.order_type));
 
         let last_qty_builder = builder.reborrow().init_last_qty();
@@ -3717,7 +3733,7 @@ impl<'a> FromCapnp<'a> for OrderFilled {
         let trade_id_reader = reader.get_trade_id()?;
         let trade_id = TradeId::from_capnp(trade_id_reader)?;
 
-        let order_side = order_side_from_capnp(reader.get_order_side()?);
+        let order_side = order_side_required_from_capnp(reader.get_order_side()?)?;
         let order_type = order_type_from_capnp(reader.get_order_type()?);
 
         let last_qty_reader = reader.get_last_qty()?;
@@ -3818,7 +3834,7 @@ impl<'a> ToCapnp<'a> for OrderFillVoided {
         if let Some(commission) = self.commission_voided {
             commission.to_capnp(builder.reborrow().init_commission_voided());
         }
-        builder.set_order_side(order_side_to_capnp(self.order_side));
+        builder.set_order_side(order_side_to_capnp(self.order_side.into()));
         builder.set_order_type(order_type_to_capnp(self.order_type));
         self.last_px.to_capnp(builder.reborrow().init_last_px());
         self.currency.to_capnp(builder.reborrow().init_currency());
@@ -3870,7 +3886,7 @@ impl<'a> FromCapnp<'a> for OrderFillVoided {
         } else {
             None
         };
-        let order_side = order_side_from_capnp(reader.get_order_side()?);
+        let order_side = order_side_required_from_capnp(reader.get_order_side()?)?;
         let order_type = order_type_from_capnp(reader.get_order_type()?);
         let last_px = Price::from_capnp(reader.get_last_px()?)?;
         let currency = Currency::from_capnp(reader.get_currency()?)?;
@@ -3955,7 +3971,7 @@ impl<'a> ToCapnp<'a> for OrderInitialized {
         let client_order_id_builder = builder.reborrow().init_client_order_id();
         self.client_order_id.to_capnp(client_order_id_builder);
 
-        builder.set_order_side(order_side_to_capnp(self.order_side));
+        builder.set_order_side(order_side_to_capnp(self.order_side.into()));
         builder.set_order_type(order_type_to_capnp(self.order_type));
 
         let quantity_builder = builder.reborrow().init_quantity();
@@ -3992,9 +4008,7 @@ impl<'a> ToCapnp<'a> for OrderInitialized {
             trigger_price.to_capnp(trigger_price_builder);
         }
 
-        if let Some(trigger_type) = self.trigger_type {
-            builder.set_trigger_type(trigger_type_to_capnp(trigger_type));
-        }
+        builder.set_trigger_type(trigger_type_to_capnp(self.trigger_type));
 
         if let Some(limit_offset) = self.limit_offset {
             let limit_offset_builder = builder.reborrow().init_limit_offset();
@@ -4006,9 +4020,7 @@ impl<'a> ToCapnp<'a> for OrderInitialized {
             trailing_offset.to_capnp(trailing_offset_builder);
         }
 
-        if let Some(trailing_offset_type) = self.trailing_offset_type {
-            builder.set_trailing_offset_type(trailing_offset_type_to_capnp(trailing_offset_type));
-        }
+        builder.set_trailing_offset_type(trailing_offset_type_to_capnp(self.trailing_offset_type));
 
         if let Some(expire_time) = self.expire_time {
             let mut expire_time_builder = builder.reborrow().init_expire_time();
@@ -4020,18 +4032,14 @@ impl<'a> ToCapnp<'a> for OrderInitialized {
             display_qty.to_capnp(display_qty_builder);
         }
 
-        if let Some(emulation_trigger) = self.emulation_trigger {
-            builder.set_emulation_trigger(trigger_type_to_capnp(emulation_trigger));
-        }
+        builder.set_emulation_trigger(trigger_type_to_capnp(self.emulation_trigger));
 
         if let Some(trigger_instrument_id) = &self.trigger_instrument_id {
             let trigger_instrument_id_builder = builder.reborrow().init_trigger_instrument_id();
             trigger_instrument_id.to_capnp(trigger_instrument_id_builder);
         }
 
-        if let Some(contingency_type) = self.contingency_type {
-            builder.set_contingency_type(contingency_type_to_capnp(contingency_type));
-        }
+        builder.set_contingency_type(contingency_type_to_capnp(self.contingency_type));
 
         if let Some(order_list_id) = &self.order_list_id {
             let order_list_id_builder = builder.reborrow().init_order_list_id();
@@ -4100,7 +4108,7 @@ impl<'a> FromCapnp<'a> for OrderInitialized {
         let client_order_id_reader = reader.get_client_order_id()?;
         let client_order_id = ClientOrderId::from_capnp(client_order_id_reader)?;
 
-        let order_side = order_side_from_capnp(reader.get_order_side()?);
+        let order_side = order_side_required_from_capnp(reader.get_order_side()?)?;
         let order_type = order_type_from_capnp(reader.get_order_type()?);
 
         let quantity_reader = reader.get_quantity()?;
@@ -4143,10 +4151,7 @@ impl<'a> FromCapnp<'a> for OrderInitialized {
             None
         };
 
-        let trigger_type = match reader.get_trigger_type()? {
-            enums_capnp::TriggerType::NoTrigger => None,
-            other => Some(trigger_type_from_capnp(other)),
-        };
+        let trigger_type = trigger_type_from_capnp(reader.get_trigger_type()?);
 
         let limit_offset = if reader.has_limit_offset() {
             let limit_offset_reader = reader.get_limit_offset()?;
@@ -4162,10 +4167,8 @@ impl<'a> FromCapnp<'a> for OrderInitialized {
             None
         };
 
-        let trailing_offset_type = match reader.get_trailing_offset_type()? {
-            enums_capnp::TrailingOffsetType::NoTrailingOffset => None,
-            other => Some(trailing_offset_type_from_capnp(other)),
-        };
+        let trailing_offset_type =
+            trailing_offset_type_from_capnp(reader.get_trailing_offset_type()?);
 
         let expire_time = if reader.has_expire_time() {
             let expire_time_reader = reader.get_expire_time()?;
@@ -4182,10 +4185,7 @@ impl<'a> FromCapnp<'a> for OrderInitialized {
             None
         };
 
-        let emulation_trigger = match reader.get_emulation_trigger()? {
-            enums_capnp::TriggerType::NoTrigger => None,
-            other => Some(trigger_type_from_capnp(other)),
-        };
+        let emulation_trigger = trigger_type_from_capnp(reader.get_emulation_trigger()?);
 
         let trigger_instrument_id = if reader.has_trigger_instrument_id() {
             let trigger_instrument_id_reader = reader.get_trigger_instrument_id()?;
@@ -4194,10 +4194,7 @@ impl<'a> FromCapnp<'a> for OrderInitialized {
             None
         };
 
-        let contingency_type = match reader.get_contingency_type()? {
-            enums_capnp::ContingencyType::NoContingency => None,
-            other => Some(contingency_type_from_capnp(other)),
-        };
+        let contingency_type = contingency_type_from_capnp(reader.get_contingency_type()?);
 
         let order_list_id = if reader.has_order_list_id() {
             let order_list_id_reader = reader.get_order_list_id()?;
@@ -4326,8 +4323,8 @@ impl<'a> ToCapnp<'a> for PositionOpened {
         let opening_order_id_builder = builder.reborrow().init_opening_order_id();
         self.opening_order_id.to_capnp(opening_order_id_builder);
 
-        builder.set_entry(order_side_to_capnp(self.entry));
-        builder.set_side(position_side_to_capnp(self.side));
+        builder.set_entry(order_side_to_capnp(self.entry.into()));
+        builder.set_side(position_side_to_capnp(self.side.into()));
         builder.set_signed_qty(self.signed_qty);
 
         let quantity_builder = builder.reborrow().init_quantity();
@@ -4380,8 +4377,8 @@ impl<'a> FromCapnp<'a> for PositionOpened {
         let opening_order_id_reader = reader.get_opening_order_id()?;
         let opening_order_id = ClientOrderId::from_capnp(opening_order_id_reader)?;
 
-        let entry = order_side_from_capnp(reader.get_entry()?);
-        let side = position_side_from_capnp(reader.get_side()?);
+        let entry = order_side_required_from_capnp(reader.get_entry()?)?;
+        let side = position_side_required_from_capnp(reader.get_side()?)?;
         let signed_qty = reader.get_signed_qty();
 
         let quantity_reader = reader.get_quantity()?;
@@ -4460,8 +4457,8 @@ impl<'a> ToCapnp<'a> for PositionChanged {
         let opening_order_id_builder = builder.reborrow().init_opening_order_id();
         self.opening_order_id.to_capnp(opening_order_id_builder);
 
-        builder.set_entry(order_side_to_capnp(self.entry));
-        builder.set_side(position_side_to_capnp(self.side));
+        builder.set_entry(order_side_to_capnp(self.entry.into()));
+        builder.set_side(position_side_to_capnp(self.side.into()));
         builder.set_signed_qty(self.signed_qty);
 
         let quantity_builder = builder.reborrow().init_quantity();
@@ -4525,8 +4522,8 @@ impl<'a> FromCapnp<'a> for PositionChanged {
         let opening_order_id_reader = reader.get_opening_order_id()?;
         let opening_order_id = ClientOrderId::from_capnp(opening_order_id_reader)?;
 
-        let entry = order_side_from_capnp(reader.get_entry()?);
-        let side = position_side_from_capnp(reader.get_side()?);
+        let entry = order_side_required_from_capnp(reader.get_entry()?)?;
+        let side = position_side_required_from_capnp(reader.get_side()?)?;
         let signed_qty = reader.get_signed_qty();
 
         let quantity_reader = reader.get_quantity()?;
@@ -4627,8 +4624,8 @@ impl<'a> ToCapnp<'a> for PositionClosed {
         self.closing_order_id
             .write_capnp(|| builder.reborrow().init_closing_order_id());
 
-        builder.set_entry(order_side_to_capnp(self.entry));
-        builder.set_side(position_side_to_capnp(self.side));
+        builder.set_entry(order_side_to_capnp(self.entry.into()));
+        builder.set_side(position_side_to_capnp(self.side.into()));
         builder.set_signed_qty(self.signed_qty);
 
         let quantity_builder = builder.reborrow().init_quantity();
@@ -4704,8 +4701,8 @@ impl<'a> FromCapnp<'a> for PositionClosed {
             || reader.get_closing_order_id(),
         )?;
 
-        let entry = order_side_from_capnp(reader.get_entry()?);
-        let side = position_side_from_capnp(reader.get_side()?);
+        let entry = order_side_required_from_capnp(reader.get_entry()?)?;
+        let side = position_side_required_from_capnp(reader.get_side()?)?;
         let signed_qty = reader.get_signed_qty();
 
         let quantity_reader = reader.get_quantity()?;

@@ -65,7 +65,7 @@ pub mod websocket;
 pub mod python;
 
 pub use crate::{
-    config::{DeriveDataClientConfig, DeriveExecClientConfig},
+    config::{DeriveDataClientConfig, DeriveExecutionClientConfig},
     execution::DeriveExecutionClient,
-    factories::{DeriveDataClientFactory, DeriveExecFactoryConfig, DeriveExecutionClientFactory},
+    factories::{DeriveDataClientFactory, DeriveExecutionClientFactory},
 };

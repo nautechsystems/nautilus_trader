@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test factories behavior.
+"""
 
 from decimal import Decimal
 
@@ -21,6 +24,7 @@ from nautilus_trader.model import ClientOrderId
 from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import ExecAlgorithmId
 from nautilus_trader.model import FillReport
+from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import LiquiditySide
 from nautilus_trader.model import MarketOrder
 from nautilus_trader.model import Money
@@ -46,7 +50,10 @@ from nautilus_trader.model import TriggerType
 from nautilus_trader.model import VenueOrderId
 
 
-def make_fill_report(instrument_id):
+def make_fill_report(instrument_id: InstrumentId) -> object:
+    """
+    Make fill report.
+    """
     return FillReport(
         account_id=AccountId("SIM-001"),
         instrument_id=instrument_id,
@@ -64,7 +71,10 @@ def make_fill_report(instrument_id):
     )
 
 
-def make_market_order_snapshot_values(instrument_id):
+def make_market_order_snapshot_values(instrument_id: InstrumentId) -> object:
+    """
+    Make market order snapshot values.
+    """
     order = MarketOrder(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -77,7 +87,7 @@ def make_market_order_snapshot_values(instrument_id):
         time_in_force=TimeInForce.GTC,
         reduce_only=False,
         quote_quantity=False,
-        contingency_type=ContingencyType.NO_CONTINGENCY,
+        contingency_type=None,
     )
     values = order.to_dict()
     values["order_type"] = values["type"]
@@ -90,7 +100,10 @@ def make_market_order_snapshot_values(instrument_id):
     return values
 
 
-def make_order_initialized(instrument_id):
+def make_order_initialized(instrument_id: InstrumentId) -> object:
+    """
+    Make order initialized.
+    """
     return OrderInitialized(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -125,7 +138,10 @@ def make_order_initialized(instrument_id):
     )
 
 
-def make_order_status_report(instrument_id, include_optionals):
+def make_order_status_report(instrument_id: InstrumentId, include_optionals: object) -> object:
+    """
+    Make order status report.
+    """
     kwargs = {
         "account_id": AccountId("SIM-001"),
         "instrument_id": instrument_id,
@@ -170,16 +186,19 @@ def make_order_status_report(instrument_id, include_optionals):
 
 
 def make_own_order(
-    side=OrderSide.BUY,
-    price="1.00000",
-    size=100_000,
-    client_order_id="O-001",
-    status=OrderStatus.ACCEPTED,
-    ts_last=0,
-    ts_accepted=0,
-    ts_submitted=0,
-    ts_init=0,
-):
+    side: object = OrderSide.BUY,
+    price: object = "1.00000",
+    size: object = 100_000,
+    client_order_id: ClientOrderId = "O-001",
+    status: object = OrderStatus.ACCEPTED,
+    ts_last: object = 0,
+    ts_accepted: object = 0,
+    ts_submitted: object = 0,
+    ts_init: object = 0,
+) -> object:
+    """
+    Make own order.
+    """
     return OwnBookOrder(
         trader_id=TraderId("TRADER-001"),
         client_order_id=ClientOrderId(client_order_id),
@@ -196,7 +215,10 @@ def make_own_order(
     )
 
 
-def make_position_fill(instrument):
+def make_position_fill(instrument: object) -> object:
+    """
+    Make position fill.
+    """
     return OrderFilled(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -220,7 +242,10 @@ def make_position_fill(instrument):
     )
 
 
-def make_position_status_report(instrument_id):
+def make_position_status_report(instrument_id: InstrumentId) -> object:
+    """
+    Make position status report.
+    """
     return PositionStatusReport(
         account_id=AccountId("SIM-001"),
         instrument_id=instrument_id,

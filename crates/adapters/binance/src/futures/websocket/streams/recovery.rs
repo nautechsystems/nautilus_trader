@@ -20,21 +20,24 @@
 //! single long-lived driver task consumes trigger signals from a channel and
 //! serializes concurrent triggers through an internal lock.
 
-use std::{
-    sync::{Arc, Mutex, RwLock},
-    time::Duration,
-};
+use std::{sync::Arc, time::Duration};
 
 use anyhow::Context;
-use nautilus_core::MUTEX_POISONED;
+use dashmap::DashMap;
+use nautilus_live::{
+    SocketControlFactory,
+    task::{TaskJoinOutcome, TaskSlot, finish_task},
+};
 use nautilus_model::identifiers::InstrumentId;
 use nautilus_network::websocket::TransportBackend;
-use tokio::{sync::Mutex as TokioMutex, task::JoinHandle};
+use parking_lot::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 
 use super::{
     client::BinanceFuturesWebSocketClient,
-    dispatch::{DispatchCtx, spawn_user_stream_dispatch},
+    dispatch::{
+        DispatchCtx, make_venue_position_id, run_user_stream_dispatch, with_venue_position_id,
+    },
     messages::BinanceFuturesWsStreamsMessage,
 };
 use crate::{
@@ -63,6 +66,7 @@ pub(crate) struct WsBuildParams {
     pub private_base_url: String,
     pub transport_backend: TransportBackend,
     pub proxy_url: Option<String>,
+    pub socket_factory: SocketControlFactory,
 }
 
 /// Context captured by the recovery driver task. All fields are cheaply
@@ -71,9 +75,10 @@ pub(crate) struct WsBuildParams {
 pub(crate) struct RecoveryCtx {
     pub http_client: BinanceFuturesHttpClient,
     pub listen_key: Arc<RwLock<Option<String>>>,
-    pub ws_client: Arc<TokioMutex<Option<BinanceFuturesWebSocketClient>>>,
-    pub ws_task: Arc<Mutex<Option<JoinHandle<()>>>>,
-    pub recovery_lock: Arc<TokioMutex<()>>,
+    pub recovery_listen_key: Arc<RwLock<Option<String>>>,
+    pub ws_client: Arc<Mutex<Option<BinanceFuturesWebSocketClient>>>,
+    pub ws_task: Arc<tokio::sync::Mutex<TaskSlot<()>>>,
+    pub recovery_lock: Arc<tokio::sync::Mutex<()>>,
     pub ws_build_params: WsBuildParams,
     pub dispatch_ctx: Arc<DispatchCtx>,
     pub recovery_tx: tokio::sync::mpsc::UnboundedSender<()>,
@@ -98,7 +103,11 @@ pub(crate) async fn build_and_connect_user_stream(
         params.transport_backend,
     )
     .context("failed to construct Binance Futures private WebSocket client")?
-    .with_proxy(params.proxy_url.clone());
+    .with_proxy(params.proxy_url.clone())
+    .with_socket_control(
+        params.socket_factory.clone(),
+        "binance-futures-user-streams",
+    );
 
     log::debug!("Connecting to Binance Futures user data stream...");
     ws_client.connect().await.map_err(|_| {
@@ -190,6 +199,8 @@ where
 
     log::warn!("Rotating Binance Futures listen key after expiry or keepalive failure");
 
+    close_recovery_listen_key(ctx).await?;
+
     // Create the new listenKey and emit the REST snapshot first, using only
     // the HTTP client. The old stream is still live during this window, so
     // its events continue to flow through the old dispatcher. If the
@@ -202,48 +213,73 @@ where
         .await
         .context("failed to create listen key during recovery")?;
     let new_listen_key = response.listen_key;
+    *ctx.recovery_listen_key.write() = Some(new_listen_key.clone());
 
     emit_open_order_reports(ctx).await?;
 
-    // Snapshot succeeded; commit the rotation. Build and connect the new
-    // stream, swap it in, close the old one, drain its queued events, then
-    // spawn the new dispatcher.
     let new_ws = build_and_connect_user_stream(&ctx.ws_build_params, &new_listen_key).await?;
     let new_stream = new_ws.stream();
 
-    let old_ws = {
-        let mut guard = ctx.ws_client.lock().await;
-        guard.replace(new_ws)
+    let old_ws = ctx.ws_client.lock().take();
+    if let Some(mut old_ws) = old_ws {
+        old_ws
+            .close()
+            .await
+            .context("failed to close old user data WebSocket")?;
+    }
+
+    // Drain queued events from the old stream while the replacement buffers new events.
+    let mut task_slot = ctx.ws_task.lock().await;
+    if let Some(outcome) = finish_task(
+        &mut task_slot,
+        Duration::from_secs(2),
+        Duration::from_secs(2),
+    )
+    .await
+    {
+        match outcome {
+            TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
+            TaskJoinOutcome::Failed(error) => {
+                anyhow::bail!("old user stream dispatch task failed: {error}");
+            }
+            TaskJoinOutcome::Incomplete => {
+                anyhow::bail!("old user stream dispatch task did not stop after abort");
+            }
+        }
+    }
+
+    let mut new_task = TaskSlot::new();
+    new_task
+        .spawn(run_user_stream_dispatch(
+            new_stream,
+            ctx.dispatch_ctx.clone(),
+            ctx.recovery_tx.clone(),
+            dispatch_fn,
+        ))
+        .map_err(|e| anyhow::anyhow!("failed to start recovered user stream dispatch task: {e}"))?;
+
+    *ctx.ws_client.lock() = Some(new_ws);
+    *task_slot = new_task;
+    *ctx.listen_key.write() = Some(new_listen_key);
+    *ctx.recovery_listen_key.write() = None;
+
+    Ok(())
+}
+
+async fn close_recovery_listen_key(ctx: &RecoveryCtx) -> anyhow::Result<()> {
+    let key = ctx.recovery_listen_key.read().clone();
+    let Some(key) = key else {
+        return Ok(());
     };
 
-    {
-        let mut key_guard = ctx.listen_key.write().expect(MUTEX_POISONED);
-        *key_guard = Some(new_listen_key);
+    ctx.http_client
+        .close_listen_key(&key)
+        .await
+        .context("failed to close uncommitted recovery listen key")?;
+    let mut pending = ctx.recovery_listen_key.write();
+    if pending.as_deref() == Some(key.as_str()) {
+        *pending = None;
     }
-
-    if let Some(mut old) = old_ws
-        && let Err(e) = old.close().await
-    {
-        log::warn!("Failed to close old user data WebSocket cleanly: {e}");
-    }
-
-    // Await the old dispatch task so events already queued on the old
-    // stream (fills, cancels) drain through the dispatcher before the new
-    // dispatcher starts. Scope the std MutexGuard so it does not span the
-    // await.
-    let old_task = ctx.ws_task.lock().expect(MUTEX_POISONED).take();
-    if let Some(task) = old_task {
-        let _ = task.await;
-    }
-
-    let new_task = spawn_user_stream_dispatch(
-        new_stream,
-        ctx.dispatch_ctx.clone(),
-        ctx.recovery_tx.clone(),
-        dispatch_fn,
-    );
-    *ctx.ws_task.lock().expect(MUTEX_POISONED) = Some(new_task);
-
     Ok(())
 }
 
@@ -258,8 +294,8 @@ where
 ///
 /// # Errors
 ///
-/// Returns an error if both the open-order and open-algo-order REST queries
-/// fail, so `recover_with_retry` schedules another attempt instead of
+/// Returns an error if both REST queries fail or a returned open order cannot
+/// be resolved, so `recover_with_retry` schedules another attempt instead of
 /// silently leaving the gap unrepaired.
 async fn emit_open_order_reports(ctx: &RecoveryCtx) -> anyhow::Result<()> {
     let params = BinanceOpenOrdersParamsBuilder::default()
@@ -280,7 +316,19 @@ async fn emit_open_order_reports(ctx: &RecoveryCtx) -> anyhow::Result<()> {
             for order in orders {
                 let symbol_ustr = order.symbol;
                 let (instrument_id, price_precision, size_precision) =
-                    resolve_precision(&instruments, &symbol_ustr, product_type);
+                    resolve_precision(&instruments, &symbol_ustr, product_type).with_context(
+                        || {
+                            format!(
+                                "failed to resolve open order {} during recovery reconcile",
+                                order.symbol
+                            )
+                        },
+                    )?;
+                let venue_position_id = make_venue_position_id(
+                    ctx.dispatch_ctx.use_position_ids,
+                    instrument_id,
+                    order.position_side,
+                )?;
 
                 match order.to_order_status_report(
                     ctx.dispatch_ctx.account_id,
@@ -291,7 +339,12 @@ async fn emit_open_order_reports(ctx: &RecoveryCtx) -> anyhow::Result<()> {
                     ts_init,
                 ) {
                     Ok(report) => {
-                        ctx.dispatch_ctx.emitter.send_order_status_report(report);
+                        ctx.dispatch_ctx
+                            .emitter
+                            .send_order_status_report(with_venue_position_id(
+                                report,
+                                venue_position_id,
+                            ));
                         emitted += 1;
                     }
                     Err(e) => {
@@ -315,7 +368,19 @@ async fn emit_open_order_reports(ctx: &RecoveryCtx) -> anyhow::Result<()> {
             for algo_order in algo_orders {
                 let symbol_ustr = algo_order.symbol;
                 let (instrument_id, price_precision, size_precision) =
-                    resolve_precision(&instruments, &symbol_ustr, product_type);
+                    resolve_precision(&instruments, &symbol_ustr, product_type).with_context(
+                        || {
+                            format!(
+                                "failed to resolve open algo order {} during recovery reconcile",
+                                algo_order.symbol
+                            )
+                        },
+                    )?;
+                let venue_position_id = make_venue_position_id(
+                    ctx.dispatch_ctx.use_position_ids,
+                    instrument_id,
+                    algo_order.position_side,
+                )?;
 
                 match algo_order.to_order_status_report(
                     ctx.dispatch_ctx.account_id,
@@ -325,7 +390,12 @@ async fn emit_open_order_reports(ctx: &RecoveryCtx) -> anyhow::Result<()> {
                     ts_init,
                 ) {
                     Ok(report) => {
-                        ctx.dispatch_ctx.emitter.send_order_status_report(report);
+                        ctx.dispatch_ctx
+                            .emitter
+                            .send_order_status_report(with_venue_position_id(
+                                report,
+                                venue_position_id,
+                            ));
                         emitted += 1;
                     }
                     Err(e) => {
@@ -353,45 +423,206 @@ async fn emit_open_order_reports(ctx: &RecoveryCtx) -> anyhow::Result<()> {
 }
 
 fn resolve_precision(
-    instruments: &dashmap::DashMap<
-        ustr::Ustr,
-        crate::futures::http::client::BinanceFuturesInstrument,
-    >,
+    instruments: &DashMap<ustr::Ustr, crate::futures::http::client::BinanceFuturesInstrument>,
     symbol_ustr: &ustr::Ustr,
     product_type: BinanceProductType,
-) -> (InstrumentId, u8, u8) {
-    if let Some(instrument) = instruments.get(symbol_ustr) {
-        (
-            instrument.id(),
-            instrument.price_precision() as u8,
-            instrument.quantity_precision() as u8,
-        )
-    } else {
-        // Fallback when the instrument is not cached: derive the venue id
-        // via the Futures-aware formatter (matches dispatch_ws_message) and
-        // use a conservative precision so venue state still propagates.
-        (format_instrument_id(symbol_ustr, product_type), 8u8, 8u8)
-    }
+) -> anyhow::Result<(InstrumentId, u8, u8)> {
+    let instrument_id = format_instrument_id(symbol_ustr, product_type);
+    let instrument = instruments
+        .get(symbol_ustr)
+        .map(|instrument| instrument.value().clone())
+        .with_context(|| format!("missing instrument metadata for {instrument_id}"))?;
+    anyhow::ensure!(
+        instrument.id() == instrument_id,
+        "instrument metadata ID {} does not match {instrument_id}",
+        instrument.id()
+    );
+    let (price_precision, size_precision) = instrument.precisions()?;
+
+    Ok((instrument_id, price_precision, size_precision))
 }
 
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
 
-    use dashmap::DashMap;
-    use nautilus_model::identifiers::InstrumentId;
+    use axum::{
+        Json, Router,
+        extract::State,
+        http::{StatusCode, Uri},
+        response::{IntoResponse, Response},
+        routing::get,
+    };
+    use nautilus_common::{
+        cache::fifo::FifoCache,
+        messages::{ExecutionEvent, ExecutionReport},
+    };
+    use nautilus_core::{AtomicSet, time::get_atomic_clock_realtime};
+    use nautilus_live::ExecutionEventEmitter;
+    use nautilus_model::{
+        enums::AccountType,
+        identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TraderId},
+        types::Currency,
+    };
     use rstest::rstest;
+    use rust_decimal::Decimal;
     use serde_json::json;
+    use tokio::task::JoinHandle;
     use ustr::Ustr;
 
     use super::*;
     use crate::{
-        common::enums::{BinanceContractStatus, BinanceTradingStatus},
+        common::{
+            consts::{BINANCE_CLIENT_ID, BINANCE_VENUE},
+            dispatch::WsDispatchState,
+            enums::{BinanceContractStatus, BinanceTradingStatus},
+        },
         futures::http::{
             client::BinanceFuturesInstrument,
             models::{BinanceFuturesCoinSymbol, BinanceFuturesUsdSymbol},
         },
     };
+
+    #[derive(Clone, Copy)]
+    enum RecoveryServerMode {
+        MissingRegular,
+        MissingAlgo,
+        FailedQueries,
+    }
+
+    async fn recovery_response(State(mode): State<RecoveryServerMode>, uri: Uri) -> Response {
+        if matches!(mode, RecoveryServerMode::FailedQueries) {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"code": -1, "msg": "test query failure"})),
+            )
+                .into_response();
+        }
+
+        let body = if uri.path().ends_with("/openOrders") {
+            match mode {
+                RecoveryServerMode::MissingRegular => json!([{
+                    "symbol": "NEWUSDT",
+                    "orderId": 1,
+                    "clientOrderId": "external-regular",
+                    "origQty": "1",
+                    "executedQty": "0",
+                    "price": "1",
+                    "status": "NEW",
+                    "timeInForce": "GTC",
+                    "type": "LIMIT",
+                    "side": "BUY",
+                    "positionSide": "LONG"
+                }]),
+                RecoveryServerMode::MissingAlgo => json!([]),
+                RecoveryServerMode::FailedQueries => unreachable!(),
+            }
+        } else {
+            match mode {
+                RecoveryServerMode::MissingRegular => json!([]),
+                RecoveryServerMode::MissingAlgo => json!([{
+                    "algoId": 2,
+                    "clientAlgoId": "external-algo",
+                    "algoType": "CONDITIONAL",
+                    "orderType": "STOP_MARKET",
+                    "symbol": "ALGOUSDT",
+                    "side": "SELL",
+                    "positionSide": "SHORT",
+                    "quantity": "1",
+                    "algoStatus": "NEW",
+                    "triggerPrice": "1"
+                }]),
+                RecoveryServerMode::FailedQueries => unreachable!(),
+            }
+        };
+
+        (StatusCode::OK, Json(body)).into_response()
+    }
+
+    async fn start_recovery_server(mode: RecoveryServerMode) -> (String, JoinHandle<()>) {
+        let app = Router::new()
+            .fallback(get(recovery_response))
+            .with_state(mode);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        (format!("http://{address}"), task)
+    }
+
+    fn recovery_context(
+        base_url: String,
+    ) -> (
+        RecoveryCtx,
+        tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    ) {
+        let clock = get_atomic_clock_realtime();
+        let account_id = AccountId::from("BINANCE-001");
+        let http_client = BinanceFuturesHttpClient::new(
+            BinanceProductType::UsdM,
+            BinanceEnvironment::Live,
+            clock,
+            Some("test-api-key".to_string()),
+            Some("test-api-secret".to_string()),
+            Some(base_url),
+            None,
+            Some(1),
+            None,
+            false,
+        )
+        .unwrap();
+        let mut emitter = ExecutionEventEmitter::new(
+            clock,
+            TraderId::from("TESTER-001"),
+            account_id,
+            AccountType::Margin,
+            None,
+        );
+        let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(event_tx);
+        let (recovery_tx, _recovery_rx) = tokio::sync::mpsc::unbounded_channel();
+        let dispatch_ctx = Arc::new(DispatchCtx {
+            emitter,
+            http_client: http_client.clone(),
+            account_id,
+            product_type: BinanceProductType::UsdM,
+            clock,
+            dispatch_state: Arc::new(WsDispatchState::default()),
+            triggered_algo_ids: Arc::new(AtomicSet::<ClientOrderId>::new()),
+            algo_client_ids: Arc::new(AtomicSet::<ClientOrderId>::new()),
+            use_position_ids: true,
+            default_taker_fee: Decimal::new(4, 4),
+            bnfcr_currency: Currency::USDT(),
+            treat_expired_as_canceled: false,
+            use_trade_lite: false,
+            seen_trade_ids: Arc::new(Mutex::new(FifoCache::new())),
+            cancellation_token: CancellationToken::new(),
+        });
+        let context = RecoveryCtx {
+            http_client,
+            listen_key: Arc::new(RwLock::new(None)),
+            recovery_listen_key: Arc::new(RwLock::new(None)),
+            ws_client: Arc::new(Mutex::new(None)),
+            ws_task: Arc::new(tokio::sync::Mutex::new(TaskSlot::new())),
+            recovery_lock: Arc::new(tokio::sync::Mutex::new(())),
+            ws_build_params: WsBuildParams {
+                product_type: BinanceProductType::UsdM,
+                environment: BinanceEnvironment::Live,
+                api_key: "test-api-key".to_string(),
+                api_secret: "test-api-secret".to_string(),
+                private_base_url: "ws://127.0.0.1:1".to_string(),
+                transport_backend: TransportBackend::default(),
+                proxy_url: None,
+                socket_factory: SocketControlFactory::new(*BINANCE_CLIENT_ID, Some(*BINANCE_VENUE)),
+            },
+            dispatch_ctx,
+            recovery_tx,
+        };
+
+        (context, event_rx)
+    }
 
     fn usdm_instrument(symbol: &str, quantity_precision: i32) -> BinanceFuturesInstrument {
         BinanceFuturesInstrument::UsdM(BinanceFuturesUsdSymbol {
@@ -451,13 +682,95 @@ mod tests {
     }
 
     #[rstest]
+    #[case(
+        RecoveryServerMode::MissingRegular,
+        "failed to resolve open order NEWUSDT during recovery reconcile",
+        "missing instrument metadata for NEWUSDT-PERP.BINANCE"
+    )]
+    #[case(
+        RecoveryServerMode::MissingAlgo,
+        "failed to resolve open algo order ALGOUSDT during recovery reconcile",
+        "missing instrument metadata for ALGOUSDT-PERP.BINANCE"
+    )]
+    #[tokio::test]
+    async fn test_recovery_reconcile_fails_orders_with_unresolved_metadata(
+        #[case] mode: RecoveryServerMode,
+        #[case] expected_error: &str,
+        #[case] expected_root_cause: &str,
+    ) {
+        let (base_url, server_task) = start_recovery_server(mode).await;
+        let (context, mut event_rx) = recovery_context(base_url);
+
+        let error = emit_open_order_reports(&context).await.unwrap_err();
+        let event = event_rx.try_recv();
+        server_task.abort();
+
+        assert_eq!(error.to_string(), expected_error);
+        assert_eq!(error.root_cause().to_string(), expected_root_cause);
+        assert!(event.is_err());
+    }
+
+    #[rstest]
+    #[case(
+        RecoveryServerMode::MissingRegular,
+        "NEWUSDT",
+        "NEWUSDT-PERP.BINANCE-LONG"
+    )]
+    #[case(
+        RecoveryServerMode::MissingAlgo,
+        "ALGOUSDT",
+        "ALGOUSDT-PERP.BINANCE-SHORT"
+    )]
+    #[tokio::test]
+    async fn test_recovery_reconcile_includes_position_id(
+        #[case] mode: RecoveryServerMode,
+        #[case] symbol: &str,
+        #[case] expected_position_id: &str,
+    ) {
+        let (base_url, server_task) = start_recovery_server(mode).await;
+        let (context, mut event_rx) = recovery_context(base_url);
+        context
+            .http_client
+            .instruments_cache()
+            .insert(Ustr::from(symbol), usdm_instrument(symbol, 3));
+
+        emit_open_order_reports(&context).await.unwrap();
+        let event = event_rx.try_recv().unwrap();
+        server_task.abort();
+
+        let ExecutionEvent::Report(ExecutionReport::Order(report)) = event else {
+            panic!("Expected recovery order status report, was {event:?}");
+        };
+        assert_eq!(
+            report.venue_position_id,
+            Some(PositionId::from(expected_position_id)),
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_recovery_reconcile_fails_when_both_queries_fail() {
+        let (base_url, server_task) =
+            start_recovery_server(RecoveryServerMode::FailedQueries).await;
+        let (context, _event_rx) = recovery_context(base_url);
+
+        let error = emit_open_order_reports(&context).await.unwrap_err();
+        server_task.abort();
+
+        assert_eq!(
+            error.to_string(),
+            "recovery reconcile failed: both REST queries returned errors"
+        );
+    }
+
+    #[rstest]
     fn test_resolve_precision_returns_cached_instrument() {
         let instruments: DashMap<Ustr, BinanceFuturesInstrument> = DashMap::new();
         let symbol = Ustr::from("BTCUSDT");
         instruments.insert(symbol, usdm_instrument("BTCUSDT", 3));
 
         let (id, price_precision, size_precision) =
-            resolve_precision(&instruments, &symbol, BinanceProductType::UsdM);
+            resolve_precision(&instruments, &symbol, BinanceProductType::UsdM).unwrap();
 
         assert_eq!(id, InstrumentId::from_str("BTCUSDT-PERP.BINANCE").unwrap());
         assert_eq!(price_precision, 2);
@@ -465,30 +778,44 @@ mod tests {
     }
 
     #[rstest]
-    fn test_resolve_precision_falls_back_to_formatted_usdm_id() {
+    fn test_resolve_precision_rejects_missing_usdm_instrument() {
         let instruments: DashMap<Ustr, BinanceFuturesInstrument> = DashMap::new();
         let symbol = Ustr::from("BTCUSDT");
 
-        let (id, price_precision, size_precision) =
-            resolve_precision(&instruments, &symbol, BinanceProductType::UsdM);
+        let error = resolve_precision(&instruments, &symbol, BinanceProductType::UsdM).unwrap_err();
 
-        // The P3 fix: USD-M perps must produce `-PERP` suffix, not raw symbol
-        assert_eq!(id, InstrumentId::from_str("BTCUSDT-PERP.BINANCE").unwrap());
-        assert_eq!(price_precision, 8);
-        assert_eq!(size_precision, 8);
+        assert_eq!(
+            error.to_string(),
+            "missing instrument metadata for BTCUSDT-PERP.BINANCE"
+        );
     }
 
     #[rstest]
-    fn test_resolve_precision_falls_back_to_formatted_coinm_id() {
+    fn test_resolve_precision_rejects_missing_coinm_instrument() {
         let instruments: DashMap<Ustr, BinanceFuturesInstrument> = DashMap::new();
         let symbol = Ustr::from("BTCUSD_PERP");
 
-        let (id, price_precision, size_precision) =
-            resolve_precision(&instruments, &symbol, BinanceProductType::CoinM);
+        let error =
+            resolve_precision(&instruments, &symbol, BinanceProductType::CoinM).unwrap_err();
 
-        assert_eq!(id, InstrumentId::from_str("BTCUSD_PERP.BINANCE").unwrap());
-        assert_eq!(price_precision, 8);
-        assert_eq!(size_precision, 8);
+        assert_eq!(
+            error.to_string(),
+            "missing instrument metadata for BTCUSD_PERP.BINANCE"
+        );
+    }
+
+    #[rstest]
+    fn test_resolve_precision_rejects_product_mismatch() {
+        let instruments: DashMap<Ustr, BinanceFuturesInstrument> = DashMap::new();
+        let symbol = Ustr::from("BTCUSDT");
+        instruments.insert(symbol, coinm_instrument("BTCUSDT", 0));
+
+        let error = resolve_precision(&instruments, &symbol, BinanceProductType::UsdM).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "instrument metadata ID BTCUSDT.BINANCE does not match BTCUSDT-PERP.BINANCE"
+        );
     }
 
     #[rstest]
@@ -498,7 +825,7 @@ mod tests {
         instruments.insert(symbol, coinm_instrument("BTCUSD_PERP", 0));
 
         let (id, price_precision, size_precision) =
-            resolve_precision(&instruments, &symbol, BinanceProductType::CoinM);
+            resolve_precision(&instruments, &symbol, BinanceProductType::CoinM).unwrap();
 
         assert_eq!(id, InstrumentId::from_str("BTCUSD_PERP.BINANCE").unwrap());
         assert_eq!(price_precision, 1);

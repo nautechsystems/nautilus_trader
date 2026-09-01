@@ -12,19 +12,21 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test okx urls behavior.
+"""
 
 import pytest
 
 from nautilus_trader.adapters.okx import OKXDataClientConfig
 from nautilus_trader.adapters.okx import OKXEnvironment
-from nautilus_trader.adapters.okx import OKXExecClientConfig
+from nautilus_trader.adapters.okx import OKXExecutionClientConfig
 from nautilus_trader.adapters.okx import OKXRegion
 from nautilus_trader.adapters.okx import get_okx_http_base_url
 from nautilus_trader.adapters.okx import get_okx_ws_url_business
 from nautilus_trader.adapters.okx import get_okx_ws_url_private
 from nautilus_trader.adapters.okx import get_okx_ws_url_public
 from nautilus_trader.model import AccountId
-from nautilus_trader.model import TraderId
 
 
 @pytest.mark.parametrize(
@@ -36,10 +38,16 @@ from nautilus_trader.model import TraderId
     ],
 )
 def test_http_base_url_by_region(region: OKXRegion, expected: str) -> None:
+    """
+    Test http base url by region.
+    """
     assert get_okx_http_base_url(region) == expected
 
 
 def test_http_base_url_defaults_to_global() -> None:
+    """
+    Test http base url defaults to global.
+    """
     assert get_okx_http_base_url() == "https://www.okx.com"
 
 
@@ -72,12 +80,18 @@ def test_ws_urls_by_region_live(
     private: str,
     business: str,
 ) -> None:
+    """
+    Test ws urls by region live.
+    """
     assert get_okx_ws_url_public(OKXEnvironment.LIVE, region) == public
     assert get_okx_ws_url_private(OKXEnvironment.LIVE, region) == private
     assert get_okx_ws_url_business(OKXEnvironment.LIVE, region) == business
 
 
 def test_ws_urls_eea_demo() -> None:
+    """
+    Test ws urls eea demo.
+    """
     assert (
         get_okx_ws_url_public(OKXEnvironment.DEMO, OKXRegion.EEA)
         == "wss://wseeapap.okx.com:8443/ws/v5/public"
@@ -85,14 +99,19 @@ def test_ws_urls_eea_demo() -> None:
 
 
 def test_data_config_defaults_to_global_region() -> None:
+    """
+    Test data config defaults to global region.
+    """
     config = OKXDataClientConfig()
 
     assert config.region == OKXRegion.GLOBAL
 
 
 def test_exec_config_accepts_region() -> None:
-    config = OKXExecClientConfig(
-        trader_id=TraderId("TRADER-001"),
+    """
+    Test exec config accepts region.
+    """
+    config = OKXExecutionClientConfig(
         account_id=AccountId("OKX-001"),
         region=OKXRegion.EEA,
     )
@@ -101,6 +120,9 @@ def test_exec_config_accepts_region() -> None:
 
 
 def test_okx_region_enum_surface() -> None:
+    """
+    Test okx region enum surface.
+    """
     # OKXRegion must mirror OKXEnvironment's surface so frozen configs with a region
     # field stay hashable, and string/TOML values round-trip.
     assert len({OKXRegion.GLOBAL, OKXRegion.EEA, OKXRegion.US}) == 3  # hashable + distinct

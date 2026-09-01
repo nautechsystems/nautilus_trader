@@ -81,7 +81,7 @@ pub(super) fn apply_trailing_order_policy(
             Some(TrailingOffsetType::BasisPoints) => {
                 ib_order.trailing_percent = Some(trailing_offset_f64 / 100.0);
             }
-            Some(TrailingOffsetType::Price | TrailingOffsetType::NoTrailingOffset) | None => {
+            Some(TrailingOffsetType::Price) | None => {
                 ib_order.aux_price = Some(trailing_offset_f64);
             }
             Some(other) => anyhow::bail!("`TrailingOffsetType` {:?} is not supported", other),

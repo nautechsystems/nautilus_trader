@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test inspection behavior.
+"""
 
 import pytest
 
@@ -29,6 +32,9 @@ from nautilus_trader.model import PriceType
 
 
 def test_adaptive_moving_average_inspection_properties() -> None:
+    """
+    Test adaptive moving average inspection properties.
+    """
     indicator = AdaptiveMovingAverage(
         period_efficiency_ratio=10,
         period_fast=2,
@@ -48,6 +54,9 @@ def test_adaptive_moving_average_inspection_properties() -> None:
 
 
 def test_weighted_moving_average_inspection_properties() -> None:
+    """
+    Test weighted moving average inspection properties.
+    """
     indicator = WeightedMovingAverage(
         period=3,
         weights=[0.2, 0.3, 0.5],
@@ -61,6 +70,9 @@ def test_weighted_moving_average_inspection_properties() -> None:
 
 
 def test_spread_analyzer_instrument_id_readback() -> None:
+    """
+    Test spread analyzer instrument id readback.
+    """
     instrument_id = InstrumentId.from_str("AUD/USD.SIM")
     indicator = SpreadAnalyzer(instrument_id=instrument_id, capacity=10)
 
@@ -78,7 +90,10 @@ def test_spread_analyzer_instrument_id_readback() -> None:
         WilderMovingAverage,
     ],
 )
-def test_moving_average_price_type_readback(indicator_type) -> None:
+def test_moving_average_price_type_readback(indicator_type: object) -> None:
+    """
+    Test moving average price type readback.
+    """
     indicator = indicator_type(period=10, price_type=PriceType.ASK)
 
     assert indicator.price_type == PriceType.ASK

@@ -410,14 +410,14 @@ impl BinanceRawSpotHttpClient {
 
         let headers = Self::default_headers(&credential, json_responses);
 
-        let client = HttpClient::new(
-            headers,
-            vec![BINANCE_API_KEY_HEADER.to_string()],
-            keyed_quotas,
-            default_quota,
-            timeout_secs,
-            proxy_url,
-        )?;
+        let client = HttpClient::builder()
+            .headers(headers)
+            .header_keys(vec![BINANCE_API_KEY_HEADER.to_string()])
+            .keyed_quotas(keyed_quotas)
+            .maybe_default_quota(default_quota)
+            .maybe_timeout_secs(timeout_secs)
+            .maybe_proxy_url(proxy_url)
+            .build()?;
 
         Ok(Self {
             client,

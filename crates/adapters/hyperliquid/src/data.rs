@@ -16,7 +16,7 @@
 use std::{
     str::FromStr,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
@@ -27,8 +27,8 @@ use anyhow::Context;
 use jiff::Timestamp;
 use nautilus_common::{
     cache::InstrumentLookupError,
-    clients::{DataClient, SocketReconnectRegistry},
-    live::{runner::get_data_event_sender, runtime::get_runtime, task::TaskHandles},
+    clients::DataClient,
+    live::runner::get_data_event_sender,
     messages::{
         DataEvent,
         data::{
@@ -45,9 +45,13 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, MUTEX_POISONED, Params, UnixNanos,
+    AtomicMap, Params, UnixNanos,
     datetime::{datetime_to_unix_nanos, unix_nanos_to_iso8601},
     time::{AtomicTime, get_atomic_clock_realtime},
+};
+use nautilus_live::{
+    SocketControl,
+    task::{TaskGroup, TaskGroupGuard},
 };
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, CustomData, Data, DataType, FundingRateUpdate, TradeTick},
@@ -57,8 +61,8 @@ use nautilus_model::{
     orderbook::OrderBook,
     types::{Price, Quantity},
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
-use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -67,7 +71,6 @@ use crate::{
         consts::HYPERLIQUID_VENUE,
         credential::{Secrets, credential_env_vars},
         parse::{bar_type_to_interval, millis_to_nanos},
-        socket::{DATA_STREAMS_ENDPOINT, SocketStatePublisher},
     },
     config::HyperliquidDataClientConfig,
     data_types::register_hyperliquid_custom_data,
@@ -76,7 +79,9 @@ use crate::{
         models::{HyperliquidCandle, HyperliquidFundingHistoryEntry, HyperliquidL2Book},
         parse::parse_recent_trade,
     },
-    websocket::{client::HyperliquidWebSocketClient, messages::NautilusWsMessage},
+    websocket::{
+        DATA_STREAMS_ENDPOINT, client::HyperliquidWebSocketClient, messages::NautilusWsMessage,
+    },
 };
 
 #[derive(Debug)]
@@ -88,14 +93,13 @@ pub struct HyperliquidDataClient {
     ws_client: HyperliquidWebSocketClient,
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
-    ws_stream_handle: Option<JoinHandle<()>>,
-    stream_health_handle: Option<JoinHandle<()>>,
-    pending_tasks: TaskHandles,
+    session_tasks: TaskGroup,
+    pending_tasks: TaskGroup,
+    shutdown_errors: Vec<String>,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     coin_to_instrument_id: Arc<AtomicMap<Ustr, InstrumentId>>,
     stream_health: Arc<Mutex<MarketDataStreamHealthMonitor>>,
-    socket_registry: SocketReconnectRegistry,
 }
 
 impl HyperliquidDataClient {
@@ -133,7 +137,6 @@ impl HyperliquidDataClient {
             http_client.set_base_info_url(url.clone());
         }
 
-        let socket_registry = SocketReconnectRegistry::default();
         let ws_url = config.base_url_ws.clone();
         let ws_client = HyperliquidWebSocketClient::new(
             ws_url,
@@ -142,12 +145,11 @@ impl HyperliquidDataClient {
             config.transport_backend,
             config.proxy_url.clone(),
         );
-        let ws_client = match SocketStatePublisher::new(client_id, socket_registry.clone()) {
-            Some(publisher) => {
-                ws_client.with_socket_control(publisher.control(DATA_STREAMS_ENDPOINT))
-            }
-            None => ws_client,
-        };
+        let ws_client = ws_client.with_socket_control(SocketControl::new(
+            client_id,
+            Some(*HYPERLIQUID_VENUE),
+            DATA_STREAMS_ENDPOINT,
+        ));
         let mut stream_health_monitor = MarketDataStreamHealthMonitor::new(
             Duration::from_secs(config.stale_stream_receive_timeout_secs),
             Duration::from_secs(config.stale_stream_warning_cooldown_secs),
@@ -169,6 +171,9 @@ impl HyperliquidDataClient {
 
         let stream_health = Arc::new(Mutex::new(stream_health_monitor));
 
+        let session_tasks = TaskGroup::new();
+        let pending_tasks = TaskGroup::new();
+
         Ok(Self {
             clock,
             client_id,
@@ -177,14 +182,13 @@ impl HyperliquidDataClient {
             ws_client,
             is_connected: AtomicBool::new(false),
             cancellation_token: CancellationToken::new(),
-            ws_stream_handle: None,
-            stream_health_handle: None,
-            pending_tasks: TaskHandles::default(),
+            session_tasks,
+            pending_tasks,
+            shutdown_errors: Vec::new(),
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
             coin_to_instrument_id: Arc::new(AtomicMap::new()),
             stream_health,
-            socket_registry,
         })
     }
 
@@ -192,38 +196,74 @@ impl HyperliquidDataClient {
     where
         F: std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        let runtime = get_runtime();
-        let handle = runtime.spawn(async move {
+        let future = async move {
             if let Err(e) = fut.await {
                 log::warn!("{description} failed: {e:?}");
             }
-        });
+        };
 
-        self.pending_tasks.push(handle);
+        if let Err(e) = self.pending_tasks.spawn(future) {
+            log::warn!("Skipping Hyperliquid {description} after shutdown began: {e}");
+        }
     }
 
     fn abort_pending_tasks(&self) {
-        self.pending_tasks.abort_all();
+        self.pending_tasks.begin_shutdown();
     }
 
-    fn abort_stream_health_monitor(&mut self) {
-        if let Some(handle) = self.stream_health_handle.take() {
-            handle.abort();
-        }
+    fn abort_session_tasks(&self) {
+        self.session_tasks.begin_shutdown();
+        self.ws_client.begin_shutdown();
     }
 
-    async fn stop_stream_health_monitor(&mut self) {
-        if let Some(handle) = self.stream_health_handle.take() {
-            match handle.await {
-                Ok(()) => {}
-                Err(e) if e.is_cancelled() => {}
-                Err(e) => log::warn!("Stream health monitor task failed: {e}"),
-            }
+    async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
+        self.cancellation_token.cancel();
+        self.abort_session_tasks();
+        self.abort_pending_tasks();
+
+        if let Err(e) = self.ws_client.disconnect().await {
+            self.shutdown_errors
+                .push(format!("Hyperliquid WebSocket shutdown failed: {e}"));
         }
+
+        if let Err(e) = self.await_session_tasks().await {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if let Err(e) = self.await_pending_tasks().await {
+            self.shutdown_errors.push(e.to_string());
+        }
+        self.clear_stream_health();
+        self.is_connected.store(false, Ordering::Release);
+
+        if !self.shutdown_errors.is_empty() {
+            anyhow::bail!(std::mem::take(&mut self.shutdown_errors).join("; "));
+        }
+        Ok(())
+    }
+
+    async fn await_pending_tasks(&self) -> anyhow::Result<()> {
+        self.pending_tasks.begin_shutdown();
+        self.pending_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to terminate Hyperliquid data tasks: {e}"))?;
+        Ok(())
+    }
+
+    async fn await_session_tasks(&self) -> anyhow::Result<()> {
+        self.session_tasks.begin_shutdown();
+        self.session_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to terminate Hyperliquid data session tasks: {e}")
+            })?;
+        Ok(())
     }
 
     fn clear_stream_health(&self) {
-        self.stream_health.lock().expect(MUTEX_POISONED).clear();
+        self.stream_health.lock().clear();
     }
 
     fn register_stream_health(&self, channel: MarketDataChannel, instrument_id: InstrumentId) {
@@ -231,17 +271,14 @@ impl HyperliquidDataClient {
             return;
         }
 
-        self.stream_health.lock().expect(MUTEX_POISONED).subscribe(
-            channel,
-            instrument_id,
-            Instant::now(),
-        );
+        self.stream_health
+            .lock()
+            .subscribe(channel, instrument_id, Instant::now());
     }
 
     fn remove_stream_health(&self, channel: MarketDataChannel, instrument_id: InstrumentId) {
         self.stream_health
             .lock()
-            .expect(MUTEX_POISONED)
             .unsubscribe(channel, instrument_id);
     }
 
@@ -250,17 +287,9 @@ impl HyperliquidDataClient {
             && self.config.stream_health_check_interval_secs > 0
     }
 
-    fn spawn_stream_health_monitor(&mut self) {
+    fn spawn_stream_health_monitor(&self) -> anyhow::Result<()> {
         if !self.stream_health_monitor_enabled() {
-            return;
-        }
-
-        if self
-            .stream_health_handle
-            .as_ref()
-            .is_some_and(|handle| !handle.is_finished())
-        {
-            return;
+            return Ok(());
         }
 
         let stream_health = Arc::clone(&self.stream_health);
@@ -269,7 +298,7 @@ impl HyperliquidDataClient {
         let clock = self.clock;
         let ws_client = self.ws_client.clone();
 
-        let handle = get_runtime().spawn(async move {
+        self.session_tasks.spawn(async move {
             log::debug!("Hyperliquid stream health monitor started");
 
             loop {
@@ -281,7 +310,6 @@ impl HyperliquidDataClient {
                     () = tokio::time::sleep(interval) => {
                         let events = stream_health
                             .lock()
-                            .expect(MUTEX_POISONED)
                             .check_stale(Instant::now(), clock.get_time_ns());
 
                         handle_stream_health_events(&ws_client, &events).await;
@@ -290,9 +318,9 @@ impl HyperliquidDataClient {
             }
 
             log::debug!("Hyperliquid stream health monitor stopped");
-        });
+        })?;
 
-        self.stream_health_handle = Some(handle);
+        Ok(())
     }
 
     fn venue(&self) -> Venue {
@@ -384,7 +412,7 @@ impl HyperliquidDataClient {
         Ok(instruments)
     }
 
-    async fn spawn_ws(&mut self) -> anyhow::Result<()> {
+    async fn spawn_ws(&self) -> anyhow::Result<()> {
         // Clone client before connecting so the clone can have out_rx set
         let mut ws_client = self.ws_client.clone();
 
@@ -393,16 +421,11 @@ impl HyperliquidDataClient {
             .await
             .context("failed to connect to Hyperliquid WebSocket")?;
 
-        // Transfer task handle to original so disconnect() can await it
-        if let Some(handle) = ws_client.take_task_handle() {
-            self.ws_client.set_task_handle(handle);
-        }
-
         let data_sender = self.data_sender.clone();
         let cancellation_token = self.cancellation_token.clone();
         let stream_health = Arc::clone(&self.stream_health);
 
-        let task = get_runtime().spawn(async move {
+        self.session_tasks.spawn(async move {
             log::debug!("Hyperliquid WebSocket consumption loop started");
 
             loop {
@@ -510,9 +533,8 @@ impl HyperliquidDataClient {
             }
 
             log::debug!("Hyperliquid WebSocket consumption loop finished");
-        });
+        })?;
 
-        self.ws_stream_handle = Some(task);
         log::debug!("WebSocket consumption task spawned");
 
         Ok(())
@@ -529,10 +551,6 @@ impl DataClient for HyperliquidDataClient {
         Some(self.venue())
     }
 
-    fn socket_reconnect_registry(&self) -> Option<&SocketReconnectRegistry> {
-        Some(&self.socket_registry)
-    }
-
     fn start(&mut self) -> anyhow::Result<()> {
         log::info!(
             "Starting Hyperliquid data client: client_id={}, environment={:?}, proxy_url={:?}",
@@ -546,26 +564,21 @@ impl DataClient for HyperliquidDataClient {
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping Hyperliquid data client {}", self.client_id);
         self.cancellation_token.cancel();
-        self.abort_stream_health_monitor();
-        self.clear_stream_health();
+        self.abort_session_tasks();
+        self.abort_pending_tasks();
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
         log::debug!("Resetting Hyperliquid data client {}", self.client_id);
-        self.is_connected.store(false, Ordering::Relaxed);
         // Keep this generation cancelled until `connect()` has torn down the
         // inner WebSocket client. Replacing it here would allow the next
         // connection to reuse an active old-generation handler.
         self.cancellation_token.cancel();
+        self.abort_session_tasks();
         self.abort_pending_tasks();
-        self.abort_stream_health_monitor();
-        self.clear_stream_health();
-
-        if let Some(handle) = self.ws_stream_handle.take() {
-            handle.abort();
-        }
+        self.is_connected.store(false, Ordering::Relaxed);
         self.instruments.store(AHashMap::new());
         self.coin_to_instrument_id.store(AHashMap::new());
         Ok(())
@@ -585,22 +598,49 @@ impl DataClient for HyperliquidDataClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.is_connected() {
+        if self.is_connected()
+            && !self.cancellation_token.is_cancelled()
+            && self.session_tasks.is_open()
+            && self.pending_tasks.is_open()
+        {
             return Ok(());
         }
 
-        if self.cancellation_token.is_cancelled() {
+        if self.cancellation_token.is_cancelled()
+            || !self.session_tasks.is_open()
+            || !self.pending_tasks.is_open()
+        {
             // `reset()` is synchronous, while shutting down the inner socket
             // is async. Complete that teardown before creating any new stream
             // task so its receiver and subscription registries cannot belong
             // to the previous generation.
-            if let Err(e) = self.ws_client.disconnect().await {
-                log::debug!("Error tearing down Hyperliquid WebSocket after reset: {e}");
-            }
+            self.ws_client.begin_shutdown();
+            self.ws_client
+                .disconnect()
+                .await
+                .context("failed to tear down Hyperliquid WebSocket before reconnect")?;
             self.ws_client.reset_runtime_state();
+            self.abort_session_tasks();
             self.abort_pending_tasks();
+            let (session_result, pending_result) =
+                tokio::join!(self.await_session_tasks(), self.await_pending_tasks());
+            session_result?;
+            pending_result?;
+            self.session_tasks.start_generation().map_err(|e| {
+                anyhow::anyhow!("Failed to start Hyperliquid data session generation: {e}")
+            })?;
+            self.pending_tasks.start_generation().map_err(|e| {
+                anyhow::anyhow!("Failed to start Hyperliquid data task generation: {e}")
+            })?;
             self.cancellation_token = CancellationToken::new();
         }
+        let cancellation_token = self.cancellation_token.clone();
+        let ws_client = self.ws_client.clone();
+        let setup_guard =
+            TaskGroupGuard::new(&[&self.session_tasks, &self.pending_tasks], move || {
+                cancellation_token.cancel();
+                ws_client.begin_shutdown();
+            });
 
         register_hyperliquid_custom_data();
 
@@ -615,41 +655,34 @@ impl DataClient for HyperliquidDataClient {
             }
         }
 
-        self.spawn_ws()
-            .await
-            .context("failed to spawn WebSocket client")?;
-        self.spawn_stream_health_monitor();
+        let session_result = async {
+            self.spawn_ws()
+                .await
+                .context("failed to spawn WebSocket client")?;
+            self.spawn_stream_health_monitor()?;
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+
+        if let Err(e) = session_result {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Hyperliquid data startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e);
+        }
 
         self.is_connected.store(true, Ordering::Relaxed);
+        setup_guard.disarm();
         log::info!("Connected: client_id={}", self.client_id);
 
         Ok(())
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if !self.is_connected() {
-            return Ok(());
-        }
-
-        self.cancellation_token.cancel();
-
-        if let Some(handle) = self.ws_stream_handle.take()
-            && let Err(e) = handle.await
-        {
-            log::error!("Error waiting for WebSocket stream task: {e}");
-        }
-
-        self.abort_pending_tasks();
-
-        if let Err(e) = self.ws_client.disconnect().await {
-            log::warn!("Error disconnecting WebSocket client: {e}");
-        }
-
-        self.stop_stream_health_monitor().await;
-        self.clear_stream_health();
+        self.teardown_partial_connect().await?;
         self.instruments.store(AHashMap::new());
-
-        self.is_connected.store(false, Ordering::Relaxed);
         log::info!("Disconnected: client_id={}", self.client_id);
 
         Ok(())
@@ -1780,12 +1813,9 @@ fn record_stream_receive(
     instrument_id: InstrumentId,
     venue_ts_event: UnixNanos,
 ) {
-    stream_health.lock().expect(MUTEX_POISONED).record_receive(
-        channel,
-        instrument_id,
-        Instant::now(),
-        venue_ts_event,
-    );
+    stream_health
+        .lock()
+        .record_receive(channel, instrument_id, Instant::now(), venue_ts_event);
 }
 
 fn log_stream_health_event(event: &MarketDataStaleEvent) {
@@ -2337,36 +2367,12 @@ mod tests {
         assert!(!client.stream_health_monitor_enabled());
         client.register_stream_health(MarketDataChannel::Deltas, instrument_id);
 
-        let warnings = client
-            .stream_health
-            .lock()
-            .expect(MUTEX_POISONED)
-            .check_stale(
-                start + Duration::from_secs(121),
-                UnixNanos::from(121_000_000_000),
-            );
+        let warnings = client.stream_health.lock().check_stale(
+            start + Duration::from_secs(121),
+            UnixNanos::from(121_000_000_000),
+        );
 
         assert!(warnings.is_empty());
-    }
-
-    #[rstest]
-    fn data_client_exposes_empty_socket_reconnect_registry() {
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-        set_data_event_sender(tx);
-        let client = HyperliquidDataClient::new(
-            *crate::common::consts::HYPERLIQUID_CLIENT_ID,
-            HyperliquidDataClientConfig::default(),
-        )
-        .unwrap();
-
-        let registry = client
-            .socket_reconnect_registry()
-            .expect("data client must expose a socket reconnect registry");
-        assert!(
-            registry
-                .get(Ustr::from(crate::common::socket::DATA_STREAMS_ENDPOINT))
-                .is_none()
-        );
     }
 
     #[rstest]
@@ -2384,12 +2390,7 @@ mod tests {
         .unwrap();
 
         assert!(
-            client
-                .stream_health
-                .lock()
-                .expect(MUTEX_POISONED)
-                .recovery
-                .is_none(),
+            client.stream_health.lock().recovery.is_none(),
             "a zero recovery cooldown must leave the monitor observability-only",
         );
     }

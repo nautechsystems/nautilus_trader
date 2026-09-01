@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test portfolio behavior.
+"""
 
 from __future__ import annotations
 
@@ -21,7 +24,10 @@ import sys
 import textwrap
 
 
-def test_portfolio_public_module_exports_pyo3_classes():
+def test_portfolio_public_module_exports_pyo3_classes() -> None:
+    """
+    Test portfolio public module exports pyo3 classes.
+    """
     portfolio = importlib.import_module("nautilus_trader.portfolio")
     native_portfolio = importlib.import_module("nautilus_trader._libnautilus.portfolio")
 
@@ -31,7 +37,10 @@ def test_portfolio_public_module_exports_pyo3_classes():
     assert portfolio.PortfolioConfig.__name__ == "PortfolioConfig"
 
 
-def test_portfolio_config_defaults_equity_curve_on_and_allows_opt_out():
+def test_portfolio_config_defaults_equity_curve_on_and_allows_opt_out() -> None:
+    """
+    Test portfolio config defaults equity curve on and allows opt out.
+    """
     from nautilus_trader.portfolio import PortfolioConfig
 
     default = PortfolioConfig()
@@ -42,7 +51,10 @@ def test_portfolio_config_defaults_equity_curve_on_and_allows_opt_out():
     assert disabled.equity_curve is False
 
 
-def test_portfolio_public_module_sets_runtime_module_names():
+def test_portfolio_public_module_sets_runtime_module_names() -> None:
+    """
+    Test portfolio public module sets runtime module names.
+    """
     script = textwrap.dedent(
         """
         import importlib
@@ -67,7 +79,10 @@ def test_portfolio_public_module_sets_runtime_module_names():
     assert result.returncode == 0, result.stderr
 
 
-def test_live_reexports_portfolio_config_for_compatibility():
+def test_live_reexports_portfolio_config_for_compatibility() -> None:
+    """
+    Test live reexports portfolio config for compatibility.
+    """
     from nautilus_trader.backtest import BacktestEngineConfig
     from nautilus_trader.live import LiveNodeConfig
     from nautilus_trader.live import PortfolioConfig as LivePortfolioConfig

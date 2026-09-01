@@ -17,10 +17,10 @@
 # Remove the image
 # docker image rm nautilus-dev
 
-FROM public.ecr.aws/docker/library/rust:1.97.1-slim-bookworm@sha256:99e09cb2284e2ddbb73a995deee3e91783fd04d177602ccf6eab326d778ee777 AS rust-toolchain
+FROM public.ecr.aws/docker/library/rust:1.98.0-slim-bookworm@sha256:94e9efa4033213dbb70d4f665527e7ece3944ddb7ba1dd2e43f6fd6e2490af58 AS rust-toolchain
 
-# Pin to specific digest for supply-chain security (ubuntu:22.04 as of 2026-04-30)
-FROM public.ecr.aws/docker/library/ubuntu@sha256:962f6cadeae0ea6284001009daa4cc9a8c37e75d1f5191cf0eb83fe565b63dd7
+# Pin to specific digest for supply-chain security (ubuntu:22.04 as of 2026-08-23)
+FROM public.ecr.aws/docker/library/ubuntu@sha256:2edbbc5dc405e9612ba3584ce95480277e3eb374407b5505fe26f17df77c7dbc
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 ENV RUST_BACKTRACE=1
@@ -53,7 +53,7 @@ ENV CARGO_HOME="/usr/local/cargo" \
 WORKDIR /workspace
 
 # Install uv
-COPY --from=ghcr.io/astral-sh/uv:0.12.5@sha256:e85be844203885286c60ffad8a858d48afb6c5a5c237ca0e67f12e74b8f174b1 \
+COPY --from=ghcr.io/astral-sh/uv:0.12.6@sha256:88bc6eb1ccd4b82efd0e1b530caffabddf50dc2bf612e66c14ea25b8ee8a4d3d \
   /uv /uvx /root/.local/bin/
 ENV PATH="/root/.local/bin:${PATH}"
 

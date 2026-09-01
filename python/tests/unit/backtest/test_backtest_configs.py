@@ -12,9 +12,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test backtest configs behavior.
+"""
 
+from __future__ import annotations
+
+import datetime as dt
 from decimal import Decimal
 
+import pandas as pd
 import pytest
 
 from nautilus_trader.backtest import BacktestDataConfig
@@ -31,6 +38,7 @@ from nautilus_trader.data import DataEngineConfig
 from nautilus_trader.execution import BestPriceFillModel
 from nautilus_trader.execution import CappedOptionFeeModel
 from nautilus_trader.execution import ExecutionEngineConfig
+from nautilus_trader.execution import FeeModel
 from nautilus_trader.execution import StaticLatencyModel
 from nautilus_trader.execution import TieredNotionalOptionFeeModel
 from nautilus_trader.live import PortfolioConfig
@@ -41,15 +49,22 @@ from nautilus_trader.model import BookType
 from nautilus_trader.model import ClientId
 from nautilus_trader.model import Currency
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import LeveragedMarginModel
+from nautilus_trader.model import Money
 from nautilus_trader.model import OmsType
 from nautilus_trader.model import OtoTriggerMode
 from nautilus_trader.model import PriceType
 from nautilus_trader.model import StandardMarginModel
+from nautilus_trader.persistence import DataCatalogConfig
+from nautilus_trader.persistence import StreamingConfig
 from nautilus_trader.risk import RiskEngineConfig
 from nautilus_trader.trading import ImportableControllerConfig
 
 
-def test_engine_config_defaults():
+def test_engine_config_defaults() -> None:
+    """
+    Test engine config defaults.
+    """
     config = BacktestEngineConfig()
     assert config.load_state is False
     assert config.save_state is False
@@ -59,7 +74,10 @@ def test_engine_config_defaults():
     assert config.timeout_connection == 60.0
 
 
-def test_engine_config_with_params():
+def test_engine_config_with_params() -> None:
+    """
+    Test engine config with params.
+    """
     instance_id = UUID4()
     logging = LoggerConfig(print_config=True)
     config = BacktestEngineConfig(
@@ -80,12 +98,18 @@ def test_engine_config_with_params():
     assert config.instance_id == instance_id
 
 
-def test_engine_config_repr():
+def test_engine_config_repr() -> None:
+    """
+    Test engine config repr.
+    """
     config = BacktestEngineConfig()
     assert "BacktestEngineConfig" in repr(config)
 
 
-def test_engine_config_sub_configs_default_to_none():
+def test_engine_config_sub_configs_default_to_none() -> None:
+    """
+    Test engine config sub configs default to none.
+    """
     config = BacktestEngineConfig()
     assert config.cache is None
     assert config.msgbus is None
@@ -95,7 +119,10 @@ def test_engine_config_sub_configs_default_to_none():
     assert config.portfolio is None
 
 
-def test_engine_config_accepts_sub_configs():
+def test_engine_config_accepts_sub_configs() -> None:
+    """
+    Test engine config accepts sub configs.
+    """
     data_engine = DataEngineConfig(debug=True)
     risk_engine = RiskEngineConfig(bypass=True, max_order_submit_rate="250/00:00:05")
     exec_engine = ExecutionEngineConfig(load_cache=False)
@@ -124,7 +151,10 @@ def test_engine_config_accepts_sub_configs():
     assert config.portfolio is not None
 
 
-def test_engine_config_accepts_controller_config():
+def test_engine_config_accepts_controller_config() -> None:
+    """
+    Test engine config accepts controller config.
+    """
     controller = ImportableControllerConfig(
         controller_path="tests.unit.common.actor:StrategyCreatingController",
         config_path="tests.unit.common.actor:TestControllerConfig",
@@ -137,7 +167,49 @@ def test_engine_config_accepts_controller_config():
     assert config.controller.controller_path == "tests.unit.common.actor:StrategyCreatingController"
 
 
-def test_venue_config_required_params():
+def test_engine_config_accepts_streaming_and_catalog_configs() -> None:
+    """
+    Test engine config retains streaming and catalog configs.
+    """
+    streaming = StreamingConfig(catalog_path="/data/output")
+    catalog = DataCatalogConfig(path="/data/input", name="history")
+
+    config = BacktestEngineConfig(streaming=streaming, catalogs=[catalog])
+
+    assert config.streaming.catalog_path == "/data/output"
+    assert config.streaming.fs_protocol == "file"
+    assert config.streaming.flush_interval_ms == 1_000
+    assert config.streaming.replace_existing is False
+    assert config.catalogs == [catalog]
+
+
+def test_streaming_config_consumes_rotation_inputs() -> None:
+    """
+    Test streaming config converts public rotation inputs to typed values.
+    """
+    config = StreamingConfig(
+        catalog_path="bucket/output",
+        fs_protocol="s3",
+        flush_interval_ms=250,
+        replace_existing=True,
+        rotation_mode="SCHEDULED_DATES",
+        rotation_interval_ns=5_000,
+        schedule_ns=750,
+    )
+
+    assert config.catalog_path == "bucket/output"
+    assert config.fs_protocol == "s3"
+    assert config.flush_interval_ms == 250
+    assert config.replace_existing is True
+    assert config.rotation_mode == "SCHEDULED_DATES"
+    assert config.rotation_interval_ns == 5_000
+    assert config.schedule_ns == 750
+
+
+def test_venue_config_required_params() -> None:
+    """
+    Test venue config required params.
+    """
     config = BacktestVenueConfig(
         name="SIM",
         oms_type=OmsType.HEDGING,
@@ -150,9 +222,31 @@ def test_venue_config_required_params():
     assert config.account_type == AccountType.MARGIN
     assert config.book_type == BookType.L1_MBP
     assert config.starting_balances == ["1_000_000 USD"]
+    assert config.default_leverage is None
 
 
-def test_venue_config_optional_params():
+def test_venue_config_accepts_enum_strings_and_defaults_book_type() -> None:
+    """
+    Test venue config accepts compatible enum strings and defaults the book type.
+    """
+    config = BacktestVenueConfig(
+        name="SIM",
+        oms_type="HEDGING",
+        account_type="MARGIN",
+        starting_balances=["1_000_000 USD"],
+        oto_trigger_mode="FULL",
+    )
+
+    assert config.oms_type == OmsType.HEDGING
+    assert config.account_type == AccountType.MARGIN
+    assert config.book_type == BookType.L1_MBP
+    assert config.oto_trigger_mode == OtoTriggerMode.FULL
+
+
+def test_venue_config_optional_params() -> None:
+    """
+    Test venue config optional params.
+    """
     instrument_id = InstrumentId.from_str("BTCUSDT.BINANCE")
     fill_model = BestPriceFillModel(prob_fill_on_limit=0.9, prob_slippage=0.1)
     latency_model = StaticLatencyModel(base_latency_nanos=1_000)
@@ -190,7 +284,6 @@ def test_venue_config_optional_params():
         fill_model=fill_model,
         latency_model=latency_model,
         price_protection_points=7,
-        settlement_prices={instrument_id: 50_000.0},
     )
     assert config.name == "BINANCE"
     assert config.routing is True
@@ -219,10 +312,54 @@ def test_venue_config_optional_params():
     assert isinstance(config.modules[0], FXRolloverInterestModule)
     assert config.fee_model is None
     assert config.price_protection_points == 7
-    assert config.settlement_prices == {instrument_id: 50_000.0}
 
 
-def test_venue_config_defaults():
+@pytest.mark.parametrize("margin_model", [StandardMarginModel(), LeveragedMarginModel()])
+def test_venue_config_round_trips_margin_models(margin_model: object) -> None:
+    """
+    Test venue config round trips each built-in margin model.
+    """
+    config = BacktestVenueConfig(
+        name="SIM",
+        oms_type=OmsType.HEDGING,
+        account_type=AccountType.MARGIN,
+        book_type=BookType.L1_MBP,
+        starting_balances=["1_000_000 USD"],
+        margin_model=margin_model,
+    )
+
+    assert type(config.margin_model) is type(margin_model)
+
+
+@pytest.mark.parametrize(
+    ("model_field", "expected_model"),
+    [
+        ("margin_model", "MarginModel"),
+        ("latency_model", "LatencyModel"),
+    ],
+)
+def test_venue_config_rejects_unsupported_models(
+    model_field: str,
+    expected_model: str,
+) -> None:
+    """
+    Test venue config rejects unsupported model objects.
+    """
+    with pytest.raises(TypeError, match=rf"^Cannot convert object to {expected_model}$"):
+        BacktestVenueConfig(
+            name="SIM",
+            oms_type=OmsType.HEDGING,
+            account_type=AccountType.MARGIN,
+            book_type=BookType.L1_MBP,
+            starting_balances=["1_000_000 USD"],
+            **{model_field: object()},
+        )
+
+
+def test_venue_config_defaults() -> None:
+    """
+    Test venue config defaults.
+    """
     config = BacktestVenueConfig(
         name="SIM",
         oms_type=OmsType.HEDGING,
@@ -253,7 +390,10 @@ def test_venue_config_defaults():
         ),
     ],
 )
-def test_venue_config_accepts_option_fee_models(fee_model, expected_repr):
+def test_venue_config_accepts_option_fee_models(fee_model: object, expected_repr: object) -> None:
+    """
+    Test venue config accepts option fee models.
+    """
     config = BacktestVenueConfig(
         name="SIM",
         oms_type=OmsType.HEDGING,
@@ -267,7 +407,47 @@ def test_venue_config_accepts_option_fee_models(fee_model, expected_repr):
     assert isinstance(config.fee_model, type(fee_model))
 
 
-def test_venue_config_repr():
+def test_venue_config_accepts_custom_fee_model_through_run_config_clone() -> None:
+    """
+    Test venue config accepts custom fee model through run config clone.
+    """
+
+    class CustomFeeModel(FeeModel):
+        """
+        Collect custom fee model tests.
+        """
+
+        def get_commission(
+            self,
+            _order: object,
+            _fill_quantity: object,
+            _fill_px: object,
+            _instrument: object,
+        ) -> object:
+            """
+            Get commission.
+            """
+            return Money.from_str("1.23 USD")
+
+    fee_model = CustomFeeModel()
+    venue = BacktestVenueConfig(
+        name="SIM",
+        oms_type=OmsType.HEDGING,
+        account_type=AccountType.MARGIN,
+        book_type=BookType.L1_MBP,
+        starting_balances=["1_000_000 USD"],
+        fee_model=fee_model,
+    )
+    run_config = BacktestRunConfig(venues=[venue], data=[])
+
+    assert venue.fee_model is fee_model
+    assert run_config.venues[0].fee_model is fee_model
+
+
+def test_venue_config_repr() -> None:
+    """
+    Test venue config repr.
+    """
     config = BacktestVenueConfig(
         name="SIM",
         oms_type=OmsType.HEDGING,
@@ -278,7 +458,10 @@ def test_venue_config_repr():
     assert "BacktestVenueConfig" in repr(config)
 
 
-def test_data_config_minimal():
+def test_data_config_minimal() -> None:
+    """
+    Test data config minimal.
+    """
     instrument_id = InstrumentId.from_str("EUR/USD.SIM")
     config = BacktestDataConfig(
         data_type="QuoteTick",
@@ -290,7 +473,10 @@ def test_data_config_minimal():
     assert config.instrument_id == instrument_id
 
 
-def test_data_config_requires_identifier():
+def test_data_config_requires_identifier() -> None:
+    """
+    Test data config requires identifier.
+    """
     with pytest.raises(ValueError, match="instrument_id"):
         BacktestDataConfig(
             data_type="QuoteTick",
@@ -298,7 +484,10 @@ def test_data_config_requires_identifier():
         )
 
 
-def test_data_config_with_instrument_id():
+def test_data_config_with_instrument_id() -> None:
+    """
+    Test data config with instrument id.
+    """
     instrument_id = InstrumentId.from_str("EUR/USD.SIM")
     config = BacktestDataConfig(
         data_type="QuoteTick",
@@ -308,7 +497,10 @@ def test_data_config_with_instrument_id():
     assert config.instrument_id == instrument_id
 
 
-def test_data_config_readback_redacts_storage_option_values():
+def test_data_config_readback_redacts_storage_option_values() -> None:
+    """
+    Test data config readback redacts storage option values.
+    """
     instrument_id = InstrumentId.from_str("EUR/USD.SIM")
     client_id = ClientId("CATALOG")
     bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
@@ -345,7 +537,35 @@ def test_data_config_readback_redacts_storage_option_values():
     assert config.optimize_file_loading is True
 
 
-def test_data_config_invalid_data_type():
+@pytest.mark.parametrize(
+    "value",
+    [
+        1_700_000_000_000_000_000,
+        "2023-11-14T22:13:20+00:00",
+        dt.datetime(2023, 11, 14, 22, 13, 20, tzinfo=dt.UTC),
+        pd.Timestamp("2023-11-14T22:13:20Z"),
+    ],
+)
+def test_data_config_accepts_compatible_timestamp_inputs(value: object) -> None:
+    """
+    Test data config normalizes compatible timestamp inputs to nanoseconds.
+    """
+    config = BacktestDataConfig(
+        data_type="QuoteTick",
+        catalog_path="/data/catalog",
+        instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
+        start_time=value,
+        end_time=value,
+    )
+
+    assert config.start_time == 1_700_000_000_000_000_000
+    assert config.end_time == 1_700_000_000_000_000_000
+
+
+def test_data_config_invalid_data_type() -> None:
+    """
+    Test data config invalid data type.
+    """
     with pytest.raises(ValueError, match="Invalid `NautilusDataType`"):
         BacktestDataConfig(
             data_type="InvalidType",
@@ -353,7 +573,10 @@ def test_data_config_invalid_data_type():
         )
 
 
-def test_data_config_repr():
+def test_data_config_repr() -> None:
+    """
+    Test data config repr.
+    """
     config = BacktestDataConfig(
         data_type="TradeTick",
         catalog_path="/data/catalog",
@@ -362,7 +585,10 @@ def test_data_config_repr():
     assert "BacktestDataConfig" in repr(config)
 
 
-def test_run_config_auto_id():
+def test_run_config_auto_id() -> None:
+    """
+    Test run config auto id.
+    """
     venue = BacktestVenueConfig(
         name="SIM",
         oms_type=OmsType.HEDGING,
@@ -379,7 +605,10 @@ def test_run_config_auto_id():
     assert len(config.id) > 0
 
 
-def test_run_config_explicit_id():
+def test_run_config_explicit_id() -> None:
+    """
+    Test run config explicit id.
+    """
     venue = BacktestVenueConfig(
         name="SIM",
         oms_type=OmsType.HEDGING,
@@ -396,7 +625,10 @@ def test_run_config_explicit_id():
     assert config.id == "my-run-001"
 
 
-def test_run_config_with_engine():
+def test_run_config_with_engine() -> None:
+    """
+    Test run config with engine.
+    """
     venue = BacktestVenueConfig(
         name="SIM",
         oms_type=OmsType.HEDGING,
@@ -417,7 +649,10 @@ def test_run_config_with_engine():
     assert config.engine.bypass_logging is True
 
 
-def test_run_config_options_are_readable():
+def test_run_config_options_are_readable() -> None:
+    """
+    Test run config options are readable.
+    """
     venue = BacktestVenueConfig(
         name="SIM",
         oms_type=OmsType.HEDGING,
@@ -447,7 +682,31 @@ def test_run_config_options_are_readable():
     assert config.end == 2
 
 
-def test_run_config_repr():
+def test_run_config_accepts_compatible_timestamp_inputs() -> None:
+    """
+    Test run config normalizes compatible timestamp inputs to nanoseconds.
+    """
+    venue = BacktestVenueConfig(
+        name="SIM",
+        oms_type="HEDGING",
+        account_type="MARGIN",
+        starting_balances=["1_000_000 USD"],
+    )
+    config = BacktestRunConfig(
+        venues=[venue],
+        data=[],
+        start="2023-11-14T22:13:20+00:00",
+        end=dt.datetime(2023, 11, 14, 22, 13, 20, tzinfo=dt.UTC),
+    )
+
+    assert config.start == 1_700_000_000_000_000_000
+    assert config.end == 1_700_000_000_000_000_000
+
+
+def test_run_config_repr() -> None:
+    """
+    Test run config repr.
+    """
     venue = BacktestVenueConfig(
         name="SIM",
         oms_type=OmsType.HEDGING,
@@ -464,7 +723,10 @@ def test_run_config_repr():
     assert "BacktestRunConfig" in repr(config)
 
 
-def test_run_config_chunk_size_zero_rejected():
+def test_run_config_chunk_size_zero_rejected() -> None:
+    """
+    Test run config chunk size zero rejected.
+    """
     venue = BacktestVenueConfig(
         name="SIM",
         oms_type=OmsType.HEDGING,

@@ -22,6 +22,7 @@
 
 mod common;
 
+use core::fmt::NumBuffer;
 use std::{ffi::c_char, hint::black_box};
 
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -296,7 +297,7 @@ fn bench_atoms(c: &mut Criterion) {
 
     c.bench_function("atom/trade_id_from_sequence", |b| {
         b.iter(|| {
-            let id = TradeId::new(itoa::Buffer::new().format(black_box(123_456_789u32)));
+            let id = TradeId::new(black_box(123_456_789u32).format_into(&mut NumBuffer::new()));
             black_box(id);
         });
     });

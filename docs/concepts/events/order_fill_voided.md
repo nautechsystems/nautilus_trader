@@ -8,7 +8,7 @@ authoritative account endpoints.
 
 Strategies receive `OrderFillVoided` after the corrected cache state is available. When a cached
 position changes, the engine then publishes `PositionChanged` if it remains open or `PositionClosed`
-if it is closed. A successful order‑only correction does not produce a position event.
+if it is closed. A successful order-only correction does not produce a position event.
 
 A correction is not an opposite-side fill. It retains the original trade identity so replay,
 reconciliation, and strategy audit history describe the venue action directly.
@@ -75,7 +75,7 @@ carries:
 
 | Field               | Python type                | Required/default | Description                                             |
 | ------------------- | -------------------------- | ---------------- | ------------------------------------------------------- |
-| `venue_order_id`    | `VenueOrderId`             | Required         | Venue‑assigned order identifier.                        |
+| `venue_order_id`    | `VenueOrderId`             | Required         | Venue-assigned order identifier.                        |
 | `account_id`        | `AccountId`                | Required         | Account associated with the original fill.              |
 | `correction_id`     | `str`                      | Required         | Identity for this correction revision.                  |
 | `trade_id`          | `TradeId`                  | Required         | Original venue trade ID.                                |

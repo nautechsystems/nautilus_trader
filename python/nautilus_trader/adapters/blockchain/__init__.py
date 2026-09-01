@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Integration adapter for blockchain and DeFi venues.
+"""
 
 from __future__ import annotations
 
@@ -20,10 +23,15 @@ from nautilus_trader._libnautilus.blockchain import *  # noqa: F403 (undefined-l
 
 
 __all__ = [
+    "BlockchainChainAnchorConfig",
     "BlockchainDataClientConfig",
     "BlockchainDataClientFactory",
     "BlockchainExecutionClientConfig",
+    "BlockchainProviderIdentity",
+    "BlockchainVerificationConfig",
+    "BlockchainVerificationProviderConfig",
     "DexPoolFilters",
+    "QuoteSpendLimit",
     "load_pool_snapshot",
 ]
 

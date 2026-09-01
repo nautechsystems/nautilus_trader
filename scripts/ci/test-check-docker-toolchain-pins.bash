@@ -19,7 +19,11 @@ create_case() {
   local install_version="$6"
   local case_dir="$CASE_ROOT/$name"
 
-  mkdir -p "$case_dir/scripts/ci" "$case_dir/.docker" "$case_dir/python"
+  mkdir -p \
+    "$case_dir/.docker" \
+    "$case_dir/.nautilus-engineering" \
+    "$case_dir/python" \
+    "$case_dir/scripts/ci"
   cp "$CHECKER" "$case_dir/scripts/ci/check-docker-toolchain-pins.bash"
   cp \
     "$REPO_ROOT/scripts/rust-toolchain.sh" \
@@ -27,19 +31,20 @@ create_case() {
     "$REPO_ROOT/scripts/uv-version.sh" \
     "$case_dir/scripts/"
 
-  printf '%s\n' '[uv]' 'version = "0.12.3"' > "$case_dir/tools.toml"
-  printf '%s\n' '[toolchain]' 'channel = "1.97.1"' > "$case_dir/rust-toolchain.toml"
+  printf '%s\n' '[uv]' 'version = "0.12.3"' \
+    > "$case_dir/.nautilus-engineering/tools.toml"
+  printf '%s\n' '[toolchain]' 'channel = "1.98.0"' > "$case_dir/rust-toolchain.toml"
   printf '%s\n' '[project]' 'requires-python = ">=3.12,<3.15"' > "$case_dir/python/pyproject.toml"
 
   printf '%s\n' \
     "FROM public.ecr.aws/docker/library/ubuntu@sha256:$digest" \
     "COPY --from=ghcr.io/astral-sh/uv:$uv_version@sha256:$digest /uv /bin/uv" \
-    "COPY --from=public.ecr.aws/docker/library/rust:1.97.1-slim-bookworm@sha256:$digest /usr/local/cargo /usr/local/cargo" \
+    "COPY --from=public.ecr.aws/docker/library/rust:1.98.0-slim-bookworm@sha256:$digest /usr/local/cargo /usr/local/cargo" \
     "RUN uv python install $install_version" > "$case_dir/.docker/DockerfileUbuntu"
   printf '%s\n' \
     "FROM public.ecr.aws/docker/library/python:$python_version-slim@sha256:$digest" \
     "COPY --from=ghcr.io/astral-sh/uv:$uv_version@sha256:$digest /uv /bin/uv" \
-    "COPY --from=public.ecr.aws/docker/library/rust:1.97.1-slim-bookworm@sha256:$digest /usr/local/cargo /usr/local/cargo" \
+    "COPY --from=public.ecr.aws/docker/library/rust:1.98.0-slim-bookworm@sha256:$digest /usr/local/cargo /usr/local/cargo" \
     "ENV PYTHONPATH=/opt/venv/lib/python$site_version/site-packages" > "$case_dir/.docker/nautilus_trader.dockerfile"
   printf '%s\n' \
     "COPY --from=ghcr.io/astral-sh/uv:$uv_version@sha256:$digest /uv /bin/uv" \
@@ -84,7 +89,8 @@ if [ "$RUN_STATUS" -ne 0 ]; then
 fi
 
 uv_case=$(create_case "uv-version" "0.11.0" "$DIGEST" "3.14" "3.14" "3.14")
-expect_failure "$uv_case" "expected uv 0.12.3 from tools.toml [uv].version"
+expect_failure "$uv_case" \
+  "expected uv 0.12.3 from .nautilus-engineering/tools.toml [uv].version"
 
 digest_case=$(create_case "invalid-digest" "0.12.3" "${DIGEST%?}" "3.14" "3.14" "3.14")
 expect_failure "$digest_case" "uses an invalid uv 0.12.3 digest"

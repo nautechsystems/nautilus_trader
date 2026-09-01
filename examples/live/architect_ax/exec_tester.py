@@ -31,10 +31,10 @@ from nautilus_trader.adapters.architect_ax import AX
 from nautilus_trader.adapters.architect_ax import AxDataClientConfig
 from nautilus_trader.adapters.architect_ax import AxDataClientFactory
 from nautilus_trader.adapters.architect_ax import AxEnvironment
-from nautilus_trader.adapters.architect_ax import AxExecClientConfig
+from nautilus_trader.adapters.architect_ax import AxExecutionClientConfig
 from nautilus_trader.adapters.architect_ax import AxExecutionClientFactory
 from nautilus_trader.common import Environment
-from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecutionEngineConfig
 from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.live import LiveNode
 from nautilus_trader.model import AccountId
@@ -47,6 +47,10 @@ from nautilus_trader.model import TraderId
 from nautilus_trader.testkit import ExecTesterConfig
 
 
+# WARNING: With DRY_RUN = False, this tester submits orders to the configured
+# environment and may use real funds. Set DRY_RUN = True to connect without
+# submitting orders or sending shutdown cancel/close commands.
+DRY_RUN = False
 TRADER_ID = TraderId.from_str("TESTER-001")
 ACCOUNT_ID = AccountId.from_str("AX-001")
 STRATEGY_ID = StrategyId.from_str("EXEC_TESTER-001")
@@ -56,16 +60,19 @@ TOB_OFFSET_TICKS = 1
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     node = (
         LiveNode.builder("AX-EXEC-TESTER-001", TRADER_ID, Environment.LIVE)
         .with_exec_engine_config(
-            LiveExecEngineConfig(
+            LiveExecutionEngineConfig(
                 reconciliation_instrument_ids=[str(INSTRUMENT_ID)],
                 open_check_interval_secs=10,
                 position_check_interval_secs=30,
             ),
         )
-        .with_reconciliation(True)
+        .with_reconciliation(reconciliation=True)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
         .with_timeout_disconnection_secs(10)
         .with_delay_post_stop_secs(5)
@@ -77,8 +84,7 @@ def main() -> None:
         .add_exec_client(
             None,
             AxExecutionClientFactory(),
-            AxExecClientConfig(
-                trader_id=TRADER_ID,
+            AxExecutionClientConfig(
                 account_id=ACCOUNT_ID,
                 environment=AxEnvironment.SANDBOX,
             ),
@@ -105,7 +111,7 @@ def main() -> None:
             cancel_orders_on_stop=True,
             close_positions_on_stop=True,
             reduce_only_on_stop=False,
-            dry_run=False,  # Set True to log intended order flow without submitting orders
+            dry_run=DRY_RUN,
             log_data=False,
         ),
     )

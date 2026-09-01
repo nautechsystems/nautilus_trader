@@ -31,6 +31,17 @@ use crate::common::{
     parse::{deserialize_decimal_from_str, serialize_decimal_as_str},
 };
 
+/// Returns whether an execution payload belongs to the configured account.
+#[must_use]
+pub(crate) fn is_owned_by_account(
+    maker_address: &str,
+    owner: &str,
+    user_address: &str,
+    api_key: &str,
+) -> bool {
+    maker_address.eq_ignore_ascii_case(user_address) || owner == api_key
+}
+
 /// A maker order included in trade messages.
 ///
 /// Used by both REST trade reports and WebSocket user trade updates
@@ -75,7 +86,7 @@ impl PolymarketMakerOrder {
     /// because keys are opaque credentials.
     #[must_use]
     pub(crate) fn is_owned_by(&self, user_address: &str, api_key: &str) -> bool {
-        self.maker_address.eq_ignore_ascii_case(user_address) || self.owner == api_key
+        is_owned_by_account(&self.maker_address, &self.owner, user_address, api_key)
     }
 }
 

@@ -37,13 +37,14 @@ use pyo3::prelude::*;
 use crate::{
     common::{
         consts::{
-            LIGHTER, LIGHTER_CLIENT_ID, LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX, LIGHTER_VENUE,
+            LIGHTER, LIGHTER_CLIENT_ID, LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
+            LIGHTER_ROBINHOOD, LIGHTER_ROBINHOOD_CLIENT_ID, LIGHTER_ROBINHOOD_VENUE, LIGHTER_VENUE,
         },
         credential::Credential,
-        enums::LighterEnvironment,
+        enums::{LighterDeployment, LighterEnvironment},
         urls::lighter_chain_id,
     },
-    config::{LighterDataClientConfig, LighterExecClientConfig},
+    config::{LighterDataClientConfig, LighterExecutionClientConfig},
     factories::{LighterDataClientFactory, LighterExecutionClientFactory},
     http::{
         client::{LighterHttpClient, LighterRawHttpClient},
@@ -101,10 +102,10 @@ fn extract_lighter_exec_config(
     py: Python<'_>,
     config: Py<PyAny>,
 ) -> PyResult<Box<dyn ClientConfig>> {
-    match config.extract::<LighterExecClientConfig>(py) {
+    match config.extract::<LighterExecutionClientConfig>(py) {
         Ok(c) => Ok(Box::new(c)),
         Err(e) => Err(to_pyvalue_err(format!(
-            "Failed to extract LighterExecClientConfig: {e}"
+            "Failed to extract LighterExecutionClientConfig: {e}"
         ))),
     }
 }
@@ -122,6 +123,7 @@ async fn submit_integrator_revocation(environment: LighterEnvironment) -> anyhow
         .nonce;
 
     let now_ms = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
+
     let tx = ApproveIntegratorTxInfo {
         context: TxContext {
             account_index: credential.account_index(),
@@ -150,17 +152,18 @@ async fn submit_integrator_revocation(environment: LighterEnvironment) -> anyhow
     ))
 }
 
-/// Revoke the Nautilus integrator approval when leaving the adapter.
+/// Revokes the Nautilus integrator approval when leaving the adapter on mainnet.
 ///
-/// This cleanup call is not a trading-mode toggle. Live trading through this
-/// adapter requires the approval; the next execution-client startup records a
-/// fresh zero-fee approval.
+/// This cleanup call is not a trading-mode toggle. Mainnet trading through this
+/// adapter requires the approval, and the next mainnet execution-client startup
+/// records a fresh zero-fee approval. Testnet does not use integrator attribution
+/// and requires no revocation.
 ///
 /// See:
 /// <https://nautilustrader.io/docs/nightly/integrations/lighter.html#integrator-attribution>.
 ///
-/// Reads L2 credentials from `LIGHTER_API_KEY_INDEX`, `LIGHTER_API_SECRET`,
-/// and `LIGHTER_ACCOUNT_INDEX` (or the `LIGHTER_TESTNET_*` variants).
+/// Reads mainnet L2 credentials from `LIGHTER_API_KEY_INDEX`, `LIGHTER_API_SECRET`,
+/// and `LIGHTER_ACCOUNT_INDEX`.
 ///
 /// Returns a status string on the awaitable; raises on failure.
 #[pyfunction]
@@ -184,10 +187,20 @@ pub fn lighter(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(LIGHTER), LIGHTER)?;
     m.add(stringify!(LIGHTER_CLIENT_ID), *LIGHTER_CLIENT_ID)?;
     m.add(stringify!(LIGHTER_VENUE), *LIGHTER_VENUE)?;
+    m.add(stringify!(LIGHTER_ROBINHOOD), LIGHTER_ROBINHOOD)?;
+    m.add(
+        stringify!(LIGHTER_ROBINHOOD_CLIENT_ID),
+        *LIGHTER_ROBINHOOD_CLIENT_ID,
+    )?;
+    m.add(
+        stringify!(LIGHTER_ROBINHOOD_VENUE),
+        *LIGHTER_ROBINHOOD_VENUE,
+    )?;
+    m.add_class::<LighterDeployment>()?;
     m.add_class::<LighterEnvironment>()?;
     m.add_class::<LighterDataClientConfig>()?;
-    m.add_class::<LighterExecClientConfig>()?;
     m.add_class::<LighterDataClientFactory>()?;
+    m.add_class::<LighterExecutionClientConfig>()?;
     m.add_class::<LighterExecutionClientFactory>()?;
     m.add_function(wrap_pyfunction!(py_revoke_lighter_integrator, m)?)?;
 
@@ -219,7 +232,7 @@ pub fn lighter(m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     if let Err(e) = registry.register_config_extractor(
-        "LighterExecClientConfig".to_string(),
+        "LighterExecutionClientConfig".to_string(),
         extract_lighter_exec_config,
     ) {
         return Err(to_pyruntime_err(format!(

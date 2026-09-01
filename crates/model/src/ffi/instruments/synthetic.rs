@@ -60,14 +60,15 @@ pub unsafe extern "C" fn synthetic_instrument_new(
         .map(InstrumentId::from)
         .collect::<Vec<InstrumentId>>();
     let formula = unsafe { cstr_as_str(formula_ptr) };
-    let synth = SyntheticInstrument::new(
-        symbol,
-        price_precision,
-        components,
-        formula,
-        ts_event.into(),
-        ts_init.into(),
-    );
+    let synth = SyntheticInstrument::builder()
+        .symbol(symbol)
+        .price_precision(price_precision)
+        .components(components)
+        .formula(formula)
+        .ts_event(ts_event.into())
+        .ts_init(ts_init.into())
+        .build()
+        .unwrap();
 
     Box::into_raw(Box::new(synth))
 }

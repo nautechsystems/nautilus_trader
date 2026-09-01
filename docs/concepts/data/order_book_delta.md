@@ -1,11 +1,11 @@
 # OrderBookDelta
 
-`OrderBookDelta` represents one change to an order book. It is the most granular built‑in book data
+`OrderBookDelta` represents one change to an order book. It is the most granular built-in book data
 type and supports the book types NautilusTrader uses for incremental updates:
 
-- `L3_MBO`: Level 3 market‑by‑order (MBO) data.
-- `L2_MBP`: Level 2 market‑by‑price (MBP) data.
-- `L1_MBP`: Level 1 market‑by‑price (MBP) top‑of‑book data.
+- `L3_MBO`: Level 3 market-by-order (MBO) data.
+- `L2_MBP`: Level 2 market-by-price (MBP) data.
+- `L1_MBP`: Level 1 market-by-price (MBP) top-of-book data.
 
 The source feed and target `BookType` determine which granularity a delta carries.
 
@@ -28,14 +28,14 @@ should maintain the book state locally.
 
 The `order` field contains the `BookOrder` payload for the delta.
 
-| Field      | Rust type         | Python type | Notes                                |
-| ---------- | ----------------- | ----------- | ------------------------------------ |
-| `side`     | `OrderSide`       | `OrderSide` | Order side.                          |
-| `price`    | `Price`           | `Price`     | Order price.                         |
-| `size`     | `Quantity`        | `Quantity`  | Order size.                          |
-| `order_id` | `OrderId` (`u64`) | `int`       | Order ID carried by the source feed. |
+| Field      | Rust type           | Python type         | Notes                                |
+| ---------- | ------------------- | ------------------- | ------------------------------------ |
+| `side`     | `Option<OrderSide>` | `OrderSide \| None` | Order side.                          |
+| `price`    | `Price`             | `Price`             | Order price.                         |
+| `size`     | `Quantity`          | `Quantity`          | Order size.                          |
+| `order_id` | `OrderId` (`u64`)   | `int`               | Order ID carried by the source feed. |
 
-The null/default order uses `NO_ORDER_SIDE`, zero price, zero size, and `order_id` zero.
+The null/default order uses `None` for its side, with zero price, zero size, and `order_id` zero.
 
 ## BookAction variants
 
@@ -52,8 +52,8 @@ The null/default order uses `NO_ORDER_SIDE`, zero price, zero size, and `order_i
 - `CLEAR` deltas reset book state and use a null book order.
 - `flags` carries event boundary and snapshot metadata. See
   [Delta flags and event boundaries](index.md#delta-flags-and-event-boundaries).
-- Rust provides `OrderBookDelta::clear(...)`; Python users construct clear deltas
-  with `BookAction.CLEAR` and a null or default book order.
+- Use `OrderBookDelta::clear(...)` in Rust or `OrderBookDelta.clear(...)` in Python to construct
+  clear deltas.
 
 ## Example
 
@@ -86,11 +86,11 @@ let delta = OrderBookDelta::new(
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
-from nautilus_trader.model.data import BookOrder
-from nautilus_trader.model.data import OrderBookDelta
-from nautilus_trader.model.enums import BookAction
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import RecordFlag
+from nautilus_trader.model import BookAction
+from nautilus_trader.model import BookOrder
+from nautilus_trader.model import OrderBookDelta
+from nautilus_trader.model import OrderSide
+from nautilus_trader.model import RecordFlag
 
 delta = OrderBookDelta(
     instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),

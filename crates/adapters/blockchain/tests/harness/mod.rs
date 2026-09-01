@@ -21,21 +21,39 @@ use std::{
     collections::HashMap,
     io::{BufRead, BufReader},
     process::{Child, Command, Stdio},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{Duration, Instant},
 };
 
-use alloy::primitives::{Address, U256, address};
+use alloy::primitives::{Address, B256, U256, address, keccak256};
+use axum::{
+    Router,
+    body::Bytes,
+    extract::State,
+    http::{StatusCode, header::CONTENT_TYPE},
+    response::{IntoResponse, Response},
+    routing::post,
+};
 use nautilus_blockchain::{
+    config::{
+        BlockchainCallEdgeManifest, BlockchainChainAnchorConfig, BlockchainContractManifest,
+        BlockchainContractProbe, BlockchainContractRole, BlockchainDeploymentManifest,
+        BlockchainPoolManifest, BlockchainProviderIdentity, BlockchainProxyManifest,
+        BlockchainTokenManifest, BlockchainVerificationConfig,
+        BlockchainVerificationProviderConfig,
+    },
     contracts::uniswap_v3_pool::{FeeProtocolEncoding, UniswapV3PoolContract},
     exchanges::arbitrum::UNISWAP_V3,
     rpc::http::BlockchainHttpRpcClient,
 };
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, hex};
 use nautilus_model::defi::{
     Pool, PoolIdentifier, PoolProfiler, Token,
     chain::chains,
-    data::block::BlockPosition,
+    data::block::{BLOCK_SCOPED_SNAPSHOT_INDEX, BlockPosition},
     pool_analysis::{
         position::PoolPosition,
         snapshot::{PoolAnalytics, PoolSnapshot},
@@ -50,14 +68,30 @@ pub(crate) const FORK_BLOCK: u64 = 489_000_000;
 /// Arbitrum chain ID.
 pub(crate) const CHAIN_ID: u64 = 42161;
 pub(crate) const SIGNER_ENV: &str = "BLOCKCHAIN_FORK_TEST_PRIVATE_KEY";
+pub(crate) const PAYLOAD_KEY_ENV: &str = "BLOCKCHAIN_FORK_TEST_PAYLOAD_KEY";
+pub(crate) const PAYLOAD_KEY_HEX: &str =
+    "5f573818412f4c7c25d86a4f8d719a4f972e3c028634c95ab9bb49c439ec2198";
+pub(crate) const PAYLOAD_DEPLOYMENT_ID: &str = "blockchain-fork-tests";
 pub(crate) const ROUTER: &str = "0xE592427A0AEce92De3Edee1F18E0157C05861564";
+pub(crate) const FACTORY: &str = "0x1F98431c8aD98523631AE4a59f267346ea31F984";
 pub(crate) const WETH: &str = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1";
+const WETH_IMPLEMENTATION: &str = "0x8b194bEae1d3e0788A1a35173978001ACDFba668";
+const EIP1967_IMPLEMENTATION_SLOT: &str =
+    "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
 pub(crate) const USDC: &str = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
+const USDC_IMPLEMENTATION: &str = "0x86e721b43d4ecfa71119dd38c0f938a75fdb57b3";
+const ZEPPELINOS_IMPLEMENTATION_SLOT: &str =
+    "0x7050c9e0f4ca769c69bd3a8ef740bc37934f8e2c036e5a723fd8ee048ed3f8c3";
+pub(crate) const QUOTE: &str = "0x61fFE014bA17989E743c5F6cB21bF9697530B21e";
+pub(crate) const POOL: &str = "0xC6962004f452bE9203591991D15f6b388e09E8D0";
 pub(crate) const FUND_AMOUNT_WEI: u128 = 100_000_000_000_000_000_000;
 pub(crate) const WRAP_AMOUNT_WEI: u128 = 1_000_000_000_000_000;
 pub(crate) const SWAP_AMOUNT: &str = "0.001";
 pub(crate) const SLIPPAGE_BPS: u32 = 50;
 pub(crate) const ANVIL_READY_TIMEOUT: Duration = Duration::from_secs(120);
+const TRACE_PROBE_ACCOUNT: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+const TRACE_PROBE_REQUEST_HASH: &str =
+    "0x0000000000000000000000000000000000000000000000000000000000000000";
 
 pub(crate) struct AnvilProcess(Child);
 
@@ -72,6 +106,503 @@ impl Drop for AnvilProcess {
 pub(crate) struct AnvilStartup {
     pub port: u16,
     pub version: String,
+}
+
+#[derive(Clone)]
+struct RpcProxyState {
+    upstream: String,
+    trace_probe_hash: String,
+    allow_broadcast: bool,
+    requests: Arc<AtomicU64>,
+    broadcasts: Arc<AtomicU64>,
+}
+
+struct RpcProxy {
+    url: String,
+    requests: Arc<AtomicU64>,
+    broadcasts: Arc<AtomicU64>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for RpcProxy {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+/// Three distinct local RPC origins sharing one deterministic Anvil fixture.
+///
+/// The verifier origins enforce the production read-only boundary in the test transport. Their
+/// distinct identities model the configured topology; they do not claim that one Anvil process is
+/// operationally independent.
+pub(crate) struct ExecutionRpcTopology {
+    authoritative: RpcProxy,
+    verifiers: [RpcProxy; 2],
+    verification: BlockchainVerificationConfig,
+}
+
+impl ExecutionRpcTopology {
+    pub(crate) fn authoritative_url(&self) -> String {
+        self.authoritative.url.clone()
+    }
+
+    pub(crate) fn verification(&self) -> BlockchainVerificationConfig {
+        self.verification.clone()
+    }
+
+    pub(crate) fn assert_broadcast_isolation(&self) {
+        assert!(
+            self.authoritative.requests.load(Ordering::Relaxed) > 0,
+            "authoritative proxy received no RPC requests"
+        );
+        assert!(
+            self.authoritative.broadcasts.load(Ordering::Relaxed) > 0,
+            "authoritative proxy received no broadcast"
+        );
+
+        for verifier in &self.verifiers {
+            assert!(
+                verifier.requests.load(Ordering::Relaxed) > 0,
+                "verification proxy received no RPC requests"
+            );
+            assert_eq!(
+                verifier.broadcasts.load(Ordering::Relaxed),
+                0,
+                "verification proxy received a broadcast attempt"
+            );
+        }
+    }
+}
+
+pub(crate) async fn start_execution_rpc_topology(anvil_url: &str) -> ExecutionRpcTopology {
+    let trace_probe_hash = create_trace_probe_transaction(anvil_url).await;
+    let authoritative = start_rpc_proxy(anvil_url, &trace_probe_hash, true).await;
+    let verifier_a = start_rpc_proxy(anvil_url, &trace_probe_hash, false).await;
+    let verifier_b = start_rpc_proxy(anvil_url, &trace_probe_hash, false).await;
+    let verification =
+        fork_verification_config(anvil_url, [&verifier_a.url, &verifier_b.url]).await;
+
+    ExecutionRpcTopology {
+        authoritative,
+        verifiers: [verifier_a, verifier_b],
+        verification,
+    }
+}
+
+async fn start_rpc_proxy(
+    upstream: &str,
+    trace_probe_hash: &B256,
+    allow_broadcast: bool,
+) -> RpcProxy {
+    let requests = Arc::new(AtomicU64::new(0));
+    let broadcasts = Arc::new(AtomicU64::new(0));
+    let state = RpcProxyState {
+        upstream: upstream.to_string(),
+        trace_probe_hash: trace_probe_hash.to_string(),
+        allow_broadcast,
+        requests: requests.clone(),
+        broadcasts: broadcasts.clone(),
+    };
+    let app = Router::new().route("/", post(proxy_rpc)).with_state(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let task = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    RpcProxy {
+        url: format!("http://{address}"),
+        requests,
+        broadcasts,
+        task,
+    }
+}
+
+async fn proxy_rpc(State(state): State<RpcProxyState>, body: Bytes) -> Response {
+    state.requests.fetch_add(1, Ordering::Relaxed);
+    let mut request = match serde_json::from_slice::<serde_json::Value>(&body) {
+        Ok(request) => request,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+
+    if request["method"] == "eth_sendRawTransaction" {
+        state.broadcasts.fetch_add(1, Ordering::Relaxed);
+        if !state.allow_broadcast {
+            return (
+                StatusCode::FORBIDDEN,
+                [(CONTENT_TYPE, "application/json")],
+                serde_json::to_vec(&serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": request["id"],
+                    "error": {"code": -32601, "message": "read-only endpoint"}
+                }))
+                .unwrap(),
+            )
+                .into_response();
+        }
+    }
+
+    if request["method"] == "debug_traceTransaction"
+        && request["params"][0].as_str() == Some(TRACE_PROBE_REQUEST_HASH)
+    {
+        request["params"][0] = serde_json::Value::String(state.trace_probe_hash.clone());
+    }
+    let body = serde_json::to_vec(&request).unwrap();
+
+    let client = HttpClient::builder().timeout_secs(120).build().unwrap();
+    let mut headers = HashMap::new();
+    headers.insert("Content-Type".to_string(), "application/json".to_string());
+
+    match client
+        .request(
+            Method::POST,
+            state.upstream,
+            None,
+            Some(headers),
+            Some(body),
+            Some(120),
+            None,
+        )
+        .await
+    {
+        Ok(response) => (
+            StatusCode::OK,
+            [(CONTENT_TYPE, "application/json")],
+            response.body,
+        )
+            .into_response(),
+        Err(_) => StatusCode::BAD_GATEWAY.into_response(),
+    }
+}
+
+async fn create_trace_probe_transaction(anvil_url: &str) -> B256 {
+    let response = anvil_rpc(
+        anvil_url,
+        "eth_sendTransaction",
+        serde_json::json!([{
+            "from": TRACE_PROBE_ACCOUNT,
+            "to": TRACE_PROBE_ACCOUNT,
+            "value": "0x0"
+        }]),
+    )
+    .await;
+    assert!(
+        response.get("error").is_none(),
+        "failed to submit local trace probe transaction: {response}"
+    );
+    let tx_hash = response["result"]
+        .as_str()
+        .unwrap()
+        .parse::<B256>()
+        .unwrap();
+    anvil_mine(anvil_url, 1).await;
+    let trace = anvil_rpc(
+        anvil_url,
+        "debug_traceTransaction",
+        serde_json::json!([
+            tx_hash,
+            {
+                "tracer": "callTracer",
+                "tracerConfig": {"onlyTopCall": false, "withLog": false}
+            }
+        ]),
+    )
+    .await;
+    assert!(
+        trace.get("result").is_some(),
+        "local call trace probe failed: {trace}"
+    );
+    tx_hash
+}
+
+async fn fork_verification_config(
+    anvil_url: &str,
+    verifier_urls: [&str; 2],
+) -> BlockchainVerificationConfig {
+    let rpc = BlockchainHttpRpcClient::new(anvil_url.to_string(), None, None);
+    let checkpoint = rpc.finalized_block().await.unwrap();
+    let block = format!("0x{:x}", checkpoint.number);
+    let probe = |call_data: &str, expected_output: String| BlockchainContractProbe {
+        call_data: call_data.to_string(),
+        expected_output,
+    };
+
+    let router_factory = rpc_call_result(anvil_url, ROUTER, "0xc45a0155", &block).await;
+    let router_weth = rpc_call_result(anvil_url, ROUTER, "0x4aa4a4fc", &block).await;
+    let factory_pool_call = factory_pool_call();
+    let factory_pool = rpc_call_result(anvil_url, FACTORY, &factory_pool_call, &block).await;
+    let quote_factory = rpc_call_result(anvil_url, QUOTE, "0xc45a0155", &block).await;
+    let weth_decimals = rpc_call_result(anvil_url, WETH, "0x313ce567", &block).await;
+    let weth_storage_value = rpc_result(
+        anvil_url,
+        "eth_getStorageAt",
+        serde_json::json!([WETH, EIP1967_IMPLEMENTATION_SLOT, block]),
+    )
+    .await;
+    assert_eq!(
+        weth_storage_value.to_ascii_lowercase(),
+        format!(
+            "0x000000000000000000000000{}",
+            WETH_IMPLEMENTATION.trim_start_matches("0x")
+        )
+        .to_ascii_lowercase()
+    );
+    let weth_implementation_code_hash =
+        runtime_code_hash(anvil_url, WETH_IMPLEMENTATION, &block).await;
+    let usdc_decimals = rpc_call_result(anvil_url, USDC, "0x313ce567", &block).await;
+    let usdc_storage_value = rpc_result(
+        anvil_url,
+        "eth_getStorageAt",
+        serde_json::json!([USDC, ZEPPELINOS_IMPLEMENTATION_SLOT, block]),
+    )
+    .await;
+    assert_eq!(
+        usdc_storage_value.to_ascii_lowercase(),
+        format!(
+            "0x000000000000000000000000{}",
+            USDC_IMPLEMENTATION.trim_start_matches("0x")
+        )
+        .to_ascii_lowercase()
+    );
+    let usdc_implementation_code_hash =
+        runtime_code_hash(anvil_url, USDC_IMPLEMENTATION, &block).await;
+    let pool_token0 = rpc_call_result(anvil_url, POOL, "0x0dfe1681", &block).await;
+    let pool_token1 = rpc_call_result(anvil_url, POOL, "0xd21220a7", &block).await;
+    let pool_fee = rpc_call_result(anvil_url, POOL, "0xddca3f43", &block).await;
+
+    let contracts = vec![
+        BlockchainContractManifest {
+            address: ROUTER.to_string(),
+            role: BlockchainContractRole::Router,
+            runtime_code_hash: runtime_code_hash(anvil_url, ROUTER, &block).await,
+            proxy: None,
+            probes: vec![
+                probe("0xc45a0155", router_factory),
+                probe("0x4aa4a4fc", router_weth),
+            ],
+        },
+        BlockchainContractManifest {
+            address: FACTORY.to_string(),
+            role: BlockchainContractRole::Factory,
+            runtime_code_hash: runtime_code_hash(anvil_url, FACTORY, &block).await,
+            proxy: None,
+            probes: vec![probe(&factory_pool_call, factory_pool)],
+        },
+        BlockchainContractManifest {
+            address: WETH.to_string(),
+            role: BlockchainContractRole::WrappedNative,
+            runtime_code_hash: runtime_code_hash(anvil_url, WETH, &block).await,
+            proxy: Some(BlockchainProxyManifest {
+                kind: "eip1967_implementation".to_string(),
+                storage_slot: EIP1967_IMPLEMENTATION_SLOT.to_string(),
+                storage_value: weth_storage_value,
+                target_address: WETH_IMPLEMENTATION.to_string(),
+                target_code_hash: weth_implementation_code_hash.clone(),
+            }),
+            probes: vec![probe("0x313ce567", weth_decimals)],
+        },
+        BlockchainContractManifest {
+            address: WETH_IMPLEMENTATION.to_string(),
+            role: BlockchainContractRole::Implementation,
+            runtime_code_hash: weth_implementation_code_hash,
+            proxy: None,
+            probes: Vec::new(),
+        },
+        BlockchainContractManifest {
+            address: QUOTE.to_string(),
+            role: BlockchainContractRole::Quote,
+            runtime_code_hash: runtime_code_hash(anvil_url, QUOTE, &block).await,
+            proxy: None,
+            probes: vec![probe("0xc45a0155", quote_factory)],
+        },
+        BlockchainContractManifest {
+            address: USDC.to_string(),
+            role: BlockchainContractRole::Token,
+            runtime_code_hash: runtime_code_hash(anvil_url, USDC, &block).await,
+            proxy: Some(BlockchainProxyManifest {
+                kind: "zeppelinos_implementation".to_string(),
+                storage_slot: ZEPPELINOS_IMPLEMENTATION_SLOT.to_string(),
+                storage_value: usdc_storage_value,
+                target_address: USDC_IMPLEMENTATION.to_string(),
+                target_code_hash: usdc_implementation_code_hash.clone(),
+            }),
+            probes: vec![probe("0x313ce567", usdc_decimals)],
+        },
+        BlockchainContractManifest {
+            address: USDC_IMPLEMENTATION.to_string(),
+            role: BlockchainContractRole::Implementation,
+            runtime_code_hash: usdc_implementation_code_hash,
+            proxy: None,
+            probes: Vec::new(),
+        },
+        BlockchainContractManifest {
+            address: POOL.to_string(),
+            role: BlockchainContractRole::Pool,
+            runtime_code_hash: runtime_code_hash(anvil_url, POOL, &block).await,
+            proxy: None,
+            probes: vec![
+                probe("0x0dfe1681", pool_token0),
+                probe("0xd21220a7", pool_token1),
+                probe("0xddca3f43", pool_fee),
+            ],
+        },
+    ];
+    let mut call_edges = Vec::new();
+    for purpose in ["wrap", "approve", "swap_sell", "swap_buy"] {
+        call_edges.push(BlockchainCallEdgeManifest {
+            purpose: purpose.to_string(),
+            caller: WETH.to_string(),
+            target: WETH_IMPLEMENTATION.to_string(),
+            call_type: "delegatecall".to_string(),
+        });
+    }
+
+    for purpose in ["approve", "swap_sell", "swap_buy"] {
+        call_edges.push(BlockchainCallEdgeManifest {
+            purpose: purpose.to_string(),
+            caller: USDC.to_string(),
+            target: USDC_IMPLEMENTATION.to_string(),
+            call_type: "delegatecall".to_string(),
+        });
+    }
+
+    for purpose in ["swap_sell", "swap_buy"] {
+        for (caller, target) in [
+            (ROUTER, POOL),
+            (POOL, ROUTER),
+            (ROUTER, WETH),
+            (ROUTER, USDC),
+            (POOL, WETH),
+            (POOL, USDC),
+        ] {
+            call_edges.push(BlockchainCallEdgeManifest {
+                purpose: purpose.to_string(),
+                caller: caller.to_string(),
+                target: target.to_string(),
+                call_type: "call".to_string(),
+            });
+        }
+
+        for target in [WETH, USDC] {
+            call_edges.push(BlockchainCallEdgeManifest {
+                purpose: purpose.to_string(),
+                caller: POOL.to_string(),
+                target: target.to_string(),
+                call_type: "staticcall".to_string(),
+            });
+        }
+    }
+    let deployment_manifest = BlockchainDeploymentManifest {
+        version: "anvil-fork-v1".to_string(),
+        chain_id: CHAIN_ID as u32,
+        chain_name: "Arbitrum".to_string(),
+        contracts,
+        tokens: vec![
+            BlockchainTokenManifest {
+                address: WETH.to_string(),
+                name: "Wrapped Ether".to_string(),
+                symbol: "WETH".to_string(),
+                decimals: 18,
+                asset_role: "both".to_string(),
+            },
+            BlockchainTokenManifest {
+                address: USDC.to_string(),
+                name: "USD Coin".to_string(),
+                symbol: "USDC".to_string(),
+                decimals: 6,
+                asset_role: "both".to_string(),
+            },
+        ],
+        pools: vec![BlockchainPoolManifest {
+            address: POOL.to_string(),
+            token0: WETH.to_string(),
+            token1: USDC.to_string(),
+            fee: 500,
+            factory: FACTORY.to_string(),
+            quote_contract: QUOTE.to_string(),
+        }],
+        call_edges,
+    };
+    let manifest_digest = keccak256(serde_json::to_vec(&deployment_manifest).unwrap()).to_string();
+
+    BlockchainVerificationConfig {
+        authoritative: provider_identity("authoritative", "operator-a", "domain-a"),
+        verifiers: vec![
+            BlockchainVerificationProviderConfig {
+                identity: provider_identity("verifier-a", "operator-b", "domain-b"),
+                http_rpc_url: verifier_urls[0].to_string(),
+            },
+            BlockchainVerificationProviderConfig {
+                identity: provider_identity("verifier-b", "operator-c", "domain-c"),
+                http_rpc_url: verifier_urls[1].to_string(),
+            },
+        ],
+        chain_anchor: BlockchainChainAnchorConfig {
+            chain_id: CHAIN_ID as u32,
+            chain_name: "Arbitrum".to_string(),
+            checkpoint_height: checkpoint.number,
+            checkpoint_hash: checkpoint.hash.to_string(),
+            checkpoint_timestamp: checkpoint.timestamp,
+            max_head_skew_blocks: 3,
+            max_head_age_secs: u64::MAX,
+            max_future_drift_secs: u64::MAX,
+        },
+        manifest_version: deployment_manifest.version.clone(),
+        manifest_digest,
+        deployment_manifest,
+    }
+}
+
+fn provider_identity(
+    provider_id: &str,
+    operator_id: &str,
+    failure_domain_id: &str,
+) -> BlockchainProviderIdentity {
+    BlockchainProviderIdentity {
+        provider_id: provider_id.to_string(),
+        operator_id: operator_id.to_string(),
+        failure_domain_ids: vec![failure_domain_id.to_string()],
+    }
+}
+
+fn factory_pool_call() -> String {
+    let mut call = hex::decode("1698ee82").unwrap();
+    call.extend_from_slice(&[0; 12]);
+    call.extend_from_slice(WETH.parse::<Address>().unwrap().as_slice());
+    call.extend_from_slice(&[0; 12]);
+    call.extend_from_slice(USDC.parse::<Address>().unwrap().as_slice());
+    call.extend_from_slice(&U256::from(500u64).to_be_bytes::<32>());
+    hex::encode_prefixed(call)
+}
+
+async fn runtime_code_hash(anvil_url: &str, address: &str, block: &str) -> String {
+    let code = rpc_result(
+        anvil_url,
+        "eth_getCode",
+        serde_json::json!([address, block]),
+    )
+    .await;
+    let code = hex::decode(code.trim_start_matches("0x")).unwrap();
+    assert!(!code.is_empty(), "missing fork bytecode for {address}");
+    keccak256(code).to_string()
+}
+
+async fn rpc_call_result(anvil_url: &str, to: &str, data: &str, block: &str) -> String {
+    rpc_result(
+        anvil_url,
+        "eth_call",
+        serde_json::json!([{"to": to, "data": data}, block]),
+    )
+    .await
+}
+
+async fn rpc_result(anvil_url: &str, method: &str, params: serde_json::Value) -> String {
+    let response = anvil_rpc(anvil_url, method, params).await;
+    assert!(
+        response.get("error").is_none(),
+        "{method} failed while building the fork manifest: {response}"
+    );
+    response["result"].as_str().unwrap().to_string()
 }
 
 pub(crate) fn weth_usdc_pool() -> Pool {
@@ -123,12 +654,13 @@ pub(crate) async fn start_anvil_at(
         .arg("--fork-retry-backoff")
         .arg("1500")
         .arg("--accounts")
-        .arg("0")
+        .arg("1")
         .arg("--chain-id")
         .arg(CHAIN_ID.to_string())
         .arg("--block-time")
         .arg("1")
         .arg("--mixed-mining")
+        .arg("--steps-tracing")
         .arg("--slots-in-an-epoch")
         .arg("1")
         .arg("--port")
@@ -290,8 +822,26 @@ pub(crate) async fn anvil_mine(anvil_url: &str, blocks: u64) {
     );
 }
 
+#[allow(
+    dead_code,
+    reason = "used by execution_fork; this harness is compiled into each fork binary"
+)]
+pub(crate) async fn anvil_drop_transaction(anvil_url: &str, transaction_hash: &str) {
+    let response = anvil_rpc(
+        anvil_url,
+        "anvil_dropTransaction",
+        serde_json::json!([transaction_hash]),
+    )
+    .await;
+    assert_eq!(
+        response["result"].as_str(),
+        Some(transaction_hash),
+        "anvil_dropTransaction failed: {response}"
+    );
+}
+
 async fn anvil_rpc(anvil_url: &str, method: &str, params: serde_json::Value) -> serde_json::Value {
-    let client = HttpClient::new(HashMap::new(), vec![], vec![], None, Some(10), None).unwrap();
+    let client = HttpClient::builder().timeout_secs(10).build().unwrap();
     let mut headers = HashMap::new();
     headers.insert("Content-Type".to_string(), "application/json".to_string());
     let body = serde_json::to_vec(&serde_json::json!({
@@ -355,6 +905,7 @@ pub(crate) async fn build_full_range_snapshot(
         .await
         .unwrap();
     let head = rpc_client.latest_block().await.unwrap();
+    let head_hash = head.hash.to_string();
     let liquidity = pool_state.liquidity;
     let snapshot = PoolSnapshot::new(
         pool.instrument_id,
@@ -388,10 +939,11 @@ pub(crate) async fn build_full_range_snapshot(
         PoolAnalytics::default(),
         BlockPosition::new(
             head.number,
-            "0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
-            0,
-            0,
-        ),
+            head_hash.clone(),
+            BLOCK_SCOPED_SNAPSHOT_INDEX,
+            BLOCK_SCOPED_SNAPSHOT_INDEX,
+        )
+        .with_block_hash(Some(head_hash)),
         UnixNanos::default(),
         UnixNanos::default(),
     );
@@ -404,6 +956,19 @@ pub(crate) async fn build_full_range_snapshot(
     let quoted_out = quote.amount1.unsigned_abs();
 
     (snapshot, quoted_out)
+}
+
+#[allow(
+    dead_code,
+    reason = "used by execution_fork and execution_livenode_fork; this harness is compiled into each fork binary"
+)]
+pub(crate) fn quote_buy_amount_in(snapshot: &PoolSnapshot, pool: &Pool) -> U256 {
+    let mut profiler = PoolProfiler::new(Arc::new(pool.clone()));
+    profiler.restore_from_snapshot(snapshot.clone()).unwrap();
+    profiler
+        .swap_exact_out(U256::from(WRAP_AMOUNT_WEI), false, None)
+        .unwrap()
+        .get_input_amount()
 }
 
 pub(crate) fn git_diff_sha256(args: &[&str]) -> String {

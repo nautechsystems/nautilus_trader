@@ -17,7 +17,7 @@ on synthetic instrument behavior.
 ## Formula language
 
 Each synthetic instrument defines a derivation formula. Nautilus evaluates this formula with
-its built‑in numeric expression engine and converts the final numeric result to the synthetic
+its built-in numeric expression engine and converts the final numeric result to the synthetic
 `Price`.
 
 ### Supported syntax
@@ -90,14 +90,14 @@ statement the value you want the synthetic to produce.
 
 ### Limits
 
-The expression engine enforces the following compile‑time limits. Formulas that exceed them
+The expression engine enforces the following compile-time limits. Formulas that exceed them
 produce a clear error at construction time.
 
 | Limit           | Value | Description                                                                                     |
 | --------------- | ----- | ----------------------------------------------------------------------------------------------- |
 | Stack depth     | 32    | Maximum number of intermediate values on the evaluation stack.                                  |
 | Local variables | 16    | Maximum number of distinct local variable names.                                                |
-| Nesting depth   | 128   | Maximum syntax nesting and expression tree depth; the top‑level expression counts as one level. |
+| Nesting depth   | 128   | Maximum syntax nesting and expression tree depth; the top-level expression counts as one level. |
 
 A weighted sum of 8 components uses a peak stack depth of 3 and zero locals. A weighted sum of
 N components builds a tree of depth N + 1, so the nesting depth limit caps a weighted sum at
@@ -134,7 +134,7 @@ represents a simple spread between Bitcoin and Ethereum spot prices on Binance. 
 `BTCUSDT.BINANCE` and `ETHUSDT.BINANCE` already exist in the cache.
 
 ```python
-from nautilus_trader.model.instruments import SyntheticInstrument
+from nautilus_trader.model import SyntheticInstrument
 
 btcusdt_binance_id = InstrumentId.from_str("BTCUSDT.BINANCE")
 ethusdt_binance_id = InstrumentId.from_str("ETHUSDT.BINANCE")
@@ -195,8 +195,8 @@ self.submit_order(order)
 ## Performance
 
 Formulas compile once at construction time and evaluate on every incoming component price tick.
-The expression engine uses a compile‑once/eval‑many architecture with a zero‑allocation f64
-stack, so evaluation adds negligible overhead to the tick‑processing path.
+The expression engine uses a compile-once/eval-many architecture with a zero-allocation f64
+stack, so evaluation adds negligible overhead to the tick-processing path.
 
 Measured on Apple M4 Pro, rustc 1.94.1, release profile (opt-level 3):
 

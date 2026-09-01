@@ -39,8 +39,7 @@ use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::BarType,
     enums::{
-        LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce,
-        TriggerType,
+        LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce, TriggerType,
     },
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
@@ -64,11 +63,13 @@ use nautilus_okx::{
             OKXPlaceOrderRequest,
         },
         query::{
-            GetAlgoOrdersParamsBuilder, GetInstrumentsParamsBuilder, GetOptionSummaryParamsBuilder,
-            GetOrderHistoryParams, GetOrderListParams, GetOrderParamsBuilder,
-            GetPositionTiersParamsBuilder, GetPositionsParamsBuilder, GetPriceLimitParamsBuilder,
-            GetRpiOrderBookParams, GetSpreadsParamsBuilder, GetTradeFeeParamsBuilder,
-            GetTransactionDetailsParamsBuilder, SetPositionModeParamsBuilder,
+            GetAlgoOrdersParamsBuilder, GetEventContractMarketsParamsBuilder,
+            GetEventContractSeriesParamsBuilder, GetInstrumentsParamsBuilder,
+            GetOptionSummaryParamsBuilder, GetOrderHistoryParams, GetOrderListParams,
+            GetOrderParamsBuilder, GetPositionTiersParamsBuilder, GetPositionsParamsBuilder,
+            GetPriceLimitParamsBuilder, GetRpiOrderBookParams, GetSpreadsParamsBuilder,
+            GetTradeFeeParamsBuilder, GetTransactionDetailsParamsBuilder,
+            SetPositionModeParamsBuilder,
         },
     },
 };
@@ -98,6 +99,7 @@ struct TestServerState {
     spread_orders_history_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     spread_trades_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     event_series_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
+    event_market_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     algo_details_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     algo_pending_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     algo_history_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
@@ -124,8 +126,7 @@ enum RequiredInstrumentCachePath {
 /// Wait for the test server to be ready by polling a health endpoint.
 async fn wait_for_server(addr: SocketAddr, path: &str) {
     let health_url = format!("http://{addr}{path}");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();
@@ -337,6 +338,30 @@ fn spread_response(params: &HashMap<String, String>) -> Value {
     payload
 }
 
+fn event_contract_series_fixture_response(params: &HashMap<String, String>) -> Value {
+    let mut payload = load_test_data("http_get_event_contract_series.json");
+
+    if let Some(series_id) = params.get("seriesId")
+        && let Some(data) = payload.get_mut("data").and_then(Value::as_array_mut)
+    {
+        data.retain(|item| item.get("seriesId").and_then(Value::as_str) == Some(series_id));
+    }
+
+    payload
+}
+
+fn event_contract_markets_response(params: &HashMap<String, String>) -> Value {
+    let mut payload = load_test_data("http_get_event_contract_markets.json");
+
+    if let Some(series_id) = params.get("seriesId")
+        && let Some(data) = payload.get_mut("data").and_then(Value::as_array_mut)
+    {
+        data.retain(|item| item.get("seriesId").and_then(Value::as_str) == Some(series_id));
+    }
+
+    payload
+}
+
 fn create_router(state: Arc<TestServerState>) -> Router {
     let instruments_state = state.clone();
     let spreads_state = state.clone();
@@ -348,6 +373,7 @@ fn create_router(state: Arc<TestServerState>) -> Router {
     let spread_history_state = state.clone();
     let spread_trades_state = state.clone();
     let event_series_state = state.clone();
+    let event_market_state = state.clone();
     let history_state = state.clone();
     let option_summary_state = state.clone();
     let price_limit_state = state.clone();
@@ -639,8 +665,24 @@ fn create_router(state: Arc<TestServerState>) -> Router {
             get(move |Query(params): Query<HashMap<String, String>>| {
                 let state = event_series_state.clone();
                 async move {
-                    state.event_series_queries.lock().await.push(params);
+                    state.event_series_queries.lock().await.push(params.clone());
+
+                    if params.contains_key("seriesId") {
+                        return Json(event_contract_series_fixture_response(&params))
+                            .into_response();
+                    }
+
                     Json(event_contract_series_response()).into_response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/public/event-contract/markets",
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let state = event_market_state.clone();
+                async move {
+                    state.event_market_queries.lock().await.push(params.clone());
+                    Json(event_contract_markets_response(&params)).into_response()
                 }
             }),
         )
@@ -1556,14 +1598,6 @@ async fn test_http_cancel_all_orders_routes_spread_request() {
 }
 
 #[rstest]
-#[case::invalid_side(
-    InstrumentId::from("ETH-USD-SWAP_ETH-USD-231229.OKX"),
-    OrderSide::NoOrderSide,
-    OrderType::Limit,
-    Some(TimeInForce::Gtc),
-    Some(Price::from("1.25")),
-    "Invalid order side"
-)]
 #[case::market_order(
     InstrumentId::from("ETH-USD-SWAP_ETH-USD-231229.OKX"),
     OrderSide::Buy,
@@ -2212,6 +2246,110 @@ async fn test_http_request_event_instrument_scans_series_until_match() {
             ),
         ]
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_event_contract_series_preserves_settlement_methods() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let mut hit_params = GetEventContractSeriesParamsBuilder::default();
+    hit_params.series_id("BTC-HIT-MONTHLY");
+    let hit_series = client
+        .request_event_contract_series(hit_params.build().unwrap())
+        .await
+        .unwrap();
+
+    let mut between_params = GetEventContractSeriesParamsBuilder::default();
+    between_params.series_id("BTC-BETWEEN-DAILY");
+    let between_series = client
+        .request_event_contract_series(between_params.build().unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(hit_series.len(), 1);
+    assert_eq!(hit_series[0].series_id, "BTC-HIT-MONTHLY");
+    assert_eq!(hit_series[0].freq, "monthly");
+    assert_eq!(hit_series[0].settlement.method, "hit");
+    assert_eq!(between_series.len(), 1);
+    assert_eq!(between_series[0].series_id, "BTC-BETWEEN-DAILY");
+    assert_eq!(between_series[0].freq, "daily");
+    assert_eq!(between_series[0].settlement.method, "between");
+    assert_eq!(state.event_series_queries.lock().await.len(), 2);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_event_contract_markets_preserves_settlement_boundaries() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+
+    let client = OKXHttpClient::new(
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let mut hit_params = GetEventContractMarketsParamsBuilder::default();
+    hit_params.series_id("BTC-HIT-MONTHLY");
+    let hit_markets = client
+        .request_event_contract_markets(hit_params.build().unwrap())
+        .await
+        .unwrap();
+
+    let mut between_params = GetEventContractMarketsParamsBuilder::default();
+    between_params.series_id("BTC-BETWEEN-DAILY");
+    let between_markets = client
+        .request_event_contract_markets(between_params.build().unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(hit_markets.len(), 2);
+
+    let up_market = hit_markets.iter().find(|m| m.hit_dir == "up").unwrap();
+    assert_eq!(
+        up_market.inst_id,
+        Ustr::from("BTC-HIT-MONTHLY-260831-1600-85000")
+    );
+    assert_eq!(up_market.floor_strike, "85000");
+    assert_eq!(up_market.cap_strike, "");
+
+    let dn_market = hit_markets.iter().find(|m| m.hit_dir == "dn").unwrap();
+    assert_eq!(
+        dn_market.inst_id,
+        Ustr::from("BTC-HIT-MONTHLY-260831-1600-37500")
+    );
+    assert_eq!(dn_market.floor_strike, "37500");
+    assert_eq!(dn_market.cap_strike, "");
+
+    assert_eq!(between_markets.len(), 1);
+    assert_eq!(
+        between_markets[0].inst_id,
+        Ustr::from("BTC-BETWEEN-DAILY-260901-1600-84000-INF")
+    );
+    assert_eq!(between_markets[0].floor_strike, "84000");
+    assert_eq!(between_markets[0].cap_strike, "INF");
+    assert_eq!(between_markets[0].hit_dir, "");
+    assert_eq!(state.event_market_queries.lock().await.len(), 2);
 }
 
 #[rstest]
@@ -4813,7 +4951,7 @@ async fn test_http_request_position_status_reports_preserves_long_short_legs() {
     assert_eq!(reports.len(), 2);
     assert_eq!(reports[0].account_id, account_id);
     assert_eq!(reports[0].instrument_id, instrument_id);
-    assert_eq!(reports[0].position_side, PositionSideSpecified::Long);
+    assert_eq!(reports[0].position_side, PositionSide::Long);
     assert_eq!(reports[0].quantity, Quantity::from("5.00"));
     assert_eq!(
         reports[0].signed_decimal_qty,
@@ -4834,7 +4972,7 @@ async fn test_http_request_position_status_reports_preserves_long_short_legs() {
 
     assert_eq!(reports[1].account_id, account_id);
     assert_eq!(reports[1].instrument_id, instrument_id);
-    assert_eq!(reports[1].position_side, PositionSideSpecified::Short);
+    assert_eq!(reports[1].position_side, PositionSide::Short);
     assert_eq!(reports[1].quantity, Quantity::from("2.00"));
     assert_eq!(
         reports[1].signed_decimal_qty,
@@ -4916,8 +5054,16 @@ async fn test_http_get_fills_returns_data() {
 
 #[rstest]
 #[tokio::test]
-async fn test_http_network_error_invalid_port() {
-    let base_url = "http://127.0.0.1:1".to_string();
+async fn test_http_network_error_connection_closed() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind test listener");
+    let addr = listener.local_addr().expect("test listener address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept test connection");
+        drop(stream);
+    });
+    let base_url = format!("http://{addr}");
 
     let client = OKXRawHttpClient::new(
         Some(base_url),
@@ -4936,6 +5082,8 @@ async fn test_http_network_error_invalid_port() {
         .unwrap();
 
     let result = client.get_instruments(params).await;
+
+    server.await.expect("test server task");
 
     assert!(result.is_err());
     match result {
@@ -5002,6 +5150,77 @@ async fn test_http_okx_error_response() {
         }
         other => panic!("expected OkxError: {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn test_place_order_http_failure_is_sent_once_without_retry() {
+    let attempt_count = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&attempt_count);
+    let router = Router::new().route(
+        "/api/v5/trade/order",
+        post(move || async move {
+            counter.fetch_add(1, Ordering::SeqCst);
+            StatusCode::INTERNAL_SERVER_ERROR
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    wait_for_server(addr, "/api/v5/trade/order").await;
+
+    let base_url = format!("http://{addr}");
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(base_url),
+        2,
+        3,
+        1,
+        1,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let request = OKXPlaceOrderRequest {
+        inst_id: "BTC-USDT-SWAP".to_string(),
+        td_mode: OKXTradeMode::Cross,
+        ccy: None,
+        cl_ord_id: Some("Oplaceorderretrycounte".to_string()),
+        tag: None,
+        side: OKXSide::Sell,
+        pos_side: None,
+        ord_type: OKXOrderType::Limit,
+        sz: "1".to_string(),
+        px: Some("65000.1".to_string()),
+        px_usd: None,
+        px_vol: None,
+        reduce_only: None,
+        tgt_ccy: None,
+        attach_algo_ords: None,
+        speed_bump: None,
+        outcome: None,
+        slippage_pct: None,
+        rpi_taker_access: None,
+        rpi_px_round: None,
+    };
+
+    let result = client.place_order(request).await;
+
+    assert!(result.is_err());
+    assert_eq!(
+        attempt_count.load(Ordering::SeqCst),
+        1,
+        "order placement must be sent once; a retry could double-place the order"
+    );
 }
 
 #[rstest]

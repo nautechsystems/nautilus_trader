@@ -31,8 +31,7 @@ from nautilus_trader.adapters.derive import DERIVE
 from nautilus_trader.adapters.derive import DeriveDataClientConfig
 from nautilus_trader.adapters.derive import DeriveDataClientFactory
 from nautilus_trader.adapters.derive import DeriveEnvironment
-from nautilus_trader.adapters.derive import DeriveExecClientConfig
-from nautilus_trader.adapters.derive import DeriveExecFactoryConfig
+from nautilus_trader.adapters.derive import DeriveExecutionClientConfig
 from nautilus_trader.adapters.derive import DeriveExecutionClientFactory
 from nautilus_trader.common import Environment
 from nautilus_trader.config import LiveRiskEngineConfig
@@ -47,6 +46,10 @@ from nautilus_trader.model import TraderId
 from nautilus_trader.testkit import ExecTesterConfig
 
 
+# WARNING: With DRY_RUN = False, this tester submits orders to the configured
+# environment and may use real funds. Set DRY_RUN = True to connect without
+# submitting orders or sending shutdown cancel/close commands.
+DRY_RUN = False
 DERIVE_ENVIRONMENT = DeriveEnvironment.TESTNET
 TRADER_ID = TraderId.from_str("TESTER-001")
 ACCOUNT_ID = AccountId.from_str("DERIVE-001")
@@ -58,14 +61,18 @@ MAX_FEE_PER_CONTRACT = "1000"
 
 
 def main() -> None:
-    exec_config = DeriveExecClientConfig(
+    """
+    Run the example.
+    """
+    exec_config = DeriveExecutionClientConfig(
+        account_id=ACCOUNT_ID,
         environment=DERIVE_ENVIRONMENT,
         max_fee_per_contract=Decimal(MAX_FEE_PER_CONTRACT),
     )
 
     node = (
         LiveNode.builder("DERIVE-EXEC-TESTER-001", TRADER_ID, Environment.LIVE)
-        .with_reconciliation(True)
+        .with_reconciliation(reconciliation=True)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
         .add_data_client(
             None,
@@ -78,11 +85,7 @@ def main() -> None:
         .add_exec_client(
             None,
             DeriveExecutionClientFactory(),
-            DeriveExecFactoryConfig(
-                trader_id=TRADER_ID,
-                account_id=ACCOUNT_ID,
-                config=exec_config,
-            ),
+            exec_config,
         )
         .build()
     )
@@ -104,7 +107,7 @@ def main() -> None:
             use_post_only=True,
             cancel_orders_on_stop=True,
             close_positions_on_stop=True,
-            dry_run=False,  # Set True to log intended order flow without submitting orders
+            dry_run=DRY_RUN,
             log_data=False,
         ),
     )

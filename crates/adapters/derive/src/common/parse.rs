@@ -105,16 +105,10 @@ pub fn salvage_elements<T: DeserializeOwned>(values: Vec<Value>) -> Vec<T> {
 }
 
 /// Maps a Nautilus order side to the Derive direction string.
-///
-/// # Errors
-///
-/// Returns an error for ambiguous Nautilus order sides
-/// ([`OrderSide::NoOrderSide`]).
-pub fn order_side_to_derive(side: OrderSide) -> anyhow::Result<DeriveOrderSide> {
+pub fn order_side_to_derive(side: OrderSide) -> DeriveOrderSide {
     match side {
-        OrderSide::Buy => Ok(DeriveOrderSide::Buy),
-        OrderSide::Sell => Ok(DeriveOrderSide::Sell),
-        OrderSide::NoOrderSide => anyhow::bail!("unsupported order side for Derive: {side:?}"),
+        OrderSide::Buy => DeriveOrderSide::Buy,
+        OrderSide::Sell => DeriveOrderSide::Sell,
     }
 }
 
@@ -362,34 +356,27 @@ fn parse_perp_instrument(
     let min_quantity = quantity_from_decimal(instrument.minimum_amount, "minimum_amount")?;
     let info = derive_instrument_info(instrument)?;
 
-    let perp = CryptoPerpetual::new_checked(
-        instrument_id,
-        raw_symbol,
-        base_currency,
-        quote_currency,
-        settlement_currency,
-        false,
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        Some(multiplier),
-        Some(size_increment),
-        Some(max_quantity),
-        Some(min_quantity),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(instrument.maker_fee_rate),
-        Some(instrument.taker_fee_rate),
-        None,
-        Some(info),
-        ts_init,
-        ts_init,
-    )?;
+    let perp = CryptoPerpetual::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .base_currency(base_currency)
+        .quote_currency(quote_currency)
+        .settlement_currency(settlement_currency)
+        .is_inverse(false)
+        .price_precision(price_increment.precision)
+        .size_precision(size_increment.precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .multiplier(multiplier)
+        .lot_size(size_increment)
+        .max_quantity(max_quantity)
+        .min_quantity(min_quantity)
+        .maker_fee(instrument.maker_fee_rate)
+        .taker_fee(instrument.taker_fee_rate)
+        .info(info)
+        .ts_event(ts_init)
+        .ts_init(ts_init)
+        .build()?;
 
     Ok(InstrumentAny::CryptoPerpetual(perp))
 }
@@ -420,38 +407,31 @@ fn parse_option_instrument(
     let min_quantity = quantity_from_decimal(instrument.minimum_amount, "minimum_amount")?;
     let info = derive_instrument_info(instrument)?;
 
-    let option = CryptoOption::new_checked(
-        instrument_id,
-        raw_symbol,
-        underlying,
-        quote_currency,
-        settlement_currency,
-        false,
-        option_kind,
-        strike_price,
-        activation_ns,
-        expiration_ns,
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        Some(multiplier),
-        Some(size_increment),
-        Some(max_quantity),
-        Some(min_quantity),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(instrument.maker_fee_rate),
-        Some(instrument.taker_fee_rate),
-        None,
-        Some(info),
-        ts_init,
-        ts_init,
-    )?;
+    let option = CryptoOption::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .underlying(underlying)
+        .quote_currency(quote_currency)
+        .settlement_currency(settlement_currency)
+        .is_inverse(false)
+        .option_kind(option_kind)
+        .strike_price(strike_price)
+        .activation_ns(activation_ns)
+        .expiration_ns(expiration_ns)
+        .price_precision(price_increment.precision)
+        .size_precision(size_increment.precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .multiplier(multiplier)
+        .lot_size(size_increment)
+        .max_quantity(max_quantity)
+        .min_quantity(min_quantity)
+        .maker_fee(instrument.maker_fee_rate)
+        .taker_fee(instrument.taker_fee_rate)
+        .info(info)
+        .ts_event(ts_init)
+        .ts_init(ts_init)
+        .build()?;
 
     Ok(InstrumentAny::CryptoOption(option))
 }
@@ -471,32 +451,25 @@ fn parse_spot_instrument(
     let min_quantity = quantity_from_decimal(instrument.minimum_amount, "minimum_amount")?;
     let info = derive_instrument_info(instrument)?;
 
-    let pair = CurrencyPair::new_checked(
-        instrument_id,
-        raw_symbol,
-        base_currency,
-        quote_currency,
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        Some(multiplier),
-        Some(size_increment),
-        Some(max_quantity),
-        Some(min_quantity),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(instrument.maker_fee_rate),
-        Some(instrument.taker_fee_rate),
-        None,
-        Some(info),
-        ts_init,
-        ts_init,
-    )?;
+    let pair = CurrencyPair::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .base_currency(base_currency)
+        .quote_currency(quote_currency)
+        .price_precision(price_increment.precision)
+        .size_precision(size_increment.precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .multiplier(multiplier)
+        .lot_size(size_increment)
+        .max_quantity(max_quantity)
+        .min_quantity(min_quantity)
+        .maker_fee(instrument.maker_fee_rate)
+        .taker_fee(instrument.taker_fee_rate)
+        .info(info)
+        .ts_event(ts_init)
+        .ts_init(ts_init)
+        .build()?;
 
     Ok(InstrumentAny::CurrencyPair(pair))
 }
@@ -632,7 +605,6 @@ mod tests {
             TriggerType::IndexPrice,
             TriggerType::LastPrice,
             TriggerType::BidAsk,
-            TriggerType::NoTrigger,
         ] {
             let err = trigger_price_type_to_derive(Some(trigger_type))
                 .expect_err("unsupported trigger price type must fail");

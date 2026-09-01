@@ -1,7 +1,7 @@
 # Adapters
 
 Adapters connect data providers and trading venues to NautilusTrader. They translate
-venue‑specific protocols into the domain objects and events used by the data and execution engines.
+venue-specific protocols into the domain objects and events used by the data and execution engines.
 Official Python adapters are available from `nautilus_trader.adapters`; the
 [integration guides](../integrations/index.md) document their supported capabilities.
 
@@ -41,7 +41,7 @@ flowchart LR
 | Component            | Purpose                                                   |
 | -------------------- | --------------------------------------------------------- |
 | `HttpClient`         | REST API communication.                                   |
-| `WebSocketClient`    | Real‑time streaming connection.                           |
+| `WebSocketClient`    | Real-time streaming connection.                           |
 | `InstrumentProvider` | Loads and parses instrument definitions from the venue.   |
 | `DataClient`         | Handles market data subscriptions and requests.           |
 | `ExecutionClient`    | Handles order submission, modification, and cancellation. |
@@ -49,7 +49,7 @@ flowchart LR
 ## Configuration and routing
 
 Each adapter exposes configuration types and factories for the clients it supports. Configs select
-venue‑specific settings such as the product, environment, credentials, and instrument loading
+venue-specific settings such as the product, environment, credentials, and instrument loading
 policy. Factories construct the clients when a `LiveNode` is built. Actors and strategies then use
 the common Nautilus APIs rather than calling adapter transports directly.
 
@@ -58,8 +58,8 @@ when a specific client must handle a request, subscription, or order. Without an
 the data and execution engines use the venue and default routes configured by the node.
 
 :::note[Custom adapter support]
-The public Python API does not yet define an interface for implementing an out‑of‑tree adapter
-entirely in Python. An out‑of‑tree Python adapter surface is planned. Custom venue integrations
+The public Python API does not yet define an interface for implementing an out-of-tree adapter
+entirely in Python. An out-of-tree Python adapter surface is planned. Custom venue integrations
 currently use the Rust adapter traits. See the
 [Python concept guide](python.md#support-boundaries).
 :::
@@ -78,7 +78,7 @@ An `InstrumentProvider` serves two use cases:
 
 ### Research and backtesting
 
-This example loads one Binance USD‑M instrument through the public Python API:
+This example loads one Binance USD-M instrument through the public Python API:
 
 ```python
 import asyncio
@@ -132,7 +132,7 @@ BinanceInstrumentProviderConfig(
 `load_ids` contains Nautilus instrument IDs, including the venue suffix, rather than raw venue
 symbols.
 
-Instrument‑loading settings, defaults, and filters vary by integration. Check the relevant
+Instrument-loading settings, defaults, and filters vary by integration. Check the relevant
 integration guide before copying a config between adapters.
 
 Subscriptions, order submission, and execution reconciliation do not load instruments by themselves.
@@ -148,7 +148,7 @@ and normalize incoming data into Nautilus types.
 
 ### Requesting data
 
-Actors and strategies can request data using built‑in methods. Data returns via callbacks:
+Actors and strategies can request data using built-in methods. Data returns via callbacks:
 
 ```python
 from collections.abc import Sequence
@@ -177,7 +177,7 @@ class MyStrategy(Strategy):
 
 ### Subscribing to data
 
-For real‑time data, use subscription methods:
+For real-time data, use subscription methods:
 
 ```python
 from nautilus_trader.model import Bar
@@ -208,7 +208,7 @@ request and subscription methods with their corresponding callbacks.
 ## Execution clients
 
 Execution clients handle order management for a venue. They translate Nautilus order commands
-into venue‑specific API calls and process execution reports back into Nautilus events.
+into venue-specific API calls and process execution reports back into Nautilus events.
 
 Responsibilities:
 

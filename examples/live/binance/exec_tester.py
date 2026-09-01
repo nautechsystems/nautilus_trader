@@ -31,7 +31,7 @@ from decimal import Decimal
 from nautilus_trader.adapters.binance import BinanceDataClientConfig
 from nautilus_trader.adapters.binance import BinanceDataClientFactory
 from nautilus_trader.adapters.binance import BinanceEnvironment
-from nautilus_trader.adapters.binance import BinanceExecClientConfig
+from nautilus_trader.adapters.binance import BinanceExecutionClientConfig
 from nautilus_trader.adapters.binance import BinanceExecutionClientFactory
 from nautilus_trader.adapters.binance import BinanceProductType
 from nautilus_trader.common import Environment
@@ -47,6 +47,10 @@ from nautilus_trader.model import TraderId
 from nautilus_trader.testkit import ExecTesterConfig
 
 
+# WARNING: With DRY_RUN = False, this tester submits orders to the configured
+# environment and may use real funds. Set DRY_RUN = True to connect without
+# submitting orders or sending shutdown cancel/close commands.
+DRY_RUN = False
 BINANCE = "BINANCE"
 TRADER_ID = TraderId.from_str("TESTER-001")
 ACCOUNT_ID = AccountId.from_str("BINANCE-001")
@@ -57,9 +61,12 @@ TOB_OFFSET_TICKS = 500
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     node = (
         LiveNode.builder("BINANCE-EXEC-TESTER-001", TRADER_ID, Environment.LIVE)
-        .with_reconciliation(True)
+        .with_reconciliation(reconciliation=True)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
         .add_data_client(
             None,
@@ -72,8 +79,7 @@ def main() -> None:
         .add_exec_client(
             None,
             BinanceExecutionClientFactory(),
-            BinanceExecClientConfig(
-                trader_id=TRADER_ID,
+            BinanceExecutionClientConfig(
                 account_id=ACCOUNT_ID,
                 product_type=BinanceProductType.SPOT,
                 environment=BinanceEnvironment.LIVE,
@@ -101,7 +107,7 @@ def main() -> None:
             cancel_orders_on_stop=True,
             close_positions_on_stop=True,
             reduce_only_on_stop=False,
-            dry_run=False,  # Set True to log intended order flow without submitting orders
+            dry_run=DRY_RUN,
             log_data=False,
         ),
     )

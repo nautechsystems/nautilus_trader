@@ -15,6 +15,7 @@
 
 use std::fmt::Display;
 
+use nautilus_core::correctness::{FAILED, check_predicate_true};
 use nautilus_model::{
     data::{Bar, QuoteTick, TradeTick},
     enums::PriceType,
@@ -41,7 +42,7 @@ use crate::{
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.indicators")
 )]
 pub struct AdaptiveMovingAverage {
-    /// The period for the internal `EfficiencyRatio` indicator.
+    /// The period for the internal `EfficiencyRatio` indicator (>= 2).
     pub period_efficiency_ratio: usize,
     /// The period for the fast smoothing constant (> 0).
     pub period_fast: usize,
@@ -116,9 +117,11 @@ impl AdaptiveMovingAverage {
     /// # Panics
     ///
     /// This function panics if:
-    /// - `period_efficiency_ratio` == 0.
+    /// - `period_efficiency_ratio` is less than 2 or its rolling-window storage
+    ///   cannot be reserved.
     /// - `period_fast` == 0.
     /// - `period_slow` == 0.
+    /// - `period_slow` == `usize::MAX`.
     /// - `period_slow` ≤ `period_fast`.
     #[must_use]
     pub fn new(
@@ -127,17 +130,35 @@ impl AdaptiveMovingAverage {
         period_slow: usize,
         price_type: Option<PriceType>,
     ) -> Self {
-        assert!(
-            period_efficiency_ratio > 0,
-            "period_efficiency_ratio must be a positive integer"
-        );
-        assert!(period_fast > 0, "period_fast must be a positive integer");
-        assert!(period_slow > 0, "period_slow must be a positive integer");
-        assert!(
+        Self::new_checked(
+            period_efficiency_ratio,
+            period_fast,
+            period_slow,
+            price_type,
+        )
+        .expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(
+        period_efficiency_ratio: usize,
+        period_fast: usize,
+        period_slow: usize,
+        price_type: Option<PriceType>,
+    ) -> anyhow::Result<Self> {
+        check_predicate_true(period_fast > 0, "`period_fast` must be positive")?;
+        check_predicate_true(period_slow > 0, "`period_slow` must be positive")?;
+        check_predicate_true(
+            period_slow < usize::MAX,
+            "`period_slow` must be less than `usize::MAX`",
+        )?;
+        check_predicate_true(
             period_slow > period_fast,
-            "period_slow ({period_slow}) must be greater than period_fast ({period_fast})"
-        );
-        Self {
+            "`period_slow` must be greater than `period_fast`",
+        )?;
+
+        let efficiency_ratio = EfficiencyRatio::new_checked(period_efficiency_ratio, price_type)?;
+
+        Ok(Self {
             period_efficiency_ratio,
             period_fast,
             period_slow,
@@ -149,8 +170,8 @@ impl AdaptiveMovingAverage {
             prior_value: None,
             has_inputs: false,
             initialized: false,
-            efficiency_ratio: EfficiencyRatio::new(period_efficiency_ratio, price_type),
-        }
+            efficiency_ratio,
+        })
     }
 
     #[must_use]
@@ -343,11 +364,11 @@ mod tests {
     }
 
     #[rstest]
-    fn new_panics_when_er_is_zero() {
-        let result = std::panic::catch_unwind(|| {
-            let _ = AdaptiveMovingAverage::new(0, 2, 30, None);
-        });
-        assert!(result.is_err());
+    #[case(0)]
+    #[case(1)]
+    #[should_panic(expected = "`period` must be at least 2")]
+    fn new_panics_when_er_period_is_below_two(#[case] period: usize) {
+        let _ = AdaptiveMovingAverage::new(period, 2, 30, None);
     }
 
     #[rstest]
@@ -372,5 +393,16 @@ mod tests {
             let _ = AdaptiveMovingAverage::new(10, 20, 5, None);
         });
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn new_checked_rejects_slow_period_max() {
+        let error =
+            AdaptiveMovingAverage::new_checked(10, usize::MAX - 1, usize::MAX, None).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "`period_slow` must be less than `usize::MAX`",
+        );
     }
 }

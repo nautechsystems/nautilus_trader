@@ -35,7 +35,7 @@ jobs:
       BUILD_MODE: release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           # Docker Buildx still pulls its Moby BuildKit image from Docker Hub.
@@ -57,7 +57,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 1
@@ -92,7 +92,7 @@ jobs:
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -134,10 +134,9 @@ jobs:
           outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/nautilus_trader,push-by-digest=true, name-canonical=true,push=true
 
       - name: Export digest
-        run: | # zizmor: ignore[template-injection] Digest comes from the pinned build action
-          mkdir -p "$RUNNER_TEMP/digests/nautilus_trader"
-          digest="${{ steps.build.outputs.digest }}"
-          touch "$RUNNER_TEMP/digests/nautilus_trader/${digest#sha256:}"
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: bash scripts/ci/save-docker-digest.bash nautilus_trader "$DIGEST"
 
       - name: Upload digest
         # https://github.com/actions/upload-artifact
@@ -161,7 +160,7 @@ jobs:
       digest_hex: ${{ steps.push.outputs.digest_hex }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           # Docker Buildx still pulls its Moby BuildKit image from Docker Hub.
@@ -175,7 +174,7 @@ jobs:
         # Required so local ./.github/actions composites resolve at runtime;
         # merge jobs only download digests otherwise.
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -193,7 +192,7 @@ jobs:
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -218,20 +217,15 @@ jobs:
         id: push
         working-directory: /tmp/digests/nautilus_trader
         shell: bash
-        run: |
-          mapfile -t tags < <(jq -cr '.tags[] | "-t", .' <<< "$DOCKER_METADATA_OUTPUT_JSON")
-          mapfile -t digests < <(printf 'ghcr.io/${{ github.repository_owner }}/nautilus_trader@sha256:%s\n' *)
-          docker buildx imagetools create "${tags[@]}" "${digests[@]}"
-          TAG=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON" | cut -d: -f2)
-          IMAGE="ghcr.io/${{ github.repository_owner }}/nautilus_trader:$TAG"
-          DIGEST=$(docker buildx imagetools inspect "$IMAGE" --format '{{json .Manifest}}' | jq -r '.digest')
-          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
-          echo "digest_hex=${DIGEST#sha256:}" >> "$GITHUB_OUTPUT"
+        run: >-
+          bash "$GITHUB_WORKSPACE/scripts/ci/create-docker-manifest.bash"
+          "ghcr.io/${{ github.repository_owner }}/nautilus_trader"
 
       - name: Inspect image
-        run: | # zizmor: ignore[template-injection] Digest comes from the preceding trusted step
-          docker buildx imagetools inspect \
-            "ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}"
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}
+        run: |
+          docker buildx imagetools inspect "$IMAGE"
 
       - name: Install cosign
         # https://github.com/sigstore/cosign-installer
@@ -240,9 +234,9 @@ jobs:
           cosign-release: v3.0.6
 
       - name: Sign image with cosign
-        run: >- # zizmor: ignore[template-injection] Digest comes from the preceding trusted step
-          bash ./scripts/ci/cosign-sign-retry.bash
-          "ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}"
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}
+        run: bash ./scripts/ci/cosign-sign-retry.bash "$IMAGE"
 
       - name: Generate SBOM
         uses: ./.github/actions/generate-sbom-retry
@@ -285,7 +279,7 @@ jobs:
       BUILD_MODE: release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -306,7 +300,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 1
@@ -344,7 +338,7 @@ jobs:
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -359,15 +353,6 @@ jobs:
         id: platform-slug
         run: |
           echo "slug=$(echo '${{ matrix.platform }}' | sed 's/\//-/g')" >> "$GITHUB_OUTPUT"
-
-      - name: Determine image tag
-        id: image-tag
-        run: | # zizmor: ignore[template-injection] Branch comes from GITHUB_REF on trusted pushes
-          if [ "${{ steps.branch-name.outputs.current_branch }}" = "master" ]; then
-            echo "tag=latest" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=${{ steps.branch-name.outputs.current_branch }}" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Prepare Docker metadata
         id: meta
@@ -398,10 +383,9 @@ jobs:
             BASE_IMAGE_DIGEST=${{ needs.merge-nautilus-trader.outputs.digest_hex }}
 
       - name: Export digest
-        run: | # zizmor: ignore[template-injection] Digest comes from the pinned build action
-          mkdir -p "$RUNNER_TEMP/digests/jupyterlab"
-          digest="${{ steps.build.outputs.digest }}"
-          touch "$RUNNER_TEMP/digests/jupyterlab/${digest#sha256:}"
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: bash scripts/ci/save-docker-digest.bash jupyterlab "$DIGEST"
 
       - name: Upload digest
         # https://github.com/actions/upload-artifact
@@ -422,7 +406,7 @@ jobs:
     needs: build-docker-images-jupyterlab
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -435,7 +419,7 @@ jobs:
         # Required so local ./.github/actions composites resolve at runtime;
         # merge jobs only download digests otherwise.
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -453,7 +437,7 @@ jobs:
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -478,19 +462,15 @@ jobs:
         id: push
         working-directory: /tmp/digests/jupyterlab
         shell: bash
-        run: |
-          mapfile -t tags < <(jq -cr '.tags[] | "-t", .' <<< "$DOCKER_METADATA_OUTPUT_JSON")
-          mapfile -t digests < <(printf 'ghcr.io/${{ github.repository_owner }}/jupyterlab@sha256:%s\n' *)
-          docker buildx imagetools create "${tags[@]}" "${digests[@]}"
-          TAG=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON" | cut -d: -f2)
-          IMAGE="ghcr.io/${{ github.repository_owner }}/jupyterlab:$TAG"
-          DIGEST=$(docker buildx imagetools inspect "$IMAGE" --format '{{json .Manifest}}' | jq -r '.digest')
-          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+        run: >-
+          bash "$GITHUB_WORKSPACE/scripts/ci/create-docker-manifest.bash"
+          "ghcr.io/${{ github.repository_owner }}/jupyterlab"
 
       - name: Inspect image
-        run: | # zizmor: ignore[template-injection] Digest comes from the preceding trusted step
-          docker buildx imagetools inspect \
-            "ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}"
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}
+        run: |
+          docker buildx imagetools inspect "$IMAGE"
 
       - name: Install cosign
         # https://github.com/sigstore/cosign-installer
@@ -499,9 +479,9 @@ jobs:
           cosign-release: v3.0.6
 
       - name: Sign image with cosign
-        run: >- # zizmor: ignore[template-injection] Digest comes from the preceding trusted step
-          bash ./scripts/ci/cosign-sign-retry.bash
-          "ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}"
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}
+        run: bash ./scripts/ci/cosign-sign-retry.bash "$IMAGE"
 
       - name: Generate SBOM
         uses: ./.github/actions/generate-sbom-retry

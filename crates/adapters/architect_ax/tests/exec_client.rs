@@ -20,32 +20,33 @@
 
 mod common;
 
-use std::{cell::RefCell, collections::HashSet, net::SocketAddr, rc::Rc};
+use std::{cell::RefCell, collections::HashSet, net::SocketAddr, rc::Rc, time::Duration};
 
 use nautilus_architect_ax::{
     common::{
         consts::{AX_CLIENT_ID, AX_VENUE},
         enums::AxEnvironment,
     },
-    config::AxExecClientConfig,
+    config::AxExecutionClientConfig,
     execution::AxExecutionClient,
 };
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
-    live::runner::set_exec_event_sender,
+    live::runner::{replace_system_event_sender, set_exec_event_sender},
     messages::{
-        ExecutionEvent,
+        ExecutionEvent, SystemEvent,
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
             GenerateOrderStatusReports, GeneratePositionStatusReports, ModifyOrder, QueryAccount,
             QueryOrder, SubmitOrder,
         },
+        system::SocketState,
     },
     testing::wait_until_async,
 };
 use nautilus_core::{UUID4, UnixNanos};
-use nautilus_live::ExecutionClientCore;
+use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{AccountType, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
@@ -58,6 +59,7 @@ use nautilus_model::{
 };
 use rstest::rstest;
 use rust_decimal_macros::dec;
+use ustr::Ustr;
 
 use crate::common::server::{load_test_data, start_test_server};
 
@@ -67,8 +69,8 @@ fn setup_exec_channel() -> tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent> 
     receiver
 }
 
-fn create_test_exec_config(addr: SocketAddr) -> AxExecClientConfig {
-    AxExecClientConfig {
+fn create_test_exec_config(addr: SocketAddr) -> AxExecutionClientConfig {
+    AxExecutionClientConfig {
         api_key: Some("test_api_key".to_string()),
         api_secret: Some("test_api_secret".to_string()),
         environment: AxEnvironment::Sandbox,
@@ -134,7 +136,7 @@ fn add_test_account_to_cache(cache: &Rc<RefCell<Cache>>, account_id: AccountId) 
 #[rstest]
 #[tokio::test]
 async fn test_exec_config_creation() {
-    let config = AxExecClientConfig {
+    let config = AxExecutionClientConfig {
         api_key: Some("test_api_key".to_string()),
         api_secret: Some("test_api_secret".to_string()),
         environment: AxEnvironment::Sandbox,
@@ -143,7 +145,6 @@ async fn test_exec_config_creation() {
 
     assert_eq!(config.api_key, Some("test_api_key".to_string()));
     assert_eq!(config.environment, AxEnvironment::Sandbox);
-    assert_eq!(config.trader_id, TraderId::from("TRADER-001"));
     assert_eq!(config.account_id, AccountId::from("AX-001"));
 }
 
@@ -163,8 +164,11 @@ async fn test_exec_client_creation() {
 #[rstest]
 #[tokio::test]
 async fn test_exec_client_connect_disconnect() {
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
     let (addr, _state) = start_test_server().await.unwrap();
-    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, _rx, cache) = registry.scope(|| create_test_execution_client(addr));
 
     // Pre-register account so await_account_registered succeeds
     add_test_account_to_cache(&cache, AccountId::from("AX-001"));
@@ -172,10 +176,33 @@ async fn test_exec_client_connect_disconnect() {
     assert!(!client.is_connected());
 
     client.connect().await.expect("Failed to connect");
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    let endpoint = Ustr::from("architect-ax-user-streams");
+    let handle = registry.handle(*AX_CLIENT_ID, endpoint).unwrap();
+
     assert!(client.is_connected());
+    assert_eq!(change.client_id, *AX_CLIENT_ID);
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Connected);
+    assert_eq!(
+        handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Disconnected);
 
     client.disconnect().await.expect("Failed to disconnect");
     assert!(!client.is_connected());
+    assert!(registry.handle(*AX_CLIENT_ID, endpoint).is_none());
 }
 
 #[rstest]
@@ -263,7 +290,7 @@ async fn test_exec_client_get_account_returns_cached() {
 #[rstest]
 #[tokio::test]
 async fn test_exec_config_url_overrides() {
-    let config = AxExecClientConfig {
+    let config = AxExecutionClientConfig {
         base_url_http: Some("http://custom:1234".to_string()),
         base_url_orders: Some("http://custom:5678".to_string()),
         base_url_ws_private: Some("ws://custom:9012/ws".to_string()),
@@ -278,7 +305,7 @@ async fn test_exec_config_url_overrides() {
 #[rstest]
 #[tokio::test]
 async fn test_exec_config_sandbox_defaults() {
-    let config = AxExecClientConfig {
+    let config = AxExecutionClientConfig {
         environment: AxEnvironment::Sandbox,
         ..Default::default()
     };
@@ -291,7 +318,7 @@ async fn test_exec_config_sandbox_defaults() {
 #[rstest]
 #[tokio::test]
 async fn test_exec_config_production_defaults() {
-    let config = AxExecClientConfig {
+    let config = AxExecutionClientConfig {
         environment: AxEnvironment::Production,
         ..Default::default()
     };
@@ -425,7 +452,7 @@ async fn test_cancel_all_orders_uses_http_endpoint() {
         client_id: Some(*AX_CLIENT_ID),
         strategy_id: StrategyId::from("S-001"),
         instrument_id,
-        order_side: OrderSide::NoOrderSide,
+        order_side: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
         params: None,
@@ -560,7 +587,7 @@ async fn test_generate_mass_status_restores_historical_terminal_orders() {
     assert_eq!(canceled.quantity, Quantity::from("200"));
     assert_eq!(canceled.filled_qty, Quantity::from("50"));
     assert_eq!(canceled.price, Some(Price::from("1.08390")));
-    assert_eq!(canceled.order_side, OrderSide::Sell);
+    assert_eq!(canceled.order_side, Some(OrderSide::Sell));
     assert_eq!(fill_reports.len(), 1);
     assert_eq!(
         fill_reports
@@ -1951,7 +1978,7 @@ async fn test_cancel_all_orders_http_failure_emits_no_cancel_rejected() {
         client_id: Some(*AX_CLIENT_ID),
         strategy_id: StrategyId::from("S-001"),
         instrument_id,
-        order_side: OrderSide::NoOrderSide,
+        order_side: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
         params: None,

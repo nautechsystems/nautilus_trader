@@ -21,8 +21,8 @@
 //! Run with: `cargo run --example coinbase-exec-tester --package nautilus-coinbase --features examples`
 //!
 //! Required credential environment variables:
-//! - `COINBASE_API_KEY`: CDP API key name (`organizations/{org_id}/apiKeys/{key_id}`).
-//! - `COINBASE_API_SECRET`: PEM-encoded EC private key (ECDSA, not Ed25519).
+//! - `COINBASE_API_KEY`: CDP API key name (`organizations/{org_id}/apiKeys/{key_id}`)
+//! - `COINBASE_API_SECRET`: PEM-encoded EC private key (ECDSA, not Ed25519)
 //!
 //! The CDP key must have View + Trade permissions. See the integration guide
 //! for setup details.
@@ -31,11 +31,11 @@ use ahash::AHashMap;
 use log::LevelFilter;
 use nautilus_coinbase::{
     common::{consts::COINBASE_CLIENT_ID, enums::CoinbaseEnvironment},
-    config::{CoinbaseDataClientConfig, CoinbaseExecClientConfig},
+    config::{CoinbaseDataClientConfig, CoinbaseExecutionClientConfig},
     factories::{CoinbaseDataClientFactory, CoinbaseExecutionClientFactory},
 };
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
-use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
+use nautilus_live::{config::LiveExecutionEngineConfig, node::LiveNode};
 use nautilus_model::{
     enums::AccountType,
     identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
@@ -45,6 +45,10 @@ use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 use ustr::Ustr;
 
+// WARNING: With `DRY_RUN = false`, this tester submits orders to the configured
+// environment and may use real funds. Set `DRY_RUN = true` to connect without
+// submitting orders or sending shutdown cancel/close commands.
+const DRY_RUN: bool = false;
 const COINBASE_ENVIRONMENT: CoinbaseEnvironment = CoinbaseEnvironment::Live;
 const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "COINBASE-001";
@@ -79,7 +83,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = CoinbaseExecClientConfig {
+    let exec_config = CoinbaseExecutionClientConfig {
+        account_id,
         environment: coinbase_environment,
         api_key: None,    // Will use 'COINBASE_API_KEY' env var
         api_secret: None, // Will use 'COINBASE_API_SECRET' env var
@@ -94,13 +99,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let data_factory = CoinbaseDataClientFactory::new();
-    let exec_factory = CoinbaseExecutionClientFactory::new(trader_id, account_id);
+    let exec_factory = CoinbaseExecutionClientFactory::new();
 
     // The user-channel handler enriches missing `price` / `stop_price` /
     // `trigger_type` fields from REST on first sight, so external LIMIT and
     // STOP_LIMIT orders are safe under the default
     // `filter_unclaimed_external_orders=false`.
-    let exec_engine_config = LiveExecEngineConfig {
+    let exec_engine_config = LiveExecutionEngineConfig {
         open_check_interval_secs: Some(10.0),
         position_check_interval_secs: Some(30.0),
         ..Default::default()
@@ -137,6 +142,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
+        .dry_run(DRY_RUN)
         .tob_offset_ticks(500)
         .use_post_only(true)
         .enable_limit_buys(true)

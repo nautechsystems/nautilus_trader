@@ -53,7 +53,6 @@
 #![allow(clippy::clone_on_copy)]
 
 pub mod backend;
-#[cfg(feature = "python")]
 pub mod config;
 pub mod parquet;
 pub mod test_data;

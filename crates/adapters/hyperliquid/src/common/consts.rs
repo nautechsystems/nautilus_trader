@@ -70,7 +70,7 @@ pub const HYPERLIQUID_BUILDER_FEE_NOT_APPROVED: &str = "Builder fee has not been
 ///
 /// Trailing stops (TrailingStopMarket/TrailingStopLimit) are supported by the exchange
 /// and can be parsed from incoming WS messages, but the outgoing request model does not
-/// yet serialize the trailing offset parameters. Add them once HyperliquidExecTriggerParams
+/// yet serialize the trailing offset parameters. Add them once HyperliquidExchangeTriggerParams
 /// is extended with trailing offset fields.
 pub const HYPERLIQUID_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
     OrderType::Market,          // IOC limit order
@@ -84,7 +84,7 @@ pub const HYPERLIQUID_SUPPORTED_ORDER_TYPES: &[OrderType] = &[
 /// Conditional order types that use trigger orders on Hyperliquid.
 ///
 /// These order types require a trigger_price and are implemented using
-/// HyperliquidExecOrderKind::Trigger with appropriate parameters.
+/// HyperliquidExchangeOrderKind::Trigger with appropriate parameters.
 pub const HYPERLIQUID_CONDITIONAL_ORDER_TYPES: &[OrderType] = &[
     OrderType::StopMarket,
     OrderType::StopLimit,

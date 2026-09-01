@@ -31,7 +31,7 @@ flowchart LR
     end
 
     subgraph Engine ["BacktestEngine"]
-        W["QuoteTickDataWrangler"]
+        W["QuoteTick construction"]
         AGG["1-minute MID INTERNAL aggregator"]
         BAR["Bar close"]
     end
@@ -92,26 +92,46 @@ for AX EURUSD-PERP backtests.
 
 ### Load into Nautilus quote ticks
 
+Define `EURUSD_PERP` and `instrument_id` in the next section before running this snippet.
+
 ```python
 from pathlib import Path
 
 import pandas as pd
 
-from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import QuoteTick
 
 df = pd.read_csv(
     Path("EURUSD-2025-12.csv"),
     header=None,
     names=["pair", "timestamp", "bid", "ask"],
 )
-df["timestamp"] = pd.to_datetime(df["timestamp"], format="%Y%m%d %H:%M:%S.%f")
-df = df.set_index("timestamp")[["bid", "ask"]]
+df["timestamp"] = pd.to_datetime(
+    df["timestamp"],
+    format="%Y%m%d %H:%M:%S.%f",
+    utc=True,
+)
+df = df.set_index("timestamp")[["bid", "ask"]].sort_index()
 
-wrangler = QuoteTickDataWrangler(instrument=EURUSD_PERP)  # defined below
-ticks = wrangler.process(df)
+ticks = []
+for timestamp, row in df.iterrows():
+    ts_ns = pd.Timestamp(str(timestamp)).value
+    ticks.append(
+        QuoteTick(
+            instrument_id=instrument_id,
+            bid_price=EURUSD_PERP.make_price(float(row.bid)),
+            ask_price=EURUSD_PERP.make_price(float(row.ask)),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=ts_ns,
+            ts_init=ts_ns,
+        ),
+    )
 ```
 
-The wrangler tags every tick with the instrument ID. The strategy declares
+Each quote carries the proxy instrument ID and one unit of bid and ask size.
+The strategy declares
 `1-MINUTE-MID-INTERNAL`, so the engine builds 1-minute MID bars from the
 tick stream internally.
 
@@ -123,13 +143,15 @@ gives one contract a notional of 1,000 EUR.
 ```python
 from decimal import Decimal
 
-from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.instruments import PerpetualContract
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model import AssetClass
+from nautilus_trader.model import Currency
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import PerpetualContract
+from nautilus_trader.model import Price
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import Symbol
+
+USD = Currency.from_str("USD")
 
 instrument_id = InstrumentId.from_str("EURUSD-PERP.AX")
 
@@ -184,24 +206,25 @@ From the repository root:
 import sys
 from pathlib import Path
 
+from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.common import LogLevel
 from nautilus_trader.config import BacktestEngineConfig
-from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.config import LoggerConfig
+from nautilus_trader.model import AccountType
+from nautilus_trader.model import BarType
+from nautilus_trader.model import Money
+from nautilus_trader.model import OmsType
+from nautilus_trader.model import TraderId
+from nautilus_trader.model import Venue
 
 sys.path.insert(0, str(Path("examples/live/architect_ax")))
+
 from strategies import BBMeanReversion
 from strategies import BBMeanReversionConfig
-from nautilus_trader.model.data import BarType
-from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import OmsType
-from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.objects import Money
 
 engine = BacktestEngine(
     BacktestEngineConfig(
-        trader_id=TraderId("BACKTESTER-001"),
+        trader_id=TraderId.from_str("BACKTESTER-001"),
         logging=LoggerConfig(stdout_level=LogLevel.INFO),
     ),
 )
@@ -212,14 +235,14 @@ engine.add_venue(
     oms_type=OmsType.NETTING,
     account_type=AccountType.MARGIN,
     base_currency=USD,
-    starting_balances=[Money(100_000, USD)],
+    starting_balances=[Money.from_str("100000 USD")],
 )
 
 engine.add_instrument(EURUSD_PERP)
 engine.add_data(ticks)
 
 strategy = BBMeanReversion(
-    BBMeanReversionConfig(
+    config=BBMeanReversionConfig(
         instrument_id=instrument_id,
         bar_type=BarType.from_str("EURUSD-PERP.AX-1-MINUTE-MID-INTERNAL"),
         trade_size=Decimal("1"),
@@ -237,7 +260,7 @@ engine.run()
 Reports come off the engine:
 
 ```python
-print(engine.generate_account_report(AX))
+print(engine.generate_account_report(venue=AX))
 print(engine.generate_order_fills_report())
 print(engine.generate_positions_report())
 
@@ -245,7 +268,8 @@ engine.reset()
 engine.dispose()
 ```
 
-The runnable example is at
+The self-contained runnable example uses the bundled AUD/USD fixture with the
+same strategy and setup pattern. It is at
 [`architect_ax_mean_reversion.py`](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/backtest/architect_ax_mean_reversion.py).
 
 ## What the run produces

@@ -19,23 +19,22 @@ runs:
       shell: bash
       env:
         TOOL_NAME: ${{ inputs.tool-name }}
-      run: | # zizmor: ignore[github-env] All callers use fixed repository tool metadata
+      run: |
         VERSION=$(bash scripts/cargo-tool-version.sh "$TOOL_NAME")
-        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-        echo "TOOL_VERSION=$VERSION" >> "$GITHUB_ENV"
-        echo "TOOL_NAME=$TOOL_NAME" >> "$GITHUB_ENV"
+        printf 'version=%s\n' "$VERSION" >> "$GITHUB_OUTPUT"
 
     - name: Get Rust toolchain version
+      id: rust-toolchain
       shell: bash
-      run: | # zizmor: ignore[github-env] Version comes from repository toolchain metadata
+      run: |
         TOOLCHAIN="$(bash scripts/rust-toolchain.sh)"
-        echo "TOOLCHAIN=$TOOLCHAIN" >> "$GITHUB_ENV"
+        printf 'toolchain=%s\n' "$TOOLCHAIN" >> "$GITHUB_OUTPUT"
 
     - name: Set up Rust toolchain
       # https://github.com/actions-rust-lang/setup-rust-toolchain
       uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
       with:
-        toolchain: ${{ env.TOOLCHAIN }}
+        toolchain: ${{ steps.rust-toolchain.outputs.toolchain }}
         override: true
 
     - name: Cache tool binary
@@ -43,19 +42,25 @@ runs:
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ runner.tool_cache }}/${{ inputs.tool-name }}
-        key: ${{ inputs.tool-name }}-bin-${{ env.TOOL_VERSION }}-${{ runner.os }}-${{ env.TOOLCHAIN }}
+        # yamllint disable rule:line-length
+        key: ${{ inputs.tool-name }}-bin-${{ steps.get-version.outputs.version }}-${{ runner.os }}-${{ steps.rust-toolchain.outputs.toolchain
+          }}
+        # yamllint enable rule:line-length
 
     - name: Add tool to PATH
       shell: bash
       env:
         TOOL_CACHE: ${{ runner.tool_cache }}
-      run: | # zizmor: ignore[github-env] Tool name comes from fixed repository callers
+        TOOL_NAME: ${{ inputs.tool-name }}
+      run: | # zizmor: ignore[github-env] The validated cache path is required on PATH.
         echo "$TOOL_CACHE/$TOOL_NAME/bin" >> "$GITHUB_PATH"
 
     - name: Install tool
       shell: bash
       env:
         TOOL_CACHE: ${{ runner.tool_cache }}
+        TOOL_NAME: ${{ inputs.tool-name }}
+        TOOL_VERSION: ${{ steps.get-version.outputs.version }}
       run: |-
         if [[ -x "$TOOL_CACHE/$TOOL_NAME/bin/$TOOL_NAME" ]]; then
           echo "$TOOL_NAME $TOOL_VERSION already installed from cache"

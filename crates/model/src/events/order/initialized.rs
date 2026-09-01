@@ -93,22 +93,26 @@ pub struct OrderInitialized {
     /// The order trigger price (STOP).
     pub trigger_price: Option<Price>,
     /// The trigger type for the order.
+    #[serde(default, with = "crate::enums::serde_option_trigger_type")]
     pub trigger_type: Option<TriggerType>,
     /// The trailing offset for the orders limit price.
     pub limit_offset: Option<Decimal>,
     /// The trailing offset for the orders trigger price (STOP).
     pub trailing_offset: Option<Decimal>,
     /// The trailing offset type.
+    #[serde(default, with = "crate::enums::serde_option_trailing_offset_type")]
     pub trailing_offset_type: Option<TrailingOffsetType>,
     /// The order expiration, `None` for no expiration.
     pub expire_time: Option<UnixNanos>,
     /// The quantity of the `LIMIT` order to display on the public book (iceberg).
     pub display_qty: Option<Quantity>,
     /// The emulation trigger type for the order.
+    #[serde(default, with = "crate::enums::serde_option_trigger_type")]
     pub emulation_trigger: Option<TriggerType>,
     /// The emulation trigger instrument ID for the order (if `None` then will be the `instrument_id`).
     pub trigger_instrument_id: Option<InstrumentId>,
     /// The order contingency type.
+    #[serde(default, with = "crate::enums::serde_option_contingency_type")]
     pub contingency_type: Option<ContingencyType>,
     /// The order list ID associated with the order.
     pub order_list_id: Option<OrderListId>,
@@ -179,8 +183,7 @@ impl OrderInitialized {
         tags: Option<Vec<Ustr>>,
     ) -> Result<Self, OrderError> {
         check_predicate_false(
-            contingency_type.is_some_and(|value| value != ContingencyType::NoContingency)
-                && linked_order_ids.as_ref().is_none_or(Vec::is_empty),
+            contingency_type.is_some() && linked_order_ids.as_ref().is_none_or(Vec::is_empty),
             "`linked_order_ids` is required for contingent orders",
         )?;
         check_predicate_false(

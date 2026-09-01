@@ -217,7 +217,7 @@ impl<'a> PoolDiscoveryService<'a> {
                 while let Some(item) = pools_stream.next().await {
                     let log = match item {
                         PoolEventStreamItem::Block(block) => {
-                            self.cache.cache_block_timestamp(block.number, block.timestamp);
+                            self.cache.cache_block_metadata(&block);
                             block_db_buffer.push(block);
                             if block_db_buffer.len() >= POOL_EVENT_BLOCK_DB_BATCH_SIZE {
                                 self.flush_pool_event_blocks(&mut block_db_buffer).await?;

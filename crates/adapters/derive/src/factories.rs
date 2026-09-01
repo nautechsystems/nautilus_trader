@@ -26,12 +26,12 @@ use nautilus_common::{
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
-    identifiers::{AccountId, ClientId, TraderId},
+    identifiers::{ClientId, TraderId},
 };
 
 use crate::{
     common::consts::{DERIVE, DERIVE_VENUE},
-    config::{DeriveDataClientConfig, DeriveExecClientConfig},
+    config::{DeriveDataClientConfig, DeriveExecutionClientConfig},
     data::DeriveDataClient,
     execution::DeriveExecutionClient,
 };
@@ -42,7 +42,7 @@ impl ClientConfig for DeriveDataClientConfig {
     }
 }
 
-impl ClientConfig for DeriveExecClientConfig {
+impl ClientConfig for DeriveExecutionClientConfig {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -104,41 +104,6 @@ impl DataClientFactory for DeriveDataClientFactory {
     }
 }
 
-/// Configuration for creating Derive execution clients via factory.
-///
-/// Bundles the trader and account identifiers required by
-/// [`ExecutionClientCore`] alongside the underlying execution client config.
-#[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.adapters.derive", from_py_object)
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.derive")
-)]
-pub struct DeriveExecFactoryConfig {
-    /// The trader ID for the execution client.
-    pub trader_id: TraderId,
-    /// The account ID for the execution client.
-    pub account_id: AccountId,
-    /// The underlying execution client configuration.
-    pub config: DeriveExecClientConfig,
-}
-
-#[cfg(feature = "python")]
-nautilus_core::impl_pyo3_config_getters!(DeriveExecFactoryConfig {
-    trader_id: TraderId,
-    account_id: AccountId,
-    config: DeriveExecClientConfig,
-});
-
-impl ClientConfig for DeriveExecFactoryConfig {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
 /// Factory for creating Derive execution clients.
 #[derive(Debug, Clone)]
 #[cfg_attr(
@@ -167,16 +132,17 @@ impl Default for DeriveExecutionClientFactory {
 impl ExecutionClientFactory for DeriveExecutionClientFactory {
     fn create(
         &self,
+        trader_id: TraderId,
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
-        let factory_config = config
+        let derive_config = config
             .as_any()
-            .downcast_ref::<DeriveExecFactoryConfig>()
+            .downcast_ref::<DeriveExecutionClientConfig>()
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Invalid config type for DeriveExecutionClientFactory. Expected DeriveExecFactoryConfig, was {config:?}",
+                    "Invalid config type for DeriveExecutionClientFactory. Expected DeriveExecutionClientConfig, was {config:?}",
                 )
             })?
             .clone();
@@ -186,17 +152,17 @@ impl ExecutionClientFactory for DeriveExecutionClientFactory {
         let account_type = AccountType::Margin;
 
         let core = ExecutionClientCore::new(
-            factory_config.trader_id,
+            trader_id,
             ClientId::from(name),
             *DERIVE_VENUE,
             oms_type,
-            factory_config.account_id,
+            derive_config.account_id,
             account_type,
             None,
             cache,
         );
 
-        let client = DeriveExecutionClient::new(core, factory_config.config)?;
+        let client = DeriveExecutionClient::new(core, derive_config)?;
         Ok(Box::new(client))
     }
 
@@ -205,7 +171,7 @@ impl ExecutionClientFactory for DeriveExecutionClientFactory {
     }
 
     fn config_type(&self) -> &'static str {
-        stringify!(DeriveExecFactoryConfig)
+        stringify!(DeriveExecutionClientConfig)
     }
 }
 
@@ -277,7 +243,7 @@ mod tests {
         let factory = DeriveExecutionClientFactory::new();
 
         assert_eq!(factory.name(), DERIVE);
-        assert_eq!(factory.config_type(), "DeriveExecFactoryConfig");
+        assert_eq!(factory.config_type(), "DeriveExecutionClientConfig");
     }
 
     #[rstest]
@@ -286,7 +252,12 @@ mod tests {
         let cache = Rc::new(RefCell::new(Cache::default()));
         let wrong_config = DeriveDataClientConfig::default();
 
-        let result = factory.create(DERIVE, &wrong_config, cache.into());
+        let result = factory.create(
+            TraderId::from("TRADER-001"),
+            DERIVE,
+            &wrong_config,
+            cache.into(),
+        );
 
         assert!(result.is_err());
         assert!(
@@ -299,18 +270,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_exec_factory_config_implements_client_config() {
-        let factory_config = DeriveExecFactoryConfig {
-            trader_id: TraderId::from("TRADER-001"),
-            account_id: AccountId::from("DERIVE-001"),
-            config: DeriveExecClientConfig::default(),
-        };
-
-        let boxed: Box<dyn ClientConfig> = Box::new(factory_config);
+    fn test_exec_client_config_implements_client_config() {
+        let boxed: Box<dyn ClientConfig> = Box::new(DeriveExecutionClientConfig::default());
         assert!(
             boxed
                 .as_any()
-                .downcast_ref::<DeriveExecFactoryConfig>()
+                .downcast_ref::<DeriveExecutionClientConfig>()
                 .is_some()
         );
     }

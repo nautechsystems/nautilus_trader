@@ -1,4 +1,25 @@
 #!/usr/bin/env python3
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+"""
+Test the commit message policy checker.
+
+Exercise the checker through its public API and its command line interface, including a
+synthetic git repository for the --ci-range mode.
+
+"""
 
 import json
 import os
@@ -8,6 +29,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from check_commit_message import SUBJECT_MAX_GUIDANCE
 from check_commit_message import check_message
 
 
@@ -15,6 +37,9 @@ CHECKER = Path(__file__).with_name("check_commit_message.py").resolve()
 
 
 def test_valid_message() -> None:
+    """
+    Test that valid messages pass without errors or warnings.
+    """
     message = (
         "Refine commit message policy\n\n"
         "Developed with assistance from AI.\n\n"
@@ -27,6 +52,9 @@ def test_valid_message() -> None:
 
 
 def test_subject_rules() -> None:
+    """
+    Test subject length, capitalization, punctuation, and syntax rules.
+    """
     cases = {
         "Fix typo": "subject must contain at least 10 characters",
         "fix: Reject invalid order state": ("subject must not use Conventional Commits syntax"),
@@ -40,6 +68,9 @@ def test_subject_rules() -> None:
 
 
 def test_subject_number_references() -> None:
+    """
+    Test that issue and pull request numbers are rejected in subjects.
+    """
     expected = "subject must not include an issue or pull request number"
     subjects = (
         "Fix invalid order state (#123)",
@@ -57,21 +88,29 @@ def test_subject_number_references() -> None:
 
 
 def test_long_subject_warns_without_failing() -> None:
+    """
+    Test that a subject beyond the length guidance warns without failing.
+    """
     target_subject = f"Refine {'x' * 53}"
     subject = f"Refine {'x' * 54}"
     errors, warnings = check_message(subject)
 
-    assert len(target_subject) == 60
+    assert len(target_subject) == SUBJECT_MAX_GUIDANCE
     assert check_message(target_subject) == ([], [])
-    assert len(subject) == 61
+    assert len(subject) == SUBJECT_MAX_GUIDANCE + 1
     assert errors == []
     assert warnings == [
-        f"subject contains {len(subject)} characters; aim for 60 or fewer because this limit will "
-        "be enforced in the future",
+        (
+            f"subject contains {len(subject)} characters; aim for 60 or fewer because this limit "
+            "will be enforced in the future"
+        ),
     ]
 
 
 def test_body_rules() -> None:
+    """
+    Test body separator and line-length rules.
+    """
     long_line = "x" * 80
 
     assert check_message("Refine commit policy\nBody without a separator")[0] == [
@@ -84,6 +123,9 @@ def test_body_rules() -> None:
 
 
 def test_branded_attribution() -> None:
+    """
+    Test that branded AI attribution lines are rejected.
+    """
     message = (
         "Generated with GitHub Copilot\n\n"
         "Powered by OpenAI\n"
@@ -105,6 +147,9 @@ def test_branded_attribution() -> None:
 
 
 def test_wrapped_branded_attribution() -> None:
+    """
+    Test branded attribution wrapped across consecutive lines.
+    """
     errors, _ = check_message("Refine policy\n\nGenerated\nwith Claude Code")
 
     assert errors == ["line 3 contains branded AI attribution"]
@@ -112,6 +157,9 @@ def test_wrapped_branded_attribution() -> None:
 
 
 def test_ai_coauthor_trailers() -> None:
+    """
+    Test that AI co-author trailers are rejected.
+    """
     message = (
         "Refine commit message policy\n\n"
         "Co-authored-by: Copilot <copilot@example.com>\n"
@@ -136,6 +184,9 @@ def test_ai_coauthor_trailers() -> None:
 
 
 def test_message_file_cli() -> None:
+    """
+    Test the message file command line interface end to end.
+    """
     result = run_message_file("Fix typo")
 
     assert result.returncode == 1
@@ -165,6 +216,9 @@ def test_message_file_cli() -> None:
 
 
 def test_ci_range() -> None:
+    """
+    Test the --ci-range mode against a synthetic git repository.
+    """
     with tempfile.TemporaryDirectory() as directory:
         repo = Path(directory)
         git(repo, "init", "--quiet")
@@ -220,6 +274,9 @@ def test_ci_range() -> None:
 
 
 def run_message_file(message: str) -> subprocess.CompletedProcess[str]:
+    """
+    Run the checker on a message file and return the completed process.
+    """
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory, "COMMIT_EDITMSG")
         path.write_text(message, encoding="utf-8")
@@ -236,6 +293,9 @@ def run_message_file(message: str) -> subprocess.CompletedProcess[str]:
 
 
 def git(repo: Path, *args: str) -> str:
+    """
+    Run a git command in the repository and return its stripped stdout.
+    """
     executable = shutil.which("git")
     if executable is None:
         raise RuntimeError("git executable is not available")
@@ -252,6 +312,9 @@ def git(repo: Path, *args: str) -> str:
 
 
 def main() -> None:
+    """
+    Run all commit message policy check tests.
+    """
     test_valid_message()
     test_subject_rules()
     test_subject_number_references()

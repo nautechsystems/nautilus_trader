@@ -120,7 +120,6 @@ fn make_snapshot(
             (OrderSide::Buy, true) => 4_500 - offset,
             (OrderSide::Sell, false) => 5_001 + offset,
             (OrderSide::Sell, true) => 5_500 + offset,
-            (OrderSide::NoOrderSide, _) => unreachable!(),
         };
         let size_mantissa = if change == SnapshotChange::Resize && index % 10 == 0 {
             1_001 + offset

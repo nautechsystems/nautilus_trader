@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Standard startup, system, and version headers for log output.
+
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
 use std::ffi::CStr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -71,6 +73,7 @@ pub fn register_allocator_mimalloc() {
     MIMALLOC_REGISTERED.store(true, Ordering::Release);
 }
 
+/// Logs the Nautilus startup header with system, identifier, and version details.
 #[rustfmt::skip]
 pub fn log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, component: Ustr) {
     let mut sys = System::new();
@@ -222,13 +225,11 @@ fn event_store_version() -> String {
 }
 
 fn build_versions() -> Vec<(&'static str, String)> {
-    let versions = BUILD_VERSIONS
+    let mut versions = BUILD_VERSIONS
         .iter()
         .filter(|(_, version)| !version.is_empty())
         .map(|(name, version)| (*name, display_version(name, version)))
         .collect::<Vec<_>>();
-
-    let mut versions = versions;
 
     let precision_index = versions
         .iter()
@@ -317,6 +318,7 @@ fn python_available() -> bool {
     unsafe { pyo3::ffi::Py_IsInitialized() != 0 }
 }
 
+/// Logs current memory and swap usage.
 #[rustfmt::skip]
 pub fn log_sysinfo(component: Ustr) {
     let mut sys = System::new();

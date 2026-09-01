@@ -34,6 +34,8 @@
 //! event-store run. [`NautilusKernel::reset`] retains the assembled system for reuse, while
 //! [`NautilusKernel::dispose`] releases its resources.
 
+#[cfg(feature = "streaming")]
+use std::collections::HashSet;
 use std::{
     cell::{Cell, Ref, RefCell},
     fmt::Debug,
@@ -41,9 +43,12 @@ use std::{
     time::Duration,
 };
 
+#[cfg(feature = "streaming")]
+use anyhow::Context;
+#[cfg(feature = "streaming")]
+use jiff::tz::TimeZone;
 use nautilus_common::{
     cache::{Cache, CacheConfig, database::CacheDatabaseAdapter},
-    clients::{SocketReconnectLookup, SocketReconnectRequestOutcome},
     clock::Clock,
     component::Component,
     enums::{ComponentState, Environment},
@@ -52,7 +57,7 @@ use nautilus_common::{
         logger::{LogGuard, LoggerConfig},
         try_drain_shutdown_on_error_trigger,
     },
-    messages::system::{ReconnectSocket, ShutdownSystem},
+    messages::system::ShutdownSystem,
     msgbus::{
         self, MessageBus, MessagingSwitchboard, ShareableMessageHandler, get_message_bus,
         set_message_bus,
@@ -65,6 +70,10 @@ use nautilus_execution::{
     order_emulator::{adapter::OrderEmulatorAdapter, emulator::OrderEmulator},
 };
 use nautilus_model::identifiers::{ClientId, TraderId};
+#[cfg(feature = "streaming")]
+use nautilus_persistence::backend::feather::{
+    FeatherWriter, FeatherWriterSubscriptions, RotationConfig as WriterRotationConfig,
+};
 use nautilus_portfolio::portfolio::Portfolio;
 use nautilus_risk::engine::RiskEngine;
 use ustr::Ustr;
@@ -80,7 +89,6 @@ use crate::{
 /// Core Nautilus system kernel.
 ///
 /// Orchestrates data and execution engines, cache, clock, and messaging across environments.
-#[derive(Debug)]
 pub struct NautilusKernel {
     /// The kernel name (for logging and identification).
     pub name: String,
@@ -118,6 +126,21 @@ pub struct NautilusKernel {
     event_store: Option<Box<dyn KernelEventStore>>,
     event_store_replay: bool,
     state_save_armed: bool,
+    #[cfg(feature = "streaming")]
+    streaming_writer: Option<Rc<RefCell<FeatherWriter>>>,
+    #[cfg(feature = "streaming")]
+    streaming_subscriptions: Option<FeatherWriterSubscriptions>,
+}
+
+impl Debug for NautilusKernel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(NautilusKernel))
+            .field("name", &self.name)
+            .field("instance_id", &self.instance_id)
+            .field("machine_id", &self.machine_id)
+            .field("environment", &self.config.environment())
+            .finish_non_exhaustive()
+    }
 }
 
 /// Optional construction-time dependencies for [`NautilusKernel`].
@@ -236,6 +259,10 @@ impl NautilusKernel {
     /// # Errors
     ///
     /// Returns an error if the kernel fails to initialize or an injected factory fails.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "kernel construction keeps initialization order and ownership visible in one place"
+    )]
     pub fn new_with_dependencies<T: NautilusKernelConfig + 'static>(
         name: String,
         config: T,
@@ -303,6 +330,32 @@ impl NautilusKernel {
         let order_emulator = OrderEmulatorAdapter::new(clock.clone(), cache.clone());
 
         let data_engine = DataEngine::new(clock.clone(), cache.clone(), config.data_engine());
+        #[cfg(feature = "streaming")]
+        let mut data_engine = data_engine;
+        #[cfg(feature = "streaming")]
+        {
+            let mut unnamed_index = 0;
+            let mut catalog_names = HashSet::new();
+
+            for catalog_config in config.catalogs() {
+                let name = catalog_config.name.clone().unwrap_or_else(|| {
+                    let name = format!("catalog_{unnamed_index}");
+                    unnamed_index += 1;
+                    name
+                });
+                anyhow::ensure!(
+                    catalog_names.insert(name.clone()),
+                    "Duplicate data catalog name '{name}'",
+                );
+                let catalog = catalog_config.create_catalog().with_context(|| {
+                    format!(
+                        "Failed to create data catalog from '{}'",
+                        catalog_config.path
+                    )
+                })?;
+                data_engine.register_catalog(catalog, Some(&name));
+            }
+        }
         let data_engine = Rc::new(RefCell::new(data_engine));
 
         DataEngine::register_msgbus_handlers(&data_engine);
@@ -323,6 +376,43 @@ impl NautilusKernel {
         )));
 
         let ts_created = clock.borrow().timestamp_ns();
+
+        #[cfg(feature = "streaming")]
+        let (streaming_writer, streaming_subscriptions) = match config.streaming() {
+            Some(streaming_config) => {
+                let environment = config.environment().to_string().to_ascii_lowercase();
+                let base_uri = match streaming_config.fs_protocol.as_str() {
+                    "file" => streaming_config
+                        .catalog_path
+                        .trim_end_matches('/')
+                        .to_string(),
+                    _ if streaming_config.catalog_path.contains("://") => streaming_config
+                        .catalog_path
+                        .trim_end_matches('/')
+                        .to_string(),
+                    protocol => format!(
+                        "{protocol}://{}",
+                        streaming_config.catalog_path.trim_end_matches('/'),
+                    ),
+                };
+                let uri = format!("{base_uri}/{environment}/{instance_id}");
+                let rotation_config = writer_rotation_config(&streaming_config.rotation_config);
+                let writer = Rc::new(RefCell::new(FeatherWriter::from_uri(
+                    &uri,
+                    None,
+                    clock.clone(),
+                    rotation_config,
+                    None,
+                    Some(streaming_config.flush_interval_ms),
+                    streaming_config.replace_existing,
+                )?));
+                let handler = FeatherWriter::subscribe_builtin_to_message_bus(writer.clone())
+                    .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+                log::info!("Writing data and events to {uri}");
+                (Some(writer), Some(handler))
+            }
+            None => (None, None),
+        };
 
         Ok(Self {
             name,
@@ -345,6 +435,10 @@ impl NautilusKernel {
             shutdown_requested,
             event_store_replay: false,
             state_save_armed: false,
+            #[cfg(feature = "streaming")]
+            streaming_writer,
+            #[cfg(feature = "streaming")]
+            streaming_subscriptions,
         })
     }
 
@@ -428,70 +522,6 @@ impl NautilusKernel {
     #[must_use]
     pub fn generate_timestamp_ns(&self) -> UnixNanos {
         self.clock.borrow().timestamp_ns()
-    }
-
-    /// Routes a reconnect command to one registered socket endpoint.
-    pub fn process_socket_reconnect(&self, command: ReconnectSocket) {
-        let outcome = if command.trader_id == self.config.trader_id() {
-            let data = self
-                .data_engine
-                .borrow()
-                .socket_reconnect_lookup(&command.client_id, command.endpoint);
-            let execution = self
-                .exec_engine
-                .borrow()
-                .socket_reconnect_lookup(&command.client_id, command.endpoint);
-            Self::request_socket_reconnect(data, execution)
-        } else {
-            SocketReconnectDispatchOutcome::InvalidTrader
-        };
-
-        if outcome == SocketReconnectDispatchOutcome::Accepted {
-            log::info!(
-                "Requested socket reconnect for client {}",
-                command.client_id
-            );
-        } else {
-            log::warn!(
-                "Rejected socket reconnect request for client {}: {outcome:?}",
-                command.client_id
-            );
-        }
-    }
-
-    fn request_socket_reconnect(
-        data: SocketReconnectLookup,
-        execution: SocketReconnectLookup,
-    ) -> SocketReconnectDispatchOutcome {
-        match (data, execution) {
-            (SocketReconnectLookup::Handle(_), SocketReconnectLookup::Handle(_)) => {
-                SocketReconnectDispatchOutcome::AmbiguousEndpoint
-            }
-            (SocketReconnectLookup::Handle(handle), _)
-            | (_, SocketReconnectLookup::Handle(handle)) => match handle.request_reconnect() {
-                SocketReconnectRequestOutcome::Accepted => SocketReconnectDispatchOutcome::Accepted,
-                SocketReconnectRequestOutcome::AlreadyReconnecting => {
-                    SocketReconnectDispatchOutcome::AlreadyReconnecting
-                }
-                SocketReconnectRequestOutcome::Disconnected => {
-                    SocketReconnectDispatchOutcome::Disconnected
-                }
-                SocketReconnectRequestOutcome::Closed => SocketReconnectDispatchOutcome::Closed,
-                SocketReconnectRequestOutcome::Unsupported => {
-                    SocketReconnectDispatchOutcome::Unsupported
-                }
-            },
-            (SocketReconnectLookup::EndpointNotFound, _)
-            | (_, SocketReconnectLookup::EndpointNotFound) => {
-                SocketReconnectDispatchOutcome::UnknownEndpoint
-            }
-            (SocketReconnectLookup::Unsupported, _) | (_, SocketReconnectLookup::Unsupported) => {
-                SocketReconnectDispatchOutcome::Unsupported
-            }
-            (SocketReconnectLookup::ClientNotFound, SocketReconnectLookup::ClientNotFound) => {
-                SocketReconnectDispatchOutcome::UnknownClient
-            }
-        }
     }
 
     /// Returns the kernel's environment context (Backtest, Sandbox, Live).
@@ -859,7 +889,8 @@ impl NautilusKernel {
         }
         self.ts_shutdown = Some(ts_shutdown);
         log::info!("Stopped");
-        save_result
+        save_result?;
+        self.flush_streaming()
     }
 
     /// Saves actor and strategy state at most once for the current trader run.
@@ -970,6 +1001,20 @@ impl NautilusKernel {
             event_store.seal(ts_dispose);
         }
 
+        #[cfg(feature = "streaming")]
+        {
+            if let Some(subscriptions) = self.streaming_subscriptions.take() {
+                FeatherWriter::unsubscribe_from_message_bus(&subscriptions);
+            }
+
+            if let Some(writer) = self.streaming_writer.take()
+                && let Err(e) =
+                    nautilus_common::live::get_runtime().block_on(writer.borrow_mut().close())
+            {
+                log::error!("Error closing streaming writer: {e}");
+            }
+        }
+
         self.data_engine.borrow_mut().dispose();
         self.exec_engine.borrow_mut().dispose();
         self.risk_engine.borrow_mut().dispose();
@@ -978,6 +1023,21 @@ impl NautilusKernel {
         get_message_bus().borrow_mut().dispose();
 
         log::info!("Disposed");
+    }
+
+    /// Flushes configured streaming output.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if buffered output cannot be written to the configured object store.
+    pub fn flush_streaming(&mut self) -> anyhow::Result<()> {
+        #[cfg(feature = "streaming")]
+        if let Some(writer) = &self.streaming_writer {
+            nautilus_common::live::get_runtime()
+                .block_on(writer.borrow_mut().flush())
+                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+        }
+        Ok(())
     }
 
     /// Starts all engine components.
@@ -1065,123 +1125,24 @@ impl NautilusKernel {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum SocketReconnectDispatchOutcome {
-    Accepted,
-    AlreadyReconnecting,
-    Disconnected,
-    Closed,
-    Unsupported,
-    UnknownClient,
-    UnknownEndpoint,
-    AmbiguousEndpoint,
-    InvalidTrader,
-}
-
-#[cfg(test)]
-mod socket_reconnect_tests {
-    use std::sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-    };
-
-    use nautilus_common::clients::{SocketReconnectHandle, SocketReconnectRegistry};
-    use rstest::rstest;
-
-    use super::*;
-
-    fn stateful_handle(count: Arc<AtomicUsize>) -> SocketReconnectHandle {
-        let reconnecting = AtomicBool::new(false);
-        SocketReconnectHandle::new(move || {
-            if reconnecting.swap(true, Ordering::SeqCst) {
-                SocketReconnectRequestOutcome::AlreadyReconnecting
-            } else {
-                count.fetch_add(1, Ordering::SeqCst);
-                SocketReconnectRequestOutcome::Accepted
-            }
-        })
-    }
-
-    #[rstest]
-    fn endpoint_request_and_duplicate_leave_sibling_untouched() {
-        let registry = SocketReconnectRegistry::default();
-        let selected = Arc::new(AtomicUsize::new(0));
-        let sibling = Arc::new(AtomicUsize::new(0));
-        let _selected_registration = registry.register(
-            Ustr::from("market-0"),
-            stateful_handle(Arc::clone(&selected)),
-        );
-        let _sibling_registration = registry.register(
-            Ustr::from("market-1"),
-            stateful_handle(Arc::clone(&sibling)),
-        );
-        let selected_lookup = || {
-            SocketReconnectLookup::Handle(
-                registry
-                    .get(Ustr::from("market-0"))
-                    .expect("selected endpoint should be registered"),
-            )
-        };
-
-        assert_eq!(
-            NautilusKernel::request_socket_reconnect(
-                selected_lookup(),
-                SocketReconnectLookup::ClientNotFound,
-            ),
-            SocketReconnectDispatchOutcome::Accepted,
-        );
-        assert_eq!(
-            NautilusKernel::request_socket_reconnect(
-                selected_lookup(),
-                SocketReconnectLookup::ClientNotFound,
-            ),
-            SocketReconnectDispatchOutcome::AlreadyReconnecting,
-        );
-        assert_eq!(selected.load(Ordering::SeqCst), 1);
-        assert_eq!(sibling.load(Ordering::SeqCst), 0);
-    }
-
-    #[rstest]
-    #[case(
-        SocketReconnectLookup::ClientNotFound,
-        SocketReconnectLookup::ClientNotFound,
-        SocketReconnectDispatchOutcome::UnknownClient
-    )]
-    #[case(
-        SocketReconnectLookup::Unsupported,
-        SocketReconnectLookup::ClientNotFound,
-        SocketReconnectDispatchOutcome::Unsupported
-    )]
-    #[case(
-        SocketReconnectLookup::EndpointNotFound,
-        SocketReconnectLookup::ClientNotFound,
-        SocketReconnectDispatchOutcome::UnknownEndpoint
-    )]
-    fn rejected_lookup_does_not_invoke_an_endpoint(
-        #[case] data: SocketReconnectLookup,
-        #[case] execution: SocketReconnectLookup,
-        #[case] expected: SocketReconnectDispatchOutcome,
-    ) {
-        assert_eq!(
-            NautilusKernel::request_socket_reconnect(data, execution),
-            expected,
-        );
-    }
-
-    #[rstest]
-    fn ambiguous_lookup_does_not_invoke_either_endpoint() {
-        let data_count = Arc::new(AtomicUsize::new(0));
-        let execution_count = Arc::new(AtomicUsize::new(0));
-
-        assert_eq!(
-            NautilusKernel::request_socket_reconnect(
-                SocketReconnectLookup::Handle(stateful_handle(Arc::clone(&data_count))),
-                SocketReconnectLookup::Handle(stateful_handle(Arc::clone(&execution_count))),
-            ),
-            SocketReconnectDispatchOutcome::AmbiguousEndpoint,
-        );
-        assert_eq!(data_count.load(Ordering::SeqCst), 0);
-        assert_eq!(execution_count.load(Ordering::SeqCst), 0);
+#[cfg(feature = "streaming")]
+fn writer_rotation_config(config: &crate::config::RotationConfig) -> WriterRotationConfig {
+    match config {
+        crate::config::RotationConfig::Size { max_size } => WriterRotationConfig::Size {
+            max_size: *max_size,
+        },
+        crate::config::RotationConfig::Interval { interval_ns } => WriterRotationConfig::Interval {
+            interval_ns: *interval_ns,
+        },
+        crate::config::RotationConfig::ScheduledDates {
+            interval_ns,
+            schedule_ns,
+        } => WriterRotationConfig::ScheduledDates {
+            interval_ns: *interval_ns,
+            rotation_time: *schedule_ns,
+            rotation_timezone: TimeZone::UTC,
+        },
+        crate::config::RotationConfig::NoRotation => WriterRotationConfig::NoRotation,
     }
 }
 
@@ -1266,6 +1227,209 @@ mod tests {
             command.as_any(),
         );
         assert!(!kernel.is_shutdown_requested());
+    }
+}
+
+#[cfg(all(test, feature = "streaming"))]
+mod streaming_tests {
+    use std::{cell::RefCell, rc::Rc, sync::Arc};
+
+    use nautilus_common::{
+        clock::TestClock,
+        messages::data::{DataCommand, QuotesResponse, RequestCommand, RequestQuotes},
+        msgbus::{self, MStr, ShareableMessageHandler},
+    };
+    use nautilus_model::{
+        data::{CustomData, DataType, QuoteTick},
+        identifiers::InstrumentId,
+        types::{Price, Quantity},
+    };
+    use nautilus_persistence::{
+        backend::catalog::ParquetDataCatalog, config::DataCatalogConfig,
+        test_data::RustTestCustomData,
+    };
+    use nautilus_serialization::ensure_custom_data_registered;
+    use rstest::rstest;
+    use tempfile::tempdir;
+
+    use super::*;
+    use crate::config::{KernelConfig, RotationConfig, StreamingConfig};
+
+    #[rstest]
+    #[case(
+        RotationConfig::Size { max_size: 17 },
+        WriterRotationConfig::Size { max_size: 17 }
+    )]
+    #[case(
+        RotationConfig::Interval { interval_ns: 23 },
+        WriterRotationConfig::Interval { interval_ns: 23 }
+    )]
+    #[case(
+        RotationConfig::ScheduledDates {
+            interval_ns: 31,
+            schedule_ns: UnixNanos::from(37),
+        },
+        WriterRotationConfig::ScheduledDates {
+            interval_ns: 31,
+            rotation_time: UnixNanos::from(37),
+            rotation_timezone: TimeZone::UTC,
+        }
+    )]
+    #[case(RotationConfig::NoRotation, WriterRotationConfig::NoRotation)]
+    fn test_writer_rotation_config(
+        #[case] config: RotationConfig,
+        #[case] expected: WriterRotationConfig,
+    ) {
+        let actual = writer_rotation_config(&config);
+
+        match (actual, expected) {
+            (
+                WriterRotationConfig::Size { max_size: actual },
+                WriterRotationConfig::Size { max_size: expected },
+            )
+            | (
+                WriterRotationConfig::Interval {
+                    interval_ns: actual,
+                },
+                WriterRotationConfig::Interval {
+                    interval_ns: expected,
+                },
+            ) => assert_eq!(actual, expected),
+            (
+                WriterRotationConfig::ScheduledDates {
+                    interval_ns: actual_interval,
+                    rotation_time: actual_time,
+                    rotation_timezone: actual_timezone,
+                },
+                WriterRotationConfig::ScheduledDates {
+                    interval_ns: expected_interval,
+                    rotation_time: expected_time,
+                    rotation_timezone: expected_timezone,
+                },
+            ) => {
+                assert_eq!(actual_interval, expected_interval);
+                assert_eq!(actual_time, expected_time);
+                assert_eq!(actual_timezone, expected_timezone);
+            }
+            (WriterRotationConfig::NoRotation, WriterRotationConfig::NoRotation) => {}
+            (actual, expected) => panic!("rotation mismatch: {actual:?} != {expected:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_configured_catalog_serves_builtin_quotes() {
+        let directory = tempdir().unwrap();
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let quotes = vec![
+            QuoteTick::new(
+                instrument_id,
+                Price::from("1.00001"),
+                Price::from("1.00003"),
+                Quantity::from("100_000"),
+                Quantity::from("200_000"),
+                UnixNanos::from(1),
+                UnixNanos::from(1),
+            ),
+            QuoteTick::new(
+                instrument_id,
+                Price::from("1.00002"),
+                Price::from("1.00004"),
+                Quantity::from("300_000"),
+                Quantity::from("400_000"),
+                UnixNanos::from(2),
+                UnixNanos::from(2),
+            ),
+        ];
+        let catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        catalog.write_to_parquet(&quotes, None, None, None).unwrap();
+        let config = KernelConfig {
+            catalogs: vec![DataCatalogConfig::new(
+                directory.path().to_string_lossy().into_owned(),
+                Some("file".to_string()),
+                None,
+                Some("history".to_string()),
+            )],
+            ..KernelConfig::default()
+        };
+        let mut kernel = NautilusKernel::new("CatalogQueryTest".to_string(), config).unwrap();
+        kernel
+            .clock
+            .borrow_mut()
+            .as_any_mut()
+            .downcast_mut::<TestClock>()
+            .unwrap()
+            .set_time(UnixNanos::from(3));
+        let request_id = UUID4::new();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let received_quotes = received.clone();
+        msgbus::register_response_handler(
+            &request_id,
+            ShareableMessageHandler::from_typed(move |response: &QuotesResponse| {
+                *received_quotes.borrow_mut() = response.data.clone();
+            }),
+        );
+        let request = RequestQuotes::new(
+            instrument_id,
+            Some(UnixNanos::from(1).to_datetime_utc()),
+            Some(UnixNanos::from(2).to_datetime_utc()),
+            None,
+            None,
+            request_id,
+            UnixNanos::from(3),
+            None,
+        );
+
+        kernel
+            .data_engine
+            .borrow_mut()
+            .execute(DataCommand::Request(RequestCommand::Quotes(request)));
+
+        assert_eq!(*received.borrow(), quotes);
+        assert_eq!(kernel.data_engine.borrow().request_count(), 1);
+        assert_eq!(kernel.data_engine.borrow().response_count(), 1);
+        kernel.dispose();
+    }
+
+    #[rstest]
+    fn test_configured_streaming_excludes_custom_data() {
+        ensure_custom_data_registered::<RustTestCustomData>();
+
+        let directory = tempdir().unwrap();
+        let instance_id = UUID4::new();
+        let config = KernelConfig {
+            instance_id: Some(instance_id),
+            streaming: Some(StreamingConfig::new(
+                directory.path().to_string_lossy().into_owned(),
+                "file".to_string(),
+                1_000,
+                false,
+                RotationConfig::NoRotation,
+            )),
+            ..KernelConfig::default()
+        };
+        let mut kernel = NautilusKernel::new("BuiltInStreamingTest".to_string(), config).unwrap();
+        let instrument_id = InstrumentId::from("RUST.TEST");
+        let custom = CustomData::new(
+            Arc::new(RustTestCustomData {
+                instrument_id,
+                value: 1.23,
+                flag: true,
+                ts_event: UnixNanos::from(1_000),
+                ts_init: UnixNanos::from(1_000),
+            }),
+            DataType::new("RustTestCustomData", None, Some(instrument_id.to_string())),
+        );
+
+        msgbus::publish_any(MStr::from("data.custom"), &custom);
+        kernel.flush_streaming().unwrap();
+
+        let custom_path = directory
+            .path()
+            .join("backtest")
+            .join(instance_id.to_string())
+            .join("data/custom");
+        assert!(!custom_path.exists());
+        kernel.dispose();
     }
 }
 

@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test macos extension behavior.
+"""
 
 import subprocess
 import sys
@@ -69,6 +72,9 @@ def test_reported_pyarrow_reproductions_in_fresh_process(
     script: str,
     expected_stdout: str,
 ) -> None:
+    """
+    Test reported pyarrow reproductions in fresh process.
+    """
     pytest.importorskip("pandas")
     pytest.importorskip("pyarrow")
 

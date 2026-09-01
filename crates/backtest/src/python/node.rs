@@ -17,30 +17,25 @@
 
 use std::collections::HashMap;
 
-use nautilus_common::{
-    actor::data_actor::ImportableActorConfig,
-    python::{
-        actor::{PyDataActor, apply_class_derived_actor_id},
-        cache::PyCache,
-    },
-};
+use nautilus_common::{actor::data_actor::ImportableActorConfig, python::cache::PyCache};
 #[cfg(feature = "examples")]
 use nautilus_core::python::to_pytype_err;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::identifiers::{AccountId, ActorId, Venue};
 use nautilus_portfolio::python::PyPortfolio;
-use nautilus_trading::ImportableStrategyConfig;
 #[cfg(feature = "examples")]
 use nautilus_trading::examples::strategies::{
     CompositeMarketMaker, CompositeMarketMakerConfig, DeltaNeutralVol, DeltaNeutralVolConfig,
     EmaCross, EmaCrossConfig, GridMarketMaker, GridMarketMakerConfig, HurstVpinDirectional,
     HurstVpinDirectionalConfig,
 };
+use nautilus_trading::{ImportableExecutionAlgorithmConfig, ImportableStrategyConfig};
 use pyo3::{prelude::*, types::PyDict};
 
 use super::engine::{
-    engine_cache, engine_portfolio, generate_account_report, generate_fills_report,
-    generate_order_fills_report, generate_orders_report, generate_positions_report,
+    PyBacktestEngine, engine_cache, engine_portfolio, generate_account_report,
+    generate_fills_report, generate_order_fills_report, generate_orders_report,
+    generate_positions_report,
 };
 use crate::{
     config::BacktestRunConfig, engine::BacktestEngine, node::BacktestNode, result::BacktestResult,
@@ -203,10 +198,14 @@ impl BacktestNode {
         generate_account_report(self.require_engine(run_config_id)?, py, venue, account_id)
     }
 
-    #[allow(
-        unsafe_code,
-        reason = "Required for Python actor component registration"
-    )]
+    /// Adds a constructed Python actor to the engine for the given run config.
+    #[pyo3(name = "add_actor")]
+    fn py_add_actor(&mut self, run_config_id: &str, actor: &Bound<'_, PyAny>) -> PyResult<()> {
+        let engine = self.require_engine_mut(run_config_id)?;
+        PyBacktestEngine::add_python_actor(engine, &actor.clone().unbind())
+    }
+
+    /// Adds an actor from an importable config to the engine for the given run config.
     #[pyo3(name = "add_actor_from_config")]
     #[expect(clippy::needless_pass_by_value)]
     fn py_add_actor_from_config(
@@ -216,109 +215,29 @@ impl BacktestNode {
         config: ImportableActorConfig,
     ) -> PyResult<()> {
         log::debug!("`add_actor_from_config` with: {config:?}");
-
-        let engine = self.get_engine_mut(run_config_id).ok_or_else(|| {
-            to_pyruntime_err(format!("No engine for run config '{run_config_id}'"))
-        })?;
-
-        let parts: Vec<&str> = config.actor_path.split(':').collect();
-        if parts.len() != 2 {
-            return Err(to_pyvalue_err(
-                "actor_path must be in format 'module.path:ClassName'",
-            ));
-        }
-        let (module_name, class_name) = (parts[0], parts[1]);
-
-        log::info!("Importing actor from module: {module_name} class: {class_name}");
-
-        // Phase 1: Create and configure the Python actor, extract its actor_id
-        let (python_actor, actor_id) =
-            Python::attach(|py| -> anyhow::Result<(Py<PyAny>, ActorId)> {
-                let actor_module = py
-                    .import(module_name)
-                    .map_err(|e| anyhow::anyhow!("Failed to import module {module_name}: {e}"))?;
-                let actor_class = actor_module
-                    .getattr(class_name)
-                    .map_err(|e| anyhow::anyhow!("Failed to get class {class_name}: {e}"))?;
-
-                let config_instance =
-                    create_config_instance(py, &config.config_path, &config.config)?;
-
-                let python_actor = if let Some(config_obj) = config_instance.clone() {
-                    actor_class.call1((config_obj,))?
-                } else {
-                    actor_class.call0()?
-                };
-
-                log::debug!("Created Python actor instance: {python_actor:?}");
-
-                let mut py_data_actor_ref = python_actor
-                    .extract::<PyRefMut<PyDataActor>>()
-                    .map_err(Into::<PyErr>::into)
-                    .map_err(|e| anyhow::anyhow!("Failed to extract PyDataActor: {e}"))?;
-
-                // Extract inherited config fields from the Python config
-                if let Some(config_obj) = config_instance.as_ref() {
-                    if let Ok(actor_id) = config_obj.getattr("actor_id")
-                        && !actor_id.is_none()
-                    {
-                        let actor_id_val = if let Ok(actor_id_val) = actor_id.extract::<ActorId>() {
-                            actor_id_val
-                        } else if let Ok(actor_id_str) = actor_id.extract::<String>() {
-                            ActorId::new_checked(&actor_id_str)?
-                        } else {
-                            anyhow::bail!("Invalid `actor_id` type");
-                        };
-                        py_data_actor_ref.set_actor_id(actor_id_val);
-                    }
-
-                    if let Ok(log_events) = config_obj.getattr("log_events")
-                        && let Ok(log_events_val) = log_events.extract::<bool>()
-                    {
-                        py_data_actor_ref.set_log_events(log_events_val);
-                    }
-
-                    if let Ok(log_commands) = config_obj.getattr("log_commands")
-                        && let Ok(log_commands_val) = log_commands.extract::<bool>()
-                    {
-                        py_data_actor_ref.set_log_commands(log_commands_val);
-                    }
-                }
-
-                py_data_actor_ref.set_python_instance(&python_actor)?;
-
-                apply_class_derived_actor_id(&mut py_data_actor_ref, &python_actor)?;
-                let actor_id = py_data_actor_ref.actor_id();
-
-                Ok((python_actor.unbind(), actor_id))
-            })
-            .map_err(to_pyruntime_err)?;
-
-        // Validate no duplicate before any mutations
-        if engine
-            .kernel()
-            .trader
-            .borrow()
-            .actor_ids()
-            .contains(&actor_id)
-        {
-            return Err(to_pyruntime_err(format!(
-                "Actor '{actor_id}' is already registered"
-            )));
-        }
-
-        // Phase 2: Register the actor through the trader's single Python registration path
-        engine
-            .kernel_mut()
-            .trader
-            .borrow_mut()
-            .add_python_actor_instance(&python_actor, actor_id)
-            .map_err(to_pyruntime_err)?;
-
-        log::info!("Registered Python actor {actor_id}");
-        Ok(())
+        let engine = self.require_engine_mut(run_config_id)?;
+        let actor = create_importable_component(
+            &config.actor_path,
+            "actor_path",
+            &config.config_path,
+            &config.config,
+            "actor",
+        )?;
+        PyBacktestEngine::add_python_actor(engine, &actor)
     }
 
+    /// Adds a constructed Python strategy to the engine for the given run config.
+    #[pyo3(name = "add_strategy")]
+    fn py_add_strategy(
+        &mut self,
+        run_config_id: &str,
+        strategy: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
+        let engine = self.require_engine_mut(run_config_id)?;
+        PyBacktestEngine::add_python_strategy(engine, &strategy.clone().unbind())
+    }
+
+    /// Adds a strategy from an importable config to the engine for the given run config.
     #[pyo3(name = "add_strategy_from_config")]
     #[expect(clippy::needless_pass_by_value)]
     fn py_add_strategy_from_config(
@@ -328,51 +247,48 @@ impl BacktestNode {
         config: ImportableStrategyConfig,
     ) -> PyResult<()> {
         log::debug!("`add_strategy_from_config` with: {config:?}");
+        let engine = self.require_engine_mut(run_config_id)?;
+        let strategy = create_importable_component(
+            &config.strategy_path,
+            "strategy_path",
+            &config.config_path,
+            &config.config,
+            "strategy",
+        )?;
+        PyBacktestEngine::add_python_strategy(engine, &strategy)
+    }
 
-        let engine = self.get_engine_mut(run_config_id).ok_or_else(|| {
-            to_pyruntime_err(format!("No engine for run config '{run_config_id}'"))
-        })?;
+    /// Adds a constructed Python execution algorithm to the engine for the given run config.
+    #[pyo3(name = "add_exec_algorithm")]
+    fn py_add_exec_algorithm(
+        &mut self,
+        run_config_id: &str,
+        exec_algorithm: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
+        let engine = self.require_engine_mut(run_config_id)?;
+        PyBacktestEngine::add_python_exec_algorithm(engine, &exec_algorithm.clone().unbind())
+    }
 
-        let parts: Vec<&str> = config.strategy_path.split(':').collect();
-        if parts.len() != 2 {
-            return Err(to_pyvalue_err(
-                "strategy_path must be in format 'module.path:ClassName'",
-            ));
-        }
-        let (module_name, class_name) = (parts[0], parts[1]);
-
-        log::info!("Importing strategy from module: {module_name} class: {class_name}");
-
-        let python_strategy = Python::attach(|py| -> anyhow::Result<Py<PyAny>> {
-            let strategy_module = py
-                .import(module_name)
-                .map_err(|e| anyhow::anyhow!("Failed to import module {module_name}: {e}"))?;
-            let strategy_class = strategy_module
-                .getattr(class_name)
-                .map_err(|e| anyhow::anyhow!("Failed to get class {class_name}: {e}"))?;
-
-            let config_instance = create_config_instance(py, &config.config_path, &config.config)?;
-
-            let python_strategy = if let Some(config_obj) = config_instance {
-                strategy_class.call1((config_obj,))?
-            } else {
-                strategy_class.call0()?
-            };
-
-            log::debug!("Created Python strategy instance: {python_strategy:?}");
-
-            Ok(python_strategy.unbind())
-        })
-        .map_err(to_pyruntime_err)?;
-
-        engine
-            .kernel_mut()
-            .trader
-            .borrow_mut()
-            .add_python_strategy_instance(&python_strategy)
-            .map_err(to_pyruntime_err)?;
-
-        Ok(())
+    /// Adds an execution algorithm from an importable config to the engine for the given run config.
+    #[pyo3(name = "add_exec_algorithm_from_config")]
+    #[expect(clippy::needless_pass_by_value)]
+    fn py_add_exec_algorithm_from_config(
+        &mut self,
+        _py: Python,
+        run_config_id: &str,
+        config: ImportableExecutionAlgorithmConfig,
+    ) -> PyResult<()> {
+        log::debug!("`add_exec_algorithm_from_config` with: {config:?}");
+        let engine = self.require_engine_mut(run_config_id)?;
+        PyBacktestEngine::ensure_can_add_exec_algorithm(engine)?;
+        let exec_algorithm = create_importable_component(
+            &config.exec_algorithm_path,
+            "exec_algorithm_path",
+            &config.config_path,
+            &config.config,
+            "exec algorithm",
+        )?;
+        PyBacktestEngine::add_python_exec_algorithm(engine, &exec_algorithm)
     }
 
     /// Adds a built-in example strategy to the engine for the given run config.
@@ -423,6 +339,11 @@ impl BacktestNode {
 impl BacktestNode {
     fn require_engine(&self, run_config_id: &str) -> PyResult<&BacktestEngine> {
         self.get_engine(run_config_id)
+            .ok_or_else(|| to_pyruntime_err(format!("No engine for run config '{run_config_id}'")))
+    }
+
+    fn require_engine_mut(&mut self, run_config_id: &str) -> PyResult<&mut BacktestEngine> {
+        self.get_engine_mut(run_config_id)
             .ok_or_else(|| to_pyruntime_err(format!("No engine for run config '{run_config_id}'")))
     }
 }
@@ -529,6 +450,45 @@ mod tests {
             assert!(error.is_instance_of::<pyo3::exceptions::PyTypeError>(py));
         });
     }
+}
+
+pub(crate) fn create_importable_component(
+    component_path: &str,
+    path_field: &str,
+    config_path: &str,
+    config: &HashMap<String, serde_json::Value>,
+    component_name: &str,
+) -> PyResult<Py<PyAny>> {
+    let Some((module_name, class_name)) = component_path.split_once(':') else {
+        return Err(to_pyvalue_err(format!(
+            "{path_field} must be in format 'module.path:ClassName'",
+        )));
+    };
+
+    if module_name.is_empty() || class_name.is_empty() || class_name.contains(':') {
+        return Err(to_pyvalue_err(format!(
+            "{path_field} must be in format 'module.path:ClassName'",
+        )));
+    }
+
+    log::info!("Importing {component_name} from module: {module_name} class: {class_name}");
+
+    Python::attach(|py| -> anyhow::Result<Py<PyAny>> {
+        let module = py
+            .import(module_name)
+            .map_err(|e| anyhow::anyhow!("Failed to import module {module_name}: {e}"))?;
+        let class = module
+            .getattr(class_name)
+            .map_err(|e| anyhow::anyhow!("Failed to get class {class_name}: {e}"))?;
+        let config_instance = create_config_instance(py, config_path, config)?;
+        let component = if let Some(config_obj) = config_instance {
+            class.call1((config_obj,))?
+        } else {
+            class.call0()?
+        };
+        Ok(component.unbind())
+    })
+    .map_err(to_pyruntime_err)
 }
 
 pub(crate) fn create_config_instance<'py>(

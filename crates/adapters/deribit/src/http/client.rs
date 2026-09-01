@@ -219,15 +219,13 @@ impl DeribitRawHttpClient {
 
         Ok(Self {
             base_url,
-            client: HttpClient::new(
-                HashMap::new(),
-                Vec::new(),
-                Self::rate_limiter_quotas(),
-                Some(*DERIBIT_HTTP_REST_QUOTA),
-                Some(timeout_secs),
-                proxy_url,
-            )
-            .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
+            client: HttpClient::builder()
+                .keyed_quotas(Self::rate_limiter_quotas())
+                .default_quota(*DERIBIT_HTTP_REST_QUOTA)
+                .timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url)
+                .build()
+                .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
             credential: None,
             retry_manager,
             cancellation_token: CancellationToken::new(),
@@ -355,15 +353,13 @@ impl DeribitRawHttpClient {
 
         Ok(Self {
             base_url,
-            client: HttpClient::new(
-                HashMap::new(),
-                Vec::new(),
-                Self::rate_limiter_quotas(),
-                Some(*DERIBIT_HTTP_REST_QUOTA),
-                Some(timeout_secs),
-                proxy_url,
-            )
-            .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
+            client: HttpClient::builder()
+                .keyed_quotas(Self::rate_limiter_quotas())
+                .default_quota(*DERIBIT_HTTP_REST_QUOTA)
+                .timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url)
+                .build()
+                .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
             credential: Some(credential),
             retry_manager,
             cancellation_token: CancellationToken::new(),

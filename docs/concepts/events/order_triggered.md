@@ -1,6 +1,6 @@
 # OrderTriggered
 
-`OrderTriggered` records that a limit‑style conditional order has triggered. The execution pipeline
+`OrderTriggered` records that a limit-style conditional order has triggered. The execution pipeline
 applies it to the order, updates the `Cache`, and publishes it on the `MessageBus`. A trading venue,
 simulated matching engine, or reconciliation can report the trigger for a `StopLimit`,
 `LimitIfTouched`, or `TrailingStopLimit` order.
@@ -14,7 +14,7 @@ Beyond the [common Python order event fields](index.md#common-python-order-event
 
 | Field            | Python type              | Required/default | Description                                      |
 | ---------------- | ------------------------ | ---------------- | ------------------------------------------------ |
-| `venue_order_id` | `VenueOrderId` or `None` | `None`           | The venue‑assigned order identifier, if known.   |
+| `venue_order_id` | `VenueOrderId` or `None` | `None`           | The venue-assigned order identifier, if known.   |
 | `account_id`     | `AccountId` or `None`    | `None`           | The account associated with the order, if known. |
 | `reconciliation` | `bool`                   | Required         | If generated during reconciliation.              |
 

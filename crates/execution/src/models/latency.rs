@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{Debug, Display};
+use std::{
+    fmt::{Debug, Display},
+    rc::Rc,
+};
 
 use nautilus_core::UnixNanos;
 
@@ -33,6 +36,53 @@ pub trait LatencyModel: Debug {
 
     /// Returns the base latency component.
     fn get_base_latency(&self) -> UnixNanos;
+}
+
+/// Shared runtime handle for a latency model.
+#[derive(Clone)]
+pub struct LatencyModelHandle(Rc<dyn LatencyModel>);
+
+impl LatencyModelHandle {
+    /// Creates a new [`LatencyModelHandle`] from a latency model.
+    #[must_use]
+    pub fn new<T>(model: T) -> Self
+    where
+        T: LatencyModel + 'static,
+    {
+        Self(Rc::new(model))
+    }
+
+    /// Creates a new [`LatencyModelHandle`] from an existing reference-counted model.
+    #[must_use]
+    pub fn from_rc(model: Rc<dyn LatencyModel>) -> Self {
+        Self(model)
+    }
+}
+
+impl Debug for LatencyModelHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple(stringify!(LatencyModelHandle))
+            .field(&"<dyn LatencyModel>")
+            .finish()
+    }
+}
+
+impl LatencyModel for LatencyModelHandle {
+    fn get_insert_latency(&self) -> UnixNanos {
+        self.0.get_insert_latency()
+    }
+
+    fn get_update_latency(&self) -> UnixNanos {
+        self.0.get_update_latency()
+    }
+
+    fn get_delete_latency(&self) -> UnixNanos {
+        self.0.get_delete_latency()
+    }
+
+    fn get_base_latency(&self) -> UnixNanos {
+        self.0.get_base_latency()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -66,11 +116,9 @@ impl LatencyModel for LatencyModelAny {
     }
 }
 
-impl From<LatencyModelAny> for Box<dyn LatencyModel> {
-    fn from(value: LatencyModelAny) -> Self {
-        match value {
-            LatencyModelAny::Static(model) => Box::new(model),
-        }
+impl From<LatencyModelAny> for LatencyModelHandle {
+    fn from(model: LatencyModelAny) -> Self {
+        Self::new(model)
     }
 }
 
@@ -164,6 +212,56 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[derive(Debug)]
+    struct CustomLatencyModel;
+
+    impl LatencyModel for CustomLatencyModel {
+        fn get_insert_latency(&self) -> UnixNanos {
+            UnixNanos::from(11)
+        }
+
+        fn get_update_latency(&self) -> UnixNanos {
+            UnixNanos::from(22)
+        }
+
+        fn get_delete_latency(&self) -> UnixNanos {
+            UnixNanos::from(33)
+        }
+
+        fn get_base_latency(&self) -> UnixNanos {
+            UnixNanos::from(44)
+        }
+    }
+
+    #[rstest]
+    fn test_latency_model_handle_calls_custom_model() {
+        let model: Rc<dyn LatencyModel> = Rc::new(CustomLatencyModel);
+        let handle = LatencyModelHandle::from_rc(model);
+        let cloned_handle = handle.clone();
+        drop(handle);
+
+        assert_eq!(cloned_handle.get_insert_latency(), UnixNanos::from(11));
+        assert_eq!(cloned_handle.get_update_latency(), UnixNanos::from(22));
+        assert_eq!(cloned_handle.get_delete_latency(), UnixNanos::from(33));
+        assert_eq!(cloned_handle.get_base_latency(), UnixNanos::from(44));
+    }
+
+    #[rstest]
+    fn test_latency_model_handle_from_any_preserves_model() {
+        let model = StaticLatencyModel::new(
+            UnixNanos::from(1),
+            UnixNanos::from(10),
+            UnixNanos::from(20),
+            UnixNanos::from(30),
+        );
+        let handle: LatencyModelHandle = LatencyModelAny::Static(model).into();
+
+        assert_eq!(handle.get_insert_latency(), UnixNanos::from(11));
+        assert_eq!(handle.get_update_latency(), UnixNanos::from(21));
+        assert_eq!(handle.get_delete_latency(), UnixNanos::from(31));
+        assert_eq!(handle.get_base_latency(), UnixNanos::from(1));
+    }
 
     #[rstest]
     fn test_static_latency_model() {

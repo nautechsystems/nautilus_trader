@@ -15,7 +15,9 @@
 
 //! Python bindings for fee model types.
 
-use nautilus_core::python::{to_pynotimplemented_err, to_pyruntime_err, to_pytype_err};
+use nautilus_core::python::{
+    clone_py_object, to_pynotimplemented_err, to_pyruntime_err, to_pytype_err,
+};
 use nautilus_model::{
     instruments::InstrumentAny,
     orders::OrderAny,
@@ -156,6 +158,12 @@ fn call_fee_get_commission_with_context<M: FeeModel>(
 #[derive(Debug)]
 pub struct PythonFeeModel {
     obj: Py<PyAny>,
+}
+
+impl Clone for PythonFeeModel {
+    fn clone(&self) -> Self {
+        Self::new(clone_py_object(&self.obj))
+    }
 }
 
 impl PythonFeeModel {
@@ -499,7 +507,8 @@ impl TieredNotionalOptionFeeModel {
 ///
 /// # Errors
 ///
-/// Returns an error if `obj` is not a supported fee model binding.
+/// Returns an error if `obj` is neither a supported built-in model nor a Python object with
+/// a `get_commission` method.
 pub fn pyobject_to_fee_model_any(obj: &Bound<'_, PyAny>) -> PyResult<FeeModelAny> {
     if let Ok(m) = obj.extract::<PyRef<'_, FixedFeeModel>>() {
         return Ok(FeeModelAny::Fixed((*m).clone()));
@@ -525,9 +534,15 @@ pub fn pyobject_to_fee_model_any(obj: &Bound<'_, PyAny>) -> PyResult<FeeModelAny
         return Ok(FeeModelAny::TieredNotionalOption((*m).clone()));
     }
 
-    let type_name = obj.get_type().name()?;
-    Err(to_pytype_err(format!(
-        "Cannot convert {type_name} to FeeModel"
+    if !obj.hasattr("get_commission")? {
+        let type_name = obj.get_type().name()?;
+        return Err(to_pytype_err(format!(
+            "Cannot convert {type_name} to FeeModel"
+        )));
+    }
+
+    Ok(FeeModelAny::Python(PythonFeeModel::new(
+        obj.clone().unbind(),
     )))
 }
 
@@ -538,20 +553,7 @@ pub fn pyobject_to_fee_model_any(obj: &Bound<'_, PyAny>) -> PyResult<FeeModelAny
 /// Returns an error if `obj` is neither a supported built-in model nor a Python object with
 /// a `get_commission` method.
 pub fn pyobject_to_fee_model_handle(obj: &Bound<'_, PyAny>) -> PyResult<FeeModelHandle> {
-    if let Ok(model) = pyobject_to_fee_model_any(obj) {
-        return Ok(model.into());
-    }
-
-    if !obj.hasattr("get_commission")? {
-        let type_name = obj.get_type().name()?;
-        return Err(to_pytype_err(format!(
-            "Cannot convert {type_name} to FeeModel"
-        )));
-    }
-
-    Ok(FeeModelHandle::new(PythonFeeModel::new(
-        obj.clone().unbind(),
-    )))
+    pyobject_to_fee_model_any(obj).map(Into::into)
 }
 
 fn fee_model_into_py<T>(py: Python<'_>, model: T) -> PyResult<Py<PyAny>>
@@ -574,6 +576,7 @@ pub fn fee_model_any_to_pyobject(py: Python<'_>, model: &FeeModelAny) -> PyResul
         FeeModelAny::ProbabilityPrice(model) => fee_model_into_py(py, model.clone()),
         FeeModelAny::CappedOption(model) => fee_model_into_py(py, model.clone()),
         FeeModelAny::TieredNotionalOption(model) => fee_model_into_py(py, model.clone()),
+        FeeModelAny::Python(model) => Ok(model.obj.clone_ref(py)),
     }
 }
 
@@ -595,25 +598,7 @@ mod tests {
 
         Python::attach(|py| {
             let expected_commission = Money::from("1.23 USD");
-            let locals = PyDict::new(py);
-            locals
-                .set_item("FeeModel", py.get_type::<PyFeeModel>())
-                .unwrap();
-            let model = py
-                .eval(
-                    c_str!(
-                        "type('CustomFeeModel', (FeeModel,), {\
-                            'get_commission': \
-                                lambda self, order, fill_quantity, fill_px, instrument: self.commission\
-                        })()"
-                    ),
-                    None,
-                    Some(&locals),
-                )
-                .unwrap();
-            model
-                .setattr("commission", expected_commission.into_py_any(py).unwrap())
-                .unwrap();
+            let model = fee_model_with_commission(py, expected_commission);
 
             let handle = pyobject_to_fee_model_handle(&model).unwrap();
             let instrument = InstrumentAny::CurrencyPair(audusd_sim());
@@ -632,6 +617,48 @@ mod tests {
                 .unwrap();
 
             assert_eq!(commission, expected_commission);
+        });
+    }
+
+    #[rstest]
+    fn test_python_fee_model_any_clones_and_retains_python_model() {
+        Python::initialize();
+
+        Python::attach(|py| {
+            let expected_commission = Money::from("1.23 USD");
+            let model = fee_model_with_commission(py, expected_commission);
+            let fee_model = pyobject_to_fee_model_any(&model).unwrap();
+            let cloned_fee_model = fee_model.clone();
+            let original = fee_model_any_to_pyobject(py, &fee_model).unwrap();
+            let retained = fee_model_any_to_pyobject(py, &cloned_fee_model).unwrap();
+            let (instrument, order) = commission_inputs();
+            let commission = cloned_fee_model
+                .get_commission(
+                    &order,
+                    Quantity::from(100_000),
+                    Price::from("0.80000"),
+                    &instrument,
+                )
+                .unwrap();
+
+            assert!(original.bind(py).is(&model));
+            assert!(retained.bind(py).is(&model));
+            assert_eq!(commission, expected_commission);
+        });
+    }
+
+    #[rstest]
+    fn test_python_fee_model_any_rejects_object_without_get_commission() {
+        Python::initialize();
+
+        Python::attach(|py| {
+            let model = PyDict::new(py);
+            let error = pyobject_to_fee_model_any(model.as_any()).unwrap_err();
+
+            assert_eq!(
+                error.to_string(),
+                "TypeError: Cannot convert dict to FeeModel"
+            );
         });
     }
 
@@ -779,5 +806,29 @@ mod tests {
             .build();
 
         (instrument, order)
+    }
+
+    fn fee_model_with_commission(py: Python<'_>, commission: Money) -> Bound<'_, PyAny> {
+        let locals = PyDict::new(py);
+        locals
+            .set_item("FeeModel", py.get_type::<PyFeeModel>())
+            .unwrap();
+        let model = py
+            .eval(
+                c_str!(
+                    "type('CustomFeeModel', (FeeModel,), {\
+                        'get_commission': \
+                            lambda self, order, fill_quantity, fill_px, instrument: self.commission\
+                    })()"
+                ),
+                None,
+                Some(&locals),
+            )
+            .unwrap();
+        model
+            .setattr("commission", commission.into_py_any(py).unwrap())
+            .unwrap();
+
+        model
     }
 }

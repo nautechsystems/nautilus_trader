@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Example of Architect AX strategies.
+"""
 
 from __future__ import annotations
 
@@ -34,6 +37,10 @@ from nautilus_trader.trading import Strategy
 
 
 class BBMeanReversionConfig(StrategyConfig):
+    """
+    Collect bbmean reversion config tests.
+    """
+
     _CUSTOM_FIELDS = (
         "instrument_id",
         "bar_type",
@@ -47,6 +54,9 @@ class BBMeanReversionConfig(StrategyConfig):
     )
 
     def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+        """
+        Create a new instance.
+        """
         for key in cls._CUSTOM_FIELDS:
             kwargs.pop(key, None)
         return super().__new__(cls, *args, **kwargs)
@@ -62,8 +72,11 @@ class BBMeanReversionConfig(StrategyConfig):
         rsi_buy_threshold: float = 0.30,
         rsi_sell_threshold: float = 0.70,
         close_positions_on_stop: bool = True,
-        **kwargs: Any,
+        **_kwargs: Any,
     ) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__()
         self.instrument_id = instrument_id
         self.bar_type = bar_type
@@ -82,6 +95,9 @@ class BBMeanReversion(Strategy):
     """
 
     def __init__(self, config: BBMeanReversionConfig) -> None:
+        """
+        Initialize the helper.
+        """
         if config.trade_size <= 0:
             raise ValueError("trade_size must be positive")
 
@@ -98,9 +114,13 @@ class BBMeanReversion(Strategy):
         self._rsi = RelativeStrengthIndex(config.rsi_period)
 
     def on_start(self) -> None:
+        """
+        On start.
+        """
         self._instrument = self.cache.instrument(self._instrument_id)
         if self._instrument is None:
-            self.log.error(f"Could not find instrument for {self._instrument_id}")
+            log_msg = f"Could not find instrument for {self._instrument_id}"
+            self.log.error(log_msg)
             self.stop()
             return
 
@@ -110,9 +130,8 @@ class BBMeanReversion(Strategy):
         )
 
         if self._trade_qty.as_decimal() <= 0:
-            self.log.error(
-                f"Trade size {self._trade_size} rounds to zero for {self._instrument_id}",
-            )
+            log_msg = f"Trade size {self._trade_size} rounds to zero for {self._instrument_id}"
+            self.log.error(log_msg)
             self.stop()
             return
 
@@ -121,6 +140,9 @@ class BBMeanReversion(Strategy):
         self.subscribe_bars(self._bar_type)
 
     def on_bar(self, bar: Bar) -> None:
+        """
+        On bar.
+        """
         self.log.info(repr(bar), LogColor.CYAN)
 
         if not self.indicators_initialized():
@@ -133,12 +155,18 @@ class BBMeanReversion(Strategy):
             self._check_entry(close)
 
     def on_stop(self) -> None:
+        """
+        On stop.
+        """
         self.cancel_all_orders(self._instrument_id)
         if self._close_positions_on_stop:
             self.close_all_positions(self._instrument_id)
         self.unsubscribe_bars(self._bar_type)
 
     def on_reset(self) -> None:
+        """
+        On reset.
+        """
         self._instrument = None
         self._trade_qty = None
         self._bb.reset()
@@ -179,6 +207,10 @@ class BBMeanReversion(Strategy):
 
 
 class OrderBookImbalanceConfig(StrategyConfig):
+    """
+    Collect order book imbalance config tests.
+    """
+
     _CUSTOM_FIELDS = (
         "instrument_id",
         "max_trade_size",
@@ -189,6 +221,9 @@ class OrderBookImbalanceConfig(StrategyConfig):
     )
 
     def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+        """
+        Create a new instance.
+        """
         for key in cls._CUSTOM_FIELDS:
             kwargs.pop(key, None)
         return super().__new__(cls, *args, **kwargs)
@@ -201,8 +236,11 @@ class OrderBookImbalanceConfig(StrategyConfig):
         trigger_imbalance_ratio: Decimal = Decimal("0.20"),
         min_seconds_between_triggers: float = 1.0,
         dry_run: bool = False,
-        **kwargs: Any,
+        **_kwargs: Any,
     ) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__()
         self.instrument_id = instrument_id
         self.max_trade_size = max_trade_size
@@ -218,6 +256,9 @@ class OrderBookImbalance(Strategy):
     """
 
     def __init__(self, config: OrderBookImbalanceConfig) -> None:
+        """
+        Initialize the helper.
+        """
         if config.max_trade_size <= 0:
             raise ValueError("max_trade_size must be positive")
         if config.trigger_min_size <= 0:
@@ -238,15 +279,22 @@ class OrderBookImbalance(Strategy):
         self._last_trigger_ns: int | None = None
 
     def on_start(self) -> None:
+        """
+        On start.
+        """
         self._instrument = self.cache.instrument(self._instrument_id)
         if self._instrument is None:
-            self.log.error(f"Could not find instrument for {self._instrument_id}")
+            log_msg = f"Could not find instrument for {self._instrument_id}"
+            self.log.error(log_msg)
             self.stop()
             return
 
         self.subscribe_quotes(self._instrument_id)
 
     def on_quote(self, quote: QuoteTick) -> None:
+        """
+        On quote.
+        """
         bid_size = quote.bid_size.as_decimal()
         ask_size = quote.ask_size.as_decimal()
         if bid_size <= 0 or ask_size <= 0:
@@ -286,7 +334,8 @@ class OrderBookImbalance(Strategy):
         )
 
         if quantity.as_decimal() <= 0:
-            self.log.error(f"Trade quantity rounds to zero for {self._instrument_id}")
+            log_msg = f"Trade quantity rounds to zero for {self._instrument_id}"
+            self.log.error(log_msg)
             return
 
         order = self.order_factory.limit(
@@ -300,11 +349,17 @@ class OrderBookImbalance(Strategy):
         self.submit_order(order)
 
     def on_stop(self) -> None:
+        """
+        On stop.
+        """
         self.cancel_all_orders(self._instrument_id)
         if not self._dry_run:
             self.close_all_positions(self._instrument_id)
         self.unsubscribe_quotes(self._instrument_id)
 
     def on_reset(self) -> None:
+        """
+        On reset.
+        """
         self._instrument = None
         self._last_trigger_ns = None

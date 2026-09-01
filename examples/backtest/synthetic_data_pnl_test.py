@@ -1,36 +1,45 @@
+"""
+Example of synthetic data pnl test.
+"""
+
 from datetime import UTC
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
+from typing import Self
 
-from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.models import PerContractFeeModel
+from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
-from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import unix_nanos_to_dt
-from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import BarSpecification
-from nautilus_trader.model.data import BarType
-from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.enums import OmsType
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instruments import FuturesContract
-from nautilus_trader.model.objects import Money
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.trading.strategy import Strategy
+from nautilus_trader.execution import PerContractFeeModel
+from nautilus_trader.model import AccountType
+from nautilus_trader.model import AssetClass
+from nautilus_trader.model import Bar
+from nautilus_trader.model import BarType
+from nautilus_trader.model import Currency
+from nautilus_trader.model import FuturesContract
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Money
+from nautilus_trader.model import OmsType
+from nautilus_trader.model import OrderSide
+from nautilus_trader.model import Price
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import Symbol
+from nautilus_trader.model import TimeInForce
+from nautilus_trader.model import TraderId
+from nautilus_trader.model import Venue
+from nautilus_trader.trading import Strategy
+
+
+USD = Currency.from_str("USD")
 
 
 def create_6E_instrument(venue: Venue) -> FuturesContract:
+    """
+    Create 6e instrument.
+    """
     symbol = Symbol("6E")
     return FuturesContract(
         # Core identification parameters for the Euro FX futures contract
@@ -40,12 +49,9 @@ def create_6E_instrument(venue: Venue) -> FuturesContract:
         currency=USD,  # Contract is denominated in USD
         # Price and size specifications from CME
         price_precision=5,  # 5 decimal places for EUR/USD pricing
-        price_increment=Price(
-            Decimal("0.00005"),
-            precision=5,
-        ),  # Minimum tick = 0.00005 ($6.25 value)
-        multiplier=Quantity(Decimal(125000), precision=0),  # Each contract = 125,000 EUR
-        lot_size=Quantity(Decimal(1), precision=0),  # Minimum trading size is 1 contract
+        price_increment=Price.from_str("0.00005"),  # Minimum tick = 0.00005 ($6.25 value)
+        multiplier=Quantity.from_int(125_000),  # Each contract = 125,000 EUR
+        lot_size=Quantity.from_int(1),  # Minimum trading size is 1 contract
         # Contract specifications and expiration details
         underlying="EUR/USD",  # The underlying forex pair
         activation_ns=0,  # Contract start time (0 = active now)
@@ -68,75 +74,109 @@ def create_6E_instrument(venue: Venue) -> FuturesContract:
     )
 
 
-class MinimalStrategyConfig(StrategyConfig, frozen=True):
-    instrument_id: InstrumentId
-    bar_type: BarType
+class MinimalStrategyConfig(StrategyConfig):
+    """
+    Collect minimal strategy config tests.
+    """
+
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+        """
+        Create a new instance.
+        """
+        kwargs.pop("instrument_id", None)
+        kwargs.pop("bar_type", None)
+        return super().__new__(cls, *args, **kwargs)
+
+    def __init__(self, instrument_id: InstrumentId, bar_type: BarType) -> None:
+        """
+        Initialize the helper.
+        """
+        super().__init__()
+        self.instrument_id = instrument_id
+        self.bar_type = bar_type
 
 
 class MinimalStrategy(Strategy):
-    def __init__(self, config: MinimalStrategyConfig):
+    """
+    Collect minimal strategy tests.
+    """
+
+    def __init__(self, config: MinimalStrategyConfig) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
+        self._config = config
         self.bars_processed = -1
 
-        self.portfolio_realized_pnl_values[int, Money] = {}
-        self.portfolio_unrealized_pnl_values[int, Money] = {}
+        self.portfolio_realized_pnl_values: dict[datetime, Money | None] = {}
+        self.portfolio_unrealized_pnl_values: dict[datetime, Money | None] = {}
 
-    def on_start(self):
-        self.subscribe_bars(self.config.bar_type)
+    def on_start(self) -> None:
+        """
+        On start.
+        """
+        self.subscribe_bars(self._config.bar_type)
 
-    def on_bar(self, bar: Bar):
+    def on_bar(self, bar: Bar) -> None:
+        """
+        On bar.
+        """
         self.bars_processed += 1
 
         bar_dt = unix_nanos_to_dt(bar.ts_event)
 
         # Collect value of realized/unrealized pnl from Portfolio
         self.portfolio_realized_pnl_values[bar_dt] = self.portfolio.realized_pnl(
-            self.config.instrument_id,
+            self._config.instrument_id,
         )
         self.portfolio_unrealized_pnl_values[bar_dt] = self.portfolio.unrealized_pnl(
-            self.config.instrument_id,
+            self._config.instrument_id,
         )
 
         is_flat = self.portfolio.is_completely_net_flat()
 
         # Debug point 1: Open position
-        # Problem is, that , but Portfolio return None: `self.portfolio.unrealized_pnl(self.config.instrument_id)`
+        # Problem is, that , but Portfolio return None: `self.portfolio.unrealized_pnl(self._config.instrument_id)`
         if self.bars_processed == 5:
             # See value of 2 variables:
             realized_pnl = self.portfolio.realized_pnl(
-                self.config.instrument_id,
+                self._config.instrument_id,
             )  # Has only commission -2.50. Is OK as no trade was closed yet.
-            unrealized_pnl = self.portfolio.unrealized_pnl(self.config.instrument_id)
-            self.log.info(f"{self.bars_processed=}, {realized_pnl=}, {unrealized_pnl=}")
+            unrealized_pnl = self.portfolio.unrealized_pnl(self._config.instrument_id)
+            log_msg = f"self.bars_processed={self.bars_processed!r}, realized_pnl={realized_pnl!r}, unrealized_pnl={unrealized_pnl!r}"
+            self.log.info(log_msg)
             # <------------------- PUT DEBUG POINT HERE
 
         # Debug point 2: Closed position
-        # Problem is, that , but Portfolio return None: `self.portfolio.unrealized_pnl(self.config.instrument_id)`
+        # Problem is, that , but Portfolio return None: `self.portfolio.unrealized_pnl(self._config.instrument_id)`
         if self.bars_processed == 10:
             # See value of 2 variables:
-            realized_pnl = self.portfolio.realized_pnl(self.config.instrument_id)
+            realized_pnl = self.portfolio.realized_pnl(self._config.instrument_id)
             unrealized_pnl = self.portfolio.unrealized_pnl(
-                self.config.instrument_id,
+                self._config.instrument_id,
             )  # Returns 0, that is OK when closed position
-            self.log.info(f"{self.bars_processed=}, {realized_pnl=}, {unrealized_pnl=}")
+            log_msg = f"self.bars_processed={self.bars_processed!r}, realized_pnl={realized_pnl!r}, unrealized_pnl={unrealized_pnl!r}"
+            self.log.info(log_msg)
             # <------------------- PUT DEBUG POINT HERE
 
         # Open positions at bar(s): 1
         if is_flat and self.bars_processed in {1}:
             order = self.order_factory.market(
-                instrument_id=self.config.instrument_id,
+                instrument_id=self._config.instrument_id,
                 order_side=OrderSide.BUY,
                 quantity=Quantity.from_str("1"),
                 time_in_force=TimeInForce.GTC,
             )
             self.submit_order(order)
             self.order_placed = True
-            self.log.info(f"Market order placed at {bar.close}")
+            log_msg = f"Market order placed at {bar.close}"
+            self.log.info(log_msg)
 
         # Close positions at bar(s): 7
         if (not is_flat) and self.bars_processed in {7}:
             order = self.order_factory.market(
-                instrument_id=self.config.instrument_id,
+                instrument_id=self._config.instrument_id,
                 order_side=OrderSide.SELL,
                 quantity=Quantity.from_str("1"),
                 time_in_force=TimeInForce.GTC,
@@ -144,14 +184,15 @@ class MinimalStrategy(Strategy):
             self.submit_order(order)
 
     def on_stop(self) -> None:
-        pass
+        """
+        On stop.
+        """
 
 
 if __name__ == "__main__":
     engine = BacktestEngine(
         config=BacktestEngineConfig(
-            trader_id="TESTER-001",
-            logging=LoggingConfig(log_level="debug"),
+            trader_id=TraderId.from_str("TESTER-001"),
         ),
     )
 
@@ -162,23 +203,16 @@ if __name__ == "__main__":
         oms_type=OmsType.NETTING,
         account_type=AccountType.MARGIN,
         base_currency=USD,
-        fee_model=PerContractFeeModel(Money(2.50, USD)),
-        starting_balances=[Money(1_000_000, USD)],
+        fee_model=PerContractFeeModel(Money.from_str("2.50 USD")),
+        starting_balances=[Money.from_str("1000000 USD")],
     )
 
     # Instrument
     instrument = create_6E_instrument(venue)
     engine.add_instrument(instrument)
 
-    # Add data = just 5 bars with same OHLC prices
-    bar_type = BarType(
-        instrument_id=instrument.id,
-        bar_spec=BarSpecification(
-            step=1,
-            aggregation=BarAggregation.MINUTE,
-            price_type=PriceType.LAST,
-        ),
-    )
+    # Add 12 synthetic one-minute bars
+    bar_type = BarType.from_str(f"{instrument.id}-1-MINUTE-LAST-EXTERNAL")
 
     timestamp_base = dt_to_unix_nanos(datetime(2024, 1, 1, tzinfo=UTC))
     bars = []
@@ -210,10 +244,10 @@ if __name__ == "__main__":
     engine.run()
 
     # Results
-    print(engine.trader.generate_order_fills_report())
-    print(engine.trader.generate_positions_report())
+    print(engine.generate_order_fills_report())
+    print(engine.generate_positions_report())
 
-    account_report = engine.trader.generate_account_report(venue)
+    account_report = engine.generate_account_report(venue=venue)
     print(account_report)
 
     # Cleanup

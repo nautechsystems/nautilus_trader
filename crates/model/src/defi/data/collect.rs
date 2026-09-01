@@ -45,6 +45,9 @@ pub struct PoolFeeCollect {
     pub pool_identifier: PoolIdentifier,
     /// The blockchain block number where the fee collection occurred.
     pub block: u64,
+    /// The hash of the block observed when this collection was ingested.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_hash: Option<String>,
     /// The unique hash identifier of the blockchain transaction containing the fee collection.
     pub transaction_hash: String,
     /// The index position of the transaction within the block.
@@ -94,6 +97,7 @@ impl PoolFeeCollect {
             instrument_id,
             pool_identifier,
             block,
+            block_hash: None,
             transaction_hash,
             transaction_index,
             log_index,

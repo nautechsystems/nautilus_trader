@@ -14,10 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Run a Lighter NVDA RWA composite market maker with the built-in CompositeMarketMaker
-strategy: Databento ``NVDA.EQUS`` quotes drive the signal and ``NVDA-PERP.LIGHTER``
-is the quoted target. This is the Python counterpart of the Rust tutorial binary
-``examples/tutorials/src/bin/lighter_nvda_composite_mm.rs``.
+Run a Lighter NVDA RWA composite market maker with the built-in CompositeMarketMaker strategy: Databento ``NVDA.EQUS`` quotes drive the signal and ``NVDA-PERP.LIGHTER`` is the quoted target. This is the Python counterpart of the Rust tutorial binary ``examples/tutorials/src/bin/lighter_nvda_composite_mm.rs``.
 
 WARNING: Running this script connects to the configured Lighter environment and
 places REAL post-only orders immediately. With the default testnet environment no
@@ -27,9 +24,9 @@ is not intended for production trading.
 
 Settings are the module-level constants below. Required environment variables:
 - DATABENTO_API_KEY.
-- LIGHTER_TESTNET_ACCOUNT_INDEX, LIGHTER_TESTNET_API_KEY_INDEX, and
-  LIGHTER_TESTNET_API_SECRET for the testnet environment (the default).
-- LIGHTER_ACCOUNT_INDEX, LIGHTER_API_KEY_INDEX, and LIGHTER_API_SECRET for mainnet.
+- Lighter credentials from the namespace selected by the deployment and environment:
+  `LIGHTER_*`, `LIGHTER_TESTNET_*`, `LIGHTER_ROBINHOOD_*`, or
+  `LIGHTER_ROBINHOOD_TESTNET_*`.
 
 """
 
@@ -38,13 +35,15 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from nautilus_trader.adapters.databento import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento import DatabentoDataClientFactory
-from nautilus_trader.adapters.databento import DatabentoLiveClientConfig
 from nautilus_trader.adapters.lighter import LIGHTER
+from nautilus_trader.adapters.lighter import LIGHTER_ROBINHOOD
 from nautilus_trader.adapters.lighter import LighterDataClientConfig
 from nautilus_trader.adapters.lighter import LighterDataClientFactory
+from nautilus_trader.adapters.lighter import LighterDeployment
 from nautilus_trader.adapters.lighter import LighterEnvironment
-from nautilus_trader.adapters.lighter import LighterExecClientConfig
+from nautilus_trader.adapters.lighter import LighterExecutionClientConfig
 from nautilus_trader.adapters.lighter import LighterExecutionClientFactory
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
@@ -57,10 +56,12 @@ from nautilus_trader.trading import CompositeMarketMakerConfig
 
 
 LIGHTER_ENVIRONMENT = LighterEnvironment.TESTNET
+LIGHTER_DEPLOYMENT = LighterDeployment.LIGHTER
+VENUE = LIGHTER if LIGHTER_DEPLOYMENT == LighterDeployment.LIGHTER else LIGHTER_ROBINHOOD
 TRADER_ID = TraderId.from_str("TESTER-001")
-ACCOUNT_ID = AccountId.from_str("LIGHTER-001")
+ACCOUNT_ID = AccountId.from_str(f"{VENUE}-001")
 STRATEGY_ID = StrategyId.from_str("NVDA_COMPOSITE_MM-001")
-INSTRUMENT_ID = InstrumentId.from_str(f"NVDA-PERP.{LIGHTER}")
+INSTRUMENT_ID = InstrumentId.from_str(f"NVDA-PERP.{VENUE}")
 SIGNAL_INSTRUMENT_ID = InstrumentId.from_str("NVDA.EQUS")
 
 MAX_POSITION = "0.20"
@@ -78,34 +79,40 @@ PUBLISHERS_FILEPATH = (
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     if not DATABENTO_API_KEY:
         raise SystemExit("DATABENTO_API_KEY must be set")
 
     node = (
         LiveNode.builder("LIGHTER-NVDA-COMPOSITE-MM-001", TRADER_ID, Environment.LIVE)
-        .with_reconciliation(True)
+        .with_reconciliation(reconciliation=True)
         .with_delay_post_stop_secs(5)
         .add_data_client(
             None,
             DatabentoDataClientFactory(),
-            DatabentoLiveClientConfig(
+            DatabentoDataClientConfig(
                 api_key=DATABENTO_API_KEY,
                 publishers_filepath=PUBLISHERS_FILEPATH,
                 use_exchange_as_venue=True,
             ),
         )
         .add_data_client(
-            None,
+            VENUE,
             LighterDataClientFactory(),
-            LighterDataClientConfig(environment=LIGHTER_ENVIRONMENT),
+            LighterDataClientConfig(
+                environment=LIGHTER_ENVIRONMENT,
+                deployment=LIGHTER_DEPLOYMENT,
+            ),
         )
         .add_exec_client(
-            None,
+            VENUE,
             LighterExecutionClientFactory(),
-            LighterExecClientConfig(
-                trader_id=TRADER_ID,
+            LighterExecutionClientConfig(
                 account_id=ACCOUNT_ID,
                 environment=LIGHTER_ENVIRONMENT,
+                deployment=LIGHTER_DEPLOYMENT,
             ),
         )
         .build()

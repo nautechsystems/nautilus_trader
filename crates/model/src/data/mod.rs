@@ -34,7 +34,7 @@ pub mod registry;
 pub mod status;
 pub mod trade;
 
-#[cfg(any(test, feature = "stubs"))]
+#[cfg(any(test, feature = "test-support"))]
 pub mod stubs;
 
 use std::{

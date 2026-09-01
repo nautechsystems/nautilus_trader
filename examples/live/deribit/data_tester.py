@@ -41,6 +41,9 @@ INSTRUMENT_ID = InstrumentId.from_str(f"BTC-PERPETUAL.{DERIBIT}")
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     node = (
         LiveNode.builder("DERIBIT-DATA-TESTER-001", TRADER_ID, Environment.LIVE)
         .add_data_client(

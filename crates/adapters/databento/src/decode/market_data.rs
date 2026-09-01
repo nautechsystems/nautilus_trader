@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use core::fmt::NumBuffer;
 use std::{collections::VecDeque, ffi::c_char, num::NonZeroUsize};
 
 use ahash::AHashMap;
@@ -157,7 +158,7 @@ pub fn decode_mbo_msg(
             let price = decode_price_or_undef(msg.price, price_precision);
             let size = decode_quantity(msg.size as u64);
             let aggressor_side = parse_aggressor_side(msg.side);
-            let trade_id = TradeId::new(itoa::Buffer::new().format(msg.sequence));
+            let trade_id = TradeId::new(msg.sequence.format_into(&mut NumBuffer::new()));
             let ts_event = msg.ts_recv.into();
             let ts_init = ts_init.unwrap_or(ts_event);
 
@@ -323,7 +324,7 @@ pub fn decode_trade_msg(
         decode_price_or_undef(msg.price, price_precision),
         decode_quantity(msg.size as u64),
         parse_aggressor_side(msg.side),
-        TradeId::new(itoa::Buffer::new().format(msg.sequence)),
+        TradeId::new(msg.sequence.format_into(&mut NumBuffer::new())),
         ts_event,
         ts_init,
     );
@@ -368,7 +369,7 @@ pub fn decode_tbbo_msg(
         decode_price_or_undef(msg.price, price_precision),
         decode_quantity(msg.size as u64),
         parse_aggressor_side(msg.side),
-        TradeId::new(itoa::Buffer::new().format(msg.sequence)),
+        TradeId::new(msg.sequence.format_into(&mut NumBuffer::new())),
         ts_event,
         ts_init,
     );
@@ -414,7 +415,7 @@ pub fn decode_mbp1_msg(
             decode_price_or_undef(msg.price, price_precision),
             decode_quantity(msg.size as u64),
             parse_aggressor_side(msg.side),
-            TradeId::new(itoa::Buffer::new().format(msg.sequence)),
+            TradeId::new(msg.sequence.format_into(&mut NumBuffer::new())),
             ts_event,
             ts_init,
         ))

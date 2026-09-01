@@ -23,13 +23,16 @@
 //! correlator `id`. When the venue echoes the id on a response frame, the
 //! matching oneshot is fulfilled with `result` or the JSON-RPC error.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, AtomicU64, Ordering},
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
+    time::Duration,
 };
 
 use ahash::AHashMap;
-use nautilus_common::live::get_runtime;
+use nautilus_live::task::{SharedTaskSlot, TaskJoinOutcome};
 use nautilus_network::{
     RECONNECTED,
     websocket::{AuthTracker, WebSocketClient},
@@ -112,19 +115,20 @@ pub(super) struct FeedHandler {
     pending: AHashMap<u64, PendingRequest>,
     send_tx: Option<tokio::sync::mpsc::UnboundedSender<SendCommand>>,
     send_failure_rx: tokio::sync::mpsc::UnboundedReceiver<SendFailure>,
-    send_task: Option<tokio::task::JoinHandle<()>>,
+    send_task: Arc<SharedTaskSlot<()>>,
     auth_tracker: AuthTracker,
     authenticated_epoch: Arc<AtomicU64>,
 }
 
 impl FeedHandler {
-    pub(super) fn new(
+    pub(super) fn new_with_send_task(
         signal: Arc<AtomicBool>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
         raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
         next_id: Arc<AtomicU64>,
         auth_tracker: AuthTracker,
         authenticated_epoch: Arc<AtomicU64>,
+        send_task: Arc<SharedTaskSlot<()>>,
     ) -> Self {
         let (_, send_failure_rx) = tokio::sync::mpsc::unbounded_channel();
         Self {
@@ -139,7 +143,7 @@ impl FeedHandler {
             pending: AHashMap::new(),
             send_tx: None,
             send_failure_rx,
-            send_task: None,
+            send_task,
             auth_tracker,
             authenticated_epoch,
         }
@@ -159,14 +163,15 @@ impl FeedHandler {
                             if self.raw_closed {
                                 self.shutdown_send_path(
                                     "WebSocket handler stopped before response was received",
-                                );
+                                )
+                                .await;
                                 return None;
                             }
                         }
                         Some(HandlerCommand::SetClient(client)) => {
                             log::debug!("Setting WebSocket client in Derive handler");
                             let client = Arc::new(client);
-                            self.stop_send_worker();
+                            self.stop_send_worker().await;
                             self.start_send_worker(Arc::clone(&client));
                             self.client = Some(client);
                         }
@@ -182,7 +187,8 @@ impl FeedHandler {
                             log::debug!("Derive handler received disconnect command");
                             self.shutdown_send_path(
                                 "WebSocket disconnected before response was received",
-                            );
+                            )
+                            .await;
 
                             if let Some(ref client) = self.client {
                                 client.disconnect().await;
@@ -201,7 +207,8 @@ impl FeedHandler {
                             if self.cmd_closed {
                                 self.shutdown_send_path(
                                     "WebSocket handler stopped before response was received",
-                                );
+                                )
+                                .await;
                                 return None;
                             }
                         }
@@ -215,7 +222,8 @@ impl FeedHandler {
                                 );
                                 self.restart_send_worker(
                                     "WebSocket reconnected before response was received",
-                                );
+                                )
+                                .await;
                                 return Some(DeriveWsMessage::Reconnected);
                             }
 
@@ -264,7 +272,8 @@ impl FeedHandler {
                             log::debug!("Derive WebSocket close frame received");
                             self.shutdown_send_path(
                                 "WebSocket closed before response was received",
-                            );
+                            )
+                            .await;
                             return None;
                         }
                         Some(_) => {}
@@ -279,7 +288,8 @@ impl FeedHandler {
                     log::debug!("Derive handler shutting down: channels closed");
                     self.shutdown_send_path(
                         "WebSocket handler stopped before response was received",
-                    );
+                    )
+                    .await;
                     return None;
                 }
             }
@@ -367,23 +377,47 @@ impl FeedHandler {
     }
 
     fn start_send_worker(&mut self, client: Arc<WebSocketClient>) {
+        if !self.send_task.is_empty() {
+            log::error!("Cannot start Derive WebSocket send worker while the prior task is owned");
+            return;
+        }
+
         let (send_tx, send_rx) = tokio::sync::mpsc::unbounded_channel();
         let (failure_tx, failure_rx) = tokio::sync::mpsc::unbounded_channel();
         self.send_tx = Some(send_tx);
         self.send_failure_rx = failure_rx;
 
-        self.send_task = Some(get_runtime().spawn(run_send_worker(client, send_rx, failure_tx)));
-    }
-
-    fn stop_send_worker(&mut self) {
-        self.send_tx.take();
-        if let Some(task) = self.send_task.take() {
-            task.abort();
+        if let Err(e) = self
+            .send_task
+            .spawn(run_send_worker(client, send_rx, failure_tx))
+        {
+            self.send_tx.take();
+            log::error!("Failed to start Derive WebSocket send worker: {e}");
         }
     }
 
-    fn restart_send_worker(&mut self, reason: &str) {
-        self.stop_send_worker();
+    async fn stop_send_worker(&mut self) {
+        self.send_tx.take();
+
+        if let Some(outcome) = self
+            .send_task
+            .finish(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+        {
+            match outcome {
+                TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
+                TaskJoinOutcome::Failed(e) => {
+                    log::error!("Derive WebSocket send worker failed: {e}");
+                }
+                TaskJoinOutcome::Incomplete => {
+                    log::error!("Derive WebSocket send worker did not stop after abort");
+                }
+            }
+        }
+    }
+
+    async fn restart_send_worker(&mut self, reason: &str) {
+        self.stop_send_worker().await;
         self.fail_pending(reason);
 
         if let Some(client) = self.client.clone() {
@@ -391,8 +425,8 @@ impl FeedHandler {
         }
     }
 
-    fn shutdown_send_path(&mut self, reason: &str) {
-        self.stop_send_worker();
+    async fn shutdown_send_path(&mut self, reason: &str) {
+        self.stop_send_worker().await;
         self.fail_pending(reason);
     }
 
@@ -451,7 +485,8 @@ impl FeedHandler {
 
 impl Drop for FeedHandler {
     fn drop(&mut self) {
-        self.stop_send_worker();
+        self.send_tx.take();
+        self.send_task.abort();
     }
 }
 
@@ -521,6 +556,25 @@ mod tests {
         Arc::new(AtomicU64::new(u64::MAX))
     }
 
+    fn feed_handler(
+        signal: Arc<AtomicBool>,
+        cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
+        raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
+        next_id: Arc<AtomicU64>,
+        auth_tracker: AuthTracker,
+        authenticated_epoch: Arc<AtomicU64>,
+    ) -> FeedHandler {
+        FeedHandler::new_with_send_task(
+            signal,
+            cmd_rx,
+            raw_rx,
+            next_id,
+            auth_tracker,
+            authenticated_epoch,
+            Arc::new(SharedTaskSlot::new()),
+        )
+    }
+
     #[rstest]
     fn test_subscribe_params_carries_single_channel() {
         let params = subscribe_params(DeriveWsChannel::ticker_slim("ETH-PERP", "1000"));
@@ -566,7 +620,7 @@ mod tests {
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let next_id = Arc::new(AtomicU64::new(1));
         let auth_tracker = AuthTracker::new();
-        let mut handler = FeedHandler::new(
+        let mut handler = feed_handler(
             signal,
             cmd_rx,
             raw_rx,
@@ -594,7 +648,7 @@ mod tests {
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let next_id = Arc::new(AtomicU64::new(1));
         let auth_tracker = AuthTracker::new();
-        let mut handler = FeedHandler::new(
+        let mut handler = feed_handler(
             signal,
             cmd_rx,
             raw_rx,
@@ -631,7 +685,7 @@ mod tests {
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let next_id = Arc::new(AtomicU64::new(1));
         let auth_tracker = AuthTracker::new();
-        let mut handler = FeedHandler::new(
+        let mut handler = feed_handler(
             signal,
             cmd_rx,
             raw_rx,
@@ -683,7 +737,7 @@ mod tests {
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let next_id = Arc::new(AtomicU64::new(1));
         let auth_tracker = AuthTracker::new();
-        let mut handler = FeedHandler::new(
+        let mut handler = feed_handler(
             signal,
             cmd_rx,
             raw_rx,
@@ -696,20 +750,20 @@ mod tests {
 
         let task = tokio::spawn(std::future::pending::<()>());
         let abort_handle = task.abort_handle();
-        handler.send_task = Some(task);
+        handler.send_task.insert(task);
 
         let (first_tx, first_rx) = tokio::sync::oneshot::channel();
         let (second_tx, second_rx) = tokio::sync::oneshot::channel();
         handler.enqueue_request("first", json!({}), 0, first_tx);
         handler.enqueue_request("second", json!({}), 0, second_tx);
-        handler.shutdown_send_path("disconnect requested");
+        handler.shutdown_send_path("disconnect requested").await;
         tokio::task::yield_now().await;
 
         let first_error = first_rx.await.unwrap().expect_err("first request failed");
         let second_error = second_rx.await.unwrap().expect_err("second request failed");
         assert!(abort_handle.is_finished());
         assert!(handler.send_tx.is_none());
-        assert!(handler.send_task.is_none());
+        assert!(handler.send_task.is_empty());
         assert!(handler.pending.is_empty());
         assert!(first_error.to_string().contains("disconnect requested"));
         assert!(second_error.to_string().contains("disconnect requested"));
@@ -723,7 +777,7 @@ mod tests {
         let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let next_id = Arc::new(AtomicU64::new(1));
         let auth_tracker = AuthTracker::new();
-        let mut handler = FeedHandler::new(
+        let mut handler = feed_handler(
             signal,
             cmd_rx,
             raw_rx,
@@ -751,7 +805,7 @@ mod tests {
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let next_id = Arc::new(AtomicU64::new(1));
         let auth_tracker = AuthTracker::new();
-        let mut handler = FeedHandler::new(
+        let mut handler = feed_handler(
             signal,
             cmd_rx,
             raw_rx,
@@ -794,7 +848,7 @@ mod tests {
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         let next_id = Arc::new(AtomicU64::new(1));
         let auth_tracker = AuthTracker::new();
-        let mut handler = FeedHandler::new(
+        let mut handler = feed_handler(
             signal,
             cmd_rx,
             raw_rx,

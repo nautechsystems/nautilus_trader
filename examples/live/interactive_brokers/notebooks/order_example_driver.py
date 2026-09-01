@@ -2,6 +2,9 @@
 #  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 # -------------------------------------------------------------------------------------------------
+"""
+Example of the IB order driver.
+"""
 
 from __future__ import annotations
 
@@ -41,6 +44,10 @@ AfterBuildHook = Callable[[Any], None]
 
 
 class OrderExample:
+    """
+    Collect order example tests.
+    """
+
     def __init__(
         self,
         *,
@@ -53,6 +60,9 @@ class OrderExample:
         after_build: AfterBuildHook | None = None,
         auto_stop_seconds: int = 20,
     ) -> None:
+        """
+        Initialize the helper.
+        """
         self.node_id = node_id
         self.strategy_path = strategy_path
         self.default_data_client_id = default_data_client_id
@@ -64,6 +74,9 @@ class OrderExample:
 
 
 def futures_provider_config() -> interactive_brokers.InteractiveBrokersInstrumentProviderConfig:
+    """
+    Futures provider config.
+    """
     return instrument_provider_config(
         load_ids=[
             os.getenv("IB_V2_ORDER_INSTRUMENT_ID", default_es_future_instrument_id()),
@@ -72,6 +85,9 @@ def futures_provider_config() -> interactive_brokers.InteractiveBrokersInstrumen
 
 
 def spread_provider_config() -> interactive_brokers.InteractiveBrokersInstrumentProviderConfig:
+    """
+    Spread provider config.
+    """
     return instrument_provider_config(
         load_ids=[
             os.getenv("IB_V2_SPREAD_INSTRUMENT_ID", default_es_put_spread_instrument_id()),
@@ -80,6 +96,9 @@ def spread_provider_config() -> interactive_brokers.InteractiveBrokersInstrument
 
 
 def databento_provider_config() -> interactive_brokers.InteractiveBrokersInstrumentProviderConfig:
+    """
+    Databento provider config.
+    """
     return instrument_provider_config(
         load_ids=[
             os.getenv("IB_V2_DATABENTO_INSTRUMENT_ID", default_ym_future_instrument_id()),
@@ -88,6 +107,9 @@ def databento_provider_config() -> interactive_brokers.InteractiveBrokersInstrum
 
 
 def set_databento_request_contracts_default() -> None:
+    """
+    Set databento request contracts default.
+    """
     ib = interactive_brokers
     os.environ.setdefault(
         "IB_V2_DATABENTO_REQUEST_CONTRACTS",
@@ -109,6 +131,9 @@ def set_databento_request_contracts_default() -> None:
 
 
 def print_bracket_details(_node: object) -> None:
+    """
+    Print bracket details.
+    """
     instrument_id = os.getenv("IB_V2_ORDER_INSTRUMENT_ID", default_es_future_instrument_id())
     print(
         f"Built v2 bracket-order node and registered BracketOrderStrategy for {instrument_id}.",
@@ -121,6 +146,9 @@ def print_bracket_details(_node: object) -> None:
 
 
 def print_market_details(_node: object) -> None:
+    """
+    Print market details.
+    """
     instrument_id = os.getenv("IB_V2_ORDER_INSTRUMENT_ID", default_es_future_instrument_id())
     print(
         f"Built v2 market-order node and registered MarketOrderStrategy for {instrument_id}.",
@@ -133,6 +161,9 @@ def print_market_details(_node: object) -> None:
 
 
 def print_oca_details(node: Any) -> None:
+    """
+    Print oca details.
+    """
     ib = interactive_brokers
     oca_group = os.getenv("IB_V2_OCA_GROUP", "<unique per run>")
     tag = ib_order_tags(ocaGroup=oca_group, ocaType=ib.IbOcaType.CANCEL_WITH_BLOCK.as_i32())
@@ -141,6 +172,9 @@ def print_oca_details(node: Any) -> None:
 
 
 def print_conditions_details(node: Any) -> None:
+    """
+    Print conditions details.
+    """
     ib = interactive_brokers
     time_condition: dict[str, Any] = {
         "type": ib.IbConditionKind.TIME.as_str(),
@@ -164,7 +198,7 @@ def print_conditions_details(node: Any) -> None:
 
     tag = ib_order_tags(
         conditions=conditions,
-        conditionsCancelOrder=env_bool("IB_V2_CONDITIONS_CANCEL_ORDER", False),
+        conditionsCancelOrder=env_bool("IB_V2_CONDITIONS_CANCEL_ORDER", default=False),
     )
 
     print(
@@ -175,6 +209,9 @@ def print_conditions_details(node: Any) -> None:
 
 
 def print_spread_details(_node: object) -> None:
+    """
+    Print spread details.
+    """
     print(
         "Built v2 spread node and registered SpreadOrderStrategy with 2 option legs.",
         flush=True,
@@ -186,6 +223,9 @@ def print_spread_details(_node: object) -> None:
 
 
 def print_databento_details(node: Any) -> None:
+    """
+    Print databento details.
+    """
     print(
         f"Built v2 IB node and registered DatabentoInstrumentIdStrategy: {node.trader_id}",
         flush=True,
@@ -247,6 +287,9 @@ ORDER_EXAMPLES = {
 
 
 def run_order_example(strategy: str) -> None:
+    """
+    Run order example.
+    """
     example = ORDER_EXAMPLES[strategy]
     if example.before_build is not None:
         example.before_build()
@@ -281,6 +324,9 @@ def run_order_example(strategy: str) -> None:
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--strategy",

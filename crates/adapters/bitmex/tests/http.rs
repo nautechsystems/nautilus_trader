@@ -489,8 +489,7 @@ async fn start_test_server()
 
     // Wait for server to be ready
     let health_url = format!("http://{addr}/instrument/active");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();
@@ -988,7 +987,7 @@ async fn test_cancel_all_orders_skips_invalid_order_rejection() {
         report.client_order_id,
         Some(ClientOrderId::from("cancel-control"))
     );
-    assert_eq!(report.order_side, OrderSide::Buy);
+    assert_eq!(report.order_side, Some(OrderSide::Buy));
     assert_eq!(report.order_type, OrderType::Limit);
     assert_eq!(report.time_in_force, TimeInForce::Gtc);
     assert_eq!(report.order_status, OrderStatus::Canceled);
@@ -1137,8 +1136,7 @@ async fn test_http_500_internal_server_error() {
 
     // Wait for server to be ready
     let health_url = format!("http://{addr}/instrument");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();

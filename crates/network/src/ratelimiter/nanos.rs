@@ -30,19 +30,32 @@ use super::clock;
 pub struct Nanos(u64);
 
 impl Nanos {
-    pub const fn as_u64(self) -> u64 {
-        self.0
-    }
-}
-
-impl Nanos {
     pub const fn new(u: u64) -> Self {
         Self(u)
+    }
+
+    pub const fn as_u64(self) -> u64 {
+        self.0
     }
 
     /// Converts a [`Duration`], clamping at `u64::MAX` nanoseconds (~584 years).
     pub fn from_duration_saturating(d: Duration) -> Self {
         Self(u64::try_from(d.as_nanos()).unwrap_or(u64::MAX))
+    }
+
+    #[inline]
+    pub const fn saturating_sub(self, rhs: Self) -> Self {
+        Self(self.0.saturating_sub(rhs.0))
+    }
+
+    #[inline]
+    pub const fn saturating_add(self, rhs: Self) -> Self {
+        Self(self.0.saturating_add(rhs.0))
+    }
+
+    #[inline]
+    pub const fn saturating_mul(self, rhs: u64) -> Self {
+        Self(self.0.saturating_mul(rhs))
     }
 }
 
@@ -105,23 +118,6 @@ impl From<Nanos> for u64 {
 impl From<Nanos> for Duration {
     fn from(n: Nanos) -> Self {
         Self::from_nanos(n.0)
-    }
-}
-
-impl Nanos {
-    #[inline]
-    pub const fn saturating_sub(self, rhs: Self) -> Self {
-        Self(self.0.saturating_sub(rhs.0))
-    }
-
-    #[inline]
-    pub const fn saturating_add(self, rhs: Self) -> Self {
-        Self(self.0.saturating_add(rhs.0))
-    }
-
-    #[inline]
-    pub const fn saturating_mul(self, rhs: u64) -> Self {
-        Self(self.0.saturating_mul(rhs))
     }
 }
 

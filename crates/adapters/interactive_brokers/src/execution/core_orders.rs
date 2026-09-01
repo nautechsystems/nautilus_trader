@@ -27,7 +27,7 @@ impl InteractiveBrokersExecutionClient {
         exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
         clock: &'static AtomicTime,
         account_id: AccountId,
-        order_submit_lock: &Arc<AsyncMutex<()>>,
+        order_submit_lock: &Arc<tokio::sync::Mutex<()>>,
     ) -> anyhow::Result<()> {
         if cmd.order_init.post_only {
             let ts_event = clock.get_time_ns();
@@ -136,7 +136,7 @@ impl InteractiveBrokersExecutionClient {
             strategy_id_map,
             active_order_contexts,
             terminal_order_contexts,
-        )?;
+        );
 
         let ts_event = clock.get_time_ns();
         let event = OrderSubmitted::new(
@@ -280,9 +280,7 @@ impl InteractiveBrokersExecutionClient {
             return Ok(Some(order_id));
         }
 
-        let map = order_id_map
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock order ID map"))?;
+        let map = order_id_map.lock();
         Ok(map.get(&cmd.client_order_id).copied())
     }
 
@@ -354,21 +352,15 @@ impl InteractiveBrokersExecutionClient {
                     Self::apply_modify_fields_to_ib_order(cmd, &mut ib_order, instrument_provider);
 
                     {
-                        let mut map = order_id_map
-                            .lock()
-                            .map_err(|_| anyhow::anyhow!("Failed to lock order ID map"))?;
+                        let mut map = order_id_map.lock();
                         map.insert(cmd.client_order_id, ib_order_id);
                     }
                     {
-                        let mut map = venue_order_id_map
-                            .lock()
-                            .map_err(|_| anyhow::anyhow!("Failed to lock venue order ID map"))?;
+                        let mut map = venue_order_id_map.lock();
                         map.insert(ib_order_id, cmd.client_order_id);
                     }
                     {
-                        let mut map = instrument_id_map
-                            .lock()
-                            .map_err(|_| anyhow::anyhow!("Failed to lock instrument ID map"))?;
+                        let mut map = instrument_id_map.lock();
                         map.insert(ib_order_id, cmd.instrument_id);
                     }
 
@@ -424,7 +416,7 @@ impl InteractiveBrokersExecutionClient {
         clock: &'static AtomicTime,
         account_id: AccountId,
         strategy_id: StrategyId,
-        order_submit_lock: &Arc<AsyncMutex<()>>,
+        order_submit_lock: &Arc<tokio::sync::Mutex<()>>,
     ) -> anyhow::Result<()> {
         let num_orders = orders.len();
         anyhow::ensure!(!orders.is_empty(), "Cannot submit an empty order list");
@@ -445,9 +437,7 @@ impl InteractiveBrokersExecutionClient {
             if let Some(parent_order_id) = order.parent_order_id()
                 && !ib_order_ids.contains_key(&parent_order_id)
             {
-                let map = order_id_map
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("Failed to lock order ID map"))?;
+                let map = order_id_map.lock();
                 anyhow::ensure!(
                     map.contains_key(&parent_order_id),
                     "Parent order ID {parent_order_id} not found for order {}",
@@ -479,13 +469,10 @@ impl InteractiveBrokersExecutionClient {
             ib_order.transmit = is_last;
 
             if let Some(parent_order_id) = order.parent_order_id() {
-                let parent_ib_order_id =
-                    ib_order_ids.get(&parent_order_id).copied().or_else(|| {
-                        order_id_map
-                            .lock()
-                            .ok()
-                            .and_then(|map| map.get(&parent_order_id).copied())
-                    });
+                let parent_ib_order_id = ib_order_ids
+                    .get(&parent_order_id)
+                    .copied()
+                    .or_else(|| order_id_map.lock().get(&parent_order_id).copied());
 
                 if let Some(parent_ib_order_id) = parent_ib_order_id {
                     ib_order.parent_id = parent_ib_order_id;
@@ -507,7 +494,7 @@ impl InteractiveBrokersExecutionClient {
                 strategy_id_map,
                 active_order_contexts,
                 terminal_order_contexts,
-            )?;
+            );
 
             let ts_event = clock.get_time_ns();
             let event = OrderSubmitted::new(
@@ -594,7 +581,7 @@ impl InteractiveBrokersExecutionClient {
                     ib_order_id,
                     active_order_contexts,
                     terminal_order_contexts,
-                )?
+                )
                 .with_context(|| format!("Tracked order context not found for {ib_order_id}"))?;
 
                 Self::remove_order_tracking(
@@ -607,7 +594,7 @@ impl InteractiveBrokersExecutionClient {
                     strategy_id_map,
                     active_order_contexts,
                     terminal_order_contexts,
-                )?;
+                );
 
                 let reason = format!("{failure_prefix}: {reason}");
                 let event = OrderRejected::new(

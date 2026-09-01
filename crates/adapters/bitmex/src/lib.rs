@@ -73,7 +73,7 @@ pub use crate::{
     common::{consts::BITMEX_VENUE, enums::BitmexSide},
     data::BitmexDataClient,
     execution::BitmexExecutionClient,
-    factories::{BitmexDataClientFactory, BitmexExecFactoryConfig, BitmexExecutionClientFactory},
+    factories::{BitmexDataClientFactory, BitmexExecutionClientFactory},
     http::{client::BitmexHttpClient, error::BitmexHttpError},
     websocket::{client::BitmexWebSocketClient, error::BitmexWsError},
 };

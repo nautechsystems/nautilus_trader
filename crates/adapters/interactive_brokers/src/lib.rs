@@ -59,7 +59,6 @@
     clippy::cloned_instead_of_copied,
     clippy::option_if_let_else,
     clippy::type_complexity,
-    clippy::await_holding_lock,
     clippy::module_inception,
     clippy::result_large_err,
     clippy::implicit_clone,

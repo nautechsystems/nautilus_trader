@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test reports behavior.
+"""
 
 from decimal import Decimal
 
@@ -58,7 +61,10 @@ from nautilus_trader.model import Venue
 from nautilus_trader.model import VenueOrderId
 
 
-def test_fill_report_to_dict_and_from_dict_roundtrip(audusd_id):
+def test_fill_report_to_dict_and_from_dict_roundtrip(audusd_id: InstrumentId) -> None:
+    """
+    Test fill report to dict and from dict roundtrip.
+    """
     report = make_fill_report(audusd_id)
 
     data = report.to_dict()
@@ -70,7 +76,10 @@ def test_fill_report_to_dict_and_from_dict_roundtrip(audusd_id):
     assert restored.venue_position_id == PositionId("P-1")
 
 
-def test_order_status_report_to_dict_and_from_dict_roundtrip(audusd_id):
+def test_order_status_report_to_dict_and_from_dict_roundtrip(audusd_id: InstrumentId) -> None:
+    """
+    Test order status report to dict and from dict roundtrip.
+    """
     report = make_order_status_report(audusd_id, include_optionals=False)
 
     data = report.to_dict()
@@ -87,7 +96,10 @@ def test_order_status_report_to_dict_and_from_dict_roundtrip(audusd_id):
     assert report_with_optionals.trigger_type == TriggerType.BID_ASK
 
 
-def test_execution_mass_status_adds_reports_and_roundtrips(audusd_id):
+def test_execution_mass_status_adds_reports_and_roundtrips(audusd_id: InstrumentId) -> None:
+    """
+    Test execution mass status adds reports and roundtrips.
+    """
     order_report = make_order_status_report(audusd_id, include_optionals=False)
     fill_report = make_fill_report(audusd_id)
     position_report = make_position_status_report(audusd_id)
@@ -120,7 +132,10 @@ def test_execution_mass_status_adds_reports_and_roundtrips(audusd_id):
     assert list(restored.position_reports.keys()) == [InstrumentId.from_str("AUD/USD.SIM")]
 
 
-def test_order_initialized_to_dict_and_from_dict_roundtrip(audusd_id):
+def test_order_initialized_to_dict_and_from_dict_roundtrip(audusd_id: InstrumentId) -> None:
+    """
+    Test order initialized to dict and from dict roundtrip.
+    """
     event = make_order_initialized(audusd_id)
 
     restored = OrderInitialized.from_dict(event.to_dict())
@@ -161,13 +176,19 @@ def test_order_initialized_to_dict_and_from_dict_roundtrip(audusd_id):
     assert restored.tags == ["tag-1", "tag-2"]
 
 
-def test_order_snapshot_from_dict_returns_snapshot_instance(audusd_id):
+def test_order_snapshot_from_dict_returns_snapshot_instance(audusd_id: InstrumentId) -> None:
+    """
+    Test order snapshot from dict returns snapshot instance.
+    """
     snapshot = OrderSnapshot.from_dict(make_market_order_snapshot_values(audusd_id))
 
     assert type(snapshot).__name__ == "OrderSnapshot"
 
 
-def test_position_adjusted_to_dict_and_from_dict_roundtrip(audusd_id):
+def test_position_adjusted_to_dict_and_from_dict_roundtrip(audusd_id: InstrumentId) -> None:
+    """
+    Test position adjusted to dict and from dict roundtrip.
+    """
     event = PositionAdjusted(
         trader_id=TraderId("TRADER-001"),
         strategy_id=StrategyId("S-001"),
@@ -191,7 +212,10 @@ def test_position_adjusted_to_dict_and_from_dict_roundtrip(audusd_id):
     assert restored.reason == "funding"
 
 
-def test_position_status_report_properties_and_roundtrip(audusd_id):
+def test_position_status_report_properties_and_roundtrip(audusd_id: InstrumentId) -> None:
+    """
+    Test position status report properties and roundtrip.
+    """
     report = make_position_status_report(audusd_id)
     restored = PositionStatusReport.from_dict(report.to_dict())
 
@@ -203,7 +227,10 @@ def test_position_status_report_properties_and_roundtrip(audusd_id):
     assert restored.venue_position_id == PositionId("P-1")
 
 
-def test_position_snapshot_from_dict_returns_snapshot_instance():
+def test_position_snapshot_from_dict_returns_snapshot_instance() -> None:
+    """
+    Test position snapshot from dict returns snapshot instance.
+    """
     instrument = TestInstrumentProvider.audusd_sim()
     fill = make_position_fill(instrument)
     position = Position(instrument=instrument, fill=fill)
@@ -215,7 +242,10 @@ def test_position_snapshot_from_dict_returns_snapshot_instance():
     assert type(snapshot).__name__ == "PositionSnapshot"
 
 
-def test_position_event_classes_expose_create_surface():
+def test_position_event_classes_expose_create_surface() -> None:
+    """
+    Test position event classes expose create surface.
+    """
     assert hasattr(PositionOpened, "position_id")
     assert hasattr(PositionOpened, "quantity")
     assert hasattr(PositionOpened, "realized_pnl")

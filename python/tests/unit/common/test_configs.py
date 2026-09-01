@@ -12,6 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test configs behavior.
+"""
+
+from pathlib import Path
 
 import pytest
 
@@ -25,7 +30,10 @@ from nautilus_trader.common import MessageBusConfig
 from nautilus_trader.model import ActorId
 
 
-def test_cache_config_defaults():
+def test_cache_config_defaults() -> None:
+    """
+    Test cache config defaults.
+    """
     config = CacheConfig(
         None,
         False,
@@ -55,7 +63,10 @@ def test_cache_config_defaults():
     assert config.persist_account_events is True
 
 
-def test_cache_config_accepts_explicit_values():
+def test_cache_config_accepts_explicit_values() -> None:
+    """
+    Test cache config accepts explicit values.
+    """
     # Get SerializationEncoding.JSON via the enum type
     default = CacheConfig(
         None,
@@ -102,17 +113,26 @@ def test_cache_config_accepts_explicit_values():
     assert config.persist_account_events is False
 
 
-def test_cache_config_rejects_public_string_encoding_argument():
+def test_cache_config_rejects_public_string_encoding_argument() -> None:
+    """
+    Test cache config rejects public string encoding argument.
+    """
     with pytest.raises(TypeError, match="SerializationEncoding"):
         CacheConfig("msgpack", False, True, True, False, False, False, 1000, 1000, 100, 1000, True)
 
 
-def test_cache_config_rejects_embedded_database_config():
+def test_cache_config_rejects_embedded_database_config() -> None:
+    """
+    Test cache config rejects embedded database config.
+    """
     with pytest.raises(TypeError, match="database"):
         CacheConfig(database=None)
 
 
-def test_data_actor_config_accepts_explicit_kwargs():
+def test_data_actor_config_accepts_explicit_kwargs() -> None:
+    """
+    Test data actor config accepts explicit kwargs.
+    """
     config = DataActorConfig(
         actor_id=ActorId("ACTOR-001"),
         log_events=False,
@@ -125,7 +145,10 @@ def test_data_actor_config_accepts_explicit_kwargs():
     assert config.log_commands is True
 
 
-def test_data_actor_config_defaults_are_readable():
+def test_data_actor_config_defaults_are_readable() -> None:
+    """
+    Test data actor config defaults are readable.
+    """
     config = DataActorConfig()
 
     assert config.actor_id is None
@@ -133,9 +156,20 @@ def test_data_actor_config_defaults_are_readable():
     assert config.log_commands is True
 
 
-def test_data_actor_config_fields_are_writable_from_python_subclasses():
+def test_data_actor_config_fields_are_writable_from_python_subclasses() -> None:
+    """
+    Test data actor config fields are writable from python subclasses.
+    """
+
     class PythonDataActorConfig(DataActorConfig):
-        def __init__(self):
+        """
+        Collect python data actor config tests.
+        """
+
+        def __init__(self) -> None:
+            """
+            Initialize the helper.
+            """
             self.actor_id = ActorId("ACTOR-002")
             self.log_events = False
             self.log_commands = False
@@ -147,7 +181,10 @@ def test_data_actor_config_fields_are_writable_from_python_subclasses():
     assert config.log_commands is False
 
 
-def test_file_writer_config_construction(tmp_path):
+def test_file_writer_config_construction(tmp_path: Path) -> None:
+    """
+    Test file writer config construction.
+    """
     config = FileWriterConfig(
         directory=str(tmp_path),
         file_name="common.log",
@@ -161,7 +198,10 @@ def test_file_writer_config_construction(tmp_path):
     assert config.file_rotate == (1, 2)
 
 
-def test_importable_actor_config_fields():
+def test_importable_actor_config_fields() -> None:
+    """
+    Test importable actor config fields.
+    """
     config = ImportableActorConfig(
         actor_path="tests.unit.common.actor:TestActor",
         config_path="tests.unit.common.actor:TestActorConfig",
@@ -173,13 +213,19 @@ def test_importable_actor_config_fields():
     assert config.config == {"log_events": False}
 
 
-def test_logger_config_from_spec():
+def test_logger_config_from_spec() -> None:
+    """
+    Test logger config from spec.
+    """
     config = LoggerConfig.from_spec("stdout=INFO;file=DEBUG")
 
     assert type(config).__name__ == "LoggerConfig"
 
 
-def test_logger_config_readback(tmp_path):
+def test_logger_config_readback(tmp_path: Path) -> None:
+    """
+    Test logger config readback.
+    """
     file_config = FileWriterConfig(directory=str(tmp_path), file_name="events.log")
     config = LoggerConfig(
         stdout_level=LogLevel.DEBUG,
@@ -209,7 +255,10 @@ def test_logger_config_readback(tmp_path):
     assert config.buffered_stdout is True
 
 
-def test_message_bus_config_defaults():
+def test_message_bus_config_defaults() -> None:
+    """
+    Test message bus config defaults.
+    """
     config = MessageBusConfig()
 
     assert config.timestamps_as_iso8601 is False
@@ -226,7 +275,10 @@ def test_message_bus_config_defaults():
     assert config.heartbeat_interval_secs is None
 
 
-def test_message_bus_config_accepts_explicit_kwargs():
+def test_message_bus_config_accepts_explicit_kwargs() -> None:
+    """
+    Test message bus config accepts explicit kwargs.
+    """
     config = MessageBusConfig(
         timestamps_as_iso8601=True,
         buffer_interval_ms=7,
@@ -256,6 +308,9 @@ def test_message_bus_config_accepts_explicit_kwargs():
     assert config.heartbeat_interval_secs == 9
 
 
-def test_message_bus_config_rejects_embedded_backing_config():
+def test_message_bus_config_rejects_embedded_backing_config() -> None:
+    """
+    Test message bus config rejects embedded backing config.
+    """
     with pytest.raises(TypeError, match="backing"):
         MessageBusConfig(backing=None)

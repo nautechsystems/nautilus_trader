@@ -13,7 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::{IntoPyObjectNautilusExt, serialization::from_dict_pyo3};
+use nautilus_core::python::{
+    IntoPyObjectNautilusExt, correctness_error_to_pyvalue_err, serialization::from_dict_pyo3,
+};
 use pyo3::{
     basic::CompareOp,
     prelude::*,
@@ -46,7 +48,7 @@ impl Position {
     #[new]
     fn py_new(py: Python, instrument: Py<PyAny>, fill: OrderFilled) -> PyResult<Self> {
         let instrument_any = pyobject_to_instrument_any(py, instrument)?;
-        Ok(Self::new(&instrument_any, fill))
+        Self::new_checked(&instrument_any, fill).map_err(correctness_error_to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -358,8 +360,9 @@ impl Position {
 
     /// Applies an `OrderFilled` event to this position.
     #[pyo3(name = "apply")]
-    fn py_apply(&mut self, fill: &OrderFilled) {
-        self.apply(fill);
+    fn py_apply(&mut self, fill: &OrderFilled) -> PyResult<()> {
+        self.try_apply(fill)
+            .map_err(correctness_error_to_pyvalue_err)
     }
 
     /// Applies a position adjustment event.

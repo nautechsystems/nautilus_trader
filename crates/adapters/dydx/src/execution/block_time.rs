@@ -27,13 +27,11 @@
 
 use std::{
     collections::VecDeque,
-    sync::{
-        RwLock,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 use jiff::Timestamp;
+use parking_lot::RwLock;
 
 /// Default rolling window size for block time averaging.
 ///
@@ -203,22 +201,15 @@ impl BlockTimeMonitor {
     ///
     /// Should be called whenever a block height update is received.
     /// Updates the current height atomically and adds the sample to the rolling window.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the RwLock is poisoned (should never happen in practice).
     pub fn record_block(&self, height: u64, time: Timestamp) {
         // Update current height atomically (hot path)
         self.current_height.store(height, Ordering::Release);
 
         // Update current time
-        *self.current_time.write().expect("RwLock poisoned") = Some(time);
+        *self.current_time.write() = Some(time);
 
         // Add to rolling window
-        self.window
-            .write()
-            .expect("RwLock poisoned")
-            .record(height, time);
+        self.window.write().record(height, time);
     }
 
     /// Returns the current block height.
@@ -230,28 +221,17 @@ impl BlockTimeMonitor {
     }
 
     /// Returns the timestamp of the most recent block.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the RwLock is poisoned (should never happen in practice).
     #[must_use]
     pub fn current_block_time(&self) -> Option<Timestamp> {
-        *self.current_time.read().expect("RwLock poisoned")
+        *self.current_time.read()
     }
 
     /// Returns the estimated seconds per block based on rolling average.
     ///
     /// Returns `None` if fewer than [`MIN_SAMPLES_FOR_ESTIMATE`] samples are available.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the RwLock is poisoned (should never happen in practice).
     #[must_use]
     pub fn estimated_seconds_per_block(&self) -> Option<f64> {
-        self.window
-            .read()
-            .expect("RwLock poisoned")
-            .average_seconds_per_block()
+        self.window.read().average_seconds_per_block()
     }
 
     /// Returns estimated seconds per block, falling back to default if unavailable.
@@ -319,23 +299,15 @@ impl BlockTimeMonitor {
     }
 
     /// Returns `true` if the monitor has enough samples for reliable estimation.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the RwLock is poisoned (should never happen in practice).
     #[must_use]
     pub fn is_ready(&self) -> bool {
-        self.window.read().expect("RwLock poisoned").sample_count() >= MIN_SAMPLES_FOR_ESTIMATE
+        self.window.read().sample_count() >= MIN_SAMPLES_FOR_ESTIMATE
     }
 
     /// Returns the number of samples collected in the rolling window.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the RwLock is poisoned (should never happen in practice).
     #[must_use]
     pub fn sample_count(&self) -> usize {
-        self.window.read().expect("RwLock poisoned").sample_count()
+        self.window.read().sample_count()
     }
 }
 

@@ -17,7 +17,7 @@
 //!
 //! [`WebSocketConfig`] selects the endpoint, upgrade headers, heartbeat and idle detection,
 //! reconnect policy, transport backend, and optional proxy. Runtime handlers and rate limiting are
-//! supplied to the client constructors instead.
+//! supplied through the client builders instead.
 //!
 //! # Reconnection strategy
 //!
@@ -28,7 +28,7 @@
 //! seconds resets its attempt count and backoff delay; shorter-lived connections continue the
 //! current cycle.
 
-use std::fmt::Debug;
+use std::{fmt::Debug, num::NonZeroU32, time::Duration};
 
 use nautilus_core::string::secret::REDACTED;
 use serde::{Deserialize, Serialize};
@@ -76,22 +76,22 @@ pub enum TransportBackend {
 
 /// Static configuration for WebSocket client connections.
 ///
-/// Runtime handlers and rate limiters are passed separately to the client constructors.
+/// Runtime handlers and rate limiters are passed separately through the client builders.
 ///
 /// # Connection modes
 ///
 /// ## Handler mode
 ///
-/// - Uses [`WebSocketClient::connect`](crate::websocket::WebSocketClient::connect).
+/// - Uses [`WebSocketClient::builder`](crate::websocket::WebSocketClient::builder).
 /// - Delivers messages through the supplied callback.
 /// - Runs the reader in an internal task.
 /// - Supports automatic reconnection with exponential backoff.
 /// - Applies `reconnect_*`, `heartbeat_timeout_secs`, and `idle_timeout_ms` settings.
-/// - Suits long‑lived connections and callback‑based APIs.
+/// - Suits long-lived connections and callback-based APIs.
 ///
 /// ## Stream mode
 ///
-/// - Uses [`WebSocketClient::connect_stream`](crate::websocket::WebSocketClient::connect_stream).
+/// - Uses [`WebSocketClient::stream_builder`](crate::websocket::WebSocketClient::stream_builder).
 /// - Returns a [`MessageReader`](super::types::MessageReader) owned by the caller.
 /// - Does not support automatic reconnection because the client cannot replace the caller's reader.
 /// - Ignores `reconnect_*`, `heartbeat_timeout_secs`, and `idle_timeout_ms` settings.
@@ -131,7 +131,7 @@ pub struct WebSocketConfig {
     /// up early during a reconnect as well as failing a connection attempt faster; keep it above
     /// the reconnect backoff.
     ///
-    /// Only applies to handler mode and must be non‑zero when set. Stream mode ignores this field
+    /// Only applies to handler mode and must be non-zero when set. Stream mode ignores this field
     /// and bounds its connection attempt at 10 seconds.
     #[serde(default)]
     pub connect_timeout_ms: Option<u64>,
@@ -349,6 +349,42 @@ impl WebSocketConfig {
             self.heartbeat_interval_secs,
         )
     }
+}
+
+/// Retry policy for establishing the initial handler-mode connection.
+///
+/// Supplied to the client builder rather than held in [`WebSocketConfig`], because it governs a
+/// single invocation of `connect` and has no meaning once a client exists. Without a policy the
+/// builder makes exactly one attempt.
+///
+/// This does not affect automatic reconnection after a connection has been established; that is
+/// configured by the `reconnect_*` fields of [`WebSocketConfig`].
+///
+/// An attempt is retried only after `ConnectionClosed`, `ConnectionReset`, or `ClosedByPeer`; an
+/// I/O error of any kind except `InvalidInput`, `InvalidData`, `Unsupported`, and
+/// `PermissionDenied`; or an HTTP upgrade or proxy `CONNECT` rejection carrying status 408, 425,
+/// 429, or 500 through 599. Every other transport error and rejection status returns immediately
+/// without waiting for a backoff delay, however many attempts remain.
+///
+/// The classification is by error variant, not by cause, and the backends do not map causes to
+/// variants uniformly - a TLS failure is permanent as `Tls` but follows the I/O rule where a
+/// backend reports it as `Io`. A permanent failure on the first attempt is indistinguishable from
+/// an exhausted ladder by the returned error alone.
+#[derive(Clone, Debug)]
+pub struct InitialConnectRetryPolicy {
+    /// Maximum number of connection attempts, including the first attempt.
+    ///
+    /// This is an upper bound rather than a promise: a failure classified as permanent returns
+    /// before the bound is reached.
+    pub max_attempts: NonZeroU32,
+    /// Delay before the second connection attempt.
+    pub delay_initial: Duration,
+    /// Maximum delay between connection attempts.
+    pub delay_max: Duration,
+    /// Multiplier applied to the delay after each failed attempt.
+    pub backoff_factor: f64,
+    /// Maximum random jitter added to each delay, in milliseconds.
+    pub jitter_ms: u64,
 }
 
 #[cfg(test)]

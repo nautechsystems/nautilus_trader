@@ -57,7 +57,7 @@ ACCEPTED = re.compile(rf"{TS}.*OrderAccepted\(.*?client_order_id=(?P<id>[^,]+),"
 CANCELED = re.compile(rf"{TS}.*OrderCanceled\(.*?client_order_id=(?P<id>[^,]+),")
 
 
-def parse_log(path: Path):
+def parse_log(path: Path) -> object:
     requotes: list[dict] = []
     submits: dict[str, dict] = {}
     accepts: dict[str, pd.Timestamp] = {}

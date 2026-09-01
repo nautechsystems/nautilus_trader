@@ -717,6 +717,118 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
+    struct DecodedOnlyMarkerBackend {
+        inner: MemoryMarkerBackend,
+    }
+
+    impl MarkerBackend for DecodedOnlyMarkerBackend {
+        fn open_run(&mut self, manifest: MarkerManifest) -> Result<(), EventStoreError> {
+            self.inner.open_run(manifest)
+        }
+
+        fn append_snapshot(
+            &mut self,
+            snapshot: &DataCursorSnapshot,
+            hash: [u8; 32],
+        ) -> Result<(), EventStoreError> {
+            self.inner.append_snapshot(snapshot, hash)
+        }
+
+        fn append_hifi(
+            &mut self,
+            marker: &HiFiMarker,
+            hash: [u8; 32],
+        ) -> Result<(), EventStoreError> {
+            self.inner.append_hifi(marker, hash)
+        }
+
+        fn append_gap(&mut self, gap: &MarkerGap, hash: [u8; 32]) -> Result<(), EventStoreError> {
+            self.inner.append_gap(gap, hash)
+        }
+
+        fn put_dict(
+            &mut self,
+            entry: &StreamDictEntry,
+            hash: [u8; 32],
+        ) -> Result<(), EventStoreError> {
+            self.inner.put_dict(entry, hash)
+        }
+
+        fn scan_snapshots(&self) -> Result<Vec<DataCursorSnapshot>, EventStoreError> {
+            self.inner.scan_snapshots()
+        }
+
+        fn scan_hifi(&self) -> Result<Vec<HiFiMarker>, EventStoreError> {
+            self.inner.scan_hifi()
+        }
+
+        fn scan_gaps(&self) -> Result<Vec<MarkerGap>, EventStoreError> {
+            self.inner.scan_gaps()
+        }
+
+        fn scan_dict(&self) -> Result<Vec<StreamDictEntry>, EventStoreError> {
+            self.inner.scan_dict()
+        }
+
+        fn seal(&mut self, status: RunStatus) -> Result<(), EventStoreError> {
+            self.inner.seal(status)
+        }
+
+        fn manifest(&self) -> Result<MarkerManifest, EventStoreError> {
+            self.inner.manifest()
+        }
+    }
+
+    #[rstest]
+    fn decoded_only_backend_uses_verifier_fallbacks() {
+        let mut backend = DecodedOnlyMarkerBackend {
+            inner: open_backend(),
+        };
+        let snapshot = snapshot(1, 1, 100, 1);
+        let hifi = hifi(2, 2, 1);
+        let gap = MarkerGap {
+            from_marker_seq: 3,
+            to_marker_seq: 4,
+            reason: MarkerGapReason::Overflow,
+        };
+        let dict = dict(1);
+        backend
+            .append_snapshot(&snapshot, compute_marker_hash(&snapshot))
+            .expect("append snapshot");
+        backend
+            .append_hifi(&hifi, compute_hifi_hash(&hifi))
+            .expect("append hifi");
+        backend
+            .append_gap(&gap, compute_gap_hash(&gap))
+            .expect("append gap");
+        backend
+            .put_dict(&dict, compute_dict_hash(&dict))
+            .expect("put dict");
+
+        let report = MarkerVerifier::scan(&backend, 2).expect("scan");
+
+        assert_eq!(
+            backend.scan_snapshot_records().expect("snapshot records"),
+            None,
+        );
+        assert_eq!(backend.scan_hifi_records().expect("hifi records"), None);
+        assert_eq!(backend.scan_gap_records().expect("gap records"), None);
+        assert_eq!(backend.scan_dict_records().expect("dict records"), None);
+        assert_eq!(
+            report,
+            MarkerVerifyReport {
+                run_id: "1700000000-marker-verifier".to_string(),
+                status: RunStatus::Running,
+                snapshots_scanned: 1,
+                hifi_scanned: 1,
+                gaps_scanned: 1,
+                dict_entries_scanned: 1,
+                findings: Vec::new(),
+            },
+        );
+    }
+
     #[rstest]
     fn contiguous_marker_seq_passes() {
         let mut backend = open_backend();

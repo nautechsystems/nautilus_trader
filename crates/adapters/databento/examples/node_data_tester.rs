@@ -23,15 +23,15 @@
 //! Run with: `cargo run --example databento-data-tester --package nautilus-databento`
 //!
 //! Required credential environment variables:
-//! - `DATABENTO_API_KEY`.
+//! - `DATABENTO_API_KEY`
 
 use std::path::PathBuf;
 
 use nautilus_common::enums::Environment;
 use nautilus_core::{Params, env::get_env_var};
 use nautilus_databento::{
-    common::DATABENTO_CLIENT_ID,
-    factories::{DatabentoDataClientFactory, DatabentoLiveClientConfig},
+    common::DATABENTO_CLIENT_ID, data::DatabentoDataClientConfig,
+    factories::DatabentoDataClientFactory,
 };
 use nautilus_live::node::LiveNode;
 use nautilus_model::identifiers::{InstrumentId, TraderId};
@@ -67,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    let databento_config = DatabentoLiveClientConfig::new(
+    let databento_config = DatabentoDataClientConfig::new(
         api_key,
         publishers_filepath,
         true, // use_exchange_as_venue

@@ -35,9 +35,9 @@ use super::{
     parse::{compute_commission, instrument_fee_exponent, instrument_taker_fee},
     reports::fetch_collateral_balance_pusd,
     responses::{
-        check_fok_status, emit_market_order_submitted, fok_check_order_id,
-        handle_batch_order_responses, handle_order_response, handle_single_order_response,
-        handle_unknown_submit_result, reject_submit_order,
+        check_fok_status, emit_market_order_submitted, emit_signed_base_quantity_update,
+        fok_check_order_id, handle_batch_order_responses, handle_order_response,
+        handle_single_order_response, handle_unknown_submit_result, reject_submit_order,
     },
     submitter::{
         InvalidMarketPriceError, MarketBuyFeeContext, MarketOrderSubmitRequest, UnknownSubmitError,
@@ -74,7 +74,7 @@ impl PolymarketExecutionClient {
 
         let neg_risk = self.get_neg_risk(&order.instrument_id());
         let token_id = instrument.raw_symbol().to_string();
-        let tick_decimals = instrument.price_precision() as u32;
+        let tick_decimals = u32::from(instrument.min_price_increment_precision());
         let price = order.price().unwrap();
         let quantity = order.quantity();
         let tif = order.time_in_force();
@@ -105,6 +105,7 @@ impl PolymarketExecutionClient {
         let price_precision = instrument.price_precision();
 
         self.spawn_task("submit_limit_order", async move {
+            let mut order = order;
             if let Err(reason) =
                 PolymarketOrderBuilder::validate_limit_expiration(&order, clock.get_time_ns())
             {
@@ -123,6 +124,17 @@ impl PolymarketExecutionClient {
             };
 
             let expected_venue_order_id = submission.expected_venue_order_id;
+            emit_signed_base_quantity_update(
+                &mut order,
+                false,
+                side,
+                quantity,
+                submission.expected_base_qty,
+                size_precision,
+                &emitter,
+                clock,
+            );
+
             match submitter.post_limit_order_submission(submission).await {
                 Ok(response) => {
                     let fok_order_id = fok_check_order_id(&response, tif);
@@ -218,6 +230,7 @@ impl PolymarketExecutionClient {
         let neg_risk = self.get_neg_risk(&order.instrument_id());
         let token_id = instrument.raw_symbol().to_string();
         let tick_size = instrument.price_increment();
+        let tick_decimals = u32::from(instrument.min_price_increment_precision());
         let side = order.order_side();
         let amount = order.quantity();
         let time_in_force = order.time_in_force();
@@ -282,6 +295,7 @@ impl PolymarketExecutionClient {
                     time_in_force,
                     neg_risk,
                     tick_size,
+                    tick_decimals,
                     fee_context,
                 })
                 .await
@@ -567,7 +581,7 @@ impl PolymarketExecutionClient {
                         &order.instrument_id(),
                     ),
                     expire_time: order.expire_time(),
-                    tick_decimals: instrument.price_precision() as u32,
+                    tick_decimals: u32::from(instrument.min_price_increment_precision()),
                 },
                 size_precision: instrument.size_precision(),
                 price_precision: instrument.price_precision(),
@@ -592,7 +606,6 @@ impl PolymarketExecutionClient {
         let order_identities = self.order_identities.clone();
         let pending_submits = self.pending_submits.clone();
         let pending_cancels = self.pending_cancels.clone();
-        let pending_tasks = self.pending_tasks.clone();
         let account_id = self.core.account_id;
 
         self.spawn_task("submit_order_list", async move {
@@ -623,9 +636,19 @@ impl PolymarketExecutionClient {
             let mut prepared_orders = Vec::with_capacity(batch_orders.len());
             let mut submissions = Vec::with_capacity(batch_orders.len());
 
-            for (batch_order, result) in batch_orders.into_iter().zip(prepare_results) {
+            for (mut batch_order, result) in batch_orders.into_iter().zip(prepare_results) {
                 match result {
                     Ok(submission) => {
+                        emit_signed_base_quantity_update(
+                            &mut batch_order.order,
+                            false,
+                            batch_order.request.side,
+                            batch_order.request.quantity,
+                            submission.expected_base_qty,
+                            batch_order.size_precision,
+                            &emitter,
+                            clock,
+                        );
                         prepared_orders.push(batch_order);
                         submissions.push(submission);
                     }
@@ -692,7 +715,6 @@ impl PolymarketExecutionClient {
                                 &order_identities,
                                 &pending_submits,
                                 &pending_cancels,
-                                &pending_tasks,
                                 account_id,
                             )
                             .await;

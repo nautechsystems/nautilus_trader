@@ -1,7 +1,7 @@
 # Configuration
 
 NautilusTrader uses typed configuration objects for data clients, execution clients, engines, and
-strategies. Higher‑level configs compose these component configs. For example, `LiveNodeConfig`
+strategies. Higher-level configs compose these component configs. For example, `LiveNodeConfig`
 owns the node's core component settings; register adapter clients through `LiveNode.builder(...)`.
 Adapters keep separate data and execution client configs when their capabilities or credentials
 differ.
@@ -31,12 +31,12 @@ Rust config types define defaults through `#[builder(default = value)]` annotati
 `Default` implementation, or both. PyO3 constructors generally resolve omitted concrete parameters
 from the Rust `Default` implementation instead of maintaining separate Python defaults.
 
-Container‑level `#[serde(default)]` on a config struct fills its missing serialized fields from that
-config's `Default` implementation. Field‑level `#[serde(default)]` instead uses the field type's
+Container-level `#[serde(default)]` on a config struct fills its missing serialized fields from that
+config's `Default` implementation. Field-level `#[serde(default)]` instead uses the field type's
 default, unless the attribute names another function.
 
 `Type::default()` and `Type::builder().build()` are separate construction paths. A custom `Default`
-implementation may delegate part of its construction to the builder, but this is type‑specific. Do
+implementation may delegate part of its construction to the builder, but this is type-specific. Do
 not assume that the two paths are interchangeable unless the implementation or documentation
 guarantees it.
 
@@ -62,9 +62,9 @@ annotation.
 
 Properties expose selected config values. Configs that hold secrets can omit their values or expose
 only presence checks; consult the config API before displaying or logging a config. Mutability is
-type‑specific: many configs expose only read‑only getters, while extensible component configs and
+type-specific: many configs expose only read-only getters, while extensible component configs and
 some adapter configs expose documented setters. `DataActorConfig`, `StrategyConfig`, and
-`ExecutionAlgorithmConfig` also accept extra fields for Python subclasses. Python‑owned analysis
+`ExecutionAlgorithmConfig` also accept extra fields for Python subclasses. Python-owned analysis
 configs retain their documented dataclass behavior.
 
 ```python
@@ -85,15 +85,15 @@ config = BybitDataClientConfig(http_timeout_secs=30)
 assert config.http_timeout_secs == 30
 ```
 
-When a wrapper maps `None` to a non‑`None` Rust default, Python cannot use that parameter to store
+When a wrapper maps `None` to a non-`None` Rust default, Python cannot use that parameter to store
 Rust `None`. For example, passing `instrument_status_poll_secs=None` to `BybitDataClientConfig`
-retains its 60‑second default. Rust callers can set `instrument_poll_interval_secs` to `None` to
+retains its 60-second default. Rust callers can set `instrument_poll_interval_secs` to `None` to
 disable periodic instrument and status polling.
 
 ## Rust configs
 
-Many Rust config structs derive [`bon::Builder`](https://bon-rs.com), which generates a type‑safe
-builder with compile‑time checks for required fields. A builder can omit fields that declare a
+Many Rust config structs derive [`bon::Builder`](https://bon-rs.com), which generates a type-safe
+builder with compile-time checks for required fields. A builder can omit fields that declare a
 builder default.
 
 Use the construction style documented for the config type. For `DataEngineConfig`, the builder and
@@ -137,27 +137,27 @@ Python exposes `instrument_poll_interval_secs` as `instrument_status_poll_secs`.
 `instrument_poll_interval_secs` as `None`, which disables periodic instrument and status polling.
 This is one case where the type's default and builder paths differ.
 
-Adapter‑specific fields such as rate limits, polling intervals, and margin modes are documented in
+Adapter-specific fields such as rate limits, polling intervals, and margin modes are documented in
 the [integration guides](../integrations/index.md).
 
 ## Engine configs
 
-Engine configs use the same typed‑field approach. In `LiveExecEngineConfig`, fields such as
+Engine configs use the same typed-field approach. In `LiveExecutionEngineConfig`, fields such as
 `reconciliation`, `inflight_check_interval_ms`, and `open_check_threshold_ms` have concrete defaults:
 
 | Field                        | Default | Purpose                                                |
 | ---------------------------- | ------- | ------------------------------------------------------ |
 | `reconciliation`             | `True`  | Run reconciliation during startup.                     |
-| `inflight_check_interval_ms` | `2_000` | Check whether in‑flight orders exceed their threshold. |
-| `open_check_threshold_ms`    | `5_000` | Wait before acting on an open‑order discrepancy.       |
+| `inflight_check_interval_ms` | `2_000` | Check whether in-flight orders exceed their threshold. |
+| `open_check_threshold_ms`    | `5_000` | Wait before acting on an open-order discrepancy.       |
 
 Optional fields such as `open_check_interval_secs` and `position_check_interval_secs` enable or
 disable their periodic checks:
 
 ```python
-from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecutionEngineConfig
 
-config = LiveExecEngineConfig(
+config = LiveExecutionEngineConfig(
     open_check_interval_secs=30.0,  # Enable open order polling
     open_check_lookback_mins=60,  # Look back 60 minutes
 )
@@ -168,7 +168,7 @@ assert config.position_check_interval_secs is None  # Disabled by default
 ```
 
 After the live node completes startup, an available execution client lets this config schedule
-open‑order report requests every 30 seconds and limit each request to the previous 60 minutes. It
+open-order report requests every 30 seconds and limit each request to the previous 60 minutes. It
 does not schedule periodic position report requests. Supplied periodic intervals must be positive,
 finite values of at least one nanosecond.
 

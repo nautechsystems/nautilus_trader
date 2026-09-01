@@ -17,7 +17,6 @@
 
 use std::{
     cell::RefCell,
-    collections::HashMap,
     net::SocketAddr,
     path::PathBuf,
     rc::Rc,
@@ -58,7 +57,7 @@ use nautilus_kraken::{
         consts::{KRAKEN_CLIENT_ID, KRAKEN_VENUE},
         enums::{KrakenEnvironment, KrakenProductType},
     },
-    config::KrakenExecClientConfig,
+    config::KrakenExecutionClientConfig,
     execution::{KrakenFuturesExecutionClient, KrakenSpotExecutionClient},
 };
 use nautilus_live::ExecutionClientCore;
@@ -508,8 +507,7 @@ async fn start_test_server()
 
 async fn wait_for_server(addr: SocketAddr) {
     let health_url = format!("http://{addr}/health");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();
@@ -521,9 +519,8 @@ async fn wait_for_server(addr: SocketAddr) {
     .await;
 }
 
-fn create_test_exec_config(addr: SocketAddr) -> KrakenExecClientConfig {
-    KrakenExecClientConfig {
-        trader_id: test_trader_id(),
+fn create_test_exec_config(addr: SocketAddr) -> KrakenExecutionClientConfig {
+    KrakenExecutionClientConfig {
         account_id: test_account_id(),
         api_key: "test_key".to_string(),
         api_secret: "c2VjcmV0".to_string(),
@@ -536,9 +533,8 @@ fn create_test_exec_config(addr: SocketAddr) -> KrakenExecClientConfig {
     }
 }
 
-fn create_test_spot_exec_config(addr: SocketAddr) -> KrakenExecClientConfig {
-    KrakenExecClientConfig {
-        trader_id: test_trader_id(),
+fn create_test_spot_exec_config(addr: SocketAddr) -> KrakenExecutionClientConfig {
+    KrakenExecutionClientConfig {
         account_id: test_account_id(),
         api_key: "test_key".to_string(),
         api_secret: "c2VjcmV0".to_string(),
@@ -941,7 +937,7 @@ fn cancel_all_orders_command() -> CancelAllOrders {
         Some(*KRAKEN_CLIENT_ID),
         test_strategy_id(),
         test_instrument_id(),
-        OrderSide::NoOrderSide,
+        None,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -955,7 +951,7 @@ fn spot_cancel_all_orders_command() -> CancelAllOrders {
         Some(*KRAKEN_CLIENT_ID),
         test_strategy_id(),
         test_spot_instrument_id(),
-        OrderSide::NoOrderSide,
+        None,
         UUID4::new(),
         UnixNanos::default(),
         None,

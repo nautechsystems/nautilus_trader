@@ -33,21 +33,23 @@ from nautilus_trader.common import MessageBusConfig
 from nautilus_trader.data import DataEngineConfig
 from nautilus_trader.execution import ExecutionEngineConfig
 from nautilus_trader.execution import OrderEmulatorConfig
+from nautilus_trader.live import DataClientConfig
+from nautilus_trader.live import ExecutionClientConfig
 from nautilus_trader.live import InstrumentProviderConfig
-from nautilus_trader.live import LiveDataClientConfig
 from nautilus_trader.live import LiveDataEngineConfig
-from nautilus_trader.live import LiveExecClientConfig
-from nautilus_trader.live import LiveExecEngineConfig
+from nautilus_trader.live import LiveExecutionEngineConfig
 from nautilus_trader.live import LiveNodeConfig
 from nautilus_trader.live import LiveRiskEngineConfig
 from nautilus_trader.live import PluginConfig
 from nautilus_trader.live import QueueMonitorConfig
 from nautilus_trader.live import RoutingConfig
+from nautilus_trader.persistence import DataCatalogConfig
+from nautilus_trader.persistence import StreamingConfig
 from nautilus_trader.portfolio import PortfolioConfig
 from nautilus_trader.risk import RiskEngineConfig
 from nautilus_trader.trading import ExecutionAlgorithmConfig
 from nautilus_trader.trading import ImportableControllerConfig
-from nautilus_trader.trading import ImportableExecAlgorithmConfig
+from nautilus_trader.trading import ImportableExecutionAlgorithmConfig
 from nautilus_trader.trading import ImportableStrategyConfig
 from nautilus_trader.trading import StrategyConfig
 
@@ -59,19 +61,20 @@ __all__ = [
     "BacktestVenueConfig",
     "CacheConfig",
     "DataActorConfig",
+    "DataCatalogConfig",
+    "DataClientConfig",
     "DataEngineConfig",
     "ExecutionAlgorithmConfig",
+    "ExecutionClientConfig",
     "ExecutionEngineConfig",
     "FileWriterConfig",
     "ImportableActorConfig",
     "ImportableControllerConfig",
-    "ImportableExecAlgorithmConfig",
+    "ImportableExecutionAlgorithmConfig",
     "ImportableStrategyConfig",
     "InstrumentProviderConfig",
-    "LiveDataClientConfig",
     "LiveDataEngineConfig",
-    "LiveExecClientConfig",
-    "LiveExecEngineConfig",
+    "LiveExecutionEngineConfig",
     "LiveNodeConfig",
     "LiveRiskEngineConfig",
     "LoggerConfig",
@@ -83,5 +86,6 @@ __all__ = [
     "RiskEngineConfig",
     "RoutingConfig",
     "StrategyConfig",
+    "StreamingConfig",
     "TearsheetConfig",
 ]

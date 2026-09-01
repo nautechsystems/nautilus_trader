@@ -1,7 +1,7 @@
 # OrderBookDepth10
 
-`OrderBookDepth10` represents a fixed‑depth book update with up to 10 bid levels and 10 ask levels.
-Use it when a venue publishes a self‑contained depth snapshot rather than incremental deltas.
+`OrderBookDepth10` represents a fixed-depth book update with up to 10 bid levels and 10 ask levels.
+Use it when a venue publishes a self-contained depth snapshot rather than incremental deltas.
 
 ## Fields
 
@@ -57,9 +57,9 @@ let depth = OrderBookDepth10::new(
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
-from nautilus_trader.model.data import BookOrder
-from nautilus_trader.model.data import OrderBookDepth10
-from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model import BookOrder
+from nautilus_trader.model import OrderBookDepth10
+from nautilus_trader.model import OrderSide
 
 bids = [
     BookOrder(
@@ -95,6 +95,6 @@ depth = OrderBookDepth10(
 
 ## Related guides
 
-- [QuoteTick](quote_tick.md) covers top‑of‑book data derived from depth.
+- [QuoteTick](quote_tick.md) covers top-of-book data derived from depth.
 - [Order books](index.md#order-books) explains order book state.
 - [Python API reference](/docs/python-api-latest/model/data.html) lists Python members.

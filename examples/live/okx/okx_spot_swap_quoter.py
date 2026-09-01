@@ -35,13 +35,13 @@ from nautilus_trader.adapters.okx import OKX
 from nautilus_trader.adapters.okx import OKXDataClientConfig
 from nautilus_trader.adapters.okx import OKXDataClientFactory
 from nautilus_trader.adapters.okx import OKXEnvironment
-from nautilus_trader.adapters.okx import OKXExecClientConfig
+from nautilus_trader.adapters.okx import OKXExecutionClientConfig
 from nautilus_trader.adapters.okx import OKXExecutionClientFactory
 from nautilus_trader.adapters.okx import OKXInstrumentType
 from nautilus_trader.adapters.okx import OKXMarginMode
 from nautilus_trader.common import Environment
 from nautilus_trader.common import LogColor
-from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecutionEngineConfig
 from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.live import LiveNode
@@ -89,6 +89,9 @@ class SpotSwapQuoterConfig(StrategyConfig):
     )
 
     def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+        """
+        Create a new instance.
+        """
         for key in cls._CUSTOM_FIELDS:
             kwargs.pop(key, None)
         return super().__new__(cls, *args, **kwargs)
@@ -102,8 +105,11 @@ class SpotSwapQuoterConfig(StrategyConfig):
         tob_offset_ticks: int = 100,
         log_data: bool = False,
         close_positions_on_stop: bool = True,
-        **kwargs: Any,
+        **_kwargs: Any,
     ) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__()
         self.spot_instrument_id = spot_instrument_id
         self.swap_instrument_id = swap_instrument_id
@@ -123,7 +129,11 @@ class SpotSwapQuoter(Strategy):
     """
 
     def __init__(self, config: SpotSwapQuoterConfig) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
+        self._config = config
         self.spot_instrument: Any | None = None
         self.swap_instrument: Any | None = None
 
@@ -140,39 +150,44 @@ class SpotSwapQuoter(Strategy):
         self._swap_ask_order: Any | None = None
 
     def on_start(self) -> None:
-        self.spot_instrument = self.cache.instrument(self.config.spot_instrument_id)
+        """
+        On start.
+        """
+        self.spot_instrument = self.cache.instrument(self._config.spot_instrument_id)
         if self.spot_instrument is None:
+            log_msg = f"Could not find spot instrument for {self._config.spot_instrument_id}"
             self.log.error(
-                f"Could not find spot instrument for {self.config.spot_instrument_id}",
+                log_msg,
             )
             self.stop()
             return
 
-        self.swap_instrument = self.cache.instrument(self.config.swap_instrument_id)
+        self.swap_instrument = self.cache.instrument(self._config.swap_instrument_id)
         if self.swap_instrument is None:
-            self.log.error(f"Could not find swap instrument for {self.config.swap_instrument_id}")
+            log_msg = f"Could not find swap instrument for {self._config.swap_instrument_id}"
+            self.log.error(log_msg)
             self.stop()
             return
 
-        offset_ticks = max(self.config.tob_offset_ticks, 0)
+        offset_ticks = max(self._config.tob_offset_ticks, 0)
 
         # Initialize spot parameters
         self._spot_price_offset = self.spot_instrument.price_increment.as_decimal() * offset_ticks
         self._spot_order_qty = Quantity.from_decimal_dp(
-            self.config.spot_order_qty,
+            self._config.spot_order_qty,
             self.spot_instrument.size_precision,
         )
 
         # Initialize swap parameters
         self._swap_price_offset = self.swap_instrument.price_increment.as_decimal() * offset_ticks
         self._swap_order_qty = Quantity.from_decimal_dp(
-            self.config.swap_order_qty,
+            self._config.swap_order_qty,
             self.swap_instrument.size_precision,
         )
 
         # Subscribe to quotes
-        self.subscribe_quotes(self.config.spot_instrument_id)
-        self.subscribe_quotes(self.config.swap_instrument_id)
+        self.subscribe_quotes(self._config.spot_instrument_id)
+        self.subscribe_quotes(self._config.swap_instrument_id)
 
         # Open initial position on spot
         self.open_position_on_start()
@@ -185,7 +200,7 @@ class SpotSwapQuoter(Strategy):
             return
 
         order = self.order_factory.market(
-            instrument_id=self.config.spot_instrument_id,
+            instrument_id=self._config.spot_instrument_id,
             order_side=OrderSide.BUY,
             quantity=self._spot_order_qty,
             time_in_force=TimeInForce.GTC,
@@ -193,18 +208,22 @@ class SpotSwapQuoter(Strategy):
         )
 
         self.submit_order(order)
+        log_msg = f"Opened position on {self._config.spot_instrument_id} with order {order.client_order_id}"
         self.log.info(
-            f"Opened position on {self.config.spot_instrument_id} with order {order.client_order_id}",
+            log_msg,
             LogColor.BLUE,
         )
 
     def on_quote(self, quote: QuoteTick) -> None:
-        if self.config.log_data:
+        """
+        On quote.
+        """
+        if self._config.log_data:
             self.log.info(repr(quote), LogColor.CYAN)
 
-        if quote.instrument_id == self.config.spot_instrument_id:
+        if quote.instrument_id == self._config.spot_instrument_id:
             self._maintain_spot_orders(quote)
-        elif quote.instrument_id == self.config.swap_instrument_id:
+        elif quote.instrument_id == self._config.swap_instrument_id:
             self._maintain_swap_orders(quote)
 
     def _maintain_spot_orders(self, quote: QuoteTick) -> None:
@@ -229,12 +248,14 @@ class SpotSwapQuoter(Strategy):
         min_price = self.spot_instrument.price_increment.as_decimal()
 
         if desired_bid <= 0:
+            log_msg = f"Calculated bid price {desired_bid} <= 0, using min price {min_price}"
             self.log.warning(
-                f"Calculated bid price {desired_bid} <= 0, using min price {min_price}",
+                log_msg,
             )
             desired_bid = min_price
         if desired_ask <= desired_bid:
-            self.log.warning(f"Calculated ask price {desired_ask} <= bid {desired_bid}, skipping")
+            log_msg = f"Calculated ask price {desired_ask} <= bid {desired_bid}, skipping"
+            self.log.warning(log_msg)
             return
 
         # Place BID order if none exists
@@ -243,7 +264,7 @@ class SpotSwapQuoter(Strategy):
             base_qty = self._spot_order_qty.as_decimal() / desired_bid
             quantity = Quantity.from_decimal_dp(base_qty, self.spot_instrument.size_precision)
             order = self.order_factory.limit(
-                instrument_id=self.config.spot_instrument_id,
+                instrument_id=self._config.spot_instrument_id,
                 order_side=OrderSide.BUY,
                 quantity=quantity,
                 price=price,
@@ -259,7 +280,7 @@ class SpotSwapQuoter(Strategy):
             base_qty = self._spot_order_qty.as_decimal() / desired_ask
             quantity = Quantity.from_decimal_dp(base_qty, self.spot_instrument.size_precision)
             order = self.order_factory.limit(
-                instrument_id=self.config.spot_instrument_id,
+                instrument_id=self._config.spot_instrument_id,
                 order_side=OrderSide.SELL,
                 quantity=quantity,
                 price=price,
@@ -291,13 +312,15 @@ class SpotSwapQuoter(Strategy):
         min_price = self.swap_instrument.price_increment.as_decimal()
 
         if desired_bid <= 0:
+            log_msg = f"Calculated swap bid price {desired_bid} <= 0, using min price {min_price}"
             self.log.warning(
-                f"Calculated swap bid price {desired_bid} <= 0, using min price {min_price}",
+                log_msg,
             )
             desired_bid = min_price
         if desired_ask <= desired_bid:
+            log_msg = f"Calculated swap ask price {desired_ask} <= bid {desired_bid}, skipping"
             self.log.warning(
-                f"Calculated swap ask price {desired_ask} <= bid {desired_bid}, skipping",
+                log_msg,
             )
             return
 
@@ -305,7 +328,7 @@ class SpotSwapQuoter(Strategy):
         if self._swap_bid_order is None:
             price = self.swap_instrument.make_price(float(desired_bid))
             order = self.order_factory.limit(
-                instrument_id=self.config.swap_instrument_id,
+                instrument_id=self._config.swap_instrument_id,
                 order_side=OrderSide.BUY,
                 quantity=self._swap_order_qty,
                 price=price,
@@ -319,7 +342,7 @@ class SpotSwapQuoter(Strategy):
         if self._swap_ask_order is None:
             price = self.swap_instrument.make_price(float(desired_ask))
             order = self.order_factory.limit(
-                instrument_id=self.config.swap_instrument_id,
+                instrument_id=self._config.swap_instrument_id,
                 order_side=OrderSide.SELL,
                 quantity=self._swap_order_qty,
                 price=price,
@@ -330,6 +353,9 @@ class SpotSwapQuoter(Strategy):
             self.submit_order(order)
 
     def on_order_filled(self, event: OrderFilled) -> None:
+        """
+        On order filled.
+        """
         # Reset state on fills so quotes are re-placed
         if self._spot_bid_order and event.client_order_id == self._spot_bid_order.client_order_id:
             self._spot_bid_order = None
@@ -342,12 +368,15 @@ class SpotSwapQuoter(Strategy):
             self._swap_ask_order = None
 
     def on_stop(self) -> None:
-        self.cancel_all_orders(self.config.spot_instrument_id)
-        self.cancel_all_orders(self.config.swap_instrument_id)
+        """
+        On stop.
+        """
+        self.cancel_all_orders(self._config.spot_instrument_id)
+        self.cancel_all_orders(self._config.swap_instrument_id)
 
-        if self.config.close_positions_on_stop:
-            self.close_all_positions(self.config.spot_instrument_id)
-            self.close_all_positions(self.config.swap_instrument_id)
+        if self._config.close_positions_on_stop:
+            self.close_all_positions(self._config.spot_instrument_id)
+            self.close_all_positions(self._config.swap_instrument_id)
 
         # Reset state
         self._spot_bid_order = None
@@ -357,17 +386,20 @@ class SpotSwapQuoter(Strategy):
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     node = (
         LiveNode.builder("OKX-SPOT-SWAP-QUOTER-001", TRADER_ID, Environment.LIVE)
         .with_exec_engine_config(
-            LiveExecEngineConfig(
+            LiveExecutionEngineConfig(
                 reconciliation_instrument_ids=[
                     str(SPOT_INSTRUMENT_ID),
                     str(SWAP_INSTRUMENT_ID),
                 ],
             ),
         )
-        .with_reconciliation(True)
+        .with_reconciliation(reconciliation=True)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))  # Must bypass for spot for now
         .with_timeout_connection(20)
         .with_timeout_reconciliation(10)
@@ -386,8 +418,7 @@ def main() -> None:
         .add_exec_client(
             None,
             OKXExecutionClientFactory(),
-            OKXExecClientConfig(
-                trader_id=TRADER_ID,
+            OKXExecutionClientConfig(
                 account_id=ACCOUNT_ID,
                 instrument_types=INSTRUMENT_TYPES,
                 environment=OKX_ENVIRONMENT,

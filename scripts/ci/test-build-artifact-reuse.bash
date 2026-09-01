@@ -127,7 +127,7 @@ if grep -Eq '^build ' "$CARGO_LOG"; then
   fail "DST smoke tests used a redundant Cargo build"
 fi
 grep -Fq \
-  'nextest run --config target."cfg(all())".rustflags=["--cfg","madsim"] -p nautilus-common -p nautilus-core -p nautilus-network -p nautilus-execution -p nautilus-live --lib --tests --features simulation' \
+  'nextest run --config target."cfg(all())".rustflags=["--cfg","madsim"] -p nautilus-common -p nautilus-core -p nautilus-event-store -p nautilus-network -p nautilus-execution -p nautilus-live --lib --tests --features simulation' \
   "$CARGO_LOG" || fail "Standard-precision DST tests did not compile the full package scope together"
 grep -Fq \
   'nextest run --config target."cfg(all())".rustflags=["--cfg","madsim"] -p nautilus-common -p nautilus-execution --lib --tests --features simulation,high-precision' \
@@ -178,7 +178,13 @@ grep -Fq '            crates/network/.*\.rs|' "$REPO_ROOT/.pre-commit-config.yam
 grep -Fq '            crates/network/Cargo\.toml|' "$REPO_ROOT/.pre-commit-config.yaml" ||
   fail "Non-Linux network Clippy hook is not limited to Rust build inputs"
 
-for config in .config/nextest.toml .cargo/audit.toml deny.toml tools.toml crates/model/cbindgen.toml; do
+for config in \
+  .config/nextest.toml \
+  .cargo/audit.toml \
+  .nautilus-engineering/tools.toml \
+  deny.toml \
+  tools.toml \
+  crates/model/cbindgen.toml; do
   run_changed_script clippy-changed.sh "$config"
   [[ ! -s "$CARGO_LOG" ]] || fail "Non-build TOML triggered Clippy: $config"
   grep -Fq "No Rust build inputs detected; skipping clippy" "$RUST_CHECK_LOG" ||

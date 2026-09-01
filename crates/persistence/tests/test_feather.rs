@@ -302,7 +302,7 @@ async fn test_write_orderbook_deltas_clear_first_preserves_precision() {
         instrument_id,
         BookAction::Add,
         BookOrder {
-            side: OrderSide::Buy,
+            side: OrderSide::Buy.into(),
             price: Price::new(1.23, 2),
             size: Quantity::new(100.0, 6),
             order_id: 1,
@@ -427,7 +427,7 @@ async fn test_write_batch_partitions_by_instrument() {
             instrument_id,
             BookAction::Add,
             BookOrder {
-                side: OrderSide::Buy,
+                side: OrderSide::Buy.into(),
                 price: Price::new(price, price_prec),
                 size: Quantity::new(size, size_prec),
                 order_id: 1,

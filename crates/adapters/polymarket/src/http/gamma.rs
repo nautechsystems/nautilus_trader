@@ -93,14 +93,12 @@ impl PolymarketGammaRawHttpClient {
         proxy_url: Option<ProxyUrl>,
     ) -> StdResult<Self, HttpClientError> {
         Ok(Self {
-            client: HttpClient::new(
-                Self::default_headers(),
-                vec![],
-                vec![],
-                Some(*POLYMARKET_GAMMA_REST_QUOTA),
-                Some(timeout_secs),
-                proxy_url.map(|url| url.expose().to_string()),
-            )?,
+            client: HttpClient::builder()
+                .headers(Self::default_headers())
+                .default_quota(*POLYMARKET_GAMMA_REST_QUOTA)
+                .timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url.map(|url| url.expose().to_string()))
+                .build()?,
             base_url: base_url
                 .unwrap_or_else(|| gamma_api_url().to_string())
                 .trim_end_matches('/')

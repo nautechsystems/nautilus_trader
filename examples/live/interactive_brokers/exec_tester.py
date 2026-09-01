@@ -21,16 +21,18 @@ an IOC order, then maintains post-only limit quotes on both sides of the book. O
 stop it cancels all orders and closes all positions. Run only against an account
 you intend to test. The strategy has no alpha advantage whatsoever and is not
 intended for production trading.
+Set `TWS_ACCOUNT` to the account that will receive the orders.
 
 """
 
 from __future__ import annotations
 
+import os
 from decimal import Decimal
 
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersDataClientFactory
-from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersExecClientConfig
+from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersExecutionClientConfig
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersExecutionClientFactory
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersInstrumentProviderConfig
 from nautilus_trader.adapters.interactive_brokers import MarketDataType
@@ -48,11 +50,14 @@ from nautilus_trader.model import TraderId
 from nautilus_trader.testkit import ExecTesterConfig
 
 
+# WARNING: With DRY_RUN = False, this tester submits orders to the configured
+# environment and may use real funds. Set DRY_RUN = True to connect without
+# submitting orders or sending shutdown cancel/close commands.
+DRY_RUN = False
 IB = "IB"
 TRADER_ID = TraderId.from_str("TESTER-001")
 ACCOUNT_ID = AccountId.from_str("IB-001")
 STRATEGY_ID = StrategyId.from_str("EXEC_TESTER-001")
-IB_ACCOUNT_ID = "U1234567"
 HOST = "127.0.0.1"
 PORT = 7497
 CLIENT_ID = 101
@@ -62,6 +67,13 @@ TOB_OFFSET_TICKS = 500
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
+    ib_account_id = os.getenv("TWS_ACCOUNT")
+    if not ib_account_id:
+        raise SystemExit("TWS_ACCOUNT must be set to the target IB account")
+
     provider_config = InteractiveBrokersInstrumentProviderConfig(
         symbology_method=SymbologyMethod.RAW,
         load_ids={INSTRUMENT_ID},
@@ -69,7 +81,7 @@ def main() -> None:
 
     node = (
         LiveNode.builder("IB-EXEC-TESTER-001", TRADER_ID, Environment.LIVE)
-        .with_reconciliation(True)
+        .with_reconciliation(reconciliation=True)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
         .add_data_client(
             None,
@@ -84,12 +96,12 @@ def main() -> None:
         )
         .add_exec_client(
             None,
-            InteractiveBrokersExecutionClientFactory(TRADER_ID, ACCOUNT_ID),
-            InteractiveBrokersExecClientConfig(
+            InteractiveBrokersExecutionClientFactory(),
+            InteractiveBrokersExecutionClientConfig(
                 host=HOST,
                 port=PORT,
                 client_id=CLIENT_ID,
-                account_id=IB_ACCOUNT_ID,
+                account_id=ib_account_id,
                 instrument_provider=provider_config,
             ),
         )
@@ -115,7 +127,7 @@ def main() -> None:
             cancel_orders_on_stop=True,
             close_positions_on_stop=True,
             reduce_only_on_stop=False,
-            dry_run=False,  # Set True to log intended order flow without submitting orders
+            dry_run=DRY_RUN,
             log_data=False,
         ),
     )

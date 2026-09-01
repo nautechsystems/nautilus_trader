@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test python handlers behavior.
+"""
 
 import re
 from pathlib import Path
@@ -33,6 +36,9 @@ EXPECTED_DELEGATE = {
 
 
 def test_python_indicator_handlers_delegate_to_rust_core() -> None:
+    """
+    Test python indicator handlers delegate to rust core.
+    """
     # Arrange
     rust_source = Path(__file__).resolve().parents[4] / "crates" / "indicators" / "src" / "python"
     handlers = 0

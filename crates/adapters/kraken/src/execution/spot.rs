@@ -18,7 +18,7 @@
 use std::{
     collections::HashSet,
     future::Future,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -29,7 +29,7 @@ use jiff::Timestamp;
 use nautilus_common::{
     cache::InstrumentLookupError,
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender},
+    live::runner::get_exec_event_sender,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
@@ -37,17 +37,18 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, MUTEX_POISONED, Params, UnixNanos,
+    AtomicMap, Params, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
-    ExecutionClientCore, ExecutionEventEmitter, execution::failure::CommandFailure,
+    ExecutionClientCore, ExecutionEventEmitter, SocketControl, execution::failure::CommandFailure,
+    task::TaskGroup,
 };
 use nautilus_model::{
     accounts::AccountAny,
     enums::{
-        AccountType, OmsType, OrderSide, OrderType, PositionSideSpecified, TimeInForce,
-        TrailingOffsetType, TriggerType,
+        AccountType, OmsType, OrderSide, OrderType, PositionSide, TimeInForce, TrailingOffsetType,
+        TriggerType,
     },
     events::OrderEventAny,
     identifiers::{
@@ -59,7 +60,6 @@ use nautilus_model::{
     types::{AccountBalance, MarginBalance, Price, Quantity},
 };
 use rust_decimal::Decimal;
-use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -81,7 +81,7 @@ use crate::{
         },
         parse::truncate_cl_ord_id,
     },
-    config::KrakenExecClientConfig,
+    config::KrakenExecutionClientConfig,
     http::{
         KrakenSpotCancelOrderBatchParams, KrakenSpotCancelOrderParamsBuilder, KrakenSpotHttpClient,
         spot::client::KRAKEN_SPOT_DEFAULT_RATE_LIMIT_PER_SECOND,
@@ -109,13 +109,13 @@ use crate::{
 pub struct KrakenSpotExecutionClient {
     core: ExecutionClientCore,
     clock: &'static AtomicTime,
-    config: KrakenExecClientConfig,
+    config: KrakenExecutionClientConfig,
     emitter: ExecutionEventEmitter,
     http: KrakenSpotHttpClient,
     ws: KrakenSpotWebSocketClient,
     cancellation_token: CancellationToken,
-    ws_stream_handle: Option<JoinHandle<()>>,
-    pending_tasks: Mutex<Vec<JoinHandle<()>>>,
+    session_tasks: TaskGroup,
+    pending_tasks: TaskGroup,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     order_qty_cache: Arc<AtomicMap<String, Decimal>>,
     truncated_id_map: Arc<AtomicMap<String, ClientOrderId>>,
@@ -126,7 +126,10 @@ pub struct KrakenSpotExecutionClient {
 
 impl KrakenSpotExecutionClient {
     /// Creates a new [`KrakenSpotExecutionClient`].
-    pub fn new(core: ExecutionClientCore, config: KrakenExecClientConfig) -> anyhow::Result<Self> {
+    pub fn new(
+        core: ExecutionClientCore,
+        config: KrakenExecutionClientConfig,
+    ) -> anyhow::Result<Self> {
         let clock = get_atomic_clock_realtime();
         let emitter = ExecutionEventEmitter::new(
             clock,
@@ -136,7 +139,12 @@ impl KrakenSpotExecutionClient {
             None,
         );
 
-        let cancellation_token = CancellationToken::new();
+        let session_tasks = TaskGroup::new();
+        let cancellation_token = session_tasks.cancellation_token();
+        let pending_tasks = TaskGroup::new();
+        let pending_spawner = pending_tasks
+            .spawner()
+            .context("Kraken Spot execution task admission is closed")?;
 
         let http = KrakenSpotHttpClient::with_credentials(
             config.api_key.clone(),
@@ -176,7 +184,12 @@ impl KrakenSpotExecutionClient {
             data_config,
             cancellation_token.clone(),
             config.proxy_url.clone(),
-        );
+        )
+        .with_socket_control(SocketControl::new(
+            core.client_id,
+            Some(*KRAKEN_VENUE),
+            "kraken-spot-user-streams",
+        ));
 
         let ws_dispatch_state = Arc::new(WsDispatchState::new());
         // Connect() swaps in a live cmd_tx; capture the shared handle so the
@@ -192,7 +205,7 @@ impl KrakenSpotExecutionClient {
             core.trader_id,
             core.account_id,
             ws.auth_token_handle(),
-            cancellation_token.clone(),
+            pending_spawner,
             clock,
         ));
 
@@ -204,8 +217,8 @@ impl KrakenSpotExecutionClient {
             http,
             ws,
             cancellation_token,
-            ws_stream_handle: None,
-            pending_tasks: Mutex::new(Vec::new()),
+            session_tasks,
+            pending_tasks,
             instruments: Arc::new(AtomicMap::new()),
             order_qty_cache: Arc::new(AtomicMap::new()),
             truncated_id_map: Arc::new(AtomicMap::new()),
@@ -253,16 +266,60 @@ impl KrakenSpotExecutionClient {
     where
         F: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        let runtime = get_runtime();
-        let handle = runtime.spawn(async move {
+        let future = async move {
             if let Err(e) = fut.await {
                 log::warn!("{description} failed: {e:?}");
             }
-        });
+        };
 
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        tasks.retain(|handle| !handle.is_finished());
-        tasks.push(handle);
+        if let Err(e) = self.pending_tasks.spawn(future) {
+            log::warn!("Skipping Kraken Spot {description} after shutdown began: {e}");
+        }
+    }
+
+    async fn finish_tasks(&self) -> anyhow::Result<()> {
+        let (session_result, pending_result) = tokio::join!(
+            self.session_tasks
+                .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2)),
+            self.pending_tasks
+                .finish_shutdown(Duration::from_secs(2), Duration::from_secs(2)),
+        );
+        session_result.context("failed to finish Kraken Spot execution session tasks")?;
+        pending_result.context("failed to finish Kraken Spot execution command tasks")?;
+        Ok(())
+    }
+
+    async fn prepare_task_groups(&mut self) -> anyhow::Result<()> {
+        if !self.session_tasks.is_open() || !self.pending_tasks.is_open() {
+            self.session_tasks.begin_shutdown();
+            self.pending_tasks.begin_shutdown();
+            self.finish_tasks().await?;
+            self.session_tasks
+                .start_generation()
+                .context("failed to start Kraken Spot execution session task generation")?;
+            self.pending_tasks
+                .start_generation()
+                .context("failed to start Kraken Spot execution command task generation")?;
+            self.cancellation_token = self.session_tasks.cancellation_token();
+            let pending_spawner = self
+                .pending_tasks
+                .spawner()
+                .context("Kraken Spot execution task admission is closed")?;
+            self.order_request_state.reset_task_spawner(pending_spawner);
+        }
+        Ok(())
+    }
+
+    async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
+        self.http.cancel_all_requests();
+        self.pending_tasks.begin_shutdown();
+        self.order_request_state.clear();
+        let ws_result = self.ws.close().await;
+        self.session_tasks.begin_shutdown();
+        let tasks_result = self.finish_tasks().await;
+        self.core.set_disconnected();
+        tasks_result?;
+        Ok(ws_result?)
     }
 
     fn submit_single_order(
@@ -537,7 +594,7 @@ impl KrakenSpotExecutionClient {
         let clock = self.clock;
         let cancellation_token = self.cancellation_token.clone();
 
-        let handle = get_runtime().spawn(async move {
+        let future = async move {
             tokio::pin!(stream);
 
             loop {
@@ -569,9 +626,11 @@ impl KrakenSpotExecutionClient {
                     }
                 }
             }
-        });
+        };
 
-        self.ws_stream_handle = Some(handle);
+        self.session_tasks
+            .spawn(future)
+            .context("failed to register Kraken Spot execution stream task")?;
 
         let event_rx = self.order_event_rx.take();
 
@@ -579,7 +638,7 @@ impl KrakenSpotExecutionClient {
             let emitter = self.emitter.clone();
             let cancellation_token = self.cancellation_token.clone();
 
-            get_runtime().spawn(async move {
+            let future = async move {
                 loop {
                     tokio::select! {
                         () = cancellation_token.cancelled() => {
@@ -597,7 +656,10 @@ impl KrakenSpotExecutionClient {
                         }
                     }
                 }
-            });
+            };
+            self.session_tasks
+                .spawn(future)
+                .context("failed to register Kraken Spot order event task")?;
         }
 
         Ok(())
@@ -769,7 +831,7 @@ impl KrakenSpotExecutionClient {
     ) {
         let reported: HashSet<InstrumentId> = reports
             .iter()
-            .filter(|r| r.position_side != PositionSideSpecified::Flat)
+            .filter(|r| r.position_side != PositionSide::Flat)
             .map(|r| r.instrument_id)
             .collect();
 
@@ -795,7 +857,7 @@ impl KrakenSpotExecutionClient {
             reports.push(PositionStatusReport::new(
                 account_id,
                 inst_id,
-                PositionSideSpecified::Flat,
+                PositionSide::Flat,
                 Quantity::zero(precision),
                 ts_now,
                 ts_now,
@@ -927,7 +989,6 @@ fn build_batch_order(
     let side = match order.order_side() {
         OrderSide::Buy => KrakenOrderSide::Buy,
         OrderSide::Sell => KrakenOrderSide::Sell,
-        side => anyhow::bail!("Invalid order side: {side:?}"),
     };
 
     if matches!(
@@ -1079,7 +1140,9 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         }
 
         self.http.cancel_all_requests();
-        self.cancellation_token.cancel();
+        self.session_tasks.begin_shutdown();
+        self.pending_tasks.begin_shutdown();
+        self.ws.begin_shutdown();
         self.core.set_stopped();
         self.core.set_disconnected();
         log::info!("Stopped: client_id={}", self.core.client_id);
@@ -1087,11 +1150,13 @@ impl ExecutionClient for KrakenSpotExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_connected() {
+        if self.core.is_connected() && self.session_tasks.is_open() && self.pending_tasks.is_open()
+        {
             return Ok(());
         }
 
         self.http.reset_cancellation_token();
+        self.prepare_task_groups().await?;
 
         if !self.core.instruments_initialized() {
             let instruments = self
@@ -1104,58 +1169,72 @@ impl ExecutionClient for KrakenSpotExecutionClient {
             self.core.set_instruments_initialized();
         }
 
-        self.ws
-            .connect()
-            .await
-            .context("Failed to connect spot WebSocket")?;
-        self.ws
-            .wait_until_active(10.0)
-            .await
-            .context("Spot WebSocket failed to become active")?;
+        let session_result = async {
+            self.ws
+                .connect()
+                .await
+                .context("Failed to connect spot WebSocket")?;
+            self.ws
+                .wait_until_active(10.0)
+                .await
+                .context("Spot WebSocket failed to become active")?;
 
-        self.ws
-            .authenticate()
-            .await
-            .context("Failed to authenticate spot WebSocket")?;
+            self.ws
+                .authenticate()
+                .await
+                .context("Failed to authenticate spot WebSocket")?;
 
-        // Request initial account state and await registration before spawning
-        // the message handler. Report events from execution snapshots conflict
-        // with ExecEngine borrows during startup, so account registration must
-        // complete first.
-        let account_state = self
-            .http
-            .request_account_state(
-                self.core.account_id,
-                self.config.spot_account_type,
-                self.config.margin_balance_asset.as_deref(),
-            )
-            .await
-            .context("Failed to request Kraken account state")?;
+            // Request initial account state and await registration before spawning
+            // the message handler. Report events from execution snapshots conflict
+            // with ExecEngine borrows during startup, so account registration must
+            // complete first.
+            let account_state = self
+                .http
+                .request_account_state(
+                    self.core.account_id,
+                    self.config.spot_account_type,
+                    self.config.margin_balance_asset.as_deref(),
+                )
+                .await
+                .context("Failed to request Kraken account state")?;
 
-        if !account_state.balances.is_empty() {
-            log::debug!(
-                "Received account state with {} balance(s)",
-                account_state.balances.len()
-            );
-        }
-
-        self.emitter.send_account_state(account_state);
-        self.await_account_registered(30.0).await?;
-
-        self.spawn_message_handler()?;
-
-        self.instruments.rcu(|m| {
-            for instrument in self.http.instruments_cache.load().values() {
-                m.insert(instrument.id(), instrument.clone());
+            if !account_state.balances.is_empty() {
+                log::debug!(
+                    "Received account state with {} balance(s)",
+                    account_state.balances.len()
+                );
             }
-        });
 
-        self.ws
-            .subscribe_executions(false, false)
-            .await
-            .context("Failed to subscribe to executions")?;
+            self.emitter.send_account_state(account_state);
+            self.await_account_registered(30.0).await?;
 
-        log::debug!("Spot WebSocket authenticated and subscribed to executions");
+            self.spawn_message_handler()?;
+
+            self.instruments.rcu(|m| {
+                for instrument in self.http.instruments_cache.load().values() {
+                    m.insert(instrument.id(), instrument.clone());
+                }
+            });
+
+            self.ws
+                .subscribe_executions(false, false)
+                .await
+                .context("Failed to subscribe to executions")?;
+
+            log::debug!("Spot WebSocket authenticated and subscribed to executions");
+
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+
+        if let Err(e) = session_result {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Kraken Spot execution startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e);
+        }
 
         self.core.set_connected();
         log::info!("Connected: client_id={}", self.core.client_id);
@@ -1163,21 +1242,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_disconnected() {
-            return Ok(());
-        }
-
-        self.http.cancel_all_requests();
-        self.cancellation_token.cancel();
-
-        if let Some(handle) = self.ws_stream_handle.take() {
-            handle.abort();
-        }
-
-        let _ = self.ws.close().await;
-
-        self.cancellation_token = CancellationToken::new();
-        self.core.set_disconnected();
+        self.teardown_partial_connect().await?;
         log::info!("Disconnected: client_id={}", self.core.client_id);
         Ok(())
     }
@@ -1538,7 +1603,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
 
-        if cmd.order_side == OrderSide::NoOrderSide {
+        if cmd.order_side.is_none() {
             log::debug!("Canceling all orders: instrument_id={instrument_id} (bulk)");
 
             let http = self.http.clone();
@@ -1574,7 +1639,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
 
             open_orders
                 .into_iter()
-                .filter(|order| order.order_side() == cmd.order_side)
+                .filter(|order| Some(order.order_side()) == cmd.order_side)
                 .filter_map(|order| {
                     Some((
                         order.venue_order_id()?,
@@ -1847,7 +1912,7 @@ mod tests {
         resolve_use_ws_trade,
     };
     use crate::{
-        common::enums::KrakenProductType, config::KrakenExecClientConfig,
+        common::enums::KrakenProductType, config::KrakenExecutionClientConfig,
         factories::KrakenExecutionClientFactory, http::KrakenSpotHttpClient,
     };
 
@@ -1971,7 +2036,7 @@ mod tests {
     #[rstest]
     fn test_execution_client_constructs_with_ws_trade_enabled() {
         let factory = KrakenExecutionClientFactory::new();
-        let config = KrakenExecClientConfig {
+        let config = KrakenExecutionClientConfig {
             product_type: KrakenProductType::Spot,
             use_ws_trade: true,
             ws_request_timeout_secs: 7,
@@ -1980,7 +2045,12 @@ mod tests {
         let cache = Rc::new(RefCell::new(Cache::default()));
         let _clock = Rc::new(RefCell::new(TestClock::new()));
 
-        let result = factory.create("KRAKEN-WS", &config, cache.into());
+        let result = factory.create(
+            TraderId::from("TRADER-001"),
+            "KRAKEN-WS",
+            &config,
+            cache.into(),
+        );
         assert!(result.is_ok(), "construction failed: {:?}", result.err());
     }
 }

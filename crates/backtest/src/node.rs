@@ -27,7 +27,6 @@ use nautilus_model::{
     },
     enums::{BookType, OtoTriggerMode},
     identifiers::{InstrumentId, Venue},
-    instruments::Instrument,
     types::Money,
 };
 use nautilus_persistence::backend::{catalog::ParquetDataCatalog, session::QueryResult};
@@ -229,7 +228,7 @@ fn build_engine(config: &BacktestRunConfig) -> anyhow::Result<BacktestEngine> {
 
         let default_leverage = venue_config.default_leverage();
         let leverages = venue_config.leverages().cloned().unwrap_or_default();
-        let margin_model = venue_config.margin_model().cloned();
+        let margin_model = venue_config.margin_model().cloned().map(Into::into);
         let modules = venue_config
             .modules()
             .iter()
@@ -250,7 +249,7 @@ fn build_engine(config: &BacktestRunConfig) -> anyhow::Result<BacktestEngine> {
             .book_type(venue_config.book_type())
             .starting_balances(starting_balances)
             .maybe_base_currency(venue_config.base_currency())
-            .default_leverage(default_leverage)
+            .maybe_default_leverage(default_leverage)
             .leverages(leverages)
             .maybe_margin_model(margin_model)
             .modules(modules)
@@ -302,22 +301,6 @@ fn build_engine(config: &BacktestRunConfig) -> anyhow::Result<BacktestEngine> {
 
         for instrument in instruments {
             engine.add_instrument(&instrument)?;
-        }
-    }
-
-    for venue_config in config.venues() {
-        let Some(settlement_prices) = venue_config.settlement_prices() else {
-            continue;
-        };
-        let venue = Venue::from(venue_config.name().as_str());
-
-        for (instrument_id, raw_price) in settlement_prices {
-            let price = {
-                let cache = engine.kernel().cache.borrow();
-                let instrument = cache.try_instrument(instrument_id)?;
-                instrument.make_price(*raw_price)
-            };
-            engine.set_settlement_price(venue, *instrument_id, price)?;
         }
     }
 
@@ -456,7 +439,7 @@ fn stream_chunks<I: Iterator<Item = anyhow::Result<Data>>>(
     chunk_size: usize,
 ) -> anyhow::Result<()> {
     if iter.peek().is_none() {
-        return engine.end_with_result();
+        return engine.end();
     }
 
     let mut next_start = config.start();
@@ -489,7 +472,7 @@ fn stream_chunks<I: Iterator<Item = anyhow::Result<Data>>>(
         next_start = end;
     }
 
-    engine.end_with_result()
+    engine.end()
 }
 
 // Takes up to `chunk_size` items, then extends to include all remaining
@@ -628,13 +611,23 @@ fn min_opt(a: Option<UnixNanos>, b: Option<UnixNanos>) -> Option<UnixNanos> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "python")]
+    use nautilus_model::enums::{AccountType, OmsType};
     use nautilus_model::{
         identifiers::InstrumentId,
         types::{Price, Quantity},
     };
+    #[cfg(feature = "python")]
+    use pyo3::{ffi::c_str, prelude::*, types::PyDict};
     use rstest::rstest;
 
     use super::*;
+    #[cfg(feature = "python")]
+    use crate::{
+        config::BacktestVenueConfig,
+        modules::SimulationModuleAny,
+        python::modules::{PySimulationModule, PythonSimulationModule},
+    };
 
     fn quote(ts_init: u64) -> Data {
         Data::Quote(QuoteTick::new(
@@ -698,5 +691,56 @@ mod tests {
         assert_eq!(chunk.len(), 2);
         assert_eq!(chunk[0].ts_init(), UnixNanos::from(1));
         assert_eq!(chunk[1].ts_init(), UnixNanos::from(1));
+    }
+
+    #[cfg(feature = "python")]
+    #[rstest]
+    fn build_engine_accepts_python_module_from_node_config() {
+        Python::initialize();
+
+        Python::attach(|py| {
+            let locals = PyDict::new(py);
+            locals
+                .set_item("SimulationModule", py.get_type::<PySimulationModule>())
+                .unwrap();
+            let module = py
+                .eval(
+                    c_str!(
+                        "type('NodeSimulationModule', (SimulationModule,), {\
+                            'process': lambda self, ts_now, context: \
+                                (setattr(self, 'calls', self.calls + 1), [])[1]\
+                        })()"
+                    ),
+                    None,
+                    Some(&locals),
+                )
+                .unwrap();
+            module.setattr("calls", 0).unwrap();
+
+            let venue = BacktestVenueConfig::builder()
+                .name("SIM")
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec!["1000 USD".to_string()])
+                .modules(vec![SimulationModuleAny::Python(
+                    PythonSimulationModule::new(module.clone().unbind()),
+                )])
+                .build()
+                .unwrap();
+            let config = BacktestRunConfig::builder()
+                .venues(vec![venue])
+                .data(Vec::new())
+                .build()
+                .unwrap();
+            let mut engine = build_engine(&config).unwrap();
+
+            engine.run(None, None, None, false).unwrap();
+
+            assert_eq!(
+                module.getattr("calls").unwrap().extract::<u32>().unwrap(),
+                1
+            );
+        });
     }
 }

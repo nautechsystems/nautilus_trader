@@ -80,7 +80,7 @@
 use std::{collections::HashSet, fmt::Debug, future::Future, pin::Pin, time::Duration};
 
 use anyhow::Context;
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
     actor::{Actor, DataActor, DataActorNative},
     cache::database::{CacheDatabaseAdapter, CacheDatabaseFactory},
@@ -92,8 +92,11 @@ use nautilus_common::{
     messages::{
         DataEvent, ExecutionEvent, ExecutionReport, SystemCommand, SystemEvent,
         data::DataCommand,
-        execution::{GenerateOrderStatusReports, GeneratePositionStatusReports, TradingCommand},
-        system::{QueueStateChanged, SocketStateChange, SocketStateChanged},
+        execution::{
+            GenerateFillReports, GenerateOrderStatusReports, GeneratePositionStatusReports,
+            TradingCommand,
+        },
+        system::{QueueStateChanged, ReconnectSocket, SocketStateChange, SocketStateChanged},
     },
     msgbus::{self, BusMessage, MessagingSwitchboard},
     runner::{SystemChannel, TimeEventMessage, TradingCommandMessage},
@@ -109,8 +112,9 @@ use nautilus_model::{
     events::OrderEventAny,
     identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     orders::Order,
-    reports::PositionStatusReport,
+    reports::{FillReport, PositionStatusReport},
 };
+use nautilus_network::mode::ReconnectRequestOutcome;
 #[cfg(feature = "python")]
 use nautilus_system::trader::Trader;
 use nautilus_system::{config::NautilusKernelConfig, kernel::NautilusKernel};
@@ -124,12 +128,14 @@ use crate::{
     execution::{
         client::LiveExecutionClient,
         manager::{
-            ExecutionManager, ExecutionManagerConfig, OpenOrderReportCheck, PositionReportCheck,
+            ExecutionManager, ExecutionManagerConfig, InstrumentAccountKey, OpenOrderReportCheck,
+            PositionFillReportPreparation, PositionFillReportQuery, PositionReportCheck,
             SourcedOrderStatusReport, TargetedOrderQuery, TargetedOrderReportResult,
             request_targeted_order_reports,
         },
     },
     runner::{AsyncRunner, AsyncRunnerChannels, PendingRunnerEvent},
+    socket::{SocketReconnectLookup, SocketReconnectRegistry},
 };
 
 pub mod builder;
@@ -170,6 +176,7 @@ pub struct LiveNode {
     handle: LiveNodeHandle,
     exec_manager: ExecutionManager,
     exec_clients: Vec<LiveExecutionClient>,
+    socket_registry: SocketReconnectRegistry,
     cache_database_factory: Option<Box<dyn CacheDatabaseFactory>>,
     external_msgbus: Option<ExternalMessageBusIngress>,
     shutdown_deadline: Option<dst::time::Instant>,
@@ -182,12 +189,17 @@ impl LiveNode {
     ///
     /// This is an internal constructor used by `LiveNodeBuilder`.
     #[must_use]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "builder components have distinct lifecycle roles"
+    )]
     pub(crate) fn new_from_builder(
         kernel: NautilusKernel,
         runner: AsyncRunner,
         config: LiveNodeConfig,
         exec_manager: ExecutionManager,
         exec_clients: Vec<LiveExecutionClient>,
+        socket_registry: SocketReconnectRegistry,
         cache_database_factory: Option<Box<dyn CacheDatabaseFactory>>,
         external_msgbus: Option<ExternalMessageBusIngress>,
     ) -> Self {
@@ -198,6 +210,7 @@ impl LiveNode {
             handle: LiveNodeHandle::new(),
             exec_manager,
             exec_clients,
+            socket_registry,
             cache_database_factory,
             external_msgbus,
             shutdown_deadline: None,
@@ -262,7 +275,7 @@ impl LiveNode {
             kernel.clock.clone(),
             kernel.cache.clone(),
             exec_manager_config,
-        );
+        )?;
 
         let node = Self {
             kernel,
@@ -271,6 +284,7 @@ impl LiveNode {
             handle: LiveNodeHandle::new(),
             exec_manager,
             exec_clients: Vec::new(),
+            socket_registry: SocketReconnectRegistry::default(),
             cache_database_factory: None,
             external_msgbus: None,
             shutdown_deadline: None,
@@ -583,7 +597,56 @@ impl LiveNode {
     fn process_system_command(&self, command: SystemCommand) {
         match command {
             SystemCommand::ReconnectSocket(command) => {
-                self.kernel.process_socket_reconnect(command);
+                self.process_socket_reconnect(command);
+            }
+        }
+    }
+
+    fn process_socket_reconnect(&self, command: ReconnectSocket) {
+        let outcome = if command.trader_id == self.config.trader_id {
+            Self::request_socket_reconnect(
+                self.socket_registry
+                    .get(command.client_id, command.endpoint),
+            )
+        } else {
+            SocketReconnectDispatchOutcome::InvalidTrader
+        };
+
+        if outcome == SocketReconnectDispatchOutcome::Accepted {
+            log::info!(
+                "Requested socket reconnect for client {} endpoint {}",
+                command.client_id,
+                command.endpoint
+            );
+        } else {
+            log::warn!(
+                "Rejected socket reconnect request for client {} endpoint {}: {outcome:?}",
+                command.client_id,
+                command.endpoint
+            );
+        }
+    }
+
+    fn request_socket_reconnect(lookup: SocketReconnectLookup) -> SocketReconnectDispatchOutcome {
+        match lookup {
+            SocketReconnectLookup::Handle(handle) => match handle.request_reconnect() {
+                ReconnectRequestOutcome::Accepted => SocketReconnectDispatchOutcome::Accepted,
+                ReconnectRequestOutcome::AlreadyReconnecting => {
+                    SocketReconnectDispatchOutcome::AlreadyReconnecting
+                }
+                ReconnectRequestOutcome::Disconnected => {
+                    SocketReconnectDispatchOutcome::Disconnected
+                }
+                ReconnectRequestOutcome::Closed => SocketReconnectDispatchOutcome::Closed,
+                ReconnectRequestOutcome::Unsupported => SocketReconnectDispatchOutcome::Unsupported,
+            },
+            SocketReconnectLookup::ClientNotFound => SocketReconnectDispatchOutcome::UnknownClient,
+            SocketReconnectLookup::Unsupported => SocketReconnectDispatchOutcome::Unsupported,
+            SocketReconnectLookup::EndpointNotFound => {
+                SocketReconnectDispatchOutcome::UnknownEndpoint
+            }
+            SocketReconnectLookup::AmbiguousEndpoint => {
+                SocketReconnectDispatchOutcome::AmbiguousEndpoint
             }
         }
     }
@@ -1512,7 +1575,7 @@ impl LiveNode {
                 result = async {
                     match position_report_task.as_mut() {
                         Some(task) => task.future.as_mut().await,
-                        None => std::future::pending::<ReportTaskOutcome<PositionReportResult>>().await,
+                        None => std::future::pending::<ReportTaskOutcome<PositionReportTaskResult>>().await,
                     }
                 }, if position_report_task.is_some() => {
                     let maintenance_start = dst::time::Instant::now();
@@ -1520,14 +1583,11 @@ impl LiveNode {
                     drop(position_report_task.take());
 
                     match result {
-                        ReportTaskOutcome::Completed(result) => {
-                            let events = self.exec_manager.reconcile_position_reports(
-                                &result.check,
-                                result.reports,
-                                &result.queried_clients,
-                                &result.failed_clients,
-                            );
-                            self.process_reconciliation_events(&events);
+                        ReportTaskOutcome::Completed(PositionReportTaskResult::Positions(result)) => {
+                            position_report_task = self.handle_position_report_result(result);
+                        }
+                        ReportTaskOutcome::Completed(PositionReportTaskResult::Fills(result)) => {
+                            self.handle_position_fill_report_result(result);
                         }
                         ReportTaskOutcome::TimedOut => {
                             self.cleanup_cancelled_report_tasks(&[]);
@@ -2921,16 +2981,219 @@ impl LiveNode {
                 match dst::time::timeout(remaining, request_position_reports(clients, command))
                     .await
                 {
-                    Ok(result) => ReportTaskOutcome::Completed(PositionReportResult {
-                        check,
-                        reports: result.reports,
-                        queried_clients: result.queried_clients,
-                        failed_clients: result.failed_clients,
-                    }),
+                    Ok(result) => ReportTaskOutcome::Completed(
+                        PositionReportTaskResult::Positions(PositionReportResult {
+                            check,
+                            reports: result.reports,
+                            queried_clients: result.queried_clients,
+                            failed_clients: result.failed_clients,
+                        }),
+                    ),
                     Err(_) => ReportTaskOutcome::TimedOut,
                 }
             }),
         })
+    }
+
+    fn start_position_fill_report_check(
+        &self,
+        position_result: PositionReportResult,
+        queries: Vec<PositionFillReportQuery>,
+    ) -> PositionReportTask {
+        let clients = self.exec_clients.clone();
+        let deadline = dst::time::Instant::now() + self.config.timeout_reconciliation;
+
+        PositionReportTask {
+            future: Box::pin(async move {
+                let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
+                match dst::time::timeout(remaining, request_position_fill_reports(clients, queries))
+                    .await
+                {
+                    Ok(result) => ReportTaskOutcome::Completed(PositionReportTaskResult::Fills(
+                        PositionFillReportResult {
+                            position_result,
+                            reports: result.reports,
+                            successful_keys: result.successful_keys,
+                        },
+                    )),
+                    Err(_) => ReportTaskOutcome::TimedOut,
+                }
+            }),
+        }
+    }
+
+    fn handle_position_report_result(
+        &mut self,
+        mut result: PositionReportResult,
+    ) -> Option<PositionReportTask> {
+        let client_refs = self
+            .exec_clients
+            .iter()
+            .map(|client| client as &dyn ExecutionClient)
+            .collect::<Vec<_>>();
+        let plan = self.exec_manager.prepare_position_fill_report_plan(
+            &mut result.check,
+            &result.reports,
+            &result.queried_clients,
+            &result.failed_clients,
+            &client_refs,
+        );
+
+        if plan.queries.is_empty() {
+            if !plan.discrepancy_keys.is_empty() {
+                log::debug!(
+                    "Position discrepancies remain deferred because no authoritative fill query is currently safe"
+                );
+            }
+            return None;
+        }
+
+        Some(self.start_position_fill_report_check(result, plan.queries))
+    }
+
+    fn handle_position_fill_report_result(&mut self, result: PositionFillReportResult) {
+        let PositionFillReportResult {
+            mut position_result,
+            mut reports,
+            successful_keys,
+        } = result;
+        let mut venue_reports = IndexMap::new();
+        for report in &position_result.reports {
+            venue_reports
+                .entry((report.instrument_id, report.account_id))
+                .or_insert_with(Vec::new)
+                .push(report.clone());
+        }
+        let mut fallback_keys = IndexSet::new();
+        let mut dispatches = 0;
+
+        for key in successful_keys {
+            if !self
+                .exec_manager
+                .position_report_check_key_is_stable(&position_result.check, &key)
+            {
+                log::debug!(
+                    "Deferring position reconciliation for {}/{}: local activity occurred before fill reports were applied",
+                    key.0,
+                    key.1,
+                );
+                continue;
+            }
+
+            let mut expected_revision = self.exec_manager.position_activity_revision(&key);
+            let key_venue_reports = venue_reports
+                .get(&key)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            let mut applied_fill = false;
+            let mut blocked = false;
+
+            for mut report in reports.shift_remove(&key).unwrap_or_default() {
+                if self.exec_manager.position_activity_revision(&key) != expected_revision {
+                    blocked = true;
+                    break;
+                }
+
+                if self.exec_manager.position_contains_fill_report(&report) {
+                    continue;
+                }
+
+                if dispatches >= DISPATCHES_PER_YIELD {
+                    log::warn!(
+                        "Deferring remaining authoritative fills after reaching the per-cycle dispatch limit"
+                    );
+                    blocked = true;
+                    break;
+                }
+
+                match self
+                    .exec_manager
+                    .prepare_position_fill_report(&mut report, key_venue_reports)
+                {
+                    Ok(PositionFillReportPreparation::Ready) => {}
+                    Ok(PositionFillReportPreparation::InferredOverlap) => {
+                        log::debug!(
+                            "Ignoring fill {} for {}/{} because its order contains an active inferred fill",
+                            report.trade_id,
+                            key.0,
+                            key.1,
+                        );
+                        continue;
+                    }
+                    Ok(PositionFillReportPreparation::Unattributed) => {
+                        log::debug!(
+                            "Ignoring unattributable hedge fill {} for {}/{} before synthetic fallback",
+                            report.trade_id,
+                            key.0,
+                            key.1,
+                        );
+                        continue;
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Deferring fill {} for {}/{}: {e}",
+                            report.trade_id,
+                            key.0,
+                            key.1,
+                        );
+                        blocked = true;
+                        break;
+                    }
+                }
+
+                if self.exec_manager.position_activity_revision(&key) != expected_revision {
+                    blocked = true;
+                    break;
+                }
+
+                self.process_exec_event(ExecutionEvent::Report(ExecutionReport::Fill(Box::new(
+                    report.clone(),
+                ))));
+                dispatches += 1;
+                let next_revision = expected_revision.saturating_add(1);
+                if self.exec_manager.position_activity_revision(&key) != next_revision
+                    || !self.exec_manager.position_contains_fill_report(&report)
+                {
+                    log::warn!(
+                        "Deferring position reconciliation for {}/{}: authoritative fill {} was not applied exactly",
+                        key.0,
+                        key.1,
+                        report.trade_id,
+                    );
+                    blocked = true;
+                    break;
+                }
+                expected_revision = next_revision;
+                applied_fill = true;
+            }
+
+            if self.exec_manager.position_activity_revision(&key) != expected_revision {
+                blocked = true;
+            }
+
+            if !blocked && !applied_fill {
+                fallback_keys.insert(key);
+            } else if !blocked {
+                log::debug!(
+                    "Deferring synthetic position reconciliation for {}/{} until the next fresh position report after applying authoritative fills",
+                    key.0,
+                    key.1,
+                );
+            }
+        }
+
+        if fallback_keys.is_empty() {
+            return;
+        }
+
+        retain_position_report_result_keys(&mut position_result, &fallback_keys);
+        let events = self.exec_manager.reconcile_position_reports(
+            &position_result.check,
+            position_result.reports,
+            &position_result.queried_clients,
+            &position_result.failed_clients,
+        );
+        self.process_reconciliation_events(&events);
     }
 
     fn flush_pending_exec_client_instruments(&self) {
@@ -2961,6 +3224,19 @@ impl LiveNode {
         drop(position_report_task.take());
         self.cleanup_cancelled_report_tasks(&planned_client_order_ids);
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SocketReconnectDispatchOutcome {
+    Accepted,
+    AlreadyReconnecting,
+    Disconnected,
+    Closed,
+    Unsupported,
+    InvalidTrader,
+    UnknownClient,
+    UnknownEndpoint,
+    AmbiguousEndpoint,
 }
 
 fn record_runner_dispatch(
@@ -3080,6 +3356,160 @@ async fn request_position_reports(
     }
 }
 
+async fn request_position_fill_reports(
+    clients: Vec<LiveExecutionClient>,
+    queries: Vec<PositionFillReportQuery>,
+) -> PositionFillReportQueryResult {
+    let mut reports_by_key: IndexMap<InstrumentAccountKey, Vec<FillReport>> = IndexMap::new();
+    let mut queried_keys = IndexSet::new();
+    let mut failed_keys = IndexSet::new();
+
+    for query in queries {
+        queried_keys.insert(query.key);
+        let Some(client) = clients
+            .iter()
+            .find(|client| client.client_id() == query.client_id)
+        else {
+            failed_keys.insert(query.key);
+            log::warn!(
+                "Failed to generate fill reports for {}/{}: execution client {} is unavailable",
+                query.key.0,
+                query.key.1,
+                query.client_id,
+            );
+            continue;
+        };
+
+        let command = query.command;
+        match client.generate_fill_reports(command.clone()).await {
+            Ok(reports)
+                if reports
+                    .iter()
+                    .all(|report| fill_report_matches_query_scope(report, query.key, &command)) =>
+            {
+                reports_by_key.entry(query.key).or_default().extend(
+                    reports
+                        .into_iter()
+                        .filter(|report| fill_report_in_query_window(report, &command)),
+                );
+            }
+            Ok(_) => {
+                failed_keys.insert(query.key);
+                log::warn!(
+                    "Discarding fill reports for {}/{}: response contained an invalid report",
+                    query.key.0,
+                    query.key.1,
+                );
+            }
+            Err(e) => {
+                failed_keys.insert(query.key);
+                log::warn!(
+                    "Failed to generate fill reports from {} for {}/{}: {e}",
+                    query.client_id,
+                    query.key.0,
+                    query.key.1,
+                );
+            }
+        }
+    }
+
+    let mut successful_keys = IndexSet::new();
+
+    for key in queried_keys {
+        if failed_keys.contains(&key) {
+            reports_by_key.shift_remove(&key);
+            continue;
+        }
+
+        let mut deduplicated = IndexMap::new();
+        let mut contradictory = false;
+
+        for report in reports_by_key.shift_remove(&key).unwrap_or_default() {
+            let fill_key = (report.account_id, report.instrument_id, report.trade_id);
+            if let Some(existing) = deduplicated.get(&fill_key) {
+                if !fill_reports_equivalent(existing, &report) {
+                    contradictory = true;
+                    break;
+                }
+            } else {
+                deduplicated.insert(fill_key, report);
+            }
+        }
+
+        let mut reports = deduplicated.into_values().collect::<Vec<_>>();
+        reports.sort_by_key(|report| (report.ts_event, report.trade_id));
+
+        if contradictory {
+            log::warn!(
+                "Discarding fill reports for {}/{}: response contained contradictory fills",
+                key.0,
+                key.1,
+            );
+            continue;
+        }
+
+        successful_keys.insert(key);
+        reports_by_key.insert(key, reports);
+    }
+
+    PositionFillReportQueryResult {
+        reports: reports_by_key,
+        successful_keys,
+    }
+}
+
+fn fill_report_matches_query_scope(
+    report: &FillReport,
+    key: InstrumentAccountKey,
+    command: &GenerateFillReports,
+) -> bool {
+    report.instrument_id == key.0
+        && report.account_id == key.1
+        && command.instrument_id == Some(key.0)
+        && command
+            .venue_order_id
+            .is_none_or(|venue_order_id| report.venue_order_id == venue_order_id)
+        && !report.last_qty.is_zero()
+}
+
+fn fill_report_in_query_window(report: &FillReport, command: &GenerateFillReports) -> bool {
+    command.start.is_none_or(|start| report.ts_event >= start)
+        && command.end.is_none_or(|end| report.ts_event <= end)
+}
+
+fn fill_reports_equivalent(left: &FillReport, right: &FillReport) -> bool {
+    left.account_id == right.account_id
+        && left.instrument_id == right.instrument_id
+        && left.venue_order_id == right.venue_order_id
+        && left.trade_id == right.trade_id
+        && left.order_side == right.order_side
+        && left.last_qty == right.last_qty
+        && left.last_px == right.last_px
+        && left.commission == right.commission
+        && left.liquidity_side == right.liquidity_side
+        && left.avg_px == right.avg_px
+        && left.ts_event == right.ts_event
+        && left.client_order_id == right.client_order_id
+        && left.venue_position_id == right.venue_position_id
+}
+
+fn retain_position_report_result_keys(
+    result: &mut PositionReportResult,
+    keys: &IndexSet<InstrumentAccountKey>,
+) {
+    result
+        .check
+        .client_coverage
+        .retain(|key, _| keys.contains(key));
+    result
+        .check
+        .activity_revisions
+        .retain(|key, _| keys.contains(key));
+    result
+        .reports
+        .retain(|report| keys.contains(&(report.instrument_id, report.account_id)));
+}
+
 fn reconciliation_check_due(
     now: dst::time::Instant,
     last: dst::time::Instant,
@@ -3140,7 +3570,8 @@ struct OpenOrderReportQueryResult {
     failed_clients: IndexSet<ClientId>,
 }
 
-type PositionReportFuture = Pin<Box<dyn Future<Output = ReportTaskOutcome<PositionReportResult>>>>;
+type PositionReportFuture =
+    Pin<Box<dyn Future<Output = ReportTaskOutcome<PositionReportTaskResult>>>>;
 
 struct PositionReportTask {
     future: PositionReportFuture,
@@ -3153,10 +3584,26 @@ struct PositionReportResult {
     failed_clients: IndexSet<ClientId>,
 }
 
+enum PositionReportTaskResult {
+    Positions(PositionReportResult),
+    Fills(PositionFillReportResult),
+}
+
+struct PositionFillReportResult {
+    position_result: PositionReportResult,
+    reports: IndexMap<InstrumentAccountKey, Vec<FillReport>>,
+    successful_keys: IndexSet<InstrumentAccountKey>,
+}
+
 struct PositionReportQueryResult {
     reports: Vec<PositionStatusReport>,
     queried_clients: IndexSet<ClientId>,
     failed_clients: IndexSet<ClientId>,
+}
+
+struct PositionFillReportQueryResult {
+    reports: IndexMap<InstrumentAccountKey, Vec<FillReport>>,
+    successful_keys: IndexSet<InstrumentAccountKey>,
 }
 
 struct RunnerReceivers<'a> {
@@ -3482,7 +3929,7 @@ mod tests {
         fmt::Debug,
         rc::Rc,
         sync::{
-            Arc, Mutex,
+            Arc,
             atomic::{AtomicBool, Ordering},
         },
     };
@@ -3515,7 +3962,7 @@ mod tests {
         nautilus_actor,
         testing::wait_until_async,
     };
-    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_core::{Params, UUID4, UnixNanos};
     use nautilus_execution::{
         engine::{ExecutionEngine, SnapshotAnchorer, stubs::StubExecutionClient},
         reconciliation::create_inferred_fill_for_qty,
@@ -3524,7 +3971,8 @@ mod tests {
         accounts::{AccountAny, MarginAccount},
         data::QuoteTick,
         enums::{
-            AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce,
+            AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
+            TimeInForce,
         },
         events::{
             AccountState, OrderAcceptedBatch, OrderFilled,
@@ -3537,7 +3985,7 @@ mod tests {
         instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
         orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
         reports::FillReport,
-        types::{AccountBalance, Currency, Money, Price, Quantity},
+        types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
     };
     use nautilus_system::{KernelEventStore, RegisteredComponents, event_store::EventStoreConfig};
     use nautilus_testkit::{
@@ -3548,11 +3996,13 @@ mod tests {
         nautilus_strategy,
         strategy::{config::StrategyConfig, core::StrategyCore},
     };
+    use parking_lot::Mutex;
     use rstest::*;
     use rust_decimal_macros::dec;
     use ustr::Ustr;
 
     use super::*;
+    use crate::{execution::manager::ReportClientCoverage, socket::SocketControl};
 
     struct ExternalIngressLogCapture {
         messages: Mutex<Vec<String>>,
@@ -3561,6 +4011,79 @@ mod tests {
     static EXTERNAL_INGRESS_LOG_CAPTURE: ExternalIngressLogCapture = ExternalIngressLogCapture {
         messages: Mutex::new(Vec::new()),
     };
+
+    #[derive(Debug)]
+    enum FillReportClientOutcome {
+        Reports(Vec<FillReport>),
+        Failure,
+    }
+
+    #[derive(Debug)]
+    struct FillReportClient {
+        client_id: ClientId,
+        account_id: AccountId,
+        venue: Venue,
+        outcome: FillReportClientOutcome,
+        commands: Rc<RefCell<Vec<GenerateFillReports>>>,
+    }
+
+    #[async_trait::async_trait(?Send)]
+    impl ExecutionClient for FillReportClient {
+        fn is_connected(&self) -> bool {
+            true
+        }
+
+        fn client_id(&self) -> ClientId {
+            self.client_id
+        }
+
+        fn account_id(&self) -> AccountId {
+            self.account_id
+        }
+
+        fn venue(&self) -> Venue {
+            self.venue
+        }
+
+        fn oms_type(&self) -> OmsType {
+            OmsType::Netting
+        }
+
+        fn get_account(&self) -> Option<AccountAny> {
+            None
+        }
+
+        fn generate_account_state(
+            &self,
+            _balances: Vec<AccountBalance>,
+            _margins: Vec<MarginBalance>,
+            _reported: bool,
+            _ts_event: UnixNanos,
+            _info: Option<Params>,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn start(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn generate_fill_reports(
+            &self,
+            cmd: GenerateFillReports,
+        ) -> anyhow::Result<Vec<FillReport>> {
+            self.commands.borrow_mut().push(cmd);
+
+            match &self.outcome {
+                FillReportClientOutcome::Reports(reports) => Ok(reports.clone()),
+                FillReportClientOutcome::Failure => anyhow::bail!("fill reports unavailable"),
+            }
+        }
+    }
 
     #[derive(Debug)]
     struct StartupSocketActor {
@@ -3601,10 +4124,7 @@ mod tests {
 
         fn log(&self, record: &Record<'_>) {
             if self.enabled(record.metadata()) {
-                self.messages
-                    .lock()
-                    .unwrap()
-                    .push(record.args().to_string());
+                self.messages.lock().push(record.args().to_string());
             }
         }
 
@@ -3641,11 +4161,7 @@ mod tests {
     fn test_republish_external_msgbus_message_logs_topic_and_error_chain() {
         log::set_logger(&EXTERNAL_INGRESS_LOG_CAPTURE).expect("test logger already installed");
         log::set_max_level(LevelFilter::Error);
-        EXTERNAL_INGRESS_LOG_CAPTURE
-            .messages
-            .lock()
-            .unwrap()
-            .clear();
+        EXTERNAL_INGRESS_LOG_CAPTURE.messages.lock().clear();
         let message = BusMessage::with_str_topic(
             "data.quotes.AUDUSD.SIM*",
             BusPayloadType::Custom(Ustr::from("UnregisteredCustomData")),
@@ -3656,7 +4172,7 @@ mod tests {
         LiveNode::republish_external_msgbus_message(&message);
 
         assert_eq!(
-            *EXTERNAL_INGRESS_LOG_CAPTURE.messages.lock().unwrap(),
+            *EXTERNAL_INGRESS_LOG_CAPTURE.messages.lock(),
             vec![
                 "Failed to republish external message bus topic 'data.quotes.AUDUSD.SIM*': invalid \
                  external message topic: Topic `value` contained invalid characters, was \
@@ -3670,7 +4186,7 @@ mod tests {
     fn test_publish_queue_state_transitions_reaches_typed_subscriber() {
         let config = LiveNodeConfig {
             trader_id: TraderId::from("QUEUE-001"),
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -3731,7 +4247,7 @@ mod tests {
     fn test_process_socket_state_change_reaches_typed_subscriber() {
         let config = LiveNodeConfig {
             trader_id: TraderId::from("SOCKET-001"),
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -3775,11 +4291,113 @@ mod tests {
     }
 
     #[rstest]
+    #[case::accepted(
+        ReconnectRequestOutcome::Accepted,
+        SocketReconnectDispatchOutcome::Accepted
+    )]
+    #[case::already_reconnecting(
+        ReconnectRequestOutcome::AlreadyReconnecting,
+        SocketReconnectDispatchOutcome::AlreadyReconnecting
+    )]
+    #[case::disconnected(
+        ReconnectRequestOutcome::Disconnected,
+        SocketReconnectDispatchOutcome::Disconnected
+    )]
+    #[case::closed(
+        ReconnectRequestOutcome::Closed,
+        SocketReconnectDispatchOutcome::Closed
+    )]
+    #[case::unsupported(
+        ReconnectRequestOutcome::Unsupported,
+        SocketReconnectDispatchOutcome::Unsupported
+    )]
+    fn test_request_socket_reconnect_maps_transport_outcome(
+        #[case] transport: ReconnectRequestOutcome,
+        #[case] expected: SocketReconnectDispatchOutcome,
+    ) {
+        let registry = SocketReconnectRegistry::default();
+        let client_id = ClientId::from("TEST");
+        let endpoint = Ustr::from("test-streams");
+        let control = SocketControl::with_registry(client_id, None, endpoint, &registry);
+        let _sink = control.sink();
+        control.register(move || transport);
+
+        let outcome = LiveNode::request_socket_reconnect(registry.get(client_id, endpoint));
+
+        assert_eq!(outcome, expected);
+    }
+
+    #[rstest]
+    #[case::client_not_found(
+        SocketReconnectLookup::ClientNotFound,
+        SocketReconnectDispatchOutcome::UnknownClient
+    )]
+    #[case::unsupported(
+        SocketReconnectLookup::Unsupported,
+        SocketReconnectDispatchOutcome::Unsupported
+    )]
+    #[case::endpoint_not_found(
+        SocketReconnectLookup::EndpointNotFound,
+        SocketReconnectDispatchOutcome::UnknownEndpoint
+    )]
+    #[case::ambiguous(
+        SocketReconnectLookup::AmbiguousEndpoint,
+        SocketReconnectDispatchOutcome::AmbiguousEndpoint
+    )]
+    fn test_request_socket_reconnect_maps_lookup_failure(
+        #[case] lookup: SocketReconnectLookup,
+        #[case] expected: SocketReconnectDispatchOutcome,
+    ) {
+        assert_eq!(LiveNode::request_socket_reconnect(lookup), expected);
+    }
+
+    #[rstest]
+    fn test_process_socket_reconnect_routes_only_matching_trader() {
+        let trader_id = TraderId::from("SOCKET-001");
+        let config = LiveNodeConfig {
+            trader_id,
+            exec_engine: crate::config::LiveExecutionEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let node = LiveNode::build("SocketReconnectNode".to_string(), Some(config)).unwrap();
+        let client_id = ClientId::from("TEST");
+        let endpoint = Ustr::from("test-streams");
+        let requests = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let request_count = Arc::clone(&requests);
+        let control =
+            SocketControl::with_registry(client_id, None, endpoint, &node.socket_registry);
+        let _sink = control.sink();
+        control.register(move || {
+            request_count.fetch_add(1, Ordering::SeqCst);
+            ReconnectRequestOutcome::Accepted
+        });
+
+        node.process_system_command(SystemCommand::ReconnectSocket(ReconnectSocket::new(
+            TraderId::from("OTHER-001"),
+            client_id,
+            endpoint,
+            UnixNanos::default(),
+        )));
+        assert_eq!(requests.load(Ordering::SeqCst), 0);
+
+        node.process_system_command(SystemCommand::ReconnectSocket(ReconnectSocket::new(
+            trader_id,
+            client_id,
+            endpoint,
+            UnixNanos::default(),
+        )));
+        assert_eq!(requests.load(Ordering::SeqCst), 1);
+    }
+
+    #[rstest]
     #[tokio::test]
     async fn test_start_publishes_socket_change_after_actor_subscribes() {
         let config = LiveNodeConfig {
             trader_id: TraderId::from("SOCKET-STARTUP-001"),
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -3836,7 +4454,7 @@ mod tests {
                 mean_dispatch_ns_trigger: 1,
                 mean_dispatch_ns_clear: 0,
             }),
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -3905,7 +4523,7 @@ mod tests {
     #[rstest]
     fn test_observe_exec_event_before_dispatch_skips_recent_fill_report() {
         let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -3944,7 +4562,7 @@ mod tests {
         #[case] expected_query_count: usize,
     ) {
         let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: true,
                 open_check_threshold_ms: 5_000,
                 single_order_query_delay_ms: 0,
@@ -4040,7 +4658,7 @@ mod tests {
             instrument_id,
             Some(client_order_id),
             old_venue_order_id,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Canceled,
@@ -4247,7 +4865,7 @@ mod tests {
             instrument.id(),
             Some(client_order_id),
             venue_order_id,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::PartiallyFilled,
@@ -4281,9 +4899,494 @@ mod tests {
     }
 
     #[rstest]
+    #[tokio::test]
+    async fn test_request_position_fill_reports_keeps_failed_query_unsuccessful() {
+        let client_id = ClientId::from("POSITION-FILLS");
+        let account_id = AccountId::from("POSITION-FILLS-001");
+        let instrument_id = crypto_perpetual_ethusdt().id();
+        let commands = Rc::new(RefCell::new(Vec::new()));
+        let client = LiveExecutionClient::new(Box::new(FillReportClient {
+            client_id,
+            account_id,
+            venue: instrument_id.venue,
+            outcome: FillReportClientOutcome::Failure,
+            commands: commands.clone(),
+        }));
+        let command = GenerateFillReports::new(
+            UUID4::new(),
+            UnixNanos::from(2_000),
+            Some(instrument_id),
+            None,
+            Some(UnixNanos::from(1_000)),
+            Some(UnixNanos::from(2_000)),
+            None,
+            None,
+        );
+
+        let result = request_position_fill_reports(
+            vec![client],
+            vec![PositionFillReportQuery {
+                key: (instrument_id, account_id),
+                client_id,
+                command: command.clone(),
+            }],
+        )
+        .await;
+
+        assert_eq!(*commands.borrow(), vec![command]);
+        assert!(result.successful_keys.is_empty());
+        assert!(result.reports.is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_request_position_fill_reports_accepts_scoped_response() {
+        let client_id = ClientId::from("POSITION-FILLS");
+        let account_id = AccountId::from("POSITION-FILLS-001");
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let instrument_id = instrument.id();
+        let report_b = FillReport::new(
+            account_id,
+            instrument_id,
+            VenueOrderId::from("V-POSITION-FILLS"),
+            TradeId::from("T-POSITION-FILLS-B"),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            Price::from("100.0"),
+            Money::zero(instrument.quote_currency()),
+            LiquiditySide::Taker,
+            Some(ClientOrderId::from("O-POSITION-FILLS")),
+            None,
+            UnixNanos::from(1_500),
+            UnixNanos::from(2_000),
+            None,
+        );
+        let mut report_a = report_b.clone();
+        report_a.trade_id = TradeId::from("T-POSITION-FILLS-A");
+        let commands = Rc::new(RefCell::new(Vec::new()));
+        let client = LiveExecutionClient::new(Box::new(FillReportClient {
+            client_id,
+            account_id,
+            venue: instrument_id.venue,
+            outcome: FillReportClientOutcome::Reports(vec![report_b.clone(), report_a.clone()]),
+            commands,
+        }));
+        let command = GenerateFillReports::new(
+            UUID4::new(),
+            UnixNanos::from(2_000),
+            Some(instrument_id),
+            None,
+            Some(UnixNanos::from(1_000)),
+            Some(UnixNanos::from(2_000)),
+            None,
+            None,
+        );
+        let key = (instrument_id, account_id);
+
+        let result = request_position_fill_reports(
+            vec![client],
+            vec![PositionFillReportQuery {
+                key,
+                client_id,
+                command,
+            }],
+        )
+        .await;
+
+        assert_eq!(result.successful_keys, IndexSet::from([key]));
+        assert_eq!(
+            result.reports,
+            IndexMap::from([(key, vec![report_a, report_b])])
+        );
+    }
+
+    #[rstest]
+    #[case("OTHER-001", "ETHUSDT-PERP.BINANCE", 1_500, "1.0")]
+    #[case("POSITION-FILLS-001", "BTCUSDT-PERP.BINANCE", 1_500, "1.0")]
+    #[case("POSITION-FILLS-001", "ETHUSDT-PERP.BINANCE", 1_500, "0.0")]
+    #[tokio::test]
+    async fn test_request_position_fill_reports_rejects_out_of_scope_response(
+        #[case] report_account: &str,
+        #[case] report_instrument: &str,
+        #[case] ts_event: u64,
+        #[case] quantity: &str,
+    ) {
+        let client_id = ClientId::from("POSITION-FILLS");
+        let account_id = AccountId::from("POSITION-FILLS-001");
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let instrument_id = instrument.id();
+        let report = FillReport::new(
+            AccountId::from(report_account),
+            InstrumentId::from(report_instrument),
+            VenueOrderId::from("V-POSITION-FILLS"),
+            TradeId::from("T-POSITION-FILLS"),
+            OrderSide::Buy,
+            Quantity::from(quantity),
+            Price::from("100.0"),
+            Money::zero(instrument.quote_currency()),
+            LiquiditySide::Taker,
+            Some(ClientOrderId::from("O-POSITION-FILLS")),
+            None,
+            UnixNanos::from(ts_event),
+            UnixNanos::from(2_000),
+            None,
+        );
+        let client = LiveExecutionClient::new(Box::new(FillReportClient {
+            client_id,
+            account_id,
+            venue: instrument_id.venue,
+            outcome: FillReportClientOutcome::Reports(vec![report]),
+            commands: Rc::new(RefCell::new(Vec::new())),
+        }));
+        let command = GenerateFillReports::new(
+            UUID4::new(),
+            UnixNanos::from(2_000),
+            Some(instrument_id),
+            None,
+            Some(UnixNanos::from(1_000)),
+            Some(UnixNanos::from(2_000)),
+            None,
+            None,
+        );
+        let key = (instrument_id, account_id);
+
+        let result = request_position_fill_reports(
+            vec![client],
+            vec![PositionFillReportQuery {
+                key,
+                client_id,
+                command,
+            }],
+        )
+        .await;
+
+        assert!(result.successful_keys.is_empty());
+        assert!(result.reports.is_empty());
+    }
+
+    #[rstest]
+    #[case(999)]
+    #[case(2_001)]
+    #[tokio::test]
+    async fn test_request_position_fill_reports_filters_time_window_superset(
+        #[case] ts_event: u64,
+    ) {
+        let client_id = ClientId::from("POSITION-FILLS");
+        let account_id = AccountId::from("POSITION-FILLS-001");
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let instrument_id = instrument.id();
+        let report = FillReport::new(
+            account_id,
+            instrument_id,
+            VenueOrderId::from("V-POSITION-FILLS"),
+            TradeId::from("T-POSITION-FILLS"),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            Price::from("100.0"),
+            Money::zero(instrument.quote_currency()),
+            LiquiditySide::Taker,
+            Some(ClientOrderId::from("O-POSITION-FILLS")),
+            None,
+            UnixNanos::from(ts_event),
+            UnixNanos::from(2_000),
+            None,
+        );
+        let client = LiveExecutionClient::new(Box::new(FillReportClient {
+            client_id,
+            account_id,
+            venue: instrument_id.venue,
+            outcome: FillReportClientOutcome::Reports(vec![report]),
+            commands: Rc::new(RefCell::new(Vec::new())),
+        }));
+        let command = GenerateFillReports::new(
+            UUID4::new(),
+            UnixNanos::from(2_000),
+            Some(instrument_id),
+            None,
+            Some(UnixNanos::from(1_000)),
+            Some(UnixNanos::from(2_000)),
+            None,
+            None,
+        );
+        let key = (instrument_id, account_id);
+
+        let result = request_position_fill_reports(
+            vec![client],
+            vec![PositionFillReportQuery {
+                key,
+                client_id,
+                command,
+            }],
+        )
+        .await;
+
+        assert_eq!(result.successful_keys, IndexSet::from([key]));
+        assert_eq!(result.reports, IndexMap::from([(key, Vec::new())]));
+    }
+
+    #[rstest]
+    fn test_position_fill_report_result_applies_authoritative_fill_without_synthetic_order() {
+        let (mut node, venue_report, fill_report) =
+            position_fill_test_fixture("AuthoritativePositionFillNode", Quantity::from("1.0"));
+        let key = (venue_report.instrument_id, venue_report.account_id);
+        let position_result = position_report_result(&node, venue_report);
+
+        node.handle_position_fill_report_result(PositionFillReportResult {
+            position_result,
+            reports: IndexMap::from([(key, vec![fill_report.clone()])]),
+            successful_keys: IndexSet::from([key]),
+        });
+
+        let cache = node.kernel.cache.borrow();
+        let positions = cache.positions_open(None, Some(&key.0), None, Some(&key.1), None);
+        assert_eq!(
+            positions
+                .iter()
+                .map(|position| position.quantity)
+                .sum::<Quantity>(),
+            Quantity::from("2.0")
+        );
+        assert_eq!(
+            cache.orders_total_count(None, Some(&key.0), None, Some(&key.1), None),
+            1
+        );
+        drop(positions);
+        drop(cache);
+        assert!(
+            node.exec_manager
+                .position_contains_fill_report(&fill_report)
+        );
+    }
+
+    #[rstest]
+    fn test_position_fill_report_match_ignores_adapter_timestamp_source() {
+        let (mut node, venue_report, fill_report) =
+            position_fill_test_fixture("PositionFillTimestampNode", Quantity::from("1.0"));
+        let key = (venue_report.instrument_id, venue_report.account_id);
+        let position_result = position_report_result(&node, venue_report);
+
+        node.handle_position_fill_report_result(PositionFillReportResult {
+            position_result,
+            reports: IndexMap::from([(key, vec![fill_report.clone()])]),
+            successful_keys: IndexSet::from([key]),
+        });
+
+        let mut rest_report = fill_report;
+        rest_report.ts_event = UnixNanos::from(2_000);
+
+        assert!(
+            node.exec_manager
+                .position_contains_fill_report(&rest_report)
+        );
+    }
+
+    #[rstest]
+    fn test_position_fill_report_result_falls_back_when_order_contains_inferred_fill() {
+        let (mut node, venue_report, fill_report) =
+            position_fill_test_fixture("InferredPositionFillNode", Quantity::from("1.0"));
+        let key = (venue_report.instrument_id, venue_report.account_id);
+        let client_order_id = fill_report.client_order_id.unwrap();
+        apply_inferred_position_fill(&mut node, &fill_report);
+
+        let venue_report = PositionStatusReport::new(
+            key.1,
+            key.0,
+            PositionSide::Long,
+            Quantity::from("3.0"),
+            venue_report.ts_last,
+            venue_report.ts_init,
+            None,
+            None,
+            venue_report.avg_px_open,
+        );
+        let mut later_fill_report = fill_report.clone();
+        later_fill_report.trade_id = TradeId::from("T-POSITION-AUTHORITATIVE-LATER");
+        later_fill_report.ts_event = UnixNanos::from(1_001);
+        let position_result = position_report_result(&node, venue_report);
+
+        node.handle_position_fill_report_result(PositionFillReportResult {
+            position_result,
+            reports: IndexMap::from([(key, vec![fill_report.clone(), later_fill_report.clone()])]),
+            successful_keys: IndexSet::from([key]),
+        });
+
+        let cache = node.kernel.cache.borrow();
+        let order = cache.order(&client_order_id).unwrap();
+        let positions = cache.positions_open(None, Some(&key.0), None, Some(&key.1), None);
+        assert_eq!(order.filled_qty(), Quantity::from("2.0"));
+        assert!(!order.trade_ids().contains(&&fill_report.trade_id));
+        assert!(!order.trade_ids().contains(&&later_fill_report.trade_id));
+        assert_eq!(
+            positions
+                .iter()
+                .map(|position| position.quantity)
+                .sum::<Quantity>(),
+            Quantity::from("3.0")
+        );
+        assert_eq!(
+            cache.orders_total_count(None, Some(&key.0), None, Some(&key.1), None),
+            2
+        );
+    }
+
+    #[rstest]
+    fn test_position_fill_report_validates_hedge_identity_before_inferred_fallback() {
+        let (mut node, _, mut fill_report) =
+            position_fill_test_fixture("InferredHedgeIdentityNode", Quantity::from("1.0"));
+        apply_inferred_position_fill(&mut node, &fill_report);
+        let conflicting_position_id = PositionId::from("P-POSITION-CONFLICT");
+        fill_report.venue_position_id = Some(conflicting_position_id);
+
+        let error = node
+            .exec_manager
+            .prepare_position_fill_report(&mut fill_report, &[])
+            .unwrap_err();
+
+        assert!(
+            error.to_string().contains(&format!(
+                "position ID {conflicting_position_id} conflicts with cached order position"
+            )),
+            "{error:#}"
+        );
+    }
+
+    #[rstest]
+    fn test_position_fill_report_result_synthesizes_only_residual_after_fresh_report() {
+        let (mut node, venue_report, fill_report) =
+            position_fill_test_fixture("ResidualPositionFillNode", Quantity::from("0.5"));
+        let key = (venue_report.instrument_id, venue_report.account_id);
+        let first_result = position_report_result(&node, venue_report.clone());
+
+        node.handle_position_fill_report_result(PositionFillReportResult {
+            position_result: first_result,
+            reports: IndexMap::from([(key, vec![fill_report])]),
+            successful_keys: IndexSet::from([key]),
+        });
+
+        let fresh_result = position_report_result(&node, venue_report);
+        node.handle_position_fill_report_result(PositionFillReportResult {
+            position_result: fresh_result,
+            reports: IndexMap::from([(key, Vec::new())]),
+            successful_keys: IndexSet::from([key]),
+        });
+
+        let cache = node.kernel.cache.borrow();
+        let positions = cache.positions_open(None, Some(&key.0), None, Some(&key.1), None);
+        assert_eq!(
+            positions
+                .iter()
+                .map(|position| position.quantity)
+                .sum::<Quantity>(),
+            Quantity::from("2.0")
+        );
+        assert_eq!(
+            cache.orders_total_count(None, Some(&key.0), None, Some(&key.1), None),
+            2
+        );
+    }
+
+    #[rstest]
+    fn test_position_fill_report_failure_does_not_trigger_synthetic_fallback() {
+        let (mut node, venue_report, _) =
+            position_fill_test_fixture("FailedPositionFillNode", Quantity::from("1.0"));
+        let key = (venue_report.instrument_id, venue_report.account_id);
+        let position_result = position_report_result(&node, venue_report);
+
+        node.handle_position_fill_report_result(PositionFillReportResult {
+            position_result,
+            reports: IndexMap::new(),
+            successful_keys: IndexSet::new(),
+        });
+
+        let cache = node.kernel.cache.borrow();
+        let positions = cache.positions_open(None, Some(&key.0), None, Some(&key.1), None);
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].quantity, Quantity::from("1.0"));
+        assert_eq!(
+            cache.orders_total_count(None, Some(&key.0), None, Some(&key.1), None),
+            1
+        );
+    }
+
+    #[rstest]
+    fn test_position_fill_report_result_falls_back_for_unattributable_hedge_fill() {
+        let (mut node, mut venue_report, mut fill_report) =
+            position_fill_test_fixture("UnattributedHedgeFillNode", Quantity::from("1.0"));
+        node.kernel
+            .exec_engine
+            .borrow_mut()
+            .register_oms_type(StrategyId::from("EXTERNAL"), OmsType::Hedging);
+        let key = (venue_report.instrument_id, venue_report.account_id);
+        let position_id = {
+            let cache = node.kernel.cache.borrow();
+            let positions = cache.positions_open(None, Some(&key.0), None, Some(&key.1), None);
+            assert_eq!(positions.len(), 1);
+            positions[0].id
+        };
+        venue_report.venue_position_id = Some(position_id);
+        fill_report.client_order_id = None;
+        fill_report.venue_order_id = VenueOrderId::from("V-POSITION-EXTERNAL");
+        let position_result = position_report_result(&node, venue_report);
+
+        node.handle_position_fill_report_result(PositionFillReportResult {
+            position_result,
+            reports: IndexMap::from([(key, vec![fill_report.clone()])]),
+            successful_keys: IndexSet::from([key]),
+        });
+
+        let cache = node.kernel.cache.borrow();
+        let positions = cache.positions_open(None, Some(&key.0), None, Some(&key.1), None);
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].id, position_id);
+        assert_eq!(positions[0].quantity, Quantity::from("2.0"));
+        assert_eq!(
+            cache.orders_total_count(None, Some(&key.0), None, Some(&key.1), None),
+            2
+        );
+        drop(positions);
+        drop(cache);
+        assert!(
+            !node
+                .exec_manager
+                .position_contains_fill_report(&fill_report)
+        );
+    }
+
+    #[rstest]
+    fn test_position_fill_report_result_defers_after_local_position_activity() {
+        let (mut node, venue_report, fill_report) =
+            position_fill_test_fixture("StalePositionFillNode", Quantity::from("1.0"));
+        let key = (venue_report.instrument_id, venue_report.account_id);
+        let position_result = position_report_result(&node, venue_report);
+        node.exec_manager.record_position_activity(key.0, key.1);
+
+        node.handle_position_fill_report_result(PositionFillReportResult {
+            position_result,
+            reports: IndexMap::from([(key, vec![fill_report.clone()])]),
+            successful_keys: IndexSet::from([key]),
+        });
+
+        let cache = node.kernel.cache.borrow();
+        let positions = cache.positions_open(None, Some(&key.0), None, Some(&key.1), None);
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].quantity, Quantity::from("1.0"));
+        assert_eq!(
+            cache.orders_total_count(None, Some(&key.0), None, Some(&key.1), None),
+            1
+        );
+        drop(positions);
+        drop(cache);
+        assert!(
+            !node
+                .exec_manager
+                .position_contains_fill_report(&fill_report)
+        );
+    }
+
+    #[rstest]
     fn test_observe_exec_event_before_dispatch_accepted_batch_stamps_local_activity() {
         let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: true,
                 open_check_threshold_ms: 5_000,
                 single_order_query_delay_ms: 0,
@@ -4340,7 +5443,7 @@ mod tests {
         use nautilus_model::{events::OrderPendingCancel, identifiers::ClientOrderId};
 
         let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: true,
                 inflight_check_threshold_ms: 100,
                 inflight_check_retries: 1,
@@ -4454,7 +5557,7 @@ mod tests {
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn test_risk_bound_command_does_not_register_inflight() {
         let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: true,
                 inflight_check_threshold_ms: 100,
                 inflight_check_retries: 2,
@@ -4473,7 +5576,7 @@ mod tests {
             .trader_id(node.trader_id())
             .strategy_id(StrategyId::from("S-RISK-DENIED"))
             .instrument_id(instrument_id)
-            .side(OrderSide::NoOrderSide)
+            .side(OrderSide::Buy)
             .quantity(Quantity::from("1.000"))
             .price(Price::from("100.00"))
             .build();
@@ -4537,7 +5640,7 @@ mod tests {
                 bypass: true,
                 ..Default::default()
             },
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: true,
                 inflight_check_threshold_ms: 100,
                 inflight_check_retries: 2,
@@ -4701,7 +5804,7 @@ mod tests {
         // and LiveNodeConfig defaults it to false.
         let builder = LiveNodeBuilder::new(TraderId::default(), Environment::Live)
             .unwrap()
-            .with_exec_engine_config(crate::config::LiveExecEngineConfig {
+            .with_exec_engine_config(crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             })
@@ -5299,7 +6402,7 @@ mod tests {
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn test_run_reconciliation_checks_does_not_publish_open_order_queries() {
         let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: true,
                 open_check_interval_secs: Some(1.0),
                 position_check_interval_secs: Some(1.0),
@@ -5416,7 +6519,7 @@ mod tests {
 
     fn recent_fill_test_fixture(name: &str) -> (LiveNode, OrderEventAny, InstrumentAny) {
         let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: true,
                 ..Default::default()
             },
@@ -5461,6 +6564,174 @@ mod tests {
         );
 
         (node, fill, instrument)
+    }
+
+    fn apply_inferred_position_fill(node: &mut LiveNode, fill_report: &FillReport) {
+        let client_order_id = fill_report.client_order_id.unwrap();
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let order = node
+            .kernel
+            .cache
+            .borrow()
+            .order_owned(&client_order_id)
+            .unwrap();
+        let order_report = OrderStatusReport::new(
+            fill_report.account_id,
+            fill_report.instrument_id,
+            Some(client_order_id),
+            fill_report.venue_order_id,
+            OrderSide::Buy.into(),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::PartiallyFilled,
+            Quantity::from("10.0"),
+            Quantity::from("2.0"),
+            UnixNanos::from(1_000),
+            UnixNanos::from(1_000),
+            UnixNanos::from(1_000),
+            None,
+        )
+        .with_avg_px(dec!(100.0));
+        let inferred = create_inferred_fill_for_qty(
+            &order,
+            &order_report,
+            &fill_report.account_id,
+            &instrument,
+            Quantity::from("1.0"),
+            UnixNanos::from(1_000),
+            None,
+        )
+        .unwrap();
+
+        node.process_reconciliation_events(&[inferred]);
+    }
+
+    fn position_fill_test_fixture(
+        name: &str,
+        authoritative_qty: Quantity,
+    ) -> (LiveNode, PositionStatusReport, FillReport) {
+        let config = LiveNodeConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
+                reconciliation: true,
+                position_check_threshold_ms: 0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut node = LiveNode::build(name.to_string(), Some(config)).unwrap();
+        let account_id = AccountId::from("TEST-001");
+        let client_id = ClientId::from("POSITION-FILLS");
+        let client_order_id = ClientOrderId::from("O-POSITION-FILLS");
+        let venue_order_id = VenueOrderId::from("V-POSITION-FILLS");
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let account = AccountAny::Margin(MarginAccount::new(
+            AccountState::new(
+                account_id,
+                AccountType::Margin,
+                vec![AccountBalance::new(
+                    Money::from("1000000 USDT"),
+                    Money::from("0 USDT"),
+                    Money::from("1000000 USDT"),
+                )],
+                Vec::new(),
+                true,
+                UUID4::new(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+                Some(Currency::USDT()),
+            ),
+            true,
+        ));
+        node.kernel.cache.borrow_mut().add_account(account).unwrap();
+        node.kernel
+            .cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        insert_accepted_limit_order_in_node(
+            &node,
+            account_id,
+            client_id,
+            instrument.id(),
+            client_order_id,
+            venue_order_id,
+        );
+        let order = node
+            .kernel
+            .cache
+            .borrow()
+            .order_owned(&client_order_id)
+            .unwrap();
+        let mut initial_fill = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            Some(TradeId::from("T-POSITION-INITIAL")),
+            None,
+            Some(Price::from("100.0")),
+            Some(Quantity::from("1.0")),
+            Some(LiquiditySide::Taker),
+            None,
+            None,
+            Some(account_id),
+        );
+        let OrderEventAny::Filled(fill) = &mut initial_fill else {
+            unreachable!();
+        };
+        fill.commission = Some(Money::zero(instrument.quote_currency()));
+        node.process_reconciliation_events(&[initial_fill]);
+
+        let ts_event = UnixNanos::from(1_000);
+        let fill_report = FillReport::new(
+            account_id,
+            instrument.id(),
+            venue_order_id,
+            TradeId::from("T-POSITION-AUTHORITATIVE"),
+            OrderSide::Buy,
+            authoritative_qty,
+            Price::from("100.0"),
+            Money::zero(instrument.quote_currency()),
+            LiquiditySide::Taker,
+            Some(client_order_id),
+            None,
+            ts_event,
+            ts_event,
+            None,
+        );
+        let venue_report = PositionStatusReport::new(
+            account_id,
+            instrument.id(),
+            PositionSide::Long,
+            Quantity::from("2.0"),
+            ts_event,
+            ts_event,
+            None,
+            None,
+            Some(dec!(100.0)),
+        );
+
+        (node, venue_report, fill_report)
+    }
+
+    fn position_report_result(
+        node: &LiveNode,
+        report: PositionStatusReport,
+    ) -> PositionReportResult {
+        let client_id = ClientId::from("POSITION-FILLS");
+        let key = (report.instrument_id, report.account_id);
+        let mut check = node
+            .exec_manager
+            .prepare_position_report_check(UUID4::new(), &[]);
+        check.client_coverage.insert(
+            key,
+            ReportClientCoverage::Resolved(IndexSet::from([client_id])),
+        );
+
+        PositionReportResult {
+            check,
+            reports: vec![report],
+            queried_clients: IndexSet::from([client_id]),
+            failed_clients: IndexSet::new(),
+        }
     }
 
     fn fill_report_event(fill: &OrderFilled) -> ExecutionEvent {
@@ -5563,7 +6834,7 @@ mod tests {
     #[tokio::test]
     async fn test_start_stop_request_aborts_startup_without_running() {
         let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -5585,7 +6856,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn test_stop_processes_residual_exec_event_during_grace_period() {
         let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -5654,7 +6925,7 @@ mod tests {
         let config = LiveNodeConfig {
             load_state: true,
             save_state: true,
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -5716,7 +6987,7 @@ mod tests {
         let (database, control) = TestCacheDatabaseControl::create();
         let config = LiveNodeConfig {
             save_state: true,
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -5769,7 +7040,7 @@ mod tests {
     #[tokio::test]
     async fn test_stop_drains_queued_exec_event_after_zero_grace() {
         let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -5907,7 +7178,7 @@ mod tests {
     fn test_build_rejects_event_store_config_without_factory() {
         let config = LiveNodeConfig {
             event_store: Some(EventStoreConfig::default()),
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -5929,7 +7200,7 @@ mod tests {
     fn test_direct_build_rejects_event_store_config() {
         let config = LiveNodeConfig {
             event_store: Some(EventStoreConfig::default()),
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -6192,7 +7463,7 @@ mod tests {
         let config = LiveNodeConfig {
             environment: Environment::Sandbox,
             msgbus: Some(msgbus_config),
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -6209,7 +7480,7 @@ mod tests {
 
         msgbus::publish_quote("data.quotes.TEST".into(), &quote);
         {
-            let publications = publications.lock().unwrap();
+            let publications = publications.lock();
             assert_eq!(publications.len(), 1);
             assert_eq!(publications[0].topic, "data.quotes.TEST");
             assert_eq!(
@@ -6292,7 +7563,7 @@ mod tests {
         let config = LiveNodeConfig {
             environment: Environment::Sandbox,
             msgbus: Some(MessageBusConfig::default()),
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -6310,7 +7581,7 @@ mod tests {
 
         msgbus::publish_quote("data.quotes.TEST".into(), &quote);
         {
-            let publications = publications.lock().unwrap();
+            let publications = publications.lock();
             assert_eq!(publications.len(), 1);
             assert_eq!(publications[0].topic, "data.quotes.TEST");
         }
@@ -6403,7 +7674,7 @@ mod tests {
         let ingress = CapturingExternalIngress::new(rx, closed.clone());
         let config = LiveNodeConfig {
             environment: Environment::Sandbox,
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -6476,7 +7747,7 @@ mod tests {
         let ingress = CapturingExternalIngress::new(rx, closed.clone());
         let config = LiveNodeConfig {
             environment: Environment::Sandbox,
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -6533,7 +7804,7 @@ mod tests {
         let ingress = FailingExternalIngress::new(closed.clone());
         let config = LiveNodeConfig {
             environment: Environment::Sandbox,
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -7366,7 +8637,7 @@ mod tests {
             _instance_id: UUID4,
             _config: MessageBusConfig,
         ) -> anyhow::Result<Box<dyn MessageBusBacking>> {
-            let rx = self.rx.lock().unwrap().take();
+            let rx = self.rx.lock().take();
             Ok(Box::new(CapturingBacking {
                 publications: self.publications.clone(),
                 closed: self.closed.clone(),
@@ -7387,13 +8658,10 @@ mod tests {
         }
 
         fn publish(&self, message: BusMessage) {
-            self.publications
-                .lock()
-                .unwrap()
-                .push(CapturedEgressMessage {
-                    topic: message.topic.to_string(),
-                    payload: message.payload,
-                });
+            self.publications.lock().push(CapturedEgressMessage {
+                topic: message.topic.to_string(),
+                payload: message.payload,
+            });
         }
 
         fn take_receiver(&mut self) -> anyhow::Result<tokio::sync::mpsc::Receiver<BusMessage>> {

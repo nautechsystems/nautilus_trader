@@ -198,6 +198,25 @@ impl DeriveCancelParams {
     }
 }
 
+/// Params for `private/cancel_by_instrument`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+pub struct DeriveCancelByInstrumentParams {
+    /// Owning subaccount identifier.
+    pub subaccount_id: u64,
+    /// Canonical Derive instrument name.
+    pub instrument_name: Ustr,
+}
+
+impl DeriveCancelByInstrumentParams {
+    #[must_use]
+    pub fn new(subaccount_id: u64, instrument_name: impl Into<Ustr>) -> Self {
+        Self {
+            subaccount_id,
+            instrument_name: instrument_name.into(),
+        }
+    }
+}
+
 /// Params for `private/cancel_all`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
 pub struct DeriveCancelAllParams {
@@ -659,7 +678,7 @@ fn build_signed_order_params(
     time_in_force: DeriveTimeInForce,
     trigger_fields: Option<DeriveTriggerFields>,
 ) -> anyhow::Result<DeriveOrderParams> {
-    let direction = order_side_to_derive(order.order_side())?;
+    let direction = order_side_to_derive(order.order_side());
 
     let asset_address: Address = instrument
         .base_asset_address
@@ -741,7 +760,8 @@ mod tests {
     use crate::common::{consts::DERIVE_VENUE, enums::DeriveInstrumentType};
 
     fn canonical_wire<T: Serialize>(params: &T) -> String {
-        let value = serde_json::to_value(params).unwrap();
+        let mut value = serde_json::to_value(params).unwrap();
+        value.sort_all_objects();
         serde_json::to_string(&value).unwrap()
     }
 

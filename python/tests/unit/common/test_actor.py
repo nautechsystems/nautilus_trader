@@ -12,12 +12,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test actor behavior.
+"""
 
 import datetime as dt
 import inspect
 import subprocess
 import sys
 from decimal import Decimal
+from typing import ClassVar
 
 import pytest
 
@@ -356,14 +360,17 @@ HISTORICAL_REQUEST_DATETIME_CASES = [
 ]
 
 
-def _make_recording_method(method_name):
-    def method(self, *args):
+def _make_recording_method(method_name: str) -> object:
+    def method(self: object, *args: object) -> None:
+        """
+        Run the helper method.
+        """
         self.calls.append((method_name, args))
 
     return method
 
 
-def _create_recording_actor_type():
+def _create_recording_actor_type() -> object:
     attrs = {}
 
     for method_name in HOOK_METHODS:
@@ -379,14 +386,21 @@ RecordingActor = _create_recording_actor_type()
 
 
 class FirstDefaultActor(DataActor):
-    pass
+    """
+    Collect first default actor tests.
+    """
 
 
 class SecondDefaultActor(DataActor):
-    pass
+    """
+    Collect second default actor tests.
+    """
 
 
-def test_data_actor_derives_default_id_from_runtime_class():
+def test_data_actor_derives_default_id_from_runtime_class() -> None:
+    """
+    Test data actor derives default id from runtime class.
+    """
     base = DataActor()
     first = FirstDefaultActor()
     second = SecondDefaultActor(TestActorConfig(actor_id=None))
@@ -398,14 +412,20 @@ def test_data_actor_derives_default_id_from_runtime_class():
     assert second.log.name == "SecondDefaultActor"
 
 
-def test_data_actor_retains_configured_id_over_runtime_class():
+def test_data_actor_retains_configured_id_over_runtime_class() -> None:
+    """
+    Test data actor retains configured id over runtime class.
+    """
     actor = FirstDefaultActor(TestActorConfig(actor_id=ActorId("CONFIGURED-001")))
 
     assert actor.actor_id == ActorId("CONFIGURED-001")
     assert actor.log.name == "CONFIGURED-001"
 
 
-def test_backtest_engine_registers_distinct_default_actor_ids():
+def test_backtest_engine_registers_distinct_default_actor_ids() -> None:
+    """
+    Test backtest engine registers distinct default actor ids.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     first = FirstDefaultActor()
     second = SecondDefaultActor()
@@ -422,7 +442,10 @@ def test_backtest_engine_registers_distinct_default_actor_ids():
         engine.dispose()
 
 
-def test_queue_state_changed_exposes_all_fields():
+def test_queue_state_changed_exposes_all_fields() -> None:
+    """
+    Test queue state changed exposes all fields.
+    """
     trader_id = TraderId("TRADER-001")
     event_id = UUID4()
 
@@ -476,7 +499,10 @@ def test_queue_state_changed_exposes_all_fields():
         pytest.param(None, SocketState.DISCONNECTED, id="disconnected-without-venue"),
     ],
 )
-def test_socket_state_changed_exposes_all_fields(venue, state):
+def test_socket_state_changed_exposes_all_fields(venue: Venue, state: object) -> None:
+    """
+    Test socket state changed exposes all fields.
+    """
     trader_id = TraderId("TRADER-001")
     client_id = ClientId("BINANCE")
     endpoint = "binance-futures-market-streams"
@@ -522,10 +548,17 @@ def test_socket_state_changed_exposes_all_fields(venue, state):
 
 
 class HistoricalRequestProbeActor(TestActor):
-    observed_request_ids = {}
+    """
+    Collect historical request probe actor tests.
+    """
+
+    observed_request_ids: ClassVar[dict[str, object]] = {}
     request_time = dt.datetime(1970, 1, 1, tzinfo=dt.UTC)
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         instrument_id = InstrumentId.from_str("AUD/USD.SIM")
         client_id = ClientId("SIM")
         venue = Venue("SIM")
@@ -595,7 +628,10 @@ class HistoricalRequestProbeActor(TestActor):
         }
 
 
-def test_data_actor_pre_registration_surface(actor):
+def test_data_actor_pre_registration_surface(actor: DataActor) -> None:
+    """
+    Test data actor pre registration surface.
+    """
     assert isinstance(actor, DataActor)
     assert actor.log.name == "ACTOR-001"
     assert actor.actor_id == ActorId("ACTOR-001")
@@ -616,18 +652,33 @@ def test_data_actor_pre_registration_surface(actor):
 
 
 @pytest.mark.parametrize("method_name", LIFECYCLE_METHODS)
-def test_data_actor_lifecycle_methods_reject_pre_initialized_state(actor, method_name):
+def test_data_actor_lifecycle_methods_reject_pre_initialized_state(
+    actor: DataActor,
+    method_name: str,
+) -> None:
+    """
+    Test data actor lifecycle methods reject pre initialized state.
+    """
     with pytest.raises(RuntimeError, match="Invalid state trigger PRE_INITIALIZED"):
         getattr(actor, method_name)()
 
 
 @pytest.mark.parametrize("method_name", HOOK_METHODS)
-def test_data_actor_lifecycle_hooks_are_callable(actor, method_name):
+def test_data_actor_lifecycle_hooks_are_callable(actor: DataActor, method_name: str) -> None:
+    """
+    Test data actor lifecycle hooks are callable.
+    """
     assert getattr(actor, method_name)() is None
 
 
 @pytest.mark.parametrize("method_name", HOOK_METHODS)
-def test_data_actor_overridden_lifecycle_hooks_are_called(recording_actor, method_name):
+def test_data_actor_overridden_lifecycle_hooks_are_called(
+    recording_actor: object,
+    method_name: str,
+) -> None:
+    """
+    Test data actor overridden lifecycle hooks are called.
+    """
     assert getattr(recording_actor, method_name)() is None
 
     assert recording_actor.calls[-1] == (method_name, ())
@@ -635,21 +686,27 @@ def test_data_actor_overridden_lifecycle_hooks_are_called(recording_actor, metho
 
 @pytest.mark.parametrize(("method_name", "sample_name"), TYPED_CALLBACKS)
 def test_data_actor_typed_callbacks_accept_runtime_objects(
-    actor,
-    sample_objects,
-    method_name,
-    sample_name,
-):
+    actor: DataActor,
+    sample_objects: object,
+    method_name: str,
+    sample_name: object,
+) -> None:
+    """
+    Test data actor typed callbacks accept runtime objects.
+    """
     assert getattr(actor, method_name)(sample_objects[sample_name]) is None
 
 
 @pytest.mark.parametrize(("method_name", "sample_name"), TYPED_CALLBACKS)
 def test_data_actor_overridden_typed_callbacks_receive_runtime_objects(
-    recording_actor,
-    sample_objects,
-    method_name,
-    sample_name,
-):
+    recording_actor: object,
+    sample_objects: object,
+    method_name: str,
+    sample_name: object,
+) -> None:
+    """
+    Test data actor overridden typed callbacks receive runtime objects.
+    """
     payload = sample_objects[sample_name]
 
     assert getattr(recording_actor, method_name)(payload) is None
@@ -661,9 +718,12 @@ def test_data_actor_overridden_typed_callbacks_receive_runtime_objects(
 
 
 def test_data_actor_overridden_pool_swap_callback_exposes_raw_payload(
-    recording_actor,
-    sample_objects,
-):
+    recording_actor: object,
+    sample_objects: object,
+) -> None:
+    """
+    Test data actor overridden pool swap callback exposes raw payload.
+    """
     payload = sample_objects["pool_swap"]
 
     assert recording_actor.on_pool_swap(payload) is None
@@ -684,21 +744,27 @@ def test_data_actor_overridden_pool_swap_callback_exposes_raw_payload(
 
 @pytest.mark.parametrize(("method_name", "sample_name"), HISTORICAL_CALLBACKS)
 def test_data_actor_historical_callbacks_accept_runtime_objects(
-    actor,
-    sample_objects,
-    method_name,
-    sample_name,
-):
+    actor: DataActor,
+    sample_objects: object,
+    method_name: str,
+    sample_name: object,
+) -> None:
+    """
+    Test data actor historical callbacks accept runtime objects.
+    """
     assert getattr(actor, method_name)(sample_objects[sample_name]) is None
 
 
 @pytest.mark.parametrize(("method_name", "sample_name"), HISTORICAL_CALLBACKS)
 def test_data_actor_overridden_historical_callbacks_receive_runtime_objects(
-    recording_actor,
-    sample_objects,
-    method_name,
-    sample_name,
-):
+    recording_actor: object,
+    sample_objects: object,
+    method_name: str,
+    sample_name: object,
+) -> None:
+    """
+    Test data actor overridden historical callbacks receive runtime objects.
+    """
     payload = sample_objects[sample_name]
 
     assert getattr(recording_actor, method_name)(payload) is None
@@ -709,7 +775,10 @@ def test_data_actor_overridden_historical_callbacks_receive_runtime_objects(
     assert call_args[0] is payload
 
 
-def test_data_actor_shutdown_system_signature_exposes_optional_reason(actor):
+def test_data_actor_shutdown_system_signature_exposes_optional_reason(actor: DataActor) -> None:
+    """
+    Test data actor shutdown system signature exposes optional reason.
+    """
     signature = inspect.signature(actor.shutdown_system)
     parameter = signature.parameters["reason"]
 
@@ -717,12 +786,15 @@ def test_data_actor_shutdown_system_signature_exposes_optional_reason(actor):
     assert parameter.default is None
 
 
-def test_data_actor_shutdown_system_requires_registration(actor):
+def test_data_actor_shutdown_system_requires_registration(actor: DataActor) -> None:
+    """
+    Test data actor shutdown system requires registration.
+    """
     with pytest.raises(RuntimeError, match="registered"):
         actor.shutdown_system("unit test shutdown")
 
 
-def _subscription_registration_cases():
+def _subscription_registration_cases() -> object:
     instrument_id = InstrumentId.from_str("AUD/USD.SIM")
     bar_type = BarType.from_str("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL")
     series_id = OptionSeriesId.from_expiry("DERIBIT", "BTC", "USD", "2024-03-29")
@@ -782,7 +854,7 @@ def _subscription_registration_cases():
     ]
 
 
-def _data_operation_registration_cases():
+def _data_operation_registration_cases() -> object:
     instrument_id = InstrumentId.from_str("AUD/USD.SIM")
     bar_type = BarType.from_str("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL")
     custom_data = _model_custom_data()
@@ -806,15 +878,19 @@ def _data_operation_registration_cases():
     ]
 
 
-def _model_custom_data():
+def _model_custom_data() -> object:
     class Payload:
+        """
+        Collect payload tests.
+        """
+
         ts_event = 3
         ts_init = 4
 
     return nautilus_trader.model.CustomData(DataType("Payload"), Payload())
 
 
-def _synthetic(formula):
+def _synthetic(formula: object) -> object:
     return SyntheticInstrument(
         symbol=Symbol("BTC-ETH"),
         price_precision=8,
@@ -829,7 +905,14 @@ def _synthetic(formula):
 
 
 @pytest.mark.parametrize(("method_name", "args"), _subscription_registration_cases())
-def test_data_actor_subscriptions_require_registration(actor, method_name, args):
+def test_data_actor_subscriptions_require_registration(
+    actor: DataActor,
+    method_name: str,
+    args: tuple[object, ...],
+) -> None:
+    """
+    Test data actor subscriptions require registration.
+    """
     with pytest.raises(RuntimeError) as exc_info:
         getattr(actor, method_name)(*args)
 
@@ -837,16 +920,34 @@ def test_data_actor_subscriptions_require_registration(actor, method_name, args)
 
 
 @pytest.mark.parametrize(("method_name", "args"), _data_operation_registration_cases())
-def test_data_actor_data_operations_require_registration(actor, method_name, args):
+def test_data_actor_data_operations_require_registration(
+    actor: DataActor,
+    method_name: str,
+    args: tuple[object, ...],
+) -> None:
+    """
+    Test data actor data operations require registration.
+    """
     with pytest.raises(RuntimeError) as exc_info:
         getattr(actor, method_name)(*args)
 
     assert str(exc_info.value) == DATA_OPERATION_REGISTRATION_ERROR
 
 
-def test_data_actor_registration_precedes_publish_signal_conversion(actor):
+def test_data_actor_registration_precedes_publish_signal_conversion(actor: DataActor) -> None:
+    """
+    Test data actor registration precedes publish signal conversion.
+    """
+
     class InvalidSignalValue:
-        def __str__(self):
+        """
+        Collect invalid signal value tests.
+        """
+
+        def __str__(self) -> str:
+            """
+            Str.
+            """
             raise ValueError("invalid signal value")
 
     with pytest.raises(RuntimeError) as exc_info:
@@ -855,14 +956,20 @@ def test_data_actor_registration_precedes_publish_signal_conversion(actor):
     assert str(exc_info.value) == DATA_OPERATION_REGISTRATION_ERROR
 
 
-def test_data_actor_registration_precedes_request_params_conversion(actor):
+def test_data_actor_registration_precedes_request_params_conversion(actor: DataActor) -> None:
+    """
+    Test data actor registration precedes request params conversion.
+    """
     with pytest.raises(RuntimeError) as exc_info:
         actor.request_instruments(params={"invalid": object()})
 
     assert str(exc_info.value) == DATA_OPERATION_REGISTRATION_ERROR
 
 
-def test_data_actor_unregistered_publish_signal_does_not_abort_subprocess():
+def test_data_actor_unregistered_publish_signal_does_not_abort_subprocess() -> None:
+    """
+    Test data actor unregistered publish signal does not abort subprocess.
+    """
     code = (
         "from nautilus_trader.common import DataActor\n"
         "try:\n"
@@ -881,7 +988,10 @@ def test_data_actor_unregistered_publish_signal_does_not_abort_subprocess():
     assert result.stdout.strip() == DATA_OPERATION_REGISTRATION_ERROR
 
 
-def test_data_actor_data_operations_succeed_when_registered(actor):
+def test_data_actor_data_operations_succeed_when_registered(actor: DataActor) -> None:
+    """
+    Test data actor data operations succeed when registered.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     custom_data = _model_custom_data()
     synthetic = _synthetic("(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2")
@@ -898,7 +1008,10 @@ def test_data_actor_data_operations_succeed_when_registered(actor):
         engine.dispose()
 
 
-def test_data_actor_subscription_validation_precedes_registration(actor):
+def test_data_actor_subscription_validation_precedes_registration(actor: DataActor) -> None:
+    """
+    Test data actor subscription validation precedes registration.
+    """
     instrument_id = InstrumentId.from_str("AUD/USD.SIM")
 
     with pytest.raises(ValueError, match="interval_ms must be > 0"):
@@ -910,20 +1023,29 @@ def test_data_actor_subscription_validation_precedes_registration(actor):
         )
 
 
-def test_data_actor_registration_precedes_params_conversion(actor):
+def test_data_actor_registration_precedes_params_conversion(actor: DataActor) -> None:
+    """
+    Test data actor registration precedes params conversion.
+    """
     with pytest.raises(RuntimeError) as exc_info:
         actor.subscribe_data(DataType("TestData"), params={"invalid": object()})
 
     assert str(exc_info.value) == "DataActor must be registered before managing subscriptions"
 
 
-def test_queue_state_changed_subscription_priority_defaults_to_none(actor):
+def test_queue_state_changed_subscription_priority_defaults_to_none(actor: DataActor) -> None:
+    """
+    Test queue state changed subscription priority defaults to none.
+    """
     signature = inspect.signature(actor.subscribe_queue_state)
 
     assert signature.parameters["priority"].default is None
 
 
-def test_socket_state_changed_subscription_priority_defaults_to_none(actor):
+def test_socket_state_changed_subscription_priority_defaults_to_none(actor: DataActor) -> None:
+    """
+    Test socket state changed subscription priority defaults to none.
+    """
     signature = inspect.signature(actor.subscribe_socket_state)
 
     assert signature.parameters["priority"].default is None
@@ -931,10 +1053,13 @@ def test_socket_state_changed_subscription_priority_defaults_to_none(actor):
 
 @pytest.mark.parametrize(("method_name", "parameter_names"), CALLBACK_SIGNATURES)
 def test_data_actor_callback_methods_expose_expected_signatures(
-    actor,
-    method_name,
-    parameter_names,
-):
+    actor: DataActor,
+    method_name: str,
+    parameter_names: object,
+) -> None:
+    """
+    Test data actor callback methods expose expected signatures.
+    """
     signature = inspect.signature(getattr(actor, method_name))
 
     assert tuple(signature.parameters) == parameter_names
@@ -942,22 +1067,33 @@ def test_data_actor_callback_methods_expose_expected_signatures(
 
 @pytest.mark.parametrize(("method_name", "parameter_names"), REGISTRATION_REQUIRED_SIGNATURES)
 def test_data_actor_registration_gated_methods_expose_expected_signatures(
-    actor,
-    method_name,
-    parameter_names,
-):
+    actor: DataActor,
+    method_name: str,
+    parameter_names: object,
+) -> None:
+    """
+    Test data actor registration gated methods expose expected signatures.
+    """
     signature = inspect.signature(getattr(actor, method_name))
 
     assert tuple(signature.parameters) == parameter_names
 
 
 @pytest.mark.parametrize("method_name", REMOVED_ORDER_EVENT_METHODS)
-def test_data_actor_order_event_methods_are_not_exposed(actor, method_name):
+def test_data_actor_order_event_methods_are_not_exposed(actor: DataActor, method_name: str) -> None:
+    """
+    Test data actor order event methods are not exposed.
+    """
     assert not hasattr(actor, method_name)
 
 
 @pytest.mark.parametrize("request_time", HISTORICAL_REQUEST_DATETIME_CASES)
-def test_data_actor_historical_requests_accept_datetimes_when_registered(request_time):
+def test_data_actor_historical_requests_accept_datetimes_when_registered(
+    request_time: object,
+) -> None:
+    """
+    Test data actor historical requests accept datetimes when registered.
+    """
     HistoricalRequestProbeActor.observed_request_ids = {}
     HistoricalRequestProbeActor.request_time = _historical_request_time(request_time)
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
@@ -991,7 +1127,7 @@ def test_data_actor_historical_requests_accept_datetimes_when_registered(request
         engine.dispose()
 
 
-def _historical_request_time(request_time):
+def _historical_request_time(request_time: object) -> object:
     if request_time == "datetime-utc":
         return dt.datetime(1970, 1, 1, tzinfo=dt.UTC)
 
@@ -1007,7 +1143,10 @@ def _historical_request_time(request_time):
 
 
 @pytest.fixture
-def actor():
+def actor() -> object:
+    """
+    Actor.
+    """
     config = TestActorConfig(
         actor_id=ActorId("ACTOR-001"),
         log_events=False,
@@ -1017,7 +1156,10 @@ def actor():
 
 
 @pytest.fixture
-def recording_actor():
+def recording_actor() -> object:
+    """
+    Record actor events.
+    """
     config = TestActorConfig(
         actor_id=ActorId("ACTOR-001"),
         log_events=False,
@@ -1029,7 +1171,10 @@ def recording_actor():
 
 
 @pytest.fixture
-def sample_objects():
+def sample_objects() -> object:
+    """
+    Sample objects.
+    """
     instrument = TestInstrumentProvider.audusd_sim()
     quote = _make_quote(instrument.id)
     trade = _make_trade(instrument.id)
@@ -1107,7 +1252,7 @@ def sample_objects():
     }
 
 
-def _make_quote(instrument_id):
+def _make_quote(instrument_id: InstrumentId) -> object:
     return QuoteTick(
         instrument_id,
         Price.from_str("1.00000"),
@@ -1119,7 +1264,7 @@ def _make_quote(instrument_id):
     )
 
 
-def _make_trade(instrument_id):
+def _make_trade(instrument_id: InstrumentId) -> object:
     return TradeTick(
         instrument_id,
         Price.from_str("1.00000"),
@@ -1131,7 +1276,7 @@ def _make_trade(instrument_id):
     )
 
 
-def _make_bar(instrument_id):
+def _make_bar(instrument_id: InstrumentId) -> object:
     bar_type = BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL")
     return Bar(
         bar_type,
@@ -1145,7 +1290,7 @@ def _make_bar(instrument_id):
     )
 
 
-def _make_book_deltas(instrument_id):
+def _make_book_deltas(instrument_id: InstrumentId) -> object:
     bid = BookOrder(OrderSide.BUY, Price.from_str("1.00000"), Quantity.from_int(1), 1)
     ask = BookOrder(OrderSide.SELL, Price.from_str("1.10000"), Quantity.from_int(2), 2)
     delta1 = OrderBookDelta(instrument_id, BookAction.ADD, bid, 0, 1, 1, 2)
@@ -1153,7 +1298,7 @@ def _make_book_deltas(instrument_id):
     return OrderBookDeltas(instrument_id, [delta1, delta2])
 
 
-def _make_option_greeks():
+def _make_option_greeks() -> object:
     instrument_id = InstrumentId.from_str("BTC-20240329-50000-C.DERIBIT")
     return OptionGreeks(
         instrument_id,
@@ -1172,12 +1317,12 @@ def _make_option_greeks():
     )
 
 
-def _make_option_chain():
+def _make_option_chain() -> object:
     series_id = OptionSeriesId.from_expiry("DERIBIT", "BTC", "USD", "2024-03-29")
     return OptionChainSlice(series_id, Price.from_str("50000.0"), 5, 6)
 
 
-def _make_block():
+def _make_block() -> object:
     return Block(
         Blockchain.BASE,
         "0x1111111111111111111111111111111111111111111111111111111111111111",
@@ -1190,7 +1335,7 @@ def _make_block():
     )
 
 
-def _make_pool():
+def _make_pool() -> object:
     chain = Chain(Blockchain.BASE, 8453)
     dex = _make_dex(chain)
     token0 = _make_token0(chain)
@@ -1209,7 +1354,7 @@ def _make_pool():
     )
 
 
-def _make_pool_swap(pool):
+def _make_pool_swap(pool: object) -> object:
     return PoolSwap(
         chain=pool.chain,
         dex=pool.dex,
@@ -1230,7 +1375,7 @@ def _make_pool_swap(pool):
     )
 
 
-def _make_pool_liquidity_update(pool):
+def _make_pool_liquidity_update(pool: object) -> object:
     return PoolLiquidityUpdate(
         chain=pool.chain,
         dex=pool.dex,
@@ -1252,7 +1397,7 @@ def _make_pool_liquidity_update(pool):
     )
 
 
-def _make_pool_fee_collect(pool):
+def _make_pool_fee_collect(pool: object) -> object:
     return PoolFeeCollect(
         chain=pool.chain,
         dex=pool.dex,
@@ -1271,7 +1416,7 @@ def _make_pool_fee_collect(pool):
     )
 
 
-def _make_pool_flash(pool):
+def _make_pool_flash(pool: object) -> object:
     return PoolFlash(
         chain=pool.chain,
         dex=pool.dex,
@@ -1291,7 +1436,7 @@ def _make_pool_flash(pool):
     )
 
 
-def _make_dex(chain):
+def _make_dex(chain: object) -> object:
     return Dex(
         chain=chain,
         name="UniswapV3",
@@ -1306,7 +1451,7 @@ def _make_dex(chain):
     )
 
 
-def _make_token0(chain):
+def _make_token0(chain: object) -> object:
     return Token(
         chain=chain,
         address="0x0000000000000000000000000000000000000001",
@@ -1316,7 +1461,7 @@ def _make_token0(chain):
     )
 
 
-def _make_token1(chain):
+def _make_token1(chain: object) -> object:
     return Token(
         chain=chain,
         address="0x0000000000000000000000000000000000000002",

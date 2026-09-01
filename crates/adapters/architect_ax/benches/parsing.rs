@@ -48,36 +48,28 @@ fn create_eurusd_instrument() -> InstrumentAny {
     let size_increment =
         Quantity::from_decimal_dp(Decimal::new(1, size_precision as u32), size_precision).unwrap();
 
-    let instrument = PerpetualContract::new(
-        InstrumentId::new(Symbol::new(symbol), *AX_VENUE),
-        Symbol::new(symbol),
-        Ustr::from("EURUSD"),
-        AssetClass::FX,
-        None,
-        Currency::USD(),
-        Currency::USD(),
-        false,
-        price_precision,
-        size_precision,
-        price_increment,
-        size_increment,
-        None,
-        Some(size_increment),
-        None,
-        Some(size_increment),
-        None,
-        None,
-        None,
-        None,
-        Some(Decimal::new(1, 2)),
-        Some(Decimal::new(5, 3)),
-        Some(Decimal::new(2, 4)),
-        Some(Decimal::new(5, 4)),
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    );
+    let instrument = PerpetualContract::builder()
+        .instrument_id(InstrumentId::new(Symbol::new(symbol), *AX_VENUE))
+        .raw_symbol(Symbol::new(symbol))
+        .underlying(Ustr::from("EURUSD"))
+        .asset_class(AssetClass::FX)
+        .quote_currency(Currency::USD())
+        .settlement_currency(Currency::USD())
+        .is_inverse(false)
+        .price_precision(price_precision)
+        .size_precision(size_precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .lot_size(size_increment)
+        .min_quantity(size_increment)
+        .margin_init(Decimal::new(1, 2))
+        .margin_maint(Decimal::new(5, 3))
+        .maker_fee(Decimal::new(2, 4))
+        .taker_fee(Decimal::new(5, 4))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
     InstrumentAny::PerpetualContract(instrument)
 }
 
@@ -143,36 +135,30 @@ fn bench_parse_candle_bar(c: &mut Criterion) {
     let size_increment =
         Quantity::from_decimal_dp(Decimal::new(1, size_precision as u32), size_precision).unwrap();
 
-    let instrument = InstrumentAny::PerpetualContract(PerpetualContract::new(
-        InstrumentId::new(Symbol::new(symbol), *AX_VENUE),
-        Symbol::new(symbol),
-        Ustr::from("EURUSD"),
-        AssetClass::Cryptocurrency,
-        None,
-        Currency::USD(),
-        Currency::USD(),
-        false,
-        price_precision,
-        size_precision,
-        price_increment,
-        size_increment,
-        None,
-        Some(size_increment),
-        None,
-        Some(size_increment),
-        None,
-        None,
-        None,
-        None,
-        Some(Decimal::new(1, 2)),
-        Some(Decimal::new(5, 3)),
-        Some(Decimal::new(2, 4)),
-        Some(Decimal::new(5, 4)),
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ));
+    let instrument = InstrumentAny::PerpetualContract(
+        PerpetualContract::builder()
+            .instrument_id(InstrumentId::new(Symbol::new(symbol), *AX_VENUE))
+            .raw_symbol(Symbol::new(symbol))
+            .underlying(Ustr::from("EURUSD"))
+            .asset_class(AssetClass::Cryptocurrency)
+            .quote_currency(Currency::USD())
+            .settlement_currency(Currency::USD())
+            .is_inverse(false)
+            .price_precision(price_precision)
+            .size_precision(size_precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .lot_size(size_increment)
+            .min_quantity(size_increment)
+            .margin_init(Decimal::new(1, 2))
+            .margin_maint(Decimal::new(5, 3))
+            .maker_fee(Decimal::new(2, 4))
+            .taker_fee(Decimal::new(5, 4))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    );
     let ts_init = UnixNanos::default();
 
     c.bench_function("parse_candle_bar", |b| {

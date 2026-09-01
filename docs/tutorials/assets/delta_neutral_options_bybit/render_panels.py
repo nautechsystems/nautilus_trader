@@ -163,12 +163,12 @@ def panel_b_delta_drift(call_k: float, put_k: float, underlying: float) -> go.Fi
     moves = np.linspace(-0.05, 0.05, 200)
     spot = underlying * (1.0 + moves)
 
-    def call_delta_bs(s, k):
+    def call_delta_bs(s, k) -> object:
         # Toy approximation: monotonic delta from -0 to 1 around the strike.
         z = (s - k) / (underlying * 0.05)
         return 0.5 * (1.0 + np.tanh(z))
 
-    def put_delta_bs(s, k):
+    def put_delta_bs(s, k) -> object:
         z = (k - s) / (underlying * 0.05)
         return -0.5 * (1.0 + np.tanh(z))
 

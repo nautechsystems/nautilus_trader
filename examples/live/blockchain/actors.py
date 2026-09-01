@@ -12,8 +12,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Example of blockchain actors.
+"""
 
-from dataclasses import dataclass
+from typing import Any
+from typing import Self
 
 from nautilus_trader.common import DataActor
 from nautilus_trader.common import LogColor
@@ -31,37 +35,57 @@ from nautilus_trader.model import PoolLiquidityUpdate
 from nautilus_trader.model import PoolSwap
 
 
-@dataclass
 class BlockchainActorConfig(DataActorConfig):
-    # Inherited fields from DataActorConfig (must be included for now)
-    actor_id: ActorId | None = None
-    log_events: bool = True
-    log_commands: bool = True
+    """
+    Collect blockchain actor config tests.
+    """
 
-    # Blockchain-specific fields
-    chain: Chain | None = None
-    client_id: ClientId | None = None
-    pools: list[InstrumentId] | None = None
+    _CUSTOM_FIELDS = ("actor_id", "chain", "client_id", "pools")
 
-    def __post_init__(self):
-        if isinstance(self.actor_id, str):
-            self.actor_id = ActorId(self.actor_id)
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+        """
+        Create a new instance.
+        """
+        for key in cls._CUSTOM_FIELDS:
+            kwargs.pop(key, None)
+        return super().__new__(cls, *args, **kwargs)
 
-        if isinstance(self.client_id, str):
-            self.client_id = ClientId(self.client_id)
-
-        if isinstance(self.pools, list) and self.pools and isinstance(self.pools[0], str):
-            self.pools = [InstrumentId.from_str(pool_str) for pool_str in self.pools]
-
-        if isinstance(self.chain, str):
-            self.chain = Chain.from_chain_name(self.chain)
+    def __init__(
+        self,
+        actor_id: ActorId | str | None = None,
+        log_events: bool = True,
+        log_commands: bool = True,
+        chain: Chain | str | None = None,
+        client_id: ClientId | str | None = None,
+        pools: list[InstrumentId | str] | None = None,
+    ) -> None:
+        """
+        Initialize the helper.
+        """
+        self.actor_id = ActorId.from_str(actor_id) if isinstance(actor_id, str) else actor_id
+        self.log_events = log_events
+        self.log_commands = log_commands
+        self.chain = Chain.from_chain_name(chain) if isinstance(chain, str) else chain
+        self.client_id = ClientId.from_str(client_id) if isinstance(client_id, str) else client_id
+        self.pools = (
+            [InstrumentId.from_str(pool) if isinstance(pool, str) else pool for pool in pools]
+            if pools is not None
+            else None
+        )
 
 
 class BlockchainActor(DataActor):
+    """
+    Collect blockchain actor tests.
+    """
+
     def __init__(self, config: BlockchainActorConfig | None = None) -> None:
+        """
+        Initialize the helper.
+        """
         if config is None:
             config = BlockchainActorConfig()
-        super().__init__()
+        super().__init__(config)
 
         self.chain = config.chain or Chain.ARBITRUM()
         self.client_id = config.client_id or ClientId(f"BLOCKCHAIN-{self.chain.name}")
@@ -107,7 +131,11 @@ class BlockchainActor(DataActor):
         self.log.info(repr(event), LogColor.BLUE)
 
     def on_pool(self, pool: Pool) -> None:
-        self.log.info(f"Received pool: {pool.instrument_id}", LogColor.GREEN)
+        """
+        On pool.
+        """
+        log_msg = f"Received pool: {pool.instrument_id}"
+        self.log.info(log_msg, color=LogColor.GREEN)
 
     def on_block(self, block: Block) -> None:
         """
@@ -123,14 +151,10 @@ class BlockchainActor(DataActor):
             total_positions = pool.get_total_active_positions()
             liquidity = pool.get_active_liquidity()
             liquidity_utilization_rate = pool.liquidity_utilization_rate()
-            self.log.info(
-                f"Pool {pool_id} contains {total_ticks} active ticks and {total_positions} active positions with liquidity of {liquidity}",
-                LogColor.BLUE,
-            )
-            self.log.info(
-                f"Pool {pool_id} has a liquidity utilization rate of {liquidity_utilization_rate * 100:.4f}%",
-                LogColor.BLUE,
-            )
+            log_msg = f"Pool {pool_id} contains {total_ticks} active ticks and {total_positions} active positions with liquidity of {liquidity}"
+            self.log.info(log_msg, color=LogColor.BLUE)
+            log_msg = f"Pool {pool_id} has a liquidity utilization rate of {liquidity_utilization_rate * 100:.4f}%"
+            self.log.info(log_msg, color=LogColor.BLUE)
 
     def on_pool_swap(self, swap: PoolSwap) -> None:
         """
@@ -150,8 +174,8 @@ class BlockchainActor(DataActor):
         """
         self.log.info(repr(update), LogColor.CYAN)
 
-    def on_pool_flash(self, event: PoolFlash) -> None:
+    def on_pool_flash(self, flash: PoolFlash) -> None:
         """
         Actions to be performed on receiving a pool flash event.
         """
-        self.log.info(repr(event), LogColor.CYAN)
+        self.log.info(repr(flash), LogColor.CYAN)

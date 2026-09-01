@@ -340,9 +340,7 @@ fn has_same_currency_identity(left: Currency, right: Currency) -> bool {
     reason = "i128::from narrows MoneyRaw when high-precision is disabled"
 )]
 fn minor_units(money: Money) -> Result<String, String> {
-    let scale = 10_i128.pow(u32::from(
-        FIXED_PRECISION.saturating_sub(money.currency.precision),
-    ));
+    let scale = raw_per_minor(money.currency.precision);
     let raw = i128::from(money.raw);
     if raw % scale != 0 {
         return Err(format!(
@@ -361,9 +359,7 @@ fn money_from_minor_units(value: &str, currency: Currency) -> Result<Money, Stri
     let minor = value
         .parse::<i128>()
         .map_err(|e| format!("Invalid wallet money minor units '{value}': {e}"))?;
-    let scale = 10_i128.pow(u32::from(
-        FIXED_PRECISION.saturating_sub(currency.precision),
-    ));
+    let scale = raw_per_minor(currency.precision);
     let raw = minor.checked_mul(scale).ok_or_else(|| {
         format!(
             "Wallet money minor units {minor} overflow at currency precision {}",
@@ -377,6 +373,10 @@ fn money_from_minor_units(value: &str, currency: Currency) -> Result<Money, Stri
         )
     })?;
     Money::from_raw_checked(raw, currency).map_err(|e| e.to_string())
+}
+
+fn raw_per_minor(precision: u8) -> i128 {
+    10_i128.pow(u32::from(FIXED_PRECISION.saturating_sub(precision)))
 }
 
 impl PartialEq for AccountBalance {
@@ -510,10 +510,12 @@ impl Display for MarginBalance {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::correctness::CorrectnessError;
     use rstest::rstest;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
+    use super::money_from_minor_units;
     use crate::{
         identifiers::InstrumentId,
         types::{
@@ -546,15 +548,35 @@ mod tests {
     }
 
     #[rstest]
-    fn test_account_balance_new_checked_with_currency_mismatch_returns_error() {
+    #[case::locked(
+        Currency::EUR(),
+        Currency::USD(),
+        "`total` currency (USD) != `locked` currency (EUR)"
+    )]
+    #[case::free(
+        Currency::USD(),
+        Currency::EUR(),
+        "`total` currency (USD) != `free` currency (EUR)"
+    )]
+    fn test_account_balance_new_checked_with_currency_mismatch_returns_error(
+        #[case] locked_currency: Currency,
+        #[case] free_currency: Currency,
+        #[case] message: &str,
+    ) {
         let usd = Currency::USD();
-        let eur = Currency::EUR();
-        let result = AccountBalance::new_checked(
+        let error = AccountBalance::new_checked(
             Money::new(1000.0, usd),
-            Money::new(250.0, eur),
-            Money::new(750.0, usd),
+            Money::new(250.0, locked_currency),
+            Money::new(750.0, free_currency),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::PredicateViolation {
+                message: message.to_string(),
+            }
         );
-        assert!(result.is_err());
     }
 
     #[rstest]
@@ -566,6 +588,30 @@ mod tests {
             Money::new(1000.0, usd),
             Money::new(250.0, eur),
             Money::new(750.0, usd),
+        );
+    }
+
+    #[rstest]
+    fn test_money_from_minor_units_rejects_invalid_integer() {
+        let error = money_from_minor_units("invalid", Currency::USD()).unwrap_err();
+
+        assert_eq!(
+            error,
+            "Invalid wallet money minor units 'invalid': invalid digit found in string"
+        );
+    }
+
+    #[rstest]
+    fn test_money_from_minor_units_rejects_scaling_overflow() {
+        let value = i128::MAX.to_string();
+        let error = money_from_minor_units(&value, Currency::USD()).unwrap_err();
+
+        assert_eq!(
+            error,
+            format!(
+                "Wallet money minor units {} overflow at currency precision 2",
+                i128::MAX
+            )
         );
     }
 

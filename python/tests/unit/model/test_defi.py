@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test defi behavior.
+"""
 
 import operator
 
@@ -37,7 +40,10 @@ from nautilus_trader.model import Token
 from nautilus_trader.model import Transaction
 
 
-def test_chain_construction_and_lookup():
+def test_chain_construction_and_lookup() -> None:
+    """
+    Test chain construction and lookup.
+    """
     chain = Chain(Blockchain.BASE, 8453)
     lookup_by_name = Chain.from_chain_name("BASE")
     lookup_by_id = Chain.from_chain_id(8453)
@@ -51,13 +57,19 @@ def test_chain_construction_and_lookup():
     assert lookup_by_id.name == Blockchain.BASE
 
 
-def test_defi_enum_exports():
+def test_defi_enum_exports() -> None:
+    """
+    Test defi enum exports.
+    """
     assert AmmType.from_str("CLAMM") == AmmType.CLAMM
     assert Blockchain.from_str("BASE") == Blockchain.BASE
     assert DexType.UNISWAP_V3 is not None
 
 
-def test_defi_public_module_names():
+def test_defi_public_module_names() -> None:
+    """
+    Test defi public module names.
+    """
     assert Blockchain.__module__ == "nautilus_trader.model"
     assert Chain.__module__ == "nautilus_trader.model"
     assert Dex.__module__ == "nautilus_trader.model"
@@ -86,7 +98,10 @@ def test_defi_public_module_names():
         ),
     ],
 )
-def test_dex_rejects_invalid_factory_address(factory, expected_err):
+def test_dex_rejects_invalid_factory_address(factory: object, expected_err: object) -> None:
+    """
+    Test dex rejects invalid factory address.
+    """
     chain = Chain(Blockchain.BASE, 8453)
 
     with pytest.raises(ValueError, match=expected_err) as exc_info:
@@ -95,7 +110,10 @@ def test_dex_rejects_invalid_factory_address(factory, expected_err):
     assert str(exc_info.value) == expected_err
 
 
-def test_dex_and_token_properties():
+def test_dex_and_token_properties() -> None:
+    """
+    Test dex and token properties.
+    """
     chain = Chain(Blockchain.BASE, 8453)
     dex = _make_dex(chain)
     token0 = _make_token0(chain)
@@ -120,7 +138,10 @@ def test_dex_and_token_properties():
     assert token1.decimals == 18
 
 
-def test_pool_construction_and_properties():
+def test_pool_construction_and_properties() -> None:
+    """
+    Test pool construction and properties.
+    """
     pool = _make_pool()
 
     assert pool.chain.name == Blockchain.BASE
@@ -138,7 +159,10 @@ def test_pool_construction_and_properties():
     assert isinstance(hash(pool), int)
 
 
-def test_pool_event_types_construction():
+def test_pool_event_types_construction() -> None:
+    """
+    Test pool event types construction.
+    """
     pool = _make_pool()
     swap = _make_pool_swap(pool)
     liquidity = _make_pool_liquidity_update(pool)
@@ -197,7 +221,10 @@ def test_pool_event_types_construction():
     assert swap_data.ts_init == 10
 
 
-def test_transaction_and_opaque_defi_surfaces():
+def test_transaction_and_opaque_defi_surfaces() -> None:
+    """
+    Test transaction and opaque defi surfaces.
+    """
     tx = _make_transaction(Chain(Blockchain.BASE, 8453))
 
     assert tx.chain.name == Blockchain.BASE
@@ -216,7 +243,10 @@ def test_transaction_and_opaque_defi_surfaces():
     assert hasattr(Block, "timestamp")
 
 
-def test_pool_profiler_surface_methods():
+def test_pool_profiler_surface_methods() -> None:
+    """
+    Test pool profiler surface methods.
+    """
     assert isinstance(PoolProfiler, type)
     assert PoolProfiler.__name__ == "PoolProfiler"
     assert hasattr(PoolProfiler, "pool")
@@ -227,7 +257,10 @@ def test_pool_profiler_surface_methods():
     assert hasattr(PoolProfiler, "size_for_impact_bps_detailed")
 
 
-def _make_dex(chain, factory="0x0000000000000000000000000000000000000fac"):
+def _make_dex(
+    chain: object,
+    factory: object = "0x0000000000000000000000000000000000000fac",
+) -> object:
     return Dex(
         chain=chain,
         name="UniswapV3",
@@ -242,7 +275,7 @@ def _make_dex(chain, factory="0x0000000000000000000000000000000000000fac"):
     )
 
 
-def _make_pool():
+def _make_pool() -> object:
     chain = Chain(Blockchain.BASE, 8453)
     dex = _make_dex(chain)
     token0 = _make_token0(chain)
@@ -261,7 +294,7 @@ def _make_pool():
     )
 
 
-def _make_pool_fee_collect(pool):
+def _make_pool_fee_collect(pool: object) -> object:
     return PoolFeeCollect(
         chain=pool.chain,
         dex=pool.dex,
@@ -280,7 +313,7 @@ def _make_pool_fee_collect(pool):
     )
 
 
-def _make_pool_flash(pool):
+def _make_pool_flash(pool: object) -> object:
     return PoolFlash(
         chain=pool.chain,
         dex=pool.dex,
@@ -300,7 +333,7 @@ def _make_pool_flash(pool):
     )
 
 
-def _make_pool_fee_protocol_update(pool):
+def _make_pool_fee_protocol_update(pool: object) -> object:
     return PoolFeeProtocolUpdate(
         chain=pool.chain,
         dex=pool.dex,
@@ -316,7 +349,7 @@ def _make_pool_fee_protocol_update(pool):
     )
 
 
-def _make_pool_fee_protocol_collect(pool):
+def _make_pool_fee_protocol_collect(pool: object) -> object:
     return PoolFeeProtocolCollect(
         chain=pool.chain,
         dex=pool.dex,
@@ -334,7 +367,7 @@ def _make_pool_fee_protocol_collect(pool):
     )
 
 
-def _make_pool_liquidity_update(pool):
+def _make_pool_liquidity_update(pool: object) -> object:
     return PoolLiquidityUpdate(
         chain=pool.chain,
         dex=pool.dex,
@@ -356,7 +389,7 @@ def _make_pool_liquidity_update(pool):
     )
 
 
-def _make_pool_swap(pool):
+def _make_pool_swap(pool: object) -> object:
     return PoolSwap(
         chain=pool.chain,
         dex=pool.dex,
@@ -377,7 +410,7 @@ def _make_pool_swap(pool):
     )
 
 
-def _make_token0(chain):
+def _make_token0(chain: object) -> object:
     return Token(
         chain=chain,
         address="0x0000000000000000000000000000000000000001",
@@ -387,7 +420,7 @@ def _make_token0(chain):
     )
 
 
-def _make_token1(chain):
+def _make_token1(chain: object) -> object:
     return Token(
         chain=chain,
         address="0x0000000000000000000000000000000000000002",
@@ -397,7 +430,7 @@ def _make_token1(chain):
     )
 
 
-def _make_transaction(chain):
+def _make_transaction(chain: object) -> object:
     return Transaction(
         chain,
         "0x1111111111111111111111111111111111111111111111111111111111111111",
@@ -434,7 +467,10 @@ def _make_transaction(chain):
         pytest.param(lambda: _make_transaction(Chain(Blockchain.BASE, 8453)), id="transaction"),
     ],
 )
-def test_defi_ordering_comparisons_raise_type_error(value_factory):
+def test_defi_ordering_comparisons_raise_type_error(value_factory: object) -> None:
+    """
+    Test defi ordering comparisons raise type error.
+    """
     value = value_factory()
 
     with pytest.raises(TypeError):

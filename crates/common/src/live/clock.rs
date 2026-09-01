@@ -291,14 +291,15 @@ impl LiveClock {
 mod tests {
     use std::{
         sync::{
-            Arc, Mutex,
+            Arc,
             atomic::{AtomicBool, Ordering},
             mpsc,
         },
         time::Duration,
     };
 
-    use nautilus_core::{MUTEX_POISONED, UnixNanos, time::get_atomic_clock_realtime};
+    use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
+    use parking_lot::Mutex;
     use rstest::rstest;
     use ustr::Ustr;
 
@@ -326,10 +327,7 @@ mod tests {
             let now_ns = get_atomic_clock_realtime().get_time_ns();
             let event = message.event().clone();
             message.dispatch();
-            self.events
-                .lock()
-                .expect(MUTEX_POISONED)
-                .push((event, now_ns));
+            self.events.lock().push((event, now_ns));
         }
     }
 
@@ -341,6 +339,22 @@ mod tests {
         pause_once: AtomicBool,
     }
 
+    impl PausingCollectingSender {
+        fn new(
+            events: Arc<Mutex<Vec<(TimeEvent, UnixNanos)>>>,
+        ) -> (Arc<Self>, mpsc::Receiver<()>, mpsc::Sender<()>) {
+            let (paused_tx, paused_rx) = mpsc::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            let sender = Arc::new(Self {
+                collector: CollectingSender::new(events),
+                paused_tx,
+                release_rx: Mutex::new(release_rx),
+                pause_once: AtomicBool::new(true),
+            });
+            (sender, paused_rx, release_tx)
+        }
+    }
+
     impl TimeEventSender for PausingCollectingSender {
         fn send(&self, message: TimeEventMessage) {
             self.collector.send(message);
@@ -349,7 +363,6 @@ mod tests {
                 self.paused_tx.send(()).expect("timer send should pause");
                 self.release_rx
                     .lock()
-                    .expect("release mutex should lock")
                     .recv()
                     .expect("timer send should release");
             }
@@ -361,23 +374,13 @@ mod tests {
         target: usize,
         timeout: Duration,
     ) {
-        wait_until(
-            || events.lock().expect(MUTEX_POISONED).len() >= target,
-            timeout,
-        );
+        wait_until(|| events.lock().len() >= target, timeout);
     }
 
     #[rstest]
     fn test_live_clock_timer_replacement_cancels_previous_task() {
         let events = Arc::new(Mutex::new(Vec::new()));
-        let (paused_tx, paused_rx) = mpsc::channel();
-        let (release_tx, release_rx) = mpsc::channel();
-        let sender = Arc::new(PausingCollectingSender {
-            collector: CollectingSender::new(Arc::clone(&events)),
-            paused_tx,
-            release_rx: Mutex::new(release_rx),
-            pause_once: AtomicBool::new(true),
-        });
+        let (sender, paused_rx, release_tx) = PausingCollectingSender::new(Arc::clone(&events));
 
         let mut clock = LiveClock::new(Some(sender));
         clock.register_default_handler(TimeEventCallback::from(|_| {}));
@@ -390,7 +393,7 @@ mod tests {
         paused_rx
             .recv_timeout(Duration::from_secs(2))
             .expect("fast timer send should pause");
-        events.lock().expect(MUTEX_POISONED).clear();
+        events.lock().clear();
 
         let slow_interval = Duration::from_millis(30).as_nanos() as u64;
         clock
@@ -400,7 +403,7 @@ mod tests {
 
         wait_for_events(&events, 3, Duration::from_secs(2));
 
-        let snapshot = events.lock().expect(MUTEX_POISONED).clone();
+        let snapshot = events.lock().clone();
         let diffs: Vec<u64> = snapshot
             .array_windows()
             .map(|[a, b]| b.0.ts_event.as_u64() - a.0.ts_event.as_u64())
@@ -462,7 +465,7 @@ mod tests {
             wait_for_events(&events, 1, Duration::from_secs(2));
 
             assert!(clock.sender.is_some());
-            let events = events.lock().expect(MUTEX_POISONED);
+            let events = events.lock();
             assert_eq!(events.len(), 1);
             assert_eq!(events[0].0.name, Ustr::from("late-sender"));
         })
@@ -473,10 +476,9 @@ mod tests {
     #[rstest]
     fn test_live_clock_reset_stops_active_timers() {
         let events = Arc::new(Mutex::new(Vec::new()));
-        let sender = Arc::new(CollectingSender::new(Arc::clone(&events)));
+        let (sender, paused_rx, release_tx) = PausingCollectingSender::new(Arc::clone(&events));
 
-        let mut clock = LiveClock::new(Some(sender));
-        clock.register_default_handler(TimeEventCallback::from(|_| {}));
+        let mut clock = LiveClock::new(Some(sender.clone()));
 
         clock
             .set_timer_ns(
@@ -484,53 +486,49 @@ mod tests {
                 Duration::from_millis(15).as_nanos() as u64,
                 None,
                 None,
-                None,
+                Some(TimeEventCallback::from(|_| {})),
                 None,
                 None,
             )
             .unwrap();
 
-        wait_for_events(&events, 2, Duration::from_millis(250));
+        paused_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("timer send should pause");
+
+        assert_eq!(events.lock().len(), 1);
+        assert_eq!(clock.timer_count(), 1);
 
         clock.reset();
+        release_tx.send(()).expect("timer send should release");
 
-        // Wait for any in-flight events to arrive
-        let start = std::time::Instant::now();
-        wait_until(
-            || start.elapsed() >= Duration::from_millis(50),
-            Duration::from_secs(2),
-        );
+        // Only the test and clock retain the sender after the canceled task exits
+        wait_until(|| Arc::strong_count(&sender) == 2, Duration::from_secs(2));
 
-        // Clear any events that arrived before reset took effect
-        events.lock().expect(MUTEX_POISONED).clear();
-
-        // Verify no new events arrive (timer should be stopped)
-        let start = std::time::Instant::now();
-        wait_until(
-            || start.elapsed() >= Duration::from_millis(50),
-            Duration::from_secs(2),
-        );
-        assert!(events.lock().expect(MUTEX_POISONED).is_empty());
+        assert_eq!(events.lock().len(), 1);
+        assert_eq!(clock.timer_count(), 0);
+        assert!(clock.timer_names().is_empty());
+        assert!(!clock.callbacks.has_any_callback(&Ustr::from("reset-test")));
     }
 
     #[rstest]
     fn test_live_clock_timer_exists_consistent_after_expiry() {
         let events = Arc::new(Mutex::new(Vec::new()));
-        let sender = Arc::new(CollectingSender::new(Arc::clone(&events)));
+        let (sender, paused_rx, release_tx) = PausingCollectingSender::new(Arc::clone(&events));
 
         let mut clock = LiveClock::new(Some(sender));
         clock.register_default_handler(TimeEventCallback::from(|_| {}));
 
         let name = Ustr::from("expiring");
-        let now = clock.timestamp_ns();
-        let interval_ns = Duration::from_millis(5).as_nanos() as u64;
-        let stop_time = UnixNanos::from(*now + Duration::from_millis(12).as_nanos() as u64);
+        let interval_ns = Duration::from_millis(10).as_nanos() as u64;
+        let start_time = clock.timestamp_ns();
+        let stop_time = start_time + Duration::from_millis(30).as_nanos() as u64;
 
         clock
             .set_timer_ns(
                 name.as_str(),
                 interval_ns,
-                None,
+                Some(start_time),
                 Some(stop_time),
                 None,
                 None,
@@ -538,7 +536,12 @@ mod tests {
             )
             .unwrap();
 
+        paused_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("timer send should pause");
+
         assert!(clock.timer_exists(&name));
+        release_tx.send(()).expect("timer send should release");
 
         // Wait for the timer task to run past its stop time and finish
         wait_until(|| clock.timer_count() == 0, Duration::from_secs(2));

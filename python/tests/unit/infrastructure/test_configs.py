@@ -12,12 +12,18 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test configs behavior.
+"""
 
 from nautilus_trader.infrastructure import PostgresCacheConfig
 from nautilus_trader.infrastructure import RedisCacheConfig
 
 
-def test_redis_cache_config_defaults():
+def test_redis_cache_config_defaults() -> None:
+    """
+    Test redis cache config defaults.
+    """
     config = RedisCacheConfig()
 
     assert config.host is None
@@ -33,7 +39,10 @@ def test_redis_cache_config_defaults():
     assert config.factor == 2
 
 
-def test_redis_cache_config_accepts_explicit_kwargs():
+def test_redis_cache_config_accepts_explicit_kwargs() -> None:
+    """
+    Test redis cache config accepts explicit kwargs.
+    """
     config = RedisCacheConfig(
         host="redis.example.com",
         port=6380,
@@ -61,7 +70,10 @@ def test_redis_cache_config_accepts_explicit_kwargs():
     assert config.factor == 4
 
 
-def test_postgres_cache_config_defaults():
+def test_postgres_cache_config_defaults() -> None:
+    """
+    Test postgres cache config defaults.
+    """
     config = PostgresCacheConfig()
 
     assert config.host is None
@@ -71,7 +83,10 @@ def test_postgres_cache_config_defaults():
     assert config.database is None
 
 
-def test_postgres_cache_config_accepts_explicit_kwargs():
+def test_postgres_cache_config_accepts_explicit_kwargs() -> None:
+    """
+    Test postgres cache config accepts explicit kwargs.
+    """
     config = PostgresCacheConfig(
         host="postgres.example.com",
         port=5433,

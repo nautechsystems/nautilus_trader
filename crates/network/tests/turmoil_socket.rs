@@ -22,13 +22,14 @@
 
 use std::{
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
 };
 
 use nautilus_network::socket::{SocketClient, SocketConfig};
+use parking_lot::Mutex;
 use rstest::{fixture, rstest};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::stream::Mode;
@@ -71,13 +72,12 @@ fn attach_message_capture(config: &mut SocketConfig, received: &ReceivedMessages
     config.message_handler = Some(Arc::new(move |data: &[u8]| {
         received
             .lock()
-            .expect("mutex poisoned")
             .push(String::from_utf8_lossy(data).to_string());
     }));
 }
 
 fn captured_messages(received: &ReceivedMessages) -> Vec<String> {
-    received.lock().expect("mutex poisoned").clone()
+    received.lock().clone()
 }
 
 async fn echo_once_then_drop_server() -> Result<(), Box<dyn std::error::Error>> {
@@ -119,10 +119,7 @@ async fn drop_each_connection_timed_server(
 
     loop {
         let (stream, _) = listener.accept().await?;
-        accept_times
-            .lock()
-            .expect("mutex poisoned")
-            .push(tokio::time::Instant::now());
+        accept_times.lock().push(tokio::time::Instant::now());
         drop(stream);
     }
 }
@@ -212,7 +209,9 @@ fn test_turmoil_real_socket_basic_connect(socket_config: SocketConfig) {
     sim.host("server", echo_server);
 
     sim.client("client", async move {
-        let client = SocketClient::connect(socket_config, None)
+        let client = SocketClient::builder()
+            .config(socket_config)
+            .connect()
             .await
             .expect("Should connect");
 
@@ -291,7 +290,10 @@ fn test_turmoil_real_socket_reconnection(mut socket_config: SocketConfig) {
     });
 
     sim.client("client", async move {
-        let client = SocketClient::connect(socket_config, Some(post_reconnection))
+        let client = SocketClient::builder()
+            .config(socket_config)
+            .post_reconnection(post_reconnection)
+            .connect()
             .await
             .expect("Should connect");
 
@@ -359,7 +361,9 @@ fn test_turmoil_socket_unstable_reconnects_exhaust_attempts(mut socket_config: S
     });
 
     sim.client("client", async move {
-        let client = SocketClient::connect(socket_config, None)
+        let client = SocketClient::builder()
+            .config(socket_config)
+            .connect()
             .await
             .expect("Initial socket connection should succeed");
         let started_at = tokio::time::Instant::now();
@@ -402,7 +406,9 @@ fn test_turmoil_socket_stable_reconnect_resets_attempts(mut socket_config: Socke
     });
 
     sim.client("client", async move {
-        let client = SocketClient::connect(socket_config, None)
+        let client = SocketClient::builder()
+            .config(socket_config)
+            .connect()
             .await
             .expect("Initial socket connection should succeed");
 
@@ -447,7 +453,9 @@ fn test_turmoil_socket_reconnect_storm_attempts_are_floored(mut socket_config: S
     });
 
     sim.client("client", async move {
-        let client = SocketClient::connect(socket_config, None)
+        let client = SocketClient::builder()
+            .config(socket_config)
+            .connect()
             .await
             .expect("Initial socket connection should succeed");
 
@@ -458,7 +466,7 @@ fn test_turmoil_socket_reconnect_storm_attempts_are_floored(mut socket_config: S
 
     sim.run().unwrap();
 
-    let times = accept_times.lock().expect("mutex poisoned");
+    let times = accept_times.lock();
     assert!(
         times.len() >= 5,
         "Expected the initial connection and several reconnects, was {}",
@@ -490,7 +498,9 @@ fn test_turmoil_real_socket_network_partition(mut socket_config: SocketConfig) {
     sim.host("server", echo_server);
 
     sim.client("client", async move {
-        let client = SocketClient::connect(socket_config, None)
+        let client = SocketClient::builder()
+            .config(socket_config)
+            .connect()
             .await
             .expect("Should connect");
 
@@ -545,7 +555,9 @@ fn test_turmoil_real_socket_close_during_reconnect(mut socket_config: SocketConf
     sim.host("server", echo_server);
 
     sim.client("client", async move {
-        let client = SocketClient::connect(socket_config, None)
+        let client = SocketClient::builder()
+            .config(socket_config)
+            .connect()
             .await
             .expect("Should connect");
 
@@ -585,7 +597,9 @@ fn test_turmoil_real_socket_disconnect_during_backoff(mut socket_config: SocketC
     sim.host("server", echo_server);
 
     sim.client("client", async move {
-        let client = SocketClient::connect(socket_config, None)
+        let client = SocketClient::builder()
+            .config(socket_config)
+            .connect()
             .await
             .expect("Should connect");
 
@@ -635,7 +649,9 @@ fn test_turmoil_socket_repeated_drops_preserve_message_order(
     sim.host("server", echo_once_then_drop_server);
 
     sim.client("client", async move {
-        let client = SocketClient::connect(socket_config, None)
+        let client = SocketClient::builder()
+            .config(socket_config)
+            .connect()
             .await
             .expect("Should connect");
 

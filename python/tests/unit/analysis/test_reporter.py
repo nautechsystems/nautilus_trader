@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test reporter behavior.
+"""
 
 import math
 
@@ -24,7 +27,6 @@ from nautilus_trader.core import UUID4
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import ClientOrderId
-from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import Currency
 from nautilus_trader.model import LiquiditySide
 from nautilus_trader.model import MarketOrder
@@ -58,13 +60,13 @@ ACCOUNT_ID = AccountId("SIM-000")
 
 
 def _make_fill(
-    client_order_id="O-001",
-    position_id="P-001",
-    order_side=OrderSide.BUY,
-    last_px="1.00001",
-    last_qty=100_000,
-    ts_event=1_000_000_000,
-):
+    client_order_id: ClientOrderId = "O-001",
+    position_id: object = "P-001",
+    order_side: object = OrderSide.BUY,
+    last_px: object = "1.00001",
+    last_qty: object = 100_000,
+    ts_event: object = 1_000_000_000,
+) -> object:
     return OrderFilled(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -88,7 +90,10 @@ def _make_fill(
     )
 
 
-def _make_filled_order(client_order_id="O-001", position_id="P-001"):
+def _make_filled_order(
+    client_order_id: ClientOrderId = "O-001",
+    position_id: object = "P-001",
+) -> object:
     order = MarketOrder(
         trader_id=TRADER_ID,
         strategy_id=STRATEGY_ID,
@@ -101,7 +106,7 @@ def _make_filled_order(client_order_id="O-001", position_id="P-001"):
         ts_init=0,
         reduce_only=False,
         quote_quantity=False,
-        contingency_type=ContingencyType.NO_CONTINGENCY,
+        contingency_type=None,
     )
     submitted = OrderSubmitted(
         trader_id=TRADER_ID,
@@ -119,12 +124,15 @@ def _make_filled_order(client_order_id="O-001", position_id="P-001"):
     return order
 
 
-def _make_position(client_order_id="O-001", position_id="P-001"):
+def _make_position(
+    client_order_id: ClientOrderId = "O-001",
+    position_id: object = "P-001",
+) -> object:
     fill = _make_fill(client_order_id=client_order_id, position_id=position_id)
     return Position(instrument=AUDUSD, fill=fill)
 
 
-def _engine_with_account():
+def _engine_with_account() -> object:
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True))
     engine.add_venue(
         venue=Venue("SIM"),
@@ -139,28 +147,40 @@ def _engine_with_account():
 # Empty-input cases
 
 
-def test_generate_orders_report_empty():
+def test_generate_orders_report_empty() -> None:
+    """
+    Test generate orders report empty.
+    """
     report = ReportProvider.generate_orders_report([])
 
     assert isinstance(report, pd.DataFrame)
     assert report.empty
 
 
-def test_generate_order_fills_report_empty():
+def test_generate_order_fills_report_empty() -> None:
+    """
+    Test generate order fills report empty.
+    """
     report = ReportProvider.generate_order_fills_report([])
 
     assert isinstance(report, pd.DataFrame)
     assert report.empty
 
 
-def test_generate_fills_report_empty():
+def test_generate_fills_report_empty() -> None:
+    """
+    Test generate fills report empty.
+    """
     report = ReportProvider.generate_fills_report([])
 
     assert isinstance(report, pd.DataFrame)
     assert report.empty
 
 
-def test_generate_positions_report_empty():
+def test_generate_positions_report_empty() -> None:
+    """
+    Test generate positions report empty.
+    """
     report = ReportProvider.generate_positions_report([])
 
     assert isinstance(report, pd.DataFrame)
@@ -170,7 +190,10 @@ def test_generate_positions_report_empty():
 # Non-empty structure cases
 
 
-def test_generate_orders_report_index():
+def test_generate_orders_report_index() -> None:
+    """
+    Test generate orders report index.
+    """
     order = _make_filled_order()
 
     report = ReportProvider.generate_orders_report([order])
@@ -179,7 +202,10 @@ def test_generate_orders_report_index():
     assert "O-001" in report.index
 
 
-def test_generate_order_fills_report_excludes_unfilled():
+def test_generate_order_fills_report_excludes_unfilled() -> None:
+    """
+    Test generate order fills report excludes unfilled.
+    """
     filled = _make_filled_order("O-001")
     unfilled = MarketOrder(
         trader_id=TRADER_ID,
@@ -193,7 +219,7 @@ def test_generate_order_fills_report_excludes_unfilled():
         ts_init=0,
         reduce_only=False,
         quote_quantity=False,
-        contingency_type=ContingencyType.NO_CONTINGENCY,
+        contingency_type=None,
     )
 
     report = ReportProvider.generate_order_fills_report([filled, unfilled])
@@ -204,7 +230,10 @@ def test_generate_order_fills_report_excludes_unfilled():
     assert isinstance(report["ts_last"].iloc[0], pd.Timestamp)
 
 
-def test_generate_fills_report_structure():
+def test_generate_fills_report_structure() -> None:
+    """
+    Test generate fills report structure.
+    """
     order = _make_filled_order()
 
     report = ReportProvider.generate_fills_report([order])
@@ -214,7 +243,10 @@ def test_generate_fills_report_structure():
     assert "type" not in report.columns
 
 
-def test_generate_positions_report_structure():
+def test_generate_positions_report_structure() -> None:
+    """
+    Test generate positions report structure.
+    """
     position = _make_position()
 
     report = ReportProvider.generate_positions_report([position])
@@ -227,7 +259,10 @@ def test_generate_positions_report_structure():
     assert "settlement_currency" not in report.columns
 
 
-def test_generate_positions_report_snapshot_flag():
+def test_generate_positions_report_snapshot_flag() -> None:
+    """
+    Test generate positions report snapshot flag.
+    """
     position = _make_position("O-001", "P-001")
     snapshot = _make_position("O-002", "P-002")
 
@@ -237,7 +272,10 @@ def test_generate_positions_report_snapshot_flag():
     assert report.loc["P-002", "is_snapshot"]
 
 
-def test_generate_account_report_structure():
+def test_generate_account_report_structure() -> None:
+    """
+    Test generate account report structure.
+    """
     engine = _engine_with_account()
     engine.run()
     account = engine.cache.account_for_venue(Venue("SIM"))
@@ -260,7 +298,7 @@ _E2E_TS_START = 1_577_836_800_000_000_000
 _E2E_BID_PRICES = ("0.70000", "0.70000", "0.70010", "0.70020", "0.70020")
 
 
-def _e2e_quotes(instrument) -> list[QuoteTick]:
+def _e2e_quotes(instrument: object) -> list[QuoteTick]:
     quotes: list[QuoteTick] = []
 
     for idx, bid_price in enumerate(_E2E_BID_PRICES):
@@ -333,7 +371,10 @@ def _stats_equal(a: dict, b: dict) -> bool:
     return True
 
 
-def test_end_to_end_reporting_and_statistics():
+def test_end_to_end_reporting_and_statistics() -> None:
+    """
+    Test end to end reporting and statistics.
+    """
     engine = _run_small_backtest_with_fills()
 
     orders = ReportProvider.generate_orders_report(engine.cache.orders())
@@ -358,7 +399,10 @@ def test_end_to_end_reporting_and_statistics():
     engine.dispose()
 
 
-def test_engine_generate_reports_match_reportprovider():
+def test_engine_generate_reports_match_reportprovider() -> None:
+    """
+    Test engine generate reports match reportprovider.
+    """
     engine = _run_small_backtest_with_fills()
 
     orders = engine.generate_orders_report()

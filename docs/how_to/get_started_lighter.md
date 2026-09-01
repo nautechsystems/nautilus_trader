@@ -23,8 +23,10 @@ Start from these files:
 
 The Rust and Python paths both use these pieces:
 
-- `LighterDataClientConfig` selects mainnet or testnet and optional transport settings.
-- `LighterExecClientConfig` adds trader/account IDs and resolves credentials.
+- `LighterDataClientConfig` selects the Lighter or Robinhood deployment, mainnet or testnet, an
+  optional custom venue, and optional transport settings.
+- `LighterExecutionClientConfig` adds the account ID and resolves credentials. Its account issuer
+  must match the resolved venue.
 - `LighterDataClientFactory` and `LighterExecutionClientFactory` register clients with `LiveNode`.
 - `DataTester` and `ExecTester` provide smoke-test actors before you write a custom strategy.
 
@@ -61,8 +63,7 @@ let mut node = LiveNode::builder(trader_id, Environment::Live)?
 After the data path works, add an execution client to the builder before calling `.build()`:
 
 ```rust
-let exec_config = LighterExecClientConfig::builder()
-    .trader_id(trader_id)
+let exec_config = LighterExecutionClientConfig::builder()
     .account_id(account_id)
     .environment(LighterEnvironment::Testnet)
     .build();
@@ -82,15 +83,26 @@ let mut node = LiveNode::builder(trader_id, Environment::Live)?
     .build()?;
 ```
 
-For execution, set the matching environment variables before connecting:
+For execution, follow the
+[account and API key setup](../integrations/lighter.md#account-and-api-key-setup), then set the
+matching environment variables before connecting:
 
 ```bash
 export LIGHTER_TESTNET_ACCOUNT_INDEX="123456"
-export LIGHTER_TESTNET_API_KEY_INDEX="0"
+export LIGHTER_TESTNET_API_KEY_INDEX="4"
 export LIGHTER_TESTNET_API_SECRET="your-lighter-api-secret"
 ```
 
-Use `LIGHTER_ACCOUNT_INDEX`, `LIGHTER_API_KEY_INDEX`, and `LIGHTER_API_SECRET` for mainnet.
+The deployment and environment select the credential namespace:
+
+| Deployment | Environment | Credential prefix             |
+| ---------- | ----------- | ----------------------------- |
+| Lighter    | Mainnet     | `LIGHTER_*`                   |
+| Lighter    | Testnet     | `LIGHTER_TESTNET_*`           |
+| Robinhood  | Mainnet     | `LIGHTER_ROBINHOOD_*`         |
+| Robinhood  | Testnet     | `LIGHTER_ROBINHOOD_TESTNET_*` |
+
+Each namespace supplies `ACCOUNT_INDEX`, `API_KEY_INDEX`, and `API_SECRET`.
 
 ## Python starter
 
@@ -104,8 +116,8 @@ From the repository root with Python installed:
 .venv/bin/python examples/live/lighter/data_tester.py
 ```
 
-The script connects to the Lighter testnet immediately and starts streaming. Settings such as the
-environment and instrument are module-level constants at the top of the file.
+The script connects to Lighter Testnet immediately and starts streaming. The deployment,
+environment, and instrument are module-level constants at the top of the file.
 
 The Python script mirrors the Rust setup:
 
@@ -115,9 +127,12 @@ builder = LiveNode.builder(
     TraderId.from_str("TESTER-001"),
     Environment.LIVE,
 ).add_data_client(
-    None,
+    VENUE,
     LighterDataClientFactory(),
-    LighterDataClientConfig(environment=LighterEnvironment.TESTNET),
+    LighterDataClientConfig(
+        environment=LighterEnvironment.TESTNET,
+        deployment=LighterDeployment.LIGHTER,
+    ),
 )
 ```
 
@@ -129,7 +144,7 @@ Use the execution tester only after the data tester works:
 
 The execution tester also connects immediately, and it places real orders by default
 (`dry_run=False`, with a warning at the top of the module). The default environment is testnet;
-set the `LIGHTER_ENVIRONMENT` constant to `LighterEnvironment.MAINNET` to trade mainnet funds.
+set `LIGHTER_DEPLOYMENT` and `LIGHTER_ENVIRONMENT` to select the target deployment and environment.
 
 ## Move to a strategy
 
@@ -143,16 +158,19 @@ replace the tester with a strategy:
   Databento signal setup.
 
 :::warning
-Rust execution examples can submit live orders when you set `DRY_RUN` to `false`. Python execution
-examples submit live orders as soon as you run them. Start on testnet or use the
-smallest accepted size, and confirm the instrument, environment, account index, API key index, and
-private key before you run.
+The Rust execution example ships with `DRY_RUN = false` and can submit live orders as soon as you
+run it. Set `DRY_RUN` to `true` to connect without order submission. Python execution examples also
+submit live orders as soon as you run them. Start on testnet or use the smallest accepted size, and
+confirm the instrument, deployment, environment, account index, API key index, and private key
+before you run.
 :::
 
 For emergency cleanup, `cargo run --bin lighter-flatten -p nautilus-lighter` cancels open orders
-and closes positions for the configured Lighter account. Review it before use because it scans the
+and closes positions for the selected deployment account. Review it before use because it scans the
 account, can take several minutes under the standard 60 req/min quota, and affects more than one
-strategy or market when the account has broader exposure.
+strategy or market when the account has broader exposure. Set `LIGHTER_DEPLOYMENT` to `lighter` or
+`robinhood` and `LIGHTER_ENVIRONMENT` to `mainnet` or `testnet`; omitted selectors default to
+Lighter Mainnet and select the matching credential namespace.
 
 [lighter-rwa-composite-mm]: ../tutorials/lighter_rwa_composite_mm.md
 [python-install]: ../getting_started/installation.md#development-wheels

@@ -28,7 +28,7 @@ module contracts.
 
 Python surface available from `nautilus_trader.adapters.derive`:
 
-- `DeriveDataClientConfig`, `DeriveExecClientConfig`, `DeriveExecFactoryConfig`
+- `DeriveDataClientConfig`, `DeriveExecutionClientConfig`
 - `DeriveDataClientFactory`, `DeriveExecutionClientFactory`
 - `DeriveEnvironment`
 - `DERIVE`, `DERIVE_CLIENT_ID`, and `DERIVE_VENUE`
@@ -47,9 +47,9 @@ alongside this guide for additional details.
 
 | Product type           | Supported | Notes                                                                |
 | ---------------------- | --------- | -------------------------------------------------------------------- |
-| ERC-20 spot            | ✓         | USDC‑quoted pairs such as `ETH-USDC`; parsed as `CurrencyPair`.      |
-| Perpetual swaps        | ✓         | Cash‑settled in USDC, with per‑currency listings such as `ETH-PERP`. |
-| Options (calls / puts) | ✓         | European‑style options using `{CURRENCY}-{EXPIRY}-{STRIKE}-{C\|P}`.  |
+| ERC-20 spot            | ✓         | USDC-quoted pairs such as `ETH-USDC`; parsed as `CurrencyPair`.      |
+| Perpetual swaps        | ✓         | Cash-settled in USDC, with per-currency listings such as `ETH-PERP`. |
+| Options (calls / puts) | ✓         | European-style options using `{CURRENCY}-{EXPIRY}-{STRIKE}-{C\|P}`.  |
 
 ## Symbology
 
@@ -76,7 +76,7 @@ exercised manually. Public spot trade channels (`trades.erc20.ETH`, `trades.ETH-
 successfully but can be low-volume, so expect sparse trade frames. When the spot book is empty the
 venue still broadcasts ticker and order book frames with a zeroed top of book; the adapter drops
 those partial quotes (logged at DEBUG), so the quote feed stays silent until a book forms. Trade
-frames are match‑driven and independent of book state, so a trade that empties the book still
+frames are match-driven and independent of book state, so a trade that empties the book still
 emits an event.
 Spot orders under Standard Margin are margined by initial margin fraction, not full notional.
 :::
@@ -97,7 +97,7 @@ credentials.
 The EIP-712 protocol constants (`DOMAIN_SEPARATOR`, `ACTION_TYPEHASH`, per-action module
 addresses) for both networks are shipped in `crates/adapters/derive/src/common/consts.rs`
 and tracked against Derive's [Protocol Constants reference](https://docs.derive.xyz/reference/protocol-constants).
-`DeriveExecClientConfig::domain_separator`, `action_typehash`, and `trade_module_address`
+`DeriveExecutionClientConfig::domain_separator`, `action_typehash`, and `trade_module_address`
 accept per-instance overrides that take precedence over the shipped values.
 
 ## Testnet onboarding
@@ -126,7 +126,7 @@ Steps to reach a position where the execution client can submit a signed order:
    non-zero collateral; the API will reject orders until the subaccount has enough margin
    for the requested size.
 6. **Set the environment variables.** Export the three values the client reads in testnet
-   mode (or pass them on `DeriveExecClientConfig`, where the config field wins):
+   mode (or pass them on `DeriveExecutionClientConfig`, where the config field wins):
 
    ```bash
    export DERIVE_TESTNET_WALLET_ADDRESS="0x..."  # Derive Chain smart-contract wallet
@@ -180,7 +180,7 @@ Mainnet onboarding mirrors testnet against the production dashboard. Use real fu
    `query_account`) that the deposit lands in `collaterals_value` and `initial_margin` stays
    positive after the intended order.
 6. **Set the environment variables.** Export the three mainnet values (or pass them on
-   `DeriveExecClientConfig`, where the config field wins):
+   `DeriveExecutionClientConfig`, where the config field wins):
 
    ```bash
    export DERIVE_WALLET_ADDRESS="0x..."  # Derive Chain smart-contract wallet
@@ -193,11 +193,11 @@ Mainnet onboarding mirrors testnet against the production dashboard. Use real fu
    of the file. Check that constant before every run and edit it to switch networks; the
    examples do not read the network from the environment. Production deployments select
    the network via `DeriveDataClientConfig::environment` /
-   `DeriveExecClientConfig::environment`.
+   `DeriveExecutionClientConfig::environment`.
 
 ## Referral code attribution
 
-Every signed order, replace, and trigger order carries the hard‑coded NautilusTrader referral
+Every signed order, replace, and trigger order carries the hard-coded NautilusTrader referral
 code. Derive funds the referral program from its own revenue, so attribution adds no trading cost,
 needs no approval, and is not configurable. This helps us gauge real usage of the integration
 and prioritize ongoing maintenance.
@@ -217,7 +217,7 @@ and prioritize ongoing maintenance.
 | Order book snapshot (REST)     | -         | *Not supported.* The venue has no book snapshot endpoint.               |
 | Historical book deltas (REST)  | -         | *Not supported.* The venue has no historical book endpoint.             |
 | Quotes (`ticker_slim`)         | ✓         | Channel: `ticker_slim.{instrument}.{interval}`.                         |
-| Quote snapshot (REST)          | ✓         | One‑shot `public/get_tickers`; emits a single `QuoteTick`.              |
+| Quote snapshot (REST)          | ✓         | One-shot `public/get_tickers`; emits a single `QuoteTick`.              |
 | Historical quotes (REST)       | -         | *Not supported.* The venue exposes ticker snapshots only.               |
 | Trades                         | ✓         | Channel: `trades.{instrument_type}.{currency}`.                         |
 | Historical trades (REST)       | ✓         | Chronological and deduplicated; `limit` retains the newest trades.      |
@@ -232,6 +232,8 @@ and prioritize ongoing maintenance.
 | Option greeks                  | ✓         | Derived from `option_pricing` on option tickers.                        |
 | Option chain                   | ✓         | Aggregated from quotes and greeks; `public/get_tickers` bootstraps ATM. |
 
+#### Instrument loading
+
 `request_instrument` calls `public/get_instrument` for the requested `InstrumentId` and
 caches the returned definition before emitting the response. The cached instrument carries
 the precision and increment fields used by later quote, trade, book, and bar parsing.
@@ -239,6 +241,8 @@ the precision and increment fields used by later quote, trade, book, and bar par
 Instrument loading treats venue error `12001` as an empty result for the affected product type,
 so a currency without a perp, option, or spot listing does not block its other products. Invalid
 instrument rows are logged and skipped while valid rows continue to load.
+
+#### Historical data
 
 Historical requests use `public/get_trade_history`, `public/get_tradingview_chart_data`, and
 `public/get_funding_rate_history`. The bar `end` bound still selects buckets by their start time at
@@ -254,6 +258,8 @@ Bars require `EXTERNAL` aggregation and `PriceType::Last`, since Derive candles 
 The venue's candle periods map to 1, 5, 15, and 30 minute, 1, 4, and 8 hour, 1 day, and 1 week
 steps; any other bar specification is rejected before the request goes out.
 
+#### Order book feeds
+
 Derive exposes book deltas and depth10 snapshots through the same
 `orderbook.{instrument}.{group}.{depth}` channel family. `subscribe_book_deltas` publishes
 snapshot deltas as `OrderBookDeltas`, while `subscribe_book_depth10` fixes `depth=10` and
@@ -261,19 +267,15 @@ publishes `OrderBookDepth10` snapshots.
 
 ### Execution
 
-Order placement, cancellation, modification, query, and report generation use Derive's
-EIP-712 self-custodial signing flow. Order-entry writes (`private/order`,
-`private/trigger_order`, `private/replace`, `private/cancel`,
-`private/cancel_trigger_order`, `private/cancel_by_label`, `private/cancel_all`) go over
-the WebSocket on the same authenticated session that streams account, order, trade, and
-balance state through the private channels (`{subaccount_id}.orders`,
-`{subaccount_id}.trades`, `{subaccount_id}.balances`). The signed EIP-712 body is
-identical regardless of transport.
+Derive uses the configured session key for authenticated execution:
+
+- Order submission and replacement requests carry locally generated EIP-712 signatures.
+- The live execution client sends order writes over the authenticated WebSocket and receives
+  account, order, trade, and balance updates through private channels.
+- Report generation, account refreshes, and instrument lookups use REST.
 
 :::note
-The HTTP order-entry endpoints remain available on `DeriveHttpClient` for tooling and tests,
-but the live execution client routes all writes over the WebSocket. Report generation,
-account refresh, and instrument lookups still use REST.
+`DeriveHttpClient` also exposes HTTP order-entry methods for tooling and tests.
 :::
 
 Perpetuals, options, and ERC-20 spot pairs all use the Derive Trade module. Spot has no
@@ -300,7 +302,7 @@ Derive holds margin at the subaccount level, so the `AccountState` mapping is:
 - Margins: one account-wide `MarginBalance` where `initial = positions_initial_margin +
   open_orders_margin` and `maintenance = positions_maintenance_margin`. These venue fields are
   USD requirements, stamped with the subaccount currency. Immediately after a closing trade the
-  venue can transiently report negative `positions_*_margin` values equal to the not‑yet‑settled
+  venue can transiently report negative `positions_*_margin` values equal to the not-yet-settled
   cash movement (realized PnL and fees); the fields return to zero once settlement lands in the
   collateral balance. Gate trading on `net_initial_margin` / `net_maintenance_margin` in
   `AccountState.info`, not on these requirement fields.
@@ -346,6 +348,43 @@ order is signed, so a tight offset on a fast-moving or high-priced instrument ca
 wrong side before the venue receives the order. Size the trigger offset to comfortably exceed
 expected price movement during submission (for `ETH-PERP`, tens of dollars rather than a few
 cents); a too-tight offset produces spurious `11051` rejections.
+
+#### Bulk cancellation
+
+##### Selection and routing
+
+Derive supports both multi-order cancellation methods exposed by `Strategy`.
+
+| Strategy method          | Supported | Parameters                                                            | Notes                                      |
+| ------------------------ | --------- | --------------------------------------------------------------------- | ------------------------------------------ |
+| `cancel_orders(...)`     | ✓         | `client_order_ids`, `client_id`, `params`                             | All orders must use the same instrument.   |
+| `cancel_all_orders(...)` | ✓         | `instrument_id`, `order_side`, `client_id`, `strategy_only`, `params` | Defaults to the calling strategy's orders. |
+
+The Derive execution client applies these methods as follows:
+
+- `cancel_orders` cancels each requested regular or trigger order individually.
+- `cancel_all_orders` with `strategy_only=True` expands cached matches into individual cancels.
+- `cancel_all_orders` with `strategy_only=False` and a Buy or Sell filter selects open regular and
+  trigger orders from the cache for the configured execution client, account, exact instrument,
+  and side, then cancels each match. It never widens to both sides.
+- `cancel_all_orders` with `strategy_only=False` and no side filter selects matching open triggers
+  from the same execution client, account, and instrument scope and cancels them individually, then sends
+  `private/cancel_by_instrument` for regular orders. It never sends `private/cancel_all`.
+
+`cancel_all_orders` treats the cache as authoritative and does not query venue order state before
+cancellation. Eligibility follows the cache-selection rules above.
+
+##### Failure handling
+
+If an eligible cached order lacks a venue order ID, the command fails closed, logs a warning, sends
+no cancellation request, and emits no order event.
+
+`private/cancel_by_instrument` cancels regular open orders only. A successful request with
+`cancelled_orders == 0` is an expected no-op and logs at debug level.
+
+A failed trigger cancellation logs a warning but does not suppress the regular instrument
+cancellation. A failed bulk request has no per-order outcome to emit; private channel updates and
+later reconciliation remain responsible for observed order state.
 
 #### Execution instructions
 
@@ -407,7 +446,7 @@ WebSocket request outcome. It emits a terminal rejection event (`OrderRejected`,
 
 For other `cancelled_orders` values, the adapter emits no terminal event and waits for the
 venue order notification or later reconciliation to settle the state. The venue may return
-`cancelled_orders == -1` for a cancel that matched its label‑wildcard path; this is treated as
+`cancelled_orders == -1` for a cancel that matched its label-wildcard path; this is treated as
 success and settled the same way.
 
 For post-only orders that reach the venue, Derive rejects a crossing order with JSON-RPC
@@ -431,50 +470,56 @@ unplaced order hanging in `Submitted` forever because no WebSocket frame will ar
 
 ## Rate limiting
 
-Derive refills every request allowance discretely at fixed five‑second window boundaries, not
+### Window model
+
+Derive refills every request allowance discretely at fixed five-second window boundaries, not
 one request at a time (source: [venue rate limits](https://docs.derive.xyz/reference/rate-limits)).
-The adapter mirrors this with a fixed‑window limiter: each request class may spend its full
+The adapter mirrors this with a fixed-window limiter: each request class may spend its full
 window allowance in one burst, and the next request waits for the boundary before it can
 depart.
 
 Windows are aligned to client construction because the venue's own window phase cannot be
-observed from the client, so a wait is at most one full window and the long‑run average rate
+observed from the client, so a wait is at most one full window and the long-run average rate
 stays at the venue allowance. A burst can still straddle a venue window boundary, in which case
 the venue answers with `-32000 Rate limit exceeded`, which the adapter surfaces as a definitive
 rejection (see [order rejection semantics](#order-rejection-semantics)).
 
-Each window allowance is the documented requests‑per‑second rate times the five‑second window,
+### Request buckets
+
+Each window allowance is the documented requests-per-second rate times the five-second window,
 so the configured `max_matching_requests_per_second` and
 `max_per_instrument_matching_requests_per_second` (1 each for Trader) admit five requests per
 window:
 
-| Bucket                             | Trader‑tier allowance  |
+| Bucket                             | Trader-tier allowance  |
 | ---------------------------------- | ---------------------- |
-| Matching (account‑wide)            | 5 requests per window  |
-| Per‑instrument matching            | 5 requests per window  |
-| REST non‑matching (per IP)         | 50 requests per window |
-| WebSocket non‑matching (logged in) | 25 requests per window |
+| Matching (account-wide)            | 5 requests per window  |
+| Per-instrument matching            | 5 requests per window  |
+| REST non-matching (per IP)         | 50 requests per window |
+| WebSocket non-matching (logged in) | 25 requests per window |
 | `private/cancel_all`               | 5 requests per window  |
 | Unscoped `private/cancel_by_label` | 50 requests per window |
 
-The REST per‑IP allowance is flat across tiers. The WebSocket non‑matching allowance applies to
+The REST per-IP allowance is flat across tiers. The WebSocket non-matching allowance applies to
 sessions authorized via `public/login`; the venue applies a reduced, unspecified allowance to
-unauthenticated sessions, so public data‑client traffic can hit venue limits earlier. The venue
+unauthenticated sessions, so public data-client traffic can hit venue limits earlier. The venue
 also caps concurrent WebSocket connections per IP (4 for a Trader).
 
-Matching‑engine writes that carry an instrument (order, replace, trigger order, and
-instrument‑scoped cancel) draw on both the account‑wide matching bucket and that instrument's
-independent bucket, so a Market Maker's account‑wide override never inflates the
-per‑instrument allowance. Trigger order create and cancel methods are paced as matching writes
-even though the venue does not list them explicitly; `private/cancel_trigger_order` carries no
-instrument and draws on the account‑wide bucket only. The stricter classification stays on the
-safe side of the documented contract.
+Matching-engine writes that carry an instrument (order, replace, trigger order, single-order
+cancel, and `private/cancel_by_instrument`) draw on both the account-wide matching bucket and that
+instrument's independent bucket, so a Market Maker's account-wide override never inflates the
+per-instrument allowance. Trigger order create and cancel methods are paced as matching writes even
+though the venue does not list them explicitly; `private/cancel_trigger_order` carries no instrument
+and draws on the account-wide bucket only.
+This conservative classification stays within Derive's documented rate contract.
+
+### Signing and venue responses
 
 Pacing waits happen before the request is signed, so a delay never consumes the validity of the
-REST `X-LYRA*` authentication headers or of the nonces and EIP‑712 signatures on the WebSocket
-order path. A matching write whose window rolls between signing and dispatch is re‑paced once
+REST `X-LYRA*` authentication headers or of the nonces and EIP-712 signatures on the WebSocket
+order path. A matching write whose window rolls between signing and dispatch is re-paced once
 before departing (at most one further window, covered by the >300s signature TTL). A venue
-rate‑limit response remains a definitive rejection; see
+rate-limit response remains a definitive rejection; see
 [order rejection semantics](#order-rejection-semantics).
 
 The remaining live allowances can be checked manually over the WebSocket via
@@ -553,11 +598,11 @@ Class/struct: `DeriveDataClientConfig`.
 | `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                       |
 | `environment`                      | `Mainnet` | Network selector (`MAINNET` or `TESTNET` in Python).                                        |
 | `http_timeout_secs`                | `10`      | REST request timeout in seconds.                                                            |
-| `ws_timeout_secs`                  | `None`    | Per‑operation WebSocket timeout (login, subscribe, read, write) in seconds. Unset uses 10s. |
+| `ws_timeout_secs`                  | `None`    | Per-operation WebSocket timeout (login, subscribe, read, write) in seconds. Unset uses 10s. |
 | `update_instruments_interval_mins` | `60`      | Interval in minutes between instrument refreshes.                                           |
-| `currencies`                       | `[]`      | Currencies to bulk‑load on connect. Empty means lazy‑load on demand.                        |
+| `currencies`                       | `[]`      | Currencies to bulk-load on connect. Empty means lazy-load on demand.                        |
 | `include_expired`                  | `false`   | Include expired option rows from `public/get_instruments`.                                  |
-| `auto_load_missing_instruments`    | `true`    | Lazy‑load an unknown instrument before sending a subscribe request.                         |
+| `auto_load_missing_instruments`    | `true`    | Lazy-load an unknown instrument before sending a subscribe request.                         |
 | `transport_backend`                | `Sockudo` | WebSocket transport when `transport-sockudo` is enabled.                                    |
 
 `auto_load_missing_instruments` covers subscribe commands only. The request commands
@@ -568,30 +613,31 @@ currency or subscribe first. `request_instrument` is the exception: it always fe
 
 ### Execution client configuration options
 
-Class/struct: `DeriveExecClientConfig`.
+Class/struct: `DeriveExecutionClientConfig`.
 
 | Option                                            | Default   | Description                                                                                                                                                                       |
 | ------------------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `wallet_address`                                  | `None`    | Derive Chain smart‑contract wallet address. Falls back to env vars below.                                                                                                         |
-| `session_key`                                     | `None`    | secp256k1 session‑key private key. Falls back to env vars below.                                                                                                                  |
+| `account_id`                                      | `Venue`   | Nautilus account identifier; defaults to `DERIVE-001`.                                                                                                                            |
+| `wallet_address`                                  | `None`    | Derive Chain smart-contract wallet address. Falls back to env vars below.                                                                                                         |
+| `session_key`                                     | `None`    | secp256k1 session-key private key. Falls back to env vars below.                                                                                                                  |
 | `subaccount_id`                                   | `None`    | Derive subaccount id. Falls back to env vars below.                                                                                                                               |
 | `base_url_rest`                                   | `None`    | Override for the REST base URL.                                                                                                                                                   |
 | `base_url_ws`                                     | `None`    | Override for the WebSocket base URL.                                                                                                                                              |
 | `proxy_url`                                       | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                                                                                                             |
 | `environment`                                     | `Mainnet` | Network selector (`MAINNET` or `TESTNET` in Python).                                                                                                                              |
 | `http_timeout_secs`                               | `10`      | REST request timeout in seconds.                                                                                                                                                  |
-| `ws_timeout_secs`                                 | `None`    | Per‑operation WebSocket timeout (login, subscribe, read, write) in seconds. Unset uses 10s.                                                                                       |
+| `ws_timeout_secs`                                 | `None`    | Per-operation WebSocket timeout (login, subscribe, read, write) in seconds. Unset uses 10s.                                                                                       |
 | `max_retries`                                     | `3`       | Retry attempts for idempotent REST reads. Order writes are sent once and never replayed.                                                                                          |
 | `retry_delay_initial_ms`                          | `100`     | Initial retry delay in milliseconds.                                                                                                                                              |
 | `retry_delay_max_ms`                              | `5,000`   | Maximum retry delay in milliseconds.                                                                                                                                              |
-| `max_fee_per_contract`                            | Required  | Positive per‑contract USDC fee cap signed into each order.                                                                                                                        |
+| `max_fee_per_contract`                            | Required  | Positive per-contract USDC fee cap signed into each order.                                                                                                                        |
 | `domain_separator`                                | `None`    | Optional EIP-712 domain separator override.                                                                                                                                       |
 | `action_typehash`                                 | `None`    | Optional EIP-712 action typehash override.                                                                                                                                        |
 | `trade_module_address`                            | `None`    | Optional Trade module contract address override.                                                                                                                                  |
 | `signature_expiry_secs`                           | `600`     | Order/replace TTL; must be >300s. Trigger orders use fixed 31-day TTL.                                                                                                            |
-| `market_order_slippage_bps`                       | `50`      | Slippage bound for market‑order limit prices.                                                                                                                                     |
-| `max_matching_requests_per_second`                | `None`    | Account‑wide matching‑engine write requests/sec (order/replace/cancel incl. trigger methods). Defaults to the Trader‑tier limit of 1 when unset; raise for Market Maker accounts. |
-| `max_per_instrument_matching_requests_per_second` | `None`    | Per‑instrument matching write requests/sec, enforced independently of the account‑wide limit. Defaults to the Trader‑tier limit of 1 when unset; raise for Market Maker accounts. |
+| `market_order_slippage_bps`                       | `50`      | Slippage bound for market-order limit prices.                                                                                                                                     |
+| `max_matching_requests_per_second`                | `None`    | Account-wide matching-engine write requests/sec (order/replace/cancel incl. trigger methods). Defaults to the Trader-tier limit of 1 when unset; raise for Market Maker accounts. |
+| `max_per_instrument_matching_requests_per_second` | `None`    | Per-instrument matching write requests/sec, enforced independently of the account-wide limit. Defaults to the Trader-tier limit of 1 when unset; raise for Market Maker accounts. |
 | `transport_backend`                               | `Sockudo` | WebSocket transport when `transport-sockudo` is enabled.                                                                                                                          |
 
 The default transport falls back to `Tungstenite` when the build disables the
@@ -611,9 +657,8 @@ The session key is the secp256k1 private key registered on the wallet for API si
 
 ### Python live node
 
-Python nodes use `LiveNode.builder(...)` and pass concrete factory
-instances. The execution factory needs `DeriveExecFactoryConfig`, which wraps the trader
-and account identifiers with the underlying `DeriveExecClientConfig`.
+Python nodes use `LiveNode.builder(...)` and pass concrete factory instances. The node supplies the
+trader identifier, while `DeriveExecutionClientConfig` supplies the account identifier.
 
 ```python
 from decimal import Decimal
@@ -621,8 +666,7 @@ from decimal import Decimal
 from nautilus_trader.adapters.derive import DeriveDataClientConfig
 from nautilus_trader.adapters.derive import DeriveDataClientFactory
 from nautilus_trader.adapters.derive import DeriveEnvironment
-from nautilus_trader.adapters.derive import DeriveExecClientConfig
-from nautilus_trader.adapters.derive import DeriveExecFactoryConfig
+from nautilus_trader.adapters.derive import DeriveExecutionClientConfig
 from nautilus_trader.adapters.derive import DeriveExecutionClientFactory
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
@@ -636,28 +680,19 @@ data_config = DeriveDataClientConfig(
     currencies=["ETH", "BTC"],
 )
 
-exec_config = DeriveExecClientConfig(
+exec_config = DeriveExecutionClientConfig(
+    account_id=AccountId("DERIVE-001"),
     environment=DeriveEnvironment.TESTNET,
     max_fee_per_contract=Decimal("1000"),
-)
-
-exec_factory_config = DeriveExecFactoryConfig(
-    trader_id,
-    AccountId("DERIVE-001"),
-    exec_config,
 )
 
 node = (
     LiveNode.builder("DERIVE-001", trader_id, Environment.LIVE)
     .add_data_client(None, DeriveDataClientFactory(), data_config)
-    .add_exec_client(None, DeriveExecutionClientFactory(), exec_factory_config)
+    .add_exec_client(None, DeriveExecutionClientFactory(), exec_config)
     .build()
 )
 ```
-
-Do not pass `DeriveExecClientConfig` directly to `add_exec_client`; the Derive execution
-factory requires the wrapped `DeriveExecFactoryConfig` so it can create the
-`ExecutionClientCore` with the correct trader and account identifiers.
 
 ### Rust data client
 
@@ -679,11 +714,11 @@ let config = DeriveDataClientConfig {
 ```rust
 use nautilus_derive::{
     common::enums::DeriveEnvironment,
-    config::DeriveExecClientConfig,
+    config::DeriveExecutionClientConfig,
 };
 use rust_decimal::Decimal;
 
-let config = DeriveExecClientConfig {
+let config = DeriveExecutionClientConfig {
     wallet_address: Some("0x...".to_string()),
     session_key: Some("0x...".to_string()),
     subaccount_id: Some(1),

@@ -22,7 +22,7 @@ use nautilus_binance::{
         consts::BINANCE,
         enums::{BinanceEnvironment, BinanceProductType},
     },
-    config::{BinanceDataClientConfig, BinanceExecClientConfig},
+    config::{BinanceDataClientConfig, BinanceExecutionClientConfig},
     factories::{BinanceDataClientFactory, BinanceExecutionClientFactory},
     python,
 };
@@ -120,15 +120,14 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .into_any();
     let config = Py::new(
         py,
-        BinanceExecClientConfig {
-            trader_id,
+        BinanceExecutionClientConfig {
             account_id,
             product_type: BinanceProductType::UsdM,
             environment: BinanceEnvironment::Testnet,
             api_key: Some(SMOKE_API_KEY.to_string()),
             api_secret: Some(SMOKE_API_SECRET.to_string()),
             use_ws_trading: false,
-            ..BinanceExecClientConfig::default()
+            ..BinanceExecutionClientConfig::default()
         },
     )
     .expect("config should convert to Python object")
@@ -143,11 +142,12 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("exec config should extract");
     let binance_config = extracted_config
         .as_any()
-        .downcast_ref::<BinanceExecClientConfig>()
+        .downcast_ref::<BinanceExecutionClientConfig>()
         .expect("exec config should downcast");
     let cache = Rc::new(RefCell::new(Cache::default()));
     let client = extracted_factory
         .create(
+            trader_id,
             "BINANCE-EXEC-EXTRACTED",
             extracted_config.as_ref(),
             cache.into(),
@@ -155,8 +155,10 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("extracted factory should create exec client");
 
     assert_eq!(extracted_factory.name(), BINANCE);
-    assert_eq!(extracted_factory.config_type(), "BinanceExecClientConfig");
-    assert_eq!(binance_config.trader_id, trader_id);
+    assert_eq!(
+        extracted_factory.config_type(),
+        "BinanceExecutionClientConfig"
+    );
     assert_eq!(binance_config.account_id, account_id);
     assert_eq!(binance_config.product_type, BinanceProductType::UsdM);
     assert_eq!(client.client_id(), ClientId::from("BINANCE-EXEC-EXTRACTED"));

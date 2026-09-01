@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Arc;
 
 use nautilus_common::messages::DataEvent;
 use nautilus_core::{AtomicMap, time::AtomicTime};
@@ -22,6 +22,7 @@ use nautilus_model::{
     enums::{InstrumentCloseType, MarketStatusAction},
     types::Price,
 };
+use parking_lot::Mutex;
 
 use super::{
     parsing::{
@@ -59,7 +60,7 @@ pub(crate) struct ResolveContext {
     pub(crate) clock: &'static AtomicTime,
     pub(crate) data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     pub(crate) watchlist: Arc<AtomicMap<String, ResolveWatchEntry>>,
-    pub(crate) apply_mutex: Arc<StdMutex<()>>,
+    pub(crate) apply_mutex: Arc<Mutex<()>>,
 }
 
 pub(crate) async fn fetch_and_apply_resolutions_by_condition_ids(
@@ -198,10 +199,7 @@ pub(crate) async fn fetch_and_apply_resolutions_by_condition_ids(
 }
 
 pub(crate) fn merge_resolve_watch_entry(ctx: &ResolveContext, entry: ResolveWatchEntry) {
-    let _guard = ctx
-        .apply_mutex
-        .lock()
-        .expect("resolve_apply_mutex poisoned");
+    let _guard = ctx.apply_mutex.lock();
     let condition_id = entry.condition_id.clone();
     let incoming_expiration_ns = entry.expiration_ns;
     let incoming_paused = entry.paused;
@@ -242,10 +240,7 @@ pub(crate) fn apply_condition_resolution(
     winning_outcome: &str,
 ) -> usize {
     let entry = {
-        let _guard = ctx
-            .apply_mutex
-            .lock()
-            .expect("resolve_apply_mutex poisoned");
+        let _guard = ctx.apply_mutex.lock();
         let Some(entry) = ctx.watchlist.get_cloned(&condition_id.to_string()) else {
             log::debug!(
                 "Ignoring resolution for condition_id={condition_id}: no local watch entry"
@@ -320,12 +315,13 @@ pub(crate) fn apply_condition_resolution(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex as StdMutex};
+    use std::sync::Arc;
 
     use ahash::AHashSet;
     use nautilus_common::messages::DataEvent;
     use nautilus_core::{AtomicMap, UnixNanos, time::get_atomic_clock_realtime};
     use nautilus_model::identifiers::{InstrumentId, PositionId};
+    use parking_lot::Mutex;
     use rstest::rstest;
 
     use super::*;
@@ -339,7 +335,7 @@ mod tests {
             clock: get_atomic_clock_realtime(),
             data_sender: data_tx,
             watchlist: Arc::new(AtomicMap::new()),
-            apply_mutex: Arc::new(StdMutex::new(())),
+            apply_mutex: Arc::new(Mutex::new(())),
         };
 
         (ctx, data_rx)

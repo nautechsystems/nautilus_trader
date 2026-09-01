@@ -1,15 +1,15 @@
 # Networking
 
 NautilusTrader adapters use the shared `nautilus-network` clients for HTTP request/response APIs,
-WebSocket streams, and suffix‑framed TCP protocols. These clients add trading‑system policy around
+WebSocket streams, and suffix-framed TCP protocols. These clients add trading-system policy around
 the underlying Rust transports: rate limits, connection reuse, liveness checks, reconnect control,
 replay coordination, and bounded reads.
 
 | Client         | Underlying transport                | Use when                           | Added policy                                                                                    |
 | -------------- | ----------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------- |
 | HTTP           | `reqwest`                           | Finite request/response operations | Layered quotas, pooled connections, keepalive, timeouts, proxy routing, and bounded bodies      |
-| WebSocket      | `tokio-tungstenite` or `sockudo-ws` | Long‑lived framed streams          | Runtime backend selection, quotas, heartbeats, liveness checks, reconnects, and session fencing |
-| Raw TCP socket | Tokio and `rustls`                  | Suffix‑framed byte streams         | Framing, initial retries, heartbeats, liveness checks, reconnects, and ordered replay           |
+| WebSocket      | `tokio-tungstenite` or `sockudo-ws` | Long-lived framed streams          | Runtime backend selection, quotas, heartbeats, liveness checks, reconnects, and session fencing |
+| Raw TCP socket | Tokio and `rustls`                  | Suffix-framed byte streams         | Framing, initial retries, heartbeats, liveness checks, reconnects, and ordered replay           |
 
 The [Adapters](adapters.md) guide explains how venue clients translate these transports into
 Nautilus domain messages. This page covers the shared transport behavior beneath that boundary.
@@ -46,13 +46,13 @@ policy.
 ### Rate limiting and requests
 
 The rate limiter uses the generic cell rate algorithm (GCRA) with a default quota and optional
-per‑key overrides. A request can carry several keys, such as an endpoint and an order scope, and
+per-key overrides. A request can carry several keys, such as an endpoint and an order scope, and
 waits for them together. Multiple limiters let one request consume independent budgets, such as
-per‑IP and per‑account limits. Sharing their `Arc` values across HTTP clients keeps those budgets
-process‑wide instead of creating one allowance per connection.
+per-IP and per-account limits. Sharing their `Arc` values across HTTP clients keeps those budgets
+process-wide instead of creating one allowance per connection.
 
-The client accepts default and per‑request headers, query parameters with repeated values, raw
-request bodies, and `GET`, `POST`, `PUT`, `PATCH`, and `DELETE` methods. A client‑level timeout applies to
+The client accepts default and per-request headers, query parameters with repeated values, raw
+request bodies, and `GET`, `POST`, `PUT`, `PATCH`, and `DELETE` methods. A client-level timeout applies to
 all requests unless a request supplies its own timeout. An optional proxy applies to both HTTP and
 HTTPS traffic.
 
@@ -66,7 +66,7 @@ and operations are safe to retry.
 
 Each client enables `TCP_NODELAY`, keeps up to 32 idle connections per host, and retains an idle
 connection for up to 60 seconds. HTTP/2 connections send keepalive probes every 30 seconds even
-while idle and use adaptive flow‑control windows. Reusing a client preserves the pool and avoids a
+while idle and use adaptive flow-control windows. Reusing a client preserves the pool and avoids a
 new TCP and TLS handshake for each request.
 
 Responses contain the status, only the header names selected when the client was built, and the raw
@@ -122,11 +122,11 @@ WebSocket library.
 
 | Mode    | Reader ownership       | Automatic reconnect            | Liveness behavior                              |
 | ------- | ---------------------- | ------------------------------ | ---------------------------------------------- |
-| Handler | Internal callback task | Exponential backoff and jitter | Heartbeat and application‑data idle timeouts   |
-| Stream  | Caller‑owned reader    | Disabled                       | Caller reports failure and replaces the client |
+| Handler | Internal callback task | Exponential backoff and jitter | Heartbeat and application-data idle timeouts   |
+| Stream  | Caller-owned reader    | Disabled                       | Caller reports failure and replaces the client |
 
-Handler mode is the usual choice for long‑lived adapter connections. Stream mode suits adapters
-that need direct stream backpressure or own a protocol‑specific reconnect sequence.
+Handler mode is the usual choice for long-lived adapter connections. Stream mode suits adapters
+that need direct stream backpressure or own a protocol-specific reconnect sequence.
 
 ### Transport backends
 
@@ -145,7 +145,7 @@ implemented. Malformed proxy URLs and other unsupported schemes return an error.
 
 ### Liveness and recovery
 
-The configured heartbeat sends either an RFC 6455 Ping or a venue‑specific text message at a fixed
+The configured heartbeat sends either an RFC 6455 Ping or a venue-specific text message at a fixed
 interval. Configuring one also arms a response deadline: sending a heartbeat establishes that the
 peer answers it, so an unset `heartbeat_timeout_secs` defaults to three intervals. Set the field to
 choose a different window. A transport with no heartbeat gets no default, because nothing would
@@ -153,19 +153,19 @@ guarantee the inbound frames needed to keep the window open.
 
 The heartbeat timeout resets on every inbound frame, including Ping and Pong, so it detects a peer
 that has stopped sending anything. The separate idle timeout resets only on text or binary
-application data, so control traffic cannot hide a silent market‑data stream. A venue that answers
+application data, so control traffic cannot hide a silent market-data stream. A venue that answers
 the keepalive with a text payload refreshes the idle timeout exactly like real data does, so that
 window means something only when it sits below the heartbeat interval.
 
 An unset timeout leaves that detection off, except that an unset `heartbeat_timeout_secs` still
 derives three intervals when a heartbeat is configured. A zero timeout is rejected. Adapters that
-expose a non‑optional integer map zero to unset rather than passing it through.
+expose a non-optional integer map zero to unset rather than passing it through.
 
 A read failure, write failure, Close frame, heartbeat timeout, idle timeout, or explicit reconnect
-request moves a handler‑mode client into reconnecting state. Reconnect uses exponential backoff with
+request moves a handler-mode client into reconnecting state. Reconnect uses exponential backoff with
 bounded jitter and allows unlimited attempts by default. A replacement connection that remains
 active for at least 10 seconds resets the attempt count and backoff. A configured maximum closes
-the client after that many consecutive failed or short‑lived attempts.
+the client after that many consecutive failed or short-lived attempts.
 
 ```mermaid
 stateDiagram-v2
@@ -180,36 +180,36 @@ stateDiagram-v2
 ```
 
 Handler mode publishes `Disconnected` on entry to `Reconnecting` and `Connected` on recovery;
-individual attempts and deliberate disconnects add no state‑sink edges.
+individual attempts and deliberate disconnects add no state-sink edges.
 
 The writer installs the replacement sink before the controller starts its reader and publishes the
 reconnect notification. A connection epoch advances with each sink replacement. Reader fences drop
-frames from retired sessions, while epoch‑aware handlers and sends let an adapter bind work to the
+frames from retired sessions, while epoch-aware handlers and sends let an adapter bind work to the
 transport that produced it. Mutable reconnect headers apply to later handshakes without interrupting
 the active connection.
 
 Adapters can register an `AuthTracker` so a disconnect invalidates authentication. They can also
 gate the reconnect buffer on that tracker, making messages wait for the new session to authenticate
 and discarding the remaining buffer if authentication fails. `SubscriptionState` separately records
-confirmed, pending subscribe, and pending unsubscribe intent for adapter‑driven resubscription; it
+confirmed, pending subscribe, and pending unsubscribe intent for adapter-driven resubscription; it
 never sends protocol messages itself.
 
 ### Reconnect throttling
 
-Once three reconnect attempts occur inside a rolling two‑minute window, each further attempt waits
-at least one second, regardless of the configured backoff. The window is purely time‑based: a
+Once three reconnect attempts occur inside a rolling two-minute window, each further attempt waits
+at least one second, regardless of the configured backoff. The window is purely time-based: a
 replacement connection that survives the stability threshold still resets the backoff and attempt
 count, but has no effect on the floor. Throttling lifts by itself once fewer than three attempts
 remain inside the window.
 
-Venues rate‑limit new connections per IP (Binance permits 300 connections per five minutes, OKX
+Venues rate-limit new connections per IP (Binance permits 300 connections per five minutes, OKX
 three per second), so an unthrottled reconnect loop can otherwise escalate a transient drop into an
-IP‑level throttle or ban affecting every client behind that address. The first attempts in any
+IP-level throttle or ban affecting every client behind that address. The first attempts in any
 window are never delayed, so a single drop still recovers immediately.
 
 ### State reporting and explicit reconnect
 
-Constructors that accept a `SocketStateSink` publish ordered `Connected` and `Disconnected`
+Clients configured with a `SocketStateSink` publish ordered `Connected` and `Disconnected`
 availability edges. A successful initial connection publishes `Connected`; transport loss or an
 accepted explicit reconnect publishes `Disconnected`; and a successful replacement publishes
 `Connected`. Initial connection failure, individual retry attempts, retry exhaustion, deliberate
@@ -217,48 +217,48 @@ disconnect, and client drop do not add events. The sink therefore describes tran
 not every internal `ConnectionMode` transition. Its callback runs synchronously and serializes
 edges, so it must return promptly and must not request another transition through the same sink.
 
-`request_reconnect()` atomically asks a handler‑mode controller to replace its active transport. A
+`request_reconnect()` atomically asks a handler-mode controller to replace its active transport. A
 cloneable `WebSocketReconnectHandle` gives adapter tasks the same capability without ownership of
 the client and distinguishes accepted, already reconnecting, disconnecting, closed, and unsupported
 requests.
 An accepted request invalidates registered authentication state and publishes `Disconnected` before
 the replacement can become active. Stream mode reports `Unsupported` because its reader is
-caller‑owned.
+caller-owned.
 
 ### Send semantics
 
-Application text and binary sends wait for their rate‑limit keys and for an active connection. The
+Application text and binary sends wait for their rate-limit keys and for an active connection. The
 ordinary send methods return after enqueueing the frame, so success does not prove delivery. The
 writer keeps FIFO order for application messages buffered during reconnect or after a failed write
 and replays them on a replacement connection. A control frame belongs to the connection it was
-issued on, so a failed Ping, Pong, or Close is dropped rather than replayed. This in‑memory buffer
-provides reconnect continuity, not durable or exactly‑once delivery.
+issued on, so a failed Ping, Pong, or Close is dropped rather than replayed. This in-memory buffer
+provides reconnect continuity, not durable or exactly-once delivery.
 
-Ownership‑bound text sends take an expected connection epoch and wait for the writer result. They
+Ownership-bound text sends take an expected connection epoch and wait for the writer result. They
 fail if ownership changes and never replay on another connection. If a bound write times out after
-it starts, delivery is undetermined and the caller must not retry blindly. Connection‑bound Pong
+it starts, delivery is undetermined and the caller must not retry blindly. Connection-bound Pong
 sends use the same epoch check so a response cannot leak onto the connection after the one that
 received its Ping.
 
 ### Backend benchmarks
 
 The [latest checked-in network benchmark](../../crates/network/benches/BENCHMARKS.md) was measured on
-2026‑07‑29. The following 512 B results are the median of three back‑to‑back runs on the same AMD
+2026-07-29. The following 512 B results are the median of three back-to-back runs on the same AMD
 Ryzen Threadripper 9980X host:
 
 | Metric                            | `tokio-tungstenite 0.30.0` | `sockudo-ws 2.0.1`       |
 | --------------------------------- | -------------------------: | -----------------------: |
-| Round‑trip text latency, p99      | 3.305 us                   | 0.651 us                 |
-| One‑way binary burst latency, p99 | 17.647 us                  | 15.053 us                |
+| Round-trip text latency, p99      | 3.305 us                   | 0.651 us                 |
+| One-way binary burst latency, p99 | 17.647 us                  | 15.053 us                |
 | Text receive throughput           | 7.187 million messages/s   | 8.504 million messages/s |
 | Text send throughput              | 6.400 million messages/s   | 7.207 million messages/s |
-| Text round‑trip throughput        | 0.530 million messages/s   | 1.852 million messages/s |
+| Text round-trip throughput        | 0.530 million messages/s   | 1.852 million messages/s |
 
-Across the measured 64 B, 512 B, and 4,096 B payloads, `sockudo-ws 2.0.1` reduced round‑trip p99
+Across the measured 64 B, 512 B, and 4,096 B payloads, `sockudo-ws 2.0.1` reduced round-trip p99
 latency by 73% to 82%. At 512 B it processed 18% more receives, 13% more sends, and 250% more round
 trips.
 
-These are backend frame‑transport microbenchmarks over established, uncompressed 1 MiB in‑memory
+These are backend frame-transport microbenchmarks over established, uncompressed 1 MiB in-memory
 Tokio duplex streams. They exclude DNS, TCP connect, TLS, HTTP upgrade, kernel network I/O,
 external latency, keepalive traffic, and the reconnecting client lifecycle. The report does not
 publish HTTP or raw TCP client results, and its absolute values should only be compared on the same
@@ -322,7 +322,7 @@ The client accepts `host:port` or URL input and supports plain or TLS mode. TLS 
 web PKI roots. A certificate directory can add trusted roots and, when it contains a matching
 certificate and private key, supply a client identity for mutual TLS.
 
-Initial connection establishment makes up to five attempts by default, with a 10‑second bound per
+Initial connection establishment makes up to five attempts by default, with a 10-second bound per
 attempt and exponential backoff. Once connected, transport loss uses the configurable reconnect
 timeout, exponential backoff, bounded jitter, and unlimited attempts by default. As with the
 WebSocket client, 10 seconds of stable uptime resets the reconnect cycle, and the same reconnect
@@ -348,7 +348,7 @@ normal reconnect replay and buffer ordering then apply to the replacement.
 During reconnect, the writer buffers application messages in FIFO order. After installing a
 replacement writer, it can first send protocol replay messages supplied by the adapter, such as a
 logon or session setup sequence, and then drain the buffered application messages. The replacement
-reader starts only after that drain succeeds. A post‑reconnection callback runs after the writer,
+reader starts only after that drain succeeds. A post-reconnection callback runs after the writer,
 buffer, and reader are ready.
 
 ```mermaid
@@ -380,11 +380,11 @@ sequenceDiagram
 ```
 
 A raw TCP replacement becomes active only after optional protocol replay and buffered application
-messages drain successfully; the reader and post‑reconnection callback start afterward.
+messages drain successfully; the reader and post-reconnection callback start afterward.
 
 `send_bytes` returns when the message enters the writer channel, not when the peer receives it. A
 concurrent disconnect can still prevent delivery. Reconnect replay and buffering are process memory,
-so protocols that require durable or exactly‑once delivery must enforce those guarantees above the
+so protocols that require durable or exactly-once delivery must enforce those guarantees above the
 socket client.
 
 ## TCP socket options
@@ -414,8 +414,8 @@ that rejects an option is still usable, so failures are logged and the connectio
 
 ## Testing
 
-The network crate separates algorithm checks from operating‑system I/O and simulated failure
-topologies. This keeps a failure local: a state‑machine invariant should fail without a socket, wire
+The network crate separates algorithm checks from operating-system I/O and simulated failure
+topologies. This keeps a failure local: a state-machine invariant should fail without a socket, wire
 behavior should fail against a small loopback peer, and reconnect races should fail under a
 reproducible network schedule.
 
@@ -424,7 +424,7 @@ reproducible network schedule.
 Tests beside the implementation cover configuration validation, state transitions, rate limits,
 backoff, retry budgets, framing, transport conversion, authentication, subscription state, and
 reconnect buffer policy. Pure logic uses fake clocks and direct state models. Async task tests use
-paused Tokio time, in‑memory duplex streams, injected transports, or an ephemeral loopback server so
+paused Tokio time, in-memory duplex streams, injected transports, or an ephemeral loopback server so
 they can exercise the real reader, writer, heartbeat, and controller tasks without an external
 service.
 
@@ -432,15 +432,15 @@ The client suites then test their own protocol boundary. HTTP tests cover reques
 response headers and body limits, timeouts, proxy behavior, and URL redaction. WebSocket and raw TCP
 tests cover concurrent sends, liveness timeouts, framing, connection epochs, state sinks, explicit
 reconnect, replay order, and shutdown races. The shared TLS tests cover certificate loading and a
-complete mutual‑TLS handshake. A separate loopback integration suite exercises the WebSocket HTTP
+complete mutual-TLS handshake. A separate loopback integration suite exercises the WebSocket HTTP
 `CONNECT` proxy path for plain `ws://` upstreams.
 
 ### Property tests
 
 [`proptest`](https://github.com/proptest-rs/proptest) generates values and operation traces for
 invariants that example cases cannot enumerate. The suites compare GCRA decisions with a reference
-model, check backoff and retry bounds, round‑trip transport messages through both WebSocket
-backends, and exercise authentication, subscription, and reconnect‑buffer state machines. Selected
+model, check backoff and retry bounds, round-trip transport messages through both WebSocket
+backends, and exercise authentication, subscription, and reconnect-buffer state machines. Selected
 suites persist minimized failures in `crates/network/proptest-regressions` so a discovered case
 becomes a permanent regression test.
 
@@ -454,7 +454,7 @@ recovery. Assertions cover eventual state, attempt limits, heartbeat behavior, m
 authentication gating, and clean shutdown. Separate suites exercise the Tungstenite and Sockudo
 backends over the same simulated protocol.
 
-Default tests keep real Tokio loopback networking and exclude the simulation‑only suites. Enabling
+Default tests keep real Tokio loopback networking and exclude the simulation-only suites. Enabling
 the `turmoil` feature swaps the TCP layer and includes those suites:
 
 ```bash

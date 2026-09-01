@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test derive factories behavior.
+"""
 
 from decimal import Decimal
 
@@ -22,8 +25,7 @@ from nautilus_trader.adapters.derive import DERIVE
 from nautilus_trader.adapters.derive import DeriveDataClientConfig
 from nautilus_trader.adapters.derive import DeriveDataClientFactory
 from nautilus_trader.adapters.derive import DeriveEnvironment
-from nautilus_trader.adapters.derive import DeriveExecClientConfig
-from nautilus_trader.adapters.derive import DeriveExecFactoryConfig
+from nautilus_trader.adapters.derive import DeriveExecutionClientConfig
 from nautilus_trader.adapters.derive import DeriveExecutionClientFactory
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
@@ -38,6 +40,9 @@ derive_exec_tester = load_example_module("derive", "exec_tester")
 
 
 def test_derive_factories_expose_python_names() -> None:
+    """
+    Test derive factories expose python names.
+    """
     data_factory = DeriveDataClientFactory()
     exec_factory = DeriveExecutionClientFactory()
 
@@ -46,6 +51,9 @@ def test_derive_factories_expose_python_names() -> None:
 
 
 def test_live_node_builder_accepts_derive_data_factory() -> None:
+    """
+    Test live node builder accepts derive data factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
 
     node = (
@@ -66,6 +74,9 @@ def test_live_node_builder_accepts_derive_data_factory() -> None:
 
 
 def test_live_node_builder_accepts_derive_exec_factory() -> None:
+    """
+    Test live node builder accepts derive exec factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
     account_id = AccountId.from_str("DERIVE-001")
 
@@ -83,16 +94,13 @@ def test_live_node_builder_accepts_derive_exec_factory() -> None:
         .add_exec_client(
             None,
             DeriveExecutionClientFactory(),
-            DeriveExecFactoryConfig(
-                trader_id=trader_id,
+            DeriveExecutionClientConfig(
                 account_id=account_id,
-                config=DeriveExecClientConfig(
-                    wallet_address=SMOKE_WALLET_ADDRESS,
-                    session_key=SMOKE_SESSION_KEY,
-                    subaccount_id=0,
-                    environment=DeriveEnvironment.TESTNET,
-                    max_fee_per_contract=Decimal(1000),
-                ),
+                wallet_address=SMOKE_WALLET_ADDRESS,
+                session_key=SMOKE_SESSION_KEY,
+                subaccount_id=0,
+                environment=DeriveEnvironment.TESTNET,
+                max_fee_per_contract=Decimal(1000),
             ),
         )
         .build()
@@ -103,43 +111,89 @@ def test_live_node_builder_accepts_derive_exec_factory() -> None:
 
 
 def test_derive_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test derive exec tester runs live orders.
+    """
     captured: dict[str, object] = {}
 
     class CapturingExecTesterConfig:
+        """
+        Collect capturing exec tester config tests.
+        """
+
         def __init__(self, **kwargs: object) -> None:
+            """
+            Initialize the helper.
+            """
             captured["exec_tester_kwargs"] = kwargs
 
     class CapturingNode:
+        """
+        Collect capturing node tests.
+        """
+
         def add_builtin_strategy(self, type_name: str, config: object) -> None:
+            """
+            Add builtin strategy.
+            """
             captured["strategy_type_name"] = type_name
             captured["strategy_config"] = config
 
         def run(self) -> None:
+            """
+            Run.
+            """
             captured["run_called"] = True
 
     class CapturingBuilder:
+        """
+        Collect capturing builder tests.
+        """
+
         def with_reconciliation(self, reconciliation: bool) -> "CapturingBuilder":
+            """
+            With reconciliation.
+            """
             captured["reconciliation"] = reconciliation
             return self
 
         def with_risk_engine_config(self, config: LiveRiskEngineConfig) -> "CapturingBuilder":
+            """
+            With risk engine config.
+            """
             captured["risk_engine_config"] = config
             return self
 
         def add_data_client(self, *args: object) -> "CapturingBuilder":
+            """
+            Add data client.
+            """
             captured["data_client_args"] = args
             return self
 
         def add_exec_client(self, *args: object) -> "CapturingBuilder":
+            """
+            Add exec client.
+            """
             captured["exec_client_args"] = args
             return self
 
         def build(self) -> CapturingNode:
+            """
+            Build.
+            """
             return CapturingNode()
 
     class CapturingLiveNode:
+        """
+        Collect capturing live node tests.
+        """
+
         @staticmethod
         def builder(name: str, trader_id: TraderId, environment: Environment) -> CapturingBuilder:
+            """
+            Builder.
+            """
             captured["builder_args"] = (name, trader_id, environment)
             return CapturingBuilder()
 

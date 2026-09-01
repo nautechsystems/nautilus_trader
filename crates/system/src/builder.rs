@@ -371,6 +371,8 @@ impl NautilusKernelBuilder {
             exec_engine: self.exec_engine,
             portfolio: self.portfolio,
             streaming: None,
+            #[cfg(feature = "streaming")]
+            catalogs: Vec::new(),
         };
 
         let kernel = NautilusKernel::new_with_dependencies(
@@ -421,7 +423,7 @@ mod tests {
     use std::{
         cell::Cell,
         sync::{
-            Arc, Mutex,
+            Arc,
             atomic::{AtomicBool, Ordering},
         },
     };
@@ -458,6 +460,7 @@ mod tests {
         position::Position,
         types::{Currency, Money},
     };
+    use parking_lot::Mutex;
     use rstest::*;
     use ustr::Ustr;
 
@@ -569,7 +572,7 @@ mod tests {
 
         nautilus_common::msgbus::publish_quote("data.quotes.TEST".into(), &quote);
 
-        let publications = publications.lock().unwrap();
+        let publications = publications.lock();
         assert_eq!(publications.len(), 1);
         assert_eq!(publications[0].topic, "data.quotes.TEST");
         assert_eq!(
@@ -881,13 +884,10 @@ mod tests {
         }
 
         fn publish(&self, message: BusMessage) {
-            self.publications
-                .lock()
-                .unwrap()
-                .push(CapturedEgressMessage {
-                    topic: message.topic.to_string(),
-                    payload: message.payload,
-                });
+            self.publications.lock().push(CapturedEgressMessage {
+                topic: message.topic.to_string(),
+                payload: message.payload,
+            });
         }
 
         fn close(&mut self) {

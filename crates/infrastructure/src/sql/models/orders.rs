@@ -37,113 +37,113 @@ use rust_decimal::Decimal;
 use sqlx::{FromRow, Row, postgres::PgRow};
 use ustr::Ustr;
 
-use crate::sql::models::enums::TrailingOffsetTypeModel;
+use crate::sql::models::enums::TrailingOffsetTypePg;
 
 #[derive(Debug)]
-pub struct OrderEventAnyModel(pub OrderEventAny);
+pub struct OrderEventAnyRow(pub OrderEventAny);
 
 #[derive(Debug)]
-pub struct OrderAcceptedModel(pub OrderAccepted);
+pub struct OrderAcceptedRow(pub OrderAccepted);
 
 #[derive(Debug)]
-pub struct OrderCancelRejectedModel(pub OrderCancelRejected);
+pub struct OrderCancelRejectedRow(pub OrderCancelRejected);
 
 #[derive(Debug)]
-pub struct OrderCanceledModel(pub OrderCanceled);
+pub struct OrderCanceledRow(pub OrderCanceled);
 
 #[derive(Debug)]
-pub struct OrderDeniedModel(pub OrderDenied);
+pub struct OrderDeniedRow(pub OrderDenied);
 
 #[derive(Debug)]
-pub struct OrderEmulatedModel(pub OrderEmulated);
+pub struct OrderEmulatedRow(pub OrderEmulated);
 
 #[derive(Debug)]
-pub struct OrderExpiredModel(pub OrderExpired);
+pub struct OrderExpiredRow(pub OrderExpired);
 
 #[derive(Debug)]
-pub struct OrderFilledModel(pub OrderFilled);
+pub struct OrderFilledRow(pub OrderFilled);
 
 #[derive(Debug)]
-pub struct OrderInitializedModel(pub OrderInitialized);
+pub struct OrderInitializedRow(pub OrderInitialized);
 
 #[derive(Debug)]
-pub struct OrderModifyRejectedModel(pub OrderModifyRejected);
+pub struct OrderModifyRejectedRow(pub OrderModifyRejected);
 
 #[derive(Debug)]
-pub struct OrderPendingCancelModel(pub OrderPendingCancel);
+pub struct OrderPendingCancelRow(pub OrderPendingCancel);
 
 #[derive(Debug)]
-pub struct OrderPendingUpdateModel(pub OrderPendingUpdate);
+pub struct OrderPendingUpdateRow(pub OrderPendingUpdate);
 
 #[derive(Debug)]
-pub struct OrderRejectedModel(pub OrderRejected);
+pub struct OrderRejectedRow(pub OrderRejected);
 
 #[derive(Debug)]
-pub struct OrderReleasedModel(pub OrderReleased);
+pub struct OrderReleasedRow(pub OrderReleased);
 
 #[derive(Debug)]
-pub struct OrderSubmittedModel(pub OrderSubmitted);
+pub struct OrderSubmittedRow(pub OrderSubmitted);
 
 #[derive(Debug)]
-pub struct OrderTriggeredModel(pub OrderTriggered);
+pub struct OrderTriggeredRow(pub OrderTriggered);
 
 #[derive(Debug)]
-pub struct OrderUpdatedModel(pub OrderUpdated);
+pub struct OrderUpdatedRow(pub OrderUpdated);
 
 #[derive(Debug)]
-pub struct OrderSnapshotModel(pub OrderSnapshot);
+pub struct OrderSnapshotRow(pub OrderSnapshot);
 
-impl<'r> FromRow<'r, PgRow> for OrderEventAnyModel {
+impl<'r> FromRow<'r, PgRow> for OrderEventAnyRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let kind = row.get::<String, _>("kind");
         if kind == "OrderAccepted" {
-            let model = OrderAcceptedModel::from_row(row)?;
-            Ok(Self(OrderEventAny::Accepted(model.0)))
+            let row = OrderAcceptedRow::from_row(row)?;
+            Ok(Self(OrderEventAny::Accepted(row.0)))
         } else if kind == "OrderCancelRejected" {
-            let model = OrderCancelRejectedModel::from_row(row)?;
-            Ok(Self(OrderEventAny::CancelRejected(model.0)))
+            let row = OrderCancelRejectedRow::from_row(row)?;
+            Ok(Self(OrderEventAny::CancelRejected(row.0)))
         } else if kind == "OrderCanceled" {
-            let model = OrderCanceledModel::from_row(row)?;
-            Ok(Self(OrderEventAny::Canceled(model.0)))
+            let row = OrderCanceledRow::from_row(row)?;
+            Ok(Self(OrderEventAny::Canceled(row.0)))
         } else if kind == "OrderDenied" {
-            let model = OrderDeniedModel::from_row(row)?;
-            Ok(Self(OrderEventAny::Denied(model.0)))
+            let row = OrderDeniedRow::from_row(row)?;
+            Ok(Self(OrderEventAny::Denied(row.0)))
         } else if kind == "OrderEmulated" {
-            let model = OrderEmulatedModel::from_row(row)?;
-            Ok(Self(OrderEventAny::Emulated(model.0)))
+            let row = OrderEmulatedRow::from_row(row)?;
+            Ok(Self(OrderEventAny::Emulated(row.0)))
         } else if kind == "OrderExpired" {
-            let model = OrderExpiredModel::from_row(row)?;
-            Ok(Self(OrderEventAny::Expired(model.0)))
+            let row = OrderExpiredRow::from_row(row)?;
+            Ok(Self(OrderEventAny::Expired(row.0)))
         } else if kind == "OrderFilled" {
-            let model = OrderFilledModel::from_row(row)?;
-            Ok(Self(OrderEventAny::Filled(model.0)))
+            let row = OrderFilledRow::from_row(row)?;
+            Ok(Self(OrderEventAny::Filled(row.0)))
         } else if kind == "OrderInitialized" {
-            let model = OrderInitializedModel::from_row(row)?;
-            Ok(Self(OrderEventAny::Initialized(model.0)))
+            let row = OrderInitializedRow::from_row(row)?;
+            Ok(Self(OrderEventAny::Initialized(row.0)))
         } else if kind == "OrderModifyRejected" {
-            let model = OrderModifyRejectedModel::from_row(row)?;
-            Ok(Self(OrderEventAny::ModifyRejected(model.0)))
+            let row = OrderModifyRejectedRow::from_row(row)?;
+            Ok(Self(OrderEventAny::ModifyRejected(row.0)))
         } else if kind == "OrderPendingCancel" {
-            let model = OrderPendingCancelModel::from_row(row)?;
-            Ok(Self(OrderEventAny::PendingCancel(model.0)))
+            let row = OrderPendingCancelRow::from_row(row)?;
+            Ok(Self(OrderEventAny::PendingCancel(row.0)))
         } else if kind == "OrderPendingUpdate" {
-            let model = OrderPendingUpdateModel::from_row(row)?;
-            Ok(Self(OrderEventAny::PendingUpdate(model.0)))
+            let row = OrderPendingUpdateRow::from_row(row)?;
+            Ok(Self(OrderEventAny::PendingUpdate(row.0)))
         } else if kind == "OrderRejected" {
-            let model = OrderRejectedModel::from_row(row)?;
-            Ok(Self(OrderEventAny::Rejected(model.0)))
+            let row = OrderRejectedRow::from_row(row)?;
+            Ok(Self(OrderEventAny::Rejected(row.0)))
         } else if kind == "OrderReleased" {
-            let model = OrderReleasedModel::from_row(row)?;
-            Ok(Self(OrderEventAny::Released(model.0)))
+            let row = OrderReleasedRow::from_row(row)?;
+            Ok(Self(OrderEventAny::Released(row.0)))
         } else if kind == "OrderSubmitted" {
-            let model = OrderSubmittedModel::from_row(row)?;
-            Ok(Self(OrderEventAny::Submitted(model.0)))
+            let row = OrderSubmittedRow::from_row(row)?;
+            Ok(Self(OrderEventAny::Submitted(row.0)))
         } else if kind == "OrderTriggered" {
-            let model = OrderTriggeredModel::from_row(row)?;
-            Ok(Self(OrderEventAny::Triggered(model.0)))
+            let row = OrderTriggeredRow::from_row(row)?;
+            Ok(Self(OrderEventAny::Triggered(row.0)))
         } else if kind == "OrderUpdated" {
-            let model = OrderUpdatedModel::from_row(row)?;
-            Ok(Self(OrderEventAny::Updated(model.0)))
+            let row = OrderUpdatedRow::from_row(row)?;
+            Ok(Self(OrderEventAny::Updated(row.0)))
         } else {
             Err(sqlx::Error::Decode(
                 format!("Unknown order event kind: {kind} in Postgres transformation").into(),
@@ -152,7 +152,7 @@ impl<'r> FromRow<'r, PgRow> for OrderEventAnyModel {
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for OrderInitializedModel {
+impl<'r> FromRow<'r, PgRow> for OrderInitializedRow {
     #[expect(
         clippy::too_many_lines,
         reason = "SQL row mapping mirrors the full order initialized event constructor"
@@ -200,7 +200,7 @@ impl<'r> FromRow<'r, PgRow> for OrderInitializedModel {
         let trigger_type = row
             .try_get::<Option<&str>, _>("trigger_type")
             .ok()
-            .and_then(|x| x.map(|x| TriggerType::from_str(x).unwrap()));
+            .and_then(parse_trigger_type);
         let limit_offset = row
             .try_get::<Option<&str>, _>("limit_offset")
             .ok()
@@ -210,9 +210,10 @@ impl<'r> FromRow<'r, PgRow> for OrderInitializedModel {
             .ok()
             .and_then(|x| x.and_then(|s| Decimal::from_str(s).ok()));
         let trailing_offset_type = row
-            .try_get::<Option<TrailingOffsetTypeModel>, _>("trailing_offset_type")
+            .try_get::<Option<TrailingOffsetTypePg>, _>("trailing_offset_type")
             .ok()
-            .and_then(|x| x.map(|x| x.0));
+            .flatten()
+            .and_then(|value| value.0);
         let expire_time = row
             .try_get::<Option<&str>, _>("expire_time")
             .ok()
@@ -224,7 +225,7 @@ impl<'r> FromRow<'r, PgRow> for OrderInitializedModel {
         let emulation_trigger = row
             .try_get::<Option<&str>, _>("emulation_trigger")
             .ok()
-            .and_then(|x| x.map(|x| TriggerType::from_str(x).unwrap()));
+            .and_then(parse_trigger_type);
         let trigger_instrument_id = row
             .try_get::<Option<&str>, _>("trigger_instrument_id")
             .ok()
@@ -232,7 +233,7 @@ impl<'r> FromRow<'r, PgRow> for OrderInitializedModel {
         let contingency_type = row
             .try_get::<Option<&str>, _>("contingency_type")
             .ok()
-            .and_then(|x| x.map(|x| ContingencyType::from_str(x).unwrap()));
+            .and_then(parse_contingency_type);
         let order_list_id = row
             .try_get::<Option<&str>, _>("order_list_id")
             .ok()
@@ -304,7 +305,7 @@ impl<'r> FromRow<'r, PgRow> for OrderInitializedModel {
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for OrderAcceptedModel {
+impl<'r> FromRow<'r, PgRow> for OrderAcceptedRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let event_id = row.try_get::<&str, _>("id").map(UUID4::from)?;
         let trader_id = row.try_get::<&str, _>("trader_id").map(TraderId::from)?;
@@ -339,7 +340,7 @@ impl<'r> FromRow<'r, PgRow> for OrderAcceptedModel {
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for OrderCancelRejectedModel {
+impl<'r> FromRow<'r, PgRow> for OrderCancelRejectedRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let trader_id = row.try_get::<&str, _>("trader_id").map(TraderId::from)?;
         let strategy_id = row
@@ -379,31 +380,31 @@ impl<'r> FromRow<'r, PgRow> for OrderCancelRejectedModel {
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for OrderCanceledModel {
+impl<'r> FromRow<'r, PgRow> for OrderCanceledRow {
     fn from_row(_row: &'r PgRow) -> Result<Self, sqlx::Error> {
         todo!()
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for OrderDeniedModel {
+impl<'r> FromRow<'r, PgRow> for OrderDeniedRow {
     fn from_row(_row: &'r PgRow) -> Result<Self, sqlx::Error> {
         todo!()
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for OrderEmulatedModel {
+impl<'r> FromRow<'r, PgRow> for OrderEmulatedRow {
     fn from_row(_row: &'r PgRow) -> Result<Self, sqlx::Error> {
         todo!()
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for OrderExpiredModel {
+impl<'r> FromRow<'r, PgRow> for OrderExpiredRow {
     fn from_row(_row: &'r PgRow) -> Result<Self, sqlx::Error> {
         todo!()
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for OrderFilledModel {
+impl<'r> FromRow<'r, PgRow> for OrderFilledRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let event_id = row.try_get::<&str, _>("id").map(UUID4::from)?;
         let trader_id = row.try_get::<&str, _>("trader_id").map(TraderId::from)?;
@@ -467,7 +468,7 @@ impl<'r> FromRow<'r, PgRow> for OrderFilledModel {
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for OrderModifyRejectedModel {
+impl<'r> FromRow<'r, PgRow> for OrderModifyRejectedRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let trader_id = row.try_get::<&str, _>("trader_id").map(TraderId::from)?;
         let strategy_id = row
@@ -507,31 +508,31 @@ impl<'r> FromRow<'r, PgRow> for OrderModifyRejectedModel {
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for OrderPendingCancelModel {
+impl<'r> FromRow<'r, PgRow> for OrderPendingCancelRow {
     fn from_row(_row: &'r PgRow) -> Result<Self, sqlx::Error> {
         todo!()
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for OrderPendingUpdateModel {
+impl<'r> FromRow<'r, PgRow> for OrderPendingUpdateRow {
     fn from_row(_row: &'r PgRow) -> Result<Self, sqlx::Error> {
         todo!()
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for OrderRejectedModel {
+impl<'r> FromRow<'r, PgRow> for OrderRejectedRow {
     fn from_row(_row: &'r PgRow) -> Result<Self, sqlx::Error> {
         todo!()
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for OrderReleasedModel {
+impl<'r> FromRow<'r, PgRow> for OrderReleasedRow {
     fn from_row(_row: &'r PgRow) -> Result<Self, sqlx::Error> {
         todo!()
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for OrderSubmittedModel {
+impl<'r> FromRow<'r, PgRow> for OrderSubmittedRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let trader_id = row.try_get::<&str, _>("trader_id").map(TraderId::from)?;
         let strategy_id = row
@@ -565,19 +566,19 @@ impl<'r> FromRow<'r, PgRow> for OrderSubmittedModel {
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for OrderTriggeredModel {
+impl<'r> FromRow<'r, PgRow> for OrderTriggeredRow {
     fn from_row(_row: &'r PgRow) -> Result<Self, sqlx::Error> {
         todo!()
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for OrderUpdatedModel {
+impl<'r> FromRow<'r, PgRow> for OrderUpdatedRow {
     fn from_row(_row: &'r PgRow) -> Result<Self, sqlx::Error> {
         todo!()
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for OrderSnapshotModel {
+impl<'r> FromRow<'r, PgRow> for OrderSnapshotRow {
     #[expect(
         clippy::too_many_lines,
         reason = "SQL row mapping mirrors the full order snapshot constructor"
@@ -631,7 +632,7 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotModel {
         let trigger_type = row
             .try_get::<Option<&str>, _>("trigger_type")
             .ok()
-            .and_then(|x| x.map(|x| TriggerType::from_str(x).expect("Invalid `TriggerType`")));
+            .and_then(parse_trigger_type);
         let limit_offset = row
             .try_get::<Option<&str>, _>("limit_offset")
             .ok()
@@ -641,9 +642,10 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotModel {
             .ok()
             .and_then(|x| x.and_then(|s| Decimal::from_str(s).ok()));
         let trailing_offset_type = row
-            .try_get::<Option<TrailingOffsetTypeModel>, _>("trailing_offset_type")
+            .try_get::<Option<TrailingOffsetTypePg>, _>("trailing_offset_type")
             .ok()
-            .and_then(|x| x.map(|x| x.0));
+            .flatten()
+            .and_then(|value| value.0);
         let time_in_force = row
             .try_get::<&str, _>("time_in_force")
             .map(|x| TimeInForce::from_str(x).expect("Invalid `TimeInForce`"))?;
@@ -676,7 +678,7 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotModel {
         let emulation_trigger = row
             .try_get::<Option<&str>, _>("emulation_trigger")
             .ok()
-            .and_then(|x| x.map(|x| TriggerType::from_str(x).expect("Invalid `TriggerType`")));
+            .and_then(parse_trigger_type);
         let trigger_instrument_id = row
             .try_get::<Option<&str>, _>("trigger_instrument_id")
             .ok()
@@ -684,9 +686,7 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotModel {
         let contingency_type = row
             .try_get::<Option<&str>, _>("contingency_type")
             .ok()
-            .and_then(|x| {
-                x.map(|x| ContingencyType::from_str(x).expect("Invalid `ContingencyType`"))
-            });
+            .and_then(parse_contingency_type);
         let order_list_id = row
             .try_get::<Option<&str>, _>("order_list_id")
             .ok()
@@ -781,4 +781,53 @@ fn tags_from_row(row: &PgRow) -> Option<Vec<Ustr>> {
     row.try_get::<Vec<String>, _>("tags")
         .ok()
         .map(|tags| tags.iter().map(|tag| Ustr::from(tag.as_str())).collect())
+}
+
+fn parse_trigger_type(value: Option<&str>) -> Option<TriggerType> {
+    value.and_then(|value| {
+        if value.eq_ignore_ascii_case("NO_TRIGGER") {
+            None
+        } else {
+            Some(TriggerType::from_str(value).expect("Invalid `TriggerType`"))
+        }
+    })
+}
+
+fn parse_contingency_type(value: Option<&str>) -> Option<ContingencyType> {
+    value.and_then(|value| {
+        if value.eq_ignore_ascii_case("NO_CONTINGENCY") {
+            None
+        } else {
+            Some(ContingencyType::from_str(value).expect("Invalid `ContingencyType`"))
+        }
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(None, None)]
+    #[case(Some("NO_TRIGGER"), None)]
+    #[case(Some("LAST_PRICE"), Some(TriggerType::LastPrice))]
+    fn test_parse_trigger_type_accepts_legacy_absence(
+        #[case] value: Option<&str>,
+        #[case] expected: Option<TriggerType>,
+    ) {
+        assert_eq!(parse_trigger_type(value), expected);
+    }
+
+    #[rstest]
+    #[case(None, None)]
+    #[case(Some("NO_CONTINGENCY"), None)]
+    #[case(Some("OCO"), Some(ContingencyType::Oco))]
+    fn test_parse_contingency_type_accepts_legacy_absence(
+        #[case] value: Option<&str>,
+        #[case] expected: Option<ContingencyType>,
+    ) {
+        assert_eq!(parse_contingency_type(value), expected);
+    }
 }

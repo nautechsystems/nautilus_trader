@@ -26,6 +26,8 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::engine::config::ExecutionEngineConfig;
 use nautilus_model::identifiers::TraderId;
+#[cfg(feature = "streaming")]
+use nautilus_persistence::config::DataCatalogConfig;
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
 use serde::{Deserialize, Serialize};
@@ -74,6 +76,11 @@ pub trait NautilusKernelConfig: Debug {
     fn portfolio(&self) -> Option<PortfolioConfig>;
     /// Returns the configuration for streaming to feather files.
     fn streaming(&self) -> Option<StreamingConfig>;
+    /// Returns configurations for existing data catalogs.
+    #[cfg(feature = "streaming")]
+    fn catalogs(&self) -> Vec<DataCatalogConfig> {
+        Vec::new()
+    }
 }
 
 /// Basic implementation of `NautilusKernelConfig` for builder and testing.
@@ -133,6 +140,10 @@ pub struct KernelConfig {
     pub portfolio: Option<PortfolioConfig>,
     /// The configuration for streaming to feather files.
     pub streaming: Option<StreamingConfig>,
+    /// Configurations for existing data catalogs.
+    #[cfg(feature = "streaming")]
+    #[builder(default)]
+    pub catalogs: Vec<DataCatalogConfig>,
 }
 
 impl NautilusKernelConfig for KernelConfig {
@@ -215,6 +226,11 @@ impl NautilusKernelConfig for KernelConfig {
     fn streaming(&self) -> Option<StreamingConfig> {
         self.streaming.clone()
     }
+
+    #[cfg(feature = "streaming")]
+    fn catalogs(&self) -> Vec<DataCatalogConfig> {
+        self.catalogs.clone()
+    }
 }
 
 impl Default for KernelConfig {
@@ -249,6 +265,21 @@ pub enum RotationConfig {
 }
 
 /// Configuration for streaming live or backtest runs to the catalog in feather format.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.persistence", from_py_object, frozen)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.persistence")
+)]
+#[cfg_attr(
+    feature = "python",
+    expect(
+        clippy::unsafe_derive_deserialize,
+        reason = "config deserializes plain fields; unsafe methods come from generated PyO3 integration"
+    )
+)]
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[builder(finish_fn(name = build_inner, vis = ""))]
 #[serde(deny_unknown_fields)]

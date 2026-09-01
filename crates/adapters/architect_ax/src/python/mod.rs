@@ -23,7 +23,6 @@
 pub mod config;
 pub mod factories;
 pub mod http;
-pub mod websocket;
 
 use std::str::FromStr;
 
@@ -37,10 +36,9 @@ use crate::{
         consts::{AX, AX_CLIENT_ID, AX_VENUE},
         enums::{AxEnvironment, AxMarketDataLevel},
     },
-    config::{AxDataClientConfig, AxExecClientConfig},
+    config::{AxDataClientConfig, AxExecutionClientConfig},
     factories::{AxDataClientFactory, AxExecutionClientFactory},
     http::client::AxHttpClient,
-    python::websocket::{PyAxMdWebSocketClient, PyAxOrdersWebSocketClient},
 };
 
 #[expect(clippy::needless_pass_by_value)]
@@ -81,10 +79,10 @@ fn extract_ax_data_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<dyn
 
 #[expect(clippy::needless_pass_by_value)]
 fn extract_ax_exec_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<dyn ClientConfig>> {
-    match config.extract::<AxExecClientConfig>(py) {
+    match config.extract::<AxExecutionClientConfig>(py) {
         Ok(c) => Ok(Box::new(c)),
         Err(e) => Err(to_pyvalue_err(format!(
-            "Failed to extract AxExecClientConfig: {e}"
+            "Failed to extract AxExecutionClientConfig: {e}"
         ))),
     }
 }
@@ -176,12 +174,10 @@ pub fn architect_ax(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<AxEnvironment>()?;
     m.add_class::<AxMarketDataLevel>()?;
     m.add_class::<AxDataClientConfig>()?;
-    m.add_class::<AxExecClientConfig>()?;
     m.add_class::<AxDataClientFactory>()?;
+    m.add_class::<AxExecutionClientConfig>()?;
     m.add_class::<AxExecutionClientFactory>()?;
     m.add_class::<AxHttpClient>()?;
-    m.add_class::<PyAxMdWebSocketClient>()?;
-    m.add_class::<PyAxOrdersWebSocketClient>()?;
 
     let registry = get_global_pyo3_registry();
 
@@ -207,9 +203,10 @@ pub fn architect_ax(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         )));
     }
 
-    if let Err(e) =
-        registry.register_config_extractor("AxExecClientConfig".to_string(), extract_ax_exec_config)
-    {
+    if let Err(e) = registry.register_config_extractor(
+        "AxExecutionClientConfig".to_string(),
+        extract_ax_exec_config,
+    ) {
         return Err(to_pyruntime_err(format!(
             "Failed to register Ax exec config extractor: {e}"
         )));

@@ -255,12 +255,7 @@ pub fn check_predicate_true(predicate: bool, fail_msg: &str) -> Result<()> {
 /// Returns an error if the validation check fails.
 #[inline(always)]
 pub fn check_predicate_false(predicate: bool, fail_msg: &str) -> Result<()> {
-    if predicate {
-        return Err(CorrectnessError::PredicateViolation {
-            message: fail_msg.to_string(),
-        });
-    }
-    Ok(())
+    check_predicate_true(!predicate, fail_msg)
 }
 
 /// Checks if the string `s` is not empty.

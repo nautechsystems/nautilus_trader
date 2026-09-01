@@ -14,12 +14,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Test execution with the built-in ExecTester strategy on a simulated sandbox venue.
+Test execution with the built-in ExecTester strategy on public Binance data.
 
-Running this example starts a sandbox node: the ExecTester opens a position with an
-IOC order, maintains post-only limit quotes on both sides of the book, then cancels
-all orders and closes all positions on stop. The sandbox matching engine simulates
-fills locally, so no real funds are involved.
+Running this example streams public Binance Spot data while the sandbox matching engine
+simulates execution locally. The ExecTester opens a position with an IOC order,
+maintains post-only limit quotes on both sides of the book, then cancels all orders and
+closes all positions on stop. No credentials or real funds are involved.
 
 """
 
@@ -27,6 +27,11 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from nautilus_trader.adapters.binance import BinanceDataClientConfig
+from nautilus_trader.adapters.binance import BinanceDataClientFactory
+from nautilus_trader.adapters.binance import BinanceEnvironment
+from nautilus_trader.adapters.binance import BinanceProductType
+from nautilus_trader.adapters.binance import BinanceSpotMarketDataMode
 from nautilus_trader.adapters.sandbox import SandboxExecutionClientConfig
 from nautilus_trader.adapters.sandbox import SandboxExecutionClientFactory
 from nautilus_trader.common import Environment
@@ -45,32 +50,47 @@ from nautilus_trader.model import Venue
 from nautilus_trader.testkit import ExecTesterConfig
 
 
-SANDBOX = "SANDBOX"
+# WARNING: With DRY_RUN = False, this tester submits orders to the configured
+# environment and may use real funds. Set DRY_RUN = True to connect without
+# submitting orders or sending shutdown cancel/close commands.
+DRY_RUN = False
+BINANCE = "BINANCE"
 TRADER_ID = TraderId.from_str("TESTER-001")
-ACCOUNT_ID = AccountId.from_str("SANDBOX-001")
-VENUE = Venue.from_str(SANDBOX)
+ACCOUNT_ID = AccountId.from_str("BINANCE-SANDBOX-001")
+VENUE = Venue.from_str(BINANCE)
 STRATEGY_ID = StrategyId.from_str("EXEC_TESTER-001")
-INSTRUMENT_ID = InstrumentId.from_str(f"BTCUSDT.{SANDBOX}")
-ORDER_QTY = "0.01"
-CURRENCY = "USD"
+INSTRUMENT_ID = InstrumentId.from_str(f"BTCUSDT.{BINANCE}")
+ORDER_QTY = "0.001"
+CURRENCY = "USDT"
 STARTING_BALANCE = "100000"
 TOB_OFFSET_TICKS = 500
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     node = (
         LiveNode.builder("SANDBOX-EXEC-TESTER-001", TRADER_ID, Environment.SANDBOX)
-        .with_reconciliation(False)
+        .with_reconciliation(reconciliation=False)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
-        .add_simulated_exec_client(
+        .add_data_client(
             None,
+            BinanceDataClientFactory(),
+            BinanceDataClientConfig(
+                product_type=BinanceProductType.SPOT,
+                environment=BinanceEnvironment.LIVE,
+                spot_market_data_mode=BinanceSpotMarketDataMode.Json,
+            ),
+        )
+        .add_simulated_exec_client(
+            BINANCE,
             SandboxExecutionClientFactory(),
             SandboxExecutionClientConfig(
                 venue=VENUE,
                 starting_balances=[
                     Money(float(STARTING_BALANCE), Currency.from_str(CURRENCY)),
                 ],
-                trader_id=TRADER_ID,
                 account_id=ACCOUNT_ID,
             ),
         )
@@ -81,7 +101,7 @@ def main() -> None:
         ExecTesterConfig(
             strategy_id=STRATEGY_ID,
             instrument_id=INSTRUMENT_ID,
-            client_id=ClientId.from_str(SANDBOX),
+            client_id=ClientId.from_str(BINANCE),
             external_order_claims=[INSTRUMENT_ID],
             order_qty=Quantity.from_str(ORDER_QTY),
             subscribe_book=True,
@@ -97,7 +117,7 @@ def main() -> None:
             cancel_orders_on_stop=True,
             close_positions_on_stop=True,
             reduce_only_on_stop=False,
-            dry_run=False,  # Set True to log intended order flow without submitting orders
+            dry_run=DRY_RUN,
             log_data=False,
         ),
     )

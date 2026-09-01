@@ -44,11 +44,12 @@
 
 use std::{
     num::NonZeroU32,
-    sync::{Arc, LazyLock, Mutex},
+    sync::{Arc, LazyLock},
 };
 
 use ahash::AHashMap;
 use nautilus_network::ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota};
+use parking_lot::Mutex;
 use ustr::Ustr;
 
 /// Conservative Lighter REST rate limit for standard accounts.
@@ -112,15 +113,10 @@ static LIGHTER_WS_MESSAGE_LIMITERS: LazyLock<Mutex<AHashMap<String, LighterWsMes
 
 /// Returns the shared WS message limiter for `url`, creating it on first
 /// access. Subsequent calls with the same `url` return the same `Arc`.
-///
-/// # Panics
-///
-/// Panics if the registry mutex is poisoned by a prior panic while holding the lock.
 #[must_use]
 pub fn ws_message_rate_limiter(url: &str) -> LighterWsMessageRateLimiter {
     LIGHTER_WS_MESSAGE_LIMITERS
         .lock()
-        .expect("Lighter WS message rate limiter registry mutex poisoned")
         .entry(url.to_string())
         .or_insert_with(|| {
             Arc::new(RateLimiter::new_with_quota(

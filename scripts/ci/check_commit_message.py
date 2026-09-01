@@ -1,4 +1,25 @@
 #!/usr/bin/env python3
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+"""
+Check commit messages against the project commit message policy.
+
+Run as a local file checker on a commit message file, or as a CI gate over a pull
+request commit range when given --ci-range.
+
+"""
 
 import argparse
 import json
@@ -13,6 +34,7 @@ from pathlib import Path
 SUBJECT_MIN_LENGTH = 10
 SUBJECT_MAX_GUIDANCE = 60
 BODY_MAX_LENGTH = 79
+BODY_MIN_LINES = 2
 
 SCISSORS_LINE = re.compile(
     r"^\s*[^\w\s]\s+------------------------ >8 ------------------------\s*$",
@@ -73,6 +95,12 @@ AI_IDENTITY_NAMES = frozenset(
 
 
 def check_message(message: str) -> tuple[list[str], list[str]]:
+    """
+    Check a commit message against the project commit message policy.
+
+    Return the policy errors and guidance warnings for the message.
+
+    """
     lines = message.splitlines()
     subject = lines[0] if lines else ""
     errors = _check_subject(subject)
@@ -111,7 +139,7 @@ def _check_subject(subject: str) -> list[str]:
 
 
 def _check_body(lines: list[str]) -> list[str]:
-    if len(lines) < 2 or not any(line.strip() for line in lines[1:]):
+    if len(lines) < BODY_MIN_LINES or not any(line.strip() for line in lines[1:]):
         return []
 
     errors = []
@@ -228,7 +256,7 @@ def _pull_request_head() -> str:
         raise ValueError(f"failed to read the pull request head SHA: {e}") from e
 
     if not isinstance(head, str):
-        raise ValueError("pull request head SHA is not text")
+        raise TypeError("pull request head SHA is not text")
 
     return head
 
@@ -269,7 +297,7 @@ def _check_ci_range() -> int:
 
     try:
         messages = _messages_from_range(base, _pull_request_head())
-    except ValueError as e:
+    except (TypeError, ValueError) as e:
         _print_error(str(e))
         return 1
 
@@ -281,6 +309,9 @@ def _check_ci_range() -> int:
 
 
 def main() -> int:
+    """
+    Parse command line arguments and run the commit message policy check.
+    """
     parser = argparse.ArgumentParser(description="Check commit messages against project policy.")
     parser.add_argument("message_file", nargs="?", type=Path, help="Git commit message file")
     parser.add_argument(

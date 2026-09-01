@@ -156,15 +156,15 @@ runs:
     - name: Get Rust toolchain version
       id: rust-toolchain
       shell: bash
-      run: | # zizmor: ignore[github-env] Version comes from repository toolchain metadata
+      run: |
         TOOLCHAIN="$(bash scripts/rust-toolchain.sh)"
-        echo "TOOLCHAIN=$TOOLCHAIN" >> "$GITHUB_ENV"
+        printf 'toolchain=%s\n' "$TOOLCHAIN" >> "$GITHUB_OUTPUT"
 
     - name: Set up Rust toolchain
       # https://github.com/actions-rust-lang/setup-rust-toolchain
       uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
       with:
-        toolchain: ${{ env.TOOLCHAIN }}
+        toolchain: ${{ steps.rust-toolchain.outputs.toolchain }}
         components: clippy,rustfmt
         cache: false
         override: true
@@ -172,7 +172,7 @@ runs:
     - name: Rust cache
       if: inputs.rust-cache-enabled == 'true'
       # https://github.com/Swatinem/rust-cache
-      uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       with:
         workspaces: ${{ inputs.rust-cache-workspaces || '. -> target' }}
         cache-on-failure: ${{ inputs.rust-cache-on-failure }}
@@ -181,31 +181,30 @@ runs:
 
     - name: Get cargo-nextest version
       if: inputs.build-type != 'pre-commit'
+      id: nextest-version
       shell: bash
-      run: | # zizmor: ignore[github-env] Version comes from repository tool metadata
+      run: |
         version="$(bash scripts/cargo-tool-version.sh cargo-nextest)"
-        if [ -z "$version" ]; then
-          echo "::error::Failed to extract cargo-nextest version"
-          exit 1
-        fi
-        echo "CARGO_NEXTEST_VERSION=$version" >> "$GITHUB_ENV"
+        printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
 
     - name: Install cargo-nextest
       if: inputs.build-type != 'pre-commit' && runner.os != 'macOS'
       # https://github.com/taiki-e/install-action
-      uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+      uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d # v2.87.0
       with:
-        tool: cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
+        tool: cargo-nextest@${{ steps.nextest-version.outputs.version }}
 
     - name: Install cargo-nextest (macOS)
       if: inputs.build-type != 'pre-commit' && runner.os == 'macOS'
       shell: bash
-      run: bash scripts/ci/install-cargo-nextest.sh "${CARGO_NEXTEST_VERSION}"
+      env:
+        CARGO_NEXTEST_VERSION: ${{ steps.nextest-version.outputs.version }}
+      run: bash scripts/ci/install-cargo-nextest.sh "$CARGO_NEXTEST_VERSION"
 
     - name: Set CARGO_INCREMENTAL=0 for CI
       if: inputs.build-type != 'pre-commit'
       shell: bash
-      run: echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
+      run: echo "CARGO_INCREMENTAL=0" >> "$GITHUB_ENV"
 
     # > --------------------------------------------------
     # > Python
@@ -217,26 +216,28 @@ runs:
 
     - name: Ensure ~/.local/bin on PATH
       shell: bash
-      run: | # zizmor: ignore[github-env] The user binary path is runner-defined
+      run: | # zizmor: ignore[github-env] The fixed user binary directory must be added to PATH.
         echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
     - name: Get cache scope
+      id: cache-scope
       shell: bash
       env:
         CACHE_SCOPE: ${{ runner.os }}-${{ runner.arch }}-py${{ inputs.python-version }}
-      run: | # zizmor: ignore[github-env] All callers use fixed matrix Python versions
-        echo "CACHE_SCOPE=$CACHE_SCOPE" >> "$GITHUB_ENV"
+      run: |
+        printf 'value=%s\n' "$CACHE_SCOPE" >> "$GITHUB_OUTPUT"
 
     - name: Get pre-commit config hash
       if: inputs.build-type == 'pre-commit'
+      id: pre-commit-hash
       shell: bash
       run: |
-        python - <<'PY' >> "$GITHUB_ENV"
+        python - <<'PY' >> "$GITHUB_OUTPUT"
         import hashlib
         from pathlib import Path
 
         print(
-            f"PRE_COMMIT_CONFIG_HASH={hashlib.sha256(Path('.pre-commit-config.yaml').read_bytes()).hexdigest()}"
+            f"value={hashlib.sha256(Path('.pre-commit-config.yaml').read_bytes()).hexdigest()}"
         )
         PY
 
@@ -249,28 +250,36 @@ runs:
 
     # > --------------------------------------------------
     # > UV
-    - name: Get uv version from pyproject.toml
+    - name: Get uv version
+      id: uv-version
       shell: bash
-      run: | # zizmor: ignore[github-env] Version comes from repository project metadata
-        echo "UV_VERSION=$(bash scripts/uv-version.sh)" >> $GITHUB_ENV
+      run: |
+        printf 'version=%s\n' "$(bash scripts/uv-version.sh)" >> "$GITHUB_OUTPUT"
 
     - name: Install uv
       # https://github.com/astral-sh/setup-uv
-      uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+      uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
       with:
-        version: ${{ env.UV_VERSION }}
+        version: ${{ steps.uv-version.outputs.version }}
         enable-cache: >-
           ${{ inputs.uv-cache-enabled == 'auto'
           && runner.os == 'macOS'
           && 'false'
           || inputs.uv-cache-enabled }}
-        cache-suffix: ${{ env.CACHE_SCOPE }}-uv-${{ env.UV_VERSION }}
+        cache-suffix: ${{ steps.cache-scope.outputs.value }}-uv-${{ steps.uv-version.outputs.version }}
         prune-cache: true
 
-    - name: Set uv cache-dir
+    - name: Sync pre-commit Python dependencies
+      if: inputs.build-type == 'pre-commit'
       shell: bash
-      run: | # zizmor: ignore[github-env] uv reports its own local cache path
-        echo "UV_CACHE_DIR=$(uv cache dir)" >> $GITHUB_ENV
+      run: >-
+        VIRTUAL_ENV="" uv sync
+        --project python
+        --group dev
+        --extra visualization
+        --no-install-project
+        --locked
+        --inexact
 
     # Self-hosted and macOS runners skip setup-uv's cache post-step under auto.
     - name: Prune uv cache
@@ -292,9 +301,9 @@ runs:
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.cache/prek
-        key: ${{ env.CACHE_SCOPE }}-prek-${{ env.PRE_COMMIT_CONFIG_HASH }}
+        key: ${{ steps.cache-scope.outputs.value }}-prek-${{ steps.pre-commit-hash.outputs.value }}
         restore-keys: |
-          ${{ env.CACHE_SCOPE }}-prek-
+          ${{ steps.cache-scope.outputs.value }}-prek-
 
     # > --------------------------------------------------
     # > Cache footprint

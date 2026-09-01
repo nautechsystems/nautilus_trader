@@ -42,19 +42,21 @@ use nautilus_coinbase::{
 };
 use nautilus_common::{
     clients::DataClient,
-    live::runner::replace_data_event_sender,
+    live::runner::{replace_data_event_sender, replace_system_event_sender},
     messages::{
-        DataEvent, DataResponse,
+        DataEvent, DataResponse, SystemEvent,
         data::{
             RequestBars, RequestBookSnapshot, RequestInstrument, RequestInstruments, RequestTrades,
             SubscribeBars, SubscribeBookDeltas, SubscribeFundingRates, SubscribeIndexPrices,
             SubscribeInstrumentStatus, SubscribeQuotes, SubscribeTrades, UnsubscribeFundingRates,
             UnsubscribeIndexPrices, UnsubscribeInstrument,
         },
+        system::SocketState,
     },
     testing::wait_until_async,
 };
 use nautilus_core::{UUID4, UnixNanos};
+use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::{BarType, Data},
     enums::BookType,
@@ -63,6 +65,7 @@ use nautilus_model::{
 use rstest::rstest;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use ustr::Ustr;
 
 fn data_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data")
@@ -356,16 +359,45 @@ async fn test_data_client_connect_disconnect() {
     let addr = start_mock_server(state).await;
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     replace_data_event_sender(tx);
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
 
     let config = create_data_client_config(addr);
-    let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
+    let registry = SocketReconnectRegistry::default();
+    let mut client = registry
+        .scope(|| CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config))
+        .unwrap();
     assert!(!client.is_connected());
 
     client.connect().await.unwrap();
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    let endpoint = Ustr::from("coinbase-data-streams");
+    let handle = registry.handle(*COINBASE_CLIENT_ID, endpoint).unwrap();
+
     assert!(client.is_connected());
+    assert_eq!(change.client_id, *COINBASE_CLIENT_ID);
+    assert_eq!(change.venue, Some(*COINBASE_VENUE));
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Connected);
+    assert_eq!(
+        handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Disconnected);
 
     client.disconnect().await.unwrap();
     assert!(!client.is_connected());
+    assert!(registry.handle(*COINBASE_CLIENT_ID, endpoint).is_none());
 }
 
 #[rstest]
@@ -1453,7 +1485,7 @@ async fn test_data_client_subscribe_instrument_status_rekeys_aliased_product() {
     );
     client.subscribe_instrument_status(cmd).unwrap();
 
-    let received = Arc::new(std::sync::Mutex::new(None));
+    let received = Arc::new(parking_lot::Mutex::new(None));
     let received_clone = Arc::clone(&received);
 
     wait_until_async(
@@ -1462,7 +1494,7 @@ async fn test_data_client_subscribe_instrument_status_rekeys_aliased_product() {
             let found = loop {
                 match rx.try_recv() {
                     Ok(DataEvent::InstrumentStatus(status)) => {
-                        *received.lock().unwrap() = Some(status);
+                        *received.lock() = Some(status);
                         break true;
                     }
                     Ok(_) => {}
@@ -1477,7 +1509,6 @@ async fn test_data_client_subscribe_instrument_status_rekeys_aliased_product() {
 
     let status = received
         .lock()
-        .unwrap()
         .take()
         .expect("InstrumentStatus must be emitted for the alias side");
     assert_eq!(

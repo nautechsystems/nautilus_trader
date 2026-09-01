@@ -135,7 +135,6 @@ use crate::{
 ///
 /// This is an internal class intended to be used by the message bus to organize
 /// topics and their subscribers.
-///
 #[derive(Clone, Debug)]
 pub struct Subscription {
     /// The shareable message handler for the subscription.
@@ -735,7 +734,7 @@ impl MessageBus {
     }
 
     /// Finds the subscriptions with pattern matching the `topic`.
-    pub(crate) fn find_topic_matches(&self, topic: MStr<Topic>) -> Vec<Subscription> {
+    fn find_topic_matches(&self, topic: MStr<Topic>) -> Vec<Subscription> {
         self.subscriptions
             .iter()
             .filter_map(|sub| {
@@ -755,7 +754,7 @@ impl MessageBus {
         self.inner_matching_subscriptions(topic.into())
     }
 
-    pub(crate) fn inner_matching_subscriptions(&mut self, topic: MStr<Topic>) -> Vec<Subscription> {
+    fn inner_matching_subscriptions(&mut self, topic: MStr<Topic>) -> Vec<Subscription> {
         self.topics.get(&topic).cloned().unwrap_or_else(|| {
             let mut matches = self.find_topic_matches(topic);
             matches.sort_by(Subscription::delivery_order);

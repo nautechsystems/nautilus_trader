@@ -16,17 +16,28 @@
 //! Integration tests for `OKXDataClient`.
 
 use std::{
-    collections::HashMap, net::SocketAddr, num::NonZeroUsize, path::PathBuf, sync::Arc,
+    collections::HashMap,
+    net::SocketAddr,
+    num::NonZeroUsize,
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::Duration,
 };
 
 use axum::{
     Router,
-    extract::Query,
+    extract::{
+        Query, State,
+        ws::{WebSocket, WebSocketUpgrade},
+    },
     http::StatusCode,
-    response::{IntoResponse, Json},
+    response::{IntoResponse, Json, Response},
     routing::get,
 };
+use futures_util::StreamExt;
 use nautilus_common::{
     clients::DataClient,
     live::runner::replace_data_event_sender,
@@ -37,6 +48,7 @@ use nautilus_common::{
             RequestInstrument, RequestInstruments,
         },
     },
+    testing::wait_until_async,
 };
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
@@ -148,6 +160,39 @@ async fn start_test_server(state: TestServerState) -> SocketAddr {
     addr
 }
 
+#[derive(Clone, Default)]
+struct WsTeardownState {
+    opened: Arc<AtomicUsize>,
+    closed: Arc<AtomicUsize>,
+}
+
+async fn handle_public_ws_upgrade(
+    ws: WebSocketUpgrade,
+    State(state): State<Arc<WsTeardownState>>,
+) -> Response {
+    ws.on_upgrade(move |socket| handle_public_ws_socket(socket, state))
+}
+
+async fn handle_public_ws_socket(mut socket: WebSocket, state: Arc<WsTeardownState>) {
+    state.opened.fetch_add(1, Ordering::Relaxed);
+    while socket.next().await.is_some() {}
+    state.closed.fetch_add(1, Ordering::Relaxed);
+}
+
+async fn start_data_session_failure_server() -> (SocketAddr, Arc<WsTeardownState>) {
+    let ws_state = Arc::new(WsTeardownState::default());
+    let router = create_router(TestServerState::default()).route(
+        "/ws/public",
+        get(handle_public_ws_upgrade).with_state(Arc::clone(&ws_state)),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind failed");
+    let addr = listener.local_addr().expect("local_addr");
+    tokio::spawn(async move { axum::serve(listener, router).await.expect("serve failed") });
+    (addr, ws_state)
+}
+
 fn create_test_data_client(
     addr: SocketAddr,
     load_spreads: bool,
@@ -175,6 +220,40 @@ fn create_test_data_client(
 
     let client = OKXDataClient::new(*OKX_CLIENT_ID, config).expect("OKX data client");
     (client, rx)
+}
+
+#[tokio::test]
+async fn test_failed_connect_tears_down_public_websocket_before_retry() {
+    let (addr, ws_state) = start_data_session_failure_server().await;
+    let (mut client, _rx) = create_test_data_client(addr, true);
+
+    for attempt in 1..=2 {
+        let error = client.connect().await.unwrap_err();
+        assert!(
+            error.to_string().contains("business websocket"),
+            "expected business WebSocket failure after public transport started: {error}"
+        );
+
+        wait_until_async(
+            || {
+                let ws_state = Arc::clone(&ws_state);
+                async move { ws_state.closed.load(Ordering::Relaxed) >= attempt }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        assert_eq!(
+            ws_state.opened.load(Ordering::Relaxed),
+            attempt,
+            "each connect attempt must open a fresh public WebSocket"
+        );
+        assert_eq!(
+            ws_state.closed.load(Ordering::Relaxed),
+            attempt,
+            "failed connect must close the public WebSocket before retry"
+        );
+    }
 }
 
 fn request_instruments() -> RequestInstruments {

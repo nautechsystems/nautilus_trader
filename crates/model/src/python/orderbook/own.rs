@@ -63,7 +63,7 @@ impl OwnBookOrder {
             trader_id,
             client_order_id,
             venue_order_id,
-            side.as_specified(),
+            side,
             price,
             size,
             order_type,
@@ -107,7 +107,7 @@ impl OwnBookOrder {
     #[getter]
     #[pyo3(name = "side")]
     fn py_side(&self) -> OrderSide {
-        self.side.as_order_side()
+        self.side
     }
 
     #[getter]

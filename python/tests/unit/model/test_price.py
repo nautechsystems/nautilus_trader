@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test price behavior.
+"""
 
 import math
 import pickle
@@ -26,7 +29,10 @@ from nautilus_trader.model import PRECISION_BYTES
 from nautilus_trader.model import Price
 
 
-def test_fixed_point_constants_are_consistent():
+def test_fixed_point_constants_are_consistent() -> None:
+    """
+    Test fixed point constants are consistent.
+    """
     if HIGH_PRECISION:
         assert FIXED_PRECISION == 16
         assert FIXED_SCALAR == 1e16
@@ -37,65 +43,101 @@ def test_fixed_point_constants_are_consistent():
         assert PRECISION_BYTES == 8
 
 
-def test_nan_raises():
+def test_nan_raises() -> None:
+    """
+    Test nan raises.
+    """
     with pytest.raises(ValueError, match="NaN"):
         Price(math.nan, precision=0)
 
 
-def test_none_raises():
+def test_none_raises() -> None:
+    """
+    Test none raises.
+    """
     with pytest.raises(TypeError):
         Price(None, precision=0)
 
 
-def test_ordering_with_unsupported_type_raises():
+def test_ordering_with_unsupported_type_raises() -> None:
+    """
+    Test ordering with unsupported type raises.
+    """
     with pytest.raises(TypeError):
         _ = Price.from_int(1) < object()
 
 
-def test_negative_precision_raises():
+def test_negative_precision_raises() -> None:
+    """
+    Test negative precision raises.
+    """
     with pytest.raises(OverflowError):
         Price(1.0, precision=-1)
 
 
-def test_precision_over_max_raises():
+def test_precision_over_max_raises() -> None:
+    """
+    Test precision over max raises.
+    """
     with pytest.raises(ValueError, match="precision"):
         Price(1.0, precision=FIXED_PRECISION + 1)
 
 
-def test_value_exceeding_positive_limit_raises():
+def test_value_exceeding_positive_limit_raises() -> None:
+    """
+    Test value exceeding positive limit raises.
+    """
     with pytest.raises(ValueError, match="not in range"):
         Price(1e18, precision=0)
 
 
-def test_value_exceeding_negative_limit_raises():
+def test_value_exceeding_negative_limit_raises() -> None:
+    """
+    Test value exceeding negative limit raises.
+    """
     with pytest.raises(ValueError, match="not in range"):
         Price(-1e18, precision=0)
 
 
-def test_from_int():
+def test_from_int() -> None:
+    """
+    Test from int.
+    """
     result = Price(1, precision=1)
     assert result.raw == 10**FIXED_PRECISION
     assert str(result) == "1.0"
 
 
-def test_from_float():
+def test_from_float() -> None:
+    """
+    Test from float.
+    """
     result = Price(1.12300, precision=5)
     expected_raw = int(1.123 * (10**FIXED_PRECISION))
     assert result.raw == expected_raw
     assert str(result) == "1.12300"
 
 
-def test_from_decimal():
+def test_from_decimal() -> None:
+    """
+    Test from decimal.
+    """
     result = Price(Decimal("1.23"), precision=1)
     assert str(result) == "1.2"
 
 
-def test_from_str():
+def test_from_str() -> None:
+    """
+    Test from str.
+    """
     result = Price.from_str("1.23")
     assert str(result) == "1.23"
 
 
-def test_from_int_method():
+def test_from_int_method() -> None:
+    """
+    Test from int method.
+    """
     price = Price.from_int(100)
     assert str(price) == "100"
     assert price.precision == 0
@@ -110,13 +152,19 @@ def test_from_int_method():
         ("1e-2", "0.01", 2),
     ],
 )
-def test_from_str_various(value, string, precision):
+def test_from_str_various(value: object, string: object, precision: object) -> None:
+    """
+    Test from str various.
+    """
     price = Price.from_str(value)
     assert str(price) == string
     assert price.precision == precision
 
 
-def test_from_raw():
+def test_from_raw() -> None:
+    """
+    Test from raw.
+    """
     raw = 1000 * (10**FIXED_PRECISION)
     price = Price.from_raw(raw, 3)
     assert str(price) == "1000.000"
@@ -124,50 +172,74 @@ def test_from_raw():
     assert price == Price(1000, 3)
 
 
-def test_from_decimal_infers_precision():
+def test_from_decimal_infers_precision() -> None:
+    """
+    Test from decimal infers precision.
+    """
     price = Price.from_decimal(Decimal("123.456"))
     assert price.precision == 3
     assert str(price) == "123.456"
 
 
-def test_from_decimal_integer():
+def test_from_decimal_integer() -> None:
+    """
+    Test from decimal integer.
+    """
     price = Price.from_decimal(Decimal(100))
     assert price.precision == 0
     assert str(price) == "100"
 
 
-def test_from_decimal_high_precision():
+def test_from_decimal_high_precision() -> None:
+    """
+    Test from decimal high precision.
+    """
     price = Price.from_decimal(Decimal("1.23456789"))
     assert price.precision == 8
     assert str(price) == "1.23456789"
 
 
-def test_from_decimal_negative():
+def test_from_decimal_negative() -> None:
+    """
+    Test from decimal negative.
+    """
     price = Price.from_decimal(Decimal("-99.95"))
     assert price.precision == 2
     assert str(price) == "-99.95"
 
 
-def test_from_decimal_trailing_zeros():
+def test_from_decimal_trailing_zeros() -> None:
+    """
+    Test from decimal trailing zeros.
+    """
     price = Price.from_decimal(Decimal("1.230"))
     assert price.precision == 3
     assert str(price) == "1.230"
 
 
-def test_from_decimal_dp():
+def test_from_decimal_dp() -> None:
+    """
+    Test from decimal dp.
+    """
     price = Price.from_decimal_dp(Decimal("123.456789"), 2)
     assert price.precision == 2
     assert str(price) == "123.46"
 
 
-def test_from_decimal_dp_bankers_rounding():
+def test_from_decimal_dp_bankers_rounding() -> None:
+    """
+    Test from decimal dp bankers rounding.
+    """
     p1 = Price.from_decimal_dp(Decimal("1.005"), 2)
     p2 = Price.from_decimal_dp(Decimal("1.015"), 2)
     assert str(p1) == "1.00"
     assert str(p2) == "1.02"
 
 
-def test_from_decimal_dp_precision_limits():
+def test_from_decimal_dp_precision_limits() -> None:
+    """
+    Test from decimal dp precision limits.
+    """
     price = Price.from_decimal_dp(Decimal("1.0"), FIXED_PRECISION)
     assert price.precision == FIXED_PRECISION
 
@@ -186,13 +258,19 @@ def test_from_decimal_dp_precision_limits():
         (1.155, 2, Price(1.16, precision=2)),
     ],
 )
-def test_various_precisions(value, precision, expected):
+def test_various_precisions(value: object, precision: object, expected: object) -> None:
+    """
+    Test various precisions.
+    """
     result = Price(value, precision)
     assert result == expected
     assert result.precision == precision
 
 
-def test_equality():
+def test_equality() -> None:
+    """
+    Test equality.
+    """
     p1 = Price(1.0, precision=1)
     p2 = Price(1.5, precision=1)
     assert p1 == p1
@@ -212,7 +290,10 @@ def test_equality():
         (1.1, 1.12, False),
     ],
 )
-def test_equality_parametrized(v1, v2, expected):
+def test_equality_parametrized(v1: object, v2: object, expected: object) -> None:
+    """
+    Test equality parametrized.
+    """
     assert (Price(v1, 2) == Price(v2, 2)) == expected
 
 
@@ -225,7 +306,10 @@ def test_equality_parametrized(v1, v2, expected):
         (-1, 0, False),
     ],
 )
-def test_equality_with_int(v1, v2, expected):
+def test_equality_with_int(v1: object, v2: object, expected: object) -> None:
+    """
+    Test equality with int.
+    """
     assert (Price(v1, 0) == v2) == expected
     assert (v2 == Price(v1, 0)) == expected
 
@@ -238,7 +322,17 @@ def test_equality_with_int(v1, v2, expected):
         (-1, 0, False, False, True, True),
     ],
 )
-def test_comparisons(v1, v2, gt, ge, le, lt):
+def test_comparisons(
+    v1: object,
+    v2: object,
+    gt: object,
+    ge: object,
+    le: object,
+    lt: object,
+) -> None:
+    """
+    Test comparisons.
+    """
     p1, p2 = Price(v1, precision=0), Price(v2, precision=0)
     assert (p1 > p2) == gt
     assert (p1 >= p2) == ge
@@ -255,7 +349,10 @@ def test_comparisons(v1, v2, gt, ge, le, lt):
         (Price(-1.5, 1), Price(1.5, 1)),
     ],
 )
-def test_neg(value, expected):
+def test_neg(value: object, expected: object) -> None:
+    """
+    Test neg.
+    """
     result = -value
     assert isinstance(result, Price)
     assert result == expected
@@ -271,7 +368,10 @@ def test_neg(value, expected):
         (Price(-1.1, 1), Price(1.1, 1)),
     ],
 )
-def test_abs(value, expected):
+def test_abs(value: object, expected: object) -> None:
+    """
+    Test abs.
+    """
     result = abs(value)
     assert isinstance(result, Price)
     assert result == expected
@@ -285,7 +385,10 @@ def test_abs(value, expected):
         (Price(2.255, 3), 2, Decimal("2.26")),
     ],
 )
-def test_round(value, precision, expected):
+def test_round(value: object, precision: object, expected: object) -> None:
+    """
+    Test round.
+    """
     assert round(value, precision) == expected
 
 
@@ -305,7 +408,10 @@ def test_round(value, precision, expected):
         (Price(1, 0), Decimal("1.1"), Decimal, Decimal("2.1")),
     ],
 )
-def test_addition(v1, v2, expected_type, expected):
+def test_addition(v1: object, v2: object, expected_type: type, expected: object) -> None:
+    """
+    Test addition.
+    """
     result = v1 + v2
     assert isinstance(result, expected_type)
     assert result == expected
@@ -326,7 +432,10 @@ def test_addition(v1, v2, expected_type, expected):
         (Price(1, 0), Decimal("1.1"), Decimal, Decimal("-0.1")),
     ],
 )
-def test_subtraction(v1, v2, expected_type, expected):
+def test_subtraction(v1: object, v2: object, expected_type: type, expected: object) -> None:
+    """
+    Test subtraction.
+    """
     result = v1 - v2
     assert isinstance(result, expected_type)
     assert result == expected
@@ -345,7 +454,10 @@ def test_subtraction(v1, v2, expected_type, expected):
         (Price(1.1, 1), Decimal("1.1"), Decimal, Decimal("1.21")),
     ],
 )
-def test_multiplication(v1, v2, expected_type, expected):
+def test_multiplication(v1: object, v2: object, expected_type: type, expected: object) -> None:
+    """
+    Test multiplication.
+    """
     result = v1 * v2
     assert isinstance(result, expected_type)
     assert result == expected
@@ -364,7 +476,10 @@ def test_multiplication(v1, v2, expected_type, expected):
         (Price(1.1, 1), Decimal("1.2"), Decimal, Decimal("0.9166666666666666666666666667")),
     ],
 )
-def test_division(v1, v2, expected_type, expected):
+def test_division(v1: object, v2: object, expected_type: type, expected: object) -> None:
+    """
+    Test division.
+    """
     result = v1 / v2
     assert isinstance(result, expected_type)
     assert result == expected
@@ -383,7 +498,10 @@ def test_division(v1, v2, expected_type, expected):
         (Price(1.1, 1), Decimal("1.2"), Decimal, Decimal(0)),
     ],
 )
-def test_floor_division(v1, v2, expected_type, expected):
+def test_floor_division(v1: object, v2: object, expected_type: type, expected: object) -> None:
+    """
+    Test floor division.
+    """
     result = v1 // v2
     assert type(result) is expected_type
     assert result == expected
@@ -400,7 +518,10 @@ def test_floor_division(v1, v2, expected_type, expected):
         (Price(1.1, 1), Price(0.2, 1), Decimal, Decimal("0.1")),
     ],
 )
-def test_mod(v1, v2, expected_type, expected):
+def test_mod(v1: object, v2: object, expected_type: type, expected: object) -> None:
+    """
+    Test mod.
+    """
     result = v1 % v2
     assert type(result) is expected_type
     assert result == expected
@@ -414,7 +535,10 @@ def test_mod(v1, v2, expected_type, expected):
         (Price(1, 0), Decimal(2), Decimal(2)),
     ],
 )
-def test_max(v1, v2, expected):
+def test_max(v1: object, v2: object, expected: object) -> None:
+    """
+    Test max.
+    """
     assert max(v1, v2) == expected
 
 
@@ -426,7 +550,10 @@ def test_max(v1, v2, expected):
         (Price(2, 0), Decimal(1), Decimal(1)),
     ],
 )
-def test_min(v1, v2, expected):
+def test_min(v1: object, v2: object, expected: object) -> None:
+    """
+    Test min.
+    """
     assert min(v1, v2) == expected
 
 
@@ -442,11 +569,17 @@ def test_min(v1, v2, expected):
         ("9007199253.999999999", 9_007_199_253),
     ],
 )
-def test_int(value, expected):
+def test_int(value: object, expected: object) -> None:
+    """
+    Test int.
+    """
     assert int(Price.from_str(value)) == expected
 
 
-def test_hash():
+def test_hash() -> None:
+    """
+    Test hash.
+    """
     p1 = Price(1.1, 1)
     p2 = Price(1.1, 1)
     assert isinstance(hash(p1), int)
@@ -464,11 +597,17 @@ def test_hash():
         (-1.1, 1, "-1.1"),
     ],
 )
-def test_str(value, precision, expected):
+def test_str(value: object, precision: object, expected: object) -> None:
+    """
+    Test str.
+    """
     assert str(Price(value, precision=precision)) == expected
 
 
-def test_repr():
+def test_repr() -> None:
+    """
+    Test repr.
+    """
     assert repr(Price(1.1, 1)) == "Price(1.1)"
     assert repr(Price(1.00000, 5)) == "Price(1.00000)"
 
@@ -477,14 +616,20 @@ def test_repr():
     ("value", "expected"),
     [(0, 0), (-0, 0), (-1, -1), (1, 1), (1.1, 1.1), (-1.1, -1.1)],
 )
-def test_as_double(value, expected):
+def test_as_double(value: object, expected: object) -> None:
+    """
+    Test as double.
+    """
     assert Price(value, 1).as_double() == expected
 
 
-def test_pickle():
+def test_pickle() -> None:
+    """
+    Test pickle.
+    """
     price = Price(1.2000, 2)
     pickled = pickle.dumps(price)
-    assert pickle.loads(pickled) == price  # noqa: S301
+    assert pickle.loads(pickled) == price
 
 
 @pytest.mark.parametrize(
@@ -496,7 +641,10 @@ def test_pickle():
         (Price(1.5, 1), Price(1.5, 1)),
     ],
 )
-def test_pos(value, expected):
+def test_pos(value: object, expected: object) -> None:
+    """
+    Test pos.
+    """
     result = +value
     assert isinstance(result, Price)
     assert result == expected
@@ -511,7 +659,10 @@ def test_pos(value, expected):
         (Price(1.1, 1), Decimal("1.1")),
     ],
 )
-def test_as_decimal(value, expected):
+def test_as_decimal(value: object, expected: object) -> None:
+    """
+    Test as decimal.
+    """
     assert value.as_decimal() == expected
 
 
@@ -523,19 +674,28 @@ def test_as_decimal(value, expected):
         (Price(0, 0), Decimal(0), True),
     ],
 )
-def test_equality_with_decimal(v1, v2, expected):
+def test_equality_with_decimal(v1: object, v2: object, expected: object) -> None:
+    """
+    Test equality with decimal.
+    """
     assert (v1 == v2) == expected
 
 
-def test_equality_with_none():
-    assert Price(1.0, 1) != None  # noqa: E711
+def test_equality_with_none() -> None:
+    """
+    Test equality with none.
+    """
+    assert Price(1.0, 1) != None
 
 
 @pytest.mark.parametrize(
     "value",
     ["not_a_number", "1.2.3", "++1", "--1", "1e", "e10", "1e1e1", "", "nan", "inf", "-inf"],
 )
-def test_from_str_invalid_raises(value):
+def test_from_str_invalid_raises(value: object) -> None:
+    """
+    Test from str invalid raises.
+    """
     with pytest.raises((ValueError, OverflowError)):
         Price.from_str(value)
 
@@ -559,7 +719,14 @@ def test_from_str_invalid_raises(value):
         ("0E-5", "0.00000", 5),
     ],
 )
-def test_from_str_comprehensive(value, expected_str, expected_precision):
+def test_from_str_comprehensive(
+    value: object,
+    expected_str: object,
+    expected_precision: object,
+) -> None:
+    """
+    Test from str comprehensive.
+    """
     price = Price.from_str(value)
     assert str(price) == expected_str
     assert price.precision == expected_precision
@@ -574,14 +741,24 @@ def test_from_str_comprehensive(value, expected_str, expected_precision):
         ("-0.0", "0.0", 1),
     ],
 )
-def test_from_str_zero_values(value, expected_str, expected_precision):
+def test_from_str_zero_values(
+    value: object,
+    expected_str: object,
+    expected_precision: object,
+) -> None:
+    """
+    Test from str zero values.
+    """
     price = Price.from_str(value)
     assert str(price) == expected_str
     assert price.precision == expected_precision
     assert price.as_double() == 0
 
 
-def test_from_str_boundary_values():
+def test_from_str_boundary_values() -> None:
+    """
+    Test from str boundary values.
+    """
     large = Price.from_str("1000000000")
     assert str(large) == "1000000000"
 
@@ -592,7 +769,10 @@ def test_from_str_boundary_values():
         Price.from_str("999999999999999999")
 
 
-def test_from_str_precision_preservation():
+def test_from_str_precision_preservation() -> None:
+    """
+    Test from str precision preservation.
+    """
     assert Price.from_str("100").precision == 0
     assert Price.from_str("1000000").precision == 0
     assert Price.from_str("100.0").precision == 1
@@ -618,12 +798,18 @@ def test_from_str_precision_preservation():
         ("1.0000000000000001", "1.0000000000000001"),
     ],
 )
-def test_from_str_rounding_behavior(input_val, expected):
+def test_from_str_rounding_behavior(input_val: object, expected: object) -> None:
+    """
+    Test from str rounding behavior.
+    """
     price = Price.from_str(input_val)
     assert str(price) == expected
 
 
-def test_from_decimal_zero():
+def test_from_decimal_zero() -> None:
+    """
+    Test from decimal zero.
+    """
     p1 = Price.from_decimal(Decimal(0))
     assert str(p1) == "0"
     assert p1.precision == 0
@@ -643,19 +829,32 @@ def test_from_decimal_zero():
         (Decimal("5e-5"), "0.00005", 5),
     ],
 )
-def test_from_decimal_scientific_notation(value, expected_str, expected_precision):
+def test_from_decimal_scientific_notation(
+    value: object,
+    expected_str: object,
+    expected_precision: object,
+) -> None:
+    """
+    Test from decimal scientific notation.
+    """
     price = Price.from_decimal(value)
     assert str(price) == expected_str
     assert price.precision == expected_precision
 
 
-def test_from_decimal_very_small_values():
+def test_from_decimal_very_small_values() -> None:
+    """
+    Test from decimal very small values.
+    """
     price = Price.from_decimal(Decimal("0.0000000000000001"))
     assert str(price) == "0.0000000000000001"
     assert price.precision == 16
 
 
-def test_from_decimal_precision_preservation():
+def test_from_decimal_precision_preservation() -> None:
+    """
+    Test from decimal precision preservation.
+    """
     assert Price.from_decimal(Decimal(100)).precision == 0
     assert Price.from_decimal(Decimal(1000000)).precision == 0
     assert Price.from_decimal(Decimal("100.0")).precision == 1
@@ -663,7 +862,10 @@ def test_from_decimal_precision_preservation():
     assert Price.from_decimal(Decimal("100.12345")).precision == 5
 
 
-def test_from_decimal_equivalent_to_from_str():
+def test_from_decimal_equivalent_to_from_str() -> None:
+    """
+    Test from decimal equivalent to from str.
+    """
     for value in ["1.23", "100.00", "0.001", "99999.9", "0.5", "1234.5678", "-99.99"]:
         from_str = Price.from_str(value)
         from_dec = Price.from_decimal(Decimal(value))
@@ -671,54 +873,81 @@ def test_from_decimal_equivalent_to_from_str():
         assert from_str.precision == from_dec.precision
 
 
-def test_zero():
+def test_zero() -> None:
+    """
+    Test zero.
+    """
     p = Price.zero(2)
     assert str(p) == "0.00"
     assert p.precision == 2
     assert p.is_zero()
 
 
-def test_is_zero():
+def test_is_zero() -> None:
+    """
+    Test is zero.
+    """
     assert Price(0, 2).is_zero()
     assert not Price(1.0, 1).is_zero()
 
 
-def test_is_positive():
+def test_is_positive() -> None:
+    """
+    Test is positive.
+    """
     assert Price(1.0, 1).is_positive()
     assert not Price(-1.0, 1).is_positive()
     assert not Price(0, 0).is_positive()
 
 
-def test_checked_add_within_bounds():
+def test_checked_add_within_bounds() -> None:
+    """
+    Test checked add within bounds.
+    """
     assert Price(10.0, 2).checked_add(Price(5.0, 2)) == Price(15.0, 2)
     assert Price(10.0, 2).checked_add(Price(-3.0, 2)) == Price(7.0, 2)
 
 
-def test_checked_sub_within_bounds():
+def test_checked_sub_within_bounds() -> None:
+    """
+    Test checked sub within bounds.
+    """
     assert Price(10.0, 2).checked_sub(Price(3.0, 2)) == Price(7.0, 2)
     assert Price(3.0, 2).checked_sub(Price(10.0, 2)) == Price(-7.0, 2)
 
 
-def test_checked_arith_uses_max_precision():
+def test_checked_arith_uses_max_precision() -> None:
+    """
+    Test checked arith uses max precision.
+    """
     sum_ = Price(10.5, 1).checked_add(Price(5.25, 2))
     assert sum_ is not None
     assert sum_.precision == 2
     assert float(sum_) == 15.75
 
 
-def test_checked_add_above_max_returns_none():
+def test_checked_add_above_max_returns_none() -> None:
+    """
+    Test checked add above max returns none.
+    """
     price_max = 17_014_118_346_046.0 if HIGH_PRECISION else 9_223_372_036.0
     near_max = Price(price_max, 0)
     assert near_max.checked_add(Price(1_000_000_000.0, 0)) is None
 
 
-def test_checked_sub_below_min_returns_none():
+def test_checked_sub_below_min_returns_none() -> None:
+    """
+    Test checked sub below min returns none.
+    """
     price_min = -17_014_118_346_046.0 if HIGH_PRECISION else -9_223_372_036.0
     near_min = Price(price_min, 0)
     assert near_min.checked_sub(Price(1_000_000_000.0, 0)) is None
 
 
-def test_checked_arith_rejects_undef_sentinel():
+def test_checked_arith_rejects_undef_sentinel() -> None:
+    """
+    Test checked arith rejects undef sentinel.
+    """
     # PRICE_UNDEF == PriceRaw::MAX (i128 or i64 max depending on feature flag)
     raw_undef = (1 << (PRECISION_BYTES * 8 - 1)) - 1
     undef = Price.from_raw(raw_undef, 0)
@@ -729,7 +958,10 @@ def test_checked_arith_rejects_undef_sentinel():
     assert one.checked_sub(undef) is None
 
 
-def test_checked_arith_rejects_error_sentinel():
+def test_checked_arith_rejects_error_sentinel() -> None:
+    """
+    Test checked arith rejects error sentinel.
+    """
     # PRICE_ERROR == PriceRaw::MIN (i128 or i64 min depending on feature flag)
     raw_error = -(1 << (PRECISION_BYTES * 8 - 1))
     error = Price.from_raw(raw_error, 0)
@@ -738,24 +970,36 @@ def test_checked_arith_rejects_error_sentinel():
     assert one.checked_sub(error) is None
 
 
-def test_float():
+def test_float() -> None:
+    """
+    Test float.
+    """
     assert float(Price(1.5, 1)) == 1.5
     assert float(Price(0, 0)) == 0.0
     assert float(Price(-1.5, 1)) == -1.5
 
 
-def test_to_formatted_str():
+def test_to_formatted_str() -> None:
+    """
+    Test to formatted str.
+    """
     assert Price.from_str("1000000.50").to_formatted_str() == "1_000_000.50"
     assert Price.from_str("999.99").to_formatted_str() == "999.99"
     assert Price.from_str("0").to_formatted_str() == "0"
 
 
-def test_round_no_ndigits():
+def test_round_no_ndigits() -> None:
+    """
+    Test round no ndigits.
+    """
     result = round(Price(1.6, 1))
     assert result == Decimal(2)
 
 
-def test_from_mantissa_exponent():
+def test_from_mantissa_exponent() -> None:
+    """
+    Test from mantissa exponent.
+    """
     p = Price.from_mantissa_exponent(12345, -2, 2)
     assert str(p) == "123.45"
     assert p.precision == 2

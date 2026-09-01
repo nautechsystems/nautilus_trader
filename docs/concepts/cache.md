@@ -1,19 +1,19 @@
 # Cache
 
-The `Cache` is the central in‑memory store for trading state and recent market data. Actors and
+The `Cache` is the central in-memory store for trading state and recent market data. Actors and
 strategies use it to read data maintained by the data and execution engines or to share raw bytes
-under application‑defined keys.
+under application-defined keys.
 
 The cache:
 
 - Stores current order books and bounded histories of quotes, trades, bars, and other market data.
 - Tracks orders, positions, accounts, instruments, and currencies until they are purged or reset.
-- Shares caller‑serialized data between components and persists it when a backing database is
+- Shares caller-serialized data between components and persists it when a backing database is
   configured.
 
 ## How caching works
 
-The engines add built‑in data to the `Cache` as events flow through the system. Live adapters feed
+The engines add built-in data to the `Cache` as events flow through the system. Live adapters feed
 events to the engine asynchronously, so the cache changes when the engine processes an event, not
 when the adapter first receives it.
 
@@ -32,7 +32,7 @@ flowchart LR
     data --> engine --> cache --> callback
 ```
 
-For the full step‑by‑step trace, see
+For the full step-by-step trace, see
 [Data flow: life of a quote tick](architecture.md#data-flow-life-of-a-quote-tick).
 
 ### Basic example
@@ -87,9 +87,9 @@ node_config = LiveNodeConfig(
 ```
 
 :::tip
-By default, the `Cache` keeps up to 10,000 values in each per‑instrument tick sequence and 10,000
+By default, the `Cache` keeps up to 10,000 values in each per-instrument tick sequence and 10,000
 bars for each bar type. These are separate limits, not combined totals. Increase them when a
-strategy needs a longer in‑memory lookback and the additional memory use is acceptable.
+strategy needs a longer in-memory lookback and the additional memory use is acceptable.
 :::
 
 ### Configuration options
@@ -116,7 +116,7 @@ let config = CacheConfig {
 ```
 
 :::note
-Each bar type maintains its own capacity. For example, if you use both 1‑minute and 5‑minute bars,
+Each bar type maintains its own capacity. For example, if you use both 1-minute and 5-minute bars,
 each stores up to `bar_capacity` bars.
 When `bar_capacity` is reached, the `Cache` automatically removes the oldest data.
 :::
@@ -125,16 +125,16 @@ When `bar_capacity` is reached, the `Cache` automatically removes the oldest dat
 
 Configure a database backing to recover successfully persisted, supported cache records after a
 restart. Restorable records include general data, currencies, instruments, accounts, orders, and
-positions. Startup does not restore bounded market‑data histories or the running process.
+positions. Startup does not restore bounded market-data histories or the running process.
 
 `CacheConfig` controls cache behavior. Connection settings belong to the concrete backing config,
 such as `RedisCacheConfig` or `PostgresCacheConfig`.
 
 A backing is a recovery mechanism, not a complete event archive or a synchronized distributed
-cache. Each node owns its in‑memory cache; pointing multiple nodes at the same database namespace
+cache. Each node owns its in-memory cache; pointing multiple nodes at the same database namespace
 does not keep those caches coherent.
 
-Rust‑native callers build a concrete database config and use the `CacheDatabaseFactory` trait to
+Rust-native callers build a concrete database config and use the `CacheDatabaseFactory` trait to
 construct the adapter passed into the system builder:
 
 ```rust
@@ -164,7 +164,7 @@ let cache_database = database
     .await?;
 ```
 
-For a Rust‑native live node, attach the adapter before startup:
+For a Rust-native live node, attach the adapter before startup:
 
 ```rust
 let node_config = LiveNodeConfig {
@@ -176,7 +176,7 @@ node.set_cache_database(cache_database)?;
 node.run().await?;
 ```
 
-With the default `LiveExecEngineConfig.load_cache = true`, the node restores persisted cache state
+With the default `LiveExecutionEngineConfig.load_cache = true`, the node restores persisted cache state
 and rebuilds derived indexes before connecting clients or reconciling execution state. Setting
 `CacheConfig.flush_on_start = true` clears the backing instead.
 
@@ -215,7 +215,7 @@ buffer when `CacheConfig.buffer_interval_ms` is set. Returning straight from `ru
 ### Accessing market data
 
 The `Cache` provides access to order books, quotes, trades, bars, and other market data. Bounded
-market‑data sequences use reverse indexing, so the most recent entry sits at index 0.
+market-data sequences use reverse indexing, so the most recent entry sits at index 0.
 
 #### Bar access
 
@@ -502,7 +502,7 @@ venue_instrument_ids = self.cache.instrument_ids(
 
 ### Purging cached data
 
-Long‑running sessions accumulate closed orders, closed positions, account events, and
+Long-running sessions accumulate closed orders, closed positions, account events, and
 unused instruments. The cache exposes targeted and bulk purge methods so strategies and
 the live trading engine can keep memory bounded without restarting the system.
 
@@ -510,21 +510,21 @@ the live trading engine can keep memory bounded without restarting the system.
 
 Use these to drop a single entity. Each refuses to purge while the entity is still active.
 
-- `cache.purge_order(client_order_id)`: removes the order and every order‑keyed index entry.
+- `cache.purge_order(client_order_id)`: removes the order and every order-keyed index entry.
   Skips open orders.
-- `cache.purge_position(position_id)`: removes the position, its snapshots, and position‑keyed
+- `cache.purge_position(position_id)`: removes the position, its snapshots, and position-keyed
   index entries. Skips open positions.
-- `cache.purge_instrument(instrument_id)`: removes the instrument and every per‑instrument
+- `cache.purge_instrument(instrument_id)`: removes the instrument and every per-instrument
   map (order book, quotes, trades, mark/index/funding prices, instrument status, greeks,
-  and bars referencing the instrument). Skips while any associated order is non‑terminal
+  and bars referencing the instrument). Skips while any associated order is non-terminal
   (anything that has not reached a closed state, including initialized, submitted,
   accepted, emulated, released, and inflight orders) or any associated position is
-  non‑closed.
+  non-closed.
 
 :::warning
 `purge_instrument` is intended for actors and strategies with their own lifecycle logic
 for deciding when an instrument is no longer needed. Purging an instrument that another
-component still relies on causes missing instrument lookups and loses market‑data
+component still relies on causes missing instrument lookups and loses market-data
 history. Active subscriptions belong to the data engine, so unsubscribe before purging
 if you no longer want updates.
 :::
@@ -543,15 +543,15 @@ lookback window in seconds.
 
 #### Automatic purging in live trading
 
-`LiveExecEngineConfig` schedules the bulk purges on a timer. All purge intervals default to `None`,
+`LiveExecutionEngineConfig` schedules the bulk purges on a timer. All purge intervals default to `None`,
 which disables the corresponding loop. Set an interval to enable a loop and set its buffer or
 lookback to control how recent entries remain protected. This example uses the recommended starting
-values from the live‑trading configuration guide:
+values from the live-trading configuration guide:
 
 ```python
-from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecutionEngineConfig
 
-exec_engine = LiveExecEngineConfig(
+exec_engine = LiveExecutionEngineConfig(
     purge_closed_orders_interval_mins=15,
     purge_closed_orders_buffer_mins=60,
     purge_closed_positions_interval_mins=15,
@@ -575,7 +575,7 @@ strategy that owns the instrument's lifecycle.
 
 ### Custom data
 
-The `Cache` stores raw bytes under application‑defined string keys. Serialize values before adding
+The `Cache` stores raw bytes under application-defined string keys. Serialize values before adding
 them and deserialize them after retrieval. Actors and strategies can use these entries to share
 small amounts of application data.
 
@@ -634,18 +634,18 @@ Use cache entries for shared, serialized data and strategy variables for local w
 
 - Available to actors and strategies that share the system cache.
 - Can persist general byte entries when a backing database is configured and writes complete.
-- Remains available when an individual strategy resets, but a cache or execution‑engine reset clears
-  the in‑memory entries.
+- Remains available when an individual strategy resets, but a cache or execution-engine reset clears
+  the in-memory entries.
 
 **Strategy variables**:
 
-- Keep typed, strategy‑specific calculations and intermediate values encapsulated.
+- Keep typed, strategy-specific calculations and intermediate values encapsulated.
 - Do not expose values to other components or persist them automatically.
 
 Actor and strategy state persistence across process restarts uses separate `on_save` and `on_load`
 hooks with a supported backing. See the
 [cache database configuration](../how_to/configure_live_trading.md#cache-database-configuration)
-section of the live‑trading guide.
+section of the live-trading guide.
 
 Serialize shared data before adding it to the cache:
 

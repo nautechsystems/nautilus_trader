@@ -26,7 +26,7 @@
 
 use std::sync::Arc;
 
-use nautilus_common::live::get_runtime;
+use futures_util::{StreamExt, stream::FuturesUnordered};
 use nautilus_model::{
     enums::{OrderSide, TimeInForce},
     identifiers::InstrumentId,
@@ -337,32 +337,27 @@ impl OrderSubmitter {
             );
 
             let mut tx_hashes = Vec::with_capacity(orders.len());
-            let mut handles = Vec::with_capacity(orders.len());
+            let mut submissions = FuturesUnordered::new();
 
             for params in orders {
                 let tx_manager = Arc::clone(&self.tx_manager);
                 let broadcaster = Arc::clone(&self.broadcaster);
                 let order_builder = Arc::clone(&self.order_builder);
 
-                let handle = get_runtime().spawn(async move {
+                submissions.push(async move {
                     let msg = order_builder.build_limit_order_from_params(&params, block_height)?;
                     let operation = format!("Submit short-term order {}", params.client_order_id);
                     broadcaster
                         .broadcast_short_term(&tx_manager, vec![msg], &operation)
                         .await
                 });
-
-                handles.push(handle);
             }
 
             // Collect results
-            for handle in handles {
-                match handle.await {
-                    Ok(Ok(tx_hash)) => tx_hashes.push(tx_hash),
-                    Ok(Err(e)) => return Err(e),
-                    Err(e) => {
-                        return Err(DydxError::Nautilus(anyhow::anyhow!("Task join error: {e}")));
-                    }
+            while let Some(result) = submissions.next().await {
+                match result {
+                    Ok(tx_hash) => tx_hashes.push(tx_hash),
+                    Err(e) => return Err(e),
                 }
             }
 

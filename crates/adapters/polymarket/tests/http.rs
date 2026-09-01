@@ -759,7 +759,8 @@ async fn start_mock_server(state: TestServerState) -> SocketAddr {
 
     wait_until_async(
         || async move {
-            HttpClient::new(HashMap::new(), vec![], vec![], None, None, None)
+            HttpClient::builder()
+                .build()
                 .unwrap()
                 .get(format!("http://{addr}/health"), None, None, Some(1), None)
                 .await
@@ -1019,6 +1020,26 @@ async fn test_cancel_market_orders_sends_market_param() {
             .as_str()
             .unwrap(),
         market
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_market_orders_sends_asset_id_without_market() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_clob_client(&addr);
+    let asset_id = "71321045679252212594626385532706912750332728571942532289631379312455583992563";
+
+    let params = CancelMarketOrdersParams {
+        market: None,
+        asset_id: Some(asset_id.to_string()),
+    };
+    client.cancel_market_orders(params).await.unwrap();
+
+    assert_eq!(
+        state.last_body.lock().await.as_ref(),
+        Some(&json!({"asset_id": asset_id}))
     );
 }
 
@@ -4667,6 +4688,67 @@ async fn test_get_positions_paginates_distinct_pages_with_offset() {
     assert_eq!(queries[0].get("offset").map(String::as_str), Some("0"));
     assert_eq!(queries[1].get("offset").map(String::as_str), Some("100"));
     assert_eq!(queries[2].get("offset").map(String::as_str), Some("200"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_positions_fails_closed_at_offset_ceiling() {
+    let state = TestServerState::default();
+    let pages = (0..=100).map(|page| {
+        let start = page * 100;
+        Value::Array((start..start + 100).map(make_data_api_position).collect())
+    });
+    state.data_api_position_pages.lock().await.extend(pages);
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_data_api_client(&addr);
+
+    let error = client.get_positions(TEST_ADDRESS).await.unwrap_err();
+    let queries = state.data_api_position_query_log.lock().await;
+
+    assert_eq!(
+        error.to_string(),
+        "decode error: /positions pagination exhausted the maximum supported offset 10000",
+    );
+    assert_eq!(queries.len(), 101);
+    assert_eq!(
+        queries
+            .last()
+            .and_then(|query| query.get("offset"))
+            .map(String::as_str),
+        Some("10000"),
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_positions_accepts_partial_page_at_offset_ceiling() {
+    let state = TestServerState::default();
+    let full_pages = (0..100).map(|page| {
+        let start = page * 100;
+        Value::Array((start..start + 100).map(make_data_api_position).collect())
+    });
+    state
+        .data_api_position_pages
+        .lock()
+        .await
+        .extend(full_pages.chain([Value::Array(vec![make_data_api_position(10_000)])]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_data_api_client(&addr);
+
+    let positions = client.get_positions(TEST_ADDRESS).await.unwrap();
+    let queries = state.data_api_position_query_log.lock().await;
+
+    assert_eq!(positions.len(), 10_001);
+    assert_eq!(queries.len(), 101);
+    assert_eq!(
+        queries
+            .last()
+            .and_then(|query| query.get("offset"))
+            .map(String::as_str),
+        Some("10000"),
+    );
 }
 
 #[rstest]

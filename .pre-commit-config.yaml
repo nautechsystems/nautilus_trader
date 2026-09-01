@@ -3,6 +3,23 @@ default_install_hook_types: [pre-commit, commit-msg]
 default_stages: [pre-commit]
 
 repos:
+  # nautilus-engineering: sync begin
+  - repo: local
+    hooks:
+      - id: check-nautilus-engineering-sync
+        name: check Nautilus engineering sync
+        entry: bash scripts/check-nautilus-engineering-sync.bash --staged
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: check-nautilus-engineering-pre-commit
+        name: check Nautilus engineering pre-commit section
+        entry: python3 scripts/manage-nautilus-engineering-pre-commit.py check --staged
+        language: system
+        pass_filenames: false
+        always_run: true
+  # nautilus-engineering: sync end
+
   ##############################################################################
   #  General checks
   ##############################################################################
@@ -28,6 +45,7 @@ repos:
       - id: check-xml
       - id: check-yaml
 
+  # nautilus-engineering: hooks begin
   - repo: https://github.com/scop/pre-commit-shfmt
     rev: v3.13.1-1
     hooks:
@@ -35,25 +53,31 @@ repos:
         args: ["-i", "2", "-ci", "-sr", "-ln", "bash", "-w"]
 
   - repo: https://github.com/shellcheck-py/shellcheck-py
-    rev: v0.11.0.1
+    rev: v0.11.0.1-1
     hooks:
       - id: shellcheck
 
-  - repo: https://github.com/google/yamlfmt
-    rev: v0.21.0
+  - repo: local
     hooks:
-      - id: yamlfmt
+      - id: taplo-format
+        name: taplo-format
+        entry: taplo format
+        language: rust
+        types: [toml]
+        additional_dependencies:
+          - cli:taplo-cli:0.10.0
 
   - repo: https://github.com/adrienverge/yamllint
     rev: v1.38.0
     hooks:
       - id: yamllint
         args: [--strict]
+  # nautilus-engineering: hooks end
 
-  - repo: https://github.com/ComPWA/taplo-pre-commit
-    rev: v0.9.3
+  - repo: https://github.com/google/yamlfmt
+    rev: v0.21.0
     hooks:
-      - id: taplo-format
+      - id: yamlfmt
 
   - repo: https://github.com/hadolint/hadolint
     rev: v2.15.1
@@ -130,7 +154,7 @@ repos:
 
       - id: check-unicode-typography
         name: check Unicode typography
-        description: Reject typographic dashes, curly quotes, and emoji-style check/cross marks
+        description: Reject non-breaking hyphens, typographic dashes, curly quotes, and emoji-style check/cross marks
         entry: bash .pre-commit-hooks/check_unicode_typography.sh
         language: system
         types: [text]
@@ -153,10 +177,11 @@ repos:
       - id: check-no-build-packages
         name: check no-build-packages
         description: Ensures `[tool.uv].no-build-package` matches `uv.lock`
-        entry: bash scripts/check-no-build-packages.sh
+        entry: bash scripts/check-no-build-packages.sh --pair python/uv.lock:python/pyproject.toml
         language: system
         files: ^python/(uv\.lock|pyproject\.toml)$
         pass_filenames: false
+        always_run: true
 
       - id: python-test-collection
         name: Python test collection
@@ -393,15 +418,11 @@ repos:
       - id: cargo-cooldown
         name: cargo cooldown
         description: Blocks crate versions published inside the cooldown window
-        entry: >-
-          bash scripts/check-cargo-cooldown.sh
-          --lock Cargo.lock
-          --lock crates/adapters/lighter/fuzz/pornin/Cargo.lock
+        entry: bash scripts/check-cargo-cooldown.sh
         language: system
         files: >-
           (?x)^(
-            Cargo\.(lock|toml)|
-            crates/adapters/lighter/fuzz/pornin/Cargo\.lock|
+            (?:.*/)?Cargo\.(lock|toml)|
             scripts/check-cargo-cooldown\.sh
           )$
         pass_filenames: false
@@ -423,7 +444,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.3
+    rev: v0.16.4
     hooks:
       - id: ruff
         name: ruff
@@ -439,6 +460,7 @@ repos:
       - id: docformatter
         language_version: python3.13 # Pin to 3.13 due to incompatibility with 3.14
         additional_dependencies: [tomli]
+        exclude: ^scripts/(check-markdown-tables|security-audit)\.py$
         args:
           - "--wrap-summaries"
           - "88"
@@ -451,11 +473,28 @@ repos:
           - "--in-place"
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.12.5 # Must match [uv] in tools.toml
+    rev: 0.12.6 # Must match [uv] in .nautilus-engineering/tools.toml
     hooks:
       - id: uv-lock
         args: ["--project", "python"]
         files: ^python/(uv\.lock|pyproject\.toml)$
+
+  - repo: local
+    hooks:
+      - id: ty
+        name: ty
+        description: Type-checks Python examples
+        entry: bash scripts/ci/check-python-types.bash python examples
+        language: system
+        files: >-
+          (?x)^(
+            Makefile|
+            docs/tutorials/.*\.py|
+            examples/.*\.py|
+            python/(nautilus_trader/.*|pyproject\.toml|uv\.lock)|
+            scripts/ci/check-python-types\.bash
+          )$
+        pass_filenames: false
 
   - repo: https://github.com/kynan/nbstripout
     rev: 0.9.1

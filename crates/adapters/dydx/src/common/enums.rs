@@ -128,26 +128,12 @@ pub enum DydxOrderSide {
     Sell,
 }
 
-impl TryFrom<OrderSide> for DydxOrderSide {
-    type Error = DydxError;
-
-    fn try_from(value: OrderSide) -> Result<Self, Self::Error> {
+impl From<OrderSide> for DydxOrderSide {
+    fn from(value: OrderSide) -> Self {
         match value {
-            OrderSide::Buy => Ok(Self::Buy),
-            OrderSide::Sell => Ok(Self::Sell),
-            _ => Err(DydxError::InvalidOrderSide(format!("{value:?}"))),
+            OrderSide::Buy => Self::Buy,
+            OrderSide::Sell => Self::Sell,
         }
-    }
-}
-
-impl DydxOrderSide {
-    /// Tries to convert from Nautilus `OrderSide`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the order side is not `Buy` or `Sell`.
-    pub fn try_from_order_side(value: OrderSide) -> anyhow::Result<Self> {
-        Self::try_from(value).map_err(|e| anyhow::anyhow!("{e}"))
     }
 }
 
@@ -881,15 +867,8 @@ mod tests {
 
     #[rstest]
     fn test_order_side_conversion_from_nautilus() {
-        assert_eq!(
-            DydxOrderSide::try_from(OrderSide::Buy).unwrap(),
-            DydxOrderSide::Buy
-        );
-        assert_eq!(
-            DydxOrderSide::try_from(OrderSide::Sell).unwrap(),
-            DydxOrderSide::Sell
-        );
-        assert!(DydxOrderSide::try_from(OrderSide::NoOrderSide).is_err());
+        assert_eq!(DydxOrderSide::from(OrderSide::Buy), DydxOrderSide::Buy);
+        assert_eq!(DydxOrderSide::from(OrderSide::Sell), DydxOrderSide::Sell);
     }
 
     #[rstest]

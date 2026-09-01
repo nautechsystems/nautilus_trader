@@ -389,6 +389,54 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn test_load_all_registers_persisted_currencies_before_instruments() {
+        let mut database = get_test_pg_cache_database().await.unwrap();
+        database.flush().unwrap();
+
+        let currency = Currency::new(
+            "DBTEST",
+            7,
+            0,
+            "Database test currency",
+            CurrencyType::Crypto,
+        );
+        let mut currency_pair = currency_pair_ethusdt();
+        currency_pair.base_currency = currency;
+        let instrument = InstrumentAny::CurrencyPair(currency_pair);
+
+        assert_eq!(Currency::try_from_str(currency.code.as_str()), None);
+
+        database.add_currency(&currency).unwrap();
+        database.add_currency(&instrument.quote_currency()).unwrap();
+        database.add_instrument(&instrument).unwrap();
+        database.close().unwrap();
+
+        let mut database = get_test_pg_cache_database().await.unwrap();
+        let loaded = database.load_all().await.unwrap();
+
+        let registered_currency = Currency::try_from_str(currency.code.as_str()).unwrap();
+        let loaded_currency = *loaded.currencies.get(&currency.code).unwrap();
+        let loaded_instrument = loaded.instruments.get(&instrument.id()).unwrap();
+        let loaded_base_currency = loaded_instrument.base_currency().unwrap();
+
+        for actual in [registered_currency, loaded_currency, loaded_base_currency] {
+            assert_eq!(actual.code, currency.code);
+            assert_eq!(actual.precision, currency.precision);
+            assert_eq!(actual.iso4217, currency.iso4217);
+            assert_eq!(actual.name, currency.name);
+            assert_eq!(actual.currency_type, currency.currency_type);
+        }
+
+        assert_eq!(
+            serde_json::to_string(loaded_instrument).unwrap(),
+            serde_json::to_string(&instrument).unwrap()
+        );
+
+        database.flush().unwrap();
+        database.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_failed_async_position_load_returns_error() {
         let mut database = get_test_pg_cache_database().await.unwrap();
         database.pool.close().await;

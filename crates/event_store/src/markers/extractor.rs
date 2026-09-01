@@ -299,7 +299,7 @@ fn fingerprint_deltas(deltas: &OrderBookDeltas) -> [u8; 32] {
     hasher.update(&(deltas.deltas.len() as u64).to_be_bytes());
     for delta in &deltas.deltas {
         hasher.update(&[delta.action as u8]);
-        hasher.update(&[delta.order.side as u8]);
+        hasher.update(&[delta.order.side.map_or(0, |side| side as u8)]);
         write_price_raw(&mut hasher, delta.order.price);
         write_quantity_raw(&mut hasher, delta.order.size);
         hasher.update(&delta.order.order_id.to_be_bytes());
@@ -734,7 +734,7 @@ mod tests {
         ));
     })]
     #[case::action(|d: &mut OrderBookDeltas| d.deltas[0].action = BookAction::Delete)]
-    #[case::side(|d: &mut OrderBookDeltas| d.deltas[0].order.side = OrderSide::Sell)]
+    #[case::side(|d: &mut OrderBookDeltas| d.deltas[0].order.side = OrderSide::Sell.into())]
     #[case::price(|d: &mut OrderBookDeltas| d.deltas[0].order.price = Price::from("3000.01"))]
     #[case::size(|d: &mut OrderBookDeltas| d.deltas[0].order.size = Quantity::from("1.11"))]
     #[case::order_id(|d: &mut OrderBookDeltas| d.deltas[0].order.order_id = 99)]

@@ -158,7 +158,7 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
-    use crate::arrow::get_raw_price;
+    use crate::arrow::{fixed_size_binary, get_raw_price};
 
     #[rstest]
     fn test_get_schema() {
@@ -252,8 +252,7 @@ mod tests {
 
         let raw_price1 = (50.20 * FIXED_SCALAR) as PriceRaw;
         let raw_price2 = (50.30 * FIXED_SCALAR) as PriceRaw;
-        let value =
-            FixedSizeBinaryArray::from(vec![&raw_price1.to_le_bytes(), &raw_price2.to_le_bytes()]);
+        let value = fixed_size_binary(vec![&raw_price1.to_le_bytes(), &raw_price2.to_le_bytes()]);
         let ts_event = UInt64Array::from(vec![1, 2]);
         let ts_init = UInt64Array::from(vec![3, 4]);
 
@@ -286,7 +285,7 @@ mod tests {
         ]);
 
         let invalid_price: PriceRaw = PriceRaw::MAX - 1000;
-        let value = FixedSizeBinaryArray::from(vec![&invalid_price.to_le_bytes()]);
+        let value = fixed_size_binary(vec![&invalid_price.to_le_bytes()]);
         let ts_event = UInt64Array::from(vec![1]);
         let ts_init = UInt64Array::from(vec![2]);
 
@@ -316,7 +315,7 @@ mod tests {
         ]);
 
         let raw_price = (50.20 * FIXED_SCALAR) as PriceRaw;
-        let value = FixedSizeBinaryArray::from(vec![&raw_price.to_le_bytes()]);
+        let value = fixed_size_binary(vec![&raw_price.to_le_bytes()]);
         let ts_event = UInt64Array::from(vec![1]);
         let ts_init = UInt64Array::from(vec![2]);
 

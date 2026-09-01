@@ -25,7 +25,6 @@ from nautilus_trader.core import UUID4
 from nautilus_trader.model import Bar
 from nautilus_trader.model import BarType
 from nautilus_trader.model import ClientOrderId
-from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import MarketOrder
 from nautilus_trader.model import OrderSide
@@ -41,7 +40,10 @@ class EMACrossConfig(StrategyConfig):
     Configuration for the EMA cross test strategy.
     """
 
-    def __new__(cls, *args, strategy_id: str | None = None, **kwargs):
+    def __new__(cls, *args: object, strategy_id: str | None = None, **kwargs: object) -> object:
+        """
+        Create a new instance.
+        """
         # `StrategyConfig` is a pyo3 @final type whose `__new__` validates
         # `strategy_id` as a `StrategyId`. For tests that need to register
         # multiple instances of the same strategy class, we accept a string
@@ -66,9 +68,12 @@ class EMACrossConfig(StrategyConfig):
         trade_size: str,
         fast_ema_period: int = 10,
         slow_ema_period: int = 20,
-        strategy_id: str | None = None,
-        **kwargs,
-    ):
+        _strategy_id: str | None = None,
+        **_kwargs: object,
+    ) -> None:
+        """
+        Initialize the helper.
+        """
         # The pyo3 base initialises its state in `__new__`, so `__init__`
         # falls through to `object.__init__` which only accepts `self`.
         super().__init__()
@@ -79,7 +84,10 @@ class EMACrossConfig(StrategyConfig):
         self.slow_ema_period = slow_ema_period
 
     @property
-    def strategy_id(self):
+    def strategy_id(self) -> object:
+        """
+        Strategy id.
+        """
         if self._strategy_id_override is not None:
             return self._strategy_id_override
         return super().strategy_id
@@ -95,7 +103,10 @@ class EMACross(Strategy):
 
     """
 
-    def __init__(self, config: EMACrossConfig):
+    def __init__(self, config: EMACrossConfig) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
         self._bar_type = BarType.from_str(config.bar_type)
@@ -113,12 +124,21 @@ class EMACross(Strategy):
 
     @property
     def bar_count(self) -> int:
+        """
+        Bar count.
+        """
         return self._bar_count
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         self.subscribe_bars(self._bar_type)
 
-    def on_bar(self, bar: Bar):
+    def on_bar(self, bar: Bar) -> None:
+        """
+        On bar.
+        """
         close = float(bar.close)
         self._bar_count += 1
 
@@ -144,7 +164,7 @@ class EMACross(Strategy):
         elif not fast_above and was_above:
             self._enter(OrderSide.SELL)
 
-    def _enter(self, side: OrderSide):
+    def _enter(self, side: OrderSide) -> None:
         if self._position_side == PositionSide.LONG and side == OrderSide.BUY:
             return
         if self._position_side == PositionSide.SHORT and side == OrderSide.SELL:
@@ -160,14 +180,14 @@ class EMACross(Strategy):
         else:
             self._position_side = PositionSide.SHORT
 
-    def _flat(self):
+    def _flat(self) -> None:
         if self._position_side == PositionSide.LONG:
             self._submit_market(OrderSide.SELL)
         elif self._position_side == PositionSide.SHORT:
             self._submit_market(OrderSide.BUY)
         self._position_side = PositionSide.FLAT
 
-    def _submit_market(self, side: OrderSide):
+    def _submit_market(self, side: OrderSide) -> None:
         self._order_count += 1
         order = MarketOrder(
             trader_id=self.trader_id,
@@ -181,16 +201,21 @@ class EMACross(Strategy):
             time_in_force=TimeInForce.GTC,
             reduce_only=False,
             quote_quantity=False,
-            contingency_type=ContingencyType.NO_CONTINGENCY,
+            contingency_type=None,
         )
         self.submit_order(order)
 
-    def on_reset(self):
+    def on_reset(self) -> None:
+        """
+        On reset.
+        """
         self._fast_ema = 0.0
         self._slow_ema = 0.0
         self._bar_count = 0
         self._order_count = 0
         self._position_side = PositionSide.FLAT
 
-    def on_stop(self):
-        pass
+    def on_stop(self) -> None:
+        """
+        On stop.
+        """

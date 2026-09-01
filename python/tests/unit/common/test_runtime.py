@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test runtime behavior.
+"""
 
 import asyncio
 from decimal import Decimal
@@ -44,25 +47,41 @@ from nautilus_trader.model import PriceType
         (LogLevel, LogLevel.INFO, "INFO"),
     ],
 )
-def test_common_enums_support_variants_and_from_str(enum_type, member, name):
+def test_common_enums_support_variants_and_from_str(
+    enum_type: object,
+    member: object,
+    name: object,
+) -> None:
+    """
+    Test common enums support variants and from str.
+    """
     assert member in list(enum_type.variants())
     assert enum_type.from_str(name) == member
 
 
-def test_component_state_and_trigger_surface():
+def test_component_state_and_trigger_surface() -> None:
+    """
+    Test component state and trigger surface.
+    """
     assert ComponentState.READY != ComponentState.RUNNING
     assert ComponentTrigger.START != ComponentTrigger.STOP
     assert isinstance(hash(ComponentState.READY), int)
     assert isinstance(hash(ComponentTrigger.START), int)
 
 
-def test_log_format_surface():
+def test_log_format_surface() -> None:
+    """
+    Test log format surface.
+    """
     assert LogFormat.BOLD == LogFormat.BOLD
     assert LogFormat.BOLD != LogFormat.ENDC
     assert str(LogFormat.BOLD) == "LogFormat.BOLD"
 
 
-def test_signal_and_custom_data_fields():
+def test_signal_and_custom_data_fields() -> None:
+    """
+    Test signal and custom data fields.
+    """
     signal = Signal("sig", "value", 1, 2)
     custom = CustomData(DataType("X"), [1, 2], 3, 4)
 
@@ -76,7 +95,10 @@ def test_signal_and_custom_data_fields():
     assert custom.ts_init == 4
 
 
-def test_get_exchange_rate_direct_and_inverse_pairs():
+def test_get_exchange_rate_direct_and_inverse_pairs() -> None:
+    """
+    Test get exchange rate direct and inverse pairs.
+    """
     direct = get_exchange_rate(
         "USD",
         "EUR",
@@ -96,7 +118,10 @@ def test_get_exchange_rate_direct_and_inverse_pairs():
     assert inverse == pytest.approx(Decimal("0.8"), abs=Decimal("1e-9"))
 
 
-def test_message_bus_listener_stream_requires_running_event_loop():
+def test_message_bus_listener_stream_requires_running_event_loop() -> None:
+    """
+    Test message bus listener stream requires running event loop.
+    """
     listener = MessageBusListener()
 
     with pytest.raises(RuntimeError, match="running event loop"):
@@ -105,8 +130,15 @@ def test_message_bus_listener_stream_requires_running_event_loop():
     listener.close()
 
 
-def test_message_bus_listener_stream_yields_bus_message():
-    async def run_test():
+def test_message_bus_listener_stream_yields_bus_message() -> None:
+    """
+    Test message bus listener stream yields bus message.
+    """
+
+    async def run_test() -> None:
+        """
+        Run test.
+        """
         listener = MessageBusListener()
         received = []
 
@@ -137,7 +169,10 @@ def test_message_bus_listener_stream_yields_bus_message():
     asyncio.run(run_test())
 
 
-def test_greeks_calculator_construction():
+def test_greeks_calculator_construction() -> None:
+    """
+    Test greeks calculator construction.
+    """
     cache = Cache()
     clock = Clock.new_test()
     calc = GreeksCalculator(cache, clock)

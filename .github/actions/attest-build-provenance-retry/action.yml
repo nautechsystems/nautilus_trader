@@ -18,7 +18,7 @@ runs:
       id: attest-1
       continue-on-error: true
       # https://github.com/actions/attest-build-provenance
-      uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+      uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
       with:
         subject-path: ${{ inputs.subject-path }}
 
@@ -34,7 +34,7 @@ runs:
       if: steps.attest-1.outcome == 'failure'
       continue-on-error: true
       # https://github.com/actions/attest-build-provenance
-      uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+      uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
       with:
         subject-path: ${{ inputs.subject-path }}
 
@@ -49,7 +49,7 @@ runs:
       id: attest-3
       if: steps.attest-1.outcome == 'failure' && steps.attest-2.outcome == 'failure'
       # https://github.com/actions/attest-build-provenance
-      uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+      uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
       with:
         subject-path: ${{ inputs.subject-path }}
 
@@ -63,18 +63,8 @@ runs:
         ATTEMPT_2_BUNDLE_PATH: ${{ steps.attest-2.outputs.bundle-path }}
         ATTEMPT_3_OUTCOME: ${{ steps.attest-3.outcome }}
         ATTEMPT_3_BUNDLE_PATH: ${{ steps.attest-3.outputs.bundle-path }}
-      run: |-
-        BUNDLE_PATH=""
-        if [ "$ATTEMPT_1_OUTCOME" = "success" ]; then
-          BUNDLE_PATH="$ATTEMPT_1_BUNDLE_PATH"
-        elif [ "$ATTEMPT_2_OUTCOME" = "success" ]; then
-          BUNDLE_PATH="$ATTEMPT_2_BUNDLE_PATH"
-        elif [ "$ATTEMPT_3_OUTCOME" = "success" ]; then
-          BUNDLE_PATH="$ATTEMPT_3_BUNDLE_PATH"
-        fi
-
-        if [ -z "$BUNDLE_PATH" ]; then
-          echo "::error::No build provenance bundle path was produced."
-          exit 1
-        fi
-        echo "bundle-path=$BUNDLE_PATH" >> "$GITHUB_OUTPUT"
+      run: >-
+        bash scripts/ci/select-attestation-bundle.bash
+        "$ATTEMPT_1_OUTCOME" "$ATTEMPT_1_BUNDLE_PATH"
+        "$ATTEMPT_2_OUTCOME" "$ATTEMPT_2_BUNDLE_PATH"
+        "$ATTEMPT_3_OUTCOME" "$ATTEMPT_3_BUNDLE_PATH"

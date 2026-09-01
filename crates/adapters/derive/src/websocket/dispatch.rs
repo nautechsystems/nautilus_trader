@@ -15,24 +15,23 @@
 
 //! Shared state for the Derive execution WebSocket dispatch loop.
 //!
-//! Holds identity context for orders submitted through this client plus the
-//! cross-stream deduplication gates that keep replay frames and concurrent
-//! `.orders` / `.trades` updates from emitting duplicate events.
+//! Holds instrument precision, identity context for orders submitted through
+//! this client, and the cross-stream deduplication gates that keep replay
+//! frames and concurrent `.orders` / `.trades` updates from emitting duplicate
+//! events.
 //!
 //! Tracked orders (those whose identity was registered at submission time)
 //! produce proper order events (`OrderAccepted`, `OrderFilled`, `OrderCanceled`,
 //! `OrderExpired`, `OrderRejected`). Untracked frames fall back to execution
 //! reports for downstream reconciliation.
 
-use std::sync::Mutex;
-
 use ahash::AHashMap;
 use nautilus_common::cache::fifo::FifoCache;
-use nautilus_core::MUTEX_POISONED;
 use nautilus_model::{
     enums::{OrderSide, OrderType},
     identifiers::{ClientOrderId, InstrumentId, StrategyId, TradeId, VenueOrderId},
 };
+use parking_lot::Mutex;
 
 /// Capacity for the cross-source trade-id dedup cache. Sized to cover any
 /// reconciliation lookback window plausible for live trading.
@@ -55,14 +54,17 @@ pub struct OrderIdentity {
 
 /// Shared dispatch state for the Derive WS execution loop.
 ///
-/// `order_identities` populates on successful `submit_order` and is consulted
-/// by both the `.orders` and `.trades` dispatch paths to decide whether a
-/// frame belongs to a tracked or external order. `pending_modifies` and
-/// `bound_venue_order_ids` track the in-flight and current venue order id of a
-/// `private/replace` so the dispatch suppresses events for the superseded leg.
+/// Instrument precision populates from instrument definitions and governs
+/// execution report values. `order_identities` populates on successful
+/// `submit_order` and is consulted by both the `.orders` and `.trades`
+/// dispatch paths to decide whether a frame belongs to a tracked or external
+/// order. `pending_modifies` and `bound_venue_order_ids` track the in-flight
+/// and current venue order id of a `private/replace` so the dispatch suppresses
+/// events for the superseded leg.
 #[derive(Debug, Default)]
 pub struct WsDispatchState {
     order_identities: Mutex<AHashMap<ClientOrderId, OrderIdentity>>,
+    instrument_precisions: Mutex<AHashMap<InstrumentId, (u8, u8)>>,
     emitted_accepted: Mutex<FifoCache<ClientOrderId, ORDER_DEDUP_CAPACITY>>,
     emitted_canceled: Mutex<FifoCache<ClientOrderId, ORDER_DEDUP_CAPACITY>>,
     filled_orders: Mutex<FifoCache<ClientOrderId, ORDER_DEDUP_CAPACITY>>,
@@ -77,53 +79,53 @@ impl WsDispatchState {
         Self::default()
     }
 
+    /// Records price and size precision for execution report parsing.
+    pub(crate) fn register_instrument_precision(
+        &self,
+        instrument_id: InstrumentId,
+        price_precision: u8,
+        size_precision: u8,
+    ) {
+        self.instrument_precisions
+            .lock()
+            .insert(instrument_id, (price_precision, size_precision));
+    }
+
+    /// Returns price and size precision for an instrument, when registered.
+    #[must_use]
+    pub(crate) fn instrument_precision(&self, instrument_id: &InstrumentId) -> Option<(u8, u8)> {
+        self.instrument_precisions
+            .lock()
+            .get(instrument_id)
+            .copied()
+    }
+
     /// Registers an order identity captured at submission so subsequent WS
     /// frames for the same client_order_id resolve to the tracked path.
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn register_identity(&self, client_order_id: ClientOrderId, identity: OrderIdentity) {
         self.order_identities
             .lock()
-            .expect(MUTEX_POISONED)
             .insert(client_order_id, identity);
     }
 
     /// Returns the registered identity for a client order, when one was
     /// captured at submission time.
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     #[must_use]
     pub fn identity(&self, client_order_id: &ClientOrderId) -> Option<OrderIdentity> {
-        self.order_identities
-            .lock()
-            .expect(MUTEX_POISONED)
-            .get(client_order_id)
-            .copied()
+        self.order_identities.lock().get(client_order_id).copied()
     }
 
     /// Drops identity and the accepted marker for a terminal order so future
     /// stale frames (post-cancel cleanup, history backfill) take the untracked
     /// report path.
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn forget(&self, client_order_id: &ClientOrderId) {
-        self.order_identities
-            .lock()
-            .expect(MUTEX_POISONED)
-            .remove(client_order_id);
-        self.emitted_accepted
-            .lock()
-            .expect(MUTEX_POISONED)
-            .remove(client_order_id);
-        self.bound_venue_order_ids
-            .lock()
-            .expect(MUTEX_POISONED)
-            .remove(client_order_id);
-        self.pending_modifies
-            .lock()
-            .expect(MUTEX_POISONED)
-            .remove(client_order_id);
+        self.order_identities.lock().remove(client_order_id);
+        self.emitted_accepted.lock().remove(client_order_id);
+        self.bound_venue_order_ids.lock().remove(client_order_id);
+        self.pending_modifies.lock().remove(client_order_id);
     }
 
     /// Records the venue order id currently bound to a tracked client order.
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn record_venue_order_id(
         &self,
         client_order_id: ClientOrderId,
@@ -131,24 +133,20 @@ impl WsDispatchState {
     ) {
         self.bound_venue_order_ids
             .lock()
-            .expect(MUTEX_POISONED)
             .insert(client_order_id, venue_order_id);
     }
 
     /// Returns the venue order id currently bound to a tracked client order.
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     #[must_use]
     pub fn bound_venue_order_id(&self, client_order_id: &ClientOrderId) -> Option<VenueOrderId> {
         self.bound_venue_order_ids
             .lock()
-            .expect(MUTEX_POISONED)
             .get(client_order_id)
             .copied()
     }
 
     /// Records the old venue order id of an in-flight `private/replace`, set
     /// before the request so the cancel leg is suppressed.
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn mark_pending_modify(
         &self,
         client_order_id: ClientOrderId,
@@ -156,40 +154,29 @@ impl WsDispatchState {
     ) {
         self.pending_modifies
             .lock()
-            .expect(MUTEX_POISONED)
             .insert(client_order_id, old_venue_order_id);
     }
 
     /// Clears the in-flight modify marker once the replace resolves.
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn clear_pending_modify(&self, client_order_id: &ClientOrderId) {
-        self.pending_modifies
-            .lock()
-            .expect(MUTEX_POISONED)
-            .remove(client_order_id);
+        self.pending_modifies.lock().remove(client_order_id);
     }
 
     /// Returns the old venue order id of an in-flight modify, when one is set.
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     #[must_use]
     pub fn pending_modify(&self, client_order_id: &ClientOrderId) -> Option<VenueOrderId> {
-        self.pending_modifies
-            .lock()
-            .expect(MUTEX_POISONED)
-            .get(client_order_id)
-            .copied()
+        self.pending_modifies.lock().get(client_order_id).copied()
     }
 
     /// Rebinds an in-flight modify when a frame for its replacement arrives
     /// before the `private/replace` response.
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn bind_incoming_modify(
         &self,
         client_order_id: ClientOrderId,
         venue_order_id: VenueOrderId,
         terminal: bool,
     ) -> bool {
-        let mut pending = self.pending_modifies.lock().expect(MUTEX_POISONED);
+        let mut pending = self.pending_modifies.lock();
         let Some(old_venue_order_id) = pending.get(&client_order_id).copied() else {
             return false;
         };
@@ -198,7 +185,7 @@ impl WsDispatchState {
             return false;
         }
 
-        let mut bound = self.bound_venue_order_ids.lock().expect(MUTEX_POISONED);
+        let mut bound = self.bound_venue_order_ids.lock();
         if bound
             .get(&client_order_id)
             .is_some_and(|current| *current != old_venue_order_id)
@@ -215,14 +202,13 @@ impl WsDispatchState {
     /// Atomically claims a pending modify for its RPC response, optionally
     /// rebinding the replacement venue order id before clearing the marker.
     /// Returns `false` when an incoming terminal frame already resolved it.
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn take_pending_modify(
         &self,
         client_order_id: &ClientOrderId,
         old_venue_order_id: VenueOrderId,
         new_venue_order_id: Option<VenueOrderId>,
     ) -> bool {
-        let mut pending = self.pending_modifies.lock().expect(MUTEX_POISONED);
+        let mut pending = self.pending_modifies.lock();
         if pending.get(client_order_id) != Some(&old_venue_order_id) {
             return false;
         }
@@ -230,7 +216,6 @@ impl WsDispatchState {
         if let Some(new_venue_order_id) = new_venue_order_id {
             self.bound_venue_order_ids
                 .lock()
-                .expect(MUTEX_POISONED)
                 .insert(*client_order_id, new_venue_order_id);
         }
         pending.remove(client_order_id);
@@ -239,20 +224,15 @@ impl WsDispatchState {
 
     /// Returns `true` when an `OrderAccepted` has already been emitted for
     /// this client order in the current process lifetime.
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     #[must_use]
     pub fn contains_accepted(&self, client_order_id: &ClientOrderId) -> bool {
-        self.emitted_accepted
-            .lock()
-            .expect(MUTEX_POISONED)
-            .contains(client_order_id)
+        self.emitted_accepted.lock().contains(client_order_id)
     }
 
     /// Records that `OrderAccepted` has been emitted for this client order.
     /// Returns `true` when the marker was already present (duplicate).
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn mark_accepted(&self, client_order_id: ClientOrderId) -> bool {
-        let mut cache = self.emitted_accepted.lock().expect(MUTEX_POISONED);
+        let mut cache = self.emitted_accepted.lock();
         if cache.contains(&client_order_id) {
             return true;
         }
@@ -262,9 +242,8 @@ impl WsDispatchState {
 
     /// Records that `OrderCanceled` has been emitted for this client order.
     /// Returns `true` when the marker was already present (duplicate).
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn mark_canceled(&self, client_order_id: ClientOrderId) -> bool {
-        let mut cache = self.emitted_canceled.lock().expect(MUTEX_POISONED);
+        let mut cache = self.emitted_canceled.lock();
         if cache.contains(&client_order_id) {
             return true;
         }
@@ -274,19 +253,14 @@ impl WsDispatchState {
 
     /// Returns `true` when this client order has reached a terminal filled
     /// state, used to suppress stale Accepted frames replayed on reconnect.
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     #[must_use]
     pub fn contains_filled(&self, client_order_id: &ClientOrderId) -> bool {
-        self.filled_orders
-            .lock()
-            .expect(MUTEX_POISONED)
-            .contains(client_order_id)
+        self.filled_orders.lock().contains(client_order_id)
     }
 
     /// Marks the client order as terminally filled. Idempotent.
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn mark_filled(&self, client_order_id: ClientOrderId) {
-        let mut cache = self.filled_orders.lock().expect(MUTEX_POISONED);
+        let mut cache = self.filled_orders.lock();
         if !cache.contains(&client_order_id) {
             cache.add(client_order_id);
         }
@@ -294,9 +268,8 @@ impl WsDispatchState {
 
     /// Inserts the trade id atomically. Returns `true` when the id was
     /// already present (i.e., this fill should be skipped as a duplicate).
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn check_and_insert_trade(&self, trade_id: TradeId) -> bool {
-        let mut cache = self.emitted_trades.lock().expect(MUTEX_POISONED);
+        let mut cache = self.emitted_trades.lock();
         if cache.contains(&trade_id) {
             return true;
         }
@@ -306,13 +279,9 @@ impl WsDispatchState {
 
     /// Returns `true` when this trade id has already been seen, without
     /// mutating state.
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     #[must_use]
     pub fn contains_trade(&self, trade_id: &TradeId) -> bool {
-        self.emitted_trades
-            .lock()
-            .expect(MUTEX_POISONED)
-            .contains(trade_id)
+        self.emitted_trades.lock().contains(trade_id)
     }
 }
 
@@ -333,6 +302,16 @@ mod tests {
             order_side: OrderSide::Buy,
             order_type: OrderType::Limit,
         }
+    }
+
+    #[rstest]
+    fn test_instrument_precision_roundtrip() {
+        let state = WsDispatchState::new();
+        let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+
+        assert_eq!(state.instrument_precision(&instrument_id), None);
+        state.register_instrument_precision(instrument_id, 2, 3);
+        assert_eq!(state.instrument_precision(&instrument_id), Some((2, 3)));
     }
 
     #[rstest]

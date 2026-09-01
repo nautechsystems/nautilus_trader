@@ -96,7 +96,11 @@ impl AccountsManager {
                 .id
         };
 
-        let position = self.cache.borrow().position_owned(&position_id);
+        let position = self
+            .cache
+            .borrow()
+            .position(&position_id)
+            .map(|position| position.clone_without_events());
 
         let pnls = match account.calculate_pnls(instrument, fill, position) {
             Ok(pnls) => pnls,
@@ -514,10 +518,6 @@ impl AccountsManager {
                     OrderSide::Sell => instrument
                         .base_currency()
                         .unwrap_or_else(|| instrument.quote_currency()),
-                    OrderSide::NoOrderSide => {
-                        log::error!("Cannot calculate wallet balance locked: invalid order side");
-                        return None;
-                    }
                 };
                 let Some(total) = account.balance_total(Some(source_currency)) else {
                     log::error!(
@@ -601,10 +601,6 @@ impl AccountsManager {
                             return None;
                         }
                     }
-                }
-                OrderSide::NoOrderSide => {
-                    log::error!("Cannot calculate wallet balance locked: invalid order side");
-                    return None;
                 }
             };
 
@@ -3640,32 +3636,19 @@ mod tests {
             "WQUOTE",
             CurrencyType::Crypto,
         );
-        let instrument = CurrencyPair::new(
-            InstrumentId::from("WBASEWQUOTE.BLOCKCHAIN"),
-            Symbol::from("WBASEWQUOTE"),
-            instrument_base,
-            instrument_quote,
-            16,
-            16,
-            Price::from_raw(1, 16),
-            Quantity::from_raw(1, 16),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let instrument = CurrencyPair::builder()
+            .instrument_id(InstrumentId::from("WBASEWQUOTE.BLOCKCHAIN"))
+            .raw_symbol(Symbol::from("WBASEWQUOTE"))
+            .base_currency(instrument_base)
+            .quote_currency(instrument_quote)
+            .price_precision(16)
+            .size_precision(16)
+            .price_increment(Price::from_raw(1, 16))
+            .size_increment(Quantity::from_raw(1, 16))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
         let scale = money_raw(10_i128.pow(u32::from(wallet_precision.max(FIXED_PRECISION))));
         let base_total = Money::from_raw(scale, observed_base);
         let quote_total = Money::from_raw(2 * scale, observed_quote);

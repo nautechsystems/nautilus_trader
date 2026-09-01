@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test polymarket factories behavior.
+"""
 
 import base64
 from decimal import Decimal
@@ -23,7 +26,7 @@ from unit.adapters.example_modules import load_example_module
 
 from nautilus_trader.adapters.polymarket import PolymarketDataClientConfig
 from nautilus_trader.adapters.polymarket import PolymarketDataClientFactory
-from nautilus_trader.adapters.polymarket import PolymarketExecClientConfig
+from nautilus_trader.adapters.polymarket import PolymarketExecutionClientConfig
 from nautilus_trader.adapters.polymarket import PolymarketExecutionClientFactory
 from nautilus_trader.adapters.polymarket import PolymarketInstrumentProviderConfig
 from nautilus_trader.adapters.polymarket import SignatureType
@@ -52,15 +55,24 @@ polymarket_updown_smoke_tester = load_example_module("polymarket", "updown_smoke
 
 
 def test_polymarket_factories_expose_python_names() -> None:
+    """
+    Test polymarket factories expose python names.
+    """
     assert PolymarketDataClientFactory().name() == POLYMARKET
     assert PolymarketExecutionClientFactory().name() == POLYMARKET
 
 
 def test_polymarket_signature_type_exposes_poly_1271() -> None:
+    """
+    Test polymarket signature type exposes poly 1271.
+    """
     assert int(SignatureType.Poly1271) == 3
 
 
 def test_live_node_builder_accepts_polymarket_data_factory() -> None:
+    """
+    Test live node builder accepts polymarket data factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
 
     node = (
@@ -82,6 +94,9 @@ def test_live_node_builder_accepts_polymarket_data_factory() -> None:
 
 
 def test_live_node_builder_accepts_polymarket_exec_factory() -> None:
+    """
+    Test live node builder accepts polymarket exec factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
 
     node = (
@@ -99,8 +114,7 @@ def test_live_node_builder_accepts_polymarket_exec_factory() -> None:
         .add_exec_client(
             None,
             PolymarketExecutionClientFactory(),
-            PolymarketExecClientConfig(
-                trader_id="TESTER-001",
+            PolymarketExecutionClientConfig(
                 account_id="POLYMARKET-001",
                 private_key=SMOKE_PRIVATE_KEY,
                 api_key=SMOKE_API_KEY,
@@ -118,6 +132,9 @@ def test_live_node_builder_accepts_polymarket_exec_factory() -> None:
 
 
 def test_polymarket_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test polymarket data tester runs.
+    """
     captured = capture_data_tester_main(monkeypatch, polymarket_data_tester)
     kwargs = captured["data_tester_kwargs"]
     data_client_config = captured["data_client_args"][2]
@@ -130,6 +147,9 @@ def test_polymarket_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_polymarket_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test polymarket exec tester runs live orders.
+    """
     captured = capture_exec_tester_main(monkeypatch, polymarket_exec_tester)
     kwargs = captured["exec_tester_kwargs"]
     exec_engine_config = captured["exec_engine_config"]
@@ -164,6 +184,9 @@ def test_polymarket_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatch
 def test_polymarket_updown_smoke_tester_runs_live_orders(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    Test polymarket updown smoke tester runs live orders.
+    """
     monkeypatch.setattr(
         polymarket_updown_smoke_tester,
         "resolve_updown_instrument_id",
@@ -189,6 +212,9 @@ def test_polymarket_updown_smoke_tester_runs_live_orders(
 
 
 def test_polymarket_updown_smoke_tester_builds_aligned_slugs() -> None:
+    """
+    Test polymarket updown smoke tester builds aligned slugs.
+    """
     slugs = polymarket_updown_smoke_tester.build_updown_event_slugs(
         assets=["BTC", " eth ", "btc"],
         interval_mins=5,
@@ -206,6 +232,9 @@ def test_polymarket_updown_smoke_tester_builds_aligned_slugs() -> None:
 
 
 def test_polymarket_updown_smoke_tester_finds_outcome_token() -> None:
+    """
+    Test polymarket updown smoke tester finds outcome token.
+    """
     events = [
         {
             "markets": [

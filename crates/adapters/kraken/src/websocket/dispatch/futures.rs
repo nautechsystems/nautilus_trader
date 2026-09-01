@@ -25,7 +25,7 @@ use ahash::AHashMap;
 use nautilus_core::{AtomicMap, UUID4, UnixNanos};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
-    enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
+    enums::{OrderStatus, OrderType, TimeInForce},
     events::{OrderCanceled, OrderEventAny, OrderUpdated},
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
@@ -373,7 +373,7 @@ pub fn open_orders_cancel(
         instrument_id,
         resolved_id,
         venue_order_id,
-        OrderSide::NoOrderSide,
+        None,
         OrderType::Limit,
         TimeInForce::Gtc,
         OrderStatus::Canceled,

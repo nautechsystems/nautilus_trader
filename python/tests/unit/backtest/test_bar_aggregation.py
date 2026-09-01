@@ -33,6 +33,7 @@ from nautilus_trader.model import AccountType
 from nautilus_trader.model import Bar
 from nautilus_trader.model import BarType
 from nautilus_trader.model import Currency
+from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Money
 from nautilus_trader.model import OmsType
 from nautilus_trader.model import Price
@@ -47,7 +48,7 @@ from tests.providers import TestInstrumentProvider
 _START = 1_577_836_800_000_000_000
 
 
-def _engine(instrument) -> BacktestEngine:
+def _engine(instrument: object) -> BacktestEngine:
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     engine.add_venue(
         venue=Venue("SIM"),
@@ -60,7 +61,7 @@ def _engine(instrument) -> BacktestEngine:
     return engine
 
 
-def _one_min_bars(instrument, bar_type: BarType, count: int) -> list[Bar]:
+def _one_min_bars(instrument: object, bar_type: BarType, count: int) -> list[Bar]:
     pp = instrument.price_precision
     bars = []
 
@@ -81,7 +82,7 @@ def _one_min_bars(instrument, bar_type: BarType, count: int) -> list[Bar]:
     return bars
 
 
-def _quotes(instrument, count: int) -> list[QuoteTick]:
+def _quotes(instrument: object, count: int) -> list[QuoteTick]:
     pp = instrument.price_precision
     quotes = []
 
@@ -102,21 +103,36 @@ def _quotes(instrument, count: int) -> list[QuoteTick]:
 
 
 class _BarCollector(Strategy):
-    def __init__(self, config=None):
+    def __init__(self, config: object = None) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
 
     def configure(self, bar_type: str) -> None:
+        """
+        Configure.
+        """
         self.bar_type = BarType.from_str(bar_type)
         self.bars: list[Bar] = []
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         self.subscribe_bars(self.bar_type)
 
-    def on_bar(self, bar: Bar):
+    def on_bar(self, bar: Bar) -> None:
+        """
+        On bar.
+        """
         self.bars.append(bar)
 
 
-def test_composite_bar_aggregation_delivers_to_subscriber():
+def test_composite_bar_aggregation_delivers_to_subscriber() -> None:
+    """
+    Test composite bar aggregation delivers to subscriber.
+    """
     # Delivered aggregated bars carry the standard bar type (no `@source` suffix)
     instrument = TestInstrumentProvider.audusd_sim()
     engine = _engine(instrument)
@@ -134,7 +150,10 @@ def test_composite_bar_aggregation_delivers_to_subscriber():
     engine.dispose()
 
 
-def test_internal_tick_aggregation_includes_first_tick():
+def test_internal_tick_aggregation_includes_first_tick() -> None:
+    """
+    Test internal tick aggregation includes first tick.
+    """
     # The first underlying tick is not dropped: 10 quotes make 2 bars, bar 1 opens at tick 1
     instrument = TestInstrumentProvider.audusd_sim()
     engine = _engine(instrument)
@@ -151,19 +170,31 @@ def test_internal_tick_aggregation_includes_first_tick():
 
 
 class _QuoteEmaStrategy(Strategy):
-    def __init__(self, config=None):
+    def __init__(self, config: object = None) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
 
-    def configure(self, instrument_id) -> None:
+    def configure(self, instrument_id: InstrumentId) -> None:
+        """
+        Configure.
+        """
         self.iid = instrument_id
         self.ema = ExponentialMovingAverage(10)  # default price type is Last
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         self.register_indicator_for_quote_ticks(self.iid, self.ema)
         self.subscribe_quotes(self.iid)
 
 
-def test_indicator_registered_for_quotes_with_last_price_does_not_crash():
+def test_indicator_registered_for_quotes_with_last_price_does_not_crash() -> None:
+    """
+    Test indicator registered for quotes with last price does not crash.
+    """
     # A `Last`-price indicator fed quotes must not panic: the run completes, indicator uninitialized
     instrument = TestInstrumentProvider.audusd_sim()
     engine = _engine(instrument)

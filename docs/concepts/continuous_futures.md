@@ -36,7 +36,7 @@ require strictly positive prices.
 
 ## Inputs
 
-A continuous‑future request or subscription is any `RequestBars` or `SubscribeBars` that carries
+A continuous-future request or subscription is any `RequestBars` or `SubscribeBars` that carries
 a `continuous_future_transitions` entry in `params`:
 
 ```python
@@ -69,7 +69,7 @@ continuous root, not a real contract. Each segment's raw source data comes from 
 in the transitions list.
 
 The continuous target bar type must be **internally aggregated**. Externally aggregated bars are
-not supported as continuous targets, but they can serve as the per‑segment source.
+not supported as continuous targets, but they can serve as the per-segment source.
 
 ### Bounded chains
 
@@ -77,23 +77,23 @@ The two optional bounds restrict which transitions contribute to the cumulative 
 do not remove contract segments from the request or subscription:
 
 - `last_post_instrument_id` caps the upper end at the first transition whose `post_instrument_id`
-  matches. Backward modes use the matching post contract as the zero‑adjustment anchor; forward
+  matches. Backward modes use the matching post contract as the zero-adjustment anchor; forward
   modes exclude later transitions from the cumulative adjustment.
 - `first_pre_instrument_id` caps the lower end at the first transition whose `pre_instrument_id`
-  matches. Forward modes use the matching pre contract as the zero‑adjustment anchor; backward
+  matches. Forward modes use the matching pre contract as the zero-adjustment anchor; backward
   modes exclude earlier transitions from the cumulative adjustment.
 
 These bounds let callers pass a wider transition table while choosing the adjustment range.
 
 ## Validation
 
-The request and subscription paths apply the same transition‑parameter validation rules before
+The request and subscription paths apply the same transition-parameter validation rules before
 allocating an aggregator or child segment state:
 
 - When supplied, `continuous_future_adjustment_mode` must parse as a valid
   `ContinuousFutureAdjustmentType`.
-- `continuous_future_transitions` must be a non‑empty array of transition rows.
-- Each row must include a non‑negative integer `transition_time_ns`, and transition times must
+- `continuous_future_transitions` must be a non-empty array of transition rows.
+- Each row must include a non-negative integer `transition_time_ns`, and transition times must
   be strictly increasing.
 - Each `pre_instrument_id` and `post_instrument_id` must parse as a valid `InstrumentId` whose
   venue equals the target venue.
@@ -107,7 +107,7 @@ allocating an aggregator or child segment state:
 
 A validation error therefore returns before either path starts an aggregation workflow.
 
-After validation, the request path releases its request‑scoped aggregators if setup or the initial
+After validation, the request path releases its request-scoped aggregators if setup or the initial
 segment dispatch fails. A failure while dispatching a later segment still ends the request with a
 completion response and normal aggregator cleanup.
 
@@ -118,7 +118,7 @@ but downstream consumers (aggregators, cache lookups, serialization) still expec
 in the cache. After validation, both the request and subscription paths ensure the target
 instrument exists:
 
-- If the target id is already cached, the target setup is a no‑op. Callers can pre‑register a custom
+- If the target id is already cached, the target setup is a no-op. Callers can pre-register a custom
   continuous instrument and the engine respects it.
 - Otherwise the target setup fetches the first segment's instrument from the cache and clones it,
   overriding only `id`, `raw_symbol`, and clearing `activation_ns` and `expiration_ns` to `0`.
@@ -149,7 +149,7 @@ flowchart TD
     Agg2 -->|adjusted bars| MsgBus[(msgbus: data.bars.*)]
 ```
 
-Request‑path bars land in the cache; subscription‑path bars publish to the message bus.
+Request-path bars land in the cache; subscription-path bars publish to the message bus.
 
 Both paths use the same segmentation, source resolution, and adjustment calculation. The request
 path processes segments in sequence; the subscription path keeps one source active and switches it
@@ -199,10 +199,10 @@ combined vector of adjusted bars.
 
 ### Chain aggregators
 
-If a request sets `bar_types = (bar_type_1, bar_type_2)` for multi‑level internal aggregation, the
-engine creates an isolated request‑scoped aggregator for each level. Segment source responses enter
+If a request sets `bar_types = (bar_type_1, bar_type_2)` for multi-level internal aggregation, the
+engine creates an isolated request-scoped aggregator for each level. Segment source responses enter
 the primary continuous target, and its emitted bars feed matching downstream aggregators. Only the
-primary builder receives the adjustment; higher levels re‑aggregate already adjusted data.
+primary builder receives the adjustment; higher levels re-aggregate already adjusted data.
 
 ## Subscription flow
 
@@ -221,7 +221,7 @@ following transition.
 
 ## Source resolution
 
-For any continuous‑future target `BarType`, the raw data feeding the primary aggregator lives on
+For any continuous-future target `BarType`, the raw data feeding the primary aggregator lives on
 the **segment contract**, not the continuous id. The target's shape decides the source type:
 
 ```mermaid
@@ -260,13 +260,13 @@ flowchart LR
 
 The `BarBuilder` uses the mode only to choose addition or multiplication. The engine resolves the
 adjustment direction into a cumulative value before calling `set_adjustment`. The `reset()` method
-clears per‑bar OHLCV state for the next bar but preserves the segment‑scoped adjustment.
+clears per-bar OHLCV state for the next bar but preserves the segment-scoped adjustment.
 
 ## Mid-bar roll boundary
 
-If a roll lands inside an in‑progress target bar, the builder keeps the current OHLC state and
-applies the new adjustment only to subsequent updates. The pre‑boundary portion stays at the old
-offset; the post‑boundary portion uses the new offset. Rewriting the existing OHLC under the new
+If a roll lands inside an in-progress target bar, the builder keeps the current OHLC state and
+applies the new adjustment only to subsequent updates. The pre-boundary portion stays at the old
+offset; the post-boundary portion uses the new offset. Rewriting the existing OHLC under the new
 adjustment would require raw input that the builder does not retain.
 
 ## Limitations
@@ -274,6 +274,6 @@ adjustment would require raw input that the builder does not retain.
 - The feature requires supplied transition metadata. The engine does not discover rolls, choose
   contracts, or infer roll prices: that is the caller's responsibility.
 - Ratio adjustment converts the factor and each price through `f64` before rebuilding the adjusted
-  `Price`. For high‑precision instruments, the result can differ from equivalent `Decimal`
-  multiplication. Spread adjustment remains exact in the fixed‑point representation because it
+  `Price`. For high-precision instruments, the result can differ from equivalent `Decimal`
+  multiplication. Spread adjustment remains exact in the fixed-point representation because it
   adds directly to `PriceRaw`.

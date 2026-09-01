@@ -128,7 +128,7 @@ impl FillReport {
 
     #[getter]
     #[pyo3(name = "order_side")]
-    const fn py_order_side(&self) -> OrderSide {
+    fn py_order_side(&self) -> OrderSide {
         self.order_side
     }
 

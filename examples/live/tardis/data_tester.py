@@ -17,12 +17,17 @@
 Stream Tardis market data with the built-in DataTester actor.
 
 Running this example connects to Tardis Machine and starts subscriptions for the
-configured instrument immediately, logging all received data. No orders are placed.
+configured instrument immediately, logging all received data. It expects Tardis
+Machine at `TARDIS_MACHINE_WS_URL` (default `ws://localhost:8001`) and uses
+`TARDIS_API_KEY` to load instrument metadata. No orders are placed.
 
 """
 
 from __future__ import annotations
 
+import os
+
+from nautilus_trader.adapters.tardis import StreamNormalizedRequestOptions
 from nautilus_trader.adapters.tardis import TardisDataClientConfig
 from nautilus_trader.adapters.tardis import TardisDataClientFactory
 from nautilus_trader.common import Environment
@@ -36,16 +41,25 @@ from nautilus_trader.testkit import DataTesterConfig
 TARDIS = "TARDIS"
 TRADER_ID = TraderId.from_str("TESTER-001")
 INSTRUMENT_ID = InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
-TARDIS_WS_URL = None
+TARDIS_WS_URL = os.getenv("TARDIS_MACHINE_WS_URL", "ws://localhost:8001")
+STREAM_OPTIONS = StreamNormalizedRequestOptions.from_json(
+    b'{"exchange":"binance-futures","symbols":["BTCUSDT"],"dataTypes":["trade","quote"]}',
+)
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     node = (
         LiveNode.builder("TARDIS-DATA-TESTER-001", TRADER_ID, Environment.SANDBOX)
         .add_data_client(
             None,
             TardisDataClientFactory(),
-            TardisDataClientConfig(tardis_ws_url=TARDIS_WS_URL),
+            TardisDataClientConfig(
+                tardis_ws_url=TARDIS_WS_URL,
+                stream_options=[STREAM_OPTIONS],
+            ),
         )
         .build()
     )

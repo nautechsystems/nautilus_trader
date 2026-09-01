@@ -592,6 +592,17 @@ impl Authentication {
             session,
         }
     }
+
+    /// Creates a correlated authentication request.
+    #[must_use]
+    pub fn with_id(app_key: String, session: String, id: u64) -> Self {
+        Self {
+            op: STREAM_OP_AUTHENTICATION.to_string(),
+            id: Some(id),
+            app_key,
+            session,
+        }
+    }
 }
 
 /// Market subscription request.
@@ -949,6 +960,75 @@ mod tests {
         assert!(!msgs.is_empty(), "{fixture}: empty array");
         for msg in &msgs {
             assert!(matches!(msg, StreamMessage::OrderChange(_)), "{fixture}");
+        }
+    }
+
+    #[rstest]
+    fn test_stream_decode_mcm_segments() {
+        let data = load_test_json("stream/mcm_SEGMENTS.jsonl");
+        let expected = [
+            (SegmentType::SegStart, "1.100001", None),
+            (SegmentType::Seg, "1.100002", None),
+            (SegmentType::SegEnd, "1.100003", Some("mcm-segment-clk")),
+        ];
+
+        let messages: Vec<StreamMessage> = data
+            .lines()
+            .map(|line| stream_decode(line.as_bytes()).unwrap())
+            .collect();
+
+        assert_eq!(messages.len(), expected.len());
+        for (message, (segment_type, market_id, clk)) in messages.into_iter().zip(expected) {
+            let StreamMessage::MarketChange(mcm) = message else {
+                panic!("Expected MarketChange");
+            };
+            assert_eq!(mcm.id, Some(1));
+            assert_eq!(mcm.pt, 1_700_000_000_000);
+            assert_eq!(mcm.clk.as_deref(), clk);
+            assert_eq!(mcm.initial_clk, None);
+            assert_eq!(mcm.ct, None);
+            assert_eq!(mcm.conflate_ms, None);
+            assert_eq!(mcm.heartbeat_ms, None);
+            assert_eq!(mcm.segment_type, Some(segment_type));
+            assert_eq!(mcm.status, None);
+            let market_changes = mcm.mc.unwrap();
+            assert_eq!(market_changes.len(), 1);
+            assert_eq!(market_changes[0].id, market_id);
+        }
+    }
+
+    #[rstest]
+    fn test_stream_decode_ocm_segments() {
+        let data = load_test_json("stream/ocm_SEGMENTS.jsonl");
+        let expected = [
+            (SegmentType::SegStart, "1.100001", None),
+            (SegmentType::Seg, "1.100002", None),
+            (SegmentType::SegEnd, "1.100003", Some("ocm-segment-clk")),
+        ];
+
+        let messages: Vec<StreamMessage> = data
+            .lines()
+            .map(|line| stream_decode(line.as_bytes()).unwrap())
+            .collect();
+
+        assert_eq!(messages.len(), expected.len());
+        for (message, (segment_type, market_id, clk)) in messages.into_iter().zip(expected) {
+            let StreamMessage::OrderChange(ocm) = message else {
+                panic!("Expected OrderChange");
+            };
+            assert_eq!(ocm.id, Some(1));
+            assert_eq!(ocm.pt, 1_700_000_000_000);
+            assert_eq!(ocm.clk.as_deref(), clk);
+            assert_eq!(ocm.initial_clk, None);
+            assert_eq!(ocm.ct, None);
+            assert_eq!(ocm.conflate_ms, None);
+            assert_eq!(ocm.heartbeat_ms, None);
+            assert_eq!(ocm.segment_type, Some(segment_type));
+            assert_eq!(ocm.status, None);
+            let order_changes = ocm.oc.unwrap();
+            assert_eq!(order_changes.len(), 1);
+            assert_eq!(order_changes[0].id, market_id);
+            assert_eq!(order_changes[0].orc.as_ref().unwrap().len(), 0);
         }
     }
 

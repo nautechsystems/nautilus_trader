@@ -1169,7 +1169,7 @@ impl BinanceFuturesOrder {
             instrument_id,
             Some(client_order_id),
             venue_order_id,
-            order_side,
+            order_side.into(),
             order_type,
             time_in_force,
             order_status,
@@ -1517,7 +1517,7 @@ impl BinanceFuturesAlgoOrder {
             instrument_id,
             Some(client_order_id),
             venue_order_id,
-            order_side,
+            order_side.into(),
             order_type,
             time_in_force,
             order_status,
@@ -1561,8 +1561,8 @@ impl BinanceFuturesAlgoOrder {
             report = report.with_activation_price(activation_price);
         }
 
-        if let Some(reduce_only) = self.reduce_only {
-            report = report.with_reduce_only(reduce_only);
+        if self.reduce_only == Some(true) || self.close_position == Some(true) {
+            report = report.with_reduce_only(true);
         }
 
         if let Some(expire_time) = parse_good_till_date(self.good_till_date)? {
@@ -2533,7 +2533,10 @@ mod tests {
         assert_eq!(report.trigger_price, Some(Price::from("45000.00")));
         assert_eq!(report.trigger_type, Some(TriggerType::MarkPrice));
         assert_eq!(report.trailing_offset, Some(Decimal::from(25)));
-        assert_eq!(report.trailing_offset_type, TrailingOffsetType::BasisPoints);
+        assert_eq!(
+            report.trailing_offset_type,
+            Some(TrailingOffsetType::BasisPoints),
+        );
     }
 
     #[rstest]

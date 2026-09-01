@@ -83,7 +83,8 @@ rustdoc-args = ["--cfg", "docsrs"]
 nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
 nautilus-execution = { workspace = true }
-nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-model = { workspace = true, features = ["test-support"] }
+nautilus-network = { workspace = true }
 
 nautilus-data = { workspace = true, optional = true }
 nautilus-persistence = { workspace = true, optional = true }
@@ -97,16 +98,20 @@ nautilus-trading = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+arc-swap = { workspace = true }
 async-trait = { workspace = true }
 bon = { workspace = true }
+futures-util = { workspace = true }
 indexmap = { workspace = true }
 libfuzzer-sys = { workspace = true, optional = true }
 log = { workspace = true }
+parking_lot = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tabled = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true, features = ["rt"] }
 ustr = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }

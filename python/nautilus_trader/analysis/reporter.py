@@ -28,6 +28,8 @@ from nautilus_trader.model import OrderFilled
 
 
 if TYPE_CHECKING:
+    from typing import Any
+
     import pandas as pd
 
 
@@ -53,6 +55,20 @@ class ReportProvider:
 
     @staticmethod
     def generate_orders_report(orders: list) -> pd.DataFrame:
+        """
+        Generate an orders report.
+
+        Parameters
+        ----------
+        orders : list
+            The orders to include.
+
+        Returns
+        -------
+        pd.DataFrame
+            The report indexed by client order ID, or an empty DataFrame.
+
+        """
         _require_pandas()
         import pandas as pd
 
@@ -63,6 +79,20 @@ class ReportProvider:
 
     @staticmethod
     def generate_order_fills_report(orders: list) -> pd.DataFrame:
+        """
+        Generate an order fills report for orders with positive filled quantity.
+
+        Parameters
+        ----------
+        orders : list
+            The orders to include.
+
+        Returns
+        -------
+        pd.DataFrame
+            The report indexed by client order ID, or an empty DataFrame.
+
+        """
         _require_pandas()
         import pandas as pd
 
@@ -79,6 +109,20 @@ class ReportProvider:
 
     @staticmethod
     def generate_fills_report(orders: list) -> pd.DataFrame:
+        """
+        Generate a fills report from individual order fill events.
+
+        Parameters
+        ----------
+        orders : list
+            The orders whose fill events to include.
+
+        Returns
+        -------
+        pd.DataFrame
+            The report indexed by client order ID, or an empty DataFrame.
+
+        """
         _require_pandas()
         import pandas as pd
 
@@ -99,6 +143,22 @@ class ReportProvider:
         positions: list,
         snapshots: list | None = None,
     ) -> pd.DataFrame:
+        """
+        Generate a positions report, optionally including position snapshots.
+
+        Parameters
+        ----------
+        positions : list
+            The positions to include.
+        snapshots : list, optional
+            The position snapshots to append and flag.
+
+        Returns
+        -------
+        pd.DataFrame
+            The report indexed by position ID, or an empty DataFrame.
+
+        """
         _require_pandas()
         import pandas as pd
 
@@ -125,7 +185,23 @@ class ReportProvider:
         return report
 
     @staticmethod
-    def generate_account_report(account) -> pd.DataFrame:
+    def generate_account_report(
+        account: Any,
+    ) -> pd.DataFrame:
+        """
+        Generate an account balances report from account state events.
+
+        Parameters
+        ----------
+        account : Any
+            The account providing state events.
+
+        Returns
+        -------
+        pd.DataFrame
+            The report indexed by event timestamp, or an empty DataFrame.
+
+        """
         _require_pandas()
         import pandas as pd
 

@@ -12,10 +12,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test persistence behavior.
+"""
 
 import datetime as dt
 import os
 from decimal import Decimal
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -82,24 +86,36 @@ def _make_bar(ts: int) -> Bar:
     )
 
 
-def test_backend_session_construction():
+def test_backend_session_construction() -> None:
+    """
+    Test backend session construction.
+    """
     session = DataBackendSession()
 
     assert session is not None
 
 
-def test_backend_session_construction_with_chunk_size():
+def test_backend_session_construction_with_chunk_size() -> None:
+    """
+    Test backend session construction with chunk size.
+    """
     session = DataBackendSession(chunk_size=5_000)
 
     assert session is not None
 
 
-def test_backend_session_rejects_zero_chunk_size():
+def test_backend_session_rejects_zero_chunk_size() -> None:
+    """
+    Test backend session rejects zero chunk size.
+    """
     with pytest.raises(ValueError, match="chunk_size must be positive"):
         DataBackendSession(chunk_size=0)
 
 
-def test_backend_session_add_file_and_query_quotes():
+def test_backend_session_add_file_and_query_quotes() -> None:
+    """
+    Test backend session add file and query quotes.
+    """
     session = DataBackendSession()
     session.add_file(NautilusDataType.QuoteTick, "quotes", _data_path("quotes.parquet"))
 
@@ -114,7 +130,10 @@ def test_backend_session_add_file_and_query_quotes():
     assert quotes[-1].ts_init == 1_577_919_652_000_000_125
 
 
-def test_backend_session_to_list_queries_quotes():
+def test_backend_session_to_list_queries_quotes() -> None:
+    """
+    Test backend session to list queries quotes.
+    """
     session = DataBackendSession()
     session.add_file(NautilusDataType.QuoteTick, "quotes", _data_path("quotes.parquet"))
 
@@ -126,7 +145,10 @@ def test_backend_session_to_list_queries_quotes():
     assert quotes[-1].ts_init == 1_577_919_652_000_000_125
 
 
-def test_backend_session_to_list_returns_unread_records():
+def test_backend_session_to_list_returns_unread_records() -> None:
+    """
+    Test backend session to list returns unread records.
+    """
     session = DataBackendSession(chunk_size=1_000)
     session.add_file(NautilusDataType.QuoteTick, "quotes", _data_path("quotes.parquet"))
     result = session.to_query_result()
@@ -139,7 +161,10 @@ def test_backend_session_to_list_returns_unread_records():
     assert quotes[0].ts_init == 1_577_900_944_000_000_879
 
 
-def test_backend_session_to_list_returns_empty_for_empty_query():
+def test_backend_session_to_list_returns_empty_for_empty_query() -> None:
+    """
+    Test backend session to list returns empty for empty query.
+    """
     session = DataBackendSession()
     session.add_file(
         NautilusDataType.QuoteTick,
@@ -151,7 +176,10 @@ def test_backend_session_to_list_returns_empty_for_empty_query():
     assert session.to_query_result().to_list() == []
 
 
-def test_backend_session_add_file_and_query_trades():
+def test_backend_session_add_file_and_query_trades() -> None:
+    """
+    Test backend session add file and query trades.
+    """
     session = DataBackendSession()
     session.add_file(NautilusDataType.TradeTick, "trades", _data_path("trades.parquet"))
 
@@ -161,7 +189,10 @@ def test_backend_session_add_file_and_query_trades():
     assert chunk_count > 0
 
 
-def test_backend_session_add_file_and_query_bars():
+def test_backend_session_add_file_and_query_bars() -> None:
+    """
+    Test backend session add file and query bars.
+    """
     session = DataBackendSession()
     session.add_file(NautilusDataType.Bar, "bars", _data_path("bars.parquet"))
 
@@ -171,7 +202,10 @@ def test_backend_session_add_file_and_query_bars():
     assert chunk_count > 0
 
 
-def test_backend_session_add_file_and_query_deltas():
+def test_backend_session_add_file_and_query_deltas() -> None:
+    """
+    Test backend session add file and query deltas.
+    """
     session = DataBackendSession()
     session.add_file(
         NautilusDataType.OrderBookDelta,
@@ -185,7 +219,10 @@ def test_backend_session_add_file_and_query_deltas():
     assert chunk_count > 0
 
 
-def test_backend_session_multiple_files():
+def test_backend_session_multiple_files() -> None:
+    """
+    Test backend session multiple files.
+    """
     session = DataBackendSession()
     session.add_file(NautilusDataType.TradeTick, "trades", _data_path("trades.parquet"))
     session.add_file(NautilusDataType.QuoteTick, "quotes", _data_path("quotes.parquet"))
@@ -196,7 +233,10 @@ def test_backend_session_multiple_files():
     assert chunk_count > 0
 
 
-def test_backend_session_nautilus_data_type_variants():
+def test_backend_session_nautilus_data_type_variants() -> None:
+    """
+    Test backend session nautilus data type variants.
+    """
     assert NautilusDataType.OrderBookDelta is not None
     assert NautilusDataType.OrderBookDepth10 is not None
     assert NautilusDataType.QuoteTick is not None
@@ -205,7 +245,10 @@ def test_backend_session_nautilus_data_type_variants():
     assert NautilusDataType.MarkPriceUpdate is not None
 
 
-def test_catalog_construction(tmp_path):
+def test_catalog_construction(tmp_path: Path) -> None:
+    """
+    Test catalog construction.
+    """
     path = str(tmp_path / "catalog")
     os.makedirs(path, exist_ok=True)
 
@@ -223,12 +266,18 @@ def test_catalog_construction(tmp_path):
         ("https://", "empty host"),
     ],
 )
-def test_catalog_construction_rejects_malformed_uri(uri, message):
+def test_catalog_construction_rejects_malformed_uri(uri: object, message: object) -> None:
+    """
+    Test catalog construction rejects malformed uri.
+    """
     with pytest.raises(OSError, match=message):
         ParquetDataCatalog(uri)
 
 
-def test_catalog_write_and_read_bars(tmp_path):
+def test_catalog_write_and_read_bars(tmp_path: Path) -> None:
+    """
+    Test catalog write and read bars.
+    """
     path = str(tmp_path / "catalog")
     os.makedirs(path, exist_ok=True)
     catalog = ParquetDataCatalog(path)
@@ -243,7 +292,10 @@ def test_catalog_write_and_read_bars(tmp_path):
     assert loaded == [_make_bar(1), _make_bar(2)]
 
 
-def test_catalog_write_and_read_quotes(tmp_path):
+def test_catalog_write_and_read_quotes(tmp_path: Path) -> None:
+    """
+    Test catalog write and read quotes.
+    """
     path = str(tmp_path / "catalog")
     os.makedirs(path, exist_ok=True)
     catalog = ParquetDataCatalog(path)
@@ -261,7 +313,10 @@ def test_catalog_write_and_read_quotes(tmp_path):
     assert loaded == quotes
 
 
-def test_catalog_write_and_read_trades(tmp_path):
+def test_catalog_write_and_read_trades(tmp_path: Path) -> None:
+    """
+    Test catalog write and read trades.
+    """
     path = str(tmp_path / "catalog")
     os.makedirs(path, exist_ok=True)
     catalog = ParquetDataCatalog(path)
@@ -279,7 +334,10 @@ def test_catalog_write_and_read_trades(tmp_path):
     assert loaded == trades
 
 
-def test_catalog_write_and_read_order_book_deltas(tmp_path):
+def test_catalog_write_and_read_order_book_deltas(tmp_path: Path) -> None:
+    """
+    Test catalog write and read order book deltas.
+    """
     path = str(tmp_path / "catalog")
     os.makedirs(path, exist_ok=True)
     catalog = ParquetDataCatalog(path)
@@ -332,7 +390,10 @@ def test_catalog_write_and_read_order_book_deltas(tmp_path):
         assert actual.order.order_id == expected.order.order_id
 
 
-def test_catalog_write_and_read_order_book_depths(tmp_path):
+def test_catalog_write_and_read_order_book_depths(tmp_path: Path) -> None:
+    """
+    Test catalog write and read order book depths.
+    """
     path = str(tmp_path / "catalog")
     os.makedirs(path, exist_ok=True)
     catalog = ParquetDataCatalog(path)
@@ -394,7 +455,10 @@ def test_catalog_write_and_read_order_book_depths(tmp_path):
                 assert actual_order.order_id == 0
 
 
-def test_catalog_append_data(tmp_path):
+def test_catalog_append_data(tmp_path: Path) -> None:
+    """
+    Test catalog append data.
+    """
     path = str(tmp_path / "catalog")
     os.makedirs(path, exist_ok=True)
     catalog = ParquetDataCatalog(path)
@@ -407,7 +471,10 @@ def test_catalog_append_data(tmp_path):
     assert intervals == [(1, 2), (3, 3)]
 
 
-def test_catalog_consolidate(tmp_path):
+def test_catalog_consolidate(tmp_path: Path) -> None:
+    """
+    Test catalog consolidate.
+    """
     path = str(tmp_path / "catalog")
     os.makedirs(path, exist_ok=True)
     catalog = ParquetDataCatalog(path)
@@ -421,7 +488,10 @@ def test_catalog_consolidate(tmp_path):
     assert intervals == [(1, 3)]
 
 
-def test_catalog_instrument_roundtrip(tmp_path):
+def test_catalog_instrument_roundtrip(tmp_path: Path) -> None:
+    """
+    Test catalog instrument roundtrip.
+    """
     path = str(tmp_path / "catalog")
     os.makedirs(path, exist_ok=True)
     catalog = ParquetDataCatalog(path)
@@ -436,7 +506,10 @@ def test_catalog_instrument_roundtrip(tmp_path):
     assert [instrument.to_dict() for instrument in read] == [inst.to_dict()]
 
 
-def test_catalog_query_filters_and_timestamp_metadata(tmp_path):
+def test_catalog_query_filters_and_timestamp_metadata(tmp_path: Path) -> None:
+    """
+    Test catalog query filters and timestamp metadata.
+    """
     path = str(tmp_path / "catalog")
     os.makedirs(path, exist_ok=True)
     catalog = ParquetDataCatalog(path)
@@ -462,7 +535,10 @@ def test_catalog_query_filters_and_timestamp_metadata(tmp_path):
     assert "bars" in catalog.list_data_types()
 
 
-def test_catalog_delete_data_range_uses_nanosecond_boundaries(tmp_path):
+def test_catalog_delete_data_range_uses_nanosecond_boundaries(tmp_path: Path) -> None:
+    """
+    Test catalog delete data range uses nanosecond boundaries.
+    """
     path = str(tmp_path / "catalog")
     os.makedirs(path, exist_ok=True)
     catalog = ParquetDataCatalog(path)
@@ -480,7 +556,10 @@ def test_catalog_delete_data_range_uses_nanosecond_boundaries(tmp_path):
     assert [bar.ts_init for bar in loaded] == [1_000_000_000, 1_000_000_003]
 
 
-def test_catalog_query_handles_multiple_instrument_identifier_patterns(tmp_path):
+def test_catalog_query_handles_multiple_instrument_identifier_patterns(tmp_path: Path) -> None:
+    """
+    Test catalog query handles multiple instrument identifier patterns.
+    """
     path = str(tmp_path / "catalog")
     os.makedirs(path, exist_ok=True)
     catalog = ParquetDataCatalog(path)
@@ -502,7 +581,10 @@ def test_catalog_query_handles_multiple_instrument_identifier_patterns(tmp_path)
     assert loaded == quotes
 
 
-def test_quote_tick_wrangler_construction():
+def test_quote_tick_wrangler_construction() -> None:
+    """
+    Test quote tick wrangler construction.
+    """
     wrangler = QuoteTickDataWrangler(
         instrument_id="AUD/USD.SIM",
         price_precision=5,
@@ -514,7 +596,10 @@ def test_quote_tick_wrangler_construction():
     assert wrangler.size_precision == 0
 
 
-def test_trade_tick_wrangler_construction():
+def test_trade_tick_wrangler_construction() -> None:
+    """
+    Test trade tick wrangler construction.
+    """
     wrangler = TradeTickDataWrangler(
         instrument_id="ETHUSDT.BINANCE",
         price_precision=2,
@@ -526,7 +611,10 @@ def test_trade_tick_wrangler_construction():
     assert wrangler.size_precision == 5
 
 
-def test_bar_wrangler_construction():
+def test_bar_wrangler_construction() -> None:
+    """
+    Test bar wrangler construction.
+    """
     wrangler = BarDataWrangler(
         bar_type="AUD/USD.SIM-1-MINUTE-BID-EXTERNAL",
         price_precision=5,
@@ -538,7 +626,10 @@ def test_bar_wrangler_construction():
     assert wrangler.size_precision == 0
 
 
-def test_order_book_delta_wrangler_construction():
+def test_order_book_delta_wrangler_construction() -> None:
+    """
+    Test order book delta wrangler construction.
+    """
     wrangler = OrderBookDeltaDataWrangler(
         instrument_id="ETHUSDT.BINANCE",
         price_precision=2,
@@ -550,7 +641,10 @@ def test_order_book_delta_wrangler_construction():
     assert wrangler.size_precision == 5
 
 
-def test_order_book_depth10_wrangler_construction():
+def test_order_book_depth10_wrangler_construction() -> None:
+    """
+    Test order book depth10 wrangler construction.
+    """
     wrangler = OrderBookDepth10DataWrangler(
         instrument_id="ETHUSDT.BINANCE",
         price_precision=2,
@@ -562,7 +656,10 @@ def test_order_book_depth10_wrangler_construction():
     assert wrangler.size_precision == 5
 
 
-def test_streaming_feather_writer_construction(tmp_path):
+def test_streaming_feather_writer_construction(tmp_path: Path) -> None:
+    """
+    Test streaming feather writer construction.
+    """
     path = str(tmp_path / "streaming")
     os.makedirs(path, exist_ok=True)
 
@@ -576,7 +673,10 @@ def test_streaming_feather_writer_construction(tmp_path):
     assert isinstance(writer.is_closed, bool)
 
 
-def test_streaming_feather_writer_write_and_flush(tmp_path):
+def test_streaming_feather_writer_write_and_flush(tmp_path: Path) -> None:
+    """
+    Test streaming feather writer write and flush.
+    """
     path = str(tmp_path / "streaming")
     os.makedirs(path, exist_ok=True)
 
@@ -590,7 +690,10 @@ def test_streaming_feather_writer_write_and_flush(tmp_path):
     writer.flush()
 
 
-def test_streaming_feather_writer_write_trade(tmp_path):
+def test_streaming_feather_writer_write_trade(tmp_path: Path) -> None:
+    """
+    Test streaming feather writer write trade.
+    """
     path = str(tmp_path / "streaming")
     os.makedirs(path, exist_ok=True)
 
@@ -643,11 +746,14 @@ def test_streaming_feather_writer_write_trade(tmp_path):
     ],
 )
 def test_streaming_feather_writer_uses_per_instrument_paths(
-    tmp_path,
-    data_name,
-    data_factory,
-    expected_metadata,
-):
+    tmp_path: Path,
+    data_name: object,
+    data_factory: object,
+    expected_metadata: object,
+) -> None:
+    """
+    Test streaming feather writer uses per instrument paths.
+    """
     path = tmp_path / f"streaming_{data_name}"
     path.mkdir()
     instrument_id = InstrumentId.from_str("ETHUSDT.BINANCE")
@@ -671,7 +777,10 @@ def test_streaming_feather_writer_uses_per_instrument_paths(
         assert table.schema.metadata[key] == value
 
 
-def test_streaming_feather_writer_replace_removes_local_files(tmp_path):
+def test_streaming_feather_writer_replace_removes_local_files(tmp_path: Path) -> None:
+    """
+    Test streaming feather writer replace removes local files.
+    """
     path = tmp_path / "streaming_replace"
     path.mkdir()
     instrument_id = InstrumentId.from_str("ETHUSDT.BINANCE")
@@ -697,7 +806,10 @@ def test_streaming_feather_writer_replace_removes_local_files(tmp_path):
     assert list(path.glob(f"quotes/{instrument_id}/*.feather")) == []
 
 
-def test_streaming_feather_writer_replace_rejects_remote_root():
+def test_streaming_feather_writer_replace_rejects_remote_root() -> None:
+    """
+    Test streaming feather writer replace rejects remote root.
+    """
     with pytest.raises(
         OSError,
         match="replace=True for remote streaming paths requires a non-empty prefix",
@@ -715,7 +827,10 @@ def test_streaming_feather_writer_replace_rejects_remote_root():
         )
 
 
-def test_streaming_feather_writer_close(tmp_path):
+def test_streaming_feather_writer_close(tmp_path: Path) -> None:
+    """
+    Test streaming feather writer close.
+    """
     path = str(tmp_path / "streaming")
     os.makedirs(path, exist_ok=True)
 
@@ -731,7 +846,10 @@ def test_streaming_feather_writer_close(tmp_path):
     assert writer.is_closed
 
 
-def test_streaming_feather_writer_rotation_modes(tmp_path):
+def test_streaming_feather_writer_rotation_modes(tmp_path: Path) -> None:
+    """
+    Test streaming feather writer rotation modes.
+    """
     cache = Cache()
     clock = Clock.new_test()
 
@@ -767,10 +885,13 @@ def test_streaming_feather_writer_rotation_modes(tmp_path):
     ids=["cross_gap", "cross_fold"],
 )
 def test_streaming_feather_writer_scheduled_rotation_matches_python_across_dst(
-    tmp_path,
-    now,
-    expected,
-):
+    tmp_path: Path,
+    now: object,
+    expected: object,
+) -> None:
+    """
+    Test streaming feather writer scheduled rotation matches python across dst.
+    """
     path = str(tmp_path / "streaming")
     os.makedirs(path, exist_ok=True)
     clock = Clock.new_test()
@@ -796,7 +917,7 @@ def test_streaming_feather_writer_scheduled_rotation_matches_python_across_dst(
     assert next_rotation_rust == expected_ns
 
 
-def _next_rotation_python(now):
+def _next_rotation_python(now: object) -> object:
     now = pd.Timestamp(now)
     rotation_timezone = ZoneInfo("America/New_York")
     rotation_time = pd.Timestamp.combine(now.date(), dt.time(0, 30))
@@ -808,7 +929,10 @@ def _next_rotation_python(now):
     return next_rotation
 
 
-def test_streaming_feather_writer_include_types(tmp_path):
+def test_streaming_feather_writer_include_types(tmp_path: Path) -> None:
+    """
+    Test streaming feather writer include types.
+    """
     path = str(tmp_path / "streaming")
     os.makedirs(path, exist_ok=True)
 
@@ -822,7 +946,10 @@ def test_streaming_feather_writer_include_types(tmp_path):
     assert writer is not None
 
 
-def test_streaming_feather_writer_flush_interval(tmp_path):
+def test_streaming_feather_writer_flush_interval(tmp_path: Path) -> None:
+    """
+    Test streaming feather writer flush interval.
+    """
     path = str(tmp_path / "streaming")
     os.makedirs(path, exist_ok=True)
 

@@ -54,7 +54,7 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     num::NonZeroU32,
-    sync::{Arc, LazyLock, Mutex},
+    sync::{Arc, LazyLock},
 };
 
 use ahash::AHashMap;
@@ -85,6 +85,7 @@ use nautilus_network::{
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
     retry::{RetryConfig, RetryError, RetryManager},
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
@@ -156,7 +157,6 @@ fn rate_limit_keys() -> Vec<Ustr> {
 fn rest_rate_limiter(base_url: &str) -> DydxRestRateLimiter {
     DYDX_REST_RATE_LIMITERS
         .lock()
-        .expect("dYdX REST rate limiter registry mutex poisoned")
         .entry(base_url.to_string())
         .or_insert_with(|| Arc::new(RateLimiter::new_with_quota(Some(*DYDX_REST_QUOTA), vec![])))
         .clone()
@@ -241,16 +241,15 @@ impl DydxRawHttpClient {
         let mut headers = HashMap::new();
         headers.insert(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string());
 
-        let client = HttpClient::new_with_rate_limiter(
-            headers,
-            vec![],
-            Some(timeout_secs),
-            proxy_url,
-            rest_rate_limiter(&base_url),
-        )
-        .map_err(|e| {
-            DydxHttpError::ValidationError(format!("Failed to create HTTP client: {e}"))
-        })?;
+        let client = HttpClient::builder()
+            .headers(headers)
+            .timeout_secs(timeout_secs)
+            .maybe_proxy_url(proxy_url)
+            .rate_limiters(vec![rest_rate_limiter(&base_url)])
+            .build()
+            .map_err(|e| {
+                DydxHttpError::ValidationError(format!("Failed to create HTTP client: {e}"))
+            })?;
 
         Ok(Self {
             base_url,
@@ -1785,7 +1784,13 @@ impl DydxHttpClient {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+
     use axum::{Router, routing::get};
+    use nautilus_common::testing::wait_until_async;
     use nautilus_model::identifiers::Symbol;
     use rstest::rstest;
 
@@ -1882,13 +1887,18 @@ mod tests {
     async fn test_http_timeout_respects_configuration_and_does_not_block() {
         use tokio::net::TcpListener;
 
-        async fn slow_handler() -> &'static str {
-            // Sleep longer than the configured HTTP timeout.
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-            "ok"
-        }
-
-        let router = Router::new().route("/v4/slow", get(slow_handler));
+        let handler_entered = Arc::new(AtomicBool::new(false));
+        let handler_entered_clone = Arc::clone(&handler_entered);
+        let router = Router::new()
+            .route(
+                "/v4/slow",
+                get(move || async move {
+                    handler_entered_clone.store(true, Ordering::SeqCst);
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    "ok"
+                }),
+            )
+            .route("/health", get(|| async { "ok" }));
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -1901,12 +1911,27 @@ mod tests {
 
         let base_url = format!("http://{addr}");
 
+        // The measured request must reach the slow route, so establish that the server is
+        // accepting before starting the clock: binding the listener makes the port
+        // connectable before the serve task has reached its accept loop.
+        let ready_url = format!("{base_url}/health");
+        let probe = HttpClient::builder().build().unwrap();
+        wait_until_async(
+            || {
+                let url = ready_url.clone();
+                let probe = probe.clone();
+                async move { probe.get(url, None, None, Some(1), None).await.is_ok() }
+            },
+            std::time::Duration::from_secs(5),
+        )
+        .await;
+
         // Configure a small operation timeout and no retries so the request
         // fails quickly even though the handler sleeps for 5 seconds.
         let retry_config = RetryConfig {
             max_retries: 0,
-            initial_delay_ms: 0,
-            max_delay_ms: 0,
+            initial_delay_ms: 1,
+            max_delay_ms: 1,
             backoff_factor: 1.0,
             jitter_ms: 0,
             operation_timeout_ms: Some(500),
@@ -1930,9 +1955,18 @@ mod tests {
             client.send_request(Method::GET, "/v4/slow", None).await;
         let elapsed = start.elapsed();
 
-        // Request should fail (timeout or client error), but without blocking the thread
-        // for the full handler duration.
-        assert!(result.is_err());
+        let expected = RetryError::OperationTimeout { timeout_ms: 500 }.to_string();
+        assert!(
+            matches!(
+                &result,
+                Err(error::DydxHttpError::HttpClientError(message)) if message == &expected
+            ),
+            "Expected operation timeout, received {result:?}"
+        );
+        assert!(
+            handler_entered.load(Ordering::SeqCst),
+            "Slow route was never entered"
+        );
         assert!(elapsed < std::time::Duration::from_secs(3));
     }
 }

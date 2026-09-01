@@ -49,14 +49,15 @@ impl Default for SyntheticInstrument {
         let btc_binance = InstrumentId::from("BTC.BINANCE");
         let ltc_binance = InstrumentId::from("LTC.BINANCE");
         let formula = "(BTC.BINANCE + LTC.BINANCE) / 2.0";
-        Self::new(
-            Symbol::new("BTC-LTC"),
-            2,
-            vec![btc_binance, ltc_binance],
-            formula,
-            0.into(),
-            0.into(),
-        )
+        Self::builder()
+            .symbol(Symbol::new("BTC-LTC"))
+            .price_precision(2)
+            .components(vec![btc_binance, ltc_binance])
+            .formula(formula)
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap()
     }
 }
 
@@ -69,36 +70,28 @@ pub fn crypto_future_btcusdt(
 ) -> CryptoFuture {
     let activation = timestamp(2014, 4, 8, 0, 0, 0);
     let expiration = timestamp(2014, 7, 8, 0, 0, 0);
-    CryptoFuture::new(
-        InstrumentId::from("ETHUSDT-123.BINANCE"),
-        Symbol::from("BTCUSDT"),
-        Currency::from("BTC"),
-        Currency::from("USDT"),
-        Currency::from("USDT"),
-        false,
-        UnixNanos::from(activation),
-        UnixNanos::from(expiration),
-        price_precision,
-        size_precision,
-        price_increment,
-        size_increment,
-        None,
-        None,
-        Some(Quantity::from("9000.0")),
-        Some(Quantity::from("0.000001")),
-        None,
-        Some(Money::new(10.00, Currency::from("USDT"))),
-        Some(Price::from("1000000.00")),
-        Some(Price::from("0.01")),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None, // info
-        0.into(),
-        0.into(),
-    )
+    CryptoFuture::builder()
+        .instrument_id(InstrumentId::from("ETHUSDT-123.BINANCE"))
+        .raw_symbol(Symbol::from("BTCUSDT"))
+        .underlying(Currency::from("BTC"))
+        .quote_currency(Currency::from("USDT"))
+        .settlement_currency(Currency::from("USDT"))
+        .is_inverse(false)
+        .activation_ns(UnixNanos::from(activation))
+        .expiration_ns(UnixNanos::from(expiration))
+        .price_precision(price_precision)
+        .size_precision(size_precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .max_quantity(Quantity::from("9000.0"))
+        .min_quantity(Quantity::from("0.000001"))
+        .min_notional(Money::new(10.00, Currency::from("USDT")))
+        .max_price(Price::from("1000000.00"))
+        .min_price(Price::from("0.01"))
+        .ts_event(0.into())
+        .ts_init(0.into())
+        .build()
+        .unwrap()
 }
 
 #[fixture]
@@ -110,36 +103,28 @@ pub fn ethbtc_quanto(
 ) -> CryptoFuture {
     let activation = timestamp(2014, 4, 8, 0, 0, 0);
     let expiration = timestamp(2014, 7, 8, 0, 0, 0);
-    CryptoFuture::new(
-        InstrumentId::from("ETHBTC-123.BINANCE"),
-        Symbol::from("ETHBTC"),
-        Currency::from("ETH"),
-        Currency::from("BTC"),
-        Currency::from("USDT"),
-        false,
-        UnixNanos::from(activation),
-        UnixNanos::from(expiration),
-        price_precision,
-        size_precision,
-        price_increment,
-        size_increment,
-        None,
-        None,
-        Some(Quantity::from("9000.0")),
-        Some(Quantity::from("0.001")),
-        None,
-        Some(Money::new(1.0, Currency::from("USDT"))),
-        Some(Price::from("1.0")),
-        Some(Price::from("0.00001")),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None, // info
-        0.into(),
-        0.into(),
-    )
+    CryptoFuture::builder()
+        .instrument_id(InstrumentId::from("ETHBTC-123.BINANCE"))
+        .raw_symbol(Symbol::from("ETHBTC"))
+        .underlying(Currency::from("ETH"))
+        .quote_currency(Currency::from("BTC"))
+        .settlement_currency(Currency::from("USDT"))
+        .is_inverse(false)
+        .activation_ns(UnixNanos::from(activation))
+        .expiration_ns(UnixNanos::from(expiration))
+        .price_precision(price_precision)
+        .size_precision(size_precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .max_quantity(Quantity::from("9000.0"))
+        .min_quantity(Quantity::from("0.001"))
+        .min_notional(Money::new(1.0, Currency::from("USDT")))
+        .max_price(Price::from("1.0"))
+        .min_price(Price::from("0.00001"))
+        .ts_event(0.into())
+        .ts_init(0.into())
+        .build()
+        .unwrap()
 }
 
 #[fixture]
@@ -150,35 +135,35 @@ pub fn xbtusd_inverse_perp(
     #[default(Price::from("0.5"))] price_increment: Price,
     #[default(Quantity::from("1"))] size_increment: Quantity,
 ) -> CryptoPerpetual {
-    CryptoPerpetual::new(
+    CryptoPerpetual::builder()
         // BitMEX uses XBT for BTC; keep the "-PERP" suffix for clarity
-        InstrumentId::from("XBTUSD-PERP.BITMEX"),
-        Symbol::from("XBTUSD"),
-        Currency::BTC(), // base
-        Currency::USD(), // quote
-        Currency::BTC(), // settlement (inverse)
-        true,            // is_inverse
-        price_precision,
-        size_precision,
-        price_increment,
-        size_increment,
-        None,                              // lot_size
-        Some(Quantity::from("1")),         // multiplier: 1 USD/contract
-        None,                              // max_quantity
-        None,                              // min_quantity
-        Some(Money::from("10000000 USD")), // max_notional
-        Some(Money::from("1 USD")),        // min_notional
-        Some(Price::from("10000000")),     // max_price
-        Some(Price::from("0.01")),         // min_price
-        Some(dec!(0.01)),                  // margin_init
-        Some(dec!(0.0035)),                // margin_maint
-        Some(dec!(-0.00025)),              // maker_fee (rebate)
-        Some(dec!(0.00075)),               // taker_fee
-        None,                              // tick_scheme
-        None,                              // info
-        UnixNanos::default(),              // ts_event
-        UnixNanos::default(),              // ts_init
-    )
+        .instrument_id(InstrumentId::from("XBTUSD-PERP.BITMEX"))
+        .raw_symbol(Symbol::from("XBTUSD"))
+        // base
+        .base_currency(Currency::BTC())
+        // quote
+        .quote_currency(Currency::USD())
+        // settlement (inverse)
+        .settlement_currency(Currency::BTC())
+        .is_inverse(true)
+        .price_precision(price_precision)
+        .size_precision(size_precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .lot_size(Quantity::from("1"))
+        .max_notional(Money::from("10000000 USD"))
+        .min_notional(Money::from("1 USD"))
+        .max_price(Price::from("10000000"))
+        .min_price(Price::from("0.01"))
+        .margin_init(dec!(0.01))
+        .margin_maint(dec!(0.0035))
+        // maker_fee (rebate)
+        .maker_fee(dec!(-0.00025))
+        .taker_fee(dec!(0.00075))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 #[fixture]
@@ -190,194 +175,162 @@ pub fn crypto_option_btc_deribit(
 ) -> CryptoOption {
     let activation = UnixNanos::from(1_671_696_002_000_000_000);
     let expiration = UnixNanos::from(1_673_596_800_000_000_000);
-    CryptoOption::new(
-        InstrumentId::from("BTC-13JAN23-16000-P.DERIBIT"),
-        Symbol::from("BTC-13JAN23-16000-P"),
-        Currency::from("BTC"),
-        Currency::from("USD"),
-        Currency::from("BTC"),
-        false,
-        OptionKind::Put,
-        Price::from("16000.000"),
-        activation,
-        expiration,
-        price_precision,
-        size_precision,
-        price_increment,
-        size_increment,
-        Some(Quantity::from(1)),
-        Some(Quantity::from(1)),
-        Some(Quantity::from("9000.0")),
-        Some(Quantity::from("0.1")),
-        None,
-        Some(Money::new(10.00, Currency::from("USD"))),
-        None,
-        None,
-        None,
-        None,
-        Some(dec!(0.0003)),
-        Some(dec!(0.0003)),
-        None,
-        None, // info
-        0.into(),
-        0.into(),
-    )
+    CryptoOption::builder()
+        .instrument_id(InstrumentId::from("BTC-13JAN23-16000-P.DERIBIT"))
+        .raw_symbol(Symbol::from("BTC-13JAN23-16000-P"))
+        .underlying(Currency::from("BTC"))
+        .quote_currency(Currency::from("USD"))
+        .settlement_currency(Currency::from("BTC"))
+        .is_inverse(false)
+        .option_kind(OptionKind::Put)
+        .strike_price(Price::from("16000.000"))
+        .activation_ns(activation)
+        .expiration_ns(expiration)
+        .price_precision(price_precision)
+        .size_precision(size_precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .multiplier(Quantity::from(1))
+        .lot_size(Quantity::from(1))
+        .max_quantity(Quantity::from("9000.0"))
+        .min_quantity(Quantity::from("0.1"))
+        .min_notional(Money::new(10.00, Currency::from("USD")))
+        .maker_fee(dec!(0.0003))
+        .taker_fee(dec!(0.0003))
+        .ts_event(0.into())
+        .ts_init(0.into())
+        .build()
+        .unwrap()
 }
 
 #[fixture]
 pub fn crypto_perpetual_ethusdt() -> CryptoPerpetual {
-    CryptoPerpetual::new(
-        InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-        Symbol::from("ETHUSDT"),
-        Currency::from("ETH"),
-        Currency::from("USDT"),
-        Currency::from("USDT"),
-        false,
-        2,
-        3,
-        Price::from("0.01"),
-        Quantity::from("0.001"),
-        None,
-        None,
-        Some(Quantity::from("10000.0")),
-        Some(Quantity::from("0.001")),
-        None,
-        Some(Money::new(10.00, Currency::from("USDT"))),
-        Some(Price::from("15000.00")),
-        Some(Price::from("1.0")),
-        Some(dec!(1.0)),
-        Some(dec!(0.35)),
-        Some(dec!(0.0002)),
-        Some(dec!(0.0004)),
-        None,
-        None, // info
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    CryptoPerpetual::builder()
+        .instrument_id(InstrumentId::from("ETHUSDT-PERP.BINANCE"))
+        .raw_symbol(Symbol::from("ETHUSDT"))
+        .base_currency(Currency::from("ETH"))
+        .quote_currency(Currency::from("USDT"))
+        .settlement_currency(Currency::from("USDT"))
+        .is_inverse(false)
+        .price_precision(2)
+        .size_precision(3)
+        .price_increment(Price::from("0.01"))
+        .size_increment(Quantity::from("0.001"))
+        .max_quantity(Quantity::from("10000.0"))
+        .min_quantity(Quantity::from("0.001"))
+        .min_notional(Money::new(10.00, Currency::from("USDT")))
+        .max_price(Price::from("15000.00"))
+        .min_price(Price::from("1.0"))
+        .margin_init(dec!(1.0))
+        .margin_maint(dec!(0.35))
+        .maker_fee(dec!(0.0002))
+        .taker_fee(dec!(0.0004))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 #[fixture]
 pub fn xbtusd_bitmex() -> CryptoPerpetual {
-    CryptoPerpetual::new(
-        InstrumentId::from("BTCUSDT.BITMEX"),
-        Symbol::from("XBTUSD"),
-        Currency::BTC(),
-        Currency::USD(),
-        Currency::BTC(),
-        true,
-        1,
-        0,
-        Price::from("0.5"),
-        Quantity::from("1"),
-        None,
-        None,
-        None,
-        None,
-        Some(Money::from("10000000 USD")),
-        Some(Money::from("1 USD")),
-        Some(Price::from("10000000")),
-        Some(Price::from("0.01")),
-        Some(dec!(0.01)),
-        Some(dec!(0.0035)),
-        Some(dec!(-0.00025)),
-        Some(dec!(0.00075)),
-        None,
-        None, // info
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    CryptoPerpetual::builder()
+        .instrument_id(InstrumentId::from("BTCUSDT.BITMEX"))
+        .raw_symbol(Symbol::from("XBTUSD"))
+        .base_currency(Currency::BTC())
+        .quote_currency(Currency::USD())
+        .settlement_currency(Currency::BTC())
+        .is_inverse(true)
+        .price_precision(1)
+        .size_precision(0)
+        .price_increment(Price::from("0.5"))
+        .size_increment(Quantity::from("1"))
+        .max_notional(Money::from("10000000 USD"))
+        .min_notional(Money::from("1 USD"))
+        .max_price(Price::from("10000000"))
+        .min_price(Price::from("0.01"))
+        .margin_init(dec!(0.01))
+        .margin_maint(dec!(0.0035))
+        .maker_fee(dec!(-0.00025))
+        .taker_fee(dec!(0.00075))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 #[fixture]
 pub fn ethusdt_bitmex() -> CryptoPerpetual {
-    CryptoPerpetual::new(
-        InstrumentId::from("ETHUSD.BITMEX"),
-        Symbol::from("ETHUSD"),
-        Currency::ETH(),
-        Currency::USD(),
-        Currency::ETH(),
-        true,
-        2,
-        0,
-        Price::from("0.05"),
-        Quantity::from("1"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(Price::from("10000000")),
-        Some(Price::from("0.01")),
-        Some(dec!(0.01)),
-        Some(dec!(0.0035)),
-        Some(dec!(-0.00025)),
-        Some(dec!(0.00075)),
-        None,
-        None, // info
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    CryptoPerpetual::builder()
+        .instrument_id(InstrumentId::from("ETHUSD.BITMEX"))
+        .raw_symbol(Symbol::from("ETHUSD"))
+        .base_currency(Currency::ETH())
+        .quote_currency(Currency::USD())
+        .settlement_currency(Currency::ETH())
+        .is_inverse(true)
+        .price_precision(2)
+        .size_precision(0)
+        .price_increment(Price::from("0.05"))
+        .size_increment(Quantity::from("1"))
+        .max_price(Price::from("10000000"))
+        .min_price(Price::from("0.01"))
+        .margin_init(dec!(0.01))
+        .margin_maint(dec!(0.0035))
+        .maker_fee(dec!(-0.00025))
+        .taker_fee(dec!(0.00075))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 #[fixture]
 pub fn currency_pair_btcusdt() -> CurrencyPair {
-    CurrencyPair::new(
-        InstrumentId::from("BTCUSDT.BINANCE"),
-        Symbol::from("BTCUSDT"),
-        Currency::from("BTC"),
-        Currency::from("USDT"),
-        2,
-        6,
-        Price::from("0.01"),
-        Quantity::from("0.000001"),
-        None,
-        None,
-        Some(Quantity::from("9000")),
-        Some(Quantity::from("0.000001")),
-        None,
-        None,
-        Some(Price::from("1000000")),
-        Some(Price::from("0.01")),
-        Some(dec!(0.001)),
-        Some(dec!(0.001)),
-        Some(dec!(0.001)),
-        Some(dec!(0.001)),
-        None,
-        None, // info
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    CurrencyPair::builder()
+        .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+        .raw_symbol(Symbol::from("BTCUSDT"))
+        .base_currency(Currency::from("BTC"))
+        .quote_currency(Currency::from("USDT"))
+        .price_precision(2)
+        .size_precision(6)
+        .price_increment(Price::from("0.01"))
+        .size_increment(Quantity::from("0.000001"))
+        .max_quantity(Quantity::from("9000"))
+        .min_quantity(Quantity::from("0.000001"))
+        .max_price(Price::from("1000000"))
+        .min_price(Price::from("0.01"))
+        .margin_init(dec!(0.001))
+        .margin_maint(dec!(0.001))
+        .maker_fee(dec!(0.001))
+        .taker_fee(dec!(0.001))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 #[fixture]
 pub fn currency_pair_ethusdt() -> CurrencyPair {
-    CurrencyPair::new(
-        InstrumentId::from("ETHUSDT.BINANCE"),
-        Symbol::from("ETHUSDT"),
-        Currency::from("ETH"),
-        Currency::from("USDT"),
-        2,
-        5,
-        Price::from("0.01"),
-        Quantity::from("0.00001"),
-        None,
-        None,
-        Some(Quantity::from("9000")),
-        Some(Quantity::from("0.00001")),
-        None,
-        None,
-        Some(Price::from("1000000")),
-        Some(Price::from("0.01")),
-        Some(dec!(0.01)),
-        Some(dec!(0.0035)),
-        Some(dec!(0.0001)),
-        Some(dec!(0.0001)),
-        None,
-        None, // info
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    CurrencyPair::builder()
+        .instrument_id(InstrumentId::from("ETHUSDT.BINANCE"))
+        .raw_symbol(Symbol::from("ETHUSDT"))
+        .base_currency(Currency::from("ETH"))
+        .quote_currency(Currency::from("USDT"))
+        .price_precision(2)
+        .size_precision(5)
+        .price_increment(Price::from("0.01"))
+        .size_increment(Quantity::from("0.00001"))
+        .max_quantity(Quantity::from("9000"))
+        .min_quantity(Quantity::from("0.00001"))
+        .max_price(Price::from("1000000"))
+        .min_price(Price::from("0.01"))
+        .margin_init(dec!(0.01))
+        .margin_maint(dec!(0.0035))
+        .maker_fee(dec!(0.0001))
+        .taker_fee(dec!(0.0001))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 /// # Panics
@@ -399,32 +352,27 @@ pub fn default_fx_ccy(symbol: Symbol, venue: Option<Venue>) -> CurrencyPair {
         1.0 / 10.0f64.powi(i32::from(price_precision)),
         price_precision,
     );
-    CurrencyPair::new(
-        instrument_id,
-        symbol,
-        Currency::from(base_currency),
-        Currency::from(quote_currency),
-        price_precision,
-        0,
-        price_increment,
-        Quantity::from("1"),
-        None,
-        Some(Quantity::from("1000")),
-        Some(Quantity::from("1000000")),
-        Some(Quantity::from("100")),
-        None,
-        None,
-        None,
-        None,
-        Some(dec!(0.03)),
-        Some(dec!(0.03)),
-        Some(dec!(0.00002)),
-        Some(dec!(0.00002)),
-        Some(Ustr::from(tick_scheme)),
-        None, // info
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    CurrencyPair::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(symbol)
+        .base_currency(Currency::from(base_currency))
+        .quote_currency(Currency::from(quote_currency))
+        .price_precision(price_precision)
+        .size_precision(0)
+        .price_increment(price_increment)
+        .size_increment(Quantity::from("1"))
+        .lot_size(Quantity::from("1000"))
+        .max_quantity(Quantity::from("1000000"))
+        .min_quantity(Quantity::from("100"))
+        .margin_init(dec!(0.03))
+        .margin_maint(dec!(0.03))
+        .maker_fee(dec!(0.00002))
+        .taker_fee(dec!(0.00002))
+        .tick_scheme(Ustr::from(tick_scheme))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 #[fixture]
@@ -444,53 +392,37 @@ pub fn usdjpy_idealpro() -> CurrencyPair {
 
 #[fixture]
 pub fn equity_aapl() -> Equity {
-    Equity::new(
-        InstrumentId::from("AAPL.XNAS"),
-        Symbol::from("AAPL"),
-        Some(Ustr::from("US0378331005")),
-        Currency::from("USD"),
-        2,
-        Price::from("0.01"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None, // info
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    Equity::builder()
+        .instrument_id(InstrumentId::from("AAPL.XNAS"))
+        .raw_symbol(Symbol::from("AAPL"))
+        .isin(Ustr::from("US0378331005"))
+        .currency(Currency::from("USD"))
+        .price_precision(2)
+        .price_increment(Price::from("0.01"))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 /// AAPL equity with ITCH-compatible precision (`price_precision=4`).
+///
+/// # Panics
+///
+/// Panics if the instrument definition is invalid.
 #[must_use]
 pub fn equity_aapl_itch() -> Equity {
-    Equity::new(
-        InstrumentId::from("AAPL.XNAS"),
-        Symbol::from("AAPL"),
-        Some(Ustr::from("US0378331005")),
-        Currency::from("USD"),
-        4,
-        Price::from("0.0001"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    Equity::builder()
+        .instrument_id(InstrumentId::from("AAPL.XNAS"))
+        .raw_symbol(Symbol::from("AAPL"))
+        .isin(Ustr::from("US0378331005"))
+        .currency(Currency::from("USD"))
+        .price_precision(4)
+        .price_increment(Price::from("0.0001"))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 /// # Panics
@@ -504,206 +436,152 @@ pub fn futures_contract_es(
 ) -> FuturesContract {
     let activation = activation.unwrap_or(UnixNanos::from(timestamp(2021, 9, 10, 0, 0, 0)));
     let expiration = expiration.unwrap_or(UnixNanos::from(timestamp(2021, 12, 17, 0, 0, 0)));
-    FuturesContract::new(
-        InstrumentId::from("ESZ21.GLBX"),
-        Symbol::from("ESZ21"),
-        AssetClass::Index,
-        Some(Ustr::from("XCME")),
-        Ustr::from("ES"),
-        activation,
-        expiration,
-        Currency::USD(),
-        2,
-        Price::from("0.01"),
-        Quantity::from(1),
-        Quantity::from(1),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None, // info
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    FuturesContract::builder()
+        .instrument_id(InstrumentId::from("ESZ21.GLBX"))
+        .raw_symbol(Symbol::from("ESZ21"))
+        .asset_class(AssetClass::Index)
+        .exchange(Ustr::from("XCME"))
+        .underlying(Ustr::from("ES"))
+        .activation_ns(activation)
+        .expiration_ns(expiration)
+        .currency(Currency::USD())
+        .price_precision(2)
+        .price_increment(Price::from("0.01"))
+        .multiplier(Quantity::from(1))
+        .lot_size(Quantity::from(1))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 #[fixture]
 pub fn futures_spread_es() -> FuturesSpread {
     let activation = timestamp(2022, 6, 21, 13, 30, 0);
     let expiration = timestamp(2024, 6, 21, 13, 30, 0);
-    FuturesSpread::new(
-        InstrumentId::from("ESM4-ESU4.GLBX"),
-        Symbol::from("ESM4-ESU4"),
-        AssetClass::Index,
-        Some(Ustr::from("XCME")),
-        Ustr::from("ES"),
-        Ustr::from("EQ"),
-        UnixNanos::from(activation),
-        UnixNanos::from(expiration),
-        Currency::USD(),
-        2,
-        Price::from("0.01"),
-        Quantity::from(1),
-        Quantity::from(1),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None, // info
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    FuturesSpread::builder()
+        .instrument_id(InstrumentId::from("ESM4-ESU4.GLBX"))
+        .raw_symbol(Symbol::from("ESM4-ESU4"))
+        .asset_class(AssetClass::Index)
+        .exchange(Ustr::from("XCME"))
+        .underlying(Ustr::from("ES"))
+        .strategy_type(Ustr::from("EQ"))
+        .activation_ns(UnixNanos::from(activation))
+        .expiration_ns(UnixNanos::from(expiration))
+        .currency(Currency::USD())
+        .price_precision(2)
+        .price_increment(Price::from("0.01"))
+        .multiplier(Quantity::from(1))
+        .lot_size(Quantity::from(1))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 #[fixture]
 pub fn option_contract_appl() -> OptionContract {
     let activation = timestamp(2021, 9, 17, 0, 0, 0);
     let expiration = timestamp(2021, 12, 17, 0, 0, 0);
-    OptionContract::new(
-        InstrumentId::from("AAPL211217C00150000.OPRA"),
-        Symbol::from("AAPL211217C00150000"),
-        AssetClass::Equity,
-        Some(Ustr::from("GMNI")),
-        Ustr::from("AAPL"),
-        OptionKind::Call,
-        Price::from("149.0"),
-        Currency::USD(),
-        UnixNanos::from(activation),
-        UnixNanos::from(expiration),
-        2,
-        Price::from("0.01"),
-        Quantity::from(1),
-        Quantity::from(1),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None, // info
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    OptionContract::builder()
+        .instrument_id(InstrumentId::from("AAPL211217C00150000.OPRA"))
+        .raw_symbol(Symbol::from("AAPL211217C00150000"))
+        .asset_class(AssetClass::Equity)
+        .exchange(Ustr::from("GMNI"))
+        .underlying(Ustr::from("AAPL"))
+        .option_kind(OptionKind::Call)
+        .strike_price(Price::from("149.0"))
+        .currency(Currency::USD())
+        .activation_ns(UnixNanos::from(activation))
+        .expiration_ns(UnixNanos::from(expiration))
+        .price_precision(2)
+        .price_increment(Price::from("0.01"))
+        .multiplier(Quantity::from(1))
+        .lot_size(Quantity::from(1))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 #[fixture]
 pub fn option_spread() -> OptionSpread {
     let activation = timestamp(2023, 11, 6, 20, 54, 7);
     let expiration = timestamp(2024, 2, 23, 22, 59, 0);
-    OptionSpread::new(
-        InstrumentId::from("UD:U$: GN 2534559.GLBX"),
-        Symbol::from("UD:U$: GN 2534559"),
-        AssetClass::FX,
-        Some(Ustr::from("XCME")),
-        Ustr::from("SR3"),
-        Ustr::from("GN"),
-        UnixNanos::from(activation),
-        UnixNanos::from(expiration),
-        Currency::USD(),
-        2,
-        Price::from("0.01"),
-        Quantity::from(1),
-        Quantity::from(1),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None, // info
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    OptionSpread::builder()
+        .instrument_id(InstrumentId::from("UD:U$: GN 2534559.GLBX"))
+        .raw_symbol(Symbol::from("UD:U$: GN 2534559"))
+        .asset_class(AssetClass::FX)
+        .exchange(Ustr::from("XCME"))
+        .underlying(Ustr::from("SR3"))
+        .strategy_type(Ustr::from("GN"))
+        .activation_ns(UnixNanos::from(activation))
+        .expiration_ns(UnixNanos::from(expiration))
+        .currency(Currency::USD())
+        .price_precision(2)
+        .price_increment(Price::from("0.01"))
+        .multiplier(Quantity::from(1))
+        .lot_size(Quantity::from(1))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 #[fixture]
 pub fn crypto_futures_spread_btc_deribit() -> CryptoFuturesSpread {
     let activation = timestamp(2026, 5, 12, 0, 0, 0);
     let expiration = timestamp(2026, 5, 19, 8, 0, 0);
-    CryptoFuturesSpread::new(
-        InstrumentId::from("BTC-FS-19MAY26_PERP.DERIBIT"),
-        Symbol::from("BTC-FS-19MAY26_PERP"),
-        Currency::BTC(),
-        Currency::USD(),
-        Currency::BTC(),
-        false,
-        Ustr::from("FS"),
-        UnixNanos::from(activation),
-        UnixNanos::from(expiration),
-        1,
-        0,
-        Price::from("0.5"),
-        Quantity::from("1"),
-        Some(Quantity::from("10")),
-        None,
-        None,
-        Some(Quantity::from("1")),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(dec!(0.0003)),
-        Some(dec!(0.0003)),
-        None,
-        None, // info
-        0.into(),
-        0.into(),
-    )
+    CryptoFuturesSpread::builder()
+        .instrument_id(InstrumentId::from("BTC-FS-19MAY26_PERP.DERIBIT"))
+        .raw_symbol(Symbol::from("BTC-FS-19MAY26_PERP"))
+        .underlying(Currency::BTC())
+        .quote_currency(Currency::USD())
+        .settlement_currency(Currency::BTC())
+        .is_inverse(false)
+        .strategy_type(Ustr::from("FS"))
+        .activation_ns(UnixNanos::from(activation))
+        .expiration_ns(UnixNanos::from(expiration))
+        .price_precision(1)
+        .size_precision(0)
+        .price_increment(Price::from("0.5"))
+        .size_increment(Quantity::from("1"))
+        .multiplier(Quantity::from("10"))
+        .min_quantity(Quantity::from("1"))
+        .maker_fee(dec!(0.0003))
+        .taker_fee(dec!(0.0003))
+        .ts_event(0.into())
+        .ts_init(0.into())
+        .build()
+        .unwrap()
 }
 
 #[fixture]
 pub fn crypto_option_spread_btc_deribit() -> CryptoOptionSpread {
     let activation = timestamp(2026, 5, 12, 0, 0, 0);
     let expiration = timestamp(2026, 5, 19, 8, 0, 0);
-    CryptoOptionSpread::new(
-        InstrumentId::from("BTC-CS-19MAY26-70000_75000.DERIBIT"),
-        Symbol::from("BTC-CS-19MAY26-70000_75000"),
-        Currency::BTC(),
-        Currency::USD(),
-        Currency::BTC(),
-        false,
-        Ustr::from("CS"),
-        UnixNanos::from(activation),
-        UnixNanos::from(expiration),
-        4,
-        1,
-        Price::from("0.0001"),
-        Quantity::from("0.1"),
-        Some(Quantity::from(1)),
-        None,
-        None,
-        Some(Quantity::from("0.1")),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(dec!(0.0003)),
-        Some(dec!(0.0003)),
-        None,
-        None, // info
-        0.into(),
-        0.into(),
-    )
+    CryptoOptionSpread::builder()
+        .instrument_id(InstrumentId::from("BTC-CS-19MAY26-70000_75000.DERIBIT"))
+        .raw_symbol(Symbol::from("BTC-CS-19MAY26-70000_75000"))
+        .underlying(Currency::BTC())
+        .quote_currency(Currency::USD())
+        .settlement_currency(Currency::BTC())
+        .is_inverse(false)
+        .strategy_type(Ustr::from("CS"))
+        .activation_ns(UnixNanos::from(activation))
+        .expiration_ns(UnixNanos::from(expiration))
+        .price_precision(4)
+        .size_precision(1)
+        .price_increment(Price::from("0.0001"))
+        .size_increment(Quantity::from("0.1"))
+        .multiplier(Quantity::from(1))
+        .min_quantity(Quantity::from("0.1"))
+        .maker_fee(dec!(0.0003))
+        .taker_fee(dec!(0.0003))
+        .ts_event(0.into())
+        .ts_init(0.into())
+        .build()
+        .unwrap()
 }
 
 #[fixture]
@@ -742,155 +620,121 @@ pub fn betting() -> BettingInstrument {
     let ts_event = UnixNanos::default();
     let ts_init = UnixNanos::default();
 
-    BettingInstrument::new(
-        id,
-        raw_symbol,
-        event_type_id,
-        event_type_name,
-        competition_id,
-        competition_name,
-        event_id,
-        event_name,
-        event_country_code,
-        event_open_date,
-        betting_type,
-        market_id,
-        market_name,
-        market_type,
-        market_start_time,
-        selection_id,
-        selection_name,
-        selection_handicap,
-        currency,
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        max_quantity,
-        min_quantity,
-        max_notional,
-        min_notional,
-        max_price,
-        min_price,
-        margin_init,
-        margin_maint,
-        maker_fee,
-        taker_fee,
-        None,
-        None, // info
-        ts_event,
-        ts_init,
-    )
+    BettingInstrument::builder()
+        .instrument_id(id)
+        .raw_symbol(raw_symbol)
+        .event_type_id(event_type_id)
+        .event_type_name(event_type_name)
+        .competition_id(competition_id)
+        .competition_name(competition_name)
+        .event_id(event_id)
+        .event_name(event_name)
+        .event_country_code(event_country_code)
+        .event_open_date(event_open_date)
+        .betting_type(betting_type)
+        .market_id(market_id)
+        .market_name(market_name)
+        .market_type(market_type)
+        .market_start_time(market_start_time)
+        .selection_id(selection_id)
+        .selection_name(selection_name)
+        .selection_handicap(selection_handicap)
+        .currency(currency)
+        .price_precision(price_increment.precision)
+        .size_precision(size_increment.precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .maybe_max_quantity(max_quantity)
+        .maybe_min_quantity(min_quantity)
+        .maybe_max_notional(max_notional)
+        .maybe_min_notional(min_notional)
+        .maybe_max_price(max_price)
+        .maybe_min_price(min_price)
+        .maybe_margin_init(margin_init)
+        .maybe_margin_maint(margin_maint)
+        .maybe_maker_fee(maker_fee)
+        .maybe_taker_fee(taker_fee)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()
+        .unwrap()
 }
 
 #[fixture]
 pub fn commodity_gold() -> Commodity {
-    Commodity::new(
-        InstrumentId::from("GOLD.COMEX"),
-        Symbol::from("GOLD"),
-        AssetClass::Commodity,
-        Currency::from("USD"),
-        2,
-        0,
-        Price::from("0.01"),
-        Quantity::from("1"),
-        Some(Quantity::from("1")),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None, // info
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    Commodity::builder()
+        .instrument_id(InstrumentId::from("GOLD.COMEX"))
+        .raw_symbol(Symbol::from("GOLD"))
+        .asset_class(AssetClass::Commodity)
+        .quote_currency(Currency::from("USD"))
+        .price_precision(2)
+        .size_precision(0)
+        .price_increment(Price::from("0.01"))
+        .size_increment(Quantity::from("1"))
+        .lot_size(Quantity::from("1"))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 #[fixture]
 pub fn index_instrument_spx() -> IndexInstrument {
-    IndexInstrument::new(
-        InstrumentId::from("SPX.INDEX"),
-        Symbol::from("SPX"),
-        Currency::from("USD"),
-        2,
-        0,
-        Price::from("0.01"),
-        Quantity::from("1"),
-        None,
-        None, // info
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    IndexInstrument::builder()
+        .instrument_id(InstrumentId::from("SPX.INDEX"))
+        .raw_symbol(Symbol::from("SPX"))
+        .currency(Currency::from("USD"))
+        .price_precision(2)
+        .size_precision(0)
+        .price_increment(Price::from("0.01"))
+        .size_increment(Quantity::from("1"))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 #[fixture]
 pub fn cfd_gold() -> Cfd {
-    Cfd::new(
-        InstrumentId::from("GOLD-CFD.SIM"),
-        Symbol::from("GOLD-CFD"),
-        AssetClass::Commodity,
-        None,
-        Currency::from("USD"),
-        2,
-        0,
-        Price::from("0.01"),
-        Quantity::from("1"),
-        Some(Quantity::from("1")),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None, // info
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    Cfd::builder()
+        .instrument_id(InstrumentId::from("GOLD-CFD.SIM"))
+        .raw_symbol(Symbol::from("GOLD-CFD"))
+        .asset_class(AssetClass::Commodity)
+        .quote_currency(Currency::from("USD"))
+        .price_precision(2)
+        .size_precision(0)
+        .price_increment(Price::from("0.01"))
+        .size_increment(Quantity::from("1"))
+        .lot_size(Quantity::from("1"))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 #[fixture]
 pub fn perpetual_contract_eurusd() -> PerpetualContract {
-    PerpetualContract::new(
-        InstrumentId::from("EURUSD-PERP.AX"),
-        Symbol::from("EURUSD-PERP"),
-        Ustr::from("EURUSD"),
-        AssetClass::FX,
-        Some(Currency::from("EUR")),
-        Currency::from("USD"),
-        Currency::from("USD"),
-        false,
-        5,
-        0,
-        Price::from("0.00001"),
-        Quantity::from("1"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(dec!(0.03)),
-        Some(dec!(0.03)),
-        Some(dec!(0.00002)),
-        Some(dec!(0.00002)),
-        None,
-        None, // info
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    PerpetualContract::builder()
+        .instrument_id(InstrumentId::from("EURUSD-PERP.AX"))
+        .raw_symbol(Symbol::from("EURUSD-PERP"))
+        .underlying(Ustr::from("EURUSD"))
+        .asset_class(AssetClass::FX)
+        .base_currency(Currency::from("EUR"))
+        .quote_currency(Currency::from("USD"))
+        .settlement_currency(Currency::from("USD"))
+        .is_inverse(false)
+        .price_precision(5)
+        .size_precision(0)
+        .price_increment(Price::from("0.00001"))
+        .size_increment(Quantity::from("1"))
+        .margin_init(dec!(0.03))
+        .margin_maint(dec!(0.03))
+        .maker_fee(dec!(0.00002))
+        .taker_fee(dec!(0.00002))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 #[fixture]
@@ -902,64 +746,40 @@ pub fn binary_option() -> BinaryOption {
     let expiration = timestamp(2024, 2, 23, 22, 59, 0);
     let price_increment = Price::from("0.001");
     let size_increment = Quantity::from("0.01");
-    BinaryOption::new(
-        InstrumentId::from("{raw_symbol}.POLYMARKET"),
-        raw_symbol,
-        AssetClass::Alternative,
-        Currency::USDC(),
-        UnixNanos::from(activation),
-        UnixNanos::from(expiration),
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None, // info
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    BinaryOption::builder()
+        .instrument_id(InstrumentId::from("{raw_symbol}.POLYMARKET"))
+        .raw_symbol(raw_symbol)
+        .asset_class(AssetClass::Alternative)
+        .currency(Currency::USDC())
+        .activation_ns(UnixNanos::from(activation))
+        .expiration_ns(UnixNanos::from(expiration))
+        .price_precision(price_increment.precision)
+        .size_precision(size_increment.precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 #[fixture]
 pub fn tokenized_asset_aaplx() -> TokenizedAsset {
-    TokenizedAsset::new(
-        InstrumentId::from("AAPLx/USD.KRAKEN"),
-        Symbol::from("AAPLxUSD"),
-        AssetClass::Equity,
-        Currency::get_or_create_crypto("AAPLx"),
-        Currency::from("USD"),
-        None,
-        2,
-        4,
-        Price::from("0.01"),
-        Quantity::from("0.0001"),
-        None,
-        None,
-        None,
-        Some(Quantity::from("0.0001")),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(dec!(-0.0002)),
-        Some(dec!(0.001)),
-        None,
-        None, // info
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    TokenizedAsset::builder()
+        .instrument_id(InstrumentId::from("AAPLx/USD.KRAKEN"))
+        .raw_symbol(Symbol::from("AAPLxUSD"))
+        .asset_class(AssetClass::Equity)
+        .base_currency(Currency::get_or_create_crypto("AAPLx"))
+        .quote_currency(Currency::from("USD"))
+        .price_precision(2)
+        .size_precision(4)
+        .price_increment(Price::from("0.01"))
+        .size_increment(Quantity::from("0.0001"))
+        .min_quantity(Quantity::from("0.0001"))
+        .maker_fee(dec!(-0.0002))
+        .taker_fee(dec!(0.001))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }

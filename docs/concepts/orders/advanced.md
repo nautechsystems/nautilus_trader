@@ -15,17 +15,17 @@ An order list groups contingent orders or a larger batch under one `order_list_i
 list do not need a contingency relationship; their own metadata defines any relationship.
 
 Production constructors require every order in a list to use the same venue. Orders may target
-different instruments at that venue, such as pairs, calendar spreads, or multi‑leg strategies. The
+different instruments at that venue, such as pairs, calendar spreads, or multi-leg strategies. The
 list takes its representative `instrument_id` from the first order; consumers that need the actual
 instrument must resolve each order individually.
 
 Caveats for mixed-instrument lists:
 
-- Pre‑trade checks for price precision, quantity precision, and GTD expiry use each order's own
+- Pre-trade checks for price precision, quantity precision, and GTD expiry use each order's own
   instrument.
-- The cumulative risk check for free balance, notional bounds, position‑reducing exposure, and
+- The cumulative risk check for free balance, notional bounds, position-reducing exposure, and
   market data uses the list's representative instrument. For a mixed list, this produces a
-  single‑instrument bound rather than per‑instrument accuracy.
+  single-instrument bound rather than per-instrument accuracy.
 - Cache lookups like `cache.order_lists(instrument_id=...)` filter against the representative
   `instrument_id`; lists containing other instruments will not match queries for those other
   instruments.
@@ -35,20 +35,32 @@ Caveats for mixed-instrument lists:
   each order's own `instrument_id` against the venue API; others still build the batch
   request around the list's representative `instrument_id` and will misroute non-first
   orders. Treat mixed-instrument lists as adapter-specific; verify the target adapter's
-  behavior before relying on it. Backtesting and strategy‑managed routing avoid relying on an
-  adapter's mixed‑instrument batch behavior.
+  behavior before relying on it. Backtesting and strategy-managed routing avoid relying on an
+  adapter's mixed-instrument batch behavior.
 
 ## Contingency types
 
-- **OTO (One‑Triggers‑Other):** A parent order releases one or more child orders after a configured
+- **OTO (One-Triggers-Other):** A parent order releases one or more child orders after a configured
   fill condition.
-- **OCO (One‑Cancels‑Other):** A fill in one linked order requests cancellation of the others.
-- **OUO (One‑Updates‑Other):** A fill in one linked order requests a quantity update for the others.
+- **OCO (One-Cancels-Other):** A fill in one linked order requests cancellation of the others.
+- **OUO (One-Updates-Other):** A fill in one linked order requests a quantity update for the others.
 
 :::info
 These types correspond to FIX
 [`ContingencyType <1385>`](https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_1385.html).
 :::
+
+### Strategy-managed contingencies
+
+Enable `StrategyConfig.manage_contingent_orders` to manage open OTO, OCO, and OUO relationships for
+orders that are not active local. The strategy sends the resulting cancel and quantity-update
+commands through the normal execution path before it calls the specific and aggregate user
+order-event handlers.
+
+The `OrderEmulator` always owns active-local orders. Enabling strategy management therefore does
+not make the strategy and emulator manage the same order. The option does not add native venue
+support or submit a non-active-local OTO child: it manages non-active-local orders that are already
+open.
 
 ### One-Triggers-Other (OTO)
 
@@ -60,6 +72,13 @@ An OTO relationship has two parts:
 The handler determines where the children wait. The backtest engine can hold them locally, while a
 live adapter may send native venue instructions, submit all legs, reject the list, or require the
 strategy to manage the relationship.
+
+Before the parent's first fill, strategy management propagates parent quantity updates to open,
+non-active-local OTO children. After filling starts, parent events keep each child quantity equal to
+the parent's cumulative filled quantity. A child fill or update waits for the next parent event to
+refresh that target. Parent processing cancels an open child if the parent closes without a fill or
+if the child's cumulative fills meet or exceed the refreshed target. The active-local emulator
+remains responsible for submitting a child held locally.
 
 #### Trigger models
 
@@ -76,15 +95,15 @@ promise pro rata child sizing. Verify child quantities when the parent fills par
 
 #### Enforcing a full-fill trigger in strategy code
 
-If the execution context does not provide the required full‑fill behavior:
+If the execution context does not provide the required full-fill behavior:
 
 1. Submit the parent order without contingent children.
 1. Handle `OrderFilled` events for the parent.
 1. Confirm the parent has reached `FILLED` status.
-1. Submit the stop‑loss, take‑profit, or other child orders.
+1. Submit the stop-loss, take-profit, or other child orders.
 
 :::warning
-Full‑fill release leaves a partially filled position without its contingent exits until the parent
+Full-fill release leaves a partially filled position without its contingent exits until the parent
 finishes. Partial release reduces that delay, but the current backtest mode does not guarantee that
 child quantities track each partial fill. Check quantities and adapter behavior before treating a
 child as complete protection.
@@ -92,34 +111,36 @@ child as complete protection.
 
 ### One-Cancels-Other (OCO)
 
-In backtest local matching, a full or partial fill in one OCO order causes a best‑effort request to
+In backtest local matching, a full or partial fill in one OCO order causes a best-effort request to
 cancel its open siblings. The local order manager applies this behavior only while a sibling remains
-active local. After release, the adapter or venue determines cancellation behavior. Another sibling
-can fill before cancellation completes.
+active local. With strategy management enabled, the strategy requests cancellation for open,
+non-active-local siblings. Otherwise, the adapter or venue determines cancellation behavior.
+Another sibling can fill before cancellation completes.
 
 ### One-Updates-Other (OUO)
 
 In backtest local matching, a fill in one OUO order uses that order's remaining quantity as the
 target for each open sibling. The engine cancels a sibling when the target is zero or its filled
 quantity already meets the target; otherwise, it updates the sibling when needed. This behavior
-suits equal‑sized peers and does not preserve a ratio between unequal starting quantities. Live
-behavior depends on adapter and venue support.
+suits equal-sized peers and does not preserve a ratio between unequal starting quantities. With
+strategy management enabled, the strategy applies the same update or cancellation behavior to
+open, non-active-local siblings. Otherwise, live behavior depends on adapter and venue support.
 
 ## Constructing contingent orders
 
 Use `OrderFactory.bracket` to construct a bracket's contingency metadata. In Rust,
 `self.order().create_list(...)` assigns a fresh `order_list_id` to an existing group of orders.
 Python code instead passes a plain list to `self.submit_order_list(...)`, which creates an
-`OrderList` when needed. These grouping paths do not create parent or linked‑order relationships.
+`OrderList` when needed. These grouping paths do not create parent or linked-order relationships.
 The current model enforces only part of the remaining consistency:
 
 - A contingent order must have at least one `linked_order_id`.
 - A child identifies its parent through `parent_order_id`.
-- Rust `create_list` requires a non‑empty list whose orders use one venue.
-- `OrderList.validate` checks for non‑empty, unique client order IDs when a strategy submits the
+- Rust `create_list` requires a non-empty list whose orders use one venue.
+- `OrderList.validate` checks for non-empty, unique client order IDs when a strategy submits the
   list.
 - `OrderList.validate` does not verify shared `order_list_id` values, parent references, or other
-  cross‑field relationships.
+  cross-field relationships.
 
 Modification, cancellation, and rejection behavior depends on the component managing the
 contingency. Do not assume a parent update or cancellation cascades in every live integration.
@@ -131,10 +152,10 @@ legs independently and leave a position without its intended protection.
 
 ## Bracket orders
 
-Bracket orders combine an entry with take‑profit and stop‑loss children. By default,
-`OrderFactory.bracket` creates a `MARKET` entry, a `LIMIT` take‑profit, and a `STOP_MARKET`
-stop‑loss. It marks the entry with an `OTO` contingency, marks both exits `reduce_only`, and links
-the exits with an `OUO` contingency. The default `LIMIT` take‑profit is also `post_only`.
+Bracket orders combine an entry with take-profit and stop-loss children. By default,
+`OrderFactory.bracket` creates a `MARKET` entry, a `LIMIT` take-profit, and a `STOP_MARKET`
+stop-loss. It marks the entry with an `OTO` contingency, marks both exits `reduce_only`, and links
+the exits with an `OUO` contingency. The default `LIMIT` take-profit is also `post_only`.
 
 The factory creates the orders and their relationship metadata. The execution context determines
 whether children wait locally, use a native venue instruction, enter the venue with the parent, or

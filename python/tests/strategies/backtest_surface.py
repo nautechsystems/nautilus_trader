@@ -12,10 +12,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test backtest surface behavior.
+"""
 
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import ClassVar
 
 from nautilus_trader.common import DataActor
 from nautilus_trader.common import DataActorConfig
@@ -25,7 +29,6 @@ from nautilus_trader.model import Bar
 from nautilus_trader.model import BarType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import ClientOrderId
-from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import ExecAlgorithmId
 from nautilus_trader.model import FundingRateUpdate
 from nautilus_trader.model import IndexPriceUpdate
@@ -35,6 +38,7 @@ from nautilus_trader.model import InstrumentStatus
 from nautilus_trader.model import LimitOrder
 from nautilus_trader.model import MarketOrder
 from nautilus_trader.model import MarkPriceUpdate
+from nautilus_trader.model import OrderBook
 from nautilus_trader.model import OrderBookDeltas
 from nautilus_trader.model import OrderSide
 from nautilus_trader.model import Price
@@ -48,14 +52,30 @@ from nautilus_trader.trading import StrategyConfig
 
 
 class SignalHarvestConfig(StrategyConfig):
+    """
+    Collect signal harvest config tests.
+    """
+
     _CUSTOM_FIELDS = ("instrument_id", "bar_type", "trade_size")
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: object, **kwargs: object) -> object:
+        """
+        Create a new instance.
+        """
         for key in cls._CUSTOM_FIELDS:
             kwargs.pop(key, None)
         return super().__new__(cls, *args, **kwargs)
 
-    def __init__(self, instrument_id: str, bar_type: str, trade_size: str, **kwargs):
+    def __init__(
+        self,
+        instrument_id: str,
+        bar_type: str,
+        trade_size: str,
+        **_kwargs: object,
+    ) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__()
         self.instrument_id = instrument_id
         self.bar_type = bar_type
@@ -63,7 +83,14 @@ class SignalHarvestConfig(StrategyConfig):
 
 
 class SignalHarvest(Strategy):
-    def __init__(self, config: SignalHarvestConfig):
+    """
+    Collect signal harvest tests.
+    """
+
+    def __init__(self, config: SignalHarvestConfig) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
         self._bar_type = BarType.from_str(config.bar_type)
@@ -87,7 +114,10 @@ class SignalHarvest(Strategy):
         self._exit_sent = False
         self._order_count = 0
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         self._instrument = self.cache.instrument(self._instrument_id)
         self.subscribe_bars(self._bar_type)
         self.subscribe_trades(self._instrument_id)
@@ -97,7 +127,10 @@ class SignalHarvest(Strategy):
         self.subscribe_instrument_status(self._instrument_id)
         self.subscribe_instrument_close(self._instrument_id)
 
-    def on_bar(self, bar: Bar):
+    def on_bar(self, bar: Bar) -> None:
+        """
+        On bar.
+        """
         self._bar_count += 1
         self._update_bar_state(bar)
 
@@ -114,25 +147,46 @@ class SignalHarvest(Strategy):
             self._submit_market(OrderSide.SELL)
             self._exit_sent = True
 
-    def on_trade(self, trade: TradeTick):
+    def on_trade(self, _trade: TradeTick) -> None:
+        """
+        On trade.
+        """
         self._trade_count += 1
 
-    def on_mark_price(self, mark_price: MarkPriceUpdate):
+    def on_mark_price(self, _mark_price: MarkPriceUpdate) -> None:
+        """
+        On mark price.
+        """
         self._mark_count += 1
 
-    def on_index_price(self, index_price: IndexPriceUpdate):
+    def on_index_price(self, _index_price: IndexPriceUpdate) -> None:
+        """
+        On index price.
+        """
         self._index_count += 1
 
-    def on_funding_rate(self, funding_rate: FundingRateUpdate):
+    def on_funding_rate(self, _funding_rate: FundingRateUpdate) -> None:
+        """
+        On funding rate.
+        """
         self._funding_count += 1
 
-    def on_instrument_status(self, status: InstrumentStatus):
+    def on_instrument_status(self, _status: InstrumentStatus) -> None:
+        """
+        On instrument status.
+        """
         self._status_count += 1
 
-    def on_instrument_close(self, close: InstrumentClose):
+    def on_instrument_close(self, _close: InstrumentClose) -> None:
+        """
+        On instrument close.
+        """
         self._close_count += 1
 
-    def on_reset(self):
+    def on_reset(self) -> None:
+        """
+        On reset.
+        """
         self._bar_count = 0
         self._trade_count = 0
         self._mark_count = 0
@@ -151,11 +205,14 @@ class SignalHarvest(Strategy):
         self._exit_sent = False
         self._order_count = 0
 
-    def on_stop(self):
+    def on_stop(self) -> None:
+        """
+        On stop.
+        """
         self.cancel_all_orders(self._instrument_id)
         self.close_all_positions(self._instrument_id)
 
-    def _update_bar_state(self, bar: Bar):
+    def _update_bar_state(self, bar: Bar) -> None:
         close = bar.close.as_decimal()
         if self._bar_count == 1:
             self._fast = close
@@ -191,7 +248,7 @@ class SignalHarvest(Strategy):
             close.as_decimal() + (self._instrument.price_increment.as_decimal() * Decimal(25)),
         )
 
-    def _submit_market(self, side: OrderSide):
+    def _submit_market(self, side: OrderSide) -> None:
         self._order_count += 1
         self.submit_order(
             MarketOrder(
@@ -206,11 +263,11 @@ class SignalHarvest(Strategy):
                 time_in_force=TimeInForce.GTC,
                 reduce_only=False,
                 quote_quantity=False,
-                contingency_type=ContingencyType.NO_CONTINGENCY,
+                contingency_type=None,
             ),
         )
 
-    def _submit_limit(self, side: OrderSide, price: Price):
+    def _submit_limit(self, side: OrderSide, price: Price) -> None:
         self._order_count += 1
         self.submit_order(
             LimitOrder(
@@ -232,21 +289,38 @@ class SignalHarvest(Strategy):
 
 
 class BookChurnConfig(StrategyConfig):
+    """
+    Collect book churn config tests.
+    """
+
     _CUSTOM_FIELDS = ("instrument_id", "trade_size")
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: object, **kwargs: object) -> object:
+        """
+        Create a new instance.
+        """
         for key in cls._CUSTOM_FIELDS:
             kwargs.pop(key, None)
         return super().__new__(cls, *args, **kwargs)
 
-    def __init__(self, instrument_id: str, trade_size: str, **kwargs):
+    def __init__(self, instrument_id: str, trade_size: str, **_kwargs: object) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__()
         self.instrument_id = instrument_id
         self.trade_size = trade_size
 
 
 class BookChurn(Strategy):
-    def __init__(self, config: BookChurnConfig):
+    """
+    Collect book churn tests.
+    """
+
+    def __init__(self, config: BookChurnConfig) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
         self._qty = Quantity.from_str(config.trade_size)
@@ -258,11 +332,17 @@ class BookChurn(Strategy):
         self._cancel_sent = False
         self._exit_sent = False
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         self.subscribe_book_deltas(self._instrument_id, BookType.L2_MBP, depth=10)
         self.subscribe_book_at_interval(self._instrument_id, BookType.L2_MBP, interval_ms=1_000)
 
-    def on_book_deltas(self, deltas: OrderBookDeltas):
+    def on_book_deltas(self, _deltas: OrderBookDeltas) -> None:
+        """
+        On book deltas.
+        """
         self._delta_count += 1
         if self._delta_count >= 1 and not self._entry_sent:
             self._submit_market(OrderSide.BUY)
@@ -277,10 +357,16 @@ class BookChurn(Strategy):
             self._submit_market(OrderSide.SELL)
             self._exit_sent = True
 
-    def on_book(self, book):
+    def on_book(self, _book: OrderBook) -> None:
+        """
+        On book.
+        """
         self._book_count += 1
 
-    def on_reset(self):
+    def on_reset(self) -> None:
+        """
+        On reset.
+        """
         self._book_count = 0
         self._delta_count = 0
         self._order_count = 0
@@ -289,11 +375,14 @@ class BookChurn(Strategy):
         self._cancel_sent = False
         self._exit_sent = False
 
-    def on_stop(self):
+    def on_stop(self) -> None:
+        """
+        On stop.
+        """
         self.cancel_all_orders(self._instrument_id)
         self.close_all_positions(self._instrument_id)
 
-    def _submit_market(self, side: OrderSide):
+    def _submit_market(self, side: OrderSide) -> None:
         self._order_count += 1
         self.submit_order(
             MarketOrder(
@@ -308,11 +397,11 @@ class BookChurn(Strategy):
                 time_in_force=TimeInForce.GTC,
                 reduce_only=False,
                 quote_quantity=False,
-                contingency_type=ContingencyType.NO_CONTINGENCY,
+                contingency_type=None,
             ),
         )
 
-    def _submit_limit(self, side: OrderSide, price: Price):
+    def _submit_limit(self, side: OrderSide, price: Price) -> None:
         self._order_count += 1
         self.submit_order(
             LimitOrder(
@@ -334,14 +423,30 @@ class BookChurn(Strategy):
 
 
 class RoutedOrderProbeConfig(StrategyConfig):
+    """
+    Collect routed order probe config tests.
+    """
+
     _CUSTOM_FIELDS = ("instrument_id", "trade_size", "exec_algorithm_id")
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: object, **kwargs: object) -> object:
+        """
+        Create a new instance.
+        """
         for key in cls._CUSTOM_FIELDS:
             kwargs.pop(key, None)
         return super().__new__(cls, *args, **kwargs)
 
-    def __init__(self, instrument_id: str, trade_size: str, exec_algorithm_id: str, **kwargs):
+    def __init__(
+        self,
+        instrument_id: str,
+        trade_size: str,
+        exec_algorithm_id: str,
+        **_kwargs: object,
+    ) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__()
         self.instrument_id = instrument_id
         self.trade_size = trade_size
@@ -349,17 +454,30 @@ class RoutedOrderProbeConfig(StrategyConfig):
 
 
 class RoutedOrderProbe(Strategy):
-    def __init__(self, config: RoutedOrderProbeConfig):
+    """
+    Collect routed order probe tests.
+    """
+
+    def __init__(self, config: RoutedOrderProbeConfig) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
         self._qty = Quantity.from_str(config.trade_size)
         self._exec_algorithm_id = ExecAlgorithmId(config.exec_algorithm_id)
         self._sent = False
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         self.subscribe_quotes(self._instrument_id)
 
-    def on_quote(self, quote: QuoteTick):
+    def on_quote(self, _quote: QuoteTick) -> None:
+        """
+        On quote.
+        """
         if not self._sent:
             self._sent = True
             client_order_id = ClientOrderId(f"{self.strategy_id}-1")
@@ -376,20 +494,30 @@ class RoutedOrderProbe(Strategy):
                     time_in_force=TimeInForce.GTC,
                     reduce_only=False,
                     quote_quantity=False,
-                    contingency_type=ContingencyType.NO_CONTINGENCY,
+                    contingency_type=None,
                     exec_algorithm_id=self._exec_algorithm_id,
                     exec_spawn_id=client_order_id,
                 ),
             )
 
-    def on_reset(self):
+    def on_reset(self) -> None:
+        """
+        On reset.
+        """
         self._sent = False
 
 
-class RoutedOrderExecAlgorithmConfig(DataActorConfig):
+class RoutedOrderExecutionAlgorithmConfig(DataActorConfig):
+    """
+    Collect routed order execution algorithm config tests.
+    """
+
     _CUSTOM_FIELDS = ("exec_algorithm_id", "signal_name")
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: object, **kwargs: object) -> object:
+        """
+        Create a new instance.
+        """
         for key in cls._CUSTOM_FIELDS:
             kwargs.pop(key, None)
         return super().__new__(cls, *args, **kwargs)
@@ -398,11 +526,14 @@ class RoutedOrderExecAlgorithmConfig(DataActorConfig):
         self,
         exec_algorithm_id: str,
         signal_name: str = "routed-order",
-        actor_id=None,
+        actor_id: object = None,
         log_events: bool = True,
         log_commands: bool = True,
-        **kwargs,
-    ):
+        **_kwargs: object,
+    ) -> None:
+        """
+        Initialize the helper.
+        """
         self.actor_id = actor_id
         self.exec_algorithm_id = exec_algorithm_id
         self.log_events = log_events
@@ -410,25 +541,41 @@ class RoutedOrderExecAlgorithmConfig(DataActorConfig):
         self.signal_name = signal_name
 
 
-class RoutedOrderExecAlgorithm(DataActor):
-    received_client_order_ids = []
-    received_exec_algorithm_ids = []
-    signal_values = []
+class RoutedOrderDataActorExecutionAlgorithm(DataActor):
+    """
+    Collect routed order data actor execution algorithm tests.
+    """
 
-    def __init__(self, config: RoutedOrderExecAlgorithmConfig):
+    received_client_order_ids: ClassVar[list[object]] = []
+    received_exec_algorithm_ids: ClassVar[list[object]] = []
+    signal_values: ClassVar[list[object]] = []
+
+    def __init__(self, config: RoutedOrderExecutionAlgorithmConfig) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
         self._signal_name = config.signal_name
 
     @classmethod
-    def reset_observations(cls):
+    def reset_observations(cls) -> None:
+        """
+        Reset observations.
+        """
         cls.received_client_order_ids = []
         cls.received_exec_algorithm_ids = []
         cls.signal_values = []
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         type(self).reset_observations()
 
-    def on_order(self, order):
+    def on_order(self, order: object) -> None:
+        """
+        On order.
+        """
         client_order_id = str(order.client_order_id)
 
         type(self).received_client_order_ids.append(client_order_id)
@@ -438,21 +585,31 @@ class RoutedOrderExecAlgorithm(DataActor):
 
 
 class RoutedOrderExecutionAlgorithm(ExecutionAlgorithm):
-    cache_instrument_ids = []
-    greeks_types = []
-    portfolio_initialized = []
-    received_client_order_ids = []
-    received_exec_algorithm_ids = []
-    running_states = []
-    signal_counts_after_unsubscribe = []
-    signal_values = []
+    """
+    Collect routed order execution algorithm tests.
+    """
 
-    def __init__(self, config: RoutedOrderExecAlgorithmConfig):
+    cache_instrument_ids: ClassVar[list[object]] = []
+    greeks_types: ClassVar[list[object]] = []
+    portfolio_initialized: ClassVar[list[object]] = []
+    received_client_order_ids: ClassVar[list[object]] = []
+    received_exec_algorithm_ids: ClassVar[list[object]] = []
+    running_states: ClassVar[list[object]] = []
+    signal_counts_after_unsubscribe: ClassVar[list[object]] = []
+    signal_values: ClassVar[list[object]] = []
+
+    def __init__(self, config: RoutedOrderExecutionAlgorithmConfig) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
         self._signal_name = config.signal_name
 
     @classmethod
-    def reset_observations(cls):
+    def reset_observations(cls) -> None:
+        """
+        Reset observations.
+        """
         cls.cache_instrument_ids = []
         cls.greeks_types = []
         cls.portfolio_initialized = []
@@ -462,16 +619,25 @@ class RoutedOrderExecutionAlgorithm(ExecutionAlgorithm):
         cls.signal_counts_after_unsubscribe = []
         cls.signal_values = []
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         type(self).reset_observations()
         self.subscribe_signal(self._signal_name)
 
-    def on_stop(self):
+    def on_stop(self) -> None:
+        """
+        On stop.
+        """
         self.unsubscribe_signal(self._signal_name)
         self.publish_signal(self._signal_name, "after-unsubscribe")
         type(self).signal_counts_after_unsubscribe.append(len(type(self).signal_values))
 
-    def on_order(self, order):
+    def on_order(self, order: object) -> None:
+        """
+        On order.
+        """
         client_order_id = str(order.client_order_id)
         instrument = self.cache.instrument(order.instrument_id)
 
@@ -483,26 +649,45 @@ class RoutedOrderExecutionAlgorithm(ExecutionAlgorithm):
         type(self).running_states.append(self.is_running())
         self.publish_signal(self._signal_name, client_order_id)
 
-    def on_signal(self, signal):
+    def on_signal(self, signal: object) -> None:
+        """
+        On signal.
+        """
         type(self).signal_values.append(signal.value)
 
 
 class DoubleSpawnExecutionAlgorithm(ExecutionAlgorithm):
-    cached_primary_quantities = []
-    spawned_exec_algorithm_ids = []
+    """
+    Collect double spawn execution algorithm tests.
+    """
 
-    def __init__(self, config: RoutedOrderExecAlgorithmConfig):
+    cached_primary_quantities: ClassVar[list[object]] = []
+    spawned_exec_algorithm_ids: ClassVar[list[object]] = []
+
+    def __init__(self, config: RoutedOrderExecutionAlgorithmConfig) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
 
     @classmethod
-    def reset_observations(cls):
+    def reset_observations(cls) -> None:
+        """
+        Reset observations.
+        """
         cls.cached_primary_quantities = []
         cls.spawned_exec_algorithm_ids = []
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         type(self).reset_observations()
 
-    def on_order(self, order):
+    def on_order(self, order: object) -> None:
+        """
+        On order.
+        """
         first = self.spawn_market(order, Quantity.from_str("0.03000"))
         second = self.spawn_market(order, Quantity.from_str("0.02000"))
         cached_primary = self.cache.order(order.client_order_id)
@@ -514,19 +699,35 @@ class DoubleSpawnExecutionAlgorithm(ExecutionAlgorithm):
 
 
 class OversizedSpawnExecutionAlgorithm(ExecutionAlgorithm):
-    error_messages = []
+    """
+    Collect oversized spawn execution algorithm tests.
+    """
 
-    def __init__(self, config: RoutedOrderExecAlgorithmConfig):
+    error_messages: ClassVar[list[object]] = []
+
+    def __init__(self, config: RoutedOrderExecutionAlgorithmConfig) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
 
     @classmethod
-    def reset_observations(cls):
+    def reset_observations(cls) -> None:
+        """
+        Reset observations.
+        """
         cls.error_messages = []
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         type(self).reset_observations()
 
-    def on_order(self, order):
+    def on_order(self, order: object) -> None:
+        """
+        On order.
+        """
         try:
             self.spawn_market(order, Quantity.from_str("0.11000"))
         except ValueError as e:
@@ -536,9 +737,16 @@ class OversizedSpawnExecutionAlgorithm(ExecutionAlgorithm):
 
 
 class MarketDataAuditActorConfig(DataActorConfig):
+    """
+    Collect market data audit actor config tests.
+    """
+
     _CUSTOM_FIELDS = ("instrument_id",)
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: object, **kwargs: object) -> object:
+        """
+        Create a new instance.
+        """
         for key in cls._CUSTOM_FIELDS:
             kwargs.pop(key, None)
         return super().__new__(cls, *args, **kwargs)
@@ -546,11 +754,14 @@ class MarketDataAuditActorConfig(DataActorConfig):
     def __init__(
         self,
         instrument_id: str,
-        actor_id=None,
+        actor_id: object = None,
         log_events: bool = True,
         log_commands: bool = True,
-        **kwargs,
-    ):
+        **_kwargs: object,
+    ) -> None:
+        """
+        Initialize the helper.
+        """
         self.actor_id = actor_id
         self.log_events = log_events
         self.log_commands = log_commands
@@ -558,6 +769,10 @@ class MarketDataAuditActorConfig(DataActorConfig):
 
 
 class MarketDataAuditActor(DataActor):
+    """
+    Collect market data audit actor tests.
+    """
+
     quote_count = 0
     book_count = 0
     depth_count = 0
@@ -565,12 +780,18 @@ class MarketDataAuditActor(DataActor):
     last_book_bid = None
     last_book_ask = None
 
-    def __init__(self, config: MarketDataAuditActorConfig):
+    def __init__(self, config: MarketDataAuditActorConfig) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
 
     @classmethod
-    def reset_observations(cls):
+    def reset_observations(cls) -> None:
+        """
+        Reset observations.
+        """
         cls.quote_count = 0
         cls.book_count = 0
         cls.depth_count = 0
@@ -578,7 +799,10 @@ class MarketDataAuditActor(DataActor):
         cls.last_book_bid = None
         cls.last_book_ask = None
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         type(self).reset_observations()
         self.subscribe_quotes(self._instrument_id)
         self.subscribe_book_at_interval(
@@ -588,62 +812,170 @@ class MarketDataAuditActor(DataActor):
             depth=10,
         )
 
-    def on_quote(self, quote: QuoteTick):
+    def on_quote(self, quote: QuoteTick) -> None:
+        """
+        On quote.
+        """
         type(self).quote_count += 1
         type(self).last_bid = quote.bid_price
 
-    def on_book_deltas(self, deltas: OrderBookDeltas):
+    def on_book_deltas(self, _deltas: OrderBookDeltas) -> None:
+        """
+        On book deltas.
+        """
         type(self).depth_count += 1
 
-    def on_book(self, book):
+    def on_book(self, book: OrderBook) -> None:
+        """
+        On book.
+        """
         type(self).book_count += 1
         type(self).last_book_bid = book.best_bid_price()
         type(self).last_book_ask = book.best_ask_price()
 
-    def on_reset(self):
+    def on_reset(self) -> None:
+        """
+        On reset.
+        """
         type(self).reset_observations()
 
 
-class StreamingWhipsawConfig(StrategyConfig):
-    _CUSTOM_FIELDS = ("instrument_id", "trade_size")
+class QuoteCountActorConfig(DataActorConfig):
+    """
+    Configure quote count actor tests.
+    """
 
-    def __new__(cls, *args, **kwargs):
+    _CUSTOM_FIELDS = ("instrument_id",)
+
+    def __new__(cls, *args: object, **kwargs: object) -> object:
+        """
+        Create a new instance.
+        """
         for key in cls._CUSTOM_FIELDS:
             kwargs.pop(key, None)
         return super().__new__(cls, *args, **kwargs)
 
-    def __init__(self, instrument_id: str, trade_size: str, **kwargs):
+    def __init__(self, instrument_id: str, **_kwargs: object) -> None:
+        """
+        Initialize the config.
+        """
+        super().__init__()
+        self.instrument_id = instrument_id
+
+
+class QuoteCountActor(DataActor):
+    """
+    Count quotes received through actor registration tests.
+    """
+
+    quote_count: ClassVar[int] = 0
+    last_bid: ClassVar[object] = None
+
+    def __init__(self, config: QuoteCountActorConfig) -> None:
+        """
+        Initialize the actor.
+        """
+        super().__init__(config)
+        self._instrument_id = InstrumentId.from_str(config.instrument_id)
+
+    @classmethod
+    def reset_observations(cls) -> None:
+        """
+        Reset observations.
+        """
+        cls.quote_count = 0
+        cls.last_bid = None
+
+    def on_start(self) -> None:
+        """
+        Subscribe to quotes.
+        """
+        type(self).reset_observations()
+        self.subscribe_quotes(self._instrument_id)
+
+    def on_quote(self, quote: QuoteTick) -> None:
+        """
+        Record a quote.
+        """
+        type(self).quote_count += 1
+        type(self).last_bid = quote.bid_price
+
+    def on_reset(self) -> None:
+        """
+        Reset observations.
+        """
+        type(self).reset_observations()
+
+
+class StreamingWhipsawConfig(StrategyConfig):
+    """
+    Collect streaming whipsaw config tests.
+    """
+
+    _CUSTOM_FIELDS = ("instrument_id", "trade_size")
+
+    def __new__(cls, *args: object, **kwargs: object) -> object:
+        """
+        Create a new instance.
+        """
+        for key in cls._CUSTOM_FIELDS:
+            kwargs.pop(key, None)
+        return super().__new__(cls, *args, **kwargs)
+
+    def __init__(self, instrument_id: str, trade_size: str, **_kwargs: object) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__()
         self.instrument_id = instrument_id
         self.trade_size = trade_size
 
 
 class StreamingWhipsaw(Strategy):
-    def __init__(self, config: StreamingWhipsawConfig):
+    """
+    Collect streaming whipsaw tests.
+    """
+
+    def __init__(self, config: StreamingWhipsawConfig) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
         self._qty = Quantity.from_str(config.trade_size)
         self._quote_count = 0
         self._order_count = 0
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         self.subscribe_quotes(self._instrument_id)
 
-    def on_quote(self, quote: QuoteTick):
+    def on_quote(self, _quote: QuoteTick) -> None:
+        """
+        On quote.
+        """
         self._quote_count += 1
         if self._quote_count in (1, 7):
             self._submit_market(OrderSide.BUY)
         elif self._quote_count in (5, 10):
             self._submit_market(OrderSide.SELL)
 
-    def on_reset(self):
+    def on_reset(self) -> None:
+        """
+        On reset.
+        """
         self._quote_count = 0
         self._order_count = 0
 
-    def on_stop(self):
+    def on_stop(self) -> None:
+        """
+        On stop.
+        """
         self.close_all_positions(self._instrument_id)
 
-    def _submit_market(self, side: OrderSide):
+    def _submit_market(self, side: OrderSide) -> None:
         self._order_count += 1
         self.submit_order(
             MarketOrder(
@@ -658,6 +990,6 @@ class StreamingWhipsaw(Strategy):
                 time_in_force=TimeInForce.GTC,
                 reduce_only=False,
                 quote_quantity=False,
-                contingency_type=ContingencyType.NO_CONTINGENCY,
+                contingency_type=None,
             ),
         )

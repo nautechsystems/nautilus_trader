@@ -31,13 +31,12 @@ mod orders;
 mod reports;
 mod responses;
 
-use std::sync::{Arc, Mutex, atomic::AtomicBool};
+use std::sync::{Arc, atomic::AtomicBool};
 
 use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
-    clients::{ExecutionClient, SocketReconnectRegistry},
-    live::task::TaskHandles,
+    clients::ExecutionClient,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
@@ -50,7 +49,7 @@ use nautilus_core::{
     collections::AtomicMap,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
+use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControl, task::TaskGroup};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, LiquiditySide, OmsType},
@@ -63,10 +62,9 @@ use nautilus_model::{
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
 use nautilus_network::retry::RetryConfig;
+use parking_lot::Mutex;
 pub(crate) use responses::is_post_only_crossing;
 use rust_decimal::Decimal;
-use tokio::task::JoinHandle;
-use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 pub(crate) use self::reports::get_pusd_currency;
@@ -78,16 +76,13 @@ use self::{
     submitter::OrderSubmitter,
 };
 use crate::{
-    common::{
-        consts::POLYMARKET_VENUE,
-        credential::Secrets,
-        enums::SignatureType,
-        socket::{SocketStatePublisher, USER_STREAMS_ENDPOINT},
-    },
-    config::PolymarketExecClientConfig,
+    common::{consts::POLYMARKET_VENUE, credential::Secrets, enums::SignatureType},
+    config::PolymarketExecutionClientConfig,
     http::{clob::PolymarketClobHttpClient, data_api::PolymarketDataApiHttpClient},
     signing::eip712::OrderSigner,
-    websocket::{client::PolymarketWebSocketClient, dispatch::WsDispatchState},
+    websocket::{
+        USER_STREAMS_ENDPOINT, client::PolymarketWebSocketClient, dispatch::WsDispatchState,
+    },
 };
 
 /// Live execution client for the Polymarket prediction market.
@@ -95,18 +90,17 @@ use crate::{
 pub struct PolymarketExecutionClient {
     core: ExecutionClientCore,
     clock: &'static AtomicTime,
-    config: PolymarketExecClientConfig,
+    config: PolymarketExecutionClientConfig,
     emitter: ExecutionEventEmitter,
     http_client: PolymarketClobHttpClient,
     data_api_client: PolymarketDataApiHttpClient,
     submitter: OrderSubmitter,
     ws_client: PolymarketWebSocketClient,
-    socket_registry: SocketReconnectRegistry,
     secrets: Secrets,
-    pending_tasks: Arc<TaskHandles>,
+    session_tasks: TaskGroup,
+    pending_tasks: TaskGroup,
+    shutdown_errors: Vec<String>,
     stopping: Arc<AtomicBool>,
-    ws_stream_handle: Option<JoinHandle<()>>,
-    heartbeat_task: Option<HeartbeatTask>,
     heartbeat_healthy: Arc<AtomicBool>,
     order_event_handler: Option<TypedHandler<OrderEventAny>>,
     position_event_handler: Option<TypedHandler<PositionEvent>>,
@@ -127,7 +121,7 @@ impl PolymarketExecutionClient {
     /// Returns an error if credentials cannot be resolved or clients fail to construct.
     pub fn new(
         core: ExecutionClientCore,
-        config: PolymarketExecClientConfig,
+        config: PolymarketExecutionClientConfig,
     ) -> anyhow::Result<Self> {
         let proxy_url = config.validated_proxy_url()?;
         let secrets = Secrets::resolve(
@@ -191,14 +185,11 @@ impl PolymarketExecutionClient {
             proxy_url,
         );
 
-        let socket_registry = SocketReconnectRegistry::default();
-        let ws_client = if let Some(publisher) =
-            SocketStatePublisher::new(core.client_id, socket_registry.clone())
-        {
-            ws_client.with_socket_control(publisher.control(USER_STREAMS_ENDPOINT))
-        } else {
-            ws_client
-        };
+        let ws_client = ws_client.with_socket_control(SocketControl::new(
+            core.client_id,
+            Some(*POLYMARKET_VENUE),
+            USER_STREAMS_ENDPOINT,
+        ));
 
         let clock = get_atomic_clock_realtime();
         let pusd = get_pusd_currency();
@@ -210,6 +201,9 @@ impl PolymarketExecutionClient {
             Some(pusd),
         );
 
+        let session_tasks = TaskGroup::new();
+        let pending_tasks = TaskGroup::new();
+
         Ok(Self {
             core,
             clock,
@@ -219,12 +213,11 @@ impl PolymarketExecutionClient {
             data_api_client,
             submitter,
             ws_client,
-            socket_registry,
             secrets,
-            pending_tasks: Arc::new(TaskHandles::default()),
+            session_tasks,
+            pending_tasks,
+            shutdown_errors: Vec::new(),
             stopping: Arc::new(AtomicBool::new(false)),
-            ws_stream_handle: None,
-            heartbeat_task: None,
             heartbeat_healthy: Arc::new(AtomicBool::new(true)),
             order_event_handler: None,
             position_event_handler: None,
@@ -237,12 +230,6 @@ impl PolymarketExecutionClient {
             ws_dispatch_state: Arc::new(Mutex::new(WsDispatchState::default())),
         })
     }
-}
-
-#[derive(Debug)]
-struct HeartbeatTask {
-    cancellation: CancellationToken,
-    handle: JoinHandle<()>,
 }
 
 fn resolve_maker_address(
@@ -300,10 +287,6 @@ impl ExecutionClient for PolymarketExecutionClient {
         self.core.cache().account_owned(&self.core.account_id)
     }
 
-    fn socket_reconnect_registry(&self) -> Option<&SocketReconnectRegistry> {
-        Some(&self.socket_registry)
-    }
-
     fn position_reconciliation_tolerance(&self) -> Decimal {
         crate::common::consts::POSITION_RECONCILIATION_TOLERANCE
     }
@@ -356,8 +339,7 @@ impl ExecutionClient for PolymarketExecutionClient {
     }
 
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
-        self.cancel_all_orders_command(&cmd);
-        Ok(())
+        self.cancel_all_orders_command(&cmd)
     }
 
     fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Arc;
 
 use ahash::AHashSet;
 use nautilus_common::cache::InstrumentLookupError;
@@ -22,6 +22,7 @@ use nautilus_model::{
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
 };
+use parking_lot::Mutex;
 use ustr::Ustr;
 
 pub(crate) fn resolve_token_id_from(
@@ -77,7 +78,7 @@ pub(crate) async fn sync_ws_subscription_with_terminal_async(
     active_quote_subs: Arc<AtomicSet<InstrumentId>>,
     active_delta_subs: Arc<AtomicSet<InstrumentId>>,
     active_trade_subs: Arc<AtomicSet<InstrumentId>>,
-    closed_condition_ids: Arc<StdMutex<AHashSet<String>>>,
+    closed_condition_ids: Arc<Mutex<AHashSet<String>>>,
     ws_open_tokens: Arc<AtomicSet<Ustr>>,
     ws_sub_mutex: Arc<tokio::sync::Mutex<()>>,
     ws: crate::websocket::pool::PolymarketMarketPoolHandle,
@@ -106,7 +107,7 @@ async fn sync_ws_subscription_inner(
     active_quote_subs: Arc<AtomicSet<InstrumentId>>,
     active_delta_subs: Arc<AtomicSet<InstrumentId>>,
     active_trade_subs: Arc<AtomicSet<InstrumentId>>,
-    closed_condition_ids: Option<Arc<StdMutex<AHashSet<String>>>>,
+    closed_condition_ids: Option<Arc<Mutex<AHashSet<String>>>>,
     ws_open_tokens: Arc<AtomicSet<Ustr>>,
     ws_sub_mutex: Arc<tokio::sync::Mutex<()>>,
     ws: crate::websocket::pool::PolymarketMarketPoolHandle,
@@ -115,12 +116,8 @@ async fn sync_ws_subscription_inner(
     let _guard = ws_sub_mutex.lock().await;
 
     let is_terminal = closed_condition_ids.is_some_and(|closed_condition_ids| {
-        crate::providers::extract_condition_id(&instrument_id).is_ok_and(|condition_id| {
-            closed_condition_ids
-                .lock()
-                .expect("closed_condition_ids mutex poisoned")
-                .contains(&condition_id)
-        })
+        crate::providers::extract_condition_id(&instrument_id)
+            .is_ok_and(|condition_id| closed_condition_ids.lock().contains(&condition_id))
     });
     let wants_subscribe = !is_terminal
         && (active_quote_subs.contains(&instrument_id)

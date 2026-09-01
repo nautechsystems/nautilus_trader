@@ -12,7 +12,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test position behavior.
+"""
 
+from __future__ import annotations
+
+import re
 from decimal import Decimal
 
 import pytest
@@ -46,22 +52,23 @@ from nautilus_trader.model import VenueOrderId
 
 USD = Currency.from_str("USD")
 AUDUSD_SIM = TestInstrumentProvider.audusd_sim()
+GBPUSD_SIM = TestInstrumentProvider.gbpusd_sim()
 
 
 def _make_fill(
-    instrument=None,
-    order_side=OrderSide.BUY,
-    last_px="1.00001",
-    last_qty=100_000,
-    position_id="P-123456",
-    client_order_id="O-20210410-022422-001-001-1",
-    venue_order_id="1",
-    trade_id="E-20210410-022422-001-001-1",
-    commission="2.00 USD",
-    currency=None,
-    event_id=None,
-    ts_event=0,
-):
+    instrument: object = None,
+    order_side: object = OrderSide.BUY,
+    last_px: object = "1.00001",
+    last_qty: object = 100_000,
+    position_id: object = "P-123456",
+    client_order_id: ClientOrderId = "O-20210410-022422-001-001-1",
+    venue_order_id: VenueOrderId = "1",
+    trade_id: object = "E-20210410-022422-001-001-1",
+    commission: object = "2.00 USD",
+    currency: object = None,
+    event_id: object = None,
+    ts_event: object = 0,
+) -> object:
     if instrument is None:
         instrument = AUDUSD_SIM
     if currency is None:
@@ -86,24 +93,128 @@ def _make_fill(
         ts_event=ts_event,
         ts_init=0,
         reconciliation=False,
-        position_id=PositionId(position_id),
+        position_id=None if position_id is None else PositionId(position_id),
         commission=Money.from_str(commission),
     )
 
 
 @pytest.fixture
-def long_position():
+def long_position() -> object:
+    """
+    Long position.
+    """
     fill = _make_fill(order_side=OrderSide.BUY)
     return Position(instrument=AUDUSD_SIM, fill=fill)
 
 
 @pytest.fixture
-def short_position():
+def short_position() -> object:
+    """
+    Short position.
+    """
     fill = _make_fill(order_side=OrderSide.SELL)
     return Position(instrument=AUDUSD_SIM, fill=fill)
 
 
-def test_position_long_properties(long_position):
+def test_position_rejects_missing_position_id() -> None:
+    """
+    Test position construction rejects a fill without a position ID.
+    """
+    fill = _make_fill(position_id=None)
+
+    with pytest.raises(ValueError, match=re.escape("`fill.position_id` was None")) as exc_info:
+        Position(instrument=AUDUSD_SIM, fill=fill)
+
+    assert str(exc_info.value) == "`fill.position_id` was None"
+
+
+def test_position_rejects_instrument_mismatch() -> None:
+    """
+    Test position construction rejects an instrument mismatch.
+    """
+    fill = _make_fill()
+    expected_error = (
+        "'instrument.id()' value of GBP/USD.SIM was not equal to "
+        "'fill.instrument_id' value of AUD/USD.SIM"
+    )
+
+    with pytest.raises(ValueError, match=re.escape(expected_error)) as exc_info:
+        Position(instrument=GBPUSD_SIM, fill=fill)
+
+    assert str(exc_info.value) == expected_error
+
+
+def test_order_filled_rejects_unspecified_side_before_position_construction() -> None:
+    """
+    Test an unspecified side is rejected before position construction.
+    """
+    with pytest.raises(TypeError) as exc_info:
+        _make_fill(order_side=OrderSide.NO_ORDER_SIDE)
+
+    assert str(exc_info.value) == "'None' is not an instance of 'OrderSide'"
+
+
+@pytest.mark.parametrize(
+    ("instrument", "position_id", "expected_error"),
+    [
+        (
+            GBPUSD_SIM,
+            "P-123456",
+            "'self.instrument_id' value of AUD/USD.SIM was not equal to "
+            "'fill.instrument_id' value of GBP/USD.SIM",
+        ),
+        (AUDUSD_SIM, None, "`fill.position_id` was None"),
+        (
+            AUDUSD_SIM,
+            "P-654321",
+            "'self.id' value of P-123456 was not equal to 'fill.position_id' value of P-654321",
+        ),
+    ],
+    ids=["instrument-mismatch", "missing-position-id", "position-mismatch"],
+)
+def test_position_apply_rejects_invalid_fill_identity_without_mutation(
+    instrument: object,
+    position_id: object,
+    expected_error: str,
+) -> None:
+    """
+    Test invalid fill identity is rejected before position mutation.
+    """
+    position = Position(instrument=AUDUSD_SIM, fill=_make_fill())
+    fill = _make_fill(
+        instrument=instrument,
+        position_id=position_id,
+        trade_id="E-20210410-022422-001-001-2",
+    )
+    state_before = position.to_dict()
+
+    with pytest.raises(ValueError, match=re.escape(expected_error)) as exc_info:
+        position.apply(fill)
+
+    assert str(exc_info.value) == expected_error
+    assert position.to_dict() == state_before
+
+
+def test_position_apply_rejects_duplicate_trade_without_mutation() -> None:
+    """
+    Test an ordinary duplicate trade is rejected before position mutation.
+    """
+    fill = _make_fill()
+    position = Position(instrument=AUDUSD_SIM, fill=fill)
+    state_before = position.to_dict()
+    expected_error = "`fill.trade_id` already contained in `trade_ids`"
+
+    with pytest.raises(ValueError, match=re.escape(expected_error)) as exc_info:
+        position.apply(fill)
+
+    assert str(exc_info.value) == expected_error
+    assert position.to_dict() == state_before
+
+
+def test_position_long_properties(long_position: object) -> None:
+    """
+    Test position long properties.
+    """
     last = Price.from_str("1.00050")
 
     assert long_position.instrument_id == AUDUSD_SIM.id
@@ -136,7 +247,10 @@ def test_position_long_properties(long_position):
     assert long_position.commissions() == [Money(2.00, USD)]
 
 
-def test_position_short_properties(short_position):
+def test_position_short_properties(short_position: object) -> None:
+    """
+    Test position short properties.
+    """
     last = Price.from_str("1.00050")
 
     assert short_position.quantity == Quantity.from_int(100_000)
@@ -156,16 +270,25 @@ def test_position_short_properties(short_position):
     assert short_position.commissions() == [Money(2.00, USD)]
 
 
-def test_position_str_and_repr(long_position):
+def test_position_str_and_repr(long_position: object) -> None:
+    """
+    Test position str and repr.
+    """
     assert str(long_position) == "Position(LONG 100_000 AUD/USD.SIM, id=P-123456)"
     assert repr(long_position) == "Position(LONG 100_000 AUD/USD.SIM, id=P-123456)"
 
 
-def test_position_equality(long_position):
+def test_position_equality(long_position: object) -> None:
+    """
+    Test position equality.
+    """
     assert long_position == long_position
 
 
-def test_position_events_and_ids(long_position):
+def test_position_events_and_ids(long_position: object) -> None:
+    """
+    Test position events and ids.
+    """
     assert len(long_position.events()) == 1
     assert long_position.client_order_ids() == [ClientOrderId("O-20210410-022422-001-001-1")]
     assert long_position.venue_order_ids() == [VenueOrderId("1")]
@@ -173,7 +296,10 @@ def test_position_events_and_ids(long_position):
     assert long_position.last_trade_id == TradeId("E-20210410-022422-001-001-1")
 
 
-def test_position_to_dict(long_position):
+def test_position_to_dict(long_position: object) -> None:
+    """
+    Test position to dict.
+    """
     d = long_position.to_dict()
 
     assert d["type"] == "Position"
@@ -185,7 +311,10 @@ def test_position_to_dict(long_position):
     assert d["realized_pnl"] == "-2.00 USD"
 
 
-def test_position_partial_fill_long():
+def test_position_partial_fill_long() -> None:
+    """
+    Test position partial fill long.
+    """
     fill = _make_fill(
         order_side=OrderSide.BUY,
         last_qty=50_000,
@@ -202,7 +331,10 @@ def test_position_partial_fill_long():
     assert repr(position) == "Position(LONG 50_000 AUD/USD.SIM, id=P-123456)"
 
 
-def test_position_close_long():
+def test_position_close_long() -> None:
+    """
+    Test position close long.
+    """
     fill1 = _make_fill(
         order_side=OrderSide.BUY,
         last_px="1.00001",
@@ -241,7 +373,10 @@ def test_position_close_long():
     assert repr(position) == "Position(FLAT AUD/USD.SIM, id=P-123456)"
 
 
-def test_position_close_short():
+def test_position_close_short() -> None:
+    """
+    Test position close short.
+    """
     fill1 = _make_fill(
         order_side=OrderSide.SELL,
         last_px="1.00010",
@@ -265,7 +400,10 @@ def test_position_close_short():
     assert position.avg_px_close == 1.00000
 
 
-def test_position_partial_fills_then_close():
+def test_position_partial_fills_then_close() -> None:
+    """
+    Test position partial fills then close.
+    """
     fill1 = _make_fill(
         order_side=OrderSide.SELL,
         last_px="1.00001",
@@ -302,7 +440,10 @@ def test_position_partial_fills_then_close():
     assert position.is_closed
 
 
-def test_position_no_change():
+def test_position_no_change() -> None:
+    """
+    Test position no change.
+    """
     fill1 = _make_fill(
         order_side=OrderSide.BUY,
         last_px="1.0",
@@ -332,7 +473,10 @@ def test_position_no_change():
     assert position.commissions() == [Money(4.00, USD)]
 
 
-def test_position_multiple_fills_long():
+def test_position_multiple_fills_long() -> None:
+    """
+    Test position multiple fills long.
+    """
     fill1 = _make_fill(
         order_side=OrderSide.BUY,
         last_px="1.00000",
@@ -369,7 +513,10 @@ def test_position_multiple_fills_long():
     assert position.avg_px_close == 1.00020
 
 
-def test_position_pnl_long_win():
+def test_position_pnl_long_win() -> None:
+    """
+    Test position pnl long win.
+    """
     fill = _make_fill(
         order_side=OrderSide.BUY,
         last_px="1.00000",
@@ -383,7 +530,10 @@ def test_position_pnl_long_win():
     assert pnl == Money(10.00, USD)
 
 
-def test_position_pnl_long_loss():
+def test_position_pnl_long_loss() -> None:
+    """
+    Test position pnl long loss.
+    """
     fill = _make_fill(
         order_side=OrderSide.BUY,
         last_px="1.00010",
@@ -397,7 +547,10 @@ def test_position_pnl_long_loss():
     assert pnl == Money(-10.00, USD)
 
 
-def test_position_pnl_short_win():
+def test_position_pnl_short_win() -> None:
+    """
+    Test position pnl short win.
+    """
     fill = _make_fill(
         order_side=OrderSide.SELL,
         last_px="1.00010",
@@ -411,7 +564,10 @@ def test_position_pnl_short_win():
     assert pnl == Money(10.00, USD)
 
 
-def test_position_pnl_short_loss():
+def test_position_pnl_short_loss() -> None:
+    """
+    Test position pnl short loss.
+    """
     fill = _make_fill(
         order_side=OrderSide.SELL,
         last_px="1.00000",
@@ -425,7 +581,10 @@ def test_position_pnl_short_loss():
     assert pnl == Money(-10.00, USD)
 
 
-def test_position_inverse_pnl_and_notional_value():
+def test_position_inverse_pnl_and_notional_value() -> None:
+    """
+    Test position inverse pnl and notional value.
+    """
     instrument = _inverse_perpetual()
     fill = _make_fill(
         instrument=instrument,
@@ -459,11 +618,14 @@ def test_position_inverse_pnl_and_notional_value():
     ],
 )
 def test_position_flip_applies_full_base_currency_commission(
-    opening_side,
-    flipping_side,
-    expected_side,
-    expected_quantity,
-):
+    opening_side: object,
+    flipping_side: object,
+    expected_side: object,
+    expected_quantity: object,
+) -> None:
+    """
+    Test position flip applies full base currency commission.
+    """
     instrument = TestInstrumentProvider.btcusdt_binance()
     opening_fill = _make_fill(
         instrument=instrument,
@@ -508,7 +670,10 @@ def test_position_flip_applies_full_base_currency_commission(
     ]
 
 
-def test_position_adjustment_dict_roundtrip_preserves_optional_values():
+def test_position_adjustment_dict_roundtrip_preserves_optional_values() -> None:
+    """
+    Test position adjustment dict roundtrip preserves optional values.
+    """
     adjustment = PositionAdjusted(
         trader_id=TraderId("TESTER-001"),
         strategy_id=StrategyId("S-001"),
@@ -545,7 +710,10 @@ def test_position_adjustment_dict_roundtrip_preserves_optional_values():
     assert restored == adjustment
 
 
-def test_position_purge_events_removes_matching_adjustment():
+def test_position_purge_events_removes_matching_adjustment() -> None:
+    """
+    Test position purge events removes matching adjustment.
+    """
     instrument = TestInstrumentProvider.btcusdt_binance()
     first = _make_fill(
         instrument=instrument,
@@ -578,7 +746,7 @@ def test_position_purge_events_removes_matching_adjustment():
     ]
 
 
-def _inverse_perpetual():
+def _inverse_perpetual() -> object:
     return CryptoPerpetual(
         instrument_id=InstrumentId.from_str("XBTUSD-PERP.BITMEX"),
         raw_symbol=Symbol("XBTUSD"),

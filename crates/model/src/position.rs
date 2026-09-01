@@ -27,13 +27,16 @@ use ahash::{AHashMap, AHashSet};
 use indexmap::IndexMap;
 use nautilus_core::{
     UUID4, UnixNanos,
-    correctness::{FAILED, check_equal, check_predicate_true},
+    correctness::{
+        CorrectnessError, CorrectnessResult, CorrectnessResultExt, FAILED, check_equal,
+        check_predicate_true,
+    },
 };
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    enums::{InstrumentClass, OrderSide, OrderSideSpecified, PositionAdjustmentType, PositionSide},
+    enums::{InstrumentClass, OrderSide, PositionAdjustmentType, PositionSide},
     events::{OrderFillVoided, OrderFilled, PositionAdjusted},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, TraderId,
@@ -122,26 +125,29 @@ impl Position {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - The `instrument.id()` does not match the `fill.instrument_id`.
-    /// - The `fill.order_side` is `NoOrderSide`.
-    /// - The `fill.position_id` is `None`.
+    /// Panics if [`Position::new_checked`] returns an error.
     #[must_use]
     #[allow(
         clippy::needless_pass_by_value,
         reason = "constructor takes the opening fill by value as the position's seed event"
     )]
     pub fn new(instrument: &InstrumentAny, fill: OrderFilled) -> Self {
-        check_equal(
-            &instrument.id(),
-            &fill.instrument_id,
-            "instrument.id()",
-            "fill.instrument_id",
-        )
-        .expect(FAILED);
-        assert_ne!(fill.order_side, OrderSide::NoOrderSide);
+        Self::new_checked(instrument, fill).expect_display(FAILED)
+    }
 
-        let position_id = fill.position_id.expect("No position ID to open `Position`");
+    /// Creates a new [`Position`] instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the instrument ID does not match the fill or the fill has no position
+    /// ID.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "constructor takes the opening fill by value as the position's seed event"
+    )]
+    pub fn new_checked(instrument: &InstrumentAny, fill: OrderFilled) -> CorrectnessResult<Self> {
+        Self::check_fill_instrument(instrument.id(), "instrument.id()", &fill)?;
+        let position_id = Self::fill_position_id(&fill)?;
 
         let mut item = Self {
             events: Vec::<OrderFilled>::new(),
@@ -183,8 +189,58 @@ impl Position {
             realized_return: 0.0,
             realized_pnl: None,
         };
-        item.apply(&fill);
-        item
+        item.apply_fill(&fill, true)?;
+        Ok(item)
+    }
+
+    /// Returns a copy without stored events, adjustments, replay events, fill voids, or trade IDs.
+    ///
+    /// # Warning
+    ///
+    /// Use this copy only as transient read state. Applying events or caching this copy can bypass
+    /// replay and duplicate-fill checks and discard position history.
+    #[must_use]
+    pub fn clone_without_events(&self) -> Self {
+        Self {
+            events: Vec::new(),
+            adjustments: Vec::new(),
+            replay_events: Vec::new(),
+            fill_voids: Vec::new(),
+            trader_id: self.trader_id,
+            strategy_id: self.strategy_id,
+            instrument_id: self.instrument_id,
+            id: self.id,
+            account_id: self.account_id,
+            opening_order_id: self.opening_order_id,
+            closing_order_id: self.closing_order_id,
+            entry: self.entry,
+            side: self.side,
+            signed_qty: self.signed_qty,
+            quantity: self.quantity,
+            peak_qty: self.peak_qty,
+            price_precision: self.price_precision,
+            size_precision: self.size_precision,
+            multiplier: self.multiplier,
+            is_inverse: self.is_inverse,
+            is_currency_pair: self.is_currency_pair,
+            instrument_class: self.instrument_class,
+            base_currency: self.base_currency,
+            quote_currency: self.quote_currency,
+            settlement_currency: self.settlement_currency,
+            ts_init: self.ts_init,
+            ts_opened: self.ts_opened,
+            ts_last: self.ts_last,
+            ts_closed: self.ts_closed,
+            duration_ns: self.duration_ns,
+            avg_px_open: self.avg_px_open,
+            avg_px_close: self.avg_px_close,
+            realized_return: self.realized_return,
+            realized_pnl: self.realized_pnl,
+            trade_ids: AHashSet::new(),
+            buy_qty: self.buy_qty,
+            sell_qty: self.sell_qty,
+            commissions: self.commissions.clone(),
+        }
     }
 
     /// Purges all order fill events for the given client order ID and recalculates derived state.
@@ -282,7 +338,7 @@ impl Position {
 
         // Reapply all remaining fills to reconstruct state
         for event in filtered_events {
-            self.apply_fill(&event, false);
+            self.apply_fill(&event, false).expect_display(FAILED);
         }
 
         // Reapply preserved adjustments to maintain full state
@@ -306,10 +362,44 @@ impl Position {
     ///
     /// Panics if the `fill.trade_id` is already present in the position's `trade_ids`.
     pub fn apply(&mut self, fill: &OrderFilled) {
-        self.apply_fill(fill, true);
+        self.apply_fill(fill, true).expect_display(FAILED);
     }
 
-    fn apply_fill(&mut self, fill: &OrderFilled, record_replay: bool) {
+    /// Applies an `OrderFilled` event to this position with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the fill instrument or position identity does not match this position,
+    /// the fill has no position ID, or an ordinary duplicate trade ID is applied. An error leaves
+    /// the position unchanged.
+    pub fn try_apply(&mut self, fill: &OrderFilled) -> CorrectnessResult<()> {
+        Self::check_fill_instrument(self.instrument_id, "self.instrument_id", fill)?;
+        let position_id = Self::fill_position_id(fill)?;
+        check_equal(&self.id, &position_id, "self.id", "fill.position_id")?;
+        self.apply_fill(fill, true)
+    }
+
+    fn check_fill_instrument(
+        instrument_id: InstrumentId,
+        instrument_param: &str,
+        fill: &OrderFilled,
+    ) -> CorrectnessResult<()> {
+        check_equal(
+            &instrument_id,
+            &fill.instrument_id,
+            instrument_param,
+            "fill.instrument_id",
+        )
+    }
+
+    fn fill_position_id(fill: &OrderFilled) -> CorrectnessResult<PositionId> {
+        fill.position_id
+            .ok_or_else(|| CorrectnessError::PredicateViolation {
+                message: "`fill.position_id` was None".to_string(),
+            })
+    }
+
+    fn apply_fill(&mut self, fill: &OrderFilled, record_replay: bool) -> CorrectnessResult<()> {
         if record_replay
             && (self.side == PositionSide::Flat || !self.trade_ids.contains(&fill.trade_id))
             && self.is_duplicate_replay_fill(fill)
@@ -319,7 +409,7 @@ impl Position {
                 fill.trade_id,
                 self.id,
             );
-            return;
+            return Ok(());
         }
 
         if fill.ts_event < self.ts_opened {
@@ -355,9 +445,8 @@ impl Position {
         if record_replay {
             check_predicate_true(
                 !self.trade_ids.contains(&fill.trade_id),
-                "`fill.trade_id` already contained in `trade_ids",
-            )
-            .expect(FAILED);
+                "`fill.trade_id` already contained in `trade_ids`",
+            )?;
             self.replay_events
                 .push(PositionReplayEvent::Filled(fill.clone()));
         }
@@ -376,11 +465,11 @@ impl Position {
         }
 
         // Calculate avg prices, points, return, PnL
-        match fill.specified_side() {
-            OrderSideSpecified::Buy => {
+        match fill.order_side {
+            OrderSide::Buy => {
                 self.handle_buy_order_fill(fill);
             }
-            OrderSideSpecified::Sell => {
+            OrderSide::Sell => {
                 self.handle_sell_order_fill(fill);
             }
         }
@@ -442,7 +531,6 @@ impl Position {
                 PositionSide::Long => self.signed_qty > 0.0,
                 PositionSide::Short => self.signed_qty < 0.0,
                 PositionSide::Flat => self.signed_qty == 0.0,
-                PositionSide::NoPositionSide => false,
             },
             "Invariant: position side must match signed_qty sign (side={:?}, signed_qty={})",
             self.side,
@@ -454,6 +542,8 @@ impl Position {
             self.peak_qty,
             self.quantity,
         );
+
+        Ok(())
     }
 
     fn is_duplicate_replay_fill(&self, fill: &OrderFilled) -> bool {
@@ -654,16 +744,8 @@ impl Position {
             self.signed_qty = 0.0; // Normalize
         } else if self.signed_qty > 0.0 {
             self.side = PositionSide::Long;
-
-            if self.entry == OrderSide::NoOrderSide {
-                self.entry = OrderSide::Buy;
-            }
         } else {
             self.side = PositionSide::Short;
-
-            if self.entry == OrderSide::NoOrderSide {
-                self.entry = OrderSide::Sell;
-            }
         }
 
         self.adjustments.push(adjustment);
@@ -674,7 +756,6 @@ impl Position {
                 PositionSide::Long => self.signed_qty > 0.0,
                 PositionSide::Short => self.signed_qty < 0.0,
                 PositionSide::Flat => self.signed_qty == 0.0,
-                PositionSide::NoPositionSide => false,
             },
             "Invariant: position side must match signed_qty sign (side={:?}, signed_qty={})",
             self.side,
@@ -845,7 +926,7 @@ impl Position {
                     let mut effective = fill.clone();
                     effective.last_qty = effective_qty;
                     effective.commission = effective_commission;
-                    self.apply_fill(&effective, false);
+                    self.apply_fill(&effective, false).expect_display(FAILED);
                 }
                 PositionReplayEvent::Adjusted(adjustment) => {
                     self.apply_adjustment_state(*adjustment, false);
@@ -1038,7 +1119,7 @@ impl Position {
         match self.side {
             PositionSide::Long => avg_px_close - avg_px_open,
             PositionSide::Short => avg_px_open - avg_px_close,
-            _ => 0.0, // FLAT
+            PositionSide::Flat => 0.0,
         }
     }
 
@@ -1063,7 +1144,7 @@ impl Position {
         let result = match self.side {
             PositionSide::Long => inverse_open - inverse_close,
             PositionSide::Short => inverse_close - inverse_open,
-            _ => 0.0, // FLAT - this is a valid case
+            PositionSide::Flat => 0.0,
         };
         Ok(result)
     }
@@ -1184,11 +1265,11 @@ impl Position {
 
     /// Returns the order side required to close this position.
     #[must_use]
-    pub fn closing_order_side(&self) -> OrderSide {
+    pub fn closing_order_side(&self) -> Option<OrderSide> {
         match self.side {
-            PositionSide::Long => OrderSide::Sell,
-            PositionSide::Short => OrderSide::Buy,
-            _ => OrderSide::NoOrderSide,
+            PositionSide::Long => Some(OrderSide::Sell),
+            PositionSide::Short => Some(OrderSide::Buy),
+            PositionSide::Flat => None,
         }
     }
 
@@ -1438,7 +1519,7 @@ mod tests {
     use std::str::FromStr;
 
     use ahash::AHashSet;
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{UnixNanos, correctness::CorrectnessError};
     use proptest::prelude::*;
     use rstest::rstest;
     use rust_decimal::{Decimal, prelude::ToPrimitive};
@@ -1451,13 +1532,14 @@ mod tests {
             order::spec::{OrderFillVoidedSpec, OrderFilledSpec},
         },
         identifiers::{
-            AccountId, ClientOrderId, PositionId, StrategyId, TradeId, VenueOrderId, stubs::uuid4,
+            AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, VenueOrderId,
+            stubs::uuid4,
         },
         instruments::{
             CryptoFuture, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny, stubs::*,
         },
         orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
-        position::{Position, fold_net_position},
+        position::{Position, PositionFillVoid, fold_net_position},
         stubs::*,
         types::{Currency, Money, Price, Quantity},
     };
@@ -1475,7 +1557,205 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "`fill.trade_id` already contained in `trade_ids")]
+    #[case::open(false)]
+    #[case::closed(true)]
+    fn test_clone_without_events_preserves_current_state(
+        mut stub_position_long: Position,
+        #[case] close: bool,
+    ) {
+        let adjustment = PositionAdjusted::new(
+            stub_position_long.trader_id,
+            stub_position_long.strategy_id,
+            stub_position_long.instrument_id,
+            stub_position_long.id,
+            stub_position_long.account_id,
+            PositionAdjustmentType::Funding,
+            None,
+            Some(Money::from_decimal(dec!(1.25), stub_position_long.settlement_currency).unwrap()),
+            Some("clone-test".into()),
+            uuid4(),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        );
+        stub_position_long.apply_adjustment(adjustment);
+
+        if close {
+            let closing_fill = OrderFilledSpec::builder()
+                .trader_id(stub_position_long.trader_id)
+                .strategy_id(stub_position_long.strategy_id)
+                .instrument_id(stub_position_long.instrument_id)
+                .client_order_id(ClientOrderId::from("CLONE-CLOSE"))
+                .venue_order_id(VenueOrderId::from("CLONE-CLOSE"))
+                .account_id(stub_position_long.account_id)
+                .trade_id(TradeId::from("CLONE-CLOSE"))
+                .order_side(OrderSide::Sell)
+                .order_type(OrderType::Market)
+                .last_qty(stub_position_long.quantity)
+                .last_px(Price::from("1.0012"))
+                .currency(stub_position_long.settlement_currency)
+                .position_id(stub_position_long.id)
+                .ts_event(UnixNanos::from(3))
+                .ts_init(UnixNanos::from(3))
+                .build();
+            stub_position_long.apply(&closing_fill);
+        }
+
+        let source_fill = stub_position_long.events[0].clone();
+        let fill_voided = OrderFillVoidedSpec::builder()
+            .trader_id(source_fill.trader_id)
+            .strategy_id(source_fill.strategy_id)
+            .instrument_id(source_fill.instrument_id)
+            .client_order_id(source_fill.client_order_id)
+            .venue_order_id(source_fill.venue_order_id)
+            .account_id(source_fill.account_id)
+            .trade_id(source_fill.trade_id)
+            .voided_qty(source_fill.last_qty)
+            .order_side(source_fill.order_side)
+            .order_type(source_fill.order_type)
+            .last_px(source_fill.last_px)
+            .currency(source_fill.currency)
+            .liquidity_side(source_fill.liquidity_side)
+            .position_id(stub_position_long.id)
+            .build();
+        stub_position_long.fill_voids.push(PositionFillVoid {
+            event: fill_voided,
+            voided_qty: source_fill.last_qty,
+            commission_voided: source_fill.commission,
+        });
+
+        let cloned = stub_position_long.clone_without_events();
+        let mut expected = stub_position_long.clone();
+        expected.events.clear();
+        expected.adjustments.clear();
+        expected.replay_events.clear();
+        expected.fill_voids.clear();
+        expected.trade_ids.clear();
+
+        assert!(!stub_position_long.events.is_empty());
+        assert!(!stub_position_long.adjustments.is_empty());
+        assert!(!stub_position_long.replay_events.is_empty());
+        assert!(!stub_position_long.fill_voids.is_empty());
+        assert!(!stub_position_long.trade_ids.is_empty());
+        assert!(cloned.events.is_empty());
+        assert!(cloned.adjustments.is_empty());
+        assert!(cloned.replay_events.is_empty());
+        assert!(cloned.fill_voids.is_empty());
+        assert!(cloned.trade_ids.is_empty());
+        assert_eq!(
+            serde_json::to_value(cloned).unwrap(),
+            serde_json::to_value(expected).unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_new_checked_rejects_missing_position_id(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .build();
+
+        let error = Position::new_checked(&instrument, fill).unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::PredicateViolation {
+                message: "`fill.position_id` was None".to_string(),
+            }
+        );
+    }
+
+    #[rstest]
+    fn test_new_checked_rejects_instrument_mismatch(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(InstrumentId::from("GBP/USD.SIM"))
+            .position_id(PositionId::from("P-1"))
+            .build();
+
+        let error = Position::new_checked(&instrument, fill).unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::EqualityMismatch {
+                lhs_param: "instrument.id()".to_string(),
+                rhs_param: "fill.instrument_id".to_string(),
+                lhs: "AUD/USD.SIM".to_string(),
+                rhs: "GBP/USD.SIM".to_string(),
+                type_name: "value",
+            }
+        );
+    }
+
+    #[rstest]
+    #[case::instrument_mismatch(
+        "GBP/USD.SIM",
+        Some("P-1"),
+        "'self.instrument_id' value of AUD/USD.SIM was not equal to 'fill.instrument_id' value of GBP/USD.SIM"
+    )]
+    #[case::missing_position_id("AUD/USD.SIM", None, "`fill.position_id` was None")]
+    #[case::position_mismatch(
+        "AUD/USD.SIM",
+        Some("P-2"),
+        "'self.id' value of P-1 was not equal to 'fill.position_id' value of P-2"
+    )]
+    fn test_try_apply_rejects_invalid_fill_identity_without_mutation(
+        #[case] fill_instrument_id: &str,
+        #[case] fill_position_id: Option<&str>,
+        #[case] expected_error: &str,
+        audusd_sim: CurrencyPair,
+    ) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let position_id = PositionId::from("P-1");
+        let fill_open = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .trade_id(TradeId::from("T-1"))
+            .position_id(position_id)
+            .build();
+        let mut fill_invalid = OrderFilledSpec::builder()
+            .instrument_id(InstrumentId::from(fill_instrument_id))
+            .trade_id(TradeId::from("T-2"))
+            .build();
+        fill_invalid.position_id = fill_position_id.map(PositionId::from);
+        let mut position = Position::new(&instrument, fill_open);
+        let state_before = serde_json::to_value(&position).unwrap();
+
+        let error = position.try_apply(&fill_invalid).unwrap_err();
+
+        assert_eq!(error.to_string(), expected_error);
+        assert_eq!(serde_json::to_value(&position).unwrap(), state_before);
+    }
+
+    #[rstest]
+    fn test_try_apply_rejects_duplicate_trade_without_mutation(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let position_id = PositionId::from("P-1");
+        let fill_open = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .trade_id(TradeId::from("T-1"))
+            .position_id(position_id)
+            .build();
+        let fill_duplicate = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-2"))
+            .trade_id(TradeId::from("T-1"))
+            .position_id(position_id)
+            .build();
+        let mut position = Position::new(&instrument, fill_open);
+        let state_before = serde_json::to_value(&position).unwrap();
+
+        let error = position.try_apply(&fill_duplicate).unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::PredicateViolation {
+                message: "`fill.trade_id` already contained in `trade_ids`".to_string(),
+            }
+        );
+        assert_eq!(serde_json::to_value(&position).unwrap(), state_before);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "`fill.trade_id` already contained in `trade_ids`")]
     fn test_two_trades_with_same_trade_id_error(audusd_sim: CurrencyPair) {
         let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
         let order1 = OrderTestBuilder::new(OrderType::Market)
@@ -1592,9 +1872,9 @@ mod tests {
             .position_id(position_id)
             .build();
         let mut position = Position::new(&instrument, fill_open.clone());
-        position.apply(&fill_close);
+        position.try_apply(&fill_close).unwrap();
 
-        position.apply(&fill_duplicate);
+        position.try_apply(&fill_duplicate).unwrap();
 
         assert_eq!(position.side, PositionSide::Flat);
         assert_eq!(position.quantity, Quantity::from(0));
@@ -1604,8 +1884,8 @@ mod tests {
         assert!(position.trade_ids.contains(&TradeId::from("T-1")));
         assert!(position.trade_ids.contains(&TradeId::from("T-2")));
 
-        position.apply(&fill_reopen);
-        position.apply(&fill_duplicate_open);
+        position.try_apply(&fill_reopen).unwrap();
+        position.try_apply(&fill_duplicate_open).unwrap();
 
         assert_eq!(position.side, PositionSide::Long);
         assert_eq!(position.quantity, Quantity::from(5));
@@ -1639,7 +1919,7 @@ mod tests {
         let mut fill_close_duplicate = fill_close;
         fill_close_duplicate.event_id = uuid4();
         fill_close_duplicate.ts_event = UnixNanos::from(6);
-        position.apply(&fill_close_duplicate);
+        position.try_apply(&fill_close_duplicate).unwrap();
 
         assert_eq!(position.side, PositionSide::Long);
         assert_eq!(position.quantity, Quantity::from(15));
@@ -1716,7 +1996,7 @@ mod tests {
         let position = Position::new(&audusd_sim, fill.into());
         assert_eq!(position.symbol(), audusd_sim.id().symbol);
         assert_eq!(position.venue(), audusd_sim.id().venue);
-        assert_eq!(position.closing_order_side(), OrderSide::Sell);
+        assert_eq!(position.closing_order_side(), Some(OrderSide::Sell));
         assert!(!position.is_opposite_side(OrderSide::Buy));
         assert_eq!(position, position); // equality operator test
         assert!(position.closing_order_id.is_none());
@@ -1771,7 +2051,7 @@ mod tests {
         let position = Position::new(&audusd_sim, fill.into());
         assert_eq!(position.symbol(), audusd_sim.id().symbol);
         assert_eq!(position.venue(), audusd_sim.id().venue);
-        assert_eq!(position.closing_order_side(), OrderSide::Buy);
+        assert_eq!(position.closing_order_side(), Some(OrderSide::Buy));
         assert!(!position.is_opposite_side(OrderSide::Sell));
         assert_eq!(position, position); // Equality operator test
         assert!(position.closing_order_id.is_none());
@@ -2094,7 +2374,7 @@ mod tests {
             position.quantity,
             Quantity::zero(audusd_sim.price_precision())
         );
-        assert_eq!(position.closing_order_side(), OrderSide::NoOrderSide);
+        assert_eq!(position.closing_order_side(), None);
         assert_eq!(position.side, PositionSide::Flat);
         assert_eq!(position.ts_opened, 0);
         assert_eq!(position.avg_px_open, 1.0);

@@ -461,6 +461,10 @@ define_switchboard! {
     get_order_filled_topic(instrument_id: InstrumentId) -> instrument_id,
     "events.order_filled.{}", instrument_id;
 
+    order_fill_voided_topics: InstrumentId,
+    get_order_fill_voided_topic(instrument_id: InstrumentId) -> instrument_id,
+    "events.order_fill_voided.{}", instrument_id;
+
     event_order_topics: StrategyId,
     get_event_order_topic(strategy_id: StrategyId) -> strategy_id,
     "events.order.{}", strategy_id;
@@ -675,6 +679,7 @@ define_wrappers! {
     get_order_cancel_rejected_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_order_canceled_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_order_filled_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_order_fill_voided_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_snapshot_order_topic(client_order_id: ClientOrderId) -> MStr<Topic>,
     get_snapshot_position_topic(position_id: PositionId) -> MStr<Topic>,
     get_event_order_topic(strategy_id: StrategyId) -> MStr<Topic>,
@@ -989,6 +994,10 @@ mod tests {
         MessagingSwitchboard::get_order_filled_topic as OrderEventTopicFn,
         "events.order_filled.ESZ24.XCME",
     )]
+    #[case::fill_voided(
+        MessagingSwitchboard::get_order_fill_voided_topic as OrderEventTopicFn,
+        "events.order_fill_voided.ESZ24.XCME",
+    )]
     fn test_get_order_event_topic(
         mut switchboard: MessagingSwitchboard,
         instrument_id: InstrumentId,
@@ -1008,6 +1017,7 @@ mod tests {
     #[case::cancel_rejected(MessagingSwitchboard::get_order_cancel_rejected_topic as OrderEventTopicFn)]
     #[case::canceled(MessagingSwitchboard::get_order_canceled_topic as OrderEventTopicFn)]
     #[case::filled(MessagingSwitchboard::get_order_filled_topic as OrderEventTopicFn)]
+    #[case::fill_voided(MessagingSwitchboard::get_order_fill_voided_topic as OrderEventTopicFn)]
     fn test_order_event_topic_does_not_match_strategy_order_pattern(
         mut switchboard: MessagingSwitchboard,
         instrument_id: InstrumentId,

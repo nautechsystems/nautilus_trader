@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test data configs behavior.
+"""
 
 import pytest
 
@@ -21,7 +24,10 @@ from nautilus_trader.model import BarIntervalType
 from nautilus_trader.model import ClientId
 
 
-def test_data_engine_config_defaults():
+def test_data_engine_config_defaults() -> None:
+    """
+    Test data engine config defaults.
+    """
     config = DataEngineConfig()
     assert config.time_bars_build_with_no_updates is True
     assert config.time_bars_timestamp_on_close is True
@@ -35,7 +41,10 @@ def test_data_engine_config_defaults():
     assert config.debug is False
 
 
-def test_data_engine_config_with_overrides():
+def test_data_engine_config_with_overrides() -> None:
+    """
+    Test data engine config with overrides.
+    """
     client_id = ClientId("DATA-001")
     config = DataEngineConfig(
         time_bars_build_with_no_updates=False,
@@ -76,21 +85,33 @@ def test_data_engine_config_with_overrides():
         ("Left-Open", BarIntervalType.LEFT_OPEN),
     ],
 )
-def test_data_engine_config_bar_interval_type_coercion(value, expected):
+def test_data_engine_config_bar_interval_type_coercion(value: object, expected: object) -> None:
+    """
+    Test data engine config bar interval type coercion.
+    """
     config = DataEngineConfig(time_bars_interval_type=value)
     assert config.time_bars_interval_type == expected
 
 
-def test_data_engine_config_invalid_interval_type_string():
+def test_data_engine_config_invalid_interval_type_string() -> None:
+    """
+    Test data engine config invalid interval type string.
+    """
     with pytest.raises(ValueError, match="invalid `time_bars_interval_type`"):
         DataEngineConfig(time_bars_interval_type="nonsense")
 
 
-def test_data_engine_config_invalid_interval_type_non_string():
+def test_data_engine_config_invalid_interval_type_non_string() -> None:
+    """
+    Test data engine config invalid interval type non string.
+    """
     with pytest.raises(ValueError, match="must be a string or BarIntervalType"):
         DataEngineConfig(time_bars_interval_type=123)
 
 
-def test_data_engine_config_repr():
+def test_data_engine_config_repr() -> None:
+    """
+    Test data engine config repr.
+    """
     config = DataEngineConfig()
     assert "DataEngineConfig" in repr(config)

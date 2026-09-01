@@ -458,12 +458,13 @@ mod imp {
     use std::{
         fmt::Debug,
         sync::{
-            Arc, Mutex,
+            Arc,
             atomic::{AtomicU64, Ordering},
         },
     };
 
     use nautilus_core::time::AtomicTime;
+    use parking_lot::Mutex;
 
     use super::{
         EntryDraft, SnapshotAnchor, SubmitError, WriterConfig, batcher,
@@ -506,10 +507,6 @@ mod imp {
         /// # Errors
         ///
         /// Returns [`EventStoreError::Backend`] when the backend has no open run.
-        #[expect(
-            clippy::needless_pass_by_value,
-            reason = "synchronous writer keeps ownership of the backend and halt callback"
-        )]
         pub fn spawn(
             backend: Box<dyn EventStore + Send>,
             clock: &'static AtomicTime,
@@ -537,12 +534,8 @@ mod imp {
         /// # Errors
         ///
         /// Returns [`SubmitError::Closed`] if the writer has been closed or fail-stopped.
-        ///
-        /// # Panics
-        ///
-        /// Panics if the internal mutex is poisoned by a panic on a prior submit.
         pub fn submit(&self, draft: EntryDraft) -> Result<(), SubmitError> {
-            let mut inner = self.inner.lock().expect("writer mutex poisoned");
+            let mut inner = self.inner.lock();
 
             if inner.closed {
                 return Err(SubmitError::Closed);
@@ -578,16 +571,12 @@ mod imp {
         ///
         /// Returns [`EventStoreError::Closed`] when the writer has closed, and forwards
         /// backend errors when recording the anchor fails.
-        ///
-        /// # Panics
-        ///
-        /// Panics if the internal mutex is poisoned by a panic on a prior submit.
         pub fn record_snapshot_anchor(
             &self,
             blob_ref: impl Into<String>,
             content_hash: impl Into<String>,
         ) -> Result<SnapshotAnchor, EventStoreError> {
-            let mut inner = self.inner.lock().expect("writer mutex poisoned");
+            let mut inner = self.inner.lock();
 
             if inner.closed {
                 return Err(EventStoreError::Closed);
@@ -614,12 +603,8 @@ mod imp {
         /// # Errors
         ///
         /// Returns [`EventStoreError`] when the final commit or seal fails.
-        ///
-        /// # Panics
-        ///
-        /// Panics if the internal mutex is poisoned by a panic on a prior submit.
         pub fn close(self, run_ended: EntryDraft) -> Result<u64, EventStoreError> {
-            let mut inner = self.inner.lock().expect("writer mutex poisoned");
+            let mut inner = self.inner.lock();
 
             if inner.closed {
                 return Err(EventStoreError::Backend(
@@ -664,13 +649,14 @@ pub use imp::EventStoreWriter;
 #[cfg(not(madsim))]
 mod tests {
     use std::sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicUsize, Ordering},
     };
 
     use bytes::Bytes;
     use indexmap::IndexMap;
     use nautilus_core::{UnixNanos, time::get_atomic_clock_static};
+    use parking_lot::Mutex;
     use rstest::{fixture, rstest};
     use ustr::Ustr;
 
@@ -743,10 +729,7 @@ mod tests {
         }
 
         fn append_batch(&mut self, entries: &[AppendEntry]) -> Result<u64, EventStoreError> {
-            self.0
-                .lock()
-                .expect("shared memory poisoned")
-                .append_batch(entries)
+            self.0.lock().append_batch(entries)
         }
 
         fn scan_range(
@@ -755,60 +738,42 @@ mod tests {
             to: u64,
             direction: ScanDirection,
         ) -> Result<Vec<EventStoreEntry>, EventStoreError> {
-            self.0
-                .lock()
-                .expect("shared memory poisoned")
-                .scan_range(from, to, direction)
+            self.0.lock().scan_range(from, to, direction)
         }
 
         fn scan_seq(&self, seq: u64) -> Result<Option<EventStoreEntry>, EventStoreError> {
-            self.0.lock().expect("shared memory poisoned").scan_seq(seq)
+            self.0.lock().scan_seq(seq)
         }
 
         fn lookup(&self, kind: IndexKind, key: &str) -> Result<Option<u64>, EventStoreError> {
-            self.0
-                .lock()
-                .expect("shared memory poisoned")
-                .lookup(kind, key)
+            self.0.lock().lookup(kind, key)
         }
 
         fn iter_index_keys(&self, kind: IndexKind) -> Result<Vec<(String, u64)>, EventStoreError> {
-            self.0
-                .lock()
-                .expect("shared memory poisoned")
-                .iter_index_keys(kind)
+            self.0.lock().iter_index_keys(kind)
         }
 
         fn record_snapshot_anchor(
             &mut self,
             anchor: SnapshotAnchor,
         ) -> Result<(), EventStoreError> {
-            self.0
-                .lock()
-                .expect("shared memory poisoned")
-                .record_snapshot_anchor(anchor)
+            self.0.lock().record_snapshot_anchor(anchor)
         }
 
         fn latest_snapshot_anchor(&self) -> Result<Option<SnapshotAnchor>, EventStoreError> {
-            self.0
-                .lock()
-                .expect("shared memory poisoned")
-                .latest_snapshot_anchor()
+            self.0.lock().latest_snapshot_anchor()
         }
 
         fn seal(&mut self, status: RunStatus) -> Result<(), EventStoreError> {
-            self.0.lock().expect("shared memory poisoned").seal(status)
+            self.0.lock().seal(status)
         }
 
         fn manifest(&self) -> Result<RunManifest, EventStoreError> {
-            self.0.lock().expect("shared memory poisoned").manifest()
+            self.0.lock().manifest()
         }
 
         fn high_watermark(&self) -> Result<u64, EventStoreError> {
-            self.0
-                .lock()
-                .expect("shared memory poisoned")
-                .high_watermark()
+            self.0.lock().high_watermark()
         }
     }
 
@@ -816,14 +781,14 @@ mod tests {
     #[derive(Debug)]
     struct BlockingBackend {
         inner: Arc<Mutex<MemoryBackend>>,
-        gate: Arc<(Mutex<bool>, std::sync::Condvar)>,
+        gate: Arc<(Mutex<bool>, parking_lot::Condvar)>,
         appends_seen: Arc<AtomicUsize>,
     }
 
     impl BlockingBackend {
         fn new(
             inner: Arc<Mutex<MemoryBackend>>,
-            gate: Arc<(Mutex<bool>, std::sync::Condvar)>,
+            gate: Arc<(Mutex<bool>, parking_lot::Condvar)>,
             appends_seen: Arc<AtomicUsize>,
         ) -> Self {
             Self {
@@ -842,15 +807,12 @@ mod tests {
         fn append_batch(&mut self, entries: &[AppendEntry]) -> Result<u64, EventStoreError> {
             self.appends_seen.fetch_add(1, Ordering::SeqCst);
             let (lock, cvar) = &*self.gate;
-            let mut released = lock.lock().expect("gate poisoned");
+            let mut released = lock.lock();
 
             while !*released {
-                released = cvar.wait(released).expect("gate wait");
+                cvar.wait(&mut released);
             }
-            self.inner
-                .lock()
-                .expect("inner poisoned")
-                .append_batch(entries)
+            self.inner.lock().append_batch(entries)
         }
 
         fn scan_range(
@@ -859,47 +821,38 @@ mod tests {
             to: u64,
             direction: ScanDirection,
         ) -> Result<Vec<EventStoreEntry>, EventStoreError> {
-            self.inner
-                .lock()
-                .expect("inner poisoned")
-                .scan_range(from, to, direction)
+            self.inner.lock().scan_range(from, to, direction)
         }
 
         fn scan_seq(&self, seq: u64) -> Result<Option<EventStoreEntry>, EventStoreError> {
-            self.inner.lock().expect("inner poisoned").scan_seq(seq)
+            self.inner.lock().scan_seq(seq)
         }
 
         fn lookup(&self, kind: IndexKind, key: &str) -> Result<Option<u64>, EventStoreError> {
-            self.inner.lock().expect("inner poisoned").lookup(kind, key)
+            self.inner.lock().lookup(kind, key)
         }
 
         fn iter_index_keys(&self, kind: IndexKind) -> Result<Vec<(String, u64)>, EventStoreError> {
-            self.inner
-                .lock()
-                .expect("inner poisoned")
-                .iter_index_keys(kind)
+            self.inner.lock().iter_index_keys(kind)
         }
 
         fn record_snapshot_anchor(
             &mut self,
             anchor: SnapshotAnchor,
         ) -> Result<(), EventStoreError> {
-            self.inner
-                .lock()
-                .expect("inner poisoned")
-                .record_snapshot_anchor(anchor)
+            self.inner.lock().record_snapshot_anchor(anchor)
         }
 
         fn seal(&mut self, status: RunStatus) -> Result<(), EventStoreError> {
-            self.inner.lock().expect("inner poisoned").seal(status)
+            self.inner.lock().seal(status)
         }
 
         fn manifest(&self) -> Result<RunManifest, EventStoreError> {
-            self.inner.lock().expect("inner poisoned").manifest()
+            self.inner.lock().manifest()
         }
 
         fn high_watermark(&self) -> Result<u64, EventStoreError> {
-            self.inner.lock().expect("inner poisoned").high_watermark()
+            self.inner.lock().high_watermark()
         }
     }
 
@@ -957,7 +910,7 @@ mod tests {
     /// `EventStoreError::Disk` once released.
     #[derive(Debug)]
     struct GatedDiskFailureBackend {
-        gate: Arc<(Mutex<bool>, std::sync::Condvar)>,
+        gate: Arc<(Mutex<bool>, parking_lot::Condvar)>,
         appends_seen: Arc<AtomicUsize>,
     }
 
@@ -969,10 +922,10 @@ mod tests {
         fn append_batch(&mut self, _: &[AppendEntry]) -> Result<u64, EventStoreError> {
             self.appends_seen.fetch_add(1, Ordering::SeqCst);
             let (lock, cvar) = &*self.gate;
-            let mut released = lock.lock().expect("gate poisoned");
+            let mut released = lock.lock();
 
             while !*released {
-                released = cvar.wait(released).expect("gate wait");
+                cvar.wait(&mut released);
             }
             Err(EventStoreError::Disk("ENOSPC".to_string()))
         }
@@ -1016,10 +969,7 @@ mod tests {
         let captured: Arc<Mutex<Vec<HaltReason>>> = Arc::new(Mutex::new(Vec::new()));
         let captured_for_cb = Arc::clone(&captured);
         let halt: HaltCallback = Arc::new(move |reason| {
-            captured_for_cb
-                .lock()
-                .expect("captured halt poisoned")
-                .push(reason);
+            captured_for_cb.lock().push(reason);
         });
         (halt, captured)
     }
@@ -1030,11 +980,7 @@ mod tests {
     ) {
         let (halt, captured) = captured_halt;
         let (wrapper, shared) = SharedMemory::new();
-        shared
-            .lock()
-            .expect("shared")
-            .open_run(manifest("run-1"))
-            .expect("open");
+        shared.lock().open_run(manifest("run-1")).expect("open");
 
         let writer = EventStoreWriter::spawn(
             Box::new(wrapper),
@@ -1052,14 +998,14 @@ mod tests {
 
         // Five drafts plus the RunEnded entry.
         assert_eq!(final_hwm, 6);
-        let backend = shared.lock().expect("shared");
+        let backend = shared.lock();
         let m = backend.manifest().expect("manifest");
         assert_eq!(m.status, RunStatus::Ended);
         assert_eq!(m.high_watermark, 6);
 
         let last = backend.scan_seq(6).expect("scan").expect("present");
         assert_eq!(last.payload_type.as_str(), "RunEnded");
-        assert!(captured.lock().expect("captured").is_empty());
+        assert!(captured.lock().is_empty());
     }
 
     #[rstest]
@@ -1070,7 +1016,6 @@ mod tests {
         let (wrapper, shared) = SharedMemory::new();
         shared
             .lock()
-            .expect("shared")
             .open_run(manifest("run-anchor"))
             .expect("open");
 
@@ -1094,7 +1039,7 @@ mod tests {
         writer.submit(entry_draft(13)).expect("submit fourth");
         let final_hwm = writer.close(run_ended_draft()).expect("close");
 
-        let backend = shared.lock().expect("shared");
+        let backend = shared.lock();
         assert_eq!(
             backend.latest_snapshot_anchor().expect("latest anchor"),
             Some(anchor.clone()),
@@ -1108,7 +1053,7 @@ mod tests {
             .collect();
 
         assert_eq!(tail_seqs, vec![3, 4, 5]);
-        assert!(captured.lock().expect("captured").is_empty());
+        assert!(captured.lock().is_empty());
     }
 
     #[rstest]
@@ -1120,14 +1065,10 @@ mod tests {
         // close commit.
         let (halt, _) = captured_halt;
         let inner = Arc::new(Mutex::new(MemoryBackend::new()));
-        inner
-            .lock()
-            .expect("inner")
-            .open_run(manifest("run-batch"))
-            .expect("open");
+        inner.lock().open_run(manifest("run-batch")).expect("open");
 
         let appends_seen = Arc::new(AtomicUsize::new(0));
-        let gate = Arc::new((Mutex::new(true), std::sync::Condvar::new()));
+        let gate = Arc::new((Mutex::new(true), parking_lot::Condvar::new()));
         let backend = BlockingBackend::new(
             Arc::clone(&inner),
             Arc::clone(&gate),
@@ -1166,13 +1107,9 @@ mod tests {
         // subsequent submit can never enqueue before the halt threshold fires.
         let (halt, captured) = captured_halt;
         let inner = Arc::new(Mutex::new(MemoryBackend::new()));
-        inner
-            .lock()
-            .expect("inner")
-            .open_run(manifest("run-halt"))
-            .expect("open");
+        inner.lock().open_run(manifest("run-halt")).expect("open");
 
-        let gate = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let gate = Arc::new((Mutex::new(false), parking_lot::Condvar::new()));
         let appends_seen = Arc::new(AtomicUsize::new(0));
         let backend = BlockingBackend::new(
             Arc::clone(&inner),
@@ -1208,7 +1145,7 @@ mod tests {
             SubmitError::HaltSignaled { .. } => {}
             SubmitError::Closed => panic!("expected HaltSignaled, was Closed"),
         }
-        let captured_reasons = captured.lock().expect("captured");
+        let captured_reasons = captured.lock();
         assert_eq!(
             captured_reasons.len(),
             1,
@@ -1232,7 +1169,7 @@ mod tests {
         }
         // The halt callback must not refire on subsequent submits.
         assert_eq!(
-            captured.lock().expect("captured").len(),
+            captured.lock().len(),
             1,
             "halt callback must not refire after the first stall",
         );
@@ -1240,7 +1177,7 @@ mod tests {
         // Release the gate so the writer thread can finish and the test can drop the
         // writer cleanly.
         let (lock, cvar) = &*gate;
-        *lock.lock().expect("gate") = true;
+        *lock.lock() = true;
         cvar.notify_all();
     }
 
@@ -1251,7 +1188,7 @@ mod tests {
         // A stall fires first, then the writer thread hits a disk failure: the latch
         // must suppress the second fire and keep the first condition's reason.
         let (halt, captured) = captured_halt;
-        let gate = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let gate = Arc::new((Mutex::new(false), parking_lot::Condvar::new()));
         let appends_seen = Arc::new(AtomicUsize::new(0));
         let backend = GatedDiskFailureBackend {
             gate: Arc::clone(&gate),
@@ -1295,13 +1232,13 @@ mod tests {
         // Release the gate so the append fails with Disk; without the latch this
         // fires a second, misclassified halt.
         let (lock, cvar) = &*gate;
-        *lock.lock().expect("gate") = true;
+        *lock.lock() = true;
         cvar.notify_all();
 
         // Dropping joins the writer thread, so the failure has been observed
         drop(writer);
 
-        let reasons = captured.lock().expect("captured");
+        let reasons = captured.lock();
         assert_eq!(
             reasons.len(),
             1,
@@ -1318,11 +1255,10 @@ mod tests {
         let inner = Arc::new(Mutex::new(MemoryBackend::new()));
         inner
             .lock()
-            .expect("inner")
             .open_run(manifest("run-zero-capacity"))
             .expect("open");
 
-        let gate = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let gate = Arc::new((Mutex::new(false), parking_lot::Condvar::new()));
         let appends_seen = Arc::new(AtomicUsize::new(0));
         let backend = BlockingBackend::new(
             Arc::clone(&inner),
@@ -1360,13 +1296,13 @@ mod tests {
         let second_submit = writer.submit(entry_draft(11));
 
         let (lock, cvar) = &*gate;
-        *lock.lock().expect("gate") = true;
+        *lock.lock() = true;
         cvar.notify_all();
 
         let final_hwm = writer.close(run_ended_draft()).expect("close");
         second_submit.expect("second submit must be buffered by the clamped capacity");
         assert_eq!(final_hwm, 3);
-        assert!(captured.lock().expect("captured").is_empty());
+        assert!(captured.lock().is_empty());
     }
 
     #[rstest]
@@ -1393,14 +1329,14 @@ mod tests {
 
         let mut waited = Duration::ZERO;
         while waited < Duration::from_secs(2) {
-            if !captured.lock().expect("captured").is_empty() {
+            if !captured.lock().is_empty() {
                 break;
             }
             std::thread::sleep(Duration::from_millis(5));
             waited += Duration::from_millis(5);
         }
 
-        let reasons = captured.lock().expect("captured");
+        let reasons = captured.lock();
         assert_eq!(reasons.len(), 1, "writer-thread halt did not fire");
         assert!(
             matches!(reasons.first(), Some(HaltReason::BackendDisk(_))),
@@ -1417,7 +1353,7 @@ mod tests {
             "was {post_halt:?}",
         );
         assert_eq!(
-            captured.lock().expect("captured").len(),
+            captured.lock().len(),
             1,
             "halt must not refire on post-halt submits",
         );
@@ -1433,11 +1369,10 @@ mod tests {
         let inner = Arc::new(Mutex::new(MemoryBackend::new()));
         inner
             .lock()
-            .expect("inner")
             .open_run(manifest("run-retry-latch"))
             .expect("open");
 
-        let gate = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let gate = Arc::new((Mutex::new(false), parking_lot::Condvar::new()));
         let appends_seen = Arc::new(AtomicUsize::new(0));
         let backend = BlockingBackend::new(
             Arc::clone(&inner),
@@ -1488,7 +1423,7 @@ mod tests {
 
         // Release the gate: the freed slot must not rescue the retrying submit
         let (lock, cvar) = &*gate;
-        *lock.lock().expect("gate") = true;
+        *lock.lock() = true;
         cvar.notify_all();
 
         let result = retrying.join().expect("retrying thread panicked");
@@ -1502,7 +1437,7 @@ mod tests {
         }
         assert_eq!(writer.high_watermark(), 2);
         assert_eq!(
-            captured.lock().expect("captured").len(),
+            captured.lock().len(),
             1,
             "halt must not refire for the refused submit",
         );
@@ -1516,11 +1451,10 @@ mod tests {
         let inner = Arc::new(Mutex::new(MemoryBackend::new()));
         inner
             .lock()
-            .expect("inner")
             .open_run(manifest("run-anchor-halt"))
             .expect("open");
 
-        let gate = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let gate = Arc::new((Mutex::new(false), parking_lot::Condvar::new()));
         let appends_seen = Arc::new(AtomicUsize::new(0));
         let backend = BlockingBackend::new(
             Arc::clone(&inner),
@@ -1554,7 +1488,7 @@ mod tests {
             .expect_err("post-halt submit");
 
         let (lock, cvar) = &*gate;
-        *lock.lock().expect("gate") = true;
+        *lock.lock() = true;
         cvar.notify_all();
 
         match err {
@@ -1574,7 +1508,7 @@ mod tests {
             }
         }
 
-        let captured_reasons = captured.lock().expect("captured");
+        let captured_reasons = captured.lock();
         assert_eq!(
             captured_reasons.len(),
             1,
@@ -1591,11 +1525,10 @@ mod tests {
         let inner = Arc::new(Mutex::new(MemoryBackend::new()));
         inner
             .lock()
-            .expect("inner")
             .open_run(manifest("run-anchor-submit-halt"))
             .expect("open");
 
-        let gate = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let gate = Arc::new((Mutex::new(false), parking_lot::Condvar::new()));
         let appends_seen = Arc::new(AtomicUsize::new(0));
         let backend = BlockingBackend::new(
             Arc::clone(&inner),
@@ -1639,7 +1572,7 @@ mod tests {
             .expect_err("post-halt submit");
 
         let (lock, cvar) = &*gate;
-        *lock.lock().expect("gate") = true;
+        *lock.lock() = true;
         cvar.notify_all();
 
         match err {
@@ -1659,7 +1592,7 @@ mod tests {
             }
         }
 
-        let captured_reasons = captured.lock().expect("captured");
+        let captured_reasons = captured.lock();
         assert_eq!(
             captured_reasons.len(),
             1,
@@ -1695,12 +1628,12 @@ mod tests {
         // Wait until the writer fail-stops and the halt fires.
         let mut waited = Duration::ZERO;
         let deadline = Duration::from_millis(500);
-        while captured.lock().expect("captured").is_empty() && waited < deadline {
+        while captured.lock().is_empty() && waited < deadline {
             std::thread::sleep(Duration::from_millis(10));
             waited += Duration::from_millis(10);
         }
 
-        let captured_reasons = captured.lock().expect("captured");
+        let captured_reasons = captured.lock();
         assert!(matches!(
             captured_reasons.first(),
             Some(HaltReason::BackendDisk(_))
@@ -1735,11 +1668,7 @@ mod tests {
         // surface at close drain, masking the steady-state batching contract.
         let (halt, _) = captured_halt;
         let (wrapper, shared) = SharedMemory::new();
-        shared
-            .lock()
-            .expect("shared")
-            .open_run(manifest("run-time"))
-            .expect("open");
+        shared.lock().open_run(manifest("run-time")).expect("open");
 
         let writer = EventStoreWriter::spawn(
             Box::new(wrapper),
@@ -1814,11 +1743,12 @@ mod tests {
 #[cfg(test)]
 #[cfg(madsim)]
 mod madsim_tests {
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     use bytes::Bytes;
     use indexmap::IndexMap;
     use nautilus_core::{UnixNanos, time::get_atomic_clock_static};
+    use parking_lot::Mutex;
     use rstest::rstest;
     use ustr::Ustr;
 
@@ -1877,10 +1807,7 @@ mod madsim_tests {
         }
 
         fn append_batch(&mut self, entries: &[AppendEntry]) -> Result<u64, EventStoreError> {
-            self.0
-                .lock()
-                .expect("shared memory poisoned")
-                .append_batch(entries)
+            self.0.lock().append_batch(entries)
         }
 
         fn scan_range(
@@ -1889,60 +1816,42 @@ mod madsim_tests {
             to: u64,
             direction: ScanDirection,
         ) -> Result<Vec<EventStoreEntry>, EventStoreError> {
-            self.0
-                .lock()
-                .expect("shared memory poisoned")
-                .scan_range(from, to, direction)
+            self.0.lock().scan_range(from, to, direction)
         }
 
         fn scan_seq(&self, seq: u64) -> Result<Option<EventStoreEntry>, EventStoreError> {
-            self.0.lock().expect("shared memory poisoned").scan_seq(seq)
+            self.0.lock().scan_seq(seq)
         }
 
         fn lookup(&self, kind: IndexKind, key: &str) -> Result<Option<u64>, EventStoreError> {
-            self.0
-                .lock()
-                .expect("shared memory poisoned")
-                .lookup(kind, key)
+            self.0.lock().lookup(kind, key)
         }
 
         fn iter_index_keys(&self, kind: IndexKind) -> Result<Vec<(String, u64)>, EventStoreError> {
-            self.0
-                .lock()
-                .expect("shared memory poisoned")
-                .iter_index_keys(kind)
+            self.0.lock().iter_index_keys(kind)
         }
 
         fn record_snapshot_anchor(
             &mut self,
             anchor: SnapshotAnchor,
         ) -> Result<(), EventStoreError> {
-            self.0
-                .lock()
-                .expect("shared memory poisoned")
-                .record_snapshot_anchor(anchor)
+            self.0.lock().record_snapshot_anchor(anchor)
         }
 
         fn latest_snapshot_anchor(&self) -> Result<Option<SnapshotAnchor>, EventStoreError> {
-            self.0
-                .lock()
-                .expect("shared memory poisoned")
-                .latest_snapshot_anchor()
+            self.0.lock().latest_snapshot_anchor()
         }
 
         fn seal(&mut self, status: RunStatus) -> Result<(), EventStoreError> {
-            self.0.lock().expect("shared memory poisoned").seal(status)
+            self.0.lock().seal(status)
         }
 
         fn manifest(&self) -> Result<RunManifest, EventStoreError> {
-            self.0.lock().expect("shared memory poisoned").manifest()
+            self.0.lock().manifest()
         }
 
         fn high_watermark(&self) -> Result<u64, EventStoreError> {
-            self.0
-                .lock()
-                .expect("shared memory poisoned")
-                .high_watermark()
+            self.0.lock().high_watermark()
         }
     }
 
@@ -1951,7 +1860,6 @@ mod madsim_tests {
         let (wrapper, shared) = SharedMemory::new();
         shared
             .lock()
-            .expect("shared")
             .open_run(manifest("run-anchor"))
             .expect("open");
 
@@ -1969,7 +1877,7 @@ mod madsim_tests {
             .record_snapshot_anchor("cache://position-snapshots/P-1/0", "blake3:abc")
             .expect("record anchor");
 
-        let backend = shared.lock().expect("shared");
+        let backend = shared.lock();
         assert_eq!(anchor.high_watermark, 2);
         assert_eq!(
             backend.latest_snapshot_anchor().expect("latest anchor"),

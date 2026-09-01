@@ -11,20 +11,20 @@ The platform defines several option instrument types:
 
 | Instrument           | Description                                                                  |
 | -------------------- | ---------------------------------------------------------------------------- |
-| `OptionContract`     | Exchange‑traded option on an underlying with strike and expiry.              |
-| `OptionSpread`       | Exchange‑defined multi‑leg option strategy as one line.                      |
+| `OptionContract`     | Exchange-traded option on an underlying with strike and expiry.              |
+| `OptionSpread`       | Exchange-defined multi-leg option strategy as one line.                      |
 | `CryptoOption`       | Crypto option with crypto quote/settlement; inverse or quanto style.         |
 | `CryptoOptionSpread` | Crypto option spread with inverse, settlement currency, and fractional size. |
-| `BinaryOption`       | Fixed‑payout option that settles to 0 or 1.                                  |
+| `BinaryOption`       | Fixed-payout option that settles to 0 or 1.                                  |
 
 Greeks-relevant metadata varies by instrument type:
 
 - `OptionContract`, `CryptoOption`: full Greeks inputs including `strike_price`,
   `option_kind` (CALL/PUT), `expiration_ns`, `underlying`, `multiplier`.
-- `OptionSpread`, `CryptoOptionSpread`: an exchange‑defined multi‑leg strategy
+- `OptionSpread`, `CryptoOptionSpread`: an exchange-defined multi-leg strategy
   published as a single tradable instrument. Has `underlying`, `expiration_ns`,
-  and `strategy_type` (a venue‑defined code). The spread itself carries no
-  `strike_price` or `option_kind`; venue‑provided leg details are stored in
+  and `strategy_type` (a venue-defined code). The spread itself carries no
+  `strike_price` or `option_kind`; venue-provided leg details are stored in
   `info` when the adapter supplies them. Orders execute against the spread as
   one line. `CryptoOptionSpread` additionally carries `is_inverse` and
   `settlement_currency` for venues like Deribit.
@@ -44,7 +44,7 @@ Nautilus provides two subscription levels:
 Subscribe to venue-provided Greeks for a single option contract from an actor or strategy:
 
 ```python
-from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model import ClientId
 
 client_id = ClientId("DERIBIT")
 self.subscribe_option_greeks(instrument_id, client_id=client_id)
@@ -344,9 +344,9 @@ single option contract:
 | `convention`       | `GreeksConvention` | Numeraire convention for the Greeks.                |
 | `delta`            | `float`            | Rate of change of option price per unit underlying. |
 | `gamma`            | `float`            | Rate of change of delta per unit underlying.        |
-| `vega`             | `float`            | Venue‑reported vega.                                |
-| `theta`            | `float`            | Venue‑reported theta.                               |
-| `rho`              | `float`            | Venue‑reported rho; defaults to zero.               |
+| `vega`             | `float`            | Venue-reported vega.                                |
+| `theta`            | `float`            | Venue-reported theta.                               |
+| `rho`              | `float`            | Venue-reported rho; defaults to zero.               |
 | `mark_iv`          | `float` or None    | Mark implied volatility.                            |
 | `bid_iv`           | `float` or None    | Bid implied volatility.                             |
 | `ask_iv`           | `float` or None    | Ask implied volatility.                             |
@@ -385,7 +385,7 @@ Methods:
 
 The following adapters currently support option Greeks subscriptions:
 
-| Adapter | Per‑instrument Greeks | Option chains |
+| Adapter | Per-instrument Greeks | Option chains |
 | ------- | :-------------------: | :-----------: |
 | Deribit | ✓                     | ✓             |
 | Bybit   | ✓                     | ✓             |

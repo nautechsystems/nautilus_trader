@@ -26,11 +26,11 @@ book prices while acting as a taker and uses its limit price when acting as a ma
 | `MARKET_TO_LIMIT`      | Walks the book, then rests the remainder at its first fill price. |
 | `LIMIT`                | Uses crossed levels as a taker or the limit price as a maker.     |
 | `STOP_MARKET`          | Walks crossed levels after triggering.                            |
-| `STOP_LIMIT`           | Uses the limit‑style rule after triggering.                       |
+| `STOP_LIMIT`           | Uses the limit-style rule after triggering.                       |
 | `MARKET_IF_TOUCHED`    | Walks crossed levels after triggering.                            |
-| `LIMIT_IF_TOUCHED`     | Uses the limit‑style rule after triggering.                       |
+| `LIMIT_IF_TOUCHED`     | Uses the limit-style rule after triggering.                       |
 | `TRAILING_STOP_MARKET` | Walks crossed levels after activation and triggering.             |
-| `TRAILING_STOP_LIMIT`  | Uses the limit‑style rule after activation and triggering.        |
+| `TRAILING_STOP_LIMIT`  | Uses the limit-style rule after activation and triggering.        |
 
 A depth order can fill partially when the available crossed size is smaller than its remaining
 quantity.
@@ -41,10 +41,10 @@ With an L1 book, the recorded market exposes only the best bid and ask:
 
 | Order class                                                              | Fill behavior                                                                   |
 | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
-| `MARKET`, `MARKET_IF_TOUCHED`, `STOP_MARKET`, and `TRAILING_STOP_MARKET` | Use the market or trigger‑price rule, then fill any residual one tick worse.    |
+| `MARKET`, `MARKET_IF_TOUCHED`, `STOP_MARKET`, and `TRAILING_STOP_MARKET` | Use the market or trigger-price rule, then fill any residual one tick worse.    |
 | `MARKET_TO_LIMIT`                                                        | Uses the best opposite quote, then rests the remainder at the first fill price. |
-| Limit‑style taker                                                        | Uses the best crossed quote, bounded by the limit price.                        |
-| Limit‑style maker                                                        | Uses the limit price when matched by a trade or market move.                    |
+| Limit-style taker                                                        | Uses the best crossed quote, bounded by the limit price.                        |
+| Limit-style maker                                                        | Uses the limit price when matched by a trade or market move.                    |
 
 The one-tick residual fill applies after the eligible market-style orders exhaust displayed L1
 size. Price protection can prevent that residual fill if it would cross the configured boundary.
@@ -137,7 +137,7 @@ record to the new displayed size.
 
 When an L1 market moves through a passive limit:
 
-| `liquidity_consumption` | Remaining‑quantity behavior                                           |
+| `liquidity_consumption` | Remaining-quantity behavior                                           |
 | ----------------------- | --------------------------------------------------------------------- |
 | `False`                 | Fill the complete remaining order at its limit price.                 |
 | `True`                  | Fill only the unconsumed displayed size and leave the remainder open. |

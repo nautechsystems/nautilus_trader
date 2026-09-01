@@ -15,13 +15,13 @@
 
 //! Provides a configuration for `RiskEngine` instances.
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use nautilus_common::{
     config::{ConfigError, ConfigErrorCollector, ConfigResult},
     throttler::RateLimit,
 };
 use nautilus_core::datetime::NANOSECONDS_IN_SECOND;
-use nautilus_model::identifiers::InstrumentId;
+use nautilus_model::identifiers::{InstrumentId, Venue};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -53,6 +53,11 @@ pub struct RiskEngineConfig {
     pub max_order_modify: RateLimit,
     #[builder(default)]
     pub max_notional_per_order: AHashMap<InstrumentId, Decimal>,
+    /// Venues whose execution clients enforce whole-position conditional exits.
+    ///
+    /// Validated exits skip bounds that apply only to their placeholder quantity and notional.
+    #[builder(default)]
+    pub full_position_exit_venues: AHashSet<Venue>,
     #[builder(default)]
     pub debug: bool,
 }
@@ -111,7 +116,9 @@ mod tests {
 
     #[rstest]
     fn test_default_config_is_valid() {
-        assert!(RiskEngineConfig::builder().build().is_ok());
+        let config = RiskEngineConfig::builder().build().unwrap();
+
+        assert!(config.full_position_exit_venues.is_empty());
     }
 
     #[rstest]

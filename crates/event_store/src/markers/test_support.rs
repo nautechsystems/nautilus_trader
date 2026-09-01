@@ -13,7 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use parking_lot::Mutex;
 
 use crate::{
     error::EventStoreError,
@@ -46,72 +48,42 @@ impl MarkerBackend for SharedMemoryMarker {
         snapshot: &DataCursorSnapshot,
         hash: [u8; 32],
     ) -> Result<(), EventStoreError> {
-        self.0
-            .lock()
-            .expect("shared memory marker poisoned")
-            .append_snapshot(snapshot, hash)
+        self.0.lock().append_snapshot(snapshot, hash)
     }
 
     fn append_hifi(&mut self, marker: &HiFiMarker, hash: [u8; 32]) -> Result<(), EventStoreError> {
-        self.0
-            .lock()
-            .expect("shared memory marker poisoned")
-            .append_hifi(marker, hash)
+        self.0.lock().append_hifi(marker, hash)
     }
 
     fn append_gap(&mut self, gap: &MarkerGap, hash: [u8; 32]) -> Result<(), EventStoreError> {
-        self.0
-            .lock()
-            .expect("shared memory marker poisoned")
-            .append_gap(gap, hash)
+        self.0.lock().append_gap(gap, hash)
     }
 
     fn put_dict(&mut self, entry: &StreamDictEntry, hash: [u8; 32]) -> Result<(), EventStoreError> {
-        self.0
-            .lock()
-            .expect("shared memory marker poisoned")
-            .put_dict(entry, hash)
+        self.0.lock().put_dict(entry, hash)
     }
 
     fn scan_snapshots(&self) -> Result<Vec<DataCursorSnapshot>, EventStoreError> {
-        self.0
-            .lock()
-            .expect("shared memory marker poisoned")
-            .scan_snapshots()
+        self.0.lock().scan_snapshots()
     }
 
     fn scan_hifi(&self) -> Result<Vec<HiFiMarker>, EventStoreError> {
-        self.0
-            .lock()
-            .expect("shared memory marker poisoned")
-            .scan_hifi()
+        self.0.lock().scan_hifi()
     }
 
     fn scan_gaps(&self) -> Result<Vec<MarkerGap>, EventStoreError> {
-        self.0
-            .lock()
-            .expect("shared memory marker poisoned")
-            .scan_gaps()
+        self.0.lock().scan_gaps()
     }
 
     fn scan_dict(&self) -> Result<Vec<StreamDictEntry>, EventStoreError> {
-        self.0
-            .lock()
-            .expect("shared memory marker poisoned")
-            .scan_dict()
+        self.0.lock().scan_dict()
     }
 
     fn seal(&mut self, status: RunStatus) -> Result<(), EventStoreError> {
-        self.0
-            .lock()
-            .expect("shared memory marker poisoned")
-            .seal(status)
+        self.0.lock().seal(status)
     }
 
     fn manifest(&self) -> Result<MarkerManifest, EventStoreError> {
-        self.0
-            .lock()
-            .expect("shared memory marker poisoned")
-            .manifest()
+        self.0.lock().manifest()
     }
 }

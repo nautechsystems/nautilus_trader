@@ -168,14 +168,12 @@ impl CoinbaseRawHttpClient {
         retry_config: Option<RetryConfig>,
     ) -> std::result::Result<Self, HttpClientError> {
         Ok(Self {
-            client: HttpClient::new(
-                Self::default_headers(),
-                vec![],
-                vec![],
-                Some(*COINBASE_REST_QUOTA),
-                Some(timeout_secs),
-                proxy_url,
-            )?,
+            client: HttpClient::builder()
+                .headers(Self::default_headers())
+                .default_quota(*COINBASE_REST_QUOTA)
+                .timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url)
+                .build()?,
             credential: None,
             base_url: ArcSwap::from_pointee(urls::rest_url(environment).to_string()),
             environment,
@@ -197,14 +195,12 @@ impl CoinbaseRawHttpClient {
         retry_config: Option<RetryConfig>,
     ) -> std::result::Result<Self, HttpClientError> {
         Ok(Self {
-            client: HttpClient::new(
-                Self::default_headers(),
-                vec![],
-                vec![],
-                Some(*COINBASE_REST_QUOTA),
-                Some(timeout_secs),
-                proxy_url,
-            )?,
+            client: HttpClient::builder()
+                .headers(Self::default_headers())
+                .default_quota(*COINBASE_REST_QUOTA)
+                .timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url)
+                .build()?,
             credential: Some(credential),
             base_url: ArcSwap::from_pointee(urls::rest_url(environment).to_string()),
             environment,
@@ -1380,7 +1376,7 @@ impl CoinbaseHttpClient {
         reduce_only: bool,
         retail_portfolio_id: Option<String>,
     ) -> anyhow::Result<CreateOrderResponse> {
-        let coinbase_side = map_order_side(side)?;
+        let coinbase_side = map_order_side(side);
         let order_config = build_order_configuration(
             order_type,
             side,
@@ -1572,15 +1568,10 @@ impl CoinbaseHttpClient {
 }
 
 /// Maps a Nautilus [`OrderSide`] to Coinbase's wire enum.
-///
-/// # Errors
-///
-/// Returns an error when the side is [`OrderSide::NoOrderSide`].
-pub fn map_order_side(side: OrderSide) -> anyhow::Result<CoinbaseOrderSide> {
+pub fn map_order_side(side: OrderSide) -> CoinbaseOrderSide {
     match side {
-        OrderSide::Buy => Ok(CoinbaseOrderSide::Buy),
-        OrderSide::Sell => Ok(CoinbaseOrderSide::Sell),
-        OrderSide::NoOrderSide => anyhow::bail!("NoOrderSide is not a valid Coinbase side"),
+        OrderSide::Buy => CoinbaseOrderSide::Buy,
+        OrderSide::Sell => CoinbaseOrderSide::Sell,
     }
 }
 
@@ -1698,9 +1689,6 @@ pub fn build_order_configuration(
             let direction = match side {
                 OrderSide::Buy => CoinbaseStopDirection::StopUp,
                 OrderSide::Sell => CoinbaseStopDirection::StopDown,
-                OrderSide::NoOrderSide => {
-                    anyhow::bail!("STOP_LIMIT requires a defined side")
-                }
             };
 
             match time_in_force {
@@ -1855,16 +1843,15 @@ mod tests {
     }
 
     #[rstest]
-    fn test_map_order_side_rejects_no_side() {
+    fn test_map_order_side() {
         assert!(matches!(
-            map_order_side(OrderSide::Buy).unwrap(),
+            map_order_side(OrderSide::Buy),
             CoinbaseOrderSide::Buy
         ));
         assert!(matches!(
-            map_order_side(OrderSide::Sell).unwrap(),
+            map_order_side(OrderSide::Sell),
             CoinbaseOrderSide::Sell
         ));
-        assert!(map_order_side(OrderSide::NoOrderSide).is_err());
     }
 
     #[rstest]

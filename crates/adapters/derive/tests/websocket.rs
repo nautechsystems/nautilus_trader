@@ -42,7 +42,7 @@ use futures_util::StreamExt;
 use nautilus_common::testing::wait_until_async;
 use nautilus_derive::{
     common::enums::DeriveEnvironment,
-    http::query::DeriveCancelAllParams,
+    http::query::{DeriveCancelAllParams, DeriveCancelByInstrumentParams},
     websocket::{
         DeriveWebSocketClient, DeriveWsChannel, DeriveWsCredentials, DeriveWsError,
         DeriveWsMessage, WsSubscriptionPayload,
@@ -299,7 +299,7 @@ async fn handle_socket(mut socket: WebSocket, state: ServerState) {
                             break;
                         }
                     }
-                    "private/cancel_all" => {
+                    "private/cancel_all" | "private/cancel_by_instrument" => {
                         state.private_frames.lock().await.push(payload);
                         if state
                             .disconnect_before_private_reply
@@ -308,7 +308,12 @@ async fn handle_socket(mut socket: WebSocket, state: ServerState) {
                             let _ = socket.send(Message::Close(None)).await;
                             break;
                         }
-                        let reply = json!({"id": id, "result": {}});
+                        let result = if method == "private/cancel_by_instrument" {
+                            json!({"cancelled_orders": 0})
+                        } else {
+                            json!({})
+                        };
+                        let reply = json!({"id": id, "result": result});
                         if socket
                             .send(Message::Text(reply.to_string().into()))
                             .await
@@ -344,8 +349,7 @@ async fn start_server(state: ServerState) -> SocketAddr {
 
 async fn wait_for_http_health(addr: SocketAddr) {
     let health_url = format!("http://{addr}/health");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();
@@ -518,6 +522,46 @@ async fn test_connect_with_login_rejection_tears_down_transport() {
     wait_for_active(&client, Duration::from_secs(2)).await;
     assert!(client.is_authenticated());
     assert_eq!(state.login_frames.lock().await.len(), 2);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_by_instrument_sends_exact_request_and_decodes_count() {
+    let state = ServerState::new();
+    let addr = start_server(state.clone()).await;
+
+    let mut client = DeriveWebSocketClient::with_credentials(
+        Some(ws_url(addr)),
+        DeriveEnvironment::Mainnet,
+        TransportBackend::default(),
+        None,
+        test_credentials(),
+        None,
+        None,
+    );
+    let execution = client.execution_handle();
+    client.connect().await.expect("connect failed");
+
+    let result = execution
+        .cancel_by_instrument(&DeriveCancelByInstrumentParams::new(30769, "ETH-PERP"))
+        .await
+        .expect("cancel_by_instrument failed");
+
+    assert_eq!(result.cancelled_orders, 0);
+    assert_eq!(
+        state.private_frames.lock().await.as_slice(),
+        &[json!({
+            "id": 2,
+            "jsonrpc": "2.0",
+            "method": "private/cancel_by_instrument",
+            "params": {
+                "subaccount_id": 30769,
+                "instrument_name": "ETH-PERP",
+            },
+        })],
+    );
 
     client.disconnect().await.unwrap();
 }
@@ -1440,7 +1484,7 @@ async fn test_reconnect_does_not_replay_pending_private_request() {
     client.connect().await.expect("connect failed");
 
     let first_error = execution
-        .cancel_all_orders(&DeriveCancelAllParams::new(30769))
+        .cancel_by_instrument(&DeriveCancelByInstrumentParams::new(30769, "ETH-PERP"))
         .await
         .expect_err("request interrupted by reconnect must fail");
     assert!(matches!(
@@ -1460,13 +1504,19 @@ async fn test_reconnect_does_not_replay_pending_private_request() {
     .await
     .expect("reconnect completion timed out");
 
+    let private_frames = state.private_frames.lock().await;
     assert_eq!(
-        state.private_frames.lock().await.len(),
+        private_frames.len(),
         1,
         "the interrupted private request must not replay on the replacement connection",
     );
+    assert_eq!(
+        private_frames[0]["method"].as_str(),
+        Some("private/cancel_by_instrument"),
+    );
+    drop(private_frames);
     execution
-        .cancel_all_orders(&DeriveCancelAllParams::new(30769))
+        .cancel_by_instrument(&DeriveCancelByInstrumentParams::new(30769, "ETH-PERP"))
         .await
         .expect("new private request should succeed after recovery");
     assert_eq!(state.private_frames.lock().await.len(), 2);

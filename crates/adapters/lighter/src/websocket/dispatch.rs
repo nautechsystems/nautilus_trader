@@ -25,7 +25,7 @@ use std::{
     collections::VecDeque,
     hash::{BuildHasher, Hasher},
     sync::{
-        Arc, LazyLock, Mutex,
+        Arc, LazyLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
@@ -34,7 +34,7 @@ use std::{
 use ahash::{AHashMap, AHashSet, RandomState};
 use anyhow::Context;
 use dashmap::{DashMap, DashSet};
-use nautilus_core::{AtomicTime, MUTEX_POISONED, UnixNanos};
+use nautilus_core::{AtomicTime, UnixNanos};
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
     events::AccountState,
@@ -44,11 +44,12 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Price, Quantity},
 };
+use parking_lot::Mutex;
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 
 use crate::{
     common::{
-        credential::{Credential, scrub_auth},
+        credential::Credential,
         enums::{LighterOrderType, LighterTimeInForce},
         symbol::MarketRegistry,
     },
@@ -140,7 +141,7 @@ impl OrderIdentity {
             order.order_type(),
             client_order_index,
         );
-        let mut binding = identity.binding.lock().expect(MUTEX_POISONED);
+        let mut binding = identity.binding.lock();
         binding.venue_order_id = Some(venue_order_id);
         binding.create_resolution = CreateResolution::Confirmed;
         drop(binding);
@@ -149,11 +150,11 @@ impl OrderIdentity {
     }
 
     fn mark_submission(&self, nonce: i64) {
-        self.binding.lock().expect(MUTEX_POISONED).submission_nonce = Some(nonce);
+        self.binding.lock().submission_nonce = Some(nonce);
     }
 
     fn bind_venue_order_id(&self, venue_order_id: VenueOrderId) -> bool {
-        let mut binding = self.binding.lock().expect(MUTEX_POISONED);
+        let mut binding = self.binding.lock();
         if binding.create_resolution == CreateResolution::Rejected {
             return false;
         }
@@ -182,11 +183,11 @@ impl OrderIdentity {
     }
 
     fn matches_venue_order_id(&self, venue_order_id: VenueOrderId) -> bool {
-        self.binding.lock().expect(MUTEX_POISONED).venue_order_id == Some(venue_order_id)
+        self.binding.lock().venue_order_id == Some(venue_order_id)
     }
 
     fn venue_order_id(&self) -> Option<VenueOrderId> {
-        self.binding.lock().expect(MUTEX_POISONED).venue_order_id
+        self.binding.lock().venue_order_id
     }
 
     fn accepted_was_emitted(&self) -> bool {
@@ -194,7 +195,7 @@ impl OrderIdentity {
     }
 
     fn claim_accepted_emission(&self) -> bool {
-        let mut binding = self.binding.lock().expect(MUTEX_POISONED);
+        let mut binding = self.binding.lock();
         if binding.create_resolution == CreateResolution::Rejected {
             return false;
         }
@@ -208,7 +209,7 @@ impl OrderIdentity {
             return false;
         }
 
-        let binding = self.binding.lock().expect(MUTEX_POISONED);
+        let binding = self.binding.lock();
         binding.submission_nonce == Some(nonce)
             && binding.create_resolution == CreateResolution::Pending
     }
@@ -218,7 +219,7 @@ impl OrderIdentity {
             return false;
         }
 
-        let mut binding = self.binding.lock().expect(MUTEX_POISONED);
+        let mut binding = self.binding.lock();
         if binding.submission_nonce != Some(nonce)
             || binding.create_resolution == CreateResolution::Rejected
         {
@@ -238,7 +239,7 @@ impl OrderIdentity {
             return false;
         }
 
-        let mut binding = self.binding.lock().expect(MUTEX_POISONED);
+        let mut binding = self.binding.lock();
         if binding.submission_nonce != Some(nonce)
             || binding.create_resolution != CreateResolution::Pending
         {
@@ -352,7 +353,7 @@ impl RetiredOrderCache {
         let index = identity.client_order_index;
         let venue_order_id = identity.venue_order_id();
         let binding = (index, venue_order_id);
-        let mut inner = self.inner.lock().expect(MUTEX_POISONED);
+        let mut inner = self.inner.lock();
         let seq = inner.next_seq;
         inner.next_seq = inner.next_seq.wrapping_add(1);
 
@@ -406,7 +407,7 @@ impl RetiredOrderCache {
     }
 
     fn cloid_for_index(&self, index: i64) -> Option<ClientOrderId> {
-        let inner = self.inner.lock().expect(MUTEX_POISONED);
+        let inner = self.inner.lock();
         let bindings = inner.by_index.get(&index)?;
         if bindings.len() != 1 {
             return None;
@@ -417,7 +418,6 @@ impl RetiredOrderCache {
     fn cloid_for_venue(&self, index: i64, venue_order_id: VenueOrderId) -> Option<ClientOrderId> {
         self.inner
             .lock()
-            .expect(MUTEX_POISONED)
             .by_index
             .get(&index)?
             .get(&Some(venue_order_id))
@@ -425,7 +425,7 @@ impl RetiredOrderCache {
     }
 
     fn identity_for_cloid(&self, cloid: &ClientOrderId) -> Option<OrderIdentity> {
-        let inner = self.inner.lock().expect(MUTEX_POISONED);
+        let inner = self.inner.lock();
         let (index, venue_order_id) = inner.by_cloid.get(cloid)?;
         inner
             .by_index
@@ -435,11 +435,7 @@ impl RetiredOrderCache {
     }
 
     fn contains_index(&self, index: i64) -> bool {
-        self.inner
-            .lock()
-            .expect(MUTEX_POISONED)
-            .by_index
-            .contains_key(&index)
+        self.inner.lock().by_index.contains_key(&index)
     }
 }
 
@@ -481,7 +477,7 @@ impl TradeDedupCache {
     }
 
     fn insert(&self, trade_id: TradeId, source: TradeDedupSource) -> Option<TradeDedupSource> {
-        let mut inner = self.inner.lock().expect(MUTEX_POISONED);
+        let mut inner = self.inner.lock();
         if let Some((existing, _)) = inner.entries.get(&trade_id) {
             return Some(*existing);
         }
@@ -504,21 +500,19 @@ impl TradeDedupCache {
     }
 
     fn remove(&self, trade_id: &TradeId) {
-        self.inner
-            .lock()
-            .expect(MUTEX_POISONED)
-            .entries
-            .remove(trade_id);
+        self.inner.lock().entries.remove(trade_id);
     }
 
     #[cfg(test)]
     pub(crate) fn contains(&self, trade_id: &TradeId) -> bool {
-        self.inner
-            .lock()
-            .expect(MUTEX_POISONED)
-            .entries
-            .contains_key(trade_id)
+        self.inner.lock().entries.contains_key(trade_id)
     }
+}
+
+#[derive(Debug, Default)]
+struct PositionSnapshot {
+    reports: AHashMap<InstrumentId, PositionStatusReport>,
+    skipped_market_ids: Option<AHashSet<i16>>,
 }
 
 /// Per-client WebSocket dispatch state.
@@ -552,13 +546,10 @@ pub(crate) struct WsDispatchState {
     /// per-market and the venue's REST quota would make a full-market
     /// fan-out prohibitively slow.
     pub(crate) active_markets: Arc<DashSet<i16>>,
-    /// WS-driven position cache backing `generate_position_status_reports`
-    /// (Lighter has no REST equivalent). `Mutex` not `DashMap` so a reader
-    /// never lands between `replace_positions`' clear and repopulate.
-    pub(crate) last_positions: Arc<Mutex<AHashMap<InstrumentId, PositionStatusReport>>>,
-    /// Markets omitted from the latest position snapshot because their rows could not be mapped or
-    /// parsed. `None` means no snapshot has completed for the current connection epoch.
-    position_snapshot_skipped: Arc<Mutex<Option<AHashSet<i16>>>>,
+    /// WS-driven position reports and their coverage state. Lighter has no REST
+    /// equivalent, so both values share one lock to keep reconciliation from
+    /// pairing reports from one frame with completeness from another.
+    position_snapshot: Arc<Mutex<PositionSnapshot>>,
     /// Identity context for orders this client submitted. Keyed on the
     /// originating [`ClientOrderId`]; populated by the execution client at
     /// submit time, consumed by the consumption loop to decide whether an
@@ -801,8 +792,7 @@ impl WsDispatchState {
             nonce_manager: Arc::new(NonceManager::default()),
             last_account_state: Arc::new(Mutex::new(None)),
             active_markets: Arc::new(DashSet::new()),
-            last_positions: Arc::new(Mutex::new(AHashMap::new())),
-            position_snapshot_skipped: Arc::new(Mutex::new(None)),
+            position_snapshot: Arc::new(Mutex::new(PositionSnapshot::default())),
             order_identities: Arc::new(DashMap::new()),
             create_registry: Arc::new(Mutex::new(())),
             seen_trade_ids: Arc::new(TradeDedupCache::new(REPLAY_CACHE_CAPACITY)),
@@ -827,10 +817,7 @@ impl WsDispatchState {
         {
             self.mark_order_submission(&order.client_order_id(), pending.nonce);
         }
-        self.pending_sendtx
-            .lock()
-            .expect(MUTEX_POISONED)
-            .push_back(pending);
+        self.pending_sendtx.lock().push_back(pending);
     }
 
     /// Pop the oldest pending entry unconditionally.
@@ -839,10 +826,7 @@ impl WsDispatchState {
     /// attribution must use [`Self::pop_pending_sendtx_if_only`].
     #[cfg(test)]
     pub(crate) fn pop_pending_sendtx_head(&self) -> Option<PendingSendTx> {
-        self.pending_sendtx
-            .lock()
-            .expect(MUTEX_POISONED)
-            .pop_front()
+        self.pending_sendtx.lock().pop_front()
     }
 
     /// Pop a pending entry only when it is the sole possible match.
@@ -854,7 +838,7 @@ impl WsDispatchState {
         &self,
         connection_epoch: u64,
     ) -> Option<PendingSendTx> {
-        let mut queue = self.pending_sendtx.lock().expect(MUTEX_POISONED);
+        let mut queue = self.pending_sendtx.lock();
         let mut matches = queue
             .iter()
             .enumerate()
@@ -875,7 +859,7 @@ impl WsDispatchState {
         max_age_ms: u64,
     ) -> Option<PendingSendTx> {
         let cutoff_ns = now.as_u64().saturating_sub(max_age_ms * 1_000_000);
-        let mut queue = self.pending_sendtx.lock().expect(MUTEX_POISONED);
+        let mut queue = self.pending_sendtx.lock();
         let mut matches = queue
             .iter()
             .enumerate()
@@ -894,7 +878,7 @@ impl WsDispatchState {
         connection_epoch: u64,
         nonce: i64,
     ) -> Option<PendingSendTx> {
-        let mut q = self.pending_sendtx.lock().expect(MUTEX_POISONED);
+        let mut q = self.pending_sendtx.lock();
         let pos = q
             .iter()
             .position(|p| p.connection_epoch == connection_epoch && p.nonce == nonce)?;
@@ -914,7 +898,7 @@ impl WsDispatchState {
             .strip_prefix("0x")
             .or_else(|| tx_hash.strip_prefix("0X"))
             .unwrap_or(tx_hash);
-        let mut q = self.pending_sendtx.lock().expect(MUTEX_POISONED);
+        let mut q = self.pending_sendtx.lock();
         let pos = q.iter().position(|p| {
             p.connection_epoch == connection_epoch && p.tx_hash.eq_ignore_ascii_case(tx_hash)
         })?;
@@ -923,7 +907,7 @@ impl WsDispatchState {
 
     /// Drain pending entries owned by one disconnected connection.
     pub(crate) fn drain_pending_sendtx(&self, connection_epoch: u64) -> Vec<PendingSendTx> {
-        let mut queue = self.pending_sendtx.lock().expect(MUTEX_POISONED);
+        let mut queue = self.pending_sendtx.lock();
         let (drained, retained) = std::mem::take(&mut *queue)
             .into_iter()
             .partition(|pending| pending.connection_epoch == connection_epoch);
@@ -931,10 +915,14 @@ impl WsDispatchState {
         drained.into()
     }
 
+    pub(crate) fn take_pending_sendtx(&self) -> Vec<PendingSendTx> {
+        std::mem::take(&mut *self.pending_sendtx.lock()).into()
+    }
+
     /// Returns the current pending-sendTx queue length. Test-only helper.
     #[cfg(test)]
     pub(crate) fn pending_sendtx_len(&self) -> usize {
-        self.pending_sendtx.lock().expect(MUTEX_POISONED).len()
+        self.pending_sendtx.lock().len()
     }
 
     /// First-time check for an `OrderTriggered` event for `cloid`. Returns
@@ -994,7 +982,7 @@ impl WsDispatchState {
 
     /// Register the client index and identity for one create as one registry operation.
     pub(crate) fn register_create_identity(&self, order: &OrderAny) -> anyhow::Result<i64> {
-        let _guard = self.create_registry.lock().expect(MUTEX_POISONED);
+        let _guard = self.create_registry.lock();
         let cloid = order.client_order_id();
         let client_order_index =
             self.register_cloid(self.derive_client_order_index(&cloid), cloid)?;
@@ -1034,7 +1022,7 @@ impl WsDispatchState {
         client_order_index: i64,
         nonce: i64,
     ) -> bool {
-        let _guard = self.create_registry.lock().expect(MUTEX_POISONED);
+        let _guard = self.create_registry.lock();
         self.order_identities
             .get(cloid)
             .is_some_and(|identity| identity.confirm_submission(client_order_index, nonce))
@@ -1047,7 +1035,7 @@ impl WsDispatchState {
         nonce: i64,
         venue_order_id: VenueOrderId,
     ) -> bool {
-        let _guard = self.create_registry.lock().expect(MUTEX_POISONED);
+        let _guard = self.create_registry.lock();
         let Some(identity) = self
             .order_identities
             .get(cloid)
@@ -1073,7 +1061,7 @@ impl WsDispatchState {
         nonce: i64,
         connection_epoch: Option<(&AtomicU64, u64)>,
     ) -> bool {
-        let _guard = self.create_registry.lock().expect(MUTEX_POISONED);
+        let _guard = self.create_registry.lock();
         let Some(identity) = self
             .order_identities
             .get(cloid)
@@ -1523,23 +1511,20 @@ impl WsDispatchState {
     /// Cache the most recent [`AccountState`] from the WS feed so
     /// `query_account` can serve a snapshot synchronously.
     pub(crate) fn cache_account_state(&self, state: AccountState) {
-        let mut guard = self.last_account_state.lock().expect(MUTEX_POISONED);
+        let mut guard = self.last_account_state.lock();
         *guard = Some(state);
     }
 
     /// Return a clone of the cached [`AccountState`], if any.
     pub(crate) fn snapshot_account_state(&self) -> Option<AccountState> {
-        self.last_account_state
-            .lock()
-            .expect(MUTEX_POISONED)
-            .clone()
+        self.last_account_state.lock().clone()
     }
 
     /// Drop the cached `AccountState` snapshot. Used at connect time so a
     /// stale prior-session snapshot cannot satisfy the strict-await gate
     /// when an initial venue frame fails to parse or omits balances.
     pub(crate) fn clear_account_state_cache(&self) {
-        let mut guard = self.last_account_state.lock().expect(MUTEX_POISONED);
+        let mut guard = self.last_account_state.lock();
         *guard = None;
     }
 
@@ -1548,90 +1533,101 @@ impl WsDispatchState {
     /// the strict-await gate before the next `account_all_positions` frame
     /// replaces the cache.
     pub(crate) fn clear_position_cache(&self) {
-        self.last_positions.lock().expect(MUTEX_POISONED).clear();
-        self.invalidate_position_snapshot();
+        let mut snapshot = self.position_snapshot.lock();
+        snapshot.reports.clear();
+        snapshot.skipped_market_ids = None;
     }
 
     pub(crate) fn invalidate_position_snapshot(&self) {
-        *self.position_snapshot_skipped.lock().expect(MUTEX_POISONED) = None;
+        self.position_snapshot.lock().skipped_market_ids = None;
     }
 
-    pub(crate) fn record_position_snapshot(&self, skipped_market_ids: &[i16]) {
-        *self.position_snapshot_skipped.lock().expect(MUTEX_POISONED) =
-            Some(skipped_market_ids.iter().copied().collect());
-    }
-
-    pub(crate) fn position_snapshot_covers(&self, market_id: i16) -> bool {
-        self.position_snapshot_skipped
-            .lock()
-            .expect(MUTEX_POISONED)
-            .as_ref()
-            .is_some_and(|skipped| !skipped.contains(&market_id))
-    }
-
-    /// Replace the cache from a complete `account_all_positions` snapshot
+    /// Replace the cache and coverage from an `account_all_positions` snapshot
     /// and return the instrument ids that were present before but absent
     /// after. The caller is expected to emit a flat
     /// [`PositionStatusReport`] for each removed instrument; otherwise the
     /// execution engine won't observe externally-closed positions.
-    /// Instruments absent from `snapshot` are evicted; an empty input
-    /// clears the cache entirely.
-    pub(crate) fn replace_positions(&self, snapshot: &[PositionStatusReport]) -> Vec<InstrumentId> {
-        self.replace_positions_except(snapshot, &[])
-    }
-
-    /// Replace the cache from a snapshot while retaining instruments whose
-    /// venue rows were skipped and therefore cannot be treated as closed.
-    pub(crate) fn replace_positions_except(
+    /// Instruments absent from `reports` are evicted unless retained because
+    /// their venue rows were skipped. An empty report set clears the cache
+    /// when no instrument is retained.
+    pub(crate) fn replace_position_snapshot(
         &self,
-        snapshot: &[PositionStatusReport],
+        reports: &[PositionStatusReport],
         retained: &[InstrumentId],
+        skipped_market_ids: &[i16],
     ) -> Vec<InstrumentId> {
-        let mut guard = self.last_positions.lock().expect(MUTEX_POISONED);
-        let new_ids: ahash::AHashSet<InstrumentId> =
-            snapshot.iter().map(|r| r.instrument_id).collect();
-        let retained_ids: ahash::AHashSet<InstrumentId> = retained.iter().copied().collect();
-        let removed: Vec<InstrumentId> = guard
-            .keys()
-            .filter(|id| !new_ids.contains(id) && !retained_ids.contains(id))
-            .copied()
-            .collect();
-        guard.retain(|id, _| retained_ids.contains(id));
-        for report in snapshot {
-            guard.insert(report.instrument_id, report.clone());
-        }
+        let mut snapshot = self.position_snapshot.lock();
+        let removed = replace_position_reports(&mut snapshot.reports, reports, retained);
+        snapshot.skipped_market_ids = Some(skipped_market_ids.iter().copied().collect());
         removed
     }
 
     /// Apply live position updates without evicting instruments omitted from the frame.
-    pub(crate) fn update_positions(
+    /// The caller must emit a flat report for every returned removed instrument.
+    pub(crate) fn apply_position_update(
         &self,
-        updates: &[PositionStatusReport],
+        reports: &[PositionStatusReport],
         closed: &[InstrumentId],
+        covered_market_ids: &[i16],
+        skipped_market_ids: &[i16],
     ) -> Vec<InstrumentId> {
-        let mut guard = self.last_positions.lock().expect(MUTEX_POISONED);
-        let removed = closed
-            .iter()
-            .filter_map(|instrument_id| guard.remove(instrument_id).map(|_| *instrument_id))
-            .collect();
-
-        for report in updates {
-            guard.insert(report.instrument_id, report.clone());
+        let mut snapshot = self.position_snapshot.lock();
+        let removed = update_position_reports(&mut snapshot.reports, reports, closed);
+        if let Some(skipped) = snapshot.skipped_market_ids.as_mut() {
+            for market_id in covered_market_ids {
+                skipped.remove(market_id);
+            }
+            skipped.extend(skipped_market_ids.iter().copied());
         }
         removed
     }
 
-    /// Snapshot the cached positions, optionally filtered by instrument.
-    pub(crate) fn snapshot_positions(
+    /// Snapshot cached position reports and their coverage under one lock.
+    pub(crate) fn snapshot_positions_with_coverage(
         &self,
-        instrument_id: Option<InstrumentId>,
-    ) -> Vec<PositionStatusReport> {
-        let guard = self.last_positions.lock().expect(MUTEX_POISONED);
-        match instrument_id {
-            Some(id) => guard.get(&id).cloned().map(|r| vec![r]).unwrap_or_default(),
-            None => guard.values().cloned().collect(),
-        }
+    ) -> (Vec<PositionStatusReport>, Option<AHashSet<i16>>) {
+        let snapshot = self.position_snapshot.lock();
+        (
+            snapshot.reports.values().cloned().collect(),
+            snapshot.skipped_market_ids.clone(),
+        )
     }
+}
+
+fn replace_position_reports(
+    current: &mut AHashMap<InstrumentId, PositionStatusReport>,
+    snapshot: &[PositionStatusReport],
+    retained: &[InstrumentId],
+) -> Vec<InstrumentId> {
+    let new_ids: AHashSet<InstrumentId> = snapshot.iter().map(|r| r.instrument_id).collect();
+    let retained_ids: AHashSet<InstrumentId> = retained.iter().copied().collect();
+    let removed: Vec<InstrumentId> = current
+        .keys()
+        .filter(|id| !new_ids.contains(id) && !retained_ids.contains(id))
+        .copied()
+        .collect();
+
+    current.retain(|id, _| retained_ids.contains(id));
+    for report in snapshot {
+        current.insert(report.instrument_id, report.clone());
+    }
+    removed
+}
+
+fn update_position_reports(
+    current: &mut AHashMap<InstrumentId, PositionStatusReport>,
+    updates: &[PositionStatusReport],
+    closed: &[InstrumentId],
+) -> Vec<InstrumentId> {
+    let removed = closed
+        .iter()
+        .filter_map(|instrument_id| current.remove(instrument_id).map(|_| *instrument_id))
+        .collect();
+
+    for report in updates {
+        current.insert(report.instrument_id, report.clone());
+    }
+    removed
 }
 
 /// Standalone derivation so the fixed-seed contract is testable without
@@ -1846,8 +1842,14 @@ pub(crate) async fn lookup_order_status_report(
     let ts_init = clock.get_time_ns();
     let supplied_cloid = client_order_id.copied();
 
-    let finalize = |order: &LighterOrder| -> Option<OrderStatusReport> {
-        let report = parse_http_order_to_report(order, registry, account_id, ts_init)?;
+    let finalize = |order: &LighterOrder| -> anyhow::Result<OrderStatusReport> {
+        let report =
+            parse_http_order_to_report(order, registry, account_id, ts_init).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "failed to parse matching Lighter order {} for market_index={market_index}",
+                    order.order_id,
+                )
+            })?;
         let mut report = dispatch.translate_order_cloid(report);
         // Substitute the caller-supplied cloid whenever it positively
         // identifies this order: when the order's
@@ -1867,7 +1869,7 @@ pub(crate) async fn lookup_order_status_report(
         {
             report = report.with_client_order_id(cloid);
         }
-        Some(dispatch.preserve_pending_order_status(report))
+        Ok(dispatch.preserve_pending_order_status(report))
     };
 
     let mut active_matches = active.orders.iter().filter(|order| matches_order(order));
@@ -1881,10 +1883,8 @@ pub(crate) async fn lookup_order_status_report(
         );
     }
 
-    if let Some(order) = active_match
-        && let Some(report) = finalize(order)
-    {
-        return Ok(Some(report));
+    if let Some(order) = active_match {
+        return finalize(order).map(Some);
     }
 
     if target_venue_index.is_none() {
@@ -1919,10 +1919,8 @@ pub(crate) async fn lookup_order_status_report(
             .context("failed to fetch Lighter inactive orders")?;
 
         for order in &inactive.orders {
-            if matches_order(order)
-                && let Some(report) = finalize(order)
-            {
-                return Ok(Some(report));
+            if matches_order(order) {
+                return finalize(order).map(Some);
             }
         }
 
@@ -2170,32 +2168,13 @@ pub(crate) fn derive_market_order_price_ticks(
     })
 }
 
-/// Degrade an `Err` sub-report to an empty `Vec` after logging the full
-/// chain at WARN. Deliberate: a transient REST failure on one category
-/// must not blank out the others. Visibility comes from the `{e:#}` log,
-/// not from the returned `ExecutionMassStatus`.
-pub(crate) fn unwrap_reports_or_warn<T>(label: &str, result: anyhow::Result<Vec<T>>) -> Vec<T> {
-    match result {
-        Ok(reports) => reports,
-        Err(e) => {
-            log::warn!(
-                "Lighter mass-status: {label} reports failed: {}",
-                scrub_auth(&format!("{e:#}")),
-            );
-            Vec::new()
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
 
     use nautilus_core::UUID4;
     use nautilus_model::{
-        enums::{
-            AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified,
-        },
+        enums::{AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide},
         identifiers::{AccountId, StrategyId, TradeId},
         orders::Order,
         reports::FillReport,
@@ -2219,7 +2198,7 @@ mod tests {
             InstrumentId::from("ETH-PERP.LIGHTER"),
             Some(ClientOrderId::new(client_order_id_str)),
             VenueOrderId::new("281476929510110"),
-            OrderSide::Sell,
+            OrderSide::Sell.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
@@ -2242,7 +2221,7 @@ mod tests {
         PositionStatusReport::new(
             AccountId::from("LIGHTER-TEST"),
             InstrumentId::from(instrument),
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from(qty),
             UnixNanos::from(1),
             UnixNanos::from(2),
@@ -2313,10 +2292,13 @@ mod tests {
                 .into_iter()
                 .map(|(instrument, qty)| stub_position_report(instrument, qty))
                 .collect();
-            state.replace_positions(&frame);
+            state.replace_position_snapshot(&frame, &[], &[]);
         }
 
-        let result = state.snapshot_positions(filter.map(InstrumentId::from));
+        let (mut result, _) = state.snapshot_positions_with_coverage();
+        if let Some(instrument_id) = filter.map(InstrumentId::from) {
+            result.retain(|report| report.instrument_id == instrument_id);
+        }
 
         let mut actual: Vec<(String, String)> = result
             .into_iter()
@@ -2336,30 +2318,40 @@ mod tests {
         // Anchors the contract the consumption loop relies on for the
         // `Reconnected` and `connect()` cache-drop paths.
         let state = WsDispatchState::new();
-        state.replace_positions(&[stub_position_report("ETH-PERP.LIGHTER", "1.0")]);
-        assert_eq!(state.snapshot_positions(None).len(), 1);
+        state.replace_position_snapshot(
+            &[stub_position_report("ETH-PERP.LIGHTER", "1.0")],
+            &[],
+            &[],
+        );
+        assert_eq!(state.snapshot_positions_with_coverage().0.len(), 1);
 
-        state.replace_positions(&[]);
+        state.replace_position_snapshot(&[], &[], &[]);
 
-        assert!(state.snapshot_positions(None).is_empty());
+        assert!(state.snapshot_positions_with_coverage().0.is_empty());
     }
 
     #[rstest]
     fn replace_positions_except_keeps_only_retained_absent_positions() {
         let state = WsDispatchState::new();
-        state.replace_positions(&[
-            stub_position_report("ETH-PERP.LIGHTER", "1.0"),
-            stub_position_report("BTC-PERP.LIGHTER", "2.0"),
-            stub_position_report("DOGE-PERP.LIGHTER", "4.0"),
-        ]);
+        state.replace_position_snapshot(
+            &[
+                stub_position_report("ETH-PERP.LIGHTER", "1.0"),
+                stub_position_report("BTC-PERP.LIGHTER", "2.0"),
+                stub_position_report("DOGE-PERP.LIGHTER", "4.0"),
+            ],
+            &[],
+            &[],
+        );
 
-        let removed = state.replace_positions_except(
+        let removed = state.replace_position_snapshot(
             &[stub_position_report("ETH-PERP.LIGHTER", "3.0")],
             &[InstrumentId::from("BTC-PERP.LIGHTER")],
+            &[],
         );
 
         let mut actual: Vec<(String, String)> = state
-            .snapshot_positions(None)
+            .snapshot_positions_with_coverage()
+            .0
             .into_iter()
             .map(|r| (r.instrument_id.to_string(), r.quantity.to_string()))
             .collect();
@@ -2378,19 +2370,26 @@ mod tests {
     #[rstest]
     fn update_positions_merges_rows_and_removes_only_explicit_closures() {
         let state = WsDispatchState::new();
-        state.replace_positions(&[
-            stub_position_report("ETH-PERP.LIGHTER", "1.0"),
-            stub_position_report("BTC-PERP.LIGHTER", "2.0"),
-        ]);
+        state.replace_position_snapshot(
+            &[
+                stub_position_report("ETH-PERP.LIGHTER", "1.0"),
+                stub_position_report("BTC-PERP.LIGHTER", "2.0"),
+            ],
+            &[],
+            &[],
+        );
 
-        let removed = state.update_positions(
+        let removed = state.apply_position_update(
             &[stub_position_report("ETH-PERP.LIGHTER", "3.0")],
             &[InstrumentId::from("DOGE-PERP.LIGHTER")],
+            &[],
+            &[],
         );
 
         assert!(removed.is_empty());
         let mut actual: Vec<(String, String)> = state
-            .snapshot_positions(None)
+            .snapshot_positions_with_coverage()
+            .0
             .into_iter()
             .map(|report| {
                 (
@@ -2408,29 +2407,17 @@ mod tests {
             ],
         );
 
-        let removed = state.update_positions(&[], &[InstrumentId::from("BTC-PERP.LIGHTER")]);
+        let removed =
+            state.apply_position_update(&[], &[InstrumentId::from("BTC-PERP.LIGHTER")], &[], &[]);
 
         assert_eq!(removed, vec![InstrumentId::from("BTC-PERP.LIGHTER")]);
-        let positions = state.snapshot_positions(None);
+        let positions = state.snapshot_positions_with_coverage().0;
         assert_eq!(positions.len(), 1);
         assert_eq!(
             positions[0].instrument_id,
             InstrumentId::from("ETH-PERP.LIGHTER")
         );
         assert_eq!(positions[0].quantity, Quantity::from("3.0"));
-    }
-
-    #[rstest]
-    fn unwrap_reports_or_warn_returns_inner_on_ok() {
-        let result: anyhow::Result<Vec<i32>> = Ok(vec![1, 2, 3]);
-        assert_eq!(unwrap_reports_or_warn("orders", result), vec![1, 2, 3]);
-    }
-
-    #[rstest]
-    fn unwrap_reports_or_warn_returns_empty_on_err() {
-        let result: anyhow::Result<Vec<i32>> = Err(anyhow::anyhow!("boom"));
-        let out: Vec<i32> = unwrap_reports_or_warn("orders", result);
-        assert!(out.is_empty());
     }
 
     #[rstest]
@@ -3442,10 +3429,10 @@ mod tests {
         let state = WsDispatchState::new();
         let prior_reports: Vec<PositionStatusReport> =
             prior.iter().map(|i| position_at(i)).collect();
-        state.replace_positions(&prior_reports);
+        state.replace_position_snapshot(&prior_reports, &[], &[]);
 
         let next_reports: Vec<PositionStatusReport> = next.iter().map(|i| position_at(i)).collect();
-        let mut removed = state.replace_positions(&next_reports);
+        let mut removed = state.replace_position_snapshot(&next_reports, &[], &[]);
         removed.sort();
         let mut expected: Vec<InstrumentId> = expected_removed
             .iter()
@@ -3765,7 +3752,7 @@ mod tests {
         assert_eq!(pending_cloid(&drained[0]), Some(cloid("OLD")));
 
         {
-            let queue = state.pending_sendtx.lock().expect(MUTEX_POISONED);
+            let queue = state.pending_sendtx.lock();
             assert_eq!(queue.len(), 1);
             assert_eq!(queue[0].connection_epoch, 5);
             assert_eq!(queue[0].nonce, 11);
@@ -3776,7 +3763,7 @@ mod tests {
         replacement_after_cleanup.connection_epoch = 5;
         state.enqueue_pending_sendtx(replacement_after_cleanup);
 
-        let queue = state.pending_sendtx.lock().expect(MUTEX_POISONED);
+        let queue = state.pending_sendtx.lock();
         assert_eq!(queue.len(), 2);
         assert_eq!(
             queue
@@ -3891,31 +3878,76 @@ mod tests {
         // positions from leaking past the strict-await gate when the
         // venue's initial `account_all_positions` frame is empty.
         let state = WsDispatchState::new();
-        state.replace_positions(&[stub_position_report("ETH-PERP.LIGHTER", "1.0")]);
-        assert!(!state.snapshot_positions(None).is_empty());
+        state.replace_position_snapshot(
+            &[stub_position_report("ETH-PERP.LIGHTER", "1.0")],
+            &[],
+            &[],
+        );
+        assert!(!state.snapshot_positions_with_coverage().0.is_empty());
 
         state.clear_position_cache();
 
-        assert!(state.snapshot_positions(None).is_empty());
-        assert!(!state.position_snapshot_covers(0));
+        let (reports, coverage) = state.snapshot_positions_with_coverage();
+        assert!(reports.is_empty());
+        assert_eq!(coverage, None);
     }
 
     #[rstest]
     fn position_snapshot_coverage_requires_current_complete_market_row() {
         let state = WsDispatchState::new();
 
-        assert!(!state.position_snapshot_covers(0));
+        assert_eq!(state.snapshot_positions_with_coverage().1, None);
 
-        state.record_position_snapshot(&[]);
-        assert!(state.position_snapshot_covers(0));
+        state.replace_position_snapshot(&[], &[], &[]);
+        assert_eq!(
+            state.snapshot_positions_with_coverage().1,
+            Some(AHashSet::new()),
+        );
 
-        state.record_position_snapshot(&[0]);
-        assert!(!state.position_snapshot_covers(0));
-        assert!(state.position_snapshot_covers(1));
+        state.replace_position_snapshot(&[], &[], &[0]);
+        assert_eq!(
+            state.snapshot_positions_with_coverage().1,
+            Some(AHashSet::from_iter([0])),
+        );
+
+        state.apply_position_update(&[], &[], &[0], &[1]);
+        assert_eq!(
+            state.snapshot_positions_with_coverage().1,
+            Some(AHashSet::from_iter([1])),
+        );
+
+        state.apply_position_update(&[], &[], &[1], &[]);
+        assert_eq!(
+            state.snapshot_positions_with_coverage().1,
+            Some(AHashSet::new()),
+        );
 
         state.invalidate_position_snapshot();
-        assert!(!state.position_snapshot_covers(0));
-        assert!(!state.position_snapshot_covers(1));
+        state.apply_position_update(&[], &[], &[0], &[]);
+        assert_eq!(state.snapshot_positions_with_coverage().1, None);
+    }
+
+    #[rstest]
+    fn position_snapshot_updates_reports_and_coverage_together() {
+        let state = WsDispatchState::new();
+        let initial = stub_position_report("ETH-PERP.LIGHTER", "1.0");
+
+        state.replace_position_snapshot(std::slice::from_ref(&initial), &[], &[1]);
+        let (reports, coverage) = state.snapshot_positions_with_coverage();
+
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].instrument_id, initial.instrument_id);
+        assert_eq!(reports[0].quantity, initial.quantity);
+        assert_eq!(coverage, Some(AHashSet::from_iter([1])));
+
+        let updated = stub_position_report("ETH-PERP.LIGHTER", "2.0");
+        state.apply_position_update(std::slice::from_ref(&updated), &[], &[1], &[2]);
+        let (reports, coverage) = state.snapshot_positions_with_coverage();
+
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].instrument_id, updated.instrument_id);
+        assert_eq!(reports[0].quantity, updated.quantity);
+        assert_eq!(coverage, Some(AHashSet::from_iter([2])));
     }
 
     #[rstest]

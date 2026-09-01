@@ -166,8 +166,8 @@ impl CanonicalScenario {
                     "blake3:be57c858fd2d34e157342f64260c4d517abc2f7a5f67dce73d43858ea1b2bf1a"
                         .to_string(),
                 result_digest: expected_result_digest(
-                    "blake3:5c574fdf946a0677111ed815b37fecea97d9852a8892eda2f5e05ab17a7fec11",
-                    "blake3:192304de589c63bc98d6703ca453a07bfee58f74f389805874c82b37680754bd",
+                    "blake3:14fee63698f0b3afd4ed0fe0710733a2c677929efc975d82456c64d4e9e732c1",
+                    "blake3:c2cf16fff2bc490e553c6c2958e4e1d66a3d4d7ddbe413752bd542fcfd7d100e",
                 ),
             },
             Self::PassiveLimitOrders => CanonicalFingerprint {
@@ -183,7 +183,7 @@ impl CanonicalScenario {
                     "blake3:7702ff4aa9ca1d26061419e9185a5bcfed0418fb0f24725ee36fd7d4323d79f5"
                         .to_string(),
                 result_digest:
-                    "blake3:c755948014039bf492f08c0877f30aa188501743388d156df3f7fd441ab13e56"
+                    "blake3:896e7bcacc5551d80e4e6e95eace2e216d91629dd1430372d5f58a2923e2ae60"
                         .to_string(),
             },
             Self::BarEmaCross => CanonicalFingerprint {
@@ -199,8 +199,8 @@ impl CanonicalScenario {
                     "blake3:ba1b5311a979bcfb6b58a4a9c478b4f00d0c577ce0c5c9cb3328f84ee921d9fc"
                         .to_string(),
                 result_digest: expected_result_digest(
-                    "blake3:1f3e9e7356dcac836c90381da74361b1521ff5426f50d2269b683fa34e869351",
-                    "blake3:f79d722cb7209cd1d6d62554e5f776b915c064595719775ad0c93b20b8ed5c69",
+                    "blake3:e62f1f8cb2f77dc5c118b02ae0d9481236d1fd69a7f26928482e2406d9556a1e",
+                    "blake3:d269453558b68dd3dae266c1ab44fa454fdb034678fc383eb4f2b3edb4156bc1",
                 ),
             },
         }
@@ -472,7 +472,6 @@ impl ScheduledOrders {
                 match side {
                     OrderSide::Buy => Price::from("30000.00"),
                     OrderSide::Sell => Price::from("70000.00"),
-                    _ => unreachable!(),
                 },
                 None,
                 None,
@@ -520,7 +519,7 @@ impl DataActor for ScheduledOrders {
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
         if matches!(self.kind, ScheduledOrderKind::Passive) {
-            self.cancel_all_orders(self.instrument_id, None, None, None)?;
+            self.cancel_all_orders(self.instrument_id, None, None, true, None)?;
         }
         Ok(())
     }

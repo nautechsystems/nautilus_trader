@@ -12,13 +12,14 @@ For benchmark scope, evidence requirements, and CI policy, see
 
 Select a tool based on the work and result:
 
-| Tool                                                      | What it measures                          | Use it for                                           |
-| --------------------------------------------------------- | ----------------------------------------- | ---------------------------------------------------- |
-| [Criterion](https://docs.rs/criterion/latest/criterion/)  | Wall‑clock time with confidence intervals | Operations above roughly 100 ns and elapsed time     |
-| [iai](https://docs.rs/iai/latest/iai/)                    | Retired CPU instructions under Cachegrind | Small, deterministic operations and change detection |
-| [flamegraph](https://github.com/flamegraph-rs/flamegraph) | Sampled call‑stack profile                | Locating work inside a representative slow path      |
+| Tool                                                      | What it measures                          | Use it for                                                |
+| --------------------------------------------------------- | ----------------------------------------- | --------------------------------------------------------- |
+| [Criterion](https://docs.rs/criterion/latest/criterion/)  | Wall-clock time with confidence intervals | Operations above roughly 100 ns and elapsed time          |
+| [iai](https://docs.rs/iai/latest/iai/)                    | Retired CPU instructions under Cachegrind | Small, deterministic operations and change detection      |
+| [CodSpeed](https://codspeed.io/docs/instruments/cpu)      | Simulated CPU cost and cache behavior     | Stable pull request comparisons of deterministic CPU work |
+| [flamegraph](https://github.com/flamegraph-rs/flamegraph) | Sampled call-stack profile                | Locating work inside a representative slow path           |
 
-Criterion reports user‑visible elapsed time. iai produces stable counts for the same binary,
+Criterion reports user-visible elapsed time. iai produces stable counts for the same binary,
 toolchain, and inputs without requiring host noise controls. Compare iai results only under the
 same code generation assumptions, and use Criterion when elapsed time is the required result.
 
@@ -51,7 +52,10 @@ harness = false
 ```
 
 To opt into the nightly CI performance workflow, register the benchmark and add its crate to
-`CI_BENCH_CRATES` in the workspace `Makefile` when the list does not already include it.
+`CI_BENCH_CRATES` in the workspace `Makefile` when the list does not already include it. Add a
+deterministic Criterion target to `CODSPEED_BENCH_TARGETS` when CPU simulation preserves what the
+benchmark intends to measure. Do not add iai, Criterion's `iter_custom` or `with_filter` APIs,
+OS-dependent work, or concurrent wall-clock benchmarks to the CodSpeed subset.
 
 ---
 
@@ -133,17 +137,23 @@ setup outside the measured function and compare counts produced by the same tool
 | One engine benchmark name pattern  | `cargo bench -p nautilus-execution --bench matching_engine -- submit` |
 | Quick smoke run (low sample count) | `cargo bench ... -- --quick`                                          |
 | All nightly registered benches     | `make cargo-ci-benches`                                               |
+| Build the CodSpeed subset          | `make cargo-codspeed-build`                                           |
+| Check the built CodSpeed subset    | `make cargo-codspeed-run`                                             |
 
 Criterion writes HTML reports to `target/criterion/`. Open
 `target/criterion/report/index.html`. The report includes per-bench violin
 plots, confidence intervals, and comparisons against the previous run's
 saved baseline.
 
+`make install-tools` installs the pinned `cargo-codspeed` version. A local CodSpeed run checks that
+the selected benchmark targets build and register, but it does not upload measurements. The
+`codspeed-benchmarks` job in `.github/workflows/performance.yml` measures and uploads the results.
+
 ### Canonical backtest workloads
 
-The canonical backtest cases use the first 10,000 rows of the checked‑in
-`test_data/btc-perp-20211231-20220201_1m.csv` file. A shared fixture drives replay‑only, scheduled
-market‑order, passive limit‑order, and bar‑EMA scenarios. The correctness test and both timed paths
+The canonical backtest cases use the first 10,000 rows of the checked-in
+`test_data/btc-perp-20211231-20220201_1m.csv` file. A shared fixture drives replay-only, scheduled
+market-order, passive limit-order, and bar-EMA scenarios. The correctness test and both timed paths
 use the same fixture loader and exact result fingerprints.
 
 Run the semantic check first:
@@ -168,6 +178,78 @@ reported duration, while still checking the result after every measured iteratio
 
 See [`crates/backtest/benches/BENCHMARKS.md`](../../crates/backtest/benches/BENCHMARKS.md) for the
 published baseline, measurement record, and current profile target.
+
+### Compare v1 and v2 backtest engines
+
+Use `scripts/benchmark-backtest-versions.py` for a wall-clock comparison between the released v1
+Cython engine and the v2 PyO3 engine. The driver owns one shared scenario matrix and normalizes the
+small API differences at runtime. It rejects a run before timing unless both environments use the
+expected package version, backend, source revision, Python version, and precision mode. For v2, it
+also requires the requested source revision to be embedded in the loaded extension.
+
+Run the comparison on a quiet host. These commands create isolated release environments and a
+detached v1 worktree without changing the current branch:
+
+```bash
+COMPARE_ROOT=$(mktemp -d /tmp/nautilus-backtest-compare.XXXXXX)
+git worktree add --detach "$COMPARE_ROOT/v1" v1.231.0
+
+uv venv --python /usr/bin/python3.12 "$COMPARE_ROOT/env-v1"
+(
+    cd "$COMPARE_ROOT/v1"
+    uvx --from uv==0.11.33 uv build --wheel --python /usr/bin/python3.12 \
+        --out-dir "$COMPARE_ROOT/wheels-v1"
+)
+V1_WHEEL=$(find "$COMPARE_ROOT/wheels-v1" -type f -name 'nautilus_trader-*.whl')
+UV_LINK_MODE=copy uv pip install --no-cache \
+    --python "$COMPARE_ROOT/env-v1/bin/python" "$V1_WHEEL"
+
+uv venv --python /usr/bin/python3.12 "$COMPARE_ROOT/env-v2"
+uv pip install --python "$COMPARE_ROOT/env-v2/bin/python" maturin==1.14.1 patchelf
+(
+    cd python
+    CARGO_BUILD_JOBS=16 "$COMPARE_ROOT/env-v2/bin/maturin" build --release \
+        --out "$COMPARE_ROOT/wheels-v2"
+)
+V2_WHEEL=$(find "$COMPARE_ROOT/wheels-v2" -type f -name 'nautilus_trader-*.whl')
+UV_LINK_MODE=copy uv pip install --no-cache \
+    --python "$COMPARE_ROOT/env-v2/bin/python" "$V2_WHEEL"
+
+V1_COMMIT=$(git -C "$COMPARE_ROOT/v1" rev-parse HEAD)
+V2_COMMIT=$(git rev-parse HEAD)
+python3.12 scripts/benchmark-backtest-versions.py compare \
+    --v1-python "$COMPARE_ROOT/env-v1/bin/python" \
+    --v1-artifact "$V1_WHEEL" \
+    --v1-source "$COMPARE_ROOT/v1" \
+    --v1-commit "$V1_COMMIT" \
+    --v2-python "$COMPARE_ROOT/env-v2/bin/python" \
+    --v2-artifact "$V2_WHEEL" \
+    --v2-source "$PWD" \
+    --v2-commit "$V2_COMMIT" \
+    --sessions 5 \
+    --output "$COMPARE_ROOT/results.json"
+```
+
+The driver runs each boundary in both environments back-to-back and reverses or rotates the case
+order across sessions. `run_preloaded` times only `BacktestEngine.run()` after fixture creation,
+engine construction, and data registration. `load_build_run` includes instrument and data fixture
+creation, engine construction, data registration, and `run()`. The coordinator proves that each
+loaded extension byte-matches the corresponding wheel member before the run and rechecks the full
+identities after it. After every timed sample, its worker repeats the complete wheel, extension,
+source, and runtime identity proof and checks its canonical digest against the coordinator's
+initial identity. Raw output stores each full identity once and binds every sample to it by digest.
+Source identity hashes staged diffs, unstaged diffs, and untracked file contents in addition to the
+revision. Exact event, order, position, and account fingerprints are checked after
+every timed iteration without adding fingerprint work to the duration.
+
+Repeat `--scenario <name>` or `--boundary <name>` on the `compare` command to run a targeted subset.
+Omit both options to run the complete matrix. Raw output stores one full fingerprint for each
+selected scenario and boundary, then binds every timed sample to it by digest.
+
+The JSON output contains every elapsed sample, the observed host state, boundary definitions,
+medians, minimum-to-maximum spread, v2/v1 ratios, and percentage gaps. The driver requires at least
+three full sessions. It records CPU governor and `perf_event_paranoid` values but does not change
+host controls.
 
 ---
 
@@ -203,7 +285,7 @@ iteration.
    Profile: bench-lto (release + lto = "fat" + codegen-units = 1, debug = full)
    ```
 
-For deeper analysis, control hyper‑threading and dynamic frequency scaling in firmware. Published
+For deeper analysis, control hyper-threading and dynamic frequency scaling in firmware. Published
 results must record those controls when they differ from the normal host state.
 
 iai runs under Cachegrind's virtual CPU model, so host quiescence, frequency scaling, and ASLR do

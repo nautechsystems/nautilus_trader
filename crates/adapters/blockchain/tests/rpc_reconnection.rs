@@ -24,10 +24,19 @@ use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use nautilus_blockchain::rpc::core::CoreBlockchainRpcClient;
-use nautilus_model::defi::{Blockchain, Chain};
+use nautilus_common::{
+    live::runner::replace_system_event_sender,
+    messages::{SystemEvent, system::SocketState},
+};
+use nautilus_live::{SocketControl, SocketReconnectRegistry, SocketReconnectRequestOutcome};
+use nautilus_model::{
+    defi::{Blockchain, Chain},
+    identifiers::{ClientId, Venue},
+};
 use rstest::rstest;
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use turmoil::{Builder, net};
+use ustr::Ustr;
 
 /// Simulates a blockchain RPC node that handles eth_subscribe and sends block notifications.
 async fn blockchain_rpc_server() -> Result<(), Box<dyn std::error::Error>> {
@@ -138,9 +147,50 @@ fn test_rpc_basic_subscription() {
         let chain = Chain::new(Blockchain::Ethereum, 1);
         let mut rpc_client =
             CoreBlockchainRpcClient::new(chain, "ws://rpc-node:8545".to_string(), None);
+        let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+        replace_system_event_sender(system_tx);
+        let registry = SocketReconnectRegistry::default();
+        let endpoint = Ustr::from("ethereum-data-streams");
+        rpc_client.set_socket_control(SocketControl::with_registry(
+            ClientId::from("ETHEREUM"),
+            Some(Venue::from("ETHEREUM")),
+            endpoint,
+            &registry,
+        ));
 
         // Connect to RPC node
         rpc_client.connect().await.expect("Should connect");
+        let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+            .await
+            .expect("timed out waiting for connected socket state")
+            .expect("system event channel closed");
+        let SystemEvent::SocketState(change) = event;
+        let handle = registry
+            .handle(ClientId::from("ETHEREUM"), endpoint)
+            .expect("reconnect handle should be registered");
+
+        assert_eq!(change.client_id, ClientId::from("ETHEREUM"));
+        assert_eq!(change.venue, Some(Venue::from("ETHEREUM")));
+        assert_eq!(change.endpoint, endpoint);
+        assert_eq!(change.state, SocketState::Connected);
+        assert_eq!(
+            handle.request_reconnect(),
+            SocketReconnectRequestOutcome::Accepted
+        );
+        let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+            .await
+            .expect("timed out waiting for disconnected socket state")
+            .expect("system event channel closed");
+        let SystemEvent::SocketState(change) = event;
+        assert_eq!(change.endpoint, endpoint);
+        assert_eq!(change.state, SocketState::Disconnected);
+        let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+            .await
+            .expect("timed out waiting for reconnected socket state")
+            .expect("system event channel closed");
+        let SystemEvent::SocketState(change) = event;
+        assert_eq!(change.endpoint, endpoint);
+        assert_eq!(change.state, SocketState::Connected);
 
         // Subscribe to new blocks
         rpc_client
@@ -154,6 +204,13 @@ fn test_rpc_basic_subscription() {
         // Get the block message
         let msg = rpc_client.next_rpc_message().await;
         assert!(msg.is_ok(), "Should receive block message");
+
+        drop(rpc_client);
+        assert!(
+            registry
+                .handle(ClientId::from("ETHEREUM"), endpoint)
+                .is_none()
+        );
 
         Ok(())
     });

@@ -235,27 +235,19 @@ fn parse_equity_contract(
     let price_precision = tick_size_to_precision(details.min_tick);
     let timestamp = get_atomic_clock_realtime().get_time_ns();
 
-    let instrument = Equity::new(
-        instrument_id,
-        Symbol::from(details.contract.local_symbol.as_str()),
-        None, // isin
-        Currency::from(details.contract.currency.to_string()),
-        price_precision,
-        Price::new(details.min_tick, price_precision),
-        Some(Quantity::new(100.0, 0)),   // Standard lot size for stocks
-        None,                            // max_quantity
-        None,                            // min_quantity
-        None,                            // max_price
-        None,                            // min_price
-        None,                            // margin_init
-        None,                            // margin_maint
-        None,                            // maker_fee
-        None,                            // taker_fee
-        None,                            // tick_scheme
-        Some(ib_contract_info(details)), // info
-        timestamp,
-        timestamp,
-    );
+    let instrument = Equity::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from(details.contract.local_symbol.as_str()))
+        .currency(Currency::from(details.contract.currency.to_string()))
+        .price_precision(price_precision)
+        .price_increment(Price::new(details.min_tick, price_precision))
+        // Standard lot size for stocks
+        .lot_size(Quantity::new(100.0, 0))
+        .info(ib_contract_info(details))
+        .ts_event(timestamp)
+        .ts_init(timestamp)
+        .build()
+        .unwrap();
 
     InstrumentAny::from(instrument)
 }
@@ -269,32 +261,20 @@ fn parse_forex_contract(
     let size_precision = tick_size_to_precision(details.min_size);
     let timestamp = get_atomic_clock_realtime().get_time_ns();
 
-    let instrument = CurrencyPair::new(
-        instrument_id,
-        Symbol::from(details.contract.local_symbol.as_str()),
-        Currency::from(details.contract.symbol.to_string()),
-        Currency::from(details.contract.currency.to_string()),
-        price_precision,
-        size_precision,
-        Price::new(details.min_tick, price_precision),
-        Quantity::new(details.size_increment, size_precision),
-        None,                            // multiplier
-        None,                            // lot_size
-        None,                            // max_quantity
-        None,                            // min_quantity
-        None,                            // max_notional
-        None,                            // min_notional
-        None,                            // max_price
-        None,                            // min_price
-        None,                            // margin_init
-        None,                            // margin_maint
-        None,                            // maker_fee
-        None,                            // taker_fee
-        None,                            // tick_scheme
-        Some(ib_contract_info(details)), // info
-        timestamp,
-        timestamp,
-    );
+    let instrument = CurrencyPair::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from(details.contract.local_symbol.as_str()))
+        .base_currency(Currency::from(details.contract.symbol.to_string()))
+        .quote_currency(Currency::from(details.contract.currency.to_string()))
+        .price_precision(price_precision)
+        .size_precision(size_precision)
+        .price_increment(Price::new(details.min_tick, price_precision))
+        .size_increment(Quantity::new(details.size_increment, size_precision))
+        .info(ib_contract_info(details))
+        .ts_event(timestamp)
+        .ts_init(timestamp)
+        .build()
+        .unwrap();
 
     InstrumentAny::from(instrument)
 }
@@ -308,34 +288,23 @@ fn parse_crypto_contract(
     let size_precision = tick_size_to_precision(details.min_size);
     let timestamp = get_atomic_clock_realtime().get_time_ns();
 
-    let instrument = CryptoPerpetual::new(
-        instrument_id,
-        Symbol::from(details.contract.local_symbol.as_str()),
-        Currency::from(details.contract.symbol.to_string()),
-        Currency::from(details.contract.currency.to_string()),
-        Currency::from(details.contract.currency.to_string()),
-        true, // is_inverse
-        price_precision,
-        size_precision,
-        Price::new(details.min_tick, price_precision),
-        Quantity::new(details.size_increment, size_precision),
-        None, // multiplier
-        None, // lot_size
-        None, // max_quantity
-        Some(Quantity::new(details.min_size, size_precision)),
-        None,                            // max_notional
-        None,                            // min_notional
-        None,                            // max_price
-        None,                            // min_price
-        None,                            // margin_init
-        None,                            // margin_maint
-        None,                            // maker_fee
-        None,                            // taker_fee
-        None,                            // tick_scheme
-        Some(ib_contract_info(details)), // info
-        timestamp,
-        timestamp,
-    );
+    let instrument = CryptoPerpetual::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from(details.contract.local_symbol.as_str()))
+        .base_currency(Currency::from(details.contract.symbol.to_string()))
+        .quote_currency(Currency::from(details.contract.currency.to_string()))
+        .settlement_currency(Currency::from(details.contract.currency.to_string()))
+        .is_inverse(true)
+        .price_precision(price_precision)
+        .size_precision(size_precision)
+        .price_increment(Price::new(details.min_tick, price_precision))
+        .size_increment(Quantity::new(details.size_increment, size_precision))
+        .min_quantity(Quantity::new(details.min_size, size_precision))
+        .info(ib_contract_info(details))
+        .ts_event(timestamp)
+        .ts_init(timestamp)
+        .build()
+        .unwrap();
 
     InstrumentAny::from(instrument)
 }
@@ -394,32 +363,25 @@ fn parse_futures_contract(
         details.contract.local_symbol.as_str()
     };
 
-    let instrument = FuturesContract::new(
-        instrument_id,
-        Symbol::from(raw_symbol),
-        sec_type_to_asset_class(details.under_security_type.as_str()),
-        None, // exchange
-        Ustr::from(details.under_symbol.as_str()),
-        activation_ns,
-        expiration_ns,
-        Currency::from(details.contract.currency.to_string()),
-        price_precision,
-        Price::new(details.min_tick, price_precision),
-        multiplier,
-        Quantity::new(1.0, 0),
-        None,                            // max_quantity
-        None,                            // min_quantity
-        None,                            // max_price
-        None,                            // min_price
-        None,                            // margin_init
-        None,                            // margin_maint
-        None,                            // maker_fee
-        None,                            // taker_fee
-        None,                            // tick_scheme
-        Some(ib_contract_info(details)), // info
-        timestamp,
-        timestamp,
-    );
+    let instrument = FuturesContract::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from(raw_symbol))
+        .asset_class(sec_type_to_asset_class(
+            details.under_security_type.as_str(),
+        ))
+        .underlying(Ustr::from(details.under_symbol.as_str()))
+        .activation_ns(activation_ns)
+        .expiration_ns(expiration_ns)
+        .currency(Currency::from(details.contract.currency.to_string()))
+        .price_precision(price_precision)
+        .price_increment(Price::new(details.min_tick, price_precision))
+        .multiplier(multiplier)
+        .lot_size(Quantity::new(1.0, 0))
+        .info(ib_contract_info(details))
+        .ts_event(timestamp)
+        .ts_init(timestamp)
+        .build()
+        .unwrap();
 
     InstrumentAny::from(instrument)
 }
@@ -471,34 +433,25 @@ fn parse_option_contract(
             details.under_symbol.clone()
         };
 
-    let instrument = OptionContract::new(
-        instrument_id,
-        Symbol::from(details.contract.local_symbol.as_str()),
-        asset_class,
-        None, // exchange
-        Ustr::from(underlying.as_str()),
-        option_kind,
-        Price::new(details.contract.strike, price_precision),
-        Currency::from(details.contract.currency.to_string()),
-        activation_ns,
-        expiration_ns,
-        price_precision,
-        Price::new(details.min_tick, price_precision),
-        multiplier,
-        multiplier,
-        None,                            // max_quantity
-        None,                            // min_quantity
-        None,                            // max_price
-        None,                            // min_price
-        None,                            // margin_init
-        None,                            // margin_maint
-        None,                            // maker_fee
-        None,                            // taker_fee
-        None,                            // tick_scheme
-        Some(ib_contract_info(details)), // info
-        timestamp,
-        timestamp,
-    );
+    let instrument = OptionContract::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from(details.contract.local_symbol.as_str()))
+        .asset_class(asset_class)
+        .underlying(Ustr::from(underlying.as_str()))
+        .option_kind(option_kind)
+        .strike_price(Price::new(details.contract.strike, price_precision))
+        .currency(Currency::from(details.contract.currency.to_string()))
+        .activation_ns(activation_ns)
+        .expiration_ns(expiration_ns)
+        .price_precision(price_precision)
+        .price_increment(Price::new(details.min_tick, price_precision))
+        .multiplier(multiplier)
+        .lot_size(multiplier)
+        .info(ib_contract_info(details))
+        .ts_event(timestamp)
+        .ts_init(timestamp)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::from(instrument))
 }
@@ -687,19 +640,19 @@ fn parse_index_contract(
     let size_precision = tick_size_to_precision(details.min_size);
     let timestamp = get_atomic_clock_realtime().get_time_ns();
 
-    let instrument = IndexInstrument::new(
-        instrument_id,
-        Symbol::from(details.contract.local_symbol.as_str()),
-        Currency::from(details.contract.currency.to_string()),
-        price_precision,
-        size_precision,
-        Price::new(details.min_tick, price_precision),
-        Quantity::new(details.size_increment, size_precision),
-        None,
-        Some(ib_contract_info(details)), // info
-        timestamp,
-        timestamp,
-    );
+    let instrument = IndexInstrument::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from(details.contract.local_symbol.as_str()))
+        .currency(Currency::from(details.contract.currency.to_string()))
+        .price_precision(price_precision)
+        .size_precision(size_precision)
+        .price_increment(Price::new(details.min_tick, price_precision))
+        .size_increment(Quantity::new(details.size_increment, size_precision))
+        .info(ib_contract_info(details))
+        .ts_event(timestamp)
+        .ts_init(timestamp)
+        .build()
+        .unwrap();
 
     InstrumentAny::from(instrument)
 }
@@ -759,33 +712,28 @@ pub fn parse_spread_instrument_id(
     let lot_size = multiplier;
 
     // Create the spread instrument
-    let spread = OptionSpread::new_checked(
-        instrument_id,
-        Symbol::from(instrument_id.symbol.as_str()), // raw_symbol
-        asset_class,
-        None, // exchange (optional)
-        underlying,
-        Ustr::from("SPREAD"), // strategy_type
-        UnixNanos::new(0),    // activation_ns (spreads don't have single activation dates)
-        UnixNanos::new(0),    // expiration_ns (spreads don't have single expiration dates)
-        currency,
-        price_precision,
-        price_increment,
-        multiplier,
-        lot_size,
-        None,                // max_quantity
-        None,                // min_quantity
-        None,                // max_price
-        None,                // min_price
-        Some(Decimal::ZERO), // margin_init
-        Some(Decimal::ZERO), // margin_maint
-        Some(Decimal::ZERO), // maker_fee
-        Some(Decimal::ZERO), // taker_fee
-        None,                // tick_scheme
-        None,                // info
-        timestamp,
-        timestamp,
-    )?;
+    let spread = OptionSpread::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from(instrument_id.symbol.as_str()))
+        .asset_class(asset_class)
+        .underlying(underlying)
+        .strategy_type(Ustr::from("SPREAD"))
+        // activation_ns (spreads don't have single activation dates)
+        .activation_ns(UnixNanos::new(0))
+        // expiration_ns (spreads don't have single expiration dates)
+        .expiration_ns(UnixNanos::new(0))
+        .currency(currency)
+        .price_precision(price_precision)
+        .price_increment(price_increment)
+        .multiplier(multiplier)
+        .lot_size(lot_size)
+        .margin_init(Decimal::ZERO)
+        .margin_maint(Decimal::ZERO)
+        .maker_fee(Decimal::ZERO)
+        .taker_fee(Decimal::ZERO)
+        .ts_event(timestamp)
+        .ts_init(timestamp)
+        .build()?;
 
     Ok(spread)
 }
@@ -829,33 +777,27 @@ pub fn parse_futures_spread_instrument_id(
     let price_increment = Price::new(min_tick, price_precision);
     let timestamp = timestamp_ns.unwrap_or_else(|| get_atomic_clock_realtime().get_time_ns());
 
-    Ok(FuturesSpread::new_checked(
-        instrument_id,
-        Symbol::from(instrument_id.symbol.as_str()),
-        AssetClass::Index,
-        None,
-        underlying,
-        Ustr::from("SPREAD"),
-        UnixNanos::new(0),
-        UnixNanos::new(0),
-        currency,
-        price_precision,
-        price_increment,
-        multiplier,
-        Quantity::new(1.0, 0),
-        None,
-        None,
-        None,
-        None,
-        Some(Decimal::ZERO),
-        Some(Decimal::ZERO),
-        Some(Decimal::ZERO),
-        Some(Decimal::ZERO),
-        None,
-        bag_contract.map(ib_contract_info_for_contract),
-        timestamp,
-        timestamp,
-    )?)
+    Ok(FuturesSpread::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from(instrument_id.symbol.as_str()))
+        .asset_class(AssetClass::Index)
+        .underlying(underlying)
+        .strategy_type(Ustr::from("SPREAD"))
+        .activation_ns(UnixNanos::new(0))
+        .expiration_ns(UnixNanos::new(0))
+        .currency(currency)
+        .price_precision(price_precision)
+        .price_increment(price_increment)
+        .multiplier(multiplier)
+        .lot_size(Quantity::new(1.0, 0))
+        .margin_init(Decimal::ZERO)
+        .margin_maint(Decimal::ZERO)
+        .maker_fee(Decimal::ZERO)
+        .taker_fee(Decimal::ZERO)
+        .maybe_info(bag_contract.map(ib_contract_info_for_contract))
+        .ts_event(timestamp)
+        .ts_init(timestamp)
+        .build()?)
 }
 
 pub fn parse_spread_instrument_any(
@@ -903,32 +845,23 @@ fn parse_cfd_contract(
         .contains('.')
         .then(|| Currency::from(details.contract.symbol.to_string()));
 
-    let instrument = Cfd::new(
-        instrument_id,
-        Symbol::from(details.contract.local_symbol.as_str()),
-        sec_type_to_asset_class(details.under_security_type.as_str()),
-        base_currency,
-        Currency::from(details.contract.currency.to_string()),
-        price_precision,
-        size_precision,
-        Price::new(details.min_tick, price_precision),
-        Quantity::new(details.size_increment, size_precision),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(ib_contract_info(details)),
-        timestamp,
-        timestamp,
-    );
+    let instrument = Cfd::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from(details.contract.local_symbol.as_str()))
+        .asset_class(sec_type_to_asset_class(
+            details.under_security_type.as_str(),
+        ))
+        .maybe_base_currency(base_currency)
+        .quote_currency(Currency::from(details.contract.currency.to_string()))
+        .price_precision(price_precision)
+        .size_precision(size_precision)
+        .price_increment(Price::new(details.min_tick, price_precision))
+        .size_increment(Quantity::new(details.size_increment, size_precision))
+        .info(ib_contract_info(details))
+        .ts_event(timestamp)
+        .ts_init(timestamp)
+        .build()
+        .unwrap();
 
     InstrumentAny::from(instrument)
 }
@@ -942,31 +875,20 @@ fn parse_commodity_contract(
     let size_precision = tick_size_to_precision(details.min_size);
     let timestamp = get_atomic_clock_realtime().get_time_ns();
 
-    let instrument = Commodity::new(
-        instrument_id,
-        Symbol::from(details.contract.local_symbol.as_str()),
-        AssetClass::Commodity,
-        Currency::from(details.contract.currency.to_string()),
-        price_precision,
-        size_precision,
-        Price::new(details.min_tick, price_precision),
-        Quantity::new(details.size_increment, size_precision),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(ib_contract_info(details)),
-        timestamp,
-        timestamp,
-    );
+    let instrument = Commodity::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from(details.contract.local_symbol.as_str()))
+        .asset_class(AssetClass::Commodity)
+        .quote_currency(Currency::from(details.contract.currency.to_string()))
+        .price_precision(price_precision)
+        .size_precision(size_precision)
+        .price_increment(Price::new(details.min_tick, price_precision))
+        .size_increment(Quantity::new(details.size_increment, size_precision))
+        .info(ib_contract_info(details))
+        .ts_event(timestamp)
+        .ts_init(timestamp)
+        .build()
+        .unwrap();
 
     InstrumentAny::from(instrument)
 }
@@ -981,27 +903,20 @@ fn parse_bond_contract(
     let price_precision = tick_size_to_precision(details.min_tick);
     let timestamp = get_atomic_clock_realtime().get_time_ns();
 
-    let instrument = Equity::new(
-        instrument_id,
-        Symbol::from(details.contract.local_symbol.as_str()),
-        None, // isin - could extract from security_id if available
-        Currency::from(details.contract.currency.to_string()),
-        price_precision,
-        Price::new(details.min_tick, price_precision),
-        Some(Quantity::new(1.0, 0)),     // Standard lot size for bonds
-        None,                            // max_quantity
-        None,                            // min_quantity
-        None,                            // max_price
-        None,                            // min_price
-        None,                            // margin_init
-        None,                            // margin_maint
-        None,                            // maker_fee
-        None,                            // taker_fee
-        None,                            // tick_scheme
-        Some(ib_contract_info(details)), // info
-        timestamp,
-        timestamp,
-    );
+    // ISIN could be extracted from `security_id` if needed
+    let instrument = Equity::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from(details.contract.local_symbol.as_str()))
+        .currency(Currency::from(details.contract.currency.to_string()))
+        .price_precision(price_precision)
+        .price_increment(Price::new(details.min_tick, price_precision))
+        // Standard lot size for bonds
+        .lot_size(Quantity::new(1.0, 0))
+        .info(ib_contract_info(details))
+        .ts_event(timestamp)
+        .ts_init(timestamp)
+        .build()
+        .unwrap();
 
     InstrumentAny::from(instrument)
 }

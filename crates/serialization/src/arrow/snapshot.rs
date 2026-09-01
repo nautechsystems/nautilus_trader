@@ -154,7 +154,7 @@ mod tests {
     use arrow::datatypes::DataType;
     use nautilus_core::UnixNanos;
     use nautilus_model::{
-        enums::{OrderSide, OrderType, PositionSide},
+        enums::{OrderSide, OrderType, PositionSide, TrailingOffsetType},
         identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
         orders::OrderTestBuilder,
         types::{Currency, Money, Price, Quantity},
@@ -174,6 +174,7 @@ mod tests {
             .trigger_price(Price::from("50500"))
             .limit_offset(Decimal::from_str("0.123456789123456789").unwrap())
             .trailing_offset(Decimal::from_str("0.987654321987654321").unwrap())
+            .trailing_offset_type(TrailingOffsetType::Price)
             .quantity(Quantity::from("0.5"))
             .build();
         let snapshot = OrderSnapshot::from(order);

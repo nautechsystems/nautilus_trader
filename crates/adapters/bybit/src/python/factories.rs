@@ -15,7 +15,6 @@
 
 //! Python bindings for Bybit factory types.
 
-use nautilus_model::identifiers::{AccountId, TraderId};
 use pyo3::prelude::*;
 
 use crate::factories::{BybitDataClientFactory, BybitExecutionClientFactory};
@@ -40,8 +39,8 @@ impl BybitDataClientFactory {
 impl BybitExecutionClientFactory {
     /// Factory for creating Bybit execution clients.
     #[new]
-    fn py_new(trader_id: TraderId, account_id: AccountId) -> Self {
-        Self::new(trader_id, account_id)
+    fn py_new() -> Self {
+        Self::new()
     }
 
     #[pyo3(name = "name")]

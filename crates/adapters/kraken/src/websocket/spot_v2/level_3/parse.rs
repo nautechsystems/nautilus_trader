@@ -405,7 +405,6 @@ fn append_depth_prune_deltas(
             OrderSide::Buy => {
                 bid_levels.insert(order.price);
             }
-            OrderSide::NoOrderSide => {}
         }
     }
 
@@ -430,7 +429,6 @@ fn append_depth_prune_deltas(
         .filter(|(_, order)| match order.side {
             OrderSide::Sell => !ask_keep.contains(&order.price),
             OrderSide::Buy => !bid_keep.contains(&order.price),
-            OrderSide::NoOrderSide => true,
         })
         .map(|(order_id, order)| (*order_id, order.clone()))
         .collect();
@@ -478,7 +476,6 @@ fn retained_price_levels(
     match side {
         OrderSide::Sell => levels.sort(),
         OrderSide::Buy => levels.sort_by(|a, b| b.cmp(a)),
-        OrderSide::NoOrderSide => {}
     }
 
     levels.dedup();
@@ -494,7 +491,6 @@ fn compare_l3_orders(a: &CachedL3Order, b: &CachedL3Order) -> Ordering {
     let price_order = match a.side {
         OrderSide::Sell => a.price.cmp(&b.price),
         OrderSide::Buy => b.price.cmp(&a.price),
-        OrderSide::NoOrderSide => Ordering::Equal,
     };
 
     price_order.then(a.seq.cmp(&b.seq))
@@ -504,7 +500,6 @@ fn side_rank(side: OrderSide) -> u8 {
     match side {
         OrderSide::Sell => 0,
         OrderSide::Buy => 1,
-        OrderSide::NoOrderSide => 2,
     }
 }
 
@@ -529,32 +524,21 @@ mod tests {
     }
 
     fn make_instrument() -> InstrumentAny {
-        InstrumentAny::CurrencyPair(CurrencyPair::new(
-            InstrumentId::from("BTC/USD.KRAKEN"),
-            Symbol::from("BTC/USD"),
-            Currency::BTC(),
-            Currency::USD(),
-            1,
-            8,
-            Price::from("0.1"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        ))
+        InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(InstrumentId::from("BTC/USD.KRAKEN"))
+                .raw_symbol(Symbol::from("BTC/USD"))
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USD())
+                .price_precision(1)
+                .size_precision(8)
+                .price_increment(Price::from("0.1"))
+                .size_increment(Quantity::from("0.00000001"))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
     }
 
     fn load_snapshot() -> KrakenL3Snapshot {

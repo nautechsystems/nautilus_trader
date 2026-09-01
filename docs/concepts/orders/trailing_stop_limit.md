@@ -2,14 +2,14 @@
 
 `FIX OrdType <40>=4` (Stop Limit) + trailing peg
 
-A *Trailing‑Stop‑Limit* order keeps its stop trigger a fixed offset from the specified market price
+A *Trailing-Stop-Limit* order keeps its stop trigger a fixed offset from the specified market price
 as the market moves favorably. It releases a *Limit* order when triggered, and the limit price also
 updates with the market until then.
 
 ## Use cases
 
-Use a *Trailing‑Stop‑Limit* order for dynamic trailing protection with a worst acceptable fill
-price. As with a *Stop‑Limit*, the released *Limit* order may not fill during a fast reversal and can
+Use a *Trailing-Stop-Limit* order for dynamic trailing protection with a worst acceptable fill
+price. As with a *Stop-Limit*, the released *Limit* order may not fill during a fast reversal and can
 leave the position open.
 
 ## Example

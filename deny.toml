@@ -133,7 +133,7 @@ deny = []
 
 # Skip certain crates during duplicate detection.
 # These are transitive duplicates from upstream crates outside our control.
-# Last reviewed: 2026-07-15
+# Last reviewed: 2026-08-22
 skip = [
   # Crypto ecosystem - version-locked together, pulled by various blockchain crates
   { crate = "block-buffer" },
@@ -170,22 +170,8 @@ skip = [
   # Case conversion - version fragmentation via derive_more
   { crate = "convert_case" },
 
-  # Arrow/Parquet ecosystem - hypersync pins arrow 57, nautilus uses arrow 58
-  { crate = "lz4_flex" },
+  # Arrow/Parquet compatibility facades - hypersync requires the 57.x package IDs
   { crate = "arrow" },
-  { crate = "arrow-arith" },
-  { crate = "arrow-array" },
-  { crate = "arrow-buffer" },
-  { crate = "arrow-cast" },
-  { crate = "arrow-csv" },
-  { crate = "arrow-data" },
-  { crate = "arrow-ipc" },
-  { crate = "arrow-json" },
-  { crate = "arrow-ord" },
-  { crate = "arrow-row" },
-  { crate = "arrow-schema" },
-  { crate = "arrow-select" },
-  { crate = "arrow-string" },
   { crate = "parquet" },
 
   # Common utility crates with version fragmentation across ecosystem
@@ -194,6 +180,7 @@ skip = [
   { crate = "hashbrown" },
   { crate = "itertools" },
   { crate = "foldhash" },
+  { crate = "num-bigint" },
   { crate = "petgraph" },
   { crate = "socket2" },
 

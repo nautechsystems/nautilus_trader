@@ -41,75 +41,143 @@ class TearsheetChart:
 
     @property
     def name(self) -> str:  # pragma: no cover (implemented by subclasses)
+        """
+        The registered chart name.
+        """
         raise NotImplementedError
 
     def kwargs(self) -> dict[str, Any]:
+        """
+        Return renderer keyword arguments for the chart.
+        """
         return {}
 
 
 @dataclass(frozen=True, kw_only=True)
 class TearsheetRunInfoChart(TearsheetChart):
+    """
+    Configuration for the run information table chart.
+    """
+
     @property
     def name(self) -> str:
+        """
+        The registered chart name.
+        """
         return "run_info"
 
 
 @dataclass(frozen=True, kw_only=True)
 class TearsheetStatsTableChart(TearsheetChart):
+    """
+    Configuration for the performance statistics table chart.
+    """
+
     @property
     def name(self) -> str:
+        """
+        The registered chart name.
+        """
         return "stats_table"
 
 
 @dataclass(frozen=True, kw_only=True)
 class TearsheetEquityChart(TearsheetChart):
+    """
+    Configuration for the equity curve chart.
+    """
+
     @property
     def name(self) -> str:
+        """
+        The registered chart name.
+        """
         return "equity"
 
 
 @dataclass(frozen=True, kw_only=True)
 class TearsheetDrawdownChart(TearsheetChart):
+    """
+    Configuration for the drawdown chart.
+    """
+
     @property
     def name(self) -> str:
+        """
+        The registered chart name.
+        """
         return "drawdown"
 
 
 @dataclass(frozen=True, kw_only=True)
 class TearsheetMonthlyReturnsChart(TearsheetChart):
+    """
+    Configuration for the monthly returns heatmap chart.
+    """
+
     compounding: bool = True
 
     @property
     def name(self) -> str:
+        """
+        The registered chart name.
+        """
         return "monthly_returns"
 
     def kwargs(self) -> dict[str, Any]:
+        """
+        Return renderer keyword arguments for the chart.
+        """
         return {"compounding": self.compounding}
 
 
 @dataclass(frozen=True, kw_only=True)
 class TearsheetDistributionChart(TearsheetChart):
+    """
+    Configuration for the returns distribution histogram chart.
+    """
+
     @property
     def name(self) -> str:
+        """
+        The registered chart name.
+        """
         return "distribution"
 
 
 @dataclass(frozen=True, kw_only=True)
 class TearsheetRollingSharpeChart(TearsheetChart):
+    """
+    Configuration for the rolling Sharpe ratio chart.
+    """
+
     @property
     def name(self) -> str:
+        """
+        The registered chart name.
+        """
         return "rolling_sharpe"
 
 
 @dataclass(frozen=True, kw_only=True)
 class TearsheetYearlyReturnsChart(TearsheetChart):
+    """
+    Configuration for the yearly returns bar chart.
+    """
+
     compounding: bool = True
 
     @property
     def name(self) -> str:
+        """
+        The registered chart name.
+        """
         return "yearly_returns"
 
     def kwargs(self) -> dict[str, Any]:
+        """
+        Return renderer keyword arguments for the chart.
+        """
         return {"compounding": self.compounding}
 
 
@@ -123,9 +191,15 @@ class TearsheetBarsWithFillsChart(TearsheetChart):
 
     @property
     def name(self) -> str:
+        """
+        The registered chart name.
+        """
         return "bars_with_fills"
 
     def kwargs(self) -> dict[str, Any]:
+        """
+        Return renderer keyword arguments for the chart.
+        """
         return {"bar_type": self.bar_type}
 
 
@@ -144,9 +218,15 @@ class TearsheetCustomChart(TearsheetChart):
 
     @property
     def name(self) -> str:
+        """
+        The registered chart name.
+        """
         return self.chart
 
     def kwargs(self) -> dict[str, Any]:
+        """
+        Return renderer keyword arguments for the chart.
+        """
         return self.args
 
 
@@ -229,9 +309,15 @@ class TearsheetConfig:
     show_logo: bool = True
 
     def __post_init__(self) -> None:
+        """
+        Validate the configuration.
+        """
         if self.height <= 0:
             raise ValueError(f"height must be positive, was {self.height}")
 
     @property
     def chart_names(self) -> list[str]:
+        """
+        The names of the configured charts, in order.
+        """
         return [c.name for c in self.charts]

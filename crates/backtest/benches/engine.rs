@@ -27,9 +27,11 @@
 //!   `BacktestEngine::run`.
 //! - `market_data_replay`: interleaved quote and trade ticks with no strategy orders.
 //! - `market_data_replay_4_streams`: the same events split across four streams to exercise heap
-//!   merging.
+//!   merging, with a separate two-instrument case.
 //! - `alternating_market_orders`: quote-driven strategy submitting market orders through the full
 //!   strategy, risk, execution client, exchange, matching engine, cache, and portfolio path.
+//! - `accumulating_market_orders`: the same full-stack path with one growing netting position, so
+//!   order cost is measured against increasing account and position histories.
 //! - `passive_limit_orders`: quote-driven strategy accumulating resting limit orders so
 //!   `OrderMatchingCore` maintains passive order state while quote and trade ticks iterate.
 //! - `gtd_limit_expiry`: quote-driven strategy submitting passive GTD limit orders which expire
@@ -55,7 +57,7 @@ use nautilus_backtest::{
     config::{BacktestEngineConfig, SimulatedVenueConfig},
     engine::BacktestEngine,
 };
-use nautilus_common::{actor::DataActor, logging::logger::LoggerConfig};
+use nautilus_common::{actor::DataActor, logging::logger::LoggerConfig, throttler::RateLimit};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
@@ -71,12 +73,14 @@ use nautilus_model::{
     identifiers::{InstrumentId, StrategyId, TradeId, Venue},
     instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
     orders::Order,
-    types::{Money, Price, Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
+use nautilus_risk::engine::config::RiskEngineConfig;
 use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, nautilus_strategy};
 use rust_decimal::Decimal;
 
 const QUOTE_COUNTS: &[usize] = &[1_000, 10_000];
+const POSITION_HISTORY_ORDER_COUNTS: &[usize] = &[250, 1_000, 4_000];
 const DATA_STREAM_COUNT: usize = 4;
 const DATA_ROUTE_COUNT: usize = 1_000;
 const ORDER_SWEEP_QUOTE_COUNT: usize = 1_000;
@@ -127,6 +131,36 @@ fn bench_run(c: &mut Criterion) {
                     run_engine_iterations(iters, data_count, OrderCounts::default(), || {
                         build_market_data_replay(data.clone())
                     })
+                });
+            },
+        );
+
+        let multi_instrument_data = generate_market_data_multi_instrument(quote_count);
+        let multi_instrument_data_count = multi_instrument_data.len();
+        group.throughput(Throughput::Elements(multi_instrument_data_count as u64));
+        group.bench_with_input(
+            BenchmarkId::new(
+                format!("market_data_replay_{DATA_STREAM_COUNT}_streams_2_instruments"),
+                multi_instrument_data_count,
+            ),
+            &multi_instrument_data,
+            |b, data| {
+                b.iter_custom(|iters| {
+                    run_engine_iterations(
+                        iters,
+                        multi_instrument_data_count,
+                        OrderCounts::default(),
+                        || {
+                            build_engine_with_data_streams(
+                                split_data_streams(data.clone(), DATA_STREAM_COUNT),
+                                None,
+                                EngineBuildConfig {
+                                    instrument_count: 2,
+                                    ..Default::default()
+                                },
+                            )
+                        },
+                    )
                 });
             },
         );
@@ -199,6 +233,30 @@ fn bench_run(c: &mut Criterion) {
                         },
                         || build_gtd_limit_expiry(data.clone(), quote_count),
                     )
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
+fn bench_position_history(c: &mut Criterion) {
+    let mut group = c.benchmark_group("backtest_engine/position_history");
+    let instrument_id = crypto_perpetual_ethusdt().id();
+
+    for &order_count in POSITION_HISTORY_ORDER_COUNTS {
+        let data = generate_market_data(instrument_id, order_count);
+        let data_count = data.len();
+        group.throughput(Throughput::Elements(order_count as u64));
+        group.bench_with_input(
+            BenchmarkId::new("accumulating_market_orders", order_count),
+            &data,
+            |b, data| {
+                b.iter_custom(|iters| {
+                    run_position_history_iterations(iters, data_count, order_count, || {
+                        build_accumulating_market_orders(data.clone(), order_count)
+                    })
                 });
             },
         );
@@ -344,6 +402,53 @@ where
     elapsed
 }
 
+fn run_position_history_iterations<F>(
+    iters: u64,
+    expected_iterations: usize,
+    expected_fills: usize,
+    mut build_engine: F,
+) -> Duration
+where
+    F: FnMut() -> BacktestEngine,
+{
+    let mut elapsed = Duration::ZERO;
+
+    for _ in 0..iters {
+        let mut engine = build_engine();
+        let started = Instant::now();
+        engine
+            .run(None, None, None, false)
+            .expect("backtest run should succeed");
+        elapsed += started.elapsed();
+
+        black_box(engine.iteration());
+        assert_eq!(engine.iteration(), expected_iterations);
+        assert_eq!(engine.get_result().total_orders, expected_fills);
+        assert_eq!(engine.get_result().total_positions, 1);
+        assert_eq!(
+            order_counts(&engine),
+            OrderCounts {
+                filled: expected_fills,
+                ..Default::default()
+            }
+        );
+
+        {
+            let cache = engine.kernel().cache();
+            let cache = cache.borrow();
+            let positions = cache.positions_open(None, None, None, None, None);
+            assert_eq!(positions.len(), 1);
+            assert_eq!(positions[0].events.len(), expected_fills);
+            assert_eq!(positions[0].replay_events.len(), expected_fills);
+            assert_eq!(positions[0].trade_ids.len(), expected_fills);
+        }
+
+        engine.dispose();
+    }
+
+    elapsed
+}
+
 fn run_engine_iterations_with_expired_orders<F>(
     iters: u64,
     expected_iterations: usize,
@@ -447,11 +552,26 @@ fn build_alternating_market_orders(data: Vec<Data>, quote_count: usize) -> Backt
     let instrument_id = crypto_perpetual_ethusdt().id();
     build_engine_with_config(
         data,
-        Some(StrategyWorkload::Market(AlternatingMarketOrders::new(
+        Some(StrategyWorkload::Market(MarketOrders::alternating(
             instrument_id,
             quote_count / MARKET_ORDER_INTERVAL,
         ))),
         EngineBuildConfig::default(),
+    )
+}
+
+fn build_accumulating_market_orders(data: Vec<Data>, order_count: usize) -> BacktestEngine {
+    let instrument_id = crypto_perpetual_ethusdt().id();
+    build_engine_with_config(
+        data,
+        Some(StrategyWorkload::Market(MarketOrders::accumulating(
+            instrument_id,
+            order_count,
+        ))),
+        EngineBuildConfig {
+            max_order_submit: Some(RateLimit::new(1_000_000, 1_000_000_000)),
+            ..Default::default()
+        },
     )
 }
 
@@ -482,14 +602,18 @@ fn build_gtd_limit_expiry(data: Vec<Data>, quote_count: usize) -> BacktestEngine
 #[derive(Clone, Copy)]
 struct EngineBuildConfig {
     book_type: BookType,
+    instrument_count: usize,
     reject_stop_orders: bool,
+    max_order_submit: Option<RateLimit>,
 }
 
 impl Default for EngineBuildConfig {
     fn default() -> Self {
         Self {
             book_type: BookType::L1_MBP,
+            instrument_count: 1,
             reject_stop_orders: true,
+            max_order_submit: None,
         }
     }
 }
@@ -510,6 +634,12 @@ fn build_engine_with_data_streams(
     let config = BacktestEngineConfig {
         logging: LoggerConfig::from_spec("bypass_logging")
             .expect("benchmark logger config should be valid"),
+        risk_engine: build_config
+            .max_order_submit
+            .map(|max_order_submit| RiskEngineConfig {
+                max_order_submit,
+                ..Default::default()
+            }),
         bypass_logging: true,
         run_analysis: false,
         ..Default::default()
@@ -534,6 +664,12 @@ fn build_engine_with_data_streams(
     engine
         .add_instrument(&instrument)
         .expect("instrument should be added");
+
+    if build_config.instrument_count == 2 {
+        engine
+            .add_instrument(&second_instrument())
+            .expect("second instrument should be added");
+    }
 
     match strategy {
         Some(StrategyWorkload::Market(strategy)) => engine
@@ -597,6 +733,24 @@ fn generate_market_data(instrument_id: InstrumentId, quote_count: usize) -> Vec<
     }
 
     data
+}
+
+fn generate_market_data_multi_instrument(quote_count: usize) -> Vec<Data> {
+    let primary = crypto_perpetual_ethusdt().id();
+    let secondary = second_instrument().id();
+    let primary_count = quote_count.div_ceil(2);
+    let mut data = generate_market_data(primary, primary_count);
+    data.extend(generate_market_data(secondary, quote_count - primary_count));
+
+    data
+}
+
+fn second_instrument() -> InstrumentAny {
+    let mut instrument = crypto_perpetual_ethusdt();
+    instrument.id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    instrument.raw_symbol = "BTCUSDT".into();
+    instrument.base_currency = Currency::BTC();
+    InstrumentAny::CryptoPerpetual(instrument)
 }
 
 fn price_from_cents(cents: i64) -> String {
@@ -851,25 +1005,59 @@ fn generate_order_trigger_data(instrument_id: InstrumentId, quote_count: usize) 
 }
 
 enum StrategyWorkload {
-    Market(AlternatingMarketOrders),
+    Market(MarketOrders),
     Passive(PassiveLimitOrders),
     Gtd(GtdLimitExpiry),
     OrderSweep(OrderTypeSweep),
 }
 
-struct AlternatingMarketOrders {
+#[derive(Clone, Copy)]
+enum MarketOrderSides {
+    Alternating,
+    Buy,
+}
+
+struct MarketOrders {
     core: StrategyCore,
     instrument_id: InstrumentId,
     trade_size: Quantity,
+    sides: MarketOrderSides,
+    interval: usize,
     max_orders: usize,
     quote_count: usize,
     orders_submitted: usize,
 }
 
-impl AlternatingMarketOrders {
-    fn new(instrument_id: InstrumentId, max_orders: usize) -> Self {
+impl MarketOrders {
+    fn alternating(instrument_id: InstrumentId, max_orders: usize) -> Self {
+        Self::new(
+            instrument_id,
+            MarketOrderSides::Alternating,
+            MARKET_ORDER_INTERVAL,
+            max_orders,
+            "BENCH-MARKET-001",
+        )
+    }
+
+    fn accumulating(instrument_id: InstrumentId, max_orders: usize) -> Self {
+        Self::new(
+            instrument_id,
+            MarketOrderSides::Buy,
+            1,
+            max_orders,
+            "BENCH-MARKET-HISTORY-001",
+        )
+    }
+
+    fn new(
+        instrument_id: InstrumentId,
+        sides: MarketOrderSides,
+        interval: usize,
+        max_orders: usize,
+        strategy_id: &str,
+    ) -> Self {
         let config = StrategyConfig {
-            strategy_id: Some(StrategyId::from("BENCH-MARKET-001")),
+            strategy_id: Some(StrategyId::from(strategy_id)),
             order_id_tag: Some("001".to_string()),
             ..Default::default()
         };
@@ -877,6 +1065,8 @@ impl AlternatingMarketOrders {
             core: StrategyCore::new(config),
             instrument_id,
             trade_size: Quantity::from("0.011"),
+            sides,
+            interval,
             max_orders,
             quote_count: 0,
             orders_submitted: 0,
@@ -884,10 +1074,12 @@ impl AlternatingMarketOrders {
     }
 
     fn submit_market_order(&mut self) -> anyhow::Result<()> {
-        let side = if self.orders_submitted.is_multiple_of(2) {
-            OrderSide::Buy
-        } else {
-            OrderSide::Sell
+        let side = match self.sides {
+            MarketOrderSides::Alternating if self.orders_submitted.is_multiple_of(2) => {
+                OrderSide::Buy
+            }
+            MarketOrderSides::Alternating => OrderSide::Sell,
+            MarketOrderSides::Buy => OrderSide::Buy,
         };
         let order = self.order().market(
             self.instrument_id,
@@ -906,15 +1098,15 @@ impl AlternatingMarketOrders {
     }
 }
 
-nautilus_strategy!(AlternatingMarketOrders);
+nautilus_strategy!(MarketOrders);
 
-impl Debug for AlternatingMarketOrders {
+impl Debug for MarketOrders {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(AlternatingMarketOrders)).finish()
+        f.debug_struct(stringify!(MarketOrders)).finish()
     }
 }
 
-impl DataActor for AlternatingMarketOrders {
+impl DataActor for MarketOrders {
     fn on_start(&mut self) -> anyhow::Result<()> {
         self.subscribe_quotes(self.instrument_id, None, None);
         Ok(())
@@ -922,8 +1114,7 @@ impl DataActor for AlternatingMarketOrders {
 
     fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
         self.quote_count += 1;
-        if self.quote_count.is_multiple_of(MARKET_ORDER_INTERVAL)
-            && self.orders_submitted < self.max_orders
+        if self.quote_count.is_multiple_of(self.interval) && self.orders_submitted < self.max_orders
         {
             self.submit_market_order()?;
         }
@@ -1012,7 +1203,7 @@ impl DataActor for PassiveLimitOrders {
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
-        self.cancel_all_orders(self.instrument_id, None, None, None)
+        self.cancel_all_orders(self.instrument_id, None, None, true, None)
     }
 }
 
@@ -1355,7 +1546,7 @@ impl DataActor for OrderTypeSweep {
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
-        self.cancel_all_orders(self.instrument_id, None, None, None)
+        self.cancel_all_orders(self.instrument_id, None, None, true, None)
     }
 }
 
@@ -1364,7 +1555,6 @@ fn passive_limit_price(side: OrderSide, order_index: usize) -> Price {
     let cents = match side {
         OrderSide::Buy => 90_000 - offset,
         OrderSide::Sell => 110_000 + offset,
-        _ => unreachable!(),
     };
     Price::from(price_from_cents(cents).as_str())
 }
@@ -1373,6 +1563,7 @@ criterion_group!(
     benches,
     bench_canonical,
     bench_run,
+    bench_position_history,
     bench_data_routes,
     bench_order_types
 );

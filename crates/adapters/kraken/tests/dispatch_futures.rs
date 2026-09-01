@@ -57,34 +57,23 @@ const FUTURES_PRODUCT: &str = "PF_XBTUSD";
 const FUTURES_INSTRUMENT_ID: &str = "PF_XBTUSD.KRAKEN";
 
 fn make_futures_perpetual() -> InstrumentAny {
-    InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-        InstrumentId::from(FUTURES_INSTRUMENT_ID),
-        Symbol::from(FUTURES_PRODUCT),
-        Currency::BTC(),
-        Currency::USD(),
-        Currency::USD(),
-        false,
-        1,
-        4,
-        Price::from("0.5"),
-        Quantity::from("0.0001"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ))
+    InstrumentAny::CryptoPerpetual(
+        CryptoPerpetual::builder()
+            .instrument_id(InstrumentId::from(FUTURES_INSTRUMENT_ID))
+            .raw_symbol(Symbol::from(FUTURES_PRODUCT))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USD())
+            .settlement_currency(Currency::USD())
+            .is_inverse(false)
+            .price_precision(1)
+            .size_precision(4)
+            .price_increment(Price::from("0.5"))
+            .size_increment(Quantity::from("0.0001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    )
 }
 
 fn instruments_with(instrument: InstrumentAny) -> Arc<AtomicMap<InstrumentId, InstrumentAny>> {

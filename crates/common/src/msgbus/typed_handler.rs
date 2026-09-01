@@ -149,7 +149,7 @@ impl ShareableMessageHandler {
         T: 'static,
         F: Fn(&T) + 'static,
     {
-        TypedHandler(Rc::new(DowncastingHandler::new(None::<&str>, f)))
+        TypedHandler(Rc::new(DowncastingHandler::new(f)))
     }
 
     /// Creates a handler from an Any-typed closure.
@@ -157,7 +157,7 @@ impl ShareableMessageHandler {
     where
         F: Fn(&dyn Any) + 'static,
     {
-        TypedHandler(Rc::new(AnyCallbackHandler::new(None::<&str>, f)))
+        TypedHandler(Rc::new(AnyCallbackHandler::new(f)))
     }
 }
 
@@ -169,13 +169,9 @@ struct DowncastingHandler<T, F: Fn(&T)> {
 }
 
 impl<T: 'static, F: Fn(&T) + 'static> DowncastingHandler<T, F> {
-    fn new<S: AsRef<str>>(id: Option<S>, callback: F) -> Self {
-        let id_ustr = id.map_or_else(
-            || generate_handler_id::<T, F>(&callback),
-            |s| Ustr::from(s.as_ref()),
-        );
+    fn new(callback: F) -> Self {
         Self {
-            id: id_ustr,
+            id: generate_handler_id(&callback),
             callback,
             _marker: PhantomData,
         }
@@ -207,17 +203,9 @@ struct AnyCallbackHandler<F: Fn(&dyn Any)> {
 }
 
 impl<F: Fn(&dyn Any) + 'static> AnyCallbackHandler<F> {
-    fn new<S: AsRef<str>>(id: Option<S>, callback: F) -> Self {
-        let id_ustr = id.map_or_else(
-            || {
-                let callback_ptr = std::ptr::from_ref(&callback);
-                let uuid = UUID4::new();
-                Ustr::from(&format!("<{callback_ptr:?}>-{uuid}"))
-            },
-            |s| Ustr::from(s.as_ref()),
-        );
+    fn new(callback: F) -> Self {
         Self {
-            id: id_ustr,
+            id: generate_handler_id(&callback),
             callback,
         }
     }
@@ -278,13 +266,7 @@ impl<T, F: Fn(&T)> Debug for CallbackHandler<T, F> {
     }
 }
 
-fn generate_handler_id<T: 'static + ?Sized, F: 'static + Fn(&T)>(callback: &F) -> Ustr {
-    let callback_ptr = std::ptr::from_ref(callback);
-    let uuid = UUID4::new();
-    Ustr::from(&format!("<{callback_ptr:?}>-{uuid}"))
-}
-
-fn generate_into_handler_id<T: 'static, F: 'static + Fn(T)>(callback: &F) -> Ustr {
+fn generate_handler_id<F: ?Sized>(callback: &F) -> Ustr {
     let callback_ptr = std::ptr::from_ref(callback);
     let uuid = UUID4::new();
     Ustr::from(&format!("<{callback_ptr:?}>-{uuid}"))
@@ -400,7 +382,7 @@ impl<T: 'static, F: Fn(T) + 'static> IntoCallbackHandler<T, F> {
     /// Creates a new into callback handler with an optional custom ID.
     pub fn new<S: AsRef<str>>(id: Option<S>, callback: F) -> Self {
         let id_ustr = id.map_or_else(
-            || generate_into_handler_id(&callback),
+            || generate_handler_id(&callback),
             |s| Ustr::from(s.as_ref()),
         );
 
@@ -433,7 +415,7 @@ impl<T, F: Fn(T)> Debug for IntoCallbackHandler<T, F> {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
+    use std::{cell::RefCell, collections::HashSet};
 
     use rstest::rstest;
 
@@ -452,6 +434,34 @@ mod tests {
         handler.handle(&"test2".to_string());
 
         assert_eq!(*received.borrow(), vec!["test1", "test2"]);
+    }
+
+    #[rstest]
+    fn test_generated_handler_ids_are_unique() {
+        let ids = (0..2)
+            .flat_map(|index| {
+                [
+                    TypedHandler::<u32>::from(move |_: &u32| {
+                        std::hint::black_box(index);
+                    })
+                    .id(),
+                    ShareableMessageHandler::from_typed::<u32, _>(move |_: &u32| {
+                        std::hint::black_box(index);
+                    })
+                    .id(),
+                    ShareableMessageHandler::from_any(move |_: &dyn Any| {
+                        std::hint::black_box(index);
+                    })
+                    .id(),
+                    TypedIntoHandler::<u32>::from(move |_: u32| {
+                        std::hint::black_box(index);
+                    })
+                    .id(),
+                ]
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(ids.iter().copied().collect::<HashSet<_>>().len(), ids.len());
     }
 
     #[rstest]

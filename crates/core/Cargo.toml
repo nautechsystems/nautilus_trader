@@ -63,6 +63,7 @@ strum = { workspace = true, optional = true }
 criterion = { workspace = true }
 dashmap = { workspace = true }
 iai = { workspace = true }
+parking_lot = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
