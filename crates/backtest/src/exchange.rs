@@ -88,6 +88,16 @@ impl InflightCommand {
             command,
         }
     }
+
+    fn matches_scope(&self, ts_now: UnixNanos, scope: SettlementScope) -> bool {
+        match scope {
+            SettlementScope::All => true,
+            SettlementScope::Data(instrument_id) => {
+                self.command.ts_init() == ts_now
+                    || instrument_id.is_some_and(|id| self.command.instrument_id() == id)
+            }
+        }
+    }
 }
 
 impl Ord for InflightCommand {
@@ -723,6 +733,24 @@ impl SimulatedExchange {
         self.inflight_queue
             .peek()
             .is_some_and(|inflight| inflight.timestamp <= ts_now)
+    }
+
+    pub(crate) fn has_pending_commands_for_scope(
+        &self,
+        ts_now: UnixNanos,
+        scope: SettlementScope,
+    ) -> bool {
+        if matches!(scope, SettlementScope::All) {
+            return self.has_pending_commands(ts_now);
+        }
+
+        if !self.message_queue.is_empty() {
+            return true;
+        }
+
+        self.inflight_queue
+            .iter()
+            .any(|inflight| inflight.timestamp <= ts_now && inflight.matches_scope(ts_now, scope))
     }
 
     /// Returns the latest arrival timestamp across all latency-deferred
@@ -1541,16 +1569,40 @@ impl SimulatedExchange {
     /// Panics if the exchange clock is not a [`TestClock`] or popping an inflight command fails
     /// during processing.
     pub fn process(&mut self, ts_now: UnixNanos) {
+        self.process_commands(ts_now, SettlementScope::All);
+    }
+
+    pub(crate) fn process_for_scope(&mut self, ts_now: UnixNanos, scope: SettlementScope) {
+        self.process_commands(ts_now, scope);
+    }
+
+    fn process_commands(&mut self, ts_now: UnixNanos, scope: SettlementScope) {
         self.set_clock_time(ts_now);
+
+        let mut deferred = Vec::new();
+        let mut processed_timestamps = BTreeSet::new();
 
         while let Some(inflight) = self.inflight_queue.peek() {
             if inflight.timestamp > ts_now {
                 break;
             }
             let inflight = self.inflight_queue.pop().unwrap();
-            let timestamp = inflight.timestamp;
+
+            if !inflight.matches_scope(ts_now, scope) {
+                deferred.push(inflight);
+                continue;
+            }
+
+            processed_timestamps.insert(inflight.timestamp);
             self.message_queue.push_back(inflight.command);
-            self.inflight_counter.remove(&timestamp);
+        }
+
+        let deferred_timestamps: BTreeSet<_> =
+            deferred.iter().map(|inflight| inflight.timestamp).collect();
+        self.inflight_queue.extend(deferred);
+
+        for timestamp in processed_timestamps.difference(&deferred_timestamps) {
+            self.inflight_counter.remove(timestamp);
         }
 
         while let Some(command) = self.message_queue.pop_front() {
@@ -1992,6 +2044,12 @@ impl SimulatedExchange {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum SettlementScope {
+    All,
+    Data(Option<InstrumentId>),
+}
+
 /// Marks the window in which order events are routed to the deferred handler, and clears
 /// it on drop so an unwind cannot leave the exchange deferring every later event.
 #[derive(Debug)]
@@ -2137,6 +2195,24 @@ mod tests {
             None,
             None,
         ))
+    }
+
+    #[rstest]
+    fn test_inflight_command_matches_settlement_scope() {
+        let inflight = InflightCommand::new(UnixNanos::from(1), 0, query_order());
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+        let other_id = InstrumentId::from("GBP/USD.SIM");
+
+        assert!(inflight.matches_scope(UnixNanos::from(1), SettlementScope::All));
+        assert!(inflight.matches_scope(
+            UnixNanos::from(1),
+            SettlementScope::Data(Some(instrument_id)),
+        ));
+        assert!(
+            !inflight.matches_scope(UnixNanos::from(1), SettlementScope::Data(Some(other_id)),)
+        );
+        assert!(!inflight.matches_scope(UnixNanos::from(1), SettlementScope::Data(None)));
+        assert!(inflight.matches_scope(UnixNanos::default(), SettlementScope::Data(None)));
     }
 
     #[rstest]

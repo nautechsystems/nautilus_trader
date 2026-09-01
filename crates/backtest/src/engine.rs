@@ -71,7 +71,7 @@ use crate::{
     config::{BacktestEngineConfig, SimulatedVenueConfig},
     data_client::BacktestDataClient,
     data_iterator::BacktestDataIterator,
-    exchange::SimulatedExchange,
+    exchange::{SettlementScope, SimulatedExchange},
     execution_client::BacktestExecutionClient,
     result::{
         BacktestResult, CanonicalBacktestResult, CanonicalBacktestState, CanonicalDiagnostic,
@@ -673,6 +673,8 @@ impl BacktestEngine {
         // at any point during the run (including the trailing settle, module,
         // and flush callbacks that execute after the main data loop) so the
         // trader and engines actually stop.
+        // Streaming batches retain commands deferred by other instruments,
+        // and end() performs the unrestricted drain after all batches are loaded.
         if !streaming || self.force_stop || self.kernel.is_shutdown_requested() {
             self.end()?;
         }
@@ -833,6 +835,7 @@ impl BacktestEngine {
             }
 
             let d = self.data_iterator.next_item().unwrap();
+            let settlement_scope = Self::settlement_scope(&d);
 
             if ts_init > self.last_ns {
                 self.advance_time_impl(ts_init, &clocks)?;
@@ -850,7 +853,7 @@ impl BacktestEngine {
 
             // Drain deferred commands, then process exchange queues
             self.drain_command_queues();
-            self.settle_venues(ts_init);
+            self.settle_venues(ts_init, settlement_scope);
 
             let prev_last_ns = self.last_ns;
             // If timestamp changed (or exhausted), flush timers then run modules
@@ -860,15 +863,16 @@ impl BacktestEngine {
                 .is_none_or(|next| next.ts_init() > prev_last_ns)
             {
                 self.flush_accumulator_events(&clocks, prev_last_ns)?;
-                self.finalize_timestamp(&clocks, prev_last_ns)?;
+                self.finalize_timestamp(&clocks, prev_last_ns, settlement_scope)?;
             }
 
             self.iteration += 1;
         }
 
-        // Process remaining exchange messages
-        let ts_now = self.kernel.clock.borrow().timestamp_ns();
-        self.finalize_timestamp(&clocks, ts_now)?;
+        if !streaming || self.force_stop || self.kernel.is_shutdown_requested() {
+            let ts_now = self.kernel.clock.borrow().timestamp_ns();
+            self.finalize_timestamp(&clocks, ts_now, SettlementScope::All)?;
+        }
 
         // Cap at last_ns when streaming or after shutdown to avoid firing
         // timers past the current batch or the graceful stop
@@ -880,6 +884,21 @@ impl BacktestEngine {
         self.flush_accumulator_events(&clocks, flush_ts)?;
 
         Ok(())
+    }
+
+    fn settlement_scope(data: &Data) -> SettlementScope {
+        if matches!(
+            data,
+            Data::MarkPrice(_) | Data::IndexPrice(_) | Data::OptionGreeks(_) | Data::Custom(_)
+        ) {
+            return SettlementScope::Data(None);
+        }
+        #[cfg(feature = "defi")]
+        if matches!(data, Data::Defi(_)) {
+            return SettlementScope::Data(None);
+        }
+
+        SettlementScope::Data(Some(data.instrument_id()))
     }
 
     fn abort_run(&mut self) {
@@ -932,11 +951,15 @@ impl BacktestEngine {
             }
         }
 
+        // Settle commands already due at the final data timestamp while strategies
+        // are still running, so callbacks and on_stop observe the final state.
+        let mut ts_now = self.kernel.clock.borrow().timestamp_ns();
+        self.settle_venues(ts_now, SettlementScope::All);
+
         self.kernel.stop_trader();
 
         // Settle residual on_stop commands before stopping engines. Venue modules are
         // not re-run; process_modules is once per timestamp.
-        let mut ts_now = self.kernel.clock.borrow().timestamp_ns();
 
         // Drain first so latency-deferred commands reach venue inflight queues
         self.drain_command_queues();
@@ -951,7 +974,7 @@ impl BacktestEngine {
             Self::set_all_clocks_time(&clocks, ts_now);
         }
 
-        self.settle_venues(ts_now);
+        self.settle_venues(ts_now, SettlementScope::All);
 
         for strategy_id in self.running_strategy_ids() {
             log::error!(
@@ -1496,7 +1519,7 @@ impl BacktestEngine {
                 shutdown_at = Some(ts_event);
                 break;
             }
-            self.finalize_timestamp(clocks, ts_event)?;
+            self.finalize_timestamp(clocks, ts_event, SettlementScope::All)?;
 
             if self.kernel.is_shutdown_requested() {
                 self.accumulator.clear();
@@ -1550,7 +1573,7 @@ impl BacktestEngine {
                 self.accumulator.clear();
                 break;
             }
-            self.finalize_timestamp(clocks, ts_event)?;
+            self.finalize_timestamp(clocks, ts_event, SettlementScope::All)?;
 
             if self.kernel.is_shutdown_requested() {
                 self.accumulator.clear();
@@ -1631,9 +1654,10 @@ impl BacktestEngine {
         &mut self,
         clocks: &[Rc<RefCell<dyn Clock>>],
         ts_now: UnixNanos,
+        mut settlement_scope: SettlementScope,
     ) -> anyhow::Result<()> {
         loop {
-            self.settle_venues(ts_now);
+            self.settle_venues(ts_now, settlement_scope);
 
             if self.kernel.is_shutdown_requested() {
                 self.accumulator.clear();
@@ -1646,16 +1670,18 @@ impl BacktestEngine {
 
             if self.accumulator.peek_next_time() == Some(ts_now) {
                 self.run_timer_handlers_at(clocks, ts_now, ts_now);
+                settlement_scope = SettlementScope::All;
                 continue;
             }
 
             if !self.settle_funding_rates(ts_now)? {
                 break;
             }
+            settlement_scope = SettlementScope::All;
         }
 
-        self.run_venue_modules(ts_now)?;
-        self.run_venue_liquidations(ts_now);
+        self.run_venue_modules(ts_now, settlement_scope)?;
+        self.run_venue_liquidations(ts_now, settlement_scope);
         Ok(())
     }
 
@@ -1832,7 +1858,7 @@ impl BacktestEngine {
             .max()
     }
 
-    fn settle_venues(&self, ts_now: UnixNanos) {
+    fn settle_venues(&self, ts_now: UnixNanos, settlement_scope: SettlementScope) {
         // Advance venue clocks so modules and event generators see the
         // correct timestamp even when no commands are pending
         for exchange in self.venues.values() {
@@ -1852,7 +1878,10 @@ impl BacktestEngine {
             let active_venues: Vec<Venue> = self
                 .venues
                 .iter()
-                .filter(|(_, ex)| ex.borrow().has_pending_commands(ts_now))
+                .filter(|(_, ex)| {
+                    ex.borrow()
+                        .has_pending_commands_for_scope(ts_now, settlement_scope)
+                })
                 .map(|(id, _)| *id)
                 .collect();
 
@@ -1861,7 +1890,8 @@ impl BacktestEngine {
             }
 
             for venue_id in &active_venues {
-                self.venues[venue_id].borrow_mut().process(ts_now);
+                let mut exchange = self.venues[venue_id].borrow_mut();
+                exchange.process_for_scope(ts_now, settlement_scope);
             }
             self.drain_command_queues();
 
@@ -1877,7 +1907,11 @@ impl BacktestEngine {
         }
     }
 
-    fn run_venue_modules(&mut self, ts_now: UnixNanos) -> anyhow::Result<()> {
+    fn run_venue_modules(
+        &mut self,
+        ts_now: UnixNanos,
+        settlement_scope: SettlementScope,
+    ) -> anyhow::Result<()> {
         if self.last_module_ns == Some(ts_now) {
             return Ok(());
         }
@@ -1893,7 +1927,7 @@ impl BacktestEngine {
 
         // Pre-settle handler-generated work so modules see final state
         self.drain_command_queues();
-        self.settle_venues(ts_now);
+        self.settle_venues(ts_now, settlement_scope);
 
         for exchange in self.venues.values() {
             exchange.borrow_mut().process_modules(ts_now)?;
@@ -1901,11 +1935,11 @@ impl BacktestEngine {
 
         // Post-settle any commands emitted by modules
         self.drain_command_queues();
-        self.settle_venues(ts_now);
+        self.settle_venues(ts_now, settlement_scope);
         Ok(())
     }
 
-    fn run_venue_liquidations(&mut self, ts_now: UnixNanos) {
+    fn run_venue_liquidations(&mut self, ts_now: UnixNanos, settlement_scope: SettlementScope) {
         if self.last_liquidation_ns == Some(ts_now) {
             return;
         }
@@ -1924,7 +1958,7 @@ impl BacktestEngine {
         }
 
         self.drain_command_queues();
-        self.settle_venues(ts_now);
+        self.settle_venues(ts_now, settlement_scope);
     }
 
     fn drain_exec_client_events(&self) {
@@ -2485,7 +2519,9 @@ mod tests {
             engine.add_venue(venue_config).unwrap();
         }
 
-        engine.run_venue_modules(UnixNanos::from(1)).unwrap();
+        engine
+            .run_venue_modules(UnixNanos::from(1), SettlementScope::All)
+            .unwrap();
 
         assert_eq!(
             engine.kernel.clock.borrow().timestamp_ns(),
@@ -2524,7 +2560,7 @@ mod tests {
             engine.add_venue(venue_config).unwrap();
         }
 
-        engine.run_venue_liquidations(UnixNanos::from(1));
+        engine.run_venue_liquidations(UnixNanos::from(1), SettlementScope::All);
 
         assert_eq!(
             engine.kernel.clock.borrow().timestamp_ns(),

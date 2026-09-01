@@ -5533,6 +5533,79 @@ fn test_close_all_positions_in_on_stop_is_processed_streaming(
 }
 
 #[rstest]
+fn test_streaming_end_settles_due_open_before_on_stop(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let target = crypto_perpetual_ethusdt;
+    let target_id = target.id;
+    let mut other = target.clone();
+    other.id = InstrumentId::new(Symbol::from("BTCUSDT"), target_id.venue);
+    other.raw_symbol = Symbol::from("BTCUSDT");
+    let other_id = other.id;
+
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    engine
+        .add_venue(
+            SimulatedVenueConfig::builder()
+                .venue(target_id.venue)
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1_000_000 USDT")])
+                .latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
+                    UnixNanos::default(),
+                    UnixNanos::from(1),
+                    UnixNanos::default(),
+                    UnixNanos::default(),
+                )))
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    engine
+        .add_instrument(&InstrumentAny::CryptoPerpetual(target))
+        .unwrap();
+    engine
+        .add_instrument(&InstrumentAny::CryptoPerpetual(other))
+        .unwrap();
+    engine
+        .add_strategy(CloseOnStop::new(target_id, Quantity::from("1.000")))
+        .unwrap();
+    engine
+        .add_data(
+            vec![
+                quote(target_id, "1000.00", "1001.00", 1_000_000_000),
+                quote(other_id, "5000.00", "5001.00", 2_000_000_000),
+            ],
+            None,
+            true,
+            true,
+        )
+        .unwrap();
+
+    engine.run(None, None, None, true).unwrap();
+    assert!(
+        engine
+            .kernel()
+            .cache()
+            .borrow()
+            .positions_open(None, Some(&target_id), None, None, None)
+            .is_empty()
+    );
+
+    engine.end().unwrap();
+
+    let cache_rc = engine.kernel().cache();
+    let cache = cache_rc.borrow();
+    assert!(
+        cache
+            .positions_open(None, Some(&target_id), None, None, None)
+            .is_empty()
+    );
+    let closed = cache.positions_closed(None, Some(&target_id), None, None, None);
+    assert_eq!(closed.len(), 1);
+    assert_eq!(engine.get_result().total_orders, 2);
+}
+
+#[rstest]
 fn test_close_all_positions_in_on_stop_is_processed_with_latency(
     crypto_perpetual_ethusdt: CryptoPerpetual,
 ) {
@@ -5657,6 +5730,270 @@ impl DataActor for OpenOnEveryQuote {
         );
         self.submit_order(order, None, None, None)
     }
+}
+
+struct OpenOnFirstBar {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    bar_type: BarType,
+    settlement_timer: Option<UnixNanos>,
+    submitted: bool,
+}
+
+impl OpenOnFirstBar {
+    fn new(
+        instrument_id: InstrumentId,
+        bar_type: BarType,
+        settlement_timer: Option<UnixNanos>,
+    ) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("OPEN-FIRST-BAR-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            bar_type,
+            settlement_timer,
+            submitted: false,
+        }
+    }
+}
+
+nautilus_strategy!(OpenOnFirstBar);
+
+impl Debug for OpenOnFirstBar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(OpenOnFirstBar)).finish()
+    }
+}
+
+impl DataActor for OpenOnFirstBar {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_bars(self.bar_type, None, None);
+
+        if let Some(settlement_timer) = self.settlement_timer {
+            self.clock()
+                .set_time_alert_ns("settlement", settlement_timer, None, None)?;
+        }
+        Ok(())
+    }
+
+    fn on_bar(&mut self, _bar: &Bar) -> anyhow::Result<()> {
+        if self.submitted {
+            return Ok(());
+        }
+        self.submitted = true;
+
+        let order = self.order().market(
+            self.instrument_id,
+            OrderSide::Buy,
+            Quantity::from("1.000"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        self.submit_order(order, None, None, None)
+    }
+
+    fn on_time_event(&mut self, _event: &TimeEvent) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+#[rstest]
+#[case::single(None, None, "2001.00", 2_000_000_000, false)]
+#[case::other_first(
+    Some((true, 2_000_000_000)),
+    None,
+    "2001.00",
+    2_000_000_000,
+    false
+)]
+#[case::target_first(
+    Some((false, 2_000_000_000)),
+    None,
+    "2001.00",
+    2_000_000_000,
+    false
+)]
+#[case::other_between_target_bars(
+    Some((true, 1_500_000_000)),
+    None,
+    "2001.00",
+    2_000_000_000,
+    false
+)]
+#[case::timer_settlement(
+    Some((false, 2_000_000_000)),
+    Some(1_000_000_001),
+    "1001.00",
+    1_000_000_001,
+    false
+)]
+#[case::streaming_chunks(
+    Some((false, 1_500_000_000)),
+    None,
+    "2001.00",
+    2_000_000_000,
+    true
+)]
+fn test_latency_order_settles_on_instrument_data_or_timer(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] other_config: Option<(bool, u64)>,
+    #[case] settlement_timer: Option<u64>,
+    #[case] expected_price: &str,
+    #[case] expected_ts: u64,
+    #[case] streaming_chunks: bool,
+) {
+    let target = crypto_perpetual_ethusdt;
+    let target_id = target.id;
+    let mut other = target.clone();
+    other.id = InstrumentId::new(Symbol::from("BTCUSDT"), target_id.venue);
+    other.raw_symbol = Symbol::from("BTCUSDT");
+    let other_id = other.id;
+    let target_bar_type = BarType::new(
+        target_id,
+        BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
+        AggregationSource::External,
+    );
+    let other_bar_type = BarType::new(
+        other_id,
+        BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
+        AggregationSource::External,
+    );
+    let flat_bars = |bar_type, first, second, second_ts| {
+        [(first, 1_000_000_000), (second, second_ts)]
+            .into_iter()
+            .map(|(price, ts)| {
+                let price = Price::from(price);
+                Data::Bar(Bar::new(
+                    bar_type,
+                    price,
+                    price,
+                    price,
+                    price,
+                    Quantity::from("10.000"),
+                    UnixNanos::from(ts),
+                    UnixNanos::from(ts),
+                ))
+            })
+            .collect::<Vec<_>>()
+    };
+    let target_stream = (
+        InstrumentAny::CryptoPerpetual(target),
+        flat_bars(target_bar_type, "1001.00", "2001.00", 2_000_000_000),
+    );
+    let other_stream = (
+        InstrumentAny::CryptoPerpetual(other),
+        flat_bars(
+            other_bar_type,
+            "5001.00",
+            "6001.00",
+            other_config.map_or(2_000_000_000, |(_, second_ts)| second_ts),
+        ),
+    );
+    let streams = match other_config {
+        None => vec![target_stream],
+        Some((true, _)) => vec![other_stream, target_stream],
+        Some((false, _)) => vec![target_stream, other_stream],
+    };
+
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    engine
+        .add_venue(
+            SimulatedVenueConfig::builder()
+                .venue(target_id.venue)
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1_000_000 USDT")])
+                .latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
+                    UnixNanos::default(),
+                    UnixNanos::from(1),
+                    UnixNanos::default(),
+                    UnixNanos::default(),
+                )))
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+
+    if streaming_chunks {
+        let mut streams = streams.into_iter();
+        let (target_instrument, target_data) = streams.next().unwrap();
+        let (other_instrument, other_data) = streams.next().unwrap();
+        let mut target_data = target_data.into_iter();
+        let target_first = target_data.next().unwrap();
+        let target_second = target_data.next().unwrap();
+
+        engine.add_instrument(&target_instrument).unwrap();
+        engine.add_instrument(&other_instrument).unwrap();
+        engine
+            .add_strategy(OpenOnFirstBar::new(target_id, target_bar_type, None))
+            .unwrap();
+        engine
+            .add_data(vec![target_first], None, true, true)
+            .unwrap();
+        engine.add_data(other_data, None, true, true).unwrap();
+
+        engine.run(None, None, None, true).unwrap();
+        assert!(
+            engine
+                .kernel()
+                .cache()
+                .borrow()
+                .positions_open(None, Some(&target_id), None, None, None)
+                .is_empty()
+        );
+
+        engine.clear_data();
+        engine.run(None, None, None, true).unwrap();
+        assert!(
+            engine
+                .kernel()
+                .cache()
+                .borrow()
+                .positions_open(None, Some(&target_id), None, None, None)
+                .is_empty()
+        );
+
+        engine
+            .add_data(vec![target_second], None, true, true)
+            .unwrap();
+        engine.run(None, None, None, true).unwrap();
+        engine.end().unwrap();
+    } else {
+        for (instrument, data) in streams {
+            engine.add_instrument(&instrument).unwrap();
+            engine.add_data(data, None, true, true).unwrap();
+        }
+        engine
+            .add_strategy(OpenOnFirstBar::new(
+                target_id,
+                target_bar_type,
+                settlement_timer.map(UnixNanos::from),
+            ))
+            .unwrap();
+        engine.run(None, None, None, false).unwrap();
+    }
+
+    let cache_rc = engine.kernel().cache();
+    let cache = cache_rc.borrow();
+    let positions = cache.positions_open(None, Some(&target_id), None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].quantity, Quantity::from("1.000"));
+    assert_eq!(positions[0].events.len(), 1);
+    assert_eq!(positions[0].events[0].last_px, Price::from(expected_price));
+    assert_eq!(
+        positions[0].events[0].ts_event,
+        UnixNanos::from(expected_ts)
+    );
 }
 
 #[rstest]
