@@ -252,29 +252,26 @@ impl SyntheticInstrument {
     ) -> Result<Price, SyntheticInstrumentError> {
         let n = self.component_names.len();
         let mut buf = [0.0_f64; MAX_INLINE_COMPONENTS];
+        let resolve_input = |component_name: &String| {
+            inputs.get(component_name).copied().ok_or_else(|| {
+                SyntheticInstrumentError::MissingInput {
+                    component_name: component_name.clone(),
+                }
+            })
+        };
         let input_values: &[f64] = if n <= MAX_INLINE_COMPONENTS {
             for (i, component_name) in self.component_names.iter().enumerate() {
-                buf[i] = *inputs.get(component_name).ok_or_else(|| {
-                    SyntheticInstrumentError::MissingInput {
-                        component_name: component_name.clone(),
-                    }
-                })?;
+                buf[i] = resolve_input(component_name)?;
             }
             &buf[..n]
         } else {
             // Fallback for large component sets
-            let v: Result<Vec<f64>, _> = self
+            let input_values = self
                 .component_names
                 .iter()
-                .map(|name| {
-                    inputs.get(name).copied().ok_or_else(|| {
-                        SyntheticInstrumentError::MissingInput {
-                            component_name: name.clone(),
-                        }
-                    })
-                })
-                .collect();
-            return self.calculate(&v?);
+                .map(resolve_input)
+                .collect::<Result<Vec<_>, _>>()?;
+            return self.calculate(&input_values);
         };
 
         self.calculate(input_values)
@@ -295,11 +292,11 @@ impl SyntheticInstrument {
             });
         }
 
-        for (i, value) in inputs.iter().enumerate() {
+        for (component_name, &value) in self.component_names.iter().zip(inputs) {
             if !value.is_finite() {
                 return Err(SyntheticInstrumentError::NonFiniteInput {
-                    component_name: self.component_names[i].clone(),
-                    value: *value,
+                    component_name: component_name.clone(),
+                    value,
                 });
             }
         }

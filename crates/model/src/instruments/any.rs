@@ -51,30 +51,10 @@ pub enum InstrumentAny {
     TokenizedAsset(TokenizedAsset),
 }
 
-// TODO: Probably move this to the `Instrument` trait too
 impl InstrumentAny {
     #[must_use]
     pub fn get_base_quantity(&self, quantity: Quantity, last_px: Price) -> Quantity {
-        match self {
-            Self::Betting(inst) => inst.calculate_base_quantity(quantity, last_px),
-            Self::BinaryOption(inst) => inst.calculate_base_quantity(quantity, last_px),
-            Self::Cfd(inst) => inst.calculate_base_quantity(quantity, last_px),
-            Self::Commodity(inst) => inst.calculate_base_quantity(quantity, last_px),
-            Self::CryptoFuture(inst) => inst.calculate_base_quantity(quantity, last_px),
-            Self::CryptoFuturesSpread(inst) => inst.calculate_base_quantity(quantity, last_px),
-            Self::CryptoOption(inst) => inst.calculate_base_quantity(quantity, last_px),
-            Self::CryptoOptionSpread(inst) => inst.calculate_base_quantity(quantity, last_px),
-            Self::CryptoPerpetual(inst) => inst.calculate_base_quantity(quantity, last_px),
-            Self::CurrencyPair(inst) => inst.calculate_base_quantity(quantity, last_px),
-            Self::Equity(inst) => inst.calculate_base_quantity(quantity, last_px),
-            Self::FuturesContract(inst) => inst.calculate_base_quantity(quantity, last_px),
-            Self::FuturesSpread(inst) => inst.calculate_base_quantity(quantity, last_px),
-            Self::IndexInstrument(inst) => inst.calculate_base_quantity(quantity, last_px),
-            Self::OptionContract(inst) => inst.calculate_base_quantity(quantity, last_px),
-            Self::OptionSpread(inst) => inst.calculate_base_quantity(quantity, last_px),
-            Self::PerpetualContract(inst) => inst.calculate_base_quantity(quantity, last_px),
-            Self::TokenizedAsset(inst) => inst.calculate_base_quantity(quantity, last_px),
-        }
+        self.calculate_base_quantity(quantity, last_px)
     }
 
     /// Returns true if the instrument is a spread instrument.
