@@ -47,8 +47,8 @@ jobs:
           # Persistent CARGO_TARGET_DIR replaces Swatinem/rust-cache here.
           rust-cache-enabled: "false"
 
-      - name: Install Rust nightly
-        run: rustup toolchain install nightly
+      - name: Install pinned Rust nightly
+        run: rustup toolchain install "$(bash scripts/tool-version.sh nightly)" --profile minimal
 
       - name: Install cargo-hack
         # https://github.com/taiki-e/install-action

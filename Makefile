@@ -23,6 +23,7 @@ LYCHEE_VERSION := $(shell bash scripts/cargo-tool-version.sh lychee)
 # Shared and NautilusTrader-specific tool versions
 PREK_VERSION := $(shell bash scripts/tool-version.sh prek)
 NIGHTLY_TOOLCHAIN := $(shell bash scripts/tool-version.sh miri) # Pinned nightly, shared with Miri
+DOCSRS_TOOLCHAIN := $(shell bash scripts/tool-version.sh nightly)
 UV_VERSION := $(shell bash scripts/uv-version.sh)
 UV_REQUIRED_SPEC := $(shell awk -F'"' '\
 	/^\[tool\.uv\]/ { in_section=1; next } \
@@ -618,7 +619,7 @@ docs-rust:  #-- Build Rust documentation with cargo doc
 docsrs-check: export DOCS_RS=1
 docsrs-check: export RUSTDOCFLAGS=--cfg docsrs -D warnings
 docsrs-check: check-hack-installed #-- Check documentation builds for docs.rs compatibility
-	cargo +nightly hack --workspace --ignore-private --ignore-unknown-features \
+	cargo +$(DOCSRS_TOOLCHAIN) hack --workspace --ignore-private --ignore-unknown-features \
 		--features arrow,capnp,cloud,defi,display \
 		--features example-databento,examples,ffi,high-precision,host \
 		--features hypersync,indicators,live,node,persistence,plugin \

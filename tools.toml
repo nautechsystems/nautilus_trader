@@ -3,10 +3,14 @@
 # Shared tools:      .nautilus-engineering/tools.toml
 # Shared source:     https://github.com/nautechsystems/nautilus_engineering
 # Rust toolchain:    rust-toolchain.toml
-# Nightly toolchain: tools.toml [miri]
+# Nightly pins:      tools.toml [nightly], [miri]
 # Local Cargo CLIs:  Cargo.toml [workspace.metadata.tools]
 # Local CLIs:        tools.toml
 # uv range:          python/pyproject.toml [tool.uv]
+
+# Temporary docs.rs pin for rust-lang/rust#159228
+[nightly]
+version = "nightly-2026-08-21"
 
 [miri]
 version = "nightly-2026-08-23"

@@ -121,6 +121,12 @@ Fuzz targets also require a Rust nightly toolchain at runtime because `cargo-fuz
 rustup toolchain install nightly
 ```
 
+The docs.rs compatibility check uses the dated nightly pinned in `tools.toml`:
+
+```bash
+rustup toolchain install "$(bash scripts/tool-version.sh nightly)" --profile minimal
+```
+
 #### One-off prerequisite: cargo-binstall
 
 `make install-tools` uses [`cargo-binstall`](https://github.com/cargo-bins/cargo-binstall) to fetch
@@ -150,7 +156,7 @@ to read them.
 | `tools.toml`                              | NautilusTrader-specific tools without a native manifest. |
 
 The shared catalog includes uv, `prek`, `pip-audit`, `osv-scanner`, Cap'n Proto, and common Cargo
-tools. The local catalog retains the Miri toolchain and `pypi-attestations` pins.
+tools. The local catalog retains the docs.rs nightly, Miri toolchain, and `pypi-attestations` pins.
 
 The Makefile reads these via `scripts/cargo-tool-version.sh`, `scripts/tool-version.sh`, and
 `scripts/uv-version.sh`, so bumping a version in the source file is the only required version
