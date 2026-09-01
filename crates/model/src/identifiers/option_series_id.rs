@@ -271,6 +271,7 @@ mod tests {
     use rstest::*;
 
     use super::*;
+    use crate::{instruments::stubs::crypto_option_btc_deribit, types::Currency};
 
     fn test_series_id() -> OptionSeriesId {
         OptionSeriesId::new(
@@ -471,7 +472,10 @@ mod tests {
         assert_eq!(id.venue, Venue::new("DERIBIT"));
         assert_eq!(id.underlying, Ustr::from("BTC"));
         assert_eq!(id.settlement_currency, Ustr::from("BTC"));
-        assert!(id.expiration_ns.as_u64() > 0);
+        assert_eq!(
+            id.expiration_ns,
+            UnixNanos::from(1_743_120_000_000_000_000u64)
+        );
     }
 
     #[rstest]
@@ -511,6 +515,21 @@ mod tests {
         let s = id.to_string();
         let parsed = OptionSeriesId::from_str(&s).unwrap();
         assert_eq!(id, parsed);
+    }
+
+    #[rstest]
+    fn test_from_crypto_option(mut crypto_option_btc_deribit: CryptoOption) {
+        crypto_option_btc_deribit.settlement_currency = Currency::USDC();
+
+        let id = OptionSeriesId::from_crypto_option(&crypto_option_btc_deribit);
+
+        assert_eq!(id.venue, Venue::new("DERIBIT"));
+        assert_eq!(id.underlying, Ustr::from("BTC"));
+        assert_eq!(id.settlement_currency, Ustr::from("USDC"));
+        assert_eq!(
+            id.expiration_ns,
+            UnixNanos::from(1_673_596_800_000_000_000u64)
+        );
     }
 
     #[rstest]

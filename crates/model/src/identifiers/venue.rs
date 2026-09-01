@@ -249,6 +249,17 @@ mod tests {
         assert_eq!(error.to_string(), "invalid string for 'value', was empty");
     }
 
+    #[rstest]
+    fn test_from_code_returns_mapped_venue() {
+        assert_eq!(Venue::from_code("XCME").unwrap(), Venue::XCME());
+    }
+
+    #[rstest]
+    fn test_from_code_rejects_unknown_code() {
+        let error = Venue::from_code("UNKNOWN").unwrap_err();
+        assert_eq!(error.to_string(), "Unknown venue code: UNKNOWN");
+    }
+
     #[cfg(feature = "defi")]
     #[rstest]
     #[case(

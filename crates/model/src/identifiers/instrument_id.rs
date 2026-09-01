@@ -253,12 +253,32 @@ mod tests {
     use rstest::rstest;
 
     use super::{InstrumentId, InstrumentIdError};
-    use crate::identifiers::stubs::*;
+    use crate::identifiers::{Symbol, Venue, stubs::*};
 
     #[rstest]
     fn test_instrument_id_parse_success(instrument_id_eth_usdt_binance: InstrumentId) {
         assert_eq!(instrument_id_eth_usdt_binance.symbol.to_string(), "ETHUSDT");
         assert_eq!(instrument_id_eth_usdt_binance.venue.to_string(), "BINANCE");
+    }
+
+    #[rstest]
+    fn test_is_synthetic() {
+        let synthetic = InstrumentId::new(Symbol::new("BTC-ETH-INDEX"), Venue::synthetic());
+        let exchange = InstrumentId::new(Symbol::new("ETHUSDT"), Venue::new("BINANCE"));
+
+        assert!(synthetic.is_synthetic());
+        assert!(!exchange.is_synthetic());
+    }
+
+    #[rstest]
+    fn test_serde_owned_value_with_composite_symbol() {
+        let id = InstrumentId::from("ES.FUT.XCME");
+
+        let value = serde_json::to_value(id).unwrap();
+        assert_eq!(value, serde_json::json!("ES.FUT.XCME"));
+
+        let deserialized: InstrumentId = serde_json::from_value(value).unwrap();
+        assert_eq!(deserialized, id);
     }
 
     #[rstest]

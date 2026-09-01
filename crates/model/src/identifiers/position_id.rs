@@ -115,6 +115,15 @@ mod tests {
     }
 
     #[rstest]
+    #[case("P-123456789", true)]
+    #[case("P-", true)]
+    #[case("VENUE-P-123456789", false)]
+    #[case("P123456789", false)]
+    fn test_is_virtual(#[case] value: &str, #[case] expected: bool) {
+        assert_eq!(PositionId::new(value).is_virtual(), expected);
+    }
+
+    #[rstest]
     #[should_panic(expected = "Condition failed: invalid string for 'value', was empty")]
     fn test_new_with_empty_string_panics_with_display_format() {
         let _ = PositionId::new("");

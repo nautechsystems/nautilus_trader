@@ -149,6 +149,16 @@ mod tests {
     }
 
     #[rstest]
+    fn test_external() {
+        let external = ClientOrderId::external();
+        let local = ClientOrderId::new("LOCAL-1");
+
+        assert_eq!(external.as_str(), "EXTERNAL");
+        assert!(external.is_external());
+        assert!(!local.is_external());
+    }
+
+    #[rstest]
     #[should_panic(expected = "Condition failed: invalid string for 'value', was empty")]
     fn test_new_with_empty_string_panics_with_display_format() {
         let _ = ClientOrderId::new("");

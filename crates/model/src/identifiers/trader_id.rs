@@ -165,6 +165,16 @@ mod tests {
     }
 
     #[rstest]
+    fn test_external() {
+        let external = TraderId::external();
+        let local = TraderId::new("TRADER-001");
+
+        assert_eq!(external.as_str(), "EXTERNAL-0");
+        assert!(external.is_external());
+        assert!(!local.is_external());
+    }
+
+    #[rstest]
     #[should_panic(expected = "name part (before '-') cannot be empty")]
     fn test_new_with_empty_name_panics() {
         let _ = TraderId::new("-001");
@@ -184,6 +194,24 @@ mod tests {
     #[rstest]
     fn test_new_checked_with_empty_tag_returns_error() {
         assert!(TraderId::new_checked("TRADER-").is_err());
+    }
+
+    #[rstest]
+    fn test_new_checked_without_separator_returns_typed_error() {
+        let error = TraderId::new_checked("TRADER001").unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::MissingSubstring {
+                param: "value".to_string(),
+                pattern: "-".to_string(),
+                value: "TRADER001".to_string(),
+            }
+        );
+        assert_eq!(
+            error.to_string(),
+            "invalid string for 'value' did not contain '-', was 'TRADER001'"
+        );
     }
 
     #[rstest]
