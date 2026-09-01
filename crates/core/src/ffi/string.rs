@@ -55,7 +55,7 @@ pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
     Python::attach(|py| unsafe { Bound::from_borrowed_ptr(py, ptr).to_string() })
 }
 
-/// Convert a C string pointer into an owned `String`.
+/// Convert a C string pointer into an owned `Ustr`.
 ///
 /// # Safety
 ///
@@ -191,9 +191,9 @@ mod tests {
     #[rstest]
     fn test_pystr_to_string() {
         Python::initialize();
-        // Create a valid Python object pointer
-        let ptr = Python::attach(|py| PyString::new(py, "test string1").as_ptr());
-        let result = unsafe { pystr_to_string(ptr) };
+        let value = Python::attach(|py| PyString::new(py, "test string1").unbind());
+        let result = unsafe { pystr_to_string(value.as_ptr()) };
+
         assert_eq!(result, "test string1");
     }
 
@@ -228,6 +228,14 @@ mod tests {
     }
 
     #[rstest]
+    fn test_cstr_to_ustr() {
+        let c_string = CString::new("test string3").unwrap();
+        let result = unsafe { cstr_to_ustr(c_string.as_ptr()) };
+
+        assert_eq!(result, Ustr::from("test string3"));
+    }
+
+    #[rstest]
     #[should_panic(expected = "`ptr` was NULL")]
     fn test_cstr_to_bytes_with_null_ptr() {
         // Create a null C string pointer
@@ -253,6 +261,17 @@ mod tests {
         let result = unsafe { optional_cstr_to_str(c_str.as_ptr()) };
         assert!(result.is_some());
         assert_eq!(result.unwrap(), input_str);
+    }
+
+    #[rstest]
+    fn test_optional_cstr_to_ustr() {
+        let c_string = CString::new("optional value").unwrap();
+
+        let null = unsafe { optional_cstr_to_ustr(std::ptr::null()) };
+        let value = unsafe { optional_cstr_to_ustr(c_string.as_ptr()) };
+
+        assert_eq!(null, None);
+        assert_eq!(value, Some(Ustr::from("optional value")));
     }
 
     #[rstest]

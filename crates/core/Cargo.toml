@@ -122,6 +122,11 @@ path = "benches/hash_map.rs"
 harness = false
 
 [[bench]]
+name = "collections"
+path = "benches/collections.rs"
+harness = false
+
+[[bench]]
 name = "hex"
 path = "benches/hex.rs"
 harness = false

@@ -340,6 +340,23 @@ mod tests {
         assert_eq!(uuid.as_bytes(), bytes);
     }
 
+    #[cfg(all(feature = "simulation", madsim))]
+    #[rstest]
+    fn test_new_bytes_is_deterministic_in_virtual_time_runtime() {
+        let generate = |seed| {
+            let runtime =
+                madsim::runtime::Runtime::with_seed_and_config(seed, madsim::Config::default());
+            runtime.block_on(async { (0..4).map(|_| UUID4::new_bytes()).collect::<Vec<_>>() })
+        };
+
+        let first = generate(42);
+        let repeated = generate(42);
+        let different = generate(43);
+
+        assert_eq!(first, repeated);
+        assert_ne!(first, different);
+    }
+
     #[rstest]
     fn test_uuid_format() {
         let uuid = UUID4::new();

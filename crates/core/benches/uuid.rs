@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::hint::black_box;
+
 use criterion::{Criterion, criterion_group, criterion_main};
 use nautilus_core::UUID4;
 use uuid::Uuid;
@@ -33,6 +35,13 @@ fn bench_uuid4_to_string(c: &mut Criterion) {
 fn bench_uuid4_from_str(c: &mut Criterion) {
     let uuid_string = "2d89666b-1a1e-4a75-b193-4eb3b454c757";
     c.bench_function("UUID4::from_str", |b| b.iter(|| UUID4::from(uuid_string)));
+}
+
+fn bench_uuid4_as_bytes(c: &mut Criterion) {
+    let uuid = UUID4::from("2d89666b-1a1e-4a75-b193-4eb3b454c757");
+    c.bench_function("UUID4::as_bytes", |b| {
+        b.iter(|| black_box(uuid.as_bytes()));
+    });
 }
 
 fn bench_uuid4_serialize(c: &mut Criterion) {
@@ -68,6 +77,7 @@ criterion_group!(
     bench_uuid_crate_new_v4,
     bench_uuid4_to_string,
     bench_uuid4_from_str,
+    bench_uuid4_as_bytes,
     bench_uuid4_serialize,
     bench_uuid4_deserialize,
     bench_uuid4_round_trip,

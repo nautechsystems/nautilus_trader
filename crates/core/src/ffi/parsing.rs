@@ -352,4 +352,24 @@ mod tests {
         let c_str = CString::new(input).unwrap();
         assert_eq!(unsafe { precision_from_cstr(c_str.as_ptr()) }, expected);
     }
+
+    #[rstest]
+    #[case("1.010", 2)]
+    #[case("1.5e-2", 3)]
+    #[case("0.0001000", 4)]
+    fn test_min_increment_precision_from_cstr(#[case] input: &str, #[case] expected: u8) {
+        let c_str = CString::new(input).unwrap();
+        assert_eq!(
+            unsafe { min_increment_precision_from_cstr(c_str.as_ptr()) },
+            expected
+        );
+    }
+
+    #[rstest]
+    #[case(0, false)]
+    #[case(1, true)]
+    #[case(u8::MAX, true)]
+    fn test_u8_as_bool(#[case] input: u8, #[case] expected: bool) {
+        assert_eq!(u8_as_bool(input), expected);
+    }
 }

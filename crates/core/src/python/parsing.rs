@@ -149,7 +149,7 @@ pub fn get_required_list<'py>(
 mod tests {
     use std::sync::Once;
 
-    use pyo3::exceptions::{PyKeyError, PyValueError};
+    use pyo3::exceptions::{PyKeyError, PyTypeError, PyValueError};
     use rstest::rstest;
 
     use super::*;
@@ -174,6 +174,68 @@ mod tests {
             assert!(error.is_instance_of::<PyKeyError>(py));
             assert_eq!(
                 error.value(py).to_string(),
+                "'Missing required key: missing'"
+            );
+        });
+    }
+
+    #[rstest]
+    fn test_get_required() {
+        ensure_python_initialized();
+
+        Python::attach(|py| {
+            let dict = PyDict::new(py);
+            dict.set_item("quantity", 125_u64).unwrap();
+
+            let value = get_required::<u64>(&dict, "quantity").unwrap();
+            let missing = get_required::<u64>(&dict, "missing").unwrap_err();
+            dict.set_item("quantity", "invalid").unwrap();
+            let invalid = get_required::<u64>(&dict, "quantity").unwrap_err();
+
+            assert_eq!(value, 125);
+            assert!(missing.is_instance_of::<PyKeyError>(py));
+            assert_eq!(
+                missing.value(py).to_string(),
+                "'Missing required key: missing'"
+            );
+            assert!(invalid.is_instance_of::<PyTypeError>(py));
+        });
+    }
+
+    #[rstest]
+    fn test_get_required_parsed_and_list() {
+        ensure_python_initialized();
+
+        Python::attach(|py| {
+            let dict = PyDict::new(py);
+            dict.set_item("limit", "250").unwrap();
+            dict.set_item("levels", PyList::new(py, [2_u64, 5, 8]).unwrap())
+                .unwrap();
+
+            let parsed = get_required_parsed(&dict, "limit", |value| {
+                value.parse::<u64>().map_err(|e| e.to_string())
+            })
+            .unwrap();
+            let levels = get_required_list(&dict, "levels")
+                .unwrap()
+                .extract::<Vec<u64>>()
+                .unwrap();
+            dict.set_item("limit", "invalid").unwrap();
+            let invalid =
+                get_required_parsed::<u64, _>(&dict, "limit", |_| Err("not a number".to_string()))
+                    .unwrap_err();
+            let missing = get_required_list(&dict, "missing").unwrap_err();
+
+            assert_eq!(parsed, 250);
+            assert_eq!(levels, [2, 5, 8]);
+            assert!(invalid.is_instance_of::<PyValueError>(py));
+            assert_eq!(
+                invalid.value(py).to_string(),
+                "Failed to parse 'limit': not a number"
+            );
+            assert!(missing.is_instance_of::<PyKeyError>(py));
+            assert_eq!(
+                missing.value(py).to_string(),
                 "'Missing required key: missing'"
             );
         });

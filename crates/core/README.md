@@ -35,6 +35,7 @@ This crate provides feature flags to control source code inclusion during compil
 - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 - `extension-module`: Builds as a Python extension module.
+- `simulation`: Enables deterministic simulation support from [madsim](https://github.com/madsim-rs/madsim).
 
 ## Documentation
 
