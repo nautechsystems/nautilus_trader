@@ -247,6 +247,28 @@ const fn subscription_transport_state(connected: bool, id: u64) -> StreamLifecyc
     }
 }
 
+/// Waits until [`BetfairStreamClient::is_order_ready`] equals `expected`.
+///
+/// Subscribes to both lifecycle components the predicate reads BEFORE evaluating
+/// it, so a transition landing between the caller's own check and this wait is
+/// still delivered. Transport transitions are reflected in the order component,
+/// which is why the socket flag needs no separate subscription.
+async fn wait_for_order_ready_state(client: &BetfairStreamClient, expected: bool) {
+    let mut auth_rx = client.lifecycle.authenticated.changed.subscribe();
+    let mut order_rx = client.lifecycle.order.changed.subscribe();
+
+    while client.is_order_ready() != expected {
+        tokio::select! {
+            changed = auth_rx.changed() => {
+                changed.expect("lifecycle sender lives as long as the borrowed client");
+            }
+            changed = order_rx.changed() => {
+                changed.expect("lifecycle sender lives as long as the borrowed client");
+            }
+        }
+    }
+}
+
 async fn wait_for_lifecycle_state(state: &LifecycleState, expected: StreamLifecycleState) {
     let mut changed_rx = state.changed.subscribe();
     loop {
@@ -995,6 +1017,16 @@ impl BetfairStreamClient {
     /// bound should wrap it in [`tokio::time::timeout`].
     pub async fn wait_for_order_subscription_state(&self, expected: StreamLifecycleState) {
         wait_for_lifecycle_state(&self.lifecycle.order, expected).await;
+    }
+
+    /// Waits for [`is_order_ready`](Self::is_order_ready) to equal `expected`.
+    ///
+    /// Unlike the per-component waits above, this tracks the composite readiness
+    /// predicate, so it observes any transition that changes the answer rather than
+    /// one nominated target state. This method has no internal timeout; callers
+    /// wanting a bound should wrap it in [`tokio::time::timeout`].
+    pub(crate) async fn wait_for_order_ready_state(&self, expected: bool) {
+        wait_for_order_ready_state(self, expected).await;
     }
 
     #[must_use]
