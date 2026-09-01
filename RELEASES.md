@@ -66,6 +66,7 @@ Released on TBD (UTC).
 ### Fixes
 
 - Fixed active-local order modifications bypassing their execution algorithm (#4793), thanks @folknor
+- Fixed execution algorithms submitting spawned orders with live emulation triggers (#4881), thanks @folknor
 - Fixed Efficiency Ratio windowing and invalid Python input handling (#4807), thanks for reporting @staffordjh
 - Fixed own order book audits removing active-local orders
 - Fixed `StrategyConfig.manage_contingent_orders` for open, non-active-local OTO, OCO, and OUO orders

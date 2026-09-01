@@ -84,6 +84,11 @@ use ustr::Ustr;
 /// - Order lifecycle management (submit, modify, cancel)
 /// - Event filtering for algorithm-owned orders
 ///
+/// When a spawned order fails before acceptance, quantity restoration updates
+/// only the cached primary order. A caller-held primary order value passed to a
+/// spawn method remains reduced and must be discarded or refreshed from the
+/// cache before reuse.
+///
 /// # Implementation
 ///
 /// Use the `nautilus_execution_algorithm!` macro to generate the native runtime
@@ -439,7 +444,7 @@ pub trait ExecutionAlgorithm: DataActor {
     /// If `reduce_primary` is true, the primary order's quantity will be reduced
     /// by the spawned quantity. If the spawned order is subsequently denied or
     /// rejected (before acceptance), or refused before submission, the deducted
-    /// quantity is automatically restored to the primary order.
+    /// quantity is automatically restored to the cached primary order.
     fn spawn_market(
         &mut self,
         primary: &mut OrderAny,
@@ -495,10 +500,13 @@ pub trait ExecutionAlgorithm: DataActor {
     /// - The algorithm's `exec_algorithm_id`
     /// - `exec_spawn_id` set to the primary order's client order ID
     ///
+    /// `submit_order` refuses the returned order when `emulation_trigger` is
+    /// `Some`; use `None` for an order that the execution algorithm will submit.
+    ///
     /// If `reduce_primary` is true, the primary order's quantity will be reduced
     /// by the spawned quantity. If the spawned order is subsequently denied or
     /// rejected (before acceptance), or refused before submission, the deducted
-    /// quantity is automatically restored to the primary order.
+    /// quantity is automatically restored to the cached primary order.
     #[expect(clippy::too_many_arguments)]
     fn spawn_limit(
         &mut self,
@@ -569,7 +577,7 @@ pub trait ExecutionAlgorithm: DataActor {
     /// If `reduce_primary` is true, the primary order's quantity will be reduced
     /// by the spawned quantity. If the spawned order is subsequently denied or
     /// rejected (before acceptance), or refused before submission, the deducted
-    /// quantity is automatically restored to the primary order.
+    /// quantity is automatically restored to the cached primary order.
     ///
     /// `_emulation_trigger` is accepted for signature parity and is not applied:
     /// a `MARKET_TO_LIMIT` order is always initialized with no emulation trigger
@@ -683,11 +691,14 @@ pub trait ExecutionAlgorithm: DataActor {
         publish_order_event(&event);
     }
 
-    /// Restores the primary order quantity after a spawned order fails before acceptance.
+    /// Restores the cached primary order quantity after a spawned order fails before acceptance.
     ///
     /// This is called when a spawned order fails before acceptance. The quantity
-    /// that was deducted from the primary order is restored (up to the spawned
-    /// order's `leaves_qty` to handle partial fills).
+    /// that was deducted from the cached primary order is restored (up to the
+    /// spawned order's `leaves_qty` to handle partial fills).
+    ///
+    /// `refused_before_submission` selects whether the restoration log records a
+    /// refusal or a denial/rejection.
     fn restore_primary_order_quantity(&mut self, order: &OrderAny, refused_before_submission: bool)
     where
         Self: ExecutionAlgorithmNative,
@@ -782,7 +793,7 @@ pub trait ExecutionAlgorithm: DataActor {
     ///
     /// Orders carrying a live emulation trigger are refused before submission.
     /// For spawned orders with a pending primary reduction, refusal restores the
-    /// primary order quantity, consumes the pending reduction, and publishes
+    /// cached primary order quantity, consumes the pending reduction, and publishes
     /// `OrderUpdated`.
     ///
     /// # Errors
