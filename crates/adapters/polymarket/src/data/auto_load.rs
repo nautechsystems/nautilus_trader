@@ -86,10 +86,7 @@ impl PolymarketDataClient {
         }
 
         {
-            let mut pending = self
-                .pending_auto_loads
-                .lock()
-                .expect("pending_auto_loads mutex poisoned");
+            let mut pending = self.pending_auto_loads.lock();
             pending.insert(instrument_id);
         }
 
@@ -104,10 +101,7 @@ impl PolymarketDataClient {
             return;
         }
 
-        let mut pending = self
-            .pending_auto_loads
-            .lock()
-            .expect("pending_auto_loads mutex poisoned");
+        let mut pending = self.pending_auto_loads.lock();
         pending.remove(&instrument_id);
     }
 
@@ -169,7 +163,7 @@ impl PolymarketDataClient {
             // Drain pending and release `scheduled` so new misses spawn a fresh
             // task in parallel rather than piggybacking on this batch's budget.
             let mut batch: AHashSet<InstrumentId> = {
-                let mut guard = pending.lock().expect("pending_auto_loads mutex poisoned");
+                let mut guard = pending.lock();
                 let snapshot = guard.iter().copied().collect();
                 guard.clear();
                 snapshot

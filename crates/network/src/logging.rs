@@ -31,9 +31,10 @@ pub(crate) fn log_task_aborted(task_name: &str) {
 #[cfg(test)]
 #[cfg(target_os = "linux")]
 pub(crate) mod tests {
-    use std::sync::{Mutex, Once};
+    use std::sync::Once;
 
     use log::{Level, LevelFilter, Log, Metadata, Record};
+    use parking_lot::Mutex;
 
     struct CaptureState {
         targets: &'static [&'static str],
@@ -46,13 +47,13 @@ pub(crate) mod tests {
 
     impl CapturingLogger {
         fn clear(&self, targets: &'static [&'static str]) {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self.state.lock();
             state.targets = targets;
             state.messages.clear();
         }
 
         fn messages(&self) -> Vec<(Level, String)> {
-            self.state.lock().unwrap().messages.clone()
+            self.state.lock().messages.clone()
         }
     }
 
@@ -63,7 +64,7 @@ pub(crate) mod tests {
 
         fn log(&self, record: &Record<'_>) {
             if self.enabled(record.metadata()) {
-                let mut state = self.state.lock().unwrap();
+                let mut state = self.state.lock();
                 if state.targets.is_empty() || state.targets.contains(&record.target()) {
                     state
                         .messages

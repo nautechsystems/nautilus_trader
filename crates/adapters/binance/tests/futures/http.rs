@@ -19,7 +19,7 @@ use std::{
     collections::HashMap,
     net::SocketAddr,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
@@ -52,6 +52,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     types::Quantity,
 };
+use parking_lot::Mutex;
 use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::json;
@@ -184,7 +185,7 @@ async fn handle_account(
     if state.increment_and_check() {
         return rate_limit_response();
     }
-    *state.last_query.lock().unwrap() = query;
+    *state.last_query.lock() = query;
     json_response(&load_fixture("account_info_v2.json"))
 }
 
@@ -882,7 +883,7 @@ async fn test_signed_request_includes_configured_recv_window() {
         .get("/fapi/v2/account", None::<&()>, true, false)
         .await
         .unwrap();
-    let query = state.last_query.lock().unwrap().clone().unwrap();
+    let query = state.last_query.lock().clone().unwrap();
     let params = serde_urlencoded::from_str::<HashMap<String, String>>(&query).unwrap();
 
     assert_eq!(params.get("recvWindow"), Some(&"42000".to_string()));

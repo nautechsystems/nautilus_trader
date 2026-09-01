@@ -16,7 +16,7 @@
 use std::{
     str::FromStr,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
@@ -45,7 +45,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, MUTEX_POISONED, Params, UnixNanos,
+    AtomicMap, Params, UnixNanos,
     datetime::{datetime_to_unix_nanos, unix_nanos_to_iso8601},
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -61,6 +61,7 @@ use nautilus_model::{
     orderbook::OrderBook,
     types::{Price, Quantity},
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
@@ -262,7 +263,7 @@ impl HyperliquidDataClient {
     }
 
     fn clear_stream_health(&self) {
-        self.stream_health.lock().expect(MUTEX_POISONED).clear();
+        self.stream_health.lock().clear();
     }
 
     fn register_stream_health(&self, channel: MarketDataChannel, instrument_id: InstrumentId) {
@@ -270,17 +271,14 @@ impl HyperliquidDataClient {
             return;
         }
 
-        self.stream_health.lock().expect(MUTEX_POISONED).subscribe(
-            channel,
-            instrument_id,
-            Instant::now(),
-        );
+        self.stream_health
+            .lock()
+            .subscribe(channel, instrument_id, Instant::now());
     }
 
     fn remove_stream_health(&self, channel: MarketDataChannel, instrument_id: InstrumentId) {
         self.stream_health
             .lock()
-            .expect(MUTEX_POISONED)
             .unsubscribe(channel, instrument_id);
     }
 
@@ -312,7 +310,6 @@ impl HyperliquidDataClient {
                     () = tokio::time::sleep(interval) => {
                         let events = stream_health
                             .lock()
-                            .expect(MUTEX_POISONED)
                             .check_stale(Instant::now(), clock.get_time_ns());
 
                         handle_stream_health_events(&ws_client, &events).await;
@@ -1816,12 +1813,9 @@ fn record_stream_receive(
     instrument_id: InstrumentId,
     venue_ts_event: UnixNanos,
 ) {
-    stream_health.lock().expect(MUTEX_POISONED).record_receive(
-        channel,
-        instrument_id,
-        Instant::now(),
-        venue_ts_event,
-    );
+    stream_health
+        .lock()
+        .record_receive(channel, instrument_id, Instant::now(), venue_ts_event);
 }
 
 fn log_stream_health_event(event: &MarketDataStaleEvent) {
@@ -2373,14 +2367,10 @@ mod tests {
         assert!(!client.stream_health_monitor_enabled());
         client.register_stream_health(MarketDataChannel::Deltas, instrument_id);
 
-        let warnings = client
-            .stream_health
-            .lock()
-            .expect(MUTEX_POISONED)
-            .check_stale(
-                start + Duration::from_secs(121),
-                UnixNanos::from(121_000_000_000),
-            );
+        let warnings = client.stream_health.lock().check_stale(
+            start + Duration::from_secs(121),
+            UnixNanos::from(121_000_000_000),
+        );
 
         assert!(warnings.is_empty());
     }
@@ -2400,12 +2390,7 @@ mod tests {
         .unwrap();
 
         assert!(
-            client
-                .stream_health
-                .lock()
-                .expect(MUTEX_POISONED)
-                .recovery
-                .is_none(),
+            client.stream_health.lock().recovery.is_none(),
             "a zero recovery cooldown must leave the monitor observability-only",
         );
     }

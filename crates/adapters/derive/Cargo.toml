@@ -75,6 +75,7 @@ dashmap = { workspace = true }
 futures-util = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
+parking_lot = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }

@@ -25,7 +25,7 @@ use std::{
     net::SocketAddr,
     path::PathBuf,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
@@ -65,6 +65,7 @@ use nautilus_model::{
 use nautilus_network::{
     SocketState, SocketStateSink, transport::TransportError, websocket::TransportBackend,
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 
@@ -635,10 +636,10 @@ async fn test_state_sink_reports_connection_loss_and_recovery() {
 
     let observed = Arc::new(Mutex::new(Vec::new()));
     let recorded = Arc::clone(&observed);
-    let sink = SocketStateSink::new(move |state| recorded.lock().unwrap().push(state));
+    let sink = SocketStateSink::new(move |state| recorded.lock().push(state));
 
     let harness = ClientHarness::build_with_state_sink(addr, Some(sink)).await;
-    assert_eq!(*observed.lock().unwrap(), vec![SocketState::Connected]);
+    assert_eq!(*observed.lock(), vec![SocketState::Connected]);
 
     // The server acks this subscribe and then closes, so the client observes a
     // connection loss rather than a graceful disconnect.
@@ -655,14 +656,14 @@ async fn test_state_sink_reports_connection_loss_and_recovery() {
     wait_until_async(
         || {
             let observed = observed.clone();
-            async move { observed.lock().unwrap().len() >= 3 }
+            async move { observed.lock().len() >= 3 }
         },
         Duration::from_secs(5),
     )
     .await;
 
     assert_eq!(
-        *observed.lock().unwrap(),
+        *observed.lock(),
         vec![
             SocketState::Connected,
             SocketState::Disconnected,

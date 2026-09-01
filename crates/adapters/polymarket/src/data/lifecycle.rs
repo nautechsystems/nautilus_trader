@@ -21,6 +21,7 @@ use nautilus_common::msgbus::{self, TypedHandler};
 use nautilus_core::{AtomicMap, AtomicSet};
 use nautilus_live::task::TaskGroupGuard;
 use nautilus_model::events::PositionEvent;
+use parking_lot::Mutex;
 
 use super::{
     PolymarketDataClient,
@@ -243,8 +244,7 @@ impl PolymarketDataClient {
                         // A set-wide sweep never converges and grows for the process lifetime
                         let pending_retirement = {
                             let terminal_conditions = closed_condition_ids
-                                .lock()
-                                .expect("closed_condition_ids mutex poisoned");
+                                .lock();
 
                             terminal_conditions
                                 .difference(&retired_condition_ids)
@@ -416,17 +416,13 @@ impl PolymarketDataClient {
         self.clear_position_event_subscription();
 
         let old_instrument_update_state = self.instrument_update_state.clone();
-        let _update_guard = old_instrument_update_state
-            .lock()
-            .expect("instrument_update_state mutex poisoned");
+        let _update_guard = old_instrument_update_state.lock();
         let old_closed_condition_ids = self.closed_condition_ids.clone();
-        let _generation_guard = old_closed_condition_ids
-            .lock()
-            .expect("closed_condition_ids mutex poisoned");
+        let _generation_guard = old_closed_condition_ids.lock();
 
         self.instruments = std::sync::Arc::new(AtomicMap::new());
         self.instrument_update_state =
-            std::sync::Arc::new(std::sync::Mutex::new(InstrumentUpdateState::default()));
+            std::sync::Arc::new(Mutex::new(InstrumentUpdateState::default()));
         self.token_meta = std::sync::Arc::new(DashMap::new());
         self.order_books = std::sync::Arc::new(DashMap::new());
         self.last_quotes = std::sync::Arc::new(DashMap::new());
@@ -438,8 +434,8 @@ impl PolymarketDataClient {
         self.new_market_inflight_keys = std::sync::Arc::new(DashMap::new());
         self.ws_open_tokens = std::sync::Arc::new(AtomicSet::new());
 
-        self.pending_auto_loads = std::sync::Arc::new(std::sync::Mutex::new(AHashSet::new()));
-        self.closed_condition_ids = std::sync::Arc::new(std::sync::Mutex::new(AHashSet::new()));
+        self.pending_auto_loads = std::sync::Arc::new(parking_lot::Mutex::new(AHashSet::new()));
+        self.closed_condition_ids = std::sync::Arc::new(parking_lot::Mutex::new(AHashSet::new()));
         self.auto_load_scheduled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     }
 
@@ -808,11 +804,7 @@ mod tests {
         client
             .pending_snapshot_after_tick_change
             .insert(instrument_id);
-        client
-            .pending_auto_loads
-            .lock()
-            .expect("pending_auto_loads mutex poisoned")
-            .insert(instrument_id);
+        client.pending_auto_loads.lock().insert(instrument_id);
         client.order_books.insert(
             instrument_id,
             OrderBook::new(instrument_id, BookType::L2_MBP),
@@ -847,11 +839,7 @@ mod tests {
         client
             .pending_snapshot_after_tick_change
             .insert(instrument_id);
-        client
-            .pending_auto_loads
-            .lock()
-            .expect("pending_auto_loads mutex poisoned")
-            .insert(instrument_id);
+        client.pending_auto_loads.lock().insert(instrument_id);
         client.order_books.insert(
             instrument_id,
             OrderBook::new(instrument_id, BookType::L2_MBP),
@@ -886,13 +874,7 @@ mod tests {
         assert!(client.last_quotes.is_empty());
         assert!(client.new_market_inflight_keys.is_empty());
         assert!(client.pending_snapshot_after_tick_change.is_empty());
-        assert!(
-            client
-                .pending_auto_loads
-                .lock()
-                .expect("pending_auto_loads mutex poisoned")
-                .is_empty()
-        );
+        assert!(client.pending_auto_loads.lock().is_empty());
         assert!(!client.auto_load_scheduled.load(Ordering::Acquire));
     }
 
@@ -1078,13 +1060,7 @@ mod tests {
             .expect("subscribe book deltas");
 
         assert!(client.active_delta_subs.contains(&instrument_id));
-        assert!(
-            client
-                .pending_auto_loads
-                .lock()
-                .expect("pending_auto_loads mutex poisoned")
-                .contains(&instrument_id)
-        );
+        assert!(client.pending_auto_loads.lock().contains(&instrument_id));
         assert_eq!(client.order_books.contains_key(&instrument_id), enabled);
 
         if let Some(mut book) = client.order_books.get_mut(&instrument_id) {
@@ -1111,13 +1087,7 @@ mod tests {
         assert!(!client.active_delta_subs.contains(&instrument_id));
         assert!(!client.order_books.contains_key(&instrument_id));
         assert!(client.last_quotes.contains_key(&instrument_id));
-        assert!(
-            client
-                .pending_auto_loads
-                .lock()
-                .expect("pending_auto_loads mutex poisoned")
-                .contains(&instrument_id)
-        );
+        assert!(client.pending_auto_loads.lock().contains(&instrument_id));
 
         client
             .subscribe_book_deltas(subscribe())
@@ -1136,13 +1106,7 @@ mod tests {
         assert!(!client.active_delta_subs.contains(&instrument_id));
         assert!(!client.order_books.contains_key(&instrument_id));
         assert!(!client.last_quotes.contains_key(&instrument_id));
-        assert!(
-            client
-                .pending_auto_loads
-                .lock()
-                .expect("pending_auto_loads mutex poisoned")
-                .is_empty()
-        );
+        assert!(client.pending_auto_loads.lock().is_empty());
     }
 
     #[rstest]
@@ -1395,13 +1359,7 @@ mod tests {
                 .pending_snapshot_after_tick_change
                 .contains(&instrument_id)
         );
-        assert!(
-            client
-                .pending_auto_loads
-                .lock()
-                .expect("pending_auto_loads mutex poisoned")
-                .is_empty()
-        );
+        assert!(client.pending_auto_loads.lock().is_empty());
         assert!(!client.order_books.contains_key(&instrument_id));
         assert!(!client.last_quotes.contains_key(&instrument_id));
         assert!(!client.token_meta.contains_key(&Ustr::from("0xTOKEN_YES")));
@@ -1470,7 +1428,6 @@ mod tests {
         client
             .closed_condition_ids
             .lock()
-            .unwrap()
             .insert("0xCOND-ONCE".to_string());
 
         client.register_resolve_poll_task().unwrap();
@@ -1531,7 +1488,6 @@ mod tests {
         client
             .closed_condition_ids
             .lock()
-            .unwrap()
             .insert("0xCOND-WATCH".to_string());
 
         client.register_resolve_poll_task().unwrap();
@@ -1615,11 +1571,7 @@ mod tests {
                     && client.active_trade_subs.is_empty()
                     && client.ws_open_tokens.is_empty()
                     && client.pending_snapshot_after_tick_change.is_empty()
-                    && client
-                        .pending_auto_loads
-                        .lock()
-                        .expect("pending_auto_loads mutex poisoned")
-                        .is_empty()
+                    && client.pending_auto_loads.lock().is_empty()
                     && client.instruments.load().len() == watched_count
                     && client.resolve_poll_watchlist.load().len() == watched_count
             },
@@ -1641,13 +1593,7 @@ mod tests {
         assert!(client.active_trade_subs.is_empty());
         assert!(client.ws_open_tokens.is_empty());
         assert!(client.pending_snapshot_after_tick_change.is_empty());
-        assert!(
-            client
-                .pending_auto_loads
-                .lock()
-                .expect("pending_auto_loads mutex poisoned")
-                .is_empty()
-        );
+        assert!(client.pending_auto_loads.lock().is_empty());
         assert_eq!(client.instruments.load().len(), watched_count);
         assert_eq!(client.resolve_poll_watchlist.load().len(), watched_count);
     }
@@ -1734,7 +1680,6 @@ mod tests {
         client
             .closed_condition_ids
             .lock()
-            .unwrap()
             .insert("0xCOND-TERMINAL".to_string());
         client.token_meta.clear();
 
@@ -1822,14 +1767,7 @@ mod tests {
                 "pending_snapshot_after_tick_change",
                 client.pending_snapshot_after_tick_change.len(),
             ),
-            (
-                "pending_auto_loads",
-                client
-                    .pending_auto_loads
-                    .lock()
-                    .expect("pending_auto_loads mutex poisoned")
-                    .len(),
-            ),
+            ("pending_auto_loads", client.pending_auto_loads.lock().len()),
         ]
     }
 

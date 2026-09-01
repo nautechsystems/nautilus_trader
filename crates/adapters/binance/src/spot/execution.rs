@@ -18,7 +18,7 @@
 use std::{
     future::Future,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -41,7 +41,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED, Params, UUID4, UnixNanos,
+    Params, UUID4, UnixNanos,
     datetime::{NANOSECONDS_IN_MILLISECOND, checked_mins_to_nanos},
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -65,6 +65,7 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
@@ -289,7 +290,6 @@ impl BinanceSpotExecutionClient {
         let user_data_active = if self.config.us {
             self.ws_user_data_client
                 .lock()
-                .expect(MUTEX_POISONED)
                 .as_ref()
                 .is_some_and(BinanceSpotWsTradingClient::is_user_data_active)
         } else {
@@ -633,7 +633,7 @@ impl BinanceSpotExecutionClient {
         )
         .with_proxy(self.config.proxy_url.clone())
         .with_socket_control(self.socket_factory.control("binance-spot-user-streams"));
-        *self.ws_user_data_client.lock().expect(MUTEX_POISONED) = Some(ws_user_data.clone());
+        *self.ws_user_data_client.lock() = Some(ws_user_data.clone());
         ws_user_data
             .connect()
             .await
@@ -707,17 +707,13 @@ impl BinanceSpotExecutionClient {
         }
 
         ws_user_data.mark_user_data_active();
-        *self.ws_user_data_client.lock().expect(MUTEX_POISONED) = Some(ws_user_data);
+        *self.ws_user_data_client.lock() = Some(ws_user_data);
         Ok(())
     }
 
     async fn disconnect_us_user_data(&mut self) {
         let mut client_drained = true;
-        let client = self
-            .ws_user_data_client
-            .lock()
-            .expect(MUTEX_POISONED)
-            .clone();
+        let client = self.ws_user_data_client.lock().clone();
 
         if let Some(mut client) = client {
             client.mark_user_data_inactive();
@@ -730,7 +726,7 @@ impl BinanceSpotExecutionClient {
         }
 
         if client_drained {
-            *self.ws_user_data_client.lock().expect(MUTEX_POISONED) = None;
+            *self.ws_user_data_client.lock() = None;
         }
 
         if let Some(listen_key) = self.listen_key.clone() {
@@ -752,12 +748,7 @@ impl BinanceSpotExecutionClient {
             client.begin_shutdown();
         }
 
-        if let Some(client) = self
-            .ws_user_data_client
-            .lock()
-            .expect(MUTEX_POISONED)
-            .as_ref()
-        {
+        if let Some(client) = self.ws_user_data_client.lock().as_ref() {
             client.mark_user_data_inactive();
             client.begin_shutdown();
         }
@@ -850,7 +841,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                     client.begin_shutdown();
                 }
 
-                if let Some(client) = ws_user_data_client.lock().expect(MUTEX_POISONED).as_ref() {
+                if let Some(client) = ws_user_data_client.lock().as_ref() {
                     client.begin_shutdown();
                 }
             });
@@ -1224,12 +1215,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
             client.begin_shutdown();
         }
 
-        if let Some(client) = self
-            .ws_user_data_client
-            .lock()
-            .expect(MUTEX_POISONED)
-            .as_ref()
-        {
+        if let Some(client) = self.ws_user_data_client.lock().as_ref() {
             client.mark_user_data_inactive();
             client.begin_shutdown();
         }
@@ -2922,7 +2908,7 @@ fn dispatch_tracked_execution_report(
         }
         BinanceSpotExecutionType::Trade => {
             let dedup_key = (report.symbol, report.trade_id);
-            let mut guard = seen_trade_ids.lock().expect(MUTEX_POISONED);
+            let mut guard = seen_trade_ids.lock();
             let is_duplicate = guard.contains(&dedup_key);
             guard.add(dedup_key);
             drop(guard);
@@ -3204,7 +3190,7 @@ fn dispatch_untracked_execution_report(
     match report.execution_type {
         BinanceSpotExecutionType::Trade => {
             let dedup_key = (report.symbol, report.trade_id);
-            let mut guard = seen_trade_ids.lock().expect(MUTEX_POISONED);
+            let mut guard = seen_trade_ids.lock();
             let is_duplicate = guard.contains(&dedup_key);
             guard.add(dedup_key);
             drop(guard);

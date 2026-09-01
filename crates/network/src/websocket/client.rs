@@ -53,7 +53,7 @@ use std::{
     future::Future,
     pin::pin,
     sync::{
-        Arc, OnceLock, RwLock,
+        Arc, OnceLock,
         atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering},
     },
     time::Duration,
@@ -63,6 +63,7 @@ use futures_util::{SinkExt, StreamExt};
 use http::HeaderName;
 use nautilus_core::string::secret::REDACTED;
 use nautilus_cryptography::providers::install_cryptographic_provider;
+use parking_lot::RwLock;
 #[cfg(any(feature = "turmoil", feature = "transport-sockudo"))]
 use rustls::ClientConfig;
 #[cfg(feature = "transport-sockudo")]
@@ -1317,7 +1318,7 @@ impl WebSocketClientInner {
             self.connect_timeout,
             Box::pin(Self::connect_with_server(
                 &self.config.url,
-                self.reconnect_headers.snapshot()?,
+                self.reconnect_headers.snapshot(),
                 self.config.backend,
                 self.config.proxy_url.as_deref(),
             )),
@@ -2268,7 +2269,7 @@ impl ReconnectHeaders {
     ///
     /// # Errors
     ///
-    /// Returns an error if the header name or value is invalid, or if the shared state is poisoned.
+    /// Returns an error if the header name or value is invalid.
     pub fn update(&self, name: &str, value: &str) -> Result<(), TransportError> {
         let name = HeaderName::from_bytes(name.as_bytes()).map_err(|e| {
             TransportError::Io(std::io::Error::new(
@@ -2284,25 +2285,14 @@ impl ReconnectHeaders {
         })?;
 
         let name = name.as_str();
-        let mut headers = self.inner.write().map_err(|_| {
-            TransportError::Io(std::io::Error::other(
-                "WebSocket reconnect headers lock poisoned",
-            ))
-        })?;
+        let mut headers = self.inner.write();
         headers.retain(|(existing, _)| !existing.eq_ignore_ascii_case(name));
         headers.push((name.to_string(), value.to_string()));
         Ok(())
     }
 
-    fn snapshot(&self) -> Result<Vec<(String, String)>, TransportError> {
-        self.inner
-            .read()
-            .map(|headers| headers.clone())
-            .map_err(|_| {
-                TransportError::Io(std::io::Error::other(
-                    "WebSocket reconnect headers lock poisoned",
-                ))
-            })
+    fn snapshot(&self) -> Vec<(String, String)> {
+        self.inner.read().clone()
     }
 }
 
@@ -2542,15 +2532,14 @@ mod reconnect_request_tests {
         let controller_notify = Arc::new(tokio::sync::Notify::new());
         let handle_slot = Arc::new(OnceLock::<WebSocketReconnectHandle>::new());
         let handle_slot_callback = Arc::clone(&handle_slot);
-        let nested_outcomes = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let nested_outcomes = Arc::new(parking_lot::Mutex::new(Vec::new()));
         let nested_outcomes_callback = Arc::clone(&nested_outcomes);
-        let states = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let states = Arc::new(parking_lot::Mutex::new(Vec::new()));
         let states_callback = Arc::clone(&states);
         let sink = SocketStateSink::new(move |state| {
-            states_callback.lock().unwrap().push(state);
+            states_callback.lock().push(state);
             nested_outcomes_callback
                 .lock()
-                .unwrap()
                 .push(handle_slot_callback.get().unwrap().request_reconnect());
         });
         let handle = WebSocketReconnectHandle {
@@ -2577,10 +2566,10 @@ mod reconnect_request_tests {
             ReconnectRequestOutcome::Accepted
         );
         assert_eq!(
-            *nested_outcomes.lock().unwrap(),
+            *nested_outcomes.lock(),
             vec![ReconnectRequestOutcome::AlreadyReconnecting]
         );
-        assert_eq!(*states.lock().unwrap(), vec![SocketState::Disconnected]);
+        assert_eq!(*states.lock(), vec![SocketState::Disconnected]);
     }
 
     #[rstest]
@@ -3704,7 +3693,7 @@ mod tests {
     use std::{
         collections::HashMap,
         num::NonZeroU32,
-        sync::{Arc, Mutex, atomic::Ordering},
+        sync::{Arc, atomic::Ordering},
         time::Duration,
     };
 
@@ -3713,6 +3702,7 @@ mod tests {
     use log::Level;
     use nautilus_common::testing::wait_until_async;
     use nautilus_core::string::secret::REDACTED;
+    use parking_lot::Mutex;
     use rstest::rstest;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
@@ -4383,7 +4373,7 @@ mod tests {
         let states = Arc::new(Mutex::new(Vec::new()));
         let states_callback = Arc::clone(&states);
         let sink = SocketStateSink::new(move |state| {
-            states_callback.lock().unwrap().push(state);
+            states_callback.lock().push(state);
         });
 
         let res = WebSocketClient::builder()
@@ -4393,7 +4383,7 @@ mod tests {
             .connect()
             .await;
         assert!(res.is_err(), "Should fail quickly with no server");
-        assert_eq!(*states.lock().unwrap(), Vec::new());
+        assert_eq!(*states.lock(), Vec::new());
     }
 
     #[tokio::test]
@@ -4441,7 +4431,7 @@ mod tests {
         let states = Arc::new(Mutex::new(Vec::new()));
         let states_callback = Arc::clone(&states);
         let sink = SocketStateSink::new(move |state| {
-            states_callback.lock().unwrap().push(state);
+            states_callback.lock().push(state);
         });
 
         let client = WebSocketClient::builder()
@@ -4452,19 +4442,19 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(*states.lock().unwrap(), vec![SocketState::Connected]);
+        assert_eq!(*states.lock(), vec![SocketState::Connected]);
 
         client.send_text("close-now".into(), None).await.unwrap();
         wait_until_async(
             || {
                 let states = Arc::clone(&states);
-                async move { states.lock().unwrap().len() == 3 }
+                async move { states.lock().len() == 3 }
             },
             Duration::from_secs(5),
         )
         .await;
         assert_eq!(
-            *states.lock().unwrap(),
+            *states.lock(),
             vec![
                 SocketState::Connected,
                 SocketState::Disconnected,
@@ -4473,7 +4463,7 @@ mod tests {
         );
 
         client.disconnect().await;
-        assert_eq!(states.lock().unwrap().len(), 3);
+        assert_eq!(states.lock().len(), 3);
     }
 
     #[rstest]
@@ -4499,7 +4489,7 @@ mod tests {
         let states = Arc::new(Mutex::new(Vec::new()));
         let states_callback = Arc::clone(&states);
         let sink = SocketStateSink::new(move |state| {
-            states_callback.lock().unwrap().push(state);
+            states_callback.lock().push(state);
         });
 
         let client = WebSocketClient::builder()
@@ -4513,7 +4503,7 @@ mod tests {
         drop(client);
         crate::dst::time::sleep(Duration::from_millis(25)).await;
 
-        assert_eq!(*states.lock().unwrap(), vec![SocketState::Connected]);
+        assert_eq!(*states.lock(), vec![SocketState::Connected]);
     }
 
     #[rstest]
@@ -4539,7 +4529,7 @@ mod tests {
         let states = Arc::new(Mutex::new(Vec::new()));
         let states_callback = Arc::clone(&states);
         let sink = SocketStateSink::new(move |state| {
-            states_callback.lock().unwrap().push(state);
+            states_callback.lock().push(state);
         });
 
         let (_reader, client) = WebSocketClient::stream_builder()
@@ -4553,7 +4543,7 @@ mod tests {
 
         assert!(client.is_closed());
         assert_eq!(
-            *states.lock().unwrap(),
+            *states.lock(),
             vec![SocketState::Connected, SocketState::Disconnected]
         );
     }
@@ -4592,7 +4582,7 @@ mod tests {
         let states = Arc::new(Mutex::new(Vec::new()));
         let states_callback = Arc::clone(&states);
         let sink = SocketStateSink::new(move |state| {
-            states_callback.lock().unwrap().push(state);
+            states_callback.lock().push(state);
         });
 
         let client = WebSocketClient::builder()
@@ -4610,7 +4600,7 @@ mod tests {
         )
         .await;
         assert_eq!(
-            *states.lock().unwrap(),
+            *states.lock(),
             vec![SocketState::Connected, SocketState::Disconnected]
         );
 
@@ -4643,7 +4633,7 @@ mod tests {
         };
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
         assert_eq!(error.to_string(), expected_message);
-        assert_eq!(headers.snapshot().unwrap(), initial);
+        assert_eq!(headers.snapshot(), initial);
     }
 
     #[tokio::test]
@@ -4825,7 +4815,7 @@ mod rust_tests {
     use std::{
         pin::Pin,
         sync::{
-            Arc, Condvar, Mutex as StdMutex, OnceLock,
+            Arc, OnceLock,
             atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering},
         },
         task::{Context, Poll},
@@ -4833,6 +4823,7 @@ mod rust_tests {
 
     use futures_util::{SinkExt, StreamExt};
     use nautilus_common::testing::wait_until_async;
+    use parking_lot::{Condvar, Mutex};
     use rstest::rstest;
     #[cfg(feature = "transport-sockudo")]
     use sockudo_ws::handshake as sockudo_handshake;
@@ -4864,19 +4855,17 @@ mod rust_tests {
     const TEST_TIMEOUT: Duration = Duration::from_secs(10);
 
     struct CondvarReleaseGuard<'a> {
-        release: &'a (StdMutex<bool>, Condvar),
+        release: &'a (Mutex<bool>, Condvar),
     }
 
     impl<'a> CondvarReleaseGuard<'a> {
-        fn new(release: &'a (StdMutex<bool>, Condvar)) -> Self {
+        fn new(release: &'a (Mutex<bool>, Condvar)) -> Self {
             Self { release }
         }
 
         fn release(&self) {
             let (lock, condvar) = self.release;
-            let mut released = lock
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let mut released = lock.lock();
             *released = true;
             condvar.notify_all();
         }
@@ -5686,27 +5675,26 @@ mod rust_tests {
         let tracker = AuthTracker::new();
         let _initial_auth = tracker.begin();
         tracker.succeed();
-        let states = Arc::new(StdMutex::new(Vec::new()));
+        let states = Arc::new(Mutex::new(Vec::new()));
         let states_callback = Arc::clone(&states);
-        let auth_at_loss = Arc::new(StdMutex::new(Vec::new()));
+        let auth_at_loss = Arc::new(Mutex::new(Vec::new()));
         let auth_at_loss_callback = Arc::clone(&auth_at_loss);
         let tracker_callback = tracker.clone();
-        let callback_release = Arc::new((StdMutex::new(false), Condvar::new()));
+        let callback_release = Arc::new((Mutex::new(false), Condvar::new()));
         let callback_release_guard = CondvarReleaseGuard::new(callback_release.as_ref());
         let callback_release_clone = Arc::clone(&callback_release);
         let (callback_entered_tx, callback_entered_rx) = std::sync::mpsc::channel();
         let sink = SocketStateSink::new(move |state| {
-            states_callback.lock().unwrap().push(state);
+            states_callback.lock().push(state);
             if state == SocketState::Disconnected {
                 auth_at_loss_callback
                     .lock()
-                    .unwrap()
                     .push(tracker_callback.auth_state());
                 callback_entered_tx.send(()).unwrap();
                 let (lock, condvar) = callback_release_clone.as_ref();
-                let mut released = lock.lock().unwrap();
+                let mut released = lock.lock();
                 while !*released {
-                    released = condvar.wait(released).unwrap();
+                    condvar.wait(&mut released);
                 }
             }
         });
@@ -5738,12 +5726,9 @@ mod rust_tests {
         assert_eq!(client.connection_mode(), ConnectionMode::Reconnect);
         assert!(!client.reconnect_published.load(Ordering::SeqCst));
         assert_eq!(tracker.auth_state(), AuthState::Unauthenticated);
+        assert_eq!(*auth_at_loss.lock(), vec![AuthState::Unauthenticated]);
         assert_eq!(
-            *auth_at_loss.lock().unwrap(),
-            vec![AuthState::Unauthenticated]
-        );
-        assert_eq!(
-            *states.lock().unwrap(),
+            *states.lock(),
             vec![SocketState::Connected, SocketState::Disconnected]
         );
         assert!(server.messages().await.is_empty());
@@ -5758,7 +5743,7 @@ mod rust_tests {
         wait_until_async(
             || {
                 let states = Arc::clone(&states);
-                async move { states.lock().unwrap().len() == 3 }
+                async move { states.lock().len() == 3 }
             },
             TEST_TIMEOUT,
         )
@@ -5796,7 +5781,7 @@ mod rust_tests {
         assert_eq!(server.messages().await, vec!["buffered", "live"]);
         assert_eq!(server.connections.load(Ordering::SeqCst), 2);
         assert_eq!(
-            *states.lock().unwrap(),
+            *states.lock(),
             vec![
                 SocketState::Connected,
                 SocketState::Disconnected,
@@ -5845,20 +5830,20 @@ mod rust_tests {
         let tracker = AuthTracker::new();
         let _initial_auth = tracker.begin();
         tracker.succeed();
-        let callback_release = Arc::new((StdMutex::new(false), Condvar::new()));
+        let callback_release = Arc::new((Mutex::new(false), Condvar::new()));
         let callback_release_guard = CondvarReleaseGuard::new(callback_release.as_ref());
         let callback_release_clone = Arc::clone(&callback_release);
         let (callback_entered_tx, callback_entered_rx) = std::sync::mpsc::channel();
-        let states = Arc::new(StdMutex::new(Vec::new()));
+        let states = Arc::new(Mutex::new(Vec::new()));
         let states_callback = Arc::clone(&states);
         let sink = SocketStateSink::new(move |state| {
-            states_callback.lock().unwrap().push(state);
+            states_callback.lock().push(state);
             if state == SocketState::Disconnected {
                 callback_entered_tx.send(()).unwrap();
                 let (lock, condvar) = callback_release_clone.as_ref();
-                let mut released = lock.lock().unwrap();
+                let mut released = lock.lock();
                 while !*released {
-                    released = condvar.wait(released).unwrap();
+                    condvar.wait(&mut released);
                 }
             }
         });
@@ -5900,7 +5885,7 @@ mod rust_tests {
             ReconnectRequestOutcome::Closed
         );
         assert_eq!(
-            *states.lock().unwrap(),
+            *states.lock(),
             vec![SocketState::Connected, SocketState::Disconnected]
         );
     }
@@ -5909,14 +5894,14 @@ mod rust_tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn test_reconnect_callback_can_drop_client() {
         let server = RecordingServer::setup().await;
-        let client_slot = Arc::new(StdMutex::new(None::<WebSocketClient>));
+        let client_slot = Arc::new(Mutex::new(None::<WebSocketClient>));
         let client_slot_callback = Arc::clone(&client_slot);
-        let states = Arc::new(StdMutex::new(Vec::new()));
+        let states = Arc::new(Mutex::new(Vec::new()));
         let states_callback = Arc::clone(&states);
         let sink = SocketStateSink::new(move |state| {
-            states_callback.lock().unwrap().push(state);
+            states_callback.lock().push(state);
             if state == SocketState::Disconnected {
-                drop(client_slot_callback.lock().unwrap().take());
+                drop(client_slot_callback.lock().take());
             }
         });
         let (handler, _handler_rx) = channel_message_handler();
@@ -5935,7 +5920,7 @@ mod rust_tests {
         let connection_mode = Arc::clone(&client.connection_mode);
         let handle = client.reconnect_handle();
         let surviving_handle = handle.clone();
-        *client_slot.lock().unwrap() = Some(client);
+        *client_slot.lock() = Some(client);
         let (result_tx, result_rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             result_tx.send(handle.request_reconnect()).unwrap();
@@ -5947,7 +5932,7 @@ mod rust_tests {
         );
         wait_until_async(|| async { controller_abort.is_finished() }, TEST_TIMEOUT).await;
 
-        assert!(client_slot.lock().unwrap().is_none());
+        assert!(client_slot.lock().is_none());
         assert_eq!(
             ConnectionMode::from_atomic(&connection_mode),
             ConnectionMode::Closed
@@ -5958,7 +5943,7 @@ mod rust_tests {
             ReconnectRequestOutcome::Closed
         );
         assert_eq!(
-            *states.lock().unwrap(),
+            *states.lock(),
             vec![SocketState::Connected, SocketState::Disconnected]
         );
     }
@@ -7519,7 +7504,7 @@ mod rust_tests {
         send_entered_notify: tokio::sync::Notify,
         released: AtomicBool,
         fail: AtomicBool,
-        waker: std::sync::Mutex<Option<std::task::Waker>>,
+        waker: parking_lot::Mutex<Option<std::task::Waker>>,
     }
 
     impl BlockingFailState {
@@ -7531,7 +7516,7 @@ mod rust_tests {
         fn release_send(&self) {
             self.released.store(true, Ordering::SeqCst);
 
-            if let Some(waker) = self.waker.lock().unwrap().take() {
+            if let Some(waker) = self.waker.lock().take() {
                 waker.wake();
             }
         }
@@ -7573,7 +7558,7 @@ mod rust_tests {
         ) -> std::task::Poll<Result<(), Self::Error>> {
             // Store the waker before checking the flag so trigger_failure
             // cannot slip between the check and the registration
-            *self.state.waker.lock().unwrap() = Some(cx.waker().clone());
+            *self.state.waker.lock() = Some(cx.waker().clone());
             self.state.send_entered.store(true, Ordering::SeqCst);
             self.state.send_entered_notify.notify_one();
 
@@ -7595,9 +7580,9 @@ mod rust_tests {
     }
 
     struct BlockingMessageState {
-        polled_tx: StdMutex<Option<std::sync::mpsc::Sender<()>>>,
-        release: (StdMutex<bool>, std::sync::Condvar),
-        message: StdMutex<Option<Message>>,
+        polled_tx: Mutex<Option<std::sync::mpsc::Sender<()>>>,
+        release: (Mutex<bool>, parking_lot::Condvar),
+        message: Mutex<Option<Message>>,
     }
 
     struct BlockingMessageTransport {
@@ -7608,17 +7593,17 @@ mod rust_tests {
         type Item = Result<Message, TransportError>;
 
         fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-            if let Some(polled_tx) = self.state.polled_tx.lock().unwrap().take() {
+            if let Some(polled_tx) = self.state.polled_tx.lock().take() {
                 polled_tx.send(()).unwrap();
             }
             let (lock, condvar) = &self.state.release;
-            let mut released = lock.lock().unwrap();
+            let mut released = lock.lock();
 
             while !*released {
-                released = condvar.wait(released).unwrap();
+                condvar.wait(&mut released);
             }
 
-            Poll::Ready(self.state.message.lock().unwrap().take().map(Ok))
+            Poll::Ready(self.state.message.lock().take().map(Ok))
         }
     }
 
@@ -7652,7 +7637,7 @@ mod rust_tests {
     }
 
     struct RecordingState {
-        messages: Arc<StdMutex<Vec<Message>>>,
+        messages: Arc<Mutex<Vec<Message>>>,
         recorded_notify: tokio::sync::Notify,
     }
 
@@ -7679,7 +7664,7 @@ mod rust_tests {
         }
 
         fn start_send(self: Pin<&mut Self>, item: Message) -> Result<(), Self::Error> {
-            self.state.messages.lock().unwrap().push(item);
+            self.state.messages.lock().push(item);
             self.state.recorded_notify.notify_one();
             Ok(())
         }
@@ -7703,7 +7688,7 @@ mod rust_tests {
     #[tokio::test(start_paused = true)]
     async fn test_pong_is_bound_to_connection_epoch() {
         let initial_state = Arc::new(RecordingState {
-            messages: Arc::new(StdMutex::new(Vec::new())),
+            messages: Arc::new(Mutex::new(Vec::new())),
             recorded_notify: tokio::sync::Notify::new(),
         });
         let initial_transport: BoxedWsTransport = Box::pin(RecordingTransport {
@@ -7727,7 +7712,7 @@ mod rust_tests {
             None,
         );
 
-        let recorded = Arc::new(StdMutex::new(Vec::new()));
+        let recorded = Arc::new(Mutex::new(Vec::new()));
         let replacement_state = Arc::new(RecordingState {
             messages: Arc::clone(&recorded),
             recorded_notify: tokio::sync::Notify::new(),
@@ -7759,10 +7744,7 @@ mod rust_tests {
             })
             .unwrap();
         sentinel_rx.await.unwrap().unwrap();
-        assert_eq!(
-            recorded.lock().unwrap().as_slice(),
-            &[Message::text("sentinel-1")]
-        );
+        assert_eq!(recorded.lock().as_slice(), &[Message::text("sentinel-1")]);
 
         writer_tx
             .send(WriterCommand::SendPongOnConnection {
@@ -7780,7 +7762,7 @@ mod rust_tests {
             .unwrap();
         sentinel_rx.await.unwrap().unwrap();
         assert_eq!(
-            recorded.lock().unwrap().as_slice(),
+            recorded.lock().as_slice(),
             &[
                 Message::text("sentinel-1"),
                 Message::Pong(b"fresh-pong".to_vec().into()),
@@ -7802,9 +7784,9 @@ mod rust_tests {
     async fn test_message_handler_drops_old_session_message(#[case] message: Message) {
         let (polled_tx, polled_rx) = std::sync::mpsc::channel();
         let state = Arc::new(BlockingMessageState {
-            polled_tx: StdMutex::new(Some(polled_tx)),
-            release: (StdMutex::new(false), Condvar::new()),
-            message: StdMutex::new(Some(message)),
+            polled_tx: Mutex::new(Some(polled_tx)),
+            release: (Mutex::new(false), Condvar::new()),
+            message: Mutex::new(Some(message)),
         });
         let release_guard = CondvarReleaseGuard::new(&state.release);
         let transport: BoxedWsTransport = Box::pin(BlockingMessageTransport {
@@ -7906,10 +7888,10 @@ mod rust_tests {
         let auth_tracker = Arc::new(OnceLock::new());
         let reconnect_buffer_waits_for_auth = Arc::new(AtomicBool::new(false));
         let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel();
-        let states = Arc::new(StdMutex::new(Vec::new()));
+        let states = Arc::new(Mutex::new(Vec::new()));
         let states_callback = Arc::clone(&states);
         let sink = SocketStateSink::new(move |state| {
-            states_callback.lock().unwrap().push(state);
+            states_callback.lock().push(state);
         });
         let write_task = WebSocketClientInner::spawn_write_task(
             Arc::clone(&connection_state),
@@ -7928,7 +7910,7 @@ mod rust_tests {
             .unwrap();
         state.send_entered_notify.notified().await;
 
-        let recorded = Arc::new(StdMutex::new(Vec::new()));
+        let recorded = Arc::new(Mutex::new(Vec::new()));
         let recording_state = Arc::new(RecordingState {
             messages: Arc::clone(&recorded),
             recorded_notify: tokio::sync::Notify::new(),
@@ -7961,7 +7943,7 @@ mod rust_tests {
         tokio::time::advance(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS)).await;
         recording_state.recorded_notify.notified().await;
         assert_eq!(
-            recorded.lock().unwrap().as_slice(),
+            recorded.lock().as_slice(),
             &[Message::text("complete-message")]
         );
 
@@ -7970,7 +7952,7 @@ mod rust_tests {
         drop(writer_tx);
         write_task.await.unwrap();
 
-        assert_eq!(*states.lock().unwrap(), vec![SocketState::Disconnected]);
+        assert_eq!(*states.lock(), vec![SocketState::Disconnected]);
     }
 
     #[rstest]
@@ -8004,7 +7986,7 @@ mod rust_tests {
         writer_tx.send(WriterCommand::Send(control)).unwrap();
         state.send_entered_notify.notified().await;
 
-        let recorded = Arc::new(StdMutex::new(Vec::new()));
+        let recorded = Arc::new(Mutex::new(Vec::new()));
         let recording_state = Arc::new(RecordingState {
             messages: Arc::clone(&recorded),
             recorded_notify: tokio::sync::Notify::new(),
@@ -8041,7 +8023,7 @@ mod rust_tests {
             tokio::time::advance(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS)).await;
         }
 
-        let replayed = recorded.lock().unwrap().clone();
+        let replayed = recorded.lock().clone();
         assert!(
             replayed.is_empty(),
             "a failed control frame must not reach the replacement connection, was {replayed:?}"
@@ -8063,7 +8045,7 @@ mod rust_tests {
     ) {
         // `send_pong` and the heartbeat task check for an active connection before enqueueing,
         // so a mode flip can land their frame on the writer's reconnect-mode branch instead.
-        let recorded = Arc::new(StdMutex::new(Vec::new()));
+        let recorded = Arc::new(Mutex::new(Vec::new()));
         let recording_state = Arc::new(RecordingState {
             messages: Arc::clone(&recorded),
             recorded_notify: tokio::sync::Notify::new(),
@@ -8098,7 +8080,7 @@ mod rust_tests {
             tokio::time::advance(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS)).await;
         }
 
-        let replayed = recorded.lock().unwrap().clone();
+        let replayed = recorded.lock().clone();
         assert!(
             replayed.is_empty(),
             "a control frame enqueued during reconnect must not reach the replacement connection, was {replayed:?}"
@@ -8140,7 +8122,7 @@ mod rust_tests {
             .unwrap();
         state.send_entered_notify.notified().await;
 
-        let recorded = Arc::new(StdMutex::new(Vec::new()));
+        let recorded = Arc::new(Mutex::new(Vec::new()));
         let recording_state = Arc::new(RecordingState {
             messages: Arc::clone(&recorded),
             recorded_notify: tokio::sync::Notify::new(),
@@ -8176,7 +8158,7 @@ mod rust_tests {
             tokio::time::advance(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS)).await;
         }
 
-        let replayed = recorded.lock().unwrap().clone();
+        let replayed = recorded.lock().clone();
         assert!(
             replayed.is_empty(),
             "a failed text heartbeat must not reach the replacement connection, was {replayed:?}"
@@ -8191,7 +8173,7 @@ mod rust_tests {
     #[rstest]
     #[tokio::test(start_paused = true)]
     async fn test_text_heartbeat_enqueued_during_reconnect_is_not_replayed() {
-        let recorded = Arc::new(StdMutex::new(Vec::new()));
+        let recorded = Arc::new(Mutex::new(Vec::new()));
         let recording_state = Arc::new(RecordingState {
             messages: Arc::clone(&recorded),
             recorded_notify: tokio::sync::Notify::new(),
@@ -8229,7 +8211,7 @@ mod rust_tests {
             tokio::time::advance(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS)).await;
         }
 
-        let replayed = recorded.lock().unwrap().clone();
+        let replayed = recorded.lock().clone();
         assert!(
             replayed.is_empty(),
             "a text heartbeat enqueued during reconnect must not reach the replacement connection, was {replayed:?}"
@@ -8328,7 +8310,7 @@ mod rust_tests {
 
         // The timed-out message is ownership-bound, so unlike an ordinary send it must
         // NOT be buffered for replay onto the replacement sink.
-        let recorded = Arc::new(StdMutex::new(Vec::new()));
+        let recorded = Arc::new(Mutex::new(Vec::new()));
         let recording_state = Arc::new(RecordingState {
             messages: Arc::clone(&recorded),
             recorded_notify: tokio::sync::Notify::new(),
@@ -8377,7 +8359,7 @@ mod rust_tests {
         }
 
         assert_eq!(
-            recorded.lock().unwrap().as_slice(),
+            recorded.lock().as_slice(),
             &[Message::text("sentinel-1"), Message::text("sentinel-2")],
             "an ownership-bound message must never be replayed after its deadline expires"
         );
@@ -8391,7 +8373,7 @@ mod rust_tests {
     #[rstest]
     #[tokio::test(start_paused = true)]
     async fn test_stalled_websocket_replay_reconnects_and_retries_buffer() {
-        let initial_messages = Arc::new(StdMutex::new(Vec::new()));
+        let initial_messages = Arc::new(Mutex::new(Vec::new()));
         let initial_recording_state = Arc::new(RecordingState {
             messages: initial_messages,
             recorded_notify: tokio::sync::Notify::new(),
@@ -8437,7 +8419,7 @@ mod rust_tests {
         tokio::time::advance(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS)).await;
         blocking_state.send_entered_notify.notified().await;
 
-        let recorded = Arc::new(StdMutex::new(Vec::new()));
+        let recorded = Arc::new(Mutex::new(Vec::new()));
         let recording_state = Arc::new(RecordingState {
             messages: Arc::clone(&recorded),
             recorded_notify: tokio::sync::Notify::new(),
@@ -8470,7 +8452,7 @@ mod rust_tests {
         tokio::time::advance(Duration::from_millis(CONNECTION_STATE_CHECK_INTERVAL_MS)).await;
         recording_state.recorded_notify.notified().await;
         assert_eq!(
-            recorded.lock().unwrap().as_slice(),
+            recorded.lock().as_slice(),
             &[Message::text("buffered-message")]
         );
 

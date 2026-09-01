@@ -111,11 +111,9 @@ impl Venue {
 
     /// # Errors
     ///
-    /// Returns an error if the venue code is unknown or lock on venue map fails.
+    /// Returns an error if the venue code is unknown.
     pub fn from_code(code: &str) -> anyhow::Result<Self> {
-        let map_guard = VENUE_MAP
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Error acquiring lock on `VENUE_MAP`: {e}"))?;
+        let map_guard = VENUE_MAP.lock();
         map_guard
             .get(code)
             .copied()

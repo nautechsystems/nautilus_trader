@@ -19,7 +19,7 @@ use std::{
     fmt::Debug,
     num::NonZeroU32,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering},
     },
     time::Duration,
@@ -52,6 +52,7 @@ use nautilus_network::{
         WebSocketClient, WebSocketConfig, channel_message_handler,
     },
 };
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -304,12 +305,7 @@ impl AxOrdersWebSocketClient {
     pub fn update_auth_token(&self, token: &str) -> AxOrdersWsResult<()> {
         let value = format!("Bearer {token}");
 
-        if let Some(headers) = self
-            .reconnect_headers
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .as_ref()
-        {
+        if let Some(headers) = self.reconnect_headers.lock().as_ref() {
             headers
                 .update("Authorization", &value)
                 .map_err(|e| AxOrdersWsClientError::Transport(e.to_string()))?;
@@ -496,10 +492,7 @@ impl AxOrdersWebSocketClient {
 
         self.connection_mode.store(client.connection_mode_atomic());
         let reconnect_handle = client.reconnect_handle();
-        *self
-            .reconnect_headers
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(client.reconnect_headers());
+        *self.reconnect_headers.lock() = Some(client.reconnect_headers());
 
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<AxOrdersWsMessage>();
         self.out_rx = Some(Arc::new(out_rx));
@@ -743,10 +736,7 @@ impl AxOrdersWebSocketClient {
             .task_handle
             .finish(Duration::from_secs(2), Duration::from_secs(2))
             .await;
-        *self
-            .reconnect_headers
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        *self.reconnect_headers.lock() = None;
 
         if let Some(control) = &self.socket_control {
             control.deregister();

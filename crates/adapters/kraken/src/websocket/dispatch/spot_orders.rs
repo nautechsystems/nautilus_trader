@@ -17,7 +17,7 @@
 
 use std::{
     sync::{
-        Arc, RwLock,
+        Arc,
         atomic::{AtomicU64, Ordering},
     },
     time::Duration,
@@ -25,7 +25,7 @@ use std::{
 
 use ahash::AHashMap;
 use dashmap::DashMap;
-use nautilus_core::{MUTEX_POISONED, UUID4, time::AtomicTime};
+use nautilus_core::{UUID4, time::AtomicTime};
 use nautilus_live::task::TaskSpawner;
 use nautilus_model::{
     events::{
@@ -35,6 +35,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, TraderId, VenueOrderId},
     types::{Price, Quantity},
 };
+use parking_lot::RwLock;
 use ustr::Ustr;
 
 use super::WsDispatchState;
@@ -266,7 +267,7 @@ impl OrderRequestState {
         }
 
         let state_for_timeout = Arc::downgrade(self);
-        let task_spawner = self.task_spawner.read().expect(MUTEX_POISONED).clone();
+        let task_spawner = self.task_spawner.read().clone();
         let cancel = task_spawner.cancellation_token();
         let timeout = self.timeout;
 
@@ -395,7 +396,7 @@ impl OrderRequestState {
     }
 
     pub(crate) fn reset_task_spawner(&self, task_spawner: TaskSpawner) {
-        *self.task_spawner.write().expect(MUTEX_POISONED) = task_spawner;
+        *self.task_spawner.write() = task_spawner;
     }
 
     /// Sends a best-effort `cancel_order` over the WebSocket after a Submit or

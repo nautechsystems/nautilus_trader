@@ -21,7 +21,7 @@
 
 use std::{
     sync::{
-        Arc, Mutex, MutexGuard, OnceLock, PoisonError,
+        Arc, OnceLock,
         atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
@@ -37,6 +37,7 @@ use nautilus_network::{
         TcpMessageHandler, WriterCommand,
     },
 };
+use parking_lot::{Mutex, MutexGuard};
 use tokio::sync::watch; // tokio-import-ok
 use tokio_tungstenite::tungstenite::stream::Mode;
 
@@ -408,7 +409,7 @@ impl BetfairStreamClient {
         let timeout_override = config.heartbeat_timeout_secs.is_some();
 
         let message_handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
-            *last_inbound_h.lock().expect("last inbound lock poisoned") = Instant::now();
+            *last_inbound_h.lock() = Instant::now();
             let Some(msg) = handler.decode(data) else {
                 return;
             };
@@ -709,9 +710,7 @@ impl BetfairStreamClient {
                 market_id_sink.load(Ordering::Acquire),
                 order_id_sink.load(Ordering::Acquire),
             );
-            *last_inbound_sink
-                .lock()
-                .expect("last inbound lock poisoned") = Instant::now();
+            *last_inbound_sink.lock() = Instant::now();
         };
         let state_sink = match state_sink {
             Some(sink) => sink.with_callback(lifecycle_callback),
@@ -772,7 +771,7 @@ impl BetfairStreamClient {
                             continue;
                         }
                         let timeout = Duration::from_millis(timeout_ms.load(Ordering::Acquire));
-                        if last.lock().expect("last inbound lock poisoned").elapsed() >= timeout {
+                        if last.lock().elapsed() >= timeout {
                             let _ = reconnect.request_reconnect();
                         }
                     }
@@ -1084,7 +1083,7 @@ impl Drop for BetfairStreamClient {
 }
 
 fn lock_stream_state(lock: &Mutex<()>) -> MutexGuard<'_, ()> {
-    lock.lock().unwrap_or_else(PoisonError::into_inner)
+    lock.lock()
 }
 
 /// Betfair race stream client for Total Performance Data (TPD).
@@ -2124,8 +2123,9 @@ mod tests {
         #[case] cricket: bool,
         #[case] subscription_op: &'static str,
     ) {
-        use std::{sync::Mutex, time::Duration};
+        use std::time::Duration;
 
+        use parking_lot::Mutex;
         use tokio::io::{AsyncBufReadExt, BufReader};
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -2176,7 +2176,7 @@ mod tests {
         let states = Arc::new(Mutex::new(Vec::new()));
         let states_sink = Arc::clone(&states);
         let state_sink = SocketStateSink::new(move |state| {
-            states_sink.lock().unwrap().push(state);
+            states_sink.lock().push(state);
         });
         let credential = BetfairCredential::new(
             "testuser".to_string(),
@@ -2227,7 +2227,7 @@ mod tests {
             .unwrap()
             .unwrap();
         tokio::time::timeout(Duration::from_secs(5), async {
-            while states.lock().unwrap().len() < 3 {
+            while states.lock().len() < 3 {
                 tokio::task::yield_now().await;
             }
         })
@@ -2236,7 +2236,7 @@ mod tests {
         client.close().await;
 
         assert_eq!(
-            *states.lock().unwrap(),
+            *states.lock(),
             vec![
                 SocketState::Connected,
                 SocketState::Disconnected,

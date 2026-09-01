@@ -24,7 +24,7 @@ use std::{
     collections::{HashMap, HashSet, VecDeque},
     net::SocketAddr,
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::Duration,
 };
 
@@ -75,6 +75,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::retry::RetryConfig;
+use parking_lot::Mutex;
 use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
@@ -130,7 +131,6 @@ impl TestState {
     fn enqueue(&self, path: &str, response: Value) {
         self.inner
             .lock()
-            .unwrap()
             .queues
             .entry(path.to_string())
             .or_default()
@@ -138,7 +138,7 @@ impl TestState {
     }
 
     fn next_response(&self, path: &str, raw_query: String) -> Value {
-        let mut state = self.inner.lock().unwrap();
+        let mut state = self.inner.lock();
         state.requests.push(RequestRecord {
             path: path.to_string(),
             raw_query,
@@ -152,7 +152,7 @@ impl TestState {
     }
 
     fn next_response_with_body(&self, path: &str, body: Value) -> Value {
-        let mut state = self.inner.lock().unwrap();
+        let mut state = self.inner.lock();
         state.requests.push(RequestRecord {
             path: path.to_string(),
             raw_query: String::new(),
@@ -166,23 +166,19 @@ impl TestState {
     }
 
     fn requests(&self) -> Vec<RequestRecord> {
-        self.inner.lock().unwrap().requests.clone()
+        self.inner.lock().requests.clone()
     }
 
     fn mark_failing(&self, path: &str) {
-        self.inner
-            .lock()
-            .unwrap()
-            .fail_paths
-            .insert(path.to_string());
+        self.inner.lock().fail_paths.insert(path.to_string());
     }
 
     fn is_failing(&self, path: &str) -> bool {
-        self.inner.lock().unwrap().fail_paths.contains(path)
+        self.inner.lock().fail_paths.contains(path)
     }
 
     fn record_failure(&self, path: &str, raw_query: String, body: Option<Value>) {
-        self.inner.lock().unwrap().requests.push(RequestRecord {
+        self.inner.lock().requests.push(RequestRecord {
             path: path.to_string(),
             raw_query,
             body,
@@ -192,7 +188,6 @@ impl TestState {
     fn requests_for(&self, path: &str) -> Vec<RequestRecord> {
         self.inner
             .lock()
-            .unwrap()
             .requests
             .iter()
             .filter(|r| r.path == path)
@@ -246,7 +241,6 @@ async fn handle_products(State(state): State<TestState>) -> axum::response::Resp
     let inner = state.inner.clone();
     let have_queue = inner
         .lock()
-        .unwrap()
         .queues
         .get("/market/products")
         .is_some_and(|q| !q.is_empty());

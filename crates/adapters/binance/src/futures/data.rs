@@ -18,7 +18,7 @@
 use std::{
     str::FromStr,
     sync::{
-        Arc, RwLock,
+        Arc,
         atomic::{AtomicBool, AtomicU32, Ordering},
     },
     time::Duration,
@@ -46,7 +46,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, MUTEX_POISONED, Params,
+    AtomicMap, Params,
     datetime::datetime_to_unix_nanos,
     nanos::UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
@@ -65,6 +65,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
 };
+use parking_lot::RwLock;
 use rust_decimal::Decimal;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
@@ -879,7 +880,7 @@ impl BinanceFuturesDataClient {
                 log::info!("WebSocket reconnected, rebuilding order book snapshots");
 
                 let epoch = {
-                    let mut guard = book_epoch.write().expect(MUTEX_POISONED);
+                    let mut guard = book_epoch.write();
                     *guard = guard.wrapping_add(1);
                     *guard
                 };
@@ -2018,7 +2019,7 @@ impl DataClient for BinanceFuturesDataClient {
 
         // Bump epoch to invalidate any in-flight snapshot from a prior subscription
         let epoch = {
-            let mut guard = self.book_epoch.write().expect(MUTEX_POISONED);
+            let mut guard = self.book_epoch.write();
             *guard = guard.wrapping_add(1);
             *guard
         };

@@ -19,7 +19,7 @@ use std::{
     num::NonZeroUsize,
     str::FromStr,
     sync::{
-        Arc, Mutex, Weak,
+        Arc, Weak,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -50,7 +50,7 @@ use nautilus_common::{
     providers::InstrumentProvider,
 };
 use nautilus_core::{
-    AtomicMap, AtomicSet, MUTEX_POISONED, Params, UnixNanos,
+    AtomicMap, AtomicSet, Params, UnixNanos,
     datetime::{NANOSECONDS_IN_SECOND, datetime_to_unix_nanos},
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -65,6 +65,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
 };
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -224,7 +225,7 @@ impl DeriveDataClient {
     /// and aborted in-flight subscribe tasks can leak entries staged before
     /// spawn (they never reach their on-error rollback branch).
     fn clear_subscription_state(&self) {
-        let _guard = self.subscription_lock.lock().expect(MUTEX_POISONED);
+        let _guard = self.subscription_lock.lock();
         self.channel_subscriptions.clear();
         self.active_book_delta_channels.store(AHashMap::new());
         self.active_book_depth10_channels.store(AHashMap::new());
@@ -235,7 +236,7 @@ impl DeriveDataClient {
         self.active_index_subs.store(AHashSet::new());
         self.active_funding_subs.store(AHashSet::new());
         self.active_greeks_subs.store(AHashSet::new());
-        self.quote_cache.lock().expect(MUTEX_POISONED).clear();
+        self.quote_cache.lock().clear();
     }
 
     async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
@@ -334,8 +335,8 @@ impl DeriveDataClient {
                 }
             },
             DeriveWsMessage::Reconnected => {
-                let _guard = ctx.subscription_lock.lock().expect(MUTEX_POISONED);
-                ctx.quote_cache.lock().expect(MUTEX_POISONED).clear();
+                let _guard = ctx.subscription_lock.lock();
+                ctx.quote_cache.lock().clear();
                 log::info!("Derive WebSocket reconnected");
             }
             DeriveWsMessage::SessionRecoveryFailed(reason) => {
@@ -348,7 +349,7 @@ impl DeriveDataClient {
     fn handle_public_ws_data(data: DerivePublicWsData, ctx: &WsMessageContext) {
         // Lifecycle mutation takes this lock before QuoteCache, so a feed
         // generation cannot change during cache mutation.
-        let _guard = ctx.subscription_lock.lock().expect(MUTEX_POISONED);
+        let _guard = ctx.subscription_lock.lock();
 
         match data {
             DerivePublicWsData::Orderbook(msg) => {
@@ -442,7 +443,7 @@ impl DeriveDataClient {
                 let price_precision = instrument.price_precision();
 
                 if ctx.active_quote_subs.contains(&instrument_id) {
-                    let mut quote_cache = ctx.quote_cache.lock().expect(MUTEX_POISONED);
+                    let mut quote_cache = ctx.quote_cache.lock();
 
                     match process_ticker_quote(
                         &msg,
@@ -1845,53 +1846,42 @@ async fn run_channel_unsubscribe(
 
 impl SubscriptionLifecycle {
     fn is_active(&self, owner: ChannelOwner) -> bool {
-        let _guard = self.lock.lock().expect(MUTEX_POISONED);
-        self.registry
-            .state
-            .lock()
-            .expect(MUTEX_POISONED)
-            .owners
-            .contains_key(&owner)
+        let _guard = self.lock.lock();
+        self.registry.state.lock().owners.contains_key(&owner)
     }
 
     fn activate(&self, owner: ChannelOwner, channel: Option<&str>) -> Option<u64> {
-        let _guard = self.lock.lock().expect(MUTEX_POISONED);
-        let mut state = self.registry.state.lock().expect(MUTEX_POISONED);
+        let _guard = self.lock.lock();
+        let mut state = self.registry.state.lock();
         let generation = state.activate(owner, channel)?;
         self.dispatch.activate(owner, channel);
         Some(generation)
     }
 
     fn attach_channel(&self, owner: ChannelOwner, generation: u64, channel: String) -> bool {
-        let _guard = self.lock.lock().expect(MUTEX_POISONED);
+        let _guard = self.lock.lock();
         self.registry
             .state
             .lock()
-            .expect(MUTEX_POISONED)
             .attach_channel(owner, generation, channel)
     }
 
     fn is_current(&self, owner: ChannelOwner, generation: u64) -> bool {
-        let _guard = self.lock.lock().expect(MUTEX_POISONED);
-        self.registry
-            .state
-            .lock()
-            .expect(MUTEX_POISONED)
-            .is_current(owner, generation)
+        let _guard = self.lock.lock();
+        self.registry.state.lock().is_current(owner, generation)
     }
 
     fn is_current_channel(&self, owner: ChannelOwner, generation: u64, channel: &str) -> bool {
-        let _guard = self.lock.lock().expect(MUTEX_POISONED);
+        let _guard = self.lock.lock();
         self.registry
             .state
             .lock()
-            .expect(MUTEX_POISONED)
             .is_current_channel(owner, generation, channel)
     }
 
     fn rollback(&self, owner: ChannelOwner, generation: u64) -> bool {
-        let _guard = self.lock.lock().expect(MUTEX_POISONED);
-        let mut state = self.registry.state.lock().expect(MUTEX_POISONED);
+        let _guard = self.lock.lock();
+        let mut state = self.registry.state.lock();
         let Some(removed) = state.remove_if_generation(owner, generation) else {
             return false;
         };
@@ -1900,20 +1890,16 @@ impl SubscriptionLifecycle {
     }
 
     fn remove(&self, owner: ChannelOwner) -> Option<RemovedSubscription> {
-        let _guard = self.lock.lock().expect(MUTEX_POISONED);
-        let mut state = self.registry.state.lock().expect(MUTEX_POISONED);
+        let _guard = self.lock.lock();
+        let mut state = self.registry.state.lock();
         let removed = state.remove(owner)?;
         self.dispatch.deactivate(owner, removed.channel_empty);
         Some(removed)
     }
 
     fn has_owners(&self, channel: &str) -> bool {
-        let _guard = self.lock.lock().expect(MUTEX_POISONED);
-        self.registry
-            .state
-            .lock()
-            .expect(MUTEX_POISONED)
-            .has_owners(channel)
+        let _guard = self.lock.lock();
+        self.registry.state.lock().has_owners(channel)
     }
 }
 
@@ -1962,10 +1948,7 @@ impl SubscriptionDispatchState {
             } => {
                 self.ticker_subscriptions(feed).remove(&instrument_id);
                 if feed == TickerFeed::Quote {
-                    self.quote_cache
-                        .lock()
-                        .expect(MUTEX_POISONED)
-                        .remove(&instrument_id);
+                    self.quote_cache.lock().remove(&instrument_id);
                 }
 
                 if channel_empty {
@@ -2007,7 +1990,7 @@ impl ChannelSubscriptionRegistry {
     }
 
     fn clear(&self) {
-        let mut state = self.state.lock().expect(MUTEX_POISONED);
+        let mut state = self.state.lock();
         let next_generation = state.next_generation;
         *state = ChannelSubscriptionState {
             next_generation,
@@ -2692,10 +2675,7 @@ mod tests {
             UnixNanos::from(1),
             UnixNanos::from(1),
         );
-        ctx.quote_cache
-            .lock()
-            .expect(MUTEX_POISONED)
-            .insert(instrument_id, cached_quote);
+        ctx.quote_cache.lock().insert(instrument_id, cached_quote);
         install_ticker(&ctx, instrument_id, channel);
         ctx.active_quote_subs.insert(instrument_id);
         let payload = subscription_payload(channel, &spot_ticker_slim_json());
@@ -2729,10 +2709,7 @@ mod tests {
             UnixNanos::from(1),
             UnixNanos::from(1),
         );
-        ctx.quote_cache
-            .lock()
-            .expect(MUTEX_POISONED)
-            .insert(instrument_id, cached_quote);
+        ctx.quote_cache.lock().insert(instrument_id, cached_quote);
         install_ticker(&ctx, instrument_id, channel);
         ctx.active_quote_subs.insert(instrument_id);
 
@@ -2997,20 +2974,10 @@ mod tests {
     fn test_subscription_registry_clear_does_not_reuse_generation() {
         let registry = ChannelSubscriptionRegistry::default();
         let owner = ChannelOwner::Trades(InstrumentId::from("ETH-20260627-3500-C.DERIVE"));
-        let first_generation = registry
-            .state
-            .lock()
-            .expect(MUTEX_POISONED)
-            .activate(owner, None)
-            .unwrap();
+        let first_generation = registry.state.lock().activate(owner, None).unwrap();
 
         registry.clear();
-        let second_generation = registry
-            .state
-            .lock()
-            .expect(MUTEX_POISONED)
-            .activate(owner, None)
-            .unwrap();
+        let second_generation = registry.state.lock().activate(owner, None).unwrap();
 
         assert!(second_generation > first_generation);
     }
@@ -3146,7 +3113,7 @@ mod tests {
         client
             .subscription_lifecycle()
             .activate(owner, Some("ticker_slim.ETH-PERP.1000"));
-        client.quote_cache.lock().expect(MUTEX_POISONED).insert(
+        client.quote_cache.lock().insert(
             instrument_id,
             QuoteTick::new(
                 instrument_id,
@@ -3170,13 +3137,7 @@ mod tests {
 
         client.unsubscribe_quotes(&command).unwrap();
 
-        assert!(
-            !client
-                .quote_cache
-                .lock()
-                .expect(MUTEX_POISONED)
-                .contains(&instrument_id)
-        );
+        assert!(!client.quote_cache.lock().contains(&instrument_id));
     }
 
     #[rstest]
@@ -3467,7 +3428,6 @@ mod tests {
             .channel_subscriptions
             .state
             .lock()
-            .expect(MUTEX_POISONED)
             .activate(ChannelOwner::Trades(instrument_id), Some("trades.perp.ETH"));
         client.channel_subscriptions.transition("trades.perp.ETH");
         client.active_mark_subs.insert(instrument_id);
@@ -3491,15 +3451,7 @@ mod tests {
         assert!(!client.active_ticker_channels.contains_key(&instrument_id));
         assert!(!client.active_quote_subs.contains(&instrument_id));
         assert!(!client.active_trade_subs.contains(&instrument_id));
-        assert!(
-            client
-                .channel_subscriptions
-                .state
-                .lock()
-                .expect(MUTEX_POISONED)
-                .owners
-                .is_empty()
-        );
+        assert!(client.channel_subscriptions.state.lock().owners.is_empty());
 
         // Sync reset cannot await canceled tasks, so their channel locks stay
         // stable until the next async teardown joins them.
@@ -3545,7 +3497,6 @@ mod tests {
             .channel_subscriptions
             .state
             .lock()
-            .expect(MUTEX_POISONED)
             .activate(ChannelOwner::Trades(instrument_id), Some("trades.perp.ETH"));
         client.channel_subscriptions.transition("trades.perp.ETH");
         client.active_mark_subs.insert(instrument_id);
@@ -3583,15 +3534,7 @@ mod tests {
         assert!(!client.active_ticker_channels.contains_key(&instrument_id));
         assert!(!client.active_quote_subs.contains(&instrument_id));
         assert!(!client.active_trade_subs.contains(&instrument_id));
-        assert!(
-            client
-                .channel_subscriptions
-                .state
-                .lock()
-                .expect(MUTEX_POISONED)
-                .owners
-                .is_empty()
-        );
+        assert!(client.channel_subscriptions.state.lock().owners.is_empty());
         assert!(client.channel_subscriptions.transitions.is_empty());
         assert!(!client.active_mark_subs.contains(&instrument_id));
         assert!(!client.active_index_subs.contains(&instrument_id));

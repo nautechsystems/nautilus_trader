@@ -194,7 +194,10 @@ When suppressing `missing_panics_doc` or `missing_errors_doc`, include a reason 
 the lint does not apply:
 
 ```rust
-#[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "result type is retained for API compatibility but no error is returned",
+)]
 ```
 
 ## Type qualification

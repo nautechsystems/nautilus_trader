@@ -19,7 +19,7 @@ use std::{
     cell::RefCell,
     fmt::{Display, Write as _},
     sync::{
-        Mutex, OnceLock, PoisonError,
+        OnceLock,
         atomic::{AtomicBool, Ordering},
         mpsc::SendError,
     },
@@ -38,6 +38,7 @@ use nautilus_core::{
     time::{get_atomic_clock_realtime, get_atomic_clock_static},
 };
 use nautilus_model::identifiers::TraderId;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize, Serializer, ser::SerializeMap};
 use smallvec::SmallVec;
 use ustr::Ustr;
@@ -137,9 +138,7 @@ impl ShutdownOnError {
     }
 
     fn arm(&self, enabled: bool) {
-        if let Ok(mut pending) = self.pending.lock() {
-            pending.take();
-        }
+        self.pending.lock().take();
         self.triggered.store(false, Ordering::Release);
         self.armed.store(enabled, Ordering::Release);
     }
@@ -148,9 +147,7 @@ impl ShutdownOnError {
         self.armed.store(false, Ordering::Release);
         self.triggered.store(false, Ordering::Release);
 
-        if let Ok(mut pending) = self.pending.lock() {
-            pending.take();
-        }
+        self.pending.lock().take();
     }
 
     fn maybe_record_trigger<F>(
@@ -166,9 +163,7 @@ impl ShutdownOnError {
             return;
         }
 
-        let Ok(mut pending) = self.pending.lock() else {
-            return;
-        };
+        let mut pending = self.pending.lock();
 
         if self
             .triggered
@@ -190,10 +185,7 @@ impl ShutdownOnError {
             return None;
         }
 
-        self.pending
-            .lock()
-            .ok()
-            .and_then(|mut pending| pending.take())
+        self.pending.lock().take()
     }
 
     fn try_drain_trigger<F>(&self, drain: F) -> bool
@@ -204,9 +196,7 @@ impl ShutdownOnError {
             return false;
         }
 
-        let Ok(mut pending) = self.pending.lock() else {
-            return false;
-        };
+        let mut pending = self.pending.lock();
 
         let Some(trigger) = pending.as_ref() else {
             return false;
@@ -923,9 +913,7 @@ impl Logger {
         config: LoggerConfig,
         file_config: FileWriterConfig,
     ) -> anyhow::Result<LogGuard> {
-        let mut lifecycle = LOGGER_LIFECYCLE
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let mut lifecycle = LOGGER_LIFECYCLE.lock();
 
         match *lifecycle {
             LoggerLifecycle::Running => {
@@ -980,11 +968,7 @@ impl Logger {
         }
 
         #[cfg(all(test, not(all(feature = "simulation", madsim))))]
-        if let Some(hook) = INIT_PUBLISH_HOOK
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
-        {
+        if let Some(hook) = INIT_PUBLISH_HOOK.lock().take() {
             let _ = hook.reached.send(());
             let _ = hook.resume.recv();
         }
@@ -1018,7 +1002,7 @@ impl Logger {
         #[cfg(not(all(feature = "simulation", madsim)))]
         {
             // Store the handle globally
-            let mut handle_guard = LOGGER_HANDLE.lock().unwrap_or_else(PoisonError::into_inner);
+            let mut handle_guard = LOGGER_HANDLE.lock();
             debug_assert!(
                 handle_guard.is_none(),
                 "LOGGER_HANDLE already set - re-initialization not supported"
@@ -1264,9 +1248,7 @@ fn should_filter_log_inner(
 ///
 /// Safe to call multiple times. Thread join is skipped if called from the logging thread.
 pub(crate) fn shutdown_graceful() {
-    let mut lifecycle = LOGGER_LIFECYCLE
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
+    let mut lifecycle = LOGGER_LIFECYCLE.lock();
 
     if *lifecycle == LoggerLifecycle::Terminated {
         return;
@@ -1282,8 +1264,7 @@ pub(crate) fn shutdown_graceful() {
         let _ = tx.send(LogEvent::Close);
     }
 
-    if let Ok(mut handle_guard) = LOGGER_HANDLE.lock()
-        && let Some(handle) = handle_guard.take()
+    if let Some(handle) = LOGGER_HANDLE.lock().take()
         && handle.thread().id() != std::thread::current().id()
     {
         let _ = handle.join();
@@ -1295,10 +1276,7 @@ pub(crate) fn shutdown_graceful() {
 
 /// Returns whether the process-global logger is running.
 pub(crate) fn is_running() -> bool {
-    *LOGGER_LIFECYCLE
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        == LoggerLifecycle::Running
+    *LOGGER_LIFECYCLE.lock() == LoggerLifecycle::Running
 }
 
 /// Flushes and syncs file logs to disk through the logging thread.
@@ -1316,9 +1294,7 @@ pub fn sync_to_disk() -> anyhow::Result<()> {
 
     #[cfg(not(all(feature = "simulation", madsim)))]
     {
-        let lifecycle = LOGGER_LIFECYCLE
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let lifecycle = LOGGER_LIFECYCLE.lock();
 
         if *lifecycle != LoggerLifecycle::Running {
             return Ok(());
@@ -1411,9 +1387,7 @@ impl LogGuard {
     /// count would exceed 255.
     #[must_use]
     pub fn new() -> Option<Self> {
-        let lifecycle = LOGGER_LIFECYCLE
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let lifecycle = LOGGER_LIFECYCLE.lock();
 
         Self::new_from_lifecycle(&lifecycle)
     }
@@ -1429,11 +1403,8 @@ impl LogGuard {
     #[cfg(all(test, not(all(feature = "simulation", madsim))))]
     fn try_new_for_test() -> TestGuardAcquire {
         match LOGGER_LIFECYCLE.try_lock() {
-            Ok(lifecycle) => TestGuardAcquire::Acquired(Self::new_from_lifecycle(&lifecycle)),
-            Err(std::sync::TryLockError::WouldBlock) => TestGuardAcquire::LifecycleBusy,
-            Err(std::sync::TryLockError::Poisoned(poisoned)) => {
-                TestGuardAcquire::Acquired(Self::new_from_lifecycle(&poisoned.into_inner()))
-            }
+            Some(lifecycle) => TestGuardAcquire::Acquired(Self::new_from_lifecycle(&lifecycle)),
+            None => TestGuardAcquire::LifecycleBusy,
         }
     }
 
@@ -1465,9 +1436,7 @@ impl Drop for LogGuard {
     /// Sends `Flush` if other guards remain active. The last guard synchronously flushes and syncs
     /// file output while leaving the process-global logging thread running.
     fn drop(&mut self) {
-        let lifecycle = LOGGER_LIFECYCLE
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let lifecycle = LOGGER_LIFECYCLE.lock();
         let previous_count = LOGGING_GUARDS_ACTIVE
             .try_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
                 assert!(count != 0, "LogGuard reference count underflow");
@@ -2871,9 +2840,7 @@ mod tests {
 
             let (publish_reached_tx, publish_reached_rx) = std::sync::mpsc::channel();
             let (publish_resume_tx, publish_resume_rx) = std::sync::mpsc::channel();
-            *INIT_PUBLISH_HOOK
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner) = Some(InitPublishHook {
+            *INIT_PUBLISH_HOOK.lock() = Some(InitPublishHook {
                 reached: publish_reached_tx,
                 resume: publish_resume_rx,
             });
@@ -3065,10 +3032,7 @@ mod tests {
                 "bypass must be forced under cfg(madsim) even when config disables it"
             );
             assert!(
-                LOGGER_HANDLE
-                    .lock()
-                    .expect("LOGGER_HANDLE mutex should not be poisoned")
-                    .is_none(),
+                LOGGER_HANDLE.lock().is_none(),
                 "writer thread must not be spawned under cfg(madsim)"
             );
         }

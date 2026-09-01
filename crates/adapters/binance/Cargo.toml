@@ -79,6 +79,7 @@ ed25519-dalek = { workspace = true }
 futures-util = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
+parking_lot = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

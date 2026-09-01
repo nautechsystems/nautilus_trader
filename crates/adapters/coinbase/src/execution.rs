@@ -19,7 +19,7 @@ use std::{
     collections::VecDeque,
     future::Future,
     str::FromStr,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -37,7 +37,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED, Params, UnixNanos,
+    Params, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -57,6 +57,7 @@ use nautilus_model::{
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
 use nautilus_network::retry::RetryConfig;
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
@@ -1082,7 +1083,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
         // is `post_only`, so without this the engine reconciler would clear
         // the local price and synthesized fills would lack `LiquiditySide`.
         {
-            let mut map = self.order_contexts.lock().expect(MUTEX_POISONED);
+            let mut map = self.order_contexts.lock();
             map.insert(
                 client_order_id.to_string(),
                 OrderContext {
@@ -1161,10 +1162,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
                         // Order never made it to the venue: drop the cached
                         // metadata so the map does not grow unbounded with
                         // dead entries.
-                        order_contexts
-                            .lock()
-                            .expect(MUTEX_POISONED)
-                            .remove(client_order_id.as_str());
+                        order_contexts.lock().remove(client_order_id.as_str());
                         let ts_event = clock.get_time_ns();
                         emitter.emit_order_rejected_event(
                             strategy_id,
@@ -1261,7 +1259,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
                         // these fields, so a stale cache would let the
                         // reconciler revert the local order to the pre-edit
                         // values).
-                        let mut map = order_contexts.lock().expect(MUTEX_POISONED);
+                        let mut map = order_contexts.lock();
                         if let Some(meta) = map.get_mut(client_order_id.as_str()) {
                             if price.is_some() {
                                 meta.price = price;
@@ -1567,10 +1565,7 @@ fn handle_coinbase_submit_failure(
     ts_event: UnixNanos,
 ) {
     if is_coinbase_local_submit_failure(err) {
-        order_contexts
-            .lock()
-            .expect(MUTEX_POISONED)
-            .remove(client_order_id.as_str());
+        order_contexts.lock().remove(client_order_id.as_str());
         emitter.emit_order_rejected_event(
             strategy_id,
             instrument_id,
@@ -1580,10 +1575,7 @@ fn handle_coinbase_submit_failure(
             false,
         );
     } else if is_coinbase_explicit_submit_rejection(err) {
-        order_contexts
-            .lock()
-            .expect(MUTEX_POISONED)
-            .remove(client_order_id.as_str());
+        order_contexts.lock().remove(client_order_id.as_str());
         emitter.emit_order_rejected_event(
             strategy_id,
             instrument_id,
@@ -1597,10 +1589,7 @@ fn handle_coinbase_submit_failure(
             "Ambiguous submit failure for {client_order_id}, awaiting reconciliation: {err}"
         );
     } else {
-        order_contexts
-            .lock()
-            .expect(MUTEX_POISONED)
-            .remove(client_order_id.as_str());
+        order_contexts.lock().remove(client_order_id.as_str());
         log::warn!(
             "Submit command failed without venue-declared outcome for {client_order_id}: {err}"
         );
@@ -1701,15 +1690,9 @@ async fn handle_user_order_update(
     // `process_user_order_update`.
     if is_terminal {
         if !client_order_id.is_empty() {
-            order_contexts
-                .lock()
-                .expect(MUTEX_POISONED)
-                .remove(&client_order_id);
+            order_contexts.lock().remove(&client_order_id);
         }
-        external_order_contexts
-            .lock()
-            .expect(MUTEX_POISONED)
-            .remove(&venue_order_id);
+        external_order_contexts.lock().remove(&venue_order_id);
     }
 }
 
@@ -1834,7 +1817,7 @@ fn process_user_order_update(
     // Snapshot previous state under lock; update immediately to avoid races
     // between concurrent handler tasks for the same order.
     let (delta_qty, delta_fees, last_fill_price_decimal, restored_quantity) = {
-        let mut state = cumulative_state.lock().expect(MUTEX_POISONED);
+        let mut state = cumulative_state.lock();
         let entry = state.entry_or_default(&order_id);
         let prev_qty = entry
             .filled_qty
@@ -1943,7 +1926,7 @@ fn process_user_order_update(
                 let trade_id_str = trade_id.as_str().to_string();
 
                 let is_new = {
-                    let mut dedup = fill_dedup.lock().expect(MUTEX_POISONED);
+                    let mut dedup = fill_dedup.lock();
                     dedup.insert((update.order_id.clone(), trade_id_str))
                 };
 
@@ -2056,17 +2039,13 @@ async fn resolve_order_context(
     account_id: AccountId,
 ) -> Option<OrderContext> {
     if !update.client_order_id.is_empty() {
-        let map = order_contexts.lock().expect(MUTEX_POISONED);
+        let map = order_contexts.lock();
         if let Some(meta) = map.get(&update.client_order_id) {
             return Some(meta.clone());
         }
     }
 
-    if let Some(meta) = external_order_contexts
-        .lock()
-        .expect(MUTEX_POISONED)
-        .get(&update.order_id)
-    {
+    if let Some(meta) = external_order_contexts.lock().get(&update.order_id) {
         return Some(meta.clone());
     }
 
@@ -2101,7 +2080,6 @@ async fn resolve_order_context(
             };
             external_order_contexts
                 .lock()
-                .expect(MUTEX_POISONED)
                 .insert(update.order_id.clone(), meta.clone());
             Some(meta)
         }
@@ -2211,7 +2189,6 @@ mod tests {
         };
         order_contexts
             .lock()
-            .unwrap()
             .insert("client-1".to_string(), context.clone());
         let err = anyhow::Error::new(CoinbaseHttpError::rate_limit(Some(1_000)))
             .context("failed to submit order");
@@ -2228,7 +2205,7 @@ mod tests {
 
         assert!(rx.try_recv().is_err());
         {
-            let map = order_contexts.lock().unwrap();
+            let map = order_contexts.lock();
             let retained = map.get("client-1").expect("submit context retained");
             assert_eq!(retained.price, context.price);
             assert_eq!(retained.trigger_price, context.trigger_price);
@@ -2251,7 +2228,7 @@ mod tests {
         )
         .await;
 
-        assert!(order_contexts.lock().unwrap().is_empty());
+        assert!(order_contexts.lock().is_empty());
         let (orders, fills) = drain_all_reports(&mut rx);
         assert_eq!(orders.len(), 1);
         assert_eq!(
@@ -2317,7 +2294,7 @@ mod tests {
             UnixNanos::from(42_u64),
         );
 
-        assert!(order_contexts.lock().unwrap().is_empty());
+        assert!(order_contexts.lock().is_empty());
         let event = rx.try_recv().expect("order rejection emitted");
         let ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) = event else {
             panic!("expected OrderRejected event, was {event:?}");
@@ -2737,7 +2714,7 @@ mod tests {
         // the same cumulative=0.5 snapshot. The fill_dedup must drop the
         // synthesized fill because the trade_id matches the prior emission.
         {
-            let mut s = state.lock().unwrap();
+            let mut s = state.lock();
             s.clear();
         }
         process_user_order_update(make_carrier(update), None, &emitter, &dedup, &state, None);
@@ -2772,7 +2749,7 @@ mod tests {
         // Drain emitted events.
         let _ = drain_fill_reports(&mut rx);
 
-        let s = state.lock().unwrap();
+        let s = state.lock();
         assert!(
             s.get("venue-1").is_none(),
             "terminal status should remove cumulative state entry"
@@ -2827,7 +2804,7 @@ mod tests {
 
         // The snapshot must seed cumulative_state so that the next live update
         // computes a correct delta.
-        let s = state.lock().unwrap();
+        let s = state.lock();
         let entry = s.get("venue-1").expect("snapshot should seed state");
         assert_eq!(entry.filled_qty.unwrap(), Quantity::from("0.50000000"));
     }

@@ -18,7 +18,7 @@
 use std::{
     future::Future,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -48,7 +48,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, MUTEX_POISONED,
+    AtomicMap,
     datetime::datetime_to_unix_nanos,
     nanos::UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
@@ -64,6 +64,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     types::Price,
 };
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -413,10 +414,7 @@ impl DataClient for AxDataClient {
 
         self.abort_all_tasks();
         self.is_connected.store(false, Ordering::Release);
-        self.funding_rate_cache
-            .lock()
-            .expect(MUTEX_POISONED)
-            .clear();
+        self.funding_rate_cache.lock().clear();
         Ok(())
     }
 
@@ -565,10 +563,7 @@ impl DataClient for AxDataClient {
         self.abort_all_tasks();
         let ws_result = self.ws_client.close().await;
         let tasks_result = self.finish_all_tasks().await;
-        self.funding_rate_cache
-            .lock()
-            .expect(MUTEX_POISONED)
-            .clear();
+        self.funding_rate_cache.lock().clear();
 
         self.is_connected.store(false, Ordering::Release);
         log::info!("Disconnected {}", self.client_id);
@@ -705,7 +700,7 @@ impl DataClient for AxDataClient {
                                     );
                                 } else if let Some(update) = funding_rates.last() {
                                     // Only emit if rate changed
-                                    let should_emit = cache.lock().expect(MUTEX_POISONED)
+                                    let should_emit = cache.lock()
                                         .get(&instrument_id) != Some(update);
 
                                     if should_emit {
@@ -714,7 +709,7 @@ impl DataClient for AxDataClient {
                                             update.rate,
                                         );
                                         let update = *update;
-                                        cache.lock().expect(MUTEX_POISONED)
+                                        cache.lock()
                                             .insert(instrument_id, update);
 
                                         if let Err(e) = sender.send(
@@ -828,10 +823,7 @@ impl DataClient for AxDataClient {
         if let Some(cancellation) = self.funding_rate_cancellations.remove(&instrument_id) {
             log::debug!("Unsubscribing from funding rates for {instrument_id}");
             cancellation.cancel();
-            self.funding_rate_cache
-                .lock()
-                .expect(MUTEX_POISONED)
-                .remove(&instrument_id);
+            self.funding_rate_cache.lock().remove(&instrument_id);
         } else {
             log::debug!("Not subscribed to funding rates for {instrument_id}");
         }
@@ -1159,10 +1151,8 @@ fn drain_status_invalidations(
     invalidations: &Arc<Mutex<AHashSet<Ustr>>>,
     instrument_states: &mut AHashMap<Ustr, AxInstrumentState>,
 ) {
-    if let Ok(mut set) = invalidations.lock() {
-        for symbol in set.drain() {
-            instrument_states.remove(&symbol);
-        }
+    for symbol in invalidations.lock().drain() {
+        instrument_states.remove(&symbol);
     }
 }
 
@@ -1423,7 +1413,7 @@ fn handle_md_message(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     use ahash::{AHashMap, AHashSet};
     use nautilus_model::{
@@ -1433,6 +1423,7 @@ mod tests {
         instruments::PerpetualContract,
         types::{Currency, Price, Quantity},
     };
+    use parking_lot::Mutex;
     use rstest::rstest;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
@@ -1451,12 +1442,12 @@ mod tests {
         let sym = Ustr::from("EURUSD-PERP");
 
         states.insert(sym, AxInstrumentState::Open);
-        invalidations.lock().unwrap().insert(sym);
+        invalidations.lock().insert(sym);
 
         drain_status_invalidations(&invalidations, &mut states);
 
         assert!(!states.contains_key(&sym));
-        assert!(invalidations.lock().unwrap().is_empty());
+        assert!(invalidations.lock().is_empty());
     }
 
     #[rstest]

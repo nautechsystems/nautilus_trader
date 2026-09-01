@@ -31,7 +31,7 @@ mod orders;
 mod reports;
 mod responses;
 
-use std::sync::{Arc, Mutex, atomic::AtomicBool};
+use std::sync::{Arc, atomic::AtomicBool};
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -62,6 +62,7 @@ use nautilus_model::{
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
 use nautilus_network::retry::RetryConfig;
+use parking_lot::Mutex;
 pub(crate) use responses::is_post_only_crossing;
 use rust_decimal::Decimal;
 use ustr::Ustr;

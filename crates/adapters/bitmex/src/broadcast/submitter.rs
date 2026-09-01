@@ -1677,7 +1677,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_client_order_id_suffix_for_multiple_clients() {
-        use std::sync::{Arc, Mutex};
+        use std::sync::Arc;
+
+        use parking_lot::Mutex;
 
         #[derive(Clone)]
         struct CaptureExecutor {
@@ -1718,7 +1720,6 @@ mod tests {
                 // Capture the client_order_id
                 self.captured_ids
                     .lock()
-                    .unwrap()
                     .push(client_order_id.as_str().to_string());
                 let report = self.report.clone();
                 let barrier = Arc::clone(&self.barrier);
@@ -1795,14 +1796,16 @@ mod tests {
         assert!(result.is_ok());
 
         // All transports receive the same client_order_id (no suffixing)
-        let ids = captured_ids.lock().unwrap();
+        let ids = captured_ids.lock();
         assert_eq!(ids.len(), 3);
         assert!(ids.iter().all(|id| id == "O-123")); // All clients get the same ID
     }
 
     #[tokio::test]
     async fn test_client_order_id_suffix_with_partial_failure() {
-        use std::sync::{Arc, Mutex};
+        use std::sync::Arc;
+
+        use parking_lot::Mutex;
 
         #[derive(Clone)]
         struct CaptureAndFailExecutor {
@@ -1843,7 +1846,6 @@ mod tests {
                 // Capture the client_order_id
                 self.captured_ids
                     .lock()
-                    .unwrap()
                     .push(client_order_id.as_str().to_string());
                 let barrier = Arc::clone(&self.barrier);
                 let should_succeed = self.should_succeed;
@@ -1916,7 +1918,7 @@ mod tests {
         assert!(result.is_ok());
 
         // All transports receive the same client_order_id (no suffixing)
-        let ids = captured_ids.lock().unwrap();
+        let ids = captured_ids.lock();
         assert_eq!(ids.len(), 2);
         assert!(ids.iter().all(|id| id == "O-456")); // All clients get the same ID
     }

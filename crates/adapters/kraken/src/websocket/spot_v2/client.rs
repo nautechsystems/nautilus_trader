@@ -18,7 +18,7 @@
 use std::{
     collections::HashMap,
     sync::{
-        Arc, RwLock,
+        Arc,
         atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
 };
@@ -42,6 +42,7 @@ use nautilus_network::{
         channel_message_handler,
     },
 };
+use parking_lot::RwLock;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -92,7 +93,7 @@ pub struct KrakenSpotWebSocketClient {
     truncated_id_map: Arc<AtomicMap<String, ClientOrderId>>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     l2_depths: L2Depths,
-    l3_depths: Arc<std::sync::Mutex<ahash::AHashMap<String, u32>>>,
+    l3_depths: Arc<parking_lot::Mutex<ahash::AHashMap<String, u32>>>,
     transport_backend: TransportBackend,
     proxy_url: Option<String>,
     socket_control: Option<SocketControl>,
@@ -187,7 +188,7 @@ impl KrakenSpotWebSocketClient {
             truncated_id_map: Arc::new(AtomicMap::new()),
             instruments: Arc::new(AtomicMap::new()),
             l2_depths: L2Depths::default(),
-            l3_depths: Arc::new(std::sync::Mutex::new(ahash::AHashMap::new())),
+            l3_depths: Arc::new(parking_lot::Mutex::new(ahash::AHashMap::new())),
             transport_backend,
             proxy_url,
             socket_control: None,
@@ -521,9 +522,7 @@ impl KrakenSpotWebSocketClient {
         self.subscription_payloads.write().await.clear();
         self.auth_tracker.fail("Disconnected");
 
-        if let Ok(mut depths) = self.l3_depths.lock() {
-            depths.clear();
-        }
+        self.l3_depths.lock().clear();
         self.l2_depths.clear();
 
         if let Some(control) = &self.socket_control {
@@ -955,15 +954,13 @@ impl KrakenSpotWebSocketClient {
 
     /// Sets the account ID for execution report parsing.
     pub fn set_account_id(&self, account_id: AccountId) {
-        if let Ok(mut guard) = self.account_id.write() {
-            *guard = Some(account_id);
-        }
+        *self.account_id.write() = Some(account_id);
     }
 
     /// Returns the account ID if set.
     #[must_use]
     pub fn account_id(&self) -> Option<AccountId> {
-        self.account_id.read().ok().and_then(|g| *g)
+        *self.account_id.read()
     }
 
     /// Caches an instrument for execution report parsing.
@@ -1133,12 +1130,7 @@ impl KrakenSpotWebSocketClient {
         let is_first_reference = self.subscriptions.add_reference(&key);
 
         if !is_first_reference {
-            let existing_depth = self
-                .l3_depths
-                .lock()
-                .expect("L3 depth map mutex poisoned")
-                .get(symbol.as_str())
-                .copied();
+            let existing_depth = self.l3_depths.lock().get(symbol.as_str()).copied();
 
             if existing_depth != Some(depth) {
                 self.subscriptions.remove_reference(&key);
@@ -1152,10 +1144,7 @@ impl KrakenSpotWebSocketClient {
 
         self.subscriptions.mark_subscribe(&key);
 
-        self.l3_depths
-            .lock()
-            .expect("L3 depth map mutex poisoned")
-            .insert(symbol.to_string(), depth);
+        self.l3_depths.lock().insert(symbol.to_string(), depth);
 
         let req_id = self.get_next_req_id();
         let request = KrakenWsRequest {
@@ -1177,10 +1166,7 @@ impl KrakenSpotWebSocketClient {
         let payload = match self.send_command(&request).await {
             Ok(p) => p,
             Err(e) => {
-                self.l3_depths
-                    .lock()
-                    .expect("L3 depth map mutex poisoned")
-                    .remove(symbol.as_str());
+                self.l3_depths.lock().remove(symbol.as_str());
                 self.subscriptions.remove_reference(&key);
                 self.subscriptions.mark_unsubscribe(&key);
                 self.subscriptions.confirm_unsubscribe(&key);
@@ -1239,10 +1225,7 @@ impl KrakenSpotWebSocketClient {
         self.send_command(&request).await?;
         self.subscriptions.confirm_unsubscribe(&key);
         self.subscription_payloads.write().await.remove(&key);
-        self.l3_depths
-            .lock()
-            .expect("L3 depth map mutex poisoned")
-            .remove(symbol.as_str());
+        self.l3_depths.lock().remove(symbol.as_str());
         Ok(())
     }
 
@@ -1336,10 +1319,7 @@ impl KrakenSpotWebSocketClient {
                 .write()
                 .await
                 .insert(key, payload);
-            self.l3_depths
-                .lock()
-                .expect("L3 depth map mutex poisoned")
-                .insert(symbol.to_string(), depth);
+            self.l3_depths.lock().insert(symbol.to_string(), depth);
         }
 
         Ok(())
@@ -1369,7 +1349,7 @@ impl KrakenSpotWebSocketClient {
     ///
     /// Stream-loop consumers read this map to drive `process_l3_message`'s
     /// resync depth lookup; `subscribe_book_l3` writes the depth.
-    pub fn l3_depths_handle(&self) -> Arc<std::sync::Mutex<ahash::AHashMap<String, u32>>> {
+    pub fn l3_depths_handle(&self) -> Arc<parking_lot::Mutex<ahash::AHashMap<String, u32>>> {
         Arc::clone(&self.l3_depths)
     }
 
@@ -1670,9 +1650,10 @@ fn bar_type_to_ws_interval(bar_type: BarType) -> Result<u32, KrakenWsError> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex, atomic::Ordering};
+    use std::sync::{Arc, atomic::Ordering};
 
     use log::{Level, LevelFilter, Log, Metadata, Record};
+    use parking_lot::Mutex;
     use rstest::rstest;
     use tokio_util::sync::CancellationToken;
 
@@ -1691,11 +1672,11 @@ mod tests {
 
     impl OutboundLogCapture {
         fn clear(&self) {
-            self.messages.lock().unwrap().clear();
+            self.messages.lock().clear();
         }
 
         fn messages(&self) -> Vec<String> {
-            self.messages.lock().unwrap().clone()
+            self.messages.lock().clone()
         }
     }
 
@@ -1709,7 +1690,7 @@ mod tests {
             if self.enabled(record.metadata()) {
                 let message = record.args().to_string();
                 if message.starts_with("Sending WebSocket request") {
-                    self.messages.lock().unwrap().push(message);
+                    self.messages.lock().push(message);
                 }
             }
         }
@@ -1995,11 +1976,7 @@ mod tests {
         client.subscriptions.add_reference(key);
         client.subscriptions.mark_subscribe(key);
         client.subscriptions.confirm_subscribe(key);
-        client
-            .l3_depths
-            .lock()
-            .unwrap()
-            .insert("BTC/USD".to_string(), 1000);
+        client.l3_depths.lock().insert("BTC/USD".to_string(), 1000);
 
         *client.auth_token.write().await = Some("test-token".to_string());
 
@@ -2105,13 +2082,9 @@ mod tests {
         let client = KrakenSpotWebSocketClient::l3(cfg, CancellationToken::new(), None);
 
         let handle = client.l3_depths_handle();
-        client
-            .l3_depths
-            .lock()
-            .unwrap()
-            .insert("BTC/USD".to_string(), 100);
+        client.l3_depths.lock().insert("BTC/USD".to_string(), 100);
 
-        assert_eq!(handle.lock().unwrap().get("BTC/USD").copied(), Some(100));
+        assert_eq!(handle.lock().get("BTC/USD").copied(), Some(100));
     }
 
     #[rstest]

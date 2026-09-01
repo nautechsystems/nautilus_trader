@@ -3929,7 +3929,7 @@ mod tests {
         fmt::Debug,
         rc::Rc,
         sync::{
-            Arc, Mutex,
+            Arc,
             atomic::{AtomicBool, Ordering},
         },
     };
@@ -3996,6 +3996,7 @@ mod tests {
         nautilus_strategy,
         strategy::{config::StrategyConfig, core::StrategyCore},
     };
+    use parking_lot::Mutex;
     use rstest::*;
     use rust_decimal_macros::dec;
     use ustr::Ustr;
@@ -4123,10 +4124,7 @@ mod tests {
 
         fn log(&self, record: &Record<'_>) {
             if self.enabled(record.metadata()) {
-                self.messages
-                    .lock()
-                    .unwrap()
-                    .push(record.args().to_string());
+                self.messages.lock().push(record.args().to_string());
             }
         }
 
@@ -4163,11 +4161,7 @@ mod tests {
     fn test_republish_external_msgbus_message_logs_topic_and_error_chain() {
         log::set_logger(&EXTERNAL_INGRESS_LOG_CAPTURE).expect("test logger already installed");
         log::set_max_level(LevelFilter::Error);
-        EXTERNAL_INGRESS_LOG_CAPTURE
-            .messages
-            .lock()
-            .unwrap()
-            .clear();
+        EXTERNAL_INGRESS_LOG_CAPTURE.messages.lock().clear();
         let message = BusMessage::with_str_topic(
             "data.quotes.AUDUSD.SIM*",
             BusPayloadType::Custom(Ustr::from("UnregisteredCustomData")),
@@ -4178,7 +4172,7 @@ mod tests {
         LiveNode::republish_external_msgbus_message(&message);
 
         assert_eq!(
-            *EXTERNAL_INGRESS_LOG_CAPTURE.messages.lock().unwrap(),
+            *EXTERNAL_INGRESS_LOG_CAPTURE.messages.lock(),
             vec![
                 "Failed to republish external message bus topic 'data.quotes.AUDUSD.SIM*': invalid \
                  external message topic: Topic `value` contained invalid characters, was \
@@ -7486,7 +7480,7 @@ mod tests {
 
         msgbus::publish_quote("data.quotes.TEST".into(), &quote);
         {
-            let publications = publications.lock().unwrap();
+            let publications = publications.lock();
             assert_eq!(publications.len(), 1);
             assert_eq!(publications[0].topic, "data.quotes.TEST");
             assert_eq!(
@@ -7587,7 +7581,7 @@ mod tests {
 
         msgbus::publish_quote("data.quotes.TEST".into(), &quote);
         {
-            let publications = publications.lock().unwrap();
+            let publications = publications.lock();
             assert_eq!(publications.len(), 1);
             assert_eq!(publications[0].topic, "data.quotes.TEST");
         }
@@ -8643,7 +8637,7 @@ mod tests {
             _instance_id: UUID4,
             _config: MessageBusConfig,
         ) -> anyhow::Result<Box<dyn MessageBusBacking>> {
-            let rx = self.rx.lock().unwrap().take();
+            let rx = self.rx.lock().take();
             Ok(Box::new(CapturingBacking {
                 publications: self.publications.clone(),
                 closed: self.closed.clone(),
@@ -8664,13 +8658,10 @@ mod tests {
         }
 
         fn publish(&self, message: BusMessage) {
-            self.publications
-                .lock()
-                .unwrap()
-                .push(CapturedEgressMessage {
-                    topic: message.topic.to_string(),
-                    payload: message.payload,
-                });
+            self.publications.lock().push(CapturedEgressMessage {
+                topic: message.topic.to_string(),
+                payload: message.payload,
+            });
         }
 
         fn take_receiver(&mut self) -> anyhow::Result<tokio::sync::mpsc::Receiver<BusMessage>> {

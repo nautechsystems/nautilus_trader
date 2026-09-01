@@ -45,6 +45,7 @@ blake3 = { workspace = true }
 bytes = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
+parking_lot = { workspace = true }
 redb = { workspace = true }
 rmp-serde = { workspace = true }
 serde = { workspace = true }

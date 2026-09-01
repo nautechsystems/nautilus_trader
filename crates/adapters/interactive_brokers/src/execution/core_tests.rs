@@ -188,8 +188,7 @@ impl SubmitTrackingState {
             &self.strategy_id_map,
             &self.active_order_contexts,
             &self.terminal_order_contexts,
-        )
-        .unwrap();
+        );
     }
 
     fn assert_active(
@@ -202,27 +201,24 @@ impl SubmitTrackingState {
         accepted: bool,
     ) {
         assert_eq!(
-            self.order_id_map.lock().unwrap().get(&client_order_id),
+            self.order_id_map.lock().get(&client_order_id),
             Some(&order_id)
         );
         assert_eq!(
-            self.venue_order_id_map.lock().unwrap().get(&order_id),
+            self.venue_order_id_map.lock().get(&order_id),
             Some(&client_order_id)
         );
         assert_eq!(
-            self.instrument_id_map.lock().unwrap().get(&order_id),
+            self.instrument_id_map.lock().get(&order_id),
             Some(&instrument_id)
         );
+        assert_eq!(self.trader_id_map.lock().get(&order_id), Some(&trader_id));
         assert_eq!(
-            self.trader_id_map.lock().unwrap().get(&order_id),
-            Some(&trader_id)
-        );
-        assert_eq!(
-            self.strategy_id_map.lock().unwrap().get(&order_id),
+            self.strategy_id_map.lock().get(&order_id),
             Some(&strategy_id)
         );
 
-        let contexts = self.active_order_contexts.lock().unwrap();
+        let contexts = self.active_order_contexts.lock();
         let context = contexts.get(&order_id).unwrap();
         assert_eq!(context.client_order_id, client_order_id);
         assert_eq!(context.instrument_id, instrument_id);
@@ -232,13 +228,7 @@ impl SubmitTrackingState {
         assert_eq!(context.order_type, OrderType::Limit);
         assert_eq!(context.accepted, accepted);
         assert_eq!(context.avg_px, None);
-        assert!(
-            self.terminal_order_contexts
-                .lock()
-                .unwrap()
-                .get(&order_id)
-                .is_none()
-        );
+        assert!(self.terminal_order_contexts.lock().get(&order_id).is_none());
     }
 
     fn emit_accepted(
@@ -259,28 +249,13 @@ impl SubmitTrackingState {
     }
 
     fn assert_absent(&self, order_id: i32, client_order_id: ClientOrderId) {
-        assert_eq!(
-            self.order_id_map.lock().unwrap().get(&client_order_id),
-            None
-        );
-        assert_eq!(self.venue_order_id_map.lock().unwrap().get(&order_id), None);
-        assert_eq!(self.instrument_id_map.lock().unwrap().get(&order_id), None);
-        assert_eq!(self.trader_id_map.lock().unwrap().get(&order_id), None);
-        assert_eq!(self.strategy_id_map.lock().unwrap().get(&order_id), None);
-        assert!(
-            self.active_order_contexts
-                .lock()
-                .unwrap()
-                .get(&order_id)
-                .is_none()
-        );
-        assert!(
-            self.terminal_order_contexts
-                .lock()
-                .unwrap()
-                .get(&order_id)
-                .is_none()
-        );
+        assert_eq!(self.order_id_map.lock().get(&client_order_id), None);
+        assert_eq!(self.venue_order_id_map.lock().get(&order_id), None);
+        assert_eq!(self.instrument_id_map.lock().get(&order_id), None);
+        assert_eq!(self.trader_id_map.lock().get(&order_id), None);
+        assert_eq!(self.strategy_id_map.lock().get(&order_id), None);
+        assert!(self.active_order_contexts.lock().get(&order_id).is_none());
+        assert!(self.terminal_order_contexts.lock().get(&order_id).is_none());
     }
 }
 
@@ -1273,27 +1248,16 @@ async fn handle_order_update_ignores_deactivated_open_order(
     open_order.order.total_quantity = 1.0;
 
     instrument_provider.insert_test_instrument(InstrumentAny::from(equity), 12345, 1);
-    order_id_map
-        .lock()
-        .unwrap()
-        .insert(client_order_id, order_id);
-    venue_order_id_map
-        .lock()
-        .unwrap()
-        .insert(order_id, client_order_id);
-    instrument_id_map
-        .lock()
-        .unwrap()
-        .insert(order_id, instrument_id);
+    order_id_map.lock().insert(client_order_id, order_id);
+    venue_order_id_map.lock().insert(order_id, client_order_id);
+    instrument_id_map.lock().insert(order_id, instrument_id);
     trader_id_map
         .lock()
-        .unwrap()
         .insert(order_id, TraderId::from("TRADER-001"));
     strategy_id_map
         .lock()
-        .unwrap()
         .insert(order_id, StrategyId::from("STRATEGY-001"));
-    active_order_contexts.lock().unwrap().insert(
+    active_order_contexts.lock().insert(
         order_id,
         create_tracked_order_context(client_order_id, instrument_id),
     );
@@ -1324,22 +1288,18 @@ async fn handle_order_update_ignores_deactivated_open_order(
 
     result.unwrap();
     assert!(exec_receiver.try_recv().is_err());
+    assert_eq!(order_id_map.lock().get(&client_order_id), Some(&order_id));
     assert_eq!(
-        order_id_map.lock().unwrap().get(&client_order_id),
-        Some(&order_id)
-    );
-    assert_eq!(
-        venue_order_id_map.lock().unwrap().get(&order_id),
+        venue_order_id_map.lock().get(&order_id),
         Some(&client_order_id)
     );
     assert_eq!(
-        instrument_id_map.lock().unwrap().get(&order_id),
+        instrument_id_map.lock().get(&order_id),
         Some(&instrument_id)
     );
     assert!(
         !active_order_contexts
             .lock()
-            .unwrap()
             .get(&order_id)
             .unwrap()
             .accepted
@@ -1374,8 +1334,7 @@ fn test_remove_order_tracking_clears_submit_identity() {
         &strategy_id_map,
         &active_order_contexts,
         &terminal_order_contexts,
-    )
-    .unwrap();
+    );
 
     InteractiveBrokersExecutionClient::remove_order_tracking(
         order_id,
@@ -1387,16 +1346,15 @@ fn test_remove_order_tracking_clears_submit_identity() {
         &strategy_id_map,
         &active_order_contexts,
         &terminal_order_contexts,
-    )
-    .unwrap();
+    );
 
-    assert!(order_id_map.lock().unwrap().is_empty());
-    assert!(venue_order_id_map.lock().unwrap().is_empty());
-    assert!(instrument_id_map.lock().unwrap().is_empty());
-    assert!(trader_id_map.lock().unwrap().is_empty());
-    assert!(strategy_id_map.lock().unwrap().is_empty());
-    assert!(active_order_contexts.lock().unwrap().is_empty());
-    assert!(terminal_order_contexts.lock().unwrap().is_empty());
+    assert!(order_id_map.lock().is_empty());
+    assert!(venue_order_id_map.lock().is_empty());
+    assert!(instrument_id_map.lock().is_empty());
+    assert!(trader_id_map.lock().is_empty());
+    assert!(strategy_id_map.lock().is_empty());
+    assert!(active_order_contexts.lock().is_empty());
+    assert!(terminal_order_contexts.lock().is_empty());
 }
 
 #[tokio::test]
@@ -1687,11 +1645,11 @@ async fn test_handle_spread_execution_first_fill() {
     let account_id = AccountId::from("IB-001");
     let ts_init = UnixNanos::new(0);
 
-    pending_combo_fill_avgs.lock().unwrap().insert(
+    pending_combo_fill_avgs.lock().insert(
         client_order_id,
         std::collections::VecDeque::from([(Decimal::from(3), Price::from("2.25"))]),
     );
-    order_fill_progress.lock().unwrap().insert(
+    order_fill_progress.lock().insert(
         client_order_id,
         (Decimal::from(3), Decimal::from_str("6.75").unwrap()),
     );
@@ -1737,13 +1695,8 @@ async fn test_handle_spread_execution_first_fill() {
         }
         other => panic!("unexpected leg event: {other:?}"),
     }
-    assert!(pending_combo_fills.lock().unwrap().is_empty());
-    assert!(
-        spread_fill_tracking
-            .lock()
-            .unwrap()
-            .contains_key(&client_order_id)
-    );
+    assert!(pending_combo_fills.lock().is_empty());
+    assert!(spread_fill_tracking.lock().contains_key(&client_order_id));
 }
 
 #[tokio::test]
@@ -1765,7 +1718,7 @@ async fn test_handle_spread_execution_duplicate_detection() {
 
     // Pre-populate tracking with the fill ID to simulate duplicate
     {
-        let mut tracking = spread_fill_tracking.lock().unwrap();
+        let mut tracking = spread_fill_tracking.lock();
         let fill_set = tracking
             .entry(client_order_id)
             .or_insert_with(ahash::AHashSet::new);
@@ -1804,18 +1757,18 @@ fn test_flush_pending_combo_fills_emits_tracked_order_fill() {
     let order_fill_progress = Arc::new(Mutex::new(AHashMap::new()));
     let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
 
-    pending_combo_fills.lock().unwrap().insert(
+    pending_combo_fills.lock().insert(
         client_order_id,
         std::collections::VecDeque::from([create_pending_combo_fill(
             client_order_id,
             Quantity::from(2),
         )]),
     );
-    pending_combo_fill_avgs.lock().unwrap().insert(
+    pending_combo_fill_avgs.lock().insert(
         client_order_id,
         std::collections::VecDeque::from([(Decimal::from(2), Price::from("2.75"))]),
     );
-    order_fill_progress.lock().unwrap().insert(
+    order_fill_progress.lock().insert(
         client_order_id,
         (Decimal::from(2), Decimal::from_str("5.50").unwrap()),
     );
@@ -1839,9 +1792,9 @@ fn test_flush_pending_combo_fills_emits_tracked_order_fill() {
         }
         other => panic!("unexpected event: {other:?}"),
     }
-    assert!(pending_combo_fills.lock().unwrap().is_empty());
-    assert!(pending_combo_fill_avgs.lock().unwrap().is_empty());
-    assert!(order_fill_progress.lock().unwrap().is_empty());
+    assert!(pending_combo_fills.lock().is_empty());
+    assert!(pending_combo_fill_avgs.lock().is_empty());
+    assert!(order_fill_progress.lock().is_empty());
 }
 
 #[rstest]
@@ -1870,13 +1823,12 @@ fn test_update_order_avg_price_allows_negative_spread_avg_fill_price() {
 
     let avg_px = order_avg_prices
         .lock()
-        .unwrap()
         .get(&client_order_id)
         .copied()
         .unwrap();
     assert_eq!(avg_px, Price::from("-2.25"));
 
-    let avg_chunks = pending_combo_fill_avgs.lock().unwrap();
+    let avg_chunks = pending_combo_fill_avgs.lock();
     let (fill_delta, partial_avg_px) = avg_chunks
         .get(&client_order_id)
         .unwrap()
@@ -1886,7 +1838,7 @@ fn test_update_order_avg_price_allows_negative_spread_avg_fill_price() {
     assert_eq!(fill_delta, Decimal::from(3));
     assert_eq!(partial_avg_px, Price::from("-2.25"));
 
-    let fill_progress = order_fill_progress.lock().unwrap();
+    let fill_progress = order_fill_progress.lock();
     let (filled, total_notional) = fill_progress.get(&client_order_id).copied().unwrap();
     assert_eq!(filled, Decimal::from(3));
     assert_eq!(total_notional, Decimal::from_str("-6.75").unwrap());
@@ -1900,18 +1852,18 @@ fn test_flush_pending_combo_fills_retains_partial_avg_chunk_remainder() {
     let order_fill_progress = Arc::new(Mutex::new(AHashMap::new()));
     let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
 
-    pending_combo_fills.lock().unwrap().insert(
+    pending_combo_fills.lock().insert(
         client_order_id,
         std::collections::VecDeque::from([create_pending_combo_fill(
             client_order_id,
             Quantity::from(1),
         )]),
     );
-    pending_combo_fill_avgs.lock().unwrap().insert(
+    pending_combo_fill_avgs.lock().insert(
         client_order_id,
         std::collections::VecDeque::from([(Decimal::from(3), Price::from("2.10"))]),
     );
-    order_fill_progress.lock().unwrap().insert(
+    order_fill_progress.lock().insert(
         client_order_id,
         (Decimal::from(3), Decimal::from_str("6.30").unwrap()),
     );
@@ -1935,12 +1887,12 @@ fn test_flush_pending_combo_fills_retains_partial_avg_chunk_remainder() {
         other => panic!("unexpected event: {other:?}"),
     }
 
-    let avg_chunks = pending_combo_fill_avgs.lock().unwrap();
+    let avg_chunks = pending_combo_fill_avgs.lock();
     let remainder = avg_chunks.get(&client_order_id).unwrap().front().unwrap();
     assert_eq!(remainder.0, Decimal::from(2));
     assert_eq!(remainder.1, Price::from("2.10"));
-    assert!(pending_combo_fills.lock().unwrap().is_empty());
-    assert!(order_fill_progress.lock().unwrap().is_empty());
+    assert!(pending_combo_fills.lock().is_empty());
+    assert!(order_fill_progress.lock().is_empty());
 }
 
 #[rstest]
@@ -1955,15 +1907,12 @@ fn test_emit_order_pending_cancel_is_idempotent() {
 
     instrument_id_map
         .lock()
-        .unwrap()
         .insert(order_id, create_test_spread_instrument());
     trader_id_map
         .lock()
-        .unwrap()
         .insert(order_id, TraderId::from("TRADER-001"));
     strategy_id_map
         .lock()
-        .unwrap()
         .insert(order_id, StrategyId::from("STRATEGY-001"));
 
     InteractiveBrokersExecutionClient::emit_order_pending_cancel(
@@ -2000,12 +1949,7 @@ fn test_emit_order_pending_cancel_is_idempotent() {
         event => panic!("Expected OrderPendingCancel, was {event:?}"),
     }
     assert!(exec_receiver.try_recv().is_err());
-    assert!(
-        pending_cancel_orders
-            .lock()
-            .unwrap()
-            .contains(&client_order_id)
-    );
+    assert!(pending_cancel_orders.lock().contains(&client_order_id));
 }
 
 #[rstest]
@@ -2096,7 +2040,7 @@ fn cancel_tracking_blocks_preexisting_route_until_identity_complete() {
     let writer_instrument_id_map = Arc::clone(&instrument_id_map);
     let writer_trader_id_map = Arc::clone(&trader_id_map);
     let writer_strategy_id_map = Arc::clone(&strategy_id_map);
-    let strategy_guard = strategy_id_map.lock().unwrap();
+    let strategy_guard = strategy_id_map.lock();
 
     let writer = std::thread::spawn(move || {
         InteractiveBrokersExecutionClient::cache_cancel_order_tracking(
@@ -2113,22 +2057,19 @@ fn cancel_tracking_blocks_preexisting_route_until_identity_complete() {
 
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
 
-    while !trader_id_map.lock().unwrap().contains_key(&order_id) {
+    while !trader_id_map.lock().contains_key(&order_id) {
         assert!(
             std::time::Instant::now() < deadline,
             "tracking writer stalled"
         );
         std::thread::yield_now();
     }
-    assert!(matches!(
-        venue_order_id_map.try_lock(),
-        Err(std::sync::TryLockError::WouldBlock)
-    ));
+    assert!(venue_order_id_map.try_lock().is_none());
 
     drop(strategy_guard);
     writer.join().unwrap().unwrap();
     assert_eq!(
-        venue_order_id_map.lock().unwrap().get(&order_id),
+        venue_order_id_map.lock().get(&order_id),
         Some(&client_order_id)
     );
 }
@@ -2148,11 +2089,11 @@ async fn test_cancel_order_recovery_tracks_resolved_order_identity(
         .instrument_provider
         .insert_test_instrument(InstrumentAny::from(spread), 54321, 1);
 
-    assert!(client.order_id_map.lock().unwrap().is_empty());
-    assert!(client.venue_order_id_map.lock().unwrap().is_empty());
-    assert!(client.instrument_id_map.lock().unwrap().is_empty());
-    assert!(client.trader_id_map.lock().unwrap().is_empty());
-    assert!(client.strategy_id_map.lock().unwrap().is_empty());
+    assert!(client.order_id_map.lock().is_empty());
+    assert!(client.venue_order_id_map.lock().is_empty());
+    assert!(client.instrument_id_map.lock().is_empty());
+    assert!(client.trader_id_map.lock().is_empty());
+    assert!(client.strategy_id_map.lock().is_empty());
 
     let trader_id = TraderId::from("TRADER-RESTORED");
     let target_strategy_id = StrategyId::from("STRATEGY-RESTORED");
@@ -2240,7 +2181,6 @@ async fn test_cancel_order_recovery_tracks_resolved_order_identity(
         client
             .pending_cancel_orders
             .lock()
-            .unwrap()
             .contains(&client_order_id)
     );
 
@@ -2281,14 +2221,14 @@ async fn test_cancel_order_recovery_tracks_resolved_order_identity(
     }
 
     assert!(exec_receiver.try_recv().is_err());
-    assert!(client.order_id_map.lock().unwrap().is_empty());
-    assert!(client.venue_order_id_map.lock().unwrap().is_empty());
-    assert!(client.instrument_id_map.lock().unwrap().is_empty());
-    assert!(client.trader_id_map.lock().unwrap().is_empty());
-    assert!(client.strategy_id_map.lock().unwrap().is_empty());
-    assert!(client.pending_cancel_orders.lock().unwrap().is_empty());
-    assert!(client.active_order_contexts.lock().unwrap().is_empty());
-    assert!(client.terminal_order_contexts.lock().unwrap().is_empty());
+    assert!(client.order_id_map.lock().is_empty());
+    assert!(client.venue_order_id_map.lock().is_empty());
+    assert!(client.instrument_id_map.lock().is_empty());
+    assert!(client.trader_id_map.lock().is_empty());
+    assert!(client.strategy_id_map.lock().is_empty());
+    assert!(client.pending_cancel_orders.lock().is_empty());
+    assert!(client.active_order_contexts.lock().is_empty());
+    assert!(client.terminal_order_contexts.lock().is_empty());
 }
 
 #[tokio::test]
@@ -2315,35 +2255,21 @@ async fn test_handle_order_status_canceled_emits_canceled_event() {
 
     instrument_provider.insert_test_instrument(InstrumentAny::from(spread), 54321, 1);
 
-    venue_order_id_map
-        .lock()
-        .unwrap()
-        .insert(order_id, client_order_id);
-    order_id_map
-        .lock()
-        .unwrap()
-        .insert(client_order_id, order_id);
-    instrument_id_map
-        .lock()
-        .unwrap()
-        .insert(order_id, instrument_id);
+    venue_order_id_map.lock().insert(order_id, client_order_id);
+    order_id_map.lock().insert(client_order_id, order_id);
+    instrument_id_map.lock().insert(order_id, instrument_id);
     trader_id_map
         .lock()
-        .unwrap()
         .insert(order_id, TraderId::from("TRADER-001"));
     strategy_id_map
         .lock()
-        .unwrap()
         .insert(order_id, StrategyId::from("STRATEGY-001"));
-    active_order_contexts.lock().unwrap().insert(
+    active_order_contexts.lock().insert(
         order_id,
         create_tracked_order_context(client_order_id, instrument_id),
     );
-    pending_cancel_orders
-        .lock()
-        .unwrap()
-        .insert(client_order_id);
-    pending_combo_fills.lock().unwrap().insert(
+    pending_cancel_orders.lock().insert(client_order_id);
+    pending_combo_fills.lock().insert(
         client_order_id,
         VecDeque::from([create_pending_combo_fill(
             client_order_id,
@@ -2396,24 +2322,14 @@ async fn test_handle_order_status_canceled_emits_canceled_event() {
         }
         other => panic!("unexpected event: {other:?}"),
     }
-    assert!(
-        !pending_cancel_orders
-            .lock()
-            .unwrap()
-            .contains(&client_order_id)
-    );
-    assert!(order_id_map.lock().unwrap().is_empty());
-    assert!(venue_order_id_map.lock().unwrap().is_empty());
-    assert!(instrument_id_map.lock().unwrap().is_empty());
-    assert!(trader_id_map.lock().unwrap().is_empty());
-    assert!(strategy_id_map.lock().unwrap().is_empty());
-    assert!(active_order_contexts.lock().unwrap().is_empty());
-    assert!(
-        terminal_order_contexts
-            .lock()
-            .unwrap()
-            .contains_key(&order_id)
-    );
+    assert!(!pending_cancel_orders.lock().contains(&client_order_id));
+    assert!(order_id_map.lock().is_empty());
+    assert!(venue_order_id_map.lock().is_empty());
+    assert!(instrument_id_map.lock().is_empty());
+    assert!(trader_id_map.lock().is_empty());
+    assert!(strategy_id_map.lock().is_empty());
+    assert!(active_order_contexts.lock().is_empty());
+    assert!(terminal_order_contexts.lock().contains_key(&order_id));
 }
 
 #[tokio::test]
@@ -2478,7 +2394,6 @@ async fn test_opra_cancel_status_preserves_canonical_instrument_identity() {
         state
             .terminal_order_contexts
             .lock()
-            .unwrap()
             .get(&order_id)
             .unwrap()
             .instrument_id,
@@ -2511,23 +2426,15 @@ async fn test_process_order_update_stream_emits_accepted_then_canceled() {
     let client_order_id = ClientOrderId::from("O-STREAM-001");
     let instrument_id = create_test_spread_instrument();
 
-    venue_order_id_map
-        .lock()
-        .unwrap()
-        .insert(order_id, client_order_id);
-    instrument_id_map
-        .lock()
-        .unwrap()
-        .insert(order_id, instrument_id);
+    venue_order_id_map.lock().insert(order_id, client_order_id);
+    instrument_id_map.lock().insert(order_id, instrument_id);
     trader_id_map
         .lock()
-        .unwrap()
         .insert(order_id, TraderId::from("TRADER-001"));
     strategy_id_map
         .lock()
-        .unwrap()
         .insert(order_id, StrategyId::from("STRATEGY-001"));
-    active_order_contexts.lock().unwrap().insert(
+    active_order_contexts.lock().insert(
         order_id,
         create_tracked_order_context(client_order_id, instrument_id),
     );
@@ -2612,23 +2519,15 @@ async fn test_process_order_update_stream_clears_market_order_update_prices() {
 
     let instrument_id = equity.id();
     instrument_provider.insert_test_instrument(InstrumentAny::from(equity), contract_id, 1);
-    venue_order_id_map
-        .lock()
-        .unwrap()
-        .insert(order_id, client_order_id);
-    instrument_id_map
-        .lock()
-        .unwrap()
-        .insert(order_id, instrument_id);
+    venue_order_id_map.lock().insert(order_id, client_order_id);
+    instrument_id_map.lock().insert(order_id, instrument_id);
     trader_id_map
         .lock()
-        .unwrap()
         .insert(order_id, TraderId::from("TRADER-001"));
     strategy_id_map
         .lock()
-        .unwrap()
         .insert(order_id, StrategyId::from("STRATEGY-001"));
-    active_order_contexts.lock().unwrap().insert(
+    active_order_contexts.lock().insert(
         order_id,
         create_tracked_order_context(client_order_id, instrument_id),
     );
@@ -2720,28 +2619,17 @@ async fn test_process_order_update_stream_emits_fill_after_commission_report(
 
     let instrument_id = equity.id();
     instrument_provider.insert_test_instrument(InstrumentAny::from(equity), contract_id, 1);
-    venue_order_id_map
-        .lock()
-        .unwrap()
-        .insert(order_id, client_order_id);
-    instrument_id_map
-        .lock()
-        .unwrap()
-        .insert(order_id, instrument_id);
+    venue_order_id_map.lock().insert(order_id, client_order_id);
+    instrument_id_map.lock().insert(order_id, instrument_id);
     trader_id_map
         .lock()
-        .unwrap()
         .insert(order_id, TraderId::from("TRADER-001"));
     strategy_id_map
         .lock()
-        .unwrap()
         .insert(order_id, StrategyId::from("STRATEGY-001"));
     let mut context = create_tracked_order_context(client_order_id, instrument_id);
     context.accepted = already_accepted;
-    active_order_contexts
-        .lock()
-        .unwrap()
-        .insert(order_id, context);
+    active_order_contexts.lock().insert(order_id, context);
 
     let mut exec_data = create_test_execution_data(order_id, "exec-stream-001", 100.0, 50.0, "BOT");
     exec_data.contract.contract_id = contract_id;
@@ -2816,7 +2704,7 @@ async fn test_process_order_update_stream_emits_fill_after_commission_report(
         }
         other => panic!("unexpected event: {other:?}"),
     }
-    assert!(commission_cache.lock().unwrap().is_empty());
+    assert!(commission_cache.lock().is_empty());
     assert!(exec_receiver.try_recv().is_err());
 }
 
@@ -2848,27 +2736,16 @@ async fn test_process_order_update_stream_retains_terminal_identity_for_late_fil
     let mut subscription = Subscription::new(update_receiver);
 
     instrument_provider.insert_test_instrument(InstrumentAny::from(equity), contract_id, 1);
-    order_id_map
-        .lock()
-        .unwrap()
-        .insert(client_order_id, order_id);
-    venue_order_id_map
-        .lock()
-        .unwrap()
-        .insert(order_id, client_order_id);
-    instrument_id_map
-        .lock()
-        .unwrap()
-        .insert(order_id, instrument_id);
+    order_id_map.lock().insert(client_order_id, order_id);
+    venue_order_id_map.lock().insert(order_id, client_order_id);
+    instrument_id_map.lock().insert(order_id, instrument_id);
     trader_id_map
         .lock()
-        .unwrap()
         .insert(order_id, TraderId::from("TRADER-001"));
     strategy_id_map
         .lock()
-        .unwrap()
         .insert(order_id, StrategyId::from("STRATEGY-001"));
-    active_order_contexts.lock().unwrap().insert(
+    active_order_contexts.lock().insert(
         order_id,
         create_tracked_order_context(client_order_id, instrument_id),
     );
@@ -2924,7 +2801,6 @@ async fn test_process_order_update_stream_retains_terminal_identity_for_late_fil
     assert!(
         pending_execution_cache
             .lock()
-            .unwrap()
             .contains_key(&String::from("exec-stream-late"))
     );
     assert!(exec_receiver.try_recv().is_err());
@@ -2974,9 +2850,9 @@ async fn test_process_order_update_stream_retains_terminal_identity_for_late_fil
                 && event.trade_id == TradeId::from("exec-stream-late")
     ));
     assert!(exec_receiver.try_recv().is_err());
-    assert!(pending_execution_cache.lock().unwrap().is_empty());
-    assert!(active_order_contexts.lock().unwrap().is_empty());
-    let terminal_contexts = terminal_order_contexts.lock().unwrap();
+    assert!(pending_execution_cache.lock().is_empty());
+    assert!(active_order_contexts.lock().is_empty());
+    let terminal_contexts = terminal_order_contexts.lock();
     let terminal_context = terminal_contexts.get(&order_id).unwrap();
     assert!(terminal_context.accepted);
     assert_eq!(terminal_context.client_order_id, client_order_id);
@@ -3013,27 +2889,16 @@ async fn test_process_order_update_stream_retains_terminal_combo_routing() {
 
     instrument_provider.insert_test_instrument(InstrumentAny::from(equity), contract_id, 1);
     instrument_provider.insert_test_instrument(InstrumentAny::from(spread), 54321, 1);
-    order_id_map
-        .lock()
-        .unwrap()
-        .insert(client_order_id, order_id);
-    venue_order_id_map
-        .lock()
-        .unwrap()
-        .insert(order_id, client_order_id);
-    instrument_id_map
-        .lock()
-        .unwrap()
-        .insert(order_id, instrument_id);
+    order_id_map.lock().insert(client_order_id, order_id);
+    venue_order_id_map.lock().insert(order_id, client_order_id);
+    instrument_id_map.lock().insert(order_id, instrument_id);
     trader_id_map
         .lock()
-        .unwrap()
         .insert(order_id, TraderId::from("TRADER-001"));
     strategy_id_map
         .lock()
-        .unwrap()
         .insert(order_id, StrategyId::from("STRATEGY-001"));
-    active_order_contexts.lock().unwrap().insert(
+    active_order_contexts.lock().insert(
         order_id,
         create_tracked_order_context(client_order_id, instrument_id),
     );
@@ -3108,13 +2973,8 @@ async fn test_process_order_update_stream_retains_terminal_combo_routing() {
             if event.instrument_id == leg_instrument_id
     ));
     assert!(exec_receiver.try_recv().is_err());
-    assert!(active_order_contexts.lock().unwrap().is_empty());
-    assert!(
-        terminal_order_contexts
-            .lock()
-            .unwrap()
-            .contains_key(&order_id)
-    );
+    assert!(active_order_contexts.lock().is_empty());
+    assert!(terminal_order_contexts.lock().contains_key(&order_id));
 }
 
 #[tokio::test]
@@ -3202,13 +3062,10 @@ async fn test_process_order_update_stream_learns_order_ref_from_execution() {
         other => panic!("unexpected event: {other:?}"),
     }
     assert_eq!(
-        venue_order_id_map.lock().unwrap().get(&order_id),
+        venue_order_id_map.lock().get(&order_id),
         Some(&client_order_id)
     );
-    assert_eq!(
-        order_id_map.lock().unwrap().get(&client_order_id),
-        Some(&order_id)
-    );
+    assert_eq!(order_id_map.lock().get(&client_order_id), Some(&order_id));
 }
 
 #[rstest]

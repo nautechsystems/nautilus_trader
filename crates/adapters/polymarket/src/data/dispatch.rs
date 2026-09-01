@@ -33,7 +33,7 @@
 //! valid snapshot arrives. The mismatched snapshot is not parsed, applied, or
 //! emitted as a quote.
 
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Arc;
 
 use ahash::{AHashMap, AHashSet};
 use dashmap::{DashMap, mapref::entry::Entry};
@@ -49,6 +49,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
 };
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -100,7 +101,7 @@ pub(super) struct WsMessageContext {
     pub(super) data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     pub(super) token_meta: Arc<DashMap<Ustr, TokenMeta>>,
     pub(super) instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-    pub(super) instrument_update_state: Arc<StdMutex<InstrumentUpdateState>>,
+    pub(super) instrument_update_state: Arc<Mutex<InstrumentUpdateState>>,
     pub(super) gamma_client: PolymarketGammaHttpClient,
     pub(super) filters: Vec<Arc<dyn InstrumentFilter>>,
     pub(super) order_books: Arc<DashMap<InstrumentId, OrderBook>>,
@@ -108,9 +109,9 @@ pub(super) struct WsMessageContext {
     pub(super) active_quote_subs: Arc<AtomicSet<InstrumentId>>,
     pub(super) active_delta_subs: Arc<AtomicSet<InstrumentId>>,
     pub(super) active_trade_subs: Arc<AtomicSet<InstrumentId>>,
-    pub(super) closed_condition_ids: Arc<StdMutex<AHashSet<String>>>,
+    pub(super) closed_condition_ids: Arc<Mutex<AHashSet<String>>>,
     pub(super) resolve_poll_watchlist: Arc<AtomicMap<String, ResolveWatchEntry>>,
-    pub(super) resolve_watch_apply_mutex: Arc<StdMutex<()>>,
+    pub(super) resolve_watch_apply_mutex: Arc<Mutex<()>>,
     pub(super) pending_snapshot_after_tick_change: Arc<AtomicSet<InstrumentId>>,
     pub(super) new_market_inflight_keys: Arc<DashMap<String, ()>>,
     pub(super) new_market_fetch_semaphore: Arc<tokio::sync::Semaphore>,
@@ -530,10 +531,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 return;
             }
 
-            let mut update_state = ctx
-                .instrument_update_state
-                .lock()
-                .expect("instrument_update_state mutex poisoned");
+            let mut update_state = ctx.instrument_update_state.lock();
 
             if update_state.is_stale_tick(&token_id, ts_event) {
                 log::debug!(
@@ -1209,7 +1207,7 @@ mod tests {
             data_sender: data_tx.clone(),
             token_meta: Arc::new(DashMap::new()),
             instruments: Arc::new(AtomicMap::new()),
-            instrument_update_state: Arc::new(StdMutex::new(InstrumentUpdateState::default())),
+            instrument_update_state: Arc::new(Mutex::new(InstrumentUpdateState::default())),
             gamma_client,
             filters: vec![],
             order_books: Arc::new(DashMap::new()),
@@ -1217,9 +1215,9 @@ mod tests {
             active_quote_subs: Arc::new(AtomicSet::new()),
             active_delta_subs: Arc::new(AtomicSet::new()),
             active_trade_subs: Arc::new(AtomicSet::new()),
-            closed_condition_ids: Arc::new(StdMutex::new(AHashSet::new())),
+            closed_condition_ids: Arc::new(Mutex::new(AHashSet::new())),
             resolve_poll_watchlist: Arc::new(AtomicMap::new()),
-            resolve_watch_apply_mutex: Arc::new(StdMutex::new(())),
+            resolve_watch_apply_mutex: Arc::new(Mutex::new(())),
             pending_snapshot_after_tick_change: Arc::new(AtomicSet::new()),
             new_market_inflight_keys: Arc::new(DashMap::new()),
             new_market_fetch_semaphore: Arc::new(tokio::sync::Semaphore::new(
@@ -1552,11 +1550,11 @@ mod tests {
         total_requests: Arc<AtomicUsize>,
         inflight_requests: Arc<AtomicUsize>,
         max_inflight_requests: Arc<AtomicUsize>,
-        seen_condition_ids: Arc<StdMutex<Vec<Option<String>>>>,
-        seen_slugs: Arc<StdMutex<Vec<Option<String>>>>,
-        empty_then_success_condition_id: Arc<StdMutex<Option<String>>>,
-        empty_then_success_payload: Arc<StdMutex<Option<Value>>>,
-        per_condition_requests: Arc<StdMutex<AHashMap<String, usize>>>,
+        seen_condition_ids: Arc<Mutex<Vec<Option<String>>>>,
+        seen_slugs: Arc<Mutex<Vec<Option<String>>>>,
+        empty_then_success_condition_id: Arc<Mutex<Option<String>>>,
+        empty_then_success_payload: Arc<Mutex<Option<Value>>>,
+        per_condition_requests: Arc<Mutex<AHashMap<String, usize>>>,
         response_delay_ms: u64,
     }
 
@@ -1581,16 +1579,8 @@ mod tests {
         let condition_id = query_param(raw_query.clone(), "condition_ids");
         let slug = query_param(raw_query, "slug");
 
-        state
-            .seen_condition_ids
-            .lock()
-            .expect("seen_condition_ids mutex poisoned")
-            .push(condition_id.clone());
-        state
-            .seen_slugs
-            .lock()
-            .expect("seen_slugs mutex poisoned")
-            .push(slug);
+        state.seen_condition_ids.lock().push(condition_id.clone());
+        state.seen_slugs.lock().push(slug);
 
         loop {
             let prev = state.max_inflight_requests.load(Ordering::SeqCst);
@@ -1613,26 +1603,18 @@ mod tests {
 
         let response = if let Some(ref cid) = condition_id {
             let next_count = {
-                let mut counts = state
-                    .per_condition_requests
-                    .lock()
-                    .expect("per_condition_requests mutex poisoned");
+                let mut counts = state.per_condition_requests.lock();
                 let next = counts.get(cid).copied().unwrap_or(0) + 1;
                 counts.insert(cid.clone(), next);
                 next
             };
 
-            let target_cid = state
-                .empty_then_success_condition_id
-                .lock()
-                .expect("empty_then_success_condition_id mutex poisoned")
-                .clone();
+            let target_cid = state.empty_then_success_condition_id.lock().clone();
 
             if target_cid.as_deref() == Some(cid.as_str()) && next_count >= 2 {
                 state
                     .empty_then_success_payload
                     .lock()
-                    .expect("empty_then_success_payload mutex poisoned")
                     .clone()
                     .unwrap_or_else(|| serde_json::json!([]))
             } else {
@@ -1676,15 +1658,8 @@ mod tests {
     async fn new_market_condition_empty_then_success_recheck_loads_instrument() {
         let state = NewMarketFetchTestServerState::default();
         let target_condition = "0xcondition-recheck";
-        *state
-            .empty_then_success_condition_id
-            .lock()
-            .expect("empty_then_success_condition_id mutex poisoned") =
-            Some(target_condition.to_string());
-        *state
-            .empty_then_success_payload
-            .lock()
-            .expect("empty_then_success_payload mutex poisoned") =
+        *state.empty_then_success_condition_id.lock() = Some(target_condition.to_string());
+        *state.empty_then_success_payload.lock() =
             Some(serde_json::json!([gamma_market_recheck_fixture_value()]));
 
         let addr = start_new_market_test_server(state.clone()).await;
@@ -1721,11 +1696,7 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
 
-        let seen_condition_ids = state
-            .seen_condition_ids
-            .lock()
-            .expect("seen_condition_ids mutex poisoned")
-            .clone();
+        let seen_condition_ids = state.seen_condition_ids.lock().clone();
         assert!(
             seen_condition_ids
                 .iter()
@@ -1769,7 +1740,6 @@ mod tests {
         client
             .closed_condition_ids
             .lock()
-            .unwrap()
             .insert(TEST_CONDITION_ID.to_string());
 
         handle_market_message(
@@ -1782,12 +1752,7 @@ mod tests {
                 let state = state.clone();
                 let ctx = &ctx;
                 async move {
-                    !state
-                        .queries
-                        .lock()
-                        .expect("scripted auto-load queries mutex poisoned")
-                        .is_empty()
-                        && ctx.new_market_inflight_keys.is_empty()
+                    !state.queries.lock().is_empty() && ctx.new_market_inflight_keys.is_empty()
                 }
             },
             StdDuration::from_secs(3),
@@ -1812,7 +1777,6 @@ mod tests {
         client
             .closed_condition_ids
             .lock()
-            .unwrap()
             .insert(TEST_CONDITION_ID.to_string());
         let ctx = make_client_ws_ctx(&client);
 
@@ -1847,7 +1811,6 @@ mod tests {
         client
             .closed_condition_ids
             .lock()
-            .unwrap()
             .insert(TEST_CONDITION_ID.to_string());
         drop(guard);
 
@@ -1870,7 +1833,6 @@ mod tests {
         client
             .closed_condition_ids
             .lock()
-            .unwrap()
             .insert(TEST_CONDITION_ID.to_string());
         let instrument_id = fixture_yes_instrument_id();
 
@@ -1925,15 +1887,11 @@ mod tests {
         let addr = start_scripted_auto_load_test_server(state).await;
         let (client, mut data_rx) = create_test_client(addr);
         let instrument_id = fixture_yes_instrument_id();
-        client
-            .instrument_update_state
-            .lock()
-            .expect("instrument_update_state mutex poisoned")
-            .record_live_tick(
-                Ustr::from(TEST_TOKEN_ID_YES),
-                "0.005".parse().expect("tick size"),
-                UnixNanos::from(1_700_000_001_000_000_000),
-            );
+        client.instrument_update_state.lock().record_live_tick(
+            Ustr::from(TEST_TOKEN_ID_YES),
+            "0.005".parse().expect("tick size"),
+            UnixNanos::from(1_700_000_001_000_000_000),
+        );
 
         client
             .request_instrument(RequestInstrument::new(
@@ -1990,15 +1948,11 @@ mod tests {
         let addr = start_scripted_auto_load_test_server(state).await;
         let (client, mut data_rx) = create_test_client(addr);
         let instrument_id = fixture_yes_instrument_id();
-        client
-            .instrument_update_state
-            .lock()
-            .expect("instrument_update_state mutex poisoned")
-            .record_live_tick(
-                Ustr::from(TEST_TOKEN_ID_YES),
-                "0.005".parse().expect("tick size"),
-                UnixNanos::from(1_700_000_001_000_000_000),
-            );
+        client.instrument_update_state.lock().record_live_tick(
+            Ustr::from(TEST_TOKEN_ID_YES),
+            "0.005".parse().expect("tick size"),
+            UnixNanos::from(1_700_000_001_000_000_000),
+        );
 
         let request_id = UUID4::new();
         client
@@ -2055,15 +2009,11 @@ mod tests {
         );
         let addr = start_scripted_auto_load_test_server(state).await;
         let (client, mut data_rx) = create_test_client(addr);
-        client
-            .instrument_update_state
-            .lock()
-            .expect("instrument_update_state mutex poisoned")
-            .record_live_tick(
-                Ustr::from(TEST_TOKEN_ID_YES),
-                "-0.01".parse().expect("tick size"),
-                UnixNanos::from(1_700_000_001_000_000_000),
-            );
+        client.instrument_update_state.lock().record_live_tick(
+            Ustr::from(TEST_TOKEN_ID_YES),
+            "-0.01".parse().expect("tick size"),
+            UnixNanos::from(1_700_000_001_000_000_000),
+        );
 
         let request_id = UUID4::new();
         client
@@ -2508,11 +2458,8 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
 
-        let condition_ids = state
-            .seen_condition_ids
-            .lock()
-            .expect("seen_condition_ids mutex poisoned");
-        let slugs = state.seen_slugs.lock().expect("seen_slugs mutex poisoned");
+        let condition_ids = state.seen_condition_ids.lock();
+        let slugs = state.seen_slugs.lock();
         assert_eq!(
             condition_ids.len(),
             1 + NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS,
@@ -2562,11 +2509,8 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
 
-        let condition_ids = state
-            .seen_condition_ids
-            .lock()
-            .expect("seen_condition_ids mutex poisoned");
-        let slugs = state.seen_slugs.lock().expect("seen_slugs mutex poisoned");
+        let condition_ids = state.seen_condition_ids.lock();
+        let slugs = state.seen_slugs.lock();
         assert_eq!(condition_ids.len(), 1);
         assert_eq!(slugs.len(), 1);
         assert_eq!(condition_ids[0], None);
@@ -2661,8 +2605,8 @@ mod tests {
         gamma_response: Arc<tokio::sync::Mutex<Option<Value>>>,
         clob_market_by_condition: Arc<tokio::sync::Mutex<AHashMap<String, Value>>>,
         market_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
-        market_cache_probe: Arc<StdMutex<Option<CacheProbe>>>,
-        market_cache_at_connect: Arc<StdMutex<Vec<bool>>>,
+        market_cache_probe: Arc<Mutex<Option<CacheProbe>>>,
+        market_cache_at_connect: Arc<Mutex<Vec<bool>>>,
     }
 
     async fn handle_gamma_markets(State(state): State<TestServerState>) -> Json<Value> {
@@ -2699,18 +2643,10 @@ mod tests {
         ws: WebSocketUpgrade,
         State(state): State<TestServerState>,
     ) -> axum::response::Response {
-        let cache_probe = state
-            .market_cache_probe
-            .lock()
-            .expect("market_cache_probe mutex poisoned")
-            .clone();
+        let cache_probe = state.market_cache_probe.lock().clone();
 
         if let Some(cache_probe) = cache_probe {
-            state
-                .market_cache_at_connect
-                .lock()
-                .expect("market_cache_at_connect mutex poisoned")
-                .push(cache_probe());
+            state.market_cache_at_connect.lock().push(cache_probe());
         }
 
         ws.on_upgrade(move |socket| record_json_ws_payloads(socket, state.market_payloads))
@@ -2740,7 +2676,7 @@ mod tests {
 
     #[derive(Clone)]
     struct ExpiredAutoLoadServerState {
-        queries: Arc<StdMutex<Vec<ExpiredAutoLoadQuery>>>,
+        queries: Arc<Mutex<Vec<ExpiredAutoLoadQuery>>>,
         open_response: Value,
         closed_response: Value,
         market_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
@@ -2752,14 +2688,10 @@ mod tests {
     ) -> Json<Value> {
         let condition_ids = query_param(raw_query.clone(), "condition_ids");
         let closed = query_param(raw_query, "closed");
-        state
-            .queries
-            .lock()
-            .expect("expired auto-load queries mutex poisoned")
-            .push(ExpiredAutoLoadQuery {
-                condition_ids,
-                closed: closed.clone(),
-            });
+        state.queries.lock().push(ExpiredAutoLoadQuery {
+            condition_ids,
+            closed: closed.clone(),
+        });
 
         if closed.as_deref() == Some("true") {
             Json(state.closed_response)
@@ -2849,9 +2781,9 @@ mod tests {
 
     #[derive(Clone, Default)]
     struct ScriptedAutoLoadServerState {
-        queries: Arc<StdMutex<Vec<ExpiredAutoLoadQuery>>>,
-        open_replies: Arc<StdMutex<VecDeque<ScriptedAutoLoadReply>>>,
-        closed_replies: Arc<StdMutex<VecDeque<ScriptedAutoLoadReply>>>,
+        queries: Arc<Mutex<Vec<ExpiredAutoLoadQuery>>>,
+        open_replies: Arc<Mutex<VecDeque<ScriptedAutoLoadReply>>>,
+        closed_replies: Arc<Mutex<VecDeque<ScriptedAutoLoadReply>>>,
         market_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
         completed_replies: Arc<AtomicUsize>,
     }
@@ -2862,9 +2794,9 @@ mod tests {
             closed_replies: Vec<ScriptedAutoLoadReply>,
         ) -> Self {
             Self {
-                queries: Arc::new(StdMutex::new(Vec::new())),
-                open_replies: Arc::new(StdMutex::new(open_replies.into())),
-                closed_replies: Arc::new(StdMutex::new(closed_replies.into())),
+                queries: Arc::new(Mutex::new(Vec::new())),
+                open_replies: Arc::new(Mutex::new(open_replies.into())),
+                closed_replies: Arc::new(Mutex::new(closed_replies.into())),
                 market_payloads: Arc::new(tokio::sync::Mutex::new(Vec::new())),
                 completed_replies: Arc::new(AtomicUsize::new(0)),
             }
@@ -2877,14 +2809,10 @@ mod tests {
     ) -> ScriptedAutoLoadReply {
         let condition_ids = query_param(raw_query.clone(), "condition_ids");
         let closed = query_param(raw_query, "closed");
-        state
-            .queries
-            .lock()
-            .expect("scripted auto-load queries mutex poisoned")
-            .push(ExpiredAutoLoadQuery {
-                condition_ids,
-                closed: closed.clone(),
-            });
+        state.queries.lock().push(ExpiredAutoLoadQuery {
+            condition_ids,
+            closed: closed.clone(),
+        });
 
         let replies = if closed.as_deref() == Some("true") {
             &state.closed_replies
@@ -2893,7 +2821,6 @@ mod tests {
         };
         replies
             .lock()
-            .expect("scripted auto-load replies mutex poisoned")
             .pop_front()
             .unwrap_or_else(|| ScriptedAutoLoadReply::ok(serde_json::json!([])))
     }
@@ -3050,22 +2977,15 @@ mod tests {
     fn reset_client_clears_live_tick_state() {
         let mut client = make_local_test_client();
         let token_id = Ustr::from("0xTOKEN_RESET_TICK");
-        client
-            .instrument_update_state
-            .lock()
-            .expect("instrument_update_state mutex poisoned")
-            .record_live_tick(
-                token_id,
-                "0.005".parse().expect("tick size"),
-                UnixNanos::from(1_700_000_001_000_000_000),
-            );
+        client.instrument_update_state.lock().record_live_tick(
+            token_id,
+            "0.005".parse().expect("tick size"),
+            UnixNanos::from(1_700_000_001_000_000_000),
+        );
 
         client.reset_client();
 
-        let update_state = client
-            .instrument_update_state
-            .lock()
-            .expect("instrument_update_state mutex poisoned");
+        let update_state = client.instrument_update_state.lock();
         assert!(!update_state.contains_live_tick(&token_id));
     }
 
@@ -4026,10 +3946,7 @@ mod tests {
 
         let instrument_id = fixture_yes_instrument_id();
         let instruments = client.instruments.clone();
-        *state
-            .market_cache_probe
-            .lock()
-            .expect("market_cache_probe mutex poisoned") = Some(Arc::new(move || {
+        *state.market_cache_probe.lock() = Some(Arc::new(move || {
             instruments.load().contains_key(&instrument_id)
         }));
 
@@ -4085,11 +4002,7 @@ mod tests {
         .expect("timed out waiting for instrument publication");
 
         let payloads = state.market_payloads.lock().await.clone();
-        let cache_at_connect = state
-            .market_cache_at_connect
-            .lock()
-            .expect("market_cache_at_connect mutex poisoned")
-            .clone();
+        let cache_at_connect = state.market_cache_at_connect.lock().clone();
         let cached_instrument = client
             .instruments
             .load()
@@ -4123,7 +4036,7 @@ mod tests {
     async fn auto_load_closed_future_instrument_retires_without_retrying() {
         let filter_calls = Arc::new(AtomicUsize::new(0));
         let state = ExpiredAutoLoadServerState {
-            queries: Arc::new(StdMutex::new(Vec::new())),
+            queries: Arc::new(Mutex::new(Vec::new())),
             open_response: serde_json::json!([]),
             closed_response: serde_json::json!([gamma_market_future_closed_fixture_value()]),
             market_payloads: Arc::new(tokio::sync::Mutex::new(Vec::new())),
@@ -4161,11 +4074,7 @@ mod tests {
                 let client = &client;
                 async move {
                     !client.active_quote_subs.contains(&instrument_id)
-                        && client
-                            .pending_auto_loads
-                            .lock()
-                            .expect("pending_auto_loads mutex poisoned")
-                            .is_empty()
+                        && client.pending_auto_loads.lock().is_empty()
                         && !client.auto_load_scheduled.load(Ordering::Acquire)
                 }
             },
@@ -4174,10 +4083,7 @@ mod tests {
         .await;
 
         assert_eq!(
-            *state
-                .queries
-                .lock()
-                .expect("expired auto-load queries mutex poisoned"),
+            *state.queries.lock(),
             vec![
                 ExpiredAutoLoadQuery {
                     condition_ids: Some(TEST_CONDITION_ID.to_string()),
@@ -4275,23 +4181,12 @@ mod tests {
         wait_until_async(
             || {
                 let state = state.clone();
-                async move {
-                    state
-                        .queries
-                        .lock()
-                        .expect("scripted auto-load queries mutex poisoned")
-                        .len()
-                        >= 2
-                }
+                async move { state.queries.lock().len() >= 2 }
             },
             StdDuration::from_secs(3),
         )
         .await;
-        client
-            .pending_auto_loads
-            .lock()
-            .expect("pending_auto_loads mutex poisoned")
-            .insert(sibling_id);
+        client.pending_auto_loads.lock().insert(sibling_id);
 
         wait_until_async(
             || {
@@ -4322,24 +4217,14 @@ mod tests {
                 .pending_snapshot_after_tick_change
                 .contains(&sibling_id)
         );
-        assert!(
-            !client
-                .pending_auto_loads
-                .lock()
-                .expect("pending_auto_loads mutex poisoned")
-                .contains(&sibling_id)
-        );
+        assert!(!client.pending_auto_loads.lock().contains(&sibling_id));
         assert!(
             !client
                 .ws_open_tokens
                 .contains(&Ustr::from(TEST_TOKEN_ID_NO))
         );
 
-        let query_count = state
-            .queries
-            .lock()
-            .expect("scripted auto-load queries mutex poisoned")
-            .len();
+        let query_count = state.queries.lock().len();
         let payload_count = state.market_payloads.lock().await.len();
 
         for instrument_id in [requested_id, sibling_id] {
@@ -4356,14 +4241,7 @@ mod tests {
         // Quiet period: terminal resubscriptions must not enqueue a later auto-load or WS payload.
         tokio::time::sleep(Duration::from_millis(100)).await;
 
-        assert_eq!(
-            state
-                .queries
-                .lock()
-                .expect("scripted auto-load queries mutex poisoned")
-                .len(),
-            query_count,
-        );
+        assert_eq!(state.queries.lock().len(), query_count,);
         assert_eq!(state.market_payloads.lock().await.len(), payload_count);
         assert!(!client.active_quote_subs.contains(&requested_id));
         assert!(!client.active_quote_subs.contains(&sibling_id));
@@ -4511,11 +4389,7 @@ mod tests {
         .await;
 
         assert_eq!(
-            state
-                .queries
-                .lock()
-                .expect("scripted auto-load queries mutex poisoned")
-                .as_slice(),
+            state.queries.lock().as_slice(),
             &[ExpiredAutoLoadQuery {
                 condition_ids: Some(TEST_CONDITION_ID.to_string()),
                 closed: None,
@@ -4570,14 +4444,7 @@ mod tests {
         wait_until_async(
             || {
                 let state = state.clone();
-                async move {
-                    state
-                        .queries
-                        .lock()
-                        .expect("scripted auto-load queries mutex poisoned")
-                        .len()
-                        == 1
-                }
+                async move { state.queries.lock().len() == 1 }
             },
             StdDuration::from_secs(3),
         )
@@ -4599,12 +4466,7 @@ mod tests {
                 let client = &client;
                 let state = state.clone();
                 async move {
-                    state
-                        .queries
-                        .lock()
-                        .expect("scripted auto-load queries mutex poisoned")
-                        .len()
-                        == 2
+                    state.queries.lock().len() == 2
                         && client.instruments.load().contains_key(&instrument_id)
                         && client.active_quote_subs.contains(&instrument_id)
                 }
@@ -4625,7 +4487,6 @@ mod tests {
             !client
                 .closed_condition_ids
                 .lock()
-                .expect("closed_condition_ids mutex poisoned")
                 .contains(TEST_CONDITION_ID)
         );
         assert!(client.active_quote_subs.contains(&instrument_id));
@@ -4635,23 +4496,10 @@ mod tests {
                 .token_meta
                 .contains_key(&Ustr::from(TEST_TOKEN_ID_YES))
         );
-        assert!(
-            !client
-                .pending_auto_loads
-                .lock()
-                .expect("pending_auto_loads mutex poisoned")
-                .contains(&instrument_id)
-        );
+        assert!(!client.pending_auto_loads.lock().contains(&instrument_id));
         assert!(data_rx.try_recv().is_err());
         assert_eq!(state.completed_replies.load(Ordering::SeqCst), 1);
-        assert_eq!(
-            state
-                .queries
-                .lock()
-                .expect("scripted auto-load queries mutex poisoned")
-                .len(),
-            2,
-        );
+        assert_eq!(state.queries.lock().len(), 2,);
     }
 
     #[rstest]
@@ -4685,14 +4533,7 @@ mod tests {
         wait_until_async(
             || {
                 let state = state.clone();
-                async move {
-                    state
-                        .queries
-                        .lock()
-                        .expect("scripted auto-load queries mutex poisoned")
-                        .len()
-                        == 1
-                }
+                async move { state.queries.lock().len() == 1 }
             },
             StdDuration::from_secs(3),
         )
@@ -4702,9 +4543,7 @@ mod tests {
         let (pending_locked_tx, pending_locked_rx) = std::sync::mpsc::sync_channel(1);
         let (pending_release_tx, pending_release_rx) = std::sync::mpsc::sync_channel(1);
         let pending_lock_thread = std::thread::spawn(move || {
-            let _guard = old_pending
-                .lock()
-                .expect("pending_auto_loads mutex poisoned");
+            let _guard = old_pending.lock();
             pending_locked_tx
                 .send(())
                 .expect("signal pending auto-load gate");
@@ -4720,12 +4559,7 @@ mod tests {
         wait_until_async(
             || {
                 let closed_condition_ids = old_closed_condition_ids.clone();
-                async move {
-                    closed_condition_ids
-                        .lock()
-                        .expect("closed_condition_ids mutex poisoned")
-                        .contains(TEST_CONDITION_ID)
-                }
+                async move { closed_condition_ids.lock().contains(TEST_CONDITION_ID) }
             },
             StdDuration::from_secs(3),
         )
@@ -4782,14 +4616,7 @@ mod tests {
         wait_until_async(
             || {
                 let state = state.clone();
-                async move {
-                    state
-                        .queries
-                        .lock()
-                        .expect("scripted auto-load queries mutex poisoned")
-                        .len()
-                        == 1
-                }
+                async move { state.queries.lock().len() == 1 }
             },
             StdDuration::from_secs(3),
         )
@@ -4799,9 +4626,7 @@ mod tests {
         let (locked_tx, locked_rx) = std::sync::mpsc::sync_channel(1);
         let (release_tx, release_rx) = std::sync::mpsc::sync_channel(1);
         let lock_thread = std::thread::spawn(move || {
-            let _guard = closed_condition_ids
-                .lock()
-                .expect("closed_condition_ids mutex poisoned");
+            let _guard = closed_condition_ids.lock();
             locked_tx.send(()).expect("signal closure application gate");
             release_rx.recv().expect("release closure application gate");
         });
@@ -4837,7 +4662,6 @@ mod tests {
             !client
                 .closed_condition_ids
                 .lock()
-                .expect("closed_condition_ids mutex poisoned")
                 .contains(TEST_CONDITION_ID)
         );
         assert!(data_rx.try_recv().is_err());
@@ -4885,11 +4709,7 @@ mod tests {
         .await;
 
         assert_eq!(
-            state
-                .queries
-                .lock()
-                .expect("scripted auto-load queries mutex poisoned")
-                .as_slice(),
+            state.queries.lock().as_slice(),
             &[
                 ExpiredAutoLoadQuery {
                     condition_ids: Some(TEST_CONDITION_ID.to_string()),
@@ -4949,7 +4769,6 @@ mod tests {
             client
                 .closed_condition_ids
                 .lock()
-                .expect("closed_condition_ids mutex poisoned")
                 .contains(TEST_CONDITION_ID)
         );
     }
@@ -4994,13 +4813,7 @@ mod tests {
         wait_until_async(
             || {
                 let state = state.clone();
-                async move {
-                    !state
-                        .queries
-                        .lock()
-                        .expect("scripted auto-load queries mutex poisoned")
-                        .is_empty()
-                }
+                async move { !state.queries.lock().is_empty() }
             },
             StdDuration::from_secs(3),
         )
@@ -5067,7 +4880,6 @@ mod tests {
             client
                 .closed_condition_ids
                 .lock()
-                .expect("closed_condition_ids mutex poisoned")
                 .contains(TEST_CONDITION_ID)
         );
         assert!(!client.active_quote_subs.contains(&instrument_id));
@@ -5095,7 +4907,7 @@ mod tests {
     async fn auto_load_expired_open_instrument_is_cached_and_subscribed() {
         let filter_calls = Arc::new(AtomicUsize::new(0));
         let state = ExpiredAutoLoadServerState {
-            queries: Arc::new(StdMutex::new(Vec::new())),
+            queries: Arc::new(Mutex::new(Vec::new())),
             open_response: serde_json::json!([gamma_market_expired_fixture_value()]),
             closed_response: serde_json::json!([]),
             market_payloads: Arc::new(tokio::sync::Mutex::new(Vec::new())),
@@ -5157,10 +4969,7 @@ mod tests {
         .await;
 
         assert_eq!(
-            *state
-                .queries
-                .lock()
-                .expect("expired auto-load queries mutex poisoned"),
+            *state.queries.lock(),
             vec![ExpiredAutoLoadQuery {
                 condition_ids: Some(TEST_CONDITION_ID.to_string()),
                 closed: None,
@@ -5175,13 +4984,7 @@ mod tests {
         );
         assert_eq!(emitted_instrument.raw_symbol().as_str(), TEST_TOKEN_ID_YES);
         assert_eq!(filter_calls.load(Ordering::SeqCst), 2);
-        assert!(
-            !client
-                .pending_auto_loads
-                .lock()
-                .expect("pending_auto_loads mutex poisoned")
-                .contains(&instrument_id)
-        );
+        assert!(!client.pending_auto_loads.lock().contains(&instrument_id));
 
         let payloads = state.market_payloads.lock().await.clone();
         assert_eq!(
@@ -5247,11 +5050,7 @@ mod tests {
         .await;
 
         assert_eq!(
-            state
-                .queries
-                .lock()
-                .expect("scripted auto-load queries mutex poisoned")
-                .as_slice(),
+            state.queries.lock().as_slice(),
             &[ExpiredAutoLoadQuery {
                 condition_ids: Some(TEST_CONDITION_ID.to_string()),
                 closed: None,
@@ -5310,25 +5109,14 @@ mod tests {
         wait_until_async(
             || {
                 let state = state.clone();
-                async move {
-                    state
-                        .queries
-                        .lock()
-                        .expect("scripted auto-load queries mutex poisoned")
-                        .len()
-                        >= 3
-                }
+                async move { state.queries.lock().len() >= 3 }
             },
             StdDuration::from_secs(3),
         )
         .await;
 
         assert_eq!(
-            state
-                .queries
-                .lock()
-                .expect("scripted auto-load queries mutex poisoned")
-                .as_slice(),
+            state.queries.lock().as_slice(),
             &[
                 ExpiredAutoLoadQuery {
                     condition_ids: Some(TEST_CONDITION_ID.to_string()),
@@ -5398,24 +5186,13 @@ mod tests {
         wait_until_async(
             || {
                 let state = state.clone();
-                async move {
-                    state
-                        .queries
-                        .lock()
-                        .expect("scripted auto-load queries mutex poisoned")
-                        .len()
-                        >= 6
-                }
+                async move { state.queries.lock().len() >= 6 }
             },
             StdDuration::from_secs(3),
         )
         .await;
 
-        let queries = state
-            .queries
-            .lock()
-            .expect("scripted auto-load queries mutex poisoned")
-            .clone();
+        let queries = state.queries.lock().clone();
         assert_eq!(queries.len(), 6);
         for (index, query) in queries.iter().enumerate() {
             assert_eq!(query.condition_ids.as_deref(), Some(TEST_CONDITION_ID));
@@ -5498,17 +5275,11 @@ mod tests {
                 let client = &client;
                 let state = state.clone();
                 async move {
-                    state
-                        .queries
-                        .lock()
-                        .expect("scripted auto-load queries mutex poisoned")
-                        .len()
-                        == 4
+                    state.queries.lock().len() == 4
                         && client.instruments.load().contains_key(&open_id)
                         && client
                             .closed_condition_ids
                             .lock()
-                            .expect("closed_condition_ids mutex poisoned")
                             .contains(CLOSED_CONDITION)
                 }
             },
@@ -5516,11 +5287,7 @@ mod tests {
         )
         .await;
 
-        let queries = state
-            .queries
-            .lock()
-            .expect("scripted auto-load queries mutex poisoned")
-            .clone();
+        let queries = state.queries.lock().clone();
         assert_eq!(queries.len(), 4);
         assert_eq!(queries[2].condition_ids.as_deref(), Some(UNKNOWN_CONDITION));
         assert_eq!(queries[2].closed, None);
@@ -5592,14 +5359,7 @@ mod tests {
         wait_until_async(
             || {
                 let state = state.clone();
-                async move {
-                    state
-                        .queries
-                        .lock()
-                        .expect("scripted auto-load queries mutex poisoned")
-                        .len()
-                        >= 2
-                }
+                async move { state.queries.lock().len() >= 2 }
             },
             StdDuration::from_secs(3),
         )
@@ -5694,14 +5454,7 @@ mod tests {
         wait_until_async(
             || {
                 let state = state.clone();
-                async move {
-                    state
-                        .queries
-                        .lock()
-                        .expect("scripted auto-load queries mutex poisoned")
-                        .len()
-                        >= queries_before_second_load
-                }
+                async move { state.queries.lock().len() >= queries_before_second_load }
             },
             StdDuration::from_secs(3),
         )
@@ -5712,11 +5465,7 @@ mod tests {
             || {
                 let client = &client;
                 async move {
-                    client
-                        .closed_condition_ids
-                        .lock()
-                        .expect("closed_condition_ids mutex poisoned")
-                        .contains(CONDITION)
+                    client.closed_condition_ids.lock().contains(CONDITION)
                         && !client.active_quote_subs.contains(&instrument_id)
                         && !client.instruments.load().contains_key(&instrument_id)
                 }
@@ -5788,11 +5537,7 @@ mod tests {
             StdDuration::from_secs(3),
         )
         .await;
-        let query_count = state
-            .queries
-            .lock()
-            .expect("scripted auto-load queries mutex poisoned")
-            .len();
+        let query_count = state.queries.lock().len();
 
         let _ = client.subscribe_quotes(SubscribeQuotes::new(
             instrument_id,
@@ -5806,14 +5551,7 @@ mod tests {
         // Quiet period: a terminal resubscription must not enqueue a delayed auto-load.
         tokio::time::sleep(Duration::from_millis(100)).await;
 
-        assert_eq!(
-            state
-                .queries
-                .lock()
-                .expect("scripted auto-load queries mutex poisoned")
-                .len(),
-            query_count,
-        );
+        assert_eq!(state.queries.lock().len(), query_count,);
         assert!(!client.active_quote_subs.contains(&instrument_id));
         assert!(!client.instruments.load().contains_key(&instrument_id));
         assert!(state.market_payloads.lock().await.is_empty());
@@ -5895,11 +5633,7 @@ mod tests {
         assert!(!client.active_delta_subs.contains(&sibling_id));
         assert!(!client.active_trade_subs.contains(&sibling_id));
 
-        let query_count = state
-            .queries
-            .lock()
-            .expect("scripted auto-load queries mutex poisoned")
-            .len();
+        let query_count = state.queries.lock().len();
 
         for instrument_id in [instrument_id, sibling_id] {
             let _ = client.subscribe_quotes(SubscribeQuotes::new(
@@ -5915,14 +5649,7 @@ mod tests {
         // Quiet period: retained settlement metadata must not trigger a delayed live reload.
         tokio::time::sleep(Duration::from_millis(100)).await;
 
-        assert_eq!(
-            state
-                .queries
-                .lock()
-                .expect("scripted auto-load queries mutex poisoned")
-                .len(),
-            query_count,
-        );
+        assert_eq!(state.queries.lock().len(), query_count,);
         assert!(client.instruments.load().contains_key(&instrument_id));
         assert!(client.instruments.load().contains_key(&sibling_id));
         assert!(!client.active_quote_subs.contains(&instrument_id));
@@ -6646,10 +6373,7 @@ mod tests {
         let asset_id = "0xCONDITION-token";
         let market = "0xCONDITION";
         let (ctx, mut data_rx, instrument_id) = quote_context(asset_id);
-        ctx.closed_condition_ids
-            .lock()
-            .unwrap()
-            .insert(market.to_string());
+        ctx.closed_condition_ids.lock().insert(market.to_string());
 
         handle_market_message(make_best_bid_ask(market, asset_id, "0.50", "0.52"), &ctx);
 

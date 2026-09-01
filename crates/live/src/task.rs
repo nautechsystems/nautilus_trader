@@ -76,7 +76,7 @@ use std::{
     future::Future,
     panic::AssertUnwindSafe,
     sync::{
-        Arc, Mutex, MutexGuard,
+        Arc,
         atomic::{AtomicBool, AtomicU8, Ordering},
     },
     time::Duration,
@@ -88,7 +88,7 @@ use nautilus_common::live::dst::{
     task::{JoinError, JoinHandle},
     time,
 };
-use nautilus_core::MUTEX_POISONED;
+use parking_lot::{Mutex, MutexGuard};
 use tokio_util::{
     sync::CancellationToken,
     task::{TaskTracker, task_tracker::TaskTrackerToken},
@@ -620,17 +620,13 @@ impl<T> SharedTaskSlot<T> {
     /// Returns whether the owned task has finished without being joined.
     ///
     /// Returns `false` while a drain owns the handle and its state is unavailable.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the task slot mutex is poisoned.
     #[must_use]
     pub fn is_finished(&self) -> bool {
         if self.is_empty() {
             return false;
         }
 
-        let state = self.state.lock().expect(MUTEX_POISONED);
+        let state = self.state.lock();
         !state.draining && state.slot.as_ref().is_some_and(JoinHandle::is_finished)
     }
 
@@ -679,16 +675,12 @@ impl<T> SharedTaskSlot<T> {
     /// # Errors
     ///
     /// Returns the input slot when this owner already has a task or is draining one.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     pub fn try_insert_slot(&self, slot: TaskSlot<T>) -> Result<(), TaskSlot<T>> {
         if slot.is_none() {
             return Ok(());
         }
 
-        let mut state = self.state.lock().expect(MUTEX_POISONED);
+        let mut state = self.state.lock();
         if self.owned.load(Ordering::Acquire) || state.slot.is_some() || state.draining {
             return Err(slot);
         }
@@ -703,10 +695,10 @@ impl<T> SharedTaskSlot<T> {
     ///
     /// # Panics
     ///
-    /// Panics if the task slot mutex is poisoned.
+    /// Panics if the shared task slot changes while cancellation temporarily drains it.
     pub fn abort(&self) {
         let (mut slot, abort, moved_slot) = {
-            let mut state = self.state.lock().expect(MUTEX_POISONED);
+            let mut state = self.state.lock();
             state.abort_requested = true;
             let moved_slot = !state.draining && state.slot.is_some();
             if moved_slot {
@@ -724,7 +716,7 @@ impl<T> SharedTaskSlot<T> {
         abort.cancel();
 
         if moved_slot {
-            let mut state = self.state.lock().expect(MUTEX_POISONED);
+            let mut state = self.state.lock();
             assert!(
                 state.slot.is_none(),
                 "shared task slot changed while aborting"
@@ -738,10 +730,6 @@ impl<T> SharedTaskSlot<T> {
     ///
     /// If another caller holds the drain lock through both bounds, returns
     /// [`TaskJoinOutcome::Incomplete`] when a task remains owned.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the task slot mutex is poisoned.
     pub async fn finish(
         &self,
         graceful_timeout: Duration,
@@ -762,9 +750,7 @@ impl<T> SharedTaskSlot<T> {
         let reserve_timeout = abort_deadline.saturating_duration_since(time::Instant::now());
         let Ok((slot, abort, abort_requested)) = time::timeout(reserve_timeout, async {
             loop {
-                if let Some(reservation) =
-                    self.state.lock().expect(MUTEX_POISONED).try_reserve_drain()
-                {
+                if let Some(reservation) = self.state.lock().try_reserve_drain() {
                     break reservation;
                 }
                 nautilus_common::live::dst::task::yield_now().await;
@@ -776,7 +762,7 @@ impl<T> SharedTaskSlot<T> {
         };
 
         if slot.is_none() {
-            let mut state = self.state.lock().expect(MUTEX_POISONED);
+            let mut state = self.state.lock();
             self.owned.store(false, Ordering::Release);
             state.draining = false;
             return None;
@@ -825,7 +811,7 @@ impl<T> SharedTaskSlot<T> {
 
 impl<T> Drop for SharedTaskSlot<T> {
     fn drop(&mut self) {
-        self.state.get_mut().expect(MUTEX_POISONED).slot.abort();
+        self.state.get_mut().slot.abort();
     }
 }
 
@@ -840,7 +826,7 @@ impl<T> Drop for SharedTaskDrain<'_, T> {
         let mut abort_applied = false;
 
         loop {
-            let mut state = self.owner.state.lock().expect(MUTEX_POISONED);
+            let mut state = self.owner.state.lock();
             if owns_task && !abort_applied && (state.abort_requested || state.abort.is_cancelled())
             {
                 drop(state);
@@ -1031,9 +1017,7 @@ impl TaskGeneration {
     }
 
     fn lock_failures(&self) -> MutexGuard<'_, Vec<String>> {
-        self.failures
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        self.failures.lock()
     }
 }
 
@@ -1887,7 +1871,7 @@ mod tests {
         let finish =
             task::spawn(async move { finishing_slot.finish(TEST_TIMEOUT, TEST_TIMEOUT).await });
 
-        while !slot.state.lock().expect(MUTEX_POISONED).draining {
+        while !slot.state.lock().draining {
             task::yield_now().await;
         }
         slot.abort();
@@ -1936,7 +1920,7 @@ mod tests {
         let finish =
             task::spawn(async move { finishing_slot.finish(TEST_TIMEOUT, TEST_TIMEOUT).await });
 
-        while !slot.state.lock().expect(MUTEX_POISONED).draining {
+        while !slot.state.lock().draining {
             task::yield_now().await;
         }
         finish.abort();
@@ -1959,7 +1943,6 @@ mod tests {
         let (reserved, _, _) = slot
             .state
             .lock()
-            .expect(MUTEX_POISONED)
             .try_reserve_drain()
             .expect("empty slot should reserve");
 
@@ -1971,7 +1954,7 @@ mod tests {
 
         assert!(rejected.is_some());
         assert!(slot.is_empty());
-        let mut state = slot.state.lock().expect(MUTEX_POISONED);
+        let mut state = slot.state.lock();
         state.slot = reserved;
         state.draining = false;
     }

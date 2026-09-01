@@ -25,9 +25,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use nautilus_common::cache::fifo::FifoCache;
-use nautilus_core::{
-    AtomicTime, MUTEX_POISONED, Params, nanos::UnixNanos, time::get_atomic_clock_realtime,
-};
+use nautilus_core::{AtomicTime, Params, nanos::UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::{BarType, CustomData, Data, DataType},
     identifiers::{AccountId, InstrumentId},
@@ -742,11 +740,7 @@ impl FeedHandler {
                         // Resolve cloid to real client_order_id if cached
                         if let Some(cloid) = &order_update.order.cloid {
                             let cloid_ustr = Ustr::from(cloid.as_str());
-                            let resolved = cloid_cache
-                                .lock()
-                                .expect(MUTEX_POISONED)
-                                .get(&cloid_ustr)
-                                .copied();
+                            let resolved = cloid_cache.lock().get(&cloid_ustr).copied();
 
                             if let Some(real_client_order_id) = resolved {
                                 log::debug!("Resolved cloid {cloid} -> {real_client_order_id}");
@@ -798,11 +792,7 @@ impl FeedHandler {
 
                         if let Some(cloid) = &fill.cloid {
                             let cloid_ustr = Ustr::from(cloid.as_str());
-                            let resolved = cloid_cache
-                                .lock()
-                                .expect(MUTEX_POISONED)
-                                .get(&cloid_ustr)
-                                .copied();
+                            let resolved = cloid_cache.lock().get(&cloid_ustr).copied();
 
                             if let Some(real_client_order_id) = resolved {
                                 log::debug!(
@@ -1407,7 +1397,7 @@ pub(crate) fn create_hyperliquid_timeout_error(msg: String) -> HyperliquidWsErro
 #[cfg(test)]
 mod tests {
     use std::{
-        sync::{Arc, Mutex, atomic::AtomicBool},
+        sync::{Arc, atomic::AtomicBool},
         time::Duration,
     };
 
@@ -1422,6 +1412,7 @@ mod tests {
         types::{Currency, Price, Quantity},
     };
     use nautilus_network::websocket::SubscriptionState;
+    use parking_lot::Mutex;
     use rstest::rstest;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
@@ -1457,11 +1448,11 @@ mod tests {
 
     impl OutboundLogCapture {
         fn clear(&self) {
-            self.messages.lock().unwrap().clear();
+            self.messages.lock().clear();
         }
 
         fn messages(&self) -> Vec<String> {
-            self.messages.lock().unwrap().clone()
+            self.messages.lock().clone()
         }
     }
 
@@ -1475,7 +1466,7 @@ mod tests {
             if self.enabled(record.metadata()) {
                 let message = record.args().to_string();
                 if message.starts_with("Sending ") {
-                    self.messages.lock().unwrap().push(message);
+                    self.messages.lock().push(message);
                 }
             }
         }

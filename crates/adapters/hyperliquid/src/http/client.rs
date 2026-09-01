@@ -23,7 +23,7 @@
 use std::{
     collections::HashMap,
     num::NonZeroU32,
-    sync::{Arc, LazyLock, Mutex},
+    sync::{Arc, LazyLock},
     time::Duration,
 };
 
@@ -31,7 +31,7 @@ use ahash::AHashMap;
 use anyhow::Context;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
-    AtomicMap, MUTEX_POISONED, UUID4, UnixNanos,
+    AtomicMap, UUID4, UnixNanos,
     consts::NAUTILUS_USER_AGENT,
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
@@ -53,6 +53,7 @@ use nautilus_network::{
     http::{HttpClient, HttpClientError, HttpResponse, Method, USER_AGENT},
     ratelimiter::quota::Quota,
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use serde_json::Value;
 use ustr::Ustr;
@@ -967,57 +968,39 @@ impl HyperliquidHttpClient {
     }
 
     /// Returns the cached CLOID for a client order ID, or derives and caches it.
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "cloid cache mutex poisoning is not expected"
-    )]
     #[must_use]
     pub fn get_or_generate_client_order_id_cloid(&self, client_order_id: ClientOrderId) -> Cloid {
-        let mut cloids = self.client_order_id_cloids.lock().expect(MUTEX_POISONED);
+        let mut cloids = self.client_order_id_cloids.lock();
         *cloids
             .entry(client_order_id)
             .or_insert_with(|| Cloid::from_client_order_id(client_order_id))
     }
 
     /// Caches a CLOID for a client order ID if one is not already cached.
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "cloid cache mutex poisoning is not expected"
-    )]
     pub fn cache_client_order_id_cloid(&self, client_order_id: ClientOrderId, cloid: Cloid) {
         self.client_order_id_cloids
             .lock()
-            .expect(MUTEX_POISONED)
             .entry(client_order_id)
             .or_insert(cloid);
     }
 
     /// Returns the cached CLOID for a client order ID.
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "cloid cache mutex poisoning is not expected"
-    )]
     #[must_use]
     pub fn cached_client_order_id_cloid(&self, client_order_id: &ClientOrderId) -> Option<Cloid> {
         self.client_order_id_cloids
             .lock()
-            .expect(MUTEX_POISONED)
             .get(client_order_id)
             .copied()
     }
 
     /// Returns the cached CLOID for a client order ID when no other client
     /// order ID maps to the same CLOID.
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "cloid cache mutex poisoning is not expected"
-    )]
     #[must_use]
     pub(crate) fn unique_cached_client_order_id_cloid(
         &self,
         client_order_id: &ClientOrderId,
     ) -> Option<Cloid> {
-        let cloids = self.client_order_id_cloids.lock().expect(MUTEX_POISONED);
+        let cloids = self.client_order_id_cloids.lock();
         let cloid = cloids.get(client_order_id).copied()?;
         let mapping_count = cloids
             .values()
@@ -1028,15 +1011,8 @@ impl HyperliquidHttpClient {
     }
 
     /// Removes the cached CLOID for a client order ID.
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "cloid cache mutex poisoning is not expected"
-    )]
     pub fn remove_client_order_id_cloid(&self, client_order_id: &ClientOrderId) -> Option<Cloid> {
-        self.client_order_id_cloids
-            .lock()
-            .expect(MUTEX_POISONED)
-            .remove(client_order_id)
+        self.client_order_id_cloids.lock().remove(client_order_id)
     }
 
     /// Overrides the base info URL (for testing with mock servers).
@@ -3733,7 +3709,7 @@ mod tests {
         response::{IntoResponse, Json, Response},
         routing::post,
     };
-    use nautilus_core::{MUTEX_POISONED, time::get_atomic_clock_realtime};
+    use nautilus_core::time::get_atomic_clock_realtime;
     use nautilus_model::{
         currencies::CURRENCY_MAP,
         enums::{CurrencyType, OrderSide, OrderStatus, OrderType, TimeInForce},
@@ -4181,7 +4157,7 @@ mod tests {
 
         // Register the custom currency
         {
-            let mut currency_map = CURRENCY_MAP.lock().expect(MUTEX_POISONED);
+            let mut currency_map = CURRENCY_MAP.lock();
             if !currency_map.contains_key(base_code) {
                 currency_map.insert(
                     base_code.to_string(),

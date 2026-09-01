@@ -17,7 +17,6 @@ use std::{
     cell::{Cell, RefCell},
     rc::Rc,
     str::FromStr,
-    sync::Mutex,
 };
 
 use ahash::AHashMap;
@@ -85,6 +84,7 @@ use nautilus_model::{
     },
 };
 use nautilus_testkit::cache::TestCacheDatabaseControl;
+use parking_lot::Mutex;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -3449,11 +3449,11 @@ struct CapturingLogger {
 
 impl CapturingLogger {
     fn clear(&self) {
-        self.messages.lock().unwrap().clear();
+        self.messages.lock().clear();
     }
 
     fn messages(&self) -> Vec<(Level, String)> {
-        self.messages.lock().unwrap().clone()
+        self.messages.lock().clone()
     }
 }
 
@@ -3466,7 +3466,6 @@ impl Log for CapturingLogger {
         if self.enabled(record.metadata()) {
             self.messages
                 .lock()
-                .unwrap()
                 .push((record.level(), record.args().to_string()));
         }
     }
@@ -4153,7 +4152,7 @@ fn test_cfd_swap_exact_long_short_and_triple_roll_balances(
 
 #[rstest]
 fn test_cfd_swap_price_and_acknowledgement_retry_and_reset_isolation() {
-    let _guard = CAPTURING_LOGGER_TEST_LOCK.lock().unwrap();
+    let _guard = CAPTURING_LOGGER_TEST_LOCK.lock();
     let _ = log::set_logger(&CAPTURING_LOGGER);
     log::set_max_level(LevelFilter::Warn);
     CAPTURING_LOGGER.clear();
@@ -4479,7 +4478,7 @@ fn test_fx_rollover_friday_to_monday_gap_books_monday_once(audusd_sim: CurrencyP
 fn test_missing_xrate_retries_emit_one_module_warning_and_no_cache_errors(
     audusd_sim: CurrencyPair,
 ) {
-    let _guard = CAPTURING_LOGGER_TEST_LOCK.lock().unwrap();
+    let _guard = CAPTURING_LOGGER_TEST_LOCK.lock();
     let _ = log::set_logger(&CAPTURING_LOGGER);
     log::set_max_level(LevelFilter::Warn);
     CAPTURING_LOGGER.clear();
@@ -4560,7 +4559,7 @@ fn test_missing_rates_skip_instrument_and_do_not_stall_later_days(
     audusd_sim: CurrencyPair,
     gbpusd_sim: CurrencyPair,
 ) {
-    let _guard = CAPTURING_LOGGER_TEST_LOCK.lock().unwrap();
+    let _guard = CAPTURING_LOGGER_TEST_LOCK.lock();
     let _ = log::set_logger(&CAPTURING_LOGGER);
     log::set_max_level(LevelFilter::Warn);
     CAPTURING_LOGGER.clear();
@@ -4660,7 +4659,7 @@ fn test_unrepresentable_money_warns_once_without_error_across_recalculation(
     audusd_sim: CurrencyPair,
     gbpusd_sim: CurrencyPair,
 ) {
-    let _guard = CAPTURING_LOGGER_TEST_LOCK.lock().unwrap();
+    let _guard = CAPTURING_LOGGER_TEST_LOCK.lock();
     let _ = log::set_logger(&CAPTURING_LOGGER);
     log::set_max_level(LevelFilter::Warn);
     CAPTURING_LOGGER.clear();

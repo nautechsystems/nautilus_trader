@@ -26,7 +26,7 @@ use std::{
     fmt::Debug,
     num::NonZeroU32,
     sync::{
-        Arc, LazyLock, Mutex,
+        Arc, LazyLock,
         atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
     time::{Duration, SystemTime},
@@ -62,6 +62,7 @@ use nautilus_network::{
         WebSocketClient, WebSocketConfig, channel_message_handler,
     },
 };
+use parking_lot::Mutex;
 use serde_json::Value;
 use tokio_tungstenite::tungstenite::Error;
 use tokio_util::sync::CancellationToken;
@@ -613,10 +614,7 @@ impl OKXWebSocketClient {
             anyhow::anyhow!("Failed to acquire WebSocket handler task spawner: {e}")
         })?;
         let handler_abort = CancellationToken::new();
-        *self
-            .handler_abort
-            .lock()
-            .expect("handler abort lock poisoned") = handler_abort.clone();
+        *self.handler_abort.lock() = handler_abort.clone();
         let mut rollback = ConnectRollback {
             handler_tasks: Arc::clone(&self.handler_tasks),
             signal: Arc::clone(&self.signal),
@@ -921,11 +919,7 @@ impl OKXWebSocketClient {
         if let Err(e) = set_client_result {
             self.handler_tasks.begin_shutdown();
             self.signal.store(true, Ordering::Release);
-            let handler_abort = self
-                .handler_abort
-                .lock()
-                .expect("handler abort lock poisoned")
-                .clone();
+            let handler_abort = self.handler_abort.lock().clone();
             handler_abort.cancel();
             let shutdown_result = self.close_stream_task(Duration::from_secs(2)).await;
             self.out_rx = None;
@@ -1073,11 +1067,7 @@ impl OKXWebSocketClient {
         self.handler_tasks.begin_shutdown();
         self.signal.store(true, Ordering::Release);
 
-        let handler_abort = self
-            .handler_abort
-            .lock()
-            .expect("handler abort lock poisoned")
-            .clone();
+        let handler_abort = self.handler_abort.lock().clone();
         handler_abort.cancel();
     }
 
@@ -3635,17 +3625,13 @@ mod tests {
         }
     }
 
-    struct BlockingDrop(Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>);
+    struct BlockingDrop(Arc<(parking_lot::Mutex<bool>, parking_lot::Condvar)>);
 
     impl Drop for BlockingDrop {
         fn drop(&mut self) {
             let (lock, condvar) = &*self.0;
-            let released = lock.lock().expect("release mutex");
-            drop(
-                condvar
-                    .wait_while(released, |released| !*released)
-                    .expect("release mutex"),
-            );
+            let mut released = lock.lock();
+            condvar.wait_while(&mut released, |released| !*released);
         }
     }
 
@@ -3844,10 +3830,7 @@ mod tests {
         let (drop_tx, drop_rx) = tokio::sync::oneshot::channel();
         let signal = DropSignal(Some(drop_tx));
         let handler_abort = CancellationToken::new();
-        *client
-            .handler_abort
-            .lock()
-            .expect("handler abort lock poisoned") = handler_abort.clone();
+        *client.handler_abort.lock() = handler_abort.clone();
         client
             .handler_tasks
             .spawn(async move {
@@ -3948,7 +3931,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn timeout_retains_unfinished_handler_task() {
         let mut client = OKXWebSocketClient::default();
-        let release = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+        let release = Arc::new((parking_lot::Mutex::new(false), parking_lot::Condvar::new()));
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
         let blocking_drop = BlockingDrop(Arc::clone(&release));
         client
@@ -3967,7 +3950,7 @@ mod tests {
         let reconnect_result = client.connect().await;
 
         let (lock, condvar) = &*release;
-        *lock.lock().expect("release mutex") = true;
+        *lock.lock() = true;
         condvar.notify_all();
 
         client

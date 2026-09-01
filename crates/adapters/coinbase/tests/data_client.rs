@@ -1485,7 +1485,7 @@ async fn test_data_client_subscribe_instrument_status_rekeys_aliased_product() {
     );
     client.subscribe_instrument_status(cmd).unwrap();
 
-    let received = Arc::new(std::sync::Mutex::new(None));
+    let received = Arc::new(parking_lot::Mutex::new(None));
     let received_clone = Arc::clone(&received);
 
     wait_until_async(
@@ -1494,7 +1494,7 @@ async fn test_data_client_subscribe_instrument_status_rekeys_aliased_product() {
             let found = loop {
                 match rx.try_recv() {
                     Ok(DataEvent::InstrumentStatus(status)) => {
-                        *received.lock().unwrap() = Some(status);
+                        *received.lock() = Some(status);
                         break true;
                     }
                     Ok(_) => {}
@@ -1509,7 +1509,6 @@ async fn test_data_client_subscribe_instrument_status_rekeys_aliased_product() {
 
     let status = received
         .lock()
-        .unwrap()
         .take()
         .expect("InstrumentStatus must be emitted for the alias side");
     assert_eq!(

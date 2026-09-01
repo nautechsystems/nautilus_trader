@@ -19,11 +19,12 @@ use std::{
     collections::HashMap,
     fmt::Display,
     num::NonZeroU32,
-    sync::{Arc, LazyLock, Mutex as StdMutex},
+    sync::{Arc, LazyLock},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use nautilus_network::ratelimiter::quota::Quota;
+use parking_lot::Mutex as BlockingMutex;
 use tokio::{
     sync::Mutex,
     time::{Instant, sleep},
@@ -46,8 +47,8 @@ const RATE_LIMIT_HEADERS: [&str; 5] = [
     HEADER_RETRY_AFTER,
 ];
 
-static SIGNER_LIMITERS: LazyLock<StdMutex<HashMap<String, Arc<PolymarketRateLimiter>>>> =
-    LazyLock::new(|| StdMutex::new(HashMap::new()));
+static SIGNER_LIMITERS: LazyLock<BlockingMutex<HashMap<String, Arc<PolymarketRateLimiter>>>> =
+    LazyLock::new(|| BlockingMutex::new(HashMap::new()));
 
 /// Global REST quota for Polymarket Gamma API requests.
 pub static POLYMARKET_GAMMA_REST_QUOTA: LazyLock<Quota> =
@@ -215,9 +216,7 @@ pub(crate) struct PolymarketRateLimiter {
 impl PolymarketRateLimiter {
     pub(crate) fn for_signer(signer: &str) -> Arc<Self> {
         let signer = signer.to_ascii_lowercase();
-        let mut limiters = SIGNER_LIMITERS
-            .lock()
-            .expect("Polymarket rate limiter registry mutex poisoned");
+        let mut limiters = SIGNER_LIMITERS.lock();
         limiters
             .entry(signer)
             .or_insert_with(|| {

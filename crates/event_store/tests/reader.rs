@@ -18,7 +18,7 @@
 //! the writer's close path, then opens it through [`RedbBackend::open_sealed`] and
 //! exercises the reader API against the on-disk file.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use bytes::Bytes;
 use indexmap::IndexMap;
@@ -29,6 +29,7 @@ use nautilus_event_store::{
     RegisteredComponents, RunManifest, RunStatus, ScanDirection, Topic, WriterConfig,
     compute_entry_hash, recover_predecessors,
 };
+use parking_lot::Mutex;
 use redb::Database;
 use rstest::rstest;
 use tempfile::TempDir;
@@ -110,10 +111,7 @@ fn captured_halt() -> (HaltCallback, Arc<Mutex<Vec<HaltReason>>>) {
     let captured: Arc<Mutex<Vec<HaltReason>>> = Arc::new(Mutex::new(Vec::new()));
     let captured_for_cb = Arc::clone(&captured);
     let halt: HaltCallback = Arc::new(move |reason| {
-        captured_for_cb
-            .lock()
-            .expect("captured halt poisoned")
-            .push(reason);
+        captured_for_cb.lock().push(reason);
     });
     (halt, captured)
 }
@@ -146,7 +144,7 @@ fn seed_sealed_run(
     }
 
     let final_hwm = writer.close(run_ended_draft()).expect("close");
-    assert!(captured.lock().expect("captured").is_empty());
+    assert!(captured.lock().is_empty());
     final_hwm
 }
 

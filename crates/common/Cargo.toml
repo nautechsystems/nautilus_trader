@@ -85,6 +85,7 @@ futures = { workspace = true }
 indexmap = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
+parking_lot = { workspace = true }
 regex = { workspace = true }
 rmp-serde = { workspace = true }
 rust_decimal = { workspace = true }

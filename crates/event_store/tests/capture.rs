@@ -20,13 +20,7 @@
 //! representative samples: a command (`SubmitOrder`), a generated event (`OrderFilled`),
 //! and a raw venue report (`OrderStatusReport`).
 
-use std::{
-    any::Any,
-    cell::RefCell,
-    rc::Rc,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::{any::Any, cell::RefCell, rc::Rc, sync::Arc, time::Duration};
 
 use bytes::Bytes;
 use indexmap::IndexMap;
@@ -59,6 +53,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Currency, Money, Price, Quantity},
 };
+use parking_lot::Mutex;
 use rstest::rstest;
 use ustr::Ustr;
 
@@ -95,7 +90,7 @@ impl EventStore for SharedMemory {
     }
 
     fn append_batch(&mut self, entries: &[AppendEntry]) -> Result<u64, EventStoreError> {
-        self.0.lock().expect("shared").append_batch(entries)
+        self.0.lock().append_batch(entries)
     }
 
     fn scan_range(
@@ -104,34 +99,31 @@ impl EventStore for SharedMemory {
         to: u64,
         direction: ScanDirection,
     ) -> Result<Vec<EventStoreEntry>, EventStoreError> {
-        self.0
-            .lock()
-            .expect("shared")
-            .scan_range(from, to, direction)
+        self.0.lock().scan_range(from, to, direction)
     }
 
     fn scan_seq(&self, seq: u64) -> Result<Option<EventStoreEntry>, EventStoreError> {
-        self.0.lock().expect("shared").scan_seq(seq)
+        self.0.lock().scan_seq(seq)
     }
 
     fn lookup(&self, kind: IndexKind, key: &str) -> Result<Option<u64>, EventStoreError> {
-        self.0.lock().expect("shared").lookup(kind, key)
+        self.0.lock().lookup(kind, key)
     }
 
     fn iter_index_keys(&self, kind: IndexKind) -> Result<Vec<(String, u64)>, EventStoreError> {
-        self.0.lock().expect("shared").iter_index_keys(kind)
+        self.0.lock().iter_index_keys(kind)
     }
 
     fn seal(&mut self, status: RunStatus) -> Result<(), EventStoreError> {
-        self.0.lock().expect("shared").seal(status)
+        self.0.lock().seal(status)
     }
 
     fn manifest(&self) -> Result<RunManifest, EventStoreError> {
-        self.0.lock().expect("shared").manifest()
+        self.0.lock().manifest()
     }
 
     fn high_watermark(&self) -> Result<u64, EventStoreError> {
-        self.0.lock().expect("shared").high_watermark()
+        self.0.lock().high_watermark()
     }
 }
 
@@ -142,7 +134,6 @@ fn writer_with_open_run(
     let backend_arc: Arc<Mutex<MemoryBackend>> = Arc::new(Mutex::new(MemoryBackend::new()));
     backend_arc
         .lock()
-        .expect("inner")
         .open_run(manifest(run_id))
         .expect("open run");
 
@@ -289,7 +280,7 @@ fn end_to_end_capture_writes_command_event_and_report() {
 
     drain(&writer, 3);
 
-    let backend = backend_arc.lock().expect("backend");
+    let backend = backend_arc.lock();
 
     let cmd_entry = backend.scan_seq(1).expect("scan").expect("present");
     assert_eq!(cmd_entry.payload_type.as_str(), "SubmitOrder");
@@ -337,7 +328,7 @@ fn end_to_end_capture_writes_command_event_and_report() {
     let final_hwm = writer.close(run_ended_draft()).expect("close writer");
     assert_eq!(final_hwm, 4, "three captured entries plus RunEnded");
 
-    let backend = backend_arc.lock().expect("backend");
+    let backend = backend_arc.lock();
     let manifest = backend.manifest().expect("manifest");
     assert_eq!(manifest.status, RunStatus::Ended);
     assert_eq!(manifest.high_watermark, 4);
@@ -395,7 +386,7 @@ fn capture_dedups_order_event_across_dispatch_hops() {
 
     drain(&writer, 2);
 
-    let backend = backend_arc.lock().expect("backend");
+    let backend = backend_arc.lock();
     assert_eq!(backend.high_watermark().expect("hwm"), 2);
 
     let entry = backend.scan_seq(1).expect("scan").expect("present");
@@ -449,8 +440,7 @@ fn captured_entry_observed_before_bus_subscriber_dispatch() {
     let observed_for_handler = Arc::clone(&observed_hwm);
     let writer_for_handler = Arc::clone(&writer);
     let handler = ShareableMessageHandler::from_typed(move |_msg: &SubmitOrder| {
-        *observed_for_handler.lock().expect("observed lock") =
-            Some(writer_for_handler.high_watermark());
+        *observed_for_handler.lock() = Some(writer_for_handler.high_watermark());
     });
 
     msgbus::subscribe_any("exec.command.*".into(), handler, Some(0));
@@ -468,10 +458,7 @@ fn captured_entry_observed_before_bus_subscriber_dispatch() {
 
     msgbus::publish_any("exec.command.SubmitOrder".into(), &cmd);
 
-    let observed = observed_hwm
-        .lock()
-        .expect("observed lock")
-        .expect("subscriber must have observed");
+    let observed = (*observed_hwm.lock()).unwrap_or_default();
     assert!(
         observed >= 1,
         "downstream subscriber observed hwm {observed} but expected the captured entry's seq",
@@ -588,7 +575,7 @@ fn raw_report_topics_capture_via_publish_any() {
 
     drain(&writer, 3);
 
-    let backend = backend_arc.lock().expect("backend");
+    let backend = backend_arc.lock();
 
     assert_eq!(
         backend.high_watermark().expect("hwm"),
@@ -750,7 +737,7 @@ fn tap_path_writes_headers_from_command_fields() {
 
     drain(&writer, 1);
 
-    let backend = backend_arc.lock().expect("backend");
+    let backend = backend_arc.lock();
     let entry = backend.scan_seq(1).expect("scan").expect("present");
     assert_eq!(entry.headers.correlation_id, Some(correlation));
     assert_eq!(entry.headers.causation_id, Some(caused));
@@ -808,7 +795,7 @@ fn tap_path_writes_headers_from_data_response_correlation_handler() {
     drain(&writer, 1);
 
     assert!(*handler_called.borrow());
-    let backend = backend_arc.lock().expect("backend");
+    let backend = backend_arc.lock();
     let entry = backend.scan_seq(1).expect("scan").expect("present");
     assert_eq!(entry.headers.correlation_id, Some(correlation));
     assert_eq!(entry.headers.causation_id, None);

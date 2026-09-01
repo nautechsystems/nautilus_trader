@@ -20,7 +20,7 @@ use std::{
     net::SocketAddr,
     num::NonZeroUsize,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
@@ -77,6 +77,7 @@ use nautilus_model::{
     identifiers::InstrumentId,
 };
 use nautilus_network::{RECONNECTED, http::HttpClient};
+use parking_lot::Mutex;
 use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::json;
@@ -608,7 +609,7 @@ async fn handle_ws_connection(mut socket: WebSocket, config: DataTestServerConfi
                         .collect::<Vec<_>>();
 
                     if !streams.is_empty() {
-                        config.subscriptions.lock().unwrap().push(streams.clone());
+                        config.subscriptions.lock().push(streams.clone());
                     }
 
                     for stream in streams {
@@ -707,7 +708,7 @@ async fn handle_ws_connection(mut socket: WebSocket, config: DataTestServerConfi
                     .unwrap_or_default();
 
                 if !streams.is_empty() {
-                    config.unsubscriptions.lock().unwrap().push(streams);
+                    config.unsubscriptions.lock().push(streams);
                 }
             }
         }
@@ -740,7 +741,7 @@ async fn handle_agg_trades(
         .get("startTime")
         .and_then(|value| value.parse().ok())
         .unwrap_or(1_700_000_000_123);
-    config.agg_trade_queries.lock().unwrap().push(query);
+    config.agg_trade_queries.lock().push(query);
     sbe_response(build_agg_trades_response(time_ms)).into_response()
 }
 
@@ -763,7 +764,7 @@ async fn handle_klines(
         Some("1s") => 999_000,
         _ => 59_999_000,
     };
-    config.kline_queries.lock().unwrap().push(query);
+    config.kline_queries.lock().push(query);
     sbe_response(build_klines_response(close_time_us, span_us)).into_response()
 }
 
@@ -874,7 +875,6 @@ async fn recv_data(
 fn recorded_streams_include(records: &Arc<Mutex<Vec<Vec<String>>>>, stream: &str) -> bool {
     records
         .lock()
-        .unwrap()
         .iter()
         .any(|streams| streams.iter().any(|recorded| recorded == stream))
 }
@@ -1271,7 +1271,7 @@ async fn test_request_bounded_aggregate_trades_routes_spot_bounds() {
     let DataEvent::Response(DataResponse::Trades(response)) = event else {
         panic!("expected trades response");
     };
-    let query = state.agg_trade_queries.lock().unwrap()[0].clone();
+    let query = state.agg_trade_queries.lock()[0].clone();
     assert_eq!(query.get("symbol").map(String::as_str), Some("BTCUSDT"));
     assert_eq!(
         query.get("startTime").map(String::as_str),
@@ -1334,7 +1334,7 @@ async fn test_request_historical_one_second_binance_bars_preserves_fields() {
         .as_ref()
         .downcast_ref::<Vec<BinanceBar>>()
         .expect("expected BinanceBar vector");
-    let query = state.kline_queries.lock().unwrap()[0].clone();
+    let query = state.kline_queries.lock()[0].clone();
     assert_eq!(query.get("symbol").map(String::as_str), Some("BTCUSDT"));
     assert_eq!(query.get("interval").map(String::as_str), Some("1s"));
     assert_eq!(
@@ -1380,7 +1380,7 @@ async fn test_request_historical_one_second_binance_bars_preserves_fields() {
     let DataEvent::Response(DataResponse::Bars(response)) = event else {
         panic!("expected core bars response");
     };
-    let queries = state.kline_queries.lock().unwrap();
+    let queries = state.kline_queries.lock();
     assert_eq!(queries.len(), 2);
     assert_eq!(queries[1].get("interval").map(String::as_str), Some("1s"));
     assert_eq!(queries[1].get("limit").map(String::as_str), Some("123"));

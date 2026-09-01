@@ -22,15 +22,13 @@
 //! dispatch consults this registry to emit events for tracked orders (reserving reports for
 //! externally-managed orders and reconciliation).
 
-use std::sync::Mutex;
-
 use ahash::{AHashMap, AHashSet};
-use nautilus_core::MUTEX_POISONED;
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
     identifiers::{ClientOrderId, InstrumentId, StrategyId, VenueOrderId},
     orders::{Order, OrderAny},
 };
+use parking_lot::Mutex;
 
 /// Identity fields captured at submit so the cache-free WS dispatch can build order events.
 ///
@@ -94,7 +92,7 @@ impl OrderIdentityRegistry {
         venue_order_id: VenueOrderId,
         identity: OrderIdentity,
     ) {
-        let mut guard = self.inner.lock().expect(MUTEX_POISONED);
+        let mut guard = self.inner.lock();
         guard.identities.insert(venue_order_id, identity);
         guard
             .client_to_venue
@@ -103,19 +101,13 @@ impl OrderIdentityRegistry {
 
     /// Returns the identity for a tracked order, if known.
     pub(crate) fn get(&self, venue_order_id: &VenueOrderId) -> Option<OrderIdentity> {
-        self.inner
-            .lock()
-            .expect(MUTEX_POISONED)
-            .identities
-            .get(venue_order_id)
-            .copied()
+        self.inner.lock().identities.get(venue_order_id).copied()
     }
 
     /// Returns the latest venue order ID captured for a tracked client order.
     pub(crate) fn venue_order_id(&self, client_order_id: &ClientOrderId) -> Option<VenueOrderId> {
         self.inner
             .lock()
-            .expect(MUTEX_POISONED)
             .client_to_venue
             .get(client_order_id)
             .copied()
@@ -126,11 +118,7 @@ impl OrderIdentityRegistry {
     /// Callers emit `OrderAccepted` only on a `true` result, so acceptance is emitted once
     /// across the submit confirmation and the WS stream.
     pub(crate) fn mark_accepted(&self, venue_order_id: VenueOrderId) -> bool {
-        self.inner
-            .lock()
-            .expect(MUTEX_POISONED)
-            .accepted
-            .insert(venue_order_id)
+        self.inner.lock().accepted.insert(venue_order_id)
     }
 }
 

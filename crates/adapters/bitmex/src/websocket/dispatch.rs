@@ -20,10 +20,7 @@
 //! proper order events; untracked orders fall back to execution reports for
 //! downstream reconciliation.
 
-use std::sync::{
-    Mutex,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use ahash::AHashMap;
 use dashmap::DashMap;
@@ -37,6 +34,7 @@ use nautilus_model::{
     reports::FillReport,
     types::Currency,
 };
+use parking_lot::Mutex;
 use ustr::Ustr;
 
 use crate::{
@@ -104,12 +102,12 @@ impl Default for GenerationalDedupSet {
 
 impl GenerationalDedupSet {
     fn contains(&self, key: &ClientOrderId) -> bool {
-        let guard = self.inner.lock().expect("dedup lock poisoned");
+        let guard = self.inner.lock();
         guard.current.contains(key) || guard.previous.contains(key)
     }
 
     fn insert(&self, key: ClientOrderId) {
-        let mut guard = self.inner.lock().expect("dedup lock poisoned");
+        let mut guard = self.inner.lock();
         let inner = &mut *guard;
         inner.current.insert(key);
         if inner.current.len() >= DEDUP_GENERATION_CAPACITY {
@@ -119,7 +117,7 @@ impl GenerationalDedupSet {
     }
 
     fn remove(&self, key: &ClientOrderId) {
-        let mut guard = self.inner.lock().expect("dedup lock poisoned");
+        let mut guard = self.inner.lock();
         guard.current.remove(key);
         guard.previous.remove(key);
     }
@@ -337,17 +335,11 @@ impl WsDispatchState {
         action: BitmexAction,
         data: Vec<OrderData>,
     ) -> Vec<ResolvedOrderData> {
-        self.order_rows
-            .lock()
-            .expect("order row cache lock poisoned")
-            .apply(action, data)
+        self.order_rows.lock().apply(action, data)
     }
 
     pub(crate) fn order_rows_clear(&self) {
-        self.order_rows
-            .lock()
-            .expect("order row cache lock poisoned")
-            .clear();
+        self.order_rows.lock().clear();
     }
 }
 

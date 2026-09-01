@@ -18,7 +18,7 @@
 use std::{
     future::Future,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Duration,
@@ -56,6 +56,7 @@ use nautilus_model::{
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
 };
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -543,9 +544,7 @@ impl KrakenSpotDataClient {
         ohlc_buffer: &OhlcBuffer,
         sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
     ) {
-        let Ok(mut buffer) = ohlc_buffer.lock() else {
-            return;
-        };
+        let mut buffer = ohlc_buffer.lock();
         let bars: Vec<Bar> = buffer.drain().map(|(_, (bar, _))| bar).collect();
         for bar in bars {
             if let Err(e) = sender.send(DataEvent::Data(Data::Bar(bar))) {
@@ -644,10 +643,7 @@ impl KrakenSpotDataClient {
                 }
             }
             KrakenSpotWsMessage::Ohlc(ohlc_data) => {
-                let Ok(mut buffer) = context.ohlc_buffer.lock() else {
-                    log::error!("OHLC buffer lock poisoned");
-                    return;
-                };
+                let mut buffer = context.ohlc_buffer.lock();
 
                 let instruments = context.instruments.load();
 
@@ -1303,10 +1299,7 @@ mod tests {
         instruments.insert(instrument.id(), instrument);
 
         let depths = Arc::new(Mutex::new(AHashMap::new()));
-        depths
-            .lock()
-            .expect("depths lock poisoned")
-            .insert("BTC/USD".to_string(), 1000);
+        depths.lock().insert("BTC/USD".to_string(), 1000);
 
         let snapshot: KrakenL3Snapshot = serde_json::from_str(
             r#"{

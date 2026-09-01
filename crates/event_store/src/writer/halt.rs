@@ -88,8 +88,7 @@ pub fn noop_halt() -> HaltCallback {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-
+    use parking_lot::Mutex;
     use rstest::rstest;
 
     use super::*;
@@ -140,12 +139,12 @@ mod tests {
         let captured: Arc<Mutex<Option<HaltReason>>> = Arc::new(Mutex::new(None));
         let captured_for_cb = Arc::clone(&captured);
         let halt: HaltCallback = Arc::new(move |reason| {
-            *captured_for_cb.lock().expect("lock") = Some(reason);
+            *captured_for_cb.lock() = Some(reason);
         });
 
         halt(HaltReason::BackendDisk("stall".to_string()));
 
-        match captured.lock().expect("lock").take() {
+        match captured.lock().take() {
             Some(HaltReason::BackendDisk(msg)) => assert_eq!(msg, "stall"),
             other => panic!("expected BackendDisk, was {other:?}"),
         }

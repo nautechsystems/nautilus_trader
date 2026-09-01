@@ -27,21 +27,18 @@
 //! WS-driven subscription paths in [`super`] and lets the client delegate to
 //! a narrow [`DerivPollManager`] API.
 
-use std::{
-    str::FromStr,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::{str::FromStr, sync::Arc, time::Duration};
 
 use ahash::AHashMap;
 use nautilus_common::messages::DataEvent;
-use nautilus_core::{MUTEX_POISONED, UnixNanos, time::AtomicTime};
+use nautilus_core::{UnixNanos, time::AtomicTime};
 use nautilus_live::task::TaskGroup;
 use nautilus_model::{
     data::{Data, FundingRateUpdate, IndexPriceUpdate},
     identifiers::InstrumentId,
     types::Price,
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use tokio_util::sync::CancellationToken;
 
@@ -124,7 +121,7 @@ impl DerivPollManager {
     /// Safe to call multiple times.
     pub(crate) fn shutdown(&self) {
         {
-            let mut polls = self.polls.lock().expect(MUTEX_POISONED);
+            let mut polls = self.polls.lock();
             for entry in polls.values_mut() {
                 entry.cancel.cancel();
                 // Replace the now-cancelled token so a later `resume()` can
@@ -164,7 +161,7 @@ impl DerivPollManager {
     /// not re-issue them.
     pub(crate) fn resume(&self) {
         let entries: Vec<(InstrumentId, CancellationToken)> = {
-            let polls = self.polls.lock().expect(MUTEX_POISONED);
+            let polls = self.polls.lock();
             polls
                 .iter()
                 .filter(|(_, state)| state.emit_index || state.emit_funding)
@@ -179,7 +176,7 @@ impl DerivPollManager {
 
     fn register(&self, instrument_id: InstrumentId, want_index: bool, want_funding: bool) {
         let (token, is_new) = {
-            let mut polls = self.polls.lock().expect(MUTEX_POISONED);
+            let mut polls = self.polls.lock();
             let is_new = !polls.contains_key(&instrument_id);
             let entry = polls
                 .entry(instrument_id)
@@ -206,7 +203,7 @@ impl DerivPollManager {
     }
 
     fn unregister(&self, instrument_id: InstrumentId, drop_index: bool, drop_funding: bool) {
-        let mut polls = self.polls.lock().expect(MUTEX_POISONED);
+        let mut polls = self.polls.lock();
         let should_cancel = match polls.get_mut(&instrument_id) {
             Some(entry) => {
                 if drop_index {
@@ -245,7 +242,7 @@ impl DerivPollManager {
                     () = cancel.cancelled() => break,
                     _ = interval.tick() => {
                         let (emit_index, emit_funding) = {
-                            let state = polls.lock().expect(MUTEX_POISONED);
+                            let state = polls.lock();
                             match state.get(&instrument_id) {
                                 Some(entry) => (entry.emit_index, entry.emit_funding),
                                 None => break,
@@ -272,7 +269,7 @@ impl DerivPollManager {
                                 // flight, and we must not emit for a kind
                                 // the caller just turned off.
                                 let (still_index, still_funding) = {
-                                    let state = polls.lock().expect(MUTEX_POISONED);
+                                    let state = polls.lock();
                                     match state.get(&instrument_id) {
                                         Some(entry) => (entry.emit_index, entry.emit_funding),
                                         None => break,
@@ -533,7 +530,6 @@ mod tests {
         let old_token = manager
             .polls
             .lock()
-            .unwrap()
             .get(&instrument_id)
             .expect("entry after subscribe")
             .cancel
@@ -548,7 +544,7 @@ mod tests {
         manager.shutdown();
 
         {
-            let polls = manager.polls.lock().unwrap();
+            let polls = manager.polls.lock();
             let entry = polls.get(&instrument_id).expect("shutdown preserves entry");
             assert!(entry.emit_index);
             assert!(entry.emit_funding);
@@ -585,7 +581,7 @@ mod tests {
         manager.subscribe_index(instrument_id);
         manager.subscribe_funding(instrument_id);
 
-        let polls = manager.polls.lock().unwrap();
+        let polls = manager.polls.lock();
         assert_eq!(polls.len(), 1, "single entry for one instrument");
         let entry = polls.get(&instrument_id).unwrap();
         assert!(entry.emit_index && entry.emit_funding);
@@ -624,7 +620,7 @@ mod tests {
             manager.unsubscribe_funding(instrument_id);
         }
 
-        let polls = manager.polls.lock().unwrap();
+        let polls = manager.polls.lock();
         let entry = polls
             .get(&instrument_id)
             .expect("entry remains while one flag is active");
@@ -650,7 +646,6 @@ mod tests {
         let first_token = manager
             .polls
             .lock()
-            .unwrap()
             .get(&instrument_id)
             .unwrap()
             .cancel
@@ -660,7 +655,7 @@ mod tests {
         assert!(first_token.is_cancelled());
 
         manager.subscribe_index(instrument_id);
-        let polls = manager.polls.lock().unwrap();
+        let polls = manager.polls.lock();
         let entry = polls
             .get(&instrument_id)
             .expect("re-subscribe re-inserts the entry");
@@ -692,7 +687,6 @@ mod tests {
         let token = manager
             .polls
             .lock()
-            .unwrap()
             .get(&instrument_id)
             .unwrap()
             .cancel
@@ -701,7 +695,7 @@ mod tests {
         manager.unsubscribe_index(instrument_id);
 
         assert!(
-            !manager.polls.lock().unwrap().contains_key(&instrument_id),
+            !manager.polls.lock().contains_key(&instrument_id),
             "entry removed when last flag flips off"
         );
         assert!(
@@ -754,7 +748,7 @@ mod tests {
 
         manager.resume();
 
-        let polls = manager.polls.lock().unwrap();
+        let polls = manager.polls.lock();
         let entry = polls
             .get(&instrument_id)
             .expect("entry survives shutdown + resume");
@@ -777,7 +771,7 @@ mod tests {
         // Seed an entry with both flags false (only reachable via direct
         // insertion; `subscribe_*` always sets a flag). Simulate the case
         // where a future change leaves an orphan entry in the map.
-        manager.polls.lock().unwrap().insert(
+        manager.polls.lock().insert(
             instrument_id,
             DerivPollState {
                 emit_index: false,

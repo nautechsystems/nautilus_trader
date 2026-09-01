@@ -54,7 +54,7 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     num::NonZeroU32,
-    sync::{Arc, LazyLock, Mutex},
+    sync::{Arc, LazyLock},
 };
 
 use ahash::AHashMap;
@@ -85,6 +85,7 @@ use nautilus_network::{
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
     retry::{RetryConfig, RetryError, RetryManager},
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
@@ -156,7 +157,6 @@ fn rate_limit_keys() -> Vec<Ustr> {
 fn rest_rate_limiter(base_url: &str) -> DydxRestRateLimiter {
     DYDX_REST_RATE_LIMITERS
         .lock()
-        .expect("dYdX REST rate limiter registry mutex poisoned")
         .entry(base_url.to_string())
         .or_insert_with(|| Arc::new(RateLimiter::new_with_quota(Some(*DYDX_REST_QUOTA), vec![])))
         .clone()

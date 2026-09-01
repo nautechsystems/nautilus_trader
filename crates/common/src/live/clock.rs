@@ -291,14 +291,15 @@ impl LiveClock {
 mod tests {
     use std::{
         sync::{
-            Arc, Mutex,
+            Arc,
             atomic::{AtomicBool, Ordering},
             mpsc,
         },
         time::Duration,
     };
 
-    use nautilus_core::{MUTEX_POISONED, UnixNanos, time::get_atomic_clock_realtime};
+    use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
+    use parking_lot::Mutex;
     use rstest::rstest;
     use ustr::Ustr;
 
@@ -326,10 +327,7 @@ mod tests {
             let now_ns = get_atomic_clock_realtime().get_time_ns();
             let event = message.event().clone();
             message.dispatch();
-            self.events
-                .lock()
-                .expect(MUTEX_POISONED)
-                .push((event, now_ns));
+            self.events.lock().push((event, now_ns));
         }
     }
 
@@ -349,7 +347,6 @@ mod tests {
                 self.paused_tx.send(()).expect("timer send should pause");
                 self.release_rx
                     .lock()
-                    .expect("release mutex should lock")
                     .recv()
                     .expect("timer send should release");
             }
@@ -361,10 +358,7 @@ mod tests {
         target: usize,
         timeout: Duration,
     ) {
-        wait_until(
-            || events.lock().expect(MUTEX_POISONED).len() >= target,
-            timeout,
-        );
+        wait_until(|| events.lock().len() >= target, timeout);
     }
 
     #[rstest]
@@ -390,7 +384,7 @@ mod tests {
         paused_rx
             .recv_timeout(Duration::from_secs(2))
             .expect("fast timer send should pause");
-        events.lock().expect(MUTEX_POISONED).clear();
+        events.lock().clear();
 
         let slow_interval = Duration::from_millis(30).as_nanos() as u64;
         clock
@@ -400,7 +394,7 @@ mod tests {
 
         wait_for_events(&events, 3, Duration::from_secs(2));
 
-        let snapshot = events.lock().expect(MUTEX_POISONED).clone();
+        let snapshot = events.lock().clone();
         let diffs: Vec<u64> = snapshot
             .array_windows()
             .map(|[a, b]| b.0.ts_event.as_u64() - a.0.ts_event.as_u64())
@@ -462,7 +456,7 @@ mod tests {
             wait_for_events(&events, 1, Duration::from_secs(2));
 
             assert!(clock.sender.is_some());
-            let events = events.lock().expect(MUTEX_POISONED);
+            let events = events.lock();
             assert_eq!(events.len(), 1);
             assert_eq!(events[0].0.name, Ustr::from("late-sender"));
         })
@@ -502,7 +496,7 @@ mod tests {
         );
 
         // Clear any events that arrived before reset took effect
-        events.lock().expect(MUTEX_POISONED).clear();
+        events.lock().clear();
 
         // Verify no new events arrive (timer should be stopped)
         let start = std::time::Instant::now();
@@ -510,7 +504,7 @@ mod tests {
             || start.elapsed() >= Duration::from_millis(50),
             Duration::from_secs(2),
         );
-        assert!(events.lock().expect(MUTEX_POISONED).is_empty());
+        assert!(events.lock().is_empty());
     }
 
     #[rstest]

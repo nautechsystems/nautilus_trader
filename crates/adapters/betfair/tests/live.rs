@@ -61,7 +61,6 @@ async fn wait_for_request_count(state: &MockState, method: &str, expected: usize
             async move {
                 methods
                     .lock()
-                    .unwrap()
                     .iter()
                     .filter(|candidate| candidate.as_str() == method)
                     .count()
@@ -91,7 +90,6 @@ fn assert_applied_once_with_identical_retry(state: &MockState, method: &str) -> 
     let requests: Vec<Value> = state
         .betting_request_params
         .lock()
-        .unwrap()
         .iter()
         .filter(|(candidate, _)| candidate == method)
         .map(|(_, params)| params.clone())
@@ -102,7 +100,6 @@ fn assert_applied_once_with_identical_retry(state: &MockState, method: &str) -> 
     let applied: Vec<Value> = state
         .betting_applied_request_params
         .lock()
-        .unwrap()
         .iter()
         .filter(|(candidate, _)| candidate == method)
         .map(|(_, params)| params.clone())
@@ -113,9 +110,9 @@ fn assert_applied_once_with_identical_retry(state: &MockState, method: &str) -> 
 }
 
 fn clear_mutation_observations(state: &MockState) {
-    state.betting_methods.lock().unwrap().clear();
-    state.betting_request_params.lock().unwrap().clear();
-    state.betting_applied_request_params.lock().unwrap().clear();
+    state.betting_methods.lock().clear();
+    state.betting_request_params.lock().clear();
+    state.betting_applied_request_params.lock().clear();
 }
 
 fn set_timeout_report(state: &MockState, method: &str, fixture_path: &str) {
@@ -125,7 +122,6 @@ fn set_timeout_report(state: &MockState, method: &str, fixture_path: &str) {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(method.to_string(), response["result"].clone());
 }
 
@@ -176,9 +172,8 @@ async fn submit_apply_then_lost_response_resolves_from_ocm() {
     h.mock_state
         .betting_apply_then_status_one_shot_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_PLACE_ORDERS.to_string(), 502);
-    h.mock_state.betting_error_overrides.lock().unwrap().insert(
+    h.mock_state.betting_error_overrides.lock().insert(
         METHOD_PLACE_ORDERS.to_string(),
         betting_api_error("NO_SESSION"),
     );
@@ -280,7 +275,6 @@ async fn cancel_apply_then_lost_response_resolves_from_ocm() {
         .mock_state
         .betting_request_params
         .lock()
-        .unwrap()
         .iter()
         .find(|(method, _)| method == METHOD_PLACE_ORDERS)
         .map(|(_, params)| customer_ref(params).to_string())
@@ -289,7 +283,6 @@ async fn cancel_apply_then_lost_response_resolves_from_ocm() {
     h.mock_state
         .betting_apply_then_status_one_shot_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_CANCEL_ORDERS.to_string(), 502);
     set_timeout_report(
         &h.mock_state,
@@ -385,7 +378,6 @@ async fn replace_apply_then_lost_response_resolves_from_ocm(#[case] replacement_
         .mock_state
         .betting_request_params
         .lock()
-        .unwrap()
         .iter()
         .find(|(method, _)| method == METHOD_PLACE_ORDERS)
         .map(|(_, params)| customer_ref(params).to_string())
@@ -394,7 +386,6 @@ async fn replace_apply_then_lost_response_resolves_from_ocm(#[case] replacement_
     h.mock_state
         .betting_apply_then_status_one_shot_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_REPLACE_ORDERS.to_string(), 502);
     set_timeout_report(
         &h.mock_state,
@@ -497,7 +488,7 @@ async fn replace_filled_stream_before_rest_updates_before_fill() {
 
     let waiters = Arc::new(AtomicUsize::new(0));
     let semaphore = Arc::new(tokio::sync::Semaphore::new(0));
-    *h.mock_state.betting_response_gate.lock().unwrap() = Some(MockResponseGate {
+    *h.mock_state.betting_response_gate.lock() = Some(MockResponseGate {
         method: METHOD_REPLACE_ORDERS.to_string(),
         waiters: Arc::clone(&waiters),
         semaphore: Arc::clone(&semaphore),
@@ -522,7 +513,7 @@ async fn replace_filled_stream_before_rest_updates_before_fill() {
         .await;
 
     semaphore.add_permits(1);
-    h.mock_state.betting_response_gate.lock().unwrap().take();
+    h.mock_state.betting_response_gate.lock().take();
     assert!(filled, "filled replacement OCM did not close the order");
     h.pump_for(Duration::from_millis(500)).await;
     h.feeder.feed("stream/ocm_harness_replace_filled.json");
@@ -957,7 +948,7 @@ async fn replace_cancelled_not_placed_stays_closed_after_late_partial_fill(
     assert!(accepted, "order did not reach Accepted");
 
     if old_terminal_first {
-        h.mock_state.betting_response_delays.lock().unwrap().insert(
+        h.mock_state.betting_response_delays.lock().insert(
             METHOD_REPLACE_ORDERS.to_string(),
             Duration::from_millis(300),
         );
@@ -1048,9 +1039,8 @@ async fn old_cancel_before_definitive_replace_error_closes_order_once() {
     h.mock_state
         .betting_error_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_REPLACE_ORDERS.to_string(), response);
-    h.mock_state.betting_response_delays.lock().unwrap().insert(
+    h.mock_state.betting_response_delays.lock().insert(
         METHOD_REPLACE_ORDERS.to_string(),
         Duration::from_millis(300),
     );
@@ -1129,7 +1119,7 @@ async fn ambiguous_replace_stays_pending_through_old_bet_cancel() {
         .await;
     assert!(accepted, "order did not reach Accepted");
 
-    h.mock_state.betting_error_overrides.lock().unwrap().insert(
+    h.mock_state.betting_error_overrides.lock().insert(
         METHOD_REPLACE_ORDERS.to_string(),
         betting_api_error("TIMEOUT_ERROR"),
     );
@@ -1185,7 +1175,7 @@ async fn successful_cancel_resolves_ambiguous_replace(
         .await;
     assert!(accepted, "order did not reach Accepted");
 
-    h.mock_state.betting_error_overrides.lock().unwrap().insert(
+    h.mock_state.betting_error_overrides.lock().insert(
         METHOD_REPLACE_ORDERS.to_string(),
         betting_api_error("TIMEOUT_ERROR"),
     );
@@ -1201,7 +1191,6 @@ async fn successful_cancel_resolves_ambiguous_replace(
         h.mock_state
             .betting_response_delays
             .lock()
-            .unwrap()
             .insert(METHOD_CANCEL_ORDERS.to_string(), Duration::from_millis(300));
     }
 
@@ -1298,7 +1287,7 @@ async fn ambiguous_replace_accounts_old_fill_across_stream_orderings(
         .await;
     assert!(accepted, "order did not reach Accepted");
 
-    h.mock_state.betting_error_overrides.lock().unwrap().insert(
+    h.mock_state.betting_error_overrides.lock().insert(
         METHOD_REPLACE_ORDERS.to_string(),
         betting_api_error("TIMEOUT_ERROR"),
     );
@@ -1474,7 +1463,6 @@ async fn reduction_that_closes_the_bet_settles_on_the_reduced_size() {
     h.mock_state
         .betting_apply_then_status_one_shot_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_CANCEL_ORDERS.to_string(), 502);
     set_timeout_report(
         &h.mock_state,
@@ -1496,7 +1484,7 @@ async fn reduction_that_closes_the_bet_settles_on_the_reduced_size() {
     closed["averagePriceMatched"] = Value::from(3.0);
     closed["sizeRemaining"] = Value::from(0.0);
     closed["sizeCancelled"] = Value::from(6.0);
-    h.mock_state.betting_overrides.lock().unwrap().insert(
+    h.mock_state.betting_overrides.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         serde_json::json!({
             "currentOrders": [closed],
@@ -1552,7 +1540,6 @@ async fn replace_apply_then_lost_response_resolves_from_reconciliation() {
     h.mock_state
         .betting_apply_then_status_one_shot_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_REPLACE_ORDERS.to_string(), 502);
     set_timeout_report(
         &h.mock_state,
@@ -1582,7 +1569,7 @@ async fn replace_apply_then_lost_response_resolves_from_reconciliation() {
         .clone();
     new_leg["betId"] = Value::from(new_bet_id);
     new_leg["priceSize"]["price"] = Value::from(5.0);
-    h.mock_state.betting_overrides.lock().unwrap().insert(
+    h.mock_state.betting_overrides.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         serde_json::json!({
             "currentOrders": [old_leg, new_leg],
@@ -1682,7 +1669,6 @@ async fn reduction_apply_then_lost_response_resolves_from_reconciliation() {
     h.mock_state
         .betting_apply_then_status_one_shot_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_CANCEL_ORDERS.to_string(), 502);
     set_timeout_report(
         &h.mock_state,
@@ -1720,7 +1706,7 @@ async fn reduction_apply_then_lost_response_resolves_from_reconciliation() {
         .clone();
     reduced["sizeRemaining"] = Value::from(4.0);
     reduced["sizeCancelled"] = Value::from(6.0);
-    h.mock_state.betting_overrides.lock().unwrap().insert(
+    h.mock_state.betting_overrides.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         serde_json::json!({
             "currentOrders": [reduced],

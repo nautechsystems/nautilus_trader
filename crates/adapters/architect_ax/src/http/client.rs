@@ -20,7 +20,7 @@ use std::{
     fmt::Debug,
     num::NonZeroU32,
     sync::{
-        Arc, LazyLock, RwLock,
+        Arc, LazyLock,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -47,6 +47,7 @@ use nautilus_network::{
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
+use parking_lot::RwLock;
 use reqwest::{Method, header::USER_AGENT};
 use rust_decimal::Decimal;
 use serde::{Serialize, de::DeserializeOwned};
@@ -116,7 +117,7 @@ impl Default for AxRawHttpClient {
 
 impl Debug for AxRawHttpClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let has_session_token = self.session_token.read().is_ok_and(|guard| guard.is_some());
+        let has_session_token = self.session_token.read().is_some();
         f.debug_struct(stringify!(AxRawHttpClient))
             .field("base_url", &self.base_url)
             .field("orders_base_url", &self.orders_base_url)
@@ -142,36 +143,18 @@ impl AxRawHttpClient {
     }
 
     /// Cancel all pending HTTP requests.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the cancellation token lock is poisoned.
     pub fn cancel_all_requests(&self) {
-        self.cancellation_token
-            .read()
-            .expect("Lock poisoned")
-            .cancel();
+        self.cancellation_token.read().cancel();
     }
 
     /// Replaces the cancelled token so new requests can proceed after reconnect.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the cancellation token lock is poisoned.
     pub fn reset_cancellation_token(&self) {
-        *self.cancellation_token.write().expect("Lock poisoned") = CancellationToken::new();
+        *self.cancellation_token.write() = CancellationToken::new();
     }
 
     /// Get a clone of the current cancellation token.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the cancellation token lock is poisoned.
     pub fn cancellation_token(&self) -> CancellationToken {
-        self.cancellation_token
-            .read()
-            .expect("Lock poisoned")
-            .clone()
+        self.cancellation_token.read().clone()
     }
 
     /// Creates a new [`AxRawHttpClient`] using the default Ax HTTP URL.
@@ -274,17 +257,12 @@ impl AxRawHttpClient {
     /// Sets the session token for authenticated requests.
     ///
     /// The session token is obtained through the login flow and used for bearer token authentication.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal lock is poisoned (indicates a panic in another thread).
     pub fn set_session_token(&self, token: String) {
-        // Lock poisoning indicates a panic in another thread, which is fatal
-        *self.session_token.write().expect("Lock poisoned") = Some(token);
+        *self.session_token.write() = Some(token);
     }
 
     pub(crate) fn has_session_token(&self) -> bool {
-        self.session_token.read().is_ok_and(|guard| guard.is_some())
+        self.session_token.read().is_some()
     }
 
     fn default_headers() -> HashMap<String, String> {
@@ -306,8 +284,7 @@ impl AxRawHttpClient {
     }
 
     fn auth_headers(&self) -> Result<HashMap<String, String>, AxHttpError> {
-        // Lock poisoning indicates a panic in another thread, which is fatal
-        let guard = self.session_token.read().expect("Lock poisoned");
+        let guard = self.session_token.read();
         let session_token = guard.as_ref().ok_or(AxHttpError::MissingSessionToken)?;
 
         let mut headers = HashMap::new();
@@ -427,11 +404,7 @@ impl AxRawHttpClient {
             }
         };
 
-        let cancel_token = self
-            .cancellation_token
-            .read()
-            .expect("Lock poisoned")
-            .clone();
+        let cancel_token = self.cancellation_token.read().clone();
 
         self.retry_manager
             .execute_with_retry_with_cancel(

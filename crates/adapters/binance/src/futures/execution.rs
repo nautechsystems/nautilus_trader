@@ -18,7 +18,7 @@
 use std::{
     future::Future,
     sync::{
-        Arc, Mutex, RwLock,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -40,7 +40,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicSet, MUTEX_POISONED, Params, UUID4, UnixNanos,
+    AtomicSet, Params, UUID4, UnixNanos,
     datetime::{
         NANOSECONDS_IN_DAY, NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND,
         checked_mins_to_nanos,
@@ -68,6 +68,7 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Quantity},
 };
+use parking_lot::{Mutex, RwLock};
 use rust_decimal::Decimal;
 use tokio_util::sync::CancellationToken;
 
@@ -946,7 +947,7 @@ impl BinanceFuturesExecutionClient {
         slot: &RwLock<Option<String>>,
         context: &str,
     ) -> anyhow::Result<()> {
-        let key = slot.read().expect(MUTEX_POISONED).clone();
+        let key = slot.read().clone();
         let Some(key) = key else {
             return Ok(());
         };
@@ -955,7 +956,7 @@ impl BinanceFuturesExecutionClient {
             .close_listen_key(&key)
             .await
             .with_context(|| context.to_string())?;
-        let mut owned = slot.write().expect(MUTEX_POISONED);
+        let mut owned = slot.write();
         if owned.as_deref() == Some(key.as_str()) {
             *owned = None;
         }
@@ -1706,7 +1707,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             TaskGroupGuard::new(&[&self.session_tasks, &self.pending_tasks], move || {
                 cancellation_token.cancel();
 
-                if let Some(client) = ws_client.lock().expect(MUTEX_POISONED).as_ref() {
+                if let Some(client) = ws_client.lock().as_ref() {
                     client.begin_shutdown();
                 }
 
@@ -1760,7 +1761,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         log::debug!("Listen key created successfully");
 
         {
-            let mut key_guard = self.listen_key.write().expect(MUTEX_POISONED);
+            let mut key_guard = self.listen_key.write();
             *key_guard = Some(listen_key.clone());
         }
 
@@ -1821,7 +1822,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
         let ws_client = build_and_connect_user_stream(&ws_build_params, &listen_key).await?;
         let stream = ws_client.stream();
-        *self.ws_client.lock().expect(MUTEX_POISONED) = Some(ws_client);
+        *self.ws_client.lock() = Some(ws_client);
 
         self.ws_task
             .lock()
@@ -1850,7 +1851,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     tokio::select! {
                         _ = interval.tick() => {
                             let key = {
-                                let guard = listen_key_ref.read().expect(MUTEX_POISONED);
+                                let guard = listen_key_ref.read();
                                 guard.clone()
                             };
 
@@ -2000,7 +2001,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             self.abort_session_tasks();
             self.abort_pending_tasks();
 
-            if let Some(client) = self.ws_client.lock().expect(MUTEX_POISONED).as_ref() {
+            if let Some(client) = self.ws_client.lock().as_ref() {
                 client.begin_shutdown();
             }
 
@@ -2031,10 +2032,10 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 self.shutdown_errors.push(e.to_string());
             }
 
-            let ws_client = self.ws_client.lock().expect(MUTEX_POISONED).clone();
+            let ws_client = self.ws_client.lock().clone();
             if let Some(mut ws_client) = ws_client {
                 match ws_client.close().await {
-                    Ok(()) => *self.ws_client.lock().expect(MUTEX_POISONED) = None,
+                    Ok(()) => *self.ws_client.lock() = None,
                     Err(e) => self.shutdown_errors.push(format!(
                         "Binance Futures stream close after failed startup failed: {e}"
                     )),
@@ -2090,7 +2091,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         self.abort_session_tasks();
         self.abort_pending_tasks();
 
-        if let Some(client) = self.ws_client.lock().expect(MUTEX_POISONED).as_ref() {
+        if let Some(client) = self.ws_client.lock().as_ref() {
             client.begin_shutdown();
         }
 
@@ -2122,10 +2123,10 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         }
 
         // Close WebSocket
-        let ws_client = self.ws_client.lock().expect(MUTEX_POISONED).clone();
+        let ws_client = self.ws_client.lock().clone();
         if let Some(mut ws_client) = ws_client {
             match ws_client.close().await {
-                Ok(()) => *self.ws_client.lock().expect(MUTEX_POISONED) = None,
+                Ok(()) => *self.ws_client.lock() = None,
                 Err(e) => {
                     self.shutdown_errors
                         .push(format!("Binance Futures stream close failed: {e}"));
@@ -3037,7 +3038,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         self.cancellation_token.cancel();
         self.abort_session_tasks();
 
-        if let Some(client) = self.ws_client.lock().expect(MUTEX_POISONED).as_ref() {
+        if let Some(client) = self.ws_client.lock().as_ref() {
             client.begin_shutdown();
         }
 

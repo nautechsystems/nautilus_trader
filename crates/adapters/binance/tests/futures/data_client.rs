@@ -21,7 +21,7 @@ use std::{
     num::NonZeroUsize,
     str::FromStr,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
@@ -81,6 +81,7 @@ use nautilus_model::{
     instruments::InstrumentAny,
 };
 use nautilus_network::http::HttpClient;
+use parking_lot::Mutex;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -238,7 +239,7 @@ async fn handle_ws_connection(mut socket: WebSocket, state: DataTestServerState)
                     .unwrap_or_default();
 
                 if !streams.is_empty() {
-                    state.subscriptions.lock().unwrap().push(streams.clone());
+                    state.subscriptions.lock().push(streams.clone());
                 }
 
                 for stream in streams {
@@ -400,7 +401,7 @@ async fn handle_ws_connection(mut socket: WebSocket, state: DataTestServerState)
                     .unwrap_or_default();
 
                 if !streams.is_empty() {
-                    state.unsubscriptions.lock().unwrap().push(streams);
+                    state.unsubscriptions.lock().push(streams);
                 }
             }
         }
@@ -576,11 +577,7 @@ fn futures_agg_trades_response(
         .or_else(|| query.get("endTime"))
         .and_then(|value| value.parse().ok())
         .unwrap_or_else(|| jiff::Timestamp::now().as_millisecond());
-    state
-        .market_queries
-        .lock()
-        .unwrap()
-        .push((path.to_string(), query));
+    state.market_queries.lock().push((path.to_string(), query));
     let quantity = if path.starts_with("/dapi") {
         "2"
     } else {
@@ -624,11 +621,7 @@ fn futures_klines_response(
         .get("endTime")
         .and_then(|value| value.parse::<i64>().ok())
         .unwrap_or_else(|| jiff::Timestamp::now().as_millisecond() - 1_000);
-    state
-        .market_queries
-        .lock()
-        .unwrap()
-        .push((path.to_string(), query));
+    state.market_queries.lock().push((path.to_string(), query));
     json_response(&json!([[
         close_time - 59_999,
         "50000.00",
@@ -1476,7 +1469,7 @@ async fn test_request_bounded_aggregate_trades_routes_futures_product(
     let DataEvent::Response(DataResponse::Trades(response)) = event else {
         panic!("expected trades response");
     };
-    let queries = state.market_queries.lock().unwrap();
+    let queries = state.market_queries.lock();
     let (path, query) = &queries[0];
     assert_eq!(path, expected_path);
     assert_eq!(
@@ -1564,7 +1557,7 @@ async fn test_request_historical_binance_bars_routes_futures_product(
         .as_ref()
         .downcast_ref::<Vec<BinanceBar>>()
         .expect("expected BinanceBar vector");
-    let queries = state.market_queries.lock().unwrap();
+    let queries = state.market_queries.lock();
     let (path, query) = &queries[0];
     assert_eq!(path, expected_path);
     assert_eq!(
@@ -1885,7 +1878,6 @@ async fn test_top_of_book_reference_count_shares_quote_and_l1_stream() {
             let count = state
                 .subscriptions
                 .lock()
-                .unwrap()
                 .iter()
                 .flatten()
                 .filter(|stream| stream.as_str() == "btcusdt@bookTicker")
@@ -3376,7 +3368,6 @@ fn ticker_data_type_for_instrument(instrument_id: InstrumentId) -> DataType {
 fn recorded_streams_include(records: &Arc<Mutex<Vec<Vec<String>>>>, stream: &str) -> bool {
     records
         .lock()
-        .unwrap()
         .iter()
         .any(|streams| streams.iter().any(|recorded| recorded == stream))
 }

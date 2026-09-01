@@ -20,12 +20,12 @@
 //! external / untracked orders). Exchange-generated fills (liquidation, ADL,
 //! settlement) are routed through the reports path regardless of tracking.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use anyhow::Context;
 use futures_util::{Stream, StreamExt, pin_mut};
 use nautilus_common::cache::fifo::FifoCache;
-use nautilus_core::{AtomicSet, MUTEX_POISONED, UUID4, UnixNanos, time::AtomicTime};
+use nautilus_core::{AtomicSet, UUID4, UnixNanos, time::AtomicTime};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::LiquiditySide,
@@ -36,6 +36,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport},
     types::{Currency, Money, Price, Quantity},
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use tokio_util::sync::CancellationToken;
 
@@ -418,7 +419,7 @@ pub(crate) fn dispatch_order_update(
             }
             BinanceExecutionType::Trade => {
                 let dedup_key = (order.symbol, order.trade_id);
-                let mut guard = seen_trade_ids.lock().expect(MUTEX_POISONED);
+                let mut guard = seen_trade_ids.lock();
                 let is_duplicate = guard.contains(&dedup_key);
                 guard.add(dedup_key);
                 drop(guard);
@@ -638,7 +639,7 @@ pub(crate) fn dispatch_order_update(
         match order.execution_type {
             BinanceExecutionType::Trade => {
                 let dedup_key = (order.symbol, order.trade_id);
-                let mut guard = seen_trade_ids.lock().expect(MUTEX_POISONED);
+                let mut guard = seen_trade_ids.lock();
                 let is_duplicate = guard.contains(&dedup_key);
                 guard.add(dedup_key);
                 drop(guard);
@@ -1187,7 +1188,7 @@ pub(crate) fn dispatch_exchange_generated_fill(
     };
 
     let dedup_key = (order.symbol, order.trade_id);
-    let mut guard = seen_trade_ids.lock().expect(MUTEX_POISONED);
+    let mut guard = seen_trade_ids.lock();
     let is_duplicate = guard.contains(&dedup_key);
     guard.add(dedup_key);
     drop(guard);

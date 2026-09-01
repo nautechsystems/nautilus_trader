@@ -25,7 +25,7 @@ use std::{
     net::SocketAddr,
     num::NonZeroUsize,
     path::PathBuf,
-    sync::{Arc, Mutex as StdMutex, OnceLock},
+    sync::{Arc, OnceLock},
     time::Duration,
 };
 
@@ -80,6 +80,7 @@ use nautilus_model::{
     instruments::Instrument,
 };
 use nautilus_network::http::{HttpClient, Method};
+use parking_lot::Mutex;
 use rstest::rstest;
 use serde_json::{Value, json};
 use ustr::Ustr;
@@ -103,22 +104,16 @@ struct TestServerState {
 
 #[derive(Default)]
 struct CapturingWarnLogger {
-    messages: StdMutex<Vec<String>>,
+    messages: Mutex<Vec<String>>,
 }
 
 impl CapturingWarnLogger {
     fn clear(&self) {
-        self.messages
-            .lock()
-            .expect("log collector mutex poisoned")
-            .clear();
+        self.messages.lock().clear();
     }
 
     fn messages(&self) -> Vec<String> {
-        self.messages
-            .lock()
-            .expect("log collector mutex poisoned")
-            .clone()
+        self.messages.lock().clone()
     }
 }
 
@@ -129,10 +124,7 @@ impl Log for CapturingWarnLogger {
 
     fn log(&self, record: &Record<'_>) {
         if self.enabled(record.metadata()) {
-            self.messages
-                .lock()
-                .expect("log collector mutex poisoned")
-                .push(record.args().to_string());
+            self.messages.lock().push(record.args().to_string());
         }
     }
 

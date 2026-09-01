@@ -18,7 +18,7 @@
 use std::{
     str::FromStr,
     sync::{
-        Arc, Mutex as StdMutex, Weak,
+        Arc, Weak,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -45,6 +45,7 @@ use nautilus_network::{
         proxy::ProxyUrl,
     },
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
@@ -88,17 +89,17 @@ pub(crate) struct PolymarketRtdsFeed {
 struct RtdsTaskSlots {
     message: tokio::sync::Mutex<TaskSlot<()>>,
     reconcile: tokio::sync::Mutex<TaskSlot<()>>,
-    shutdown_errors: StdMutex<Vec<String>>,
+    shutdown_errors: Mutex<Vec<String>>,
 }
 
 struct RtdsWebSocketGuard<'a> {
-    owner: &'a StdMutex<Option<Arc<WebSocketClient>>>,
+    owner: &'a Mutex<Option<Arc<WebSocketClient>>>,
     ws: Option<Arc<WebSocketClient>>,
 }
 
 impl<'a> RtdsWebSocketGuard<'a> {
-    fn take(owner: &'a StdMutex<Option<Arc<WebSocketClient>>>) -> Self {
-        let ws = owner.lock().expect("RTDS ws_client mutex poisoned").take();
+    fn take(owner: &'a Mutex<Option<Arc<WebSocketClient>>>) -> Self {
+        let ws = owner.lock().take();
         Self { owner, ws }
     }
 
@@ -110,24 +111,18 @@ impl<'a> RtdsWebSocketGuard<'a> {
 impl Drop for RtdsWebSocketGuard<'_> {
     fn drop(&mut self) {
         if self.ws.is_some() {
-            *self.owner.lock().expect("RTDS ws_client mutex poisoned") = self.ws.take();
+            *self.owner.lock() = self.ws.take();
         }
     }
 }
 
 impl RtdsTaskSlots {
     fn push_shutdown_error(&self, error: String) {
-        self.shutdown_errors
-            .lock()
-            .expect("RTDS shutdown_errors mutex poisoned")
-            .push(error);
+        self.shutdown_errors.lock().push(error);
     }
 
     fn take_shutdown_result(&self) -> anyhow::Result<()> {
-        let mut errors = self
-            .shutdown_errors
-            .lock()
-            .expect("RTDS shutdown_errors mutex poisoned");
+        let mut errors = self.shutdown_errors.lock();
 
         if errors.is_empty() {
             Ok(())
@@ -161,14 +156,14 @@ struct PolymarketRtdsFeedInner {
     last_emitted_timestamps_ms: dashmap::DashMap<String, u64>,
     // Tracks the last venue state we successfully pushed so incremental syncs
     // can send only the delta from desired state to live wire state.
-    live_subscriptions: StdMutex<AHashMap<String, RtdsWireSubscription>>,
-    ws_client: StdMutex<Option<Arc<WebSocketClient>>>,
+    live_subscriptions: Mutex<AHashMap<String, RtdsWireSubscription>>,
+    ws_client: Mutex<Option<Arc<WebSocketClient>>>,
     wire_mutex: tokio::sync::Mutex<()>,
     reconcile_notify: tokio::sync::Notify,
     reconcile_pending: AtomicBool,
     reset_live_state_pending: AtomicBool,
     closing: AtomicBool,
-    shutdown_generation: StdMutex<u64>,
+    shutdown_generation: Mutex<u64>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -425,7 +420,7 @@ impl PolymarketRtdsFeed {
         let task_owner = Arc::new(RtdsTaskSlots {
             message: tokio::sync::Mutex::new(TaskSlot::new()),
             reconcile: tokio::sync::Mutex::new(TaskSlot::new()),
-            shutdown_errors: StdMutex::new(Vec::new()),
+            shutdown_errors: Mutex::new(Vec::new()),
         });
         Self {
             inner: Arc::new(PolymarketRtdsFeedInner {
@@ -438,14 +433,14 @@ impl PolymarketRtdsFeed {
                 socket_control,
                 subscriptions: dashmap::DashMap::new(),
                 last_emitted_timestamps_ms: dashmap::DashMap::new(),
-                live_subscriptions: StdMutex::new(AHashMap::new()),
-                ws_client: StdMutex::new(None),
+                live_subscriptions: Mutex::new(AHashMap::new()),
+                ws_client: Mutex::new(None),
                 wire_mutex: tokio::sync::Mutex::new(()),
                 reconcile_notify: tokio::sync::Notify::new(),
                 reconcile_pending: AtomicBool::new(false),
                 reset_live_state_pending: AtomicBool::new(false),
                 closing: AtomicBool::new(false),
-                shutdown_generation: StdMutex::new(0),
+                shutdown_generation: Mutex::new(0),
             }),
             _task_owner: Some(Arc::clone(&task_owner)),
             task_slots: Arc::downgrade(&task_owner),
@@ -541,22 +536,14 @@ impl PolymarketRtdsFeed {
     }
 
     pub(crate) async fn connect(&self) -> anyhow::Result<()> {
-        let generation = *self
-            .inner
-            .shutdown_generation
-            .lock()
-            .expect("RTDS shutdown_generation mutex poisoned");
+        let generation = *self.inner.shutdown_generation.lock();
 
         if self.inner.closing.load(Ordering::Acquire) {
             self.finish_retained_tasks().await?;
         }
 
         {
-            let current_generation = self
-                .inner
-                .shutdown_generation
-                .lock()
-                .expect("RTDS shutdown_generation mutex poisoned");
+            let current_generation = self.inner.shutdown_generation.lock();
             if *current_generation != generation {
                 anyhow::bail!("RTDS connect was canceled by shutdown");
             }
@@ -566,11 +553,7 @@ impl PolymarketRtdsFeed {
         self.ensure_reconcile_worker();
         self.reconcile_once(false).await?;
 
-        let current_generation = self
-            .inner
-            .shutdown_generation
-            .lock()
-            .expect("RTDS shutdown_generation mutex poisoned");
+        let current_generation = self.inner.shutdown_generation.lock();
         if *current_generation != generation || self.inner.closing.load(Ordering::Acquire) {
             anyhow::bail!("RTDS connect was canceled by shutdown");
         }
@@ -668,11 +651,7 @@ impl PolymarketRtdsFeed {
             control.deregister();
         }
 
-        self.inner
-            .live_subscriptions
-            .lock()
-            .expect("RTDS live_subscriptions mutex poisoned")
-            .clear();
+        self.inner.live_subscriptions.lock().clear();
         drop(_guard);
 
         let mut message_slot = tasks.message.lock().await;
@@ -727,11 +706,7 @@ impl PolymarketRtdsFeed {
     }
 
     pub(crate) fn begin_shutdown(&self) {
-        let mut generation = self
-            .inner
-            .shutdown_generation
-            .lock()
-            .expect("RTDS shutdown_generation mutex poisoned");
+        let mut generation = self.inner.shutdown_generation.lock();
         *generation = generation.wrapping_add(1);
         self.inner.closing.store(true, Ordering::Release);
         self.inner.reconcile_pending.store(false, Ordering::Release);
@@ -740,13 +715,7 @@ impl PolymarketRtdsFeed {
             .store(false, Ordering::Release);
         self.inner.reconcile_notify.notify_waiters();
 
-        if let Some(ws) = self
-            .inner
-            .ws_client
-            .lock()
-            .expect("RTDS ws_client mutex poisoned")
-            .as_ref()
-        {
+        if let Some(ws) = self.inner.ws_client.lock().as_ref() {
             ws.notify_closed();
         }
     }
@@ -776,19 +745,11 @@ impl PolymarketRtdsFeed {
     }
 
     fn current_ws(&self) -> Option<Arc<WebSocketClient>> {
-        self.inner
-            .ws_client
-            .lock()
-            .expect("RTDS ws_client mutex poisoned")
-            .clone()
+        self.inner.ws_client.lock().clone()
     }
 
     fn clear_ws_if_current(&self, ws: &Arc<WebSocketClient>) -> bool {
-        let mut guard = self
-            .inner
-            .ws_client
-            .lock()
-            .expect("RTDS ws_client mutex poisoned");
+        let mut guard = self.inner.ws_client.lock();
         let Some(current) = guard.as_ref() else {
             return false;
         };
@@ -802,11 +763,7 @@ impl PolymarketRtdsFeed {
     }
 
     fn ensure_reconcile_worker(&self) {
-        let _generation = self
-            .inner
-            .shutdown_generation
-            .lock()
-            .expect("RTDS shutdown_generation mutex poisoned");
+        let _generation = self.inner.shutdown_generation.lock();
 
         if self.inner.closing.load(Ordering::Acquire) {
             return;
@@ -878,11 +835,7 @@ impl PolymarketRtdsFeed {
 
     async fn ensure_connected_locked(&self) -> anyhow::Result<bool> {
         let generation = {
-            let generation = self
-                .inner
-                .shutdown_generation
-                .lock()
-                .expect("RTDS shutdown_generation mutex poisoned");
+            let generation = self.inner.shutdown_generation.lock();
 
             if self.inner.closing.load(Ordering::Acquire) {
                 return Ok(false);
@@ -920,11 +873,7 @@ impl PolymarketRtdsFeed {
         }
 
         log::debug!("Polymarket RTDS WebSocket connected: {}", self.inner.url);
-        *self
-            .inner
-            .ws_client
-            .lock()
-            .expect("RTDS ws_client mutex poisoned") = Some(Arc::clone(&ws));
+        *self.inner.ws_client.lock() = Some(Arc::clone(&ws));
 
         // Tokio cancellation is cooperative. Quiesce the previous loop before
         // activating the replacement so an admitted old-loop tail cannot emit
@@ -966,20 +915,12 @@ impl PolymarketRtdsFeed {
         }
 
         let spawn_result = {
-            let generation_guard = self
-                .inner
-                .shutdown_generation
-                .lock()
-                .expect("RTDS shutdown_generation mutex poisoned");
+            let generation_guard = self.inner.shutdown_generation.lock();
 
             if *generation_guard != generation || self.inner.closing.load(Ordering::Acquire) {
                 None
             } else {
-                *self
-                    .inner
-                    .ws_client
-                    .lock()
-                    .expect("RTDS ws_client mutex poisoned") = Some(Arc::clone(&ws));
+                *self.inner.ws_client.lock() = Some(Arc::clone(&ws));
 
                 let feed = self.worker();
                 let ws_for_task = Arc::clone(&ws);
@@ -1035,11 +976,7 @@ impl PolymarketRtdsFeed {
     }
 
     fn is_generation_open(&self, generation: u64) -> bool {
-        let current_generation = self
-            .inner
-            .shutdown_generation
-            .lock()
-            .expect("RTDS shutdown_generation mutex poisoned");
+        let current_generation = self.inner.shutdown_generation.lock();
         *current_generation == generation && !self.inner.closing.load(Ordering::Acquire)
     }
 
@@ -1092,20 +1029,12 @@ impl PolymarketRtdsFeed {
         }
 
         if reset_live_state {
-            self.inner
-                .live_subscriptions
-                .lock()
-                .expect("RTDS live_subscriptions mutex poisoned")
-                .clear();
+            self.inner.live_subscriptions.lock().clear();
         }
 
         let desired = self.snapshot_wire_subscriptions();
         let (unsubscribe, subscribe) = {
-            let live = self
-                .inner
-                .live_subscriptions
-                .lock()
-                .expect("RTDS live_subscriptions mutex poisoned");
+            let live = self.inner.live_subscriptions.lock();
             let unsubscribe = live
                 .iter()
                 .filter(|(key, _)| !desired.contains_key(*key))
@@ -1137,11 +1066,7 @@ impl PolymarketRtdsFeed {
         }
 
         {
-            let mut live = self
-                .inner
-                .live_subscriptions
-                .lock()
-                .expect("RTDS live_subscriptions mutex poisoned");
+            let mut live = self.inner.live_subscriptions.lock();
             live.retain(|key, _| desired.contains_key(key));
             for (key, wire) in desired {
                 live.insert(key, wire);
@@ -2139,13 +2064,10 @@ mod tests {
         let state = TestServerState::default();
         let addr = start_rtds_server(state.clone()).await;
         let (data_tx, mut data_rx) = tokio::sync::mpsc::unbounded_channel();
-        let states = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let states = Arc::new(parking_lot::Mutex::new(Vec::new()));
         let states_callback = Arc::clone(&states);
         let state_sink = SocketStateSink::new(move |state| {
-            states_callback
-                .lock()
-                .expect("socket state mutex poisoned")
-                .push(state);
+            states_callback.lock().push(state);
         });
         let feed = PolymarketRtdsFeed::new_with_proxy_and_state_sink(
             format!("ws://{addr}/rtds"),
@@ -2195,10 +2117,7 @@ mod tests {
             || {
                 let states = Arc::clone(&states);
                 async move {
-                    states
-                        .lock()
-                        .expect("socket state mutex poisoned")
-                        .as_slice()
+                    states.lock().as_slice()
                         == [
                             nautilus_network::SocketState::Connected,
                             nautilus_network::SocketState::Disconnected,
@@ -2264,10 +2183,7 @@ mod tests {
             .expect("post-reconnect TWAP data channel closed");
 
         assert_eq!(
-            states
-                .lock()
-                .expect("socket state mutex poisoned")
-                .as_slice(),
+            states.lock().as_slice(),
             [
                 nautilus_network::SocketState::Connected,
                 nautilus_network::SocketState::Disconnected,
@@ -3992,11 +3908,7 @@ mod tests {
             .expect("track BTC");
 
         let ws = connect_test_ws(format!("ws://{addr}/rtds")).await;
-        *feed
-            .inner
-            .ws_client
-            .lock()
-            .expect("RTDS ws_client mutex poisoned") = Some(ws.clone());
+        *feed.inner.ws_client.lock() = Some(ws.clone());
 
         let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
 
@@ -4324,11 +4236,7 @@ mod tests {
             .expect("track BTC");
 
         let ws = connect_test_ws(format!("ws://{addr}/rtds")).await;
-        *feed
-            .inner
-            .ws_client
-            .lock()
-            .expect("RTDS ws_client mutex poisoned") = Some(ws.clone());
+        *feed.inner.ws_client.lock() = Some(ws.clone());
         feed.inner.closing.store(true, Ordering::Release);
 
         let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();

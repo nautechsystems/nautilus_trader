@@ -31,11 +31,13 @@
 use std::{
     pin::pin,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicU8, Ordering},
     },
     time::Duration,
 };
+
+use parking_lot::Mutex;
 
 pub type AuthResultSender = tokio::sync::oneshot::Sender<Result<(), String>>;
 pub type AuthResultReceiver = tokio::sync::oneshot::Receiver<Result<(), String>>;
@@ -166,15 +168,14 @@ impl AuthTracker {
         self.state
             .store(AuthState::Unauthenticated.as_u8(), Ordering::Release);
 
-        if let Ok(mut guard) = self.tx.lock() {
-            if let Some(old) = guard.take() {
-                log::warn!("New authentication request superseding previous pending request");
-                let _ = old.send(Err("Authentication attempt superseded".to_string()));
-            } else {
-                log::debug!("Starting new authentication request");
-            }
-            *guard = Some(sender);
+        let mut guard = self.tx.lock();
+        if let Some(old) = guard.take() {
+            log::warn!("New authentication request superseding previous pending request");
+            let _ = old.send(Err("Authentication attempt superseded".to_string()));
+        } else {
+            log::debug!("Starting new authentication request");
         }
+        *guard = Some(sender);
 
         receiver
     }
@@ -192,9 +193,7 @@ impl AuthTracker {
             .store(AuthState::Authenticated.as_u8(), Ordering::Release);
         self.state_notify.notify_waiters();
 
-        if let Ok(mut guard) = self.tx.lock()
-            && let Some(sender) = guard.take()
-        {
+        if let Some(sender) = self.tx.lock().take() {
             let _ = sender.send(Ok(()));
         }
     }
@@ -213,9 +212,7 @@ impl AuthTracker {
         self.state_notify.notify_waiters();
         let message = error.into();
 
-        if let Ok(mut guard) = self.tx.lock()
-            && let Some(sender) = guard.take()
-        {
+        if let Some(sender) = self.tx.lock().take() {
             let _ = sender.send(Err(message));
         }
     }

@@ -510,11 +510,12 @@ impl FeedHandler {
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Mutex, time::Duration};
+    use std::time::Duration;
 
     use futures_util::StreamExt;
     use nautilus_common::testing::wait_until_async;
     use nautilus_network::websocket::{TransportBackend, WebSocketConfig, channel_message_handler};
+    use parking_lot::Mutex;
     use rstest::{fixture, rstest};
     use serde_json::{Value, json};
 
@@ -572,10 +573,7 @@ mod tests {
 
             while let Some(message) = socket.next().await {
                 match message.expect("read websocket message") {
-                    Message::Text(text) => received
-                        .lock()
-                        .expect("recording mutex poisoned")
-                        .push(text.to_string()),
+                    Message::Text(text) => received.lock().push(text.to_string()),
                     Message::Close(_) => break,
                     _ => {}
                 }
@@ -673,14 +671,14 @@ mod tests {
         wait_until_async(
             || {
                 let messages = Arc::clone(&messages);
-                async move { messages.lock().expect("recording mutex poisoned").len() >= 2 }
+                async move { messages.lock().len() >= 2 }
             },
             Duration::from_secs(1),
         )
         .await;
 
         {
-            let messages = messages.lock().expect("recording mutex poisoned");
+            let messages = messages.lock();
             assert_eq!(messages.len(), 2);
             assert_eq!(
                 serde_json::from_str::<Value>(&messages[0]).expect("valid subscribe payload"),
@@ -761,7 +759,7 @@ mod tests {
         let (_, message) = task.await.expect("join handler task");
         assert!(message.is_none());
 
-        let messages = messages.lock().expect("recording mutex poisoned").clone();
+        let messages = messages.lock().clone();
         let expected_subscription = json!({
             "assets_ids": [MARKET_ASSET_ID],
             "type": "market",
@@ -818,7 +816,6 @@ mod tests {
                 async move {
                     messages
                         .lock()
-                        .expect("recording mutex poisoned")
                         .last()
                         .is_some_and(|message| message == "barrier")
                 }
@@ -827,7 +824,7 @@ mod tests {
         )
         .await;
 
-        let messages = messages.lock().expect("recording mutex poisoned").clone();
+        let messages = messages.lock().clone();
         let expected_subscription = json!({
             "assets_ids": [MARKET_ASSET_ID],
             "type": "market",
@@ -856,7 +853,7 @@ mod tests {
         wait_until_async(
             || {
                 let messages = Arc::clone(messages);
-                async move { messages.lock().expect("recording mutex poisoned").len() == expected }
+                async move { messages.lock().len() == expected }
             },
             Duration::from_secs(1),
         )
@@ -878,12 +875,7 @@ mod tests {
         wait_until_async(
             || {
                 let messages = Arc::clone(&messages);
-                async move {
-                    !messages
-                        .lock()
-                        .expect("recording mutex poisoned")
-                        .is_empty()
-                }
+                async move { !messages.lock().is_empty() }
             },
             Duration::from_secs(1),
         )
@@ -1078,19 +1070,14 @@ mod tests {
         wait_until_async(
             || {
                 let messages = Arc::clone(&messages);
-                async move {
-                    !messages
-                        .lock()
-                        .expect("recording mutex poisoned")
-                        .is_empty()
-                }
+                async move { !messages.lock().is_empty() }
             },
             Duration::from_secs(1),
         )
         .await;
 
         {
-            let messages = messages.lock().expect("recording mutex poisoned");
+            let messages = messages.lock();
             assert_eq!(messages.len(), 1);
             assert_eq!(
                 serde_json::from_str::<Value>(&messages[0]).expect("valid subscribe payload"),

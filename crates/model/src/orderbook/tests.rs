@@ -16,13 +16,13 @@
 use std::{
     collections::{BTreeMap, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
-    sync::Mutex,
 };
 
 use ahash::AHashSet;
 use indexmap::IndexMap;
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use nautilus_core::UnixNanos;
+use parking_lot::{Mutex, MutexGuard};
 use rstest::{fixture, rstest};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -1784,7 +1784,7 @@ impl BookWarnCapture {
     // one process, so drain only the messages naming this test's instrument
     fn take_for(&self, instrument_id: InstrumentId) -> Vec<String> {
         let marker = format!("instrument_id={instrument_id})");
-        let mut messages = self.messages.lock().unwrap();
+        let mut messages = self.messages.lock();
         let (mine, rest) = messages
             .drain(..)
             .partition(|message| message.ends_with(&marker));
@@ -1800,10 +1800,7 @@ impl Log for BookWarnCapture {
 
     fn log(&self, record: &Record<'_>) {
         if self.enabled(record.metadata()) {
-            self.messages
-                .lock()
-                .unwrap()
-                .push(record.args().to_string());
+            self.messages.lock().push(record.args().to_string());
         }
     }
 
@@ -1815,8 +1812,8 @@ static BOOK_WARN_CAPTURE: BookWarnCapture = BookWarnCapture {
 };
 static BOOK_WARN_TEST_LOCK: Mutex<()> = Mutex::new(());
 
-fn start_book_warn_capture() -> std::sync::MutexGuard<'static, ()> {
-    let guard = BOOK_WARN_TEST_LOCK.lock().unwrap();
+fn start_book_warn_capture() -> MutexGuard<'static, ()> {
+    let guard = BOOK_WARN_TEST_LOCK.lock();
     let _ = log::set_logger(&BOOK_WARN_CAPTURE);
     log::set_max_level(LevelFilter::Warn);
     guard

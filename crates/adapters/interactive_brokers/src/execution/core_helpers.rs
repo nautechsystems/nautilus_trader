@@ -81,11 +81,9 @@ impl InteractiveBrokersExecutionClient {
     pub(super) fn get_mapped_instrument_id(
         order_id: i32,
         instrument_id_map: &Arc<Mutex<AHashMap<i32, InstrumentId>>>,
-    ) -> anyhow::Result<Option<InstrumentId>> {
-        let map = instrument_id_map
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock instrument ID map"))?;
-        Ok(map.get(&order_id).copied())
+    ) -> Option<InstrumentId> {
+        let map = instrument_id_map.lock();
+        map.get(&order_id).copied()
     }
 
     pub(super) fn get_required_order_actor_ids(
@@ -94,17 +92,13 @@ impl InteractiveBrokersExecutionClient {
         strategy_id_map: &Arc<Mutex<AHashMap<i32, StrategyId>>>,
     ) -> anyhow::Result<(TraderId, StrategyId)> {
         let trader_id = {
-            let map = trader_id_map
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock trader ID map"))?;
+            let map = trader_id_map.lock();
             map.get(&order_id).copied()
         }
         .with_context(|| format!("Trader ID not found for Interactive Brokers order {order_id}"))?;
 
         let strategy_id = {
-            let map = strategy_id_map
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock strategy ID map"))?;
+            let map = strategy_id_map.lock();
             map.get(&order_id).copied()
         }
         .with_context(|| {
@@ -163,64 +157,46 @@ impl InteractiveBrokersExecutionClient {
         strategy_id_map: &Arc<Mutex<AHashMap<i32, StrategyId>>>,
         active_order_contexts: &Arc<Mutex<AHashMap<i32, TrackedOrderContext>>>,
         terminal_order_contexts: &Arc<Mutex<FifoCacheMap<i32, TrackedOrderContext, 10_000>>>,
-    ) -> anyhow::Result<()> {
+    ) {
         {
-            let mut order_map = order_id_map
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock order ID map"))?;
+            let mut order_map = order_id_map.lock();
             order_map.insert(client_order_id, ib_order_id);
         }
 
         {
-            let mut venue_map = venue_order_id_map
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock venue order ID map"))?;
+            let mut venue_map = venue_order_id_map.lock();
             venue_map.insert(ib_order_id, client_order_id);
         }
 
         {
-            let mut instrument_map = instrument_id_map
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock instrument ID map"))?;
+            let mut instrument_map = instrument_id_map.lock();
             instrument_map.insert(ib_order_id, instrument_id);
         }
 
         {
-            let mut trader_map = trader_id_map
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock trader_id map"))?;
+            let mut trader_map = trader_id_map.lock();
             trader_map.insert(ib_order_id, trader_id);
         }
 
         {
-            let mut strategy_map = strategy_id_map
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock strategy_id map"))?;
+            let mut strategy_map = strategy_id_map.lock();
             strategy_map.insert(ib_order_id, strategy_id);
         }
 
-        terminal_order_contexts
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock terminal order contexts"))?
-            .remove(&ib_order_id);
-        active_order_contexts
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock active order contexts"))?
-            .insert(
-                ib_order_id,
-                TrackedOrderContext {
-                    client_order_id,
-                    trader_id,
-                    strategy_id,
-                    instrument_id,
-                    order_side,
-                    order_type,
-                    accepted: false,
-                    avg_px: None,
-                },
-            );
-
-        Ok(())
+        terminal_order_contexts.lock().remove(&ib_order_id);
+        active_order_contexts.lock().insert(
+            ib_order_id,
+            TrackedOrderContext {
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+                order_side,
+                order_type,
+                accepted: false,
+                avg_px: None,
+            },
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -237,9 +213,7 @@ impl InteractiveBrokersExecutionClient {
         // Order-status callbacks first map the IB order ID to a client order ID, then read
         // its instrument, trader, and strategy IDs. Hold this lock while updating all maps
         // so a callback sees either the complete identity or no route at all.
-        let mut venue_map = venue_order_id_map
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock venue order ID map"))?;
+        let mut venue_map = venue_order_id_map.lock();
         if let Some(existing_client_order_id) = venue_map.get(&ib_order_id) {
             anyhow::ensure!(
                 *existing_client_order_id == cmd.client_order_id,
@@ -248,21 +222,15 @@ impl InteractiveBrokersExecutionClient {
         }
         venue_map.remove(&ib_order_id);
 
-        order_id_map
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock order ID map"))?
-            .insert(cmd.client_order_id, ib_order_id);
+        order_id_map.lock().insert(cmd.client_order_id, ib_order_id);
         instrument_id_map
             .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock instrument ID map"))?
             .insert(ib_order_id, target_order.instrument_id());
         trader_id_map
             .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock trader ID map"))?
             .insert(ib_order_id, target_order.trader_id());
         strategy_id_map
             .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock strategy ID map"))?
             .insert(ib_order_id, target_order.strategy_id());
         venue_map.insert(ib_order_id, cmd.client_order_id);
 
@@ -273,21 +241,12 @@ impl InteractiveBrokersExecutionClient {
         ib_order_id: i32,
         active_order_contexts: &Arc<Mutex<AHashMap<i32, TrackedOrderContext>>>,
         terminal_order_contexts: &Arc<Mutex<FifoCacheMap<i32, TrackedOrderContext, 10_000>>>,
-    ) -> anyhow::Result<Option<TrackedOrderContext>> {
-        if let Some(context) = active_order_contexts
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock active order contexts"))?
-            .get(&ib_order_id)
-            .cloned()
-        {
-            return Ok(Some(context));
+    ) -> Option<TrackedOrderContext> {
+        if let Some(context) = active_order_contexts.lock().get(&ib_order_id).cloned() {
+            return Some(context);
         }
 
-        Ok(terminal_order_contexts
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock terminal order contexts"))?
-            .get(&ib_order_id)
-            .cloned())
+        terminal_order_contexts.lock().get(&ib_order_id).cloned()
     }
 
     pub(super) fn emit_order_accepted_if_needed(
@@ -298,9 +257,7 @@ impl InteractiveBrokersExecutionClient {
         active_order_contexts: &Arc<Mutex<AHashMap<i32, TrackedOrderContext>>>,
         exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
     ) -> anyhow::Result<bool> {
-        let mut contexts = active_order_contexts
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock active order contexts"))?;
+        let mut contexts = active_order_contexts.lock();
         let Some(context) = contexts.get_mut(&ib_order_id) else {
             return Ok(false);
         };
@@ -329,9 +286,7 @@ impl InteractiveBrokersExecutionClient {
             return Ok(true);
         }
 
-        let mut contexts = terminal_order_contexts
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock terminal order contexts"))?;
+        let mut contexts = terminal_order_contexts.lock();
         let Some(context) = contexts.get_mut(&ib_order_id) else {
             return Ok(false);
         };
@@ -381,37 +336,14 @@ impl InteractiveBrokersExecutionClient {
         strategy_id_map: &Arc<Mutex<AHashMap<i32, StrategyId>>>,
         active_order_contexts: &Arc<Mutex<AHashMap<i32, TrackedOrderContext>>>,
         terminal_order_contexts: &Arc<Mutex<FifoCacheMap<i32, TrackedOrderContext, 10_000>>>,
-    ) -> anyhow::Result<()> {
-        order_id_map
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock order ID map"))?
-            .remove(&client_order_id);
-        venue_order_id_map
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock venue order ID map"))?
-            .remove(&ib_order_id);
-        instrument_id_map
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock instrument ID map"))?
-            .remove(&ib_order_id);
-        trader_id_map
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock trader ID map"))?
-            .remove(&ib_order_id);
-        strategy_id_map
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock strategy ID map"))?
-            .remove(&ib_order_id);
-        active_order_contexts
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock active order contexts"))?
-            .remove(&ib_order_id);
-        terminal_order_contexts
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock terminal order contexts"))?
-            .remove(&ib_order_id);
-
-        Ok(())
+    ) {
+        order_id_map.lock().remove(&client_order_id);
+        venue_order_id_map.lock().remove(&ib_order_id);
+        instrument_id_map.lock().remove(&ib_order_id);
+        trader_id_map.lock().remove(&ib_order_id);
+        strategy_id_map.lock().remove(&ib_order_id);
+        active_order_contexts.lock().remove(&ib_order_id);
+        terminal_order_contexts.lock().remove(&ib_order_id);
     }
 }
 

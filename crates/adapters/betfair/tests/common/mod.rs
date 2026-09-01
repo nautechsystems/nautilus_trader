@@ -20,7 +20,7 @@ use std::{
     net::SocketAddr,
     path::PathBuf,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
@@ -50,6 +50,7 @@ use nautilus_common::{
     testing::wait_until_async,
 };
 use nautilus_network::http::HttpClient;
+use parking_lot::Mutex;
 use serde_json::Value;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -160,7 +161,6 @@ async fn handle_login(State(state): State<MockState>) -> impl IntoResponse {
     let body = state
         .login_response_override
         .lock()
-        .unwrap()
         .clone()
         .unwrap_or_else(|| load_fixture("rest/login_success.json"));
     (
@@ -174,13 +174,11 @@ async fn handle_keep_alive(State(state): State<MockState>) -> Response {
     let body = state
         .keep_alive_response_override
         .lock()
-        .unwrap()
         .clone()
         .unwrap_or_else(|| load_fixture("rest/login_success.json"));
     let status = state
         .keep_alive_status_override
         .lock()
-        .unwrap()
         .map(|status| StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR))
         .unwrap_or(StatusCode::OK);
     (
@@ -207,19 +205,14 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> Response
     let params = request.get("params").cloned().unwrap_or(Value::Null);
 
     if !method.is_empty() {
-        state
-            .betting_methods
-            .lock()
-            .unwrap()
-            .push(method.to_string());
+        state.betting_methods.lock().push(method.to_string());
         state
             .betting_request_params
             .lock()
-            .unwrap()
             .push((method.to_string(), params.clone()));
     }
 
-    let response_gate = state.betting_response_gate.lock().unwrap().clone();
+    let response_gate = state.betting_response_gate.lock().clone();
     if let Some(gate) = response_gate
         && gate.method == method
     {
@@ -231,12 +224,7 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> Response
             .forget();
     }
 
-    let delay = state
-        .betting_response_delays
-        .lock()
-        .unwrap()
-        .get(method)
-        .copied();
+    let delay = state.betting_response_delays.lock().get(method).copied();
 
     if let Some(delay) = delay {
         tokio::time::sleep(delay).await;
@@ -245,13 +233,11 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> Response
     if let Some(status) = state
         .betting_apply_then_status_one_shot_overrides
         .lock()
-        .unwrap()
         .remove(method)
     {
         state
             .betting_applied_request_params
             .lock()
-            .unwrap()
             .push((method.to_string(), params));
         let code = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
         return (code, "").into_response();
@@ -260,20 +246,13 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> Response
     if let Some(status) = state
         .betting_status_one_shot_overrides
         .lock()
-        .unwrap()
         .remove(method)
     {
         let code = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
         return (code, "").into_response();
     }
 
-    if let Some(status) = state
-        .betting_status_overrides
-        .lock()
-        .unwrap()
-        .get(method)
-        .copied()
-    {
+    if let Some(status) = state.betting_status_overrides.lock().get(method).copied() {
         let code = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
         return (code, "").into_response();
     }
@@ -281,16 +260,8 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> Response
     let error_response = state
         .betting_error_one_shot_overrides
         .lock()
-        .unwrap()
         .remove(method)
-        .or_else(|| {
-            state
-                .betting_error_overrides
-                .lock()
-                .unwrap()
-                .get(method)
-                .cloned()
-        });
+        .or_else(|| state.betting_error_overrides.lock().get(method).cloned());
 
     if let Some(mut response) = error_response {
         response["id"] = Value::from(id);
@@ -300,10 +271,9 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> Response
     let sequence_result = state
         .betting_response_sequences
         .lock()
-        .unwrap()
         .get_mut(method)
         .and_then(VecDeque::pop_front);
-    let override_result = state.betting_overrides.lock().unwrap().get(method).cloned();
+    let override_result = state.betting_overrides.lock().get(method).cloned();
 
     let result = if let Some(value) = sequence_result.or(override_result) {
         value
@@ -345,7 +315,7 @@ async fn handle_accounts(State(state): State<MockState>, body: Bytes) -> impl In
     let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
     let id = request.get("id").and_then(|i| i.as_u64()).unwrap_or(0);
 
-    let response_gate = state.accounts_response_gate.lock().unwrap().clone();
+    let response_gate = state.accounts_response_gate.lock().clone();
     if let Some(gate) = response_gate
         && gate.method == method
     {
@@ -357,23 +327,12 @@ async fn handle_accounts(State(state): State<MockState>, body: Bytes) -> impl In
             .forget();
     }
 
-    if let Some(mut response) = state
-        .accounts_error_overrides
-        .lock()
-        .unwrap()
-        .get(method)
-        .cloned()
-    {
+    if let Some(mut response) = state.accounts_error_overrides.lock().get(method).cloned() {
         response["id"] = Value::from(id);
         return axum::Json(response);
     }
 
-    let override_result = state
-        .accounts_overrides
-        .lock()
-        .unwrap()
-        .get(method)
-        .cloned();
+    let override_result = state.accounts_overrides.lock().get(method).cloned();
 
     let result = if let Some(value) = override_result {
         value

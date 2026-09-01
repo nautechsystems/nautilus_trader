@@ -26,7 +26,7 @@ use std::{
     collections::HashMap,
     num::NonZeroU32,
     sync::{
-        Arc, LazyLock, RwLock,
+        Arc, LazyLock,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -60,6 +60,7 @@ use nautilus_network::{
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
+use parking_lot::RwLock;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
@@ -325,39 +326,18 @@ impl BitmexRawHttpClient {
     }
 
     /// Cancel all pending HTTP requests.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the cancellation token lock is poisoned.
     pub fn cancel_all_requests(&self) {
-        self.cancellation_token
-            .read()
-            .expect("cancellation token lock poisoned")
-            .cancel();
+        self.cancellation_token.read().cancel();
     }
 
     /// Replace the cancellation token so new requests can proceed.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the cancellation token lock is poisoned.
     pub fn reset_cancellation_token(&self) {
-        *self
-            .cancellation_token
-            .write()
-            .expect("cancellation token lock poisoned") = CancellationToken::new();
+        *self.cancellation_token.write() = CancellationToken::new();
     }
 
     /// Get a clone of the cancellation token for this client.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the cancellation token lock is poisoned.
     pub fn cancellation_token(&self) -> CancellationToken {
-        self.cancellation_token
-            .read()
-            .expect("cancellation token lock poisoned")
-            .clone()
+        self.cancellation_token.read().clone()
     }
 
     fn sign_request(

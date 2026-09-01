@@ -22,13 +22,14 @@
 
 use std::{
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
 };
 
 use nautilus_network::socket::{SocketClient, SocketConfig};
+use parking_lot::Mutex;
 use rstest::{fixture, rstest};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::stream::Mode;
@@ -71,13 +72,12 @@ fn attach_message_capture(config: &mut SocketConfig, received: &ReceivedMessages
     config.message_handler = Some(Arc::new(move |data: &[u8]| {
         received
             .lock()
-            .expect("mutex poisoned")
             .push(String::from_utf8_lossy(data).to_string());
     }));
 }
 
 fn captured_messages(received: &ReceivedMessages) -> Vec<String> {
-    received.lock().expect("mutex poisoned").clone()
+    received.lock().clone()
 }
 
 async fn echo_once_then_drop_server() -> Result<(), Box<dyn std::error::Error>> {
@@ -119,10 +119,7 @@ async fn drop_each_connection_timed_server(
 
     loop {
         let (stream, _) = listener.accept().await?;
-        accept_times
-            .lock()
-            .expect("mutex poisoned")
-            .push(tokio::time::Instant::now());
+        accept_times.lock().push(tokio::time::Instant::now());
         drop(stream);
     }
 }
@@ -469,7 +466,7 @@ fn test_turmoil_socket_reconnect_storm_attempts_are_floored(mut socket_config: S
 
     sim.run().unwrap();
 
-    let times = accept_times.lock().expect("mutex poisoned");
+    let times = accept_times.lock();
     assert!(
         times.len() >= 5,
         "Expected the initial connection and several reconnects, was {}",

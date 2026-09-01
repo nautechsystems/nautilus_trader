@@ -214,9 +214,7 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
             }
         };
 
-        let update_state = instrument_update_state
-            .lock()
-            .expect("instrument_update_state mutex poisoned");
+        let update_state = instrument_update_state.lock();
         let mut effective_instruments = Vec::with_capacity(instruments.len());
         let now_ns = clock.get_time_ns();
 
@@ -309,9 +307,7 @@ pub(super) fn request_instrument(client: &PolymarketDataClient, request: Request
         };
 
         if let Some(inst) = instrument {
-            let update_state = instrument_update_state
-                .lock()
-                .expect("instrument_update_state mutex poisoned");
+            let update_state = instrument_update_state.lock();
             let inst = match update_state.compose_instrument(&inst) {
                 Ok(instrument) => instrument,
                 Err(e) => {

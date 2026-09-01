@@ -17,10 +17,7 @@
 
 mod common;
 
-use std::{
-    sync::{Mutex, atomic::Ordering},
-    time::Duration,
-};
+use std::{sync::atomic::Ordering, time::Duration};
 
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use nautilus_architect_ax::{
@@ -38,6 +35,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::websocket::TransportBackend;
+use parking_lot::Mutex;
 use rstest::rstest;
 use ustr::Ustr;
 
@@ -55,11 +53,11 @@ static OUTBOUND_LOG_CAPTURE: OutboundLogCapture = OutboundLogCapture {
 
 impl OutboundLogCapture {
     fn clear(&self) {
-        self.messages.lock().unwrap().clear();
+        self.messages.lock().clear();
     }
 
     fn messages(&self) -> Vec<(String, String)> {
-        self.messages.lock().unwrap().clone()
+        self.messages.lock().clone()
     }
 }
 
@@ -79,7 +77,6 @@ impl Log for OutboundLogCapture {
             if message.starts_with("Sending WebSocket payload") {
                 self.messages
                     .lock()
-                    .unwrap()
                     .push((record.target().to_string(), message));
             }
         }

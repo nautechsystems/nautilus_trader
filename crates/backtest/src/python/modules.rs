@@ -15,13 +15,12 @@
 
 //! Python bindings and native extractor registry for simulation module types.
 
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
 
 use ahash::AHashMap;
 use jiff::civil::{Time, Weekday};
-use nautilus_core::{
-    MUTEX_POISONED,
-    python::{clone_py_object, to_pynotimplemented_err, to_pytype_err, to_pyvalue_err},
+use nautilus_core::python::{
+    clone_py_object, to_pynotimplemented_err, to_pytype_err, to_pyvalue_err,
 };
 use nautilus_model::{
     data::Data,
@@ -32,6 +31,7 @@ use nautilus_model::{
     python::{data::data_to_pyobject, instruments::instrument_any_to_pyobject},
     types::{Currency, Money},
 };
+use parking_lot::Mutex;
 use pyo3::{
     PyClass,
     prelude::*,
@@ -59,10 +59,6 @@ static SIMULATION_MODULE_EXTRACTORS: LazyLock<Mutex<AHashMap<usize, SimulationMo
 /// # Errors
 ///
 /// Returns an error if a different extractor is already registered for `T`.
-///
-/// # Panics
-///
-/// Panics if the extractor registry mutex is poisoned.
 pub fn register_simulation_module_extractor<T: PyClass>(
     py: Python<'_>,
     extractor: SimulationModuleExtractor,
@@ -70,7 +66,7 @@ pub fn register_simulation_module_extractor<T: PyClass>(
     let type_object = py.get_type::<T>();
     let type_id = type_object.as_ptr() as usize;
     let type_name = type_object.name()?;
-    let mut extractors = SIMULATION_MODULE_EXTRACTORS.lock().expect(MUTEX_POISONED);
+    let mut extractors = SIMULATION_MODULE_EXTRACTORS.lock();
     if let Some(registered) = extractors.get(&type_id) {
         if std::ptr::fn_addr_eq(*registered, extractor) {
             return Ok(());
@@ -371,10 +367,6 @@ pub fn pyobject_to_simulation_module_any(obj: &Bound<'_, PyAny>) -> PyResult<Sim
 /// # Errors
 ///
 /// Returns an error if the object cannot be resolved or its native extractor fails.
-///
-/// # Panics
-///
-/// Panics if the extractor registry mutex is poisoned.
 pub fn pyobject_to_simulation_module_handle(
     py: Python<'_>,
     obj: &Bound<'_, PyAny>,
@@ -385,11 +377,7 @@ pub fn pyobject_to_simulation_module_handle(
 
     let type_object = obj.get_type();
     let type_id = type_object.as_ptr() as usize;
-    let extractor = SIMULATION_MODULE_EXTRACTORS
-        .lock()
-        .expect(MUTEX_POISONED)
-        .get(&type_id)
-        .copied();
+    let extractor = SIMULATION_MODULE_EXTRACTORS.lock().get(&type_id).copied();
 
     if let Some(extractor) = extractor {
         return extractor(py, obj);

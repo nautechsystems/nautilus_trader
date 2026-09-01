@@ -24,7 +24,7 @@ use std::{
     rc::Rc,
     str::FromStr,
     sync::{
-        Arc, Condvar, Mutex,
+        Arc,
         atomic::{AtomicBool, Ordering},
         mpsc,
     },
@@ -49,7 +49,7 @@ use nautilus_common::{
 #[cfg(feature = "examples")]
 use nautilus_core::python::to_pytype_err;
 use nautilus_core::{
-    MUTEX_POISONED, UUID4,
+    UUID4,
     python::{to_pyruntime_err, to_pyvalue_err},
 };
 use nautilus_model::{
@@ -73,6 +73,7 @@ use nautilus_trading::{
     ImportableControllerConfig, ImportableExecutionAlgorithmConfig, ImportableStrategyConfig,
     python::{algorithm::PyExecutionAlgorithm, strategy::PyStrategy},
 };
+use parking_lot::{Condvar, Mutex};
 use pyo3::{
     ffi::c_str,
     intern,
@@ -226,17 +227,13 @@ struct BlockingWake {
 impl BlockingWake {
     /// Waits for a wake, returning `false` once the deadline passes.
     fn wait_until(&self, deadline: Instant) -> bool {
-        let mut woken = self.woken.lock().expect(MUTEX_POISONED);
+        let mut woken = self.woken.lock();
         while !*woken {
             let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
                 return false;
             };
 
-            let (guard, timeout) = self
-                .signal
-                .wait_timeout(woken, remaining)
-                .expect(MUTEX_POISONED);
-            woken = guard;
+            let timeout = self.signal.wait_for(&mut woken, remaining);
 
             if timeout.timed_out() && !*woken {
                 return false;
@@ -254,7 +251,7 @@ impl std::task::Wake for BlockingWake {
     }
 
     fn wake_by_ref(self: &Arc<Self>) {
-        *self.woken.lock().expect(MUTEX_POISONED) = true;
+        *self.woken.lock() = true;
         self.signal.notify_all();
     }
 }
@@ -274,11 +271,11 @@ struct RunSuspension {
 
 impl RunWakeState {
     fn suspend(&self, generation: u64, future: Py<PyAny>) {
-        *self.pending.lock().expect(MUTEX_POISONED) = Some(RunSuspension { generation, future });
+        *self.pending.lock() = Some(RunSuspension { generation, future });
     }
 
     fn resume(&self, py: Python<'_>, generation: u64) -> PyResult<()> {
-        let mut pending = self.pending.lock().expect(MUTEX_POISONED);
+        let mut pending = self.pending.lock();
         let Some(suspension) = pending.as_ref() else {
             return Ok(());
         };
@@ -303,7 +300,7 @@ impl RunWakeState {
 
     fn close(&self) {
         self.closed.store(true, Ordering::Release);
-        self.pending.lock().expect(MUTEX_POISONED).take();
+        self.pending.lock().take();
     }
 }
 
@@ -2285,7 +2282,7 @@ mod tests {
         fmt::Debug,
         rc::Rc,
         sync::{
-            Arc, Mutex, TryLockError,
+            Arc,
             atomic::{AtomicBool, AtomicUsize, Ordering},
             mpsc,
         },
@@ -2339,6 +2336,7 @@ mod tests {
         python::strategy::PyStrategy,
         strategy::{StrategyConfig, StrategyCore},
     };
+    use parking_lot::Mutex;
     use pyo3::{
         Py, PyRef, Python,
         ffi::c_str,
@@ -2474,20 +2472,20 @@ mod tests {
     #[derive(Debug, Clone)]
     #[pyo3::pyclass(name = "TestCacheDatabaseFactory", from_py_object)]
     struct TestCacheDatabaseFactory {
-        database: Arc<std::sync::Mutex<Option<TestCacheDatabase>>>,
-        instance_id: Arc<std::sync::Mutex<Option<UUID4>>>,
+        database: Arc<parking_lot::Mutex<Option<TestCacheDatabase>>>,
+        instance_id: Arc<parking_lot::Mutex<Option<UUID4>>>,
     }
 
     impl TestCacheDatabaseFactory {
         fn new(database: Option<TestCacheDatabase>) -> Self {
             Self {
-                database: Arc::new(std::sync::Mutex::new(database)),
-                instance_id: Arc::new(std::sync::Mutex::new(None)),
+                database: Arc::new(parking_lot::Mutex::new(database)),
+                instance_id: Arc::new(parking_lot::Mutex::new(None)),
             }
         }
 
         fn received_instance_id(&self) -> Option<UUID4> {
-            *self.instance_id.lock().unwrap()
+            *self.instance_id.lock()
         }
     }
 
@@ -2500,7 +2498,7 @@ mod tests {
             config: CacheConfig,
         ) -> anyhow::Result<Box<dyn CacheDatabaseAdapter>> {
             TEST_CACHE_DATABASE_FACTORY_CALLS.fetch_add(1, Ordering::SeqCst);
-            *self.instance_id.lock().unwrap() = Some(instance_id);
+            *self.instance_id.lock() = Some(instance_id);
 
             anyhow::ensure!(
                 trader_id == TraderId::from("TESTER-001"),
@@ -2515,7 +2513,6 @@ mod tests {
             let database = self
                 .database
                 .lock()
-                .unwrap()
                 .take()
                 .ok_or_else(|| anyhow::anyhow!("Test cache database unavailable"))?;
             Ok(Box::new(database))
@@ -3816,7 +3813,7 @@ class ClaimsStrategy(Strategy):
         let dependency_lock = Arc::new(Mutex::new(()));
         let dependency_lock_for_thread = dependency_lock.clone();
         let wake_thread = thread::spawn(move || {
-            let _guard = dependency_lock_for_thread.lock().unwrap();
+            let _guard = dependency_lock_for_thread.lock();
             locked_tx.send(()).unwrap();
             start_rx.recv().unwrap();
             waker.wake_by_ref();
@@ -3831,14 +3828,11 @@ class ClaimsStrategy(Strategy):
 
             loop {
                 match dependency_lock.try_lock() {
-                    Ok(_) => break true,
-                    Err(TryLockError::WouldBlock) if Instant::now() < deadline => {
+                    Some(_) => break true,
+                    None if Instant::now() < deadline => {
                         thread::yield_now();
                     }
-                    Err(TryLockError::WouldBlock) => break false,
-                    Err(TryLockError::Poisoned(e)) => {
-                        panic!("dependency lock should not be poisoned: {e}");
-                    }
+                    None => break false,
                 }
             }
         });

@@ -22,7 +22,7 @@
 use std::{
     collections::VecDeque,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
@@ -47,6 +47,7 @@ use nautilus_network::{
     retry::{RetryManager, create_websocket_retry_manager},
     websocket::{AuthTracker, SubscriptionState, WebSocketClient},
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
@@ -1041,12 +1042,10 @@ impl DeribitWsFeedHandler {
                                     request_id
                                 );
 
-                                if let Ok(mut errors) = self.subscribe_errors.lock() {
-                                    errors.push(format!(
-                                        "Subscribe rejected: code={}, message={}",
-                                        error.code, error.message,
-                                    ));
-                                }
+                                self.subscribe_errors.lock().push(format!(
+                                    "Subscribe rejected: code={}, message={}",
+                                    error.code, error.message,
+                                ));
                             } else {
                                 // Confirm each channel in the subscription
                                 for ch in &channels {

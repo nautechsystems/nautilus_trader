@@ -22,7 +22,7 @@
 use std::{
     fmt::Debug,
     sync::{
-        Arc, Mutex, PoisonError, RwLock, RwLockReadGuard,
+        Arc,
         atomic::{AtomicBool, AtomicU8, Ordering},
     },
     time::Duration,
@@ -51,6 +51,7 @@ use nautilus_network::{
         channel_message_handler,
     },
 };
+use parking_lot::{Mutex, RwLock, RwLockReadGuard};
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -398,11 +399,18 @@ impl DeribitWebSocketClient {
         tokio::time::timeout(timeout, async {
             loop {
                 // Fail fast on permanent subscribe errors
-                if let Ok(mut errors) = self.subscribe_errors.lock()
-                    && !errors.is_empty()
-                {
-                    let msg = errors.join("; ");
-                    errors.clear();
+                let subscribe_error = {
+                    let mut errors = self.subscribe_errors.lock();
+                    if errors.is_empty() {
+                        None
+                    } else {
+                        let msg = errors.join("; ");
+                        errors.clear();
+                        Some(msg)
+                    }
+                };
+
+                if let Some(msg) = subscribe_error {
                     return Err(DeribitWsError::Subscribe(msg));
                 }
 
@@ -593,9 +601,7 @@ impl DeribitWebSocketClient {
 
         self.out_rx = Some(Arc::new(out_rx));
 
-        if let Ok(mut errors) = self.subscribe_errors.lock() {
-            errors.clear();
-        }
+        self.subscribe_errors.lock().clear();
 
         // Create handler
         let mut handler = DeribitWsFeedHandler::new(
@@ -620,7 +626,7 @@ impl DeribitWebSocketClient {
         // Cache updates hold a read guard while mutating the central cache. Publishing the new
         // sender under the write guard ensures later subscriptions follow this cache snapshot.
         {
-            let mut command_sender = self.cmd_tx.write().unwrap_or_else(PoisonError::into_inner);
+            let mut command_sender = self.cmd_tx.write();
             let _ = cmd_tx.send(HandlerCommand::SetClient(ws_client));
 
             let instruments: Vec<InstrumentAny> =
@@ -1800,7 +1806,7 @@ impl DeribitWebSocketClient {
     }
 
     fn command_sender(&self) -> RwLockReadGuard<'_, CommandSender> {
-        self.cmd_tx.read().unwrap_or_else(PoisonError::into_inner)
+        self.cmd_tx.read()
     }
 }
 

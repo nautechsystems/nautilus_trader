@@ -556,12 +556,11 @@ mod tests {
         },
     };
     #[cfg(any(feature = "python", not(all(feature = "simulation", madsim))))]
-    use std::{
-        sync::{Mutex, mpsc},
-        time::Duration as StdDuration,
-    };
+    use std::{sync::mpsc, time::Duration as StdDuration};
 
     use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    use parking_lot::Mutex;
     #[cfg(feature = "python")]
     use pyo3::{
         Python,
@@ -606,7 +605,6 @@ mod tests {
             self.tx.send(message).expect("message should send");
             self.release_rx
                 .lock()
-                .expect("release mutex should lock")
                 .recv()
                 .expect("timer send should release");
         }
@@ -1179,7 +1177,6 @@ mod tests {
                       -> pyo3::PyResult<()> {
                     let next_time_ns = callback_schedule
                         .lock()
-                        .expect("schedule mutex should lock")
                         .as_ref()
                         .expect("timer schedule should be available")
                         .load(Ordering::SeqCst);
@@ -1206,10 +1203,7 @@ mod tests {
 
             timer.start();
             let expected_time_ns = timer.next_time_ns().as_u64();
-            schedule
-                .lock()
-                .expect("schedule mutex should lock")
-                .replace(timer.next_time_ns.clone());
+            schedule.lock().replace(timer.next_time_ns.clone());
             let observed_time_ns = py
                 .detach(move || rx.recv_timeout(StdDuration::from_secs(1)))
                 .expect("senderless callback should observe the schedule");

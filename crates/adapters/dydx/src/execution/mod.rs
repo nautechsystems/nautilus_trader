@@ -40,7 +40,7 @@
 
 use std::{
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicU64, Ordering},
     },
     time::{Duration, Instant},
@@ -61,7 +61,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED, Params, UUID4, UnixNanos,
+    Params, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -81,6 +81,7 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money},
 };
 use nautilus_network::retry::RetryConfig;
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 
 use crate::{
@@ -957,10 +958,7 @@ impl DydxExecutionClient {
         F: Future<Output = ()> + Send + 'static,
     {
         let id = self.next_pending_task_id.fetch_add(1, Ordering::Relaxed);
-        self.pending_task_labels
-            .lock()
-            .expect(MUTEX_POISONED)
-            .insert(id, label);
+        self.pending_task_labels.lock().insert(id, label);
 
         let label_guard = PendingTaskLabel {
             id,
@@ -972,16 +970,13 @@ impl DydxExecutionClient {
         };
 
         if let Err(e) = self.pending_tasks.spawn(wrapped) {
-            self.pending_task_labels
-                .lock()
-                .expect(MUTEX_POISONED)
-                .remove(&id);
+            self.pending_task_labels.lock().remove(&id);
             log::warn!("Skipping dYdX {label} after shutdown began: {e}");
         }
     }
 
     fn begin_pending_shutdown(&self) {
-        let labels = self.pending_task_labels.lock().expect(MUTEX_POISONED);
+        let labels = self.pending_task_labels.lock();
         let pending_cancels = labels
             .values()
             .filter(|label| label.contains("cancel"))
@@ -3126,7 +3121,7 @@ struct PendingTaskLabel {
 
 impl Drop for PendingTaskLabel {
     fn drop(&mut self) {
-        self.labels.lock().expect(MUTEX_POISONED).remove(&self.id);
+        self.labels.lock().remove(&self.id);
     }
 }
 
@@ -3717,7 +3712,7 @@ mod tests {
         });
 
         {
-            let labels = client.pending_task_labels.lock().expect(MUTEX_POISONED);
+            let labels = client.pending_task_labels.lock();
             assert_eq!(labels.len(), 2);
         }
 
@@ -3729,13 +3724,7 @@ mod tests {
             .unwrap();
 
         assert!(client.pending_tasks.is_empty());
-        assert!(
-            client
-                .pending_task_labels
-                .lock()
-                .expect(MUTEX_POISONED)
-                .is_empty()
-        );
+        assert!(client.pending_task_labels.lock().is_empty());
     }
 
     // The label substring used by `begin_pending_shutdown` to recognise cancel

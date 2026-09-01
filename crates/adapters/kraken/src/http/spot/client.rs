@@ -20,7 +20,7 @@ use std::{
     fmt::Debug,
     num::NonZeroU32,
     sync::{
-        Arc, RwLock,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -52,6 +52,7 @@ use nautilus_network::{
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
+use parking_lot::RwLock;
 use rust_decimal::Decimal;
 use serde::de::DeserializeOwned;
 use tokio_util::sync::CancellationToken;
@@ -251,26 +252,17 @@ impl KrakenSpotRawHttpClient {
 
     /// Cancels all pending HTTP requests.
     pub fn cancel_all_requests(&self) {
-        self.cancellation_token
-            .read()
-            .expect("cancellation token lock poisoned")
-            .cancel();
+        self.cancellation_token.read().cancel();
     }
 
     /// Replaces the canceled token so requests can proceed after reconnect.
     pub fn reset_cancellation_token(&self) {
-        *self
-            .cancellation_token
-            .write()
-            .expect("cancellation token lock poisoned") = CancellationToken::new();
+        *self.cancellation_token.write() = CancellationToken::new();
     }
 
     /// Returns a clone of the current cancellation token.
     pub fn cancellation_token(&self) -> CancellationToken {
-        self.cancellation_token
-            .read()
-            .expect("cancellation token lock poisoned")
-            .clone()
+        self.cancellation_token.read().clone()
     }
 
     fn default_headers() -> HashMap<String, String> {

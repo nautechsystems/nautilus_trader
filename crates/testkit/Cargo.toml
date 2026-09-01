@@ -100,6 +100,7 @@ indexmap = { workspace = true, optional = true }
 itchy = { workspace = true, optional = true }
 jiff = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
+parking_lot = { workspace = true }
 parquet = { workspace = true, features = ["zstd"], optional = true }
 rand = { workspace = true, optional = true }
 reqwest = { workspace = true, features = ["blocking"], optional = true }

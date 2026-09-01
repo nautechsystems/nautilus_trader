@@ -27,7 +27,7 @@
 use std::{
     fmt::Debug,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
 };
@@ -46,6 +46,7 @@ use nautilus_network::{
         channel_message_handler,
     },
 };
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -188,9 +189,8 @@ impl BinanceSpotWebSocketClient {
 
     /// Returns whether any connection in the pool is active.
     #[must_use]
-    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn is_active(&self) -> bool {
-        let slots = self.slots.lock().expect("slots lock poisoned");
+        let slots = self.slots.lock();
         slots
             .iter()
             .any(|s| s.connection_mode.load(Ordering::Relaxed) == ConnectionMode::Active as u8)
@@ -198,9 +198,8 @@ impl BinanceSpotWebSocketClient {
 
     /// Returns whether all connections in the pool are closed.
     #[must_use]
-    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn is_closed(&self) -> bool {
-        let slots = self.slots.lock().expect("slots lock poisoned");
+        let slots = self.slots.lock();
         slots.is_empty()
             || slots
                 .iter()
@@ -209,9 +208,8 @@ impl BinanceSpotWebSocketClient {
 
     /// Returns the total number of confirmed subscriptions across all connections.
     #[must_use]
-    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn subscription_count(&self) -> usize {
-        let slots = self.slots.lock().expect("slots lock poisoned");
+        let slots = self.slots.lock();
         slots.iter().map(|s| s.subscriptions_state.len()).sum()
     }
 
@@ -220,27 +218,26 @@ impl BinanceSpotWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if connection fails.
-    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub async fn connect(&mut self) -> BinanceWsResult<()> {
         let connect_lock = Arc::clone(&self.connect_lock);
         let _connect_guard = connect_lock.lock().await;
 
-        if !self.slots.lock().expect("slots lock poisoned").is_empty() {
+        if !self.slots.lock().is_empty() {
             self.close_connections().await?;
         }
 
         {
-            let _slots = self.slots.lock().expect("slots lock poisoned");
+            let _slots = self.slots.lock();
             self.signal.store(false, Ordering::Release);
         }
 
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel();
-        *self.out_tx.lock().expect("out_tx lock poisoned") = Some(out_tx);
-        *self.out_rx.lock().expect("out_rx lock poisoned") = Some(out_rx);
+        *self.out_tx.lock() = Some(out_tx);
+        *self.out_rx.lock() = Some(out_rx);
 
         let slot = self.create_connection(0).await?;
         let shutdown = {
-            let mut slots = self.slots.lock().expect("slots lock poisoned");
+            let mut slots = self.slots.lock();
             let shutdown = self.signal.load(Ordering::Acquire);
             slots.push(slot);
             shutdown
@@ -276,7 +273,7 @@ impl BinanceSpotWebSocketClient {
     }
 
     pub(crate) fn begin_shutdown(&self) {
-        let slots = self.slots.lock().expect("slots lock poisoned");
+        let slots = self.slots.lock();
         self.signal.store(true, Ordering::Release);
 
         for slot in slots.iter() {
@@ -330,8 +327,8 @@ impl BinanceSpotWebSocketClient {
             }
         }
 
-        *self.out_tx.lock().expect("out_tx lock poisoned") = None;
-        *self.out_rx.lock().expect("out_rx lock poisoned") = None;
+        *self.out_tx.lock() = None;
+        *self.out_rx.lock() = None;
 
         let errors = batch
             .slots
@@ -355,7 +352,6 @@ impl BinanceSpotWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the pool is exhausted or command delivery fails.
-    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub async fn subscribe(&self, streams: Vec<String>) -> BinanceWsResult<()> {
         // Serialize all phases so concurrent subscribers see a consistent
         // pool state and can't trigger spurious `Pool exhausted`.
@@ -363,7 +359,7 @@ impl BinanceSpotWebSocketClient {
 
         // Phase 1: filter already-subscribed streams (brief lock).
         let new_streams: Vec<String> = {
-            let slots = self.slots.lock().expect("slots lock poisoned");
+            let slots = self.slots.lock();
 
             if self.signal.load(Ordering::Acquire) {
                 return Err(BinanceWsError::ClientError(
@@ -383,7 +379,7 @@ impl BinanceSpotWebSocketClient {
         // Phase 2: create connections if needed.
         loop {
             let (remaining_capacity, slot_count) = {
-                let slots = self.slots.lock().expect("slots lock poisoned");
+                let slots = self.slots.lock();
                 let cap: usize = slots
                     .iter()
                     .map(|s| MAX_STREAMS_PER_CONNECTION - s.streams.len())
@@ -397,7 +393,7 @@ impl BinanceSpotWebSocketClient {
 
             let new_slot = self.create_connection(slot_count).await?;
             let (slot_count, shutdown) = {
-                let mut slots = self.slots.lock().expect("slots lock poisoned");
+                let mut slots = self.slots.lock();
                 let shutdown = self.signal.load(Ordering::Acquire);
                 slots.push(new_slot);
                 (slots.len(), shutdown)
@@ -420,7 +416,7 @@ impl BinanceSpotWebSocketClient {
 
         // Phase 3: assign streams to slots and send commands (brief lock).
         // Stage assignments first so a capacity error leaves slots unchanged.
-        let mut slots = self.slots.lock().expect("slots lock poisoned");
+        let mut slots = self.slots.lock();
 
         if self.signal.load(Ordering::Acquire) {
             return Err(BinanceWsError::ClientError(
@@ -474,10 +470,9 @@ impl BinanceSpotWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if command delivery fails.
-    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub async fn unsubscribe(&self, streams: Vec<String>) -> BinanceWsResult<()> {
         let _connect_guard = self.connect_lock.lock().await;
-        let mut slots = self.slots.lock().expect("slots lock poisoned");
+        let mut slots = self.slots.lock();
 
         if self.signal.load(Ordering::Acquire) {
             return Err(BinanceWsError::ClientError(
@@ -521,12 +516,8 @@ impl BinanceSpotWebSocketClient {
     ///
     /// This method can only be called once per connection lifecycle. Subsequent calls
     /// return an empty stream.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal output receiver mutex is poisoned.
     pub fn stream(&self) -> impl Stream<Item = BinanceSpotWsMessage> + 'static {
-        let out_rx = self.out_rx.lock().expect("out_rx lock poisoned").take();
+        let out_rx = self.out_rx.lock().take();
         async_stream::stream! {
             if let Some(mut rx) = out_rx {
                 while let Some(msg) = rx.recv().await {
@@ -573,14 +564,9 @@ impl BinanceSpotWebSocketClient {
     }
 
     async fn create_connection(&self, slot_index: usize) -> BinanceWsResult<ConnectionSlot> {
-        let out_tx = self
-            .out_tx
-            .lock()
-            .expect("out_tx lock poisoned")
-            .clone()
-            .ok_or_else(|| {
-                BinanceWsError::ClientError("Output channel not initialized".to_string())
-            })?;
+        let out_tx = self.out_tx.lock().clone().ok_or_else(|| {
+            BinanceWsError::ClientError("Output channel not initialized".to_string())
+        })?;
 
         let (raw_handler, raw_rx) = channel_message_handler();
         let ping_handler: PingHandler = Arc::new(move |_| {});
@@ -768,7 +754,7 @@ impl std::ops::Deref for ConnectionSlots {
 
 impl Drop for ConnectionSlots {
     fn drop(&mut self) {
-        for slot in self.0.get_mut().expect("slots lock poisoned").iter() {
+        for slot in self.0.get_mut().iter() {
             slot.cancellation_token.cancel();
             if let Some(handle) = slot.task_handle.as_ref() {
                 handle.abort();
@@ -788,17 +774,14 @@ struct ConnectionSlotBatch<'a> {
 
 impl<'a> ConnectionSlotBatch<'a> {
     fn take(owner: &'a Mutex<Vec<ConnectionSlot>>) -> Self {
-        let slots = std::mem::take(&mut *owner.lock().expect("slots lock poisoned"));
+        let slots = std::mem::take(&mut *owner.lock());
         Self { owner, slots }
     }
 }
 
 impl Drop for ConnectionSlotBatch<'_> {
     fn drop(&mut self) {
-        self.owner
-            .lock()
-            .expect("slots lock poisoned")
-            .extend(self.slots.drain(..));
+        self.owner.lock().extend(self.slots.drain(..));
     }
 }
 
@@ -814,20 +797,16 @@ mod tests {
             BinanceSpotWebSocketClient::new(None, None, None, None, TransportBackend::default())
                 .unwrap();
         let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
-        client
-            .slots
-            .lock()
-            .expect("slots lock poisoned")
-            .push(ConnectionSlot {
-                cmd_tx,
-                streams: Vec::new(),
-                subscriptions_state: SubscriptionState::new('@'),
-                task_handle: TaskSlot::from_handle(tokio::spawn(std::future::pending())),
-                cancellation_token: CancellationToken::new(),
-                connection_mode: Arc::new(AtomicU8::new(ConnectionMode::Active as u8)),
-                socket_control: None,
-                shutdown_errors: Vec::new(),
-            });
+        client.slots.lock().push(ConnectionSlot {
+            cmd_tx,
+            streams: Vec::new(),
+            subscriptions_state: SubscriptionState::new('@'),
+            task_handle: TaskSlot::from_handle(tokio::spawn(std::future::pending())),
+            cancellation_token: CancellationToken::new(),
+            connection_mode: Arc::new(AtomicU8::new(ConnectionMode::Active as u8)),
+            socket_control: None,
+            shutdown_errors: Vec::new(),
+        });
 
         {
             let close = client.close();
@@ -838,7 +817,7 @@ mod tests {
             }
         }
 
-        let slots = client.slots.lock().expect("slots lock poisoned");
+        let slots = client.slots.lock();
         assert_eq!(slots.len(), 1);
         assert!(slots[0].task_handle.is_some());
     }

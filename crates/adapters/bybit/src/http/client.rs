@@ -163,7 +163,7 @@ pub struct BybitRawHttpClient {
     proxy_url: Option<String>,
     session_generation: Arc<AtomicU64>,
     retry_manager: RetryManager<BybitHttpError>,
-    cancellation_token: Arc<std::sync::Mutex<CancellationToken>>,
+    cancellation_token: Arc<parking_lot::Mutex<CancellationToken>>,
 }
 
 impl Default for BybitRawHttpClient {
@@ -185,32 +185,20 @@ impl Debug for BybitRawHttpClient {
 
 impl BybitRawHttpClient {
     /// Cancels all pending HTTP requests.
-    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn cancel_all_requests(&self) {
-        self.cancellation_token
-            .lock()
-            .expect("cancellation token lock poisoned")
-            .cancel();
+        self.cancellation_token.lock().cancel();
     }
 
     /// Replaces the cancelled token with a fresh one so subsequent
     /// requests are not immediately short-circuited.
-    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn reset_cancellation_token(&self) {
-        let mut guard = self
-            .cancellation_token
-            .lock()
-            .expect("cancellation token lock poisoned");
+        let mut guard = self.cancellation_token.lock();
         *guard = CancellationToken::new();
     }
 
     /// Returns a clone of the current cancellation token.
-    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn cancellation_token(&self) -> CancellationToken {
-        self.cancellation_token
-            .lock()
-            .expect("cancellation token lock poisoned")
-            .clone()
+        self.cancellation_token.lock().clone()
     }
 
     /// Creates a new [`BybitRawHttpClient`] using the default Bybit HTTP URL.
@@ -255,7 +243,7 @@ impl BybitRawHttpClient {
             proxy_url,
             session_generation: Arc::new(AtomicU64::new(session_generation)),
             retry_manager,
-            cancellation_token: Arc::new(std::sync::Mutex::new(CancellationToken::new())),
+            cancellation_token: Arc::new(parking_lot::Mutex::new(CancellationToken::new())),
         })
     }
 
@@ -306,7 +294,7 @@ impl BybitRawHttpClient {
             proxy_url,
             session_generation: Arc::new(AtomicU64::new(session_generation)),
             retry_manager,
-            cancellation_token: Arc::new(std::sync::Mutex::new(CancellationToken::new())),
+            cancellation_token: Arc::new(parking_lot::Mutex::new(CancellationToken::new())),
         })
     }
 

@@ -20,7 +20,7 @@
 
 use std::{
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -47,7 +47,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, MUTEX_POISONED,
+    AtomicMap,
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -62,6 +62,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
 };
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -380,10 +381,7 @@ fn dispatch_ws_message(
         NautilusWsMessage::InstrumentStatus(status) => {
             // Coinbase publishes status for every product on a single feed,
             // so filter to currently-subscribed instruments before emitting.
-            let subscribed = status_subs
-                .lock()
-                .expect(MUTEX_POISONED)
-                .contains(&status.instrument_id);
+            let subscribed = status_subs.lock().contains(&status.instrument_id);
             if subscribed && let Err(e) = data_sender.send(DataEvent::InstrumentStatus(*status)) {
                 log::error!("Failed to send instrument status: {e}");
             }
@@ -441,10 +439,7 @@ impl DataClient for CoinbaseDataClient {
         self.deriv_polls.shutdown();
         self.ws_client.begin_shutdown();
         self.is_connected.store(false, Ordering::Relaxed);
-        self.instrument_status_subs
-            .lock()
-            .expect(MUTEX_POISONED)
-            .clear();
+        self.instrument_status_subs.lock().clear();
         Ok(())
     }
 
@@ -641,7 +636,7 @@ impl DataClient for CoinbaseDataClient {
         // Coinbase publishes a single product-wide status feed. Only subscribe
         // to the WS channel once; subsequent calls just record the instrument.
         let was_empty = {
-            let mut subs = self.instrument_status_subs.lock().expect(MUTEX_POISONED);
+            let mut subs = self.instrument_status_subs.lock();
             let was_empty = subs.is_empty();
             subs.insert(cmd.instrument_id);
             was_empty
@@ -794,7 +789,7 @@ impl DataClient for CoinbaseDataClient {
         );
 
         let now_empty = {
-            let mut subs = self.instrument_status_subs.lock().expect(MUTEX_POISONED);
+            let mut subs = self.instrument_status_subs.lock();
             subs.remove(&cmd.instrument_id);
             subs.is_empty()
         };
@@ -1325,17 +1320,16 @@ mod tests {
             client
                 .instrument_status_subs
                 .lock()
-                .unwrap()
                 .contains(&instrument_id)
         );
 
         // Duplicate subscribe keeps the set at size 1.
         client.subscribe_instrument_status(cmd).unwrap();
-        assert_eq!(client.instrument_status_subs.lock().unwrap().len(), 1);
+        assert_eq!(client.instrument_status_subs.lock().len(), 1);
 
         // Reset clears the set so a subsequent connect starts clean.
         client.reset().unwrap();
-        assert!(client.instrument_status_subs.lock().unwrap().is_empty());
+        assert!(client.instrument_status_subs.lock().is_empty());
     }
 
     // Unsubscribing the last instrument empties the set; intermediate
@@ -1370,7 +1364,7 @@ mod tests {
                 ))
                 .unwrap();
         }
-        assert_eq!(client.instrument_status_subs.lock().unwrap().len(), 2);
+        assert_eq!(client.instrument_status_subs.lock().len(), 2);
 
         let unsub = |id| {
             UnsubscribeInstrumentStatus::new(
@@ -1387,7 +1381,7 @@ mod tests {
         // Intermediate unsubscribe: `a` leaves, `b` retained.
         client.unsubscribe_instrument_status(&unsub(a)).unwrap();
         {
-            let subs = client.instrument_status_subs.lock().unwrap();
+            let subs = client.instrument_status_subs.lock();
             assert!(!subs.contains(&a), "a removed");
             assert!(subs.contains(&b), "b retained");
             assert_eq!(subs.len(), 1);
@@ -1397,7 +1391,7 @@ mod tests {
         // re-arms the channel-level WS subscription.
         client.unsubscribe_instrument_status(&unsub(b)).unwrap();
         assert!(
-            client.instrument_status_subs.lock().unwrap().is_empty(),
+            client.instrument_status_subs.lock().is_empty(),
             "last unsubscribe must empty the set",
         );
     }

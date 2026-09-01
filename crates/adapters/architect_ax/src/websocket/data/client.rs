@@ -19,7 +19,7 @@ use std::{
     fmt::Debug,
     num::NonZeroU32,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering},
     },
     time::Duration,
@@ -40,6 +40,7 @@ use nautilus_network::{
         TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler,
     },
 };
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -293,10 +294,7 @@ impl AxMdWebSocketClient {
     ///
     /// This should be called before `connect()` if authentication is required.
     pub fn set_auth_token(&self, token: String) {
-        *self
-            .auth_token
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(token);
+        *self.auth_token.lock() = Some(token);
     }
 
     /// Updates the token used by future automatic reconnect attempts.
@@ -309,12 +307,7 @@ impl AxMdWebSocketClient {
     pub fn update_auth_token(&self, token: String) -> AxWsResult<()> {
         let value = format!("Bearer {token}");
 
-        if let Some(headers) = self
-            .reconnect_headers
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .as_ref()
-        {
+        if let Some(headers) = self.reconnect_headers.lock().as_ref() {
             headers
                 .update("Authorization", &value)
                 .map_err(|e| AxWsClientError::Transport(e.to_string()))?;
@@ -419,11 +412,7 @@ impl AxMdWebSocketClient {
 
         let mut headers = vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())];
 
-        let auth_token = self
-            .auth_token
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
+        let auth_token = self.auth_token.lock().clone();
 
         if let Some(token) = auth_token {
             headers.push(("Authorization".to_string(), format!("Bearer {token}")));
@@ -461,10 +450,7 @@ impl AxMdWebSocketClient {
 
         self.connection_mode.store(client.connection_mode_atomic());
         let reconnect_handle = client.reconnect_handle();
-        *self
-            .reconnect_headers
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(client.reconnect_headers());
+        *self.reconnect_headers.lock() = Some(client.reconnect_headers());
 
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<AxDataWsMessage>();
         self.out_rx = Some(Arc::new(out_rx));
@@ -850,9 +836,7 @@ impl AxMdWebSocketClient {
             }
         });
 
-        if let Ok(mut invalidations) = self.status_invalidations.lock() {
-            invalidations.insert(Ustr::from(symbol));
-        }
+        self.status_invalidations.lock().insert(Ustr::from(symbol));
 
         Ok(())
     }
@@ -1077,10 +1061,7 @@ impl AxMdWebSocketClient {
             .finish(Duration::from_secs(2), Duration::from_secs(2))
             .await;
 
-        *self
-            .reconnect_headers
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        *self.reconnect_headers.lock() = None;
 
         if let Some(control) = &self.socket_control {
             control.deregister();

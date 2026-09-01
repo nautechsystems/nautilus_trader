@@ -23,7 +23,7 @@ use std::{
     path::PathBuf,
     str::FromStr,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -48,7 +48,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, MUTEX_POISONED, Params, UnixNanos,
+    AtomicMap, Params, UnixNanos,
     datetime::{NANOSECONDS_IN_DAY, datetime_to_unix_nanos},
     string::secret::REDACTED,
     time::{AtomicTime, get_atomic_clock_realtime},
@@ -60,6 +60,7 @@ use nautilus_model::{
     identifiers::{ClientId, InstrumentId, Symbol, Venue},
     instruments::{Instrument, InstrumentAny},
 };
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -276,7 +277,7 @@ impl DatabentoDataClient {
 
     /// Gets or creates a feed handler for the specified dataset.
     fn get_or_create_feed_handler(&self, dataset: &str) -> bool {
-        let mut channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
+        let mut channels = self.cmd_channels.lock();
 
         if !channels.contains_key(dataset) {
             log::debug!("Creating new feed handler for dataset: {dataset}");
@@ -298,7 +299,7 @@ impl DatabentoDataClient {
         start_after_subscribe: bool,
     ) -> anyhow::Result<()> {
         let tx = {
-            let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
+            let channels = self.cmd_channels.lock();
             channels
                 .get(dataset)
                 .cloned()
@@ -315,7 +316,7 @@ impl DatabentoDataClient {
     }
 
     fn send_close_to_active_feeds(&self) {
-        let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
+        let channels = self.cmd_channels.lock();
         for (dataset, tx) in channels.iter() {
             if let Err(e) = tx.send(HandlerCommand::Close) {
                 log::warn!("Failed to send close command to dataset {dataset}: {e}");
@@ -324,7 +325,7 @@ impl DatabentoDataClient {
     }
 
     fn clear_feed_channels(&self) {
-        let mut channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
+        let mut channels = self.cmd_channels.lock();
         channels.clear();
     }
 
@@ -367,10 +368,7 @@ impl DatabentoDataClient {
             if let Err(e) = feed_handler.run().await {
                 log::error!("Feed handler error: {e}");
             }
-            feed_channels
-                .lock()
-                .expect(MUTEX_POISONED)
-                .remove(&feed_dataset);
+            feed_channels.lock().remove(&feed_dataset);
         };
 
         let cancellation_token = self.cancellation_token.clone();
@@ -1873,7 +1871,7 @@ mod tests {
         };
 
         assert!(result.is_err());
-        assert!(client.cmd_channels.lock().expect(MUTEX_POISONED).is_empty());
+        assert!(client.cmd_channels.lock().is_empty());
     }
 
     #[rstest]

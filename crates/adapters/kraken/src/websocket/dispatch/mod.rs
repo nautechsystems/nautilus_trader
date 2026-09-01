@@ -37,7 +37,7 @@ pub mod spot;
 pub mod spot_orders;
 
 use std::sync::{
-    Arc, Mutex,
+    Arc,
     atomic::{AtomicBool, Ordering},
 };
 
@@ -54,6 +54,7 @@ use nautilus_model::{
     reports::FillReport,
     types::{Currency, Quantity},
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 
 const DEDUP_CAPACITY: usize = 10_000;
@@ -318,12 +319,8 @@ impl WsDispatchState {
     /// duplicate), `false` otherwise. When the dedup set is at capacity the
     /// oldest entry is evicted to make room, preserving the `DEDUP_CAPACITY`
     /// most recently seen trade IDs.
-    #[expect(
-        clippy::missing_panics_doc,
-        reason = "dedup mutex poisoning is not expected"
-    )]
     pub fn check_and_insert_trade(&self, trade_id: TradeId) -> bool {
-        let mut set = self.emitted_trades.lock().expect("dedup mutex poisoned");
+        let mut set = self.emitted_trades.lock();
 
         if set.contains(&trade_id) {
             return true;
@@ -621,7 +618,7 @@ mod tests {
 
         // Inspect the dedup set directly to confirm FIFO behaviour without
         // perturbing state via another `check_and_insert_trade` call.
-        let set = state.emitted_trades.lock().expect("dedup mutex poisoned");
+        let set = state.emitted_trades.lock();
         assert_eq!(set.len(), DEDUP_CAPACITY);
         assert!(
             !set.contains(&TradeId::new("trade-0")),

@@ -21,7 +21,7 @@ use std::{
     net::SocketAddr,
     rc::Rc,
     sync::{
-        Arc, Mutex as StdMutex,
+        Arc,
         atomic::{AtomicUsize, Ordering},
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -99,6 +99,7 @@ use nautilus_model::{
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
+use parking_lot::Mutex;
 use rstest::rstest;
 use serde_json::json;
 
@@ -188,8 +189,8 @@ struct CapturedQuery {
     query: HashMap<String, String>,
 }
 
-type CapturedQueries = Arc<std::sync::Mutex<Vec<CapturedQuery>>>;
-type CapturedWsTradingMessages = Arc<std::sync::Mutex<Vec<serde_json::Value>>>;
+type CapturedQueries = Arc<parking_lot::Mutex<Vec<CapturedQuery>>>;
+type CapturedWsTradingMessages = Arc<parking_lot::Mutex<Vec<serde_json::Value>>>;
 
 #[derive(Clone, Copy, Debug)]
 enum ReportFixtureMode {
@@ -213,10 +214,7 @@ enum ReportFixtureMode {
 
 fn record_query(state: &CommandResponseState, path: &'static str, query: HashMap<String, String>) {
     if let Some(captured_queries) = &state.captured_queries {
-        captured_queries
-            .lock()
-            .unwrap()
-            .push(CapturedQuery { path, query });
+        captured_queries.lock().push(CapturedQuery { path, query });
     }
 }
 
@@ -264,7 +262,7 @@ async fn handle_ws_trading_connection(
         if matches!(method, Some("order.place" | "order.cancel"))
             && let Some(captured) = &captured_ws_trading_messages
         {
-            captured.lock().unwrap().push(parsed.clone());
+            captured.lock().push(parsed.clone());
         }
 
         let response = match method {
@@ -996,7 +994,7 @@ fn command_response(response: CommandResponse, success: &serde_json::Value) -> R
 }
 
 fn create_exec_test_router_with_algo_capture_and_hedge_mode(
-    captured_query: &Arc<std::sync::Mutex<Option<HashMap<String, String>>>>,
+    captured_query: &Arc<parking_lot::Mutex<Option<HashMap<String, String>>>>,
     hedge_mode: bool,
 ) -> Router {
     create_exec_test_router_with_command_responses(CommandResponseState {
@@ -1017,7 +1015,7 @@ fn create_exec_test_router_with_algo_capture_and_hedge_mode(
                     return unauthorized_response();
                 }
 
-                *captured_query.lock().unwrap() = Some(query);
+                *captured_query.lock() = Some(query);
 
                 json_response(&json!({
                     "algoId": 12345,
@@ -1172,7 +1170,7 @@ async fn start_exec_test_server_with_query_capture_and_responses_and_hedge_mode(
     report_fixture_mode: ReportFixtureMode,
     hedge_mode: bool,
 ) -> (SocketAddr, CapturedQueries) {
-    let captured_queries = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let captured_queries = Arc::new(parking_lot::Mutex::new(Vec::new()));
     let router = create_exec_test_router_with_command_responses(CommandResponseState {
         responses,
         request_count: Arc::new(AtomicUsize::new(0)),
@@ -1213,7 +1211,7 @@ async fn start_exec_test_server_with_ws_trading_capture() -> (SocketAddr, Captur
 async fn start_exec_test_server_with_ws_trading_capture_and_hedge_mode(
     hedge_mode: bool,
 ) -> (SocketAddr, CapturedWsTradingMessages) {
-    let captured_ws_trading_messages = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let captured_ws_trading_messages = Arc::new(parking_lot::Mutex::new(Vec::new()));
     let router = create_exec_test_router_with_command_responses(CommandResponseState {
         responses: CommandResponses::default(),
         request_count: Arc::new(AtomicUsize::new(0)),
@@ -1248,7 +1246,7 @@ async fn start_exec_test_server_with_ws_trading_capture_and_hedge_mode(
 
 async fn start_exec_test_server_with_algo_capture() -> (
     SocketAddr,
-    Arc<std::sync::Mutex<Option<HashMap<String, String>>>>,
+    Arc<parking_lot::Mutex<Option<HashMap<String, String>>>>,
 ) {
     start_exec_test_server_with_algo_capture_and_hedge_mode(false).await
 }
@@ -1257,9 +1255,9 @@ async fn start_exec_test_server_with_algo_capture_and_hedge_mode(
     hedge_mode: bool,
 ) -> (
     SocketAddr,
-    Arc<std::sync::Mutex<Option<HashMap<String, String>>>>,
+    Arc<parking_lot::Mutex<Option<HashMap<String, String>>>>,
 ) {
-    let captured_query = Arc::new(std::sync::Mutex::new(None));
+    let captured_query = Arc::new(parking_lot::Mutex::new(None));
     let router =
         create_exec_test_router_with_algo_capture_and_hedge_mode(&captured_query, hedge_mode);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1288,11 +1286,11 @@ async fn start_exec_test_server_with_algo_capture_and_hedge_mode(
 
 async fn start_exec_test_server_with_gtd_algo_and_ws_capture() -> (
     SocketAddr,
-    Arc<std::sync::Mutex<Option<HashMap<String, String>>>>,
+    Arc<parking_lot::Mutex<Option<HashMap<String, String>>>>,
     CapturedWsTradingMessages,
 ) {
-    let captured_query = Arc::new(std::sync::Mutex::new(None));
-    let captured_ws_trading_messages = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let captured_query = Arc::new(parking_lot::Mutex::new(None));
+    let captured_ws_trading_messages = Arc::new(parking_lot::Mutex::new(Vec::new()));
     let router = create_exec_test_router_with_command_responses(CommandResponseState {
         responses: CommandResponses::default(),
         request_count: Arc::new(AtomicUsize::new(0)),
@@ -1311,7 +1309,7 @@ async fn start_exec_test_server_with_gtd_algo_and_ws_capture() -> (
                     return unauthorized_response();
                 }
 
-                *captured_query.lock().unwrap() = Some(query.clone());
+                *captured_query.lock() = Some(query.clone());
                 json_response(&json!({
                     "algoId": 12345,
                     "clientAlgoId": query.get("clientAlgoId").cloned().unwrap_or_default(),
@@ -1356,7 +1354,7 @@ async fn start_exec_test_server_with_gtd_algo_and_ws_capture() -> (
 }
 
 fn create_exec_test_router_with_order_capture(
-    captured_query: &Arc<std::sync::Mutex<Option<HashMap<String, String>>>>,
+    captured_query: &Arc<parking_lot::Mutex<Option<HashMap<String, String>>>>,
     hedge_mode: bool,
 ) -> Router {
     let captured = captured_query.clone();
@@ -1438,7 +1436,7 @@ fn create_exec_test_router_with_order_capture(
                         if let Some(symbol) = query.get("symbol") {
                             response["symbol"] = json!(symbol);
                         }
-                        *captured.lock().unwrap() = Some(query);
+                        *captured.lock() = Some(query);
                         json_response(&response)
                     }
                 }
@@ -1449,7 +1447,7 @@ fn create_exec_test_router_with_order_capture(
 
 async fn start_exec_test_server_with_order_capture() -> (
     SocketAddr,
-    Arc<std::sync::Mutex<Option<HashMap<String, String>>>>,
+    Arc<parking_lot::Mutex<Option<HashMap<String, String>>>>,
 ) {
     start_exec_test_server_with_order_capture_and_hedge_mode(false).await
 }
@@ -1458,9 +1456,9 @@ async fn start_exec_test_server_with_order_capture_and_hedge_mode(
     hedge_mode: bool,
 ) -> (
     SocketAddr,
-    Arc<std::sync::Mutex<Option<HashMap<String, String>>>>,
+    Arc<parking_lot::Mutex<Option<HashMap<String, String>>>>,
 ) {
-    let captured_query = Arc::new(std::sync::Mutex::new(None));
+    let captured_query = Arc::new(parking_lot::Mutex::new(None));
     let router = create_exec_test_router_with_order_capture(&captured_query, hedge_mode);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -1861,13 +1859,13 @@ async fn test_submit_usdm_gtd_order_encodes_expiry_over_http() {
     wait_until_async(
         || {
             let captured_query = captured_query.clone();
-            async move { captured_query.lock().unwrap().is_some() }
+            async move { captured_query.lock().is_some() }
         },
         Duration::from_secs(5),
     )
     .await;
 
-    let query = captured_query.lock().unwrap().clone().unwrap();
+    let query = captured_query.lock().clone().unwrap();
     let expected_expiry = expire_time.as_millis().to_string();
     assert_eq!(query.get("timeInForce").map(String::as_str), Some("GTD"));
     assert_eq!(
@@ -1939,7 +1937,7 @@ async fn test_submit_hedge_order_rejects_custom_position_id_before_request() {
         error.to_string(),
         "submitted position ID P-VIRTUAL-LONG conflicts with canonical Binance Futures venue position ID BTCUSDT-PERP.BINANCE-LONG; omit position_id while use_position_ids=true, or set use_position_ids=false for virtual hedging",
     );
-    assert!(captured_query.lock().unwrap().is_none());
+    assert!(captured_query.lock().is_none());
 }
 
 #[rstest]
@@ -1975,7 +1973,6 @@ async fn test_submit_hedge_order_list_rejects_custom_position_id_before_request(
     assert!(
         captured_queries
             .lock()
-            .unwrap()
             .iter()
             .all(|query| query.path != "batchOrders")
     );
@@ -2064,7 +2061,6 @@ async fn test_submit_order_list_denies_linked_conditional_orders_without_batch_s
     assert!(
         captured_queries
             .lock()
-            .unwrap()
             .iter()
             .all(|query| query.path != "batchOrders")
     );
@@ -2147,13 +2143,13 @@ async fn test_submit_trailing_stop_order_uses_activate_price_and_precise_callbac
         || {
             let captured_query = captured_query.clone();
 
-            async move { captured_query.lock().unwrap().is_some() }
+            async move { captured_query.lock().is_some() }
         },
         Duration::from_secs(5),
     )
     .await;
 
-    let query = captured_query.lock().unwrap().clone().unwrap();
+    let query = captured_query.lock().clone().unwrap();
     assert_eq!(query.get("type"), Some(&"TRAILING_STOP_MARKET".to_string()));
     assert_eq!(query.get("activatePrice"), Some(&"10000.00".to_string()));
     assert_eq!(query.get("callbackRate"), Some(&"0.25".to_string()));
@@ -2240,13 +2236,13 @@ async fn test_submit_algo_order_in_hedge_mode_omits_reduce_only() {
         || {
             let captured_query = captured_query.clone();
 
-            async move { captured_query.lock().unwrap().is_some() }
+            async move { captured_query.lock().is_some() }
         },
         Duration::from_secs(5),
     )
     .await;
 
-    let query = captured_query.lock().unwrap().clone().unwrap();
+    let query = captured_query.lock().clone().unwrap();
     assert_eq!(query.get("positionSide"), Some(&"LONG".to_string()));
     assert!(!query.contains_key("reduceOnly"));
 }
@@ -2290,13 +2286,13 @@ async fn test_submit_close_position_in_hedge_mode_emits_closing_position_side(
         || {
             let captured_query = captured_query.clone();
 
-            async move { captured_query.lock().unwrap().is_some() }
+            async move { captured_query.lock().is_some() }
         },
         Duration::from_secs(5),
     )
     .await;
 
-    let query = captured_query.lock().unwrap().clone().unwrap();
+    let query = captured_query.lock().clone().unwrap();
     assert_eq!(query.get("closePosition").map(String::as_str), Some("true"));
     assert_eq!(
         query.get("positionSide").map(String::as_str),
@@ -2381,13 +2377,13 @@ async fn test_submit_partial_exit_position_side_follows_reduce_only(
         || {
             let captured_query = captured_query.clone();
 
-            async move { captured_query.lock().unwrap().is_some() }
+            async move { captured_query.lock().is_some() }
         },
         Duration::from_secs(5),
     )
     .await;
 
-    let query = captured_query.lock().unwrap().clone().unwrap();
+    let query = captured_query.lock().clone().unwrap();
     assert_eq!(
         query.get("positionSide").map(String::as_str),
         Some(expected_position_side),
@@ -2425,13 +2421,13 @@ async fn test_submit_usdm_gtd_algo_uses_http_when_ws_trading_is_active() {
     wait_until_async(
         || {
             let captured_query = captured_query.clone();
-            async move { captured_query.lock().unwrap().is_some() }
+            async move { captured_query.lock().is_some() }
         },
         Duration::from_secs(5),
     )
     .await;
 
-    let query = captured_query.lock().unwrap().clone().unwrap();
+    let query = captured_query.lock().clone().unwrap();
     let expected_expiry = expire_time.as_millis().to_string();
     assert_eq!(query.get("type").map(String::as_str), Some("STOP"));
     assert_eq!(query.get("timeInForce").map(String::as_str), Some("GTD"));
@@ -2439,7 +2435,7 @@ async fn test_submit_usdm_gtd_algo_uses_http_when_ws_trading_is_active() {
         query.get("goodTillDate").map(String::as_str),
         Some(expected_expiry.as_str()),
     );
-    assert!(captured_ws_trading_messages.lock().unwrap().is_empty());
+    assert!(captured_ws_trading_messages.lock().is_empty());
 }
 
 #[rstest]
@@ -2473,13 +2469,13 @@ async fn test_submit_reduce_only_limit_order_respects_position_mode(
         || {
             let captured_query = captured_query.clone();
 
-            async move { captured_query.lock().unwrap().is_some() }
+            async move { captured_query.lock().is_some() }
         },
         Duration::from_secs(5),
     )
     .await;
 
-    let query = captured_query.lock().unwrap().clone().unwrap();
+    let query = captured_query.lock().clone().unwrap();
     assert_eq!(
         query.get("positionSide").map(String::as_str),
         expected_position_side
@@ -3076,13 +3072,13 @@ async fn test_delivery_order_routing_uses_raw_binance_symbol() {
     wait_until_async(
         || {
             let captured_query = captured_query.clone();
-            async move { captured_query.lock().unwrap().is_some() }
+            async move { captured_query.lock().is_some() }
         },
         Duration::from_secs(5),
     )
     .await;
 
-    let query = captured_query.lock().unwrap().clone().unwrap();
+    let query = captured_query.lock().clone().unwrap();
     assert_query_symbol_eq(&query, "BTCUSDT_260925", "BTCUSDT_260925.BINANCE");
 }
 
@@ -3308,7 +3304,6 @@ async fn test_bounded_mass_status_marks_unresolved_historical_fills_incomplete()
     assert!(
         captured_queries
             .lock()
-            .unwrap()
             .iter()
             .all(|query| query.path != "userTrades")
     );
@@ -3365,7 +3360,6 @@ async fn test_futures_reconciliation_rejects_spot_identity_before_query() {
     assert!(
         captured_queries
             .lock()
-            .unwrap()
             .iter()
             .all(|query| query.path != "userTrades"
                 && query.path != "openOrders"
@@ -3438,7 +3432,7 @@ async fn test_historical_reconciliation_skips_unresolved_instrument_before_query
     assert!(order.is_none());
     assert!(orders.is_empty());
     assert!(fills.is_empty());
-    assert!(captured_queries.lock().unwrap().iter().all(|query| {
+    assert!(captured_queries.lock().iter().all(|query| {
         query.path != "order" && query.path != "allOrders" && query.path != "userTrades"
     }));
 }
@@ -3486,7 +3480,6 @@ async fn test_position_reconciliation_rejects_unresolved_instrument_before_query
     assert!(
         captured_queries
             .lock()
-            .unwrap()
             .iter()
             .all(|query| query.path != "positionRisk")
     );
@@ -3554,7 +3547,7 @@ async fn test_historical_algo_report_bypasses_regular_order_id_collision() {
         Some("1")
     );
     assert!(!history_query.query.contains_key("page"));
-    let queries = captured_queries.lock().unwrap();
+    let queries = captured_queries.lock();
     assert!(queries.iter().all(|query| {
         query.path != "order" || query.query.get("orderId").map(String::as_str) != Some("123456789")
     }));
@@ -3603,7 +3596,6 @@ async fn test_historical_algo_report_rejects_non_matching_history_result() {
     assert!(
         captured_queries
             .lock()
-            .unwrap()
             .iter()
             .filter(|query| query.path == "order")
             .all(|query| query.query.get("orderId").map(String::as_str) != Some("22542179"))
@@ -3653,7 +3645,6 @@ async fn test_historical_algo_report_client_id_not_found_returns_none() {
     assert!(
         captured_queries
             .lock()
-            .unwrap()
             .iter()
             .all(|query| query.path != "allAlgoOrders")
     );
@@ -3705,7 +3696,6 @@ async fn test_unknown_order_id_collision_does_not_query_algo_by_venue_id() {
     assert!(
         captured_queries
             .lock()
-            .unwrap()
             .iter()
             .all(|query| query.path != "allAlgoOrders")
     );
@@ -3752,7 +3742,6 @@ async fn test_cached_regular_order_id_collision_skips_algo_fallback() {
     assert!(
         captured_queries
             .lock()
-            .unwrap()
             .iter()
             .all(|query| query.path != "algoOrder" && query.path != "allAlgoOrders")
     );
@@ -3810,7 +3799,6 @@ async fn test_algo_report_by_client_id_enriches_from_actual_order() {
     assert!(
         captured_queries
             .lock()
-            .unwrap()
             .iter()
             .all(|query| query.path != "allAlgoOrders")
     );
@@ -3983,7 +3971,6 @@ async fn test_cached_algo_actual_order_id_uses_client_id_fallback() {
     assert!(
         captured_queries
             .lock()
-            .unwrap()
             .iter()
             .all(|query| query.path != "allAlgoOrders")
     );
@@ -4057,7 +4044,7 @@ async fn test_query_order_bypasses_regular_order_id_collision() {
         history_query.query.get("limit").map(String::as_str),
         Some("1")
     );
-    let queries = captured_queries.lock().unwrap();
+    let queries = captured_queries.lock();
     assert!(queries.iter().all(|query| {
         query.path != "order" || query.query.get("orderId").map(String::as_str) != Some("123456789")
     }));
@@ -4129,7 +4116,6 @@ async fn test_query_order_cached_algo_actual_id_uses_client_id_fallback() {
     assert!(
         captured_queries
             .lock()
-            .unwrap()
             .iter()
             .all(|query| query.path != "allAlgoOrders")
     );
@@ -4185,7 +4171,6 @@ async fn test_query_order_cached_regular_id_collision_skips_algo_fallback() {
     assert!(
         captured_queries
             .lock()
-            .unwrap()
             .iter()
             .all(|query| query.path != "algoOrder" && query.path != "allAlgoOrders")
     );
@@ -4379,7 +4364,6 @@ async fn test_generate_mass_status_includes_stable_fill_identity(
     assert_eq!(
         captured_queries
             .lock()
-            .unwrap()
             .iter()
             .filter(|query| query.path == "userTrades")
             .count(),
@@ -4702,7 +4686,7 @@ async fn test_generate_fill_reports_enforces_complete_history_boundary(
         BinanceProductType::CoinM => InstrumentId::from("BTCUSD_260925.BINANCE"),
         _ => unreachable!(),
     };
-    captured_queries.lock().unwrap().clear();
+    captured_queries.lock().clear();
 
     let result = client
         .generate_fill_reports(GenerateFillReports::new(
@@ -4728,7 +4712,6 @@ async fn test_generate_fill_reports_enforces_complete_history_boundary(
             assert!(
                 captured_queries
                     .lock()
-                    .unwrap()
                     .iter()
                     .all(|query| query.path != "userTrades")
             );
@@ -4758,7 +4741,7 @@ async fn test_generate_fill_reports_rejects_end_only_range() {
     add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
     client.start().unwrap();
     client.connect().await.unwrap();
-    captured_queries.lock().unwrap().clear();
+    captured_queries.lock().clear();
 
     let result = client
         .generate_fill_reports(GenerateFillReports::new(
@@ -4780,7 +4763,6 @@ async fn test_generate_fill_reports_rejects_end_only_range() {
     assert!(
         captured_queries
             .lock()
-            .unwrap()
             .iter()
             .all(|query| query.path != "userTrades")
     );
@@ -4800,7 +4782,7 @@ async fn test_generate_fill_reports_rejects_stale_command_boundary() {
     add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
     client.start().unwrap();
     client.connect().await.unwrap();
-    captured_queries.lock().unwrap().clear();
+    captured_queries.lock().clear();
 
     let ts_now = UnixNanos::from_millis(
         SystemTime::now()
@@ -4829,7 +4811,6 @@ async fn test_generate_fill_reports_rejects_stale_command_boundary() {
     assert!(
         captured_queries
             .lock()
-            .unwrap()
             .iter()
             .all(|query| query.path != "userTrades")
     );
@@ -4970,7 +4951,6 @@ async fn test_generate_mass_status_exposes_fill_history_coverage(
     };
     let fill_queries: Vec<_> = captured_queries
         .lock()
-        .unwrap()
         .iter()
         .filter(|query| query.path == "userTrades")
         .cloned()
@@ -5006,7 +4986,6 @@ async fn test_generate_mass_status_uses_maximum_fill_history_by_default() {
     let fill_count = mass_status.fill_reports().into_values().flatten().count();
     let fill_queries: Vec<_> = captured_queries
         .lock()
-        .unwrap()
         .iter()
         .filter(|query| query.path == "userTrades")
         .cloned()
@@ -5467,12 +5446,12 @@ async fn test_position_report_failures_warn_with_count_and_mass_status_counts_he
 }
 
 struct PositionLogCapture {
-    records: StdMutex<Vec<(Level, String)>>,
+    records: Mutex<Vec<(Level, String)>>,
 }
 
 impl PositionLogCapture {
     fn take_records(&self) -> Vec<(Level, String)> {
-        std::mem::take(&mut self.records.lock().unwrap())
+        std::mem::take(&mut self.records.lock())
     }
 }
 
@@ -5485,7 +5464,6 @@ impl Log for PositionLogCapture {
         if self.enabled(record.metadata()) {
             self.records
                 .lock()
-                .unwrap()
                 .push((record.level(), record.args().to_string()));
         }
     }
@@ -5494,7 +5472,7 @@ impl Log for PositionLogCapture {
 }
 
 static POSITION_LOG_CAPTURE: PositionLogCapture = PositionLogCapture {
-    records: StdMutex::new(Vec::new()),
+    records: Mutex::new(Vec::new()),
 };
 
 fn install_position_log_capture() -> &'static PositionLogCapture {
@@ -6176,7 +6154,6 @@ async fn wait_for_query(captured_queries: &CapturedQueries, path: &'static str) 
             async move {
                 captured_queries
                     .lock()
-                    .unwrap()
                     .iter()
                     .any(|entry| entry.path == path)
             }
@@ -6187,7 +6164,6 @@ async fn wait_for_query(captured_queries: &CapturedQueries, path: &'static str) 
 
     captured_queries
         .lock()
-        .unwrap()
         .iter()
         .find(|entry| entry.path == path)
         .cloned()
@@ -6205,7 +6181,6 @@ async fn wait_for_queries(
             async move {
                 captured_queries
                     .lock()
-                    .unwrap()
                     .iter()
                     .filter(|entry| entry.path == path)
                     .count()
@@ -6218,7 +6193,6 @@ async fn wait_for_queries(
 
     captured_queries
         .lock()
-        .unwrap()
         .iter()
         .filter(|entry| entry.path == path)
         .take(expected)
@@ -6234,7 +6208,7 @@ async fn wait_for_ws_trading_method(
         || {
             let captured_messages = captured_messages.clone();
             async move {
-                captured_messages.lock().unwrap().iter().any(|message| {
+                captured_messages.lock().iter().any(|message| {
                     message.get("method").and_then(|value| value.as_str()) == Some(method)
                 })
             }
@@ -6245,7 +6219,6 @@ async fn wait_for_ws_trading_method(
 
     captured_messages
         .lock()
-        .unwrap()
         .iter()
         .find(|message| message.get("method").and_then(|value| value.as_str()) == Some(method))
         .cloned()
@@ -6863,13 +6836,13 @@ async fn test_submit_order_with_price_match_sends_price_match_and_omits_price() 
     wait_until_async(
         || {
             let captured_query = captured_query.clone();
-            async move { captured_query.lock().unwrap().is_some() }
+            async move { captured_query.lock().is_some() }
         },
         Duration::from_secs(5),
     )
     .await;
 
-    let query = captured_query.lock().unwrap().clone().unwrap();
+    let query = captured_query.lock().clone().unwrap();
     assert_eq!(
         query.get("priceMatch"),
         Some(&"OPPONENT_5".to_string()),

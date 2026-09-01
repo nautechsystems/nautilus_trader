@@ -155,7 +155,7 @@ async fn test_connect_login_failure() {
     let (addr, state) = start_mock_http().await;
 
     let fixture = load_fixture("rest/login_failure.json");
-    *state.login_response_override.lock().unwrap() = Some(fixture);
+    *state.login_response_override.lock() = Some(fixture);
 
     let client = create_test_http_client(addr);
 
@@ -283,7 +283,7 @@ async fn test_keep_alive_failure_then_reconnect_restores_session() {
     assert!(client.is_connected().await);
 
     // Make keep_alive fail
-    *state.keep_alive_response_override.lock().unwrap() =
+    *state.keep_alive_response_override.lock() =
         Some(r#"{"token":"","product":"","status":"FAIL","error":"NO_SESSION"}"#.to_string());
     let ka_result = client.keep_alive().await;
     assert!(ka_result.is_err(), "keep_alive should fail with NO_SESSION");
@@ -316,7 +316,7 @@ async fn test_keep_alive_transient_error_preserves_session() {
     assert!(initial_token.is_some());
 
     // Return invalid JSON to simulate a transient failure (produces JsonError)
-    *state.keep_alive_response_override.lock().unwrap() = Some("not-json".to_string());
+    *state.keep_alive_response_override.lock() = Some("not-json".to_string());
     let ka_result = client.keep_alive().await;
     assert!(ka_result.is_err());
     assert!(
@@ -358,7 +358,7 @@ async fn test_send_betting_without_session_returns_error() {
 #[tokio::test]
 async fn test_send_betting_jsonrpc_error_returns_betfair_error() {
     let (addr, state) = start_mock_http().await;
-    state.betting_error_overrides.lock().unwrap().insert(
+    state.betting_error_overrides.lock().insert(
         METHOD_LIST_MARKET_CATALOGUE.to_string(),
         load_json_fixture("rest/betting_jsonrpc_error_invalid_params_live.json"),
     );
@@ -390,7 +390,7 @@ async fn test_send_betting_jsonrpc_error_returns_betfair_error() {
 #[tokio::test]
 async fn test_send_betting_order_definitive_error_remains_betfair_error() {
     let (addr, state) = start_mock_http().await;
-    state.betting_error_overrides.lock().unwrap().insert(
+    state.betting_error_overrides.lock().insert(
         METHOD_PLACE_ORDERS.to_string(),
         load_json_fixture("rest/betting_jsonrpc_error_invalid_params_live.json"),
     );
@@ -420,7 +420,7 @@ async fn test_send_betting_order_definitive_error_remains_betfair_error() {
 #[tokio::test]
 async fn test_send_betting_session_error_classified_as_session() {
     let (addr, state) = start_mock_http().await;
-    state.betting_error_overrides.lock().unwrap().insert(
+    state.betting_error_overrides.lock().insert(
         METHOD_LIST_MARKET_CATALOGUE.to_string(),
         betting_api_error("NO_SESSION"),
     );
@@ -457,7 +457,7 @@ async fn test_send_betting_session_error_classified_as_session() {
 #[tokio::test]
 async fn test_send_betting_too_many_requests_classified_as_rate_limit() {
     let (addr, state) = start_mock_http().await;
-    state.betting_error_overrides.lock().unwrap().insert(
+    state.betting_error_overrides.lock().insert(
         METHOD_LIST_MARKET_CATALOGUE.to_string(),
         betting_api_error("TOO_MANY_REQUESTS"),
     );
@@ -484,7 +484,7 @@ async fn test_send_betting_too_many_requests_classified_as_rate_limit() {
 #[tokio::test]
 async fn test_send_betting_api_error_preserves_live_wire_fields() {
     let (addr, state) = start_mock_http().await;
-    state.betting_error_overrides.lock().unwrap().insert(
+    state.betting_error_overrides.lock().insert(
         METHOD_LIST_MARKET_CATALOGUE.to_string(),
         load_json_fixture("rest/betting_jsonrpc_error_too_much_data_live.json"),
     );
@@ -516,7 +516,7 @@ async fn test_send_betting_api_error_preserves_live_wire_fields() {
 #[tokio::test]
 async fn test_send_accounts_selects_exception_named_by_wire_data() {
     let (addr, state) = start_mock_http().await;
-    state.accounts_error_overrides.lock().unwrap().insert(
+    state.accounts_error_overrides.lock().insert(
         METHOD_GET_ACCOUNT_FUNDS.to_string(),
         load_json_fixture("rest/account_jsonrpc_error_invalid_input_live.json"),
     );
@@ -562,7 +562,6 @@ async fn test_send_betting_malformed_api_error_data_preserves_outer_error(
     state
         .betting_error_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_PLACE_ORDERS.to_string(), response);
 
     let client = create_test_http_client(addr);
@@ -595,14 +594,10 @@ async fn test_send_betting_order_retries_documented_transient_api_error(
     #[case] api_error_code: &str,
 ) {
     let (addr, state) = start_mock_http().await;
-    state
-        .betting_error_one_shot_overrides
-        .lock()
-        .unwrap()
-        .insert(
-            METHOD_PLACE_ORDERS.to_string(),
-            betting_api_error(api_error_code),
-        );
+    state.betting_error_one_shot_overrides.lock().insert(
+        METHOD_PLACE_ORDERS.to_string(),
+        betting_api_error(api_error_code),
+    );
 
     let client = create_test_http_client(addr);
     client.connect().await.unwrap();
@@ -636,7 +631,7 @@ async fn test_send_betting_order_does_not_retry_ambiguous_api_error(
     #[case] retryable: bool,
 ) {
     let (addr, state) = start_mock_http().await;
-    state.betting_error_overrides.lock().unwrap().insert(
+    state.betting_error_overrides.lock().insert(
         METHOD_PLACE_ORDERS.to_string(),
         betting_api_error(api_error_code),
     );
@@ -667,7 +662,6 @@ async fn test_send_betting_order_does_not_retry_ambiguous_error_without_customer
     state
         .betting_status_one_shot_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_PLACE_ORDERS.to_string(), 502);
 
     let client = create_test_http_client(addr);
@@ -704,7 +698,6 @@ async fn test_send_betting_5xx_retries_once_before_giving_up() {
     state
         .betting_status_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_LIST_MARKET_CATALOGUE.to_string(), 503);
 
     let client = create_test_http_client(addr);
@@ -829,7 +822,6 @@ async fn test_send_betting_unexpected_status_surfaces_error() {
     state
         .betting_status_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_LIST_MARKET_CATALOGUE.to_string(), 503);
 
     let client = create_test_http_client(addr);

@@ -15,7 +15,7 @@
 
 //! Stateful cache database test double.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use ahash::AHashMap;
 use bytes::Bytes;
@@ -42,6 +42,7 @@ use nautilus_model::{
     position::Position,
     types::{Currency, Money},
 };
+use parking_lot::Mutex;
 use ustr::Ustr;
 
 #[expect(
@@ -66,10 +67,6 @@ pub struct TestCacheDatabaseControl {
     state: Arc<Mutex<TestCacheDatabaseState>>,
 }
 
-#[allow(
-    clippy::missing_panics_doc,
-    reason = "mutex poisoning is not expected in lifecycle tests"
-)]
 impl TestCacheDatabaseControl {
     /// Creates an adapter and its shared control handle.
     #[must_use]
@@ -85,20 +82,19 @@ impl TestCacheDatabaseControl {
 
     /// Records an event in the shared lifecycle log.
     pub fn record(&self, event: impl Into<String>) {
-        self.state.lock().unwrap().events.push(event.into());
+        self.state.lock().events.push(event.into());
     }
 
     /// Returns the recorded lifecycle events.
     #[must_use]
     pub fn events(&self) -> Vec<String> {
-        self.state.lock().unwrap().events.clone()
+        self.state.lock().events.clone()
     }
 
     /// Seeds actor state for a later load.
     pub fn set_actor_state(&self, actor_id: ActorId, state: &IndexMap<String, Vec<u8>>) {
         self.state
             .lock()
-            .unwrap()
             .actors
             .insert(actor_id, encode_state(state));
     }
@@ -107,7 +103,6 @@ impl TestCacheDatabaseControl {
     pub fn set_strategy_state(&self, strategy_id: StrategyId, state: &IndexMap<String, Vec<u8>>) {
         self.state
             .lock()
-            .unwrap()
             .strategies
             .insert(strategy_id, encode_state(state));
     }
@@ -117,7 +112,6 @@ impl TestCacheDatabaseControl {
     pub fn actor_state(&self, actor_id: &ActorId) -> Option<IndexMap<String, Vec<u8>>> {
         self.state
             .lock()
-            .unwrap()
             .actors
             .get(actor_id)
             .cloned()
@@ -129,7 +123,6 @@ impl TestCacheDatabaseControl {
     pub fn strategy_state(&self, strategy_id: &StrategyId) -> Option<IndexMap<String, Vec<u8>>> {
         self.state
             .lock()
-            .unwrap()
             .strategies
             .get(strategy_id)
             .cloned()
@@ -138,27 +131,27 @@ impl TestCacheDatabaseControl {
 
     /// Configures actor loads to fail.
     pub fn set_fail_load_actor(&self, fail: bool) {
-        self.state.lock().unwrap().fail_load_actor = fail;
+        self.state.lock().fail_load_actor = fail;
     }
 
     /// Configures strategy loads to fail.
     pub fn set_fail_load_strategy(&self, fail: bool) {
-        self.state.lock().unwrap().fail_load_strategy = fail;
+        self.state.lock().fail_load_strategy = fail;
     }
 
     /// Configures actor updates to fail.
     pub fn set_fail_update_actor(&self, fail: bool) {
-        self.state.lock().unwrap().fail_update_actor = fail;
+        self.state.lock().fail_update_actor = fail;
     }
 
     /// Configures strategy updates to fail.
     pub fn set_fail_update_strategy(&self, fail: bool) {
-        self.state.lock().unwrap().fail_update_strategy = fail;
+        self.state.lock().fail_update_strategy = fail;
     }
 
     /// Configures position updates to fail.
     pub fn set_fail_update_position(&self, fail: bool) {
-        self.state.lock().unwrap().fail_update_position = fail;
+        self.state.lock().fail_update_position = fail;
     }
 }
 
@@ -254,7 +247,7 @@ impl CacheDatabaseAdapter for TestCacheDatabase {
 
     fn load_actor(&self, actor_id: &ActorId) -> anyhow::Result<AHashMap<String, Bytes>> {
         self.control.record(format!("actor.load:{actor_id}"));
-        let state = self.control.state.lock().unwrap();
+        let state = self.control.state.lock();
         if state.fail_load_actor {
             anyhow::bail!("test actor load failure");
         }
@@ -263,7 +256,7 @@ impl CacheDatabaseAdapter for TestCacheDatabase {
 
     fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<AHashMap<String, Bytes>> {
         self.control.record(format!("strategy.load:{strategy_id}"));
-        let state = self.control.state.lock().unwrap();
+        let state = self.control.state.lock();
         if state.fail_load_strategy {
             anyhow::bail!("test strategy load failure");
         }
@@ -429,7 +422,7 @@ impl CacheDatabaseAdapter for TestCacheDatabase {
         actor_state: &AHashMap<String, Bytes>,
     ) -> anyhow::Result<()> {
         self.control.record(format!("actor.update:{actor_id}"));
-        let mut state = self.control.state.lock().unwrap();
+        let mut state = self.control.state.lock();
         if state.fail_update_actor {
             anyhow::bail!("test actor update failure");
         }
@@ -444,7 +437,7 @@ impl CacheDatabaseAdapter for TestCacheDatabase {
     ) -> anyhow::Result<()> {
         self.control
             .record(format!("strategy.update:{strategy_id}"));
-        let mut state = self.control.state.lock().unwrap();
+        let mut state = self.control.state.lock();
         if state.fail_update_strategy {
             anyhow::bail!("test strategy update failure");
         }
@@ -463,7 +456,7 @@ impl CacheDatabaseAdapter for TestCacheDatabase {
     }
 
     fn update_position(&self, _position: &Position) -> anyhow::Result<()> {
-        if self.control.state.lock().unwrap().fail_update_position {
+        if self.control.state.lock().fail_update_position {
             anyhow::bail!("test position update failure");
         }
         Ok(())

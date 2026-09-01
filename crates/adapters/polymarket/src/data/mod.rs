@@ -27,7 +27,7 @@ mod subscriptions;
 use std::{
     future::Future,
     sync::{
-        Arc, Mutex as StdMutex,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -68,6 +68,7 @@ use nautilus_model::{
     orderbook::OrderBook,
 };
 use nautilus_network::websocket::proxy::ProxyUrl;
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -123,7 +124,7 @@ pub struct PolymarketDataClient {
     tasks: TaskGroup,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-    instrument_update_state: Arc<StdMutex<InstrumentUpdateState>>,
+    instrument_update_state: Arc<Mutex<InstrumentUpdateState>>,
     token_meta: Arc<DashMap<Ustr, TokenMeta>>,
     order_books: Arc<DashMap<InstrumentId, OrderBook>>,
     last_quotes: Arc<DashMap<InstrumentId, QuoteTick>>,
@@ -131,15 +132,15 @@ pub struct PolymarketDataClient {
     active_delta_subs: Arc<AtomicSet<InstrumentId>>,
     active_trade_subs: Arc<AtomicSet<InstrumentId>>,
     resolve_poll_watchlist: Arc<AtomicMap<String, ResolveWatchEntry>>,
-    resolve_watch_apply_mutex: Arc<StdMutex<()>>,
+    resolve_watch_apply_mutex: Arc<Mutex<()>>,
     pending_snapshot_after_tick_change: Arc<AtomicSet<InstrumentId>>,
     new_market_inflight_keys: Arc<DashMap<String, ()>>,
     new_market_fetch_semaphore: Arc<tokio::sync::Semaphore>,
     ws_open_tokens: Arc<AtomicSet<Ustr>>,
     ws_sub_mutex: Arc<tokio::sync::Mutex<()>>,
-    pending_auto_loads: Arc<StdMutex<AHashSet<InstrumentId>>>,
+    pending_auto_loads: Arc<Mutex<AHashSet<InstrumentId>>>,
     auto_load_scheduled: Arc<AtomicBool>,
-    closed_condition_ids: Arc<StdMutex<AHashSet<String>>>,
+    closed_condition_ids: Arc<Mutex<AHashSet<String>>>,
     position_event_handler: Option<TypedHandler<PositionEvent>>,
     rtds_feed: PolymarketRtdsFeed,
     rtds_socket_control: Option<SocketControl>,
@@ -220,7 +221,7 @@ impl PolymarketDataClient {
             tasks,
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
-            instrument_update_state: Arc::new(StdMutex::new(InstrumentUpdateState::default())),
+            instrument_update_state: Arc::new(Mutex::new(InstrumentUpdateState::default())),
             token_meta: Arc::new(DashMap::new()),
             order_books: Arc::new(DashMap::new()),
             last_quotes: Arc::new(DashMap::new()),
@@ -228,7 +229,7 @@ impl PolymarketDataClient {
             active_delta_subs: Arc::new(AtomicSet::new()),
             active_trade_subs: Arc::new(AtomicSet::new()),
             resolve_poll_watchlist: Arc::new(AtomicMap::new()),
-            resolve_watch_apply_mutex: Arc::new(StdMutex::new(())),
+            resolve_watch_apply_mutex: Arc::new(Mutex::new(())),
             pending_snapshot_after_tick_change: Arc::new(AtomicSet::new()),
             new_market_inflight_keys: Arc::new(DashMap::new()),
             new_market_fetch_semaphore: Arc::new(tokio::sync::Semaphore::new(
@@ -236,9 +237,9 @@ impl PolymarketDataClient {
             )),
             ws_open_tokens: Arc::new(AtomicSet::new()),
             ws_sub_mutex: Arc::new(tokio::sync::Mutex::new(())),
-            pending_auto_loads: Arc::new(StdMutex::new(AHashSet::new())),
+            pending_auto_loads: Arc::new(Mutex::new(AHashSet::new())),
             auto_load_scheduled: Arc::new(AtomicBool::new(false)),
-            closed_condition_ids: Arc::new(StdMutex::new(AHashSet::new())),
+            closed_condition_ids: Arc::new(Mutex::new(AHashSet::new())),
             position_event_handler: None,
             rtds_feed: PolymarketRtdsFeed::new_with_proxy_and_socket_control(
                 rtds_url,
@@ -372,10 +373,7 @@ impl PolymarketDataClient {
             initialize_state();
             return true;
         };
-        let closed = self
-            .closed_condition_ids
-            .lock()
-            .expect("closed_condition_ids mutex poisoned");
+        let closed = self.closed_condition_ids.lock();
 
         if closed.contains(&condition_id) {
             log::debug!(

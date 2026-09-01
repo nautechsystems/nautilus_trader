@@ -22,7 +22,7 @@ use std::{
     cell::{Cell, RefCell},
     collections::HashSet,
     rc::Rc,
-    sync::{Mutex, Once},
+    sync::Once,
 };
 
 use async_trait::async_trait;
@@ -86,6 +86,7 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
+use parking_lot::Mutex;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -378,10 +379,7 @@ impl Log for ManagerLogCapture {
 
     fn log(&self, record: &Record<'_>) {
         if self.enabled(record.metadata()) {
-            self.messages
-                .lock()
-                .unwrap()
-                .push(record.args().to_string());
+            self.messages.lock().push(record.args().to_string());
         }
     }
 
@@ -400,7 +398,7 @@ fn install_manager_log_capture() {
         log::set_max_level(LevelFilter::Warn);
     });
 
-    MANAGER_LOG_CAPTURE.messages.lock().unwrap().clear();
+    MANAGER_LOG_CAPTURE.messages.lock().clear();
 }
 
 #[rstest]
@@ -10616,7 +10614,7 @@ async fn test_orphan_fill_group_validates_when_later_fill_has_position_id() {
         .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
         .await;
 
-    let messages = MANAGER_LOG_CAPTURE.messages.lock().unwrap().clone();
+    let messages = MANAGER_LOG_CAPTURE.messages.lock().clone();
     let cache = ctx.cache.borrow();
 
     assert!(result.events.is_empty());
@@ -10672,7 +10670,7 @@ async fn test_orphan_fills_for_unknown_instrument_skipped() {
         .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
         .await;
 
-    let messages = MANAGER_LOG_CAPTURE.messages.lock().unwrap().clone();
+    let messages = MANAGER_LOG_CAPTURE.messages.lock().clone();
     let cache = ctx.cache.borrow();
 
     assert!(result.events.is_empty());

@@ -17,8 +17,10 @@
 
 use std::{
     collections::HashMap,
-    sync::{LazyLock, Mutex, OnceLock},
+    sync::{LazyLock, OnceLock},
 };
+
+use parking_lot::Mutex;
 
 use crate::identifiers::Venue;
 
@@ -89,7 +91,6 @@ pub static VENUE_MAP: LazyLock<Mutex<HashMap<&str, Venue>>> = LazyLock::new(|| {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::MUTEX_POISONED;
     use rstest::*;
 
     use super::*;
@@ -167,7 +168,7 @@ mod tests {
 
     #[rstest]
     fn test_venue_map_contains_all_venues() {
-        let venue_map = VENUE_MAP.lock().expect(MUTEX_POISONED);
+        let venue_map = VENUE_MAP.lock();
 
         // Test that all venue constants are in the map
         assert!(venue_map.contains_key("CBCM"));
@@ -185,7 +186,7 @@ mod tests {
 
     #[rstest]
     fn test_venue_map_values_match_constants() {
-        let venue_map = VENUE_MAP.lock().expect(MUTEX_POISONED);
+        let venue_map = VENUE_MAP.lock();
 
         // Test that map values match the venue constants
         assert_eq!(venue_map.get("CBCM").unwrap(), &Venue::CBCM());
@@ -200,7 +201,7 @@ mod tests {
 
     #[rstest]
     fn test_venue_map_lookup_nonexistent() {
-        let venue_map = VENUE_MAP.lock().expect(MUTEX_POISONED);
+        let venue_map = VENUE_MAP.lock();
 
         // Test that non-existent venues return None
         assert!(venue_map.get("INVALID").is_none());
@@ -291,7 +292,7 @@ mod tests {
         let handles: Vec<_> = (0..4)
             .map(|_| {
                 thread::spawn(|| {
-                    let venue_map = VENUE_MAP.lock().expect(MUTEX_POISONED);
+                    let venue_map = VENUE_MAP.lock();
                     venue_map.get("XCME").copied()
                 })
             })

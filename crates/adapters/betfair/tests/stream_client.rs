@@ -22,11 +22,7 @@
 //! - Reconnection: client re-sends auth + subscriptions with latest clk after a
 //!   server-side drop
 
-use std::{
-    fmt::Debug,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::{fmt::Debug, sync::Arc, time::Duration};
 
 use nautilus_betfair::{
     common::{
@@ -43,6 +39,7 @@ use nautilus_betfair::{
     },
 };
 use nautilus_network::socket::TcpMessageHandler;
+use parking_lot::Mutex;
 use rstest::rstest;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -1485,7 +1482,7 @@ async fn test_segmented_mcm_survives_fragmented_and_coalesced_transport() {
 
     let handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
         if let Ok(StreamMessage::MarketChange(message)) = stream_decode(data) {
-            let mut received = received_handler.lock().unwrap();
+            let mut received = received_handler.lock();
             received.push(message.segment_type.unwrap());
             received_count_tx.send_replace(received.len());
         }
@@ -1507,7 +1504,7 @@ async fn test_segmented_mcm_survives_fragmented_and_coalesced_transport() {
     client.close().await.expect("close stream");
     server.await.unwrap();
 
-    let received = received.lock().unwrap();
+    let received = received.lock();
     assert_eq!(received.len(), SEQUENCE_COUNT * 3);
     let (sequences, remainder) = received.as_chunks::<3>();
     assert!(remainder.is_empty());

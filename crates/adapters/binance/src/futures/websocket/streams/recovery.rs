@@ -20,20 +20,17 @@
 //! single long-lived driver task consumes trigger signals from a channel and
 //! serializes concurrent triggers through an internal lock.
 
-use std::{
-    sync::{Arc, Mutex, RwLock},
-    time::Duration,
-};
+use std::{sync::Arc, time::Duration};
 
 use anyhow::Context;
 use dashmap::DashMap;
-use nautilus_core::MUTEX_POISONED;
 use nautilus_live::{
     SocketControlFactory,
     task::{TaskJoinOutcome, TaskSlot, finish_task},
 };
 use nautilus_model::identifiers::InstrumentId;
 use nautilus_network::websocket::TransportBackend;
+use parking_lot::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 
 use super::{
@@ -216,14 +213,14 @@ where
         .await
         .context("failed to create listen key during recovery")?;
     let new_listen_key = response.listen_key;
-    *ctx.recovery_listen_key.write().expect(MUTEX_POISONED) = Some(new_listen_key.clone());
+    *ctx.recovery_listen_key.write() = Some(new_listen_key.clone());
 
     emit_open_order_reports(ctx).await?;
 
     let new_ws = build_and_connect_user_stream(&ctx.ws_build_params, &new_listen_key).await?;
     let new_stream = new_ws.stream();
 
-    let old_ws = ctx.ws_client.lock().expect(MUTEX_POISONED).take();
+    let old_ws = ctx.ws_client.lock().take();
     if let Some(mut old_ws) = old_ws {
         old_ws
             .close()
@@ -261,20 +258,16 @@ where
         ))
         .map_err(|e| anyhow::anyhow!("failed to start recovered user stream dispatch task: {e}"))?;
 
-    *ctx.ws_client.lock().expect(MUTEX_POISONED) = Some(new_ws);
+    *ctx.ws_client.lock() = Some(new_ws);
     *task_slot = new_task;
-    *ctx.listen_key.write().expect(MUTEX_POISONED) = Some(new_listen_key);
-    *ctx.recovery_listen_key.write().expect(MUTEX_POISONED) = None;
+    *ctx.listen_key.write() = Some(new_listen_key);
+    *ctx.recovery_listen_key.write() = None;
 
     Ok(())
 }
 
 async fn close_recovery_listen_key(ctx: &RecoveryCtx) -> anyhow::Result<()> {
-    let key = ctx
-        .recovery_listen_key
-        .read()
-        .expect(MUTEX_POISONED)
-        .clone();
+    let key = ctx.recovery_listen_key.read().clone();
     let Some(key) = key else {
         return Ok(());
     };
@@ -283,7 +276,7 @@ async fn close_recovery_listen_key(ctx: &RecoveryCtx) -> anyhow::Result<()> {
         .close_listen_key(&key)
         .await
         .context("failed to close uncommitted recovery listen key")?;
-    let mut pending = ctx.recovery_listen_key.write().expect(MUTEX_POISONED);
+    let mut pending = ctx.recovery_listen_key.write();
     if pending.as_deref() == Some(key.as_str()) {
         *pending = None;
     }

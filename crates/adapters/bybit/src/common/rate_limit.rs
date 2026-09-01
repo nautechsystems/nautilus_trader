@@ -18,7 +18,7 @@
 use std::{
     collections::VecDeque,
     sync::{
-        Arc, LazyLock, Mutex,
+        Arc, LazyLock,
         atomic::{AtomicU64, Ordering},
     },
     time::Duration,
@@ -27,6 +27,7 @@ use std::{
 use ahash::AHashMap;
 use aws_lc_rs::digest;
 use nautilus_network::ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota};
+use parking_lot::Mutex;
 use ustr::Ustr;
 
 use super::enums::BybitProductType;
@@ -138,10 +139,7 @@ impl SlidingWindows {
         loop {
             let wait = {
                 let now = tokio::time::Instant::now();
-                let mut windows = self
-                    .windows
-                    .lock()
-                    .expect("Bybit rate-limit mutex poisoned");
+                let mut windows = self.windows.lock();
                 let mut wait = Duration::ZERO;
 
                 for reservation in reservations {
@@ -210,10 +208,7 @@ impl SlidingWindows {
         }
 
         let now = tokio::time::Instant::now();
-        let mut windows = self
-            .windows
-            .lock()
-            .expect("Bybit rate-limit mutex poisoned");
+        let mut windows = self.windows.lock();
         let window = windows
             .entry(key.clone())
             .or_insert_with(|| Window::new(configured_limit, period));
@@ -244,10 +239,7 @@ impl SlidingWindows {
 
     fn block(&self, key: &LimitKey, limit: u32, period: Duration, duration: Duration) {
         let now = tokio::time::Instant::now();
-        let mut windows = self
-            .windows
-            .lock()
-            .expect("Bybit rate-limit mutex poisoned");
+        let mut windows = self.windows.lock();
         let window = windows
             .entry(key.clone())
             .or_insert_with(|| Window::new(limit, period));
@@ -258,7 +250,6 @@ impl SlidingWindows {
     fn observed_limit(&self, key: &LimitKey) -> Option<u32> {
         self.windows
             .lock()
-            .expect("Bybit rate-limit mutex poisoned")
             .get(key)
             .and_then(|window| window.observed_limit)
     }
@@ -443,9 +434,7 @@ pub(crate) fn websocket_connection_limiter(
     proxy_url: Option<&str>,
 ) -> Arc<ConnectionLimiter> {
     let scope = transport_scope(url, proxy_url);
-    let mut registry = WS_CONNECTION_LIMITERS
-        .lock()
-        .expect("Bybit WebSocket connection limiter registry mutex poisoned");
+    let mut registry = WS_CONNECTION_LIMITERS.lock();
     if let Some(limiter) = registry.get(&scope) {
         return Arc::clone(limiter);
     }
@@ -526,9 +515,7 @@ pub(crate) fn category_from_payload(payload: Option<&str>) -> Option<BybitProduc
 }
 
 fn shared_session_generation(scope: &TransportScope) -> Arc<AtomicU64> {
-    let mut registry = HTTP_SESSION_GENERATIONS
-        .lock()
-        .expect("Bybit HTTP session registry mutex poisoned");
+    let mut registry = HTTP_SESSION_GENERATIONS.lock();
     if let Some(generation) = registry.get(scope) {
         return Arc::clone(generation);
     }

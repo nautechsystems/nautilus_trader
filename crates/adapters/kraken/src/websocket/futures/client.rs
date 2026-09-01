@@ -18,7 +18,7 @@
 use std::{
     collections::HashMap,
     sync::{
-        Arc, RwLock,
+        Arc,
         atomic::{AtomicBool, AtomicU8, Ordering},
     },
 };
@@ -42,6 +42,7 @@ use nautilus_network::{
         WebSocketClient, WebSocketConfig, channel_message_handler,
     },
 };
+use parking_lot::RwLock;
 use tokio_util::sync::CancellationToken;
 
 use super::{
@@ -889,15 +890,13 @@ impl KrakenFuturesWebSocketClient {
 
     /// Sets the account ID for execution report parsing.
     pub fn set_account_id(&self, account_id: AccountId) {
-        if let Ok(mut guard) = self.account_id.write() {
-            *guard = Some(account_id);
-        }
+        *self.account_id.write() = Some(account_id);
     }
 
     /// Returns the account ID if set.
     #[must_use]
     pub fn account_id(&self) -> Option<AccountId> {
-        self.account_id.read().ok().and_then(|g| *g)
+        *self.account_id.read()
     }
 
     /// Returns a reference to the shared account ID.

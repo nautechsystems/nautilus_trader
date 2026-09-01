@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use ahash::AHashMap;
 use bytes::Bytes;
@@ -39,6 +39,7 @@ use nautilus_model::{
     position::Position,
     types::{Currency, Money},
 };
+use parking_lot::Mutex;
 use ustr::Ustr;
 
 #[derive(Debug, Default)]
@@ -56,7 +57,7 @@ pub(super) struct FailNthAddOrderDatabaseControl {
 
 impl FailNthAddOrderDatabaseControl {
     pub(super) fn set_fail_add_order_on(&self, call: Option<usize>) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock();
         state.fail_add_order_on = call;
         state.add_order_calls = 0;
     }
@@ -66,7 +67,7 @@ impl FailNthAddOrderDatabaseControl {
         reason = "used by the exec_engine test target sharing this module"
     )]
     pub(super) fn order_snapshots(&self) -> Vec<OrderSnapshot> {
-        self.state.lock().unwrap().order_snapshots.clone()
+        self.state.lock().order_snapshots.clone()
     }
 
     #[allow(
@@ -74,7 +75,7 @@ impl FailNthAddOrderDatabaseControl {
         reason = "used by the exec_engine test target sharing this module"
     )]
     pub(super) fn position_snapshots(&self) -> Vec<PositionSnapshot> {
-        self.state.lock().unwrap().position_snapshots.clone()
+        self.state.lock().position_snapshots.clone()
     }
 }
 
@@ -248,7 +249,7 @@ impl CacheDatabaseAdapter for FailNthAddOrderDatabase {
     }
 
     fn add_order(&self, _order: &OrderAny, _client_id: Option<ClientId>) -> anyhow::Result<()> {
-        let mut state = self.control.state.lock().unwrap();
+        let mut state = self.control.state.lock();
         state.add_order_calls += 1;
         if state.fail_add_order_on == Some(state.add_order_calls) {
             anyhow::bail!("test add order failure");
@@ -372,7 +373,6 @@ impl CacheDatabaseAdapter for FailNthAddOrderDatabase {
         self.control
             .state
             .lock()
-            .unwrap()
             .order_snapshots
             .push(OrderSnapshot::from(order.clone()));
         Ok(())
@@ -387,12 +387,7 @@ impl CacheDatabaseAdapter for FailNthAddOrderDatabase {
         let mut snapshot = PositionSnapshot::from(position, unrealized_pnl);
         snapshot.ts_init = ts_snapshot;
 
-        self.control
-            .state
-            .lock()
-            .unwrap()
-            .position_snapshots
-            .push(snapshot);
+        self.control.state.lock().position_snapshots.push(snapshot);
         Ok(())
     }
 

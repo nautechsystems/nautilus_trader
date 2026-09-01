@@ -23,12 +23,13 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     ops::Deref,
-    sync::{Arc, LazyLock, Mutex},
+    sync::{Arc, LazyLock},
     time::Duration,
 };
 
 use anyhow::Context;
 use ibapi::client::Client;
+use parking_lot::Mutex;
 
 /// Key for the connection registry: (host, port, client_id).
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -82,9 +83,8 @@ impl Deref for SharedClientHandle {
 
 impl Drop for SharedClientHandle {
     fn drop(&mut self) {
-        if let Ok(mut guard) = self.registry.lock()
-            && let Some((_, ref_count)) = guard.get_mut(&self.key)
-        {
+        let mut guard = self.registry.lock();
+        if let Some((_, ref_count)) = guard.get_mut(&self.key) {
             *ref_count = ref_count.saturating_sub(1);
             if *ref_count == 0 {
                 guard.remove(&self.key);
@@ -124,9 +124,7 @@ pub async fn get_or_connect(
     );
 
     let (reuse_client, ref_count_val) = {
-        let mut guard = registry
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Registry mutex poisoned: {e}"))?;
+        let mut guard = registry.lock();
 
         if let Some((client, ref_count)) = guard.get_mut(&key) {
             if client.is_connected() {
@@ -179,9 +177,7 @@ pub async fn get_or_connect(
     let client = Arc::new(client);
 
     {
-        let mut guard = registry
-            .lock()
-            .map_err(|e| anyhow::anyhow!("Registry mutex poisoned: {e}"))?;
+        let mut guard = registry.lock();
         log::debug!(
             "Registering shared IB client in registry (host={}, port={}, client_id={})",
             host,

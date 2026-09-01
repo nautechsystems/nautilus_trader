@@ -40,10 +40,6 @@ where
 }
 
 /// Aborts all pending tasks stored in `pending_tasks`.
-///
-/// # Panics
-///
-/// Panics if the task handle storage mutex is poisoned.
 pub fn abort_pending_tasks(pending_tasks: &TaskGroup) {
     pending_tasks.begin_shutdown();
 }

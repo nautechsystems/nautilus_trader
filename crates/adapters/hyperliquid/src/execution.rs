@@ -16,7 +16,7 @@
 //! Live execution client implementation for the Hyperliquid adapter.
 
 use std::{
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -34,7 +34,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED, Params, UnixNanos,
+    Params, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -52,6 +52,7 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Quantity},
 };
+use parking_lot::Mutex;
 
 #[derive(Debug, Clone)]
 struct StagedBracketChild {
@@ -235,10 +236,6 @@ impl HyperliquidExecutionClient {
     /// that fire on the runtime to finish before asserting on dispatch
     /// state, avoiding bare `sleep` calls when a negative condition needs
     /// to be checked after the spawned work is done.
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "pending_tasks mutex poisoning is not expected"
-    )]
     #[must_use]
     pub fn pending_tasks_all_finished(&self) -> bool {
         self.pending_tasks.all_finished()
@@ -355,11 +352,7 @@ impl HyperliquidExecutionClient {
 
             if (staged_children.is_empty() && active_children.is_empty())
                 || (!parent.is_open() && parent.filled_qty().raw == 0)
-                || self
-                    .staged_brackets
-                    .lock()
-                    .expect(MUTEX_POISONED)
-                    .contains_parent(&parent_id)
+                || self.staged_brackets.lock().contains_parent(&parent_id)
             {
                 continue;
             }
@@ -370,7 +363,7 @@ impl HyperliquidExecutionClient {
             }
 
             let has_staged_children = !staged_children.is_empty();
-            let mut state = self.staged_brackets.lock().expect(MUTEX_POISONED);
+            let mut state = self.staged_brackets.lock();
             if has_staged_children {
                 state.stage(parent_id, staged_children);
             }
@@ -682,7 +675,7 @@ impl HyperliquidExecutionClient {
 
                 let ts = clock.get_time_ns();
                 let fills = {
-                    let mut guard = tracker.lock().expect(MUTEX_POISONED);
+                    let mut guard = tracker.lock();
                     build_settlement_fills(&settlements, &spot_state, &mut guard, account_id, ts)
                 };
 
@@ -1096,10 +1089,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
         if let Err(e) = task_spawner.spawn(async move {
             if let Some((parent_id, children)) = staged_children {
-                staged_brackets
-                    .lock()
-                    .expect(MUTEX_POISONED)
-                    .stage(parent_id, children);
+                staged_brackets.lock().stage(parent_id, children);
             }
 
             for (order, request) in valid_orders.iter().zip(hyperliquid_orders.iter()) {
@@ -1408,7 +1398,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
         if let Some(order) = self
             .staged_brackets
             .lock()
-            .expect(MUTEX_POISONED)
             .cancel_child(&cmd.client_order_id)
         {
             self.emitter
@@ -1844,12 +1833,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             .map_err(|e| anyhow::anyhow!("Hyperliquid session task admission is closed: {e}"))?;
 
         for parent_id in ready_bracket_parents {
-            if let Some(children) = self
-                .staged_brackets
-                .lock()
-                .expect(MUTEX_POISONED)
-                .activate(&parent_id)
-            {
+            if let Some(children) = self.staged_brackets.lock().activate(&parent_id) {
                 spawn_staged_children(
                     children,
                     &self.emitter,
@@ -2299,10 +2283,8 @@ impl HyperliquidExecutionClient {
                                 }
 
                                 if let Some(parent_id) = staged_parent_fill
-                                    && let Some(children) = staged_brackets
-                                        .lock()
-                                        .expect(MUTEX_POISONED)
-                                        .activate(&parent_id)
+                                    && let Some(children) =
+                                        staged_brackets.lock().activate(&parent_id)
                                 {
                                     spawn_staged_children(
                                         children,
@@ -2318,10 +2300,8 @@ impl HyperliquidExecutionClient {
                                 }
 
                                 if let Some((parent_id, ts_event)) = staged_parent_terminal {
-                                    let children = staged_brackets
-                                        .lock()
-                                        .expect(MUTEX_POISONED)
-                                        .cancel_for_parent(&parent_id);
+                                    let children =
+                                        staged_brackets.lock().cancel_for_parent(&parent_id);
 
                                     for child in children {
                                         emitter.emit_order_canceled(&child, None, ts_event);
@@ -2335,10 +2315,8 @@ impl HyperliquidExecutionClient {
                                     && cumulative > previous
                                     && cumulative < quantity
                                 {
-                                    let sibling = staged_brackets
-                                        .lock()
-                                        .expect(MUTEX_POISONED)
-                                        .active_sibling(&client_order_id);
+                                    let sibling =
+                                        staged_brackets.lock().active_sibling(&client_order_id);
 
                                     if let Some(sibling) = sibling {
                                         spawn_active_sibling_resize(
@@ -2356,7 +2334,6 @@ impl HyperliquidExecutionClient {
                                 if let Some(client_order_id) = active_child_terminal {
                                     let sibling = staged_brackets
                                         .lock()
-                                        .expect(MUTEX_POISONED)
                                         .take_active_sibling(&client_order_id);
 
                                     if let Some(sibling) = sibling {
@@ -3213,7 +3190,6 @@ impl PostRejectionRoute {
         let active_sibling = self
             .staged_brackets
             .lock()
-            .expect(MUTEX_POISONED)
             .take_active_sibling(&client_order_id);
 
         if let Some(sibling) = active_sibling {
@@ -3229,7 +3205,6 @@ impl PostRejectionRoute {
         let staged_children = self
             .staged_brackets
             .lock()
-            .expect(MUTEX_POISONED)
             .cancel_for_parent(&client_order_id);
 
         for child in staged_children {

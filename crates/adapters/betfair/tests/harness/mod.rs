@@ -440,7 +440,6 @@ impl Harness {
         self.mock_state
             .betting_overrides
             .lock()
-            .unwrap()
             .insert(method.to_string(), value["result"].clone());
     }
 

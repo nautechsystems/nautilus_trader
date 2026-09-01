@@ -15,9 +15,7 @@
 
 //! Async task handle storage and lifecycle operations.
 
-use std::sync::Mutex;
-
-use nautilus_core::MUTEX_POISONED;
+use parking_lot::Mutex;
 
 use super::dst::task::JoinHandle;
 
@@ -29,21 +27,13 @@ pub struct TaskHandles {
 
 impl TaskHandles {
     /// Stores `handle` after removing handles for completed tasks.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     pub fn push(&self, handle: JoinHandle<()>) {
-        let mut handles = self.handles.lock().expect(MUTEX_POISONED);
+        let mut handles = self.handles.lock();
         handles.retain(|handle| !handle.is_finished());
         handles.push(handle);
     }
 
     /// Drains and aborts all stored task handles.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     pub fn abort_all(&self) {
         for handle in self.take_all() {
             handle.abort();
@@ -52,59 +42,35 @@ impl TaskHandles {
 
     /// Aborts all stored task handles without draining them, so callers can await their
     /// termination later through [`Self::all_finished`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     pub fn abort_all_retained(&self) {
-        for handle in self.handles.lock().expect(MUTEX_POISONED).iter() {
+        for handle in self.handles.lock().iter() {
             handle.abort();
         }
     }
 
     /// Removes and returns all stored task handles.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     #[must_use]
     pub fn take_all(&self) -> Vec<JoinHandle<()>> {
-        let mut handles = self.handles.lock().expect(MUTEX_POISONED);
+        let mut handles = self.handles.lock();
         std::mem::take(&mut *handles)
     }
 
     /// Returns whether every stored task handle has finished.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     #[must_use]
     pub fn all_finished(&self) -> bool {
-        self.handles
-            .lock()
-            .expect(MUTEX_POISONED)
-            .iter()
-            .all(JoinHandle::is_finished)
+        self.handles.lock().iter().all(JoinHandle::is_finished)
     }
 
     /// Returns whether no task handles are stored.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.handles.lock().expect(MUTEX_POISONED).is_empty()
+        self.handles.lock().is_empty()
     }
 
     /// Returns the number of stored task handles.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.handles.lock().expect(MUTEX_POISONED).len()
+        self.handles.lock().len()
     }
 }
 

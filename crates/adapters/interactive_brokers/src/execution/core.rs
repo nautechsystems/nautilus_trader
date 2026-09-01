@@ -30,7 +30,7 @@ use std::{
     fmt::Debug,
     str::FromStr,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -95,6 +95,7 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
+use parking_lot::Mutex;
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use ustr::Ustr;
 
@@ -357,9 +358,7 @@ impl InteractiveBrokersExecutionClient {
     }
 
     fn reserve_next_local_order_id(next_order_id: &Arc<Mutex<i32>>) -> anyhow::Result<i32> {
-        let mut guard = next_order_id
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock next order ID"))?;
+        let mut guard = next_order_id.lock();
         anyhow::ensure!(
             *guard > 0,
             "No valid Interactive Brokers order ID available"
@@ -691,8 +690,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         {
             let mut id = self
                 .next_order_id
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock next order ID"))?;
+                .lock();
             *id = starting_order_id;
         }
 
@@ -1398,10 +1396,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         let target_order = if let Some(venue_order_id) = &cmd.venue_order_id {
             IbOrderSelector::from_venue_order_id(venue_order_id)?
         } else {
-            let map = self
-                .order_id_map
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock order_id_map"))?;
+            let map = self.order_id_map.lock();
             IbOrderSelector::OrderId(
                 *map.get(&cmd.client_order_id)
                     .context("No venue order id for client_order_id")?,
@@ -1444,10 +1439,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                         continue;
                     }
 
-                    let instrument_id = match instrument_id_map.lock() {
-                        Ok(map) => map.get(&data.order_id).copied(),
-                        Err(_) => None,
-                    };
+                    let instrument_id = instrument_id_map.lock().get(&data.order_id).copied();
                     let instrument_id = match instrument_id {
                         Some(id) => id,
                         None => match instrument_provider
@@ -1501,10 +1493,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                 }
             }
 
-            let was_pending_cancel = pending_cancel_orders
-                .lock()
-                .map(|mut pending| pending.remove(&client_order_id))
-                .unwrap_or(false);
+            let was_pending_cancel = pending_cancel_orders.lock().remove(&client_order_id);
 
             if was_pending_cancel {
                 let event = OrderCanceled::new(
@@ -1747,10 +1736,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
 
             if orders_to_cancel.is_empty() {
                 let ib_order_ids: Vec<i32> = {
-                    let instrument_id_map = self
-                        .instrument_id_map
-                        .lock()
-                        .map_err(|_| anyhow::anyhow!("Failed to lock instrument ID map"))?;
+                    let instrument_id_map = self.instrument_id_map.lock();
                     instrument_id_map
                         .iter()
                         .filter_map(|(order_id, instrument_id)| {
@@ -1759,10 +1745,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                         .collect()
                 };
 
-                let venue_map = self
-                    .venue_order_id_map
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("Failed to lock venue order ID map"))?;
+                let venue_map = self.venue_order_id_map.lock();
 
                 orders_to_cancel.extend(ib_order_ids.into_iter().filter_map(|ib_order_id| {
                     venue_map.get(&ib_order_id).copied().map(|client_order_id| {
@@ -1851,9 +1834,7 @@ impl InteractiveBrokersExecutionClient {
             return false;
         }
 
-        self.next_order_id
-            .lock()
-            .is_ok_and(|next_order_id| *next_order_id > 0)
+        *self.next_order_id.lock() > 0
     }
 
     fn ensure_client_ready_for_order_request(&self, request: &str) -> Result<(), String> {
@@ -2144,9 +2125,7 @@ impl InteractiveBrokersExecutionClient {
         let order_selector = if let Some(venue_order_id) = &cmd.venue_order_id {
             IbOrderSelector::from_venue_order_id(venue_order_id)?
         } else {
-            let map = order_id_map
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock order ID map"))?;
+            let map = order_id_map.lock();
             IbOrderSelector::OrderId(
                 *map.get(&cmd.client_order_id)
                     .context("No IB order ID mapping found for client order ID")?,
@@ -2289,9 +2268,7 @@ impl InteractiveBrokersExecutionClient {
     ) -> anyhow::Result<()> {
         // Get all IB order selectors first, then drop the guard before awaiting
         let order_selectors: Vec<(ClientOrderId, IbOrderSelector, Option<VenueOrderId>)> = {
-            let order_id_map_guard = order_id_map
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock order ID map"))?;
+            let order_id_map_guard = order_id_map.lock();
 
             orders_to_cancel
                 .into_iter()
@@ -2396,15 +2373,13 @@ impl InteractiveBrokersExecutionClient {
         ts_init: UnixNanos,
         account_id: AccountId,
     ) -> anyhow::Result<()> {
-        let mut pending = pending_cancel_orders
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock pending cancel orders map"))?;
+        let mut pending = pending_cancel_orders.lock();
         if !pending.insert(client_order_id) {
             return Ok(());
         }
         drop(pending);
 
-        let instrument_id = Self::get_mapped_instrument_id(order_id, instrument_id_map)?
+        let instrument_id = Self::get_mapped_instrument_id(order_id, instrument_id_map)
             .context("Instrument ID not found for pending cancel order")?;
         let (trader_id, strategy_id) =
             Self::get_required_order_actor_ids(order_id, trader_id_map, strategy_id_map)?;

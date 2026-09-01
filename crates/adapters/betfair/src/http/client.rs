@@ -24,7 +24,7 @@ use std::{
     },
 };
 
-use nautilus_core::{MUTEX_POISONED, string::urlencoding};
+use nautilus_core::string::urlencoding;
 use nautilus_network::{
     http::{HttpClient, Method},
     ratelimiter::quota::Quota,
@@ -99,7 +99,7 @@ pub struct BetfairHttpClient {
     session_token: Arc<tokio::sync::RwLock<Option<String>>>,
     retry_manager: RetryManager<BetfairHttpError>,
     order_retry_manager: RetryManager<BetfairHttpError>,
-    cancellation_token: std::sync::Mutex<CancellationToken>,
+    cancellation_token: parking_lot::Mutex<CancellationToken>,
     connect_lock: tokio::sync::Mutex<()>,
     request_id: AtomicU64,
     url_identity_login: String,
@@ -154,7 +154,7 @@ impl BetfairHttpClient {
             session_token: Arc::new(tokio::sync::RwLock::new(None)),
             retry_manager: RetryManager::new(retry_config),
             order_retry_manager: RetryManager::new(order_retry_config),
-            cancellation_token: std::sync::Mutex::new(CancellationToken::new()),
+            cancellation_token: parking_lot::Mutex::new(CancellationToken::new()),
             connect_lock: tokio::sync::Mutex::new(()),
             request_id: AtomicU64::new(1),
             url_identity_login: BETFAIR_IDENTITY_LOGIN_URL.to_string(),
@@ -192,15 +192,8 @@ impl BetfairHttpClient {
     ///
     /// `disconnect()` cancels and replaces the token, so callers should fetch
     /// a fresh clone for each operation rather than holding one long-term.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal cancellation-token mutex is poisoned.
     pub fn cancellation_token(&self) -> CancellationToken {
-        self.cancellation_token
-            .lock()
-            .expect(MUTEX_POISONED)
-            .clone()
+        self.cancellation_token.lock().clone()
     }
 
     /// Returns the current session token, if authenticated.
@@ -297,15 +290,11 @@ impl BetfairHttpClient {
 
     /// Clears the session token, cancels any in-flight retries, and primes a
     /// fresh cancellation token for the next session.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal cancellation-token mutex is poisoned.
     pub async fn disconnect(&self) {
         log::info!("Betfair disconnecting...");
         let _guard = self.connect_lock.lock().await;
         {
-            let mut guard = self.cancellation_token.lock().expect(MUTEX_POISONED);
+            let mut guard = self.cancellation_token.lock();
             guard.cancel();
             *guard = CancellationToken::new();
         }
@@ -580,11 +569,7 @@ impl BetfairHttpClient {
         // Snapshot the current token; `disconnect()` may swap it for a fresh
         // one mid-flight, but the in-flight retry loop should observe the
         // pre-disconnect token so a cancel actually unblocks it.
-        let token = self
-            .cancellation_token
-            .lock()
-            .expect(MUTEX_POISONED)
-            .clone();
+        let token = self.cancellation_token.lock().clone();
 
         let retry_manager = if is_order {
             &self.order_retry_manager
@@ -733,8 +718,9 @@ fn map_retry_error(
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Mutex, time::Duration};
+    use std::time::Duration;
 
+    use parking_lot::Mutex;
     use proptest::prelude::*;
     use rstest::rstest;
 
@@ -969,10 +955,7 @@ mod tests {
                 move || {
                     let attempt_times = Arc::clone(&attempt_times_for_operation);
                     async move {
-                        attempt_times
-                            .lock()
-                            .expect(MUTEX_POISONED)
-                            .push(started_at.elapsed());
+                        attempt_times.lock().push(started_at.elapsed());
                         Err::<(), _>(BetfairHttpError::UnexpectedStatus {
                             status: 502,
                             body: "Bad Gateway".to_string(),
@@ -986,7 +969,7 @@ mod tests {
 
         assert!(matches!(result, Err(BetfairHttpError::NetworkError(_))));
         assert_eq!(started_at.elapsed(), Duration::from_secs(45));
-        let attempt_times = attempt_times.lock().expect(MUTEX_POISONED);
+        let attempt_times = attempt_times.lock();
         assert!(attempt_times.len() > 1);
         assert_eq!(attempt_times[0], Duration::ZERO);
         assert!(

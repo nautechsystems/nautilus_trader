@@ -10,7 +10,7 @@
 use std::{
     collections::{HashMap, VecDeque},
     fmt::Debug,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::Duration,
 };
 
@@ -42,6 +42,7 @@ use nautilus_model::{
     identifiers::InstrumentId,
     types::{Price, Quantity},
 };
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::data::{
@@ -229,7 +230,7 @@ impl DataFarmConnectionState {
         generation: u64,
         degraded_since_ns: UnixNanos,
     ) {
-        let mut state = self.state.lock().expect("data farm state mutex poisoned");
+        let mut state = self.state.lock();
 
         if state.recovery(scope).recovery_generation != generation {
             return;
@@ -243,7 +244,7 @@ impl DataFarmConnectionState {
     }
 
     fn mark_farm_degraded(&self, farm: DataFarmIdentity, degraded_since_ns: UnixNanos) {
-        let mut state = self.state.lock().expect("data farm state mutex poisoned");
+        let mut state = self.state.lock();
 
         state
             .degraded_farms
@@ -253,7 +254,7 @@ impl DataFarmConnectionState {
     }
 
     fn mark_ok(&self, farm: &DataFarmIdentity) -> bool {
-        let mut state = self.state.lock().expect("data farm state mutex poisoned");
+        let mut state = self.state.lock();
 
         let family_scope = DataFarmRecoveryScope::from(farm.kind);
         let farm_degraded_since_ns = state.degraded_farms.remove(farm);
@@ -295,11 +296,7 @@ impl DataFarmConnectionState {
     }
 
     fn recovery_generation_for(&self, scope: DataFarmRecoveryScope) -> u64 {
-        self.state
-            .lock()
-            .expect("data farm state mutex poisoned")
-            .recovery(scope)
-            .recovery_generation
+        self.state.lock().recovery(scope).recovery_generation
     }
 
     fn recovery_since_ns_after_for(
@@ -309,7 +306,6 @@ impl DataFarmConnectionState {
     ) -> Option<UnixNanos> {
         self.state
             .lock()
-            .expect("data farm state mutex poisoned")
             .recovery(scope)
             .recoveries
             .iter()
@@ -2256,10 +2252,7 @@ mod tests {
             clock,
         );
 
-        let state = data_farm_state
-            .state
-            .lock()
-            .expect("data farm state mutex poisoned");
+        let state = data_farm_state.state.lock();
         assert_eq!(state.historical_bars.recovery_generation, 1);
         assert_eq!(
             state.historical_bars.recoveries.front(),
@@ -2447,10 +2440,7 @@ mod tests {
         );
         data_farm_state.mark_degraded(initial_generation, UnixNanos::from(20));
 
-        let state = data_farm_state
-            .state
-            .lock()
-            .expect("data farm state mutex poisoned");
+        let state = data_farm_state.state.lock();
         assert_eq!(state.market_data.recovery_generation, 1);
         assert!(state.degraded_farms.is_empty());
         assert!(state.degraded_scopes.is_empty());
@@ -3168,7 +3158,6 @@ mod tests {
                 if state_for_recovery
                     .state
                     .lock()
-                    .expect("data farm state mutex poisoned")
                     .degraded_scopes
                     .contains_key(&DataFarmRecoveryScope::MarketData)
                 {

@@ -19,14 +19,8 @@
 //! reports the correct high-watermark over a multi-batch run.
 
 #[cfg(not(madsim))]
-use std::sync::{
-    Condvar,
-    atomic::{AtomicUsize, Ordering},
-};
-use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{sync::Arc, time::Duration};
 
 use bytes::Bytes;
 use indexmap::IndexMap;
@@ -43,6 +37,9 @@ use nautilus_event_store::{
     IndexKind, RedbBackend, RegisteredComponents, RunManifest, RunStatus, Topic, WriterConfig,
     codec,
 };
+#[cfg(not(madsim))]
+use parking_lot::Condvar;
+use parking_lot::Mutex;
 use redb::{ReadableDatabase, ReadableTable};
 use rstest::rstest;
 use tempfile::TempDir;
@@ -96,10 +93,7 @@ fn captured_halt() -> (HaltCallback, Arc<Mutex<Vec<HaltReason>>>) {
     let captured: Arc<Mutex<Vec<HaltReason>>> = Arc::new(Mutex::new(Vec::new()));
     let captured_for_cb = Arc::clone(&captured);
     let halt: HaltCallback = Arc::new(move |reason| {
-        captured_for_cb
-            .lock()
-            .expect("captured halt poisoned")
-            .push(reason);
+        captured_for_cb.lock().push(reason);
     });
     (halt, captured)
 }
@@ -145,16 +139,13 @@ impl EventStore for BlockingMemoryBackend {
     ) -> Result<u64, nautilus_event_store::EventStoreError> {
         self.appends_started.fetch_add(1, Ordering::SeqCst);
         let (lock, cvar) = &*self.gate;
-        let mut released = lock.lock().expect("gate poisoned");
+        let mut released = lock.lock();
 
         while !*released {
-            released = cvar.wait(released).expect("gate wait");
+            cvar.wait(&mut released);
         }
 
-        self.inner
-            .lock()
-            .expect("inner poisoned")
-            .append_batch(entries)
+        self.inner.lock().append_batch(entries)
     }
 
     fn scan_range(
@@ -163,17 +154,14 @@ impl EventStore for BlockingMemoryBackend {
         to: u64,
         direction: ScanDirection,
     ) -> Result<Vec<EventStoreEntry>, nautilus_event_store::EventStoreError> {
-        self.inner
-            .lock()
-            .expect("inner poisoned")
-            .scan_range(from, to, direction)
+        self.inner.lock().scan_range(from, to, direction)
     }
 
     fn scan_seq(
         &self,
         seq: u64,
     ) -> Result<Option<EventStoreEntry>, nautilus_event_store::EventStoreError> {
-        self.inner.lock().expect("inner poisoned").scan_seq(seq)
+        self.inner.lock().scan_seq(seq)
     }
 
     fn lookup(
@@ -181,29 +169,26 @@ impl EventStore for BlockingMemoryBackend {
         kind: IndexKind,
         key: &str,
     ) -> Result<Option<u64>, nautilus_event_store::EventStoreError> {
-        self.inner.lock().expect("inner poisoned").lookup(kind, key)
+        self.inner.lock().lookup(kind, key)
     }
 
     fn iter_index_keys(
         &self,
         kind: IndexKind,
     ) -> Result<Vec<(String, u64)>, nautilus_event_store::EventStoreError> {
-        self.inner
-            .lock()
-            .expect("inner poisoned")
-            .iter_index_keys(kind)
+        self.inner.lock().iter_index_keys(kind)
     }
 
     fn seal(&mut self, status: RunStatus) -> Result<(), nautilus_event_store::EventStoreError> {
-        self.inner.lock().expect("inner poisoned").seal(status)
+        self.inner.lock().seal(status)
     }
 
     fn manifest(&self) -> Result<RunManifest, nautilus_event_store::EventStoreError> {
-        self.inner.lock().expect("inner poisoned").manifest()
+        self.inner.lock().manifest()
     }
 
     fn high_watermark(&self) -> Result<u64, nautilus_event_store::EventStoreError> {
-        self.inner.lock().expect("inner poisoned").high_watermark()
+        self.inner.lock().high_watermark()
     }
 }
 
@@ -243,7 +228,7 @@ fn writer_commits_drafts_durably_to_redb_file() {
 
     // 3 drafts + RunEnded == 4 entries.
     assert_eq!(final_hwm, 4);
-    assert!(captured.lock().expect("captured").is_empty());
+    assert!(captured.lock().is_empty());
 
     // Reopening the same path with a fresh backend instance must surface the run as
     // already sealed; that proves seal landed durably to disk.
@@ -308,7 +293,6 @@ fn writer_halts_instead_of_dropping_when_backend_blocks_past_channel_capacity() 
     let inner = Arc::new(Mutex::new(MemoryBackend::new()));
     inner
         .lock()
-        .expect("inner")
         .open_run(manifest("run-backpressure"))
         .expect("open run");
     let gate = Arc::new((Mutex::new(false), Condvar::new()));
@@ -362,12 +346,12 @@ fn writer_halts_instead_of_dropping_when_backend_blocks_past_channel_capacity() 
         SubmitError::Closed => panic!("expected HaltSignaled, was Closed"),
     }
     assert!(matches!(
-        captured.lock().expect("captured").first(),
+        captured.lock().first(),
         Some(HaltReason::BackpressureStall { .. }),
     ));
 
     let (lock, cvar) = &*gate;
-    *lock.lock().expect("gate") = true;
+    *lock.lock() = true;
     cvar.notify_all();
 
     let mut waited = Duration::ZERO;
@@ -382,7 +366,7 @@ fn writer_halts_instead_of_dropping_when_backend_blocks_past_channel_capacity() 
     );
     drop(writer);
 
-    let backend = inner.lock().expect("inner");
+    let backend = inner.lock();
     let entries = backend
         .scan_range(1, 3, ScanDirection::Forward)
         .expect("scan committed entries");

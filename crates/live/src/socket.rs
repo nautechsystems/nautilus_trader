@@ -19,7 +19,7 @@ use std::{
     cell::RefCell,
     fmt::Debug,
     sync::{
-        Arc, Mutex, PoisonError, Weak,
+        Arc, Weak,
         atomic::{AtomicU64, Ordering},
     },
 };
@@ -35,6 +35,7 @@ use nautilus_common::{
 use nautilus_model::identifiers::{ClientId, Venue};
 pub use nautilus_network::mode::ReconnectRequestOutcome as SocketReconnectRequestOutcome;
 use nautilus_network::{SocketState, SocketStateSink, mode::ReconnectRequestOutcome};
+use parking_lot::Mutex;
 use ustr::Ustr;
 
 thread_local! {
@@ -127,17 +128,13 @@ impl SocketReconnectRegistry {
 
     #[cfg(any(feature = "node", test))]
     pub(crate) fn register_client(&self, client_id: ClientId) {
-        self.inner
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clients
-            .insert(client_id);
+        self.inner.lock().clients.insert(client_id);
     }
 
     /// Resolves one logical socket endpoint.
     #[must_use]
     pub fn get(&self, client_id: ClientId, endpoint: Ustr) -> SocketReconnectLookup {
-        let inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
+        let inner = self.inner.lock();
         let key = SocketEndpoint {
             client_id,
             endpoint,
@@ -192,7 +189,7 @@ impl SocketReconnectRegistrar {
     fn owner(&self, client_id: ClientId) -> Option<SocketReconnectOwner> {
         let registry = self.registry.upgrade()?;
         let owner_id = {
-            let mut inner = registry.lock().unwrap_or_else(PoisonError::into_inner);
+            let mut inner = registry.lock();
             inner.next_owner = inner.next_owner.wrapping_add(1).max(1);
             let owner_id = inner.next_owner;
             inner.supported.insert(client_id);
@@ -234,9 +231,7 @@ impl SocketReconnectOwner {
             let Some(_registry) = registry_ref.upgrade() else {
                 return ReconnectRequestOutcome::Closed;
             };
-            let request = guarded_request
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
+            let request = guarded_request.lock();
             request
                 .as_ref()
                 .map_or(ReconnectRequestOutcome::Closed, |handle| {
@@ -244,7 +239,7 @@ impl SocketReconnectOwner {
                 })
         });
         let generation = {
-            let mut inner = registry.lock().unwrap_or_else(PoisonError::into_inner);
+            let mut inner = registry.lock();
             inner.next_generation = inner.next_generation.wrapping_add(1).max(1);
             let generation = inner.next_generation;
             inner.entries.entry(key).or_default().insert(
@@ -292,7 +287,7 @@ impl Drop for SocketReconnectOwnerInner {
             return;
         };
         let removed = {
-            let mut inner = registry.lock().unwrap_or_else(PoisonError::into_inner);
+            let mut inner = registry.lock();
             if let Some(owners) = inner.owners.get_mut(&self.client_id) {
                 owners.remove(&self.owner_id);
                 if owners.is_empty() {
@@ -342,7 +337,7 @@ fn remove_entry(
     owner_id: u64,
     generation: Option<u64>,
 ) -> Option<RegistryEntry> {
-    let mut inner = registry.lock().unwrap_or_else(PoisonError::into_inner);
+    let mut inner = registry.lock();
     let mut entry = None;
     let mut remove_endpoint = false;
 
@@ -364,7 +359,7 @@ fn remove_entry(
 
 fn deactivate(entry: Option<RegistryEntry>) {
     if let Some(entry) = entry {
-        *entry.request.lock().unwrap_or_else(PoisonError::into_inner) = None;
+        *entry.request.lock() = None;
     }
 }
 
@@ -400,7 +395,7 @@ impl SocketControlFactory {
     #[must_use]
     pub fn control(&self, endpoint: impl AsRef<str>) -> SocketControl {
         let endpoint = Ustr::from(endpoint.as_ref());
-        let mut controls = self.controls.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut controls = self.controls.lock();
         if let Some(control) = controls.get(&endpoint) {
             return control.clone();
         }
@@ -470,10 +465,7 @@ impl SocketStatePublisher {
     where
         F: Fn(SocketState),
     {
-        let _guard = self
-            .publish_lock
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let _guard = self.publish_lock.lock();
 
         if self.is_current(generation) {
             on_state(state);
@@ -537,22 +529,14 @@ impl SocketControl {
         F: Fn(SocketState) + Send + Sync + 'static,
     {
         let (registration, replaced, generation) = {
-            let _guard = self
-                .publisher
-                .publish_lock
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
+            let _guard = self.publisher.publish_lock.lock();
             let replaced = self
                 .owner
                 .as_ref()
                 .and_then(|owner| owner.remove(self.publisher.endpoint));
             let generation = advance_generation(&self.publisher.active_generation);
             self.generation.store(generation, Ordering::Release);
-            let registration = self
-                .registration
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .take();
+            let registration = self.registration.lock().take();
             (registration, replaced, generation)
         };
         deactivate(replaced);
@@ -570,11 +554,7 @@ impl SocketControl {
         F: Fn() -> ReconnectRequestOutcome + Send + Sync + 'static,
     {
         let (replaced, old_registration) = {
-            let _guard = self
-                .publisher
-                .publish_lock
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
+            let _guard = self.publisher.publish_lock.lock();
             let generation = self.generation.load(Ordering::Acquire);
             if generation == 0 || !self.publisher.is_current(generation) {
                 return;
@@ -584,10 +564,7 @@ impl SocketControl {
             } else {
                 (None, None)
             };
-            let mut current = self
-                .registration
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
+            let mut current = self.registration.lock();
             let old_registration = std::mem::replace(&mut *current, registration);
             (replaced, old_registration)
         };
@@ -598,16 +575,9 @@ impl SocketControl {
     /// Removes the reconnect handle owned by this control generation.
     pub fn deregister(&self) {
         let registration = {
-            let _guard = self
-                .publisher
-                .publish_lock
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
+            let _guard = self.publisher.publish_lock.lock();
             self.generation.store(0, Ordering::Release);
-            self.registration
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .take()
+            self.registration.lock().take()
         };
         drop(registration);
     }
@@ -842,7 +812,6 @@ mod tests {
         let old_generation = registry
             .inner
             .lock()
-            .unwrap_or_else(PoisonError::into_inner)
             .entries
             .get(&key)
             .and_then(|entries| entries.values().next())
@@ -865,7 +834,6 @@ mod tests {
             let old_entry_is_registered = registry
                 .inner
                 .lock()
-                .unwrap_or_else(PoisonError::into_inner)
                 .entries
                 .get(&key)
                 .and_then(|entries| entries.values().next())

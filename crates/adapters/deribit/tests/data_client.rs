@@ -22,7 +22,7 @@ use std::{
     net::SocketAddr,
     path::PathBuf,
     sync::{
-        Arc, Mutex as StdMutex, OnceLock,
+        Arc, OnceLock,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
@@ -73,6 +73,7 @@ use nautilus_model::{
 };
 use nautilus_network::http::HttpClient;
 use nautilus_testkit::events::drain_data_events;
+use parking_lot::Mutex;
 use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
@@ -197,21 +198,17 @@ struct TestServerState {
 
 #[derive(Default)]
 struct CapturingDebugLogger {
-    messages: StdMutex<Vec<String>>,
+    messages: Mutex<Vec<String>>,
 }
 
 impl CapturingDebugLogger {
     fn clear(&self) {
-        self.messages
-            .lock()
-            .expect("log collector mutex poisoned")
-            .clear();
+        self.messages.lock().clear();
     }
 
     fn contains(&self, needle: &str) -> bool {
         self.messages
             .lock()
-            .expect("log collector mutex poisoned")
             .iter()
             .any(|message| message.contains(needle))
     }
@@ -224,10 +221,7 @@ impl Log for CapturingDebugLogger {
 
     fn log(&self, record: &Record<'_>) {
         if self.enabled(record.metadata()) {
-            self.messages
-                .lock()
-                .expect("log collector mutex poisoned")
-                .push(record.args().to_string());
+            self.messages.lock().push(record.args().to_string());
         }
     }
 

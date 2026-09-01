@@ -20,10 +20,9 @@
 //! [`FactoryRegistry`] of extractors keyed by Python class name, then resolves an owned
 //! `Box<dyn Factory>` from an arbitrary Python object at configuration time.
 
-use std::sync::Mutex;
-
 use ahash::AHashMap;
-use nautilus_core::{MUTEX_POISONED, python::to_pynotimplemented_err};
+use nautilus_core::python::to_pynotimplemented_err;
+use parking_lot::Mutex;
 use pyo3::{Py, PyAny, PyResult, Python};
 
 /// Function type for extracting a Python object into a boxed factory.
@@ -56,16 +55,12 @@ impl<T: ?Sized> FactoryRegistry<T> {
     /// # Errors
     ///
     /// Returns an error if a different extractor is already registered for the type name.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     pub fn register(
         &self,
         type_name: String,
         extractor: FactoryExtractor<T>,
     ) -> anyhow::Result<()> {
-        let mut extractors = self.extractors_by_type.lock().expect(MUTEX_POISONED);
+        let mut extractors = self.extractors_by_type.lock();
 
         if let Some(registered) = extractors.get(&type_name) {
             if std::ptr::fn_addr_eq(*registered, extractor) {
@@ -87,16 +82,12 @@ impl<T: ?Sized> FactoryRegistry<T> {
     /// # Errors
     ///
     /// Returns an error if no extractor is registered for the Python type or extraction fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     pub fn extract(&self, py: Python<'_>, factory: Py<PyAny>) -> PyResult<Box<T>> {
         let type_name = factory
             .getattr(py, "__class__")?
             .getattr(py, "__name__")?
             .extract::<String>(py)?;
-        let extractors = self.extractors_by_type.lock().expect(MUTEX_POISONED);
+        let extractors = self.extractors_by_type.lock();
 
         match extractors.get(&type_name) {
             Some(extractor) => extractor(py, factory),

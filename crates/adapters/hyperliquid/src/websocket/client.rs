@@ -16,7 +16,7 @@
 use std::{
     str::FromStr,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, AtomicU8, Ordering},
     },
     time::Duration,
@@ -29,7 +29,7 @@ use dashmap::DashMap;
 use nautilus_common::cache::{InstrumentLookupError, fifo::FifoCacheMap};
 #[cfg(test)]
 use nautilus_common::live::get_runtime;
-use nautilus_core::{AtomicMap, MUTEX_POISONED};
+use nautilus_core::AtomicMap;
 use nautilus_live::{
     SocketControl,
     task::{SharedTaskSlot, TaskJoinOutcome},
@@ -51,6 +51,7 @@ use nautilus_network::{
         channel_message_handler,
     },
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
@@ -1156,34 +1157,17 @@ impl HyperliquidWebSocketClient {
     ///
     /// This writes directly to a shared cache that the handler reads from, avoiding any
     /// race conditions between caching and WebSocket message processing.
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "cloid cache mutex poisoning is not expected"
-    )]
     pub fn cache_cloid_mapping(&self, cloid: Ustr, client_order_id: ClientOrderId) {
         log::debug!("Caching cloid mapping: {cloid} -> {client_order_id}");
-        self.cloid_cache
-            .lock()
-            .expect(MUTEX_POISONED)
-            .insert(cloid, client_order_id);
+        self.cloid_cache.lock().insert(cloid, client_order_id);
     }
 
     /// Removes a cloid mapping from the cache.
     ///
     /// Called on terminal order state. The cache is FIFO-bounded so missed
     /// removals self-evict (see GH-3972 cancel-replace drain).
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "cloid cache mutex poisoning is not expected"
-    )]
     pub fn remove_cloid_mapping(&self, cloid: &Ustr) {
-        if self
-            .cloid_cache
-            .lock()
-            .expect(MUTEX_POISONED)
-            .remove(cloid)
-            .is_some()
-        {
+        if self.cloid_cache.lock().remove(cloid).is_some() {
             log::debug!("Removed cloid mapping: {cloid}");
         }
     }
@@ -1191,12 +1175,8 @@ impl HyperliquidWebSocketClient {
     /// Clears all cloid mappings from the cache.
     ///
     /// Useful for cleanup during reconnection or shutdown.
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "cloid cache mutex poisoning is not expected"
-    )]
     pub fn clear_cloid_cache(&self) {
-        let mut cache = self.cloid_cache.lock().expect(MUTEX_POISONED);
+        let mut cache = self.cloid_cache.lock();
         let count = cache.len();
         cache.clear();
 
@@ -1207,28 +1187,16 @@ impl HyperliquidWebSocketClient {
 
     /// Returns the number of cloid mappings in the cache.
     #[must_use]
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "cloid cache mutex poisoning is not expected"
-    )]
     pub fn cloid_cache_len(&self) -> usize {
-        self.cloid_cache.lock().expect(MUTEX_POISONED).len()
+        self.cloid_cache.lock().len()
     }
 
     /// Looks up a client_order_id by its venue CLOID.
     ///
     /// Returns `Some(ClientOrderId)` if the mapping exists, `None` otherwise.
     #[must_use]
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "cloid cache mutex poisoning is not expected"
-    )]
     pub fn get_cloid_mapping(&self, cloid: &Ustr) -> Option<ClientOrderId> {
-        self.cloid_cache
-            .lock()
-            .expect(MUTEX_POISONED)
-            .get(cloid)
-            .copied()
+        self.cloid_cache.lock().get(cloid).copied()
     }
 
     /// Gets an instrument from the cache by ID.
@@ -1486,7 +1454,7 @@ impl HyperliquidWebSocketClient {
 
         // Keep registry mutations and their handler commands ordered across
         // concurrent generic/custom subscriptions for the same coin.
-        let _trade_stream_guard = self.trade_stream_lock.lock().expect(MUTEX_POISONED);
+        let _trade_stream_guard = self.trade_stream_lock.lock();
         let registration = self.trade_streams.register(coin, stream_use);
         cmd_tx
             .send(HandlerCommand::UpdateTradeSubs {
@@ -1891,7 +1859,7 @@ impl HyperliquidWebSocketClient {
         let cmd_tx = self.cmd_tx.read().await;
         // Keep registry mutations and their handler commands ordered across
         // concurrent generic/custom unsubscriptions for the same coin.
-        let _trade_stream_guard = self.trade_stream_lock.lock().expect(MUTEX_POISONED);
+        let _trade_stream_guard = self.trade_stream_lock.lock();
         let release = self.trade_streams.release(&coin, stream_use);
         cmd_tx
             .send(HandlerCommand::UpdateTradeSubs {

@@ -15,14 +15,11 @@
 
 //! Functions translating raw OKX WebSocket frames into Nautilus data types.
 
-use std::{
-    str::FromStr,
-    sync::{LazyLock, Mutex},
-};
+use std::{str::FromStr, sync::LazyLock};
 
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
-use nautilus_core::{MUTEX_POISONED, UUID4, nanos::UnixNanos};
+use nautilus_core::{UUID4, nanos::UnixNanos};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, Data, FundingRateUpdate, IndexPriceUpdate,
@@ -41,6 +38,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport},
     types::{Money, Price, Quantity},
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
@@ -502,7 +500,7 @@ fn log_unknown_cancel_source_inner(
     }
 
     let key = format!("{source}|{reason}");
-    let mut seen = seen.lock().expect(MUTEX_POISONED);
+    let mut seen = seen.lock();
 
     if seen.len() >= max_tracked {
         return false;
@@ -6221,7 +6219,7 @@ mod tests {
 
         let seen = fresh_cancel_source_seen();
         assert!(log_unknown_cancel_source_inner(&msg, &seen, 8));
-        assert_eq!(seen.lock().expect(MUTEX_POISONED).len(), 1);
+        assert_eq!(seen.lock().len(), 1);
     }
 
     #[rstest]
@@ -6234,7 +6232,7 @@ mod tests {
         let seen = fresh_cancel_source_seen();
         assert!(log_unknown_cancel_source_inner(&msg, &seen, 8));
         assert!(!log_unknown_cancel_source_inner(&msg, &seen, 8));
-        assert_eq!(seen.lock().expect(MUTEX_POISONED).len(), 1);
+        assert_eq!(seen.lock().len(), 1);
     }
 
     #[rstest]
@@ -6249,7 +6247,7 @@ mod tests {
 
         let seen = fresh_cancel_source_seen();
         assert!(!log_unknown_cancel_source_inner(&msg, &seen, 8));
-        assert!(seen.lock().expect(MUTEX_POISONED).is_empty());
+        assert!(seen.lock().is_empty());
     }
 
     #[rstest]
@@ -6258,7 +6256,7 @@ mod tests {
             create_order_msg_for_event_test(OKXOrderStatus::Canceled, "test", "123", "100", "1");
         let seen = fresh_cancel_source_seen();
         assert!(!log_unknown_cancel_source_inner(&msg, &seen, 8));
-        assert!(seen.lock().expect(MUTEX_POISONED).is_empty());
+        assert!(seen.lock().is_empty());
     }
 
     #[rstest]
@@ -6282,7 +6280,7 @@ mod tests {
             create_order_msg_for_event_test(OKXOrderStatus::Canceled, "test", "123", "100", "1");
         overflow.cancel_source = Some("novel_overflow".to_string());
         assert!(!log_unknown_cancel_source_inner(&overflow, &seen, cap));
-        assert_eq!(seen.lock().expect(MUTEX_POISONED).len(), cap);
+        assert_eq!(seen.lock().len(), cap);
     }
 
     // Regression test: PartiallyFilled order with price change should emit Updated, not StatusOnly

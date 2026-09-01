@@ -18,7 +18,7 @@
 use std::{
     str::FromStr,
     sync::{
-        Arc, RwLock,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -44,7 +44,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, MUTEX_POISONED, Params,
+    AtomicMap, Params,
     datetime::datetime_to_unix_nanos,
     nanos::UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
@@ -63,6 +63,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
 };
+use parking_lot::RwLock;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -792,7 +793,7 @@ impl BinanceSpotDataClient {
         command_spawner: &TaskSpawner,
     ) {
         let epoch = {
-            let mut guard = book_epoch.write().expect(MUTEX_POISONED);
+            let mut guard = book_epoch.write();
             *guard = guard.wrapping_add(1);
             *guard
         };
@@ -2008,7 +2009,7 @@ impl DataClient for BinanceSpotDataClient {
 
                 // Bump epoch to invalidate any in-flight snapshot from a prior subscription
                 let epoch = {
-                    let mut guard = self.book_epoch.write().expect(MUTEX_POISONED);
+                    let mut guard = self.book_epoch.write();
                     *guard = guard.wrapping_add(1);
                     *guard
                 };
@@ -2617,10 +2618,7 @@ impl BinanceSpotDataClient {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        sync::{Arc, RwLock},
-        time::Duration,
-    };
+    use std::{sync::Arc, time::Duration};
 
     use nautilus_common::messages::DataEvent;
     use nautilus_core::{AtomicMap, nanos::UnixNanos, time::AtomicTime};
@@ -2632,6 +2630,7 @@ mod tests {
         instruments::{Instrument, InstrumentAny, stubs::currency_pair_btcusdt},
         types::{Price, Quantity},
     };
+    use parking_lot::RwLock;
     use rstest::rstest;
     use rust_decimal_macros::dec;
     use ustr::Ustr;

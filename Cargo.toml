@@ -287,6 +287,7 @@ sysinfo = { version = "0.39.6", default-features = false, features = [
 tabled = { version = "0.21.0", default-features = false, features = ["std"] }
 thiserror = "2.0.20"
 tokio = { version = "1.53.1", default-features = false, features = [
+  "parking_lot",
   "rt-multi-thread",
   "sync",
   "fs",

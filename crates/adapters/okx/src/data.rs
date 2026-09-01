@@ -124,7 +124,7 @@ pub struct OKXDataClient {
     // `Mutex<AHashMap>` so the spawned subscribe task can roll back the
     // refcount on failure. A bare `AHashMap` would leave the count
     // permanently incremented and wedge future Greeks subscribes.
-    option_summary_family_subs: Arc<std::sync::Mutex<AHashMap<Ustr, usize>>>,
+    option_summary_family_subs: Arc<parking_lot::Mutex<AHashMap<Ustr, usize>>>,
     clock: &'static AtomicTime,
 }
 
@@ -228,7 +228,7 @@ impl OKXDataClient {
             book_sync: BookSyncTracker::default(),
             index_ticker_map: Arc::new(AtomicMap::new()),
             option_greeks_subs: Arc::new(AtomicMap::new()),
-            option_summary_family_subs: Arc::new(std::sync::Mutex::new(AHashMap::new())),
+            option_summary_family_subs: Arc::new(parking_lot::Mutex::new(AHashMap::new())),
             clock,
         })
     }
@@ -667,10 +667,7 @@ impl OKXDataClient {
                 let ts_init = clock.get_time_ns();
                 // Hold the instrument lock for the batch so a concurrent
                 // reconciliation cannot interleave diff, cache update, and publish
-                let _update_guard = instrument_update_lock
-                    .mutex
-                    .lock()
-                    .expect("instrument update lock poisoned");
+                let _update_guard = instrument_update_lock.mutex.lock();
 
                 for okx_inst in okx_instruments {
                     let inst_key = okx_inst.inst_id;
@@ -1141,10 +1138,7 @@ impl OKXDataClient {
         self.book_sync.clear();
         self.option_greeks_subs
             .store(AHashMap::<InstrumentId, AHashSet<OKXGreeksType>>::new());
-        self.option_summary_family_subs
-            .lock()
-            .expect("option_summary_family_subs mutex poisoned")
-            .clear();
+        self.option_summary_family_subs.lock().clear();
         self.is_connected.store(false, Ordering::Release);
 
         let mut errors = Vec::new();
@@ -1226,7 +1220,7 @@ fn handle_book_sequence_outcome(
 /// detect a write that raced its fetch and skip publishing a stale snapshot.
 #[derive(Debug, Default)]
 struct InstrumentUpdateLock {
-    mutex: std::sync::Mutex<()>,
+    mutex: parking_lot::Mutex<()>,
     write_seq: AtomicU64,
 }
 
@@ -1630,10 +1624,7 @@ async fn reconcile_instruments(
 
     // Hold the instrument lock from the diff through publication so a concurrent
     // instruments channel update cannot interleave with this pass
-    let _update_guard = instrument_update_lock
-        .mutex
-        .lock()
-        .expect("instrument update lock poisoned");
+    let _update_guard = instrument_update_lock.mutex.lock();
 
     // A write during the fetch means the snapshot is stale relative to the
     // instrument cache; skip publishing it and let the next pass reconcile fully
@@ -1714,10 +1705,7 @@ impl DataClient for OKXDataClient {
         self.book_sync.clear();
         self.option_greeks_subs
             .store(AHashMap::<InstrumentId, AHashSet<OKXGreeksType>>::new());
-        self.option_summary_family_subs
-            .lock()
-            .expect("option_summary_family_subs mutex poisoned")
-            .clear();
+        self.option_summary_family_subs.lock().clear();
         Ok(())
     }
 
@@ -2052,10 +2040,7 @@ impl DataClient for OKXDataClient {
 
         let family = extract_inst_family(instrument_id.symbol.inner().as_str())?;
         let is_first = {
-            let mut family_subs = self
-                .option_summary_family_subs
-                .lock()
-                .expect("option_summary_family_subs mutex poisoned");
+            let mut family_subs = self.option_summary_family_subs.lock();
             let count = family_subs.entry(family).or_default();
             *count += 1;
             *count == 1
@@ -2074,9 +2059,7 @@ impl DataClient for OKXDataClient {
                     if result.is_err() {
                         // Roll back the refcount so a retry can re-arm the subscribe;
                         // otherwise the family wedges and Greeks stay dark.
-                        let mut subs = family_subs
-                            .lock()
-                            .expect("option_summary_family_subs mutex poisoned");
+                        let mut subs = family_subs.lock();
 
                         if let Some(count) = subs.get_mut(&family) {
                             *count = count.saturating_sub(1);
@@ -2330,10 +2313,7 @@ impl DataClient for OKXDataClient {
 
         let family = extract_inst_family(instrument_id.symbol.inner().as_str())?;
         let should_unsubscribe = {
-            let mut family_subs = self
-                .option_summary_family_subs
-                .lock()
-                .expect("option_summary_family_subs mutex poisoned");
+            let mut family_subs = self.option_summary_family_subs.lock();
 
             if let Some(count) = family_subs.get_mut(&family) {
                 *count = count.saturating_sub(1);
@@ -2486,8 +2466,7 @@ impl DataClient for OKXDataClient {
             {
                 let _update_guard = update_lock
                     .mutex
-                    .lock()
-                    .expect("instrument update lock poisoned");
+                    .lock();
 
                 if update_lock.write_seq.load(Ordering::SeqCst) == seq_before {
                     cache_instrument_updates(
@@ -2582,8 +2561,7 @@ impl DataClient for OKXDataClient {
                     {
                         let _update_guard = update_lock
                             .mutex
-                            .lock()
-                            .expect("instrument update lock poisoned");
+                            .lock();
 
                         if update_lock.write_seq.load(Ordering::SeqCst) == seq_before {
                             cache_instrument_updates(
@@ -4552,10 +4530,7 @@ mod tests {
             .expect("parse")
             .expect("instrument");
         {
-            let _guard = update_lock
-                .mutex
-                .lock()
-                .expect("instrument update lock poisoned");
+            let _guard = update_lock.mutex.lock();
             publish_instrument_updates(
                 std::slice::from_ref(&v2),
                 &instruments_by_symbol,

@@ -19,7 +19,7 @@ use std::{
     net::SocketAddr,
     path::PathBuf,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
@@ -55,6 +55,7 @@ use nautilus_model::{
     types::{Currency, Price, Quantity},
 };
 use nautilus_network::websocket::{AuthTracker, SubscriptionState, TransportBackend};
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 

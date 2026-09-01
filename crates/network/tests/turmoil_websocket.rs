@@ -22,7 +22,7 @@
 
 use std::{
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
@@ -38,6 +38,7 @@ use nautilus_network::{
         channel_epoch_message_handler, channel_message_handler,
     },
 };
+use parking_lot::Mutex;
 use rstest::{fixture, rstest};
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use turmoil::net;
@@ -284,10 +285,7 @@ async fn ws_drop_each_connection_timed_server(
     loop {
         let (stream, _) = listener.accept().await?;
         let mut websocket = accept_async(stream).await?;
-        accept_times
-            .lock()
-            .expect("mutex poisoned")
-            .push(tokio::time::Instant::now());
+        accept_times.lock().push(tokio::time::Instant::now());
         let _ = websocket.close(None).await;
     }
 }
@@ -695,7 +693,7 @@ fn test_turmoil_websocket_reconnect_storm_attempts_are_floored(
 
     sim.run().unwrap();
 
-    let times = accept_times.lock().expect("mutex poisoned");
+    let times = accept_times.lock();
     assert!(
         times.len() >= 5,
         "Expected the initial connection and several reconnects, was {}",

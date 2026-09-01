@@ -68,10 +68,6 @@ impl MessageBusFactoryRegistry {
     /// # Errors
     ///
     /// Returns an error if a different extractor is already registered for the type name.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     pub fn register(
         &self,
         type_name: String,
@@ -86,10 +82,6 @@ impl MessageBusFactoryRegistry {
     /// # Errors
     ///
     /// Returns an error if no extractor is registered for the Python type or extraction fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     pub fn extract(
         &self,
         py: Python<'_>,

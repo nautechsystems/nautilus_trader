@@ -18,7 +18,7 @@ use std::{
     fmt::Debug,
     ops::RangeInclusive,
     str::FromStr,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -67,6 +67,7 @@ use nautilus_model::{
         AccountBalance, Currency, MarginBalance, Money, Price, Quantity, fixed::FIXED_PRECISION,
     },
 };
+use parking_lot::Mutex;
 use zeroize::Zeroizing;
 
 use crate::{
@@ -261,7 +262,7 @@ fn in_flight_limit_error(slot: &InFlightSlot) -> anyhow::Error {
 /// Aborted or failed preparation can leave a claim behind; because no signed transaction
 /// exists for a preparing slot, releasing it cannot strand a broadcastable signature.
 fn release_preparing_slot(in_flight: &Mutex<Option<InFlightSlot>>) {
-    let mut slot = in_flight.lock().expect("in-flight mutex poisoned");
+    let mut slot = in_flight.lock();
     if matches!(*slot, Some(InFlightSlot::Preparing(_))) {
         *slot = None;
     }
@@ -696,10 +697,7 @@ impl BlockchainExecutionClient {
             get_atomic_clock_realtime().get_time_ns(),
             None,
         )?;
-        *self
-            .wallet_balance
-            .lock()
-            .expect("wallet balance mutex poisoned") = wallet_balance;
+        *self.wallet_balance.lock() = wallet_balance;
         Ok(())
     }
 
@@ -707,12 +705,7 @@ impl BlockchainExecutionClient {
         &mut self,
     ) -> anyhow::Result<(WalletBalance, Vec<AccountBalance>)> {
         let native_currency_balance = self.fetch_native_currency_balance().await?;
-        let token_universe = self
-            .wallet_balance
-            .lock()
-            .expect("wallet balance mutex poisoned")
-            .token_universe
-            .clone();
+        let token_universe = self.wallet_balance.lock().token_universe.clone();
         let mut token_addresses = token_universe.iter().copied().collect::<Vec<_>>();
         token_addresses.sort_unstable();
 
@@ -1348,12 +1341,11 @@ impl BlockchainExecutionClient {
         let nonce = intent
             .nonce
             .ok_or_else(|| anyhow::anyhow!("Active execution intent {} has no nonce", intent.id))?;
-        *self.in_flight.lock().expect("in-flight mutex poisoned") =
-            Some(InFlightSlot::Recovering(RecoveryTransaction {
-                intent_id: intent.id,
-                nonce,
-                purpose,
-            }));
+        *self.in_flight.lock() = Some(InFlightSlot::Recovering(RecoveryTransaction {
+            intent_id: intent.id,
+            nonce,
+            purpose,
+        }));
         let hashes = database.get_execution_transaction_hashes(intent.id).await?;
         let current = current_execution_hash(intent.id, &hashes)?;
         let tx_hash = B256::from_str(&current.transaction_hash).with_context(|| {
@@ -1450,13 +1442,12 @@ impl BlockchainExecutionClient {
             );
         }
 
-        *self.in_flight.lock().expect("in-flight mutex poisoned") =
-            Some(InFlightSlot::AwaitingFinality(InFlightTransaction {
-                intent_id: intent.id,
-                nonce,
-                tx_hash,
-                purpose,
-            }));
+        *self.in_flight.lock() = Some(InFlightSlot::AwaitingFinality(InFlightTransaction {
+            intent_id: intent.id,
+            nonce,
+            tx_hash,
+            purpose,
+        }));
 
         let plan = if purpose == TransactionPurpose::Swap {
             Some(self.restore_swap_plan(&intent)?)
@@ -1516,7 +1507,7 @@ impl BlockchainExecutionClient {
                     };
                     prepared.tx_hash = replacement_hash;
                     prepared.raw_tx = replacement_payload;
-                    *self.in_flight.lock().expect("in-flight mutex poisoned") =
+                    *self.in_flight.lock() =
                         Some(InFlightSlot::AwaitingFinality(InFlightTransaction {
                             intent_id: intent.id,
                             nonce,
@@ -1704,7 +1695,7 @@ impl BlockchainExecutionClient {
         }
 
         {
-            let slot = self.in_flight.lock().expect("in-flight mutex poisoned");
+            let slot = self.in_flight.lock();
             if let Some(in_flight) = *slot {
                 return Err(in_flight_limit_error(&in_flight));
             }
@@ -2233,7 +2224,7 @@ impl TransactionExecutor {
     /// Claims the single in-flight slot before any preparation RPC call, so the `pending`
     /// nonce read stays authoritative: a second transaction is rejected before it can sign.
     fn claim_slot(&self, purpose: TransactionPurpose) -> anyhow::Result<()> {
-        let mut slot = self.in_flight.lock().expect("in-flight mutex poisoned");
+        let mut slot = self.in_flight.lock();
         if let Some(in_flight) = *slot {
             return Err(in_flight_limit_error(&in_flight));
         }
@@ -2802,7 +2793,7 @@ impl TransactionExecutor {
         purpose: TransactionPurpose,
     ) -> anyhow::Result<()> {
         {
-            let mut slot = self.in_flight.lock().expect("in-flight mutex poisoned");
+            let mut slot = self.in_flight.lock();
             *slot = Some(InFlightSlot::AwaitingFinality(InFlightTransaction {
                 intent_id: prepared.intent_id,
                 nonce: prepared.nonce,
@@ -3588,7 +3579,7 @@ impl TransactionExecutor {
     }
 
     fn release_slot(&self) {
-        *self.in_flight.lock().expect("in-flight mutex poisoned") = None;
+        *self.in_flight.lock() = None;
     }
 }
 
@@ -4662,10 +4653,7 @@ async fn complete_finalized_swap(
         }
     }
 
-    *executor
-        .wallet_balance
-        .lock()
-        .expect("wallet balance mutex poisoned") = wallet.wallet_balance;
+    *executor.wallet_balance.lock() = wallet.wallet_balance;
     emitter.try_emit_account_state(
         wallet.balances,
         vec![],
@@ -4892,12 +4880,7 @@ async fn load_verified_wallet_after_fill(
     included: &IncludedTransaction,
     executor: &TransactionExecutor,
 ) -> anyhow::Result<VerifiedWalletRefresh> {
-    let mut token_universe = executor
-        .wallet_balance
-        .lock()
-        .expect("wallet balance mutex poisoned")
-        .token_universe
-        .clone();
+    let mut token_universe = executor.wallet_balance.lock().token_universe.clone();
     token_universe.insert(plan.pool.token0.address);
     token_universe.insert(plan.pool.token1.address);
 
@@ -5837,11 +5820,7 @@ impl ExecutionClient for BlockchainExecutionClient {
         );
         anyhow::ensure!(self.core.is_started(), "Execution client is not started");
 
-        let balances = self
-            .wallet_balance
-            .lock()
-            .expect("wallet balance mutex poisoned")
-            .as_account_balances()?;
+        let balances = self.wallet_balance.lock().as_account_balances()?;
         self.generate_account_state(
             balances,
             vec![],
@@ -7311,7 +7290,7 @@ mod tests {
 
     /// Extracts the transaction awaiting finality in the in-flight slot.
     fn awaiting_in_flight(client: &BlockchainExecutionClient) -> InFlightTransaction {
-        let slot = *client.in_flight.lock().unwrap();
+        let slot = *client.in_flight.lock();
         let Some(InFlightSlot::AwaitingFinality(in_flight)) = slot else {
             panic!("expected an awaiting-finality transaction, was {slot:?}");
         };
@@ -7319,7 +7298,7 @@ mod tests {
     }
 
     fn recovering_in_flight(client: &BlockchainExecutionClient) -> RecoveryTransaction {
-        let slot = *client.in_flight.lock().unwrap();
+        let slot = *client.in_flight.lock();
         let Some(InFlightSlot::Recovering(recovery)) = slot else {
             panic!("expected a recovery transaction, was {slot:?}");
         };
@@ -9542,13 +9521,12 @@ mod tests {
     async fn submit_order_denies_when_transaction_in_flight() {
         let (mut client, _) = swap_client_with_cache(test_config("http://127.0.0.1:1".to_string()));
         client.core.set_connected();
-        *client.in_flight.lock().unwrap() =
-            Some(InFlightSlot::AwaitingFinality(InFlightTransaction {
-                intent_id: 1,
-                nonce: 7,
-                tx_hash: B256::ZERO,
-                purpose: TransactionPurpose::Wrap,
-            }));
+        *client.in_flight.lock() = Some(InFlightSlot::AwaitingFinality(InFlightTransaction {
+            intent_id: 1,
+            nonce: 7,
+            tx_hash: B256::ZERO,
+            purpose: TransactionPurpose::Wrap,
+        }));
         let order = test_market_sell_order(test_pool().instrument_id);
         let mut receiver = start_with_events(&mut client);
 
@@ -9639,7 +9617,7 @@ mod tests {
             record.client_order_id.as_deref(),
             Some(order.client_order_id().as_str())
         );
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
         let nonce_state = sqlx::query_as::<_, (i64, i64)>(sqlx::AssertSqlSafe(format!(
             "SELECT next_canonical_nonce, revision FROM {schema}.execution_verification_nonce"
         )))
@@ -9852,7 +9830,7 @@ mod tests {
                 .iter()
                 .all(|request| { request["method"] != "eth_sendRawTransaction" })
         );
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -9960,7 +9938,7 @@ mod tests {
                 .iter()
                 .all(|request| { request["method"] != "eth_sendRawTransaction" })
         );
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -10021,7 +9999,7 @@ mod tests {
                 .all(|request| { request["method"] != "eth_sendRawTransaction" })
         );
         assert!(matches!(
-            *client.in_flight.lock().unwrap(),
+            *client.in_flight.lock(),
             Some(InFlightSlot::Preparing(TransactionPurpose::Swap))
         ));
 
@@ -10130,12 +10108,7 @@ mod tests {
         assert!(account_state.is_reported);
         assert_eq!(
             account_state.balances,
-            client
-                .wallet_balance
-                .lock()
-                .unwrap()
-                .as_account_balances()
-                .unwrap()
+            client.wallet_balance.lock().as_account_balances().unwrap()
         );
 
         let (fill_emitted, active): (bool, bool) = sqlx::query_as(sqlx::AssertSqlSafe(format!(
@@ -10622,7 +10595,7 @@ mod tests {
                 || error.to_string().contains("is not a BUY output"),
             "was: {error}"
         );
-        assert!(client.in_flight.lock().unwrap().is_some());
+        assert!(client.in_flight.lock().is_some());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -10728,7 +10701,7 @@ mod tests {
         assert_eq!(status, "broadcast");
         assert!(!terminal_emitted);
         assert!(active);
-        assert!(client.in_flight.lock().unwrap().is_some());
+        assert!(client.in_flight.lock().is_some());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -10788,7 +10761,7 @@ mod tests {
         assert_eq!(status, "broadcast");
         assert!(!fill_emitted);
         assert!(active);
-        assert!(client.in_flight.lock().unwrap().is_some());
+        assert!(client.in_flight.lock().is_some());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -11011,7 +10984,7 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(row_count, 0);
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -11090,7 +11063,7 @@ mod tests {
         .unwrap();
         assert_eq!(row_count, 1);
         assert_eq!(status.as_deref(), Some("recoverable"));
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -11212,7 +11185,7 @@ mod tests {
                 .all(|request| request["method"] != "eth_sendRawTransaction"),
             "no broadcast may follow a pre-trade denial"
         );
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -11248,7 +11221,7 @@ mod tests {
             client_order_id.as_deref(),
             Some(order.client_order_id().as_str())
         );
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -11284,7 +11257,7 @@ mod tests {
             client_order_id.as_deref(),
             Some(order.client_order_id().as_str())
         );
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -11340,7 +11313,7 @@ mod tests {
             record.client_order_id.as_deref(),
             Some(order.client_order_id().as_str())
         );
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -11380,7 +11353,7 @@ mod tests {
             .unwrap();
         assert_eq!(record.purpose, "swap");
         assert_eq!(record.status, "finalized");
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -11418,7 +11391,7 @@ mod tests {
             .unwrap();
         assert_eq!(record.purpose, "swap");
         assert_eq!(record.status, "finalized");
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -11567,7 +11540,7 @@ mod tests {
             .filter(|request| request["method"] == "eth_sendRawTransaction")
             .count();
         assert_eq!(broadcasts, 0);
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -11632,7 +11605,7 @@ mod tests {
         assert_eq!(denied_commit, 1, "was: {events:?}");
         assert_eq!(denied_in_flight, 1, "was: {events:?}");
         assert!(matches!(
-            *client.in_flight.lock().unwrap(),
+            *client.in_flight.lock(),
             Some(InFlightSlot::Preparing(TransactionPurpose::Swap))
         ));
         assert_eq!(intent_count, 0);
@@ -13095,7 +13068,7 @@ mod tests {
                 .all(|request| request["method"] != "eth_sendRawTransaction"),
             "no broadcast may follow a chain mismatch"
         );
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -13146,7 +13119,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(record.status, "dropped");
-        assert!(client.in_flight.lock().unwrap().is_some());
+        assert!(client.in_flight.lock().is_some());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -13183,7 +13156,7 @@ mod tests {
             "was: {error}"
         );
         assert_eq!(transitions, ["prepared", "signed", "broadcast", "dropped"]);
-        assert!(client.in_flight.lock().unwrap().is_some());
+        assert!(client.in_flight.lock().is_some());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -13253,7 +13226,7 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(row_count, 1);
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -13730,13 +13703,12 @@ mod tests {
     async fn in_flight_guard_rejects_second_transaction() {
         let (mut client, _) = client_with_mock_rpc(ready_rpc_state()).await;
         client.core.set_connected();
-        *client.in_flight.lock().unwrap() =
-            Some(InFlightSlot::AwaitingFinality(InFlightTransaction {
-                intent_id: 1,
-                nonce: 7,
-                tx_hash: B256::ZERO,
-                purpose: TransactionPurpose::Wrap,
-            }));
+        *client.in_flight.lock() = Some(InFlightSlot::AwaitingFinality(InFlightTransaction {
+            intent_id: 1,
+            nonce: 7,
+            tx_hash: B256::ZERO,
+            purpose: TransactionPurpose::Wrap,
+        }));
 
         let error = client.wrap(U256::from(1_000u64)).await.unwrap_err();
 
@@ -13778,7 +13750,7 @@ mod tests {
                 .contains("pre-sign deployment manifest verification disagreed"),
             "was: {error}"
         );
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
         let requests = state.recorded_requests();
         assert_eq!(
             requests
@@ -13816,7 +13788,7 @@ mod tests {
                 .contains("pre-sign wrapped token probe verification is unavailable"),
             "was: {error}"
         );
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
         let requests = state.recorded_requests();
         assert!(
             requests
@@ -13955,7 +13927,7 @@ mod tests {
             .unwrap_err();
 
         assert!(error.to_string().contains("returned false"), "was: {error}");
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
         let requests = state.recorded_requests();
         let approval_calls = requests
             .iter()
@@ -14189,7 +14161,7 @@ mod tests {
             .unwrap();
         assert_eq!(record.purpose, "approve");
         assert_eq!(record.status, "finalized");
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
         assert_eq!(
             execution_intent_markers(&admin_pool, &schema).await,
             vec![("approve".into(), "finalized".into(), true, false)]
@@ -14330,12 +14302,7 @@ mod tests {
         client.start().unwrap();
 
         client.refresh_wallet_balances().await.unwrap();
-        let balances = client
-            .wallet_balance
-            .lock()
-            .unwrap()
-            .as_account_balances()
-            .unwrap();
+        let balances = client.wallet_balance.lock().as_account_balances().unwrap();
 
         assert_eq!(balances.len(), 3);
         assert_eq!(balances[0].currency.code.as_str(), "ETH");
@@ -14358,18 +14325,10 @@ mod tests {
         assert_eq!(balances[2].locked, Money::zero(balances[2].currency));
 
         client.refresh_wallet_balances().await.unwrap();
-        let balances = client
-            .wallet_balance
-            .lock()
-            .unwrap()
-            .as_account_balances()
-            .unwrap();
+        let balances = client.wallet_balance.lock().as_account_balances().unwrap();
 
         assert_eq!(balances.len(), 3);
-        assert_eq!(
-            client.wallet_balance.lock().unwrap().token_balances.len(),
-            2
-        );
+        assert_eq!(client.wallet_balance.lock().token_balances.len(), 2);
         assert_eq!(balances[0].total.raw, 0);
         assert_eq!(balances[1].total.raw, 2_000_000_000_000_000_000);
         assert_eq!(balances[2].total.raw, 12_345_670_000_000_000);
@@ -14395,12 +14354,7 @@ mod tests {
         replace_exec_event_sender(sender);
         client.start().unwrap();
         client.refresh_wallet_balances().await.unwrap();
-        let retained = client
-            .wallet_balance
-            .lock()
-            .unwrap()
-            .as_account_balances()
-            .unwrap();
+        let retained = client.wallet_balance.lock().as_account_balances().unwrap();
         receiver.try_recv().unwrap();
         // SAFETY: this variable name is unique to this test across the test binary
         unsafe { std::env::set_var("BLOCKCHAIN_TEST_BALANCE_ATOMIC", TEST_PRIVATE_KEY) };
@@ -14417,12 +14371,7 @@ mod tests {
         assert!(!client.is_connected());
         assert!(client.signer.is_none());
         assert_eq!(
-            client
-                .wallet_balance
-                .lock()
-                .unwrap()
-                .as_account_balances()
-                .unwrap(),
+            client.wallet_balance.lock().as_account_balances().unwrap(),
             retained
         );
         assert!(matches!(
@@ -14451,12 +14400,7 @@ mod tests {
         replace_exec_event_sender(sender);
         client.start().unwrap();
         client.refresh_wallet_balances().await.unwrap();
-        let retained = client
-            .wallet_balance
-            .lock()
-            .unwrap()
-            .as_account_balances()
-            .unwrap();
+        let retained = client.wallet_balance.lock().as_account_balances().unwrap();
         receiver.try_recv().unwrap();
         drop(receiver);
         // SAFETY: this variable name is unique to this test across the test binary
@@ -14471,12 +14415,7 @@ mod tests {
         assert!(!client.is_connected());
         assert!(client.signer.is_none());
         assert_eq!(
-            client
-                .wallet_balance
-                .lock()
-                .unwrap()
-                .as_account_balances()
-                .unwrap(),
+            client.wallet_balance.lock().as_account_balances().unwrap(),
             retained
         );
     }
@@ -14795,7 +14734,7 @@ mod tests {
         client.start().unwrap();
         // SAFETY: this variable name is unique to this test across the test binary
         unsafe { std::env::set_var("BLOCKCHAIN_TEST_RECONNECT_CLAIM", TEST_PRIVATE_KEY) };
-        *client.in_flight.lock().unwrap() = Some(InFlightSlot::Preparing(TransactionPurpose::Swap));
+        *client.in_flight.lock() = Some(InFlightSlot::Preparing(TransactionPurpose::Swap));
         client
             .pending_tasks
             .spawn(async {})
@@ -14803,7 +14742,7 @@ mod tests {
 
         client.connect().await.unwrap();
 
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
     }
 
     #[allow(unsafe_code)] // env-var mutation in tests; unique var names avoid cross-test races
@@ -14826,7 +14765,7 @@ mod tests {
         let order = test_market_sell_order(test_pool().instrument_id);
         client.submit_order(submit_order_cmd(&order)).unwrap();
         await_recorded_requests(&state, "eth_getBlockByNumber", 1).await;
-        assert!(client.in_flight.lock().unwrap().is_some());
+        assert!(client.in_flight.lock().is_some());
 
         client.disconnect().await.unwrap();
         let ready_addr = start_mock_rpc_server(ready_rpc_state()).await;
@@ -14835,7 +14774,7 @@ mod tests {
         client.verification = ready.verification;
         client.connect().await.unwrap();
 
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -14959,10 +14898,7 @@ mod tests {
                     () = tokio::time::sleep(Duration::from_millis(1)) => {}
                 }
 
-                if matches!(
-                    *in_flight.lock().unwrap(),
-                    Some(InFlightSlot::AwaitingFinality(_))
-                ) {
+                if matches!(*in_flight.lock(), Some(InFlightSlot::AwaitingFinality(_))) {
                     break;
                 }
             }
@@ -14972,7 +14908,7 @@ mod tests {
         drop(wrap);
         lock_transaction.rollback().await.unwrap();
 
-        let slot = *client.in_flight.lock().unwrap();
+        let slot = *client.in_flight.lock();
         let second_error = client
             .wrap(U256::from(2_000_000_000_000_000u64))
             .await
@@ -15039,7 +14975,7 @@ mod tests {
             "Execution intent reservation failed before commit"
         );
         assert_eq!(broadcasts, 0);
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -15058,7 +14994,7 @@ mod tests {
             .wrap(U256::from(1_000_000_000_000_000u64))
             .await
             .unwrap_err();
-        let slot = *client.in_flight.lock().unwrap();
+        let slot = *client.in_flight.lock();
         let second_error = client
             .wrap(U256::from(2_000_000_000_000_000u64))
             .await
@@ -15298,7 +15234,7 @@ mod tests {
             error.to_string().contains("Timed out awaiting finality"),
             "was: {error}"
         );
-        assert!(client.in_flight.lock().unwrap().is_some());
+        assert!(client.in_flight.lock().is_some());
         assert_eq!(purpose, "wrap");
         assert_eq!(status, "dropped");
         assert_eq!(broadcasts, 1);
@@ -15529,7 +15465,7 @@ mod tests {
             .unwrap();
         let requests = restart_state.recorded_requests();
         assert_eq!(record.status, "finalized");
-        assert!(restarted.in_flight.lock().unwrap().is_none());
+        assert!(restarted.in_flight.lock().is_none());
         assert_eq!(
             requests
                 .iter()
@@ -16016,7 +15952,7 @@ mod tests {
         };
         let database = client.cache.database.as_ref().unwrap();
         let intent = reserve_test_wrap_intent(database).await;
-        *client.in_flight.lock().unwrap() = Some(InFlightSlot::Preparing(TransactionPurpose::Wrap));
+        *client.in_flight.lock() = Some(InFlightSlot::Preparing(TransactionPurpose::Wrap));
 
         client.reconcile_unresolved_execution().await.unwrap();
 
@@ -16037,7 +15973,7 @@ mod tests {
         assert_eq!(status, "recoverable");
         assert!(!active);
         assert_eq!(transitions, ["prepared", "recoverable"]);
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
         assert!(
             state
                 .recorded_requests()
@@ -16119,7 +16055,7 @@ mod tests {
             .unwrap();
         let requests = restart_state.recorded_requests();
         assert_eq!(record.status, "finalized");
-        assert!(restarted.in_flight.lock().unwrap().is_none());
+        assert!(restarted.in_flight.lock().is_none());
         assert_eq!(
             requests
                 .iter()
@@ -16301,7 +16237,7 @@ mod tests {
                 .contains("retains signed transaction bytes"),
             "was: {error}"
         );
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
         assert!(
             state
                 .recorded_requests()
@@ -16927,7 +16863,7 @@ mod tests {
 
         restarted.reconcile_unresolved_execution().await.unwrap();
 
-        assert!(restarted.in_flight.lock().unwrap().is_none());
+        assert!(restarted.in_flight.lock().is_none());
         assert!(
             restart_state
                 .recorded_requests()
@@ -17018,7 +16954,7 @@ mod tests {
             hashes,
             [(original_hash.to_string(), "dropped".to_string(), true)]
         );
-        assert!(restarted.in_flight.lock().unwrap().is_some());
+        assert!(restarted.in_flight.lock().is_some());
         assert_eq!(
             execution_intent_markers(&admin_pool, &schema).await,
             vec![("wrap".into(), "dropped".into(), false, true)]
@@ -17163,7 +17099,7 @@ mod tests {
         let requests = restart_state.recorded_requests();
         assert_eq!(record.status, "finalized");
         assert_eq!(record.purpose, "approve");
-        assert!(restarted.in_flight.lock().unwrap().is_none());
+        assert!(restarted.in_flight.lock().is_none());
         assert_eq!(
             execution_intent_markers(&admin_pool, &schema).await,
             vec![("approve".into(), "finalized".into(), true, false)]
@@ -17318,7 +17254,7 @@ mod tests {
             "was: {error}"
         );
         assert_eq!(transitions, ["prepared", "signed", "broadcast", "dropped"]);
-        assert!(client.in_flight.lock().unwrap().is_some());
+        assert!(client.in_flight.lock().is_some());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -17390,7 +17326,7 @@ mod tests {
             "was: {error}"
         );
         assert_eq!(transitions, ["prepared", "signed", "broadcast", "dropped"]);
-        assert!(client.in_flight.lock().unwrap().is_some());
+        assert!(client.in_flight.lock().is_some());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -17442,7 +17378,7 @@ mod tests {
                 .iter()
                 .all(|request| request["method"] != "eth_sendRawTransaction")
         );
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -18068,7 +18004,7 @@ mod tests {
             error.to_string().contains("reverted on-chain"),
             "was: {error}"
         );
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
 
         let expected_hash = expected_wrap_tx_hash(U256::from(1_000_000_000_000_000u64)).await;
 
@@ -18258,7 +18194,7 @@ mod tests {
             [first.client_order_id(), second.client_order_id()]
         );
         assert!(state.recorded_requests().is_empty());
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
 
         for order in &orders {
             let cache_ref = cache.borrow();
@@ -18288,7 +18224,7 @@ mod tests {
         assert_eq!(rejected.client_order_id, order.client_order_id());
         assert_eq!(rejected.reason.as_str(), ORDER_MODIFY_UNSUPPORTED);
         assert!(state.recorded_requests().is_empty());
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
         let cache_ref = cache.borrow();
         let cached = cache_ref.order(&order.client_order_id()).unwrap();
         assert_eq!(cached.status(), OrderStatus::Initialized);
@@ -18315,7 +18251,7 @@ mod tests {
         assert_eq!(rejected.client_order_id, order.client_order_id());
         assert_eq!(rejected.reason.as_str(), ORDER_CANCEL_UNSUPPORTED);
         assert!(state.recorded_requests().is_empty());
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
         let cache_ref = cache.borrow();
         let cached = cache_ref.order(&order.client_order_id()).unwrap();
         assert_eq!(cached.status(), OrderStatus::Initialized);
@@ -18358,7 +18294,7 @@ mod tests {
             [first.client_order_id(), second.client_order_id()]
         );
         assert!(state.recorded_requests().is_empty());
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
     }
 
     #[tokio::test]
@@ -18380,7 +18316,7 @@ mod tests {
         let events = collect_order_events(&mut receiver);
         assert!(events.is_empty(), "was: {events:?}");
         assert!(state.recorded_requests().is_empty());
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
         let cache_ref = cache.borrow();
         let cached = cache_ref.order(&order.client_order_id()).unwrap();
         assert_eq!(cached.status(), OrderStatus::Initialized);
@@ -18412,7 +18348,7 @@ mod tests {
         let events = collect_order_events(&mut receiver);
         assert!(events.is_empty(), "was: {events:?}");
         assert!(state.recorded_requests().is_empty());
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
     }
 
     #[tokio::test]
@@ -18484,7 +18420,7 @@ mod tests {
         assert!(mass_status.is_none());
 
         assert!(state.recorded_requests().is_empty());
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert!(client.in_flight.lock().is_none());
     }
 
     async fn connect_test_postgres(

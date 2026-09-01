@@ -27,7 +27,7 @@ use std::{
     fmt::Debug,
     num::NonZeroU32,
     sync::{
-        Arc, LazyLock, Mutex,
+        Arc, LazyLock,
         atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
     time::Duration,
@@ -43,6 +43,7 @@ use nautilus_network::{
         PingHandler, TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler,
     },
 };
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -193,8 +194,6 @@ impl BinanceFuturesWsTradingClient {
     /// # Errors
     ///
     /// Returns an error if connection fails.
-    // Mutex poisoning is not documented individually
-    #[expect(clippy::missing_panics_doc)]
     pub async fn connect(&mut self) -> BinanceFuturesWsApiResult<()> {
         let connect_lock = Arc::clone(&self.connect_lock);
         let _connect_guard = connect_lock.lock().await;
@@ -213,10 +212,7 @@ impl BinanceFuturesWsTradingClient {
             ))
         })?;
         self.signal.store(false, Ordering::Relaxed);
-        *self
-            .cancellation_token
-            .lock()
-            .expect("cancellation token lock poisoned") = CancellationToken::new();
+        *self.cancellation_token.lock() = CancellationToken::new();
 
         let (raw_handler, raw_rx) = channel_message_handler();
         let ping_handler: PingHandler = Arc::new(move |_| {});
@@ -268,7 +264,7 @@ impl BinanceFuturesWsTradingClient {
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel();
 
         {
-            let mut rx_guard = self.out_rx.lock().expect("Mutex poisoned");
+            let mut rx_guard = self.out_rx.lock();
             *rx_guard = Some(out_rx);
         }
 
@@ -292,11 +288,7 @@ impl BinanceFuturesWsTradingClient {
             control.register(move || reconnect_handle.request_reconnect());
         }
 
-        let cancellation_token = self
-            .cancellation_token
-            .lock()
-            .expect("cancellation token lock poisoned")
-            .clone();
+        let cancellation_token = self.cancellation_token.lock().clone();
 
         let handler_task = async move {
             tokio::select! {
@@ -313,7 +305,7 @@ impl BinanceFuturesWsTradingClient {
             if let Some(control) = &self.socket_control {
                 control.deregister();
             }
-            self.out_rx.lock().expect("Mutex poisoned").take();
+            self.out_rx.lock().take();
             return Err(BinanceFuturesWsApiError::HandlerUnavailable(format!(
                 "failed to register handler task: {e}"
             )));
@@ -337,10 +329,7 @@ impl BinanceFuturesWsTradingClient {
     pub(crate) fn begin_shutdown(&self) {
         self.handler_tasks.begin_shutdown();
         self.signal.store(true, Ordering::Relaxed);
-        self.cancellation_token
-            .lock()
-            .expect("cancellation token lock poisoned")
-            .cancel();
+        self.cancellation_token.lock().cancel();
     }
 
     async fn disconnect_handler(&self) -> BinanceFuturesWsApiResult<()> {
@@ -356,10 +345,7 @@ impl BinanceFuturesWsTradingClient {
             log::debug!("Failed to send disconnect command: {e}");
         }
 
-        self.cancellation_token
-            .lock()
-            .expect("cancellation token lock poisoned")
-            .cancel();
+        self.cancellation_token.lock().cancel();
 
         let result = self
             .handler_tasks
@@ -462,20 +448,16 @@ impl BinanceFuturesWsTradingClient {
     /// Receives the next message from the handler.
     ///
     /// Returns `None` if the receiver is closed or not initialized.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal output receiver mutex is poisoned.
     pub async fn recv(&self) -> Option<BinanceFuturesWsTradingMessage> {
         let rx_opt = {
-            let mut rx_guard = self.out_rx.lock().expect("Mutex poisoned");
+            let mut rx_guard = self.out_rx.lock();
             rx_guard.take()
         };
 
         if let Some(mut rx) = rx_opt {
             let result = rx.recv().await;
 
-            let mut rx_guard = self.out_rx.lock().expect("Mutex poisoned");
+            let mut rx_guard = self.out_rx.lock();
             *rx_guard = Some(rx);
             result
         } else {

@@ -18,7 +18,7 @@
 use std::{
     collections::HashMap,
     num::NonZeroU32,
-    sync::{Arc, LazyLock, Mutex, Weak},
+    sync::{Arc, LazyLock, Weak},
     time::Duration,
 };
 
@@ -48,6 +48,7 @@ use nautilus_network::{
     http::{HttpClient, HttpResponse, Method, USER_AGENT},
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use ustr::Ustr;
@@ -309,9 +310,7 @@ impl BinanceRawFuturesHttpClient {
         scope: BinanceFuturesRequestScope,
         quota: Quota,
     ) -> BinanceFuturesRateLimiter {
-        let mut registry = BINANCE_FUTURES_REQUEST_LIMITERS
-            .lock()
-            .expect("Binance Futures request rate limiter registry mutex poisoned");
+        let mut registry = BINANCE_FUTURES_REQUEST_LIMITERS.lock();
 
         if let Some(limiter) = registry.get(&scope).and_then(Weak::upgrade) {
             return limiter;
@@ -329,9 +328,7 @@ impl BinanceRawFuturesHttpClient {
         scope: BinanceFuturesOrderScope,
         quotas: Vec<(String, Quota)>,
     ) -> BinanceFuturesRateLimiter {
-        let mut registry = BINANCE_FUTURES_ORDER_LIMITERS
-            .lock()
-            .expect("Binance Futures order rate limiter registry mutex poisoned");
+        let mut registry = BINANCE_FUTURES_ORDER_LIMITERS.lock();
 
         if let Some(limiter) = registry.get(&scope).and_then(Weak::upgrade) {
             return limiter;

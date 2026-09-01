@@ -33,9 +33,10 @@
 
 use std::{
     collections::HashMap,
-    sync::{LazyLock, Mutex, OnceLock},
+    sync::{LazyLock, OnceLock},
 };
 
+use parking_lot::Mutex;
 use ustr::Ustr;
 
 use crate::{enums::CurrencyType, types::Currency};

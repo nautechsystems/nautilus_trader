@@ -20,7 +20,7 @@ use std::{
     cell::RefCell,
     panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 use ahash::{AHashMap, AHashSet, RandomState};
@@ -70,6 +70,7 @@ use nautilus_model::{
     stubs::TestDefault,
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
+use parking_lot::Mutex;
 use rstest::{fixture, rstest};
 use rust_decimal_macros::dec;
 use ustr::Ustr;
@@ -8458,11 +8459,7 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     fn load_actor(&self, actor_id: &ActorId) -> anyhow::Result<AHashMap<String, Bytes>> {
-        self.database_calls
-            .lock()
-            .unwrap()
-            .actor_loads
-            .push(*actor_id);
+        self.database_calls.lock().actor_loads.push(*actor_id);
 
         if self.fail_persistence_io {
             anyhow::bail!("state I/O failed");
@@ -8471,11 +8468,7 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<AHashMap<String, Bytes>> {
-        self.database_calls
-            .lock()
-            .unwrap()
-            .strategy_loads
-            .push(*strategy_id);
+        self.database_calls.lock().strategy_loads.push(*strategy_id);
 
         if self.fail_persistence_io {
             anyhow::bail!("state I/O failed");
@@ -8637,10 +8630,7 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     fn index_order_clients(&self, claims: &[(ClientOrderId, ClientId)]) -> anyhow::Result<()> {
-        self.order_client_claims
-            .lock()
-            .unwrap()
-            .push(claims.to_vec());
+        self.order_client_claims.lock().push(claims.to_vec());
 
         if self.fail_index_order_clients {
             anyhow::bail!("index order clients failed");
@@ -8655,7 +8645,6 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     ) -> anyhow::Result<()> {
         self.database_calls
             .lock()
-            .unwrap()
             .actor_updates
             .push((*actor_id, state.clone()));
         if self.fail_persistence_io {
@@ -8671,7 +8660,6 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     ) -> anyhow::Result<()> {
         self.database_calls
             .lock()
-            .unwrap()
             .strategy_updates
             .push((*strategy_id, state.clone()));
         if self.fail_persistence_io {
@@ -8701,7 +8689,6 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     fn snapshot_order_state(&self, order: &OrderAny) -> anyhow::Result<()> {
         self.database_calls
             .lock()
-            .unwrap()
             .order_snapshots
             .push(order.clone());
 
@@ -8717,11 +8704,11 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
         ts_snapshot: UnixNanos,
         unrealized_pnl: Option<Money>,
     ) -> anyhow::Result<()> {
-        self.database_calls
-            .lock()
-            .unwrap()
-            .position_snapshots
-            .push((position.clone(), ts_snapshot, unrealized_pnl));
+        self.database_calls.lock().position_snapshots.push((
+            position.clone(),
+            ts_snapshot,
+            unrealized_pnl,
+        ));
 
         if self.fail_persistence_io {
             anyhow::bail!("state I/O failed");
@@ -8834,7 +8821,7 @@ fn test_component_and_state_snapshots_forward_exact_values() {
     assert_eq!(loaded_strategy.get("strategy-a"), Some(&vec![5, 6]));
     assert_eq!(loaded_strategy.get("strategy-b"), Some(&vec![7, 8]));
 
-    let calls = calls.lock().unwrap();
+    let calls = calls.lock();
     assert_eq!(calls.actor_loads, vec![actor_id]);
     assert_eq!(calls.strategy_loads, vec![strategy_id]);
     assert_eq!(
@@ -8980,7 +8967,7 @@ fn test_claim_order_clients_persists_one_batch_and_is_idempotent(audusd_sim: Cur
         Some(client_id),
     );
     assert_eq!(
-        recorded_claims.lock().unwrap().as_slice(),
+        recorded_claims.lock().as_slice(),
         &[vec![
             (order_1.client_order_id(), client_id),
             (order_2.client_order_id(), client_id),
@@ -9025,7 +9012,7 @@ fn test_claim_order_clients_rejects_conflict_without_partial_commit(audusd_sim: 
         cache.client_id(&order_2.client_order_id()).copied(),
         Some(existing_client_id),
     );
-    assert!(recorded_claims.lock().unwrap().is_empty());
+    assert!(recorded_claims.lock().is_empty());
 }
 
 #[rstest]
@@ -9059,7 +9046,7 @@ fn test_claim_order_clients_rejects_invalid_batch_without_mutation(audusd_sim: C
     assert!(conflicting_batch_error.to_string().contains("Conflicting"));
     assert!(missing_order_error.to_string().contains("order not found"));
     assert_eq!(cache.client_id(&order.client_order_id()), None);
-    assert!(recorded_claims.lock().unwrap().is_empty());
+    assert!(recorded_claims.lock().is_empty());
 }
 
 #[rstest]
@@ -9092,10 +9079,7 @@ fn test_claim_order_clients_database_error_leaves_memory_unmodified(audusd_sim: 
     assert_eq!(error.to_string(), "index order clients failed");
     assert_eq!(cache.client_id(&order_1.client_order_id()), None);
     assert_eq!(cache.client_id(&order_2.client_order_id()), None);
-    assert_eq!(
-        recorded_claims.lock().unwrap().as_slice(),
-        &[claims.to_vec()]
-    );
+    assert_eq!(recorded_claims.lock().as_slice(), &[claims.to_vec()]);
 }
 
 #[rstest]

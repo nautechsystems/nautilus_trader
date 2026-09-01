@@ -1148,12 +1148,13 @@ pub(crate) mod tests {
         use std::{
             collections::{HashMap, VecDeque},
             net::SocketAddr,
-            sync::{Arc, Mutex},
+            sync::Arc,
             time::Duration,
         };
 
         use alloy::{consensus::TxEnvelope, eips::eip2718::Decodable2718, primitives::TxKind};
         use axum::{Router, extract::State, routing::post};
+        use parking_lot::Mutex;
         use serde_json::Value;
 
         type ResponseSequences<K> = Arc<Mutex<HashMap<K, VecDeque<String>>>>;
@@ -1210,7 +1211,7 @@ pub(crate) mod tests {
                 parameter: &str,
                 responses: &[&str],
             ) -> Self {
-                self.parameter_response_sequences.lock().unwrap().insert(
+                self.parameter_response_sequences.lock().insert(
                     (method.to_string(), parameter.to_string()),
                     responses.iter().map(ToString::to_string).collect(),
                 );
@@ -1221,7 +1222,7 @@ pub(crate) mod tests {
             #[cfg(feature = "hypersync")]
             #[must_use]
             pub(crate) fn with_response_sequence(self, method: &str, responses: &[&str]) -> Self {
-                self.response_sequences.lock().unwrap().insert(
+                self.response_sequences.lock().insert(
                     method.to_string(),
                     responses.iter().map(ToString::to_string).collect(),
                 );
@@ -1282,7 +1283,7 @@ pub(crate) mod tests {
                 selector: &str,
                 responses: &[&str],
             ) -> Self {
-                self.call_response_sequences.lock().unwrap().insert(
+                self.call_response_sequences.lock().insert(
                     selector.to_string(),
                     responses.iter().map(ToString::to_string).collect(),
                 );
@@ -1312,20 +1313,20 @@ pub(crate) mod tests {
             /// Returns every JSON-RPC request body the server received, in order.
             #[must_use]
             pub(crate) fn recorded_requests(&self) -> Vec<Value> {
-                self.requests.lock().unwrap().clone()
+                self.requests.lock().clone()
             }
         }
 
         async fn handle(State(state): State<MockRpcState>, body: String) -> String {
             let request: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
-            state.requests.lock().unwrap().push(request.clone());
+            state.requests.lock().push(request.clone());
 
             let method = request["method"].as_str().unwrap_or_default();
 
             if method == "eth_sendRawTransaction"
                 && let Some(raw) = request["params"][0].as_str()
             {
-                *state.sent_raw_transaction.lock().unwrap() = Some(raw.to_string());
+                *state.sent_raw_transaction.lock() = Some(raw.to_string());
             }
 
             if let Some(duration) = state.sleep_methods.get(method) {
@@ -1356,7 +1357,6 @@ pub(crate) mod tests {
                     if let Some(response) = state
                         .call_response_sequences
                         .lock()
-                        .unwrap()
                         .get_mut(selector)
                         .and_then(VecDeque::pop_front)
                     {
@@ -1372,7 +1372,6 @@ pub(crate) mod tests {
             let queued_response = state
                 .response_sequences
                 .lock()
-                .unwrap()
                 .get_mut(method)
                 .and_then(VecDeque::pop_front);
 
@@ -1381,7 +1380,6 @@ pub(crate) mod tests {
                 state
                     .parameter_response_sequences
                     .lock()
-                    .unwrap()
                     .get_mut(&(method.to_string(), parameter.to_string()))
                     .and_then(VecDeque::pop_front)
             });
@@ -1433,7 +1431,7 @@ pub(crate) mod tests {
         }
 
         fn response_from_sent_transaction(state: &MockRpcState, trace: bool) -> String {
-            let Some(raw) = state.sent_raw_transaction.lock().unwrap().clone() else {
+            let Some(raw) = state.sent_raw_transaction.lock().clone() else {
                 return method_not_found_response();
             };
             let stripped = raw.strip_prefix("0x").unwrap_or(&raw);

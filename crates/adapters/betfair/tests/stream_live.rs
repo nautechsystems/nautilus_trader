@@ -17,7 +17,7 @@
 
 use std::{
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
@@ -30,6 +30,7 @@ use nautilus_betfair::{
 };
 use nautilus_common::testing::wait_until_async;
 use nautilus_network::socket::TcpMessageHandler;
+use parking_lot::Mutex;
 use rstest::rstest;
 
 const VALIDATION_SECS: u64 = 60 * 60;
@@ -69,11 +70,7 @@ async fn live_stream_stays_active_across_heartbeats() {
             match msg {
                 StreamMessage::Connection(connection) => {
                     stats_h.connections.fetch_add(1, Ordering::SeqCst);
-                    stats_h
-                        .connection_ids
-                        .lock()
-                        .expect("connection id lock")
-                        .push(connection.connection_id);
+                    stats_h.connection_ids.lock().push(connection.connection_id);
                 }
                 StreamMessage::Status(status) => {
                     stats_h.statuses.fetch_add(1, Ordering::SeqCst);

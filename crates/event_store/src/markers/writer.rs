@@ -70,7 +70,6 @@ mod imp {
     use std::{
         fmt::Debug,
         sync::{
-            Mutex, PoisonError,
             atomic::{AtomicBool, AtomicU64, Ordering},
             mpsc::{self, RecvTimeoutError, SyncSender, TrySendError},
         },
@@ -79,6 +78,7 @@ mod imp {
     };
 
     use nautilus_core::time::AtomicTime;
+    use parking_lot::Mutex;
 
     use super::{
         EventStoreError, MarkerBackend, MarkerGap, MarkerMsg, MarkerWriterConfig, StreamDictEntry,
@@ -192,10 +192,6 @@ mod imp {
         ///
         /// Returns [`EventStoreError::Closed`] when the writer is closed, and
         /// [`EventStoreError::Backend`] when `msg` is not a `Snapshot` or `HiFi` marker.
-        ///
-        /// # Panics
-        ///
-        /// Panics if the pending overflow range mutex is poisoned.
         pub fn submit(&self, msg: MarkerMsg, marker_seq: u64) -> Result<bool, EventStoreError> {
             if self.closed.load(Ordering::Acquire) {
                 return Err(EventStoreError::Closed);
@@ -211,10 +207,7 @@ mod imp {
             }
 
             let tx = self.tx.as_ref().ok_or(EventStoreError::Closed)?;
-            let mut dropped = self
-                .dropped
-                .lock()
-                .expect("marker dropped range mutex poisoned");
+            let mut dropped = self.dropped.lock();
             let outbound = if let Some(range) = *dropped {
                 MarkerMsg::GapThen {
                     gap: range.gap(MarkerGapReason::Overflow),
@@ -276,7 +269,7 @@ mod imp {
 
             if let Some(tx) = self.tx.take() {
                 let close_msg = {
-                    let mut dropped = self.dropped.lock().unwrap_or_else(PoisonError::into_inner);
+                    let mut dropped = self.dropped.lock();
                     if let Some(range) = dropped.take() {
                         MarkerMsg::GapThen {
                             gap: range.gap(MarkerGapReason::WriterClosed),
@@ -413,13 +406,11 @@ mod imp {
 mod imp {
     use std::{
         fmt::Debug,
-        sync::{
-            Mutex,
-            atomic::{AtomicU64, Ordering},
-        },
+        sync::atomic::{AtomicU64, Ordering},
     };
 
     use nautilus_core::time::AtomicTime;
+    use parking_lot::Mutex;
 
     use super::{EventStoreError, MarkerBackend, MarkerMsg, MarkerWriterConfig, StreamDictEntry};
     use crate::{
@@ -476,12 +467,8 @@ mod imp {
         ///
         /// Returns [`EventStoreError::Closed`] when the writer is closed, and
         /// [`EventStoreError::Backend`] when `msg` is not a `Snapshot` or `HiFi` marker.
-        ///
-        /// # Panics
-        ///
-        /// Panics if the writer mutex is poisoned.
         pub fn submit(&self, msg: MarkerMsg, marker_seq: u64) -> Result<bool, EventStoreError> {
-            let mut inner = self.inner.lock().expect("marker writer mutex poisoned");
+            let mut inner = self.inner.lock();
 
             if inner.closed {
                 return Err(EventStoreError::Closed);
@@ -510,16 +497,12 @@ mod imp {
         /// # Errors
         ///
         /// Returns [`EventStoreError::Closed`] when the writer is closed.
-        ///
-        /// # Panics
-        ///
-        /// Panics if the writer mutex is poisoned.
         #[expect(
             clippy::needless_pass_by_value,
             reason = "matches the threaded writer API, which transfers ownership"
         )]
         pub fn put_dict(&self, entry: StreamDictEntry) -> Result<bool, EventStoreError> {
-            let mut inner = self.inner.lock().expect("marker writer mutex poisoned");
+            let mut inner = self.inner.lock();
 
             if inner.closed {
                 return Err(EventStoreError::Closed);
@@ -530,12 +513,8 @@ mod imp {
         }
 
         /// Seals the marker run.
-        ///
-        /// # Panics
-        ///
-        /// Panics if the writer mutex is poisoned.
         pub fn close(self) {
-            let mut inner = self.inner.lock().expect("marker writer mutex poisoned");
+            let mut inner = self.inner.lock();
 
             if !inner.closed {
                 let _ = inner.backend.seal(RunStatus::Ended);
@@ -552,13 +531,14 @@ pub use imp::MarkerWriter;
 mod tests {
     use std::{
         sync::{
-            Arc, Mutex,
+            Arc,
             atomic::{AtomicUsize, Ordering},
         },
         time::{Duration, Instant},
     };
 
     use nautilus_core::{UnixNanos, time::get_atomic_clock_static};
+    use parking_lot::Mutex;
     use rstest::rstest;
 
     use super::{super::test_support::SharedMemoryMarker, *};
@@ -612,14 +592,14 @@ mod tests {
     #[derive(Debug)]
     struct BlockingMarkerBackend {
         inner: Arc<Mutex<MemoryMarkerBackend>>,
-        gate: Arc<(Mutex<bool>, std::sync::Condvar)>,
+        gate: Arc<(Mutex<bool>, parking_lot::Condvar)>,
         appends_seen: Arc<AtomicUsize>,
     }
 
     impl BlockingMarkerBackend {
         fn new(
             inner: Arc<Mutex<MemoryMarkerBackend>>,
-            gate: Arc<(Mutex<bool>, std::sync::Condvar)>,
+            gate: Arc<(Mutex<bool>, parking_lot::Condvar)>,
             appends_seen: Arc<AtomicUsize>,
         ) -> Self {
             Self {
@@ -631,10 +611,10 @@ mod tests {
 
         fn wait_for_release(&self) {
             let (lock, cvar) = &*self.gate;
-            let mut released = lock.lock().expect("gate poisoned");
+            let mut released = lock.lock();
 
             while !*released {
-                released = cvar.wait(released).expect("gate wait");
+                cvar.wait(&mut released);
             }
         }
     }
@@ -651,10 +631,7 @@ mod tests {
         ) -> Result<(), EventStoreError> {
             self.appends_seen.fetch_add(1, Ordering::SeqCst);
             self.wait_for_release();
-            self.inner
-                .lock()
-                .expect("inner marker poisoned")
-                .append_snapshot(snapshot, hash)
+            self.inner.lock().append_snapshot(snapshot, hash)
         }
 
         fn append_hifi(
@@ -664,19 +641,13 @@ mod tests {
         ) -> Result<(), EventStoreError> {
             self.appends_seen.fetch_add(1, Ordering::SeqCst);
             self.wait_for_release();
-            self.inner
-                .lock()
-                .expect("inner marker poisoned")
-                .append_hifi(marker, hash)
+            self.inner.lock().append_hifi(marker, hash)
         }
 
         fn append_gap(&mut self, gap: &MarkerGap, hash: [u8; 32]) -> Result<(), EventStoreError> {
             self.appends_seen.fetch_add(1, Ordering::SeqCst);
             self.wait_for_release();
-            self.inner
-                .lock()
-                .expect("inner marker poisoned")
-                .append_gap(gap, hash)
+            self.inner.lock().append_gap(gap, hash)
         }
 
         fn put_dict(
@@ -684,49 +655,31 @@ mod tests {
             entry: &StreamDictEntry,
             hash: [u8; 32],
         ) -> Result<(), EventStoreError> {
-            self.inner
-                .lock()
-                .expect("inner marker poisoned")
-                .put_dict(entry, hash)
+            self.inner.lock().put_dict(entry, hash)
         }
 
         fn scan_snapshots(&self) -> Result<Vec<DataCursorSnapshot>, EventStoreError> {
-            self.inner
-                .lock()
-                .expect("inner marker poisoned")
-                .scan_snapshots()
+            self.inner.lock().scan_snapshots()
         }
 
         fn scan_hifi(&self) -> Result<Vec<HiFiMarker>, EventStoreError> {
-            self.inner
-                .lock()
-                .expect("inner marker poisoned")
-                .scan_hifi()
+            self.inner.lock().scan_hifi()
         }
 
         fn scan_gaps(&self) -> Result<Vec<MarkerGap>, EventStoreError> {
-            self.inner
-                .lock()
-                .expect("inner marker poisoned")
-                .scan_gaps()
+            self.inner.lock().scan_gaps()
         }
 
         fn scan_dict(&self) -> Result<Vec<StreamDictEntry>, EventStoreError> {
-            self.inner
-                .lock()
-                .expect("inner marker poisoned")
-                .scan_dict()
+            self.inner.lock().scan_dict()
         }
 
         fn seal(&mut self, status: RunStatus) -> Result<(), EventStoreError> {
-            self.inner
-                .lock()
-                .expect("inner marker poisoned")
-                .seal(status)
+            self.inner.lock().seal(status)
         }
 
         fn manifest(&self) -> Result<MarkerManifest, EventStoreError> {
-            self.inner.lock().expect("inner marker poisoned").manifest()
+            self.inner.lock().manifest()
         }
     }
 
@@ -747,7 +700,6 @@ mod tests {
         let (wrapper, shared) = SharedMemoryMarker::new();
         shared
             .lock()
-            .expect("shared marker")
             .open_run(manifest("run-snapshots"))
             .expect("open marker run");
         let config = MarkerWriterConfig {
@@ -773,7 +725,7 @@ mod tests {
         );
         writer.close();
 
-        let backend = shared.lock().expect("shared marker");
+        let backend = shared.lock();
         assert_eq!(
             backend.scan_snapshots().expect("scan snapshots"),
             vec![s1, s2]
@@ -785,10 +737,9 @@ mod tests {
         let inner = Arc::new(Mutex::new(MemoryMarkerBackend::new()));
         inner
             .lock()
-            .expect("inner marker")
             .open_run(manifest("run-dict-capacity"))
             .expect("open marker run");
-        let gate = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let gate = Arc::new((Mutex::new(false), parking_lot::Condvar::new()));
         let appends_seen = Arc::new(AtomicUsize::new(0));
         let backend = BlockingMarkerBackend::new(
             Arc::clone(&inner),
@@ -835,7 +786,7 @@ mod tests {
         let release = std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(20));
             let (lock, cvar) = &*gate_for_release;
-            *lock.lock().expect("gate") = true;
+            *lock.lock() = true;
             cvar.notify_all();
         });
 
@@ -843,7 +794,7 @@ mod tests {
         release.join().expect("release gate");
         writer.close();
 
-        let backend = inner.lock().expect("inner marker");
+        let backend = inner.lock();
         assert_eq!(backend.scan_dict().expect("scan dict"), vec![entry]);
         assert_eq!(
             backend
@@ -880,7 +831,6 @@ mod tests {
         let (wrapper, shared) = SharedMemoryMarker::new();
         shared
             .lock()
-            .expect("shared marker")
             .open_run(manifest("run-latency"))
             .expect("open marker run");
 
@@ -902,25 +852,13 @@ mod tests {
                 .expect("submit")
         );
         wait_until(
-            || {
-                shared
-                    .lock()
-                    .expect("shared marker")
-                    .scan_snapshots()
-                    .expect("scan")
-                    .len()
-                    == 1
-            },
+            || shared.lock().scan_snapshots().expect("scan").len() == 1,
             "latency flush",
         );
         writer.close();
 
         assert_eq!(
-            shared
-                .lock()
-                .expect("shared marker")
-                .scan_snapshots()
-                .expect("scan snapshots"),
+            shared.lock().scan_snapshots().expect("scan snapshots"),
             vec![snap]
         );
     }
@@ -930,10 +868,9 @@ mod tests {
         let inner = Arc::new(Mutex::new(MemoryMarkerBackend::new()));
         inner
             .lock()
-            .expect("inner marker")
             .open_run(manifest("run-overflow"))
             .expect("open marker run");
-        let gate = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let gate = Arc::new((Mutex::new(false), parking_lot::Condvar::new()));
         let appends_seen = Arc::new(AtomicUsize::new(0));
         let backend = BlockingMarkerBackend::new(
             Arc::clone(&inner),
@@ -986,19 +923,11 @@ mod tests {
         );
 
         let (lock, cvar) = &*gate;
-        *lock.lock().expect("gate") = true;
+        *lock.lock() = true;
         cvar.notify_all();
 
         wait_until(
-            || {
-                inner
-                    .lock()
-                    .expect("inner marker")
-                    .scan_snapshots()
-                    .expect("scan")
-                    .len()
-                    == 2
-            },
+            || inner.lock().scan_snapshots().expect("scan").len() == 2,
             "first two snapshots to drain",
         );
 
@@ -1010,7 +939,7 @@ mod tests {
         );
         writer.close();
 
-        let backend = inner.lock().expect("inner marker");
+        let backend = inner.lock();
         let gaps = backend.scan_gaps().expect("scan gaps");
         assert_eq!(
             gaps,
@@ -1036,10 +965,9 @@ mod tests {
         let inner = Arc::new(Mutex::new(MemoryMarkerBackend::new()));
         inner
             .lock()
-            .expect("inner marker")
             .open_run(manifest("run-overflow-hifi"))
             .expect("open marker run");
-        let gate = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let gate = Arc::new((Mutex::new(false), parking_lot::Condvar::new()));
         let appends_seen = Arc::new(AtomicUsize::new(0));
         let backend = BlockingMarkerBackend::new(
             Arc::clone(&inner),
@@ -1086,19 +1014,11 @@ mod tests {
         }
 
         let (lock, cvar) = &*gate;
-        *lock.lock().expect("gate") = true;
+        *lock.lock() = true;
         cvar.notify_all();
 
         wait_until(
-            || {
-                inner
-                    .lock()
-                    .expect("inner marker")
-                    .scan_snapshots()
-                    .expect("scan")
-                    .len()
-                    == 2
-            },
+            || inner.lock().scan_snapshots().expect("scan").len() == 2,
             "first two snapshots to drain",
         );
 
@@ -1110,7 +1030,7 @@ mod tests {
         );
         writer.close();
 
-        let backend = inner.lock().expect("inner marker");
+        let backend = inner.lock();
         assert_eq!(
             backend.scan_gaps().expect("scan gaps"),
             vec![MarkerGap {
@@ -1127,10 +1047,9 @@ mod tests {
         let inner = Arc::new(Mutex::new(MemoryMarkerBackend::new()));
         inner
             .lock()
-            .expect("inner marker")
             .open_run(manifest("run-close-gap"))
             .expect("open marker run");
-        let gate = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let gate = Arc::new((Mutex::new(false), parking_lot::Condvar::new()));
         let appends_seen = Arc::new(AtomicUsize::new(0));
         let backend = BlockingMarkerBackend::new(
             Arc::clone(&inner),
@@ -1179,11 +1098,11 @@ mod tests {
         let close_thread = std::thread::spawn(move || writer.close());
         std::thread::sleep(Duration::from_millis(20));
         let (lock, cvar) = &*gate;
-        *lock.lock().expect("gate") = true;
+        *lock.lock() = true;
         cvar.notify_all();
         close_thread.join().expect("close thread");
 
-        let backend = inner.lock().expect("inner marker");
+        let backend = inner.lock();
         assert_eq!(
             backend.scan_gaps().expect("scan gaps"),
             vec![MarkerGap {
@@ -1215,10 +1134,9 @@ mod tests {
         let inner = Arc::new(Mutex::new(MemoryMarkerBackend::new()));
         inner
             .lock()
-            .expect("inner marker")
             .open_run(manifest("run-drop-gap"))
             .expect("open marker run");
-        let gate = Arc::new((Mutex::new(false), std::sync::Condvar::new()));
+        let gate = Arc::new((Mutex::new(false), parking_lot::Condvar::new()));
         let appends_seen = Arc::new(AtomicUsize::new(0));
         let backend = BlockingMarkerBackend::new(
             Arc::clone(&inner),
@@ -1265,11 +1183,11 @@ mod tests {
         let drop_thread = std::thread::spawn(move || drop(writer));
         std::thread::sleep(Duration::from_millis(20));
         let (lock, cvar) = &*gate;
-        *lock.lock().expect("gate") = true;
+        *lock.lock() = true;
         cvar.notify_all();
         drop_thread.join().expect("drop thread");
 
-        let backend = inner.lock().expect("inner marker");
+        let backend = inner.lock();
         assert_eq!(
             backend.scan_gaps().expect("scan gaps"),
             vec![MarkerGap {
@@ -1298,7 +1216,6 @@ mod tests {
         let (wrapper, shared) = SharedMemoryMarker::new();
         shared
             .lock()
-            .expect("shared marker")
             .open_run(manifest("run-close"))
             .expect("open marker run");
         let config = MarkerWriterConfig {
@@ -1318,7 +1235,7 @@ mod tests {
         );
         writer.close();
 
-        let backend = shared.lock().expect("shared marker");
+        let backend = shared.lock();
         assert_eq!(backend.scan_hifi().expect("scan hifi"), vec![marker]);
         assert_eq!(
             backend.manifest().expect("manifest").status,
@@ -1370,7 +1287,6 @@ mod madsim_tests {
         let (wrapper, shared) = SharedMemoryMarker::new();
         shared
             .lock()
-            .expect("shared marker")
             .open_run(manifest("run-madsim"))
             .expect("open marker run");
 
@@ -1388,23 +1304,14 @@ mod madsim_tests {
                 .expect("submit")
         );
         assert_eq!(
-            shared
-                .lock()
-                .expect("shared marker")
-                .scan_snapshots()
-                .expect("scan snapshots"),
+            shared.lock().scan_snapshots().expect("scan snapshots"),
             vec![snap]
         );
 
         writer.close();
 
         assert_eq!(
-            shared
-                .lock()
-                .expect("shared marker")
-                .manifest()
-                .expect("manifest")
-                .status,
+            shared.lock().manifest().expect("manifest").status,
             RunStatus::Ended
         );
     }

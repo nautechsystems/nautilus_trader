@@ -17,7 +17,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -83,6 +83,7 @@ use nautilus_trading::{
     nautilus_strategy,
     strategy::{Strategy, StrategyConfig, StrategyCore},
 };
+use parking_lot::Mutex;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use serde::Deserialize;
@@ -219,7 +220,6 @@ impl LiveStressProbe {
         let previous = self
             .state
             .lock()
-            .unwrap()
             .orders
             .insert(client_order_id, LiveStressOrder::default());
         assert!(previous.is_none(), "duplicate live stress client order ID");
@@ -231,7 +231,7 @@ impl LiveStressProbe {
         event: LiveStressEvent,
         bet_id: Option<BetId>,
     ) -> bool {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock();
         let Some(order) = state.orders.get_mut(&client_order_id) else {
             state.failure = Some(format!(
                 "event for unknown order {client_order_id}: {event:?}"
@@ -260,29 +260,29 @@ impl LiveStressProbe {
     }
 
     fn mark_completed(&self, client_order_id: ClientOrderId) -> bool {
-        self.state.lock().unwrap().completed.insert(client_order_id)
+        self.state.lock().completed.insert(client_order_id)
     }
 
     fn fail(&self, reason: impl Into<String>) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock();
         if state.failure.is_none() {
             state.failure = Some(reason.into());
         }
     }
 
     fn finished(&self, expected: usize) -> bool {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock();
         state.failure.is_some() || state.completed.len() == expected
     }
 
     fn failed(&self) -> bool {
-        self.state.lock().unwrap().failure.is_some()
+        self.state.lock().failure.is_some()
     }
 }
 
 impl LiveExecutionProbe {
     fn record_socket_state(&self, socket_state: SocketState) -> bool {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock();
         let count = match socket_state {
             SocketState::Connected => &mut state.socket_connected,
             SocketState::Disconnected => &mut state.socket_disconnected,
@@ -292,7 +292,7 @@ impl LiveExecutionProbe {
     }
 
     fn record_accepted(&self, bet_id: BetId) -> bool {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock();
         state.record_bet_id(Some(bet_id.clone()));
         state.accepted_bet_id = Some(bet_id);
         state.accepted += 1;
@@ -300,7 +300,7 @@ impl LiveExecutionProbe {
     }
 
     fn record_updated(&self, bet_id: Option<BetId>) -> bool {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock();
         state.record_bet_id(bet_id.clone());
         state.updated_bet_id = bet_id;
         state.updated += 1;
@@ -309,7 +309,7 @@ impl LiveExecutionProbe {
 
     fn record_canceled(&self, bet_id: Option<BetId>) {
         {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self.state.lock();
             state.record_bet_id(bet_id);
             state.canceled += 1;
         }
@@ -318,7 +318,7 @@ impl LiveExecutionProbe {
 
     fn record_filled(&self, bet_id: BetId) {
         {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self.state.lock();
             state.record_bet_id(Some(bet_id));
             state.filled += 1;
             let failure = if state.updated != 1 {
@@ -341,7 +341,7 @@ impl LiveExecutionProbe {
 
     fn fail(&self, reason: impl Into<String>) {
         {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self.state.lock();
             if state.failure.is_none() {
                 state.failure = Some(reason.into());
             }
@@ -350,7 +350,7 @@ impl LiveExecutionProbe {
     }
 
     fn finished(&self) -> bool {
-        let state = self.state.lock().unwrap();
+        let state = self.state.lock();
         state.canceled == 1 || state.filled == 1 || state.failure.is_some()
     }
 
@@ -366,7 +366,7 @@ impl LiveExecutionProbe {
     }
 
     fn snapshot(&self) -> LiveExecutionState {
-        self.state.lock().unwrap().clone()
+        self.state.lock().clone()
     }
 }
 
@@ -1140,7 +1140,7 @@ async fn run_live_execution_stress(
     let _ = monitor.await;
 
     let (customer_order_refs, known_bet_ids, failure) = {
-        let state = probe.state.lock().unwrap();
+        let state = probe.state.lock();
         let customer_order_refs = state
             .orders
             .keys()
@@ -1188,7 +1188,7 @@ async fn run_live_execution_stress(
         LiveStressEvent::PendingCancel,
         LiveStressEvent::Canceled,
     ];
-    let state = probe.state.lock().unwrap();
+    let state = probe.state.lock();
     anyhow::ensure!(
         state.orders.len() == total_orders,
         "live stress registered {} orders, expected {total_orders}",

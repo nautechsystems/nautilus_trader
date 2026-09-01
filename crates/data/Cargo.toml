@@ -78,6 +78,7 @@ pyo3-stub-gen = { workspace = true, optional = true }
 nautilus-serialization = { workspace = true, features = ["arrow"] }
 
 criterion = { workspace = true }
+parking_lot = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "macros", "rt"] }

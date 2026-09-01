@@ -25,7 +25,7 @@ use std::{
     collections::VecDeque,
     hash::{BuildHasher, Hasher},
     sync::{
-        Arc, LazyLock, Mutex,
+        Arc, LazyLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
@@ -34,7 +34,7 @@ use std::{
 use ahash::{AHashMap, AHashSet, RandomState};
 use anyhow::Context;
 use dashmap::{DashMap, DashSet};
-use nautilus_core::{AtomicTime, MUTEX_POISONED, UnixNanos};
+use nautilus_core::{AtomicTime, UnixNanos};
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
     events::AccountState,
@@ -44,6 +44,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Price, Quantity},
 };
+use parking_lot::Mutex;
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 
 use crate::{
@@ -140,7 +141,7 @@ impl OrderIdentity {
             order.order_type(),
             client_order_index,
         );
-        let mut binding = identity.binding.lock().expect(MUTEX_POISONED);
+        let mut binding = identity.binding.lock();
         binding.venue_order_id = Some(venue_order_id);
         binding.create_resolution = CreateResolution::Confirmed;
         drop(binding);
@@ -149,11 +150,11 @@ impl OrderIdentity {
     }
 
     fn mark_submission(&self, nonce: i64) {
-        self.binding.lock().expect(MUTEX_POISONED).submission_nonce = Some(nonce);
+        self.binding.lock().submission_nonce = Some(nonce);
     }
 
     fn bind_venue_order_id(&self, venue_order_id: VenueOrderId) -> bool {
-        let mut binding = self.binding.lock().expect(MUTEX_POISONED);
+        let mut binding = self.binding.lock();
         if binding.create_resolution == CreateResolution::Rejected {
             return false;
         }
@@ -182,11 +183,11 @@ impl OrderIdentity {
     }
 
     fn matches_venue_order_id(&self, venue_order_id: VenueOrderId) -> bool {
-        self.binding.lock().expect(MUTEX_POISONED).venue_order_id == Some(venue_order_id)
+        self.binding.lock().venue_order_id == Some(venue_order_id)
     }
 
     fn venue_order_id(&self) -> Option<VenueOrderId> {
-        self.binding.lock().expect(MUTEX_POISONED).venue_order_id
+        self.binding.lock().venue_order_id
     }
 
     fn accepted_was_emitted(&self) -> bool {
@@ -194,7 +195,7 @@ impl OrderIdentity {
     }
 
     fn claim_accepted_emission(&self) -> bool {
-        let mut binding = self.binding.lock().expect(MUTEX_POISONED);
+        let mut binding = self.binding.lock();
         if binding.create_resolution == CreateResolution::Rejected {
             return false;
         }
@@ -208,7 +209,7 @@ impl OrderIdentity {
             return false;
         }
 
-        let binding = self.binding.lock().expect(MUTEX_POISONED);
+        let binding = self.binding.lock();
         binding.submission_nonce == Some(nonce)
             && binding.create_resolution == CreateResolution::Pending
     }
@@ -218,7 +219,7 @@ impl OrderIdentity {
             return false;
         }
 
-        let mut binding = self.binding.lock().expect(MUTEX_POISONED);
+        let mut binding = self.binding.lock();
         if binding.submission_nonce != Some(nonce)
             || binding.create_resolution == CreateResolution::Rejected
         {
@@ -238,7 +239,7 @@ impl OrderIdentity {
             return false;
         }
 
-        let mut binding = self.binding.lock().expect(MUTEX_POISONED);
+        let mut binding = self.binding.lock();
         if binding.submission_nonce != Some(nonce)
             || binding.create_resolution != CreateResolution::Pending
         {
@@ -352,7 +353,7 @@ impl RetiredOrderCache {
         let index = identity.client_order_index;
         let venue_order_id = identity.venue_order_id();
         let binding = (index, venue_order_id);
-        let mut inner = self.inner.lock().expect(MUTEX_POISONED);
+        let mut inner = self.inner.lock();
         let seq = inner.next_seq;
         inner.next_seq = inner.next_seq.wrapping_add(1);
 
@@ -406,7 +407,7 @@ impl RetiredOrderCache {
     }
 
     fn cloid_for_index(&self, index: i64) -> Option<ClientOrderId> {
-        let inner = self.inner.lock().expect(MUTEX_POISONED);
+        let inner = self.inner.lock();
         let bindings = inner.by_index.get(&index)?;
         if bindings.len() != 1 {
             return None;
@@ -417,7 +418,6 @@ impl RetiredOrderCache {
     fn cloid_for_venue(&self, index: i64, venue_order_id: VenueOrderId) -> Option<ClientOrderId> {
         self.inner
             .lock()
-            .expect(MUTEX_POISONED)
             .by_index
             .get(&index)?
             .get(&Some(venue_order_id))
@@ -425,7 +425,7 @@ impl RetiredOrderCache {
     }
 
     fn identity_for_cloid(&self, cloid: &ClientOrderId) -> Option<OrderIdentity> {
-        let inner = self.inner.lock().expect(MUTEX_POISONED);
+        let inner = self.inner.lock();
         let (index, venue_order_id) = inner.by_cloid.get(cloid)?;
         inner
             .by_index
@@ -435,11 +435,7 @@ impl RetiredOrderCache {
     }
 
     fn contains_index(&self, index: i64) -> bool {
-        self.inner
-            .lock()
-            .expect(MUTEX_POISONED)
-            .by_index
-            .contains_key(&index)
+        self.inner.lock().by_index.contains_key(&index)
     }
 }
 
@@ -481,7 +477,7 @@ impl TradeDedupCache {
     }
 
     fn insert(&self, trade_id: TradeId, source: TradeDedupSource) -> Option<TradeDedupSource> {
-        let mut inner = self.inner.lock().expect(MUTEX_POISONED);
+        let mut inner = self.inner.lock();
         if let Some((existing, _)) = inner.entries.get(&trade_id) {
             return Some(*existing);
         }
@@ -504,20 +500,12 @@ impl TradeDedupCache {
     }
 
     fn remove(&self, trade_id: &TradeId) {
-        self.inner
-            .lock()
-            .expect(MUTEX_POISONED)
-            .entries
-            .remove(trade_id);
+        self.inner.lock().entries.remove(trade_id);
     }
 
     #[cfg(test)]
     pub(crate) fn contains(&self, trade_id: &TradeId) -> bool {
-        self.inner
-            .lock()
-            .expect(MUTEX_POISONED)
-            .entries
-            .contains_key(trade_id)
+        self.inner.lock().entries.contains_key(trade_id)
     }
 }
 
@@ -829,10 +817,7 @@ impl WsDispatchState {
         {
             self.mark_order_submission(&order.client_order_id(), pending.nonce);
         }
-        self.pending_sendtx
-            .lock()
-            .expect(MUTEX_POISONED)
-            .push_back(pending);
+        self.pending_sendtx.lock().push_back(pending);
     }
 
     /// Pop the oldest pending entry unconditionally.
@@ -841,10 +826,7 @@ impl WsDispatchState {
     /// attribution must use [`Self::pop_pending_sendtx_if_only`].
     #[cfg(test)]
     pub(crate) fn pop_pending_sendtx_head(&self) -> Option<PendingSendTx> {
-        self.pending_sendtx
-            .lock()
-            .expect(MUTEX_POISONED)
-            .pop_front()
+        self.pending_sendtx.lock().pop_front()
     }
 
     /// Pop a pending entry only when it is the sole possible match.
@@ -856,7 +838,7 @@ impl WsDispatchState {
         &self,
         connection_epoch: u64,
     ) -> Option<PendingSendTx> {
-        let mut queue = self.pending_sendtx.lock().expect(MUTEX_POISONED);
+        let mut queue = self.pending_sendtx.lock();
         let mut matches = queue
             .iter()
             .enumerate()
@@ -877,7 +859,7 @@ impl WsDispatchState {
         max_age_ms: u64,
     ) -> Option<PendingSendTx> {
         let cutoff_ns = now.as_u64().saturating_sub(max_age_ms * 1_000_000);
-        let mut queue = self.pending_sendtx.lock().expect(MUTEX_POISONED);
+        let mut queue = self.pending_sendtx.lock();
         let mut matches = queue
             .iter()
             .enumerate()
@@ -896,7 +878,7 @@ impl WsDispatchState {
         connection_epoch: u64,
         nonce: i64,
     ) -> Option<PendingSendTx> {
-        let mut q = self.pending_sendtx.lock().expect(MUTEX_POISONED);
+        let mut q = self.pending_sendtx.lock();
         let pos = q
             .iter()
             .position(|p| p.connection_epoch == connection_epoch && p.nonce == nonce)?;
@@ -916,7 +898,7 @@ impl WsDispatchState {
             .strip_prefix("0x")
             .or_else(|| tx_hash.strip_prefix("0X"))
             .unwrap_or(tx_hash);
-        let mut q = self.pending_sendtx.lock().expect(MUTEX_POISONED);
+        let mut q = self.pending_sendtx.lock();
         let pos = q.iter().position(|p| {
             p.connection_epoch == connection_epoch && p.tx_hash.eq_ignore_ascii_case(tx_hash)
         })?;
@@ -925,7 +907,7 @@ impl WsDispatchState {
 
     /// Drain pending entries owned by one disconnected connection.
     pub(crate) fn drain_pending_sendtx(&self, connection_epoch: u64) -> Vec<PendingSendTx> {
-        let mut queue = self.pending_sendtx.lock().expect(MUTEX_POISONED);
+        let mut queue = self.pending_sendtx.lock();
         let (drained, retained) = std::mem::take(&mut *queue)
             .into_iter()
             .partition(|pending| pending.connection_epoch == connection_epoch);
@@ -934,13 +916,13 @@ impl WsDispatchState {
     }
 
     pub(crate) fn take_pending_sendtx(&self) -> Vec<PendingSendTx> {
-        std::mem::take(&mut *self.pending_sendtx.lock().expect(MUTEX_POISONED)).into()
+        std::mem::take(&mut *self.pending_sendtx.lock()).into()
     }
 
     /// Returns the current pending-sendTx queue length. Test-only helper.
     #[cfg(test)]
     pub(crate) fn pending_sendtx_len(&self) -> usize {
-        self.pending_sendtx.lock().expect(MUTEX_POISONED).len()
+        self.pending_sendtx.lock().len()
     }
 
     /// First-time check for an `OrderTriggered` event for `cloid`. Returns
@@ -1000,7 +982,7 @@ impl WsDispatchState {
 
     /// Register the client index and identity for one create as one registry operation.
     pub(crate) fn register_create_identity(&self, order: &OrderAny) -> anyhow::Result<i64> {
-        let _guard = self.create_registry.lock().expect(MUTEX_POISONED);
+        let _guard = self.create_registry.lock();
         let cloid = order.client_order_id();
         let client_order_index =
             self.register_cloid(self.derive_client_order_index(&cloid), cloid)?;
@@ -1040,7 +1022,7 @@ impl WsDispatchState {
         client_order_index: i64,
         nonce: i64,
     ) -> bool {
-        let _guard = self.create_registry.lock().expect(MUTEX_POISONED);
+        let _guard = self.create_registry.lock();
         self.order_identities
             .get(cloid)
             .is_some_and(|identity| identity.confirm_submission(client_order_index, nonce))
@@ -1053,7 +1035,7 @@ impl WsDispatchState {
         nonce: i64,
         venue_order_id: VenueOrderId,
     ) -> bool {
-        let _guard = self.create_registry.lock().expect(MUTEX_POISONED);
+        let _guard = self.create_registry.lock();
         let Some(identity) = self
             .order_identities
             .get(cloid)
@@ -1079,7 +1061,7 @@ impl WsDispatchState {
         nonce: i64,
         connection_epoch: Option<(&AtomicU64, u64)>,
     ) -> bool {
-        let _guard = self.create_registry.lock().expect(MUTEX_POISONED);
+        let _guard = self.create_registry.lock();
         let Some(identity) = self
             .order_identities
             .get(cloid)
@@ -1529,23 +1511,20 @@ impl WsDispatchState {
     /// Cache the most recent [`AccountState`] from the WS feed so
     /// `query_account` can serve a snapshot synchronously.
     pub(crate) fn cache_account_state(&self, state: AccountState) {
-        let mut guard = self.last_account_state.lock().expect(MUTEX_POISONED);
+        let mut guard = self.last_account_state.lock();
         *guard = Some(state);
     }
 
     /// Return a clone of the cached [`AccountState`], if any.
     pub(crate) fn snapshot_account_state(&self) -> Option<AccountState> {
-        self.last_account_state
-            .lock()
-            .expect(MUTEX_POISONED)
-            .clone()
+        self.last_account_state.lock().clone()
     }
 
     /// Drop the cached `AccountState` snapshot. Used at connect time so a
     /// stale prior-session snapshot cannot satisfy the strict-await gate
     /// when an initial venue frame fails to parse or omits balances.
     pub(crate) fn clear_account_state_cache(&self) {
-        let mut guard = self.last_account_state.lock().expect(MUTEX_POISONED);
+        let mut guard = self.last_account_state.lock();
         *guard = None;
     }
 
@@ -1554,16 +1533,13 @@ impl WsDispatchState {
     /// the strict-await gate before the next `account_all_positions` frame
     /// replaces the cache.
     pub(crate) fn clear_position_cache(&self) {
-        let mut snapshot = self.position_snapshot.lock().expect(MUTEX_POISONED);
+        let mut snapshot = self.position_snapshot.lock();
         snapshot.reports.clear();
         snapshot.skipped_market_ids = None;
     }
 
     pub(crate) fn invalidate_position_snapshot(&self) {
-        self.position_snapshot
-            .lock()
-            .expect(MUTEX_POISONED)
-            .skipped_market_ids = None;
+        self.position_snapshot.lock().skipped_market_ids = None;
     }
 
     /// Replace the cache and coverage from an `account_all_positions` snapshot
@@ -1580,7 +1556,7 @@ impl WsDispatchState {
         retained: &[InstrumentId],
         skipped_market_ids: &[i16],
     ) -> Vec<InstrumentId> {
-        let mut snapshot = self.position_snapshot.lock().expect(MUTEX_POISONED);
+        let mut snapshot = self.position_snapshot.lock();
         let removed = replace_position_reports(&mut snapshot.reports, reports, retained);
         snapshot.skipped_market_ids = Some(skipped_market_ids.iter().copied().collect());
         removed
@@ -1595,7 +1571,7 @@ impl WsDispatchState {
         covered_market_ids: &[i16],
         skipped_market_ids: &[i16],
     ) -> Vec<InstrumentId> {
-        let mut snapshot = self.position_snapshot.lock().expect(MUTEX_POISONED);
+        let mut snapshot = self.position_snapshot.lock();
         let removed = update_position_reports(&mut snapshot.reports, reports, closed);
         if let Some(skipped) = snapshot.skipped_market_ids.as_mut() {
             for market_id in covered_market_ids {
@@ -1610,7 +1586,7 @@ impl WsDispatchState {
     pub(crate) fn snapshot_positions_with_coverage(
         &self,
     ) -> (Vec<PositionStatusReport>, Option<AHashSet<i16>>) {
-        let snapshot = self.position_snapshot.lock().expect(MUTEX_POISONED);
+        let snapshot = self.position_snapshot.lock();
         (
             snapshot.reports.values().cloned().collect(),
             snapshot.skipped_market_ids.clone(),
@@ -3776,7 +3752,7 @@ mod tests {
         assert_eq!(pending_cloid(&drained[0]), Some(cloid("OLD")));
 
         {
-            let queue = state.pending_sendtx.lock().expect(MUTEX_POISONED);
+            let queue = state.pending_sendtx.lock();
             assert_eq!(queue.len(), 1);
             assert_eq!(queue[0].connection_epoch, 5);
             assert_eq!(queue[0].nonce, 11);
@@ -3787,7 +3763,7 @@ mod tests {
         replacement_after_cleanup.connection_epoch = 5;
         state.enqueue_pending_sendtx(replacement_after_cleanup);
 
-        let queue = state.pending_sendtx.lock().expect(MUTEX_POISONED);
+        let queue = state.pending_sendtx.lock();
         assert_eq!(queue.len(), 2);
         assert_eq!(
             queue

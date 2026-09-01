@@ -17,7 +17,7 @@
 
 use std::{
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -53,6 +53,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     types::{Currency, Money},
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 
 use crate::{
@@ -243,12 +244,7 @@ impl BetfairDataClient {
     }
 
     fn begin_stream_shutdown(&self) {
-        for stream in self
-            .stream_shutdowns
-            .lock()
-            .expect("Betfair stream shutdown mutex poisoned")
-            .iter()
-        {
+        for stream in self.stream_shutdowns.lock().iter() {
             stream.begin_shutdown();
         }
     }
@@ -290,10 +286,7 @@ impl BetfairDataClient {
             && self.race_stream_client.is_none()
             && self.cricket_stream_client.is_none()
         {
-            self.stream_shutdowns
-                .lock()
-                .expect("Betfair stream shutdown mutex poisoned")
-                .clear();
+            self.stream_shutdowns.lock().clear();
         }
 
         if self.shutdown_errors.is_empty() {
@@ -451,7 +444,7 @@ impl BetfairDataClient {
                                 }
 
                                 if let Some(trades) = &rc.trd {
-                                    let mut volumes = traded_volumes.lock().unwrap();
+                                    let mut volumes = traded_volumes.lock();
 
                                     for pv in trades {
                                         if pv.volume == Decimal::ZERO {
@@ -549,9 +542,9 @@ impl BetfairDataClient {
                         if market_closed {
                             let prefix = format!("{}-", mc.id);
 
-                            if let Ok(mut volumes) = traded_volumes.lock() {
-                                volumes.retain(|k, _| !k.0.symbol.as_str().starts_with(&prefix));
-                            }
+                            traded_volumes
+                                .lock()
+                                .retain(|k, _| !k.0.symbol.as_str().starts_with(&prefix));
                         }
                     }
 
@@ -743,11 +736,7 @@ impl DataClient for BetfairDataClient {
         let stream_shutdowns = Arc::clone(&self.stream_shutdowns);
         let setup_guard =
             TaskGroupGuard::new(&[&self.session_tasks, &self.command_tasks], move || {
-                for stream in stream_shutdowns
-                    .lock()
-                    .expect("Betfair stream shutdown mutex poisoned")
-                    .iter()
-                {
+                for stream in stream_shutdowns.lock().iter() {
                     stream.begin_shutdown();
                 }
             });
@@ -820,7 +809,6 @@ impl DataClient for BetfairDataClient {
         self.stream_client = Some(stream_client);
         self.stream_shutdowns
             .lock()
-            .expect("Betfair stream shutdown mutex poisoned")
             .push(BetfairStreamShutdown::Exchange(Arc::clone(
                 self.stream_client.as_ref().expect("stream client assigned"),
             )));
@@ -873,7 +861,6 @@ impl DataClient for BetfairDataClient {
                         self.race_stream_client = Some(Arc::clone(&race_client));
                         self.stream_shutdowns
                             .lock()
-                            .expect("Betfair stream shutdown mutex poisoned")
                             .push(BetfairStreamShutdown::Auxiliary(Arc::clone(&race_client)));
 
                         let race_socket_control = self.race_socket_control.as_ref().map(Arc::clone);
@@ -956,7 +943,6 @@ impl DataClient for BetfairDataClient {
                         self.cricket_stream_client = Some(Arc::clone(&cricket_client));
                         self.stream_shutdowns
                             .lock()
-                            .expect("Betfair stream shutdown mutex poisoned")
                             .push(BetfairStreamShutdown::Auxiliary(Arc::clone(
                                 &cricket_client,
                             )));

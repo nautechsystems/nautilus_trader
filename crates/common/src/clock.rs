@@ -1255,14 +1255,10 @@ pub(crate) fn replace_existing_timer<T: Timer>(timers: &mut BTreeMap<Ustr, T>, n
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        cell::RefCell,
-        collections::BTreeMap,
-        sync::{Arc, Mutex},
-        time::Duration,
-    };
+    use std::{cell::RefCell, collections::BTreeMap, sync::Arc, time::Duration};
 
-    use nautilus_core::{MUTEX_POISONED, UnixNanos};
+    use nautilus_core::UnixNanos;
+    use parking_lot::Mutex;
     use proptest::{prelude::*, test_runner::TestCaseResult};
     use rstest::{fixture, rstest};
     use ustr::Ustr;
@@ -1285,9 +1281,7 @@ mod tests {
     impl From<TestCallback> for TimeEventCallback {
         fn from(callback: TestCallback) -> Self {
             Self::from(move |_event: TimeEvent| {
-                if let Ok(mut called) = callback.called.lock() {
-                    *called = true;
-                }
+                *callback.called.lock() = true;
             })
         }
     }
@@ -1392,8 +1386,8 @@ mod tests {
             handler.callback.call(handler.event);
         }
 
-        assert!(*default_called.lock().expect(MUTEX_POISONED));
-        assert!(*custom_called.lock().expect(MUTEX_POISONED));
+        assert!(*default_called.lock());
+        assert!(*custom_called.lock());
     }
 
     #[rstest]
@@ -2541,17 +2535,11 @@ mod tests {
         let clock = ClockApi::from_handlers(
             || UnixNanos::from(1_700_000_000_000_000_000),
             move |name, _, _, _| {
-                calls_for_alert
-                    .lock()
-                    .expect(MUTEX_POISONED)
-                    .push(name.to_string());
+                calls_for_alert.lock().push(name.to_string());
                 Ok(())
             },
             move |name, _, _, _, _, _, _| {
-                calls_for_timer
-                    .lock()
-                    .expect(MUTEX_POISONED)
-                    .push(name.to_string());
+                calls_for_timer.lock().push(name.to_string());
                 Ok(())
             },
             Vec::new,
@@ -2583,7 +2571,7 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(err.to_string(), "Interval exceeds u64 nanoseconds");
-        assert!(calls.lock().expect(MUTEX_POISONED).is_empty());
+        assert!(calls.lock().is_empty());
     }
 
     #[rstest]
@@ -2625,11 +2613,9 @@ mod tests {
         let clock = ClockApi::from_handlers(
             || UnixNanos::from(1_700_000_000_123_456_789),
             move |name, alert_time_ns, _callback, allow_past| {
-                alerts_for_handler.lock().expect(MUTEX_POISONED).push((
-                    name.to_string(),
-                    alert_time_ns,
-                    allow_past,
-                ));
+                alerts_for_handler
+                    .lock()
+                    .push((name.to_string(), alert_time_ns, allow_past));
                 Ok(())
             },
             move |name,
@@ -2639,7 +2625,7 @@ mod tests {
                   _callback,
                   allow_past,
                   fire_immediately| {
-                timers_for_handler.lock().expect(MUTEX_POISONED).push((
+                timers_for_handler.lock().push((
                     name.to_string(),
                     interval_ns,
                     start_time_ns,
@@ -2654,13 +2640,10 @@ mod tests {
             |name| name == "alpha",
             |name| (name == "alpha").then(|| UnixNanos::from(1_700_000_000_999_000_000)),
             move |name| {
-                cancellations_for_handler
-                    .lock()
-                    .expect(MUTEX_POISONED)
-                    .push(name.to_string());
+                cancellations_for_handler.lock().push(name.to_string());
             },
             move || {
-                *cancel_all_for_handler.lock().expect(MUTEX_POISONED) = true;
+                *cancel_all_for_handler.lock() = true;
             },
         );
 
@@ -2723,7 +2706,7 @@ mod tests {
             Some(UnixNanos::from(1_700_000_000_999_000_000))
         );
         assert_eq!(
-            alerts.lock().expect(MUTEX_POISONED).as_slice(),
+            alerts.lock().as_slice(),
             &[
                 (
                     "alert".to_string(),
@@ -2738,7 +2721,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            timers.lock().expect(MUTEX_POISONED).as_slice(),
+            timers.lock().as_slice(),
             &[
                 (
                     "timer".to_string(),
@@ -2758,11 +2741,8 @@ mod tests {
                 )
             ]
         );
-        assert_eq!(
-            cancellations.lock().expect(MUTEX_POISONED).as_slice(),
-            &["alpha".to_string()]
-        );
-        assert!(*cancel_all.lock().expect(MUTEX_POISONED));
+        assert_eq!(cancellations.lock().as_slice(), &["alpha".to_string()]);
+        assert!(*cancel_all.lock());
     }
 
     proptest! {

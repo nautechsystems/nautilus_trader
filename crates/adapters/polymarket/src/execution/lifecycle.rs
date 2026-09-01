@@ -28,7 +28,7 @@ use nautilus_common::{
     live::runner::get_exec_event_sender,
     msgbus::{self, TypedHandler},
 };
-use nautilus_core::{MUTEX_POISONED, collections::AtomicMap, time::AtomicTime};
+use nautilus_core::{collections::AtomicMap, time::AtomicTime};
 use nautilus_live::task::TaskGroupGuard;
 use nautilus_model::{
     events::{OrderEventAny, OrderFilled, PositionEvent},
@@ -298,7 +298,7 @@ impl PolymarketExecutionClient {
                 match rx.recv().await {
                     Some(PolymarketWsMessage::User(user_msg)) => {
                         let refresh = {
-                            let mut state = ws_dispatch_state.lock().expect(MUTEX_POISONED);
+                            let mut state = ws_dispatch_state.lock();
                             dispatch_user_message(&user_msg, &ctx, &mut state)
                         };
 
@@ -492,7 +492,7 @@ impl PolymarketExecutionClient {
             }
         }
 
-        let mut state = self.ws_dispatch_state.lock().expect(MUTEX_POISONED);
+        let mut state = self.ws_dispatch_state.lock();
 
         for (key, fills) in matched_fills {
             if !voided_trades.contains(&key) {
@@ -557,7 +557,7 @@ impl PolymarketExecutionClient {
         self.clear_position_event_subscription();
         self.shared_token_instruments.store(AHashMap::new());
         self.neg_risk_index.store(AHashMap::new());
-        *self.ws_dispatch_state.lock().expect(MUTEX_POISONED) = WsDispatchState::default();
+        *self.ws_dispatch_state.lock() = WsDispatchState::default();
     }
 
     pub(super) async fn connect_client(&mut self) -> anyhow::Result<()> {
@@ -1261,7 +1261,7 @@ mod tests {
             .order_identities
             .get(&venue_order_id)
             .expect("order identity restored");
-        let state = client.ws_dispatch_state.lock().expect(MUTEX_POISONED);
+        let state = client.ws_dispatch_state.lock();
 
         assert_eq!(identity.client_order_id, order.client_order_id());
         assert!(!client.order_identities.mark_accepted(venue_order_id));
@@ -1548,7 +1548,6 @@ mod tests {
         client
             .ws_dispatch_state
             .lock()
-            .expect(MUTEX_POISONED)
             .processed_fills
             .add("trade-1".to_string());
 
@@ -1566,7 +1565,6 @@ mod tests {
             !client
                 .ws_dispatch_state
                 .lock()
-                .expect(MUTEX_POISONED)
                 .processed_fills
                 .contains(&"trade-1".to_string())
         );
@@ -1580,7 +1578,6 @@ mod tests {
         client
             .ws_dispatch_state
             .lock()
-            .expect(MUTEX_POISONED)
             .processed_fills
             .add(dedup_key.clone());
 
@@ -1590,7 +1587,6 @@ mod tests {
             client
                 .ws_dispatch_state
                 .lock()
-                .expect(MUTEX_POISONED)
                 .processed_fills
                 .contains(&dedup_key)
         );

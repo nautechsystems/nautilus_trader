@@ -43,11 +43,10 @@
 //! during startup that would then immediately flip when the other stream
 //! lands.
 
-use std::sync::Mutex;
-
 use ahash::AHashMap;
 use nautilus_core::UnixNanos;
 use nautilus_model::{events::AccountState, identifiers::AccountId, types::Currency};
+use parking_lot::Mutex;
 use ustr::Ustr;
 
 use super::{
@@ -100,7 +99,7 @@ impl LighterAccountStateReconciler {
     /// Clear all cached state. Use before re-subscribing on a new WS
     /// session so the next emission reflects only fresh frames.
     pub(crate) fn reset(&self) {
-        let mut inner = self.inner.lock().expect("reconciler mutex poisoned");
+        let mut inner = self.inner.lock();
         inner.assets.clear();
         inner.user_stats = None;
         inner.assets_seen = false;
@@ -112,7 +111,7 @@ impl LighterAccountStateReconciler {
     /// Upsert per-key: each entry in `assets` overwrites any prior entry
     /// with the same key; keys absent from this frame are retained.
     pub(crate) fn update_assets(&self, assets: &AHashMap<Ustr, LighterAsset>) {
-        let mut inner = self.inner.lock().expect("reconciler mutex poisoned");
+        let mut inner = self.inner.lock();
         for (key, asset) in assets {
             inner.assets.insert(*key, asset.clone());
         }
@@ -121,7 +120,7 @@ impl LighterAccountStateReconciler {
 
     /// Update the perp-rollup snapshot from a `user_stats` frame.
     pub(crate) fn update_user_stats(&self, stats: &LighterUserStats) {
-        let mut inner = self.inner.lock().expect("reconciler mutex poisoned");
+        let mut inner = self.inner.lock();
         inner.user_stats = Some(stats.clone());
         inner.user_stats_seen = true;
     }
@@ -137,7 +136,7 @@ impl LighterAccountStateReconciler {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Option<anyhow::Result<AccountState>> {
-        let inner = self.inner.lock().expect("reconciler mutex poisoned");
+        let inner = self.inner.lock();
         if !inner.both_seen() {
             return None;
         }

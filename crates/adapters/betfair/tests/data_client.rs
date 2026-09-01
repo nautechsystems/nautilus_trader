@@ -283,9 +283,9 @@ async fn test_data_stream_relogin_requests_one_follow_up_reconnect() {
         let mut login_response: Value =
             serde_json::from_str(&load_fixture("rest/login_success.json")).unwrap();
         login_response["token"] = Value::String("REFRESHED_SESSION_TOKEN".to_string());
-        *server_state.login_response_override.lock().unwrap() =
+        *server_state.login_response_override.lock() =
             Some(serde_json::to_string(&login_response).unwrap());
-        *server_state.keep_alive_response_override.lock().unwrap() =
+        *server_state.keep_alive_response_override.lock() =
             Some(load_fixture("rest/login_failure.json"));
 
         tokio::io::AsyncWriteExt::write_all(
@@ -308,7 +308,7 @@ async fn test_data_stream_relogin_requests_one_follow_up_reconnect() {
         let final_auth_json: Value = serde_json::from_str(&final_auth).unwrap();
         assert_eq!(final_auth_json["session"], "REFRESHED_SESSION_TOKEN");
 
-        *server_state.keep_alive_response_override.lock().unwrap() = None;
+        *server_state.keep_alive_response_override.lock() = None;
         tokio::io::AsyncWriteExt::write_all(
             &mut final_write_half,
             b"{\"op\":\"connection\",\"connectionId\":\"replacement-2\"}\r\n",

@@ -15,7 +15,7 @@
 
 //! Shared runtime helpers for the Polymarket data client.
 
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Arc;
 
 use ahash::AHashSet;
 use dashmap::DashMap;
@@ -26,6 +26,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
 };
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -36,17 +37,14 @@ use super::{
 use crate::{providers::extract_condition_id, resolve::ResolveWatchEntry};
 
 pub(crate) fn is_condition_closed(
-    closed_condition_ids: &Arc<StdMutex<AHashSet<String>>>,
+    closed_condition_ids: &Arc<Mutex<AHashSet<String>>>,
     condition_id: &str,
 ) -> bool {
-    closed_condition_ids
-        .lock()
-        .expect("closed_condition_ids mutex poisoned")
-        .contains(condition_id)
+    closed_condition_ids.lock().contains(condition_id)
 }
 
 pub(crate) async fn register_closed_condition_for_live_data(
-    closed_condition_ids: &Arc<StdMutex<AHashSet<String>>>,
+    closed_condition_ids: &Arc<Mutex<AHashSet<String>>>,
     ws_sub_mutex: &Arc<tokio::sync::Mutex<()>>,
     condition_id: &str,
     cancellation: Option<&CancellationToken>,
@@ -60,9 +58,7 @@ pub(crate) async fn register_closed_condition_for_live_data(
         ws_sub_mutex.lock().await
     };
     let newly_closed = {
-        let mut terminal_conditions = closed_condition_ids
-            .lock()
-            .expect("closed_condition_ids mutex poisoned");
+        let mut terminal_conditions = closed_condition_ids.lock();
 
         if cancellation.is_some_and(CancellationToken::is_cancelled) {
             return false;
@@ -91,7 +87,7 @@ pub(crate) fn is_instrument_expired_and_not_reported_open(
 
 pub(crate) fn seed_token_meta_from_live_instruments(
     now_ns: UnixNanos,
-    closed_condition_ids: &Arc<StdMutex<AHashSet<String>>>,
+    closed_condition_ids: &Arc<Mutex<AHashSet<String>>>,
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     token_meta: &Arc<DashMap<Ustr, TokenMeta>>,
 ) {
@@ -102,9 +98,7 @@ pub(crate) fn seed_token_meta_from_live_instruments(
             continue;
         }
 
-        let terminal_conditions = closed_condition_ids
-            .lock()
-            .expect("closed_condition_ids mutex poisoned");
+        let terminal_conditions = closed_condition_ids.lock();
 
         if extract_condition_id(&instrument.id())
             .is_ok_and(|condition_id| terminal_conditions.contains(&condition_id))
@@ -145,7 +139,7 @@ fn has_live_runtime_state(
     active_delta_subs: &Arc<AtomicSet<InstrumentId>>,
     active_trade_subs: &Arc<AtomicSet<InstrumentId>>,
     pending_snapshot_after_tick_change: &Arc<AtomicSet<InstrumentId>>,
-    pending_auto_loads: &Arc<StdMutex<AHashSet<InstrumentId>>>,
+    pending_auto_loads: &Arc<Mutex<AHashSet<InstrumentId>>>,
     ws_open_tokens: &Arc<AtomicSet<Ustr>>,
 ) -> bool {
     if active_quote_subs.contains(&instrument_id)
@@ -157,11 +151,7 @@ fn has_live_runtime_state(
         return true;
     }
 
-    if pending_auto_loads
-        .lock()
-        .expect("pending_auto_loads mutex poisoned")
-        .contains(&instrument_id)
-    {
+    if pending_auto_loads.lock().contains(&instrument_id) {
         return true;
     }
 
@@ -187,7 +177,7 @@ pub(crate) async fn retire_local_instrument_state(
     active_trade_subs: &Arc<AtomicSet<InstrumentId>>,
     resolve_poll_watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
     pending_snapshot_after_tick_change: &Arc<AtomicSet<InstrumentId>>,
-    pending_auto_loads: &Arc<StdMutex<AHashSet<InstrumentId>>>,
+    pending_auto_loads: &Arc<Mutex<AHashSet<InstrumentId>>>,
     ws_open_tokens: &Arc<AtomicSet<Ustr>>,
     ws_sub_mutex: &Arc<tokio::sync::Mutex<()>>,
     ws: &crate::websocket::pool::PolymarketMarketPoolHandle,
@@ -214,9 +204,7 @@ pub(crate) async fn retire_local_instrument_state(
 
     pending_snapshot_after_tick_change.remove(&instrument_id);
     {
-        let mut pending = pending_auto_loads
-            .lock()
-            .expect("pending_auto_loads mutex poisoned");
+        let mut pending = pending_auto_loads.lock();
         pending.remove(&instrument_id);
     }
 
@@ -243,7 +231,7 @@ pub(crate) async fn retire_local_instrument_state(
 pub(crate) async fn retire_closed_condition_state(
     condition_id: &str,
     seed_ids: impl IntoIterator<Item = InstrumentId>,
-    closed_condition_ids: &Arc<StdMutex<AHashSet<String>>>,
+    closed_condition_ids: &Arc<Mutex<AHashSet<String>>>,
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     token_meta: &Arc<DashMap<Ustr, TokenMeta>>,
     order_books: &Arc<DashMap<InstrumentId, OrderBook>>,
@@ -253,7 +241,7 @@ pub(crate) async fn retire_closed_condition_state(
     active_trade_subs: &Arc<AtomicSet<InstrumentId>>,
     resolve_poll_watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
     pending_snapshot_after_tick_change: &Arc<AtomicSet<InstrumentId>>,
-    pending_auto_loads: &Arc<StdMutex<AHashSet<InstrumentId>>>,
+    pending_auto_loads: &Arc<Mutex<AHashSet<InstrumentId>>>,
     ws_open_tokens: &Arc<AtomicSet<Ustr>>,
     ws_sub_mutex: &Arc<tokio::sync::Mutex<()>>,
     ws: &crate::websocket::pool::PolymarketMarketPoolHandle,
@@ -310,7 +298,6 @@ pub(crate) async fn retire_closed_condition_state(
         ids.extend(
             pending_auto_loads
                 .lock()
-                .expect("pending_auto_loads mutex poisoned")
                 .iter()
                 .filter(|id| matches_condition(id))
                 .copied(),
@@ -390,7 +377,7 @@ pub(crate) async fn retire_expired_local_instruments(
     active_trade_subs: &Arc<AtomicSet<InstrumentId>>,
     resolve_poll_watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
     pending_snapshot_after_tick_change: &Arc<AtomicSet<InstrumentId>>,
-    pending_auto_loads: &Arc<StdMutex<AHashSet<InstrumentId>>>,
+    pending_auto_loads: &Arc<Mutex<AHashSet<InstrumentId>>>,
     ws_open_tokens: &Arc<AtomicSet<Ustr>>,
     ws_sub_mutex: &Arc<tokio::sync::Mutex<()>>,
     ws: &crate::websocket::pool::PolymarketMarketPoolHandle,
@@ -460,7 +447,7 @@ pub(crate) async fn retire_expired_local_instruments(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex as StdMutex};
+    use std::sync::Arc;
 
     use ahash::AHashSet;
     use dashmap::DashMap;
@@ -474,6 +461,7 @@ mod tests {
         orderbook::OrderBook,
         types::{Currency, Price, Quantity},
     };
+    use parking_lot::Mutex;
     use rstest::rstest;
 
     use super::*;
@@ -483,11 +471,11 @@ mod tests {
     };
 
     struct ClosureLogCapture {
-        messages: StdMutex<Vec<String>>,
+        messages: Mutex<Vec<String>>,
     }
 
     static CLOSURE_LOG_CAPTURE: ClosureLogCapture = ClosureLogCapture {
-        messages: StdMutex::new(Vec::new()),
+        messages: Mutex::new(Vec::new()),
     };
 
     impl Log for ClosureLogCapture {
@@ -498,10 +486,7 @@ mod tests {
 
         fn log(&self, record: &Record<'_>) {
             if self.enabled(record.metadata()) {
-                self.messages
-                    .lock()
-                    .unwrap()
-                    .push(record.args().to_string());
+                self.messages.lock().push(record.args().to_string());
             }
         }
 
@@ -514,7 +499,7 @@ mod tests {
         log::set_logger(&CLOSURE_LOG_CAPTURE).expect("test logger already installed");
         log::set_max_level(LevelFilter::Info);
 
-        let closed_condition_ids = Arc::new(StdMutex::new(AHashSet::new()));
+        let closed_condition_ids = Arc::new(Mutex::new(AHashSet::new()));
         let ws_sub_mutex = Arc::new(tokio::sync::Mutex::new(()));
 
         for condition_id in ["0xCOND-A", "0xCOND-A", "0xCOND-B"] {
@@ -530,14 +515,14 @@ mod tests {
         }
 
         assert_eq!(
-            *CLOSURE_LOG_CAPTURE.messages.lock().unwrap(),
+            *CLOSURE_LOG_CAPTURE.messages.lock(),
             vec![
                 "Market closed for condition 0xCOND-A, retiring live data state".to_string(),
                 "Market closed for condition 0xCOND-B, retiring live data state".to_string(),
             ],
         );
         assert_eq!(
-            *closed_condition_ids.lock().unwrap(),
+            *closed_condition_ids.lock(),
             AHashSet::from_iter(["0xCOND-A".to_string(), "0xCOND-B".to_string()]),
         );
     }
@@ -587,7 +572,7 @@ mod tests {
         active_delta_subs: &Arc<AtomicSet<InstrumentId>>,
         active_trade_subs: &Arc<AtomicSet<InstrumentId>>,
         pending_snapshot_after_tick_change: &Arc<AtomicSet<InstrumentId>>,
-        pending_auto_loads: &Arc<StdMutex<AHashSet<InstrumentId>>>,
+        pending_auto_loads: &Arc<Mutex<AHashSet<InstrumentId>>>,
         ws_open_tokens: &Arc<AtomicSet<Ustr>>,
     ) {
         let instrument_id = instrument.id();
@@ -596,10 +581,7 @@ mod tests {
         active_delta_subs.insert(instrument_id);
         active_trade_subs.insert(instrument_id);
         pending_snapshot_after_tick_change.insert(instrument_id);
-        pending_auto_loads
-            .lock()
-            .expect("pending_auto_loads mutex poisoned")
-            .insert(instrument_id);
+        pending_auto_loads.lock().insert(instrument_id);
         ws_open_tokens.insert(Ustr::from(instrument.raw_symbol().as_str()));
         order_books.insert(
             instrument_id,
@@ -628,7 +610,7 @@ mod tests {
         let active_delta_subs = Arc::new(AtomicSet::new());
         let active_trade_subs = Arc::new(AtomicSet::new());
         let pending_snapshot_after_tick_change = Arc::new(AtomicSet::new());
-        let pending_auto_loads = Arc::new(StdMutex::new(AHashSet::new()));
+        let pending_auto_loads = Arc::new(Mutex::new(AHashSet::new()));
         let ws_open_tokens = Arc::new(AtomicSet::new());
 
         active_delta_subs.insert(instrument_id);
@@ -674,7 +656,7 @@ mod tests {
         let active_trade_subs = Arc::new(AtomicSet::new());
         let resolve_poll_watchlist = Arc::new(AtomicMap::new());
         let pending_snapshot_after_tick_change = Arc::new(AtomicSet::new());
-        let pending_auto_loads = Arc::new(StdMutex::new(AHashSet::new()));
+        let pending_auto_loads = Arc::new(Mutex::new(AHashSet::new()));
         let ws_open_tokens = Arc::new(AtomicSet::new());
         let ws_sub_mutex = Arc::new(tokio::sync::Mutex::new(()));
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
@@ -722,7 +704,7 @@ mod tests {
         let active_trade_subs = Arc::new(AtomicSet::new());
         let resolve_poll_watchlist = Arc::new(AtomicMap::new());
         let pending_snapshot_after_tick_change = Arc::new(AtomicSet::new());
-        let pending_auto_loads = Arc::new(StdMutex::new(AHashSet::new()));
+        let pending_auto_loads = Arc::new(Mutex::new(AHashSet::new()));
         let ws_open_tokens = Arc::new(AtomicSet::new());
         let ws_sub_mutex = Arc::new(tokio::sync::Mutex::new(()));
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
@@ -811,12 +793,7 @@ mod tests {
         assert!(!active_delta_subs.contains(&instrument_id));
         assert!(!active_trade_subs.contains(&instrument_id));
         assert!(!pending_snapshot_after_tick_change.contains(&instrument_id));
-        assert!(
-            pending_auto_loads
-                .lock()
-                .expect("pending_auto_loads mutex poisoned")
-                .is_empty()
-        );
+        assert!(pending_auto_loads.lock().is_empty());
         assert!(!ws_open_tokens.contains(&token_id));
     }
 }

@@ -21,7 +21,7 @@
 //! supplies an [`L3Sink`] that decides how to deliver the produced
 //! `OrderBookDeltas` to its downstream consumer.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use ahash::AHashMap;
 use nautilus_core::{AtomicMap, UnixNanos};
@@ -31,6 +31,7 @@ use nautilus_model::{
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
 };
+use parking_lot::Mutex;
 
 use super::{
     BookOrderIdHasher, KrakenL3WsMessage,
@@ -74,9 +75,7 @@ pub(crate) trait L3Sink {
 
 /// Returns the depth registered for `symbol`, defaulting to `1000`.
 pub(crate) fn subscription_depth(depths: &Arc<Mutex<AHashMap<String, u32>>>, symbol: &str) -> u32 {
-    depths
-        .lock()
-        .map_or(1000, |depths| depths.get(symbol).copied().unwrap_or(1000))
+    depths.lock().get(symbol).copied().unwrap_or(1000)
 }
 
 /// Emits a `Clear` delta (with `F_LAST`) after detecting a checksum mismatch.
@@ -351,10 +350,7 @@ mod tests {
         instruments.insert(instrument.id(), instrument);
 
         let depths = Arc::new(Mutex::new(AHashMap::new()));
-        depths
-            .lock()
-            .expect("L3 depth map mutex poisoned")
-            .insert("BTC/USD".to_string(), 1000);
+        depths.lock().insert("BTC/USD".to_string(), 1000);
 
         let snapshot: KrakenL3Snapshot = serde_json::from_str(
             r#"{
@@ -415,10 +411,7 @@ mod tests {
         instruments.insert(instrument.id(), instrument);
 
         let depths = Arc::new(Mutex::new(AHashMap::new()));
-        depths
-            .lock()
-            .expect("L3 depth map mutex poisoned")
-            .insert("BTC/USD".to_string(), 1000);
+        depths.lock().insert("BTC/USD".to_string(), 1000);
 
         let update: KrakenL3UpdateData = serde_json::from_str(
             r#"{

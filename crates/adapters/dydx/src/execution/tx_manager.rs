@@ -39,11 +39,12 @@
 //!    broadcasts
 
 use std::sync::{
-    Arc, RwLock,
+    Arc,
     atomic::{AtomicU64, Ordering},
 };
 
 use cosmrs::Any;
+use parking_lot::RwLock;
 
 use super::{types::PreparedTransaction, wallet::Wallet};
 use crate::{
@@ -157,14 +158,10 @@ impl TransactionManager {
     /// - Using permissioned key but no authenticators found for main account
     /// - No authenticator matches the wallet's public key
     /// - gRPC query fails
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal `RwLock` is poisoned.
     pub async fn resolve_authenticators(&self) -> Result<(), DydxError> {
         // Check if we already have authenticator IDs configured
         {
-            let ids = self.authenticator_ids.read().expect("RwLock poisoned");
+            let ids = self.authenticator_ids.read();
             if !ids.is_empty() {
                 log::debug!("Using pre-configured authenticator IDs: {:?}", *ids);
                 return Ok(());
@@ -247,7 +244,7 @@ impl TransactionManager {
 
         // Store the resolved authenticator IDs
         {
-            let mut ids = self.authenticator_ids.write().expect("RwLock poisoned");
+            let mut ids = self.authenticator_ids.write();
             *ids = matching_ids.clone();
         }
         log::debug!("Resolved authenticator IDs: {matching_ids:?}");
@@ -474,10 +471,6 @@ impl TransactionManager {
     /// # Errors
     ///
     /// Returns error if account lookup fails or transaction building fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal `RwLock` is poisoned.
     pub async fn build_transaction(
         &self,
         msgs: Vec<Any>,
@@ -492,7 +485,7 @@ impl TransactionManager {
 
         // Read authenticator IDs (resolved during connect if using permissioned keys)
         let auth_ids_snapshot: Vec<u64> = {
-            let ids = self.authenticator_ids.read().expect("RwLock poisoned");
+            let ids = self.authenticator_ids.read();
             ids.clone()
         };
 

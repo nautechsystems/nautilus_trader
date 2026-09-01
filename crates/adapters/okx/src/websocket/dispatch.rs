@@ -20,17 +20,12 @@
 //! proper order events; untracked orders fall back to execution reports for
 //! downstream reconciliation.
 
-use std::{
-    collections::VecDeque,
-    fmt::Debug,
-    hash::Hash,
-    sync::{Arc, Mutex},
-};
+use std::{collections::VecDeque, fmt::Debug, hash::Hash, sync::Arc};
 
 use ahash::AHashMap;
 use dashmap::DashMap;
 use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
-use nautilus_core::{AtomicMap, MUTEX_POISONED, UUID4, UnixNanos, time::AtomicTime};
+use nautilus_core::{AtomicMap, UUID4, UnixNanos, time::AtomicTime};
 use nautilus_live::{
     ExecutionEventEmitter,
     execution::{
@@ -52,6 +47,7 @@ use nautilus_model::{
     reports::FillReport,
     types::{Currency, Money, Quantity},
 };
+use parking_lot::Mutex;
 use ustr::Ustr;
 
 use crate::{
@@ -163,15 +159,15 @@ where
     }
 
     fn contains(&self, key: &K) -> bool {
-        self.inner.lock().expect(MUTEX_POISONED).contains(key)
+        self.inner.lock().contains(key)
     }
 
     fn insert(&self, key: K) -> bool {
-        self.inner.lock().expect(MUTEX_POISONED).insert(key)
+        self.inner.lock().insert(key)
     }
 
     fn remove(&self, key: &K) {
-        self.inner.lock().expect(MUTEX_POISONED).remove(key);
+        self.inner.lock().remove(key);
     }
 }
 
@@ -242,7 +238,7 @@ impl WsDispatchState {
         client_order_id: ClientOrderId,
         venue_order_id: VenueOrderId,
     ) {
-        let mut bindings = self.lifecycle_bindings.lock().expect(MUTEX_POISONED);
+        let mut bindings = self.lifecycle_bindings.lock();
         let binding = bindings.venue_by_client.get(&client_order_id).copied();
         if binding.is_some_and(|binding| binding.parent != venue_order_id) {
             log::error!(
@@ -269,7 +265,7 @@ impl WsDispatchState {
         &self,
         client_order_id: ClientOrderId,
     ) -> Option<(VenueOrderId, bool)> {
-        let bindings = self.lifecycle_bindings.lock().expect(MUTEX_POISONED);
+        let bindings = self.lifecycle_bindings.lock();
         bindings
             .venue_by_client
             .get(&client_order_id)
@@ -293,7 +289,7 @@ impl WsDispatchState {
     }
 
     pub(crate) fn remove_order_tracking(&self, client_order_id: ClientOrderId) {
-        let pending = self.pending_linked_children.lock().expect(MUTEX_POISONED);
+        let pending = self.pending_linked_children.lock();
         let removed_context = self.order_contexts.remove(&client_order_id).is_some();
         self.order_identities.remove(&client_order_id);
         drop(pending);
@@ -308,7 +304,7 @@ impl WsDispatchState {
         client_order_id: ClientOrderId,
         failure: &CommandFailure,
     ) {
-        let bindings = self.lifecycle_bindings.lock().expect(MUTEX_POISONED);
+        let bindings = self.lifecycle_bindings.lock();
         if matches!(failure, CommandFailure::Ambiguous(_))
             && bindings.venue_by_client.contains_key(&client_order_id)
         {
@@ -336,12 +332,12 @@ impl WsDispatchState {
                     .then_some(entry.identity.client_order_id)
             })
             .collect::<Vec<_>>();
-        let bindings = self.lifecycle_bindings.lock().expect(MUTEX_POISONED);
+        let bindings = self.lifecycle_bindings.lock();
         if let Some(client_order_id) = bindings.client_order_id(&parent_venue_order_id) {
             return LinkedChildResolution::Bound(client_order_id);
         }
 
-        let mut pending = self.pending_linked_children.lock().expect(MUTEX_POISONED);
+        let mut pending = self.pending_linked_children.lock();
         let candidate_client_order_ids = candidate_client_order_ids
             .iter()
             .filter(|client_order_id| {
@@ -364,17 +360,12 @@ impl WsDispatchState {
     }
 
     fn take_routable_linked_children(&self) -> Vec<OKXOrderMsg> {
-        if self
-            .pending_linked_children
-            .lock()
-            .expect(MUTEX_POISONED)
-            .is_empty()
-        {
+        if self.pending_linked_children.lock().is_empty() {
             return Vec::new();
         }
 
-        let bindings = self.lifecycle_bindings.lock().expect(MUTEX_POISONED);
-        let mut pending = self.pending_linked_children.lock().expect(MUTEX_POISONED);
+        let bindings = self.lifecycle_bindings.lock();
+        let mut pending = self.pending_linked_children.lock();
         let mut held = VecDeque::with_capacity(pending.len());
         let mut routable = Vec::new();
 
@@ -405,29 +396,19 @@ impl WsDispatchState {
 impl WsDispatchState {
     /// Returns whether acceptance was already emitted for the order.
     #[must_use]
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn contains_accepted(&self, cid: &ClientOrderId) -> bool {
-        self.accepted_venue_order_ids
-            .lock()
-            .expect(MUTEX_POISONED)
-            .contains_key(cid)
+        self.accepted_venue_order_ids.lock().contains_key(cid)
     }
 
     /// Records that acceptance was emitted for the order.
-    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn insert_accepted(&self, cid: ClientOrderId, venue_order_id: VenueOrderId) {
         self.accepted_venue_order_ids
             .lock()
-            .expect(MUTEX_POISONED)
             .insert(cid, venue_order_id);
     }
 
     fn accepted_venue_order_id(&self, cid: &ClientOrderId) -> Option<VenueOrderId> {
-        self.accepted_venue_order_ids
-            .lock()
-            .expect(MUTEX_POISONED)
-            .get(cid)
-            .copied()
+        self.accepted_venue_order_ids.lock().get(cid).copied()
     }
 
     /// Returns whether the order was already triggered.
@@ -475,10 +456,7 @@ impl WsDispatchState {
     }
 
     fn remove_accepted(&self, cid: &ClientOrderId) {
-        self.accepted_venue_order_ids
-            .lock()
-            .expect(MUTEX_POISONED)
-            .remove(cid);
+        self.accepted_venue_order_ids.lock().remove(cid);
     }
 
     fn remove_triggered(&self, cid: &ClientOrderId) {
@@ -889,7 +867,7 @@ fn route_algo_order_message(
 
     let parent_venue_order_id = VenueOrderId::new(msg.algo_id.as_str());
     let client_order_id = {
-        let bindings = state.lifecycle_bindings.lock().expect(MUTEX_POISONED);
+        let bindings = state.lifecycle_bindings.lock();
         bindings.client_order_id(&parent_venue_order_id)
     };
 
@@ -972,7 +950,7 @@ fn dispatch_tracked_algo_order_message(
 ) {
     let parent_venue_order_id = VenueOrderId::new(msg.algo_id.as_str());
     let ts_event = parse_millisecond_timestamp(msg.u_time);
-    let mut bindings = state.lifecycle_bindings.lock().expect(MUTEX_POISONED);
+    let mut bindings = state.lifecycle_bindings.lock();
     let mut is_terminal = false;
     let mut binding = bindings
         .venue_by_client
@@ -1469,8 +1447,7 @@ fn dispatch_order_messages(
                 .order_contexts
                 .get(&client_order_id)
                 .map(|entry| refresh_regular_child_context(msg, *entry, instrument));
-            let mut lifecycle_bindings =
-                context.map(|_| state.lifecycle_bindings.lock().expect(MUTEX_POISONED));
+            let mut lifecycle_bindings = context.map(|_| state.lifecycle_bindings.lock());
 
             if let (Some(context), Some(bindings)) = (context, lifecycle_bindings.as_mut()) {
                 let parent_venue_order_id = linked_parent_venue_order_id.or_else(|| {

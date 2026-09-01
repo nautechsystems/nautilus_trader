@@ -204,10 +204,7 @@ impl InteractiveBrokersExecutionClient {
             }
             OrderUpdate::ExecutionData(exec_data) => {
                 let execution_id = exec_data.execution.execution_id.clone();
-                let has_commission = commission_cache
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("Failed to lock commission cache"))?
-                    .contains_key(&execution_id);
+                let has_commission = commission_cache.lock().contains_key(&execution_id);
 
                 if !has_commission {
                     tracing::debug!(
@@ -216,7 +213,6 @@ impl InteractiveBrokersExecutionClient {
                     );
                     pending_live_exec_data
                         .lock()
-                        .map_err(|_| anyhow::anyhow!("Failed to lock pending live execution data"))?
                         .insert(execution_id, exec_data.clone());
                     return Ok(());
                 }
@@ -244,13 +240,10 @@ impl InteractiveBrokersExecutionClient {
             OrderUpdate::CommissionReport(commission) => {
                 let pending_exec_data = pending_live_exec_data
                     .lock()
-                    .map_err(|_| anyhow::anyhow!("Failed to lock pending live execution data"))?
                     .remove(&commission.execution_id);
 
                 {
-                    let mut cache = commission_cache
-                        .lock()
-                        .map_err(|_| anyhow::anyhow!("Failed to lock commission cache"))?;
+                    let mut cache = commission_cache.lock();
                     // IB uses -1.0 as a pending-sentinel before the real commission arrives;
                     // clamp only that sentinel to zero (legitimate rebates can be negative).
                     let commission_value = if commission.commission == -1.0_f64 {
@@ -326,9 +319,7 @@ impl InteractiveBrokersExecutionClient {
                     {
                         Some(ClientOrderId::from(order_ref))
                     } else {
-                        let map = venue_order_id_map
-                            .lock()
-                            .map_err(|_| anyhow::anyhow!("Failed to lock venue order ID map"))?;
+                        let map = venue_order_id_map.lock();
                         map.get(&order_data.order_id).copied()
                     };
 
@@ -336,7 +327,7 @@ impl InteractiveBrokersExecutionClient {
                         && IbOrderStatus::from_str(status_str).is_ok_and(IbOrderStatus::is_accepted)
                     {
                         let instrument_id = {
-                            Self::get_mapped_instrument_id(order_data.order_id, instrument_id_map)?
+                            Self::get_mapped_instrument_id(order_data.order_id, instrument_id_map)
                                 .map(Ok)
                                 .unwrap_or_else(|| {
                                     Self::resolve_contract_instrument_id(
@@ -486,9 +477,7 @@ impl InteractiveBrokersExecutionClient {
         spread_fill_tracking: &Arc<Mutex<AHashMap<ClientOrderId, ahash::AHashSet<String>>>>,
     ) -> anyhow::Result<()> {
         let client_order_id = {
-            let map = venue_order_id_map
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock venue order ID map"))?;
+            let map = venue_order_id_map.lock();
             map.get(&status.order_id).copied()
         };
 
@@ -497,7 +486,7 @@ impl InteractiveBrokersExecutionClient {
             return Ok(());
         };
 
-        let instrument_id = Self::get_mapped_instrument_id(status.order_id, instrument_id_map)?;
+        let instrument_id = Self::get_mapped_instrument_id(status.order_id, instrument_id_map);
 
         let Some(instrument_id) = instrument_id else {
             tracing::debug!("Instrument ID not found for order ID: {}", status.order_id);
@@ -550,18 +539,9 @@ impl InteractiveBrokersExecutionClient {
                 order_fill_progress,
                 exec_sender,
             )?;
-            pending_combo_fills
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock pending combo fills"))?
-                .remove(&client_order_id);
-            pending_combo_fill_avgs
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock pending combo avg chunks"))?
-                .remove(&client_order_id);
-            order_fill_progress
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock order fill progress"))?
-                .remove(&client_order_id);
+            pending_combo_fills.lock().remove(&client_order_id);
+            pending_combo_fill_avgs.lock().remove(&client_order_id);
+            order_fill_progress.lock().remove(&client_order_id);
         }
 
         let status_str = status.status.as_str();
@@ -597,10 +577,7 @@ impl InteractiveBrokersExecutionClient {
                 );
             }
             Some(IbOrderStatus::Cancelled | IbOrderStatus::ApiCancelled) => {
-                pending_cancel_orders
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("Failed to lock pending cancel orders map"))?
-                    .remove(&client_order_id);
+                pending_cancel_orders.lock().remove(&client_order_id);
 
                 let (trader_id, strategy_id) = Self::get_required_order_actor_ids(
                     status.order_id,
@@ -667,7 +644,7 @@ impl InteractiveBrokersExecutionClient {
                 order_fill_progress,
                 pending_cancel_orders,
                 spread_fill_tracking,
-            )?;
+            );
         }
 
         Ok(())
@@ -690,70 +667,25 @@ impl InteractiveBrokersExecutionClient {
         order_fill_progress: &Arc<Mutex<AHashMap<ClientOrderId, (Decimal, Decimal)>>>,
         pending_cancel_orders: &Arc<Mutex<ahash::AHashSet<ClientOrderId>>>,
         spread_fill_tracking: &Arc<Mutex<AHashMap<ClientOrderId, ahash::AHashSet<String>>>>,
-    ) -> anyhow::Result<()> {
-        let avg_px = order_avg_prices
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock order avg prices"))?
-            .get(&client_order_id)
-            .copied();
+    ) {
+        let avg_px = order_avg_prices.lock().get(&client_order_id).copied();
 
-        if let Some(mut context) = active_order_contexts
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock active order contexts"))?
-            .remove(&order_id)
-        {
+        if let Some(mut context) = active_order_contexts.lock().remove(&order_id) {
             context.avg_px = avg_px;
-            terminal_order_contexts
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock terminal order contexts"))?
-                .insert(order_id, context);
+            terminal_order_contexts.lock().insert(order_id, context);
         }
 
-        order_id_map
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock order ID map"))?
-            .remove(&client_order_id);
-        venue_order_id_map
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock venue order ID map"))?
-            .remove(&order_id);
-        instrument_id_map
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock instrument ID map"))?
-            .remove(&order_id);
-        trader_id_map
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock trader ID map"))?
-            .remove(&order_id);
-        strategy_id_map
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock strategy ID map"))?
-            .remove(&order_id);
-        order_avg_prices
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock order avg prices"))?
-            .remove(&client_order_id);
-        pending_combo_fills
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock pending combo fills"))?
-            .remove(&client_order_id);
-        pending_combo_fill_avgs
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock pending combo avg chunks"))?
-            .remove(&client_order_id);
-        order_fill_progress
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock order fill progress"))?
-            .remove(&client_order_id);
-        pending_cancel_orders
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock pending cancel orders map"))?
-            .remove(&client_order_id);
-        spread_fill_tracking
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock spread fill tracking"))?
-            .remove(&client_order_id);
-        Ok(())
+        order_id_map.lock().remove(&client_order_id);
+        venue_order_id_map.lock().remove(&order_id);
+        instrument_id_map.lock().remove(&order_id);
+        trader_id_map.lock().remove(&order_id);
+        strategy_id_map.lock().remove(&order_id);
+        order_avg_prices.lock().remove(&client_order_id);
+        pending_combo_fills.lock().remove(&client_order_id);
+        pending_combo_fill_avgs.lock().remove(&client_order_id);
+        order_fill_progress.lock().remove(&client_order_id);
+        pending_cancel_orders.lock().remove(&client_order_id);
+        spread_fill_tracking.lock().remove(&client_order_id);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -779,11 +711,9 @@ impl InteractiveBrokersExecutionClient {
             exec_data.execution.order_id,
             active_order_contexts,
             terminal_order_contexts,
-        )?;
+        );
         let mapped_client_order_id = {
-            let map = venue_order_id_map
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock venue order ID map"))?;
+            let map = venue_order_id_map.lock();
             map.get(&exec_data.execution.order_id).copied()
         };
 
@@ -797,11 +727,9 @@ impl InteractiveBrokersExecutionClient {
             let client_order_id = ClientOrderId::from(order_ref);
             order_id_map
                 .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock order ID map"))?
                 .insert(client_order_id, exec_data.execution.order_id);
             venue_order_id_map
                 .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock venue order ID map"))?
                 .insert(exec_data.execution.order_id, client_order_id);
             client_order_id
         } else {
@@ -813,7 +741,7 @@ impl InteractiveBrokersExecutionClient {
         };
 
         let instrument_id = if let Some(mapped_id) =
-            Self::get_mapped_instrument_id(exec_data.execution.order_id, instrument_id_map)?
+            Self::get_mapped_instrument_id(exec_data.execution.order_id, instrument_id_map)
         {
             mapped_id
         } else if let Some(cached_id) =
@@ -825,9 +753,7 @@ impl InteractiveBrokersExecutionClient {
         };
 
         let (commission, commission_currency) = {
-            let mut cache = commission_cache
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock commission cache"))?;
+            let mut cache = commission_cache.lock();
             let Some((commission, commission_currency)) =
                 cache.remove(&exec_data.execution.execution_id)
             else {
@@ -846,9 +772,7 @@ impl InteractiveBrokersExecutionClient {
         ) || !exec_data.contract.combo_legs.is_empty();
 
         let spread_instrument_id = {
-            let map = instrument_id_map
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock instrument ID map"))?;
+            let map = instrument_id_map.lock();
             map.get(&exec_data.execution.order_id).copied()
         }
         .or_else(|| {
@@ -871,9 +795,7 @@ impl InteractiveBrokersExecutionClient {
             || instrument_id.symbol.as_str().contains(")_");
 
         let avg_px = {
-            let avg_prices = order_avg_prices
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock order avg prices"))?;
+            let avg_prices = order_avg_prices.lock();
             avg_prices.get(&client_order_id).copied()
         }
         .or_else(|| tracked_context.as_ref().and_then(|context| context.avg_px));
@@ -1004,10 +926,7 @@ impl InteractiveBrokersExecutionClient {
         let converted_avg_price = avg_fill_price * price_magnifier;
         let avg_px = Price::new(converted_avg_price, instrument.price_precision());
 
-        order_avg_prices
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock order avg prices"))?
-            .insert(client_order_id, avg_px);
+        order_avg_prices.lock().insert(client_order_id, avg_px);
 
         let filled_decimal = Decimal::from_f64_retain(filled)
             .ok_or_else(|| anyhow::anyhow!("Failed to convert filled qty to Decimal: {filled}"))?;
@@ -1015,9 +934,7 @@ impl InteractiveBrokersExecutionClient {
             anyhow::anyhow!("Failed to convert avg fill price to Decimal: {converted_avg_price}")
         })?;
 
-        let mut progress = order_fill_progress
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock order fill progress"))?;
+        let mut progress = order_fill_progress.lock();
         let (previous_filled, previous_notional) = progress
             .get(&client_order_id)
             .copied()
@@ -1039,9 +956,8 @@ impl InteractiveBrokersExecutionClient {
 
         pending_combo_fill_avgs
             .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock pending combo avg chunks"))?
             .entry(client_order_id)
-            .or_insert_with(VecDeque::new)
+            .or_default()
             .push_back((fill_delta, partial_avg_px));
 
         Ok(())
@@ -1054,12 +970,8 @@ impl InteractiveBrokersExecutionClient {
         order_fill_progress: &Arc<Mutex<AHashMap<ClientOrderId, (Decimal, Decimal)>>>,
         exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
     ) -> anyhow::Result<()> {
-        let mut combo_fills = pending_combo_fills
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock pending combo fills"))?;
-        let mut avg_chunks = pending_combo_fill_avgs
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock pending combo avg chunks"))?;
+        let mut combo_fills = pending_combo_fills.lock();
+        let mut avg_chunks = pending_combo_fill_avgs.lock();
 
         loop {
             let maybe_fill = combo_fills
@@ -1124,10 +1036,7 @@ impl InteractiveBrokersExecutionClient {
         }
 
         if !combo_fills.contains_key(&client_order_id) {
-            order_fill_progress
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock order fill progress"))?
-                .remove(&client_order_id);
+            order_fill_progress.lock().remove(&client_order_id);
         }
 
         Ok(())
@@ -1146,9 +1055,7 @@ impl InteractiveBrokersExecutionClient {
         account_id: AccountId,
     ) -> anyhow::Result<()> {
         let client_order_id = {
-            let map = venue_order_id_map
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock venue order ID map"))?;
+            let map = venue_order_id_map.lock();
             map.get(&order_data.order_id).copied()
         };
 
@@ -1161,7 +1068,7 @@ impl InteractiveBrokersExecutionClient {
         }
         let client_order_id = client_order_id.expect("checked above");
 
-        let instrument_id = Self::get_mapped_instrument_id(order_data.order_id, instrument_id_map)?
+        let instrument_id = Self::get_mapped_instrument_id(order_data.order_id, instrument_id_map)
             .map(Ok)
             .unwrap_or_else(|| {
                 Self::resolve_contract_instrument_id(instrument_provider, &order_data.contract)
@@ -1233,13 +1140,9 @@ impl InteractiveBrokersExecutionClient {
         let fill_id = trade_id.to_string();
 
         let fill_count = {
-            let mut tracking = spread_fill_tracking
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock spread fill tracking"))?;
+            let mut tracking = spread_fill_tracking.lock();
 
-            let fill_set = tracking
-                .entry(client_order_id)
-                .or_insert_with(ahash::AHashSet::new);
+            let fill_set = tracking.entry(client_order_id).or_default();
 
             if fill_set.contains(&fill_id) {
                 tracing::debug!(
@@ -1280,13 +1183,10 @@ impl InteractiveBrokersExecutionClient {
             let combo_qty = pending_combo_fill.last_qty.as_decimal();
             pending_combo_fills
                 .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock pending combo fills"))?
                 .entry(client_order_id)
-                .or_insert_with(VecDeque::new)
+                .or_default()
                 .push_back(pending_combo_fill);
-            let mut avg_chunks = pending_combo_fill_avgs
-                .lock()
-                .map_err(|_| anyhow::anyhow!("Failed to lock pending combo avg chunks"))?;
+            let mut avg_chunks = pending_combo_fill_avgs.lock();
 
             if !avg_chunks.contains_key(&client_order_id)
                 && let Some(avg_px) = avg_px

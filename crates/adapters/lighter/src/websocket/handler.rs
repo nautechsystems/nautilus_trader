@@ -2142,7 +2142,7 @@ pub(crate) fn create_lighter_ws_timeout_error(_msg: String) -> LighterWsError {
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Mutex, time::Duration};
+    use std::time::Duration;
 
     use log::{Level, LevelFilter, Log, Metadata, Record};
     use nautilus_model::{
@@ -2151,6 +2151,7 @@ mod tests {
         instruments::{CryptoPerpetual, CurrencyPair},
         types::{Currency, Money, Price, Quantity},
     };
+    use parking_lot::Mutex;
     use rstest::rstest;
     use rust_decimal::Decimal;
     use serde_json::json;
@@ -2173,11 +2174,11 @@ mod tests {
 
     impl OutboundLogCapture {
         fn clear(&self) {
-            self.messages.lock().unwrap().clear();
+            self.messages.lock().clear();
         }
 
         fn messages(&self) -> Vec<String> {
-            self.messages.lock().unwrap().clone()
+            self.messages.lock().clone()
         }
     }
 
@@ -2191,7 +2192,7 @@ mod tests {
             if self.enabled(record.metadata()) {
                 let message = record.args().to_string();
                 if message.starts_with("Sending Lighter unsubscribe") {
-                    self.messages.lock().unwrap().push(message);
+                    self.messages.lock().push(message);
                 }
             }
         }

@@ -29,7 +29,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     future::Future,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Duration,
@@ -52,7 +52,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED, UUID4, UnixNanos,
+    UUID4, UnixNanos,
     datetime::unix_nanos_to_iso8601,
     params::Params,
     time::{AtomicTime, get_atomic_clock_realtime},
@@ -75,6 +75,7 @@ use nautilus_model::{
     types::{AccountBalance, MarginBalance, Quantity},
 };
 use nautilus_network::error::SendError;
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
@@ -344,11 +345,6 @@ impl LighterExecutionClient {
 
     /// Returns `true` when every retained background task has completed.
     /// Useful in tests to wait for fire-and-forget HTTP work.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned, which can only occur if a
-    /// task holding the lock previously panicked.
     #[must_use]
     pub fn pending_tasks_all_finished(&self) -> bool {
         self.pending_tasks.all_finished()
@@ -2465,7 +2461,6 @@ impl TxSendSequencer {
         };
         self.state
             .lock()
-            .expect(MUTEX_POISONED)
             .pending
             .entry(key)
             .or_default()
@@ -2497,7 +2492,7 @@ impl TxSendSequencer {
     }
 
     fn release(&self, key: TxSendKey, nonce: i64) {
-        let mut state = self.state.lock().expect(MUTEX_POISONED);
+        let mut state = self.state.lock();
         let should_notify = if let Some(pending) = state.pending.get_mut(&key) {
             let removed = pending.remove(&nonce);
             if pending.is_empty() {
@@ -2515,7 +2510,7 @@ impl TxSendSequencer {
     }
 
     fn ready_to_send(&self, key: TxSendKey, nonce: i64) -> bool {
-        let state = self.state.lock().expect(MUTEX_POISONED);
+        let state = self.state.lock();
         state
             .pending
             .get(&key)
@@ -11460,7 +11455,7 @@ mod tests {
         assert_eq!(acked.connection_epoch, 5);
         assert_eq!(acked.nonce, 21);
         {
-            let queue = client.dispatch.pending_sendtx.lock().expect(MUTEX_POISONED);
+            let queue = client.dispatch.pending_sendtx.lock();
             assert_eq!(queue.len(), 1);
             assert_eq!(queue[0].connection_epoch, 4);
             assert_eq!(queue[0].nonce, 20);

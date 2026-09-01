@@ -83,6 +83,7 @@ derive_builder = { workspace = true }
 futures-util = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
+parking_lot = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
