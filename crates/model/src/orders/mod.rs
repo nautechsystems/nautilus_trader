@@ -1500,7 +1500,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        enums::{LiquiditySide, OrderSide, OrderStatus, PositionSide, TriggerType},
+        enums::{
+            LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TrailingOffsetType,
+            TriggerType,
+        },
         events::order::spec::{
             OrderAcceptedSpec, OrderCancelRejectedSpec, OrderCanceledSpec, OrderDeniedSpec,
             OrderExpiredSpec, OrderFillVoidedSpec, OrderFilledSpec, OrderInitializedSpec,
@@ -1766,6 +1769,102 @@ mod tests {
 
         assert_eq!(order.avg_px(), Some(Decimal::from_str(fill_px).unwrap()));
         assert_eq!(order.slippage(), expected);
+    }
+
+    #[rstest]
+    #[case::limit(OrderType::Limit)]
+    #[case::limit_if_touched(OrderType::LimitIfTouched)]
+    #[case::market_if_touched(OrderType::MarketIfTouched)]
+    #[case::market_to_limit(OrderType::MarketToLimit)]
+    #[case::stop_limit(OrderType::StopLimit)]
+    #[case::stop_market(OrderType::StopMarket)]
+    #[case::trailing_stop_limit(OrderType::TrailingStopLimit)]
+    #[case::trailing_stop_market(OrderType::TrailingStopMarket)]
+    fn test_fill_void_recomputes_slippage(#[case] order_type: OrderType) {
+        let venue_order_id = VenueOrderId::from("V-SLIPPAGE");
+        let account_id = AccountId::from("SIM-SLIPPAGE");
+        let mut order = OrderTestBuilder::new(order_type)
+            .instrument_id(InstrumentId::from("ETHUSDT-LINEAR.BYBIT"))
+            .client_order_id(ClientOrderId::from("O-SLIPPAGE"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(10))
+            .price(Price::from("100.00"))
+            .trigger_price(Price::from("100.00"))
+            .trigger_type(TriggerType::LastPrice)
+            .limit_offset(dec!(1))
+            .trailing_offset(dec!(1))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .build();
+        let accepted = OrderAcceptedSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(order.client_order_id())
+            .venue_order_id(venue_order_id)
+            .account_id(account_id)
+            .build();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+
+        if order_type == OrderType::MarketToLimit {
+            order
+                .apply(OrderEventAny::Updated(
+                    OrderUpdatedSpec::builder()
+                        .trader_id(order.trader_id())
+                        .strategy_id(order.strategy_id())
+                        .instrument_id(order.instrument_id())
+                        .client_order_id(order.client_order_id())
+                        .quantity(order.quantity())
+                        .venue_order_id(venue_order_id)
+                        .account_id(account_id)
+                        .price(Price::from("100.00"))
+                        .build(),
+                ))
+                .unwrap();
+        }
+
+        let fill = |trade_id: &str, last_px: &str| {
+            OrderFilledSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(order.instrument_id())
+                .client_order_id(order.client_order_id())
+                .venue_order_id(venue_order_id)
+                .account_id(account_id)
+                .trade_id(TradeId::from(trade_id))
+                .order_side(order.order_side())
+                .order_type(order.order_type())
+                .last_qty(Quantity::from(5))
+                .last_px(Price::from(last_px))
+                .build()
+        };
+        let unfavorable_fill = fill("T-SLIPPAGE-1", "110.00");
+        let reference_fill = fill("T-SLIPPAGE-2", "100.00");
+        order
+            .apply(OrderEventAny::Filled(unfavorable_fill.clone()))
+            .unwrap();
+        order.apply(OrderEventAny::Filled(reference_fill)).unwrap();
+        assert_eq!(order.avg_px(), Some(dec!(105)));
+        assert_eq!(order.slippage(), Some(dec!(5)));
+
+        let correction = matching_fill_void(&unfavorable_fill, unfavorable_fill.last_qty, None);
+        let event_count = order.event_count();
+        order.apply(OrderEventAny::FillVoided(correction)).unwrap();
+        let replayed =
+            OrderAny::from_events(order.events().into_iter().cloned().collect()).unwrap();
+
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+        assert_eq!(order.filled_qty(), Quantity::from(5));
+        assert_eq!(order.voided_qty(), Quantity::from(5));
+        assert_eq!(order.leaves_qty(), Quantity::from(5));
+        assert_eq!(order.avg_px(), Some(dec!(100)));
+        assert_eq!(order.slippage(), None);
+        assert_eq!(order.event_count(), event_count + 1);
+        assert_eq!(replayed.status(), order.status());
+        assert_eq!(replayed.filled_qty(), order.filled_qty());
+        assert_eq!(replayed.voided_qty(), order.voided_qty());
+        assert_eq!(replayed.leaves_qty(), order.leaves_qty());
+        assert_eq!(replayed.avg_px(), order.avg_px());
+        assert_eq!(replayed.slippage(), order.slippage());
     }
 
     #[rstest]
@@ -2446,6 +2545,231 @@ mod tests {
         assert_eq!(order.voided_qty(), Quantity::from(40_000));
     }
 
+    enum FillVoidIdentityField {
+        VenueOrderId,
+        AccountId,
+        OrderSide,
+        OrderType,
+        LastPx,
+        Currency,
+        LiquiditySide,
+        PositionId,
+    }
+
+    #[rstest]
+    #[case::venue_order_id(FillVoidIdentityField::VenueOrderId)]
+    #[case::account_id(FillVoidIdentityField::AccountId)]
+    #[case::order_side(FillVoidIdentityField::OrderSide)]
+    #[case::order_type(FillVoidIdentityField::OrderType)]
+    #[case::last_px(FillVoidIdentityField::LastPx)]
+    #[case::currency(FillVoidIdentityField::Currency)]
+    #[case::liquidity_side(FillVoidIdentityField::LiquiditySide)]
+    #[case::position_id(FillVoidIdentityField::PositionId)]
+    fn test_fill_void_rejects_known_fill_identity_mismatch(#[case] field: FillVoidIdentityField) {
+        let (mut order, fill) = filled_market_order_for_void();
+        let events_before: Vec<_> = order.events().into_iter().cloned().collect();
+        let mut correction =
+            matching_fill_void(&fill, Quantity::from(40), Some(Money::from("0.40 USD")));
+
+        match field {
+            FillVoidIdentityField::VenueOrderId => {
+                correction.venue_order_id = VenueOrderId::from("V-OTHER");
+            }
+            FillVoidIdentityField::AccountId => {
+                correction.account_id = AccountId::from("SIM-OTHER");
+            }
+            FillVoidIdentityField::OrderSide => correction.order_side = OrderSide::Sell,
+            FillVoidIdentityField::OrderType => correction.order_type = OrderType::Limit,
+            FillVoidIdentityField::LastPx => correction.last_px = Price::from("1.50"),
+            FillVoidIdentityField::Currency => correction.currency = Currency::EUR(),
+            FillVoidIdentityField::LiquiditySide => {
+                correction.liquidity_side = LiquiditySide::Maker;
+            }
+            FillVoidIdentityField::PositionId => {
+                correction.position_id = Some(PositionId::from("P-OTHER"));
+            }
+        }
+
+        let result = order.apply(OrderEventAny::FillVoided(correction));
+
+        assert!(matches!(result, Err(OrderError::InvalidOrderEvent)));
+        assert_fill_void_rejected_without_mutation(&order, &events_before);
+    }
+
+    #[rstest]
+    #[case::currency("0.40 EUR")]
+    #[case::sign("-0.40 USD")]
+    #[case::amount("1.01 USD")]
+    fn test_fill_void_rejects_invalid_commission_without_mutation(#[case] commission: &str) {
+        let (mut order, fill) = filled_market_order_for_void();
+        let events_before: Vec<_> = order.events().into_iter().cloned().collect();
+        let correction =
+            matching_fill_void(&fill, Quantity::from(40), Some(Money::from(commission)));
+
+        let result = order.apply(OrderEventAny::FillVoided(correction));
+
+        assert!(matches!(
+            result,
+            Err(OrderError::InvalidFillVoidCommission(trade_id)) if trade_id == fill.trade_id
+        ));
+        assert_fill_void_rejected_without_mutation(&order, &events_before);
+    }
+
+    #[rstest]
+    fn test_fill_void_rejects_zero_quantity_without_mutation() {
+        let (mut order, fill) = filled_market_order_for_void();
+        let events_before: Vec<_> = order.events().into_iter().cloned().collect();
+        let correction = matching_fill_void(
+            &fill,
+            Quantity::zero(fill.last_qty.precision),
+            Some(Money::from("0.00 USD")),
+        );
+
+        let result = order.apply(OrderEventAny::FillVoided(correction));
+
+        assert!(matches!(
+            result,
+            Err(OrderError::OverVoid(trade_id)) if trade_id == fill.trade_id
+        ));
+        assert_fill_void_rejected_without_mutation(&order, &events_before);
+    }
+
+    #[rstest]
+    fn test_fill_void_uses_latest_cumulative_correction() {
+        let (mut order, fill) = filled_market_order_for_void();
+        order
+            .apply(OrderEventAny::FillVoided(matching_fill_void(
+                &fill,
+                Quantity::from(40),
+                Some(Money::from("0.40 USD")),
+            )))
+            .unwrap();
+        let event_count = order.event_count();
+
+        let decreasing_commission = order.apply(OrderEventAny::FillVoided(matching_fill_void(
+            &fill,
+            Quantity::from(50),
+            Some(Money::from("0.30 USD")),
+        )));
+
+        assert!(matches!(
+            decreasing_commission,
+            Err(OrderError::InvalidFillVoidCommission(trade_id)) if trade_id == fill.trade_id
+        ));
+        assert_eq!(order.event_count(), event_count);
+        assert_eq!(order.filled_qty(), Quantity::from(60));
+        assert_eq!(order.voided_qty(), Quantity::from(40));
+        assert_eq!(
+            order.commission(&Currency::USD()),
+            Some(Money::from("0.60 USD")),
+        );
+
+        order
+            .apply(OrderEventAny::FillVoided(matching_fill_void(
+                &fill,
+                Quantity::from(60),
+                Some(Money::from("0.60 USD")),
+            )))
+            .unwrap();
+        let replayed =
+            OrderAny::from_events(order.events().into_iter().cloned().collect()).unwrap();
+
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+        assert_eq!(order.filled_qty(), Quantity::from(40));
+        assert_eq!(order.voided_qty(), Quantity::from(60));
+        assert_eq!(order.leaves_qty(), Quantity::from(60));
+        assert_eq!(order.avg_px(), Some(dec!(1.25)));
+        assert_eq!(
+            order.commission(&Currency::USD()),
+            Some(Money::from("0.40 USD")),
+        );
+        assert_eq!(order.trade_ids(), vec![&fill.trade_id]);
+        assert_eq!(order.last_trade_id(), Some(fill.trade_id));
+        assert_eq!(order.event_count(), event_count + 1);
+        assert_eq!(replayed.status(), order.status());
+        assert_eq!(replayed.filled_qty(), order.filled_qty());
+        assert_eq!(replayed.voided_qty(), order.voided_qty());
+        assert_eq!(replayed.leaves_qty(), order.leaves_qty());
+        assert_eq!(replayed.avg_px(), order.avg_px());
+        assert_eq!(replayed.commissions(), order.commissions());
+        assert_eq!(replayed.trade_ids(), order.trade_ids());
+        assert_eq!(replayed.last_trade_id(), order.last_trade_id());
+    }
+
+    fn filled_market_order_for_void() -> (MarketOrder, OrderFilled) {
+        let venue_order_id = VenueOrderId::from("V-FILL-VOID");
+        let account_id = AccountId::from("SIM-FILL-VOID");
+        let fill = OrderFilledSpec::builder()
+            .venue_order_id(venue_order_id)
+            .account_id(account_id)
+            .trade_id(TradeId::from("T-FILL-VOID"))
+            .last_qty(Quantity::from(100))
+            .last_px(Price::from("1.25"))
+            .position_id(PositionId::from("P-FILL-VOID"))
+            .commission(Money::from("1.00 USD"))
+            .build();
+        let mut order: MarketOrder = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(100))
+            .build()
+            .try_into()
+            .unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder()
+                    .venue_order_id(venue_order_id)
+                    .account_id(account_id)
+                    .build(),
+            ))
+            .unwrap();
+        order.apply(OrderEventAny::Filled(fill.clone())).unwrap();
+
+        (order, fill)
+    }
+
+    fn matching_fill_void(
+        fill: &OrderFilled,
+        voided_qty: Quantity,
+        commission_voided: Option<Money>,
+    ) -> OrderFillVoided {
+        OrderFillVoidedSpec::builder()
+            .trader_id(fill.trader_id)
+            .strategy_id(fill.strategy_id)
+            .instrument_id(fill.instrument_id)
+            .client_order_id(fill.client_order_id)
+            .venue_order_id(fill.venue_order_id)
+            .account_id(fill.account_id)
+            .trade_id(fill.trade_id)
+            .voided_qty(voided_qty)
+            .order_side(fill.order_side)
+            .order_type(fill.order_type)
+            .last_px(fill.last_px)
+            .currency(fill.currency)
+            .liquidity_side(fill.liquidity_side)
+            .maybe_position_id(fill.position_id)
+            .maybe_commission_voided(commission_voided)
+            .is_reopened(true)
+            .build()
+    }
+
+    fn assert_fill_void_rejected_without_mutation(
+        order: &MarketOrder,
+        events_before: &[OrderEventAny],
+    ) {
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.filled_qty(), Quantity::from(100));
+        assert_eq!(order.voided_qty(), Quantity::from(0));
+        assert_eq!(order.leaves_qty(), Quantity::from(0));
+        assert_eq!(order.avg_px(), Some(dec!(1.25)));
+        assert_eq!(
+            order.commission(&Currency::USD()),
+            Some(Money::from("1.00 USD")),
+        );
+        assert_eq!(
+            order.events().into_iter().cloned().collect::<Vec<_>>(),
+            events_before,
+        );
+    }
+
     #[rstest]
     fn test_unknown_fill_void_does_not_reverse_surviving_fill() {
         let init = OrderInitializedSpec::builder()
@@ -3118,6 +3442,46 @@ mod tests {
     }
 
     #[rstest]
+    fn test_pending_cancel_supersedes_pending_update_without_losing_previous_status() {
+        let mut order: MarketOrder = OrderInitializedSpec::builder().build().try_into().unwrap();
+        order
+            .apply(OrderEventAny::Submitted(
+                OrderSubmittedSpec::builder().build(),
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::PendingUpdate(
+                OrderPendingUpdateSpec::builder().build(),
+            ))
+            .unwrap();
+
+        assert_eq!(order.status(), OrderStatus::PendingUpdate);
+        assert_eq!(order.previous_status(), Some(OrderStatus::Accepted));
+
+        order
+            .apply(OrderEventAny::PendingCancel(
+                OrderPendingCancelSpec::builder().build(),
+            ))
+            .unwrap();
+
+        assert_eq!(order.status(), OrderStatus::PendingCancel);
+        assert_eq!(order.previous_status(), Some(OrderStatus::Accepted));
+
+        let repeated = OrderEventAny::PendingCancel(OrderPendingCancelSpec::builder().build());
+        order.apply(repeated.clone()).unwrap();
+
+        assert_eq!(order.status(), OrderStatus::PendingCancel);
+        assert_eq!(order.previous_status(), Some(OrderStatus::Accepted));
+        assert_eq!(order.event_count(), 6);
+        assert_eq!(order.last_event(), &repeated);
+    }
+
+    #[rstest]
     fn test_late_fill_for_historical_venue_order_keeps_current_venue_order_id() {
         let old_venue_order_id = VenueOrderId::from("V-OLD");
         let new_venue_order_id = VenueOrderId::from("V-NEW");
@@ -3401,6 +3765,55 @@ mod tests {
         assert_eq!(order.status(), OrderStatus::PartiallyFilled);
         assert_eq!(order.quantity(), Quantity::from(80_000));
         assert_eq!(order.leaves_qty(), Quantity::from(40_000)); // 80k - 40k filled
+    }
+
+    #[rstest]
+    fn test_reconciliation_update_closes_order_at_filled_quantity() {
+        let mut order: MarketOrder = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(100))
+            .build()
+            .try_into()
+            .unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Filled(
+                OrderFilledSpec::builder()
+                    .last_qty(Quantity::from(40))
+                    .build(),
+            ))
+            .unwrap();
+        let updated = OrderEventAny::Updated(
+            OrderUpdatedSpec::builder()
+                .quantity(Quantity::from(40))
+                .reconciliation(true)
+                .ts_event(UnixNanos::from(5_000))
+                .build(),
+        );
+
+        order.apply(updated.clone()).unwrap();
+        let replayed =
+            OrderAny::from_events(order.events().into_iter().cloned().collect()).unwrap();
+
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.previous_status(), Some(OrderStatus::PartiallyFilled));
+        assert_eq!(order.quantity(), Quantity::from(40));
+        assert_eq!(order.filled_qty(), Quantity::from(40));
+        assert_eq!(order.leaves_qty(), Quantity::from(0));
+        assert_eq!(order.ts_closed(), Some(UnixNanos::from(5_000)));
+        assert_eq!(order.ts_last(), UnixNanos::from(5_000));
+        assert_eq!(order.event_count(), 4);
+        assert_eq!(order.last_event(), &updated);
+        assert_eq!(replayed.status(), order.status());
+        assert_eq!(replayed.previous_status(), order.previous_status());
+        assert_eq!(replayed.quantity(), order.quantity());
+        assert_eq!(replayed.filled_qty(), order.filled_qty());
+        assert_eq!(replayed.leaves_qty(), order.leaves_qty());
+        assert_eq!(replayed.ts_closed(), order.ts_closed());
+        assert_eq!(replayed.ts_last(), order.ts_last());
     }
 
     #[rstest]

@@ -69,6 +69,7 @@ Released on TBD (UTC).
 - Fixed execution algorithms submitting spawned orders with live emulation triggers (#4881), thanks @folknor
 - Fixed Efficiency Ratio windowing and invalid Python input handling (#4807), thanks for reporting @staffordjh
 - Fixed own order book audits removing active-local orders
+- Fixed stale order slippage after fill-void corrections
 - Fixed `StrategyConfig.manage_contingent_orders` for open, non-active-local OTO, OCO, and OUO orders
 - Fixed native strategy timers bypassing managed time-event routing (#4888), thanks for reporting @silarin
 - Fixed rate-limit requests consuming quota before all applicable limits were available
