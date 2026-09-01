@@ -27,10 +27,7 @@ use nautilus_common::messages::{
 use nautilus_core::datetime::datetime_to_unix_nanos;
 use nautilus_model::{data::CustomData, instruments::Instrument};
 
-use super::{
-    PolymarketDataClient,
-    instruments::{apply_live_instrument, cache_instrument_if_active},
-};
+use super::{PolymarketDataClient, instruments::apply_live_instrument_locked};
 use crate::{
     common::consts::POLYMARKET_VENUE,
     providers::extract_condition_id,
@@ -190,6 +187,7 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
     let filters = client.provider.filters();
     let instrument_config = client.provider.config().clone();
     let instruments_cache = client.instruments.clone();
+    let instrument_update_state = client.instrument_update_state.clone();
     let token_meta = client.token_meta.clone();
     let closed_condition_ids = client.closed_condition_ids.clone();
     let request_id = request.request_id;
@@ -216,26 +214,48 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
             }
         };
 
-        for instrument in &instruments {
-            if !cache_instrument_if_active(
-                clock.get_time_ns(),
-                &closed_condition_ids,
-                &instruments_cache,
-                &token_meta,
-                instrument,
-            ) {
+        let update_state = instrument_update_state
+            .lock()
+            .expect("instrument_update_state mutex poisoned");
+        let mut effective_instruments = Vec::with_capacity(instruments.len());
+        let now_ns = clock.get_time_ns();
+
+        for instrument in instruments {
+            let instrument = match update_state.compose_instrument(&instrument) {
+                Ok(instrument) => instrument,
+                Err(e) => {
+                    log::error!(
+                        "Failed to apply live tick to instrument {}: {e}",
+                        instrument.id()
+                    );
+                    continue;
+                }
+            };
+
+            if crate::data::runtime::is_instrument_expired(&instrument, now_ns)
+                || !apply_live_instrument_locked(
+                    &closed_condition_ids,
+                    &update_state,
+                    &instruments_cache,
+                    &token_meta,
+                    &instrument,
+                    |_| {},
+                )
+            {
                 log::debug!(
                     "Skipping expired instrument {} during request_instruments cache update",
                     instrument.id()
                 );
             }
+
+            effective_instruments.push(instrument);
         }
 
         let response = DataResponse::Instruments(InstrumentsResponse::new(
             request_id,
             client_id,
             venue,
-            instruments,
+            effective_instruments,
             start_nanos,
             end_nanos,
             clock.get_time_ns(),
@@ -257,6 +277,7 @@ pub(super) fn request_instrument(client: &PolymarketDataClient, request: Request
     let http = client.provider.http_client().clone();
     let sender = client.data_sender.clone();
     let instruments_cache = client.instruments.clone();
+    let instrument_update_state = client.instrument_update_state.clone();
     let token_meta = client.token_meta.clone();
     let closed_condition_ids = client.closed_condition_ids.clone();
     let client_id = request.client_id.unwrap_or(client.client_id);
@@ -288,13 +309,25 @@ pub(super) fn request_instrument(client: &PolymarketDataClient, request: Request
         };
 
         if let Some(inst) = instrument {
+            let update_state = instrument_update_state
+                .lock()
+                .expect("instrument_update_state mutex poisoned");
+            let inst = match update_state.compose_instrument(&inst) {
+                Ok(instrument) => instrument,
+                Err(e) => {
+                    log::error!("Failed to apply live tick to instrument {instrument_id}: {e}");
+                    return;
+                }
+            };
+
             if crate::data::runtime::is_instrument_expired(&inst, clock.get_time_ns()) {
                 log::debug!(
                     "Skipping expired instrument {instrument_id} during request_instrument cache update"
                 );
             } else {
-                apply_live_instrument(
+                apply_live_instrument_locked(
                     &closed_condition_ids,
+                    &update_state,
                     &instruments_cache,
                     &token_meta,
                     &inst,

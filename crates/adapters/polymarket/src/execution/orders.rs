@@ -74,7 +74,7 @@ impl PolymarketExecutionClient {
 
         let neg_risk = self.get_neg_risk(&order.instrument_id());
         let token_id = instrument.raw_symbol().to_string();
-        let tick_decimals = instrument.price_precision() as u32;
+        let tick_decimals = u32::from(instrument.min_price_increment_precision());
         let price = order.price().unwrap();
         let quantity = order.quantity();
         let tif = order.time_in_force();
@@ -230,6 +230,7 @@ impl PolymarketExecutionClient {
         let neg_risk = self.get_neg_risk(&order.instrument_id());
         let token_id = instrument.raw_symbol().to_string();
         let tick_size = instrument.price_increment();
+        let tick_decimals = u32::from(instrument.min_price_increment_precision());
         let side = order.order_side();
         let amount = order.quantity();
         let time_in_force = order.time_in_force();
@@ -294,6 +295,7 @@ impl PolymarketExecutionClient {
                     time_in_force,
                     neg_risk,
                     tick_size,
+                    tick_decimals,
                     fee_context,
                 })
                 .await
@@ -579,7 +581,7 @@ impl PolymarketExecutionClient {
                         &order.instrument_id(),
                     ),
                     expire_time: order.expire_time(),
-                    tick_decimals: instrument.price_precision() as u32,
+                    tick_decimals: u32::from(instrument.min_price_increment_precision()),
                 },
                 size_precision: instrument.size_precision(),
                 price_precision: instrument.price_precision(),

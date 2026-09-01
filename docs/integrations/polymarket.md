@@ -224,7 +224,8 @@ We recommend using environment variables to manage your credentials.
 ## Data capability
 
 Polymarket supports live `L2_MBP` order book deltas, quotes, and trades. Instrument definitions are
-published by bootstrap, configured refreshes, new-market discovery, and tick-size changes.
+published by bootstrap, configured refreshes, on-demand loading, single-instrument requests,
+new-market discovery, and tick-size changes.
 
 ## Orders capability
 
@@ -526,6 +527,9 @@ For an unknown outcome, the adapter:
 ### Precision limits
 
 Polymarket enforces different precision constraints based on tick size and `orderType`.
+Every Polymarket `BinaryOption` uses a canonical `price_precision` of 4, independent of its active
+tick size. The instrument's `price_increment` carries the active tick, and order signing derives
+the venue tick decimals from that increment.
 
 **Binary Option instruments** typically support up to 6 decimal places for amounts
 (with 0.0001 tick size), but **market orders (`FAK` and `FOK`) have stricter
@@ -533,7 +537,7 @@ precision requirements**:
 
 - **Market order types (`FAK` and `FOK`):**
   - The direct maker amount is limited to **2 decimal places**.
-  - The computed taker amount uses the market tick precision plus two size decimals.
+  - The computed taker amount uses the market tick decimals plus two size decimals.
   - A limit order submitted with `FAK` or `FOK` must also satisfy the stricter market-order amount
     validation. The venue rejects values that are valid for a resting order but not for that
     market-order type.
@@ -549,19 +553,24 @@ precision requirements**:
 
 ### Tick size precision hierarchy
 
-| Tick Size | Price Decimals | Size Decimals | Amount Decimals |
-| --------- | -------------- | ------------- | --------------- |
-| 0.1       | 1              | 2             | 3               |
-| 0.01      | 2              | 2             | 4               |
-| 0.005     | 3              | 2             | 5               |
-| 0.0025    | 4              | 2             | 6               |
-| 0.001     | 3              | 2             | 5               |
-| 0.0001    | 4              | 2             | 6               |
+| Tick size | Tick decimals | Size decimals | Amount decimals |
+| --------- | ------------- | ------------- | --------------- |
+| 0.1       | 1             | 2             | 3               |
+| 0.01      | 2             | 2             | 4               |
+| 0.005     | 3             | 2             | 5               |
+| 0.0025    | 4             | 2             | 6               |
+| 0.001     | 3             | 2             | 5               |
+| 0.0001    | 4             | 2             | 6               |
 
 :::note
 
 - The adapter validates tick size before signing. It also denies limit `FAK` or `FOK` BUYs whose
   maker amount has more than two decimal places. This applies to single and batch submissions.
+- The adapter requires instrument tick sizes to be exactly representable at four decimals. It
+  rejects instrument definitions and tick-size events that do not meet this requirement; a rejected
+  event leaves the current tick active.
+- Tick decimals control signing and amount precision. They do not change the instrument's canonical
+  four-decimal price precision.
 - Resting `GTC` and `GTD` limit orders and all SELL orders keep their tick-derived amount precision.
 - The adapter rejects limit prices outside the current market's `tick_size` to `1 - tick_size`
   range before signing.
@@ -580,8 +589,8 @@ book levels can be invalid on the new grid (for example `0.505` fits a `0.001`
 tick but not a `0.01` tick). To keep old-grid prices out of the new epoch, the
 adapter treats the change as a book epoch transition:
 
-1. Publish the updated `BinaryOption` with the new `price_increment`, `price_precision`, and
-   tick-relative `min_price`/`max_price` bounds.
+1. Publish the updated `BinaryOption` with the new `price_increment`, canonical four-decimal
+   `price_precision`, and tick-relative `min_price`/`max_price` bounds.
 2. Drop the local order book for the instrument.
 3. Mark the instrument as awaiting a fresh snapshot.
 4. Drop incremental `price_change` book deltas until the snapshot arrives.
@@ -592,6 +601,11 @@ follows `drop_quotes_missing_side`: when enabled, quote ticks require both bid
 and ask prices; when disabled, missing sides use Polymarket boundary prices with
 zero size. The adapter can keep quotes flowing during the gap by reading `best_bid`
 and `best_ask` from each `price_change`.
+
+Gamma instrument data supplies the active tick until the first `tick_size_change` for that token.
+The WebSocket tick then remains authoritative across later Gamma refreshes and instrument requests.
+The adapter ignores older tick-size events by venue timestamp. A data-client reset starts a new
+generation and allows Gamma to supply each token's tick again.
 
 ## Trades
 

@@ -73,6 +73,7 @@ pub(crate) struct MarketOrderSubmitRequest {
     pub(crate) time_in_force: TimeInForce,
     pub(crate) neg_risk: bool,
     pub(crate) tick_size: Price,
+    pub(crate) tick_decimals: u32,
     pub(crate) fee_context: Option<MarketBuyFeeContext>,
 }
 
@@ -156,6 +157,7 @@ impl OrderSubmitter {
             time_in_force,
             neg_risk,
             tick_size,
+            tick_decimals,
             fee_context,
         } = request;
         let poly_side = PolymarketOrderSide::from(side);
@@ -176,9 +178,12 @@ impl OrderSubmitter {
 
         let result = calculate_market_price(levels, amount_dec, poly_side)
             .map_err(|e| anyhow::anyhow!("Market price calculation failed: {e}"))?;
-        let price =
-            PolymarketOrderBuilder::normalize_market_price(result.crossing_price, tick_size)
-                .map_err(InvalidMarketPriceError)?;
+        let price = PolymarketOrderBuilder::normalize_market_price(
+            result.crossing_price,
+            tick_size,
+            tick_decimals,
+        )
+        .map_err(InvalidMarketPriceError)?;
 
         // Fee-aware sizing applies to BUY only and only when a context is
         // provided. Run before signing so the on-chain `taker_amount` and
@@ -203,7 +208,7 @@ impl OrderSubmitter {
                 price,
                 signed_amount,
                 neg_risk,
-                u32::from(tick_size.precision),
+                tick_decimals,
             )
             .map_err(|e| anyhow::anyhow!("Failed to build market order: {e}"))?;
 

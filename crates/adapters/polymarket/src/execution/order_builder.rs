@@ -311,9 +311,10 @@ impl PolymarketOrderBuilder {
     pub(crate) fn normalize_market_price(
         price: Decimal,
         tick_size: Price,
+        tick_decimals: u32,
     ) -> Result<Decimal, String> {
         let tick = tick_size.as_decimal();
-        let price = price.trunc_with_scale(u32::from(tick_size.precision));
+        let price = price.trunc_with_scale(tick_decimals);
 
         validate_price(
             price,
@@ -382,6 +383,7 @@ fn validate_price(
     label: &str,
     price_display: &str,
 ) -> Result<(), String> {
+    let tick = tick.normalize();
     let max_price = Decimal::ONE - tick;
 
     if price < tick || price > max_price {
@@ -702,16 +704,19 @@ mod tests {
     }
 
     #[rstest]
-    #[case::half_cent("0.5059", "0.005", dec!(0.505))]
-    #[case::quarter_cent("0.50259", "0.0025", dec!(0.5025))]
+    #[case::half_cent("0.5059", "0.005", 3, dec!(0.505))]
+    #[case::half_cent_p4("0.5059", "0.0050", 3, dec!(0.505))]
+    #[case::quarter_cent("0.50259", "0.0025", 4, dec!(0.5025))]
     fn test_normalize_market_price(
         #[case] price: &str,
         #[case] tick_size: &str,
+        #[case] tick_decimals: u32,
         #[case] expected: Decimal,
     ) {
         let normalized = PolymarketOrderBuilder::normalize_market_price(
             price.parse::<Decimal>().unwrap(),
             Price::from(tick_size),
+            tick_decimals,
         )
         .unwrap();
 
@@ -744,9 +749,11 @@ mod tests {
         #[case] tick_size: &str,
         #[case] expected: &str,
     ) {
+        let tick_size = Price::from(tick_size);
         let error = PolymarketOrderBuilder::normalize_market_price(
             price.parse().unwrap(),
-            Price::from(tick_size),
+            tick_size,
+            u32::from(tick_size.precision),
         )
         .unwrap_err();
 

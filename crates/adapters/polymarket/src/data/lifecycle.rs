@@ -25,7 +25,7 @@ use nautilus_model::events::PositionEvent;
 use super::{
     PolymarketDataClient,
     dispatch::{WsMessageContext, handle_ws_message},
-    instruments::refresh_expired_market_closure,
+    instruments::{InstrumentUpdateState, refresh_expired_market_closure},
     runtime::{
         retire_closed_condition_state, retire_expired_local_instruments,
         seed_token_meta_from_live_instruments,
@@ -87,6 +87,7 @@ impl PolymarketDataClient {
             data_sender: self.data_sender.clone(),
             token_meta: self.token_meta.clone(),
             instruments: self.instruments.clone(),
+            instrument_update_state: self.instrument_update_state.clone(),
             gamma_client: self.provider.http_client().clone(),
             filters: self.provider.filters(),
             order_books: self.order_books.clone(),
@@ -172,6 +173,7 @@ impl PolymarketDataClient {
             data_sender: self.data_sender.clone(),
             token_meta: self.token_meta.clone(),
             instruments: self.instruments.clone(),
+            instrument_update_state: self.instrument_update_state.clone(),
             gamma_client: gamma_client.clone(),
             filters: self.provider.filters(),
             order_books: self.order_books.clone(),
@@ -413,12 +415,18 @@ impl PolymarketDataClient {
         self.resolve_poll_watchlist.store(AHashMap::new());
         self.clear_position_event_subscription();
 
+        let old_instrument_update_state = self.instrument_update_state.clone();
+        let _update_guard = old_instrument_update_state
+            .lock()
+            .expect("instrument_update_state mutex poisoned");
         let old_closed_condition_ids = self.closed_condition_ids.clone();
         let _generation_guard = old_closed_condition_ids
             .lock()
             .expect("closed_condition_ids mutex poisoned");
 
         self.instruments = std::sync::Arc::new(AtomicMap::new());
+        self.instrument_update_state =
+            std::sync::Arc::new(std::sync::Mutex::new(InstrumentUpdateState::default()));
         self.token_meta = std::sync::Arc::new(DashMap::new());
         self.order_books = std::sync::Arc::new(DashMap::new());
         self.last_quotes = std::sync::Arc::new(DashMap::new());
@@ -1478,6 +1486,7 @@ mod tests {
         // The live boundary refuses re-application, so no production path recreates this
         let republished = apply_live_instrument(
             &client.closed_condition_ids,
+            &client.instrument_update_state,
             &client.instruments,
             &client.token_meta,
             &inst,

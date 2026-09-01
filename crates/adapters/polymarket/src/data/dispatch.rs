@@ -23,7 +23,7 @@
 //! Tick-size changes are handled as book epoch transitions: the local order
 //! book is dropped, incremental `price_change` deltas are gated through
 //! `pending_snapshot_after_tick_change`, and the gate clears once the next
-//! venue snapshot reseeds the book under the new precision. The quote arm of
+//! venue snapshot reseeds the book on the new tick grid. The quote arm of
 //! `price_change` stays open through the gap because each payload carries
 //! `best_bid` / `best_ask` on the new grid; `last_quotes` is preserved so the
 //! unchanged side's size carries forward. See
@@ -55,7 +55,9 @@ use ustr::Ustr;
 use super::{
     NEW_MARKET_EMPTY_RECHECK_DELAY, NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS,
     effective_deltas::apply_snapshot_and_diff,
-    instruments::{TokenMeta, apply_live_instrument},
+    instruments::{
+        InstrumentUpdateState, TokenMeta, apply_live_instrument, apply_live_instrument_locked,
+    },
     spawn_task,
 };
 use crate::{
@@ -98,6 +100,7 @@ pub(super) struct WsMessageContext {
     pub(super) data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     pub(super) token_meta: Arc<DashMap<Ustr, TokenMeta>>,
     pub(super) instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    pub(super) instrument_update_state: Arc<StdMutex<InstrumentUpdateState>>,
     pub(super) gamma_client: PolymarketGammaHttpClient,
     pub(super) filters: Vec<Arc<dyn InstrumentFilter>>,
     pub(super) order_books: Arc<DashMap<InstrumentId, OrderBook>>,
@@ -504,18 +507,6 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
 
         MarketWsMessage::TickSizeChange(change) => {
             let token_id = change.asset_id;
-            let meta = match ctx.token_meta.get(&token_id) {
-                Some(m) => *m,
-                None => {
-                    log::error!("No instrument for token_id {token_id}");
-                    return;
-                }
-            };
-
-            if is_terminal_condition(ctx, meta.instrument_id) {
-                return;
-            }
-
             let tick_size: rust_decimal::Decimal = match change.new_tick_size.parse() {
                 Ok(d) => d,
                 Err(e) => {
@@ -526,15 +517,51 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                     return;
                 }
             };
-            let new_price_precision = tick_size.scale() as u8;
+            let ts_event = match parse_timestamp_ms(&change.timestamp) {
+                Ok(ts) => ts,
+                Err(e) => {
+                    log::error!("Failed to parse tick size change timestamp: {e}");
+                    return;
+                }
+            };
 
-            let instruments = ctx.instruments.load();
-            let existing = instruments.get(&meta.instrument_id);
+            if let Err(e) = crate::http::parse::tick_relative_price_bounds(tick_size) {
+                log::error!("Invalid tick size '{}': {e}", change.new_tick_size);
+                return;
+            }
 
-            // No-op tick_size_change must not trigger an epoch transition.
-            if let Some(existing_inst) = existing
-                && existing_inst.price_increment().as_decimal() == tick_size
-            {
+            let mut update_state = ctx
+                .instrument_update_state
+                .lock()
+                .expect("instrument_update_state mutex poisoned");
+
+            if update_state.is_stale_tick(&token_id, ts_event) {
+                log::debug!(
+                    "Ignoring stale tick size change for {} at {}",
+                    change.asset_id,
+                    change.timestamp,
+                );
+                return;
+            }
+
+            let meta = ctx.token_meta.get(&token_id).map(|meta| *meta);
+            if meta.is_some_and(|meta| is_terminal_condition(ctx, meta.instrument_id)) {
+                return;
+            }
+
+            update_state.record_live_tick(token_id, tick_size, ts_event);
+
+            let Some(meta) = meta else {
+                log::debug!("Recorded tick size change before instrument load for {token_id}");
+                return;
+            };
+
+            let Some(current) = ctx.instruments.get_cloned(&meta.instrument_id) else {
+                return;
+            };
+
+            // A newer duplicate still advances live provenance for stale-event rejection.
+            if current.price_increment().as_decimal() == tick_size {
                 log::debug!(
                     "Ignoring duplicate tick size change for {}: {} -> {}",
                     change.asset_id,
@@ -544,8 +571,6 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 return;
             }
 
-            drop(instruments);
-
             log::debug!(
                 "Tick size changed for {}: {} -> {}",
                 change.asset_id,
@@ -553,54 +578,39 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 change.new_tick_size
             );
 
-            ctx.token_meta.insert(
-                token_id,
-                TokenMeta {
-                    price_precision: new_price_precision,
-                    ..meta
-                },
-            );
-
             let ts_init = ctx.clock.get_time_ns();
-            let mut rebuilt = None;
-            let mut rebuild_error = None;
-
-            // Rebuild from the value the map holds now, so a concurrent market closure update is
-            // carried forward rather than reverted by an older snapshot. Resolving presence here
-            // rather than from the snapshot above also covers an instrument cached after it, whose
-            // `token_meta` precision was already advanced.
-            ctx.instruments.rcu(|map| {
-                rebuilt = None;
-                rebuild_error = None;
-
-                let Some(current) = map.get(&meta.instrument_id).cloned() else {
+            let rebuilt = match rebuild_instrument_with_tick_size(
+                &current,
+                &change.new_tick_size,
+                ts_event,
+                ts_init,
+            ) {
+                Ok(instrument) => instrument,
+                Err(e) => {
+                    log::error!("Failed to rebuild instrument for tick size change: {e}");
                     return;
-                };
+                }
+            };
 
-                match rebuild_instrument_with_tick_size(
-                    &current,
-                    &change.new_tick_size,
-                    ts_init,
-                    ts_init,
-                ) {
-                    Ok(instrument) => {
-                        map.insert(instrument.id(), instrument.clone());
-                        rebuilt = Some(instrument);
+            if !apply_live_instrument_locked(
+                &ctx.closed_condition_ids,
+                &update_state,
+                &ctx.instruments,
+                &ctx.token_meta,
+                &rebuilt,
+                |instrument| {
+                    if let Err(e) = ctx
+                        .data_sender
+                        .send(DataEvent::Instrument(instrument.clone()))
+                    {
+                        log::error!("Failed to emit rebuilt instrument: {e}");
                     }
-                    Err(e) => rebuild_error = Some(e.to_string()),
-                }
-            });
-
-            if let Some(e) = rebuild_error {
-                log::error!("Failed to rebuild instrument for tick size change: {e}");
-            } else if let Some(rebuilt) = rebuilt {
-                // Retirement wins if the instrument was removed after the cache update
-                if let Some(latest) = ctx.instruments.get_cloned(&rebuilt.id())
-                    && let Err(e) = ctx.data_sender.send(DataEvent::Instrument(latest))
-                {
-                    log::error!("Failed to emit rebuilt instrument: {e}");
-                }
+                },
+            ) {
+                return;
             }
+
+            drop(update_state);
 
             // Book epoch transition; see module docs.
             let instrument_id = meta.instrument_id;
@@ -643,6 +653,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
             let filters = ctx.filters.clone();
             let token_meta = ctx.token_meta.clone();
             let instruments = ctx.instruments.clone();
+            let instrument_update_state = ctx.instrument_update_state.clone();
             let closed_condition_ids = ctx.closed_condition_ids.clone();
             let data_sender = ctx.data_sender.clone();
             let clock = ctx.clock;
@@ -769,6 +780,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                             let instrument_id = inst.id();
                             apply_live_instrument(
                                 &closed_condition_ids,
+                                &instrument_update_state,
                                 &instruments,
                                 &token_meta,
                                 &inst,
@@ -977,8 +989,8 @@ mod tests {
         messages::{
             DataResponse,
             data::{
-                RequestBookSnapshot, RequestCustomData, RequestInstrument, RequestTrades,
-                SubscribeBookDeltas, SubscribeQuotes,
+                RequestBookSnapshot, RequestCustomData, RequestInstrument, RequestInstruments,
+                RequestTrades, SubscribeBookDeltas, SubscribeQuotes,
             },
         },
         testing::wait_until_async,
@@ -1197,6 +1209,7 @@ mod tests {
             data_sender: data_tx.clone(),
             token_meta: Arc::new(DashMap::new()),
             instruments: Arc::new(AtomicMap::new()),
+            instrument_update_state: Arc::new(StdMutex::new(InstrumentUpdateState::default())),
             gamma_client,
             filters: vec![],
             order_books: Arc::new(DashMap::new()),
@@ -1360,6 +1373,7 @@ mod tests {
             data_sender: client.data_sender.clone(),
             token_meta: client.token_meta.clone(),
             instruments: client.instruments.clone(),
+            instrument_update_state: client.instrument_update_state.clone(),
             gamma_client: client.provider.http_client().clone(),
             filters: client.provider.filters(),
             order_books: client.order_books.clone(),
@@ -1897,6 +1911,201 @@ mod tests {
             !client
                 .token_meta
                 .contains_key(&Ustr::from(TEST_TOKEN_ID_YES))
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn instrument_request_composes_live_tick_into_event_and_response() {
+        let market = gamma_market_recheck_fixture_value();
+        let state = ScriptedAutoLoadServerState::new(
+            vec![ScriptedAutoLoadReply::ok(serde_json::json!([market]))],
+            vec![],
+        );
+        let addr = start_scripted_auto_load_test_server(state).await;
+        let (client, mut data_rx) = create_test_client(addr);
+        let instrument_id = fixture_yes_instrument_id();
+        client
+            .instrument_update_state
+            .lock()
+            .expect("instrument_update_state mutex poisoned")
+            .record_live_tick(
+                Ustr::from(TEST_TOKEN_ID_YES),
+                "0.005".parse().expect("tick size"),
+                UnixNanos::from(1_700_000_001_000_000_000),
+            );
+
+        client
+            .request_instrument(RequestInstrument::new(
+                instrument_id,
+                None,
+                None,
+                Some(client.client_id),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+            ))
+            .expect("instrument request should start");
+
+        let events = tokio::time::timeout(StdDuration::from_secs(3), async {
+            let mut events = Vec::new();
+
+            loop {
+                let event = data_rx.recv().await.expect("data event channel closed");
+                let is_response = matches!(event, DataEvent::Response(DataResponse::Instrument(_)));
+                events.push(event);
+                if is_response {
+                    return events;
+                }
+            }
+        })
+        .await
+        .expect("timed out waiting for instrument response");
+
+        let published = events.iter().find_map(|event| match event {
+            DataEvent::Instrument(instrument) => Some(instrument),
+            _ => None,
+        });
+        let response = events.iter().find_map(|event| match event {
+            DataEvent::Response(DataResponse::Instrument(response)) => Some(&response.data),
+            _ => None,
+        });
+
+        for instrument in [published, response] {
+            let instrument = instrument.expect("composed instrument");
+            assert_eq!(instrument.price_precision(), 4);
+            assert_eq!(instrument.price_increment(), Price::from("0.005"));
+            assert_eq!(instrument.price_increment().precision, 4);
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn instruments_request_composes_live_tick_into_response_and_cache() {
+        let market = gamma_market_recheck_fixture_value();
+        let state = ScriptedAutoLoadServerState::new(
+            vec![ScriptedAutoLoadReply::ok(serde_json::json!([market]))],
+            vec![],
+        );
+        let addr = start_scripted_auto_load_test_server(state).await;
+        let (client, mut data_rx) = create_test_client(addr);
+        let instrument_id = fixture_yes_instrument_id();
+        client
+            .instrument_update_state
+            .lock()
+            .expect("instrument_update_state mutex poisoned")
+            .record_live_tick(
+                Ustr::from(TEST_TOKEN_ID_YES),
+                "0.005".parse().expect("tick size"),
+                UnixNanos::from(1_700_000_001_000_000_000),
+            );
+
+        let request_id = UUID4::new();
+        client
+            .request_instruments(RequestInstruments::new(
+                None,
+                None,
+                Some(client.client_id),
+                None,
+                request_id,
+                UnixNanos::default(),
+                None,
+            ))
+            .expect("instruments request should start");
+
+        let response = tokio::time::timeout(StdDuration::from_secs(3), async {
+            loop {
+                match data_rx.recv().await.expect("data event channel closed") {
+                    DataEvent::Response(DataResponse::Instruments(response))
+                        if response.correlation_id == request_id =>
+                    {
+                        return response;
+                    }
+                    _ => {}
+                }
+            }
+        })
+        .await
+        .expect("timed out waiting for instruments response");
+
+        let response_instrument = response
+            .data
+            .iter()
+            .find(|instrument| instrument.id() == instrument_id)
+            .expect("Yes instrument in response");
+        let cached_instrument = client
+            .instruments
+            .get_cloned(&instrument_id)
+            .expect("Yes instrument in cache");
+
+        for instrument in [response_instrument, &cached_instrument] {
+            assert_eq!(instrument.price_precision(), 4);
+            assert_eq!(instrument.price_increment(), Price::from("0.005"));
+            assert_eq!(instrument.price_increment().precision, 4);
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn instruments_request_skips_invalid_live_tick_and_responds() {
+        let market = gamma_market_recheck_fixture_value();
+        let state = ScriptedAutoLoadServerState::new(
+            vec![ScriptedAutoLoadReply::ok(serde_json::json!([market]))],
+            vec![],
+        );
+        let addr = start_scripted_auto_load_test_server(state).await;
+        let (client, mut data_rx) = create_test_client(addr);
+        client
+            .instrument_update_state
+            .lock()
+            .expect("instrument_update_state mutex poisoned")
+            .record_live_tick(
+                Ustr::from(TEST_TOKEN_ID_YES),
+                "-0.01".parse().expect("tick size"),
+                UnixNanos::from(1_700_000_001_000_000_000),
+            );
+
+        let request_id = UUID4::new();
+        client
+            .request_instruments(RequestInstruments::new(
+                None,
+                None,
+                Some(client.client_id),
+                None,
+                request_id,
+                UnixNanos::default(),
+                None,
+            ))
+            .expect("instruments request should start");
+
+        let response = tokio::time::timeout(StdDuration::from_secs(3), async {
+            loop {
+                match data_rx.recv().await.expect("data event channel closed") {
+                    DataEvent::Response(DataResponse::Instruments(response))
+                        if response.correlation_id == request_id =>
+                    {
+                        return response;
+                    }
+                    _ => {}
+                }
+            }
+        })
+        .await
+        .expect("timed out waiting for instruments response");
+
+        assert_eq!(response.data.len(), 1);
+        assert_eq!(response.data[0].id(), fixture_no_instrument_id());
+        assert!(
+            !client
+                .instruments
+                .load()
+                .contains_key(&fixture_yes_instrument_id())
+        );
+        assert!(
+            client
+                .instruments
+                .load()
+                .contains_key(&fixture_no_instrument_id())
         );
     }
 
@@ -2835,6 +3044,29 @@ mod tests {
             data_api,
             ws,
         )
+    }
+
+    #[rstest]
+    fn reset_client_clears_live_tick_state() {
+        let mut client = make_local_test_client();
+        let token_id = Ustr::from("0xTOKEN_RESET_TICK");
+        client
+            .instrument_update_state
+            .lock()
+            .expect("instrument_update_state mutex poisoned")
+            .record_live_tick(
+                token_id,
+                "0.005".parse().expect("tick size"),
+                UnixNanos::from(1_700_000_001_000_000_000),
+            );
+
+        client.reset_client();
+
+        let update_state = client
+            .instrument_update_state
+            .lock()
+            .expect("instrument_update_state mutex poisoned");
+        assert!(!update_state.contains_live_tick(&token_id));
     }
 
     #[rstest]
@@ -5901,12 +6133,22 @@ mod tests {
     }
 
     fn make_tick_change(market: &str, asset_id: &str, old: &str, new: &str) -> MarketWsMessage {
+        make_tick_change_at(market, asset_id, old, new, "1700000001000")
+    }
+
+    fn make_tick_change_at(
+        market: &str,
+        asset_id: &str,
+        old: &str,
+        new: &str,
+        timestamp: &str,
+    ) -> MarketWsMessage {
         MarketWsMessage::TickSizeChange(PolymarketTickSizeChange {
             market: Ustr::from(market),
             asset_id: Ustr::from(asset_id),
             new_tick_size: new.to_string(),
             old_tick_size: old.to_string(),
-            timestamp: "1700000001000".to_string(),
+            timestamp: timestamp.to_string(),
         })
     }
 
@@ -6469,7 +6711,7 @@ mod tests {
         );
 
         let meta = ctx.token_meta.get(&token_ustr).expect("token_meta");
-        assert_eq!(meta.price_precision, 2);
+        assert_eq!(meta.price_precision, 4);
 
         let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
         assert!(
@@ -6533,7 +6775,7 @@ mod tests {
         let inst = seed_instrument(
             &ctx,
             asset_id_str,
-            Price::from("0.01"),
+            Price::from("0.0100"),
             Quantity::from("0.01"),
         );
         let instrument_id = inst.id();
@@ -6567,7 +6809,7 @@ mod tests {
                 .contains(&instrument_id)
         );
         let meta = ctx.token_meta.get(&token_ustr).expect("token_meta");
-        assert_eq!(meta.price_precision, 2);
+        assert_eq!(meta.price_precision, 4);
         let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
         assert!(
             events.is_empty(),
@@ -6581,7 +6823,7 @@ mod tests {
     fn tick_size_change_rebuilds_exact_increment(
         #[case] old_tick: &str,
         #[case] new_tick: &str,
-        #[case] expected_precision: u8,
+        #[case] expected_tick_decimals: u8,
         #[case] expected_max: &str,
     ) {
         let asset_id_str = "0xTOKEN_VALUE";
@@ -6611,7 +6853,7 @@ mod tests {
                 .contains(&instrument_id)
         );
         let meta = ctx.token_meta.get(&token_ustr).expect("token_meta");
-        assert_eq!(meta.price_precision, expected_precision);
+        assert_eq!(meta.price_precision, 4);
 
         let rebuilt = ctx
             .instruments
@@ -6620,6 +6862,12 @@ mod tests {
             .cloned()
             .expect("rebuilt instrument");
         assert_eq!(rebuilt.price_increment(), Price::from(new_tick));
+        assert_eq!(rebuilt.price_precision(), 4);
+        assert_eq!(rebuilt.price_increment().precision, 4);
+        assert_eq!(
+            rebuilt.min_price_increment_precision(),
+            expected_tick_decimals
+        );
         assert_eq!(rebuilt.min_price(), Some(Price::from(new_tick)));
         assert_eq!(rebuilt.max_price(), Some(Price::from(expected_max)));
 
@@ -6628,6 +6876,164 @@ mod tests {
             events.iter().any(|e| matches!(e, DataEvent::Instrument(_))),
             "expected rebuilt instrument event, found: {events:?}",
         );
+    }
+
+    #[rstest]
+    #[case::gamma_then_websocket(false)]
+    #[case::websocket_then_gamma(true)]
+    fn live_tick_wins_both_gamma_websocket_arrival_orders(#[case] websocket_first: bool) {
+        let asset_id = "0xTOKEN_ORDERING";
+        let market = "0xMARKET";
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let gamma_instrument =
+            seed_instrument(&ctx, asset_id, Price::from("0.01"), Quantity::from("0.01"));
+
+        let apply_gamma = || {
+            apply_live_instrument(
+                &ctx.closed_condition_ids,
+                &ctx.instrument_update_state,
+                &ctx.instruments,
+                &ctx.token_meta,
+                &gamma_instrument,
+                |instrument| {
+                    ctx.data_sender
+                        .send(DataEvent::Instrument(instrument.clone()))
+                        .expect("data event receiver");
+                },
+            )
+        };
+
+        if websocket_first {
+            handle_market_message(make_tick_change(market, asset_id, "0.01", "0.005"), &ctx);
+            assert!(apply_gamma());
+        } else {
+            assert!(apply_gamma());
+            handle_market_message(make_tick_change(market, asset_id, "0.01", "0.005"), &ctx);
+        }
+
+        let effective = ctx
+            .instruments
+            .get_cloned(&gamma_instrument.id())
+            .expect("effective instrument");
+        let published = std::iter::from_fn(|| data_rx.try_recv().ok())
+            .filter_map(|event| match event {
+                DataEvent::Instrument(instrument) => Some(instrument),
+                _ => None,
+            })
+            .last()
+            .expect("published instrument");
+
+        for instrument in [&effective, &published] {
+            assert_eq!(instrument.price_precision(), 4);
+            assert_eq!(instrument.price_increment(), Price::from("0.005"));
+            assert_eq!(instrument.price_increment().precision, 4);
+        }
+    }
+
+    #[rstest]
+    fn tick_size_change_rejects_older_timestamp() {
+        let asset_id = "0xTOKEN_STALE_TICK";
+        let market = "0xMARKET";
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let instrument = seed_instrument(
+            &ctx,
+            asset_id,
+            Price::from("0.0100"),
+            Quantity::from("0.01"),
+        );
+
+        handle_market_message(
+            make_tick_change_at(market, asset_id, "0.01", "0.005", "1700000002000"),
+            &ctx,
+        );
+        handle_market_message(
+            make_tick_change_at(market, asset_id, "0.005", "0.001", "1700000001000"),
+            &ctx,
+        );
+
+        let effective = ctx
+            .instruments
+            .get_cloned(&instrument.id())
+            .expect("effective instrument");
+        let instrument_events = std::iter::from_fn(|| data_rx.try_recv().ok())
+            .filter(|event| matches!(event, DataEvent::Instrument(_)))
+            .count();
+
+        assert_eq!(effective.price_increment(), Price::from("0.005"));
+        assert_eq!(effective.price_precision(), 4);
+        assert_eq!(instrument_events, 1);
+    }
+
+    #[rstest]
+    fn duplicate_tick_size_change_advances_timestamp_provenance() {
+        let asset_id = "0xTOKEN_DUPLICATE_TICK";
+        let market = "0xMARKET";
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let instrument = seed_instrument(
+            &ctx,
+            asset_id,
+            Price::from("0.0100"),
+            Quantity::from("0.01"),
+        );
+
+        handle_market_message(
+            make_tick_change_at(market, asset_id, "0.01", "0.01", "1700000002000"),
+            &ctx,
+        );
+        handle_market_message(
+            make_tick_change_at(market, asset_id, "0.01", "0.005", "1700000001000"),
+            &ctx,
+        );
+
+        let effective = ctx
+            .instruments
+            .get_cloned(&instrument.id())
+            .expect("effective instrument");
+        let instrument_events = std::iter::from_fn(|| data_rx.try_recv().ok())
+            .filter(|event| matches!(event, DataEvent::Instrument(_)))
+            .count();
+
+        assert_eq!(effective.price_increment(), Price::from("0.01"));
+        assert_eq!(effective.price_precision(), 4);
+        assert_eq!(instrument_events, 0);
+    }
+
+    #[rstest]
+    fn tick_size_change_before_instrument_load_overlays_gamma() {
+        let asset_id = "0xTOKEN_EARLY_TICK";
+        let market = "0xMARKET";
+        let (ctx, mut data_rx) = make_ws_ctx();
+
+        handle_market_message(make_tick_change(market, asset_id, "0.01", "0.005"), &ctx);
+
+        let gamma_instrument =
+            stub_instrument(asset_id, Price::from("0.01"), Quantity::from("0.01"));
+        assert!(apply_live_instrument(
+            &ctx.closed_condition_ids,
+            &ctx.instrument_update_state,
+            &ctx.instruments,
+            &ctx.token_meta,
+            &gamma_instrument,
+            |instrument| {
+                ctx.data_sender
+                    .send(DataEvent::Instrument(instrument.clone()))
+                    .expect("data event receiver");
+            },
+        ));
+
+        let effective = ctx
+            .instruments
+            .get_cloned(&gamma_instrument.id())
+            .expect("effective instrument");
+        let published = match data_rx.try_recv().expect("instrument event") {
+            DataEvent::Instrument(instrument) => instrument,
+            other => panic!("Expected instrument event, was {other:?}"),
+        };
+
+        for instrument in [&effective, &published] {
+            assert_eq!(instrument.price_precision(), 4);
+            assert_eq!(instrument.price_increment(), Price::from("0.005"));
+        }
     }
 
     #[rstest]

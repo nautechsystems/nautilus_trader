@@ -72,7 +72,7 @@ use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use self::{
-    instruments::TokenMeta,
+    instruments::{InstrumentUpdateState, TokenMeta},
     requests::{
         request_book_snapshot, request_data, request_instrument, request_instruments,
         request_trades,
@@ -123,6 +123,7 @@ pub struct PolymarketDataClient {
     tasks: TaskGroup,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    instrument_update_state: Arc<StdMutex<InstrumentUpdateState>>,
     token_meta: Arc<DashMap<Ustr, TokenMeta>>,
     order_books: Arc<DashMap<InstrumentId, OrderBook>>,
     last_quotes: Arc<DashMap<InstrumentId, QuoteTick>>,
@@ -219,6 +220,7 @@ impl PolymarketDataClient {
             tasks,
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
+            instrument_update_state: Arc::new(StdMutex::new(InstrumentUpdateState::default())),
             token_meta: Arc::new(DashMap::new()),
             order_books: Arc::new(DashMap::new()),
             last_quotes: Arc::new(DashMap::new()),

@@ -141,6 +141,7 @@ impl PolymarketDataClient {
         let http = self.provider.http_client().clone();
         let filters = self.provider.filters();
         let instruments = self.instruments.clone();
+        let instrument_update_state = self.instrument_update_state.clone();
         let token_meta = self.token_meta.clone();
         let active_quote_subs = self.active_quote_subs.clone();
         let active_delta_subs = self.active_delta_subs.clone();
@@ -348,6 +349,7 @@ impl PolymarketDataClient {
                                 let instrument_id = instrument.id();
                                 apply_live_instrument(
                                     &closed_condition_ids,
+                                    &instrument_update_state,
                                     &instruments,
                                     &token_meta,
                                     instrument,

@@ -79,7 +79,7 @@ use nautilus_model::{
 use nautilus_network::http::HttpClient;
 use nautilus_polymarket::{
     common::{
-        consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE},
+        consts::{POLYMARKET_CLIENT_ID, POLYMARKET_PRICE_PRECISION, POLYMARKET_VENUE},
         enums::SignatureType,
     },
     config::{PolymarketExecutionClientConfig, PolymarketInstrumentProviderConfig},
@@ -8323,7 +8323,8 @@ fn add_instrument_to_cache_with_values(
     size_precision: u8,
     taker_fee: Decimal,
 ) {
-    let price_increment = Price::from(tick_size);
+    let price_increment =
+        Price::from_decimal_dp(tick_size.parse().unwrap(), POLYMARKET_PRICE_PRECISION).unwrap();
     let size_increment = if size_precision == 0 {
         Quantity::from("1")
     } else {
@@ -8349,7 +8350,7 @@ fn add_instrument_to_cache_with_values(
         .currency(Currency::pUSD())
         .activation_ns(UnixNanos::default())
         .expiration_ns(UnixNanos::default())
-        .price_precision(price_increment.precision)
+        .price_precision(POLYMARKET_PRICE_PRECISION)
         .size_precision(size_precision)
         .price_increment(price_increment)
         .size_increment(size_increment)
