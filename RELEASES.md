@@ -113,6 +113,7 @@ Released on TBD (UTC).
 - Improved model type boundary regression coverage
 - Improved nightly Clippy compatibility across Rust workspace checks
 - Improved `OrderBook` regression coverage
+- Improved Python `Position` lifecycle validation to raise `ValueError` for invalid fills
 - Improved Betfair stream lifecycle test synchronization (#4849), thanks @folknor
 - Improved dYdX retry timeout test coverage (#4835), thanks @folknor
 - Improved Lighter async task ownership across execution and WebSocket reconnects

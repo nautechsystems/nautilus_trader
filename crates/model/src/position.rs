@@ -27,7 +27,10 @@ use ahash::{AHashMap, AHashSet};
 use indexmap::IndexMap;
 use nautilus_core::{
     UUID4, UnixNanos,
-    correctness::{FAILED, check_equal, check_predicate_true},
+    correctness::{
+        CorrectnessError, CorrectnessResult, CorrectnessResultExt, FAILED, check_equal,
+        check_predicate_true,
+    },
 };
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Serialize};
@@ -122,23 +125,29 @@ impl Position {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - The `instrument.id()` does not match the `fill.instrument_id`.
-    /// - The `fill.position_id` is `None`.
+    /// Panics if [`Position::new_checked`] returns an error.
     #[must_use]
     #[allow(
         clippy::needless_pass_by_value,
         reason = "constructor takes the opening fill by value as the position's seed event"
     )]
     pub fn new(instrument: &InstrumentAny, fill: OrderFilled) -> Self {
-        check_equal(
-            &instrument.id(),
-            &fill.instrument_id,
-            "instrument.id()",
-            "fill.instrument_id",
-        )
-        .expect(FAILED);
-        let position_id = fill.position_id.expect("No position ID to open `Position`");
+        Self::new_checked(instrument, fill).expect_display(FAILED)
+    }
+
+    /// Creates a new [`Position`] instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the instrument ID does not match the fill or the fill has no position
+    /// ID.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "constructor takes the opening fill by value as the position's seed event"
+    )]
+    pub fn new_checked(instrument: &InstrumentAny, fill: OrderFilled) -> CorrectnessResult<Self> {
+        Self::check_fill_instrument(instrument.id(), "instrument.id()", &fill)?;
+        let position_id = Self::fill_position_id(&fill)?;
 
         let mut item = Self {
             events: Vec::<OrderFilled>::new(),
@@ -180,8 +189,8 @@ impl Position {
             realized_return: 0.0,
             realized_pnl: None,
         };
-        item.apply(&fill);
-        item
+        item.apply_fill(&fill, true)?;
+        Ok(item)
     }
 
     /// Returns a copy without stored events, adjustments, replay events, fill voids, or trade IDs.
@@ -329,7 +338,7 @@ impl Position {
 
         // Reapply all remaining fills to reconstruct state
         for event in filtered_events {
-            self.apply_fill(&event, false);
+            self.apply_fill(&event, false).expect_display(FAILED);
         }
 
         // Reapply preserved adjustments to maintain full state
@@ -353,10 +362,44 @@ impl Position {
     ///
     /// Panics if the `fill.trade_id` is already present in the position's `trade_ids`.
     pub fn apply(&mut self, fill: &OrderFilled) {
-        self.apply_fill(fill, true);
+        self.apply_fill(fill, true).expect_display(FAILED);
     }
 
-    fn apply_fill(&mut self, fill: &OrderFilled, record_replay: bool) {
+    /// Applies an `OrderFilled` event to this position with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the fill instrument or position identity does not match this position,
+    /// the fill has no position ID, or an ordinary duplicate trade ID is applied. An error leaves
+    /// the position unchanged.
+    pub fn try_apply(&mut self, fill: &OrderFilled) -> CorrectnessResult<()> {
+        Self::check_fill_instrument(self.instrument_id, "self.instrument_id", fill)?;
+        let position_id = Self::fill_position_id(fill)?;
+        check_equal(&self.id, &position_id, "self.id", "fill.position_id")?;
+        self.apply_fill(fill, true)
+    }
+
+    fn check_fill_instrument(
+        instrument_id: InstrumentId,
+        instrument_param: &str,
+        fill: &OrderFilled,
+    ) -> CorrectnessResult<()> {
+        check_equal(
+            &instrument_id,
+            &fill.instrument_id,
+            instrument_param,
+            "fill.instrument_id",
+        )
+    }
+
+    fn fill_position_id(fill: &OrderFilled) -> CorrectnessResult<PositionId> {
+        fill.position_id
+            .ok_or_else(|| CorrectnessError::PredicateViolation {
+                message: "`fill.position_id` was None".to_string(),
+            })
+    }
+
+    fn apply_fill(&mut self, fill: &OrderFilled, record_replay: bool) -> CorrectnessResult<()> {
         if record_replay
             && (self.side == PositionSide::Flat || !self.trade_ids.contains(&fill.trade_id))
             && self.is_duplicate_replay_fill(fill)
@@ -366,7 +409,7 @@ impl Position {
                 fill.trade_id,
                 self.id,
             );
-            return;
+            return Ok(());
         }
 
         if fill.ts_event < self.ts_opened {
@@ -402,9 +445,8 @@ impl Position {
         if record_replay {
             check_predicate_true(
                 !self.trade_ids.contains(&fill.trade_id),
-                "`fill.trade_id` already contained in `trade_ids",
-            )
-            .expect(FAILED);
+                "`fill.trade_id` already contained in `trade_ids`",
+            )?;
             self.replay_events
                 .push(PositionReplayEvent::Filled(fill.clone()));
         }
@@ -500,6 +542,8 @@ impl Position {
             self.peak_qty,
             self.quantity,
         );
+
+        Ok(())
     }
 
     fn is_duplicate_replay_fill(&self, fill: &OrderFilled) -> bool {
@@ -882,7 +926,7 @@ impl Position {
                     let mut effective = fill.clone();
                     effective.last_qty = effective_qty;
                     effective.commission = effective_commission;
-                    self.apply_fill(&effective, false);
+                    self.apply_fill(&effective, false).expect_display(FAILED);
                 }
                 PositionReplayEvent::Adjusted(adjustment) => {
                     self.apply_adjustment_state(*adjustment, false);
@@ -1475,7 +1519,7 @@ mod tests {
     use std::str::FromStr;
 
     use ahash::AHashSet;
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{UnixNanos, correctness::CorrectnessError};
     use proptest::prelude::*;
     use rstest::rstest;
     use rust_decimal::{Decimal, prelude::ToPrimitive};
@@ -1488,7 +1532,8 @@ mod tests {
             order::spec::{OrderFillVoidedSpec, OrderFilledSpec},
         },
         identifiers::{
-            AccountId, ClientOrderId, PositionId, StrategyId, TradeId, VenueOrderId, stubs::uuid4,
+            AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, VenueOrderId,
+            stubs::uuid4,
         },
         instruments::{
             CryptoFuture, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny, stubs::*,
@@ -1603,7 +1648,114 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "`fill.trade_id` already contained in `trade_ids")]
+    fn test_new_checked_rejects_missing_position_id(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .build();
+
+        let error = Position::new_checked(&instrument, fill).unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::PredicateViolation {
+                message: "`fill.position_id` was None".to_string(),
+            }
+        );
+    }
+
+    #[rstest]
+    fn test_new_checked_rejects_instrument_mismatch(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(InstrumentId::from("GBP/USD.SIM"))
+            .position_id(PositionId::from("P-1"))
+            .build();
+
+        let error = Position::new_checked(&instrument, fill).unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::EqualityMismatch {
+                lhs_param: "instrument.id()".to_string(),
+                rhs_param: "fill.instrument_id".to_string(),
+                lhs: "AUD/USD.SIM".to_string(),
+                rhs: "GBP/USD.SIM".to_string(),
+                type_name: "value",
+            }
+        );
+    }
+
+    #[rstest]
+    #[case::instrument_mismatch(
+        "GBP/USD.SIM",
+        Some("P-1"),
+        "'self.instrument_id' value of AUD/USD.SIM was not equal to 'fill.instrument_id' value of GBP/USD.SIM"
+    )]
+    #[case::missing_position_id("AUD/USD.SIM", None, "`fill.position_id` was None")]
+    #[case::position_mismatch(
+        "AUD/USD.SIM",
+        Some("P-2"),
+        "'self.id' value of P-1 was not equal to 'fill.position_id' value of P-2"
+    )]
+    fn test_try_apply_rejects_invalid_fill_identity_without_mutation(
+        #[case] fill_instrument_id: &str,
+        #[case] fill_position_id: Option<&str>,
+        #[case] expected_error: &str,
+        audusd_sim: CurrencyPair,
+    ) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let position_id = PositionId::from("P-1");
+        let fill_open = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .trade_id(TradeId::from("T-1"))
+            .position_id(position_id)
+            .build();
+        let mut fill_invalid = OrderFilledSpec::builder()
+            .instrument_id(InstrumentId::from(fill_instrument_id))
+            .trade_id(TradeId::from("T-2"))
+            .build();
+        fill_invalid.position_id = fill_position_id.map(PositionId::from);
+        let mut position = Position::new(&instrument, fill_open);
+        let state_before = serde_json::to_value(&position).unwrap();
+
+        let error = position.try_apply(&fill_invalid).unwrap_err();
+
+        assert_eq!(error.to_string(), expected_error);
+        assert_eq!(serde_json::to_value(&position).unwrap(), state_before);
+    }
+
+    #[rstest]
+    fn test_try_apply_rejects_duplicate_trade_without_mutation(audusd_sim: CurrencyPair) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let position_id = PositionId::from("P-1");
+        let fill_open = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .trade_id(TradeId::from("T-1"))
+            .position_id(position_id)
+            .build();
+        let fill_duplicate = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-2"))
+            .trade_id(TradeId::from("T-1"))
+            .position_id(position_id)
+            .build();
+        let mut position = Position::new(&instrument, fill_open);
+        let state_before = serde_json::to_value(&position).unwrap();
+
+        let error = position.try_apply(&fill_duplicate).unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::PredicateViolation {
+                message: "`fill.trade_id` already contained in `trade_ids`".to_string(),
+            }
+        );
+        assert_eq!(serde_json::to_value(&position).unwrap(), state_before);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "`fill.trade_id` already contained in `trade_ids`")]
     fn test_two_trades_with_same_trade_id_error(audusd_sim: CurrencyPair) {
         let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
         let order1 = OrderTestBuilder::new(OrderType::Market)
@@ -1720,9 +1872,9 @@ mod tests {
             .position_id(position_id)
             .build();
         let mut position = Position::new(&instrument, fill_open.clone());
-        position.apply(&fill_close);
+        position.try_apply(&fill_close).unwrap();
 
-        position.apply(&fill_duplicate);
+        position.try_apply(&fill_duplicate).unwrap();
 
         assert_eq!(position.side, PositionSide::Flat);
         assert_eq!(position.quantity, Quantity::from(0));
@@ -1732,8 +1884,8 @@ mod tests {
         assert!(position.trade_ids.contains(&TradeId::from("T-1")));
         assert!(position.trade_ids.contains(&TradeId::from("T-2")));
 
-        position.apply(&fill_reopen);
-        position.apply(&fill_duplicate_open);
+        position.try_apply(&fill_reopen).unwrap();
+        position.try_apply(&fill_duplicate_open).unwrap();
 
         assert_eq!(position.side, PositionSide::Long);
         assert_eq!(position.quantity, Quantity::from(5));
@@ -1767,7 +1919,7 @@ mod tests {
         let mut fill_close_duplicate = fill_close;
         fill_close_duplicate.event_id = uuid4();
         fill_close_duplicate.ts_event = UnixNanos::from(6);
-        position.apply(&fill_close_duplicate);
+        position.try_apply(&fill_close_duplicate).unwrap();
 
         assert_eq!(position.side, PositionSide::Long);
         assert_eq!(position.quantity, Quantity::from(15));
