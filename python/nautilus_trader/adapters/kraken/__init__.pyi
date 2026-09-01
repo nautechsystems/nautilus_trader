@@ -95,6 +95,8 @@ class KrakenExecutionClientConfig:
     @property
     def max_requests_per_second(self) -> int | None: ...
     @property
+    def max_retries(self) -> int: ...
+    @property
     def spot_account_type(self) -> model.AccountType: ...
     @property
     def default_leverage(self) -> int | None: ...
@@ -124,6 +126,7 @@ class KrakenExecutionClientConfig:
         heartbeat_interval_secs: int | None = None,
         auth_timeout_secs: int | None = None,
         max_requests_per_second: int | None = None,
+        max_retries: int | None = None,
         spot_account_type: model.AccountType | None = None,
         default_leverage: int | None = None,
         use_spot_position_reports: bool | None = None,
