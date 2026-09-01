@@ -90,6 +90,7 @@ Released on TBD (UTC).
 - Fixed Bybit option batch limits and WebSocket batch amend payloads
 - Fixed Bybit rate limiting causing expired requests, venue rejections, and inconsistent order state
 - Fixed Deribit lazy-load subscriptions racing instrument cache updates
+- Fixed Derive `CancelAllOrders` to use cached orders without refreshing venue state
 - Fixed Hyperliquid execution disconnect cleanup
 - Fixed Hyperliquid market order prices in order list submits
 - Fixed Interactive Brokers adaptive limit orders parsed as market orders (#4830), thanks @mameikagou

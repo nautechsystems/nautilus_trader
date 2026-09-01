@@ -1545,110 +1545,75 @@ impl ExecutionClient for DeriveExecutionClient {
     }
 
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
-        let http_client = self.http_client.clone();
-        let ws_exec = self.ws_exec.clone();
-        let subaccount_id = self.credential.subaccount_id();
         let venue_symbol = format_venue_symbol(&cmd.instrument_id)?.to_string();
         let side_filter = cmd.order_side;
+        let cache = self.core.cache();
+        let orders = cache.orders_open_refs(
+            Some(&self.core.venue),
+            Some(&cmd.instrument_id),
+            None,
+            Some(&self.core.account_id),
+            side_filter,
+        );
+        let mut cancels = Vec::with_capacity(orders.len());
+
+        for order in orders {
+            let client_order_id = order.client_order_id();
+            if cache.client_id(&client_order_id) != Some(&self.core.client_id) {
+                continue;
+            }
+
+            let is_trigger = is_derive_trigger_order_type(order.order_type());
+            if side_filter.is_none() && !is_trigger {
+                continue;
+            }
+
+            let Some(venue_order_id) = order.venue_order_id() else {
+                log::warn!(
+                    "Cannot cancel all orders for {}: order {client_order_id} has no venue_order_id",
+                    cmd.instrument_id,
+                );
+                return Ok(());
+            };
+            cancels.push((venue_order_id, is_trigger));
+        }
+        drop(cache);
+
+        if side_filter.is_some() && cancels.is_empty() {
+            return Ok(());
+        }
+
+        let ws_exec = self.ws_exec.clone();
+        let subaccount_id = self.credential.subaccount_id();
 
         self.spawn_task("cancel_all_orders", async move {
-            // Preserve the requested side because Derive bulk cancellation has no side filter
-            if let Some(side_filter) = side_filter {
-                let open_params = DeriveGetOpenOrdersParams::new(subaccount_id);
-                let mut orders = match http_client.get_open_orders(&open_params).await {
-                    Ok(v) => v,
-                    Err(e) => {
-                        log::warn!(
-                            "Derive cancel_all_orders: failed to list open orders for side filter {side_filter:?}: {e}",
-                        );
-                        return Ok(());
-                    }
-                }
-                .orders;
-
-                match http_client
-                    .get_trigger_orders(&DeriveGetTriggerOrdersParams::new(subaccount_id))
-                    .await
-                {
-                    Ok(result) => orders.extend(result.orders),
-                    Err(e) => {
-                        log::warn!(
-                            "Derive cancel_all_orders: failed to list trigger orders for side filter {side_filter:?}: {e}",
-                        );
-                    }
-                }
-
-                for order in orders {
-                    if order.instrument_name.as_str() != venue_symbol {
-                        continue;
-                    }
-                    let order_side = match order.direction {
-                        DeriveOrderSide::Buy => OrderSide::Buy,
-                        DeriveOrderSide::Sell => OrderSide::Sell,
-                    };
-
-                    if order_side != side_filter {
-                        continue;
-                    }
-
-                    let outcome = if order.trigger_type.is_some() {
-                        ws_exec
-                            .cancel_trigger_order(&DeriveCancelTriggerOrderParams::new(
-                                subaccount_id,
-                                order.order_id.as_str(),
-                            ))
-                            .await
-                            .map(|_| ())
-                    } else {
-                        ws_exec
-                            .cancel_order(&DeriveCancelParams::new(
-                                subaccount_id,
-                                venue_symbol.as_str(),
-                                order.order_id.as_str(),
-                            ))
-                            .await
-                    };
-
-                    if let Err(e) = outcome {
-                        log::warn!(
-                            "Derive cancel_all_orders: cancel for {} failed: {e}",
-                            order.order_id,
-                        );
-                    }
-                }
-            } else {
-                let trigger_orders = match http_client
-                    .get_trigger_orders(&DeriveGetTriggerOrdersParams::new(subaccount_id))
-                    .await
-                {
-                    Ok(result) => result.orders,
-                    Err(e) => {
-                        log::warn!(
-                            "Derive cancel_all_orders: failed to list trigger orders for {venue_symbol}: {e}",
-                        );
-                        Vec::new()
-                    }
-                };
-
-                for order in trigger_orders {
-                    if order.instrument_name.as_str() != venue_symbol {
-                        continue;
-                    }
-
-                    if let Err(e) = ws_exec
+            for (venue_order_id, is_trigger) in cancels {
+                let outcome = if is_trigger {
+                    ws_exec
                         .cancel_trigger_order(&DeriveCancelTriggerOrderParams::new(
                             subaccount_id,
-                            order.order_id.as_str(),
+                            venue_order_id.as_str(),
                         ))
                         .await
-                    {
-                        log::warn!(
-                            "Derive cancel_all_orders: trigger cancel for {} failed: {e}",
-                            order.order_id,
-                        );
-                    }
-                }
+                        .map(|_| ())
+                } else {
+                    ws_exec
+                        .cancel_order(&DeriveCancelParams::new(
+                            subaccount_id,
+                            venue_symbol.as_str(),
+                            venue_order_id.as_str(),
+                        ))
+                        .await
+                };
 
+                if let Err(e) = outcome {
+                    log::warn!(
+                        "Derive cancel_all_orders: cancel for {venue_order_id} failed: {e}",
+                    );
+                }
+            }
+
+            if side_filter.is_none() {
                 match ws_exec
                     .cancel_by_instrument(&DeriveCancelByInstrumentParams::new(
                         subaccount_id,
