@@ -1,6 +1,6 @@
 # NautilusTrader 2.0.0rc4
 
-Released on TBD (UTC).
+Released on 1st September 2026 (UTC).
 
 > [!NOTE]
 > The `OrderSide`, `PositionSide`, `ContingencyType`, `TrailingOffsetType`, and `TriggerType` changes
@@ -11,16 +11,20 @@ Released on TBD (UTC).
 
 ### Enhancements
 
+- Added error reporting for strategies left running after a backtest ends (#4803), thanks @folknor
+- Added client order ID options to Python `GridMarketMakerConfig` (#4822), thanks @mameikagou
 - Added custom Python fee model support to simulation configs (#4806), thanks for reporting @gtalknitin
 - Added instrument-scoped order fill-voided event topics
 - Added Rust model handles for custom backtest margin and latency implementations
 - Added live socket state events and targeted reconnect controls across adapters
+- Added warnings for open orders excluded by the reconciliation lookback window (#4847), thanks @folknor
 - Added `Serializable` support to `OrderBookDeltas` (#4889), thanks @abhijeetvichare76
 - Added Lighter support for Robinhood Chain with deployment-specific venues and credentials
 - Added OKX instrument cache reconciliation and WebSocket instrument updates
 - Added Polymarket market descriptions to `instrument.info` (#4840), thanks for reporting @mystic-io
 - Added Polymarket quote ticks from `best_bid_ask` market events
 - Added Polymarket RTDS crypto TWAP custom data (#4843), thanks @seungpyoson
+- Added matching engine controls to sandbox execution configs (#4813), thanks @graceyangfan
 
 ### Breaking Changes
 
@@ -49,6 +53,7 @@ Released on TBD (UTC).
 - Changed contract expiry to use `InstrumentClose.close_price` for futures, binary contracts, and option close legs
 - Changed omitted backtest leverage to 10x for margin and 1x for cash; set `default_leverage=1` for prior behavior
 - Changed Rust `MarginModel` implementations to require `Send + Sync` and `name()`
+- Changed `ExecutionManager::new` to validate lookback bounds and return `ConfigResult` (#4809), thanks @folknor
 - Changed `Strategy.cancel_all_orders` to associated orders by default (#4470), thanks for reporting @zurpet
 - Changed `ExecutionClientFactory::create` to receive the node's `TraderId`
 - Changed `SimulatedExecutionClientFactory::create` to receive the node's `TraderId`
@@ -62,12 +67,15 @@ Released on TBD (UTC).
 
 - Added fail-closed Cargo dependency cooldown checks and transactional repair for both lockfiles,
   with portable GNU and BSD date handling
+- Fixed foreign-instrument fills corrupting cached position state (#4802), thanks @folknor
 
 ### Fixes
 
 - Fixed active-local order modifications bypassing their execution algorithm (#4793), thanks @folknor
 - Fixed execution algorithms submitting spawned orders with live emulation triggers (#4881), thanks @folknor
+- Fixed trigger-carrying order modifications bypassing the order emulator (#4848), thanks @folknor
 - Fixed Efficiency Ratio windowing and invalid Python input handling (#4807), thanks for reporting @staffordjh
+- Fixed indicator string representations reporting fields out of order (#4816), thanks @s1amese2003
 - Fixed own order book audits removing active-local orders
 - Fixed stale order slippage after fill-void corrections
 - Fixed `StrategyConfig.manage_contingent_orders` for open, non-active-local OTO, OCO, and OUO orders
@@ -78,6 +86,7 @@ Released on TBD (UTC).
 - Fixed live order snapshots not being persisted to PostgreSQL
 - Fixed live position snapshots not being persisted to PostgreSQL
 - Fixed partial late fills reopening canceled orders
+- Fixed cloned execution event emitters dropping events after sender initialization (#4874), thanks @folknor
 - Fixed BacktestEngine delayed orders using unrelated instrument prices (#4891), thanks for reporting @mdou7
 - Fixed `generate_missing_orders=False` creating synthetic orders and fills (#4739), thanks for reporting @hashtagdenis
 - Fixed Betfair `CancelAllOrders` side filters and large batch cancellation
@@ -91,6 +100,8 @@ Released on TBD (UTC).
 - Fixed Binance Spot and Futures execution reconciliation when no data client is configured
 - Fixed Bybit option batch limits and WebSocket batch amend payloads
 - Fixed Bybit rate limiting causing expired requests, venue rejections, and inconsistent order state
+- Fixed Bybit scoped SPOT position reports and wallet balance fan-out (#4844), thanks @folknor
+- Fixed Bybit WebSocket order book depth validation (#4823), thanks @Centaur-pub
 - Fixed Deribit lazy-load subscriptions racing instrument cache updates
 - Fixed Derive `CancelAllOrders` to use cached orders without refreshing venue state
 - Fixed Hyperliquid execution disconnect cleanup
@@ -107,6 +118,7 @@ Released on TBD (UTC).
 - Fixed Polymarket `CancelAllOrders` handling for empty caches and cross-strategy, instrument, and side scopes
 - Fixed Polymarket FAK no-match batch responses missing `OrderRejected` events
 - Fixed Polymarket market WebSocket heartbeats before initial subscription (#4864), thanks for reporting @mystic-io
+- Fixed Polymarket position pagination returning incomplete results at the offset limit (#4811), thanks @seungpyoson
 - Fixed Polymarket stale tick refreshes and mixed price precision (#4896), thanks for reporting @mystic-io
 - Fixed Tardis incremental L2 batches ending on exchange timestamps (#4872), thanks for reporting @szpony
 
@@ -119,10 +131,12 @@ Released on TBD (UTC).
 - Improved nightly Clippy compatibility across Rust workspace checks
 - Improved `OrderBook` regression coverage
 - Improved Python `Position` lifecycle validation to raise `ValueError` for invalid fills
+- Improved Architect AX and Bybit initial WebSocket retries and cancellation (#4867), thanks @folknor
 - Improved Betfair stream lifecycle test synchronization (#4849), thanks @folknor
 - Improved dYdX retry timeout test coverage (#4835), thanks @folknor
 - Improved Lighter async task ownership across execution and WebSocket reconnects
 - Improved Polymarket auto-load and data task ownership across reconnects
+- Improved Polymarket reconciliation regression coverage (#4855), thanks @seungpyoson
 - Refined model fixed-point validation and wallet scaling
 - Refined `OrderBook` validation, snapshots, quotes, and display paths
 - Refined Python actor setup across runtime paths

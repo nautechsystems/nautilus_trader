@@ -3,8 +3,8 @@
 NautilusTrader v2 is the Rust core and PyO3 Python package under `python/`. It is the primary Python
 path on `develop`. Use this guide to migrate from the legacy v1 Cython package.
 
-After cutover, v1 moves to the `develop_v1` branch for approximately three months of critical
-security backports. It does not receive new feature or parity work.
+Legacy v1 lives on the `develop_v1` branch, which accepts critical security backports for
+approximately three months after the v2 cutover. It does not receive new feature or parity work.
 
 The v1 and v2 packages both install and import as `nautilus_trader`, so use a separate virtual
 environment for each and never install both into one.
@@ -183,6 +183,59 @@ V2 strategy order changes take client order IDs rather than order objects:
 | `cancel_order(order, ...)`   | `cancel_order(order.client_order_id, ...)` |
 | `cancel_orders(orders, ...)` | `cancel_orders(client_order_ids, ...)`     |
 
+`Strategy.cancel_all_orders()` now affects only orders associated with that strategy by default.
+Pass `strategy_only=False` to retain v1's broader instrument-and-side scope.
+
+The public `nautilus_trader.data.OptionChainManager` is removed. Call `subscribe_option_chain(...)`
+from a `DataActor` or `Strategy`, then handle each aggregated `OptionChainSlice` in
+`on_option_chain(slice)`. Call `unsubscribe_option_chain(series_id)` to stop the subscription.
+
+`Cache.actor_ids()` is removed. Rust integrations can use `Trader::actor_ids()`; Python v2 does not
+expose a direct actor-ID collection.
+
+### Typed model objects
+
+V2 removes the PyCapsule boundary between Python and Rust. Pass model objects directly and use
+normal Python type checks:
+
+| v1 API                                        | v2 migration                                  |
+| --------------------------------------------- | --------------------------------------------- |
+| `nautilus_trader.core.is_pycapsule(value)`    | `isinstance(value, ExpectedModelType)`        |
+| `model.as_pycapsule()`                        | Pass the model object                         |
+| `OrderBookDeltas.from_pycapsule(capsule)`     | Use the `OrderBookDeltas` object directly     |
+| Databento `load_*_as_pycapsule(...)`          | Call the corresponding `load_*(...)` method   |
+| Adapter callbacks receiving `PyCapsule`       | Handle the typed model object                 |
+| `BacktestEngine.add_data` with duck typing    | Pass supported NautilusTrader model objects   |
+| Duck-typed portfolio-statistic position input | Pass `nautilus_trader.model.Position` objects |
+
+`DataQueryResult` iteration returns list chunks containing typed Python objects. Use `to_list()` to
+flatten all remaining chunks. Query and decode failures raise `RuntimeError` instead of appearing as
+an exhausted iterator.
+
+### Enum absence and side names
+
+`AggressorSide.BUYER` and `AggressorSide.SELLER` become `AggressorSide.BUY` and
+`AggressorSide.SELL`. String, serde, and PostgreSQL output also use `BUY` and `SELL`; legacy
+`BUYER` and `SELLER` input remains deprecated compatibility input.
+
+These Python compatibility attributes now evaluate to `None`, not enum members:
+
+- `OrderSide.NO_ORDER_SIDE`
+- `PositionSide.NO_POSITION_SIDE`
+- `ContingencyType.NO_CONTINGENCY`
+- `TrailingOffsetType.NO_TRAILING_OFFSET`
+- `TriggerType.NO_TRIGGER`
+
+Use `is None` for absence checks. The legacy `NO_*` string tokens still parse to `None`, but the
+attributes no longer have enum properties such as `.name` or `.value` and do not appear in
+`variants()`.
+
+This absence also reaches affected return values. `BookOrder.side`, `DatabentoImbalance.side`,
+`OrderStatusReport.order_side`, `OrderStatusReport.contingency_type`, and
+`OrderStatusReport.trailing_offset_type` can return `None`. The concrete order classes also return
+`None` from `closing_side(PositionSide.FLAT)`. Handle the optional value before accessing enum
+properties, and use `OrderBookDelta.clear(...)` when constructing a clear delta.
+
 ### Inspection and state renames
 
 V2 exposes consistent read-only inspection across economic instrument types. Properties include
@@ -273,6 +326,8 @@ Betfair configuration moves and flattens in v2:
   `max_market_start_time` fields move directly onto `BetfairDataClientConfig`.
 - Execution reconciliation uses `BetfairExecutionClientConfig.reconcile_market_ids` directly.
   `reconcile_market_ids_only` still controls whether the filter applies.
+- Rename `stream_heartbeat_ms` to `stream_heartbeat_secs` and `stream_idle_timeout_ms` to
+  `stream_heartbeat_timeout_secs`, then convert configured values from milliseconds to seconds.
 - `certs_dir` is removed because v2 uses interactive login. The HTTP keepalive interval is fixed
   internally at 36,000 seconds rather than exposed as `keep_alive_secs`.
 
@@ -288,6 +343,9 @@ Databento configuration also changes shape:
   `reconnect_timeout_mins` are not accepted by the Python `DatabentoDataClientConfig` constructor.
   Reconnection remains an internal client concern; do not copy those v1 fields into current config
   construction.
+
+Bybit's `bybit_bar_spec_to_interval` now takes a `BarAggregation` and step instead of the
+aggregation's integer value and step.
 
 Interactive Brokers legacy mutation fields have constructor or builder replacements:
 
@@ -335,9 +393,37 @@ changes these public names:
 | `LiveExecClientConfig`          | `ExecutionClientConfig`              |
 | `LiveExecEngineConfig`          | `LiveExecutionEngineConfig`          |
 | `ImportableExecAlgorithmConfig` | `ImportableExecutionAlgorithmConfig` |
+| `ExecFactoryExtractor`          | `ExecutionFactoryExtractor`          |
+| `SimExecFactoryExtractor`       | `SimulatedExecutionFactoryExtractor` |
 
 `ExecAlgorithmId`, its associated `exec_*` fields, and `ExecTester` retain their established
-names. Venue protocol terms such as `ExecType` also remain unchanged.
+names. Venue protocol terms such as `ExecType` also remain unchanged. The extractor aliases are
+Rust extension APIs under `nautilus_system::python::registry`.
+
+V2 removes component and client collections from node configuration. Register them explicitly:
+
+| v1 config field                        | v2 migration                                                           |
+| -------------------------------------- | ---------------------------------------------------------------------- |
+| `NautilusKernelConfig.message_bus`     | Pass `msgbus` to `BacktestEngineConfig` or `LiveNodeConfig`.           |
+| `NautilusKernelConfig.actors`          | Call `add_actor` or `add_actor_from_config` on the node.               |
+| `NautilusKernelConfig.strategies`      | Call `add_strategy` or `add_strategy_from_config` on the node.         |
+| `NautilusKernelConfig.exec_algorithms` | Call `add_exec_algorithm` or `add_exec_algorithm_from_config`.         |
+| `TradingNodeConfig.data_clients`       | Call `LiveNodeBuilder.add_data_client`.                                |
+| `TradingNodeConfig.exec_clients`       | Call `LiveNodeBuilder.add_exec_client` or `add_simulated_exec_client`. |
+
+On `LiveNodeConfig`, timeout names now state their unit and the post-stop wait is a delay:
+
+| v1 field                 | v2 `LiveNodeConfig` field     |
+| ------------------------ | ----------------------------- |
+| `timeout_connection`     | `timeout_connection_secs`     |
+| `timeout_reconciliation` | `timeout_reconciliation_secs` |
+| `timeout_portfolio`      | `timeout_portfolio_secs`      |
+| `timeout_disconnection`  | `timeout_disconnection_secs`  |
+| `timeout_post_stop`      | `delay_post_stop_secs`        |
+| `timeout_shutdown`       | `timeout_shutdown_secs`       |
+
+`BacktestEngineConfig` keeps the v1 timeout names without the `_secs` suffix, except that
+`timeout_post_stop` becomes `delay_post_stop`.
 
 Execution factories now consume the corresponding execution client config directly. Remove
 `BitmexExecFactoryConfig`, `DeriveExecFactoryConfig`, and `HyperliquidExecFactoryConfig` wrappers,
@@ -364,12 +450,17 @@ Postgres cache backing through `LiveNodeBuilder`; this does not restore the gene
 `DatabaseConfig` workflow. See
 [cache database configuration](docs/how_to/configure_live_trading.md#cache-database-configuration).
 
+Custom Rust cache database adapters used with live orders must implement the batch
+`index_order_clients` operation. The default trait implementation rejects non-empty claims.
+
 The generic Python APIs under `nautilus_trader.network` have no v2 public Python equivalent:
 `HttpClient`, `HttpMethod`, `HttpResponse`, `SocketClient`, `WebSocketClient`, `SocketConfig`,
-`WebSocketConfig`, `Quota`, network exceptions, and the `http_*` functions. Use adapter-specific
-APIs for supported venue workflows or the Rust `nautilus-network` crate for custom networking.
-`TransportBackend` remains available from `nautilus_trader.network` only for adapter config
-transport selection.
+`WebSocketConfig`, `Quota`, network exceptions, and the `http_*` functions. Adapter-specific
+low-level Python WebSocket clients and their request, error, and channel-control types are also
+removed. Use `LiveNode` data and execution clients for streaming venue workflows, retained adapter
+HTTP clients for supported direct requests, or the Rust `nautilus-network` crate for custom
+networking. `TransportBackend` remains available from `nautilus_trader.network` only for adapter
+config transport selection.
 
 The v1 `NautilusConfig`, `NautilusKernelConfig`, `ImportableConfig`, config factory classes, and
 encoding and path utilities are not application config objects in the current package. Use the
@@ -411,6 +502,21 @@ keyword arguments in `__new__` before the PyO3 base validates them, then assign 
 `__init__`. See the
 [v2 strategy config example][python-v2-strategy-config].
 
+### Register actors, strategies, and algorithms
+
+V1 node configs contain importable actors, strategies, and execution algorithms. V2 registers each
+component on the node instead:
+
+- For `BacktestNode`, call `node.build()` first. Then pass the run config ID and a constructed
+  component to `add_actor`, `add_strategy`, or `add_exec_algorithm`, or use the corresponding
+  `_from_config` method. Call `node.run()` after registration.
+- For `LiveNode`, register constructed components or importable configs with the same method pairs
+  before calling `run()` or `run_async()`.
+
+`LiveNode.add_actor` accepts constructed Python actor instances. Registration applies the actor's
+config, derives its ID, and rejects duplicate IDs or registration after the node leaves its idle
+state.
+
 ### Backtest node post-run inspection
 
 V2 keeps `BacktestNode` engines internal; the v1 `get_engine` and `get_engines` calls are unavailable.
@@ -435,6 +541,9 @@ These additional reports also take the run config ID first:
 - `generate_positions_report`
 - `generate_account_report`
 
+The [getting-started backtest guides](docs/getting_started/index.md) show the current high-level
+`BacktestNode` and low-level `BacktestEngine` APIs.
+
 ### Live node inspection and host-loop integration
 
 V2 exposes the Rust-owned cache and portfolio through `node.cache` and `node.portfolio`. These
@@ -447,6 +556,9 @@ Choose the lifecycle method based on who owns the loop:
 | `LiveNode.run()`        | Runs on the calling thread, owns signal handling, and blocks until shutdown.            |
 | `LiveNode.run_async()`  | Runs on the caller's asyncio loop and resolves once the node has stopped.               |
 | `LiveNodeHandle.stop()` | Requests graceful shutdown and returns immediately; the active run completes afterward. |
+
+Earlier v2 `LiveNode.start()` and `LiveNode.poll()` no longer exist. Replace an owned-loop start/poll
+sequence with `run()`, or await `run_async()` when the application owns the event loop.
 
 Both entry points run the same lifecycle, so a hosted node performs the same startup ordering,
 maintenance, external message-bus ingress, reconciliation, and shutdown as an owned one. A host
@@ -480,6 +592,11 @@ Python v2 `ExecutionAlgorithm` remains a routed-order component rather than inhe
 
 The runtime owns command routing and calls `execute`; do not call or override `execute` as the
 algorithm entrypoint.
+
+An execution algorithm cannot submit a spawned order with a live emulation trigger. Use
+`emulation_trigger=None`; Python raises `ValueError` if `submit_order` receives a triggered child.
+After a failed spawn with `reduce_primary=True`, discard or refresh the caller-held primary order:
+quantity restoration updates the cached primary order.
 
 V2 `OrderList` stores client order IDs instead of order objects. The runtime resolves those IDs
 through the cache and calls `on_order_list(order_list, orders)`, where `orders` follows the client
@@ -594,8 +711,16 @@ Account for these differences from v1:
 - `Bar.is_revision` is not exposed on the v2 Python surface. Do not depend on it during migration.
 - A direct `Position.apply` fill that crosses zero resets the open entry price to the flipping fill.
   v1 retains the old side's entry price; the v2 behavior is the go-forward contract.
+- `Position.apply` validates the fill's instrument ID, position ID, and ordinary trade-ID uniqueness
+  before mutation. Invalid fills leave the position unchanged and raise `ValueError`; v1 raises
+  `KeyError` for a duplicate trade ID and does not validate both identities on every apply.
 - `PortfolioConfig.use_mark_prices` defaults to `true`; v1 defaulted to `false`. Set it to `false` to
   skip mark prices.
+- Backtest venues no longer accept `settlement_prices`. Add `InstrumentClose` data with
+  `close_type=InstrumentCloseType.CONTRACT_EXPIRED`; its exact `close_price` settles futures, binary
+  contracts, and option close legs at expiry.
+- An omitted backtest `default_leverage` now selects 10x for margin accounts and 1x for cash
+  accounts. Set `default_leverage=Decimal(1)` to retain v1's unleveraged behavior.
 - v2 `OrderList` stores client order IDs instead of order objects:
   - Use the resolved `orders` argument in `ExecutionAlgorithm.on_order_list(order_list, orders)`.
   - Elsewhere, replace `order_list.orders` with `order_list.client_order_ids()`, then resolve each
@@ -610,9 +735,22 @@ Account for these differences from v1:
   the operand with `Decimal(str(value))`.
 - `Order.to_dict()` returns `avg_px` and `slippage` as strings, matching how the other decimal
   fields already serialize. Wrap the value in `Decimal(...)` before doing arithmetic on it.
-- Postgres-backed deployments must run `nautilus database init` before starting a v2 node. The
-  `order.avg_px` and `order.slippage` columns move from `double precision` to `NUMERIC`, and the node
-  now fails at connect time while the old column types remain.
+
+### PostgreSQL schema changes
+
+Postgres-backed deployments must run `nautilus database init` before starting a v2 node. The
+`order.avg_px` and `order.slippage` columns move from `double precision` to `NUMERIC`, and the node
+fails at connect time while the old column types remain.
+
+Existing databases whose `AGGRESSOR_SIDE` enum still contains `BUYER` and `SELLER` also need this
+one-time migration before ingesting v2 data:
+
+```sql
+ALTER TYPE AGGRESSOR_SIDE RENAME VALUE 'BUYER' TO 'BUY';
+ALTER TYPE AGGRESSOR_SIDE RENAME VALUE 'SELLER' TO 'SELL';
+```
+
+Do not run those statements if the enum already contains `BUY` and `SELL`.
 
 ## Known limitations
 
@@ -632,28 +770,25 @@ These gaps can affect migration but do not block supported cutover workflows:
   `add_simulated_exec_client`. A working sandbox client does not mean a custom live factory will
   register: neither path currently accepts an out-of-tree Python factory, and v1 `LiveDataClient`
   and `LiveExecutionClient` subclassing has no v2 equivalent yet. An out-of-tree Python adapter
-  surface is planned. See [Python support boundaries][python-support-boundaries],
-  [issue 4748][python-v2-custom-clients], and [issue 4694][python-v2-out-of-tree-adapters].
-- PostgreSQL cache position and synthetic loads, actor and strategy state persistence, and cache
-  heartbeat remain incomplete.
+  surface is planned. See [Python support boundaries][python-support-boundaries] and
+  [issue 4694][python-v2-out-of-tree-adapters].
+- The PostgreSQL cache loads positions but not synthetics. It also does not persist actor or strategy
+  state or write cache heartbeats. Redis backing supports these operations.
 - External message-bus publishing of serialized order and position snapshots remains deferred.
+- Python `LiveNodeConfig` does not accept the v1 kernel-level `streaming` or `emulator` fields, and
+  `loop_debug=True` is rejected by the Rust live runtime. Order emulation itself remains available
+  through order emulation triggers.
 - V2 `BacktestNode` catalog configuration does not support v1 data-client factories, a download
   engine, on-the-fly downloads, custom data, or data frames.
 - Instrument-provider filter dictionaries are not a common v2 adapter contract. Hyperliquid v2
   loads its configured instrument universe and does not accept the v1 `instrument_provider` field.
   Check each adapter's Rust/PyO3 config rather than copying v1 provider examples.
-- The high-level and low-level backtesting tutorials still use v1 imports and configuration. Use
-  the generated v2 stubs, the [v2 backtest acceptance tests][python-v2-backtest-tests] for
-  backtesting, and [Rust-native Python examples][python-v2-examples] for live and adapter workflows
-  while those tutorials are ported.
 
 The [v2 roadmap][v2-roadmap] tracks the wider post-cutover surface. Release-specific breaking
 changes remain in [RELEASES.md][release-notes].
 
 [live-message-bus-config]: docs/how_to/configure_live_trading.md#messagebus-configuration
 [python-support-boundaries]: docs/concepts/python.md#support-boundaries
-[python-v2-backtest-tests]: python/tests/acceptance/test_backtest.py
-[python-v2-custom-clients]: https://github.com/nautechsystems/nautilus_trader/issues/4748
 [python-v2-examples]: examples/README.md#live-adapter-examples
 [python-v2-out-of-tree-adapters]: https://github.com/nautechsystems/nautilus_trader/issues/4694
 [python-v2-strategy-config]: python/tests/strategies/ema_cross.py
