@@ -15,6 +15,7 @@ Released on TBD (UTC).
 - Added instrument-scoped order fill-voided event topics
 - Added Rust model handles for custom backtest margin and latency implementations
 - Added live socket state events and targeted reconnect controls across adapters
+- Added `Serializable` support to `OrderBookDeltas` (#4889), thanks @abhijeetvichare76
 - Added Lighter support for Robinhood Chain with deployment-specific venues and credentials
 - Added OKX instrument cache reconciliation and WebSocket instrument updates
 - Added Polymarket market descriptions to `instrument.info` (#4840), thanks for reporting @mystic-io
@@ -73,6 +74,7 @@ Released on TBD (UTC).
 - Fixed Python factory re-entry through `LiveNodeBuilder` causing process aborts
 - Fixed live order snapshots not being persisted to PostgreSQL
 - Fixed live position snapshots not being persisted to PostgreSQL
+- Fixed partial late fills reopening canceled orders
 - Fixed BacktestEngine delayed orders using unrelated instrument prices (#4891), thanks for reporting @mdou7
 - Fixed `generate_missing_orders=False` creating synthetic orders and fills (#4739), thanks for reporting @hashtagdenis
 - Fixed Betfair `CancelAllOrders` side filters and large batch cancellation
@@ -98,6 +100,7 @@ Released on TBD (UTC).
 - Fixed OKX conditional order identity, replay deduplication, and post-trigger cancellation
 - Fixed Polymarket user WebSocket subscriptions to cover all account orders and trades
 - Fixed Polymarket `CancelAllOrders` handling for empty caches and cross-strategy, instrument, and side scopes
+- Fixed Polymarket FAK no-match batch responses missing `OrderRejected` events
 - Fixed Polymarket market WebSocket heartbeats before initial subscription (#4864), thanks for reporting @mystic-io
 - Fixed Polymarket stale tick refreshes and mixed price precision (#4896), thanks for reporting @mystic-io
 - Fixed Tardis incremental L2 batches ending on exchange timestamps (#4872), thanks for reporting @szpony
@@ -107,10 +110,17 @@ Released on TBD (UTC).
 - Added Python memory leak checks for backtest, live node, model, and persistence lifecycles
 - Added strict Clippy audit tooling
 - Allowed `DataActor` implementations without native `Component` state
+- Improved model type boundary regression coverage
+- Improved nightly Clippy compatibility across Rust workspace checks
+- Improved `OrderBook` regression coverage
 - Improved Betfair stream lifecycle test synchronization (#4849), thanks @folknor
 - Improved dYdX retry timeout test coverage (#4835), thanks @folknor
 - Improved Lighter async task ownership across execution and WebSocket reconnects
 - Improved Polymarket auto-load and data task ownership across reconnects
+- Refined model fixed-point validation and wallet scaling
+- Refined `OrderBook` validation, snapshots, quotes, and display paths
+- Refined Python actor setup across runtime paths
+- Standardized Rust blocking locks on `parking_lot`
 - Optimized `BacktestEngine` processing when simulation modules and liquidation are disabled
 - Optimized `IdsGenerator` trade ID formatting
 - Optimized `MatchingEngine` L1 pending order queue scans

@@ -108,6 +108,10 @@ const DEFAULT_ACCEPTED_ORDER_ID: &str =
     "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
 const CANCEL_ALREADY_DONE_ORDER_ID: &str =
     "0xb816482a1234567890abcdef1234567890abcdef1234567890abcdef12345678";
+const FAK_NO_MATCH_REASON: &str = concat!(
+    "no orders found to match with FAK order. ",
+    "FAK orders are partially filled or killed if no match is found.",
+);
 const TEST_TOKEN_ID: &str =
     "71321045679252212594626385532706912750332728571942532289631379312455583992563";
 
@@ -6912,6 +6916,41 @@ async fn test_submit_market_order_posts_order_type_from_time_in_force(
 
 #[rstest]
 #[tokio::test]
+async fn test_submit_market_order_fak_no_match_rejects_immediately() {
+    let state = TestServerState::default();
+    *state.order_response.lock().await = Some(json!({
+        "success": true,
+        "orderID": "0xmarket-fak-rejected",
+        "errorMsg": FAK_NO_MATCH_REASON,
+    }));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+    let order = make_market_order("O-MKT-FAK-NO-MATCH", instrument_id, OrderSide::Buy, true);
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
+    assert_order_event(recv_execution_event(&mut rx).await, "Updated");
+    let rejected = assert_order_event(recv_execution_event(&mut rx).await, "Rejected");
+
+    assert_eq!(rejected.client_order_id(), order.client_order_id());
+    assert_eq!(order_event_reason(&rejected), FAK_NO_MATCH_REASON);
+    assert_eq!(state.single_order_get_count.load(Ordering::Acquire), 0);
+    assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_submit_market_order_buy_uses_balance_projection() {
     let state = TestServerState::default();
     *state.balance_response.lock().await = json!({
@@ -7443,10 +7482,17 @@ async fn test_submit_market_order_ambiguous_retry_then_bad_request_remains_unkno
 
 #[rstest]
 #[tokio::test]
-async fn test_submit_market_order_ambiguous_retry_then_response_rejection_remains_unknown() {
+async fn test_submit_market_order_ambiguous_retry_then_fak_no_match_remains_unknown() {
     let state = TestServerState::default();
     *state.order_post_500_remaining.lock().await = 1;
-    *state.order_response.lock().await = Some(load_json("http_order_response_failed.json"));
+    state
+        .order_response_uses_request_hash
+        .store(true, Ordering::Release);
+    *state.order_response.lock().await = Some(json!({
+        "errorMsg": FAK_NO_MATCH_REASON,
+        "orderID": DEFAULT_ACCEPTED_ORDER_ID,
+        "success": true
+    }));
 
     let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, cache) = create_test_execution_client_with_retries(addr, 1);
@@ -7455,7 +7501,7 @@ async fn test_submit_market_order_ambiguous_retry_then_response_rejection_remain
     let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
     add_instrument_to_cache(&cache, instrument_id);
     let order = make_market_order(
-        "O-MKT-RETRY-AMBIGUOUS-THEN-RESPONSE-REJECTION",
+        "O-MKT-RETRY-AMBIGUOUS-THEN-NO-MATCH",
         instrument_id,
         OrderSide::Buy,
         true,
@@ -7480,6 +7526,16 @@ async fn test_submit_market_order_ambiguous_retry_then_response_rejection_remain
     )
     .await;
     assert_no_execution_event(&mut rx).await;
+
+    let body = state.last_body.lock().await.clone().unwrap();
+    let signed_order: PolymarketOrder = serde_json::from_value(body["order"].clone()).unwrap();
+    let expected_venue_order_id = format!("{:#x}", order_hash(&signed_order, false).unwrap());
+
+    assert_ne!(DEFAULT_ACCEPTED_ORDER_ID, expected_venue_order_id);
+    assert_eq!(
+        *state.open_order_ids.lock().await,
+        HashSet::from([expected_venue_order_id])
+    );
 }
 
 #[rstest]
@@ -9179,6 +9235,48 @@ async fn test_submit_order_rejected_on_http_failure_response() {
 
 #[rstest]
 #[tokio::test]
+async fn test_submit_order_fak_no_match_rejects_immediately() {
+    let state = TestServerState::default();
+    *state.order_response.lock().await = Some(json!({
+        "success": true,
+        "orderID": "0xfak-rejected",
+        "errorMsg": FAK_NO_MATCH_REASON,
+    }));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+    let order = make_limit_order(
+        "O-FAK-NO-MATCH",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Ioc,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
+    let rejected = assert_order_event(recv_execution_event(&mut rx).await, "Rejected");
+
+    assert_eq!(rejected.client_order_id(), order.client_order_id());
+    assert_eq!(order_event_reason(&rejected), FAK_NO_MATCH_REASON);
+    assert_eq!(state.single_order_get_count.load(Ordering::Acquire), 0);
+    assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_submit_order_http_5xx_submit_outcome_unknown() {
     let state = TestServerState::default();
     *state.order_response_status.lock().await = StatusCode::INTERNAL_SERVER_ERROR;
@@ -9633,12 +9731,29 @@ async fn test_submit_order_ambiguous_retry_then_mismatched_order_id_remains_unkn
 }
 
 #[rstest]
+#[case::fok_unfilled(
+    TimeInForce::Fok,
+    "O-FOK-RETRY-AMBIGUOUS-THEN-UNFILLED",
+    "order couldn't be fully filled. FOK orders are fully filled or killed."
+)]
+#[case::fak_no_match(
+    TimeInForce::Ioc,
+    "O-FAK-RETRY-AMBIGUOUS-THEN-NO-MATCH",
+    FAK_NO_MATCH_REASON
+)]
 #[tokio::test]
-async fn test_submit_fok_order_ambiguous_retry_then_unfilled_response_remains_unknown() {
+async fn test_submit_order_ambiguous_retry_then_immediate_rejection_remains_unknown(
+    #[case] time_in_force: TimeInForce,
+    #[case] client_order_id: &str,
+    #[case] reason: &str,
+) {
     let state = TestServerState::default();
     *state.order_post_500_remaining.lock().await = 1;
+    state
+        .order_response_uses_request_hash
+        .store(true, Ordering::Release);
     *state.order_response.lock().await = Some(json!({
-        "errorMsg": "order couldn't be fully filled. FOK orders are fully filled or killed.",
+        "errorMsg": reason,
         "orderID": DEFAULT_ACCEPTED_ORDER_ID,
         "success": true
     }));
@@ -9650,13 +9765,13 @@ async fn test_submit_fok_order_ambiguous_retry_then_unfilled_response_remains_un
     let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
     add_instrument_to_cache(&cache, instrument_id);
     let order = make_limit_order(
-        "O-FOK-RETRY-AMBIGUOUS-THEN-UNFILLED",
+        client_order_id,
         instrument_id,
         OrderSide::Buy,
         false,
         false,
         false,
-        TimeInForce::Fok,
+        time_in_force,
     );
     cache
         .borrow_mut()
@@ -9677,6 +9792,16 @@ async fn test_submit_fok_order_ambiguous_retry_then_unfilled_response_remains_un
     )
     .await;
     assert_no_execution_event(&mut rx).await;
+
+    let body = state.last_body.lock().await.clone().unwrap();
+    let signed_order: PolymarketOrder = serde_json::from_value(body["order"].clone()).unwrap();
+    let expected_venue_order_id = format!("{:#x}", order_hash(&signed_order, false).unwrap());
+
+    assert_ne!(DEFAULT_ACCEPTED_ORDER_ID, expected_venue_order_id);
+    assert_eq!(
+        *state.open_order_ids.lock().await,
+        HashSet::from([expected_venue_order_id])
+    );
 }
 
 #[rstest]
@@ -10066,6 +10191,69 @@ async fn test_submit_order_list_fok_unfilled_error_rejects_immediately() {
         let rejected = assert_order_event(recv_execution_event(&mut rx).await, "Rejected");
         assert_eq!(order_event_reason(&rejected), reason);
     }
+    assert_eq!(state.single_order_get_count.load(Ordering::Acquire), 0);
+    assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_list_fak_no_match_rejects_only_failed_leg() {
+    let state = TestServerState::default();
+    *state.batch_order_response.lock().await = Some(json!([
+        {"success": true, "orderID": "0xbatch-fak-rejected", "errorMsg": FAK_NO_MATCH_REASON},
+        {
+            "success": true,
+            "orderID": "0xbatch-fak-matched",
+            "status": "matched",
+            "errorMsg": FAK_NO_MATCH_REASON
+        }
+    ]));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+    let orders: Vec<OrderAny> = ["O-BATCH-FAK-REJECTED", "O-BATCH-FAK-MATCHED"]
+        .into_iter()
+        .map(|client_order_id| {
+            make_limit_order(
+                client_order_id,
+                instrument_id,
+                OrderSide::Buy,
+                false,
+                false,
+                false,
+                TimeInForce::Ioc,
+            )
+        })
+        .collect();
+
+    for order in &orders {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+    }
+
+    client
+        .submit_order_list(make_submit_order_list_cmd(instrument_id, &orders))
+        .unwrap();
+
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
+    let rejected = assert_order_event(recv_execution_event(&mut rx).await, "Rejected");
+    let accepted = assert_order_event(recv_execution_event(&mut rx).await, "Accepted");
+
+    assert_eq!(
+        rejected.client_order_id(),
+        ClientOrderId::from("O-BATCH-FAK-REJECTED")
+    );
+    assert_eq!(order_event_reason(&rejected), FAK_NO_MATCH_REASON);
+    assert_eq!(
+        accepted.client_order_id(),
+        ClientOrderId::from("O-BATCH-FAK-MATCHED")
+    );
     assert_eq!(state.single_order_get_count.load(Ordering::Acquire), 0);
     assert_no_execution_event(&mut rx).await;
 }

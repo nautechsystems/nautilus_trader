@@ -391,18 +391,20 @@ initial Nautilus state and whether an order with `FOK` time-in-force needs the f
 check. The venue meanings follow Polymarket's
 [order lifecycle](https://docs.polymarket.com/concepts/order-lifecycle).
 
-| Submit `status` | Venue meaning                                | Initial Nautilus state                                         | `FOK` REST check |
-| --------------- | -------------------------------------------- | -------------------------------------------------------------- | ---------------- |
-| `live`          | Resting on the book                          | `Accepted`                                                     | Kept             |
-| `matched`       | Matched immediately                          | `Accepted`                                                     | Skipped          |
-| `delayed`       | Matching delay in progress                   | `Submitted` until WebSocket or REST activity proves acceptance | Kept             |
-| `unmatched`     | Delay completed without a match; now resting | `Accepted`                                                     | Kept             |
-| Absent or empty | No status supplied                           | `Accepted` for compatibility                                   | Kept             |
+| Submit `status` | Venue meaning                                | Initial Nautilus state                                         | `FOK` REST check     |
+| --------------- | -------------------------------------------- | -------------------------------------------------------------- | -------------------- |
+| `live`          | Resting on the book                          | `Accepted`                                                     | Kept                 |
+| `matched`       | Matched immediately                          | `Accepted`                                                     | Skipped              |
+| `delayed`       | Matching delay in progress                   | `Submitted` until WebSocket or REST activity proves acceptance | Kept                 |
+| `unmatched`     | Delay completed without a match; now resting | `Accepted`                                                     | Kept                 |
+| Absent or empty | No status supplied                           | `Accepted` unless a proven FOK/FAK error rejects it            | Kept unless rejected |
 
 These meanings apply to the submit response. The adapter treats `delayed` as a submit outcome, not
 as a market configuration signal. A `matched` response skips the REST check because the submit
 already confirms an immediate match. An absent or empty status emits `OrderAccepted` for
-compatibility and keeps the REST check.
+compatibility and keeps the REST check unless a proven unfilled `FOK` or no-match `FAK` response
+causes immediate rejection. For a successful response with a non-empty `orderID`, an explicit
+`status` takes precedence over an unfilled `FOK` or no-match `FAK` error string.
 
 #### Delayed responses
 
@@ -433,23 +435,25 @@ Ambiguous failures include:
 - HTTP 425 responses.
 - HTTP 429 responses that lack CLOB signer-limiter headers.
 
-| Outcome                                                                                       | Nautilus result             | Reason                                    |
-| --------------------------------------------------------------------------------------------- | --------------------------- | ----------------------------------------- |
-| `success=false`, a documented processing error, or another non-retryable client/API error     | `OrderRejected`             | The response proves rejection.            |
-| Single or batch `FOK`: `success=true`, non-empty `orderID`, no status, and the unfilled error | Immediate `OrderRejected`   | The venue proves it killed the order.     |
-| Batch leg: `success=true`, empty `orderID`, and a populated `errorMsg`                        | `OrderRejected` with reason | The venue proves it rejected that leg.    |
-| No `orderID` and no reason                                                                    | Remains `Submitted`         | The response does not prove rejection.    |
-| Any ambiguous failure                                                                         | Remains `Submitted`         | The adapter cannot determine the outcome. |
-| Definitive retry error after an earlier ambiguous attempt                                     | Remains `Submitted`         | The earlier attempt may have succeeded.   |
-| Failure before `POST /order`, such as a failed pUSD balance lookup                            | `OrderDenied`               | The adapter did not submit the order.     |
+| Outcome                                                                                   | Nautilus result             | Reason                                    |
+| ----------------------------------------------------------------------------------------- | --------------------------- | ----------------------------------------- |
+| `success=false`, a documented processing error, or another non-retryable client/API error | `OrderRejected`             | The response proves rejection.            |
+| Single or batch `FOK`: `success=true`, no status, and the unfilled error                  | Immediate `OrderRejected`   | The venue proves it killed the order.     |
+| Single or batch `IOC`/`FAK`: `success=true`, no status, and the exact no-match error      | Immediate `OrderRejected`   | The venue proves no quantity matched.     |
+| Batch leg: `success=true`, empty `orderID`, and a populated `errorMsg`                    | `OrderRejected` with reason | The venue proves it rejected that leg.    |
+| No `orderID` and no reason                                                                | Remains `Submitted`         | The response does not prove rejection.    |
+| Any ambiguous failure                                                                     | Remains `Submitted`         | The adapter cannot determine the outcome. |
+| Definitive retry error after an earlier ambiguous attempt                                 | Remains `Submitted`         | The earlier attempt may have succeeded.   |
+| Failure before `POST /order`, such as a failed pUSD balance lookup                        | `OrderDenied`               | The adapter did not submit the order.     |
 
 Local denials format the strategy-facing reason from `OrderDeniedReason`. The leading token is the
 stable code, such as `VALIDATION_FAILED` or `UNSUPPORTED_ORDER_TYPE`.
 
-The proven unfilled `FOK` response skips the REST check. After an ambiguous single-order attempt, a
-later HTTP error or decoded rejection does not prove that the first attempt failed. An accepted
-response carrying the matching valid order ID confirms the deterministic signed order; a rejection
-does not, even with a matching ID.
+The proven unfilled `FOK` and no-match `FAK` responses resolve as immediate rejections. The `FOK`
+response skips the REST check. After an ambiguous single-order attempt, a later HTTP error or
+decoded rejection does not prove that the first attempt failed. An accepted response carrying the
+matching valid order ID confirms the deterministic signed order; a rejection does not, even with a
+matching ID.
 
 Diagnostic errors retain the HTTP status and transport or rate-limit context. For venue HTTP status,
 rate-limit, and exchange errors, strategy-facing rejection events use the venue reason; other

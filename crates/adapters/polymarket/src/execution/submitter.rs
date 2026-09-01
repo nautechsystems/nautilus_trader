@@ -249,8 +249,7 @@ impl OrderSubmitter {
             .await
         {
             Ok(response) => {
-                let is_fok = order_type == PolymarketOrderType::FOK;
-                let outcome = submit_response_outcome(&response, is_fok);
+                let outcome = submit_response_outcome(&response, time_in_force);
                 let earlier_attempt_unknown = saw_unknown_outcome.load(Ordering::Acquire);
 
                 if outcome == SubmitResponseOutcome::Unknown
@@ -258,7 +257,7 @@ impl OrderSubmitter {
                         && !submit_response_confirms_expected(
                             &response,
                             expected_venue_order_id,
-                            is_fok,
+                            time_in_force,
                         ))
                 {
                     return Err(UnknownSubmitError {
@@ -506,16 +505,16 @@ impl OrderSubmitter {
 
         match result {
             Ok(response) => {
-                let is_fok = submission.order_type == PolymarketOrderType::FOK;
+                let time_in_force = TimeInForce::from(submission.order_type);
                 let earlier_attempt_unknown = saw_unknown_outcome.load(Ordering::Acquire);
-                let outcome = submit_response_outcome(&response, is_fok);
+                let outcome = submit_response_outcome(&response, time_in_force);
 
                 if outcome == SubmitResponseOutcome::Unknown
                     || (earlier_attempt_unknown
                         && !submit_response_confirms_expected(
                             &response,
                             submission.expected_venue_order_id,
-                            is_fok,
+                            time_in_force,
                         ))
                 {
                     Err(Error::decode(submit_response_unknown_reason(
@@ -562,9 +561,9 @@ fn submit_outcome_is_unknown(error: &Error, earlier_attempt_unknown: bool) -> bo
 
 pub(super) fn submit_response_outcome(
     response: &OrderResponse,
-    is_fok: bool,
+    time_in_force: TimeInForce,
 ) -> SubmitResponseOutcome {
-    if is_fok && response.error_msg.as_deref().is_some_and(is_fok_unfilled) {
+    if immediate_rejection_reason(response, time_in_force).is_some() {
         SubmitResponseOutcome::Rejected
     } else if response.success && submit_response_venue_order_id(response).is_some() {
         SubmitResponseOutcome::Accepted
@@ -589,9 +588,9 @@ pub(super) fn submit_response_venue_order_id(response: &OrderResponse) -> Option
 fn submit_response_confirms_expected(
     response: &OrderResponse,
     expected_venue_order_id: VenueOrderId,
-    is_fok: bool,
+    time_in_force: TimeInForce,
 ) -> bool {
-    submit_response_outcome(response, is_fok) == SubmitResponseOutcome::Accepted
+    submit_response_outcome(response, time_in_force) == SubmitResponseOutcome::Accepted
         && submit_response_venue_order_id(response) == Some(expected_venue_order_id)
 }
 
@@ -634,9 +633,34 @@ fn submit_retry_error(error: RetryError, saw_unknown_outcome: &AtomicBool) -> Er
     }
 }
 
-pub(super) fn is_fok_unfilled(reason: &str) -> bool {
+pub(super) fn immediate_rejection_reason(
+    response: &OrderResponse,
+    time_in_force: TimeInForce,
+) -> Option<&str> {
+    if !response.success || response.status.is_some() {
+        return None;
+    }
+
+    let reason = response.error_msg.as_deref()?;
+    match time_in_force {
+        TimeInForce::Fok if is_fok_unfilled(reason) => Some(reason),
+        TimeInForce::Ioc if is_fak_unfilled(reason) => Some(reason),
+        _ => None,
+    }
+}
+
+fn is_fok_unfilled(reason: &str) -> bool {
     reason.contains("couldn't be fully filled")
         && reason.contains("FOK orders are fully filled or killed")
+}
+
+const FAK_UNFILLED_REASON: &str = concat!(
+    "no orders found to match with FAK order. ",
+    "FAK orders are partially filled or killed if no match is found.",
+);
+
+fn is_fak_unfilled(reason: &str) -> bool {
+    reason == FAK_UNFILLED_REASON
 }
 
 fn signed_base_quantity(
@@ -714,35 +738,80 @@ mod tests {
     }
 
     #[rstest]
-    #[case::accepted(false, true, Some("0xorder"), None, SubmitResponseOutcome::Accepted)]
-    #[case::rejected(false, false, None, Some("rejected"), SubmitResponseOutcome::Rejected)]
-    #[case::successful_rejection(
+    #[case::accepted(
+        TimeInForce::Gtc,
+        true,
+        Some("0xorder"),
+        None,
+        SubmitResponseOutcome::Accepted
+    )]
+    #[case::rejected(
+        TimeInForce::Gtc,
         false,
+        None,
+        Some("rejected"),
+        SubmitResponseOutcome::Rejected
+    )]
+    #[case::successful_rejection(
+        TimeInForce::Gtc,
         true,
         Some(""),
         Some("rejected"),
         SubmitResponseOutcome::Rejected
     )]
-    #[case::missing_id(false, true, None, None, SubmitResponseOutcome::Unknown)]
-    #[case::empty_id(false, true, Some(""), None, SubmitResponseOutcome::Unknown)]
+    #[case::missing_id(TimeInForce::Gtc, true, None, None, SubmitResponseOutcome::Unknown)]
+    #[case::empty_id(TimeInForce::Gtc, true, Some(""), None, SubmitResponseOutcome::Unknown)]
     #[case::whitespace_id_rejection(
-        false,
+        TimeInForce::Gtc,
         true,
         Some(" \t"),
         Some("rejected"),
         SubmitResponseOutcome::Rejected
     )]
-    #[case::non_ascii_id(false, true, Some("é"), None, SubmitResponseOutcome::Unknown)]
-    #[case::whitespace_reason(false, false, None, Some(" \n\t"), SubmitResponseOutcome::Unknown)]
-    #[case::fok_unfilled(
+    #[case::non_ascii_id(
+        TimeInForce::Gtc,
         true,
+        Some("é"),
+        None,
+        SubmitResponseOutcome::Unknown
+    )]
+    #[case::whitespace_reason(
+        TimeInForce::Gtc,
+        false,
+        None,
+        Some(" \n\t"),
+        SubmitResponseOutcome::Unknown
+    )]
+    #[case::fok_unfilled(
+        TimeInForce::Fok,
         true,
         Some("0xfok"),
         Some("order couldn't be fully filled. FOK orders are fully filled or killed."),
         SubmitResponseOutcome::Rejected
     )]
+    #[case::fak_unfilled(
+        TimeInForce::Ioc,
+        true,
+        Some("0xfak"),
+        Some(FAK_UNFILLED_REASON),
+        SubmitResponseOutcome::Rejected
+    )]
+    #[case::fak_unfilled_for_resting_order(
+        TimeInForce::Gtc,
+        true,
+        Some("0xgtc"),
+        Some(FAK_UNFILLED_REASON),
+        SubmitResponseOutcome::Accepted
+    )]
+    #[case::fak_near_match(
+        TimeInForce::Ioc,
+        true,
+        Some("0xfak"),
+        Some("no orders found to match with FAK order"),
+        SubmitResponseOutcome::Accepted
+    )]
     fn test_submit_response_outcome(
-        #[case] is_fok: bool,
+        #[case] time_in_force: TimeInForce,
         #[case] success: bool,
         #[case] order_id: Option<&str>,
         #[case] error_msg: Option<&str>,
@@ -759,7 +828,35 @@ mod tests {
             error_msg: error_msg.map(str::to_string),
         };
 
-        assert_eq!(submit_response_outcome(&response, is_fok), expected);
+        assert_eq!(submit_response_outcome(&response, time_in_force), expected);
+    }
+
+    #[rstest]
+    fn test_submit_response_matched_fok_confirms_expected_order_id() {
+        let expected_venue_order_id = VenueOrderId::from("0xmatched-fok");
+        let response = OrderResponse {
+            success: true,
+            order_id: Some(expected_venue_order_id.to_string()),
+            status: Some(crate::http::query::OrderResponseStatus::Matched),
+            making_amount: None,
+            taking_amount: None,
+            transaction_hashes: None,
+            trade_ids: None,
+            error_msg: Some(
+                "order couldn't be fully filled. FOK orders are fully filled or killed."
+                    .to_string(),
+            ),
+        };
+
+        assert_eq!(
+            submit_response_outcome(&response, TimeInForce::Fok),
+            SubmitResponseOutcome::Accepted
+        );
+        assert!(submit_response_confirms_expected(
+            &response,
+            expected_venue_order_id,
+            TimeInForce::Fok
+        ));
     }
 
     #[rstest]
@@ -779,14 +876,14 @@ mod tests {
         assert!(submit_response_confirms_expected(
             &response,
             expected_venue_order_id,
-            false
+            TimeInForce::Gtc
         ));
 
         response.order_id = Some("0xother".to_string());
         assert!(!submit_response_confirms_expected(
             &response,
             expected_venue_order_id,
-            false
+            TimeInForce::Gtc
         ));
     }
 

@@ -36,7 +36,7 @@ use super::{
     reconciliation::{cap_order_report_filled_qty, validate_client_bound_order_quantity},
     reports::get_pusd_currency,
     submitter::{
-        OrderSubmitter, SubmitResponseOutcome, is_fok_unfilled, submit_response_outcome,
+        OrderSubmitter, SubmitResponseOutcome, immediate_rejection_reason, submit_response_outcome,
         submit_response_unknown_reason, submit_response_venue_order_id,
     },
     types::{BatchLimitOrderContext, classify_http_command_failure},
@@ -77,10 +77,9 @@ pub(super) async fn handle_batch_order_responses(
         .zip(responses)
         .zip(&expected_venue_order_ids)
     {
-        let (deferred_cancel, fok_order_id) = if submit_response_outcome(
-            &response,
-            batch_order.order.time_in_force() == TimeInForce::Fok,
-        ) == SubmitResponseOutcome::Unknown
+        let time_in_force = batch_order.order.time_in_force();
+        let (deferred_cancel, fok_order_id) = if submit_response_outcome(&response, time_in_force)
+            == SubmitResponseOutcome::Unknown
         {
             (
                 handle_unknown_submit_result(
@@ -101,7 +100,7 @@ pub(super) async fn handle_batch_order_responses(
                 None,
             )
         } else {
-            let fok_order_id = fok_check_order_id(&response, batch_order.order.time_in_force());
+            let fok_order_id = fok_check_order_id(&response, time_in_force);
             let deferred_cancel = handle_order_response(
                 Ok(response),
                 &batch_order.order,
@@ -564,7 +563,7 @@ pub(super) fn handle_order_response(
 ) -> Option<(String, VenueOrderId)> {
     match result {
         Ok(response) => {
-            if let Some(reason) = fok_rejection_reason(&response, order.time_in_force()) {
+            if let Some(reason) = immediate_rejection_reason(&response, order.time_in_force()) {
                 reject_submit_order(order, reason, emitter, clock, pending_cancels);
                 return None;
             }
@@ -701,20 +700,9 @@ pub(super) fn fok_check_order_id(
             response.success
                 && time_in_force == TimeInForce::Fok
                 && decision.poll_fok
-                && fok_rejection_reason(response, time_in_force).is_none()
+                && immediate_rejection_reason(response, time_in_force).is_none()
         })
         .map(|venue_order_id| venue_order_id.to_string())
-}
-
-fn fok_rejection_reason(response: &OrderResponse, time_in_force: TimeInForce) -> Option<&str> {
-    if !response.success || response.status.is_some() || time_in_force != TimeInForce::Fok {
-        return None;
-    }
-
-    response
-        .error_msg
-        .as_deref()
-        .filter(|reason| is_fok_unfilled(reason))
 }
 
 pub(crate) fn is_post_only_crossing(reason: &str) -> bool {
