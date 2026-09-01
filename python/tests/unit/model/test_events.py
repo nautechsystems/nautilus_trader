@@ -664,6 +664,9 @@ def test_order_canceled_default_reason_to_dict_roundtrip(
     client_order_id: ClientOrderId,
     uuid: UUID4,
 ) -> None:
+    """
+    Test order canceled default reason to dict roundtrip.
+    """
     event = OrderCanceled(
         trader_id=trader_id,
         strategy_id=strategy_id,
