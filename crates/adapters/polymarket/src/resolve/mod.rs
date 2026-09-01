@@ -23,8 +23,8 @@ mod watchlist;
 #[allow(unused_imports)]
 pub(crate) use self::{
     apply::{
-        ResolveApplyBatchStats, ResolveBatchErrorMode, ResolveContext, apply_condition_resolution,
-        fetch_and_apply_resolutions_by_condition_ids, merge_resolve_watch_entry,
+        PendingResolution, ResolveApplyBatchStats, ResolveApplyResult, ResolveBatchErrorMode,
+        ResolveContext, apply_condition_resolution, fetch_and_apply_resolutions_by_condition_ids,
     },
     parsing::{
         StrictResolvedMarket, build_resolved_market_from_clob_market, build_strict_resolved_market,
@@ -38,7 +38,8 @@ pub(crate) use self::{
         collect_resolve_watch_selection, instrument_market_context, pause_resolve_watch_entries,
         remove_data_resolve_watch_entry_from_instrument,
         update_resolve_watchlist_from_position_event,
-        upsert_data_resolve_watch_entry_from_instrument,
+        update_resolve_watchlist_from_position_event_serialized,
+        upsert_data_resolve_watch_entry_from_instrument, upsert_data_resolve_watch_entry_if_active,
         upsert_resolve_watch_entry_from_instrument,
     },
 };

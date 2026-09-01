@@ -1084,9 +1084,14 @@ caller must resubscribe after the market becomes available.
 
 The Rust data client tracks Polymarket exposure at `condition_id` level so both YES and NO legs
 close together when the venue resolves the market. Position events add open Polymarket binary
-option instruments to an internal watchlist. Once a watched condition expires, the data client
-waits `resolve_poll_grace_secs`, then polls Gamma every `resolve_poll_interval_secs` until the
-condition resolves or `resolve_poll_max_wait_secs` elapses.
+option instruments to an internal watchlist. Data clients can also watch an instrument without a
+position by subscribing to `InstrumentStatus`, `InstrumentClose`, or both. These subscriptions are
+independent: a status subscription emits only the status close, while a close subscription emits
+only the settlement price. Unsubscribing from one does not remove the other.
+
+Once a watched condition expires, the data client waits `resolve_poll_grace_secs`, then polls Gamma
+every `resolve_poll_interval_secs` until the condition resolves or
+`resolve_poll_max_wait_secs` elapses.
 
 Resolution uses strict winner inference:
 
@@ -1097,10 +1102,11 @@ Resolution uses strict winner inference:
 - Non-binary, ambiguous, malformed, or still-unresolved payloads are skipped. They remain on the
   watchlist until the poll window times out or a manual request resolves them.
 
-When the client applies a resolution, it emits one `InstrumentStatus` close and one
-`InstrumentClose` per tracked leg. The winner leg closes at `1`, and the losing leg closes at `0`.
-The close type is `InstrumentCloseType.CONTRACT_EXPIRED`. This event closes Nautilus exposure and
-does not redeem tokens or claim funds on-chain.
+When the client applies a resolution, position-owned legs emit one `InstrumentStatus` close and one
+`InstrumentClose`. Data-only legs emit whichever event types have active subscriptions. The winner
+leg closes at `1`, and the losing leg closes at `0`. The close type is
+`InstrumentCloseType.CONTRACT_EXPIRED`. This event closes Nautilus exposure and does not redeem
+tokens or claim funds on-chain.
 
 The same apply path handles WebSocket `market_resolved` events, automatic polling, and manual
 requests. After `resolve_poll_max_wait_secs`, automatic polling pauses the watched condition and

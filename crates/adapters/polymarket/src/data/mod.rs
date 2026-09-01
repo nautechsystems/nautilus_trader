@@ -73,6 +73,7 @@ use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
+pub(crate) use self::subscriptions::sync_ws_subscription_with_resolution_and_terminal_async;
 use self::{
     instruments::{InstrumentUpdateState, TokenMeta},
     requests::{
@@ -80,9 +81,7 @@ use self::{
         request_trades,
     },
     runtime::is_instrument_expired_and_not_reported_open,
-    subscriptions::{
-        resolve_token_id_from, sync_ws_subscription_with_resolution_and_terminal_async,
-    },
+    subscriptions::resolve_token_id_from,
 };
 use crate::{
     common::consts::POLYMARKET_VENUE,
@@ -94,7 +93,8 @@ use crate::{
     },
     providers::PolymarketInstrumentProvider,
     resolve::{
-        ResolveWatchEntry, remove_data_resolve_watch_entry_from_instrument,
+        PendingResolution, ResolveContext, ResolveWatchEntry, apply_condition_resolution,
+        remove_data_resolve_watch_entry_from_instrument,
         upsert_data_resolve_watch_entry_from_instrument,
     },
     rtds::{PolymarketRtdsFeed, is_supported_rtds_data_type},
@@ -137,6 +137,7 @@ pub struct PolymarketDataClient {
     active_instrument_close_subs: Arc<AtomicSet<InstrumentId>>,
     resolve_poll_watchlist: Arc<AtomicMap<String, ResolveWatchEntry>>,
     resolve_watch_apply_mutex: Arc<Mutex<()>>,
+    pending_resolutions: Arc<DashMap<String, PendingResolution>>,
     pending_snapshot_after_tick_change: Arc<AtomicSet<InstrumentId>>,
     new_market_inflight_keys: Arc<DashMap<String, ()>>,
     new_market_fetch_semaphore: Arc<tokio::sync::Semaphore>,
@@ -236,6 +237,7 @@ impl PolymarketDataClient {
             active_instrument_close_subs: Arc::new(AtomicSet::new()),
             resolve_poll_watchlist: Arc::new(AtomicMap::new()),
             resolve_watch_apply_mutex: Arc::new(Mutex::new(())),
+            pending_resolutions: Arc::new(DashMap::new()),
             pending_snapshot_after_tick_change: Arc::new(AtomicSet::new()),
             new_market_inflight_keys: Arc::new(DashMap::new()),
             new_market_fetch_semaphore: Arc::new(tokio::sync::Semaphore::new(
@@ -315,6 +317,53 @@ impl PolymarketDataClient {
         resolve_token_id_from(&self.instruments, instrument_id)
     }
 
+    fn resolution_context(&self) -> ResolveContext {
+        ResolveContext {
+            clock: self.clock,
+            data_sender: self.data_sender.clone(),
+            instruments: self.instruments.clone(),
+            watchlist: self.resolve_poll_watchlist.clone(),
+            apply_mutex: self.resolve_watch_apply_mutex.clone(),
+            active_quote_subs: self.active_quote_subs.clone(),
+            active_delta_subs: self.active_delta_subs.clone(),
+            active_trade_subs: self.active_trade_subs.clone(),
+            active_status_subs: self.active_instrument_status_subs.clone(),
+            active_close_subs: self.active_instrument_close_subs.clone(),
+            closed_condition_ids: self.closed_condition_ids.clone(),
+            ws_open_tokens: self.ws_open_tokens.clone(),
+            ws_sub_mutex: self.ws_sub_mutex.clone(),
+            ws: self.ws_client.handle(),
+            pending_resolutions: self.pending_resolutions.clone(),
+        }
+    }
+
+    fn apply_pending_resolution(&self, instrument_id: InstrumentId) {
+        let Ok(condition_id) = crate::providers::extract_condition_id(&instrument_id) else {
+            return;
+        };
+        let Some(pending) = self
+            .pending_resolutions
+            .get(&condition_id)
+            .map(|entry| entry.value().clone())
+        else {
+            return;
+        };
+        let ctx = self.resolution_context();
+        let future = async move {
+            apply_condition_resolution(
+                &ctx,
+                &condition_id,
+                &pending.winning_asset_id,
+                &pending.winning_outcome,
+            )
+            .await;
+        };
+
+        if let Err(e) = self.tasks.spawn(future) {
+            log::debug!("Skipping pending Polymarket resolution after shutdown began: {e}");
+        }
+    }
+
     fn ensure_live_subscription_allowed(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
         let now_ns = self.clock.get_time_ns();
         let loaded = self.instruments.load();
@@ -373,15 +422,23 @@ impl PolymarketDataClient {
         instrument_id: InstrumentId,
         subscriptions: &Arc<AtomicSet<InstrumentId>>,
     ) -> bool {
+        let _guard = self.resolve_watch_apply_mutex.lock();
+
         if !self.add_live_subscription_intent(instrument_id, subscriptions) {
             return false;
         }
 
-        if let Some(instrument) = self.instruments.load().get(&instrument_id) {
-            upsert_data_resolve_watch_entry_from_instrument(
+        if let Some(instrument) = self.instruments.load().get(&instrument_id)
+            && !upsert_data_resolve_watch_entry_from_instrument(
                 &self.resolve_poll_watchlist,
                 instrument,
+            )
+        {
+            subscriptions.remove(&instrument_id);
+            log::warn!(
+                "Ignoring Polymarket resolution subscription for unsupported cached instrument {instrument_id}"
             );
+            return false;
         }
 
         true
@@ -392,6 +449,7 @@ impl PolymarketDataClient {
         instrument_id: InstrumentId,
         subscriptions: &Arc<AtomicSet<InstrumentId>>,
     ) {
+        let _guard = self.resolve_watch_apply_mutex.lock();
         subscriptions.remove(&instrument_id);
         let has_data_subscription = self.active_instrument_status_subs.contains(&instrument_id)
             || self.active_instrument_close_subs.contains(&instrument_id);
@@ -402,6 +460,51 @@ impl PolymarketDataClient {
                 has_data_subscription,
             );
         }
+
+        if let Ok(condition_id) = crate::providers::extract_condition_id(&instrument_id) {
+            let has_resolution_intent = [
+                &self.active_instrument_status_subs,
+                &self.active_instrument_close_subs,
+            ]
+            .into_iter()
+            .any(|subscriptions| {
+                subscriptions.load().iter().any(|candidate| {
+                    crate::providers::extract_condition_id(candidate)
+                        .is_ok_and(|candidate_condition| candidate_condition == condition_id)
+                })
+            });
+
+            if !has_resolution_intent && !self.resolve_poll_watchlist.contains_key(&condition_id) {
+                self.pending_resolutions.remove(&condition_id);
+            }
+        }
+    }
+
+    fn subscribe_resolution(
+        &self,
+        instrument_id: InstrumentId,
+        subscriptions: &Arc<AtomicSet<InstrumentId>>,
+    ) -> anyhow::Result<()> {
+        self.ensure_live_subscription_allowed(instrument_id)?;
+        let cached = self.instruments.load().contains_key(&instrument_id);
+
+        if !cached && !self.config.auto_load_missing_instruments {
+            anyhow::bail!(
+                "Instrument {instrument_id} not found, and `auto_load_missing_instruments` is disabled"
+            );
+        }
+
+        if !self.add_resolution_subscription_intent(instrument_id, subscriptions) {
+            return Ok(());
+        }
+
+        if !cached {
+            self.queue_pending_load(instrument_id);
+            return Ok(());
+        }
+
+        self.sync_ws_subscription(instrument_id);
+        Ok(())
     }
 
     fn add_live_subscription_intent_with_state(
@@ -677,55 +780,11 @@ impl DataClient for PolymarketDataClient {
         &mut self,
         cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        self.ensure_live_subscription_allowed(instrument_id)?;
-        let cached = self.instruments.load().contains_key(&instrument_id);
-
-        if !cached && !self.config.auto_load_missing_instruments {
-            anyhow::bail!(
-                "Instrument {instrument_id} not found, and `auto_load_missing_instruments` is disabled"
-            );
-        }
-
-        if !self
-            .add_resolution_subscription_intent(instrument_id, &self.active_instrument_status_subs)
-        {
-            return Ok(());
-        }
-
-        if !cached {
-            self.queue_pending_load(instrument_id);
-            return Ok(());
-        }
-
-        self.sync_ws_subscription(instrument_id);
-        Ok(())
+        self.subscribe_resolution(cmd.instrument_id, &self.active_instrument_status_subs)
     }
 
     fn subscribe_instrument_close(&mut self, cmd: SubscribeInstrumentClose) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        self.ensure_live_subscription_allowed(instrument_id)?;
-        let cached = self.instruments.load().contains_key(&instrument_id);
-
-        if !cached && !self.config.auto_load_missing_instruments {
-            anyhow::bail!(
-                "Instrument {instrument_id} not found, and `auto_load_missing_instruments` is disabled"
-            );
-        }
-
-        if !self
-            .add_resolution_subscription_intent(instrument_id, &self.active_instrument_close_subs)
-        {
-            return Ok(());
-        }
-
-        if !cached {
-            self.queue_pending_load(instrument_id);
-            return Ok(());
-        }
-
-        self.sync_ws_subscription(instrument_id);
-        Ok(())
+        self.subscribe_resolution(cmd.instrument_id, &self.active_instrument_close_subs)
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
@@ -765,6 +824,7 @@ impl DataClient for PolymarketDataClient {
             instrument_id,
             &self.active_instrument_status_subs,
         );
+        self.apply_pending_resolution(instrument_id);
         self.drop_pending_if_unwanted(instrument_id);
         self.sync_ws_subscription(instrument_id);
         Ok(())
@@ -779,6 +839,7 @@ impl DataClient for PolymarketDataClient {
             instrument_id,
             &self.active_instrument_close_subs,
         );
+        self.apply_pending_resolution(instrument_id);
         self.drop_pending_if_unwanted(instrument_id);
         self.sync_ws_subscription(instrument_id);
         Ok(())

@@ -32,7 +32,9 @@ use ustr::Ustr;
 
 use super::{
     instruments::TokenMeta,
-    subscriptions::{resolve_token_id_from, sync_ws_subscription_async},
+    subscriptions::{
+        resolve_token_id_from, sync_ws_subscription_with_resolution_and_terminal_async,
+    },
 };
 use crate::{providers::extract_condition_id, resolve::ResolveWatchEntry};
 
@@ -175,6 +177,9 @@ pub(crate) async fn retire_local_instrument_state(
     active_quote_subs: &Arc<AtomicSet<InstrumentId>>,
     active_delta_subs: &Arc<AtomicSet<InstrumentId>>,
     active_trade_subs: &Arc<AtomicSet<InstrumentId>>,
+    active_status_subs: &Arc<AtomicSet<InstrumentId>>,
+    active_close_subs: &Arc<AtomicSet<InstrumentId>>,
+    closed_condition_ids: &Arc<Mutex<AHashSet<String>>>,
     resolve_poll_watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
     pending_snapshot_after_tick_change: &Arc<AtomicSet<InstrumentId>>,
     pending_auto_loads: &Arc<Mutex<AHashSet<InstrumentId>>>,
@@ -189,12 +194,15 @@ pub(crate) async fn retire_local_instrument_state(
     active_trade_subs.remove(&instrument_id);
 
     if let Some(token_id) = token_id.as_ref() {
-        sync_ws_subscription_async(
+        sync_ws_subscription_with_resolution_and_terminal_async(
             instrument_id,
             token_id.clone(),
             active_quote_subs.clone(),
             active_delta_subs.clone(),
             active_trade_subs.clone(),
+            active_status_subs.clone(),
+            active_close_subs.clone(),
+            closed_condition_ids.clone(),
             ws_open_tokens.clone(),
             ws_sub_mutex.clone(),
             ws.clone(),
@@ -239,6 +247,8 @@ pub(crate) async fn retire_closed_condition_state(
     active_quote_subs: &Arc<AtomicSet<InstrumentId>>,
     active_delta_subs: &Arc<AtomicSet<InstrumentId>>,
     active_trade_subs: &Arc<AtomicSet<InstrumentId>>,
+    active_status_subs: &Arc<AtomicSet<InstrumentId>>,
+    active_close_subs: &Arc<AtomicSet<InstrumentId>>,
     resolve_poll_watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
     pending_snapshot_after_tick_change: &Arc<AtomicSet<InstrumentId>>,
     pending_auto_loads: &Arc<Mutex<AHashSet<InstrumentId>>>,
@@ -340,6 +350,9 @@ pub(crate) async fn retire_closed_condition_state(
             active_quote_subs,
             active_delta_subs,
             active_trade_subs,
+            active_status_subs,
+            active_close_subs,
+            closed_condition_ids,
             resolve_poll_watchlist,
             pending_snapshot_after_tick_change,
             pending_auto_loads,
@@ -375,6 +388,9 @@ pub(crate) async fn retire_expired_local_instruments(
     active_quote_subs: &Arc<AtomicSet<InstrumentId>>,
     active_delta_subs: &Arc<AtomicSet<InstrumentId>>,
     active_trade_subs: &Arc<AtomicSet<InstrumentId>>,
+    active_status_subs: &Arc<AtomicSet<InstrumentId>>,
+    active_close_subs: &Arc<AtomicSet<InstrumentId>>,
+    closed_condition_ids: &Arc<Mutex<AHashSet<String>>>,
     resolve_poll_watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
     pending_snapshot_after_tick_change: &Arc<AtomicSet<InstrumentId>>,
     pending_auto_loads: &Arc<Mutex<AHashSet<InstrumentId>>>,
@@ -425,6 +441,11 @@ pub(crate) async fn retire_expired_local_instruments(
     }
 
     for instrument_id in expired_ids {
+        if !is_watchlisted_instrument(resolve_poll_watchlist, instrument_id) {
+            active_status_subs.remove(&instrument_id);
+            active_close_subs.remove(&instrument_id);
+        }
+
         retire_local_instrument_state(
             instrument_id,
             instruments,
@@ -434,6 +455,9 @@ pub(crate) async fn retire_expired_local_instruments(
             active_quote_subs,
             active_delta_subs,
             active_trade_subs,
+            active_status_subs,
+            active_close_subs,
+            closed_condition_ids,
             resolve_poll_watchlist,
             pending_snapshot_after_tick_change,
             pending_auto_loads,
@@ -466,7 +490,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        resolve::upsert_resolve_watch_entry_from_instrument,
+        resolve::{
+            upsert_data_resolve_watch_entry_from_instrument,
+            upsert_resolve_watch_entry_from_instrument,
+        },
         websocket::{handler::HandlerCommand, pool::PolymarketMarketPoolHandle},
     };
 
@@ -654,6 +681,9 @@ mod tests {
         let active_quote_subs = Arc::new(AtomicSet::new());
         let active_delta_subs = Arc::new(AtomicSet::new());
         let active_trade_subs = Arc::new(AtomicSet::new());
+        let active_status_subs = Arc::new(AtomicSet::new());
+        let active_close_subs = Arc::new(AtomicSet::new());
+        let closed_condition_ids = Arc::new(Mutex::new(AHashSet::new()));
         let resolve_poll_watchlist = Arc::new(AtomicMap::new());
         let pending_snapshot_after_tick_change = Arc::new(AtomicSet::new());
         let pending_auto_loads = Arc::new(Mutex::new(AHashSet::new()));
@@ -679,6 +709,9 @@ mod tests {
             &active_quote_subs,
             &active_delta_subs,
             &active_trade_subs,
+            &active_status_subs,
+            &active_close_subs,
+            &closed_condition_ids,
             &resolve_poll_watchlist,
             &pending_snapshot_after_tick_change,
             &pending_auto_loads,
@@ -702,6 +735,9 @@ mod tests {
         let active_quote_subs = Arc::new(AtomicSet::new());
         let active_delta_subs = Arc::new(AtomicSet::new());
         let active_trade_subs = Arc::new(AtomicSet::new());
+        let active_status_subs = Arc::new(AtomicSet::new());
+        let active_close_subs = Arc::new(AtomicSet::new());
+        let closed_condition_ids = Arc::new(Mutex::new(AHashSet::new()));
         let resolve_poll_watchlist = Arc::new(AtomicMap::new());
         let pending_snapshot_after_tick_change = Arc::new(AtomicSet::new());
         let pending_auto_loads = Arc::new(Mutex::new(AHashSet::new()));
@@ -741,6 +777,9 @@ mod tests {
             &active_quote_subs,
             &active_delta_subs,
             &active_trade_subs,
+            &active_status_subs,
+            &active_close_subs,
+            &closed_condition_ids,
             &resolve_poll_watchlist,
             &pending_snapshot_after_tick_change,
             &pending_auto_loads,
@@ -772,6 +811,9 @@ mod tests {
             &active_quote_subs,
             &active_delta_subs,
             &active_trade_subs,
+            &active_status_subs,
+            &active_close_subs,
+            &closed_condition_ids,
             &resolve_poll_watchlist,
             &pending_snapshot_after_tick_change,
             &pending_auto_loads,
@@ -795,5 +837,62 @@ mod tests {
         assert!(!pending_snapshot_after_tick_change.contains(&instrument_id));
         assert!(pending_auto_loads.lock().is_empty());
         assert!(!ws_open_tokens.contains(&token_id));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn retire_expired_watchlisted_resolution_subscription_keeps_ws_owner() {
+        let instruments = Arc::new(AtomicMap::new());
+        let token_meta = Arc::new(DashMap::new());
+        let order_books = Arc::new(DashMap::new());
+        let last_quotes = Arc::new(DashMap::new());
+        let active_quote_subs = Arc::new(AtomicSet::new());
+        let active_delta_subs = Arc::new(AtomicSet::new());
+        let active_trade_subs = Arc::new(AtomicSet::new());
+        let active_status_subs = Arc::new(AtomicSet::new());
+        let active_close_subs = Arc::new(AtomicSet::new());
+        let closed_condition_ids = Arc::new(Mutex::new(AHashSet::new()));
+        let resolve_poll_watchlist = Arc::new(AtomicMap::new());
+        let pending_snapshot_after_tick_change = Arc::new(AtomicSet::new());
+        let pending_auto_loads = Arc::new(Mutex::new(AHashSet::new()));
+        let ws_open_tokens = Arc::new(AtomicSet::new());
+        let ws_sub_mutex = Arc::new(tokio::sync::Mutex::new(()));
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let ws = PolymarketMarketPoolHandle::test_single_shard(tx, &["0xTOKEN_WATCHED"]);
+        let instrument = seed_expired_instrument("0xTOKEN_WATCHED", "0xCOND-WATCHED");
+        let instrument_id = instrument.id();
+        let token_id = Ustr::from(instrument.raw_symbol().as_str());
+        seed_cached_instrument(&instruments, &token_meta, &instrument);
+        assert!(upsert_data_resolve_watch_entry_from_instrument(
+            &resolve_poll_watchlist,
+            &instrument,
+        ));
+        active_status_subs.insert(instrument_id);
+        ws_open_tokens.insert(token_id);
+
+        retire_expired_local_instruments(
+            get_atomic_clock_realtime().get_time_ns(),
+            &instruments,
+            &token_meta,
+            &order_books,
+            &last_quotes,
+            &active_quote_subs,
+            &active_delta_subs,
+            &active_trade_subs,
+            &active_status_subs,
+            &active_close_subs,
+            &closed_condition_ids,
+            &resolve_poll_watchlist,
+            &pending_snapshot_after_tick_change,
+            &pending_auto_loads,
+            &ws_open_tokens,
+            &ws_sub_mutex,
+            &ws,
+        )
+        .await;
+
+        assert!(active_status_subs.contains(&instrument_id));
+        assert!(ws_open_tokens.contains(&token_id));
+        assert!(rx.try_recv().is_err());
     }
 }

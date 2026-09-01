@@ -46,6 +46,7 @@ pub(crate) fn resolve_token_id_from(
     clippy::too_many_arguments,
     reason = "shared state comes in as Arc refs"
 )]
+#[cfg(test)]
 pub(crate) async fn sync_ws_subscription_async(
     instrument_id: InstrumentId,
     token_id_str: String,

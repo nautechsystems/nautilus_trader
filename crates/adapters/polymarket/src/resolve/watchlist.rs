@@ -16,12 +16,13 @@
 use std::sync::Arc;
 
 use ahash::AHashSet;
-use nautilus_core::{AtomicMap, UnixNanos};
+use nautilus_core::{AtomicMap, AtomicSet, UnixNanos};
 use nautilus_model::{
     events::PositionEvent,
     identifiers::{InstrumentId, PositionId},
     instruments::{Instrument, InstrumentAny},
 };
+use parking_lot::Mutex;
 
 use crate::{common::consts::POLYMARKET_VENUE, providers::extract_condition_id};
 
@@ -110,10 +111,10 @@ fn binary_option_context(
 pub(crate) fn upsert_data_resolve_watch_entry_from_instrument(
     watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
     instrument: &InstrumentAny,
-) {
+) -> bool {
     let Some((condition_id, token_id, expiration_ns, tracked)) = binary_option_context(instrument)
     else {
-        return;
+        return false;
     };
 
     watchlist.rcu(|entries| {
@@ -125,7 +126,7 @@ pub(crate) fn upsert_data_resolve_watch_entry_from_instrument(
                 tracked: ahash::AHashMap::new(),
                 paused: false,
             });
-        entry.expiration_ns = expiration_ns;
+        entry.expiration_ns = merge_expiration_ns(entry.expiration_ns, expiration_ns);
         entry
             .tracked
             .entry(token_id.clone())
@@ -135,6 +136,31 @@ pub(crate) fn upsert_data_resolve_watch_entry_from_instrument(
                 ..tracked.clone()
             });
     });
+    true
+}
+
+fn merge_expiration_ns(current: UnixNanos, incoming: UnixNanos) -> UnixNanos {
+    match (current.as_u64(), incoming.as_u64()) {
+        (0, _) => incoming,
+        (_, 0) => current,
+        _ => current.max(incoming),
+    }
+}
+
+pub(crate) fn upsert_data_resolve_watch_entry_if_active(
+    owner_lock: &Arc<Mutex<()>>,
+    watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
+    active_status_subs: &Arc<AtomicSet<InstrumentId>>,
+    active_close_subs: &Arc<AtomicSet<InstrumentId>>,
+    instrument: &InstrumentAny,
+) -> bool {
+    let _guard = owner_lock.lock();
+    let instrument_id = instrument.id();
+    if !active_status_subs.contains(&instrument_id) && !active_close_subs.contains(&instrument_id) {
+        return false;
+    }
+
+    upsert_data_resolve_watch_entry_from_instrument(watchlist, instrument)
 }
 
 pub(crate) fn remove_data_resolve_watch_entry_from_instrument(
@@ -192,7 +218,7 @@ pub(crate) fn upsert_resolve_watch_entry_from_instrument(
                 tracked: ahash::AHashMap::new(),
                 paused: false,
             });
-        entry.expiration_ns = expiration_ns;
+        entry.expiration_ns = merge_expiration_ns(entry.expiration_ns, expiration_ns);
         entry
             .tracked
             .entry(token_id.clone())
@@ -277,6 +303,16 @@ pub(crate) fn update_resolve_watchlist_from_position_event(
     }
 }
 
+pub(crate) fn update_resolve_watchlist_from_position_event_serialized(
+    owner_lock: &Arc<Mutex<()>>,
+    watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
+    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    event: &PositionEvent,
+) {
+    let _guard = owner_lock.lock();
+    update_resolve_watchlist_from_position_event(watchlist, instruments, event);
+}
+
 pub(crate) fn collect_resolve_watch_selection(
     watchlist: &ahash::AHashMap<String, ResolveWatchEntry>,
     now_ns: UnixNanos,
@@ -290,13 +326,6 @@ pub(crate) fn collect_resolve_watch_selection(
 
     for (condition_id, entry) in watchlist {
         if entry.tracked.is_empty() {
-            continue;
-        }
-
-        if entry.expiration_ns == UnixNanos::default() {
-            if mode != ResolveWatchSelectionMode::ManualFallback {
-                selection.condition_ids.push(condition_id.clone());
-            }
             continue;
         }
 
@@ -716,6 +745,108 @@ mod tests {
     }
 
     #[rstest]
+    fn serialized_position_update_waits_for_resolution_owner_lock() {
+        let owner_lock = Arc::new(Mutex::new(()));
+        let watchlist = Arc::new(AtomicMap::new());
+        let instruments = Arc::new(AtomicMap::new());
+        let instrument = seed_instrument_with_context(
+            &instruments,
+            "0xTOKEN_YES",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-BTC"),
+                expiration_ns: Some(UnixNanos::from(1_000_000_000)),
+                ..SeedInstrumentContext::default()
+            },
+        );
+        let event = stub_position_opened_event(instrument.id());
+        let owner_lock_for_thread = owner_lock.clone();
+        let watchlist_for_thread = watchlist.clone();
+        let instruments_for_thread = instruments;
+        let (done_tx, done_rx) = std::sync::mpsc::sync_channel(1);
+        let guard = owner_lock.lock();
+
+        let update_thread = std::thread::spawn(move || {
+            update_resolve_watchlist_from_position_event_serialized(
+                &owner_lock_for_thread,
+                &watchlist_for_thread,
+                &instruments_for_thread,
+                &event,
+            );
+            done_tx.send(()).expect("report position update");
+        });
+
+        assert!(
+            done_rx
+                .recv_timeout(std::time::Duration::from_millis(50))
+                .is_err(),
+            "position update should wait for the resolution owner lock",
+        );
+        drop(guard);
+        done_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("position update should complete after lock release");
+        update_thread.join().expect("position update thread");
+
+        assert!(watchlist.contains_key(&"0xCOND-BTC".to_string()));
+    }
+
+    #[rstest]
+    fn condition_expiration_does_not_regress_from_zero_or_earlier_sibling() {
+        let watchlist = Arc::new(AtomicMap::new());
+        let instruments = Arc::new(AtomicMap::new());
+        let later = seed_instrument_with_context(
+            &instruments,
+            "0xTOKEN_LATER",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-BTC"),
+                expiration_ns: Some(UnixNanos::from(2_000)),
+                ..SeedInstrumentContext::default()
+            },
+        );
+        let missing = seed_instrument_with_context(
+            &instruments,
+            "0xTOKEN_MISSING",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-BTC"),
+                expiration_ns: Some(UnixNanos::default()),
+                ..SeedInstrumentContext::default()
+            },
+        );
+        let earlier = seed_instrument_with_context(
+            &instruments,
+            "0xTOKEN_EARLIER",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-BTC"),
+                expiration_ns: Some(UnixNanos::from(1_000)),
+                ..SeedInstrumentContext::default()
+            },
+        );
+
+        for instrument in [&later, &missing, &earlier] {
+            assert!(upsert_data_resolve_watch_entry_from_instrument(
+                &watchlist, instrument,
+            ));
+        }
+
+        assert_eq!(
+            watchlist
+                .load()
+                .get("0xCOND-BTC")
+                .expect("condition watch")
+                .expiration_ns,
+            UnixNanos::from(2_000),
+        );
+    }
+
+    #[rstest]
     fn resolve_watch_selection_deduplicates_shared_condition_ids_and_pauses_timed_out_entries() {
         let now_ns = UnixNanos::from(2_000_000_000_000);
         let mut watchlist = ahash::AHashMap::new();
@@ -770,6 +901,46 @@ mod tests {
         );
         assert!(selection.condition_ids.is_empty());
         assert_eq!(selection.pause_condition_ids, vec!["0xCOND-A".to_string()]);
+    }
+
+    #[rstest]
+    fn resolve_watch_selection_pauses_missing_expiration_after_max_wait() {
+        let mut watchlist = ahash::AHashMap::new();
+        watchlist.insert(
+            "0xCOND-MISSING-EXPIRATION".to_string(),
+            ResolveWatchEntry {
+                condition_id: "0xCOND-MISSING-EXPIRATION".to_string(),
+                expiration_ns: UnixNanos::default(),
+                tracked: ahash::AHashMap::from_iter([(
+                    "0xYES".to_string(),
+                    TrackedInstrument {
+                        instrument_id: InstrumentId::from(
+                            "0xCOND-MISSING-EXPIRATION-0xYES.POLYMARKET",
+                        ),
+                        token_id: "0xYES".to_string(),
+                        price_precision: 3,
+                        open_position_ids: AHashSet::new(),
+                        has_data_subscription: true,
+                    },
+                )]),
+                paused: false,
+            },
+        );
+
+        let selection = collect_resolve_watch_selection(
+            &watchlist,
+            UnixNanos::from(1_801_000_000_000),
+            10,
+            1800,
+            ResolveWatchSelectionMode::AutoPoll,
+        );
+
+        assert!(selection.condition_ids.is_empty());
+        assert_eq!(selection.timed_out_watchlist, 1);
+        assert_eq!(
+            selection.pause_condition_ids,
+            vec!["0xCOND-MISSING-EXPIRATION".to_string()]
+        );
     }
 
     #[rstest]

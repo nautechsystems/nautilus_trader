@@ -33,10 +33,9 @@ use crate::{
     providers::extract_condition_id,
     resolve::{
         PolymarketResolveRequestSummaryData, RESOLVE_REQUEST_TYPE_NAME, ResolveBatchErrorMode,
-        ResolveContext, ResolveRequestSummary, ResolveWatchSelectionMode,
-        collect_resolve_watch_selection, fetch_and_apply_resolutions_by_condition_ids,
-        parse_condition_ids_from_request_params, pause_resolve_watch_entries,
-        request_params_has_explicit_condition_selector,
+        ResolveRequestSummary, ResolveWatchSelectionMode, collect_resolve_watch_selection,
+        fetch_and_apply_resolutions_by_condition_ids, parse_condition_ids_from_request_params,
+        pause_resolve_watch_entries, request_params_has_explicit_condition_selector,
     },
 };
 
@@ -69,14 +68,7 @@ pub(super) fn request_data(client: &PolymarketDataClient, request: RequestCustom
     let grace_secs = client.config.resolve_poll_grace_secs;
     let max_wait_secs = client.config.resolve_poll_max_wait_secs.max(grace_secs);
     let clob_public_client = client.clob_public_client.clone();
-    let resolve_ctx = ResolveContext {
-        clock: client.clock,
-        data_sender: client.data_sender.clone(),
-        watchlist: client.resolve_poll_watchlist.clone(),
-        apply_mutex: client.resolve_watch_apply_mutex.clone(),
-        active_status_subs: client.active_instrument_status_subs.clone(),
-        active_close_subs: client.active_instrument_close_subs.clone(),
-    };
+    let resolve_ctx = client.resolution_context();
     let future = async move {
         let mut summary = ResolveRequestSummary {
             requested_condition_ids: Vec::new(),
