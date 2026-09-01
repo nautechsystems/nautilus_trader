@@ -737,6 +737,7 @@ fn create_external_terminal_event(
             true, // reconciliation
             Some(report.venue_order_id),
             Some(account_id),
+            report.cancel_reason.as_deref().map(Ustr::from),
         )),
         OrderStatus::Expired => OrderEventAny::Expired(OrderExpired::new(
             order.trader_id(),
@@ -969,6 +970,7 @@ pub(super) fn create_reconciliation_canceled(
         true, // reconciliation
         order.venue_order_id(),
         order.account_id(),
+        report.cancel_reason.as_deref().map(Ustr::from),
     ))
 }
 

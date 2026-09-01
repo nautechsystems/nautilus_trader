@@ -297,6 +297,7 @@ impl OrderEventFactory {
             false,
             venue_order_id,
             Some(self.account_id),
+            None,
         );
         OrderEventAny::Canceled(event)
     }

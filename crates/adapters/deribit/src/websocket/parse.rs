@@ -1109,6 +1109,7 @@ pub(crate) fn parse_order_canceled_with_client_order_id(
         false, // reconciliation
         Some(venue_order_id),
         Some(account_id),
+        msg.cancel_reason.as_deref().map(Ustr::from),
     )
 }
 

@@ -665,6 +665,7 @@ impl DydxExecutionClient {
                                                 false,
                                                 Some(report.venue_order_id),
                                                 Some(account_id),
+                                                None,
                                             );
                                             emitter.send_order_event(OrderEventAny::Canceled(
                                                 canceled,

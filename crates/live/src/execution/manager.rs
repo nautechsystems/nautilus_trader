@@ -1867,6 +1867,7 @@ impl ExecutionManager {
                                     true, // reconciliation
                                     order.venue_order_id(),
                                     order.account_id(),
+                                    None,
                                 ));
                                 result.events.push(event);
                             }
@@ -3775,6 +3776,7 @@ impl ExecutionManager {
                     true,
                     order.venue_order_id(),
                     order.account_id(),
+                    None,
                 )));
             }
             OrderStatus::PendingUpdate | OrderStatus::PendingCancel => {

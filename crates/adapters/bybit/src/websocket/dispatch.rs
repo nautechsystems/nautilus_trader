@@ -473,6 +473,7 @@ fn dispatch_order_update(
                         false,
                         Some(venue_order_id),
                         Some(account_id),
+                        None,
                     );
                     cleanup_terminal(client_order_id, state);
                     emitter.send_order_event(OrderEventAny::Canceled(canceled));
@@ -622,6 +623,7 @@ fn dispatch_order_update(
                         false,
                         Some(venue_order_id),
                         Some(account_id),
+                        None,
                     );
                     cleanup_terminal(client_order_id, state);
                     emitter.send_order_event(OrderEventAny::Canceled(canceled));

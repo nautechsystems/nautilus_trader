@@ -619,9 +619,11 @@ def test_order_canceled(
         ts_init=0,
         reconciliation=False,
         venue_order_id=venue_order_id,
+        reason="not-enough-liquidity",
     )
 
     assert event.venue_order_id == venue_order_id
+    assert event.reason == "not-enough-liquidity"
     assert "OrderCanceled" in repr(event)
 
 
@@ -646,11 +648,36 @@ def test_order_canceled_to_dict_roundtrip(
         ts_init=0,
         reconciliation=False,
         venue_order_id=venue_order_id,
+        reason="not-enough-liquidity",
     )
 
     restored = OrderCanceled.from_dict(event.to_dict())
 
     assert restored == event
+    assert restored.reason == "not-enough-liquidity"
+
+
+def test_order_canceled_default_reason_to_dict_roundtrip(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    audusd_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    uuid: UUID4,
+) -> None:
+    event = OrderCanceled(
+        trader_id=trader_id,
+        strategy_id=strategy_id,
+        instrument_id=audusd_id,
+        client_order_id=client_order_id,
+        event_id=uuid,
+        ts_event=0,
+        ts_init=0,
+        reconciliation=False,
+    )
+
+    restored = OrderCanceled.from_dict(event.to_dict())
+
+    assert restored.reason is None
 
 
 def test_order_expired(
