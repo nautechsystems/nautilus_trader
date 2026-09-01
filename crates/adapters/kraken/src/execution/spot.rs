@@ -158,7 +158,7 @@ impl KrakenSpotExecutionClient {
             config.environment,
             config.base_url.clone(),
             config.timeout_secs,
-            None,
+            Some(config.max_retries),
             None,
             None,
             proxy_url.clone(),
@@ -1894,8 +1894,16 @@ fn resolve_use_ws_trade(params: Option<&Params>, default: bool) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc};
+    use std::{
+        cell::RefCell,
+        rc::Rc,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
 
+    use axum::{Router, http::StatusCode, routing::post};
     use nautilus_common::{
         cache::{Cache, InstrumentLookupError},
         clock::TestClock,
@@ -1910,15 +1918,66 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        CommandFailure, batch_cancel_item_for_spot, cancel_order_for_spot, resolve_leverage,
-        resolve_use_ws_trade,
+        AccountType, ClientId, CommandFailure, ExecutionClientCore,
+        KrakenSpotCancelOrderParamsBuilder, KrakenSpotExecutionClient, OmsType,
+        batch_cancel_item_for_spot, cancel_order_for_spot, resolve_leverage, resolve_use_ws_trade,
     };
     use crate::{
-        common::enums::KrakenProductType, config::KrakenExecutionClientConfig,
-        factories::KrakenExecutionClientFactory, http::KrakenSpotHttpClient,
+        common::{consts::KRAKEN_VENUE, enums::KrakenProductType},
+        config::KrakenExecutionClientConfig,
+        factories::KrakenExecutionClientFactory,
+        http::KrakenSpotHttpClient,
     };
 
     const TEST_INSTRUMENT_ID: &str = "BTC/USDT.KRAKEN";
+
+    #[tokio::test]
+    async fn test_execution_config_max_retries_zero_disables_spot_cancel_retries() {
+        let request_count = Arc::new(AtomicUsize::new(0));
+        let handler_count = request_count.clone();
+        let router = Router::new().route(
+            "/0/private/CancelOrder",
+            post(move || {
+                let handler_count = handler_count.clone();
+                async move {
+                    handler_count.fetch_add(1, Ordering::Relaxed);
+                    StatusCode::TOO_MANY_REQUESTS
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let core = ExecutionClientCore::new(
+            TraderId::from("TRADER-001"),
+            ClientId::from("KRAKEN"),
+            *KRAKEN_VENUE,
+            OmsType::Netting,
+            AccountId::from("KRAKEN-001"),
+            AccountType::Cash,
+            None,
+            cache,
+        );
+        let config = KrakenExecutionClientConfig {
+            api_key: "test-key".into(),
+            api_secret: "c2VjcmV0".into(),
+            base_url: Some(format!("http://{addr}")),
+            max_retries: 0,
+            ..Default::default()
+        };
+        let client = KrakenSpotExecutionClient::new(core, config).unwrap();
+        let params = KrakenSpotCancelOrderParamsBuilder::default()
+            .txid("V-001".to_string())
+            .build()
+            .unwrap();
+
+        let result = client.http.inner.cancel_order(&params).await;
+
+        assert!(result.is_err());
+        assert_eq!(request_count.load(Ordering::Relaxed), 1);
+    }
 
     fn params_with(key: &str, val: serde_json::Value) -> Params {
         let mut map = indexmap::IndexMap::new();

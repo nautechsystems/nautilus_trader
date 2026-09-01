@@ -139,7 +139,7 @@ impl KrakenFuturesExecutionClient {
             config.environment,
             config.base_url.clone(),
             config.timeout_secs,
-            None,
+            Some(config.max_retries),
             None,
             None,
             proxy_url.clone(),
