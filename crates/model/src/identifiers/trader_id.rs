@@ -23,6 +23,8 @@ use nautilus_core::correctness::{
 };
 use ustr::Ustr;
 
+const EXTERNAL_TRADER_ID: &str = "EXTERNAL-0";
+
 /// Represents a valid trader ID.
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -117,13 +119,13 @@ impl TraderId {
     /// Creates an external trader ID used for orders from external sources.
     #[must_use]
     pub fn external() -> Self {
-        Self::new("EXTERNAL-0")
+        Self::new(EXTERNAL_TRADER_ID)
     }
 
     /// Returns whether this trader ID is external.
     #[must_use]
     pub fn is_external(&self) -> bool {
-        self.0.as_str() == "EXTERNAL-0"
+        self.0 == EXTERNAL_TRADER_ID
     }
 }
 
@@ -187,16 +189,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_new_checked_with_empty_name_returns_error() {
-        assert!(TraderId::new_checked("-001").is_err());
-    }
-
-    #[rstest]
-    fn test_new_checked_with_empty_tag_returns_error() {
-        assert!(TraderId::new_checked("TRADER-").is_err());
-    }
-
-    #[rstest]
     fn test_new_checked_without_separator_returns_typed_error() {
         let error = TraderId::new_checked("TRADER001").unwrap_err();
 
@@ -215,36 +207,20 @@ mod tests {
     }
 
     #[rstest]
-    fn test_new_checked_with_empty_name_returns_typed_error_with_stable_display() {
-        let error = TraderId::new_checked("-001").unwrap_err();
-
-        match error {
-            CorrectnessError::PredicateViolation { ref message } => {
-                assert_eq!(message, "`value` name part (before '-') cannot be empty");
-            }
-            other => panic!("Expected typed predicate violation, was: {other:?}"),
-        }
+    #[case("-001", "`value` name part (before '-') cannot be empty")]
+    #[case("TRADER-", "`value` tag part (after '-') cannot be empty")]
+    fn test_new_checked_with_empty_component_returns_typed_error(
+        #[case] value: &str,
+        #[case] expected: &str,
+    ) {
+        let error = TraderId::new_checked(value).unwrap_err();
 
         assert_eq!(
-            error.to_string(),
-            "`value` name part (before '-') cannot be empty"
-        );
-    }
-
-    #[rstest]
-    fn test_new_checked_with_empty_tag_returns_typed_error_with_stable_display() {
-        let error = TraderId::new_checked("TRADER-").unwrap_err();
-
-        match error {
-            CorrectnessError::PredicateViolation { ref message } => {
-                assert_eq!(message, "`value` tag part (after '-') cannot be empty");
+            error,
+            CorrectnessError::PredicateViolation {
+                message: expected.to_string(),
             }
-            other => panic!("Expected typed predicate violation, was: {other:?}"),
-        }
-
-        assert_eq!(
-            error.to_string(),
-            "`value` tag part (after '-') cannot be empty"
         );
+        assert_eq!(error.to_string(), expected);
     }
 }

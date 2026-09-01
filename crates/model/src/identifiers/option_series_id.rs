@@ -113,15 +113,15 @@ impl OptionSeriesId {
         settlement_currency: &str,
         date_str: &str,
     ) -> Result<Self, OptionSeriesIdError> {
-        let value = format!("{venue}:{underlying}:{settlement_currency}:{date_str}");
+        let format_value = || format!("{venue}:{underlying}:{settlement_currency}:{date_str}");
         let venue =
             Venue::new_checked(venue).map_err(|source| OptionSeriesIdError::InvalidVenue {
-                value: value.clone(),
+                value: format_value(),
                 source: Box::new(source),
             })?;
         let expiration_ns =
             UnixNanos::from_str(date_str).map_err(|e| OptionSeriesIdError::InvalidExpiration {
-                value: value.clone(),
+                value: format_value(),
                 expiration: date_str.to_string(),
                 reason: e.to_string(),
             })?;
@@ -218,25 +218,29 @@ impl FromStr for OptionSeriesId {
     /// Parses `VENUE:UNDERLYING:SETTLEMENT:EXPIRY` where EXPIRY can be
     /// nanoseconds (`1772524800000000000`) or a date (`2026-03-03`).
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let value = s.to_string();
-        let parts: Vec<&str> = s.splitn(4, ':').collect();
-        if parts.len() != 4 {
-            return Err(OptionSeriesIdError::InvalidFormat { value });
-        }
+        let mut parts = s.splitn(4, ':');
+        let (Some(venue), Some(underlying), Some(settlement_currency), Some(expiration)) =
+            (parts.next(), parts.next(), parts.next(), parts.next())
+        else {
+            return Err(OptionSeriesIdError::InvalidFormat {
+                value: s.to_string(),
+            });
+        };
 
         let venue =
-            Venue::new_checked(parts[0]).map_err(|source| OptionSeriesIdError::InvalidVenue {
-                value: value.clone(),
+            Venue::new_checked(venue).map_err(|source| OptionSeriesIdError::InvalidVenue {
+                value: s.to_string(),
                 source: Box::new(source),
             })?;
-        let underlying = Ustr::from(parts[1]);
-        let settlement_currency = Ustr::from(parts[2]);
-        let expiration_ns =
-            UnixNanos::from_str(parts[3]).map_err(|e| OptionSeriesIdError::InvalidExpiration {
-                value: value.clone(),
-                expiration: parts[3].to_string(),
+        let underlying = Ustr::from(underlying);
+        let settlement_currency = Ustr::from(settlement_currency);
+        let expiration_ns = UnixNanos::from_str(expiration).map_err(|e| {
+            OptionSeriesIdError::InvalidExpiration {
+                value: s.to_string(),
+                expiration: expiration.to_string(),
                 reason: e.to_string(),
-            })?;
+            }
+        })?;
 
         Ok(Self {
             venue,
@@ -268,6 +272,8 @@ impl<'de> Deserialize<'de> for OptionSeriesId {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use rstest::*;
 
     use super::*;
@@ -429,8 +435,6 @@ mod tests {
 
     #[rstest]
     fn test_option_series_id_hash() {
-        use std::collections::HashSet;
-
         let id1 = test_series_id();
         let id2 = OptionSeriesId::new(
             Venue::new("DERIBIT"),
@@ -442,7 +446,7 @@ mod tests {
         let mut set = HashSet::new();
         set.insert(id1);
         set.insert(id2);
-        set.insert(id1); // duplicate
+        set.insert(id1);
 
         assert_eq!(set.len(), 2);
     }

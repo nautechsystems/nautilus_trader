@@ -25,6 +25,8 @@ use nautilus_core::correctness::{
 };
 use ustr::Ustr;
 
+const EXTERNAL_CLIENT_ORDER_ID: &str = "EXTERNAL";
+
 /// Represents a valid client order ID (assigned by the Nautilus system).
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -84,13 +86,13 @@ impl ClientOrderId {
     /// Creates an external client order ID used when no ID was provided.
     #[must_use]
     pub fn external() -> Self {
-        Self::new("EXTERNAL")
+        Self::new(EXTERNAL_CLIENT_ORDER_ID)
     }
 
     /// Returns whether this client order ID is external.
     #[must_use]
     pub fn is_external(&self) -> bool {
-        self.0.as_str() == "EXTERNAL"
+        self.0 == EXTERNAL_CLIENT_ORDER_ID
     }
 }
 
@@ -107,25 +109,19 @@ impl Display for ClientOrderId {
 }
 
 #[must_use]
-pub fn optional_ustr_to_vec_client_order_ids(s: Option<Ustr>) -> Option<Vec<ClientOrderId>> {
-    s.map(|ustr| {
-        let s_str = ustr.to_string();
-        s_str
-            .split(',')
-            .map(ClientOrderId::new)
-            .collect::<Vec<ClientOrderId>>()
-    })
+pub fn optional_ustr_to_vec_client_order_ids(value: Option<Ustr>) -> Option<Vec<ClientOrderId>> {
+    value.map(|ids| ids.as_str().split(',').map(ClientOrderId::new).collect())
 }
 
 #[must_use]
-pub fn optional_vec_client_order_ids_to_ustr(vec: Option<Vec<ClientOrderId>>) -> Option<Ustr> {
-    vec.map(|client_order_ids| {
-        let s: String = client_order_ids
-            .into_iter()
-            .map(|id| id.to_string())
-            .collect::<Vec<String>>()
+pub fn optional_vec_client_order_ids_to_ustr(value: Option<Vec<ClientOrderId>>) -> Option<Ustr> {
+    value.map(|ids| {
+        let value = ids
+            .iter()
+            .map(ClientOrderId::as_str)
+            .collect::<Vec<_>>()
             .join(",");
-        Ustr::from(&s)
+        Ustr::from(&value)
     })
 }
 
@@ -166,29 +162,27 @@ mod tests {
 
     #[rstest]
     fn test_optional_ustr_to_vec_client_order_ids() {
-        // Test with None
         assert_eq!(optional_ustr_to_vec_client_order_ids(None), None);
-
-        // Test with Some
-        let ustr = Ustr::from("id1,id2,id3");
-        let client_order_ids = optional_ustr_to_vec_client_order_ids(Some(ustr)).unwrap();
-        assert_eq!(client_order_ids[0].as_str(), "id1");
-        assert_eq!(client_order_ids[1].as_str(), "id2");
-        assert_eq!(client_order_ids[2].as_str(), "id3");
+        assert_eq!(
+            optional_ustr_to_vec_client_order_ids(Some(Ustr::from("id1,id2,id3"))),
+            Some(vec![
+                ClientOrderId::new("id1"),
+                ClientOrderId::new("id2"),
+                ClientOrderId::new("id3"),
+            ])
+        );
     }
 
     #[rstest]
     fn test_optional_vec_client_order_ids_to_ustr() {
-        // Test with None
         assert_eq!(optional_vec_client_order_ids_to_ustr(None), None);
-
-        // Test with Some
-        let client_order_ids = vec![
-            ClientOrderId::from("id1"),
-            ClientOrderId::from("id2"),
-            ClientOrderId::from("id3"),
-        ];
-        let ustr = optional_vec_client_order_ids_to_ustr(Some(client_order_ids)).unwrap();
-        assert_eq!(ustr.to_string(), "id1,id2,id3");
+        assert_eq!(
+            optional_vec_client_order_ids_to_ustr(Some(vec![
+                ClientOrderId::new("id1"),
+                ClientOrderId::new("id2"),
+                ClientOrderId::new("id3"),
+            ])),
+            Some(Ustr::from("id1,id2,id3"))
+        );
     }
 }

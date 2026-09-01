@@ -103,9 +103,7 @@ impl InstrumentId {
     pub fn is_synthetic(&self) -> bool {
         self.venue.is_synthetic()
     }
-}
 
-impl InstrumentId {
     /// # Errors
     ///
     /// Returns an error if `value` is not a valid identifier.
@@ -148,16 +146,15 @@ impl FromStr for InstrumentId {
     type Err = InstrumentIdError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let value = s.to_string();
         let (symbol_part, venue_part) =
             s.rsplit_once('.')
                 .ok_or_else(|| InstrumentIdError::MissingSeparator {
-                    value: value.clone(),
+                    value: s.to_string(),
                 })?;
 
         let venue =
             Venue::new_checked(venue_part).map_err(|source| InstrumentIdError::InvalidVenue {
-                value: value.clone(),
+                value: s.to_string(),
                 source: Box::new(source),
             })?;
 
@@ -168,27 +165,27 @@ impl FromStr for InstrumentId {
                     PoolIdentifier::new_checked(symbol_part)
                         .map(|pool_id| pool_id.to_string())
                         .map_err(|e| InstrumentIdError::InvalidAddress {
-                            value: value.clone(),
+                            value: s.to_string(),
                             reason: e.to_string(),
                         })?
                 } else {
                     validate_address(symbol_part)
                         .map(|address| address.to_string())
                         .map_err(|e| InstrumentIdError::InvalidAddress {
-                            value: value.clone(),
+                            value: s.to_string(),
                             reason: e.to_string(),
                         })?
                 };
                 Symbol::new_checked(validated_symbol).map_err(|source| {
                     InstrumentIdError::InvalidSymbol {
-                        value: value.clone(),
+                        value: s.to_string(),
                         source: Box::new(source),
                     }
                 })?
             } else {
                 Symbol::new_checked(symbol_part).map_err(|source| {
                     InstrumentIdError::InvalidSymbol {
-                        value: value.clone(),
+                        value: s.to_string(),
                         source: Box::new(source),
                     }
                 })?
@@ -196,7 +193,7 @@ impl FromStr for InstrumentId {
 
             #[cfg(not(feature = "defi"))]
             Symbol::new_checked(symbol_part).map_err(|source| InstrumentIdError::InvalidSymbol {
-                value: value.clone(),
+                value: s.to_string(),
                 source: Box::new(source),
             })?
         };
@@ -253,7 +250,10 @@ mod tests {
     use rstest::rstest;
 
     use super::{InstrumentId, InstrumentIdError};
-    use crate::identifiers::{Symbol, Venue, stubs::*};
+    use crate::{
+        enums::InstrumentClass,
+        identifiers::{Symbol, Venue, stubs::*},
+    };
 
     #[rstest]
     fn test_instrument_id_parse_success(instrument_id_eth_usdt_binance: InstrumentId) {
@@ -415,7 +415,6 @@ mod tests {
     #[cfg(feature = "defi")]
     #[rstest]
     fn test_regular_venue_with_blockchain_like_name_but_without_dex() {
-        // Should work fine since it doesn't contain ':' (not a DEX venue)
         let id = InstrumentId::from("0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443.Ethereum");
         assert_eq!(
             id.symbol.to_string(),
@@ -461,20 +460,15 @@ mod tests {
     fn test_blockchain_extraction_valid_dex() {
         let id =
             InstrumentId::from("0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443.Arbitrum:UniswapV3");
-        let blockchain = id.blockchain();
-        assert!(blockchain.is_some());
-        assert_eq!(blockchain.unwrap(), crate::defi::Blockchain::Arbitrum);
+        assert_eq!(id.blockchain(), Some(crate::defi::Blockchain::Arbitrum));
     }
 
     #[cfg(feature = "defi")]
     #[rstest]
     fn test_blockchain_extraction_tradifi_venue() {
         let id = InstrumentId::from("ETH/USDT.BINANCE");
-        let blockchain = id.blockchain();
-        assert!(blockchain.is_none());
+        assert_eq!(id.blockchain(), None);
     }
-
-    use crate::enums::InstrumentClass;
 
     #[rstest]
     #[case("ES.FUT.XCME", Some(("ES", InstrumentClass::Future)))]
