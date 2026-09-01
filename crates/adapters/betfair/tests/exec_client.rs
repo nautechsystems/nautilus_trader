@@ -68,7 +68,8 @@ use nautilus_model::{
     enums::{AccountType, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{OrderAccepted, OrderDeniedReason, OrderEventAny, OrderUpdated},
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, VenueOrderId,
+        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId,
+        VenueOrderId,
     },
     orders::{Order, OrderAny, OrderList, builder::OrderTestBuilder},
     types::{Currency, Price, Quantity},
@@ -1001,6 +1002,41 @@ fn make_accepted_test_order(
     order
 }
 
+fn make_accepted_test_order_for(
+    instrument_id: &str,
+    client_order_id: &str,
+    venue_order_id: &str,
+    strategy_id: &str,
+    account_id: &str,
+    side: OrderSide,
+) -> OrderAny {
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from(strategy_id))
+        .instrument_id(InstrumentId::from(instrument_id))
+        .client_order_id(ClientOrderId::from(client_order_id))
+        .side(side)
+        .price(Price::from("2.50"))
+        .quantity(Quantity::from("10"))
+        .time_in_force(TimeInForce::Gtc)
+        .build();
+    order
+        .apply(OrderEventAny::Accepted(OrderAccepted::new(
+            TraderId::from("TESTER-001"),
+            StrategyId::from(strategy_id),
+            InstrumentId::from(instrument_id),
+            ClientOrderId::from(client_order_id),
+            VenueOrderId::from(venue_order_id),
+            AccountId::from(account_id),
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+            false,
+        )))
+        .unwrap();
+    order
+}
+
 fn assert_valid_customer_ref(params: &Value) -> &str {
     let customer_ref = params["customerRef"]
         .as_str()
@@ -1016,10 +1052,35 @@ fn assert_valid_customer_ref(params: &Value) -> &str {
 }
 
 fn add_order_to_cache(cache: &Rc<RefCell<Cache>>, order: OrderAny) {
+    add_order_to_cache_for_client(cache, order, Some(*BETFAIR_CLIENT_ID));
+}
+
+fn add_order_to_cache_for_client(
+    cache: &Rc<RefCell<Cache>>,
+    order: OrderAny,
+    client_id: Option<ClientId>,
+) {
     cache
         .borrow_mut()
-        .add_order(order, None, Some(*BETFAIR_CLIENT_ID), false)
+        .add_order(order, None, client_id, false)
         .unwrap();
+}
+
+fn make_cancel_all_orders_cmd(
+    instrument_id: &str,
+    order_side: Option<OrderSide>,
+) -> CancelAllOrders {
+    CancelAllOrders::new(
+        TraderId::from("TESTER-001"),
+        Some(*BETFAIR_CLIENT_ID),
+        StrategyId::from("S-001"),
+        InstrumentId::from(instrument_id),
+        order_side,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
 }
 
 fn make_submit_order_cmd(order: &OrderAny) -> SubmitOrder {
@@ -1882,6 +1943,456 @@ async fn test_cancel_all_orders_ambiguous_5xx_emits_no_rejected() {
         !rejected_seen,
         "ambiguous cancel-all 5xx must not emit CancelRejected",
     );
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[case(OrderSide::Buy, ["101", "102"])]
+#[case(OrderSide::Sell, ["201", "202"])]
+#[tokio::test]
+async fn test_cancel_all_orders_filters_side_instrument_and_owner(
+    #[case] order_side: OrderSide,
+    #[case] expected_bet_ids: [&str; 2],
+) {
+    let (addr, state) = start_mock_http().await;
+    let fixture = load_fixture("rest/betting_cancel_orders_batch_partial_failure.json");
+    let response: Value = serde_json::from_str(&fixture).unwrap();
+    state
+        .betting_overrides
+        .lock()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), response["result"].clone());
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = "1.179082386-235-0.BETFAIR";
+    let other_instrument_id = "1.179082386-999-0.BETFAIR";
+    let other_client_id = ClientId::from("BETFAIR-OTHER");
+    let orders = [
+        (
+            instrument_id,
+            "O-BUY-LOCAL",
+            "101",
+            "S-001",
+            "BETFAIR-001",
+            OrderSide::Buy,
+            Some(*BETFAIR_CLIENT_ID),
+        ),
+        (
+            instrument_id,
+            "O-BUY-EXTERNAL",
+            "102",
+            "EXTERNAL",
+            "BETFAIR-001",
+            OrderSide::Buy,
+            Some(*BETFAIR_CLIENT_ID),
+        ),
+        (
+            instrument_id,
+            "O-SELL-LOCAL",
+            "201",
+            "S-002",
+            "BETFAIR-001",
+            OrderSide::Sell,
+            Some(*BETFAIR_CLIENT_ID),
+        ),
+        (
+            instrument_id,
+            "O-SELL-EXTERNAL",
+            "202",
+            "EXTERNAL",
+            "BETFAIR-001",
+            OrderSide::Sell,
+            Some(*BETFAIR_CLIENT_ID),
+        ),
+        (
+            other_instrument_id,
+            "O-BUY-OTHER-INSTRUMENT",
+            "103",
+            "S-001",
+            "BETFAIR-001",
+            OrderSide::Buy,
+            Some(*BETFAIR_CLIENT_ID),
+        ),
+        (
+            other_instrument_id,
+            "O-SELL-OTHER-INSTRUMENT",
+            "203",
+            "S-001",
+            "BETFAIR-001",
+            OrderSide::Sell,
+            Some(*BETFAIR_CLIENT_ID),
+        ),
+        (
+            instrument_id,
+            "O-BUY-OTHER-ACCOUNT",
+            "104",
+            "S-001",
+            "BETFAIR-OTHER",
+            OrderSide::Buy,
+            Some(*BETFAIR_CLIENT_ID),
+        ),
+        (
+            instrument_id,
+            "O-SELL-OTHER-ACCOUNT",
+            "204",
+            "S-001",
+            "BETFAIR-OTHER",
+            OrderSide::Sell,
+            Some(*BETFAIR_CLIENT_ID),
+        ),
+        (
+            instrument_id,
+            "O-BUY-OTHER-CLIENT",
+            "105",
+            "S-001",
+            "BETFAIR-001",
+            OrderSide::Buy,
+            Some(other_client_id),
+        ),
+        (
+            instrument_id,
+            "O-SELL-OTHER-CLIENT",
+            "205",
+            "S-001",
+            "BETFAIR-001",
+            OrderSide::Sell,
+            Some(other_client_id),
+        ),
+        (
+            instrument_id,
+            "O-BUY-NO-CLIENT",
+            "106",
+            "S-001",
+            "BETFAIR-001",
+            OrderSide::Buy,
+            None,
+        ),
+        (
+            instrument_id,
+            "O-SELL-NO-CLIENT",
+            "206",
+            "S-001",
+            "BETFAIR-001",
+            OrderSide::Sell,
+            None,
+        ),
+    ];
+
+    for (instrument, client_order_id, venue_order_id, strategy, account, side, source) in orders {
+        let order = make_accepted_test_order_for(
+            instrument,
+            client_order_id,
+            venue_order_id,
+            strategy,
+            account,
+            side,
+        );
+        add_order_to_cache_for_client(&cache, order, source);
+    }
+    cache.borrow_mut().build_index();
+
+    client
+        .cancel_all_orders(make_cancel_all_orders_cmd(instrument_id, Some(order_side)))
+        .unwrap();
+
+    wait_until_async(
+        || async { betting_method_count(&state, METHOD_CANCEL_ORDERS) == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let params = state
+        .betting_request_params
+        .lock()
+        .iter()
+        .find(|(method, _)| method == METHOD_CANCEL_ORDERS)
+        .unwrap()
+        .1
+        .clone();
+    let mut bet_ids = params["instructions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|instruction| instruction["betId"].as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    bet_ids.sort();
+    let mut expected_bet_ids = expected_bet_ids.map(str::to_string).to_vec();
+    expected_bet_ids.sort();
+
+    assert_eq!(params["marketId"], "1.179082386");
+    assert_eq!(bet_ids, expected_bet_ids);
+    assert_valid_customer_ref(&params);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(rx.try_recv().is_err());
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_all_orders_side_with_no_matches_sends_no_request() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = "1.179082386-235-0.BETFAIR";
+    let order = make_accepted_test_order_for(
+        instrument_id,
+        "O-SELL-ONLY",
+        "201",
+        "S-001",
+        "BETFAIR-001",
+        OrderSide::Sell,
+    );
+    add_order_to_cache(&cache, order);
+    cache.borrow_mut().build_index();
+
+    client
+        .cancel_all_orders(make_cancel_all_orders_cmd(
+            instrument_id,
+            Some(OrderSide::Buy),
+        ))
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    assert_eq!(betting_method_count(&state, METHOD_CANCEL_ORDERS), 0);
+    assert!(rx.try_recv().is_err());
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_all_orders_side_splits_more_than_sixty_instructions() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = "1.179082386-235-0.BETFAIR";
+    let mut expected_bet_ids = HashSet::new();
+
+    for index in 0..61 {
+        let client_order_id = format!("O-BUY-{index:03}");
+        let venue_order_id = format!("{}", 1_000 + index);
+        expected_bet_ids.insert(venue_order_id.clone());
+        let order = make_accepted_test_order_for(
+            instrument_id,
+            &client_order_id,
+            &venue_order_id,
+            "S-001",
+            "BETFAIR-001",
+            OrderSide::Buy,
+        );
+        add_order_to_cache(&cache, order);
+    }
+    cache.borrow_mut().build_index();
+
+    client
+        .cancel_all_orders(make_cancel_all_orders_cmd(
+            instrument_id,
+            Some(OrderSide::Buy),
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || async { betting_method_count(&state, METHOD_CANCEL_ORDERS) == 2 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let params = state
+        .betting_request_params
+        .lock()
+        .iter()
+        .filter(|(method, _)| method == METHOD_CANCEL_ORDERS)
+        .map(|(_, params)| params.clone())
+        .collect::<Vec<_>>();
+    let instruction_counts = params
+        .iter()
+        .map(|params| params["instructions"].as_array().unwrap().len())
+        .collect::<Vec<_>>();
+    let actual_bet_ids = params
+        .iter()
+        .flat_map(|params| params["instructions"].as_array().unwrap())
+        .map(|instruction| instruction["betId"].as_str().unwrap().to_string())
+        .collect::<HashSet<_>>();
+    let customer_refs = params
+        .iter()
+        .map(assert_valid_customer_ref)
+        .collect::<HashSet<_>>();
+
+    assert_eq!(instruction_counts, vec![60, 1]);
+    assert_eq!(actual_bet_ids, expected_bet_ids);
+    assert_eq!(customer_refs.len(), 2);
+    assert!(rx.try_recv().is_err());
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_all_orders_side_missing_venue_id_fails_closed() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = "1.179082386-235-0.BETFAIR";
+    let valid = make_accepted_test_order_for(
+        instrument_id,
+        "O-BUY-VALID",
+        "101",
+        "S-001",
+        "BETFAIR-001",
+        OrderSide::Buy,
+    );
+    let mut missing = make_accepted_test_order_for(
+        instrument_id,
+        "O-BUY-NO-VENUE-ID",
+        "102",
+        "S-002",
+        "BETFAIR-001",
+        OrderSide::Buy,
+    );
+
+    match &mut missing {
+        OrderAny::Limit(order) => order.venue_order_id = None,
+        _ => unreachable!(),
+    }
+    add_order_to_cache(&cache, valid);
+    add_order_to_cache(&cache, missing);
+    cache.borrow_mut().build_index();
+
+    client
+        .cancel_all_orders(make_cancel_all_orders_cmd(
+            instrument_id,
+            Some(OrderSide::Buy),
+        ))
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    assert_eq!(betting_method_count(&state, METHOD_CANCEL_ORDERS), 0);
+    assert!(rx.try_recv().is_err());
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_all_orders_side_ambiguous_outcome_emits_no_order_event() {
+    let (addr, state) = start_mock_http().await;
+    state
+        .betting_status_overrides
+        .lock()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), 502);
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = "1.179082386-235-0.BETFAIR";
+    let order = make_accepted_test_order_for(
+        instrument_id,
+        "O-BUY-AMBIGUOUS",
+        "101",
+        "S-001",
+        "BETFAIR-001",
+        OrderSide::Buy,
+    );
+    add_order_to_cache(&cache, order);
+    cache.borrow_mut().build_index();
+
+    client
+        .cancel_all_orders(make_cancel_all_orders_cmd(
+            instrument_id,
+            Some(OrderSide::Buy),
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || async { betting_method_count(&state, METHOD_CANCEL_ORDERS) == 2 },
+        Duration::from_secs(5),
+    )
+    .await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let params = state
+        .betting_request_params
+        .lock()
+        .iter()
+        .filter(|(method, _)| method == METHOD_CANCEL_ORDERS)
+        .map(|(_, params)| params.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(params.len(), 2, "one 502 must cause exactly one retry");
+    assert_eq!(params[0], params[1], "retry must reuse the request body");
+    assert_eq!(
+        assert_valid_customer_ref(&params[0]),
+        assert_valid_customer_ref(&params[1]),
+    );
+    assert!(rx.try_recv().is_err());
 
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());
@@ -3322,6 +3833,83 @@ async fn test_batch_cancel_orders_success_no_rejected_events() {
         event.is_err(),
         "Successful batch-cancel should not emit rejected events, found: {event:?}"
     );
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_batch_cancel_orders_splits_more_than_sixty_instructions() {
+    let (addr, state) = start_mock_http().await;
+
+    let fixture = load_fixture("rest/betting_cancel_orders_batch_success.json");
+    let response: Value = serde_json::from_str(&fixture).unwrap();
+    state
+        .betting_overrides
+        .lock()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), response["result"].clone());
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let cancels = (0..61)
+        .map(|index| {
+            (
+                ClientOrderId::from(format!("O-BC-{index:03}")),
+                Some(VenueOrderId::from(format!("{}", 1_000 + index))),
+            )
+        })
+        .collect();
+    let cmd = make_batch_cancel_cmd("1.179082386-235-0.BETFAIR", cancels);
+    client.batch_cancel_orders(cmd).unwrap();
+
+    wait_until_async(
+        || async { betting_method_count(&state, METHOD_CANCEL_ORDERS) == 2 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let params = state
+        .betting_request_params
+        .lock()
+        .iter()
+        .filter(|(method, _)| method == METHOD_CANCEL_ORDERS)
+        .map(|(_, params)| params.clone())
+        .collect::<Vec<_>>();
+    let instruction_counts = params
+        .iter()
+        .map(|params| params["instructions"].as_array().unwrap().len())
+        .collect::<Vec<_>>();
+    let actual_bet_ids = params
+        .iter()
+        .flat_map(|params| params["instructions"].as_array().unwrap())
+        .map(|instruction| instruction["betId"].as_str().unwrap().to_string())
+        .collect::<HashSet<_>>();
+    let expected_bet_ids = (1_000..1_061)
+        .map(|bet_id| bet_id.to_string())
+        .collect::<HashSet<_>>();
+    let customer_refs = params
+        .iter()
+        .map(assert_valid_customer_ref)
+        .collect::<HashSet<_>>();
+
+    assert_eq!(instruction_counts, vec![60, 1]);
+    assert_eq!(actual_bet_ids, expected_bet_ids);
+    assert_eq!(customer_refs.len(), 2);
+    assert!(rx.try_recv().is_err());
 
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());

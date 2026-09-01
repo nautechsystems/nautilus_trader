@@ -2846,25 +2846,68 @@ impl ExecutionClient for BetfairExecutionClient {
             }
         };
 
-        let params = CancelOrdersParams {
-            market_id: Some(market_id),
-            instructions: None,
-            customer_ref: Some(order_customer_ref()),
+        let Some(order_side) = cmd.order_side else {
+            let params = CancelOrdersParams {
+                market_id: Some(market_id),
+                instructions: None,
+                customer_ref: Some(order_customer_ref()),
+            };
+
+            let http_client = Arc::clone(&self.http_client);
+
+            self.spawn_task("cancel-all-orders", async move {
+                let result = http_client
+                    .send_betting_order::<serde_json::Value, _>(METHOD_CANCEL_ORDERS, &params)
+                    .await;
+
+                if let Err(e) = result {
+                    log::warn!("Failed to cancel all orders: {e}");
+                }
+
+                Ok(())
+            });
+
+            return Ok(());
         };
 
-        let http_client = Arc::clone(&self.http_client);
+        let cache = self.core.cache();
+        let orders = cache.orders_open_refs(
+            Some(&self.core.venue),
+            Some(&instrument_id),
+            None,
+            Some(&self.core.account_id),
+            Some(order_side),
+        );
+        let mut cancels = Vec::with_capacity(orders.len());
 
-        self.spawn_task("cancel-all-orders", async move {
-            let result = http_client
-                .send_betting_order::<serde_json::Value, _>(METHOD_CANCEL_ORDERS, &params)
-                .await;
-
-            if let Err(e) = result {
-                log::warn!("Failed to cancel all orders: {e}");
+        for order in orders {
+            let client_order_id = order.client_order_id();
+            if cache.client_id(&client_order_id) != Some(&self.core.client_id) {
+                continue;
             }
 
-            Ok(())
-        });
+            let Some(venue_order_id) = order.venue_order_id() else {
+                log::warn!(
+                    "Cannot cancel all {order_side} orders for {instrument_id}: \
+                     order {client_order_id} has no venue_order_id",
+                );
+                return Ok(());
+            };
+
+            cancels.push(CancelOrderData {
+                strategy_id: order.strategy_id(),
+                instrument_id: order.instrument_id(),
+                client_order_id,
+                venue_order_id,
+            });
+        }
+        drop(cache);
+
+        if cancels.is_empty() {
+            return Ok(());
+        }
+
+        self.spawn_cancel_orders("cancel-all-orders-by-side", market_id, cancels, false);
 
         Ok(())
     }
@@ -2881,19 +2924,16 @@ impl ExecutionClient for BetfairExecutionClient {
             }
         };
 
-        let mut instructions = Vec::new();
-        let mut valid_cancels = Vec::new();
+        let mut cancels = Vec::new();
 
         for cancel in &cmd.cancels {
             match cancel.venue_order_id {
-                Some(venue_order_id) => {
-                    let bet_id: BetId = venue_order_id.to_string();
-                    instructions.push(CancelInstruction {
-                        bet_id,
-                        size_reduction: None,
-                    });
-                    valid_cancels.push(cancel);
-                }
+                Some(venue_order_id) => cancels.push(CancelOrderData {
+                    strategy_id: cancel.strategy_id,
+                    instrument_id: cancel.instrument_id,
+                    client_order_id: cancel.client_order_id,
+                    venue_order_id,
+                }),
                 None => {
                     log::warn!(
                         "Cannot batch cancel order {}: no venue_order_id",
@@ -2903,123 +2943,11 @@ impl ExecutionClient for BetfairExecutionClient {
             }
         }
 
-        if valid_cancels.is_empty() {
+        if cancels.is_empty() {
             return Ok(());
         }
 
-        let params = CancelOrdersParams {
-            market_id: Some(market_id),
-            instructions: Some(instructions),
-            customer_ref: Some(order_customer_ref()),
-        };
-
-        let cancel_data: Vec<_> = valid_cancels
-            .iter()
-            .map(|c| {
-                (
-                    c.strategy_id,
-                    c.instrument_id,
-                    c.client_order_id,
-                    c.venue_order_id,
-                )
-            })
-            .collect();
-
-        let http_client = Arc::clone(&self.http_client);
-        let emitter = self.emitter.clone();
-        let clock = self.clock;
-
-        self.spawn_task("batch-cancel-orders", async move {
-            let report: CancelExecutionReport = match http_client
-                .send_betting_order(METHOD_CANCEL_ORDERS, &params)
-                .await
-            {
-                Ok(r) => r,
-                Err(e) => {
-                    match classify_http_error(&e) {
-                        CommandFailure::Ambiguous(_) => log::warn!(
-                            "Ambiguous batch cancel response for {} orders, awaiting OCM reconciliation: {e}",
-                            cancel_data.len(),
-                        ),
-                        CommandFailure::NotSent(_) | CommandFailure::VenueRejected(_) => {
-                            let reason = format!("batch-cancel-orders error: {e}");
-                            let ts_event = clock.get_time_ns();
-
-                            for (strategy_id, instr_id, client_oid, venue_oid) in &cancel_data {
-                                emitter.emit_order_cancel_rejected_event(
-                                    *strategy_id,
-                                    *instr_id,
-                                    *client_oid,
-                                    *venue_oid,
-                                    &reason,
-                                    ts_event,
-                                );
-                            }
-                        }
-                    }
-                    return Ok(());
-                }
-            };
-
-            let instruction_reports = report.instruction_reports.as_deref().unwrap_or_default();
-            if instruction_reports.len() > cancel_data.len() {
-                log::warn!(
-                    "Batch cancel returned {} reports for {} instructions; ignoring unmatched reports",
-                    instruction_reports.len(),
-                    cancel_data.len(),
-                );
-            }
-
-            for (index, (strategy_id, instr_id, client_oid, venue_oid)) in
-                cancel_data.iter().enumerate()
-            {
-                let instruction_report = instruction_reports.get(index);
-                let instruction_result = instruction_report.map(|ir| {
-                    classify_instruction_report(ir.status, ir.error_code, true, || {
-                        format_cancel_instruction_reason(ir.error_code, report.error_code)
-                    })
-                });
-                let result = classify_execution_report(
-                    report.status,
-                    report.error_code,
-                    instruction_result,
-                    || {
-                        format_betfair_reason(report.error_code, None, "unknown error")
-                    },
-                );
-
-                match result {
-                    Ok(()) => {
-                        if instruction_report.is_some_and(|ir| {
-                            ir.error_code == Some(InstructionReportErrorCode::BetTakenOrLapsed)
-                        }) {
-                            log::debug!(
-                                "Cancel {client_oid}: BetTakenOrLapsed, treating as success",
-                            );
-                        }
-                    }
-                    Err(CommandFailure::Ambiguous(_)) => log::warn!(
-                        "Ambiguous cancel result for {client_oid}, awaiting OCM reconciliation",
-                    ),
-                    Err(
-                        CommandFailure::NotSent(reason)
-                        | CommandFailure::VenueRejected(reason),
-                    ) => {
-                        let ts_event = clock.get_time_ns();
-                        emitter.emit_order_cancel_rejected_event(
-                            *strategy_id,
-                            *instr_id,
-                            *client_oid,
-                            *venue_oid,
-                            &reason,
-                            ts_event,
-                        );
-                    }
-                }
-            }
-
-            Ok(())
-        });
+        self.spawn_cancel_orders("batch-cancel-orders", market_id, cancels, true);
 
         Ok(())
     }
@@ -3229,6 +3157,151 @@ impl ExecutionClient for BetfairExecutionClient {
         });
 
         Ok(())
+    }
+}
+
+const MAX_CANCEL_ORDERS_INSTRUCTIONS: usize = 60;
+
+#[derive(Clone, Copy, Debug)]
+struct CancelOrderData {
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+}
+
+impl BetfairExecutionClient {
+    fn spawn_cancel_orders(
+        &self,
+        task_name: &'static str,
+        market_id: String,
+        cancels: Vec<CancelOrderData>,
+        emit_rejections: bool,
+    ) {
+        let http_client = Arc::clone(&self.http_client);
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
+
+        self.spawn_task(task_name, async move {
+            for cancels in cancels.chunks(MAX_CANCEL_ORDERS_INSTRUCTIONS) {
+                let params = CancelOrdersParams {
+                    market_id: Some(market_id.clone()),
+                    instructions: Some(
+                        cancels
+                            .iter()
+                            .map(|cancel| CancelInstruction {
+                                bet_id: cancel.venue_order_id.to_string(),
+                                size_reduction: None,
+                            })
+                            .collect(),
+                    ),
+                    customer_ref: Some(order_customer_ref()),
+                };
+                let report: CancelExecutionReport = match http_client
+                    .send_betting_order(METHOD_CANCEL_ORDERS, &params)
+                    .await
+                {
+                    Ok(report) => report,
+                    Err(e) => {
+                        match classify_http_error(&e) {
+                            CommandFailure::Ambiguous(_) => log::warn!(
+                                "Ambiguous {task_name} response for {} orders, awaiting OCM reconciliation: {e}",
+                                cancels.len(),
+                            ),
+                            CommandFailure::NotSent(_) | CommandFailure::VenueRejected(_) => {
+                                let reason = format!("{task_name} error: {e}");
+
+                                if emit_rejections {
+                                    let ts_event = clock.get_time_ns();
+
+                                    for cancel in cancels {
+                                        emitter.emit_order_cancel_rejected_event(
+                                            cancel.strategy_id,
+                                            cancel.instrument_id,
+                                            cancel.client_order_id,
+                                            Some(cancel.venue_order_id),
+                                            &reason,
+                                            ts_event,
+                                        );
+                                    }
+                                } else {
+                                    for cancel in cancels {
+                                        log::warn!(
+                                            "Cancel {} was rejected: {reason}",
+                                            cancel.client_order_id,
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        continue;
+                    }
+                };
+
+                let instruction_reports = report.instruction_reports.as_deref().unwrap_or_default();
+                if instruction_reports.len() > cancels.len() {
+                    log::warn!(
+                        "{task_name} returned {} reports for {} instructions; ignoring unmatched reports",
+                        instruction_reports.len(),
+                        cancels.len(),
+                    );
+                }
+
+                for (index, cancel) in cancels.iter().enumerate() {
+                    let instruction_report = instruction_reports.get(index);
+                    let instruction_result = instruction_report.map(|ir| {
+                        classify_instruction_report(ir.status, ir.error_code, true, || {
+                            format_cancel_instruction_reason(ir.error_code, report.error_code)
+                        })
+                    });
+                    let result = classify_execution_report(
+                        report.status,
+                        report.error_code,
+                        instruction_result,
+                        || format_betfair_reason(report.error_code, None, "unknown error"),
+                    );
+
+                    match result {
+                        Ok(()) => {
+                            if instruction_report.is_some_and(|ir| {
+                                ir.error_code == Some(InstructionReportErrorCode::BetTakenOrLapsed)
+                            }) {
+                                log::debug!(
+                                    "Cancel {}: BetTakenOrLapsed, treating as success",
+                                    cancel.client_order_id,
+                                );
+                            }
+                        }
+                        Err(CommandFailure::Ambiguous(_)) => log::warn!(
+                            "Ambiguous cancel result for {}, awaiting OCM reconciliation",
+                            cancel.client_order_id,
+                        ),
+                        Err(
+                            CommandFailure::NotSent(reason)
+                            | CommandFailure::VenueRejected(reason),
+                        ) => {
+                            if emit_rejections {
+                                emitter.emit_order_cancel_rejected_event(
+                                    cancel.strategy_id,
+                                    cancel.instrument_id,
+                                    cancel.client_order_id,
+                                    Some(cancel.venue_order_id),
+                                    &reason,
+                                    clock.get_time_ns(),
+                                );
+                            } else {
+                                log::warn!(
+                                    "Cancel {} was rejected: {reason}",
+                                    cancel.client_order_id,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            Ok(())
+        });
     }
 }
 
