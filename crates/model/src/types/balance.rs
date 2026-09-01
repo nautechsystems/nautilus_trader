@@ -510,10 +510,12 @@ impl Display for MarginBalance {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::correctness::CorrectnessError;
     use rstest::rstest;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
+    use super::money_from_minor_units;
     use crate::{
         identifiers::InstrumentId,
         types::{
@@ -546,15 +548,41 @@ mod tests {
     }
 
     #[rstest]
-    fn test_account_balance_new_checked_with_currency_mismatch_returns_error() {
+    fn test_account_balance_new_checked_with_locked_currency_mismatch_returns_error() {
         let usd = Currency::USD();
         let eur = Currency::EUR();
-        let result = AccountBalance::new_checked(
+        let error = AccountBalance::new_checked(
             Money::new(1000.0, usd),
             Money::new(250.0, eur),
             Money::new(750.0, usd),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::PredicateViolation {
+                message: "`total` currency (USD) != `locked` currency (EUR)".to_string(),
+            }
         );
-        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_account_balance_new_checked_with_free_currency_mismatch_returns_error() {
+        let usd = Currency::USD();
+        let eur = Currency::EUR();
+        let error = AccountBalance::new_checked(
+            Money::new(1000.0, usd),
+            Money::new(250.0, usd),
+            Money::new(750.0, eur),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::PredicateViolation {
+                message: "`total` currency (USD) != `free` currency (EUR)".to_string(),
+            }
+        );
     }
 
     #[rstest]
@@ -566,6 +594,30 @@ mod tests {
             Money::new(1000.0, usd),
             Money::new(250.0, eur),
             Money::new(750.0, usd),
+        );
+    }
+
+    #[rstest]
+    fn test_money_from_minor_units_rejects_invalid_integer() {
+        let error = money_from_minor_units("invalid", Currency::USD()).unwrap_err();
+
+        assert_eq!(
+            error,
+            "Invalid wallet money minor units 'invalid': invalid digit found in string"
+        );
+    }
+
+    #[rstest]
+    fn test_money_from_minor_units_rejects_scaling_overflow() {
+        let value = i128::MAX.to_string();
+        let error = money_from_minor_units(&value, Currency::USD()).unwrap_err();
+
+        assert_eq!(
+            error,
+            format!(
+                "Wallet money minor units {} overflow at currency precision 2",
+                i128::MAX
+            )
         );
     }
 

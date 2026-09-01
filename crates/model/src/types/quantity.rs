@@ -1516,6 +1516,35 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "high-precision"))]
+    #[rstest]
+    fn test_from_decimal_dp_rejects_quantity_raw_overflow() {
+        let error = Quantity::from_decimal_dp(dec!(20_000_000_000), 0).unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::PredicateViolation {
+                message: format!("Decimal value exceeds QuantityRaw range [0, {QUANTITY_RAW_MAX}]"),
+            }
+        );
+    }
+
+    #[cfg(feature = "high-precision")]
+    #[rstest]
+    fn test_from_decimal_dp_rejects_value_above_quantity_max() {
+        let raw = 340_282_366_920_940_000_000_000_000_000_u128;
+        let error = Quantity::from_decimal_dp(dec!(34_028_236_692_094), 0).unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::PredicateViolation {
+                message: format!(
+                    "Raw value {raw} exceeds QUANTITY_RAW_MAX={QUANTITY_RAW_MAX} for Quantity"
+                ),
+            }
+        );
+    }
+
     #[rstest]
     fn test_add() {
         let a = 1.0;
@@ -1971,6 +2000,20 @@ mod tests {
             }
             _ => panic!("expected PredicateViolation, was {error:?}"),
         }
+    }
+
+    #[rstest]
+    #[cfg(feature = "defi")]
+    fn test_from_u256_rejects_amount_above_quantity_raw_range() {
+        let amount = U256::from(u128::MAX) + U256::from(1_u8);
+        let error = Quantity::from_u256(amount, 18).unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::PredicateViolation {
+                message: format!("U256 scaled amount {amount} exceeds QuantityRaw range"),
+            }
+        );
     }
 
     #[rstest]

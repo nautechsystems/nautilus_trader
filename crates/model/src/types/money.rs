@@ -962,6 +962,25 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_new_checked_rejects_float_for_wei_currency() {
+        use crate::enums::CurrencyType;
+
+        let currency = Currency::new("TST18", 18, 0, "Test token", CurrencyType::Crypto);
+        let error = Money::new_checked(1.0, currency).unwrap_err();
+        let message = "`currency.precision` exceeded maximum float precision (16), use \
+                       `Money::from_wei()` for wei values instead";
+
+        assert_eq!(
+            error,
+            CorrectnessError::PredicateViolation {
+                message: message.to_string(),
+            }
+        );
+        assert_eq!(error.to_string(), message);
+    }
+
     #[rstest]
     fn test_money_is_zero() {
         let zero_usd = Money::new(0.0, Currency::USD());
