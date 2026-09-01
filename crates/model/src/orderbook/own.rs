@@ -682,9 +682,7 @@ fn sum_order_sizes<'a, I>(orders: I) -> Decimal
 where
     I: Iterator<Item = &'a OwnBookOrder>,
 {
-    orders.fold(Decimal::ZERO, |total, order| {
-        total + order.size.as_decimal()
-    })
+    orders.map(|order| order.size.as_decimal()).sum()
 }
 
 /// Represents a ladder of price levels for one side of an order book.
@@ -837,10 +835,7 @@ impl OwnBookLadder {
     #[must_use]
     #[allow(dead_code)]
     pub(crate) fn top(&self) -> Option<&OwnBookLevel> {
-        match self.levels.iter().next() {
-            Some((_, l)) => Option::Some(l),
-            None => Option::None,
-        }
+        self.levels.values().next()
     }
 }
 
@@ -923,21 +918,24 @@ impl OwnBookLevel {
     /// Returns the total size of all orders at this price level as a float.
     #[must_use]
     pub fn size(&self) -> f64 {
-        self.orders.iter().map(|(_, o)| o.size.as_f64()).sum()
+        self.orders.values().map(|order| order.size.as_f64()).sum()
     }
 
     /// Returns the total size of all orders at this price level as a decimal.
     #[must_use]
     pub fn size_decimal(&self) -> Decimal {
-        self.orders.iter().map(|(_, o)| o.size.as_decimal()).sum()
+        self.orders
+            .values()
+            .map(|order| order.size.as_decimal())
+            .sum()
     }
 
     /// Returns the total exposure (price * size) of all orders at this price level as a float.
     #[must_use]
     pub fn exposure(&self) -> f64 {
         self.orders
-            .iter()
-            .map(|(_, o)| o.price.as_f64() * o.size.as_f64())
+            .values()
+            .map(|order| order.price.as_f64() * order.size.as_f64())
             .sum()
     }
 
@@ -1005,7 +1003,5 @@ impl Ord for OwnBookLevel {
 
 #[must_use]
 pub fn should_handle_own_book_order(order: &OrderAny) -> bool {
-    order.has_price()
-        && order.time_in_force() != TimeInForce::Ioc
-        && order.time_in_force() != TimeInForce::Fok
+    order.has_price() && !matches!(order.time_in_force(), TimeInForce::Ioc | TimeInForce::Fok)
 }

@@ -15,6 +15,7 @@
 
 //! Functions related to order book display.
 
+use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use tabled::{builder::Builder, settings::Style};
 
@@ -42,30 +43,11 @@ pub(crate) fn pprint_book(
         let bid_quantities = order_book.group_bids(group_size, Some(num_levels));
         let ask_quantities = order_book.group_asks(group_size, Some(num_levels));
 
-        // Use the precision of the group_size for consistent formatting
-        let precision = group_size.scale();
-
-        let mut data = Vec::new();
-
-        // Add ask levels (highest to lowest)
-        for (price, qty) in ask_quantities.iter().rev() {
-            data.push(BookLevelDisplay {
-                bids: String::new(),
-                price: format!("{price:.precision$}", precision = precision as usize),
-                asks: qty.to_string(),
-            });
-        }
-
-        // Add bid levels (highest to lowest)
-        for (price, qty) in &bid_quantities {
-            data.push(BookLevelDisplay {
-                bids: qty.to_string(),
-                price: format!("{price:.precision$}", precision = precision as usize),
-                asks: String::new(),
-            });
-        }
-
-        data
+        grouped_levels(
+            &bid_quantities,
+            &ask_quantities,
+            group_size.scale() as usize,
+        )
     } else {
         let ask_levels: Vec<(&BookPrice, &BookLevel)> = order_book
             .asks
@@ -145,30 +127,11 @@ pub(crate) fn pprint_own_book(
         let ask_quantities =
             own_order_book.ask_quantity(None, Some(num_levels), Some(group_size), None, None);
 
-        // Use the precision of the group_size for consistent formatting
-        let precision = group_size.scale();
-
-        let mut data = Vec::new();
-
-        // Add ask levels (highest to lowest)
-        for (price, qty) in ask_quantities.iter().rev() {
-            data.push(BookLevelDisplay {
-                bids: String::new(),
-                price: format!("{price:.precision$}", precision = precision as usize),
-                asks: qty.to_string(),
-            });
-        }
-
-        // Add bid levels (highest to lowest)
-        for (price, qty) in &bid_quantities {
-            data.push(BookLevelDisplay {
-                bids: qty.to_string(),
-                price: format!("{price:.precision$}", precision = precision as usize),
-                asks: String::new(),
-            });
-        }
-
-        data
+        grouped_levels(
+            &bid_quantities,
+            &ask_quantities,
+            group_size.scale() as usize,
+        )
     } else {
         let ask_levels: Vec<(&BookPrice, &OwnBookLevel)> = own_order_book
             .asks
@@ -230,6 +193,32 @@ pub(crate) fn pprint_own_book(
     );
 
     format!("{header}\n{table}")
+}
+
+fn grouped_levels(
+    bid_quantities: &IndexMap<Decimal, Decimal>,
+    ask_quantities: &IndexMap<Decimal, Decimal>,
+    precision: usize,
+) -> Vec<BookLevelDisplay> {
+    let mut data = Vec::with_capacity(bid_quantities.len() + ask_quantities.len());
+
+    for (price, quantity) in ask_quantities.iter().rev() {
+        data.push(BookLevelDisplay {
+            bids: String::new(),
+            price: format!("{price:.precision$}"),
+            asks: quantity.to_string(),
+        });
+    }
+
+    for (price, quantity) in bid_quantities {
+        data.push(BookLevelDisplay {
+            bids: quantity.to_string(),
+            price: format!("{price:.precision$}"),
+            asks: String::new(),
+        });
+    }
+
+    data
 }
 
 fn render_book_levels(data: Vec<BookLevelDisplay>) -> String {

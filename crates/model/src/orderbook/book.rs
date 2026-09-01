@@ -207,17 +207,11 @@ impl OrderBook {
         }
 
         let mut removed_levels = Vec::new();
-        let mut clear_bids = false;
-        let mut clear_asks = false;
-
-        match side {
-            Some(OrderSide::Buy) => clear_bids = true,
-            Some(OrderSide::Sell) => clear_asks = true,
-            _ => {
-                clear_bids = true;
-                clear_asks = true;
-            }
-        }
+        let (clear_bids, clear_asks) = match side {
+            Some(OrderSide::Buy) => (true, false),
+            Some(OrderSide::Sell) => (false, true),
+            None => (true, true),
+        };
 
         // Collect prices to remove for asks (prices <= best_bid)
         let mut ask_prices_to_remove = Vec::new();
@@ -506,30 +500,7 @@ impl OrderBook {
 
         let mut order_count = 0;
 
-        // Add bid orders
-        for level in self.bids(None) {
-            for order in level.iter() {
-                order_count += 1;
-                let flags = if order_count == total_orders {
-                    RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
-                } else {
-                    RecordFlag::F_SNAPSHOT as u8
-                };
-
-                deltas.push(OrderBookDelta::new(
-                    self.instrument_id,
-                    BookAction::Add,
-                    *order,
-                    flags,
-                    self.sequence,
-                    ts_event,
-                    ts_init,
-                ));
-            }
-        }
-
-        // Add ask orders
-        for level in self.asks(None) {
+        for level in self.bids(None).chain(self.asks(None)) {
             for order in level.iter() {
                 order_count += 1;
                 let flags = if order_count == total_orders {
@@ -1300,43 +1271,38 @@ impl OrderBook {
         let instrument_id = deltas[0].instrument_id;
         let mut book = Self::new(instrument_id, book_type);
         let mut quotes = Vec::new();
-        let mut last_bid: Option<Price> = None;
-        let mut last_ask: Option<Price> = None;
+        let mut last_bbo: Option<(Price, Price)> = None;
 
         for delta in deltas {
             book.apply_delta(delta).unwrap();
-            let bid = book.best_bid_price();
-            let ask = book.best_ask_price();
+            let Some((bid_px, ask_px)) = book.best_bid_price().zip(book.best_ask_price()) else {
+                last_bbo = None;
+                continue;
+            };
 
-            // Reset cached BBO when one side disappears so that a
-            // recovery to the same prices emits a fresh quote
-            if bid.is_none() || ask.is_none() {
-                last_bid = None;
-                last_ask = None;
+            let bbo = (bid_px, ask_px);
+
+            if last_bbo == Some(bbo) {
+                continue;
             }
 
-            if let (Some(bid_px), Some(ask_px)) = (bid, ask)
-                && (bid != last_bid || ask != last_ask)
-            {
-                last_bid = bid;
-                last_ask = ask;
-                let bid_level = book.bids.top().unwrap();
-                let ask_level = book.asks.top().unwrap();
-                let precision = bid_level.first().unwrap().size.precision;
-                let bid_sz = Quantity::from_raw(bid_level.size_raw(), precision);
-                let ask_sz = Quantity::from_raw(ask_level.size_raw(), precision);
-                let quote = QuoteTick::new(
-                    instrument_id,
-                    bid_px,
-                    ask_px,
-                    bid_sz,
-                    ask_sz,
-                    delta.ts_event,
-                    delta.ts_init,
-                );
+            last_bbo = Some(bbo);
+            let bid_level = book.bids.top().unwrap();
+            let ask_level = book.asks.top().unwrap();
+            let precision = bid_level.first().unwrap().size.precision;
+            let bid_sz = Quantity::from_raw(bid_level.size_raw(), precision);
+            let ask_sz = Quantity::from_raw(ask_level.size_raw(), precision);
+            let quote = QuoteTick::new(
+                instrument_id,
+                bid_px,
+                ask_px,
+                bid_sz,
+                ask_sz,
+                delta.ts_event,
+                delta.ts_init,
+            );
 
-                quotes.push(quote);
-            }
+            quotes.push(quote);
         }
 
         quotes

@@ -79,12 +79,9 @@ impl Ord for BookPrice {
             self.side, other.side
         );
 
-        match self.side.cmp(&other.side) {
-            Ordering::Equal => match self.side {
-                OrderSide::Buy => other.value.cmp(&self.value),
-                OrderSide::Sell => self.value.cmp(&other.value),
-            },
-            non_equal => non_equal,
+        match self.side {
+            OrderSide::Buy => other.value.cmp(&self.value),
+            OrderSide::Sell => self.value.cmp(&other.value),
         }
     }
 }
@@ -489,10 +486,7 @@ impl BookLadder {
     /// Returns the best price level in the ladder.
     #[must_use]
     pub(crate) fn top(&self) -> Option<&BookLevel> {
-        match self.levels.iter().next() {
-            Some((_, l)) => Option::Some(l),
-            None => Option::None,
-        }
+        self.levels.values().next()
     }
 
     /// Simulates fills for an order against this ladder's liquidity.
