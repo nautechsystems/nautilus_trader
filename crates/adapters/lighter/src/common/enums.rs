@@ -770,7 +770,7 @@ impl LighterAccountTier {
         match self {
             Self::Standard => Some(60),
             Self::Premium => Some(24_000),
-            Self::Plus => Some(120_000),
+            Self::Plus => Some(24_000),
             Self::Builder => Some(240_000),
             Self::Unknown(_) => None,
         }
@@ -1265,7 +1265,7 @@ mod tests {
     #[rstest]
     #[case(LighterAccountTier::Standard, Some(60))]
     #[case(LighterAccountTier::Premium, Some(24_000))]
-    #[case(LighterAccountTier::Plus, Some(120_000))]
+    #[case(LighterAccountTier::Plus, Some(24_000))]
     #[case(LighterAccountTier::Builder, Some(240_000))]
     #[case(LighterAccountTier::Unknown(9), None)]
     fn test_account_tier_documented_rest_quota(

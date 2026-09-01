@@ -96,6 +96,7 @@ Released on TBD (UTC).
 - Fixed Interactive Brokers adaptive limit orders parsed as market orders (#4830), thanks @mameikagou
 - Fixed Interactive Brokers restored-order cancel callback routing (#4852), thanks @gapurov
 - Fixed L2/L3 matching against deleted book touches (#4819), thanks @SoYuCry
+- Fixed Lighter Plus and Premium quota metadata to match deployed account-tier limits
 - Fixed Lighter Testnet orders by omitting mainnet-only integrator attribution (#4834), thanks @Buff2out
 - Fixed OKX WebSocket submissions omitting `reduceOnly` (#4827), thanks for reporting @silarin
 - Fixed OKX ambiguous submissions, subscription recovery, and triggered child reconciliation

@@ -594,8 +594,8 @@ not raise limits automatically because a local quota override does not grant a h
 | Tier     | Latency (maker / taker) | REST weighted limit | `sendTx` limit       | Fees (maker / taker)      | Notes                                   |
 | -------- | ----------------------- | ------------------- | -------------------- | ------------------------- | --------------------------------------- |
 | Standard | 200 ms / 300 ms         | 60 req/min          | 60 req/min           | 0 / 0                     | Zero-fee default tier.                  |
-| Premium  | 0 ms / 140-200 ms       | 24,000 req/min      | 4,000-40,000 req/min | 0.28-0.40 / 1.96-2.80 bps | Lowest latency; scales with staked LIT. |
-| Plus     | 200 ms / 300 ms         | 120,000 req/min     | 8,000 req/min        | 0.5 / 0.5 bps             | Raised limits, standard latency.        |
+| Premium  | 0 ms / 140-200 ms       | 24,000 req/min      | 4,000-48,000 req/min | 0.28-0.40 / 1.96-2.80 bps | Lowest latency; scales with staked LIT. |
+| Plus     | 200 ms / 300 ms         | 24,000 req/min      | 4,000 req/min        | 0.5 / 0.5 bps             | Raised limits, standard latency.        |
 | Builder  | -                       | 240,000 req/min     | -                    | -                         | Highest REST throughput.                |
 
 Premium figures scale with staked LIT and can change. Before raising a local quota, confirm that
@@ -649,11 +649,11 @@ acknowledgement latency, not send rate. `sendTx` does not count against the clie
 | ------------------------------------ | --------------------------- | ---------------------------------------------------- |
 | REST, standard account               | 60 req/min                  | Default; set `rest_quota_per_min` to override.       |
 | REST, premium account                | 24,000 weighted req/min     | Local override required; venue attribution applies.  |
-| REST, plus account                   | 120,000 weighted req/min    | Local override required; venue attribution applies.  |
+| REST, plus account                   | 24,000 weighted req/min     | Local override required; venue attribution applies.  |
 | REST, builder account                | 240,000 weighted req/min    | Local override required; venue attribution applies.  |
 | `sendTx` / `sendTxBatch`, standard   | 60 req/min                  | Execution orders use WebSocket `sendTx`.             |
-| `sendTx` / `sendTxBatch`, plus       | 8,000 req/min               | Set `sendtx_quota_per_min` to use it.                |
-| `sendTx` / `sendTxBatch`, premium    | 4,000-40,000 req/min        | Set `sendtx_quota_per_min` (scales with staked LIT). |
+| `sendTx` / `sendTxBatch`, premium    | 4,000-48,000 req/min        | Set `sendtx_quota_per_min` (scales with staked LIT). |
+| `sendTx` / `sendTxBatch`, plus       | 4,000 req/min               | Set `sendtx_quota_per_min` to use it.                |
 | Default transaction type limit       | 40 req/min                  | Applies to tx types not covered by volume quota.     |
 | `L2UpdateLeverage` transaction limit | 40 req/min                  | Relevant to `update_leverage`.                       |
 | Pending orders                       | 500/account, 16/market      | Venue limit; adapter does not pre-count it.          |
