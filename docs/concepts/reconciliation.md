@@ -205,6 +205,11 @@ For compatibility, a mass status without an explicit `lookback_start` follows th
 adjustment path. The engine can analyze zero-crossings, remove closed lifecycles, and generate a
 synthetic fill when the reported fills do not explain the current venue position.
 
+When `generate_missing_orders` is disabled, the engine still processes raw venue order reports. It
+filters completed lifecycles when the current lifecycle explains the venue position, but it does
+not add or replace synthetic reports to align a fill window with the venue position or materialize
+an order for a fill group that has no order report.
+
 Adapters that apply a history cutoff should declare it through the
 [mass-status history contract](#mass-status-history-contract) instead of relying on this inference.
 

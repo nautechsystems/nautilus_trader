@@ -55,6 +55,7 @@ use nautilus_execution::{
     engine::ExecutionEngine,
     reconciliation::{
         create_position_reconciliation_venue_order_id, process_mass_status_for_reconciliation,
+        process_mass_status_for_reconciliation_without_synthetic_reports,
     },
 };
 use nautilus_live::manager::{ExecutionManager, ExecutionManagerConfig};
@@ -8395,6 +8396,68 @@ async fn test_adjust_fills_creates_synthetic_for_partial_window() {
     );
 }
 
+#[rstest]
+#[case::netting(false)]
+#[case::hedging(true)]
+#[tokio::test]
+async fn test_missing_orders_disabled_skips_synthetic_fill_recovery(#[case] hedging: bool) {
+    let config = ExecutionManagerConfig {
+        generate_missing_orders: false,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument_id = test_instrument_id();
+    ctx.add_instrument(test_instrument());
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    let venue_position_id = hedging.then(|| PositionId::from("ETHUSDT-PERP.BINANCE-LONG"));
+    mass_status.add_fill_reports(vec![FillReport::new(
+        test_account_id(),
+        instrument_id,
+        VenueOrderId::from("V-PARTIAL-DISABLED"),
+        TradeId::from("T-PARTIAL-DISABLED"),
+        OrderSide::Buy,
+        Quantity::from("2.000"),
+        Price::from("3100.00"),
+        Money::from("1.00 USDT"),
+        LiquiditySide::Taker,
+        None,
+        venue_position_id,
+        UnixNanos::from(1_000_001),
+        UnixNanos::from(1_000_001),
+        None,
+    )]);
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from("5.000"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        venue_position_id,
+        Some(dec!(3000.00)),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    let cache = ctx.cache.borrow();
+
+    assert!(result.events.is_empty());
+    assert!(result.external_orders.is_empty());
+    assert_eq!(cache.orders_total_count(None, None, None, None, None), 0);
+    assert!(cache.positions(None, None, None, None, None).is_empty());
+}
+
 #[tokio::test]
 async fn test_external_order_has_venue_tag() {
     let mut ctx = TestContext::new();
@@ -9660,7 +9723,7 @@ async fn test_adjust_fills_missing_order_reports_uses_fill_side() {
 }
 
 #[tokio::test]
-async fn test_adjust_fills_filter_to_current_lifecycle_preserves_working_orders() {
+async fn test_adjust_fills_without_synthetic_reports_filters_to_current_lifecycle() {
     // Test FilterToCurrentLifecycle filters closed orders from previous lifecycles
     // while preserving working orders.
     //
@@ -9789,7 +9852,12 @@ async fn test_adjust_fills_filter_to_current_lifecycle_preserves_working_orders(
     mass_status.add_fill_reports(vec![fill_o1, fill_o2, fill_o3]);
     mass_status.add_position_reports(vec![position_report]);
 
-    let result = process_mass_status_for_reconciliation(&mass_status, &instrument, None).unwrap();
+    let result = process_mass_status_for_reconciliation_without_synthetic_reports(
+        &mass_status,
+        &instrument,
+        None,
+    )
+    .unwrap();
 
     // O1 and O2 should be filtered out (closed orders from previous lifecycle)
     assert!(

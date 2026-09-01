@@ -31,8 +31,8 @@ use nautilus_model::{
         },
     },
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
-        VenueOrderId,
+        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
+        TraderId, Venue, VenueOrderId,
     },
     instruments::{
         Instrument, InstrumentAny,
@@ -42,7 +42,7 @@ use nautilus_model::{
         Order, OrderAny, OrderTestBuilder,
         stubs::{TestOrderEventStubs, TestOrderStubs},
     },
-    reports::{FillReport, OrderStatusReport, PositionStatusReport},
+    reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{Currency, Money, Price, Quantity},
 };
 use rstest::{fixture, rstest};
@@ -1011,6 +1011,85 @@ fn test_adjust_fills_multiple_zero_crossings_mismatch() {
         }
         _ => panic!("Expected ReplaceCurrentLifecycle, was {result:?}"),
     }
+}
+
+#[rstest]
+fn test_process_mass_status_without_synthetic_reports_preserves_mismatched_lifecycle(
+    instrument: InstrumentAny,
+) {
+    let account_id = AccountId::from("TEST-001");
+    let instrument_id = instrument.id();
+    let venue_order_id1 = VenueOrderId::from("ORDER1");
+    let venue_order_id2 = VenueOrderId::from("ORDER2");
+    let venue_order_id4 = VenueOrderId::from("ORDER4");
+    let venue_order_id5 = VenueOrderId::from("ORDER5");
+    let make_fill =
+        |venue_order_id: VenueOrderId, trade_id: &str, side: OrderSide, px: &str, ts_event: u64| {
+            FillReport::new(
+                account_id,
+                instrument_id,
+                venue_order_id,
+                TradeId::from(trade_id),
+                side,
+                Quantity::from("0.05"),
+                Price::from(px),
+                Money::from("0.00 USD"),
+                LiquiditySide::Taker,
+                None,
+                None,
+                UnixNanos::from(ts_event),
+                UnixNanos::from(ts_event),
+                None,
+            )
+        };
+
+    let mut mass_status = ExecutionMassStatus::new(
+        ClientId::from("TEST"),
+        account_id,
+        Venue::from("SIM"),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_fill_reports(vec![
+        make_fill(venue_order_id1, "TRADE1", OrderSide::Buy, "4000.00", 1_000),
+        make_fill(venue_order_id2, "TRADE2", OrderSide::Sell, "4050.00", 2_000),
+        make_fill(venue_order_id4, "TRADE4", OrderSide::Buy, "4000.00", 3_000),
+        make_fill(venue_order_id5, "TRADE5", OrderSide::Buy, "4100.00", 4_000),
+    ]);
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from("0.05"),
+        UnixNanos::from(5_000),
+        UnixNanos::from(5_000),
+        None,
+        None,
+        Some(dec!(4142.04)),
+    )]);
+    let raw_fills = mass_status.fill_reports();
+
+    let generated =
+        process_mass_status_for_reconciliation(&mass_status, &instrument, None).unwrap();
+    let preserved = process_mass_status_for_reconciliation_without_synthetic_reports(
+        &mass_status,
+        &instrument,
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(generated.orders.len(), 1);
+    assert!(generated.orders.contains_key(&venue_order_id4));
+    assert_eq!(generated.fills.len(), 1);
+    assert_eq!(generated.fills[&venue_order_id4].len(), 1);
+    assert!(
+        generated.fills[&venue_order_id4][0]
+            .trade_id
+            .as_str()
+            .starts_with("S-")
+    );
+    assert!(preserved.orders.is_empty());
+    assert_eq!(preserved.fills, raw_fills);
 }
 
 #[rstest]

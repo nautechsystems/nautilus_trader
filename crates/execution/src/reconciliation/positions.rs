@@ -53,6 +53,30 @@ pub fn process_mass_status_for_reconciliation(
     instrument: &InstrumentAny,
     tolerance: Option<Decimal>,
 ) -> anyhow::Result<ReconciliationResult> {
+    process_mass_status_for_reconciliation_inner(mass_status, instrument, tolerance, true)
+}
+
+/// Process fill reports without generating synthetic order or fill reports.
+///
+/// Non-generating adjustments, such as filtering completed position lifecycles, are still applied.
+///
+/// # Errors
+///
+/// Returns an error if report processing fails.
+pub fn process_mass_status_for_reconciliation_without_synthetic_reports(
+    mass_status: &ExecutionMassStatus,
+    instrument: &InstrumentAny,
+    tolerance: Option<Decimal>,
+) -> anyhow::Result<ReconciliationResult> {
+    process_mass_status_for_reconciliation_inner(mass_status, instrument, tolerance, false)
+}
+
+fn process_mass_status_for_reconciliation_inner(
+    mass_status: &ExecutionMassStatus,
+    instrument: &InstrumentAny,
+    tolerance: Option<Decimal>,
+    generate_synthetic_reports: bool,
+) -> anyhow::Result<ReconciliationResult> {
     let instrument_id = instrument.id();
     let account_id = mass_status.account_id;
     let tol = tolerance.unwrap_or(DEFAULT_TOLERANCE);
@@ -90,7 +114,7 @@ pub fn process_mass_status_for_reconciliation(
         FillAdjustmentResult::AddSyntheticOpening {
             synthetic_fill,
             existing_fills: _,
-        } => {
+        } if generate_synthetic_reports => {
             let venue_order_id = create_synthetic_venue_order_id(&synthetic_fill, instrument_id);
             let order = create_synthetic_order_report(
                 &synthetic_fill,
@@ -114,7 +138,7 @@ pub fn process_mass_status_for_reconciliation(
         FillAdjustmentResult::ReplaceCurrentLifecycle {
             synthetic_fill,
             first_venue_order_id,
-        } => {
+        } if generate_synthetic_reports => {
             let order = create_synthetic_order_report(
                 &synthetic_fill,
                 account_id,
@@ -162,6 +186,9 @@ pub fn process_mass_status_for_reconciliation(
                     )
             });
         }
+
+        FillAdjustmentResult::AddSyntheticOpening { .. }
+        | FillAdjustmentResult::ReplaceCurrentLifecycle { .. } => {}
     }
 
     Ok(ReconciliationResult {

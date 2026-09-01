@@ -21,6 +21,8 @@
 //!
 //! Public entry points:
 //! - [`process_mass_status_for_reconciliation`] - partial-window fill reconstruction
+//! - [`process_mass_status_for_reconciliation_without_synthetic_reports`] - reconstruction that
+//!   preserves the input report set when adjustment would require synthetic reports
 //! - [`generate_reconciliation_order_events`] - venue-temporal event sequence for a report
 //! - [`reconcile_order_report`] - core order-state reconciliation
 //! - [`reconcile_fill_report`] - apply a venue fill to a cached order, with dedup
@@ -28,8 +30,10 @@
 //! - [`check_position_reconciliation`] - final qty and avg-px tolerance check
 //!
 //! Invariants maintained across all paths:
-//! 1. Final position quantity matches the venue within instrument precision.
-//! 2. Position average price matches within tolerance (default 0.01%).
+//! 1. When enabled, synthetic adjustment aligns position quantity with the venue within instrument
+//!    precision.
+//! 2. When enabled, synthetic adjustment aligns average price with the venue within tolerance
+//!    (default 0.01%).
 //! 3. All generated fills preserve correct unrealized PnL.
 //! 4. Synthetic `trade_id` and `venue_order_id` values are deterministic
 //!    functions of the logical event, so restart replays dedupe.
@@ -62,5 +66,6 @@ pub use orders::{
 pub use positions::{
     calculate_reconciliation_price, check_position_reconciliation,
     process_mass_status_for_reconciliation,
+    process_mass_status_for_reconciliation_without_synthetic_reports,
 };
 pub use types::ReconciliationResult;

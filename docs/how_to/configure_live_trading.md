@@ -389,14 +389,14 @@ and caveats, see [Runtime checks](../concepts/reconciliation.md#runtime-checks).
 
 ### Additional options
 
-| Setting                            | Default | Description                                                                                                              |
-| ---------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `allow_overfills`                  | False   | Allow fills exceeding order quantity (logs warning). Useful when reconciliation races fills.                             |
-| `generate_missing_orders`          | True    | Generate LIMIT orders during reconciliation to align position discrepancies (strategy `EXTERNAL`, tag `RECONCILIATION`). |
-| `snapshot_orders`                  | False   | Persist order snapshots during submission processing and after each state change when cache backing is configured.       |
-| `snapshot_positions`               | False   | Publish position snapshots on open, change, and close, and persist them when cache backing is configured.                |
-| `snapshot_positions_interval_secs` | None    | Interval (seconds) between position snapshots.                                                                           |
-| `debug`                            | False   | Enable debug logging for execution.                                                                                      |
+| Setting                            | Default | Description                                                                                                        |
+| ---------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------ |
+| `allow_overfills`                  | False   | Allow fills exceeding order quantity (logs warning). Useful when reconciliation races fills.                       |
+| `generate_missing_orders`          | True    | Generate reconciliation orders from unmatched fill and position reports.                                           |
+| `snapshot_orders`                  | False   | Persist order snapshots during submission processing and after each state change when cache backing is configured. |
+| `snapshot_positions`               | False   | Publish position snapshots on open, change, and close, and persist them when cache backing is configured.          |
+| `snapshot_positions_interval_secs` | None    | Interval (seconds) between position snapshots.                                                                     |
+| `debug`                            | False   | Enable debug logging for execution.                                                                                |
 
 ### Memory management
 

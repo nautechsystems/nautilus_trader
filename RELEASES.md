@@ -73,6 +73,8 @@ Released on TBD (UTC).
 - Fixed Python factory re-entry through `LiveNodeBuilder` causing process aborts
 - Fixed live order snapshots not being persisted to PostgreSQL
 - Fixed live position snapshots not being persisted to PostgreSQL
+- Fixed BacktestEngine delayed orders using unrelated instrument prices (#4891), thanks for reporting @mdou7
+- Fixed `generate_missing_orders=False` creating synthetic orders and fills (#4739), thanks for reporting @hashtagdenis
 - Fixed Betfair order and fill reconciliation with more than 250 market IDs
 - Fixed Betfair stream readiness, liveness, subscription replay, and reconnect reconciliation
 - Fixed Betfair modify recovery after ambiguous REST outcomes and instruction failures

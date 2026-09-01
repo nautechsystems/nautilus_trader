@@ -60,8 +60,9 @@ use nautilus_execution::{
         generate_reconciliation_order_pre_fill_events,
         generate_reconciliation_order_snapshot_events_with_commission,
         incremental_inferred_fill_price_and_liquidity, inferred_fill_price_and_liquidity,
-        process_mass_status_for_reconciliation, reconcile_order_report_with_commission,
-        should_reconciliation_update,
+        process_mass_status_for_reconciliation,
+        process_mass_status_for_reconciliation_without_synthetic_reports,
+        reconcile_order_report_with_commission, should_reconciliation_update,
     },
 };
 #[cfg(feature = "node")]
@@ -1084,6 +1085,15 @@ impl ExecutionManager {
                     orders_skipped_no_instrument += 1;
                 }
             } else if fills.iter().any(FillReport::has_venue_position_id) {
+                if !self.config.generate_missing_orders {
+                    log::debug!(
+                        "Skipping orphan fills for venue order {venue_order_id}: \
+                         `generate_missing_orders` is disabled"
+                    );
+                    orders_skipped_filtered += 1;
+                    continue;
+                }
+
                 let Some(instrument) = self.get_instrument(&first_fill.instrument_id) else {
                     orders_skipped_no_instrument += 1;
                     continue;
@@ -5297,7 +5307,17 @@ impl ExecutionManager {
         for instrument in &instruments_to_adjust {
             let instrument_id = instrument.id();
 
-            match process_mass_status_for_reconciliation(mass_status, instrument, None) {
+            let result = if self.config.generate_missing_orders {
+                process_mass_status_for_reconciliation(mass_status, instrument, None)
+            } else {
+                process_mass_status_for_reconciliation_without_synthetic_reports(
+                    mass_status,
+                    instrument,
+                    None,
+                )
+            };
+
+            match result {
                 Ok(result) => {
                     final_orders.retain(|_, order| order.instrument_id != instrument_id);
                     final_fills.retain(|_, fills| {
