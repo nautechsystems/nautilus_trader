@@ -1537,10 +1537,11 @@ pub trait Strategy: DataActor {
         Ok(())
     }
 
-    /// Called when a time event is received.
+    /// Routes a time event through the framework-managed strategy handlers when called directly.
     ///
-    /// Routes GTD expiry timer events to the expiry handler and market exit timer events
-    /// to the market exit checker.
+    /// Framework timer dispatch never calls this method. Implement [`DataActor::on_time_event`] for
+    /// user timer callbacks. Runtime hosts call [`route_time_event`] directly so an override cannot
+    /// replace framework-managed GTD expiry or market exit routing.
     ///
     /// # Errors
     ///
@@ -1549,11 +1550,7 @@ pub trait Strategy: DataActor {
     where
         Self: StrategyNative + Component,
     {
-        if event.name.starts_with("GTD-EXPIRY:") {
-            self.expire_gtd_order(event.clone());
-        } else if event.name.starts_with("MARKET_EXIT_CHECK:") {
-            self.check_market_exit(event.clone());
-        }
+        route_time_event(self, event);
         Ok(())
     }
 
@@ -2238,15 +2235,20 @@ pub trait Strategy: DataActor {
     where
         Self: StrategyNative,
     {
-        let timer_name = event.name.to_string();
-        let Some(client_order_id_str) = timer_name.strip_prefix("GTD-EXPIRY:") else {
+        let timer_name = event.name;
+        let Some(client_order_id) = timer_name
+            .as_str()
+            .strip_prefix("GTD-EXPIRY:")
+            .and_then(|value| ClientOrderId::new_checked(value).ok())
+        else {
             log::error!("Invalid GTD timer name format: {timer_name}");
             return;
         };
 
-        let client_order_id = ClientOrderId::from(client_order_id_str);
-
         let core = StrategyNative::strategy_core_mut(self);
+        if core.gtd_timers.get(&client_order_id) != Some(&timer_name) {
+            return;
+        }
         core.gtd_timers.remove(&client_order_id);
 
         let order = core.cache_ref().order(&client_order_id).map(|o| o.clone());
@@ -2302,6 +2304,44 @@ pub trait Strategy: DataActor {
                 log::error!("Failed to set GTD expiry timer for {client_order_id}: {e}");
             }
         }
+    }
+}
+
+/// Routes a time event through framework-managed strategy handlers.
+///
+/// Runtime hosts call this before the user-facing [`DataActor::on_time_event`] callback so custom
+/// [`Strategy::on_time_event`] implementations cannot replace managed GTD expiry or market exit
+/// routing.
+pub fn route_time_event<T>(strategy: &mut T, event: &TimeEvent)
+where
+    T: Strategy + StrategyNative + Component + ?Sized,
+{
+    let (gtd_order_id, is_market_exit) = {
+        let core = StrategyNative::strategy_core(strategy);
+        let gtd_order_id = event
+            .name
+            .as_str()
+            .strip_prefix("GTD-EXPIRY:")
+            .and_then(|value| ClientOrderId::new_checked(value).ok())
+            .filter(|client_order_id| core.gtd_timers.get(client_order_id) == Some(&event.name));
+        let is_market_exit = event.name == core.market_exit_timer_name;
+        (gtd_order_id, is_market_exit)
+    };
+
+    if gtd_order_id.is_none() && !is_market_exit {
+        return;
+    }
+
+    let core = StrategyNative::strategy_core_mut(strategy);
+    if core.managed_time_event_last_id == Some(event.event_id) {
+        return;
+    }
+    core.managed_time_event_last_id = Some(event.event_id);
+
+    if gtd_order_id.is_some() {
+        strategy.expire_gtd_order(event.clone());
+    } else {
+        strategy.check_market_exit(event.clone());
     }
 }
 
@@ -2443,6 +2483,13 @@ mod tests {
         modified_quantity: Quantity,
     }
 
+    #[derive(Debug)]
+    struct TimerOverrideStrategy {
+        core: StrategyCore,
+        gtd_expiries: usize,
+        market_exit_checks: usize,
+    }
+
     impl DataActor for CoreFreeStrategy {
         fn on_start(&mut self) -> anyhow::Result<()> {
             self.started = true;
@@ -2465,6 +2512,22 @@ mod tests {
                 None,
             )
             .unwrap();
+        }
+    });
+
+    impl DataActor for TimerOverrideStrategy {
+        fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
+            Strategy::on_time_event(self, event)
+        }
+    }
+
+    nautilus_strategy!(TimerOverrideStrategy, {
+        fn check_market_exit(&mut self, _event: TimeEvent) {
+            self.market_exit_checks += 1;
+        }
+
+        fn expire_gtd_order(&mut self, _event: TimeEvent) {
+            self.gtd_expiries += 1;
         }
     });
 
@@ -5029,6 +5092,31 @@ mod tests {
     }
 
     #[rstest]
+    #[case::matching_order(Ustr::from("GTD-EXPIRY:O-PRESENT"))]
+    #[case::empty_order_id(Ustr::from("GTD-EXPIRY:"))]
+    fn test_route_time_event_ignores_unregistered_gtd_timer(#[case] timer_name: Ustr) {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let order = make_accepted_limit_order("O-PRESENT");
+        let client_order_id = order.client_order_id();
+        add_order_to_cache(&strategy, &order);
+        let event = TimeEvent::new(
+            timer_name,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        route_time_event(&mut strategy, &event);
+
+        let cache = strategy.core.cache_ref();
+        let cached_order = cache.order(&client_order_id).unwrap();
+        assert_eq!(cached_order.status(), OrderStatus::Accepted);
+        assert!(!strategy.core.gtd_timers.contains_key(&client_order_id));
+    }
+
+    #[rstest]
     #[case::filled(make_filled)]
     #[case::canceled(make_canceled)]
     #[case::rejected(make_rejected)]
@@ -5523,6 +5611,107 @@ mod tests {
         // The attempt WAS incremented to 1 during the check, then reset on finalize.
         assert!(!strategy.core.is_exiting);
         assert_eq!(strategy.core.market_exit_attempts, 0);
+    }
+
+    #[rstest]
+    fn test_route_time_event_is_idempotent_when_callback_forwards() {
+        let mut strategy = TestStrategy::new(StrategyConfig {
+            strategy_id: Some(StrategyId::from("TEST-001")),
+            ..Default::default()
+        });
+        register_strategy(&mut strategy);
+
+        let order = make_accepted_limit_order("O-PRESENT");
+        add_order_to_cache(&strategy, &order);
+        strategy.core.cache_rc().borrow_mut().build_index();
+        strategy.core.is_exiting = true;
+        let event = TimeEvent::new(
+            strategy.core.market_exit_timer_name,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        route_time_event(&mut strategy, &event);
+        Strategy::on_time_event(&mut strategy, &event).unwrap();
+
+        assert!(strategy.core.is_exiting);
+        assert_eq!(strategy.core.market_exit_attempts, 1);
+        assert_eq!(
+            strategy.core.managed_time_event_last_id,
+            Some(event.event_id)
+        );
+    }
+
+    #[rstest]
+    fn test_route_time_event_deduplicates_overridden_managed_handlers() {
+        let mut strategy = TimerOverrideStrategy {
+            core: StrategyCore::new(StrategyConfig {
+                strategy_id: Some(StrategyId::from("TEST-001")),
+                ..Default::default()
+            }),
+            gtd_expiries: 0,
+            market_exit_checks: 0,
+        };
+        let market_event = TimeEvent::new(
+            strategy.core.market_exit_timer_name,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        route_time_event(&mut strategy, &market_event);
+        DataActor::on_time_event(&mut strategy, &market_event).unwrap();
+
+        let client_order_id = ClientOrderId::from("O-001");
+        let gtd_timer_name = Ustr::from("GTD-EXPIRY:O-001");
+        strategy
+            .core
+            .gtd_timers
+            .insert(client_order_id, gtd_timer_name);
+        let gtd_event = TimeEvent::new(
+            gtd_timer_name,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        route_time_event(&mut strategy, &gtd_event);
+        DataActor::on_time_event(&mut strategy, &gtd_event).unwrap();
+
+        assert_eq!(strategy.market_exit_checks, 1);
+        assert_eq!(strategy.gtd_expiries, 1);
+        assert!(strategy.core.gtd_timers.contains_key(&client_order_id));
+        assert_eq!(
+            strategy.core.managed_time_event_last_id,
+            Some(gtd_event.event_id)
+        );
+    }
+
+    #[rstest]
+    fn test_route_time_event_ignores_unowned_market_exit_timer() {
+        let mut strategy = TestStrategy::new(StrategyConfig {
+            strategy_id: Some(StrategyId::from("TEST-001")),
+            ..Default::default()
+        });
+        register_strategy(&mut strategy);
+
+        let order = make_accepted_limit_order("O-PRESENT");
+        add_order_to_cache(&strategy, &order);
+        strategy.core.cache_rc().borrow_mut().build_index();
+        strategy.core.is_exiting = true;
+        let event = TimeEvent::new(
+            Ustr::from("MARKET_EXIT_CHECK:OTHER-001"),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        route_time_event(&mut strategy, &event);
+
+        assert!(strategy.core.is_exiting);
+        assert_eq!(strategy.core.market_exit_attempts, 0);
+        assert_eq!(strategy.core.managed_time_event_last_id, None);
     }
 
     #[rstest]

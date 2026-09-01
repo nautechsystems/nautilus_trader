@@ -21,7 +21,6 @@ use nautilus_common::{
     config::ConfigError,
     enums::LogColor,
     log_info, log_warn,
-    timer::TimeEvent,
 };
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -353,10 +352,6 @@ impl DataActor for ExecTester {
             log_info!("{index_price:?}", color = LogColor::Cyan);
         }
         Ok(())
-    }
-
-    fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
-        Strategy::on_time_event(self, event)
     }
 }
 
