@@ -347,19 +347,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_comparisons_bid_side() {
-        let level0 = BookLevel::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
-        let level1 = BookLevel::new(BookPrice::new(Price::from("1.01"), OrderSide::Buy));
-        assert_eq!(level0, level0);
-        assert!(level0 > level1);
-    }
+    #[case::bid(OrderSide::Buy, true)]
+    #[case::ask(OrderSide::Sell, false)]
+    fn test_comparisons(#[case] side: OrderSide, #[case] first_is_greater: bool) {
+        let level0 = BookLevel::new(BookPrice::new(Price::from("1.00"), side));
+        let same = BookLevel::new(BookPrice::new(Price::from("1.00"), side));
+        let level1 = BookLevel::new(BookPrice::new(Price::from("1.01"), side));
 
-    #[rstest]
-    fn test_comparisons_ask_side() {
-        let level0 = BookLevel::new(BookPrice::new(Price::from("1.00"), OrderSide::Sell));
-        let level1 = BookLevel::new(BookPrice::new(Price::from("1.01"), OrderSide::Sell));
-        assert_eq!(level0, level0);
-        assert!(level0 < level1);
+        assert_eq!(level0, same);
+        assert_eq!(level0 > level1, first_is_greater);
+        assert_eq!(level0 < level1, !first_is_greater);
     }
 
     #[rstest]
@@ -644,17 +641,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_size() {
-        let mut level = BookLevel::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
-        let order1 = BookOrder::new(OrderSide::Buy, Price::from("1.00"), Quantity::from(10), 0);
-        let order2 = BookOrder::new(OrderSide::Buy, Price::from("1.00"), Quantity::from(15), 1);
-
-        level.add(order1);
-        level.add(order2);
-        assert_eq!(level.size(), 25.0);
-    }
-
-    #[rstest]
     fn test_size_raw() {
         let mut level = BookLevel::new(BookPrice::new(Price::from("2.00"), OrderSide::Buy));
         let order1 = BookOrder::new(OrderSide::Buy, Price::from("2.00"), Quantity::from(10), 0);
@@ -677,17 +663,6 @@ mod tests {
         level.add(order1);
         level.add(order2);
         assert_eq!(level.size_decimal(), dec!(30.0));
-    }
-
-    #[rstest]
-    fn test_exposure() {
-        let mut level = BookLevel::new(BookPrice::new(Price::from("2.00"), OrderSide::Buy));
-        let order1 = BookOrder::new(OrderSide::Buy, Price::from("2.00"), Quantity::from(10), 0);
-        let order2 = BookOrder::new(OrderSide::Buy, Price::from("2.00"), Quantity::from(20), 1);
-
-        level.add(order1);
-        level.add(order2);
-        assert_eq!(level.exposure(), 60.0);
     }
 
     #[rstest]

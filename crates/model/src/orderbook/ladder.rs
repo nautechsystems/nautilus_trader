@@ -567,12 +567,6 @@ mod tests {
     };
 
     #[rstest]
-    fn test_is_empty() {
-        let ladder = BookLadder::new(OrderSide::Buy, BookType::L3_MBO);
-        assert!(ladder.is_empty(), "A new ladder should be empty");
-    }
-
-    #[rstest]
     fn test_is_empty_after_add() {
         let mut ladder = BookLadder::new(OrderSide::Buy, BookType::L3_MBO);
         assert!(ladder.is_empty(), "Ladder should start empty");
@@ -614,28 +608,19 @@ mod tests {
     }
 
     #[rstest]
-    fn test_book_price_bid_sorting() {
-        let mut bid_prices = [
-            BookPrice::new(Price::from("2.0"), OrderSide::Buy),
-            BookPrice::new(Price::from("4.0"), OrderSide::Buy),
-            BookPrice::new(Price::from("1.0"), OrderSide::Buy),
-            BookPrice::new(Price::from("3.0"), OrderSide::Buy),
-        ];
-        bid_prices.sort();
-        assert_eq!(bid_prices[0].value, Price::from("4.0"));
-    }
-
-    #[rstest]
-    fn test_book_price_ask_sorting() {
-        let mut ask_prices = [
-            BookPrice::new(Price::from("2.0"), OrderSide::Sell),
-            BookPrice::new(Price::from("4.0"), OrderSide::Sell),
-            BookPrice::new(Price::from("1.0"), OrderSide::Sell),
-            BookPrice::new(Price::from("3.0"), OrderSide::Sell),
+    #[case::bid(OrderSide::Buy, "4.0")]
+    #[case::ask(OrderSide::Sell, "1.0")]
+    fn test_book_price_sorting(#[case] side: OrderSide, #[case] expected_top: &str) {
+        let mut prices = [
+            BookPrice::new(Price::from("2.0"), side),
+            BookPrice::new(Price::from("4.0"), side),
+            BookPrice::new(Price::from("1.0"), side),
+            BookPrice::new(Price::from("3.0"), side),
         ];
 
-        ask_prices.sort();
-        assert_eq!(ask_prices[0].value, Price::from("1.0"));
+        prices.sort();
+
+        assert_eq!(prices[0].value, Price::from(expected_top));
     }
 
     #[rstest]
@@ -700,36 +685,33 @@ mod tests {
     }
 
     #[rstest]
-    fn test_add_descending_buy_orders() {
-        let mut ladder = BookLadder::new(OrderSide::Buy, BookType::L3_MBO);
-        let order1 = BookOrder::new(OrderSide::Buy, Price::from("9.00"), Quantity::from(20), 1);
-        let order2 = BookOrder::new(OrderSide::Buy, Price::from("8.00"), Quantity::from(30), 2);
+    #[case::bid(OrderSide::Buy, "9.00", "8.00", "9.00")]
+    #[case::ask(OrderSide::Sell, "8.00", "9.00", "8.00")]
+    fn test_add_orders_preserves_top(
+        #[case] side: OrderSide,
+        #[case] first_price: &str,
+        #[case] second_price: &str,
+        #[case] expected_top: &str,
+    ) {
+        let mut ladder = BookLadder::new(side, BookType::L3_MBO);
+        let order1 = BookOrder::new(side, Price::from(first_price), Quantity::from(20), 1);
+        let order2 = BookOrder::new(side, Price::from(second_price), Quantity::from(30), 2);
 
         ladder.add(order1, 0);
         ladder.add(order2, 0);
 
-        assert_eq!(ladder.top().unwrap().price.value, Price::from("9.00"));
+        assert_eq!(ladder.top().unwrap().price.value, Price::from(expected_top));
     }
 
     #[rstest]
-    fn test_add_ascending_sell_orders() {
-        let mut ladder = BookLadder::new(OrderSide::Sell, BookType::L3_MBO);
-        let order1 = BookOrder::new(OrderSide::Sell, Price::from("8.00"), Quantity::from(20), 1);
-        let order2 = BookOrder::new(OrderSide::Sell, Price::from("9.00"), Quantity::from(30), 2);
-
-        ladder.add(order1, 0);
-        ladder.add(order2, 0);
-
-        assert_eq!(ladder.top().unwrap().price.value, Price::from("8.00"));
-    }
-
-    #[rstest]
-    fn test_update_buy_order_price() {
-        let mut ladder = BookLadder::new(OrderSide::Buy, BookType::L3_MBO);
-        let order = BookOrder::new(OrderSide::Buy, Price::from("11.00"), Quantity::from(20), 1);
+    #[case::bid(OrderSide::Buy)]
+    #[case::ask(OrderSide::Sell)]
+    fn test_update_order_price(#[case] side: OrderSide) {
+        let mut ladder = BookLadder::new(side, BookType::L3_MBO);
+        let order = BookOrder::new(side, Price::from("11.00"), Quantity::from(20), 1);
 
         ladder.add(order, 0);
-        let order = BookOrder::new(OrderSide::Buy, Price::from("11.10"), Quantity::from(20), 1);
+        let order = BookOrder::new(side, Price::from("11.10"), Quantity::from(20), 1);
 
         ladder.update(order, 0);
         assert_eq!(ladder.len(), 1);
@@ -739,45 +721,14 @@ mod tests {
     }
 
     #[rstest]
-    fn test_update_sell_order_price() {
-        let mut ladder = BookLadder::new(OrderSide::Sell, BookType::L3_MBO);
-        let order = BookOrder::new(OrderSide::Sell, Price::from("11.00"), Quantity::from(20), 1);
+    #[case::bid(OrderSide::Buy)]
+    #[case::ask(OrderSide::Sell)]
+    fn test_update_order_size(#[case] side: OrderSide) {
+        let mut ladder = BookLadder::new(side, BookType::L3_MBO);
+        let order = BookOrder::new(side, Price::from("11.00"), Quantity::from(20), 1);
 
         ladder.add(order, 0);
-
-        let order = BookOrder::new(OrderSide::Sell, Price::from("11.10"), Quantity::from(20), 1);
-
-        ladder.update(order, 0);
-        assert_eq!(ladder.len(), 1);
-        assert_eq!(ladder.sizes(), 20.0);
-        assert_eq!(ladder.exposures(), 222.0);
-        assert_eq!(ladder.top().unwrap().price.value, Price::from("11.1"));
-    }
-
-    #[rstest]
-    fn test_update_buy_order_size() {
-        let mut ladder = BookLadder::new(OrderSide::Buy, BookType::L3_MBO);
-        let order = BookOrder::new(OrderSide::Buy, Price::from("11.00"), Quantity::from(20), 1);
-
-        ladder.add(order, 0);
-
-        let order = BookOrder::new(OrderSide::Buy, Price::from("11.00"), Quantity::from(10), 1);
-
-        ladder.update(order, 0);
-        assert_eq!(ladder.len(), 1);
-        assert_eq!(ladder.sizes(), 10.0);
-        assert_eq!(ladder.exposures(), 110.0);
-        assert_eq!(ladder.top().unwrap().price.value, Price::from("11.0"));
-    }
-
-    #[rstest]
-    fn test_update_sell_order_size() {
-        let mut ladder = BookLadder::new(OrderSide::Sell, BookType::L3_MBO);
-        let order = BookOrder::new(OrderSide::Sell, Price::from("11.00"), Quantity::from(20), 1);
-
-        ladder.add(order, 0);
-
-        let order = BookOrder::new(OrderSide::Sell, Price::from("11.00"), Quantity::from(10), 1);
+        let order = BookOrder::new(side, Price::from("11.00"), Quantity::from(10), 1);
 
         ladder.update(order, 0);
         assert_eq!(ladder.len(), 1);
@@ -797,15 +748,21 @@ mod tests {
     }
 
     #[rstest]
-    fn test_delete_buy_order() {
-        let mut ladder = BookLadder::new(OrderSide::Buy, BookType::L3_MBO);
-        let order = BookOrder::new(OrderSide::Buy, Price::from("11.00"), Quantity::from(20), 1);
+    #[case::bid(OrderSide::Buy, "11.00", "20", "10")]
+    #[case::ask(OrderSide::Sell, "10.00", "10", "10")]
+    fn test_delete_order(
+        #[case] side: OrderSide,
+        #[case] price: &str,
+        #[case] stored_size: &str,
+        #[case] delete_size: &str,
+    ) {
+        let mut ladder = BookLadder::new(side, BookType::L3_MBO);
+        let order = BookOrder::new(side, Price::from(price), Quantity::from(stored_size), 1);
 
         ladder.add(order, 0);
+        let delete = BookOrder::new(side, Price::from(price), Quantity::from(delete_size), 1);
 
-        let order = BookOrder::new(OrderSide::Buy, Price::from("11.00"), Quantity::from(10), 1);
-
-        ladder.delete(order, 0, 0.into());
+        ladder.delete(delete, 0, 0.into());
         assert_eq!(ladder.len(), 0);
         assert_eq!(ladder.sizes(), 0.0);
         assert_eq!(ladder.exposures(), 0.0);
@@ -813,43 +770,14 @@ mod tests {
     }
 
     #[rstest]
-    fn test_delete_sell_order() {
-        let mut ladder = BookLadder::new(OrderSide::Sell, BookType::L3_MBO);
-        let order = BookOrder::new(OrderSide::Sell, Price::from("10.00"), Quantity::from(10), 1);
-
-        ladder.add(order, 0);
-
-        let order = BookOrder::new(OrderSide::Sell, Price::from("10.00"), Quantity::from(10), 1);
-
-        ladder.delete(order, 0, 0.into());
-        assert_eq!(ladder.len(), 0);
+    fn test_ladder_totals_empty() {
+        let ladder = BookLadder::new(OrderSide::Buy, BookType::L3_MBO);
         assert_eq!(ladder.sizes(), 0.0);
         assert_eq!(ladder.exposures(), 0.0);
-        assert_eq!(ladder.top(), None);
     }
 
     #[rstest]
-    fn test_ladder_sizes_empty() {
-        let ladder = BookLadder::new(OrderSide::Buy, BookType::L3_MBO);
-        assert_eq!(
-            ladder.sizes(),
-            0.0,
-            "An empty ladder should have total size 0.0"
-        );
-    }
-
-    #[rstest]
-    fn test_ladder_exposures_empty() {
-        let ladder = BookLadder::new(OrderSide::Buy, BookType::L3_MBO);
-        assert_eq!(
-            ladder.exposures(),
-            0.0,
-            "An empty ladder should have total exposure 0.0"
-        );
-    }
-
-    #[rstest]
-    fn test_ladder_sizes() {
+    fn test_ladder_totals() {
         let mut ladder = BookLadder::new(OrderSide::Buy, BookType::L3_MBO);
         let order1 = BookOrder::new(OrderSide::Buy, Price::from("10.00"), Quantity::from(20), 1);
         let order2 = BookOrder::new(OrderSide::Buy, Price::from("9.50"), Quantity::from(30), 2);
@@ -857,27 +785,10 @@ mod tests {
         ladder.add(order2, 0);
 
         let expected_size = 20.0 + 30.0;
-        assert_eq!(
-            ladder.sizes(),
-            expected_size,
-            "Ladder total size should match the sum of order sizes"
-        );
-    }
-
-    #[rstest]
-    fn test_ladder_exposures() {
-        let mut ladder = BookLadder::new(OrderSide::Buy, BookType::L3_MBO);
-        let order1 = BookOrder::new(OrderSide::Buy, Price::from("10.00"), Quantity::from(20), 1);
-        let order2 = BookOrder::new(OrderSide::Buy, Price::from("9.50"), Quantity::from(30), 2);
-        ladder.add(order1, 0);
-        ladder.add(order2, 0);
-
         let expected_exposure = 10.00 * 20.0 + 9.50 * 30.0;
-        assert_eq!(
-            ladder.exposures(),
-            expected_exposure,
-            "Ladder total exposure should match the sum of individual exposures"
-        );
+
+        assert_eq!(ladder.sizes(), expected_size);
+        assert_eq!(ladder.exposures(), expected_exposure);
     }
 
     #[rstest]
@@ -1249,8 +1160,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_l2_orders_not_affected_by_l1_fix() {
-        let mut ladder = BookLadder::new(OrderSide::Buy, BookType::L3_MBO);
+    fn test_l2_orders_create_multiple_levels() {
+        let mut ladder = BookLadder::new(OrderSide::Buy, BookType::L2_MBP);
 
         let order1 = BookOrder {
             side: OrderSide::Buy.into(),
