@@ -1149,16 +1149,22 @@ mod tests {
     const TEST_TIMEOUT: Duration = Duration::from_secs(1);
 
     #[rstest]
-    fn task_group_guard_runs_rollback_until_disarmed() {
-        let group = Arc::new(TaskGroup::new());
+    fn task_group_guard_closes_all_groups_and_runs_rollback_until_disarmed() {
+        let first = Arc::new(TaskGroup::new());
+        let second = Arc::new(TaskGroup::new());
         let rolled_back = Arc::new(AtomicBool::new(false));
+        let first_on_drop = Arc::clone(&first);
+        let second_on_drop = Arc::clone(&second);
         let rolled_back_on_drop = Arc::clone(&rolled_back);
 
-        drop(TaskGroupGuard::new(&[&group], move || {
+        drop(TaskGroupGuard::new(&[&first, &second], move || {
+            assert!(!first_on_drop.is_open());
+            assert!(!second_on_drop.is_open());
             rolled_back_on_drop.store(true, Ordering::Release);
         }));
 
-        assert!(!group.is_open());
+        assert!(!first.is_open());
+        assert!(!second.is_open());
         assert!(rolled_back.load(Ordering::Acquire));
 
         let group = Arc::new(TaskGroup::new());
@@ -1217,6 +1223,7 @@ mod tests {
             polled_task.store(true, Ordering::Release);
         });
 
+        assert!(matches!(group.spawner(), Err(TaskSpawnError::CLOSED)));
         assert_eq!(result, Err(TaskSpawnError::CLOSED));
         assert!(!polled.load(Ordering::Acquire));
         group
@@ -1375,6 +1382,20 @@ mod tests {
     #[rstest]
     #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn dropping_task_group_aborts_owned_tasks() {
+        let group = TaskGroup::new();
+        let (future, started_rx, dropped) = pending_with_drop_signal();
+
+        group.spawn(future).expect("spawn");
+        started_rx.await.expect("task should start");
+
+        drop(group);
+        wait_for_drop(&dropped).await;
+    }
+
+    #[rstest]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn unexpected_task_cancellation_is_reported() {
         let group = TaskGroup::new();
         group.spawn(std::future::pending()).expect("spawn");
@@ -1390,7 +1411,7 @@ mod tests {
         let TaskShutdownError::Join(failures) = error else {
             panic!("expected join failure");
         };
-        assert_eq!(failures.len(), 1);
+        assert_eq!(failures, ["task was canceled unexpectedly"]);
         assert!(group.is_empty());
     }
 
@@ -1803,15 +1824,20 @@ mod tests {
     }
 
     #[rstest]
+    #[case(Duration::MAX, Duration::ZERO)]
+    #[case(Duration::ZERO, Duration::MAX)]
     #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
-    async fn unrepresentable_deadline_retains_owned_task() {
+    async fn unrepresentable_deadline_retains_owned_task(
+        #[case] graceful_timeout: Duration,
+        #[case] abort_timeout: Duration,
+    ) {
         let group = TaskGroup::new();
         group.spawn(std::future::pending()).expect("spawn");
         group.begin_shutdown();
 
         let error = group
-            .finish_shutdown(Duration::MAX, Duration::ZERO)
+            .finish_shutdown(graceful_timeout, abort_timeout)
             .await
             .expect_err("deadline should be rejected");
 
@@ -1856,9 +1882,49 @@ mod tests {
         let TaskShutdownError::Join(failures) = error else {
             panic!("expected join failure");
         };
-        assert_eq!(failures.len(), 1);
+        assert_eq!(failures, ["task panicked: task panic"]);
         assert!(group.is_empty());
         group.start_generation().expect("group should reopen");
+    }
+
+    #[rstest]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn shared_task_spawn_reports_finished_and_preserves_typed_result() {
+        let slot = SharedTaskSlot::new();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+
+        slot.spawn(async move {
+            let _ = started_tx.send(());
+            let _ = release_rx.await;
+            42
+        })
+        .expect("spawn");
+        started_rx.await.expect("task should start");
+
+        assert!(!slot.is_finished());
+        release_tx.send(()).expect("task should be waiting");
+
+        time::timeout(TEST_TIMEOUT, async {
+            while !slot.is_finished() {
+                task::yield_now().await;
+            }
+        })
+        .await
+        .expect("task should finish");
+
+        assert!(!slot.is_empty());
+        assert!(slot.is_finished());
+        let outcome = slot
+            .finish(TEST_TIMEOUT, TEST_TIMEOUT)
+            .await
+            .expect("task should be present");
+        let TaskJoinOutcome::Completed(value) = outcome else {
+            panic!("expected completed task");
+        };
+        assert_eq!(value, 42);
+        assert!(slot.is_empty());
     }
 
     #[rstest]
@@ -1881,6 +1947,72 @@ mod tests {
             .expect("abort should wake the active finish")
             .expect("finisher should join")
             .expect("task should be present");
+        assert!(matches!(outcome, TaskJoinOutcome::Aborted));
+        assert!(slot.is_empty());
+    }
+
+    #[rstest]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn concurrent_shared_finish_respects_its_own_bound() {
+        let slot = Arc::new(SharedTaskSlot::new());
+        slot.insert(task::spawn(std::future::pending::<u32>()));
+        let finishing_slot = Arc::clone(&slot);
+        let finish = task::spawn(async move {
+            finishing_slot
+                .finish(Duration::from_secs(10), TEST_TIMEOUT)
+                .await
+        });
+
+        time::timeout(TEST_TIMEOUT, async {
+            while slot.drain_lock.try_lock().is_ok() {
+                task::yield_now().await;
+            }
+        })
+        .await
+        .expect("first finisher should hold the drain lock");
+
+        let second = time::timeout(TEST_TIMEOUT, slot.finish(Duration::ZERO, Duration::ZERO)).await;
+        slot.abort();
+        let first = time::timeout(TEST_TIMEOUT, finish)
+            .await
+            .expect("abort should wake the first finisher")
+            .expect("first finisher should join")
+            .expect("task should be present");
+        let second = second
+            .expect("second finisher should respect its own bound")
+            .expect("task should remain owned");
+
+        assert!(matches!(first, TaskJoinOutcome::Aborted));
+        assert!(matches!(second, TaskJoinOutcome::Incomplete));
+        assert!(slot.is_empty());
+    }
+
+    #[rstest]
+    #[case(Duration::MAX, Duration::ZERO)]
+    #[case(Duration::ZERO, Duration::MAX)]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn unrepresentable_shared_deadline_retains_owned_task(
+        #[case] graceful_timeout: Duration,
+        #[case] abort_timeout: Duration,
+    ) {
+        let slot = SharedTaskSlot::new();
+        slot.insert(task::spawn(std::future::pending::<()>()));
+
+        let outcome = slot
+            .finish(graceful_timeout, abort_timeout)
+            .await
+            .expect("task should remain present");
+
+        assert!(matches!(outcome, TaskJoinOutcome::Incomplete));
+        assert!(!slot.is_empty());
+
+        slot.abort();
+        let outcome = slot
+            .finish(TEST_TIMEOUT, TEST_TIMEOUT)
+            .await
+            .expect("task should remain present");
         assert!(matches!(outcome, TaskJoinOutcome::Aborted));
         assert!(slot.is_empty());
     }
@@ -1935,6 +2067,46 @@ mod tests {
         assert!(slot.is_empty());
     }
 
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn shared_task_timeout_preserves_owned_typed_result() {
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let slot = SharedTaskSlot::new();
+        slot.insert(tokio::task::spawn_blocking(move || {
+            let _ = started_tx.send(());
+            let _ = release_rx.recv();
+            42
+        }));
+        started_rx.await.expect("blocking task should start");
+
+        let outcome = slot
+            .finish(Duration::ZERO, Duration::ZERO)
+            .await
+            .expect("task should be present");
+
+        if !matches!(outcome, TaskJoinOutcome::Incomplete) {
+            let _ = release_tx.send(());
+            panic!("expected incomplete task, was {outcome:?}");
+        }
+        assert!(!slot.is_empty());
+
+        release_tx
+            .send(())
+            .expect("blocking task should be waiting");
+        let outcome = slot
+            .finish(TEST_TIMEOUT, TEST_TIMEOUT)
+            .await
+            .expect("task should be present");
+        let TaskJoinOutcome::Completed(value) = outcome else {
+            panic!("expected completed task after retry, was {outcome:?}");
+        };
+
+        assert_eq!(value, 42);
+        assert!(slot.is_empty());
+    }
+
     #[rstest]
     #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
@@ -1962,6 +2134,77 @@ mod tests {
     #[rstest]
     #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn shared_task_try_insert_returns_task_when_occupied() {
+        let slot = SharedTaskSlot::new();
+        slot.insert(task::spawn(std::future::pending::<()>()));
+        let candidate = TaskSlot::from_handle(task::spawn(async {}));
+
+        let mut rejected = slot
+            .try_insert_slot(candidate)
+            .expect_err("occupied slot should reject insertion");
+        let outcome = finish_task(&mut rejected, TEST_TIMEOUT, TEST_TIMEOUT)
+            .await
+            .expect("rejected task should remain present");
+
+        assert!(matches!(outcome, TaskJoinOutcome::Completed(())));
+        assert!(rejected.is_none());
+        assert!(!slot.is_empty());
+
+        slot.abort();
+        let outcome = slot
+            .finish(TEST_TIMEOUT, TEST_TIMEOUT)
+            .await
+            .expect("original task should remain present");
+        assert!(matches!(outcome, TaskJoinOutcome::Aborted));
+        assert!(slot.is_empty());
+    }
+
+    #[rstest]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn shared_task_insert_aborts_rejected_task_before_panicking() {
+        let slot = SharedTaskSlot::new();
+        slot.insert(task::spawn(std::future::pending::<()>()));
+        let (future, started_rx, dropped) = pending_with_drop_signal();
+
+        let candidate = task::spawn(future);
+        started_rx.await.expect("candidate task should start");
+
+        let panic = std::panic::catch_unwind(AssertUnwindSafe(|| slot.insert(candidate)))
+            .expect_err("occupied slot should panic");
+        wait_for_drop(&dropped).await;
+
+        assert_eq!(
+            panic_message(panic.as_ref()),
+            "shared task slot is already occupied",
+        );
+        assert!(!slot.is_empty());
+        slot.abort();
+        let outcome = slot
+            .finish(TEST_TIMEOUT, TEST_TIMEOUT)
+            .await
+            .expect("original task should be present");
+        assert!(matches!(outcome, TaskJoinOutcome::Aborted));
+        assert!(slot.is_empty());
+    }
+
+    #[rstest]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn dropping_shared_task_slot_aborts_owned_task() {
+        let slot = SharedTaskSlot::new();
+        let (future, started_rx, dropped) = pending_with_drop_signal();
+
+        slot.insert(task::spawn(future));
+        started_rx.await.expect("task should start");
+
+        drop(slot);
+        wait_for_drop(&dropped).await;
+    }
+
+    #[rstest]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn singular_task_preserves_typed_result() {
         let mut slot = TaskSlot::new();
         slot.spawn(async { 42 }).expect("spawn");
@@ -1974,6 +2217,85 @@ mod tests {
         };
         assert_eq!(value, 42);
         assert!(slot.is_none());
+    }
+
+    #[rstest]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn task_slot_insert_aborts_rejected_task_before_panicking() {
+        let mut slot = TaskSlot::from_handle(task::spawn(std::future::pending::<()>()));
+        let (future, started_rx, dropped) = pending_with_drop_signal();
+
+        let candidate = task::spawn(future);
+        started_rx.await.expect("candidate task should start");
+
+        let panic = std::panic::catch_unwind(AssertUnwindSafe(|| slot.insert(candidate)))
+            .expect_err("occupied slot should panic");
+        wait_for_drop(&dropped).await;
+
+        assert_eq!(
+            panic_message(panic.as_ref()),
+            "task slot is already occupied"
+        );
+        assert!(slot.is_some());
+        slot.abort();
+        let outcome = finish_task(&mut slot, TEST_TIMEOUT, TEST_TIMEOUT)
+            .await
+            .expect("original task should be present");
+        assert!(matches!(outcome, TaskJoinOutcome::Aborted));
+        assert!(slot.is_none());
+    }
+
+    #[rstest]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn task_slot_spawn_rejects_occupied_slot_without_detaching_original() {
+        let dropped = Arc::new(AtomicBool::new(false));
+        let dropped_task = Arc::clone(&dropped);
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+
+        let mut slot = TaskSlot::from_handle(task::spawn(async move {
+            let _drop = DropSignal(dropped_task);
+            let _ = started_tx.send(());
+            let _ = release_rx.await;
+            42
+        }));
+        started_rx.await.expect("original task should start");
+
+        let panic = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            slot.spawn(std::future::pending::<u32>())
+        }));
+        let _ = release_tx.send(());
+        let outcome = finish_task(&mut slot, TEST_TIMEOUT, TEST_TIMEOUT)
+            .await
+            .expect("task should remain present");
+        wait_for_drop(&dropped).await;
+        let panic = panic.expect_err("occupied slot should panic");
+
+        let TaskJoinOutcome::Completed(value) = outcome else {
+            panic!("expected original task to complete, was {outcome:?}");
+        };
+        assert_eq!(
+            panic_message(panic.as_ref()),
+            "task slot is already occupied"
+        );
+        assert_eq!(value, 42);
+        assert!(dropped.load(Ordering::Acquire));
+        assert!(slot.is_none());
+    }
+
+    #[rstest]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn dropping_task_slot_aborts_owned_task() {
+        let (future, started_rx, dropped) = pending_with_drop_signal();
+
+        let slot = TaskSlot::from_handle(task::spawn(future));
+        started_rx.await.expect("task should start");
+
+        drop(slot);
+        wait_for_drop(&dropped).await;
     }
 
     #[rstest]
@@ -2098,6 +2420,25 @@ mod tests {
         assert!(slot.is_none());
     }
 
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    #[rstest]
+    #[tokio::test]
+    async fn singular_task_reports_panicked_join() {
+        let mut slot = TaskSlot::from_handle(task::spawn(async {
+            panic!("task panic");
+        }));
+
+        let outcome = finish_task(&mut slot, TEST_TIMEOUT, TEST_TIMEOUT)
+            .await
+            .expect("task should be present");
+        let TaskJoinOutcome::Failed(error) = outcome else {
+            panic!("expected failed task");
+        };
+
+        assert!(error.is_panic());
+        assert!(slot.is_none());
+    }
+
     #[rstest]
     #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
@@ -2194,6 +2535,33 @@ mod tests {
 
         assert!(matches!(outcome, TaskJoinOutcome::Aborted));
         assert!(slot.is_none());
+    }
+
+    fn pending_with_drop_signal() -> (
+        impl Future<Output = ()>,
+        tokio::sync::oneshot::Receiver<()>,
+        Arc<AtomicBool>,
+    ) {
+        let dropped = Arc::new(AtomicBool::new(false));
+        let dropped_task = Arc::clone(&dropped);
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let future = async move {
+            let _drop = DropSignal(dropped_task);
+            let _ = started_tx.send(());
+            std::future::pending::<()>().await;
+        };
+
+        (future, started_rx, dropped)
+    }
+
+    async fn wait_for_drop(dropped: &AtomicBool) {
+        time::timeout(TEST_TIMEOUT, async {
+            while !dropped.load(Ordering::Acquire) {
+                task::yield_now().await;
+            }
+        })
+        .await
+        .expect("task should be dropped");
     }
 
     struct DropSignal(Arc<AtomicBool>);
