@@ -47,7 +47,7 @@ use nautilus_core::{
 };
 use nautilus_live::{
     ExecutionClientCore, ExecutionEventEmitter, SocketControlFactory,
-    task::{TaskGroup, TaskGroupGuard, TaskSpawner},
+    task::{TaskGroup, TaskGroupGuard, TaskSpawnError, TaskSpawner},
 };
 use nautilus_model::{
     accounts::AccountAny,
@@ -656,10 +656,7 @@ impl BinanceSpotExecutionClient {
             .spawner()
             .context("Binance Spot session task admission is closed")?;
 
-        if let Err(e) = self.session_tasks.spawn(async move {
-            dispatch_active.store(true, Ordering::Release);
-            let _active = DispatchActiveGuard(dispatch_active);
-
+        if let Err(e) = spawn_dispatch_task(&self.session_tasks, &dispatch_active, async move {
             while let Some(message) = ws_clone.recv().await {
                 if matches!(&message, BinanceSpotWsTradingMessage::Reconnected) {
                     ws_clone.mark_user_data_active();
@@ -913,9 +910,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                         .spawner()
                         .context("Binance Spot session task admission is closed")?;
 
-                    self.session_tasks.spawn(async move {
-                        dispatch_active.store(true, Ordering::Release);
-                        let _active = DispatchActiveGuard(dispatch_active);
+                    spawn_dispatch_task(&self.session_tasks, &dispatch_active, async move {
                         let mut resubscribing = false;
 
                         loop {
@@ -2067,6 +2062,39 @@ impl Drop for DispatchActiveGuard {
     fn drop(&mut self) {
         self.0.store(false, Ordering::Release);
     }
+}
+
+/// Marks `dispatch_active` before spawning `dispatch`, and clears it when the task ends.
+///
+/// The flag says a dispatch consumer has been admitted, which submission readiness reads
+/// through `ws_user_data_active`. Marking it here rather than inside `dispatch` is what orders
+/// it against admission: a store in the task body carries no happens-before edge from a
+/// successful spawn to the flag being visible, so a caller can observe `false` after admission
+/// has already succeeded.
+///
+/// The guard is constructed here and moved into the task, so ownership clears the flag on
+/// every path: [`TaskGroup::spawn`] drops a rejected future, the group's wrapper can drop the
+/// future without polling it when cancellation wins, and the task dropping it covers a normal
+/// exit or a panic.
+///
+/// # Errors
+///
+/// Returns an error if task admission is closed, having left the flag clear.
+fn spawn_dispatch_task<F>(
+    session_tasks: &TaskGroup,
+    dispatch_active: &Arc<AtomicBool>,
+    dispatch: F,
+) -> Result<(), TaskSpawnError>
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    dispatch_active.store(true, Ordering::Release);
+    let active = DispatchActiveGuard(Arc::clone(dispatch_active));
+
+    session_tasks.spawn(async move {
+        let _active = active;
+        dispatch.await;
+    })
 }
 
 fn max_trade_id(reports: &[FillReport]) -> anyhow::Result<i64> {
@@ -3331,6 +3359,20 @@ mod tests {
             ),
             expected
         );
+    }
+
+    #[rstest]
+    fn test_spawn_dispatch_task_clears_active_when_admission_closed() {
+        let tasks = TaskGroup::new();
+        tasks.begin_shutdown();
+        let dispatch_active = Arc::new(AtomicBool::new(false));
+
+        spawn_dispatch_task(&tasks, &dispatch_active, std::future::pending())
+            .expect_err("closed task group must reject the dispatch task");
+
+        // The rejected future is dropped with the guard it owns, so the flag cannot
+        // stay true for a dispatch loop that never ran.
+        assert!(!dispatch_active.load(Ordering::Acquire));
     }
 
     #[rstest]
