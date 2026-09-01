@@ -1148,6 +1148,15 @@ mod tests {
 
     const TEST_TIMEOUT: Duration = Duration::from_secs(1);
 
+    /// Interval a test waits on while letting an in-flight `finish_*` future make progress.
+    ///
+    /// Sleeping rather than yielding is deliberate. A `yield_now` arm keeps the remaining
+    /// worker runnable and can delay it servicing the timer driver, so a zero-duration
+    /// `time::timeout` inside the raced future may not fire promptly and the loop spins
+    /// waiting for it. Sleeping lets the runtime park and service the timer before the
+    /// next poll.
+    const POLL_INTERVAL: Duration = Duration::from_millis(10);
+
     #[rstest]
     fn task_group_guard_runs_rollback_until_disarmed() {
         let group = Arc::new(TaskGroup::new());
@@ -1603,7 +1612,7 @@ mod tests {
                 tokio::select! {
                     biased;
                     outcome = &mut finish => panic!("finish completed unexpectedly: {outcome:?}"),
-                    () = task::yield_now() => {}
+                    () = time::sleep(POLL_INTERVAL) => {}
                 }
             }
 
@@ -2179,7 +2188,7 @@ mod tests {
                 tokio::select! {
                     biased;
                     outcome = &mut finish => panic!("finish completed unexpectedly: {outcome:?}"),
-                    () = task::yield_now() => {}
+                    () = time::sleep(POLL_INTERVAL) => {}
                 }
             }
         }
