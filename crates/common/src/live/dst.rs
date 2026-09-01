@@ -221,27 +221,16 @@ mod tests {
 
     use super::*;
 
-    // -- Normal build tests (real tokio) --
-
-    #[cfg(not(all(feature = "simulation", madsim)))]
-    #[tokio::test]
-    async fn test_dst_sleep() {
-        let start = time::Instant::now();
-        time::sleep(time::Duration::from_millis(10)).await;
-        let elapsed = start.elapsed();
-        assert!(elapsed >= time::Duration::from_millis(5));
-    }
-
-    #[cfg(not(all(feature = "simulation", madsim)))]
-    #[tokio::test]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn test_dst_task_spawn() {
         let handle = task::spawn(async { 42 });
         let result = handle.await.unwrap();
         assert_eq!(result, 42);
     }
 
-    #[cfg(not(all(feature = "simulation", madsim)))]
-    #[tokio::test]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn test_real_tokio_sync_alongside_dst() {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         tx.send(7).unwrap();
@@ -249,7 +238,6 @@ mod tests {
         assert_eq!(result.unwrap(), Some(7));
     }
 
-    #[cfg(not(all(feature = "simulation", madsim)))]
     #[rstest]
     fn test_dst_runtime_builder() {
         let rt = runtime::Builder::new_multi_thread()
@@ -261,7 +249,14 @@ mod tests {
         assert_eq!(result, 99);
     }
 
-    // -- Simulation build tests (madsim) --
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    #[tokio::test]
+    async fn test_dst_sleep() {
+        let start = time::Instant::now();
+        time::sleep(time::Duration::from_millis(10)).await;
+        let elapsed = start.elapsed();
+        assert!(elapsed >= time::Duration::from_millis(5));
+    }
 
     #[cfg(all(feature = "simulation", madsim))]
     #[madsim::test]
@@ -273,35 +268,6 @@ mod tests {
         // Real tokio would show 100-115ms from OS jitter.
         assert!(elapsed >= time::Duration::from_millis(100));
         assert!(elapsed < time::Duration::from_millis(101));
-    }
-
-    #[cfg(all(feature = "simulation", madsim))]
-    #[madsim::test]
-    async fn test_dst_task_spawn() {
-        let handle = task::spawn(async { 42 });
-        let result = handle.await.unwrap();
-        assert_eq!(result, 42);
-    }
-
-    #[cfg(all(feature = "simulation", madsim))]
-    #[madsim::test]
-    async fn test_real_tokio_sync_alongside_dst() {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        tx.send(7).unwrap();
-        let result = time::timeout(time::Duration::from_secs(1), rx.recv()).await;
-        assert_eq!(result.unwrap(), Some(7));
-    }
-
-    #[cfg(all(feature = "simulation", madsim))]
-    #[rstest]
-    fn test_dst_runtime_builder() {
-        let rt = runtime::Builder::new_multi_thread()
-            .worker_threads(2)
-            .enable_all()
-            .build()
-            .unwrap();
-        let result = rt.block_on(async { 99 });
-        assert_eq!(result, 99);
     }
 
     // Pins the wall-clock seam end-to-end on the common leg: the `simulation`

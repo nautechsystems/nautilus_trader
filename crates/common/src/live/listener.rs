@@ -16,7 +16,7 @@
 //! Message bus listener for live trading using tokio channels.
 
 use bytes::Bytes;
-use futures::stream::Stream;
+use futures::{StreamExt, stream::Stream};
 use ustr::Ustr;
 
 use crate::{
@@ -57,14 +57,9 @@ impl MessageBusListener {
     pub fn close(&mut self) {
         log::debug!("Closing");
 
-        // Drop receiver
-        if let Some(rx) = self.rx.take() {
-            drop(rx);
-        }
-
-        // Drop sender
-        let (new_tx, _) = tokio::sync::mpsc::unbounded_channel();
-        let _ = std::mem::replace(&mut self.tx, new_tx);
+        self.rx = None;
+        let (tx, _) = tokio::sync::mpsc::unbounded_channel();
+        self.tx = tx;
 
         log::debug!("Closed");
     }
@@ -101,13 +96,12 @@ impl MessageBusListener {
 
     /// Streams messages arriving on the receiver channel.
     pub fn stream(
-        mut stream_rx: tokio::sync::mpsc::UnboundedReceiver<BusMessage>,
+        stream_rx: tokio::sync::mpsc::UnboundedReceiver<BusMessage>,
     ) -> impl Stream<Item = BusMessage> + 'static {
-        async_stream::stream! {
-            while let Some(msg) = stream_rx.recv().await {
-                yield msg;
-            }
-        }
+        futures::stream::unfold(stream_rx, |mut rx| async {
+            rx.recv().await.map(|msg| (msg, rx))
+        })
+        .fuse()
     }
 }
 
@@ -134,42 +128,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_publish_and_receive() {
-        let mut listener = MessageBusListener::new();
-
-        // Get the receiver
-        let rx = listener
-            .get_stream_receiver()
-            .expect("Failed to get stream receiver");
-
-        // Create a simple channel to collect messages
-        let (notify_tx, mut notify_rx) = tokio::sync::mpsc::channel::<()>(1);
-
-        // Spawn a task to process messages
-        let handle = tokio::spawn(async move {
-            let stream = MessageBusListener::stream(rx);
-            futures::pin_mut!(stream);
-            let msg = stream.next().await.expect("No message received");
-
-            assert_eq!(msg.topic, "test-topic");
-            assert_eq!(msg.payload_type, BusPayloadType::Custom(Ustr::default()));
-            assert_eq!(msg.payload.as_ref(), b"test-payload");
-            assert_eq!(msg.encoding, SerializationEncoding::Json);
-            notify_tx.send(()).await.unwrap();
-        });
-
-        // Publish a message
-        listener.publish(Ustr::from("test-topic"), Bytes::from("test-payload"));
-
-        // Wait for the message to be processed
-        tokio::select! {
-            _ = notify_rx.recv() => {},
-            () = tokio::time::sleep(tokio::time::Duration::from_secs(1)) => {
-                panic!("Timeout waiting for message");
-            }
-        }
-
-        // Clean up
-        handle.await.unwrap();
+        assert_publish(Ustr::from("test-topic"), "test-topic", "test-payload").await;
     }
 
     #[tokio::test]
@@ -182,11 +141,9 @@ mod tests {
         let topics = ["topic1", "topic2", "topic3"];
         let payloads = ["payload1", "payload2", "payload3"];
 
-        // Spawn a task to collect messages
-        let handle = tokio::spawn(async move {
-            let stream = MessageBusListener::stream(rx);
-            futures::pin_mut!(stream);
-
+        let stream = MessageBusListener::stream(rx);
+        futures::pin_mut!(stream);
+        let result = tokio::time::timeout(tokio::time::Duration::from_secs(1), async {
             let mut received = Vec::new();
 
             for _ in 0..3 {
@@ -206,11 +163,7 @@ mod tests {
             );
         }
 
-        // Wait for the task to complete and check result
-        let result = tokio::time::timeout(tokio::time::Duration::from_secs(1), handle)
-            .await
-            .expect("Test timed out")
-            .expect("Task panicked");
+        let result = result.await.expect("Test timed out");
 
         let expected = topics
             .iter()
@@ -237,12 +190,16 @@ mod tests {
     async fn test_publish_after_close() {
         let mut listener = MessageBusListener::new();
 
-        let _rx = listener
+        let rx = listener
             .get_stream_receiver()
             .expect("Failed to get stream receiver");
+        let stream = MessageBusListener::stream(rx);
+        futures::pin_mut!(stream);
 
         listener.close();
         assert!(listener.is_closed());
+        assert!(stream.next().await.is_none());
+        assert!(stream.next().await.is_none());
 
         // Publishing should log an error but not panic
         listener.publish(Ustr::from("test-topic"), Bytes::from("test-payload"));
@@ -250,73 +207,30 @@ mod tests {
 
     #[tokio::test]
     async fn test_publish_with_mstr_topic() {
-        // This test specifically verifies that publish() correctly handles
-        // MStr<Topic> -> *topic (Ustr deref) -> BusMessage::new(Ustr, ...)
-        let mut listener = MessageBusListener::new();
-
-        let rx = listener
-            .get_stream_receiver()
-            .expect("Failed to get stream receiver");
-
-        let (notify_tx, mut notify_rx) = tokio::sync::mpsc::channel::<()>(1);
-
-        // Spawn a task to process the message
-        let handle = tokio::spawn(async move {
-            let stream = MessageBusListener::stream(rx);
-            futures::pin_mut!(stream);
-            let msg = stream.next().await.expect("No message received");
-
-            assert_eq!(msg.topic, "mstr-topic");
-            assert_eq!(msg.payload.as_ref(), b"mstr-payload");
-            notify_tx.send(()).await.unwrap();
-        });
-
-        // Publish using MStr<Topic> (not Ustr directly)
         let topic = MStr::<Topic>::from("mstr-topic");
-        listener.publish(topic, Bytes::from("mstr-payload"));
-
-        // Wait for the message to be processed
-        tokio::select! {
-            _ = notify_rx.recv() => {},
-            () = tokio::time::sleep(tokio::time::Duration::from_secs(1)) => {
-                panic!("Timeout waiting for message");
-            }
-        }
-
-        handle.await.unwrap();
+        assert_publish(topic, "mstr-topic", "mstr-payload").await;
     }
 
     #[tokio::test]
     async fn test_publish_with_string_topic() {
-        // Test that &str -> Into<MStr<Topic>> -> *topic -> Ustr works
-        let mut listener = MessageBusListener::new();
+        assert_publish("string-topic", "string-topic", "string-payload").await;
+    }
 
-        let rx = listener
+    async fn assert_publish<T: Into<MStr<Topic>>>(topic: T, expected_topic: &str, payload: &str) {
+        let mut listener = MessageBusListener::new();
+        let mut rx = listener
             .get_stream_receiver()
             .expect("Failed to get stream receiver");
 
-        let (notify_tx, mut notify_rx) = tokio::sync::mpsc::channel::<()>(1);
+        listener.publish(topic, Bytes::copy_from_slice(payload.as_bytes()));
+        let msg = tokio::time::timeout(tokio::time::Duration::from_secs(1), rx.recv())
+            .await
+            .expect("Test timed out")
+            .expect("No message received");
 
-        let handle = tokio::spawn(async move {
-            let stream = MessageBusListener::stream(rx);
-            futures::pin_mut!(stream);
-            let msg = stream.next().await.expect("No message received");
-
-            assert_eq!(msg.topic, "string-topic");
-            assert_eq!(msg.payload.as_ref(), b"string-payload");
-            notify_tx.send(()).await.unwrap();
-        });
-
-        // Publish using &str (tests Into<MStr<Topic>> conversion)
-        listener.publish("string-topic", Bytes::from("string-payload"));
-
-        tokio::select! {
-            _ = notify_rx.recv() => {},
-            () = tokio::time::sleep(tokio::time::Duration::from_secs(1)) => {
-                panic!("Timeout waiting for message");
-            }
-        }
-
-        handle.await.unwrap();
+        assert_eq!(msg.topic, expected_topic);
+        assert_eq!(msg.payload_type, BusPayloadType::Custom(Ustr::default()));
+        assert_eq!(msg.payload.as_ref(), payload.as_bytes());
+        assert_eq!(msg.encoding, SerializationEncoding::Json);
     }
 }

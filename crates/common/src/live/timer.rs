@@ -71,49 +71,6 @@ const TASK_ACTIVE: u8 = 0;
 const TASK_FIRING: u8 = 1;
 const TASK_RETIRED: u8 = 2;
 
-fn should_fire_scheduled_time(next_time_ns: UnixNanos, stop_time_ns: Option<UnixNanos>) -> bool {
-    stop_time_ns.is_none_or(|stop_time_ns| next_time_ns <= stop_time_ns)
-}
-
-fn expires_after_scheduled_time(next_time_ns: UnixNanos, stop_time_ns: Option<UnixNanos>) -> bool {
-    stop_time_ns == Some(next_time_ns)
-}
-
-fn is_stop_boundary(next_time_ns: u64, stop_time_ns: Option<UnixNanos>) -> bool {
-    stop_time_ns == Some(UnixNanos::from(next_time_ns))
-}
-
-fn should_adjust_past_due_time(
-    observed_next: u64,
-    now_ns: UnixNanos,
-    stop_time_ns: Option<UnixNanos>,
-) -> bool {
-    observed_next <= now_ns.as_u64() && !is_stop_boundary(observed_next, stop_time_ns)
-}
-
-fn normalize_start_time_ns(
-    observed_next: u64,
-    now_ns: UnixNanos,
-    stop_time_ns: Option<UnixNanos>,
-) -> UnixNanos {
-    if is_stop_boundary(observed_next, stop_time_ns) {
-        return UnixNanos::from(observed_next);
-    }
-
-    let now_raw = now_ns.as_u64();
-    let start_time_ns = if observed_next <= now_raw {
-        now_raw
-    } else {
-        observed_next
-    };
-
-    UnixNanos::from(floor_to_nearest_microsecond(start_time_ns))
-}
-
-fn timer_start_delay(next_time_ns: UnixNanos, now_ns: UnixNanos) -> Duration {
-    Duration::from_nanos(next_time_ns.saturating_sub(now_ns.as_u64()))
-}
-
 /// A live timer for use with a `LiveClock`.
 ///
 /// `LiveTimer` triggers events at specified intervals in a real-time environment,
@@ -126,7 +83,7 @@ fn timer_start_delay(next_time_ns: UnixNanos, now_ns: UnixNanos) -> Duration {
 pub struct LiveTimer {
     /// The name of the timer.
     pub name: Ustr,
-    /// The start time of the timer in UNIX nanoseconds.
+    /// The interval between timer events in nanoseconds.
     pub interval_ns: NonZeroU64,
     /// The start time of the timer in UNIX nanoseconds.
     pub start_time_ns: UnixNanos,
@@ -140,32 +97,6 @@ pub struct LiveTimer {
     task_state: Option<Arc<TimerTaskState>>,
     canceled: bool,
     sender: Option<Arc<dyn TimeEventSender>>,
-}
-
-#[derive(Debug)]
-struct TimerTaskState {
-    status: AtomicU8,
-    next_time_ns: AtomicU64,
-}
-
-#[derive(Debug)]
-enum OwnerCallback {
-    Direct(TimeEventMessageFactory),
-    /// The callback is retained owner-side so a restarted timer (cancel or
-    /// natural expiry closed the token) can register a fresh token.
-    Registered {
-        token: TimeEventCallbackToken,
-        callback: TimeEventCallback,
-    },
-    Senderless(TimeEventCallback),
-}
-
-#[derive(Clone, Debug)]
-enum WorkerDispatch {
-    Direct(TimeEventMessageFactory),
-    Registered(TimeEventCallbackToken),
-    #[cfg(feature = "python")]
-    SenderlessPython(Arc<crate::timer::PythonTimeEventCallback>),
 }
 
 impl LiveTimer {
@@ -465,6 +396,76 @@ impl LiveTimer {
     }
 }
 
+impl Timer for LiveTimer {
+    fn is_expired(&self) -> bool {
+        Self::is_expired(self)
+    }
+
+    fn cancel(&mut self) {
+        Self::cancel(self);
+    }
+}
+
+impl Drop for LiveTimer {
+    fn drop(&mut self) {
+        self.close_registered_callback();
+        self.retire_task();
+
+        if let Some(handle) = self.task_handle.take() {
+            handle.abort();
+        }
+    }
+}
+
+fn should_fire_scheduled_time(next_time_ns: UnixNanos, stop_time_ns: Option<UnixNanos>) -> bool {
+    stop_time_ns.is_none_or(|stop_time_ns| next_time_ns <= stop_time_ns)
+}
+
+fn expires_after_scheduled_time(next_time_ns: UnixNanos, stop_time_ns: Option<UnixNanos>) -> bool {
+    stop_time_ns == Some(next_time_ns)
+}
+
+fn is_stop_boundary(next_time_ns: u64, stop_time_ns: Option<UnixNanos>) -> bool {
+    stop_time_ns == Some(UnixNanos::from(next_time_ns))
+}
+
+fn should_adjust_past_due_time(
+    observed_next: u64,
+    now_ns: UnixNanos,
+    stop_time_ns: Option<UnixNanos>,
+) -> bool {
+    observed_next <= now_ns.as_u64() && !is_stop_boundary(observed_next, stop_time_ns)
+}
+
+fn normalize_start_time_ns(
+    observed_next: u64,
+    now_ns: UnixNanos,
+    stop_time_ns: Option<UnixNanos>,
+) -> UnixNanos {
+    if is_stop_boundary(observed_next, stop_time_ns) {
+        return UnixNanos::from(observed_next);
+    }
+
+    let now_raw = now_ns.as_u64();
+    let start_time_ns = if observed_next <= now_raw {
+        now_raw
+    } else {
+        observed_next
+    };
+
+    UnixNanos::from(floor_to_nearest_microsecond(start_time_ns))
+}
+
+fn timer_start_delay(next_time_ns: UnixNanos, now_ns: UnixNanos) -> Duration {
+    Duration::from_nanos(next_time_ns.saturating_sub(now_ns.as_u64()))
+}
+
+#[derive(Debug)]
+struct TimerTaskState {
+    status: AtomicU8,
+    next_time_ns: AtomicU64,
+}
+
 impl TimerTaskState {
     fn new(next_time_ns: u64) -> Self {
         Self {
@@ -521,25 +522,24 @@ impl TimerTaskState {
     }
 }
 
-impl Timer for LiveTimer {
-    fn is_expired(&self) -> bool {
-        Self::is_expired(self)
-    }
-
-    fn cancel(&mut self) {
-        Self::cancel(self);
-    }
+#[derive(Debug)]
+enum OwnerCallback {
+    Direct(TimeEventMessageFactory),
+    /// The callback is retained owner-side so a restarted timer (cancel or
+    /// natural expiry closed the token) can register a fresh token.
+    Registered {
+        token: TimeEventCallbackToken,
+        callback: TimeEventCallback,
+    },
+    Senderless(TimeEventCallback),
 }
 
-impl Drop for LiveTimer {
-    fn drop(&mut self) {
-        self.close_registered_callback();
-        self.retire_task();
-
-        if let Some(handle) = self.task_handle.take() {
-            handle.abort();
-        }
-    }
+#[derive(Clone, Debug)]
+enum WorkerDispatch {
+    Direct(TimeEventMessageFactory),
+    Registered(TimeEventCallbackToken),
+    #[cfg(feature = "python")]
+    SenderlessPython(Arc<crate::timer::PythonTimeEventCallback>),
 }
 
 #[cfg(test)]

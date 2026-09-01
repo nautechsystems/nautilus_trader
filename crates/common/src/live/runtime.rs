@@ -52,13 +52,8 @@ use tokio::{runtime::Builder, task, time::timeout};
 static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
 /// Environment variable name to configure the number of OS threads for the common runtime.
-/// If not set or if the value cannot be parsed as a positive integer, the default value is used.
+/// If not set or if the value cannot be parsed as a positive integer, Tokio's default is used.
 const NAUTILUS_WORKER_THREADS: &str = "NAUTILUS_WORKER_THREADS";
-
-/// The default number of OS threads to use if the environment variable is not set.
-///
-/// 0 means Tokio will use the default (number of logical CPUs).
-const DEFAULT_OS_THREADS: usize = 0;
 
 /// Creates and configures a new multi-threaded Tokio runtime.
 ///
@@ -79,15 +74,13 @@ fn initialize_runtime() -> tokio::runtime::Runtime {
     let worker_threads = std::env::var(NAUTILUS_WORKER_THREADS)
         .ok()
         .and_then(|val| val.parse::<usize>().ok())
-        .unwrap_or(DEFAULT_OS_THREADS);
+        .unwrap_or_default();
 
     let mut builder = Builder::new_multi_thread();
 
-    let builder = if worker_threads > 0 {
-        builder.worker_threads(worker_threads)
-    } else {
-        &mut builder
-    };
+    if worker_threads > 0 {
+        builder.worker_threads(worker_threads);
+    }
 
     builder
         .enable_all()
