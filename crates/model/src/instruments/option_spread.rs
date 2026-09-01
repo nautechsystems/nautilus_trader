@@ -472,7 +472,7 @@ mod tests {
     fn test_serialization_roundtrip(option_spread: OptionSpread) {
         let json = serde_json::to_string(&option_spread).unwrap();
         let deserialized: OptionSpread = serde_json::from_str(&json).unwrap();
-        assert_eq!(option_spread, deserialized);
+        assert_eq!(json, serde_json::to_string(&deserialized).unwrap());
     }
 
     #[rstest]

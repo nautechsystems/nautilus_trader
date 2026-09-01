@@ -596,7 +596,7 @@ mod tests {
     fn test_serialization_roundtrip(perpetual_contract_eurusd: PerpetualContract) {
         let json = serde_json::to_string(&perpetual_contract_eurusd).unwrap();
         let deserialized: PerpetualContract = serde_json::from_str(&json).unwrap();
-        assert_eq!(perpetual_contract_eurusd, deserialized);
+        assert_eq!(json, serde_json::to_string(&deserialized).unwrap());
     }
 
     #[rstest]

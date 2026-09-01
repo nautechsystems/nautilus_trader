@@ -563,7 +563,7 @@ mod tests {
     fn test_serialization_roundtrip(option_contract_appl: OptionContract) {
         let json = serde_json::to_string(&option_contract_appl).unwrap();
         let deserialized: OptionContract = serde_json::from_str(&json).unwrap();
-        assert_eq!(option_contract_appl, deserialized);
+        assert_eq!(json, serde_json::to_string(&deserialized).unwrap());
     }
 
     #[rstest]

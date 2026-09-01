@@ -465,7 +465,7 @@ mod tests {
     fn test_serialization_roundtrip(binary_option: BinaryOption) {
         let json = serde_json::to_string(&binary_option).unwrap();
         let deserialized: BinaryOption = serde_json::from_str(&json).unwrap();
-        assert_eq!(binary_option, deserialized);
+        assert_eq!(json, serde_json::to_string(&deserialized).unwrap());
     }
 
     #[rstest]

@@ -595,7 +595,7 @@ mod tests {
     fn test_serialization_roundtrip(crypto_perpetual_ethusdt: CryptoPerpetual) {
         let json = serde_json::to_string(&crypto_perpetual_ethusdt).unwrap();
         let deserialized: CryptoPerpetual = serde_json::from_str(&json).unwrap();
-        assert_eq!(crypto_perpetual_ethusdt, deserialized);
+        assert_eq!(json, serde_json::to_string(&deserialized).unwrap());
     }
 
     #[rstest]

@@ -1243,16 +1243,15 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "'margin_init' not positive")]
     fn validate_negative_max_qty() {
         let quantity = Quantity::new(0.0, 0);
-        validate_instrument_common(
+        let error = validate_instrument_common(
             2,
             2,
             Quantity::new(0.01, 2),
             Quantity::new(1.0, 0),
-            dec!(0),
-            dec!(0),
+            dec!(0.01),
+            dec!(0.01),
             None,
             None,
             Some(quantity),
@@ -1262,7 +1261,16 @@ mod tests {
             None,
             None,
         )
-        .expect_display(FAILED);
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::NotPositive {
+                param: "max_quantity".to_string(),
+                value: "0".to_string(),
+                type_name: "`Quantity`",
+            }
+        );
     }
 
     #[rstest]
@@ -1338,18 +1346,33 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "'margin_init' not positive")]
+    #[case::bid(true)]
+    #[case::ask(false)]
+    fn tick_navigation_rejects_negative_offset(
+        currency_pair_btcusdt: CurrencyPair,
+        #[case] bid: bool,
+    ) {
+        let price = if bid {
+            currency_pair_btcusdt.next_bid_price(10_000.0, -1)
+        } else {
+            currency_pair_btcusdt.next_ask_price(10_000.0, -1)
+        };
+
+        assert_eq!(price, None);
+    }
+
+    #[rstest]
     fn validate_price_increment_precision_mismatch() {
         let size_increment = Quantity::new(0.01, 2);
         let multiplier = Quantity::new(1.0, 0);
         let price_increment = Price::new(0.001, 3);
-        validate_instrument_common(
+        let error = validate_instrument_common(
             2,
             2,
             size_increment,
             multiplier,
-            dec!(0),
-            dec!(0),
+            dec!(0.01),
+            dec!(0.01),
             Some(price_increment),
             None,
             None,
@@ -1359,23 +1382,33 @@ mod tests {
             None,
             None,
         )
-        .expect_display(FAILED);
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::EqualityMismatch {
+                lhs_param: "price_increment.precision".to_string(),
+                rhs_param: "price_precision".to_string(),
+                lhs: "3".to_string(),
+                rhs: "2".to_string(),
+                type_name: "u8",
+            }
+        );
     }
 
     #[rstest]
-    #[should_panic(expected = "'margin_init' not positive")]
     fn validate_min_price_exceeds_max_price() {
         let size_increment = Quantity::new(0.01, 2);
         let multiplier = Quantity::new(1.0, 0);
         let min_price = Price::new(10.0, 2);
         let max_price = Price::new(5.0, 2);
-        validate_instrument_common(
+        let error = validate_instrument_common(
             2,
             2,
             size_increment,
             multiplier,
-            dec!(0),
-            dec!(0),
+            dec!(0.01),
+            dec!(0.01),
             None,
             None,
             None,
@@ -1385,7 +1418,14 @@ mod tests {
             Some(max_price),
             Some(min_price),
         )
-        .expect_display(FAILED);
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::PredicateViolation {
+                message: "min_price exceeds max_price".to_string(),
+            }
+        );
     }
 
     #[rstest]
@@ -1607,18 +1647,17 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "'margin_init' not positive")]
     fn validate_non_positive_max_price() {
         let size_increment = Quantity::new(0.01, 2);
         let multiplier = Quantity::new(1.0, 0);
         let max_price = Price::new(0.0, 2);
-        validate_instrument_common(
+        let error = validate_instrument_common(
             2,
             2,
             size_increment,
             multiplier,
-            dec!(0),
-            dec!(0),
+            dec!(0.01),
+            dec!(0.01),
             None,
             None,
             None,
@@ -1628,22 +1667,30 @@ mod tests {
             Some(max_price),
             None,
         )
-        .expect_display(FAILED);
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::NotPositive {
+                param: "max_price".to_string(),
+                value: "0.00".to_string(),
+                type_name: "`Price`",
+            }
+        );
     }
 
     #[rstest]
-    #[should_panic(expected = "'margin_init' not positive")]
     fn validate_non_positive_max_notional(currency_pair_btcusdt: CurrencyPair) {
         let size_increment = Quantity::new(0.01, 2);
         let multiplier = Quantity::new(1.0, 0);
         let max_notional = Money::new(0.0, currency_pair_btcusdt.quote_currency());
-        validate_instrument_common(
+        let error = validate_instrument_common(
             2,
             2,
             size_increment,
             multiplier,
-            dec!(0),
-            dec!(0),
+            dec!(0.01),
+            dec!(0.01),
             None,
             None,
             None,
@@ -1653,23 +1700,31 @@ mod tests {
             None,
             None,
         )
-        .expect_display(FAILED);
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::NotPositive {
+                param: "max_notional".to_string(),
+                value: "0.00000000 USDT".to_string(),
+                type_name: "`Money`",
+            }
+        );
     }
 
     #[rstest]
-    #[should_panic(expected = "'margin_init' not positive")]
     fn validate_price_increment_min_price_precision_mismatch() {
         let size_increment = Quantity::new(0.01, 2);
         let multiplier = Quantity::new(1.0, 0);
         let price_increment = Price::new(0.01, 2);
         let min_price = Price::new(1.0, 3);
-        validate_instrument_common(
+        let error = validate_instrument_common(
             2,
             2,
             size_increment,
             multiplier,
-            dec!(0),
-            dec!(0),
+            dec!(0.01),
+            dec!(0.01),
             Some(price_increment),
             None,
             None,
@@ -1679,23 +1734,33 @@ mod tests {
             None,
             Some(min_price),
         )
-        .expect_display(FAILED);
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::EqualityMismatch {
+                lhs_param: "min_price.precision".to_string(),
+                rhs_param: "price_precision".to_string(),
+                lhs: "3".to_string(),
+                rhs: "2".to_string(),
+                type_name: "u8",
+            }
+        );
     }
 
     #[rstest]
-    #[should_panic(expected = "'margin_init' not positive")]
     fn validate_negative_min_notional(currency_pair_btcusdt: CurrencyPair) {
         let size_increment = Quantity::new(0.01, 2);
         let multiplier = Quantity::new(1.0, 0);
         let min_notional = Money::new(-1.0, currency_pair_btcusdt.quote_currency());
         let max_notional = Money::new(1.0, currency_pair_btcusdt.quote_currency());
-        validate_instrument_common(
+        let error = validate_instrument_common(
             2,
             2,
             size_increment,
             multiplier,
-            dec!(0),
-            dec!(0),
+            dec!(0.01),
+            dec!(0.01),
             None,
             None,
             None,
@@ -1705,7 +1770,16 @@ mod tests {
             None,
             None,
         )
-        .expect_display(FAILED);
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::NotPositive {
+                param: "min_notional".to_string(),
+                value: "-1.00000000 USDT".to_string(),
+                type_name: "`Money`",
+            }
+        );
     }
 
     #[rstest]
@@ -1817,18 +1891,18 @@ mod tests {
     }
 
     #[rstest]
-    fn pyo3_failure_validate_price_increment_max_price_precision_mismatch() {
+    fn validate_price_increment_max_price_precision_mismatch() {
         let size_increment = Quantity::new(0.01, 2);
         let multiplier = Quantity::new(1.0, 0);
         let price_increment = Price::new(0.01, 2);
         let max_price = Price::new(1.0, 3);
-        let res = validate_instrument_common(
+        let error = validate_instrument_common(
             2,
             2,
             size_increment,
             multiplier,
-            dec!(0),
-            dec!(0),
+            dec!(0.01),
+            dec!(0.01),
             Some(price_increment),
             None,
             None,
@@ -1837,8 +1911,19 @@ mod tests {
             None,
             Some(max_price),
             None,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::EqualityMismatch {
+                lhs_param: "max_price.precision".to_string(),
+                rhs_param: "price_precision".to_string(),
+                lhs: "3".to_string(),
+                rhs: "2".to_string(),
+                type_name: "u8",
+            }
         );
-        assert!(res.is_err());
     }
 
     #[rstest]

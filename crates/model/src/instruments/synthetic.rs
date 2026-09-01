@@ -653,6 +653,37 @@ mod tests {
     }
 
     #[rstest]
+    fn test_serialization_roundtrip_rebuilds_formula() {
+        let components = vec![
+            InstrumentId::from_str("BTC.BINANCE").unwrap(),
+            InstrumentId::from_str("LTC.BINANCE").unwrap(),
+        ];
+        let synth = SyntheticInstrument::builder()
+            .symbol(Symbol::from("BTC-LTC"))
+            .price_precision(3)
+            .components(components.clone())
+            .formula("BTC.BINANCE / LTC.BINANCE")
+            .ts_event(11.into())
+            .ts_init(22.into())
+            .build()
+            .unwrap();
+        let json = serde_json::to_string(&synth).unwrap();
+
+        let deserialized: SyntheticInstrument = serde_json::from_str(&json).unwrap();
+        let price = deserialized.calculate(&[12.5, 2.0]).unwrap();
+
+        assert_eq!(deserialized.id, synth.id);
+        assert_eq!(deserialized.price_precision, 3);
+        assert_eq!(deserialized.price_increment, Price::from("0.001"));
+        assert_eq!(deserialized.components, components);
+        assert_eq!(deserialized.formula, "BTC.BINANCE / LTC.BINANCE");
+        assert_eq!(deserialized.ts_event, UnixNanos::from(11));
+        assert_eq!(deserialized.ts_init, UnixNanos::from(22));
+        assert_eq!(price.as_decimal(), rust_decimal_macros::dec!(6.25));
+        assert_eq!(price.precision, 3);
+    }
+
+    #[rstest]
     fn test_deserialize_rejects_unknown_formula_symbol() {
         let synth = SyntheticInstrument::default();
         let payload = serde_json::to_string(&synth).unwrap().replace(

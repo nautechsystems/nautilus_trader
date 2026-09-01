@@ -527,7 +527,7 @@ mod tests {
         let inst = futures_contract_es(None, None);
         let json = serde_json::to_string(&inst).unwrap();
         let deserialized: FuturesContract = serde_json::from_str(&json).unwrap();
-        assert_eq!(inst, deserialized);
+        assert_eq!(json, serde_json::to_string(&deserialized).unwrap());
     }
 
     #[rstest]

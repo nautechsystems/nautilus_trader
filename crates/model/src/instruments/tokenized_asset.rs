@@ -554,7 +554,7 @@ mod tests {
     fn test_serialization_roundtrip(tokenized_asset_aaplx: TokenizedAsset) {
         let json = serde_json::to_string(&tokenized_asset_aaplx).unwrap();
         let deserialized: TokenizedAsset = serde_json::from_str(&json).unwrap();
-        assert_eq!(tokenized_asset_aaplx, deserialized);
+        assert_eq!(json, serde_json::to_string(&deserialized).unwrap());
     }
 
     #[rstest]

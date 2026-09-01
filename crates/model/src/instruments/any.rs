@@ -110,6 +110,55 @@ mod tests {
     use crate::instruments::stubs::*;
 
     #[rstest]
+    #[case::betting(InstrumentAny::Betting(betting()), "3.33")]
+    #[case::binary_option(InstrumentAny::BinaryOption(binary_option()), "3.33")]
+    #[case::cfd(InstrumentAny::Cfd(cfd_gold()), "3")]
+    #[case::commodity(InstrumentAny::Commodity(commodity_gold()), "3")]
+    #[case::crypto_future(
+        InstrumentAny::CryptoFuture(crypto_future_btcusdt(
+            2,
+            6,
+            Price::from("0.01"),
+            Quantity::from("0.000001"),
+        )),
+        "3.333333"
+    )]
+    #[case::crypto_futures_spread(
+        InstrumentAny::CryptoFuturesSpread(crypto_futures_spread_btc_deribit()),
+        "3"
+    )]
+    #[case::crypto_option(
+        InstrumentAny::CryptoOption(crypto_option_btc_deribit(
+            3,
+            1,
+            Price::from("0.001"),
+            Quantity::from("0.1"),
+        )),
+        "3.3"
+    )]
+    #[case::crypto_option_spread(
+        InstrumentAny::CryptoOptionSpread(crypto_option_spread_btc_deribit()),
+        "3.3"
+    )]
+    #[case::crypto_perpetual(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()), "3.333")]
+    #[case::currency_pair(InstrumentAny::CurrencyPair(currency_pair_btcusdt()), "3.333333")]
+    #[case::equity(InstrumentAny::Equity(equity_aapl()), "3")]
+    #[case::futures_contract(InstrumentAny::FuturesContract(futures_contract_es(None, None)), "3")]
+    #[case::futures_spread(InstrumentAny::FuturesSpread(futures_spread_es()), "3")]
+    #[case::index(InstrumentAny::IndexInstrument(index_instrument_spx()), "3")]
+    #[case::option_contract(InstrumentAny::OptionContract(option_contract_appl()), "3")]
+    #[case::option_spread(InstrumentAny::OptionSpread(option_spread()), "3")]
+    #[case::perpetual_contract(InstrumentAny::PerpetualContract(perpetual_contract_eurusd()), "3")]
+    #[case::tokenized_asset(InstrumentAny::TokenizedAsset(tokenized_asset_aaplx()), "3.3333")]
+    fn test_get_base_quantity(#[case] instrument: InstrumentAny, #[case] expected: &str) {
+        let quantity = instrument.get_base_quantity(Quantity::from("10"), Price::from("3"));
+        let expected = Quantity::from(expected);
+
+        assert_eq!(quantity.as_decimal(), expected.as_decimal());
+        assert_eq!(quantity.precision, expected.precision);
+    }
+
+    #[rstest]
     #[case::futures_spread(InstrumentAny::FuturesSpread(futures_spread_es()), true)]
     #[case::option_spread(InstrumentAny::OptionSpread(option_spread()), true)]
     #[case::crypto_futures_spread(

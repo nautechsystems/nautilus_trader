@@ -531,7 +531,7 @@ mod tests {
     fn test_serialization_roundtrip(crypto_futures_spread_btc_deribit: CryptoFuturesSpread) {
         let json = serde_json::to_string(&crypto_futures_spread_btc_deribit).unwrap();
         let deserialized: CryptoFuturesSpread = serde_json::from_str(&json).unwrap();
-        assert_eq!(crypto_futures_spread_btc_deribit, deserialized);
+        assert_eq!(json, serde_json::to_string(&deserialized).unwrap());
     }
 
     #[rstest]

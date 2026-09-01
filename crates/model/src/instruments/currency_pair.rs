@@ -514,7 +514,7 @@ mod tests {
     fn test_serialization_roundtrip(currency_pair_btcusdt: CurrencyPair) {
         let json = serde_json::to_string(&currency_pair_btcusdt).unwrap();
         let deserialized: CurrencyPair = serde_json::from_str(&json).unwrap();
-        assert_eq!(currency_pair_btcusdt, deserialized);
+        assert_eq!(json, serde_json::to_string(&deserialized).unwrap());
     }
 
     #[rstest]

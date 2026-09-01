@@ -503,7 +503,7 @@ mod tests {
     fn test_serialization_roundtrip(futures_spread_es: FuturesSpread) {
         let json = serde_json::to_string(&futures_spread_es).unwrap();
         let deserialized: FuturesSpread = serde_json::from_str(&json).unwrap();
-        assert_eq!(futures_spread_es, deserialized);
+        assert_eq!(json, serde_json::to_string(&deserialized).unwrap());
     }
 
     #[rstest]

@@ -604,7 +604,7 @@ mod tests {
     fn test_serialization_roundtrip(crypto_option_btc_deribit: CryptoOption) {
         let json = serde_json::to_string(&crypto_option_btc_deribit).unwrap();
         let deserialized: CryptoOption = serde_json::from_str(&json).unwrap();
-        assert_eq!(crypto_option_btc_deribit, deserialized);
+        assert_eq!(json, serde_json::to_string(&deserialized).unwrap());
     }
 
     #[rstest]
