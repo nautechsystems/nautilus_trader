@@ -377,7 +377,7 @@ impl Quantity {
     ///
     /// # Panics
     ///
-    /// Panics if precision is beyond `MAX_FLOAT_PRECISION` (16).
+    /// With the `defi` feature, panics if precision exceeds `MAX_FLOAT_PRECISION` (16).
     #[must_use]
     pub fn as_f64(&self) -> f64 {
         #[cfg(feature = "defi")]
@@ -391,17 +391,8 @@ impl Quantity {
 
     #[cfg(not(feature = "high-precision"))]
     /// Returns the value of this instance as an `f64`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if precision is beyond `MAX_FLOAT_PRECISION` (16).
     #[must_use]
     pub fn as_f64(&self) -> f64 {
-        #[cfg(feature = "defi")]
-        if self.precision > MAX_FLOAT_PRECISION {
-            panic!("Invalid f64 conversion beyond `MAX_FLOAT_PRECISION` (16)");
-        }
-
         fixed_u64_to_f64(self.raw)
     }
 
@@ -1532,8 +1523,9 @@ mod tests {
     #[cfg(feature = "high-precision")]
     #[rstest]
     fn test_from_decimal_dp_rejects_value_above_quantity_max() {
-        let raw = 340_282_366_920_940_000_000_000_000_000_u128;
-        let error = Quantity::from_decimal_dp(dec!(34_028_236_692_094), 0).unwrap_err();
+        let value = 34_028_236_692_094_u64;
+        let raw = u128::from(value) * FIXED_SCALAR_RAW;
+        let error = Quantity::from_decimal_dp(Decimal::from(value), 0).unwrap_err();
 
         assert_eq!(
             error,

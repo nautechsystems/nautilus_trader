@@ -304,22 +304,14 @@ const _: () = {
 /// a debug assertion fires to surface potential misuse during development.
 #[inline(always)]
 fn should_skip_validation(precision: u8) -> bool {
-    if precision == FIXED_PRECISION {
-        return true;
-    }
+    #[cfg(not(feature = "defi"))]
+    debug_assert!(
+        precision <= FIXED_PRECISION,
+        "precision {precision} exceeds FIXED_PRECISION {FIXED_PRECISION}: \
+         raw value validation is not possible at this precision"
+    );
 
-    if precision > FIXED_PRECISION {
-        // Only assert when defi feature is disabled - with defi, 18dp is legitimate
-        #[cfg(not(feature = "defi"))]
-        debug_assert!(
-            false,
-            "precision {precision} exceeds FIXED_PRECISION {FIXED_PRECISION}: \
-             raw value validation is not possible at this precision"
-        );
-        return true;
-    }
-
-    false
+    precision >= FIXED_PRECISION
 }
 
 /// Builds the error for invalid fixed-point raw values (cold path).
