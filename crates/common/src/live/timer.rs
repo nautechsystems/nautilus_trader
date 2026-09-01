@@ -547,7 +547,7 @@ mod tests {
     #[cfg(not(all(feature = "simulation", madsim)))]
     use std::rc::Rc;
     #[cfg(all(feature = "python", not(all(feature = "simulation", madsim))))]
-    use std::sync::atomic::AtomicU64;
+    use std::sync::{OnceLock, atomic::AtomicU64};
     use std::{
         num::NonZeroU64,
         sync::{
@@ -624,141 +624,79 @@ mod tests {
     }
 
     #[rstest]
-    fn test_live_timer_stop_bound_allows_unbounded_scheduled_time() {
-        assert!(super::should_fire_scheduled_time(
-            UnixNanos::from(100),
-            None
-        ));
-        assert!(!super::expires_after_scheduled_time(
-            UnixNanos::from(100),
-            None
-        ));
-    }
-
-    #[rstest]
-    fn test_live_timer_stop_bound_skips_time_past_stop() {
-        let next_time_ns = UnixNanos::from(110);
-        let stop_time_ns = Some(UnixNanos::from(100));
-
-        assert!(!super::should_fire_scheduled_time(
-            next_time_ns,
-            stop_time_ns
-        ));
-        assert!(!super::expires_after_scheduled_time(
-            next_time_ns,
-            stop_time_ns
-        ));
-    }
-
-    #[rstest]
-    fn test_live_timer_stop_bound_allows_time_before_stop_without_expiring() {
-        let next_time_ns = UnixNanos::from(90);
-        let stop_time_ns = Some(UnixNanos::from(100));
-
-        assert!(super::should_fire_scheduled_time(
-            next_time_ns,
-            stop_time_ns
-        ));
-        assert!(!super::expires_after_scheduled_time(
-            next_time_ns,
-            stop_time_ns
-        ));
-    }
-
-    #[rstest]
-    fn test_live_timer_stop_bound_fires_time_at_stop_then_expires() {
-        let next_time_ns = UnixNanos::from(100);
-        let stop_time_ns = Some(UnixNanos::from(100));
-
-        assert!(super::should_fire_scheduled_time(
-            next_time_ns,
-            stop_time_ns
-        ));
-        assert!(super::expires_after_scheduled_time(
-            next_time_ns,
-            stop_time_ns
-        ));
-    }
-
-    #[rstest]
-    fn test_live_timer_past_due_stop_boundary_is_not_adjusted_forward() {
-        let observed_next = 100;
-        let now = UnixNanos::from(110);
-        let stop_time_ns = Some(UnixNanos::from(observed_next));
-
-        assert!(!super::should_adjust_past_due_time(
-            observed_next,
-            now,
-            stop_time_ns
-        ));
-    }
-
-    #[rstest]
-    fn test_live_timer_past_due_time_before_stop_is_adjusted_forward() {
-        let observed_next = 90;
-        let now = UnixNanos::from(110);
-        let stop_time_ns = Some(UnixNanos::from(120));
-
-        assert!(super::should_adjust_past_due_time(
-            observed_next,
-            now,
-            stop_time_ns
-        ));
-    }
-
-    #[rstest]
-    fn test_live_timer_start_time_normalization_adjusts_past_due_time() {
-        let observed_next = 1_234_567;
-        let now = UnixNanos::from(2_345_678);
+    #[case::unbounded(100, None, true, false)]
+    #[case::past_stop(110, Some(100), false, false)]
+    #[case::before_stop(90, Some(100), true, false)]
+    #[case::at_stop(100, Some(100), true, true)]
+    fn test_live_timer_stop_bound(
+        #[case] next_time_ns: u64,
+        #[case] stop_time_ns: Option<u64>,
+        #[case] should_fire: bool,
+        #[case] expires: bool,
+    ) {
+        let next_time_ns = UnixNanos::from(next_time_ns);
+        let stop_time_ns = stop_time_ns.map(UnixNanos::from);
 
         assert_eq!(
-            super::normalize_start_time_ns(observed_next, now, None),
-            UnixNanos::from(2_345_000)
+            super::should_fire_scheduled_time(next_time_ns, stop_time_ns),
+            should_fire
+        );
+        assert_eq!(
+            super::expires_after_scheduled_time(next_time_ns, stop_time_ns),
+            expires
         );
     }
 
     #[rstest]
-    fn test_live_timer_start_time_normalization_keeps_future_time() {
-        let observed_next = 3_456_789;
-        let now = UnixNanos::from(2_345_678);
-
+    #[case::stop_boundary(100, 110, 100, false)]
+    #[case::before_stop(90, 110, 120, true)]
+    fn test_live_timer_past_due_adjustment(
+        #[case] observed_next: u64,
+        #[case] now: u64,
+        #[case] stop_time_ns: u64,
+        #[case] expected: bool,
+    ) {
         assert_eq!(
-            super::normalize_start_time_ns(observed_next, now, None),
-            UnixNanos::from(3_456_000)
+            super::should_adjust_past_due_time(
+                observed_next,
+                UnixNanos::from(now),
+                Some(UnixNanos::from(stop_time_ns)),
+            ),
+            expected
         );
     }
 
     #[rstest]
-    fn test_live_timer_start_time_normalization_keeps_stop_boundary_exact() {
-        let observed_next = 1_234_567;
-        let now = UnixNanos::from(2_345_678);
-        let stop_time_ns = Some(UnixNanos::from(observed_next));
-
+    #[case::past_due(1_234_567, 2_345_678, None, 2_345_000)]
+    #[case::future(3_456_789, 2_345_678, None, 3_456_000)]
+    #[case::stop_boundary(1_234_567, 2_345_678, Some(1_234_567), 1_234_567)]
+    fn test_live_timer_start_time_normalization(
+        #[case] observed_next: u64,
+        #[case] now: u64,
+        #[case] stop_time_ns: Option<u64>,
+        #[case] expected: u64,
+    ) {
         assert_eq!(
-            super::normalize_start_time_ns(observed_next, now, stop_time_ns),
-            UnixNanos::from(observed_next)
+            super::normalize_start_time_ns(
+                observed_next,
+                UnixNanos::from(now),
+                stop_time_ns.map(UnixNanos::from),
+            ),
+            UnixNanos::from(expected)
         );
     }
 
     #[rstest]
-    fn test_live_timer_start_delay_preserves_full_delay() {
-        let next_time_ns = UnixNanos::from(12_000_000);
-        let now = UnixNanos::from(10_000_000);
-
+    #[case::full(12_000_000, 10_000_000, 2_000_000)]
+    #[case::sub_millisecond(10_500_000, 10_000_000, 500_000)]
+    fn test_live_timer_start_delay(
+        #[case] next_time_ns: u64,
+        #[case] now: u64,
+        #[case] expected_ns: u64,
+    ) {
         assert_eq!(
-            super::timer_start_delay(next_time_ns, now),
-            tokio::time::Duration::from_millis(2)
-        );
-    }
-
-    #[rstest]
-    fn test_live_timer_start_delay_preserves_sub_millisecond_delay() {
-        let next_time_ns = UnixNanos::from(10_500_000);
-        let now = UnixNanos::from(10_000_000);
-
-        assert_eq!(
-            super::timer_start_delay(next_time_ns, now),
-            tokio::time::Duration::from_micros(500)
+            super::timer_start_delay(UnixNanos::from(next_time_ns), UnixNanos::from(now)),
+            tokio::time::Duration::from_nanos(expected_ns)
         );
     }
 
@@ -803,41 +741,24 @@ mod tests {
     }
 
     #[rstest]
-    fn test_live_timer_fire_immediately_field() {
+    #[case::immediate(true, 100)]
+    #[case::after_interval(false, 1_100)]
+    fn test_live_timer_fire_immediately(
+        #[case] fire_immediately: bool,
+        #[case] expected_next_time_ns: u64,
+    ) {
         let timer = LiveTimer::new(
             Ustr::from("TEST_TIMER"),
             NonZeroU64::new(1000).unwrap(),
             UnixNanos::from(100),
             None,
             TimeEventCallback::from(|_| {}),
-            true, // fire_immediately = true
-            None, // time_event_sender
-        );
-
-        // Verify the field is set correctly
-        assert!(timer.fire_immediately);
-
-        // With fire_immediately=true, next_time_ns should be start_time_ns
-        assert_eq!(timer.next_time_ns(), UnixNanos::from(100));
-    }
-
-    #[rstest]
-    fn test_live_timer_fire_immediately_false_field() {
-        let timer = LiveTimer::new(
-            Ustr::from("TEST_TIMER"),
-            NonZeroU64::new(1000).unwrap(),
-            UnixNanos::from(100),
+            fire_immediately,
             None,
-            TimeEventCallback::from(|_| {}),
-            false, // fire_immediately = false
-            None,  // time_event_sender
         );
 
-        // Verify the field is set correctly
-        assert!(!timer.fire_immediately);
-
-        // With fire_immediately=false, next_time_ns should be start_time_ns + interval
-        assert_eq!(timer.next_time_ns(), UnixNanos::from(1100));
+        assert_eq!(timer.fire_immediately, fire_immediately);
+        assert_eq!(timer.next_time_ns(), UnixNanos::from(expected_next_time_ns));
     }
 
     #[rstest]
@@ -1165,7 +1086,7 @@ mod tests {
         Python::initialize();
 
         Python::attach(|py| {
-            let schedule: Arc<Mutex<Option<Arc<AtomicU64>>>> = Arc::new(Mutex::new(None));
+            let schedule = Arc::new(OnceLock::<Arc<AtomicU64>>::new());
             let callback_schedule = schedule.clone();
             let (tx, rx) = mpsc::channel();
             let callback = pyo3::types::PyCFunction::new_closure(
@@ -1176,8 +1097,7 @@ mod tests {
                       _kwargs: Option<&pyo3::Bound<'_, pyo3::types::PyDict>>|
                       -> pyo3::PyResult<()> {
                     let next_time_ns = callback_schedule
-                        .lock()
-                        .as_ref()
+                        .get()
                         .expect("timer schedule should be available")
                         .load(Ordering::SeqCst);
                     tx.send(next_time_ns)
@@ -1190,12 +1110,11 @@ mod tests {
             .unbind();
             let now = get_atomic_clock_realtime().get_time_ns();
             let interval_ns = 10_000_000;
-            let start_time_ns = now + 50_000_000;
             let mut timer = LiveTimer::new(
                 Ustr::from("SENDERLESS_SCHEDULE"),
                 NonZeroU64::new(interval_ns).unwrap(),
-                start_time_ns,
-                None,
+                now,
+                Some(now),
                 TimeEventCallback::from(callback),
                 true,
                 None,
@@ -1203,7 +1122,9 @@ mod tests {
 
             timer.start();
             let expected_time_ns = timer.next_time_ns().as_u64();
-            schedule.lock().replace(timer.next_time_ns.clone());
+            schedule
+                .set(timer.next_time_ns.clone())
+                .expect("timer schedule should set once");
             let observed_time_ns = py
                 .detach(move || rx.recv_timeout(StdDuration::from_secs(1)))
                 .expect("senderless callback should observe the schedule");
