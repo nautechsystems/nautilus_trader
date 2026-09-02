@@ -368,7 +368,8 @@ repos:
             clippy\.toml|
             rust-toolchain\.toml|
             python/pyproject\.toml|
-            \.cargo/config\.toml
+            \.cargo/config\.toml|
+            scripts/cargo-features\.bash
           )$
         types: [file]
         pass_filenames: false
@@ -402,7 +403,8 @@ repos:
             Cargo\.lock|
             rust-toolchain\.toml|
             python/pyproject\.toml|
-            \.cargo/config\.toml
+            \.cargo/config\.toml|
+            scripts/cargo-features\.bash
           )$
         types: [file]
         pass_filenames: false

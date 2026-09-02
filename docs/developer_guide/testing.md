@@ -175,7 +175,7 @@ measurement policy. Run benchmarks separately from unit tests to avoid interfere
 ```bash
 make cargo-test
 # or
-cargo nextest run --workspace --features "arrow,ffi,python,high-precision,streaming,defi" --cargo-profile nextest --lib --tests
+cargo nextest run --workspace --features "$(bash scripts/cargo-features.bash)" --cargo-profile nextest --lib --tests
 ```
 
 :::info
@@ -194,7 +194,7 @@ with the libtest runner.
 ```bash
 make cargo-test-doc
 # or
-cargo test --doc --workspace --features "arrow,ffi,python,high-precision,streaming,defi" --profile nextest
+cargo test --doc --workspace --features "$(bash scripts/cargo-features.bash)" --profile nextest
 ```
 
 Doc examples are a maintained test surface: CI runs this target on pull requests that touch Rust

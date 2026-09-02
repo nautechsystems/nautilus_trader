@@ -179,9 +179,15 @@ endif
 # Can be disabled: make cargo-test-core DEFI=false
 DEFI ?= true
 ifeq ($(DEFI),true)
-BASE_FEATURES := arrow,ffi,python,high-precision,streaming,defi
+BASE_FEATURES := $(shell bash scripts/cargo-features.bash)
 else
-BASE_FEATURES := arrow,ffi,python,high-precision,streaming
+BASE_FEATURES := $(shell bash scripts/cargo-features.bash --no-defi)
+endif
+
+# $(shell) swallows a failing or missing script, and an empty list silently
+# compiles every Rust gate with no features rather than failing.
+ifeq ($(strip $(BASE_FEATURES)),)
+$(error scripts/cargo-features.bash produced no features)
 endif
 
 # Combine base features with extra features
@@ -1017,7 +1023,7 @@ cargo-test-core-local-debug:  #-- Run Rust tests for core crates with direct pac
 cargo-test-lib: export RUST_BACKTRACE=1
 cargo-test-lib: check-nextest-installed
 cargo-test-lib:  #-- Run Rust library tests only with high precision
-	cargo nextest run --lib --workspace --no-default-features --features "ffi,python,high-precision,streaming,defi,test-support" $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) $(NEXTEST_OUTPUT_ARGS)
+	cargo nextest run --lib --workspace --no-default-features --features "$(BASE_FEATURES),test-support" $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) $(NEXTEST_OUTPUT_ARGS)
 
 .PHONY: cargo-test-standard-precision
 cargo-test-standard-precision: export RUST_BACKTRACE=1
@@ -1029,7 +1035,7 @@ cargo-test-standard-precision:  #-- Run Rust tests with standard precision (debu
 cargo-test-debug: export RUST_BACKTRACE=1
 cargo-test-debug: check-nextest-installed
 cargo-test-debug:  #-- Run Rust tests with high precision (debug profile)
-	cargo nextest run --workspace --lib --tests --features "ffi,python,high-precision,streaming,defi" $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) $(NEXTEST_OUTPUT_ARGS)
+	cargo nextest run --workspace --lib --tests --features "$(BASE_FEATURES)" $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) $(NEXTEST_OUTPUT_ARGS)
 
 .PHONY: cargo-test-coverage
 cargo-test-coverage: check-nextest-installed check-llvm-cov-installed

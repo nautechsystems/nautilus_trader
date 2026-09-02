@@ -63,11 +63,12 @@ PATH="${FAKE_BIN}:${PATH}" CARGO_LOG="$CARGO_LOG" \
   clippy-strict-audit > "$REPORT" 2> "$ERROR_LOG"
 
 [[ "$(grep -c '^clippy ' "$CARGO_LOG")" -eq 2 ]] || fail "Audit did not run Clippy twice"
+BASE_FEATURES=$(bash "$REPO_ROOT/scripts/cargo-features.bash")
 grep -Fq \
-  'clippy --quiet --workspace --locked --lib --bins --features arrow,ffi,python,high-precision,streaming,defi --profile nextest --no-deps --color never --message-format=json --' \
+  "clippy --quiet --workspace --locked --lib --bins --features $BASE_FEATURES --profile nextest --no-deps --color never --message-format=json --" \
   "$CARGO_LOG" || fail "Production audit command changed"
 grep -Fq \
-  'clippy --quiet --workspace --locked --lib --bins --tests --features arrow,ffi,python,high-precision,streaming,defi --profile nextest --no-deps --color never --message-format=json --' \
+  "clippy --quiet --workspace --locked --lib --bins --tests --features $BASE_FEATURES --profile nextest --no-deps --color never --message-format=json --" \
   "$CARGO_LOG" || fail "Test audit command changed"
 grep -Fq -- '--force-warn clippy::unimplemented' "$CARGO_LOG" ||
   fail "Audit did not force candidate lints to warnings"

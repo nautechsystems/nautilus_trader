@@ -49,6 +49,7 @@ jobs:
     outputs:
       run-tests: ${{ steps.plan.outputs.run_tests }}
       run-rust-tests: ${{ steps.plan.outputs.run_rust_tests }}
+      github-changed: ${{ steps.plan.outputs.github_changed }}
       untrusted_pr: ${{ steps.policy.outputs.untrusted_pr }}
       publish_r2: ${{ steps.wheel-publication.outputs.publish_r2 }}
       publish_development: ${{ steps.wheel-publication.outputs.publish_development }}
@@ -149,6 +150,8 @@ jobs:
           sudo apt-get install -y ripgrep -o Acquire::Retries=5
 
       - name: Check GitHub Action pins
+        # One network round trip per pinned reference, so only when they changed
+        if: needs.plan.outputs.github-changed == 'true'
         run: make check-github-action-pins
 
       - name: Check Docker toolchain pins
