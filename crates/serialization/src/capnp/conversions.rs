@@ -118,6 +118,29 @@ where
     }
 }
 
+fn write_string_map(map: &IndexMap<Ustr, Ustr>, mut builder: base_capnp::string_map::Builder<'_>) {
+    let mut entries = builder.reborrow().init_entries(map.len() as u32);
+    for (index, (key, value)) in map.iter().enumerate() {
+        let mut entry = entries.reborrow().get(index as u32);
+        entry.set_key(key.as_str());
+        entry.set_value(value.as_str());
+    }
+}
+
+fn read_string_map(
+    reader: base_capnp::string_map::Reader<'_>,
+) -> Result<IndexMap<Ustr, Ustr>, Box<dyn Error>> {
+    let entries = reader.get_entries()?;
+    let mut map = IndexMap::with_capacity(entries.len() as usize);
+    for entry in entries {
+        map.insert(
+            Ustr::from(entry.get_key()?.to_str()?),
+            Ustr::from(entry.get_value()?.to_str()?),
+        );
+    }
+    Ok(map)
+}
+
 impl<'a> ToCapnp<'a> for nautilus_core::UUID4 {
     type Builder = base_capnp::u_u_i_d4::Builder<'a>;
 
@@ -1327,12 +1350,8 @@ impl<'a> ToCapnp<'a> for MarginBalance {
         let maintenance_builder = builder.reborrow().init_maintenance();
         self.maintenance.to_capnp(maintenance_builder);
 
-        // Only set the instrument pointer for per-instrument entries; leave
-        // unset to signal account-wide (cross margin) balances.
-        if let Some(instrument_id) = self.instrument_id {
-            let instrument_builder = builder.init_instrument();
-            instrument_id.to_capnp(instrument_builder);
-        }
+        // An unset pointer represents an account-wide cross-margin balance
+        self.instrument_id.write_capnp(|| builder.init_instrument());
     }
 }
 
@@ -1346,12 +1365,8 @@ impl<'a> FromCapnp<'a> for MarginBalance {
         let maintenance_reader = reader.get_maintenance()?;
         let maintenance = Money::from_capnp(maintenance_reader)?;
 
-        let instrument_id = if reader.has_instrument() {
-            let instrument_reader = reader.get_instrument()?;
-            Some(InstrumentId::from_capnp(instrument_reader)?)
-        } else {
-            None
-        };
+        let instrument_id =
+            read_optional_from_capnp(|| reader.has_instrument(), || reader.get_instrument())?;
 
         Ok(Self::new_checked(initial, maintenance, instrument_id)?)
     }
@@ -2902,10 +2917,8 @@ impl<'a> ToCapnp<'a> for OrderCanceled {
         let client_order_id_builder = builder.reborrow().init_client_order_id();
         self.client_order_id.to_capnp(client_order_id_builder);
 
-        if let Some(ref venue_order_id) = self.venue_order_id {
-            let venue_order_id_builder = builder.reborrow().init_venue_order_id();
-            venue_order_id.to_capnp(venue_order_id_builder);
-        }
+        self.venue_order_id
+            .write_capnp(|| builder.reborrow().init_venue_order_id());
 
         self.account_id
             .write_capnp(|| builder.reborrow().init_account_id());
@@ -2991,10 +3004,8 @@ impl<'a> ToCapnp<'a> for OrderExpired {
         let client_order_id_builder = builder.reborrow().init_client_order_id();
         self.client_order_id.to_capnp(client_order_id_builder);
 
-        if let Some(ref venue_order_id) = self.venue_order_id {
-            let venue_order_id_builder = builder.reborrow().init_venue_order_id();
-            venue_order_id.to_capnp(venue_order_id_builder);
-        }
+        self.venue_order_id
+            .write_capnp(|| builder.reborrow().init_venue_order_id());
 
         self.account_id
             .write_capnp(|| builder.reborrow().init_account_id());
@@ -3080,10 +3091,8 @@ impl<'a> ToCapnp<'a> for OrderTriggered {
         let client_order_id_builder = builder.reborrow().init_client_order_id();
         self.client_order_id.to_capnp(client_order_id_builder);
 
-        if let Some(ref venue_order_id) = self.venue_order_id {
-            let venue_order_id_builder = builder.reborrow().init_venue_order_id();
-            venue_order_id.to_capnp(venue_order_id_builder);
-        }
+        self.venue_order_id
+            .write_capnp(|| builder.reborrow().init_venue_order_id());
 
         self.account_id
             .write_capnp(|| builder.reborrow().init_account_id());
@@ -3169,15 +3178,10 @@ impl<'a> ToCapnp<'a> for OrderPendingUpdate {
         let client_order_id_builder = builder.reborrow().init_client_order_id();
         self.client_order_id.to_capnp(client_order_id_builder);
 
-        if let Some(ref venue_order_id) = self.venue_order_id {
-            let venue_order_id_builder = builder.reborrow().init_venue_order_id();
-            venue_order_id.to_capnp(venue_order_id_builder);
-        }
-
-        if let Some(ref account_id) = self.account_id {
-            let account_id_builder = builder.reborrow().init_account_id();
-            account_id.to_capnp(account_id_builder);
-        }
+        self.venue_order_id
+            .write_capnp(|| builder.reborrow().init_venue_order_id());
+        self.account_id
+            .write_capnp(|| builder.reborrow().init_account_id());
 
         let event_id_builder = builder.reborrow().init_event_id();
         self.event_id.to_capnp(event_id_builder);
@@ -3208,19 +3212,13 @@ impl<'a> FromCapnp<'a> for OrderPendingUpdate {
         let client_order_id_reader = reader.get_client_order_id()?;
         let client_order_id = ClientOrderId::from_capnp(client_order_id_reader)?;
 
-        let venue_order_id = if reader.has_venue_order_id() {
-            let venue_order_id_reader = reader.get_venue_order_id()?;
-            Some(VenueOrderId::from_capnp(venue_order_id_reader)?)
-        } else {
-            None
-        };
+        let venue_order_id = read_optional_from_capnp(
+            || reader.has_venue_order_id(),
+            || reader.get_venue_order_id(),
+        )?;
 
-        let account_id = if reader.has_account_id() {
-            let account_id_reader = reader.get_account_id()?;
-            Some(AccountId::from_capnp(account_id_reader)?)
-        } else {
-            None
-        };
+        let account_id =
+            read_optional_from_capnp(|| reader.has_account_id(), || reader.get_account_id())?;
 
         let event_id_reader = reader.get_event_id()?;
         let event_id = nautilus_core::UUID4::from_capnp(event_id_reader)?;
@@ -3266,15 +3264,10 @@ impl<'a> ToCapnp<'a> for OrderPendingCancel {
         let client_order_id_builder = builder.reborrow().init_client_order_id();
         self.client_order_id.to_capnp(client_order_id_builder);
 
-        if let Some(ref venue_order_id) = self.venue_order_id {
-            let venue_order_id_builder = builder.reborrow().init_venue_order_id();
-            venue_order_id.to_capnp(venue_order_id_builder);
-        }
-
-        if let Some(ref account_id) = self.account_id {
-            let account_id_builder = builder.reborrow().init_account_id();
-            account_id.to_capnp(account_id_builder);
-        }
+        self.venue_order_id
+            .write_capnp(|| builder.reborrow().init_venue_order_id());
+        self.account_id
+            .write_capnp(|| builder.reborrow().init_account_id());
 
         let event_id_builder = builder.reborrow().init_event_id();
         self.event_id.to_capnp(event_id_builder);
@@ -3305,19 +3298,13 @@ impl<'a> FromCapnp<'a> for OrderPendingCancel {
         let client_order_id_reader = reader.get_client_order_id()?;
         let client_order_id = ClientOrderId::from_capnp(client_order_id_reader)?;
 
-        let venue_order_id = if reader.has_venue_order_id() {
-            let venue_order_id_reader = reader.get_venue_order_id()?;
-            Some(VenueOrderId::from_capnp(venue_order_id_reader)?)
-        } else {
-            None
-        };
+        let venue_order_id = read_optional_from_capnp(
+            || reader.has_venue_order_id(),
+            || reader.get_venue_order_id(),
+        )?;
 
-        let account_id = if reader.has_account_id() {
-            let account_id_reader = reader.get_account_id()?;
-            Some(AccountId::from_capnp(account_id_reader)?)
-        } else {
-            None
-        };
+        let account_id =
+            read_optional_from_capnp(|| reader.has_account_id(), || reader.get_account_id())?;
 
         let event_id_reader = reader.get_event_id()?;
         let event_id = nautilus_core::UUID4::from_capnp(event_id_reader)?;
@@ -3553,20 +3540,11 @@ impl<'a> ToCapnp<'a> for OrderUpdated {
         let quantity_builder = builder.reborrow().init_quantity();
         self.quantity.to_capnp(quantity_builder);
 
-        if let Some(price) = self.price {
-            let price_builder = builder.reborrow().init_price();
-            price.to_capnp(price_builder);
-        }
-
-        if let Some(trigger_price) = self.trigger_price {
-            let trigger_price_builder = builder.reborrow().init_trigger_price();
-            trigger_price.to_capnp(trigger_price_builder);
-        }
-
-        if let Some(protection_price) = self.protection_price {
-            let protection_price_builder = builder.reborrow().init_protection_price();
-            protection_price.to_capnp(protection_price_builder);
-        }
+        self.price.write_capnp(|| builder.reborrow().init_price());
+        self.trigger_price
+            .write_capnp(|| builder.reborrow().init_trigger_price());
+        self.protection_price
+            .write_capnp(|| builder.reborrow().init_protection_price());
 
         let event_id_builder = builder.reborrow().init_event_id();
         self.event_id.to_capnp(event_id_builder);
@@ -3609,26 +3587,15 @@ impl<'a> FromCapnp<'a> for OrderUpdated {
         let quantity_reader = reader.get_quantity()?;
         let quantity = Quantity::from_capnp(quantity_reader)?;
 
-        let price = if reader.has_price() {
-            let price_reader = reader.get_price()?;
-            Some(Price::from_capnp(price_reader)?)
-        } else {
-            None
-        };
+        let price = read_optional_from_capnp(|| reader.has_price(), || reader.get_price())?;
 
-        let trigger_price = if reader.has_trigger_price() {
-            let trigger_price_reader = reader.get_trigger_price()?;
-            Some(Price::from_capnp(trigger_price_reader)?)
-        } else {
-            None
-        };
+        let trigger_price =
+            read_optional_from_capnp(|| reader.has_trigger_price(), || reader.get_trigger_price())?;
 
-        let protection_price = if reader.has_protection_price() {
-            let protection_price_reader = reader.get_protection_price()?;
-            Some(Price::from_capnp(protection_price_reader)?)
-        } else {
-            None
-        };
+        let protection_price = read_optional_from_capnp(
+            || reader.has_protection_price(),
+            || reader.get_protection_price(),
+        )?;
 
         let event_id_reader = reader.get_event_id()?;
         let event_id = nautilus_core::UUID4::from_capnp(event_id_reader)?;
@@ -3713,24 +3680,13 @@ impl<'a> ToCapnp<'a> for OrderFilled {
 
         builder.set_reconciliation(self.reconciliation);
 
-        if let Some(position_id) = &self.position_id {
-            let position_id_builder = builder.reborrow().init_position_id();
-            position_id.to_capnp(position_id_builder);
-        }
-
-        if let Some(commission) = &self.commission {
-            let commission_builder = builder.reborrow().init_commission();
-            commission.to_capnp(commission_builder);
-        }
+        self.position_id
+            .write_capnp(|| builder.reborrow().init_position_id());
+        self.commission
+            .write_capnp(|| builder.reborrow().init_commission());
 
         if let Some(info) = &self.info {
-            let mut info_builder = builder.reborrow().init_info();
-            let mut entries_builder = info_builder.reborrow().init_entries(info.len() as u32);
-            for (i, (key, value)) in info.iter().enumerate() {
-                let mut entry_builder = entries_builder.reborrow().get(i as u32);
-                entry_builder.set_key(key.as_str());
-                entry_builder.set_value(value.as_str());
-            }
+            write_string_map(info, builder.reborrow().init_info());
         }
     }
 }
@@ -3785,30 +3741,14 @@ impl<'a> FromCapnp<'a> for OrderFilled {
 
         let reconciliation = reader.get_reconciliation();
 
-        let position_id = if reader.has_position_id() {
-            let position_id_reader = reader.get_position_id()?;
-            Some(PositionId::from_capnp(position_id_reader)?)
-        } else {
-            None
-        };
+        let position_id =
+            read_optional_from_capnp(|| reader.has_position_id(), || reader.get_position_id())?;
 
-        let commission = if reader.has_commission() {
-            let commission_reader = reader.get_commission()?;
-            Some(Money::from_capnp(commission_reader)?)
-        } else {
-            None
-        };
+        let commission =
+            read_optional_from_capnp(|| reader.has_commission(), || reader.get_commission())?;
 
         let info = if reader.has_info() {
-            let info_reader = reader.get_info()?;
-            let entries_reader = info_reader.get_entries()?;
-            let mut map = IndexMap::with_capacity(entries_reader.len() as usize);
-            for entry_reader in entries_reader {
-                let key = Ustr::from(entry_reader.get_key()?.to_str()?);
-                let value = Ustr::from(entry_reader.get_value()?.to_str()?);
-                map.insert(key, value);
-            }
-            Some(map)
+            Some(read_string_map(reader.get_info()?)?)
         } else {
             None
         };
@@ -3858,40 +3798,31 @@ impl<'a> ToCapnp<'a> for OrderFillVoided {
         self.trade_id.to_capnp(builder.reborrow().init_trade_id());
         self.voided_qty
             .to_capnp(builder.reborrow().init_voided_qty());
-        if let Some(commission) = self.commission_voided {
-            commission.to_capnp(builder.reborrow().init_commission_voided());
-        }
+        self.commission_voided
+            .write_capnp(|| builder.reborrow().init_commission_voided());
         builder.set_order_side(order_side_to_capnp(self.order_side.into()));
         builder.set_order_type(order_type_to_capnp(self.order_type));
         self.last_px.to_capnp(builder.reborrow().init_last_px());
         self.currency.to_capnp(builder.reborrow().init_currency());
         builder.set_liquidity_side(liquidity_side_to_capnp(self.liquidity_side));
 
-        if let Some(position_id) = self.position_id {
-            position_id.to_capnp(builder.reborrow().init_position_id());
-        }
+        self.position_id
+            .write_capnp(|| builder.reborrow().init_position_id());
 
         if let Some(reason) = self.reason {
             builder.set_reason(reason.as_str());
         }
 
         if let Some(info) = &self.info {
-            let mut info_builder = builder.reborrow().init_info();
-            let mut entries = info_builder.reborrow().init_entries(info.len() as u32);
-            for (index, (key, value)) in info.iter().enumerate() {
-                let mut entry = entries.reborrow().get(index as u32);
-                entry.set_key(key.as_str());
-                entry.set_value(value.as_str());
-            }
+            write_string_map(info, builder.reborrow().init_info());
         }
         self.event_id.to_capnp(builder.reborrow().init_event_id());
         builder.reborrow().init_ts_event().set_value(*self.ts_event);
         builder.reborrow().init_ts_init().set_value(*self.ts_init);
         builder.set_reconciliation(self.reconciliation);
         builder.set_is_reopened(self.is_reopened);
-        if let Some(causation_id) = self.causation_id {
-            causation_id.to_capnp(builder.reborrow().init_causation_id());
-        }
+        self.causation_id
+            .write_capnp(|| builder.reborrow().init_causation_id());
     }
 }
 
@@ -3908,49 +3839,32 @@ impl<'a> FromCapnp<'a> for OrderFillVoided {
         let correction_id = Ustr::from(reader.get_correction_id()?.to_str()?);
         let trade_id = TradeId::from_capnp(reader.get_trade_id()?)?;
         let voided_qty = Quantity::from_capnp(reader.get_voided_qty()?)?;
-        let commission_voided = if reader.has_commission_voided() {
-            Some(Money::from_capnp(reader.get_commission_voided()?)?)
-        } else {
-            None
-        };
+        let commission_voided = read_optional_from_capnp(
+            || reader.has_commission_voided(),
+            || reader.get_commission_voided(),
+        )?;
         let order_side = order_side_required_from_capnp(reader.get_order_side()?)?;
         let order_type = order_type_from_capnp(reader.get_order_type()?);
         let last_px = Price::from_capnp(reader.get_last_px()?)?;
         let currency = Currency::from_capnp(reader.get_currency()?)?;
         let liquidity_side = liquidity_side_from_capnp(reader.get_liquidity_side()?);
-        let position_id = if reader.has_position_id() {
-            Some(PositionId::from_capnp(reader.get_position_id()?)?)
-        } else {
-            None
-        };
+        let position_id =
+            read_optional_from_capnp(|| reader.has_position_id(), || reader.get_position_id())?;
         let reason = if reader.has_reason() {
             Some(Ustr::from(reader.get_reason()?.to_str()?))
         } else {
             None
         };
         let info = if reader.has_info() {
-            let entries = reader.get_info()?.get_entries()?;
-            let mut map = IndexMap::with_capacity(entries.len() as usize);
-            for entry in entries {
-                map.insert(
-                    Ustr::from(entry.get_key()?.to_str()?),
-                    Ustr::from(entry.get_value()?.to_str()?),
-                );
-            }
-            Some(map)
+            Some(read_string_map(reader.get_info()?)?)
         } else {
             None
         };
         let event_id = nautilus_core::UUID4::from_capnp(reader.get_event_id()?)?;
         let ts_event = reader.get_ts_event()?.get_value().into();
         let ts_init = reader.get_ts_init()?.get_value().into();
-        let causation_id = if reader.has_causation_id() {
-            Some(nautilus_core::UUID4::from_capnp(
-                reader.get_causation_id()?,
-            )?)
-        } else {
-            None
-        };
+        let causation_id =
+            read_optional_from_capnp(|| reader.has_causation_id(), || reader.get_causation_id())?;
 
         Ok(Self {
             trader_id,
@@ -4019,33 +3933,18 @@ impl<'a> ToCapnp<'a> for OrderInitialized {
         let mut ts_init_builder = builder.reborrow().init_ts_init();
         ts_init_builder.set_value(*self.ts_init);
 
-        // Optional fields
-        if let Some(price) = self.price {
-            let price_builder = builder.reborrow().init_price();
-            price.to_capnp(price_builder);
-        }
-
-        if let Some(activation_price) = self.activation_price {
-            let activation_price_builder = builder.reborrow().init_activation_price();
-            activation_price.to_capnp(activation_price_builder);
-        }
-
-        if let Some(trigger_price) = self.trigger_price {
-            let trigger_price_builder = builder.reborrow().init_trigger_price();
-            trigger_price.to_capnp(trigger_price_builder);
-        }
+        self.price.write_capnp(|| builder.reborrow().init_price());
+        self.activation_price
+            .write_capnp(|| builder.reborrow().init_activation_price());
+        self.trigger_price
+            .write_capnp(|| builder.reborrow().init_trigger_price());
 
         builder.set_trigger_type(trigger_type_to_capnp(self.trigger_type));
 
-        if let Some(limit_offset) = self.limit_offset {
-            let limit_offset_builder = builder.reborrow().init_limit_offset();
-            limit_offset.to_capnp(limit_offset_builder);
-        }
-
-        if let Some(trailing_offset) = self.trailing_offset {
-            let trailing_offset_builder = builder.reborrow().init_trailing_offset();
-            trailing_offset.to_capnp(trailing_offset_builder);
-        }
+        self.limit_offset
+            .write_capnp(|| builder.reborrow().init_limit_offset());
+        self.trailing_offset
+            .write_capnp(|| builder.reborrow().init_trailing_offset());
 
         builder.set_trailing_offset_type(trailing_offset_type_to_capnp(self.trailing_offset_type));
 
@@ -4054,24 +3953,18 @@ impl<'a> ToCapnp<'a> for OrderInitialized {
             expire_time_builder.set_value(*expire_time);
         }
 
-        if let Some(display_qty) = self.display_qty {
-            let display_qty_builder = builder.reborrow().init_display_qty();
-            display_qty.to_capnp(display_qty_builder);
-        }
+        self.display_qty
+            .write_capnp(|| builder.reborrow().init_display_qty());
 
         builder.set_emulation_trigger(trigger_type_to_capnp(self.emulation_trigger));
 
-        if let Some(trigger_instrument_id) = &self.trigger_instrument_id {
-            let trigger_instrument_id_builder = builder.reborrow().init_trigger_instrument_id();
-            trigger_instrument_id.to_capnp(trigger_instrument_id_builder);
-        }
+        self.trigger_instrument_id
+            .write_capnp(|| builder.reborrow().init_trigger_instrument_id());
 
         builder.set_contingency_type(contingency_type_to_capnp(self.contingency_type));
 
-        if let Some(order_list_id) = &self.order_list_id {
-            let order_list_id_builder = builder.reborrow().init_order_list_id();
-            order_list_id.to_capnp(order_list_id_builder);
-        }
+        self.order_list_id
+            .write_capnp(|| builder.reborrow().init_order_list_id());
 
         if let Some(linked_order_ids) = &self.linked_order_ids {
             let mut linked_order_ids_builder = builder
@@ -4083,32 +3976,21 @@ impl<'a> ToCapnp<'a> for OrderInitialized {
             }
         }
 
-        if let Some(parent_order_id) = &self.parent_order_id {
-            let parent_order_id_builder = builder.reborrow().init_parent_order_id();
-            parent_order_id.to_capnp(parent_order_id_builder);
-        }
+        self.parent_order_id
+            .write_capnp(|| builder.reborrow().init_parent_order_id());
 
-        if let Some(exec_algorithm_id) = &self.exec_algorithm_id {
-            let exec_algorithm_id_builder = builder.reborrow().init_exec_algorithm_id();
-            exec_algorithm_id.to_capnp(exec_algorithm_id_builder);
-        }
+        self.exec_algorithm_id
+            .write_capnp(|| builder.reborrow().init_exec_algorithm_id());
 
         if let Some(exec_algorithm_params) = &self.exec_algorithm_params {
-            let mut params_builder = builder.reborrow().init_exec_algorithm_params();
-            let mut entries_builder = params_builder
-                .reborrow()
-                .init_entries(exec_algorithm_params.len() as u32);
-            for (i, (key, value)) in exec_algorithm_params.iter().enumerate() {
-                let mut entry_builder = entries_builder.reborrow().get(i as u32);
-                entry_builder.set_key(key.as_str());
-                entry_builder.set_value(value.as_str());
-            }
+            write_string_map(
+                exec_algorithm_params,
+                builder.reborrow().init_exec_algorithm_params(),
+            );
         }
 
-        if let Some(exec_spawn_id) = &self.exec_spawn_id {
-            let exec_spawn_id_builder = builder.reborrow().init_exec_spawn_id();
-            exec_spawn_id.to_capnp(exec_spawn_id_builder);
-        }
+        self.exec_spawn_id
+            .write_capnp(|| builder.reborrow().init_exec_spawn_id());
 
         if let Some(tags) = &self.tags {
             let mut tags_builder = builder.reborrow().init_tags(tags.len() as u32);
@@ -4156,43 +4038,25 @@ impl<'a> FromCapnp<'a> for OrderInitialized {
         let ts_init_reader = reader.get_ts_init()?;
         let ts_init = ts_init_reader.get_value();
 
-        // Optional fields
-        let price = if reader.has_price() {
-            let price_reader = reader.get_price()?;
-            Some(Price::from_capnp(price_reader)?)
-        } else {
-            None
-        };
+        let price = read_optional_from_capnp(|| reader.has_price(), || reader.get_price())?;
 
-        let activation_price = if reader.has_activation_price() {
-            let activation_price_reader = reader.get_activation_price()?;
-            Some(Price::from_capnp(activation_price_reader)?)
-        } else {
-            None
-        };
+        let activation_price = read_optional_from_capnp(
+            || reader.has_activation_price(),
+            || reader.get_activation_price(),
+        )?;
 
-        let trigger_price = if reader.has_trigger_price() {
-            let trigger_price_reader = reader.get_trigger_price()?;
-            Some(Price::from_capnp(trigger_price_reader)?)
-        } else {
-            None
-        };
+        let trigger_price =
+            read_optional_from_capnp(|| reader.has_trigger_price(), || reader.get_trigger_price())?;
 
         let trigger_type = trigger_type_from_capnp(reader.get_trigger_type()?);
 
-        let limit_offset = if reader.has_limit_offset() {
-            let limit_offset_reader = reader.get_limit_offset()?;
-            Some(Decimal::from_capnp(limit_offset_reader)?)
-        } else {
-            None
-        };
+        let limit_offset =
+            read_optional_from_capnp(|| reader.has_limit_offset(), || reader.get_limit_offset())?;
 
-        let trailing_offset = if reader.has_trailing_offset() {
-            let trailing_offset_reader = reader.get_trailing_offset()?;
-            Some(Decimal::from_capnp(trailing_offset_reader)?)
-        } else {
-            None
-        };
+        let trailing_offset = read_optional_from_capnp(
+            || reader.has_trailing_offset(),
+            || reader.get_trailing_offset(),
+        )?;
 
         let trailing_offset_type =
             trailing_offset_type_from_capnp(reader.get_trailing_offset_type()?);
@@ -4205,30 +4069,20 @@ impl<'a> FromCapnp<'a> for OrderInitialized {
             None
         };
 
-        let display_qty = if reader.has_display_qty() {
-            let display_qty_reader = reader.get_display_qty()?;
-            Some(Quantity::from_capnp(display_qty_reader)?)
-        } else {
-            None
-        };
+        let display_qty =
+            read_optional_from_capnp(|| reader.has_display_qty(), || reader.get_display_qty())?;
 
         let emulation_trigger = trigger_type_from_capnp(reader.get_emulation_trigger()?);
 
-        let trigger_instrument_id = if reader.has_trigger_instrument_id() {
-            let trigger_instrument_id_reader = reader.get_trigger_instrument_id()?;
-            Some(InstrumentId::from_capnp(trigger_instrument_id_reader)?)
-        } else {
-            None
-        };
+        let trigger_instrument_id = read_optional_from_capnp(
+            || reader.has_trigger_instrument_id(),
+            || reader.get_trigger_instrument_id(),
+        )?;
 
         let contingency_type = contingency_type_from_capnp(reader.get_contingency_type()?);
 
-        let order_list_id = if reader.has_order_list_id() {
-            let order_list_id_reader = reader.get_order_list_id()?;
-            Some(OrderListId::from_capnp(order_list_id_reader)?)
-        } else {
-            None
-        };
+        let order_list_id =
+            read_optional_from_capnp(|| reader.has_order_list_id(), || reader.get_order_list_id())?;
 
         let linked_order_ids = if reader.has_linked_order_ids() {
             let linked_order_ids_reader = reader.get_linked_order_ids()?;
@@ -4241,40 +4095,24 @@ impl<'a> FromCapnp<'a> for OrderInitialized {
             None
         };
 
-        let parent_order_id = if reader.has_parent_order_id() {
-            let parent_order_id_reader = reader.get_parent_order_id()?;
-            Some(ClientOrderId::from_capnp(parent_order_id_reader)?)
-        } else {
-            None
-        };
+        let parent_order_id = read_optional_from_capnp(
+            || reader.has_parent_order_id(),
+            || reader.get_parent_order_id(),
+        )?;
 
-        let exec_algorithm_id = if reader.has_exec_algorithm_id() {
-            let exec_algorithm_id_reader = reader.get_exec_algorithm_id()?;
-            Some(ExecAlgorithmId::from_capnp(exec_algorithm_id_reader)?)
-        } else {
-            None
-        };
+        let exec_algorithm_id = read_optional_from_capnp(
+            || reader.has_exec_algorithm_id(),
+            || reader.get_exec_algorithm_id(),
+        )?;
 
         let exec_algorithm_params = if reader.has_exec_algorithm_params() {
-            let params_reader = reader.get_exec_algorithm_params()?;
-            let entries_reader = params_reader.get_entries()?;
-            let mut params = IndexMap::with_capacity(entries_reader.len() as usize);
-            for entry_reader in entries_reader {
-                let key = Ustr::from(entry_reader.get_key()?.to_str()?);
-                let value = Ustr::from(entry_reader.get_value()?.to_str()?);
-                params.insert(key, value);
-            }
-            Some(params)
+            Some(read_string_map(reader.get_exec_algorithm_params()?)?)
         } else {
             None
         };
 
-        let exec_spawn_id = if reader.has_exec_spawn_id() {
-            let exec_spawn_id_reader = reader.get_exec_spawn_id()?;
-            Some(ClientOrderId::from_capnp(exec_spawn_id_reader)?)
-        } else {
-            None
-        };
+        let exec_spawn_id =
+            read_optional_from_capnp(|| reader.has_exec_spawn_id(), || reader.get_exec_spawn_id())?;
 
         let tags = if reader.has_tags() {
             let tags_reader = reader.get_tags()?;
@@ -4422,12 +4260,8 @@ impl<'a> FromCapnp<'a> for PositionOpened {
 
         let avg_px_open = reader.get_avg_px_open();
 
-        let realized_pnl = if reader.has_realized_pnl() {
-            let realized_pnl_reader = reader.get_realized_pnl()?;
-            Some(Money::from_capnp(realized_pnl_reader)?)
-        } else {
-            None
-        };
+        let realized_pnl =
+            read_optional_from_capnp(|| reader.has_realized_pnl(), || reader.get_realized_pnl())?;
 
         let event_id_reader = reader.get_event_id()?;
         let event_id = nautilus_core::UUID4::from_capnp(event_id_reader)?;
@@ -4575,12 +4409,8 @@ impl<'a> FromCapnp<'a> for PositionChanged {
         };
         let realized_return = reader.get_realized_return();
 
-        let realized_pnl = if reader.has_realized_pnl() {
-            let realized_pnl_reader = reader.get_realized_pnl()?;
-            Some(Money::from_capnp(realized_pnl_reader)?)
-        } else {
-            None
-        };
+        let realized_pnl =
+            read_optional_from_capnp(|| reader.has_realized_pnl(), || reader.get_realized_pnl())?;
 
         let unrealized_pnl_reader = reader.get_unrealized_pnl()?;
         let unrealized_pnl = Money::from_capnp(unrealized_pnl_reader)?;
@@ -4754,12 +4584,8 @@ impl<'a> FromCapnp<'a> for PositionClosed {
         };
         let realized_return = reader.get_realized_return();
 
-        let realized_pnl = if reader.has_realized_pnl() {
-            let realized_pnl_reader = reader.get_realized_pnl()?;
-            Some(Money::from_capnp(realized_pnl_reader)?)
-        } else {
-            None
-        };
+        let realized_pnl =
+            read_optional_from_capnp(|| reader.has_realized_pnl(), || reader.get_realized_pnl())?;
 
         let unrealized_pnl_reader = reader.get_unrealized_pnl()?;
         let unrealized_pnl = Money::from_capnp(unrealized_pnl_reader)?;
@@ -4838,19 +4664,11 @@ impl<'a> ToCapnp<'a> for PositionAdjusted {
 
         builder.set_adjustment_type(position_adjustment_type_to_capnp(self.adjustment_type));
 
-        if let Some(qty_change) = self.quantity_change {
-            let (lo, mid, hi, flags) = decimal_to_parts(&qty_change);
-            let mut qty_change_builder = builder.reborrow().init_quantity_change();
-            qty_change_builder.set_lo(lo);
-            qty_change_builder.set_mid(mid);
-            qty_change_builder.set_hi(hi);
-            qty_change_builder.set_flags(flags);
-        }
+        self.quantity_change
+            .write_capnp(|| builder.reborrow().init_quantity_change());
 
-        if let Some(ref pnl) = self.pnl_change {
-            let pnl_change_builder = builder.reborrow().init_pnl_change();
-            pnl.to_capnp(pnl_change_builder);
-        }
+        self.pnl_change
+            .write_capnp(|| builder.reborrow().init_pnl_change());
 
         if let Some(reason) = self.reason {
             builder.set_reason(reason.as_str());
@@ -4888,24 +4706,13 @@ impl<'a> FromCapnp<'a> for PositionAdjusted {
 
         let adjustment_type = position_adjustment_type_from_capnp(reader.get_adjustment_type()?);
 
-        let quantity_change = if reader.has_quantity_change() {
-            let qty_change_reader = reader.get_quantity_change()?;
-            Some(decimal_from_parts(
-                qty_change_reader.get_lo(),
-                qty_change_reader.get_mid(),
-                qty_change_reader.get_hi(),
-                qty_change_reader.get_flags(),
-            )?)
-        } else {
-            None
-        };
+        let quantity_change = read_optional_from_capnp(
+            || reader.has_quantity_change(),
+            || reader.get_quantity_change(),
+        )?;
 
-        let pnl_change = if reader.has_pnl_change() {
-            let pnl_change_reader = reader.get_pnl_change()?;
-            Some(Money::from_capnp(pnl_change_reader)?)
-        } else {
-            None
-        };
+        let pnl_change =
+            read_optional_from_capnp(|| reader.has_pnl_change(), || reader.get_pnl_change())?;
 
         let reason = if reader.has_reason() {
             Some(Ustr::from(reader.get_reason()?.to_str()?))

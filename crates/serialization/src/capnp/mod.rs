@@ -51,7 +51,7 @@ pub trait ToCapnp<'a> {
     /// The Cap'n Proto builder type for this Rust type.
     type Builder;
 
-    /// Convert this Rust value to a Cap'n Proto builder.
+    /// Converts this Rust value to a Cap'n Proto builder.
     fn to_capnp(&self, builder: Self::Builder);
 }
 
@@ -60,7 +60,7 @@ pub trait FromCapnp<'a> {
     /// The Cap'n Proto reader type for this Rust type.
     type Reader;
 
-    /// Convert a Cap'n Proto reader to this Rust type.
+    /// Converts a Cap'n Proto reader to this Rust type.
     ///
     /// # Errors
     ///

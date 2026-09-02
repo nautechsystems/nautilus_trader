@@ -1335,14 +1335,10 @@ mod tests {
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn shutdown_forces_abort_and_observes_canceled_join() {
         let group = TaskGroup::new();
-        let dropped = Arc::new(AtomicBool::new(false));
-        let dropped_task = Arc::clone(&dropped);
-        group
-            .spawn(async move {
-                let _drop = DropSignal(dropped_task);
-                std::future::pending::<()>().await;
-            })
-            .expect("spawn");
+        let (future, started_rx, dropped) = pending_with_drop_signal();
+
+        group.spawn(future).expect("spawn");
+        started_rx.await.expect("task should start");
 
         group.begin_shutdown();
         group

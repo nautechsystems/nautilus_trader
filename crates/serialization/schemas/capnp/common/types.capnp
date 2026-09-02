@@ -22,9 +22,9 @@ struct UInt128 {
 # Rust Decimal representation (rust_decimal crate)
 # Used for arbitrary precision decimal values in orders and positions
 struct Decimal {
-    lo @0 :UInt64;    # Low 64 bits of coefficient
-    mid @1 :UInt64;   # Middle 64 bits of coefficient
-    hi @2 :UInt64;    # High 64 bits of coefficient
+    lo @0 :UInt64;    # Low 32-bit limb; upper 32 bits must be zero
+    mid @1 :UInt64;   # Middle 32-bit limb; upper 32 bits must be zero
+    hi @2 :UInt64;    # High 32-bit limb; upper 32 bits must be zero
     flags @3 :UInt32; # Scale and sign information
 }
 
