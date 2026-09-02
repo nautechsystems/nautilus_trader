@@ -821,6 +821,7 @@ check-jiff-features:  #-- Check jiff features
 test-scripts:  #-- Run repository script tests
 	$(info $(M) Running script tests...)
 	$Q bash .pre-commit-hooks/test_check_cargo_conventions.sh
+	$Q bash .pre-commit-hooks/test_check_docs_conventions.sh
 	$Q bash .pre-commit-hooks/test_check_dst_conventions.sh
 	$Q bash .pre-commit-hooks/test_check_formatting_py.sh
 	$Q bash .pre-commit-hooks/test_check_formatting_rs.sh

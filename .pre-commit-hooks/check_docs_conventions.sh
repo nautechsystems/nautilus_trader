@@ -6,13 +6,17 @@
 # 2. `# Panics` sections that say "does not panic" (self-contradictory)
 # 3. `# Errors` on functions that don't return Result/Option
 #
+# Cargo features (crates/**/Cargo.toml):
+# 4. Every non-default feature is listed once, in alphabetical order, under
+#    `Feature flags` in both README.md and src/lib.rs
+#
 # Suppress with `// panics-doc-ok` above the doc block for transitive panics.
 # Suppress with `// errors-doc-ok` above the doc block for special cases.
 #
 # Markdown (docs/**/*.md):
-# 4. Hyphen-split words in table rows (e.g., "configu- ration")
-# 5. Soft hyphens (U+00AD)
-# 6. Table lines ending with a trailing hyphen on a word fragment
+# 5. Hyphen-split words in table rows (e.g., "configu- ration")
+# 6. Soft hyphens (U+00AD)
+# 7. Table lines ending with a trailing hyphen on a word fragment
 
 set -euo pipefail
 
@@ -45,6 +49,110 @@ read_file_lines() {
     done < "$1"
   fi
   total=${#lines[@]}
+}
+
+manifest_feature_names() {
+  awk '
+    /^[[:space:]]*\[features\][[:space:]]*(#.*)?$/ {
+      in_features = 1
+      next
+    }
+    in_features && /^[[:space:]]*\[/ {
+      exit
+    }
+    in_features {
+      feature = $0
+      sub(/^[[:space:]]*/, "", feature)
+      single_quote = sprintf("%c", 39)
+      is_feature = feature ~ /^[A-Za-z0-9_-]+[[:space:]]*=/
+      is_feature = is_feature || feature ~ /^"[^"]+"[[:space:]]*=/
+      is_feature = is_feature || feature ~ ("^" single_quote "[^" single_quote "]+" single_quote "[[:space:]]*=")
+      if (!is_feature) {
+        next
+      }
+      sub(/[[:space:]]*=.*$/, "", feature)
+      quote = substr(feature, 1, 1)
+      if ((quote == "\"" || quote == single_quote) && substr(feature, length(feature), 1) == quote) {
+        feature = substr(feature, 2, length(feature) - 2)
+      }
+      if (feature != "default") {
+        print feature
+      }
+    }
+  ' "$1" | LC_ALL=C sort
+}
+
+documented_feature_names() {
+  local file="$1"
+  local heading="$2"
+  local rustdoc="$3"
+
+  awk -v heading="$heading" -v rustdoc="$rustdoc" '
+    {
+      line = $0
+      if (rustdoc == "true") {
+        sub(/^[[:space:]]*\/\/![[:space:]]?/, "", line)
+      }
+      if (line == heading) {
+        found = 1
+        in_section = 1
+        next
+      }
+      if (in_section && line ~ /^#/) {
+        exit
+      }
+      if (in_section && line ~ /^-[[:space:]]+`[^`]+`/) {
+        sub(/^-[[:space:]]+`/, "", line)
+        sub(/`.*/, "", line)
+        print line
+      }
+    }
+    END {
+      if (!found) {
+        exit 2
+      }
+    }
+  ' "$file"
+}
+
+check_feature_docs() {
+  local file="$1"
+  local heading="$2"
+  local rustdoc="$3"
+  local expected="$4"
+  local actual
+  local expected_display
+  local actual_display
+
+  if [[ ! -f "$file" ]]; then
+    echo -e "${RED}Error:${NC} Missing feature flag documentation file $file"
+    VIOLATIONS=$((VIOLATIONS + 1))
+    return
+  fi
+
+  if ! actual=$(documented_feature_names "$file" "$heading" "$rustdoc"); then
+    echo -e "${RED}Error:${NC} Missing \`$heading\` section in $file"
+    VIOLATIONS=$((VIOLATIONS + 1))
+    return
+  fi
+
+  if [[ "$actual" == "$expected" ]]; then
+    return
+  fi
+
+  expected_display=$(printf '%s\n' "$expected" | paste -sd ' ' -)
+  if [[ -n "$actual" ]]; then
+    actual_display=$(printf '%s\n' "$actual" | paste -sd ' ' -)
+  else
+    actual_display="<none>"
+  fi
+
+  echo -e "${RED}Error:${NC} Feature flag list mismatch in $file"
+  echo "  Expected: $expected_display"
+  echo "  Found:    $actual_display"
+  echo "  List every non-default [features] key once under \`$heading\` in alphabetical order"
+  echo
+  VIOLATIONS=$((VIOLATIONS + 1))
 }
 
 # =============================================================================
@@ -225,6 +333,15 @@ while IFS=: read -r file line_num match; do
   fi
 
 done < <(rg -n '/// # (Panics|Errors)' crates --type rust --sort path 2> /dev/null || true)
+
+while IFS= read -r manifest; do
+  expected=$(manifest_feature_names "$manifest")
+  [[ -z "$expected" ]] && continue
+
+  crate_dir=${manifest%/Cargo.toml}
+  check_feature_docs "$crate_dir/README.md" "## Feature flags" false "$expected"
+  check_feature_docs "$crate_dir/src/lib.rs" "# Feature Flags" true "$expected"
+done < <(rg --files crates -g Cargo.toml 2> /dev/null | LC_ALL=C sort)
 
 # =============================================================================
 # Markdown table checks (docs/**/*.md)

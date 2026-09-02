@@ -314,7 +314,7 @@ repos:
         description: Enforces documentation conventions
         entry: bash .pre-commit-hooks/check_docs_conventions.sh
         language: system
-        files: "\\.(rs|md)$"
+        files: "(Cargo\\.toml|\\.(rs|md))$"
         pass_filenames: false
 
       - id: check-cargo-conventions
