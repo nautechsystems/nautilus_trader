@@ -37,7 +37,6 @@ pub(crate) use self::{
         ResolveWatchEntry, ResolveWatchSelection, ResolveWatchSelectionMode, TrackedInstrument,
         collect_resolve_watch_selection, instrument_market_context, pause_resolve_watch_entries,
         remove_data_resolve_watch_entry_from_instrument,
-        update_resolve_watchlist_from_position_event,
         update_resolve_watchlist_from_position_event_serialized,
         upsert_data_resolve_watch_entry_from_instrument, upsert_data_resolve_watch_entry_if_active,
         upsert_resolve_watch_entry_from_instrument,

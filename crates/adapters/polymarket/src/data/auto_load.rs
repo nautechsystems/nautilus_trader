@@ -30,9 +30,7 @@ use nautilus_model::{
 
 use super::{
     PolymarketDataClient,
-    instruments::{
-        apply_live_instrument, publish_cached_condition_closed, query_positive_closed_condition_ids,
-    },
+    instruments::{apply_live_instrument, publish_cached_condition_closed},
     runtime::{
         is_condition_closed, register_closed_condition_for_live_data, retire_closed_condition_state,
     },
@@ -41,13 +39,9 @@ use super::{
     },
 };
 use crate::{
-    common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE,
-    filters::market_closed,
-    http::query::GetGammaMarketsParams,
-    providers::extract_condition_id,
-    resolve::{
-        ResolveContext, apply_condition_resolution, upsert_data_resolve_watch_entry_if_active,
-    },
+    common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE, filters::market_closed,
+    http::query::GetGammaMarketsParams, providers::extract_condition_id,
+    resolve::upsert_data_resolve_watch_entry_if_active,
 };
 
 #[derive(Debug)]
@@ -135,7 +129,6 @@ impl PolymarketDataClient {
         }
 
         let pending = self.pending_auto_loads.clone();
-        let pending_resolutions = self.pending_resolutions.clone();
         let closed_condition_ids = self.closed_condition_ids.clone();
         let scheduled = self.auto_load_scheduled.clone();
         let debounce_ms = self.config.auto_load_debounce_ms;
@@ -163,24 +156,6 @@ impl PolymarketDataClient {
         let resolve_watch_apply_mutex = self.resolve_watch_apply_mutex.clone();
         let pending_snapshot_after_tick_change = self.pending_snapshot_after_tick_change.clone();
         let scheduled_guard = AutoLoadScheduledGuard::new(scheduled);
-        let resolve_ctx = ResolveContext {
-            clock: self.clock,
-            data_sender: data_sender.clone(),
-            instruments: instruments.clone(),
-            watchlist: resolve_poll_watchlist.clone(),
-            apply_mutex: resolve_watch_apply_mutex.clone(),
-            active_quote_subs: active_quote_subs.clone(),
-            active_delta_subs: active_delta_subs.clone(),
-            active_trade_subs: active_trade_subs.clone(),
-            active_status_subs: active_instrument_status_subs.clone(),
-            active_close_subs: active_instrument_close_subs.clone(),
-            closed_condition_ids: closed_condition_ids.clone(),
-            ws_open_tokens: ws_open_tokens.clone(),
-            ws_sub_mutex: ws_sub_mutex.clone(),
-            ws: ws_client.clone(),
-            pending_resolutions: pending_resolutions.clone(),
-        };
-
         let future = async move {
             let mut scheduled_guard = scheduled_guard;
 
@@ -319,9 +294,12 @@ impl PolymarketDataClient {
                             }
 
                             let closed_result = tokio::select! {
-                                result = query_positive_closed_condition_ids(
-                                    &http,
-                                    &probe_condition_ids,
+                                result = http.request_instruments_by_params_with_transient(
+                                    GetGammaMarketsParams {
+                                        condition_ids: Some(probe_condition_ids.clone()),
+                                        closed: Some(true),
+                                        ..Default::default()
+                                    },
                                 ) => result,
                                 () = cancellation.cancelled() => return,
                             };
@@ -331,12 +309,37 @@ impl PolymarketDataClient {
                             }
 
                             match closed_result {
-                                Ok(closed_ids) => {
-                                    batch_returned_any |= !closed_ids.is_empty();
-                                    for condition_id in closed_ids {
+                                Ok((closed_instruments, closed_transient)) => {
+                                    batch_returned_any |= !closed_instruments.is_empty()
+                                        || !closed_transient.is_empty();
+                                    transient.extend(closed_transient);
+                                    let requested = probe_condition_ids
+                                        .iter()
+                                        .map(String::as_str)
+                                        .collect::<AHashSet<_>>();
+                                    let mut closed_by_condition =
+                                        AHashMap::<String, Vec<InstrumentAny>>::new();
+
+                                    for instrument in closed_instruments {
+                                        if market_closed(&instrument) != Some(true) {
+                                            continue;
+                                        }
+
+                                        if let Ok(condition_id) =
+                                            extract_condition_id(&instrument.id())
+                                            && requested.contains(condition_id.as_str())
+                                        {
+                                            closed_by_condition
+                                                .entry(condition_id)
+                                                .or_default()
+                                                .push(instrument);
+                                        }
+                                    }
+
+                                    for (condition_id, instruments) in closed_by_condition {
                                         outcomes.insert(
                                             condition_id,
-                                            AutoLoadOutcome::Closed(Vec::new()),
+                                            AutoLoadOutcome::Closed(instruments),
                                         );
                                     }
                                 }
@@ -371,15 +374,18 @@ impl PolymarketDataClient {
                             }
 
                             for instrument in loaded {
+                                let instrument_id = instrument.id();
                                 if !filters.iter().all(|f| f.accept(instrument)) {
                                     log::debug!(
                                         "Auto-loaded instrument {} filtered out",
                                         instrument.id()
                                     );
+                                    let _guard = resolve_watch_apply_mutex.lock();
+                                    active_instrument_status_subs.remove(&instrument_id);
+                                    active_instrument_close_subs.remove(&instrument_id);
                                     continue;
                                 }
 
-                                let instrument_id = instrument.id();
                                 apply_live_instrument(
                                     &closed_condition_ids,
                                     &instrument_update_state,
@@ -505,19 +511,6 @@ impl PolymarketDataClient {
                         }
                         AutoLoadOutcome::Unknown => {}
                     }
-
-                    if let Some(pending_resolution) = pending_resolutions
-                        .get(condition_id)
-                        .map(|entry| entry.value().clone())
-                    {
-                        apply_condition_resolution(
-                            &resolve_ctx,
-                            condition_id,
-                            &pending_resolution.winning_asset_id,
-                            &pending_resolution.winning_outcome,
-                        )
-                        .await;
-                    }
                 }
 
                 if cancellation.is_cancelled() {
@@ -545,6 +538,15 @@ impl PolymarketDataClient {
                         Ok(condition_id) => condition_id,
                         Err(_) => continue,
                     };
+
+                    if !active_quote_subs.contains(id)
+                        && !active_delta_subs.contains(id)
+                        && !active_trade_subs.contains(id)
+                        && !active_instrument_status_subs.contains(id)
+                        && !active_instrument_close_subs.contains(id)
+                    {
+                        continue;
+                    }
 
                     match outcomes.get(&condition_id) {
                         Some(AutoLoadOutcome::Open(_)) => {

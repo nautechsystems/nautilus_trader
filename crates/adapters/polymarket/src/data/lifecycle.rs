@@ -53,9 +53,11 @@ impl PolymarketDataClient {
         let watchlist = self.resolve_poll_watchlist.clone();
         let instruments = self.instruments.clone();
         let owner_lock = self.resolve_watch_apply_mutex.clone();
+        let closed_condition_ids = self.closed_condition_ids.clone();
         let handler = TypedHandler::from(move |event: &PositionEvent| {
             update_resolve_watchlist_from_position_event_serialized(
                 &owner_lock,
+                &closed_condition_ids,
                 &watchlist,
                 &instruments,
                 event,

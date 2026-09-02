@@ -25,8 +25,6 @@ use nautilus_model::{
 use parking_lot::Mutex;
 use ustr::Ustr;
 
-type ResolutionSubscriptionSets = (Arc<AtomicSet<InstrumentId>>, Arc<AtomicSet<InstrumentId>>);
-
 pub(crate) fn resolve_token_id_from(
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     instrument_id: InstrumentId,
@@ -46,36 +44,6 @@ pub(crate) fn resolve_token_id_from(
     clippy::too_many_arguments,
     reason = "shared state comes in as Arc refs"
 )]
-#[cfg(test)]
-pub(crate) async fn sync_ws_subscription_async(
-    instrument_id: InstrumentId,
-    token_id_str: String,
-    active_quote_subs: Arc<AtomicSet<InstrumentId>>,
-    active_delta_subs: Arc<AtomicSet<InstrumentId>>,
-    active_trade_subs: Arc<AtomicSet<InstrumentId>>,
-    ws_open_tokens: Arc<AtomicSet<Ustr>>,
-    ws_sub_mutex: Arc<tokio::sync::Mutex<()>>,
-    ws: crate::websocket::pool::PolymarketMarketPoolHandle,
-) {
-    sync_ws_subscription_inner(
-        instrument_id,
-        token_id_str,
-        active_quote_subs,
-        active_delta_subs,
-        active_trade_subs,
-        None,
-        None,
-        ws_open_tokens,
-        ws_sub_mutex,
-        ws,
-    )
-    .await;
-}
-
-#[allow(
-    clippy::too_many_arguments,
-    reason = "shared state comes in as Arc refs"
-)]
 pub(crate) async fn sync_ws_subscription_with_resolution_and_terminal_async(
     instrument_id: InstrumentId,
     token_id_str: String,
@@ -89,51 +57,17 @@ pub(crate) async fn sync_ws_subscription_with_resolution_and_terminal_async(
     ws_sub_mutex: Arc<tokio::sync::Mutex<()>>,
     ws: crate::websocket::pool::PolymarketMarketPoolHandle,
 ) {
-    sync_ws_subscription_inner(
-        instrument_id,
-        token_id_str,
-        active_quote_subs,
-        active_delta_subs,
-        active_trade_subs,
-        Some((active_instrument_status_subs, active_instrument_close_subs)),
-        Some(closed_condition_ids),
-        ws_open_tokens,
-        ws_sub_mutex,
-        ws,
-    )
-    .await;
-}
-
-#[allow(
-    clippy::too_many_arguments,
-    reason = "shared state comes in as Arc refs"
-)]
-async fn sync_ws_subscription_inner(
-    instrument_id: InstrumentId,
-    token_id_str: String,
-    active_quote_subs: Arc<AtomicSet<InstrumentId>>,
-    active_delta_subs: Arc<AtomicSet<InstrumentId>>,
-    active_trade_subs: Arc<AtomicSet<InstrumentId>>,
-    active_resolution_subs: Option<ResolutionSubscriptionSets>,
-    closed_condition_ids: Option<Arc<Mutex<AHashSet<String>>>>,
-    ws_open_tokens: Arc<AtomicSet<Ustr>>,
-    ws_sub_mutex: Arc<tokio::sync::Mutex<()>>,
-    ws: crate::websocket::pool::PolymarketMarketPoolHandle,
-) {
     let token_id = Ustr::from(token_id_str.as_str());
     let _guard = ws_sub_mutex.lock().await;
 
-    let is_terminal = closed_condition_ids.is_some_and(|closed_condition_ids| {
-        crate::providers::extract_condition_id(&instrument_id)
-            .is_ok_and(|condition_id| closed_condition_ids.lock().contains(&condition_id))
-    });
+    let is_terminal = crate::providers::extract_condition_id(&instrument_id)
+        .is_ok_and(|condition_id| closed_condition_ids.lock().contains(&condition_id));
     let wants_subscribe = !is_terminal
         && (active_quote_subs.contains(&instrument_id)
             || active_delta_subs.contains(&instrument_id)
             || active_trade_subs.contains(&instrument_id)
-            || active_resolution_subs.is_some_and(|(status, close)| {
-                status.contains(&instrument_id) || close.contains(&instrument_id)
-            }));
+            || active_instrument_status_subs.contains(&instrument_id)
+            || active_instrument_close_subs.contains(&instrument_id));
     let is_open = ws_open_tokens.contains(&token_id);
 
     if wants_subscribe && !is_open {
@@ -163,6 +97,7 @@ mod tests {
     type ActiveSet = Arc<AtomicSet<InstrumentId>>;
     type OpenTokens = Arc<AtomicSet<Ustr>>;
     type WsMutex = Arc<tokio::sync::Mutex<()>>;
+    type ClosedConditions = Arc<Mutex<AHashSet<String>>>;
 
     fn make_handle() -> (
         PolymarketMarketPoolHandle,
@@ -187,11 +122,23 @@ mod tests {
         )
     }
 
-    fn make_state() -> (ActiveSet, ActiveSet, ActiveSet, OpenTokens, WsMutex) {
+    fn make_state() -> (
+        ActiveSet,
+        ActiveSet,
+        ActiveSet,
+        ActiveSet,
+        ActiveSet,
+        ClosedConditions,
+        OpenTokens,
+        WsMutex,
+    ) {
         (
             Arc::new(AtomicSet::new()),
             Arc::new(AtomicSet::new()),
             Arc::new(AtomicSet::new()),
+            Arc::new(AtomicSet::new()),
+            Arc::new(AtomicSet::new()),
+            Arc::new(Mutex::new(AHashSet::new())),
             Arc::new(AtomicSet::new()),
             Arc::new(tokio::sync::Mutex::new(())),
         )
@@ -209,17 +156,20 @@ mod tests {
     #[tokio::test]
     async fn sync_ws_subscribes_when_intent_present_and_ws_closed() {
         let (ws, mut rx) = make_handle();
-        let (quotes, deltas, trades, open, mutex) = make_state();
+        let (quotes, deltas, trades, status, close, closed, open, mutex) = make_state();
 
         let inst = instrument_id();
         quotes.insert(inst);
 
-        sync_ws_subscription_async(
+        sync_ws_subscription_with_resolution_and_terminal_async(
             inst,
             inst.symbol.as_str().to_string(),
             quotes.clone(),
             deltas,
             trades,
+            status,
+            close,
+            closed,
             open.clone(),
             mutex,
             ws,
@@ -241,9 +191,7 @@ mod tests {
     #[tokio::test]
     async fn sync_ws_subscribes_when_resolution_intent_present_and_ws_closed() {
         let (ws, mut rx) = make_handle();
-        let (quotes, deltas, trades, open, mutex) = make_state();
-        let status = Arc::new(AtomicSet::new());
-        let close = Arc::new(AtomicSet::new());
+        let (quotes, deltas, trades, status, close, closed, open, mutex) = make_state();
         let inst = instrument_id();
         status.insert(inst);
 
@@ -255,7 +203,7 @@ mod tests {
             trades,
             status,
             close,
-            Arc::new(Mutex::new(AHashSet::new())),
+            closed,
             open.clone(),
             mutex,
             ws,
@@ -273,17 +221,20 @@ mod tests {
     #[tokio::test]
     async fn sync_ws_unsubscribes_when_intent_absent_and_ws_open() {
         let (ws, mut rx) = make_handle_with_assigned(&["0xCOND-0xTOKEN"]);
-        let (quotes, deltas, trades, open, mutex) = make_state();
+        let (quotes, deltas, trades, status, close, closed, open, mutex) = make_state();
 
         let inst = instrument_id();
         open.insert(token_ustr());
 
-        sync_ws_subscription_async(
+        sync_ws_subscription_with_resolution_and_terminal_async(
             inst,
             inst.symbol.as_str().to_string(),
             quotes,
             deltas,
             trades,
+            status,
+            close,
+            closed,
             open.clone(),
             mutex,
             ws,
@@ -310,7 +261,7 @@ mod tests {
         #[case] expect_command: bool,
     ) {
         let (ws, mut rx) = make_handle();
-        let (quotes, deltas, trades, open, mutex) = make_state();
+        let (quotes, deltas, trades, status, close, closed, open, mutex) = make_state();
 
         let inst = instrument_id();
 
@@ -322,12 +273,15 @@ mod tests {
             open.insert(token_ustr());
         }
 
-        sync_ws_subscription_async(
+        sync_ws_subscription_with_resolution_and_terminal_async(
             inst,
             inst.symbol.as_str().to_string(),
             quotes,
             deltas,
             trades,
+            status,
+            close,
+            closed,
             open.clone(),
             mutex,
             ws,
@@ -345,17 +299,20 @@ mod tests {
         drop(rx);
         let ws = PolymarketMarketPoolHandle::test_single_shard(tx, &[]);
 
-        let (quotes, deltas, trades, open, mutex) = make_state();
+        let (quotes, deltas, trades, status, close, closed, open, mutex) = make_state();
 
         let inst = instrument_id();
         quotes.insert(inst);
 
-        sync_ws_subscription_async(
+        sync_ws_subscription_with_resolution_and_terminal_async(
             inst,
             inst.symbol.as_str().to_string(),
             quotes,
             deltas,
             trades,
+            status,
+            close,
+            closed,
             open.clone(),
             mutex,
             ws,
@@ -372,7 +329,7 @@ mod tests {
     #[tokio::test]
     async fn sync_ws_opens_for_any_active_kind(#[case] q: bool, #[case] d: bool, #[case] t: bool) {
         let (ws, mut rx) = make_handle();
-        let (quotes, deltas, trades, open, mutex) = make_state();
+        let (quotes, deltas, trades, status, close, closed, open, mutex) = make_state();
 
         let inst = instrument_id();
 
@@ -388,12 +345,15 @@ mod tests {
             trades.insert(inst);
         }
 
-        sync_ws_subscription_async(
+        sync_ws_subscription_with_resolution_and_terminal_async(
             inst,
             inst.symbol.as_str().to_string(),
             quotes,
             deltas,
             trades,
+            status,
+            close,
+            closed,
             open.clone(),
             mutex,
             ws,

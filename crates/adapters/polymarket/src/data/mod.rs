@@ -93,7 +93,7 @@ use crate::{
     },
     providers::PolymarketInstrumentProvider,
     resolve::{
-        PendingResolution, ResolveContext, ResolveWatchEntry, apply_condition_resolution,
+        PendingResolution, ResolveContext, ResolveWatchEntry,
         remove_data_resolve_watch_entry_from_instrument,
         upsert_data_resolve_watch_entry_from_instrument,
     },
@@ -337,33 +337,6 @@ impl PolymarketDataClient {
         }
     }
 
-    fn apply_pending_resolution(&self, instrument_id: InstrumentId) {
-        let Ok(condition_id) = crate::providers::extract_condition_id(&instrument_id) else {
-            return;
-        };
-        let Some(pending) = self
-            .pending_resolutions
-            .get(&condition_id)
-            .map(|entry| entry.value().clone())
-        else {
-            return;
-        };
-        let ctx = self.resolution_context();
-        let future = async move {
-            apply_condition_resolution(
-                &ctx,
-                &condition_id,
-                &pending.winning_asset_id,
-                &pending.winning_outcome,
-            )
-            .await;
-        };
-
-        if let Err(e) = self.tasks.spawn(future) {
-            log::debug!("Skipping pending Polymarket resolution after shutdown began: {e}");
-        }
-    }
-
     fn ensure_live_subscription_allowed(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
         let now_ns = self.clock.get_time_ns();
         let loaded = self.instruments.load();
@@ -459,24 +432,6 @@ impl PolymarketDataClient {
                 instrument,
                 has_data_subscription,
             );
-        }
-
-        if let Ok(condition_id) = crate::providers::extract_condition_id(&instrument_id) {
-            let has_resolution_intent = [
-                &self.active_instrument_status_subs,
-                &self.active_instrument_close_subs,
-            ]
-            .into_iter()
-            .any(|subscriptions| {
-                subscriptions.load().iter().any(|candidate| {
-                    crate::providers::extract_condition_id(candidate)
-                        .is_ok_and(|candidate_condition| candidate_condition == condition_id)
-                })
-            });
-
-            if !has_resolution_intent && !self.resolve_poll_watchlist.contains_key(&condition_id) {
-                self.pending_resolutions.remove(&condition_id);
-            }
         }
     }
 
@@ -824,7 +779,6 @@ impl DataClient for PolymarketDataClient {
             instrument_id,
             &self.active_instrument_status_subs,
         );
-        self.apply_pending_resolution(instrument_id);
         self.drop_pending_if_unwanted(instrument_id);
         self.sync_ws_subscription(instrument_id);
         Ok(())
@@ -839,7 +793,6 @@ impl DataClient for PolymarketDataClient {
             instrument_id,
             &self.active_instrument_close_subs,
         );
-        self.apply_pending_resolution(instrument_id);
         self.drop_pending_if_unwanted(instrument_id);
         self.sync_ws_subscription(instrument_id);
         Ok(())

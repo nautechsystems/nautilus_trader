@@ -269,7 +269,7 @@ fn remove_resolve_watch_instrument(
     });
 }
 
-pub(crate) fn update_resolve_watchlist_from_position_event(
+fn update_resolve_watchlist_from_position_event(
     watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     event: &PositionEvent,
@@ -305,11 +305,27 @@ pub(crate) fn update_resolve_watchlist_from_position_event(
 
 pub(crate) fn update_resolve_watchlist_from_position_event_serialized(
     owner_lock: &Arc<Mutex<()>>,
+    closed_condition_ids: &Arc<Mutex<AHashSet<String>>>,
     watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     event: &PositionEvent,
 ) {
     let _guard = owner_lock.lock();
+    let loaded = instruments.load();
+    let Some(instrument) = loaded.get(&event.instrument_id()) else {
+        return;
+    };
+    let (_, _, condition_id) = instrument_market_context(instrument);
+    let condition_id = condition_id.or_else(|| extract_condition_id(&instrument.id()).ok());
+    let Some(condition_id) = condition_id else {
+        return;
+    };
+    drop(loaded);
+
+    let terminal_conditions = closed_condition_ids.lock();
+    if terminal_conditions.contains(&condition_id) && !watchlist.contains_key(&condition_id) {
+        return;
+    }
     update_resolve_watchlist_from_position_event(watchlist, instruments, event);
 }
 
@@ -747,6 +763,7 @@ mod tests {
     #[rstest]
     fn serialized_position_update_waits_for_resolution_owner_lock() {
         let owner_lock = Arc::new(Mutex::new(()));
+        let closed_condition_ids = Arc::new(Mutex::new(AHashSet::new()));
         let watchlist = Arc::new(AtomicMap::new());
         let instruments = Arc::new(AtomicMap::new());
         let instrument = seed_instrument_with_context(
@@ -770,6 +787,7 @@ mod tests {
         let update_thread = std::thread::spawn(move || {
             update_resolve_watchlist_from_position_event_serialized(
                 &owner_lock_for_thread,
+                &closed_condition_ids,
                 &watchlist_for_thread,
                 &instruments_for_thread,
                 &event,
@@ -790,6 +808,40 @@ mod tests {
         update_thread.join().expect("position update thread");
 
         assert!(watchlist.contains_key(&"0xCOND-BTC".to_string()));
+    }
+
+    #[rstest]
+    fn position_event_does_not_recreate_terminal_watch() {
+        let owner_lock = Arc::new(Mutex::new(()));
+        let watchlist = Arc::new(AtomicMap::new());
+        let instruments = Arc::new(AtomicMap::new());
+        let closed_condition_ids =
+            Arc::new(Mutex::new(AHashSet::from_iter(["0xCOND-BTC".to_string()])));
+        let instrument = seed_instrument_with_context(
+            &instruments,
+            "0xTOKEN_YES",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-BTC"),
+                expiration_ns: Some(UnixNanos::from(1_000_000_000)),
+                ..SeedInstrumentContext::default()
+            },
+        );
+
+        update_resolve_watchlist_from_position_event_serialized(
+            &owner_lock,
+            &closed_condition_ids,
+            &watchlist,
+            &instruments,
+            &stub_position_opened_event(instrument.id()),
+        );
+
+        assert!(closed_condition_ids.lock().contains("0xCOND-BTC"));
+        assert!(
+            !watchlist.contains_key(&"0xCOND-BTC".to_string()),
+            "a terminal condition must not regain resolution ownership",
+        );
     }
 
     #[rstest]

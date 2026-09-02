@@ -1043,8 +1043,9 @@ the full universe at startup is rarely practical. The data adapter auto-loads mi
 demand so that strategies can subscribe to markets that are not in the cache:
 
 - When a strategy issues `subscribe_quotes`, `subscribe_trades`, `subscribe_book_deltas`,
-  or `request_instrument` for an instrument that is not cached, the adapter registers the request and
-  waits `auto_load_debounce_ms` (default 100 ms) so that concurrent requests coalesce.
+  `subscribe_instrument_status`, `subscribe_instrument_close`, or `request_instrument` for an
+  instrument that is not cached, the adapter registers the request and waits
+  `auto_load_debounce_ms` (default 100 ms) so that concurrent requests coalesce.
 - It then issues a single batched Gamma API call. Batches larger than the Gamma `condition_ids`
   query ceiling (about 100) are split across multiple calls and merged.
 - Once the instruments are loaded, they are published to the data engine (populating the cache)
@@ -1107,6 +1108,9 @@ When the client applies a resolution, position-owned legs emit one `InstrumentSt
 leg closes at `1`, and the losing leg closes at `0`. The close type is
 `InstrumentCloseType.CONTRACT_EXPIRED`. This event closes Nautilus exposure and does not redeem
 tokens or claim funds on-chain.
+
+Resolution terminalizes the entire condition. The client stops normal quote, trade, and book-delta
+WebSocket streams for both outcome siblings and rejects later live subscriptions for either sibling.
 
 The same apply path handles WebSocket `market_resolved` events, automatic polling, and manual
 requests. After `resolve_poll_max_wait_secs`, automatic polling pauses the watched condition and

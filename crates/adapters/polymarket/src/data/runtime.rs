@@ -140,6 +140,8 @@ fn has_live_runtime_state(
     active_quote_subs: &Arc<AtomicSet<InstrumentId>>,
     active_delta_subs: &Arc<AtomicSet<InstrumentId>>,
     active_trade_subs: &Arc<AtomicSet<InstrumentId>>,
+    active_status_subs: &Arc<AtomicSet<InstrumentId>>,
+    active_close_subs: &Arc<AtomicSet<InstrumentId>>,
     pending_snapshot_after_tick_change: &Arc<AtomicSet<InstrumentId>>,
     pending_auto_loads: &Arc<Mutex<AHashSet<InstrumentId>>>,
     ws_open_tokens: &Arc<AtomicSet<Ustr>>,
@@ -161,7 +163,9 @@ fn has_live_runtime_state(
         return false;
     };
     let token_id = Ustr::from(token_id);
-    token_meta.contains_key(&token_id) || ws_open_tokens.contains(&token_id)
+    let resolution_owned =
+        active_status_subs.contains(&instrument_id) || active_close_subs.contains(&instrument_id);
+    token_meta.contains_key(&token_id) || (ws_open_tokens.contains(&token_id) && !resolution_owned)
 }
 
 #[allow(
@@ -422,6 +426,8 @@ pub(crate) async fn retire_expired_local_instruments(
                 active_quote_subs,
                 active_delta_subs,
                 active_trade_subs,
+                active_status_subs,
+                active_close_subs,
                 pending_snapshot_after_tick_change,
                 pending_auto_loads,
                 ws_open_tokens,
@@ -636,6 +642,8 @@ mod tests {
         let active_quote_subs = Arc::new(AtomicSet::new());
         let active_delta_subs = Arc::new(AtomicSet::new());
         let active_trade_subs = Arc::new(AtomicSet::new());
+        let active_status_subs = Arc::new(AtomicSet::new());
+        let active_close_subs = Arc::new(AtomicSet::new());
         let pending_snapshot_after_tick_change = Arc::new(AtomicSet::new());
         let pending_auto_loads = Arc::new(Mutex::new(AHashSet::new()));
         let ws_open_tokens = Arc::new(AtomicSet::new());
@@ -650,6 +658,8 @@ mod tests {
             &active_quote_subs,
             &active_delta_subs,
             &active_trade_subs,
+            &active_status_subs,
+            &active_close_subs,
             &pending_snapshot_after_tick_change,
             &pending_auto_loads,
             &ws_open_tokens,
@@ -665,6 +675,8 @@ mod tests {
             &active_quote_subs,
             &active_delta_subs,
             &active_trade_subs,
+            &active_status_subs,
+            &active_close_subs,
             &pending_snapshot_after_tick_change,
             &pending_auto_loads,
             &ws_open_tokens,
@@ -894,5 +906,22 @@ mod tests {
         assert!(active_status_subs.contains(&instrument_id));
         assert!(ws_open_tokens.contains(&token_id));
         assert!(rx.try_recv().is_err());
+        assert!(
+            !has_live_runtime_state(
+                instrument_id,
+                Some(token_id.as_str()),
+                &token_meta,
+                &last_quotes,
+                &active_quote_subs,
+                &active_delta_subs,
+                &active_trade_subs,
+                &active_status_subs,
+                &active_close_subs,
+                &pending_snapshot_after_tick_change,
+                &pending_auto_loads,
+                &ws_open_tokens,
+            ),
+            "resolution-only WS ownership must not schedule another no-op retirement",
+        );
     }
 }

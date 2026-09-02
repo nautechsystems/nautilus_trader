@@ -36,7 +36,7 @@ use super::{
     watchlist::{ResolveWatchEntry, TrackedInstrument},
 };
 use crate::{
-    common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE,
+    common::consts::{GAMMA_CONDITION_IDS_BATCH_SIZE, POLYMARKET_PRICE_PRECISION},
     http::{
         clob::PolymarketClobPublicClient, gamma::PolymarketGammaHttpClient,
         query::GetGammaMarketsParams,
@@ -69,7 +69,6 @@ pub(crate) struct PendingResolution {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ResolveApplyResult {
     Applied { emitted_closes: usize },
-    Deferred,
     Ignored,
 }
 
@@ -240,97 +239,135 @@ pub(crate) async fn apply_condition_resolution(
     winning_outcome: &str,
 ) -> ResolveApplyResult {
     let condition_id_string = condition_id.to_string();
-    if !ctx.watchlist.contains_key(&condition_id_string) {
-        let no_watch_result = {
-            let _guard = ctx.apply_mutex.lock();
-            if ctx.watchlist.contains_key(&condition_id_string) {
-                None
-            } else {
-                let has_resolution_intent = [&ctx.active_status_subs, &ctx.active_close_subs]
-                    .into_iter()
-                    .any(|subscriptions| {
-                        subscriptions.load().iter().any(|instrument_id| {
-                            crate::providers::extract_condition_id(instrument_id)
-                                .is_ok_and(|candidate| candidate == condition_id)
-                        })
-                    });
+    let pending_resolution = PendingResolution {
+        winning_asset_id: winning_asset_id.to_string(),
+        winning_outcome: winning_outcome.to_string(),
+    };
 
-                if has_resolution_intent {
-                    ctx.pending_resolutions.insert(
-                        condition_id_string.clone(),
-                        PendingResolution {
-                            winning_asset_id: winning_asset_id.to_string(),
-                            winning_outcome: winning_outcome.to_string(),
-                        },
-                    );
-                    Some(ResolveApplyResult::Deferred)
-                } else {
-                    ctx.pending_resolutions.remove(&condition_id_string);
-                    Some(ResolveApplyResult::Ignored)
-                }
-            }
-        };
-
-        if let Some(result) = no_watch_result {
-            if result == ResolveApplyResult::Ignored {
-                log::debug!(
-                    "Ignoring resolution for condition_id={condition_id}: no local watch entry"
-                );
-            }
-            return result;
-        }
+    if let Some(existing) = ctx.pending_resolutions.get(&condition_id_string)
+        && existing.value() != &pending_resolution
+    {
+        log::warn!(
+            "Ignoring conflicting resolution for condition_id={condition_id}: existing winner={} ({}) received winner={winning_asset_id} ({winning_outcome})",
+            existing.winning_asset_id,
+            existing.winning_outcome,
+        );
+        return ResolveApplyResult::Ignored;
     }
+    ctx.pending_resolutions
+        .insert(condition_id_string.clone(), pending_resolution.clone());
 
+    let result =
+        apply_condition_resolution_inner(ctx, condition_id, winning_asset_id, winning_outcome)
+            .await;
+    ctx.pending_resolutions
+        .remove_if(&condition_id_string, |_, current| {
+            current == &pending_resolution
+        });
+    result
+}
+
+async fn apply_condition_resolution_inner(
+    ctx: &ResolveContext,
+    condition_id: &str,
+    winning_asset_id: &str,
+    winning_outcome: &str,
+) -> ResolveApplyResult {
+    let condition_id_string = condition_id.to_string();
     let reconcile_guard = ctx.ws_sub_mutex.lock().await;
     let (reconciliation_targets, emitted_closes) = {
         let _guard = ctx.apply_mutex.lock();
-        let Some(entry) = ctx.watchlist.get_cloned(&condition_id_string) else {
-            log::debug!(
-                "Ignoring resolution for condition_id={condition_id}: no local watch entry"
-            );
-            return ResolveApplyResult::Ignored;
+        let entry = ctx.watchlist.get_cloned(&condition_id_string);
+        let matches_condition = |instrument_id: &InstrumentId| {
+            crate::providers::extract_condition_id(instrument_id)
+                .is_ok_and(|candidate| candidate == condition_id)
         };
-
-        let active_resolution_ids: AHashSet<InstrumentId> =
-            [&ctx.active_status_subs, &ctx.active_close_subs]
-                .into_iter()
-                .flat_map(|subscriptions| subscriptions.load().iter().copied().collect::<Vec<_>>())
-                .filter(|instrument_id| {
-                    crate::providers::extract_condition_id(instrument_id)
-                        .is_ok_and(|candidate| candidate == condition_id)
-                })
-                .collect();
-        let tracked_ids: AHashSet<InstrumentId> = entry
-            .tracked
-            .values()
+        let watched_instrument_ids: AHashSet<InstrumentId> = entry
+            .iter()
+            .flat_map(|entry| entry.tracked.values())
             .map(|tracked| tracked.instrument_id)
             .collect();
+        let active_status_ids: AHashSet<InstrumentId> = ctx
+            .active_status_subs
+            .load()
+            .iter()
+            .filter(|instrument_id| {
+                matches_condition(instrument_id) || watched_instrument_ids.contains(instrument_id)
+            })
+            .copied()
+            .collect();
+        let active_close_ids: AHashSet<InstrumentId> = ctx
+            .active_close_subs
+            .load()
+            .iter()
+            .filter(|instrument_id| {
+                matches_condition(instrument_id) || watched_instrument_ids.contains(instrument_id)
+            })
+            .copied()
+            .collect();
 
-        if !active_resolution_ids.is_subset(&tracked_ids) {
-            ctx.pending_resolutions.insert(
-                condition_id_string,
-                PendingResolution {
-                    winning_asset_id: winning_asset_id.to_string(),
-                    winning_outcome: winning_outcome.to_string(),
-                },
+        if entry.is_none() && active_status_ids.is_empty() && active_close_ids.is_empty() {
+            log::debug!(
+                "Ignoring resolution for condition_id={condition_id}: no local resolution owner"
             );
-            return ResolveApplyResult::Deferred;
-        }
-
-        if entry.tracked.is_empty() {
-            ctx.watchlist.remove(&condition_id_string);
-            ctx.pending_resolutions.remove(&condition_id_string);
             return ResolveApplyResult::Ignored;
         }
 
         let ts_init = ctx.clock.get_time_ns();
         let reason = Ustr::from(&format!("Winner: {winning_asset_id} ({winning_outcome})"));
-        let tracked_instruments: Vec<TrackedInstrument> = entry.tracked.values().cloned().collect();
+        let loaded = ctx.instruments.load();
+        let mut tracked_instruments: AHashMap<InstrumentId, TrackedInstrument> = entry
+            .iter()
+            .flat_map(|entry| entry.tracked.values())
+            .map(|tracked| (tracked.instrument_id, tracked.clone()))
+            .collect();
+
+        for instrument_id in active_status_ids.union(&active_close_ids).copied() {
+            if tracked_instruments.contains_key(&instrument_id) {
+                continue;
+            }
+
+            let token_id = loaded
+                .get(&instrument_id)
+                .map(|instrument| instrument.raw_symbol().as_str().to_string())
+                .or_else(|| {
+                    instrument_id
+                        .symbol
+                        .as_str()
+                        .rsplit_once('-')
+                        .map(|(_, token_id)| token_id.to_string())
+                });
+            let Some(token_id) = token_id else {
+                log::error!("Cannot apply resolution for {instrument_id}: token ID is unavailable");
+                continue;
+            };
+            let price_precision = loaded
+                .get(&instrument_id)
+                .map_or(POLYMARKET_PRICE_PRECISION, |instrument| {
+                    instrument.price_precision()
+                });
+            tracked_instruments.insert(
+                instrument_id,
+                TrackedInstrument {
+                    instrument_id,
+                    token_id,
+                    price_precision,
+                    open_position_ids: AHashSet::new(),
+                    has_data_subscription: true,
+                },
+            );
+        }
+
+        if tracked_instruments.is_empty() {
+            ctx.watchlist.remove(&condition_id_string);
+            return ResolveApplyResult::Ignored;
+        }
+
         let mut emitted_closes = 0;
 
-        for tracked in &tracked_instruments {
+        for tracked in tracked_instruments.values() {
             let position_owned = !tracked.open_position_ids.is_empty();
-            if position_owned || ctx.active_status_subs.contains(&tracked.instrument_id) {
+            if position_owned || active_status_ids.contains(&tracked.instrument_id) {
                 let status = InstrumentStatus::new(
                     tracked.instrument_id,
                     MarketStatusAction::Close,
@@ -348,12 +385,11 @@ pub(crate) async fn apply_condition_resolution(
                         "Failed to emit instrument status for {}: {e}",
                         tracked.instrument_id
                     );
-                    ctx.pending_resolutions.remove(&condition_id_string);
                     return ResolveApplyResult::Ignored;
                 }
             }
 
-            if !(position_owned || ctx.active_close_subs.contains(&tracked.instrument_id)) {
+            if !(position_owned || active_close_ids.contains(&tracked.instrument_id)) {
                 continue;
             }
 
@@ -380,17 +416,15 @@ pub(crate) async fn apply_condition_resolution(
                     "Failed to emit instrument close for {}: {e}",
                     tracked.instrument_id
                 );
-                ctx.pending_resolutions.remove(&condition_id_string);
                 return ResolveApplyResult::Ignored;
             }
             emitted_closes += 1;
         }
 
         let mut reconciliation_targets: AHashMap<InstrumentId, String> = tracked_instruments
-            .iter()
+            .values()
             .map(|tracked| (tracked.instrument_id, tracked.token_id.clone()))
             .collect();
-        let loaded = ctx.instruments.load();
 
         for subscriptions in [
             &ctx.active_quote_subs,
@@ -426,11 +460,17 @@ pub(crate) async fn apply_condition_resolution(
         }
 
         ctx.watchlist.remove(&condition_id_string);
-        for subscriptions in [&ctx.active_status_subs, &ctx.active_close_subs] {
+        for subscriptions in [
+            &ctx.active_quote_subs,
+            &ctx.active_delta_subs,
+            &ctx.active_trade_subs,
+            &ctx.active_status_subs,
+            &ctx.active_close_subs,
+        ] {
             subscriptions.rcu(|entries| {
                 entries.retain(|instrument_id| {
-                    !crate::providers::extract_condition_id(instrument_id)
-                        .is_ok_and(|candidate| candidate == condition_id)
+                    !matches_condition(instrument_id)
+                        && !tracked_instruments.contains_key(instrument_id)
                 });
             });
         }
@@ -442,8 +482,6 @@ pub(crate) async fn apply_condition_resolution(
         if newly_closed {
             log::info!("Market resolved for condition {condition_id}, reconciling live data state");
         }
-        ctx.pending_resolutions.remove(&condition_id_string);
-
         (reconciliation_targets, emitted_closes)
     };
     drop(reconcile_guard);
@@ -479,7 +517,7 @@ mod tests {
     use ahash::AHashSet;
     use nautilus_common::messages::DataEvent;
     use nautilus_core::{AtomicMap, UnixNanos, time::get_atomic_clock_realtime};
-    use nautilus_model::identifiers::InstrumentId;
+    use nautilus_model::identifiers::{InstrumentId, PositionId};
     use parking_lot::Mutex;
     use rstest::rstest;
 
@@ -550,19 +588,117 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn resolution_without_watch_entry_preserves_unrelated_data_subscription_intent() {
-        let (ctx, _data_rx) = make_resolve_context();
+    async fn resolution_without_watch_entry_completes_active_data_subscription_intent() {
+        let (ctx, mut data_rx) = make_resolve_context();
         let instrument_id = InstrumentId::from("0xCOND-0xYES.POLYMARKET");
         ctx.active_status_subs.insert(instrument_id);
         ctx.active_close_subs.insert(instrument_id);
 
         assert_eq!(
             apply_condition_resolution(&ctx, "0xCOND", "0xYES", "Yes").await,
-            ResolveApplyResult::Deferred
+            ResolveApplyResult::Applied { emitted_closes: 1 }
         );
 
-        assert!(ctx.active_status_subs.contains(&instrument_id));
-        assert!(ctx.active_close_subs.contains(&instrument_id));
+        assert!(!ctx.active_status_subs.contains(&instrument_id));
+        assert!(!ctx.active_close_subs.contains(&instrument_id));
+        assert!(!ctx.pending_resolutions.contains_key("0xCOND"));
+        assert!(ctx.closed_condition_ids.lock().contains("0xCOND"));
+        assert!(matches!(
+            data_rx.try_recv(),
+            Ok(DataEvent::InstrumentStatus(_))
+        ));
+        assert!(matches!(
+            data_rx.try_recv(),
+            Ok(DataEvent::Data(NautilusData::InstrumentClose(_)))
+        ));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn direct_resolution_installs_pending_barrier_before_ws_reconciliation() {
+        let (ctx, _data_rx) = make_resolve_context();
+        let instrument_id = InstrumentId::from("0xCOND-0xYES.POLYMARKET");
+        ctx.active_status_subs.insert(instrument_id);
+        ctx.watchlist.insert(
+            "0xCOND".to_string(),
+            ResolveWatchEntry {
+                condition_id: "0xCOND".to_string(),
+                expiration_ns: UnixNanos::default(),
+                tracked: ahash::AHashMap::from_iter([(
+                    "0xYES".to_string(),
+                    TrackedInstrument {
+                        instrument_id,
+                        token_id: "0xYES".to_string(),
+                        price_precision: 3,
+                        open_position_ids: AHashSet::new(),
+                        has_data_subscription: true,
+                    },
+                )]),
+                paused: false,
+            },
+        );
+
+        let reconcile_guard = ctx.ws_sub_mutex.lock().await;
+        let apply_ctx = ctx.clone();
+        let apply_task = tokio::spawn(async move {
+            apply_condition_resolution(&apply_ctx, "0xCOND", "0xYES", "Yes").await
+        });
+        tokio::task::yield_now().await;
+
         assert!(ctx.pending_resolutions.contains_key("0xCOND"));
+
+        drop(reconcile_guard);
+        assert_eq!(
+            apply_task.await.expect("resolution task"),
+            ResolveApplyResult::Applied { emitted_closes: 0 }
+        );
+        assert!(!ctx.pending_resolutions.contains_key("0xCOND"));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn resolution_clears_pending_barrier_when_watch_disappears() {
+        let (ctx, _data_rx) = make_resolve_context();
+        let instrument_id = InstrumentId::from("0xCOND-0xYES.POLYMARKET");
+        ctx.watchlist.insert(
+            "0xCOND".to_string(),
+            ResolveWatchEntry {
+                condition_id: "0xCOND".to_string(),
+                expiration_ns: UnixNanos::default(),
+                tracked: ahash::AHashMap::from_iter([(
+                    "0xYES".to_string(),
+                    TrackedInstrument {
+                        instrument_id,
+                        token_id: "0xYES".to_string(),
+                        price_precision: 3,
+                        open_position_ids: AHashSet::from_iter([PositionId::new("P-1")]),
+                        has_data_subscription: false,
+                    },
+                )]),
+                paused: false,
+            },
+        );
+        ctx.pending_resolutions.insert(
+            "0xCOND".to_string(),
+            PendingResolution {
+                winning_asset_id: "0xYES".to_string(),
+                winning_outcome: "Yes".to_string(),
+            },
+        );
+
+        let reconcile_guard = ctx.ws_sub_mutex.lock().await;
+        let apply_ctx = ctx.clone();
+        let apply_task = tokio::spawn(async move {
+            apply_condition_resolution(&apply_ctx, "0xCOND", "0xYES", "Yes").await
+        });
+        tokio::task::yield_now().await;
+        ctx.watchlist.remove(&"0xCOND".to_string());
+        drop(reconcile_guard);
+
+        assert_eq!(
+            apply_task.await.expect("resolution task"),
+            ResolveApplyResult::Ignored
+        );
+        assert!(!ctx.pending_resolutions.contains_key("0xCOND"));
     }
 }
