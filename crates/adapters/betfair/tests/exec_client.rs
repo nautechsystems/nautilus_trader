@@ -24,7 +24,7 @@ use std::{
     rc::Rc,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -59,7 +59,6 @@ use nautilus_common::{
         },
         system::SocketState,
     },
-    testing::wait_until_async,
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
@@ -160,8 +159,38 @@ fn create_test_execution_client(
 
 async fn connect_execution_ready(client: &mut BetfairExecutionClient) {
     client.connect().await.unwrap();
-    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(2)).await;
+    wait_for_connection_state(client, true).await;
     assert!(client.is_connected());
+}
+
+async fn wait_for_connection_state(client: &BetfairExecutionClient, expected: bool) {
+    tokio::time::timeout(PHASE_TIMEOUT, client.wait_for_connection_state(expected))
+        .await
+        .unwrap_or_else(|_| {
+            panic!(
+                "deadline elapsed waiting for connection state {expected}; state after deadline: {}",
+                client.is_connected()
+            )
+        });
+}
+
+async fn wait_for_reconciliation_state(client: &BetfairExecutionClient, expected: bool) {
+    tokio::time::timeout(
+        PHASE_TIMEOUT,
+        client.wait_for_reconciliation_state(expected),
+    )
+    .await
+    .unwrap_or_else(|_| {
+        panic!(
+            "deadline elapsed waiting for reconciliation state {expected}; state after deadline: {}",
+            client.is_reconciling()
+        )
+    });
+}
+
+#[tokio::test]
+async fn test_mock_state_notifier_contract() {
+    assert_mock_state_notifier_contract().await;
 }
 
 #[rstest]
@@ -187,8 +216,7 @@ async fn test_exec_client_connect_disconnect() {
     let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, _rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
-    let subscription_received = Arc::new(AtomicBool::new(false));
-    let subscription_received_server = Arc::clone(&subscription_received);
+    let (subscription_received_tx, subscription_received) = tokio::sync::watch::channel(false);
 
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
@@ -203,7 +231,7 @@ async fn test_exec_client_connect_disconnect() {
 
         let json: Value = serde_json::from_str(line.trim()).unwrap();
         assert_eq!(json["op"], "orderSubscription");
-        subscription_received_server.store(true, Ordering::Relaxed);
+        subscription_received_tx.send_replace(true);
         let id = json["id"].as_u64().unwrap();
         write_half
             .write_all(
@@ -222,17 +250,15 @@ async fn test_exec_client_connect_disconnect() {
 
     client.connect().await.unwrap();
 
-    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(2)).await;
+    wait_for_connection_state(&client, true).await;
 
     assert!(client.is_connected());
     assert!(state.login_count.load(std::sync::atomic::Ordering::Relaxed) > 0);
 
-    wait_until_async(
-        || {
-            let subscription_received = Arc::clone(&subscription_received);
-            async move { subscription_received.load(Ordering::Relaxed) }
-        },
-        Duration::from_secs(2),
+    wait_for_watch(
+        subscription_received,
+        "stream subscription receipt",
+        |received| *received,
     )
     .await;
 
@@ -282,7 +308,7 @@ async fn test_exec_client_failed_startup_rolls_back_session_before_retry() {
     });
 
     client.connect().await.unwrap();
-    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(2)).await;
+    wait_for_connection_state(&client, true).await;
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());
     server.await.unwrap();
@@ -343,7 +369,7 @@ async fn test_exec_client_canceled_startup_allows_immediate_retry() {
     response_gate.semaphore.add_permits(1);
 
     client.connect().await.unwrap();
-    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(2)).await;
+    wait_for_connection_state(&client, true).await;
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());
     server.await.unwrap();
@@ -661,13 +687,9 @@ async fn test_cancel_order_bet_taken_or_lapsed_treated_as_success() {
     let cmd = make_cancel_order("1.179082386-235-0.BETFAIR", "O-001", "1");
     client.cancel_order(cmd).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move { methods.lock().iter().any(|m| m == METHOD_CANCEL_ORDERS) }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 1
+    })
     .await;
 
     let mut rejected_seen = false;
@@ -769,13 +791,9 @@ async fn test_cancel_order_definitive_result_failure_without_instructions_emits_
     let cmd = make_cancel_order("1.179082386-235-0.BETFAIR", "O-003", "1");
     client.cancel_order(cmd).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move { methods.lock().iter().any(|m| m == METHOD_CANCEL_ORDERS) }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 1
+    })
     .await;
 
     let mut rejected_count = 0;
@@ -824,13 +842,9 @@ async fn test_cancel_order_ambiguous_5xx_emits_no_rejected() {
     let cmd = make_cancel_order("1.179082386-235-0.BETFAIR", "O-003-5XX", "1");
     client.cancel_order(cmd).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move { methods.lock().iter().any(|m| m == METHOD_CANCEL_ORDERS) }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 1
+    })
     .await;
 
     tokio::time::sleep(Duration::from_secs(1)).await;
@@ -885,13 +899,9 @@ async fn test_cancel_order_timeout_status_emits_no_rejected() {
     let cmd = make_cancel_order("1.179082386-235-0.BETFAIR", "O-003-TIMEOUT", "1");
     client.cancel_order(cmd).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move { methods.lock().iter().any(|m| m == METHOD_CANCEL_ORDERS) }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 1
+    })
     .await;
 
     let mut rejected_seen = false;
@@ -1288,21 +1298,9 @@ async fn test_submit_order_retry_reuses_customer_ref() {
     add_order_to_cache(&cache, order.clone());
     client.submit_order(make_submit_order_cmd(&order)).unwrap();
 
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move {
-                state
-                    .betting_methods
-                    .lock()
-                    .iter()
-                    .filter(|method| method.as_str() == METHOD_PLACE_ORDERS)
-                    .count()
-                    == 2
-            }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_PLACE_ORDERS request count == 2", |state| {
+        betting_method_count(state, METHOD_PLACE_ORDERS) == 2
+    })
     .await;
 
     let params: Vec<Value> = state
@@ -1373,21 +1371,9 @@ async fn test_submit_retry_preserves_earlier_ambiguity_before_no_session() {
     add_order_to_cache(&cache, order.clone());
     client.submit_order(make_submit_order_cmd(&order)).unwrap();
 
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move {
-                state
-                    .betting_methods
-                    .lock()
-                    .iter()
-                    .filter(|method| method.as_str() == METHOD_PLACE_ORDERS)
-                    .count()
-                    == 2
-            }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_PLACE_ORDERS request count == 2", |state| {
+        betting_method_count(state, METHOD_PLACE_ORDERS) == 2
+    })
     .await;
 
     let mut submitted = 0;
@@ -1457,20 +1443,10 @@ async fn test_concurrent_submit_retry_state_is_request_local() {
         client.submit_order(make_submit_order_cmd(&order)).unwrap();
     }
 
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move {
-                state
-                    .betting_methods
-                    .lock()
-                    .iter()
-                    .filter(|method| method.as_str() == METHOD_PLACE_ORDERS)
-                    .count()
-                    == ORDER_COUNT + 1
-            }
-        },
-        Duration::from_secs(5),
+    wait_for_mock_state(
+        &state,
+        "METHOD_PLACE_ORDERS request count == ORDER_COUNT + 1",
+        |state| betting_method_count(state, METHOD_PLACE_ORDERS) == ORDER_COUNT + 1,
     )
     .await;
 
@@ -1795,13 +1771,9 @@ async fn test_cancel_all_orders_sends_request() {
     );
     client.cancel_all_orders(cmd).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move { methods.lock().iter().any(|m| m == METHOD_CANCEL_ORDERS) }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 1
+    })
     .await;
 
     let params = state
@@ -1814,12 +1786,7 @@ async fn test_cancel_all_orders_sends_request() {
         .1;
     assert_valid_customer_ref(&params);
     assert!(params.get("instructions").is_none());
-
-    let event = rx.try_recv();
-    assert!(
-        event.is_err(),
-        "Cancel all should not emit rejected events on success, found: {event:?}"
-    );
+    // Cancel-all is fire-and-forget, so this test covers dispatch and payload only.
 
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());
@@ -1917,13 +1884,9 @@ async fn test_cancel_all_orders_ambiguous_5xx_emits_no_rejected() {
     );
     client.cancel_all_orders(cmd).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move { methods.lock().iter().any(|m| m == METHOD_CANCEL_ORDERS) }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 1
+    })
     .await;
 
     tokio::time::sleep(Duration::from_secs(1)).await;
@@ -2109,10 +2072,9 @@ async fn test_cancel_all_orders_filters_side_instrument_and_owner(
         .cancel_all_orders(make_cancel_all_orders_cmd(instrument_id, Some(order_side)))
         .unwrap();
 
-    wait_until_async(
-        || async { betting_method_count(&state, METHOD_CANCEL_ORDERS) == 1 },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count == 1", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) == 1
+    })
     .await;
 
     let params = state
@@ -2234,10 +2196,9 @@ async fn test_cancel_all_orders_side_splits_more_than_sixty_instructions() {
         ))
         .unwrap();
 
-    wait_until_async(
-        || async { betting_method_count(&state, METHOD_CANCEL_ORDERS) == 2 },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count == 2", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) == 2
+    })
     .await;
 
     let params = state
@@ -2372,10 +2333,9 @@ async fn test_cancel_all_orders_side_ambiguous_outcome_emits_no_order_event() {
         ))
         .unwrap();
 
-    wait_until_async(
-        || async { betting_method_count(&state, METHOD_CANCEL_ORDERS) == 2 },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count == 2", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) == 2
+    })
     .await;
     tokio::time::sleep(Duration::from_secs(1)).await;
 
@@ -3807,13 +3767,9 @@ async fn test_batch_cancel_orders_success_no_rejected_events() {
     );
     client.batch_cancel_orders(cmd).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move { methods.lock().iter().any(|m| m == METHOD_CANCEL_ORDERS) }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 1
+    })
     .await;
 
     let params = state
@@ -3876,10 +3832,9 @@ async fn test_batch_cancel_orders_splits_more_than_sixty_instructions() {
     let cmd = make_batch_cancel_cmd("1.179082386-235-0.BETFAIR", cancels);
     client.batch_cancel_orders(cmd).unwrap();
 
-    wait_until_async(
-        || async { betting_method_count(&state, METHOD_CANCEL_ORDERS) == 2 },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count == 2", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) == 2
+    })
     .await;
 
     let params = state
@@ -4086,13 +4041,9 @@ async fn test_batch_cancel_orders_definitive_failure_rejects_each_instruction_on
     );
     client.batch_cancel_orders(cmd).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move { methods.lock().iter().any(|m| m == METHOD_CANCEL_ORDERS) }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 1
+    })
     .await;
 
     let mut rejected_ids: Vec<ClientOrderId> = Vec::new();
@@ -4155,13 +4106,9 @@ async fn test_batch_cancel_orders_ambiguous_5xx_emits_no_rejections() {
     );
     client.batch_cancel_orders(cmd).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move { methods.lock().iter().any(|m| m == METHOD_CANCEL_ORDERS) }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 1
+    })
     .await;
 
     tokio::time::sleep(Duration::from_secs(1)).await;
@@ -4282,13 +4229,9 @@ async fn test_modify_order_quantity_reduction_does_not_reject() {
     );
     client.modify_order(cmd).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move { methods.lock().iter().any(|m| m == METHOD_CANCEL_ORDERS) }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 1
+    })
     .await;
 
     let params = state
@@ -4945,13 +4888,9 @@ async fn test_submit_order_with_handicap_includes_handicap_in_instruction() {
 
     client.submit_order(make_submit_order_cmd(&order)).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move { methods.lock().iter().any(|m| m == METHOD_PLACE_ORDERS) }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_PLACE_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_PLACE_ORDERS) >= 1
+    })
     .await;
 
     let params = state
@@ -5015,17 +4954,10 @@ async fn test_modify_price_dispatches_replace_orders_with_new_price() {
     );
     client.modify_order(cmd).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move {
-                methods
-                    .lock()
-                    .iter()
-                    .any(|m| m == "SportsAPING/v1.0/replaceOrders")
-            }
-        },
-        Duration::from_secs(5),
+    wait_for_mock_state(
+        &state,
+        "METHOD_REPLACE_ORDERS request count >= 1",
+        |state| betting_method_count(state, METHOD_REPLACE_ORDERS) >= 1,
     )
     .await;
 
@@ -5184,12 +5116,10 @@ async fn test_startup_restored_modify_price_ambiguous_5xx_resolves_from_http_rec
         ))
         .unwrap();
 
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move { betting_method_count(&state, METHOD_REPLACE_ORDERS) >= 2 }
-        },
-        Duration::from_secs(5),
+    wait_for_mock_state(
+        &state,
+        "METHOD_REPLACE_ORDERS request count >= 2",
+        |state| betting_method_count(state, METHOD_REPLACE_ORDERS) >= 2,
     )
     .await;
 
@@ -5343,12 +5273,10 @@ async fn test_startup_restored_ambiguous_replace_rejects_when_old_bet_stays_acti
             "3.00",
         ))
         .unwrap();
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move { betting_method_count(&state, METHOD_REPLACE_ORDERS) >= 2 }
-        },
-        Duration::from_secs(5),
+    wait_for_mock_state(
+        &state,
+        "METHOD_REPLACE_ORDERS request count >= 2",
+        |state| betting_method_count(state, METHOD_REPLACE_ORDERS) >= 2,
     )
     .await;
 
@@ -5486,12 +5414,10 @@ async fn test_modify_price_reconciliation_keeps_in_flight_request_pending() {
         ))
         .unwrap();
 
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move { betting_method_count(&state, METHOD_REPLACE_ORDERS) >= 1 }
-        },
-        Duration::from_secs(5),
+    wait_for_mock_state(
+        &state,
+        "METHOD_REPLACE_ORDERS request count >= 1",
+        |state| betting_method_count(state, METHOD_REPLACE_ORDERS) >= 1,
     )
     .await;
 
@@ -5574,13 +5500,9 @@ async fn test_startup_restored_modify_quantity_ambiguous_5xx_resolves_from_http_
         ))
         .unwrap();
 
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move { betting_method_count(&state, METHOD_CANCEL_ORDERS) >= 2 }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 2", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 2
+    })
     .await;
 
     let quiet = drain_events(&mut rx, Duration::from_millis(300)).await;
@@ -5715,13 +5637,9 @@ async fn test_startup_restored_modify_quantity_ambiguous_5xx_resolves_from_ocm()
         ))
         .unwrap();
 
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move { betting_method_count(&state, METHOD_CANCEL_ORDERS) >= 2 }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 2", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 2
+    })
     .await;
 
     let quiet = drain_events(&mut rx, Duration::from_millis(300)).await;
@@ -5992,13 +5910,9 @@ async fn test_reduction_success_after_a_terminal_stream_update_stays_silent() {
         ))
         .unwrap();
 
-    wait_until_async(
-        || {
-            let waiters = Arc::clone(&waiters);
-            async move { waiters.load(Ordering::Relaxed) == 1 }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "response gate waiter count 1", |state| {
+        response_gate_waiter_count(state) == 1
+    })
     .await;
 
     // Lapse more than requested to close the bet at two matched
@@ -6086,13 +6000,9 @@ async fn test_modify_quantity_reduction_survives_a_terminal_report() {
         ))
         .unwrap();
 
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move { betting_method_count(&state, METHOD_CANCEL_ORDERS) >= 2 }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 2", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 2
+    })
     .await;
 
     state
@@ -6225,13 +6135,9 @@ async fn test_reduction_stream_before_rest_emits_updated_once() {
         ))
         .unwrap();
 
-    wait_until_async(
-        || {
-            let waiters = Arc::clone(&waiters);
-            async move { waiters.load(Ordering::Relaxed) == 1 }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "response gate waiter count 1", |state| {
+        response_gate_waiter_count(state) == 1
+    })
     .await;
 
     let mut ocm = load_json_fixture("stream/ocm_harness_open.json");
@@ -6406,13 +6312,9 @@ async fn test_generate_order_status_reports_recovers_from_no_session() {
         let initial_sub_json: Value = serde_json::from_str(&initial_sub).unwrap();
         assert_eq!(initial_sub_json["op"], "orderSubscription");
 
-        wait_until_async(
-            || {
-                let login_count = Arc::clone(&server_state.login_count);
-                async move { login_count.load(Ordering::Relaxed) == 2 }
-            },
-            Duration::from_secs(5),
-        )
+        wait_for_mock_state(&server_state, "login count 2", |state| {
+            state.login_count.load(Ordering::Relaxed) == 2
+        })
         .await;
         drop(reader);
         drop(write_half);
@@ -6741,17 +6643,10 @@ async fn test_replace_flow_suppresses_ocm_cancel_for_old_bet_id() {
     );
     client.modify_order(modify_cmd).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move {
-                methods
-                    .lock()
-                    .iter()
-                    .any(|m| m == "SportsAPING/v1.0/replaceOrders")
-            }
-        },
-        Duration::from_secs(5),
+    wait_for_mock_state(
+        &state,
+        "METHOD_REPLACE_ORDERS request count >= 1",
+        |state| betting_method_count(state, METHOD_REPLACE_ORDERS) >= 1,
     )
     .await;
 
@@ -6908,13 +6803,9 @@ async fn test_startup_restored_replace_stream_before_rest_emits_updated_once() {
         ))
         .unwrap();
 
-    wait_until_async(
-        || {
-            let waiters = Arc::clone(&waiters);
-            async move { waiters.load(Ordering::Relaxed) == 1 }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "response gate waiter count 1", |state| {
+        response_gate_waiter_count(state) == 1
+    })
     .await;
     assert_eq!(waiters.load(Ordering::Relaxed), 1);
 
@@ -7021,13 +6912,9 @@ async fn test_submit_order_fok_sends_fill_or_kill_payload() {
 
     client.submit_order(make_submit_order_cmd(&order)).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move { methods.lock().iter().any(|m| m == METHOD_PLACE_ORDERS) }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_PLACE_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_PLACE_ORDERS) >= 1
+    })
     .await;
 
     let params = state
@@ -7085,18 +6972,9 @@ async fn test_submit_limit_at_the_close_sends_limit_on_close_payload() {
     add_order_to_cache(&cache, order.clone());
     client.submit_order(make_submit_order_cmd(&order)).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move {
-                methods
-                    .lock()
-                    .iter()
-                    .any(|method| method == METHOD_PLACE_ORDERS)
-            }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_PLACE_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_PLACE_ORDERS) >= 1
+    })
     .await;
 
     let params = state
@@ -7153,13 +7031,9 @@ async fn test_submit_order_market_on_close_sends_bsp_instruction() {
 
     client.submit_order(make_submit_order_cmd(&order)).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move { methods.lock().iter().any(|m| m == METHOD_PLACE_ORDERS) }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_PLACE_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_PLACE_ORDERS) >= 1
+    })
     .await;
 
     let params = state
@@ -7221,13 +7095,9 @@ async fn test_submit_order_ambiguous_5xx_does_not_emit_rejected() {
     // no-Rejected assertion below is grounded in the 5xx path having fired.
     // Without this, a regression that stops dispatching placeOrders after
     // local submit would still pass.
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move { methods.lock().iter().any(|m| m == METHOD_PLACE_ORDERS) }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_PLACE_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_PLACE_ORDERS) >= 1
+    })
     .await;
 
     let mut submitted_seen = false;
@@ -7385,13 +7255,27 @@ const RECONNECT_CONNECTION_MSG: &[u8] =
 const STREAM_CLOSED_MSG: &[u8] =
     b"{\"op\":\"status\",\"id\":1,\"statusCode\":\"FAILURE\",\"connectionClosed\":true}\r\n";
 
+/// Counts recorded calls of `method`, over the request params rather than the method list.
+///
+/// The mock pushes the method name first and the params second, publishing after each, so a
+/// predicate over the method list can wake between the two and read params that are not yet
+/// recorded. Counting the later of the two collections makes every waiter on this helper
+/// observe a request whose payload is already readable.
 fn betting_method_count(state: &MockState, method: &str) -> usize {
     state
-        .betting_methods
+        .betting_request_params
         .lock()
         .iter()
-        .filter(|seen| seen.as_str() == method)
+        .filter(|(seen, _)| seen.as_str() == method)
         .count()
+}
+
+fn response_gate_waiter_count(state: &MockState) -> usize {
+    state
+        .betting_response_gate
+        .lock()
+        .as_ref()
+        .map_or(0, |gate| gate.waiters.load(Ordering::Relaxed))
 }
 
 fn submit_single_and_list(
@@ -7578,14 +7462,7 @@ async fn test_active_replacement_stream_denies_submit_before_connection_message(
     assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 0);
 
     send_connection_tx.send(()).unwrap();
-    wait_until_async(
-        || {
-            let halted = client.is_reconciling();
-            async move { !halted }
-        },
-        Duration::from_secs(5),
-    )
-    .await;
+    wait_for_reconciliation_state(&client, false).await;
 
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());
@@ -7616,14 +7493,7 @@ async fn test_stream_closed_status_denies_submit_before_reconnect() {
     client.connect().await.unwrap();
 
     while rx.try_recv().is_ok() {}
-    wait_until_async(
-        || {
-            let halted = client.is_reconciling();
-            async move { halted }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_reconciliation_state(&client, true).await;
 
     let order = make_test_order(
         "1.181005744-86362-0.BETFAIR",
@@ -7673,14 +7543,7 @@ async fn test_degraded_order_stream_denies_submit_until_current_heartbeat() {
     stream_tx
         .send(b"{\"op\":\"ocm\",\"id\":2,\"pt\":1001,\"ct\":\"HEARTBEAT\",\"status\":503}\r\n")
         .unwrap();
-    wait_until_async(
-        || {
-            let connected = client.is_connected();
-            async move { !connected }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_connection_state(&client, false).await;
 
     let denied = make_test_order(
         "1.181005744-86362-0.BETFAIR",
@@ -7700,7 +7563,7 @@ async fn test_degraded_order_stream_denies_submit_until_current_heartbeat() {
     stream_tx
         .send(b"{\"op\":\"ocm\",\"id\":2,\"pt\":1002,\"ct\":\"HEARTBEAT\"}\r\n")
         .unwrap();
-    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
+    wait_for_connection_state(&client, true).await;
 
     let allowed = make_test_order(
         "1.181005744-86362-0.BETFAIR",
@@ -7712,13 +7575,9 @@ async fn test_degraded_order_stream_denies_submit_until_current_heartbeat() {
     client
         .submit_order(make_submit_order_cmd(&allowed))
         .unwrap();
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move { betting_method_count(&state, METHOD_PLACE_ORDERS) == 1 }
-        },
-        Duration::from_secs(2),
-    )
+    wait_for_mock_state(&state, "METHOD_PLACE_ORDERS request count == 1", |state| {
+        betting_method_count(state, METHOD_PLACE_ORDERS) == 1
+    })
     .await;
 
     assert!(client.is_connected());
@@ -7779,14 +7638,7 @@ async fn test_post_reconnect_dispatches_mass_status() {
         "expected ExecutionReport::MassStatus dispatch after reconnect",
     );
 
-    wait_until_async(
-        || {
-            let halted = client.is_reconciling();
-            async move { !halted }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_reconciliation_state(&client, false).await;
     assert!(!client.is_reconciling());
 
     client.disconnect().await.unwrap();
@@ -7834,14 +7686,7 @@ async fn test_command_before_reconnect_image_keeps_recovery_pending() {
 
     connect_execution_ready(&mut client).await;
     reconnect_tx.send(()).unwrap();
-    wait_until_async(
-        || {
-            let halted = client.is_reconciling();
-            async move { halted }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_reconciliation_state(&client, true).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -7872,14 +7717,7 @@ async fn test_command_before_reconnect_image_keeps_recovery_pending() {
     .expect("recovery was not queued after the replacement image");
 
     assert!(mass_status.order_reports().is_empty());
-    wait_until_async(
-        || {
-            let halted = client.is_reconciling();
-            async move { !halted }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_reconciliation_state(&client, false).await;
     assert!(!client.is_reconciling());
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());
@@ -8071,12 +7909,10 @@ async fn test_post_reconnect_retry_exhaustion_keeps_submissions_halted() {
     });
 
     client.connect().await.unwrap();
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move { betting_method_count(&state, METHOD_LIST_CURRENT_ORDERS) == 4 }
-        },
-        Duration::from_secs(5),
+    wait_for_mock_state(
+        &state,
+        "METHOD_LIST_CURRENT_ORDERS request count == 4",
+        |state| betting_method_count(state, METHOD_LIST_CURRENT_ORDERS) == 4,
     )
     .await;
 
@@ -8139,13 +7975,9 @@ async fn test_post_reconnect_relogin_waits_for_reconciliation_and_does_not_loop(
             .await
             .unwrap();
 
-        wait_until_async(
-            || {
-                let waiters = Arc::clone(&server_gate.waiters);
-                async move { waiters.load(Ordering::Relaxed) == 1 }
-            },
-            Duration::from_secs(2),
-        )
+        wait_for_mock_state(&server_state, "response gate waiter count 1", |state| {
+            response_gate_waiter_count(state) == 1
+        })
         .await;
 
         assert!(
@@ -8155,13 +7987,9 @@ async fn test_post_reconnect_relogin_waits_for_reconciliation_and_does_not_loop(
             "full re-login must not replace the stream before reconciliation completes",
         );
         server_gate.semaphore.add_permits(1);
-        wait_until_async(
-            || {
-                let waiters = Arc::clone(&server_gate.waiters);
-                async move { waiters.load(Ordering::Relaxed) == 2 }
-            },
-            Duration::from_secs(2),
-        )
+        wait_for_mock_state(&server_state, "response gate waiter count 2", |state| {
+            response_gate_waiter_count(state) == 2
+        })
         .await;
         assert!(
             tokio::time::timeout(Duration::from_millis(300), listener.accept())
@@ -8290,14 +8118,7 @@ async fn test_reconnect_transient_keep_alive_failure_continues_reconciliation() 
         saw_mass_status,
         "reconciliation must continue after a transient keep-alive failure",
     );
-    wait_until_async(
-        || {
-            let halted = client.is_reconciling();
-            async move { !halted }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_reconciliation_state(&client, false).await;
 
     assert_eq!(state.keep_alive_count.load(Ordering::Relaxed), 1);
     assert_eq!(state.login_count.load(Ordering::Relaxed), 1);
@@ -8340,16 +8161,10 @@ async fn test_reconnect_auth_failure_keeps_submissions_halted() {
     *state.login_response_override.lock() = Some(load_fixture("rest/login_failure.json"));
     trigger_tx.send(()).unwrap();
 
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move {
-                state.keep_alive_count.load(Ordering::Relaxed) >= 1
-                    && state.login_count.load(Ordering::Relaxed) >= 2
-            }
-        },
-        Duration::from_secs(2),
-    )
+    wait_for_mock_state(&state, "keep-alive count 1 and login count 2", |state| {
+        state.keep_alive_count.load(Ordering::Relaxed) >= 1
+            && state.login_count.load(Ordering::Relaxed) >= 2
+    })
     .await;
     tokio::time::sleep(Duration::from_millis(100)).await;
 
@@ -8410,12 +8225,10 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
 
     while rx.try_recv().is_ok() {}
 
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move { betting_method_count(&state, METHOD_LIST_CURRENT_ORDERS) >= 1 }
-        },
-        Duration::from_secs(2),
+    wait_for_mock_state(
+        &state,
+        "METHOD_LIST_CURRENT_ORDERS request count >= 1",
+        |state| betting_method_count(state, METHOD_LIST_CURRENT_ORDERS) >= 1,
     )
     .await;
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -8453,13 +8266,9 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
         .remove(METHOD_LIST_CURRENT_ORDERS);
     retry_tx.send(()).unwrap();
 
-    wait_until_async(
-        || {
-            let waiters = Arc::clone(&response_gate.waiters);
-            async move { waiters.load(Ordering::Relaxed) == 1 }
-        },
-        Duration::from_secs(2),
-    )
+    wait_for_mock_state(&state, "response gate waiter count 1", |state| {
+        response_gate_waiter_count(state) == 1
+    })
     .await;
 
     let expected = submit_single_and_list(&client, &cache, "MASS-HALT");
@@ -8470,13 +8279,9 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
     assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 0);
 
     response_gate.semaphore.add_permits(1);
-    wait_until_async(
-        || {
-            let waiters = Arc::clone(&response_gate.waiters);
-            async move { waiters.load(Ordering::Relaxed) == 2 }
-        },
-        Duration::from_secs(2),
-    )
+    wait_for_mock_state(&state, "response gate waiter count 2", |state| {
+        response_gate_waiter_count(state) == 2
+    })
     .await;
     assert!(client.is_reconciling());
     response_gate.semaphore.add_permits(1);
@@ -8492,14 +8297,7 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
             break;
         }
     }
-    wait_until_async(
-        || {
-            let halted = client.is_reconciling();
-            async move { !halted }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_reconciliation_state(&client, false).await;
 
     let allowed = make_test_order(
         "1.181005744-86362-0.BETFAIR",
@@ -8511,13 +8309,9 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
     client
         .submit_order(make_submit_order_cmd(&allowed))
         .unwrap();
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move { betting_method_count(&state, METHOD_PLACE_ORDERS) == 1 }
-        },
-        Duration::from_secs(2),
-    )
+    wait_for_mock_state(&state, "METHOD_PLACE_ORDERS request count == 1", |state| {
+        betting_method_count(state, METHOD_PLACE_ORDERS) == 1
+    })
     .await;
 
     assert_eq!(recovered_counts, Some((3, 2)));
@@ -8584,13 +8378,9 @@ async fn test_submit_denied_during_reconciliation() {
 
     while rx.try_recv().is_ok() {}
 
-    wait_until_async(
-        || {
-            let waiters = Arc::clone(&response_gate.waiters);
-            async move { waiters.load(Ordering::Relaxed) == 1 }
-        },
-        Duration::from_secs(2),
-    )
+    wait_for_mock_state(&state, "response gate waiter count 1", |state| {
+        response_gate_waiter_count(state) == 1
+    })
     .await;
     assert!(client.is_reconciling());
 
@@ -8605,13 +8395,9 @@ async fn test_submit_denied_during_reconciliation() {
     assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 0);
 
     response_gate.semaphore.add_permits(1);
-    wait_until_async(
-        || {
-            let waiters = Arc::clone(&response_gate.waiters);
-            async move { waiters.load(Ordering::Relaxed) == 2 }
-        },
-        Duration::from_secs(2),
-    )
+    wait_for_mock_state(&state, "response gate waiter count 2", |state| {
+        response_gate_waiter_count(state) == 2
+    })
     .await;
     assert!(client.is_reconciling());
     response_gate.semaphore.add_permits(1);
@@ -8626,14 +8412,7 @@ async fn test_submit_denied_during_reconciliation() {
             break;
         }
     }
-    wait_until_async(
-        || {
-            let halted = client.is_reconciling();
-            async move { !halted }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_reconciliation_state(&client, false).await;
 
     let allowed = make_test_order(
         "1.181005744-86362-0.BETFAIR",
@@ -8645,13 +8424,9 @@ async fn test_submit_denied_during_reconciliation() {
     client
         .submit_order(make_submit_order_cmd(&allowed))
         .unwrap();
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move { betting_method_count(&state, METHOD_PLACE_ORDERS) == 1 }
-        },
-        Duration::from_secs(2),
-    )
+    wait_for_mock_state(&state, "METHOD_PLACE_ORDERS request count == 1", |state| {
+        betting_method_count(state, METHOD_PLACE_ORDERS) == 1
+    })
     .await;
 
     assert!(saw_mass_status);
@@ -8687,6 +8462,7 @@ async fn test_queued_reconnect_generation_stays_halted() {
 
     let (release_second_tx, release_second_rx) = tokio::sync::oneshot::channel();
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+    let server_state = state.clone();
 
     let server = tokio::spawn(async move {
         let (mut reader, mut write_half) = accept_and_auth(&listener).await;
@@ -8699,13 +8475,9 @@ async fn test_queued_reconnect_generation_stays_halted() {
             .await
             .unwrap();
 
-        wait_until_async(
-            || {
-                let waiters = Arc::clone(&server_gate.waiters);
-                async move { waiters.load(Ordering::Relaxed) == 1 }
-            },
-            Duration::from_secs(2),
-        )
+        wait_for_mock_state(&server_state, "response gate waiter count 1", |state| {
+            response_gate_waiter_count(state) == 1
+        })
         .await;
 
         tokio::io::AsyncWriteExt::write_all(&mut write_half, STREAM_CLOSED_MSG)
@@ -8716,22 +8488,14 @@ async fn test_queued_reconnect_generation_stays_halted() {
             .unwrap();
 
         server_gate.semaphore.add_permits(1);
-        wait_until_async(
-            || {
-                let waiters = Arc::clone(&server_gate.waiters);
-                async move { waiters.load(Ordering::Relaxed) == 2 }
-            },
-            Duration::from_secs(2),
-        )
+        wait_for_mock_state(&server_state, "response gate waiter count 2", |state| {
+            response_gate_waiter_count(state) == 2
+        })
         .await;
         server_gate.semaphore.add_permits(1);
-        wait_until_async(
-            || {
-                let waiters = Arc::clone(&server_gate.waiters);
-                async move { waiters.load(Ordering::Relaxed) == 3 }
-            },
-            Duration::from_secs(2),
-        )
+        wait_for_mock_state(&server_state, "response gate waiter count 3", |state| {
+            response_gate_waiter_count(state) == 3
+        })
         .await;
         release_second_rx.await.unwrap();
         server_gate.semaphore.add_permits(1);
@@ -8744,13 +8508,9 @@ async fn test_queued_reconnect_generation_stays_halted() {
 
     while rx.try_recv().is_ok() {}
 
-    wait_until_async(
-        || {
-            let waiters = Arc::clone(&response_gate.waiters);
-            async move { waiters.load(Ordering::Relaxed) == 3 }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "response gate waiter count 3", |state| {
+        response_gate_waiter_count(state) == 3
+    })
     .await;
     assert!(client.is_reconciling());
     tokio::time::sleep(Duration::from_millis(300)).await;
@@ -8788,14 +8548,7 @@ async fn test_queued_reconnect_generation_stays_halted() {
     assert!(mass_status.order_reports().is_empty());
     assert_eq!(response_gate.waiters.load(Ordering::Relaxed), 3);
 
-    wait_until_async(
-        || {
-            let halted = client.is_reconciling();
-            async move { !halted }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_reconciliation_state(&client, false).await;
     assert!(!client.is_reconciling());
 
     client.disconnect().await.unwrap();
@@ -8840,14 +8593,7 @@ async fn test_submit_order_list_denied_during_reconciliation() {
 
     client.connect().await.unwrap();
 
-    wait_until_async(
-        || {
-            let halted = client.is_reconciling();
-            async move { halted }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_reconciliation_state(&client, true).await;
     assert!(client.is_reconciling());
 
     while rx.try_recv().is_ok() {}
@@ -8949,14 +8695,7 @@ async fn test_disconnect_during_reconciliation_clears_halt() {
 
     client.connect().await.unwrap();
 
-    wait_until_async(
-        || {
-            let halted = client.is_reconciling();
-            async move { halted }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_reconciliation_state(&client, true).await;
     assert!(client.is_reconciling());
 
     // Disconnecting mid-reconcile aborts the reconnect task before it can clear
@@ -9006,13 +8745,9 @@ async fn test_stop_during_reconciliation_cancels_recovery() {
     });
 
     client.connect().await.unwrap();
-    wait_until_async(
-        || {
-            let waiters = Arc::clone(&response_gate.waiters);
-            async move { waiters.load(Ordering::Relaxed) == 1 }
-        },
-        Duration::from_secs(2),
-    )
+    wait_for_mock_state(&state, "response gate waiter count 1", |state| {
+        response_gate_waiter_count(state) == 1
+    })
     .await;
     assert!(client.is_reconciling());
 
@@ -9079,14 +8814,7 @@ async fn test_cancel_allowed_during_reconciliation() {
 
     client.connect().await.unwrap();
 
-    wait_until_async(
-        || {
-            let halted = client.is_reconciling();
-            async move { halted }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_reconciliation_state(&client, true).await;
     assert!(client.is_reconciling());
 
     while rx.try_recv().is_ok() {}

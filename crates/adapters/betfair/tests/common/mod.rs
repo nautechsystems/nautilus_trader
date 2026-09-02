@@ -17,6 +17,7 @@
 
 use std::{
     collections::{HashMap, VecDeque},
+    fmt::Debug,
     net::SocketAddr,
     path::PathBuf,
     sync::{
@@ -55,8 +56,39 @@ use serde_json::Value;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::TcpListener,
-    sync::Semaphore,
+    sync::{Semaphore, watch},
 };
+
+/// Circuit breaker for a logical phase, not routine synchronization.
+///
+/// Waits are event-driven and unbounded on their own; this bound exists only so a
+/// genuine regression reports the expected and observed state instead of hanging
+/// until the harness kills the process. It is deliberately well below the harness
+/// slow-test thresholds so that diagnostic still fires, and far above the ~2s
+/// scheduling gaps that made the previous wall-clock waits flaky under load.
+#[allow(dead_code)]
+pub(crate) const PHASE_TIMEOUT: Duration = Duration::from_secs(15);
+
+#[allow(dead_code)]
+pub(crate) async fn wait_for_watch<T, F>(mut rx: watch::Receiver<T>, expected: &str, predicate: F)
+where
+    T: Debug,
+    F: Fn(&T) -> bool,
+{
+    let wait = async {
+        while !predicate(&rx.borrow_and_update()) {
+            rx.changed().await.expect("test signal sender dropped");
+        }
+    };
+    tokio::time::timeout(PHASE_TIMEOUT, wait)
+        .await
+        .unwrap_or_else(|_| {
+            panic!(
+                "deadline elapsed waiting for {expected}; state after deadline: {:?}",
+                *rx.borrow()
+            )
+        });
+}
 
 pub(crate) fn data_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data")
@@ -119,7 +151,7 @@ pub(crate) struct MockResponseGate {
     pub semaphore: Arc<Semaphore>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(crate) struct MockState {
     pub login_count: Arc<AtomicUsize>,
     pub keep_alive_count: Arc<AtomicUsize>,
@@ -154,10 +186,118 @@ pub(crate) struct MockState {
     pub login_response_override: Arc<Mutex<Option<String>>>,
     pub keep_alive_response_override: Arc<Mutex<Option<String>>>,
     pub keep_alive_status_override: Arc<Mutex<Option<u16>>>,
+    state_tx: watch::Sender<u64>,
+}
+
+impl Debug for MockState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let betting_response_gate_waiters = self
+            .betting_response_gate
+            .lock()
+            .as_ref()
+            .map_or(0, |gate| gate.waiters.load(Ordering::Relaxed));
+        let accounts_response_gate_waiters = self
+            .accounts_response_gate
+            .lock()
+            .as_ref()
+            .map_or(0, |gate| gate.waiters.load(Ordering::Relaxed));
+        f.debug_struct(stringify!(MockState))
+            .field("login_count", &self.login_count.load(Ordering::Relaxed))
+            .field(
+                "keep_alive_count",
+                &self.keep_alive_count.load(Ordering::Relaxed),
+            )
+            .field(
+                "betting_request_count",
+                &self.betting_request_count.load(Ordering::Relaxed),
+            )
+            .field("betting_methods", &*self.betting_methods.lock())
+            .field(
+                "betting_request_params",
+                &*self.betting_request_params.lock(),
+            )
+            .field(
+                "betting_response_gate_waiters",
+                &betting_response_gate_waiters,
+            )
+            .field(
+                "accounts_response_gate_waiters",
+                &accounts_response_gate_waiters,
+            )
+            .finish_non_exhaustive()
+    }
+}
+
+impl Default for MockState {
+    fn default() -> Self {
+        let (state_tx, _) = watch::channel(0);
+        Self {
+            login_count: Arc::default(),
+            keep_alive_count: Arc::default(),
+            betting_request_count: Arc::default(),
+            betting_overrides: Arc::default(),
+            betting_response_sequences: Arc::default(),
+            betting_error_overrides: Arc::default(),
+            betting_error_one_shot_overrides: Arc::default(),
+            betting_status_overrides: Arc::default(),
+            betting_status_one_shot_overrides: Arc::default(),
+            betting_apply_then_status_one_shot_overrides: Arc::default(),
+            betting_applied_request_params: Arc::default(),
+            betting_methods: Arc::default(),
+            betting_request_params: Arc::default(),
+            betting_response_delays: Arc::default(),
+            betting_response_gate: Arc::default(),
+            accounts_response_gate: Arc::default(),
+            accounts_overrides: Arc::default(),
+            accounts_error_overrides: Arc::default(),
+            login_response_override: Arc::default(),
+            keep_alive_response_override: Arc::default(),
+            keep_alive_status_override: Arc::default(),
+            state_tx,
+        }
+    }
+}
+
+impl MockState {
+    #[allow(dead_code)]
+    pub(crate) fn subscribe(&self) -> watch::Receiver<u64> {
+        self.state_tx.subscribe()
+    }
+
+    fn publish(&self) {
+        self.state_tx.send_modify(|generation| {
+            *generation = generation.wrapping_add(1);
+        });
+    }
+}
+
+#[allow(dead_code)]
+pub(crate) async fn wait_for_mock_state<F>(state: &MockState, expected: &str, predicate: F)
+where
+    F: Fn(&MockState) -> bool,
+{
+    let mut changed_rx = state.subscribe();
+    let wait = async {
+        loop {
+            if predicate(state) {
+                return;
+            }
+            changed_rx
+                .changed()
+                .await
+                .expect("test signal sender dropped");
+        }
+    };
+    tokio::time::timeout(PHASE_TIMEOUT, wait)
+        .await
+        .unwrap_or_else(|_| {
+            panic!("deadline elapsed waiting for {expected}; state after deadline: {state:?}")
+        });
 }
 
 async fn handle_login(State(state): State<MockState>) -> impl IntoResponse {
     state.login_count.fetch_add(1, Ordering::Relaxed);
+    state.publish();
     let body = state
         .login_response_override
         .lock()
@@ -171,6 +311,7 @@ async fn handle_login(State(state): State<MockState>) -> impl IntoResponse {
 
 async fn handle_keep_alive(State(state): State<MockState>) -> Response {
     state.keep_alive_count.fetch_add(1, Ordering::Relaxed);
+    state.publish();
     let body = state
         .keep_alive_response_override
         .lock()
@@ -199,6 +340,7 @@ async fn handle_navigation() -> impl IntoResponse {
 
 async fn handle_betting(State(state): State<MockState>, body: Bytes) -> Response {
     state.betting_request_count.fetch_add(1, Ordering::Relaxed);
+    state.publish();
     let request: Value = serde_json::from_slice(&body).unwrap_or_default();
     let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
     let id = request.get("id").and_then(|i| i.as_u64()).unwrap_or(0);
@@ -206,10 +348,12 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> Response
 
     if !method.is_empty() {
         state.betting_methods.lock().push(method.to_string());
+        state.publish();
         state
             .betting_request_params
             .lock()
             .push((method.to_string(), params.clone()));
+        state.publish();
     }
 
     let response_gate = state.betting_response_gate.lock().clone();
@@ -217,6 +361,7 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> Response
         && gate.method == method
     {
         gate.waiters.fetch_add(1, Ordering::Relaxed);
+        state.publish();
         gate.semaphore
             .acquire()
             .await
@@ -235,10 +380,12 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> Response
         .lock()
         .remove(method)
     {
+        state.publish();
         state
             .betting_applied_request_params
             .lock()
             .push((method.to_string(), params));
+        state.publish();
         let code = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
         return (code, "").into_response();
     }
@@ -248,6 +395,7 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> Response
         .lock()
         .remove(method)
     {
+        state.publish();
         let code = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
         return (code, "").into_response();
     }
@@ -257,11 +405,13 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> Response
         return (code, "").into_response();
     }
 
-    let error_response = state
-        .betting_error_one_shot_overrides
-        .lock()
-        .remove(method)
-        .or_else(|| state.betting_error_overrides.lock().get(method).cloned());
+    let one_shot_error = state.betting_error_one_shot_overrides.lock().remove(method);
+
+    if one_shot_error.is_some() {
+        state.publish();
+    }
+    let error_response =
+        one_shot_error.or_else(|| state.betting_error_overrides.lock().get(method).cloned());
 
     if let Some(mut response) = error_response {
         response["id"] = Value::from(id);
@@ -273,6 +423,10 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> Response
         .lock()
         .get_mut(method)
         .and_then(VecDeque::pop_front);
+
+    if sequence_result.is_some() {
+        state.publish();
+    }
     let override_result = state.betting_overrides.lock().get(method).cloned();
 
     let result = if let Some(value) = sequence_result.or(override_result) {
@@ -320,6 +474,7 @@ async fn handle_accounts(State(state): State<MockState>, body: Bytes) -> impl In
         && gate.method == method
     {
         gate.waiters.fetch_add(1, Ordering::Relaxed);
+        state.publish();
         gate.semaphore
             .acquire()
             .await
@@ -348,6 +503,120 @@ async fn handle_accounts(State(state): State<MockState>, body: Bytes) -> impl In
         "result": result,
     });
     axum::Json(response)
+}
+
+#[allow(dead_code)]
+pub(crate) async fn assert_mock_state_notifier_contract() {
+    fn generation(state: &MockState) -> u64 {
+        *state.subscribe().borrow_and_update()
+    }
+
+    fn betting_body(method: &str) -> Bytes {
+        Bytes::from(serde_json::json!({"method": method, "id": 1, "params": {}}).to_string())
+    }
+
+    async fn betting_publications(state: &MockState, method: &str) -> u64 {
+        let before = generation(state);
+        let _ = handle_betting(State(state.clone()), betting_body(method)).await;
+        generation(state).wrapping_sub(before)
+    }
+
+    async fn assert_branch_adds_publications(
+        state: MockState,
+        method: &str,
+        normal: u64,
+        added: u64,
+    ) {
+        let observed = betting_publications(&state, method).await;
+        assert!(
+            observed >= normal.wrapping_add(added),
+            "branch published {observed}, expected at least {added} more than baseline {normal}"
+        );
+    }
+
+    // Every handler-side MockState mutation must appear in this matrix. These checks are
+    // relative to freshly measured baselines because extra publications are harmless wakeups.
+    let state = MockState::default();
+    let before = generation(&state);
+    let _ = handle_login(State(state.clone())).await;
+    assert!(generation(&state) != before, "login count did not publish");
+
+    let state = MockState::default();
+    let before = generation(&state);
+    let _ = handle_keep_alive(State(state.clone())).await;
+    assert!(
+        generation(&state) != before,
+        "keep-alive count did not publish"
+    );
+
+    let state = MockState::default();
+    let before = generation(&state);
+    let _ = handle_betting(State(state.clone()), Bytes::from_static(b"{}")).await;
+    let malformed = generation(&state).wrapping_sub(before);
+    assert!(
+        malformed > 0,
+        "malformed betting request count did not publish"
+    );
+
+    let state = MockState::default();
+    let normal = betting_publications(&state, METHOD_PLACE_ORDERS).await;
+    assert!(
+        normal >= malformed.wrapping_add(2),
+        "method and params published {normal}, expected two more than malformed baseline {malformed}"
+    );
+
+    let state = MockState::default();
+    *state.betting_response_gate.lock() = Some(MockResponseGate {
+        method: METHOD_PLACE_ORDERS.to_string(),
+        waiters: Arc::default(),
+        semaphore: Arc::new(Semaphore::new(1)),
+    });
+    assert_branch_adds_publications(state, METHOD_PLACE_ORDERS, normal, 1).await;
+
+    let state = MockState::default();
+    state
+        .betting_apply_then_status_one_shot_overrides
+        .lock()
+        .insert(METHOD_PLACE_ORDERS.to_string(), 500);
+    assert_branch_adds_publications(state, METHOD_PLACE_ORDERS, normal, 2).await;
+
+    let state = MockState::default();
+    state
+        .betting_status_one_shot_overrides
+        .lock()
+        .insert(METHOD_PLACE_ORDERS.to_string(), 500);
+    assert_branch_adds_publications(state, METHOD_PLACE_ORDERS, normal, 1).await;
+
+    let state = MockState::default();
+    state
+        .betting_error_one_shot_overrides
+        .lock()
+        .insert(METHOD_PLACE_ORDERS.to_string(), serde_json::json!({}));
+    assert_branch_adds_publications(state, METHOD_PLACE_ORDERS, normal, 1).await;
+
+    let state = MockState::default();
+    state.betting_response_sequences.lock().insert(
+        METHOD_PLACE_ORDERS.to_string(),
+        VecDeque::from([Value::Null]),
+    );
+    assert_branch_adds_publications(state, METHOD_PLACE_ORDERS, normal, 1).await;
+
+    let state = MockState::default();
+    *state.accounts_response_gate.lock() = Some(MockResponseGate {
+        method: "AccountAPING/v1.0/getAccountFunds".to_string(),
+        waiters: Arc::default(),
+        semaphore: Arc::new(Semaphore::new(1)),
+    });
+    let before = generation(&state);
+    let _ = handle_accounts(
+        State(state.clone()),
+        betting_body("AccountAPING/v1.0/getAccountFunds"),
+    )
+    .await;
+    assert!(
+        generation(&state) != before,
+        "accounts response-gate waiters did not publish"
+    );
 }
 
 pub(crate) async fn start_mock_http() -> (SocketAddr, MockState) {

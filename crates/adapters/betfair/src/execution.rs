@@ -232,6 +232,26 @@ impl BetfairExecutionClient {
         self.reconciliation_gate.is_halted()
     }
 
+    /// Waits for the reconciliation halt state to equal `expected`.
+    ///
+    /// Returns immediately if the gate is already in the expected state; otherwise
+    /// waits for a later transition. A transient expected state that is replaced
+    /// before this task observes it can be missed because transitions are not
+    /// recorded as history. This method has no internal timeout; callers wanting a
+    /// bound should wrap it in [`tokio::time::timeout`].
+    pub async fn wait_for_reconciliation_state(&self, expected: bool) {
+        wait_for_reconciliation_state(&self.reconciliation_gate, expected).await;
+    }
+
+    /// Waits for the semantic connection state to equal `expected`.
+    ///
+    /// Returns immediately if the client is already in the expected state; otherwise
+    /// waits for a later lifecycle transition. This method has no internal timeout;
+    /// callers wanting a bound should wrap it in [`tokio::time::timeout`].
+    pub async fn wait_for_connection_state(&self, expected: bool) {
+        wait_for_connection_state(self, expected).await;
+    }
+
     fn submissions_halted(&self) -> bool {
         !self.core.is_connected()
             || self.reconciliation_gate.is_halted()
@@ -4254,6 +4274,69 @@ async fn wait_for_generation_change(
     while *state_rx.borrow_and_update() == generation {
         if state_rx.changed().await.is_err() {
             return;
+        }
+    }
+}
+
+/// Waits until the gate's halt state equals `expected`.
+///
+/// Subscribes before the first read so a transition landing between the two is
+/// observed rather than missed. The generation channel is used only as an edge
+/// notification; `is_halted` remains the authoritative read.
+async fn wait_for_reconciliation_state(gate: &ReconciliationGate, expected: bool) {
+    let mut state_rx = gate.subscribe();
+
+    while gate.is_halted() != expected {
+        if state_rx.changed().await.is_err() {
+            return;
+        }
+    }
+}
+
+/// Waits until the client's semantic connection state equals `expected`.
+///
+/// `is_connected` reads three terms: the core connected flag, the reconciliation
+/// gate, and the stream's composite order readiness. The reconciliation receiver is
+/// subscribed once, before the first evaluation, so no generation edge is missed
+/// across iterations. The stream term is awaited through a level-triggered wait
+/// that subscribes before reading its own predicate, which closes the same window
+/// for it - an edge-triggered wait cannot, because `select!` subscribes only when
+/// it first polls the future, after this loop has already evaluated `is_connected`.
+///
+/// The stream arm is selected only when the stream term is not already the
+/// satisfied one. Waiting for `true` with the stream already ready means the gate
+/// is what blocks, and a level-triggered wait on an already-satisfied term would
+/// return instantly on every iteration and starve the task that resolves the gate.
+///
+/// The core connected flag has no notification source, so this waits only for the
+/// terms that can move while it runs. That is sufficient because `connect`,
+/// `disconnect`, and `stop` all take `&mut self` while this holds a shared borrow of
+/// the same client, so the core flag cannot change under it.
+async fn wait_for_connection_state(client: &BetfairExecutionClient, expected: bool) {
+    let mut reconciliation_rx = client.reconciliation_gate.subscribe();
+
+    while ExecutionClient::is_connected(client) != expected {
+        let Some(stream_client) = &client.stream_client else {
+            reconciliation_rx
+                .changed()
+                .await
+                .expect("reconciliation sender lives as long as the client");
+            continue;
+        };
+
+        if expected && stream_client.is_order_ready() {
+            reconciliation_rx
+                .changed()
+                .await
+                .expect("reconciliation sender lives as long as the client");
+            continue;
+        }
+
+        tokio::select! {
+            () = stream_client.wait_for_order_ready_state(expected) => {}
+            changed = reconciliation_rx.changed() => {
+                changed.expect("reconciliation sender lives as long as the client");
+            }
         }
     }
 }
