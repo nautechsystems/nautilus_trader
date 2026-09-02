@@ -40,6 +40,7 @@ pub mod denied;
 pub mod denied_reason;
 pub mod emulated;
 pub mod expired;
+pub mod fill_declined;
 pub mod fill_voided;
 pub mod filled;
 pub mod initialized;
