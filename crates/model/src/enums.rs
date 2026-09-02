@@ -1247,6 +1247,47 @@ impl OrderSide {
     }
 }
 
+/// The reason the execution engine declined to apply a fill.
+#[repr(C)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    AsRefStr,
+    FromRepr,
+    EnumIter,
+    EnumString,
+)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        frozen,
+        eq,
+        eq_int,
+        module = "nautilus_trader.model",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
+pub enum FillDeclinedReason {
+    /// The fill's venue position ID conflicts with the position ID cached for the order.
+    PositionIdConflict = 1,
+    /// The fill's instrument differs from the cached position's instrument.
+    PositionInstrumentMismatch = 2,
+    /// The fill would take the order past its quantity and overfills are not allowed.
+    Overfill = 3,
+    /// The order's state cannot accept a fill.
+    InvalidOrderState = 4,
+}
+
 /// The status for a specific order.
 ///
 /// An order is considered _open_ for the following status:
@@ -2108,6 +2149,7 @@ enum_strum_serde!(BookType);
 enum_strum_serde!(ContingencyType);
 enum_strum_serde!(ContinuousFutureAdjustmentType);
 enum_strum_serde!(CurrencyType);
+enum_strum_serde!(FillDeclinedReason);
 enum_strum_serde!(GreeksConvention);
 enum_strum_serde!(InstrumentClass);
 enum_strum_serde!(InstrumentCloseType);

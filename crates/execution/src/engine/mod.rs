@@ -68,12 +68,13 @@ use nautilus_core::{
 use nautilus_model::{
     accounts::Account,
     enums::{
-        AccountType, ContingencyType, OmsType, OrderStatus, OrderType, PositionSide, TimeInForce,
+        AccountType, ContingencyType, FillDeclinedReason, OmsType, OrderStatus, OrderType,
+        PositionSide, TimeInForce,
     },
     events::{
-        OrderAccepted, OrderDenied, OrderDeniedReason, OrderEvent, OrderEventAny, OrderFillVoided,
-        OrderFilled, OrderInitialized, PositionChanged, PositionClosed, PositionEvent,
-        PositionOpened,
+        OrderAccepted, OrderDenied, OrderDeniedReason, OrderEvent, OrderEventAny,
+        OrderFillDeclined, OrderFillVoided, OrderFilled, OrderInitialized, PositionChanged,
+        PositionClosed, PositionEvent, PositionOpened,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId,
@@ -2872,10 +2873,20 @@ impl ExecutionEngine {
                     return;
                 };
                 let configured_oms_type = self.determine_oms_type(fill);
-                let Some(position_id) =
-                    self.determine_position_id(fill, configured_oms_type, Some(&order_before_fill))
-                else {
-                    return;
+                let position_id = match self.determine_position_id(
+                    fill,
+                    configured_oms_type,
+                    Some(&order_before_fill),
+                ) {
+                    PositionIdOutcome::Assigned(position_id) => position_id,
+                    PositionIdOutcome::Declined {
+                        reason,
+                        details,
+                        position_id,
+                    } => {
+                        self.decline_fill(fill, position_id, reason, details);
+                        return;
+                    }
                 };
                 let oms_type = self
                     .cache
@@ -2892,21 +2903,46 @@ impl ExecutionEngine {
                     self.validate_fill_for_order_projection(&order_before_fill, &fill)
                 };
 
-                if validation.is_ok() {
-                    let event = OrderEventAny::Filled(fill.clone());
-                    let Some(order) =
-                        self.update_cached_order(client_order_id, &event, apply_position)
-                    else {
-                        return;
-                    };
+                match validation {
+                    Ok(()) => {
+                        let event = OrderEventAny::Filled(fill.clone());
+                        let order =
+                            match self.update_cached_order(client_order_id, &event, apply_position)
+                            {
+                                Ok(order) => order,
+                                Err(CachedOrderSkip::InvalidState) => {
+                                    let details = format!(
+                                        "Invalid order state: status={}",
+                                        order_before_fill.status()
+                                    );
+                                    self.decline_fill(
+                                        &fill,
+                                        fill.position_id,
+                                        FillDeclinedReason::InvalidOrderState,
+                                        details,
+                                    );
+                                    return;
+                                }
+                                Err(CachedOrderSkip::Silent) => return,
+                            };
 
-                    let position_events = if apply_position {
-                        self.handle_order_fill(&order, fill, oms_type)
-                    } else {
-                        Vec::new()
-                    };
-                    self.publish_order_event(&event);
-                    self.publish_position_events(position_events);
+                        let position_events = if apply_position {
+                            self.handle_order_fill(&order, fill, oms_type)
+                        } else {
+                            Vec::new()
+                        };
+                        self.publish_order_event(&event);
+                        self.publish_position_events(position_events);
+                    }
+                    Err(
+                        FillValidationError::Duplicate | FillValidationError::DuplicatePosition,
+                    ) => {}
+                    Err(FillValidationError::Overfill { details }) => self.decline_fill(
+                        &fill,
+                        fill.position_id,
+                        FillDeclinedReason::Overfill,
+                        details,
+                    ),
                 }
             }
             OrderEventAny::FillVoided(voided) => {
@@ -3005,7 +3041,7 @@ impl ExecutionEngine {
 
                 if self
                     .update_cached_order(client_order_id, &event, true)
-                    .is_none()
+                    .is_err()
                 {
                     return;
                 }
@@ -3020,7 +3056,7 @@ impl ExecutionEngine {
             _ => {
                 if self
                     .update_cached_order(client_order_id, &event, true)
-                    .is_some()
+                    .is_ok()
                 {
                     self.publish_order_event(&event);
                 }
@@ -3049,7 +3085,8 @@ impl ExecutionEngine {
         let position_id = self.determine_leg_fill_position_id(&fill, oms_type);
         fill.position_id = Some(position_id);
 
-        if !self.validate_fill_for_position(position_id, &fill) {
+        if let Err((_, details)) = self.validate_fill_for_position(position_id, &fill) {
+            log::error!("{details}");
             return;
         }
 
@@ -3224,7 +3261,7 @@ impl ExecutionEngine {
         fill: &OrderFilled,
         oms_type: OmsType,
         order: Option<&OrderAny>,
-    ) -> Option<PositionId> {
+    ) -> PositionIdOutcome {
         let cache = self.cache.borrow();
         let cached_position_id = cache.position_id(&fill.client_order_id()).copied();
         drop(cache);
@@ -3248,13 +3285,16 @@ impl ExecutionEngine {
                 && cached_position_id.is_virtual();
 
             if oms_type == OmsType::Hedging && !flip_remainder {
-                log::error!(
+                let details = format!(
                     "Cannot apply hedging fill {} for {}: venue position ID {fill_position_id} conflicts with cached position ID {cached_position_id}",
                     fill.trade_id,
                     fill.client_order_id(),
                 );
-
-                return None;
+                return PositionIdOutcome::Declined {
+                    reason: FillDeclinedReason::PositionIdConflict,
+                    details,
+                    position_id: Some(fill_position_id),
+                };
             }
 
             log::warn!(
@@ -3269,11 +3309,15 @@ impl ExecutionEngine {
                 log::debug!("Assigned {position_id} to {}", fill.client_order_id());
             }
 
-            if !self.validate_fill_for_position(position_id, fill) {
-                return None;
+            if let Err((reason, details)) = self.validate_fill_for_position(position_id, fill) {
+                return PositionIdOutcome::Declined {
+                    reason,
+                    details,
+                    position_id: Some(position_id),
+                };
             }
 
-            return Some(position_id);
+            return PositionIdOutcome::Assigned(position_id);
         }
 
         let position_id = match (oms_type, fill.position_id) {
@@ -3283,8 +3327,12 @@ impl ExecutionEngine {
             _ => self.determine_netting_position_id(fill),
         };
 
-        if !self.validate_fill_for_position(position_id, fill) {
-            return None;
+        if let Err((reason, details)) = self.validate_fill_for_position(position_id, fill) {
+            return PositionIdOutcome::Declined {
+                reason,
+                details,
+                position_id: Some(position_id),
+            };
         }
 
         let order = if let Some(o) = order {
@@ -3313,7 +3361,7 @@ impl ExecutionEngine {
                     "Primary exec spawn order {exec_spawn_id} not found, \
                      skipping position ID propagation"
                 );
-                return Some(position_id);
+                return PositionIdOutcome::Assigned(position_id);
             };
             let primary_already_indexed = cache.position_id(&primary.client_order_id()).is_some();
             drop(cache);
@@ -3332,7 +3380,7 @@ impl ExecutionEngine {
             }
         }
 
-        Some(position_id)
+        PositionIdOutcome::Assigned(position_id)
     }
 
     /// Returns whether `fill` may be applied to the position assigned to `position_id`.
@@ -3346,23 +3394,25 @@ impl ExecutionEngine {
     /// so two accounts trading one instrument under one strategy share a position ID.
     /// External order claims can be handed to a successor strategy while the predecessor's
     /// positions stay cached, so a later venue fill can carry the new strategy against them.
-    fn validate_fill_for_position(&self, position_id: PositionId, fill: &OrderFilled) -> bool {
+    fn validate_fill_for_position(
+        &self,
+        position_id: PositionId,
+        fill: &OrderFilled,
+    ) -> Result<(), (FillDeclinedReason, String)> {
         let cache = self.cache.borrow();
         let Some(position) = cache.position_ref(&position_id) else {
-            return true;
+            return Ok(());
         };
 
         if position.instrument_id != fill.instrument_id {
-            log::error!(
+            let details = format!(
                 "Cannot apply fill {} to position {position_id}: instrument_id mismatch, expected={}, received={}",
-                fill.trade_id,
-                position.instrument_id,
-                fill.instrument_id
+                fill.trade_id, position.instrument_id, fill.instrument_id
             );
-            return false;
+            return Err((FillDeclinedReason::PositionInstrumentMismatch, details));
         }
 
-        true
+        Ok(())
     }
 
     fn determine_hedging_position_id(
@@ -3439,14 +3489,18 @@ impl ExecutionEngine {
         PositionId::new(format!("{}-{}", fill.instrument_id, fill.strategy_id))
     }
 
-    fn validate_fill_for_order(&self, order: &OrderAny, fill: &OrderFilled) -> anyhow::Result<()> {
+    fn validate_fill_for_order(
+        &self,
+        order: &OrderAny,
+        fill: &OrderFilled,
+    ) -> Result<(), FillValidationError> {
         if order.is_duplicate_fill(fill) {
             log::warn!(
                 "Duplicate fill: {} trade_id={} already applied, skipping",
                 order.client_order_id(),
                 fill.trade_id
             );
-            anyhow::bail!("Duplicate fill");
+            return Err(FillValidationError::Duplicate);
         }
 
         if let Some(position_id) = fill.position_id
@@ -3458,7 +3512,7 @@ impl ExecutionEngine {
                 fill.trade_id,
                 position_id
             );
-            anyhow::bail!("Duplicate position fill");
+            return Err(FillValidationError::DuplicatePosition);
         }
 
         self.check_overfill(order, fill)
@@ -3468,9 +3522,9 @@ impl ExecutionEngine {
         &self,
         order: &OrderAny,
         fill: &OrderFilled,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), FillValidationError> {
         if order.is_duplicate_fill(fill) {
-            anyhow::bail!("Duplicate fill");
+            return Err(FillValidationError::Duplicate);
         }
 
         self.check_overfill(order, fill)
@@ -3488,7 +3542,7 @@ impl ExecutionEngine {
         client_order_id: ClientOrderId,
         event: &OrderEventAny,
         send_portfolio_update: bool,
-    ) -> Option<OrderAny> {
+    ) -> Result<OrderAny, CachedOrderSkip> {
         let result = { self.cache.borrow_mut().update_order(event) };
 
         let order = match result {
@@ -3498,29 +3552,34 @@ impl ExecutionEngine {
                     e.downcast_ref::<OrderError>(),
                     Some(OrderError::InvalidStateTransition)
                 ) {
+                    // A dropped fill represents real, possibly lost, execution: the caller
+                    // logs and publishes it through `decline_fill`.
+                    if matches!(event, OrderEventAny::Filled(_)) {
+                        return Err(CachedOrderSkip::InvalidState);
+                    }
+
                     // A non-fill event that fails to apply to an already-closed order is an
                     // expected venue race (e.g. a place reject then a stream cancel for the same
-                    // order), not an anomaly. A dropped fill stays at warn even on a closed order,
-                    // since it represents real, possibly lost, execution.
+                    // order), not an anomaly.
                     let already_closed = self
                         .cache
                         .borrow()
                         .order(&client_order_id)
                         .is_some_and(|o| o.is_closed());
 
-                    if already_closed && !matches!(event, OrderEventAny::Filled(_)) {
+                    if already_closed {
                         log::debug!("InvalidStateTrigger: {e}, did not apply {event}");
                     } else {
                         log::warn!("InvalidStateTrigger: {e}, did not apply {event}");
                     }
-                    return None;
+                    return Err(CachedOrderSkip::InvalidState);
                 }
 
                 if let Some(OrderError::DuplicateFill(trade_id)) = e.downcast_ref::<OrderError>() {
                     log::warn!(
                         "Duplicate fill rejected at order level: trade_id={trade_id}, did not apply {event}"
                     );
-                    return None;
+                    return Err(CachedOrderSkip::Silent);
                 }
 
                 if let Some(OrderError::DuplicateFillVoid(trade_id)) =
@@ -3529,7 +3588,7 @@ impl ExecutionEngine {
                     log::warn!(
                         "Duplicate fill void rejected at order level: trade_id={trade_id}, did not apply {event}"
                     );
-                    return None;
+                    return Err(CachedOrderSkip::Silent);
                 }
 
                 log::error!("Error applying event: {e}, did not apply {event}");
@@ -3567,7 +3626,7 @@ impl ExecutionEngine {
                         }
                     }
                 }
-                return None;
+                return Err(CachedOrderSkip::Silent);
             }
         };
 
@@ -3596,7 +3655,7 @@ impl ExecutionEngine {
             self.send_order_update_to_portfolio(event);
         }
 
-        Some(order)
+        Ok(order)
     }
 
     fn send_order_update_to_portfolio(&self, event: &OrderEventAny) {
@@ -3683,7 +3742,11 @@ impl ExecutionEngine {
         }
     }
 
-    fn check_overfill(&self, order: &OrderAny, fill: &OrderFilled) -> anyhow::Result<()> {
+    fn check_overfill(
+        &self,
+        order: &OrderAny,
+        fill: &OrderFilled,
+    ) -> Result<(), FillValidationError> {
         let potential_overfill = order.calculate_overfill(fill.last_qty);
 
         if potential_overfill.is_positive() {
@@ -3706,11 +3769,42 @@ impl ExecutionEngine {
                     fill.last_qty,
                     order.quantity()
                 );
-                anyhow::bail!("{msg}");
+                return Err(FillValidationError::Overfill { details: msg });
             }
         }
 
         Ok(())
+    }
+
+    fn decline_fill(
+        &self,
+        fill: &OrderFilled,
+        position_id: Option<PositionId>,
+        reason: FillDeclinedReason,
+        details: String,
+    ) {
+        log::error!("{details}");
+        let event = OrderFillDeclined {
+            trader_id: fill.trader_id,
+            strategy_id: fill.strategy_id,
+            instrument_id: fill.instrument_id,
+            client_order_id: fill.client_order_id,
+            venue_order_id: fill.venue_order_id,
+            account_id: fill.account_id,
+            trade_id: fill.trade_id,
+            position_id: position_id.or(fill.position_id),
+            order_side: fill.order_side,
+            last_qty: fill.last_qty,
+            last_px: fill.last_px,
+            reason,
+            details: details.into(),
+            event_id: UUID4::new(),
+            causation_id: fill.event_id,
+            ts_event: fill.ts_event,
+            ts_init: self.clock.borrow().timestamp_ns(),
+        };
+        let topic = switchboard::get_order_fill_declined_topic(fill.strategy_id);
+        msgbus::publish_any(topic, &event);
     }
 
     fn handle_order_fill(
@@ -4504,6 +4598,26 @@ enum SubmissionValidationResult {
         status: OrderStatus,
     },
     Deny(OrderDeniedReason),
+}
+
+enum FillValidationError {
+    Duplicate,
+    DuplicatePosition,
+    Overfill { details: String },
+}
+
+enum PositionIdOutcome {
+    Assigned(PositionId),
+    Declined {
+        reason: FillDeclinedReason,
+        details: String,
+        position_id: Option<PositionId>,
+    },
+}
+
+enum CachedOrderSkip {
+    InvalidState,
+    Silent,
 }
 
 #[cfg(test)]

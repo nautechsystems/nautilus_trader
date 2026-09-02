@@ -40,6 +40,7 @@ pub use crate::events::{
         denied_reason::{OrderDeniedCode, OrderDeniedReason, OrderPriceField},
         emulated::OrderEmulated,
         expired::OrderExpired,
+        fill_declined::OrderFillDeclined,
         fill_voided::OrderFillVoided,
         filled::OrderFilled,
         initialized::OrderInitialized,

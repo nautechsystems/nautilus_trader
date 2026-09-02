@@ -64,13 +64,13 @@ use nautilus_model::{
     accounts::{AccountAny, CashAccount},
     data::QuoteTick,
     enums::{
-        AccountType, AssetClass, ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus,
-        OrderType, PositionSide, TimeInForce, TriggerType,
+        AccountType, AssetClass, ContingencyType, FillDeclinedReason, LiquiditySide, OmsType,
+        OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce, TriggerType,
     },
     events::{
         AccountState, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEventAny, OrderExpired,
-        OrderFilled, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected,
-        OrderUpdated, PositionEvent,
+        OrderFillDeclined, OrderFilled, OrderModifyRejected, OrderPendingCancel,
+        OrderPendingUpdate, OrderRejected, OrderUpdated, PositionEvent,
         order::spec::{
             OrderCancelRejectedSpec, OrderCanceledSpec, OrderExpiredSpec, OrderFillVoidedSpec,
             OrderFilledSpec, OrderModifyRejectedSpec, OrderPendingCancelSpec,
@@ -100,6 +100,13 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde_json::Value;
 use ustr::Ustr;
+
+fn as_order_filled(event: &OrderEventAny) -> &OrderFilled {
+    let OrderEventAny::Filled(fill) = event else {
+        panic!("Expected OrderFilled event");
+    };
+    fill
+}
 
 #[fixture]
 fn test_clock() -> Rc<RefCell<dyn clock::Clock>> {
@@ -2511,6 +2518,217 @@ fn test_terminal_fill_void_rejects_late_fill_without_opening_position(
             .iter()
             .all(|event| !matches!(event, OrderEventAny::Filled(_)))
     );
+}
+
+#[rstest]
+fn test_invalid_order_state_publishes_fill_declined(mut execution_engine: ExecutionEngine) {
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let venue_order_id = VenueOrderId::from("V-001");
+    let account_id = AccountId::test_default();
+    let trade_id = TradeId::new("T-VOID-TERMINAL");
+    let voided = OrderEventAny::FillVoided(
+        OrderFillVoidedSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(instrument.id())
+            .client_order_id(order.client_order_id())
+            .venue_order_id(venue_order_id)
+            .account_id(account_id)
+            .trade_id(trade_id)
+            .voided_qty(order.quantity())
+            .order_side(order.order_side())
+            .order_type(order.order_type())
+            .last_px(Price::from("1.00000"))
+            .currency(instrument.quote_currency())
+            .liquidity_side(LiquiditySide::NoLiquiditySide)
+            .build(),
+    );
+    let late_fill = OrderEventAny::Filled(build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        order.client_order_id(),
+        venue_order_id,
+        account_id,
+        trade_id,
+        order.order_side(),
+        order.order_type(),
+        order.quantity(),
+        Price::from("1.00000"),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        None,
+        None,
+    ));
+    execution_engine.process(&voided);
+
+    let topic = switchboard::get_order_fill_declined_topic(order.strategy_id());
+    let pattern: msgbus::MStr<msgbus::Pattern> = topic.as_ref().into();
+    let (handler, saver) = get_any_saving_handler::<OrderFillDeclined>(None);
+    msgbus::subscribe_any(pattern, handler.clone(), None);
+
+    execution_engine.process(&late_fill);
+    msgbus::unsubscribe_any(pattern, &handler);
+
+    let declined = saver.get_messages();
+    assert_eq!(declined.len(), 1);
+    assert_eq!(declined[0].reason, FillDeclinedReason::InvalidOrderState);
+    assert_eq!(declined[0].trade_id, trade_id);
+    assert_eq!(
+        declined[0].causation_id,
+        as_order_filled(&late_fill).event_id
+    );
+    assert!(declined[0].details.contains("VOIDED"));
+
+    let cache = execution_engine.cache().borrow();
+    let cached_order = cache.order(&order.client_order_id()).unwrap();
+    assert_eq!(cached_order.status(), OrderStatus::Voided);
+    assert_eq!(cached_order.filled_qty(), Quantity::from(0));
+    assert!(cache.positions(None, None, None, None, None).is_empty());
+}
+
+#[rstest]
+fn test_overfill_refusal_publishes_fill_declined(mut execution_engine: ExecutionEngine) {
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let fill = OrderEventAny::Filled(build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        order.client_order_id(),
+        VenueOrderId::from("V-001"),
+        AccountId::test_default(),
+        TradeId::new("T-OVERFILL"),
+        order.order_side(),
+        order.order_type(),
+        order.quantity() + order.quantity(),
+        Price::from("1.00000"),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        None,
+        None,
+    ));
+    let topic = switchboard::get_order_fill_declined_topic(order.strategy_id());
+    let pattern: msgbus::MStr<msgbus::Pattern> = topic.as_ref().into();
+    let (handler, saver) = get_any_saving_handler::<OrderFillDeclined>(None);
+    msgbus::subscribe_any(pattern, handler.clone(), None);
+
+    execution_engine.process(&fill);
+    msgbus::unsubscribe_any(pattern, &handler);
+
+    let declined = saver.get_messages();
+    assert_eq!(declined.len(), 1);
+    assert_eq!(declined[0].reason, FillDeclinedReason::Overfill);
+    assert_eq!(declined[0].causation_id, as_order_filled(&fill).event_id);
+    assert!(declined[0].details.contains("potential_overfill"));
+    let cached = execution_engine.cache().borrow();
+    assert_eq!(
+        cached.order(&order.client_order_id()).unwrap().filled_qty(),
+        Quantity::from(0)
+    );
+    assert!(cached.positions(None, None, None, None, None).is_empty());
+}
+
+#[rstest]
+fn test_duplicate_fill_does_not_publish_fill_declined(mut execution_engine: ExecutionEngine) {
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let fill = OrderEventAny::Filled(build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        order.client_order_id(),
+        VenueOrderId::from("V-001"),
+        AccountId::test_default(),
+        TradeId::new("T-DUPLICATE"),
+        order.order_side(),
+        order.order_type(),
+        order.quantity(),
+        Price::from("1.00000"),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        None,
+        None,
+    ));
+    execution_engine.process(&fill);
+
+    let topic = switchboard::get_order_fill_declined_topic(order.strategy_id());
+    let pattern: msgbus::MStr<msgbus::Pattern> = topic.as_ref().into();
+    let (handler, saver) = get_any_saving_handler::<OrderFillDeclined>(None);
+    msgbus::subscribe_any(pattern, handler.clone(), None);
+    execution_engine.process(&fill);
+    msgbus::unsubscribe_any(pattern, &handler);
+
+    assert!(saver.get_messages().is_empty());
+}
+
+#[rstest]
+fn test_position_instrument_mismatch_publishes_fill_declined(
+    mut execution_engine: ExecutionEngine,
+) {
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let other_instrument = gbpusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(other_instrument.clone().into())
+        .unwrap();
+    let position_id = PositionId::new(format!("{}-{}", instrument.id(), order.strategy_id()));
+    let position_fill = build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        other_instrument.id(),
+        order.client_order_id(),
+        VenueOrderId::from("V-OTHER"),
+        AccountId::test_default(),
+        TradeId::new("T-OTHER"),
+        order.order_side(),
+        order.order_type(),
+        order.quantity(),
+        Price::from("1.00000"),
+        other_instrument.quote_currency(),
+        LiquiditySide::Maker,
+        Some(position_id),
+        None,
+    );
+    let position = Position::new(&other_instrument.into(), position_fill);
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+    let fill = OrderEventAny::Filled(build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        order.client_order_id(),
+        VenueOrderId::from("V-001"),
+        AccountId::test_default(),
+        TradeId::new("T-MISMATCH"),
+        order.order_side(),
+        order.order_type(),
+        order.quantity(),
+        Price::from("1.00000"),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        None,
+        None,
+    ));
+    let topic = switchboard::get_order_fill_declined_topic(order.strategy_id());
+    let pattern: msgbus::MStr<msgbus::Pattern> = topic.as_ref().into();
+    let (handler, saver) = get_any_saving_handler::<OrderFillDeclined>(None);
+    msgbus::subscribe_any(pattern, handler.clone(), None);
+
+    execution_engine.process(&fill);
+    msgbus::unsubscribe_any(pattern, &handler);
+
+    let declined = saver.get_messages();
+    assert_eq!(declined.len(), 1);
+    assert_eq!(
+        declined[0].reason,
+        FillDeclinedReason::PositionInstrumentMismatch
+    );
+    assert_eq!(declined[0].position_id, Some(position_id));
+    assert!(declined[0].details.contains("expected="));
+    assert!(declined[0].details.contains("received="));
 }
 
 #[rstest]
@@ -8395,6 +8613,110 @@ fn test_conflicting_venue_position_id_rejects_hedging_fill(mut execution_engine:
     let cached_order = cache.order(&order.client_order_id()).unwrap();
 
     assert_eq!(cached_order.status(), OrderStatus::Accepted);
+    assert_eq!(cached_order.filled_qty(), Quantity::from(0));
+    assert!(!cache.position_exists(&cached_position_id));
+    assert!(!cache.position_exists(&venue_position_id));
+}
+
+#[rstest]
+fn test_position_id_conflict_publishes_fill_declined(mut execution_engine: ExecutionEngine) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = audusd_sim();
+
+    let stub_client = StubExecutionClient::new(
+        ClientId::from("STUB"),
+        AccountId::test_default(),
+        Venue::test_default(),
+        OmsType::Hedging,
+        None,
+    );
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let account = CashAccount::default();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(account.into())
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    let cached_position_id = PositionId::from("CACHED-POS");
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(
+            order.clone(),
+            Some(cached_position_id),
+            Some(ClientId::from("STUB")),
+            true,
+        )
+        .unwrap();
+
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &order,
+        AccountId::test_default(),
+    ));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &order,
+        AccountId::test_default(),
+        VenueOrderId::from("V-001"),
+    ));
+
+    let venue_position_id = PositionId::from("VENUE-POS");
+    let order_filled_event = TestOrderEventStubs::filled(
+        &cached_order_or(&execution_engine, &order),
+        &instrument.into(),
+        Some(TradeId::new("E-19700101-000000-001-001-1")),
+        Some(venue_position_id),
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(AccountId::test_default()),
+    );
+
+    let topic = switchboard::get_order_fill_declined_topic(strategy_id);
+    let pattern: msgbus::MStr<msgbus::Pattern> = topic.as_ref().into();
+    let (handler, saver) = get_any_saving_handler::<OrderFillDeclined>(None);
+    msgbus::subscribe_any(pattern, handler.clone(), None);
+
+    execution_engine.process(&order_filled_event);
+    msgbus::unsubscribe_any(pattern, &handler);
+
+    let declined = saver.get_messages();
+    assert_eq!(declined.len(), 1);
+    assert_eq!(declined[0].reason, FillDeclinedReason::PositionIdConflict);
+    assert_eq!(
+        declined[0].trade_id,
+        as_order_filled(&order_filled_event).trade_id
+    );
+    assert_eq!(declined[0].position_id, Some(venue_position_id));
+    assert_eq!(
+        declined[0].causation_id,
+        as_order_filled(&order_filled_event).event_id
+    );
+    assert!(declined[0].details.contains("VENUE-POS"));
+    assert!(declined[0].details.contains("CACHED-POS"));
+
+    let cache = execution_engine.cache().borrow();
+    let cached_order = cache.order(&order.client_order_id()).unwrap();
     assert_eq!(cached_order.filled_qty(), Quantity::from(0));
     assert!(!cache.position_exists(&cached_position_id));
     assert!(!cache.position_exists(&venue_position_id));
