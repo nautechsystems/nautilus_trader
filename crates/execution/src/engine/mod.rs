@@ -3241,7 +3241,13 @@ impl ExecutionEngine {
             && let Some(fill_position_id) = fill.position_id
             && cached_position_id != fill_position_id
         {
-            if oms_type == OmsType::Hedging {
+            // A flip re-indexes the order to a newly minted virtual position ID while
+            // later fills of that order still carry the ID the order holds.
+            let flip_remainder = order.and_then(OrderAny::position_id) == Some(fill_position_id)
+                && fill_position_id.is_virtual()
+                && cached_position_id.is_virtual();
+
+            if oms_type == OmsType::Hedging && !flip_remainder {
                 log::error!(
                     "Cannot apply hedging fill {} for {}: venue position ID {fill_position_id} conflicts with cached position ID {cached_position_id}",
                     fill.trade_id,

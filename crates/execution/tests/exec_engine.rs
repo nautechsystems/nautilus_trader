@@ -13125,6 +13125,148 @@ fn test_own_book_status_integrity_during_transitions() {
     }
 }
 
+#[rstest]
+fn test_hedging_flip_applies_remainder_to_flipped_position(mut execution_engine: ExecutionEngine) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = audusd_sim();
+
+    let stub_client = StubExecutionClient::new(
+        ClientId::from("STUB"),
+        AccountId::test_default(),
+        Venue::test_default(),
+        OmsType::Hedging,
+        None,
+    );
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(CashAccount::default().into())
+        .unwrap();
+
+    let position_id = PositionId::from("P-19700101-000000-000-001-1");
+    let opening_order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-1"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(
+            opening_order.clone(),
+            None,
+            Some(ClientId::from("STUB")),
+            true,
+        )
+        .unwrap();
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &opening_order,
+        AccountId::test_default(),
+    ));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &opening_order,
+        AccountId::test_default(),
+        VenueOrderId::from("V-1"),
+    ));
+    execution_engine.process(&TestOrderEventStubs::filled(
+        &opening_order,
+        &instrument.clone().into(),
+        Some(TradeId::new("T-OPEN")),
+        Some(position_id),
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(AccountId::test_default()),
+    ));
+
+    let reversal_order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-FLIP"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(200_000))
+        .build();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(
+            reversal_order.clone(),
+            None,
+            Some(ClientId::from("STUB")),
+            true,
+        )
+        .unwrap();
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &reversal_order,
+        AccountId::test_default(),
+    ));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &reversal_order,
+        AccountId::test_default(),
+        VenueOrderId::from("V-FLIP"),
+    ));
+    execution_engine.process(&TestOrderEventStubs::filled(
+        &reversal_order,
+        &instrument.clone().into(),
+        Some(TradeId::new("T-FLIP")),
+        Some(position_id),
+        None,
+        Some(Quantity::from(150_000)),
+        None,
+        None,
+        None,
+        Some(AccountId::test_default()),
+    ));
+
+    let partially_filled_order = cached_order_or(&execution_engine, &reversal_order);
+    let remainder_trade_id = TradeId::new("T-REMAINDER");
+    execution_engine.process(&TestOrderEventStubs::filled(
+        &partially_filled_order,
+        &instrument.into(),
+        Some(remainder_trade_id),
+        Some(position_id),
+        None,
+        Some(Quantity::from(50_000)),
+        None,
+        None,
+        None,
+        Some(AccountId::test_default()),
+    ));
+
+    let cache = execution_engine.cache().borrow();
+    let filled_order = cache.order(&reversal_order.client_order_id()).unwrap();
+    assert_eq!(filled_order.filled_qty(), Quantity::from(200_000));
+
+    let original = cache.position(&position_id).unwrap();
+    assert!(original.is_closed());
+
+    let positions = cache.positions_open(None, None, None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_ne!(positions[0].id, position_id);
+    assert_eq!(positions[0].side, PositionSide::Short);
+    assert_eq!(positions[0].quantity, Quantity::from(100_000));
+    assert!(positions[0].trade_ids.contains(&remainder_trade_id));
+}
+
 fn setup_netting_snapshot_engine(
     execution_engine: &mut ExecutionEngine,
     instrument: &CurrencyPair,
