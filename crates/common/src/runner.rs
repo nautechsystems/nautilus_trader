@@ -20,7 +20,7 @@
 //! system-wide components that need to be accessible across threads.
 
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     fmt::Debug,
     num::NonZeroU64,
     sync::{
@@ -586,6 +586,31 @@ impl Drop for TradingCommandDispatchGuard {
     }
 }
 
+/// Returns `true` while an order event is being processed on this thread.
+#[must_use]
+pub fn order_event_is_dispatching() -> bool {
+    ORDER_EVENT_DISPATCH_DEPTH.with(|depth| depth.get() > 0)
+}
+
+/// An RAII marker for an active order-event dispatch on this thread.
+#[derive(Debug)]
+pub struct OrderEventDispatchGuard;
+
+impl OrderEventDispatchGuard {
+    /// Marks an order-event dispatch as active until the returned guard is dropped.
+    #[must_use]
+    pub fn enter() -> Self {
+        ORDER_EVENT_DISPATCH_DEPTH.with(|depth| depth.set(depth.get() + 1));
+        Self
+    }
+}
+
+impl Drop for OrderEventDispatchGuard {
+    fn drop(&mut self) {
+        ORDER_EVENT_DISPATCH_DEPTH.with(|depth| depth.set(depth.get().saturating_sub(1)));
+    }
+}
+
 /// Returns `true` while a deferred trading command is being dispatched.
 #[must_use]
 pub fn trading_cmd_is_dispatching() -> bool {
@@ -711,6 +736,7 @@ thread_local! {
     static DATA_CMD_QUEUE: RefCell<Vec<DataCommand>> = const { RefCell::new(Vec::new()) };
     static TRADING_CMD_QUEUE: RefCell<Vec<TradingCommandMessage>> = const { RefCell::new(Vec::new()) };
     static TRADING_CMD_DISPATCHES: RefCell<Vec<Vec<TradingCommandMessage>>> = const { RefCell::new(Vec::new()) };
+    static ORDER_EVENT_DISPATCH_DEPTH: Cell<usize> = const { Cell::new(0) };
 }
 
 #[cfg(test)]

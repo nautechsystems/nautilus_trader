@@ -34,13 +34,13 @@ class SandboxExecutionClientConfig:
         use_reduce_only: bool = True,
         fee_model: typing.Any | None = None,
         fill_model: typing.Any | None = None,
-        latency_model: typing.Any | None = None,
         queue_position: bool = False,
         liquidity_consumption: bool = False,
         bar_adaptive_high_low_ordering: bool = False,
         use_market_order_acks: bool = False,
         oto_full_trigger: bool = False,
         price_protection_points: int | None = None,
+        latency_model: typing.Any | None = None,
     ) -> None: ...
     @property
     def account_id(self) -> model.AccountId: ...

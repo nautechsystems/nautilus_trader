@@ -15,7 +15,10 @@
 
 //! Tests for sandbox execution client.
 
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
 
 use nautilus_common::{
     cache::Cache,
@@ -33,8 +36,9 @@ use nautilus_common::{
         self, MessageBus, MessagingSwitchboard, TypedHandler,
         stubs::get_typed_into_message_saving_handler, typed_handler::TypedIntoHandler,
     },
+    runner::OrderEventDispatchGuard,
 };
-use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_SECOND};
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::DataEngine;
 #[cfg(feature = "python")]
 use nautilus_execution::python::fee::PythonFeeModel;
@@ -747,17 +751,20 @@ fn setup_account_state_handler(cache: Rc<RefCell<Cache>>) {
     );
 }
 
-/// Bundles a started sandbox client wired to a retained `TestClock` (standing in for the
-/// live clock) with the shared cache and exec-event channel, for the inbound-latency tests.
+/// Bundles a started sandbox client wired to a retained `TestClock` (standing in for the live
+/// clock) with the shared cache and exec-event channel, for the inbound-latency tests.
 struct LatencyHarness {
     client: SandboxExecutionClient,
     cache: Rc<RefCell<Cache>>,
     test_clock: Rc<RefCell<TestClock>>,
     rx: tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    /// Everything `ExecEngine.process` has received, in arrival order: events the inbound drain
+    /// flushed at its barrier plus whatever `settle` has forwarded from the channel.
+    events: Rc<RefCell<Vec<OrderEventAny>>>,
 }
 
-/// Builds a started sandbox client under the given `latency_model` with `instrument`
-/// seeded in the cache. Passing `None` exercises the immediate (no-deferral) path.
+/// Builds a started sandbox client under the given `latency_model` with `instrument` seeded in the
+/// cache.
 fn setup_latency_harness(
     trader_id: TraderId,
     account_id: AccountId,
@@ -766,9 +773,24 @@ fn setup_latency_harness(
     latency_model: Option<LatencyModelAny>,
 ) -> LatencyHarness {
     *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
-    setup_order_event_handler();
 
     let cache = Rc::new(RefCell::new(Cache::default()));
+    let events: Rc<RefCell<Vec<OrderEventAny>>> = Rc::new(RefCell::new(Vec::new()));
+
+    // Stands in for `ExecutionEngine::process`: the cache the matching engine reads is updated
+    // here, so a command applied after a barrier flush sees the events before it.
+    {
+        let cache = cache.clone();
+        let events = events.clone();
+        msgbus::register_order_event_endpoint(
+            MessagingSwitchboard::exec_engine_process(),
+            TypedIntoHandler::from(move |event: OrderEventAny| {
+                let _ = cache.borrow_mut().update_order(&event);
+                events.borrow_mut().push(event);
+            }),
+        );
+    }
+
     let test_clock = Rc::new(RefCell::new(TestClock::new()));
     let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
 
@@ -801,6 +823,7 @@ fn setup_latency_harness(
         cache,
         test_clock,
         rx,
+        events,
     }
 }
 
@@ -814,9 +837,9 @@ fn static_latency_model(insert_ns: u64, update_ns: u64, delete_ns: u64) -> Laten
     ))
 }
 
-/// Advances the test clock to `to`, running any inbound-drain alerts that fire exactly as
-/// the live runner would (`advance_time` → `match_handlers` → `handler.run()`), and returns
-/// the number of alert handlers that ran.
+/// Advances the test clock to `to`, running any inbound-drain alerts that fire exactly as the live
+/// runner would (`advance_time` → `match_handlers` → `handler.run()`), and returns the number of
+/// alert handlers that ran.
 fn advance_and_fire(test_clock: &Rc<RefCell<TestClock>>, to: UnixNanos) -> usize {
     let events = test_clock.borrow_mut().advance_time(to, true);
     let handlers = test_clock.borrow().match_handlers(events);
@@ -827,8 +850,8 @@ fn advance_and_fire(test_clock: &Rc<RefCell<TestClock>>, to: UnixNanos) -> usize
     count
 }
 
-/// Drains all currently-queued order events from the exec channel without mutating the
-/// cached order state (so a deferred drain re-reads the order exactly as it was submitted).
+/// Drains all currently-queued order events from the exec channel without mutating the cached order
+/// state (so a deferred drain re-reads the order exactly as it was submitted).
 fn drain_order_events(
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
 ) -> Vec<OrderEventAny> {
@@ -840,8 +863,28 @@ fn drain_order_events(
         .collect()
 }
 
-/// Submits a resting buy limit order (far from any market, so it accepts rather than fills)
-/// through the sandbox client, adding it to the cache first, and returns the built order.
+/// Forwards everything the execution channel is holding to `ExecEngine.process`, then returns every
+/// event that endpoint has received since the last call, in arrival order.
+fn settle(harness: &mut LatencyHarness) -> Vec<OrderEventAny> {
+    let endpoint = MessagingSwitchboard::exec_engine_process();
+
+    for event in std::iter::from_fn(|| harness.rx.try_recv().ok()) {
+        if let ExecutionEvent::Order(order_event) = event {
+            msgbus::send_order_event(endpoint, order_event);
+        }
+    }
+
+    harness.events.borrow_mut().drain(..).collect()
+}
+
+/// Returns the events that reached `ExecEngine.process` without the runner draining the execution
+/// channel - the settlement barrier's own output.
+fn flushed_at_barrier(harness: &LatencyHarness) -> Vec<OrderEventAny> {
+    harness.events.borrow_mut().drain(..).collect()
+}
+
+/// Submits a resting buy limit order (far from any market, so it accepts rather than fills) through
+/// the sandbox client, adding it to the cache first, and returns the built order.
 fn submit_resting_limit(
     harness: &LatencyHarness,
     trader_id: TraderId,
@@ -859,7 +902,7 @@ fn submit_resting_limit(
         .ts_init(ts)
         .build();
     // Not `.submit(true)`: that stub stamps `ACCOUNT-001`, while `process_cancel_all` filters the
-    // cache by the client's own account. The client's `OrderSubmitted` sets the matching one.
+    // cache by the client's own account.
     harness
         .cache
         .borrow_mut()
@@ -879,8 +922,8 @@ fn submit_resting_limit(
     order
 }
 
-/// Builds a buy limit order whose instrument is deliberately absent from the harness cache,
-/// adds it to the cache, and returns it, for the deferred no-engine-guard rejection tests.
+/// Builds a buy limit order whose instrument is deliberately absent from the harness cache, adds it
+/// to the cache, and returns it, for the deferred no-engine-guard rejection tests.
 fn build_uncached_instrument_order(
     harness: &LatencyHarness,
     client_order_id: &str,
@@ -905,8 +948,8 @@ fn build_uncached_instrument_order(
 }
 
 /// Applies an `OrderPendingCancel` event to `order` in the cache, mirroring the state
-/// `Strategy::cancel_order` / `cancel_orders` establish before their cancel command reaches
-/// the execution client, so a synthesized `CancelRejected` later has a valid FSM transition.
+/// `Strategy::cancel_order` / `cancel_orders` establish before their cancel command reaches the
+/// execution client, so a synthesized `CancelRejected` later has a valid FSM transition.
 fn mark_pending_cancel(
     cache: &Rc<RefCell<Cache>>,
     order: &OrderAny,
@@ -929,8 +972,8 @@ fn mark_pending_cancel(
 }
 
 /// Applies an `OrderPendingUpdate` event to `order` in the cache, mirroring the state
-/// `Strategy::modify_order` establishes before its modify command reaches the execution
-/// client, so a synthesized `ModifyRejected` later has a valid FSM transition.
+/// `Strategy::modify_order` establishes before its modify command reaches the execution client, so
+/// a synthesized `ModifyRejected` later has a valid FSM transition.
 fn mark_pending_update(
     cache: &Rc<RefCell<Cache>>,
     order: &OrderAny,
@@ -4085,8 +4128,8 @@ fn test_submit_order_through_exec_engine_no_reentrant_panic(
     );
 }
 
-/// The inbound-latency alert must drive order acceptance even with no market data after
-/// submission: a `TestClock` advance past the due time exercises the drain path directly.
+/// The inbound-latency alert must drive order acceptance even with no market data after submission:
+/// a `TestClock` advance past the due time exercises the drain path directly.
 #[rstest]
 fn test_inbound_latency_alert_drives_acceptance_with_no_market_data(
     trader_id: TraderId,
@@ -4114,9 +4157,7 @@ fn test_inbound_latency_alert_drives_acceptance_with_no_market_data(
         submit_time,
     );
 
-    // Immediately: the client's "sent to venue" record is emitted, but the order has NOT
-    // reached the engine yet (still in flight behind the insert latency).
-    let before = drain_order_events(&mut harness.rx);
+    let before = flushed_at_barrier(&harness);
     assert!(
         before
             .iter()
@@ -4131,8 +4172,6 @@ fn test_inbound_latency_alert_drives_acceptance_with_no_market_data(
         "order must not be accepted before its inbound latency elapses",
     );
 
-    // No market data is fed. Advancing the wall clock to the due time fires the inbound
-    // alert; running the handler drives the drain (as the runner would in production).
     let due = UnixNanos::from(*submit_time + INSERT_LATENCY_NS);
     assert_eq!(
         advance_and_fire(&harness.test_clock, due),
@@ -4140,8 +4179,7 @@ fn test_inbound_latency_alert_drives_acceptance_with_no_market_data(
         "expected exactly one inbound-drain alert to fire",
     );
 
-    // The drain applied the deferred submit, so the engine accepted the order
-    let after = drain_order_events(&mut harness.rx);
+    let after = settle(&mut harness);
     assert!(
         after
             .iter()
@@ -4153,8 +4191,8 @@ fn test_inbound_latency_alert_drives_acceptance_with_no_market_data(
     harness.client.stop().unwrap();
 }
 
-/// With no latency model configured, the submit path runs inline with no deferral, locking in
-/// zero behavior change for existing users (the default `latency_model = None`).
+/// With no latency model configured, the submit path runs inline with no deferral, locking in zero
+/// behavior change for existing users (the default `latency_model = None`).
 #[rstest]
 fn test_no_latency_model_accepts_order_immediately(
     trader_id: TraderId,
@@ -4174,7 +4212,6 @@ fn test_no_latency_model_accepts_order_immediately(
         submit_time,
     );
 
-    // No clock advance: the order must already be accepted in this same call
     let events = drain_order_events(&mut harness.rx);
     assert!(
         events
@@ -4191,7 +4228,6 @@ fn test_no_latency_model_accepts_order_immediately(
         "with no latency model the order must be accepted immediately (no deferral)",
     );
 
-    // No inbound alert should have been armed, so advancing the clock fires nothing
     let fired = advance_and_fire(
         &harness.test_clock,
         UnixNanos::from(*submit_time + 10_000_000_000),
@@ -4234,9 +4270,7 @@ fn test_reset_clears_inbound_queue_and_cancels_alert(
         submit_time,
     );
 
-    // The immediate "sent to venue" record arrives; nothing is accepted yet, the command
-    // is still sitting behind its inbound latency.
-    let before = drain_order_events(&mut harness.rx);
+    let before = flushed_at_barrier(&harness);
     assert!(
         !before
             .iter()
@@ -4246,8 +4280,6 @@ fn test_reset_clears_inbound_queue_and_cancels_alert(
 
     harness.client.reset();
 
-    // No alert may remain armed for the discarded queue (same naming scheme as
-    // execution.rs::inbound_alert_name).
     let alert_name = format!("SANDBOX-INBOUND-{}", harness.client.client_id());
     assert_eq!(
         harness.test_clock.borrow().next_time_ns(&alert_name),
@@ -4255,23 +4287,21 @@ fn test_reset_clears_inbound_queue_and_cancels_alert(
         "reset must cancel the inbound alert",
     );
 
-    // Advancing past the original due time must fire nothing and apply nothing: the
-    // deferred command was discarded, not merely left to expire.
     let due = UnixNanos::from(*submit_time + INSERT_LATENCY_NS);
     let fired = advance_and_fire(&harness.test_clock, due);
     assert_eq!(fired, 0, "reset must leave no alert to fire");
 
-    let after = drain_order_events(&mut harness.rx);
+    let after = flushed_at_barrier(&harness);
     assert!(
-        after.is_empty(),
+        after.is_empty() && drain_order_events(&mut harness.rx).is_empty(),
         "reset must discard the deferred command so it is never applied",
     );
 
     harness.client.stop().unwrap();
 }
 
-/// Commands sharing a due timestamp drain in submission order (FIFO), enforced by the
-/// `inbound_seq` tie-break.
+/// Commands sharing a due timestamp drain in submission order (FIFO), enforced by the `inbound_seq`
+/// tie-break.
 #[rstest]
 fn test_inbound_latency_fifo_ordering_for_shared_due_timestamp(
     trader_id: TraderId,
@@ -4305,8 +4335,7 @@ fn test_inbound_latency_fifo_ordering_for_shared_due_timestamp(
         );
     }
 
-    // The immediate "sent to venue" records arrive up front; nothing accepts yet
-    let before = drain_order_events(&mut harness.rx);
+    let before = flushed_at_barrier(&harness);
     assert!(
         !before
             .iter()
@@ -4314,7 +4343,6 @@ fn test_inbound_latency_fifo_ordering_for_shared_due_timestamp(
         "no order may be accepted before its inbound latency elapses",
     );
 
-    // One shared due timestamp → exactly one armed alert drains every order at once
     let due = UnixNanos::from(*submit_time + INSERT_LATENCY_NS);
     assert_eq!(
         advance_and_fire(&harness.test_clock, due),
@@ -4322,7 +4350,7 @@ fn test_inbound_latency_fifo_ordering_for_shared_due_timestamp(
         "orders sharing a due timestamp must arm exactly one inbound alert",
     );
 
-    let accepted_ids: Vec<String> = drain_order_events(&mut harness.rx)
+    let accepted_ids: Vec<String> = settle(&mut harness)
         .into_iter()
         .filter_map(|event| match event {
             OrderEventAny::Accepted(accepted) => Some(accepted.client_order_id.to_string()),
@@ -4337,8 +4365,471 @@ fn test_inbound_latency_fifo_ordering_for_shared_due_timestamp(
     harness.client.stop().unwrap();
 }
 
-/// `SubmitOrderList` travels the same enqueue → drain path as a lone `SubmitOrder`, deferred by
-/// the insert leg; an interior checkpoint confirms `command_leg_latency` is not misrouting it.
+/// The barrier invariant: a command released from the inbound queue has its events processed into
+/// the cache before the next released command is applied.
+#[rstest]
+fn test_inbound_latency_barrier_settles_each_command_before_the_next(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+) {
+    const LEG_LATENCY_NS: u64 = 1_000_000_000; // 1s on the insert and update legs alike
+
+    let mut harness = setup_latency_harness(
+        trader_id,
+        account_id,
+        venue,
+        &instrument,
+        Some(static_latency_model(LEG_LATENCY_NS, LEG_LATENCY_NS, 0)),
+    );
+
+    let submit_time = harness.test_clock.borrow().timestamp_ns();
+    let order = submit_resting_limit(
+        &harness,
+        trader_id,
+        &instrument,
+        "O-BARRIER-1",
+        "100.00",
+        submit_time,
+    );
+
+    // The runner settles the "sent to venue" record during the latency window, as it would live
+    let _ = settle(&mut harness);
+
+    harness
+        .client
+        .modify_order(ModifyOrder::new(
+            trader_id,
+            Some(harness.client.client_id()),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            None,
+            None,
+            Some(Price::from("99.00")),
+            None,
+            UUID4::new(),
+            submit_time,
+            None,
+            None,
+        ))
+        .unwrap();
+
+    // Both commands fall due in one pass, the modify one sequence behind the submit
+    let due = UnixNanos::from(*submit_time + LEG_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, due), 1);
+
+    // Read without settling the channel: whatever is here was flushed at the barrier
+    let flushed = flushed_at_barrier(&harness);
+    let accepted_at = flushed
+        .iter()
+        .position(|event| {
+            matches!(event, OrderEventAny::Accepted(accepted)
+            if accepted.client_order_id == order.client_order_id())
+        })
+        .expect("the submit's acceptance must be flushed at the barrier, not left on the channel");
+    let updated_at = flushed
+        .iter()
+        .position(|event| {
+            matches!(event, OrderEventAny::Updated(updated)
+            if updated.client_order_id == order.client_order_id()
+                && updated.price == Some(Price::from("99.00")))
+        })
+        .expect("the modify must be applied in the same pass, against the accepted order");
+    assert!(
+        accepted_at < updated_at,
+        "the submit's events must settle before the modify behind it is applied",
+    );
+
+    assert!(
+        drain_order_events(&mut harness.rx).is_empty(),
+        "a released command's events go straight to the execution engine, not the channel",
+    );
+
+    let cache = harness.cache.borrow();
+    let cached = cache.order(&order.client_order_id()).unwrap();
+    assert_eq!(
+        cached.price(),
+        Some(Price::from("99.00")),
+        "the cache the venue reads must carry both commands' effects",
+    );
+}
+
+/// Commands sharing one due time apply in enqueue order within a single pass: the monotonic
+/// `inbound_seq` tie-break means a later command can never overtake an earlier one.
+#[rstest]
+fn test_inbound_latency_commands_sharing_a_due_time_apply_in_enqueue_order(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+) {
+    const LEG_LATENCY_NS: u64 = 2_000_000_000; // 2s on every leg, so one shared due time
+
+    let mut harness = setup_latency_harness(
+        trader_id,
+        account_id,
+        venue,
+        &instrument,
+        Some(static_latency_model(
+            LEG_LATENCY_NS,
+            LEG_LATENCY_NS,
+            LEG_LATENCY_NS,
+        )),
+    );
+
+    let submit_time = harness.test_clock.borrow().timestamp_ns();
+    let order = submit_resting_limit(
+        &harness,
+        trader_id,
+        &instrument,
+        "O-SHARED-DUE-1",
+        "1000.00",
+        submit_time,
+    );
+    let _ = settle(&mut harness);
+
+    harness
+        .client
+        .modify_order(ModifyOrder::new(
+            trader_id,
+            Some(harness.client.client_id()),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            None,
+            None,
+            Some(Price::from("3000.00")),
+            None,
+            UUID4::new(),
+            submit_time,
+            None,
+            None,
+        ))
+        .unwrap();
+    harness
+        .client
+        .cancel_order(cancel_for(&harness, trader_id, &order, submit_time))
+        .unwrap();
+
+    let due = UnixNanos::from(*submit_time + LEG_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, due), 1);
+
+    let flushed = flushed_at_barrier(&harness);
+    let kinds: Vec<&str> = flushed
+        .iter()
+        .filter(|event| event.client_order_id() == order.client_order_id())
+        .filter_map(|event| match event {
+            OrderEventAny::Accepted(_) => Some("accepted"),
+            OrderEventAny::Updated(_) => Some("updated"),
+            OrderEventAny::Canceled(_) => Some("canceled"),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        kinds,
+        vec!["accepted", "updated", "canceled"],
+        "commands sharing a due time must apply in enqueue order, each settled before the next",
+    );
+}
+
+/// A drain flush that re-enters the client must not apply the next command from inside the previous
+/// command's flush.
+#[rstest]
+fn test_inbound_latency_drain_reentered_during_flush_does_not_split_a_command(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+) {
+    const INSERT_LATENCY_NS: u64 = 1_000_000_000; // 1s, shared by both commands below
+
+    let mut harness = setup_latency_harness(
+        trader_id,
+        account_id,
+        venue,
+        &instrument,
+        Some(static_latency_model(INSERT_LATENCY_NS, 0, 0)),
+    );
+
+    // Replaces the harness stand-in with one that does everything it did, plus re-enters the client
+    // once from inside the flush.
+    let reentered = Rc::new(Cell::new(false));
+    {
+        let cache = harness.cache.clone();
+        let events = harness.events.clone();
+        let reentered = reentered.clone();
+        let reentry_id = InstrumentId::from("REENTRY-PERP.SIM");
+        msgbus::register_order_event_endpoint(
+            MessagingSwitchboard::exec_engine_process(),
+            TypedIntoHandler::from(move |event: OrderEventAny| {
+                let _ = cache.borrow_mut().update_order(&event);
+                let is_accepted = matches!(event, OrderEventAny::Accepted(_));
+                events.borrow_mut().push(event);
+
+                // Exactly once, on the first acceptance the flush emits
+                if is_accepted && !reentered.replace(true) {
+                    let quote = create_quote_tick(reentry_id, 2000.00, 2010.00);
+                    msgbus::publish_quote(
+                        format!("data.quotes.{}.{}", reentry_id.venue, reentry_id).into(),
+                        &quote,
+                    );
+                }
+            }),
+        );
+    }
+
+    let submit_time = harness.test_clock.borrow().timestamp_ns();
+
+    // One command emitting two acceptances, so a split is observable
+    let legs: Vec<OrderAny> = [("O-REENTRY-L1", "100.00"), ("O-REENTRY-L2", "99.00")]
+        .iter()
+        .map(|(client_order_id, price)| {
+            let order = OrderTestBuilder::new(OrderType::Limit)
+                .instrument_id(instrument.id())
+                .side(OrderSide::Buy)
+                .price(Price::from(*price))
+                .quantity(Quantity::from("1.000"))
+                .client_order_id((*client_order_id).into())
+                .ts_init(submit_time)
+                .submit(true)
+                .build();
+            harness
+                .cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+            order
+        })
+        .collect();
+
+    harness
+        .client
+        .submit_order_list(create_submit_order_list(
+            trader_id,
+            harness.client.client_id(),
+            instrument.id(),
+            &legs,
+        ))
+        .unwrap();
+
+    // Enqueued behind the list on the same insert leg, so both fall due in one pass
+    submit_resting_limit(
+        &harness,
+        trader_id,
+        &instrument,
+        "O-REENTRY-S1",
+        "98.00",
+        submit_time,
+    );
+
+    // The runner settles the "sent to venue" records during the latency window, as it would live
+    let _ = settle(&mut harness);
+
+    let due = UnixNanos::from(*submit_time + INSERT_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, due), 1);
+
+    let accepted: Vec<String> = flushed_at_barrier(&harness)
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Accepted(accepted) => Some(accepted.client_order_id.to_string()),
+            _ => None,
+        })
+        .collect();
+
+    assert!(
+        reentered.get(),
+        "the flush must have re-entered the client, or this test proves nothing",
+    );
+
+    let position = |client_order_id: &str| {
+        accepted
+            .iter()
+            .position(|got| got == client_order_id)
+            .unwrap_or_else(|| panic!("missing acceptance for {client_order_id} in {accepted:?}"))
+    };
+    let leg_1 = position("O-REENTRY-L1");
+    let leg_2 = position("O-REENTRY-L2");
+    let standalone = position("O-REENTRY-S1");
+
+    assert_eq!(
+        leg_1.abs_diff(leg_2),
+        1,
+        "both acceptances come from one command, so nothing may be applied between them: \
+         {accepted:?}",
+    );
+    assert!(
+        standalone > leg_1 && standalone > leg_2,
+        "the command queued behind the list must be applied only once the list has fully \
+         settled: {accepted:?}",
+    );
+
+    harness.client.stop().unwrap();
+}
+
+/// The re-entrancy claim must hold across sandbox clients, not only within one.
+#[rstest]
+fn test_inbound_latency_drain_claim_holds_across_sandbox_clients(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+) {
+    const INSERT_LATENCY_NS: u64 = 1_000_000_000; // 1s, shared by both clients below
+
+    let mut harness = setup_latency_harness(
+        trader_id,
+        account_id,
+        venue,
+        &instrument,
+        Some(static_latency_model(INSERT_LATENCY_NS, 0, 0)),
+    );
+
+    // A second sandbox client on its own venue, sharing this thread, cache, clock, execution
+    // channel and `ExecEngine.process` endpoint with the harness client
+    let venue_b = Venue::new("SIM2");
+    let client_id_b = ClientId::new("SANDBOX-2");
+    let mut config_b = create_config(trader_id, AccountId::from("SANDBOX-002"), venue_b);
+    config_b.latency_model = Some(static_latency_model(INSERT_LATENCY_NS, 0, 0));
+    let core_b = ExecutionClientCore::new(
+        trader_id,
+        client_id_b,
+        venue_b,
+        config_b.oms_type,
+        config_b.account_id,
+        config_b.account_type,
+        config_b.base_currency,
+        harness.cache.clone(),
+    );
+    let clock_b: Rc<RefCell<dyn Clock>> = harness.test_clock.clone();
+    let mut client_b =
+        SandboxExecutionClient::new(core_b, config_b, clock_b, harness.cache.clone());
+    client_b.start().unwrap();
+
+    // Replaces the harness stand-in with one that also models the borrow `ExecutionEngine::process`
+    // holds across its dispatch, and re-enters the second client once from inside the flush.
+    let reentered = Rc::new(Cell::new(false));
+    {
+        let cache = harness.cache.clone();
+        let events = harness.events.clone();
+        let reentered = reentered.clone();
+        let processing = Cell::new(false);
+        let reentry_id = InstrumentId::from("REENTRY-PERP.SIM2");
+        msgbus::register_order_event_endpoint(
+            MessagingSwitchboard::exec_engine_process(),
+            TypedIntoHandler::from(move |event: OrderEventAny| {
+                assert!(
+                    !processing.replace(true),
+                    "a sandbox client flushed into the execution engine while it was already \
+                     processing an event, which re-enters `ExecutionEngine::process`'s own borrow",
+                );
+
+                let _ = cache.borrow_mut().update_order(&event);
+                let is_accepted = matches!(event, OrderEventAny::Accepted(_));
+                events.borrow_mut().push(event);
+
+                // Exactly once, on the first acceptance the flush emits
+                if is_accepted && !reentered.replace(true) {
+                    let quote = create_quote_tick(reentry_id, 2000.00, 2010.00);
+                    msgbus::publish_quote(
+                        format!("data.quotes.{}.{}", reentry_id.venue, reentry_id).into(),
+                        &quote,
+                    );
+                }
+
+                processing.set(false);
+            }),
+        );
+    }
+
+    let submit_time = harness.test_clock.borrow().timestamp_ns();
+
+    // One command queued on each client, both falling due at the same time
+    let _order_a = submit_resting_limit(
+        &harness,
+        trader_id,
+        &instrument,
+        "O-CROSS-A",
+        "100.00",
+        submit_time,
+    );
+
+    let order_b = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("99.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id("O-CROSS-B".into())
+        .ts_init(submit_time)
+        .build();
+    harness
+        .cache
+        .borrow_mut()
+        .add_order(order_b.clone(), None, None, false)
+        .unwrap();
+    client_b
+        .submit_order(SubmitOrder::from_order(
+            &order_b,
+            trader_id,
+            Some(client_id_b),
+            None,
+            UUID4::new(),
+            submit_time,
+        ))
+        .unwrap();
+
+    // The runner settles the "sent to venue" records during the latency window, as it would live
+    let _ = settle(&mut harness);
+
+    // Both queues fall due.
+    let due = UnixNanos::from(*submit_time + INSERT_LATENCY_NS);
+    let _ = harness.test_clock.borrow_mut().advance_time(due, true);
+
+    let accepted_ids = |harness: &LatencyHarness| -> Vec<String> {
+        flushed_at_barrier(harness)
+            .into_iter()
+            .filter_map(|event| match event {
+                OrderEventAny::Accepted(accepted) => Some(accepted.client_order_id.to_string()),
+                _ => None,
+            })
+            .collect()
+    };
+
+    // Releases the first client's queue; its flush then reaches the second client, whose own
+    // command is already due
+    let release_id = InstrumentId::from("RELEASE-PERP.SIM");
+    let quote = create_quote_tick(release_id, 2000.00, 2010.00);
+    msgbus::publish_quote(
+        format!("data.quotes.{}.{}", release_id.venue, release_id).into(),
+        &quote,
+    );
+
+    assert!(
+        reentered.get(),
+        "the flush must have reached the second client, or this test proves nothing",
+    );
+    assert_eq!(
+        accepted_ids(&harness),
+        vec!["O-CROSS-A".to_string()],
+        "the second client must not release its queue from inside the first client's flush",
+    );
+
+    // Nothing is lost by skipping: the next tick on that client's own venue releases it
+    let quote = create_quote_tick(InstrumentId::from("REENTRY-PERP.SIM2"), 2000.00, 2010.00);
+    msgbus::publish_quote("data.quotes.SIM2.REENTRY-PERP.SIM2".into(), &quote);
+    assert_eq!(
+        accepted_ids(&harness),
+        vec!["O-CROSS-B".to_string()],
+        "the skipped queue must be released by the next market-data tick on its own venue",
+    );
+
+    client_b.stop().unwrap();
+    harness.client.stop().unwrap();
+}
+
+/// `SubmitOrderList` travels the same enqueue → drain path as a lone `SubmitOrder`, deferred by the
+/// insert leg; an interior checkpoint confirms `command_leg_latency` is not misrouting it.
 #[rstest]
 fn test_inbound_latency_submit_order_list_through_deferred_path(
     trader_id: TraderId,
@@ -4395,7 +4886,7 @@ fn test_inbound_latency_submit_order_list_through_deferred_path(
         .unwrap();
 
     // Both legs' immediate "sent to venue" records arrive; neither reaches the engine yet
-    let before = drain_order_events(&mut harness.rx);
+    let before = flushed_at_barrier(&harness);
     assert_eq!(
         before
             .iter()
@@ -4411,16 +4902,16 @@ fn test_inbound_latency_submit_order_list_through_deferred_path(
         "no leg may be accepted before the insert leg elapses",
     );
 
-    // Interior checkpoint, partway through the insert leg: if the command were misrouted to a
-    // leg shorter than (or equal to) this point - the query default of zero, for instance - the
-    // alert would already have fired and this advance would apply it, so it must fire nothing.
+    // Interior checkpoint, partway through the insert leg: if the command were misrouted to a leg
+    // shorter than (or equal to) this point - the query default of zero, for instance - the alert
+    // would already have fired and this advance would apply it, so it must fire nothing.
     let midpoint = UnixNanos::from(*submit_time + INSERT_LATENCY_NS / 2);
     assert_eq!(
         advance_and_fire(&harness.test_clock, midpoint),
         0,
         "the list must not apply before the insert leg elapses",
     );
-    let mid = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+    let mid = settle(&mut harness);
     assert!(
         !mid.iter()
             .any(|event| matches!(event, OrderEventAny::Accepted(_))),
@@ -4430,7 +4921,7 @@ fn test_inbound_latency_submit_order_list_through_deferred_path(
     let due = UnixNanos::from(*submit_time + INSERT_LATENCY_NS);
     assert_eq!(advance_and_fire(&harness.test_clock, due), 1);
 
-    let events = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+    let events = settle(&mut harness);
 
     for order in &orders {
         assert!(
@@ -4496,7 +4987,7 @@ fn test_inbound_latency_command_is_deferred_by_its_own_leg(
     );
 
     // In flight behind the insert leg: submitted immediately, not yet accepted
-    let before = drain_order_events(&mut harness.rx);
+    let before = flushed_at_barrier(&harness);
     assert!(
         before
             .iter()
@@ -4511,11 +5002,10 @@ fn test_inbound_latency_command_is_deferred_by_its_own_leg(
         "submit must not reach the engine before the insert leg elapses",
     );
 
-    // The submit drains exactly at t0 + insert. Apply the events so the order is open in the
-    // cache, which `process_cancel` and `process_modify` alike read it from.
+    // The submit drains exactly at t0 + insert.
     let accept_due = UnixNanos::from(*submit_time + INSERT_LATENCY_NS);
     assert_eq!(advance_and_fire(&harness.test_clock, accept_due), 1);
-    let accepted = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+    let accepted = settle(&mut harness);
     assert!(
         accepted
             .iter()
@@ -4542,7 +5032,7 @@ fn test_inbound_latency_command_is_deferred_by_its_own_leg(
         0,
         "the command must be deferred by its own leg, not the (shorter) insert leg",
     );
-    let mid = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+    let mid = settle(&mut harness);
     assert!(
         !kind.applied_to(&mid, order.client_order_id()),
         "the command must not settle before its own leg elapses",
@@ -4551,7 +5041,7 @@ fn test_inbound_latency_command_is_deferred_by_its_own_leg(
     // It reaches the venue once its own leg elapses
     let due = UnixNanos::from(*accept_due + LEG_LATENCY_NS);
     assert_eq!(advance_and_fire(&harness.test_clock, due), 1);
-    let after = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+    let after = settle(&mut harness);
     assert!(
         kind.applied_to(&after, order.client_order_id()),
         "the command must settle at the time it was issued plus its own leg",
@@ -4560,16 +5050,17 @@ fn test_inbound_latency_command_is_deferred_by_its_own_leg(
     harness.client.stop().unwrap();
 }
 
-/// A `StaticLatencyModel` with only `insert_latency_nanos` set leaves the update and delete legs
-/// at zero, so a resting order's cancel or modify hits the clock's immediate-fire branch
-/// (`due_ns == now`), never exercised by the other latency tests in this file.
+/// A `StaticLatencyModel` with only `insert_latency_nanos` set leaves the update and delete legs at
+/// zero.
 #[rstest]
-fn test_inbound_latency_zero_leg_command_drains_at_the_same_instant_it_is_enqueued(
+fn test_inbound_latency_zero_leg_command_is_applied_inline(
     trader_id: TraderId,
     account_id: AccountId,
     venue: Venue,
     instrument: InstrumentAny,
 ) {
+    // The client id `setup_latency_harness` builds, as `inbound_alert_name` formats it
+    const ALERT: &str = "SANDBOX-INBOUND-SANDBOX";
     const INSERT_LATENCY_NS: u64 = 1_000_000_000; // 1s; update and delete legs default to zero
 
     let mut harness = setup_latency_harness(
@@ -4591,88 +5082,65 @@ fn test_inbound_latency_zero_leg_command_drains_at_the_same_instant_it_is_enqueu
     );
 
     let accept_due = UnixNanos::from(*submit_time + INSERT_LATENCY_NS);
+    assert_eq!(
+        harness.test_clock.borrow().next_time_ns(ALERT),
+        Some(accept_due),
+        "a non-zero leg arms the alert for exactly its due time",
+    );
     assert_eq!(advance_and_fire(&harness.test_clock, accept_due), 1);
-    let accepted = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+    let accepted = settle(&mut harness);
     assert!(
         accepted
             .iter()
             .any(|event| matches!(event, OrderEventAny::Accepted(accepted)
-            if accepted.client_order_id.as_str() == "O-ZERO-LEG-1")),
+            if accepted.client_order_id == order.client_order_id())),
         "expected OrderAccepted at t0 + insert latency",
     );
 
-    // Modify at the current clock: the zero update leg makes `due_ns` equal to `now` right at
-    // enqueue, with no forward advance needed to reach it.
+    // Zero update leg, empty queue: applied inline, with no clock advance to reach it
     harness
         .client
-        .modify_order(ModifyOrder::new(
-            trader_id,
-            Some(harness.client.client_id()),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            None,
-            None,
-            Some(Price::from("99.00")),
-            None,
-            UUID4::new(),
-            accept_due,
-            None,
-            None,
-        ))
+        .modify_order(modify_for(&harness, trader_id, &order, accept_due))
         .unwrap();
 
-    assert_eq!(
-        advance_and_fire(&harness.test_clock, accept_due),
-        1,
-        "a zero-latency leg must still arm and fire an alert, even with no forward advance",
+    assert!(
+        harness.test_clock.borrow().next_time_ns(ALERT).is_none(),
+        "a zero-latency command must not arm an alert for a time already passed",
     );
-    let modified = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+    let modified = settle(&mut harness);
     assert!(
         modified
             .iter()
             .any(|event| matches!(event, OrderEventAny::Updated(updated)
-            if updated.client_order_id.as_str() == "O-ZERO-LEG-1"
+            if updated.client_order_id == order.client_order_id()
                 && updated.price == Some(Price::from("99.00")))),
-        "the zero-latency modify must be applied, not left queued forever",
+        "the zero-latency modify must be applied inline, not left queued",
     );
 
-    // Cancel at the same instant: the zero delete leg makes it due immediately too
+    // Same for the zero delete leg
     harness
         .client
-        .cancel_order(CancelOrder::new(
-            trader_id,
-            Some(harness.client.client_id()),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            None,
-            UUID4::new(),
-            accept_due,
-            None,
-            None,
-        ))
+        .cancel_order(cancel_for(&harness, trader_id, &order, accept_due))
         .unwrap();
 
-    assert_eq!(
-        advance_and_fire(&harness.test_clock, accept_due),
-        1,
-        "the zero-latency cancel must also fire without a forward advance",
+    assert!(
+        harness.test_clock.borrow().next_time_ns(ALERT).is_none(),
+        "a zero-latency cancel must not arm an alert either",
     );
-    let canceled = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+    let canceled = settle(&mut harness);
     assert!(
         canceled
             .iter()
             .any(|event| matches!(event, OrderEventAny::Canceled(canceled)
-            if canceled.client_order_id.as_str() == "O-ZERO-LEG-1")),
-        "the zero-latency cancel must be applied, not left queued forever",
+            if canceled.client_order_id == order.client_order_id())),
+        "the zero-latency cancel must be applied inline, not left queued",
     );
 
     harness.client.stop().unwrap();
 }
 
-/// Without a latency model a command cannot overtake anything, so no engine is created for a
-/// cancel with no order; creating one would consume a raw engine ID it should not need.
+/// Without a latency model a command cannot overtake anything, so no engine is created for a cancel
+/// with no order; creating one would consume a raw engine ID it should not need.
 #[rstest]
 fn test_no_latency_model_cancel_without_engine_creates_no_engine(
     trader_id: TraderId,
@@ -4724,10 +5192,8 @@ fn test_no_latency_model_cancel_without_engine_creates_no_engine(
     harness.client.stop().unwrap();
 }
 
-/// Inbound latency lets an order-targeting command overtake the submit that would have created
-/// the matching engine. `ensure_engine_for` builds the engine from the cached instrument so the
-/// venue can answer for an order it has never seen: every target must be rejected, not silently
-/// discarded, or it would be stranded with no event and no log.
+/// Inbound latency lets an order-targeting command overtake the submit that would have created the
+/// matching engine.
 #[rstest]
 #[case::cancel(DeferredCommand::Cancel)]
 #[case::modify(DeferredCommand::Modify)]
@@ -4781,7 +5247,7 @@ fn test_inbound_latency_deferred_command_overtaking_its_submit_is_rejected(
     let due = UnixNanos::from(*submit_time + LEG_LATENCY_NS);
     assert_eq!(advance_and_fire(&harness.test_clock, due), 1);
 
-    let events = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+    let events = settle(&mut harness);
     let expected: Vec<ClientOrderId> = targets
         .iter()
         .map(|order| order.client_order_id())
@@ -4795,9 +5261,8 @@ fn test_inbound_latency_deferred_command_overtaking_its_submit_is_rejected(
     harness.client.stop().unwrap();
 }
 
-/// When the instrument itself is absent from the cache, `ensure_engine_for` cannot build an
-/// engine and none of the apply helpers can raise a rejection without one. The guard must
-/// reject instead, so the order is not left pending forever.
+/// When the instrument itself is absent from the cache, `ensure_engine_for` cannot build an engine
+/// and none of the apply helpers can raise a rejection without one.
 #[rstest]
 #[case::cancel(DeferredCommand::Cancel)]
 #[case::modify(DeferredCommand::Modify)]
@@ -4837,7 +5302,7 @@ fn test_inbound_latency_deferred_command_for_uncached_instrument_is_rejected(
     let due = UnixNanos::from(*ts + LEG_LATENCY_NS);
     assert_eq!(advance_and_fire(&harness.test_clock, due), 1);
 
-    let events = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+    let events = settle(&mut harness);
     let expected: Vec<ClientOrderId> = targets
         .iter()
         .map(|order| order.client_order_id())
@@ -4865,151 +5330,8 @@ fn test_inbound_latency_deferred_command_for_uncached_instrument_is_rejected(
     harness.client.stop().unwrap();
 }
 
-/// A command enqueued at a `due_ns` a drain pass has already popped from must queue behind the
-/// sibling that pass held back, not ahead of it (the monotonic `inbound_seq` tie-break).
-#[rstest]
-fn test_inbound_latency_enqueue_at_drained_due_ts_cannot_overtake_held_back_command(
-    trader_id: TraderId,
-    account_id: AccountId,
-    venue: Venue,
-    instrument: InstrumentAny,
-) {
-    const INSERT_LATENCY_NS: u64 = 2_000_000_000; // 2s
-    const UPDATE_LATENCY_NS: u64 = 1_000_000_000; // 1s
-
-    let mut harness = setup_latency_harness(
-        trader_id,
-        account_id,
-        venue,
-        &instrument,
-        // A zero delete leg (the documented default) puts the cancel on the current timestamp
-        Some(static_latency_model(
-            INSERT_LATENCY_NS,
-            UPDATE_LATENCY_NS,
-            0,
-        )),
-    );
-
-    let submit_time = harness.test_clock.borrow().timestamp_ns();
-    let order = submit_resting_limit(
-        &harness,
-        trader_id,
-        &instrument,
-        "O-DUE-TS-REUSE-1",
-        "1000.00",
-        submit_time,
-    );
-
-    // Amend one second later, so the shorter update leg lands it on the submit's due time
-    let modify_time = UnixNanos::from(*submit_time + UPDATE_LATENCY_NS);
-    assert_eq!(advance_and_fire(&harness.test_clock, modify_time), 0);
-    harness
-        .client
-        .modify_order(ModifyOrder::new(
-            trader_id,
-            Some(harness.client.client_id()),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            None,
-            None,
-            Some(Price::from("3000.00")),
-            None,
-            UUID4::new(),
-            modify_time,
-            None,
-            None,
-        ))
-        .unwrap();
-
-    let _ = drain_order_events(&mut harness.rx);
-
-    // The submit is applied here and the modify is held back, still queued at this timestamp
-    let due = UnixNanos::from(*submit_time + INSERT_LATENCY_NS);
-    assert_eq!(advance_and_fire(&harness.test_clock, due), 1);
-
-    let events = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
-    assert!(
-        events
-            .iter()
-            .any(|event| matches!(event, OrderEventAny::Accepted(accepted)
-            if accepted.client_order_id == order.client_order_id())),
-        "the submit must reach the venue in the first pass",
-    );
-    assert!(
-        !events
-            .iter()
-            .any(|event| matches!(event, OrderEventAny::Updated(_))),
-        "the modify must be held back until the venue's view of the order is current",
-    );
-
-    // Cancel at the drain timestamp: the zero delete leg makes it due at the very timestamp the
-    // held-back modify still occupies, so it must queue behind that modify.
-    harness
-        .client
-        .cancel_order(CancelOrder::new(
-            trader_id,
-            Some(harness.client.client_id()),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            None,
-            UUID4::new(),
-            due,
-            None,
-            None,
-        ))
-        .unwrap();
-
-    // The next pass applies exactly one of the two (they target the same order), which must be
-    // the modify that arrived first.
-    assert_eq!(
-        advance_and_fire(
-            &harness.test_clock,
-            UnixNanos::from(*due + NANOSECONDS_IN_SECOND),
-        ),
-        1,
-    );
-
-    let events = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
-    assert!(
-        events
-            .iter()
-            .any(|event| matches!(event, OrderEventAny::Updated(updated)
-            if updated.client_order_id == order.client_order_id()
-                && updated.price == Some(Price::from("3000.00")))),
-        "the held-back modify must be applied before the cancel enqueued after it",
-    );
-    assert!(
-        !events
-            .iter()
-            .any(|event| matches!(event, OrderEventAny::Canceled(_))),
-        "a command enqueued later must not overtake a held-back command at the same due time",
-    );
-
-    // The cancel then settles on the following pass, leaving the order canceled at the venue
-    assert_eq!(
-        advance_and_fire(
-            &harness.test_clock,
-            UnixNanos::from(*due + 2 * NANOSECONDS_IN_SECOND),
-        ),
-        1,
-    );
-
-    let events = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
-    assert!(
-        events
-            .iter()
-            .any(|event| matches!(event, OrderEventAny::Canceled(canceled)
-            if canceled.client_order_id == order.client_order_id())),
-        "the cancel must settle once the modify ahead of it has been applied",
-    );
-
-    harness.client.stop().unwrap();
-}
-
 /// Market data fed through the public processing API must drain commands that have fallen due
-/// before matching, exactly as the registered message handlers do (`drain_due_now`).
+/// before matching, exactly as the registered message handlers do (`drain_inbound`).
 #[rstest]
 fn test_inbound_latency_public_quote_processing_drains_due_commands(
     trader_id: TraderId,
@@ -5047,7 +5369,7 @@ fn test_inbound_latency_public_quote_processing_drains_due_commands(
     let quote = create_quote_tick(instrument.id(), 2000.00, 2010.00);
     harness.client.process_quote_tick(&quote).unwrap();
 
-    let events = drain_order_events(&mut harness.rx);
+    let events = settle(&mut harness);
     assert!(
         events
             .iter()
@@ -5061,112 +5383,6 @@ fn test_inbound_latency_public_quote_processing_drains_due_commands(
             .any(|event| matches!(event, OrderEventAny::Filled(fill)
             if fill.client_order_id == order.client_order_id())),
         "the order must fill against the quote that arrived after its latency elapsed",
-    );
-
-    harness.client.stop().unwrap();
-}
-
-/// A strategy submitting from an order-event callback enqueues while a hold-back is outstanding.
-/// That enqueue must not re-arm the drain alert onto the held-back command's already-elapsed due
-/// time, which would fire it immediately and undo the back-off the hold-back established.
-#[rstest]
-fn test_inbound_latency_enqueue_during_hold_back_keeps_retry_floor(
-    trader_id: TraderId,
-    account_id: AccountId,
-    venue: Venue,
-    instrument: InstrumentAny,
-) {
-    const LEG_LATENCY_NS: u64 = 2_000_000_000; // 2s on the insert and delete legs alike
-
-    let mut harness = setup_latency_harness(
-        trader_id,
-        account_id,
-        venue,
-        &instrument,
-        Some(static_latency_model(LEG_LATENCY_NS, 0, LEG_LATENCY_NS)),
-    );
-
-    let submit_time = harness.test_clock.borrow().timestamp_ns();
-    let order = submit_resting_limit(
-        &harness,
-        trader_id,
-        &instrument,
-        "O-FLOOR-1",
-        "1000.00",
-        submit_time,
-    );
-
-    // Cancelled at the same instant on an equal leg, so both commands fall due in one pass
-    harness
-        .client
-        .cancel_order(cancel_for(&harness, trader_id, &order, submit_time))
-        .unwrap();
-    let _ = drain_order_events(&mut harness.rx);
-
-    // The submit applies and the cancel behind it is held back until that acceptance reaches
-    // the cache the venue reads the order from.
-    let due = UnixNanos::from(*submit_time + LEG_LATENCY_NS);
-    assert_eq!(advance_and_fire(&harness.test_clock, due), 1);
-
-    // Drained without applying to the cache, standing in for a runner that has not yet drained
-    // the execution channel; they are replayed below once the hold-back has had its window.
-    let held_events = drain_order_events(&mut harness.rx);
-    assert!(
-        held_events
-            .iter()
-            .any(|event| matches!(event, OrderEventAny::Accepted(accepted)
-            if accepted.client_order_id == order.client_order_id())),
-        "the submit must reach the venue in the first pass",
-    );
-    assert!(
-        !held_events
-            .iter()
-            .any(|event| matches!(event, OrderEventAny::Canceled(_))),
-        "the cancel must be held back for the acceptance to settle",
-    );
-
-    // A second order submitted from that callback, enqueued inside the retry window
-    let _sibling = submit_resting_limit(
-        &harness,
-        trader_id,
-        &instrument,
-        "O-FLOOR-SIBLING-1",
-        "1.00",
-        due,
-    );
-
-    assert_eq!(
-        advance_and_fire(&harness.test_clock, due),
-        0,
-        "an enqueue during a hold-back must not re-arm the drain alert inside the retry window",
-    );
-    assert!(
-        !drain_order_events(&mut harness.rx)
-            .iter()
-            .any(|event| matches!(event, OrderEventAny::Canceled(_))),
-        "the held-back cancel must not reach the venue before the acceptance settles",
-    );
-
-    // The runner catches up, so the acceptance lands in the cache the cancel is read from
-    for event in &held_events {
-        let _ = harness.cache.borrow_mut().update_order(event);
-    }
-
-    assert_eq!(
-        advance_and_fire(
-            &harness.test_clock,
-            UnixNanos::from(*due + NANOSECONDS_IN_SECOND),
-        ),
-        1,
-    );
-
-    let events = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
-    assert!(
-        events
-            .iter()
-            .any(|event| matches!(event, OrderEventAny::Canceled(canceled)
-            if canceled.client_order_id == order.client_order_id())),
-        "the retried cancel must reach the venue once the acceptance has settled",
     );
 
     harness.client.stop().unwrap();
@@ -5208,7 +5424,7 @@ fn test_stop_terminalizes_commands_still_in_flight(
         &harness.test_clock,
         UnixNanos::from(*submit_time + INSERT_LATENCY_NS),
     );
-    let _ = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+    let _ = settle(&mut harness);
 
     // Both of these are still in flight when the client stops
     let cancel_time = harness.test_clock.borrow().timestamp_ns();
@@ -5221,9 +5437,6 @@ fn test_stop_terminalizes_commands_still_in_flight(
         cancel_time,
     );
 
-    // Real callers only reach `cancel_order` once the strategy has marked the order
-    // pending-cancel in the cache, so the synthesized `CancelRejected` below has a status to
-    // restore.
     mark_pending_cancel(&harness.cache, &resting, trader_id, cancel_time);
     harness
         .client
@@ -5245,7 +5458,7 @@ fn test_stop_terminalizes_commands_still_in_flight(
     harness.client.stop().unwrap();
 
     // Every event emitted at stop must be applicable to the cached order, not merely emitted
-    let events = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+    let events = settle(&mut harness);
     assert!(
         events
             .iter()
@@ -5285,8 +5498,8 @@ fn test_stop_terminalizes_commands_still_in_flight(
         "the FSM must accept the synthesized cancel-rejected, restoring the pre-cancel status",
     );
 
-    // Discarded means gone, not merely rejected: a restart must not resurrect the queue and
-    // apply the stranded commands later, on the first enqueue that re-arms the drain.
+    // Discarded means gone, not merely rejected: a restart must not resurrect the queue and apply
+    // the stranded commands later, on the first enqueue that re-arms the drain.
     harness.client.start().unwrap();
     let restart_time = harness.test_clock.borrow().timestamp_ns();
     submit_resting_limit(
@@ -5304,7 +5517,7 @@ fn test_stop_terminalizes_commands_still_in_flight(
         UnixNanos::from(*restart_time + INSERT_LATENCY_NS),
     );
 
-    let events = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+    let events = settle(&mut harness);
     let accepted: Vec<&str> = events
         .iter()
         .filter_map(|event| match event {
@@ -5321,8 +5534,90 @@ fn test_stop_terminalizes_commands_still_in_flight(
     harness.client.stop().unwrap();
 }
 
-/// `CancelAllOrders` travels the same enqueue → drain path as `CancelOrder`, deferred by the
-/// delete leg; every open order on the instrument reaches `Canceled` directly from `Accepted`.
+/// `stop()` unwinds the queue last-issued-first, so several commands pending on one order are
+/// rejected in an order the FSM accepts: the modify's rejection restores the order's previous
+/// status, and only then does the submit's rejection terminalize it.
+#[rstest]
+#[case::equal_legs(1_000_000_000, 1_000_000_000)] // insert and update legs both 1s: due_ns ties
+#[case::shorter_update_leg(2_000_000_000, 500_000_000)] // update leg shorter: modify is due first
+fn test_stop_unwinds_multiple_pending_commands_for_one_order_in_fsm_order(
+    #[case] insert_latency_ns: u64,
+    #[case] update_latency_ns: u64,
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+) {
+    let mut harness = setup_latency_harness(
+        trader_id,
+        account_id,
+        venue,
+        &instrument,
+        Some(static_latency_model(
+            insert_latency_ns,
+            update_latency_ns,
+            0,
+        )),
+    );
+
+    let submit_time = harness.test_clock.borrow().timestamp_ns();
+    let order = submit_resting_limit(
+        &harness,
+        trader_id,
+        &instrument,
+        "O-UNWIND-1",
+        "100.00",
+        submit_time,
+    );
+
+    // The runner settles the "sent to venue" record, leaving the order SUBMITTED
+    let _ = settle(&mut harness);
+
+    // `Strategy::modify_order` establishes PENDING_UPDATE before its command reaches the client
+    mark_pending_update(&harness.cache, &order, trader_id, submit_time);
+    harness
+        .client
+        .modify_order(modify_for(&harness, trader_id, &order, submit_time))
+        .unwrap();
+
+    // Both commands are still in flight
+    harness.client.stop().unwrap();
+
+    let events = settle(&mut harness);
+    let modify_rejected_at = events
+        .iter()
+        .position(|event| {
+            matches!(event, OrderEventAny::ModifyRejected(rejected)
+            if rejected.client_order_id == order.client_order_id())
+        })
+        .expect("the in-flight modify must be rejected at stop");
+    let rejected_at = events
+        .iter()
+        .position(|event| {
+            matches!(event, OrderEventAny::Rejected(rejected)
+            if rejected.client_order_id == order.client_order_id())
+        })
+        .expect("the in-flight submit must be rejected at stop");
+    assert!(
+        modify_rejected_at < rejected_at,
+        "the modify must unwind before the submit it was stacked on, or the FSM refuses it",
+    );
+
+    let cache = harness.cache.borrow();
+    let cached = cache.order(&order.client_order_id()).unwrap();
+    assert_eq!(
+        cached.status(),
+        OrderStatus::Rejected,
+        "both rejections must apply, leaving the order terminal rather than stranded",
+    );
+    assert!(
+        !cached.is_pending_update(),
+        "the order must not be left pending an update that never reached the venue",
+    );
+}
+
+/// `CancelAllOrders` travels the same enqueue → drain path as `CancelOrder`, deferred by the delete
+/// leg; every open order on the instrument reaches `Canceled` directly from `Accepted`.
 #[rstest]
 fn test_inbound_latency_cancel_all_orders_through_deferred_path(
     trader_id: TraderId,
@@ -5365,7 +5660,7 @@ fn test_inbound_latency_cancel_all_orders_through_deferred_path(
 
     let accept_due = UnixNanos::from(*submit_time + INSERT_LATENCY_NS);
     assert_eq!(advance_and_fire(&harness.test_clock, accept_due), 1);
-    let accepted = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+    let accepted = settle(&mut harness);
     assert_eq!(
         accepted
             .iter()
@@ -5399,7 +5694,7 @@ fn test_inbound_latency_cancel_all_orders_through_deferred_path(
         0,
         "cancel-all must use the delete leg, not the (shorter) insert leg",
     );
-    let mid = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+    let mid = settle(&mut harness);
     assert!(
         !mid.iter()
             .any(|event| matches!(event, OrderEventAny::Canceled(_))),
@@ -5410,7 +5705,7 @@ fn test_inbound_latency_cancel_all_orders_through_deferred_path(
     let cancel_due = UnixNanos::from(*accept_due + DELETE_LATENCY_NS);
     assert_eq!(advance_and_fire(&harness.test_clock, cancel_due), 1);
 
-    let events = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+    let events = settle(&mut harness);
 
     for order in [&first, &second] {
         assert!(
@@ -5474,7 +5769,7 @@ fn test_stop_terminalizes_cancel_all_without_invalid_transitions(
         &harness.test_clock,
         UnixNanos::from(*submit_time + INSERT_LATENCY_NS),
     );
-    let _ = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+    let _ = settle(&mut harness);
 
     // Still in flight when the client stops: the strategy marks no order pending-cancel for a
     // cancel-all, so `resting` stays `Accepted` in the cache throughout.
@@ -5497,9 +5792,9 @@ fn test_stop_terminalizes_cancel_all_without_invalid_transitions(
 
     harness.client.stop().unwrap();
 
-    // A silently-dropped invalid transition would leave `resting` looking untouched too, so
-    // assert on the emitted events themselves rather than only on the post-apply status.
-    let events = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+    // A silently-dropped invalid transition would leave `resting` looking untouched too, so assert
+    // on the emitted events themselves rather than only on the post-apply status.
+    let events = settle(&mut harness);
     assert!(
         events.is_empty(),
         "a discarded CancelAllOrders must emit nothing: the strategy marked no order pending \
@@ -5520,8 +5815,8 @@ fn test_stop_terminalizes_cancel_all_without_invalid_transitions(
     );
 }
 
-/// A leg already closed when `submit_order_list` first ran never received an `OrderSubmitted`,
-/// so discarding the still-deferred list at stop must reject only the leg still in flight.
+/// A leg already closed when `submit_order_list` first ran never received an `OrderSubmitted`, so
+/// discarding the still-deferred list at stop must reject only the leg still in flight.
 #[rstest]
 fn test_stop_terminalizes_only_in_flight_legs_of_a_submit_order_list(
     trader_id: TraderId,
@@ -5550,8 +5845,8 @@ fn test_stop_terminalizes_only_in_flight_legs_of_a_submit_order_list(
         .ts_init(ts)
         .submit(true)
         .build();
-    // Not `.submit(true)`: stays `Initialized`, the only status the FSM accepts the
-    // `OrderDenied` below from.
+    // Not `.submit(true)`: stays `Initialized`, the only status the FSM accepts the `OrderDenied`
+    // below from.
     let closed_leg = OrderTestBuilder::new(OrderType::Limit)
         .trader_id(trader_id)
         .instrument_id(instrument.id())
@@ -5598,7 +5893,7 @@ fn test_stop_terminalizes_only_in_flight_legs_of_a_submit_order_list(
 
     harness.client.stop().unwrap();
 
-    let events = apply_order_events_from_channel(&harness.cache, &mut harness.rx);
+    let events = settle(&mut harness);
     let rejected_ids: Vec<ClientOrderId> = events
         .iter()
         .filter_map(|event| match event {
@@ -5680,7 +5975,7 @@ fn test_inbound_latency_deferred_submit_rejects_when_it_cannot_be_applied(
         1,
     );
 
-    let events = drain_order_events(&mut harness.rx);
+    let events = settle(&mut harness);
     assert!(
         events
             .iter()
@@ -5690,4 +5985,678 @@ fn test_inbound_latency_deferred_submit_rejects_when_it_cannot_be_applied(
     );
 
     harness.client.stop().unwrap();
+}
+
+/// Replaces the harness `ExecEngine.process` stand-in with one that records every transition the
+/// FSM refuses, so an event the cache drops shows up instead of being swallowed.
+fn install_fsm_checking_endpoint(
+    cache: &Rc<RefCell<Cache>>,
+    events: &Rc<RefCell<Vec<OrderEventAny>>>,
+) -> Rc<RefCell<Vec<String>>> {
+    let refused: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+    let cache = cache.clone();
+    let events = events.clone();
+    let sink = refused.clone();
+    msgbus::register_order_event_endpoint(
+        MessagingSwitchboard::exec_engine_process(),
+        TypedIntoHandler::from(move |event: OrderEventAny| {
+            if let Err(e) = cache.borrow_mut().update_order(&event) {
+                sink.borrow_mut()
+                    .push(format!("{}: {e}", order_event_kind(&event)));
+            }
+            events.borrow_mut().push(event);
+        }),
+    );
+    refused
+}
+
+/// Short name for an order event, for assertion messages.
+fn order_event_kind(event: &OrderEventAny) -> &'static str {
+    match event {
+        OrderEventAny::Initialized(_) => "initialized",
+        OrderEventAny::Submitted(_) => "submitted",
+        OrderEventAny::Accepted(_) => "accepted",
+        OrderEventAny::Rejected(_) => "rejected",
+        OrderEventAny::Canceled(_) => "canceled",
+        OrderEventAny::Expired(_) => "expired",
+        OrderEventAny::Triggered(_) => "triggered",
+        OrderEventAny::PendingUpdate(_) => "pending_update",
+        OrderEventAny::PendingCancel(_) => "pending_cancel",
+        OrderEventAny::ModifyRejected(_) => "modify_rejected",
+        OrderEventAny::CancelRejected(_) => "cancel_rejected",
+        OrderEventAny::Updated(_) => "updated",
+        OrderEventAny::Filled(_) => "filled",
+        _ => "other",
+    }
+}
+
+/// The client's own "sent to venue" record and the events the matching engine emits for the same
+/// order take one ordered route, so a runner lagged past the inbound leg cannot invert them.
+#[rstest]
+fn test_inbound_latency_client_record_and_venue_events_share_one_route(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+) {
+    const INSERT_LATENCY_NS: u64 = 1_000_000_000; // 1s
+
+    let mut harness = setup_latency_harness(
+        trader_id,
+        account_id,
+        venue,
+        &instrument,
+        Some(static_latency_model(INSERT_LATENCY_NS, 0, 0)),
+    );
+    let refused = install_fsm_checking_endpoint(&harness.cache, &harness.events);
+
+    let submit_time = harness.test_clock.borrow().timestamp_ns();
+    let order = submit_resting_limit(
+        &harness,
+        trader_id,
+        &instrument,
+        "O-ONE-ROUTE-1",
+        "100.00",
+        submit_time,
+    );
+
+    // Deliberately not settled: models a runner that has not drained the execution channel by the
+    // time the inbound leg elapses, which is what makes the two routes observable.
+    let due = UnixNanos::from(*submit_time + INSERT_LATENCY_NS);
+    assert_eq!(advance_and_fire(&harness.test_clock, due), 1);
+
+    let kinds: Vec<&str> = flushed_at_barrier(&harness)
+        .iter()
+        .filter(|event| event.client_order_id() == order.client_order_id())
+        .map(order_event_kind)
+        .collect();
+    assert_eq!(
+        kinds,
+        vec!["submitted", "accepted"],
+        "the client's own record must reach the engine before the venue's acceptance",
+    );
+    assert!(
+        drain_order_events(&mut harness.rx).is_empty(),
+        "with a latency model no order event may take the execution channel: the barrier is \
+         the single route",
+    );
+    assert!(
+        refused.borrow().is_empty(),
+        "no event may be refused by the FSM: {:?}",
+        refused.borrow(),
+    );
+
+    let cache = harness.cache.borrow();
+    let cached = cache.order(&order.client_order_id()).unwrap();
+    assert_eq!(cached.status(), OrderStatus::Accepted);
+    assert!(
+        cached.ts_submitted().is_some(),
+        "the order's OrderSubmitted must have been applied, not dropped by the FSM",
+    );
+}
+
+/// No command is released while an order-event dispatch is active on the thread.
+#[rstest]
+fn test_inbound_latency_no_release_during_order_event_dispatch(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+) {
+    const INSERT_LATENCY_NS: u64 = 1_000_000_000; // 1s
+
+    let harness = setup_latency_harness(
+        trader_id,
+        account_id,
+        venue,
+        &instrument,
+        Some(static_latency_model(INSERT_LATENCY_NS, 0, 0)),
+    );
+
+    // Stands in for the engine's own `RefCell`, held across the dispatch and marked the same way
+    // the real endpoint marks it.
+    let engine: Rc<RefCell<u32>> = Rc::new(RefCell::new(0));
+    let reentered = Rc::new(Cell::new(false));
+    let reentrant_dispatch = Rc::new(Cell::new(false));
+    {
+        let cache = harness.cache.clone();
+        let events = harness.events.clone();
+        let reentered = reentered.clone();
+        let reentrant_dispatch = reentrant_dispatch.clone();
+        let reentry_id = InstrumentId::from("REENTRY-DISPATCH-PERP.SIM");
+        msgbus::register_order_event_endpoint(
+            MessagingSwitchboard::exec_engine_process(),
+            TypedIntoHandler::from(move |event: OrderEventAny| {
+                let Ok(mut depth) = engine.try_borrow_mut() else {
+                    // In production this is `rc.borrow_mut()`, which panics rather than Err
+                    reentrant_dispatch.set(true);
+                    return;
+                };
+                let _dispatching = OrderEventDispatchGuard::enter();
+                *depth += 1;
+
+                let _ = cache.borrow_mut().update_order(&event);
+                events.borrow_mut().push(event);
+
+                // An actor subscribed to what the engine publishes from inside its borrow publishes
+                // market data, reaching the sandbox's own synchronous subscription
+                if !reentered.replace(true) {
+                    let quote = create_quote_tick(reentry_id, 2000.00, 2010.00);
+                    msgbus::publish_quote(
+                        format!("data.quotes.{}.{}", reentry_id.venue, reentry_id).into(),
+                        &quote,
+                    );
+                }
+            }),
+        );
+    }
+
+    let submit_time = harness.test_clock.borrow().timestamp_ns();
+    let order = submit_resting_limit(
+        &harness,
+        trader_id,
+        &instrument,
+        "O-DISPATCH-1",
+        "100.00",
+        submit_time,
+    );
+
+    // The command is due, but nothing has drained it yet
+    harness
+        .test_clock
+        .borrow_mut()
+        .set_time(UnixNanos::from(*submit_time + INSERT_LATENCY_NS));
+    reentered.set(false);
+
+    // The runner delivers another client's event into the engine, entering an engine frame with no
+    // sandbox drain on the stack
+    msgbus::send_order_event(
+        MessagingSwitchboard::exec_engine_process(),
+        OrderEventAny::PendingCancel(OrderPendingCancel::new(
+            trader_id,
+            order.strategy_id(),
+            order.instrument_id(),
+            ClientOrderId::from("O-OTHER-CLIENT-1"),
+            order.account_id(),
+            UUID4::new(),
+            submit_time,
+            submit_time,
+            false,
+            order.venue_order_id(),
+        )),
+    );
+
+    assert!(
+        reentered.get(),
+        "the engine dispatch must have re-entered the sandbox, or this test proves nothing",
+    );
+    assert!(
+        !reentrant_dispatch.get(),
+        "a release reached from inside an order-event dispatch would flush back into the \
+         engine's own borrow and panic the runner",
+    );
+
+    // Skipping loses nothing: the next tick outside any engine frame releases the command
+    harness
+        .client
+        .process_quote_tick(&create_quote_tick(instrument.id(), 99.00, 99.50))
+        .unwrap();
+    assert!(
+        harness
+            .events
+            .borrow()
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Accepted(accepted)
+            if accepted.client_order_id == order.client_order_id())),
+        "the command skipped during the dispatch must be released by the next tick",
+    );
+}
+
+/// A zero-leg command created from a strategy callback during a flush is queued, not applied
+/// inline, so it reads the cache only once the command that triggered it has fully settled.
+#[rstest]
+fn test_inbound_latency_zero_leg_command_from_callback_is_not_applied_inline(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+) {
+    const INSERT_LATENCY_NS: u64 = 1_000_000_000; // 1s; the delete leg is zero
+
+    let harness = setup_latency_harness(
+        trader_id,
+        account_id,
+        venue,
+        &instrument,
+        Some(static_latency_model(INSERT_LATENCY_NS, 0, 0)),
+    );
+    let LatencyHarness {
+        client,
+        cache,
+        test_clock,
+        mut rx,
+        events,
+    } = harness;
+    // Behind an `Rc` so the stand-in can re-enter the client the way a strategy callback does
+    let client = Rc::new(client);
+    let endpoint = MessagingSwitchboard::exec_engine_process();
+
+    // A market, so the order below emits `Accepted` *and* `Filled` from one command
+    client
+        .process_quote_tick(&create_quote_tick(instrument.id(), 100.0, 101.0))
+        .unwrap();
+
+    let submit_time = test_clock.borrow().timestamp_ns();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("102.00")) // marketable against the 101.00 ask
+        .quantity(Quantity::from("1.000"))
+        .client_order_id("O-CALLBACK-INLINE-1".into())
+        .ts_init(submit_time)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    client
+        .submit_order(SubmitOrder::from_order(
+            &order,
+            trader_id,
+            Some(client.client_id()),
+            None,
+            UUID4::new(),
+            submit_time,
+        ))
+        .unwrap();
+    events.borrow_mut().clear();
+
+    let reentered = Rc::new(Cell::new(false));
+    {
+        let cache = cache.clone();
+        let events = events.clone();
+        let reentered = reentered.clone();
+        let strategy_id = order.strategy_id();
+        let instrument_id = instrument.id();
+        msgbus::register_order_event_endpoint(
+            endpoint,
+            TypedIntoHandler::from(move |event: OrderEventAny| {
+                let _ = cache.borrow_mut().update_order(&event);
+                let is_accepted = matches!(event, OrderEventAny::Accepted(_));
+                events.borrow_mut().push(event);
+
+                // What a strategy's `on_order_accepted` would do: a zero-delete-leg cancel-all
+                // issued while the command's `Filled` has not been applied yet
+                if is_accepted && !reentered.replace(true) {
+                    client
+                        .cancel_all_orders(CancelAllOrders::new(
+                            trader_id,
+                            Some(client.client_id()),
+                            strategy_id,
+                            instrument_id,
+                            OrderSide::NoOrderSide,
+                            UUID4::new(),
+                            submit_time,
+                            None,
+                            None,
+                        ))
+                        .unwrap();
+                }
+            }),
+        );
+    }
+
+    let due = UnixNanos::from(*submit_time + INSERT_LATENCY_NS);
+    assert_eq!(advance_and_fire(&test_clock, due), 1);
+
+    for event in std::iter::from_fn(|| rx.try_recv().ok()) {
+        if let ExecutionEvent::Order(order_event) = event {
+            msgbus::send_order_event(endpoint, order_event);
+        }
+    }
+
+    assert!(
+        reentered.get(),
+        "the flush must have re-entered the client, or this test proves nothing",
+    );
+
+    let kinds: Vec<&str> = events.borrow().iter().map(order_event_kind).collect();
+    assert_eq!(
+        kinds,
+        vec!["accepted", "filled"],
+        "the cancel-all must see the filled order and cancel nothing: {kinds:?}",
+    );
+    assert_eq!(
+        cache
+            .borrow()
+            .order(&order.client_order_id())
+            .unwrap()
+            .status(),
+        OrderStatus::Filled,
+    );
+}
+
+/// Stop unwinds several pending commands on one order without emitting an event the FSM refuses.
+#[rstest]
+fn test_stop_unwinds_stacked_pending_commands_without_refused_events(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+) {
+    const LEG_NS: u64 = 1_000_000_000; // 1s on every leg, so all three stay in flight
+
+    let mut harness = setup_latency_harness(
+        trader_id,
+        account_id,
+        venue,
+        &instrument,
+        Some(static_latency_model(LEG_NS, LEG_NS, LEG_NS)),
+    );
+    let refused = install_fsm_checking_endpoint(&harness.cache, &harness.events);
+
+    let submit_time = harness.test_clock.borrow().timestamp_ns();
+    let order = submit_resting_limit(
+        &harness,
+        trader_id,
+        &instrument,
+        "O-STACKED-1",
+        "100.00",
+        submit_time,
+    );
+    let _ = settle(&mut harness); // the order is SUBMITTED
+
+    // `Strategy::modify_order` / `cancel_order` establish these before their commands arrive
+    mark_pending_update(&harness.cache, &order, trader_id, submit_time);
+    harness
+        .client
+        .modify_order(modify_for(&harness, trader_id, &order, submit_time))
+        .unwrap();
+    mark_pending_cancel(&harness.cache, &order, trader_id, submit_time);
+    harness
+        .client
+        .cancel_order(cancel_for(&harness, trader_id, &order, submit_time))
+        .unwrap();
+
+    // Submit, modify and cancel are all still in flight
+    harness.client.stop().unwrap();
+
+    let kinds: Vec<&str> = settle(&mut harness)
+        .iter()
+        .filter(|event| event.client_order_id() == order.client_order_id())
+        .map(order_event_kind)
+        .collect();
+    assert_eq!(
+        kinds,
+        vec!["cancel_rejected", "rejected"],
+        "the pending state is released once, by the command that established it, before the \
+         submit is rejected: {kinds:?}",
+    );
+    assert!(
+        refused.borrow().is_empty(),
+        "every event emitted at stop must be applicable by the FSM: {:?}",
+        refused.borrow(),
+    );
+
+    let cache = harness.cache.borrow();
+    let cached = cache.order(&order.client_order_id()).unwrap();
+    assert_eq!(cached.status(), OrderStatus::Rejected);
+    assert!(!cached.is_pending_update() && !cached.is_pending_cancel());
+}
+
+/// A command queued from a callback during a drain must not arm an inbound alert.
+#[rstest]
+fn test_inbound_latency_command_queued_during_a_drain_does_not_arm_an_alert(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+) {
+    const INSERT_LATENCY_NS: u64 = 1_000_000_000; // 1s; the delete leg is zero
+
+    let harness = setup_latency_harness(
+        trader_id,
+        account_id,
+        venue,
+        &instrument,
+        Some(static_latency_model(INSERT_LATENCY_NS, 0, 0)),
+    );
+    let LatencyHarness {
+        client,
+        cache,
+        test_clock,
+        mut rx,
+        events,
+    } = harness;
+    let client = Rc::new(client);
+    let endpoint = MessagingSwitchboard::exec_engine_process();
+    let alert_name = format!("SANDBOX-INBOUND-{}", client.client_id());
+
+    let submit_time = test_clock.borrow().timestamp_ns();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("100.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id("O-DRAIN-ARM-1".into())
+        .ts_init(submit_time)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    client
+        .submit_order(SubmitOrder::from_order(
+            &order,
+            trader_id,
+            Some(client.client_id()),
+            None,
+            UUID4::new(),
+            submit_time,
+        ))
+        .unwrap();
+
+    for event in std::iter::from_fn(|| rx.try_recv().ok()) {
+        if let ExecutionEvent::Order(order_event) = event {
+            msgbus::send_order_event(endpoint, order_event);
+        }
+    }
+    events.borrow_mut().clear();
+
+    // Observed from inside the flush, right after the callback's command is queued
+    let armed_during_flush: Rc<RefCell<Option<Option<UnixNanos>>>> = Rc::new(RefCell::new(None));
+    {
+        let cache = cache.clone();
+        let test_clock = test_clock.clone();
+        let armed_during_flush = armed_during_flush.clone();
+        let alert_name = alert_name.clone();
+        let strategy_id = order.strategy_id();
+        let instrument_id = instrument.id();
+        msgbus::register_order_event_endpoint(
+            endpoint,
+            TypedIntoHandler::from(move |event: OrderEventAny| {
+                let _ = cache.borrow_mut().update_order(&event);
+                let is_accepted = matches!(event, OrderEventAny::Accepted(_));
+                events.borrow_mut().push(event);
+
+                if is_accepted && armed_during_flush.borrow().is_none() {
+                    // Hoisted: a `borrow()` in the argument list would still be held when
+                    // `cancel_all_orders` takes the clock mutably
+                    let ts_now = test_clock.borrow().timestamp_ns();
+                    client
+                        .cancel_all_orders(CancelAllOrders::new(
+                            trader_id,
+                            Some(client.client_id()),
+                            strategy_id,
+                            instrument_id,
+                            OrderSide::NoOrderSide,
+                            UUID4::new(),
+                            ts_now,
+                            None,
+                            None,
+                        ))
+                        .unwrap();
+                    let armed = test_clock.borrow().next_time_ns(&alert_name);
+                    *armed_during_flush.borrow_mut() = Some(armed);
+                }
+            }),
+        );
+    }
+
+    let due = UnixNanos::from(*submit_time + INSERT_LATENCY_NS);
+    assert_eq!(advance_and_fire(&test_clock, due), 1);
+
+    let armed = armed_during_flush
+        .borrow()
+        .expect("the flush must have re-entered the client, or this test proves nothing");
+    assert_eq!(
+        armed, None,
+        "a command queued during a drain is applied by the running pass, so arming for it only \
+         asks the clock for an alert at a time already past",
+    );
+
+    // The command still settles in the same pass
+    assert_eq!(
+        cache
+            .borrow()
+            .order(&order.client_order_id())
+            .unwrap()
+            .status(),
+        OrderStatus::Canceled,
+    );
+    assert_eq!(
+        test_clock.borrow().next_time_ns(&alert_name),
+        None,
+        "nothing is left queued, so no alert may remain armed",
+    );
+}
+
+/// A command issued from a strategy callback, while an order event is being dispatched, must not
+/// send back into the execution engine.
+#[rstest]
+fn test_inbound_latency_command_from_a_callback_defers_its_records(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+) {
+    const INSERT_LATENCY_NS: u64 = 1_000_000_000;
+
+    let harness = setup_latency_harness(
+        trader_id,
+        account_id,
+        venue,
+        &instrument,
+        Some(static_latency_model(
+            INSERT_LATENCY_NS,
+            INSERT_LATENCY_NS,
+            0,
+        )),
+    );
+    let LatencyHarness {
+        client,
+        cache,
+        test_clock,
+        mut rx,
+        events,
+    } = harness;
+    let client = Rc::new(client);
+    let endpoint = MessagingSwitchboard::exec_engine_process();
+
+    let engine: Rc<RefCell<u32>> = Rc::new(RefCell::new(0));
+    let reentrant = Rc::new(Cell::new(false));
+    let fired = Rc::new(Cell::new(false));
+    {
+        let cache = cache.clone();
+        let events = events.clone();
+        let reentrant = reentrant.clone();
+        let fired = fired.clone();
+        let client = client.clone();
+        let instrument = instrument.clone();
+        msgbus::register_order_event_endpoint(
+            endpoint,
+            TypedIntoHandler::from(move |event: OrderEventAny| {
+                let Ok(mut depth) = engine.try_borrow_mut() else {
+                    reentrant.set(true);
+                    return;
+                };
+                let _dispatching = OrderEventDispatchGuard::enter();
+                *depth += 1;
+                let _ = cache.borrow_mut().update_order(&event);
+                let is_accepted = matches!(event, OrderEventAny::Accepted(_));
+                events.borrow_mut().push(event);
+
+                // The commonest strategy pattern there is: submit from on_order_accepted
+                if is_accepted && !fired.replace(true) {
+                    let ts = UnixNanos::from(2_000_000_000);
+                    let next = OrderTestBuilder::new(OrderType::Limit)
+                        .instrument_id(instrument.id())
+                        .side(OrderSide::Buy)
+                        .price(Price::from("99.00"))
+                        .quantity(Quantity::from("1.000"))
+                        .client_order_id("O-FROM-CALLBACK-1".into())
+                        .ts_init(ts)
+                        .build();
+                    cache
+                        .borrow_mut()
+                        .add_order(next.clone(), None, None, false)
+                        .unwrap();
+                    client
+                        .submit_order(SubmitOrder::from_order(
+                            &next,
+                            trader_id,
+                            Some(client.client_id()),
+                            None,
+                            UUID4::new(),
+                            ts,
+                        ))
+                        .unwrap();
+                }
+            }),
+        );
+    }
+
+    let submit_time = test_clock.borrow().timestamp_ns();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("100.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id("O-HOLE-1".into())
+        .ts_init(submit_time)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    client
+        .submit_order(SubmitOrder::from_order(
+            &order,
+            trader_id,
+            Some(client.client_id()),
+            None,
+            UUID4::new(),
+            submit_time,
+        ))
+        .unwrap();
+
+    for e in std::iter::from_fn(|| rx.try_recv().ok()) {
+        if let ExecutionEvent::Order(oe) = e {
+            msgbus::send_order_event(endpoint, oe);
+        }
+    }
+    events.borrow_mut().clear();
+
+    let due = UnixNanos::from(*submit_time + INSERT_LATENCY_NS);
+    assert_eq!(advance_and_fire(&test_clock, due), 1);
+
+    assert!(
+        fired.get(),
+        "the callback must have run, or this test proves nothing"
+    );
+    assert!(
+        !reentrant.get(),
+        "a client command issued from inside an engine dispatch flushed back into the \
+         engine's own borrow - in production that is a panic",
+    );
 }

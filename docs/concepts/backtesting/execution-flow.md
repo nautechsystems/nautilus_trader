@@ -91,6 +91,8 @@ expirations) still dispatch synchronously, exactly as without a latency model.
 ```python
 from nautilus_trader.adapters.sandbox import SandboxExecutionClientConfig
 from nautilus_trader.execution import StaticLatencyModel
+from nautilus_trader.model import Money
+from nautilus_trader.model import Venue
 
 config = SandboxExecutionClientConfig(
     venue=Venue("BINANCE"),
@@ -98,6 +100,15 @@ config = SandboxExecutionClientConfig(
     latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
 )
 ```
+
+Commands released from the inbound queue settle one at a time: each command's events reach the
+execution engine before the next released command is applied, so a modify or cancel always reads
+the venue state the command ahead of it produced. Incoming market data drains the queue before it
+reaches a matching engine, and the client's clock alert only wakes a queue that would otherwise
+sit idle with no data flowing. A command whose latency leg is zero is applied on arrival, unless
+another command is still in flight ahead of it or one is being released as it arrives - a command
+issued from an order event callback joins the queue so it reads the completed state rather than a
+partial one.
 
 Stopping the client discards anything still in flight. A discarded submit, modify, or targeted
 cancel is rejected (`OrderRejected`, `OrderModifyRejected`, `OrderCancelRejected`) so its order does

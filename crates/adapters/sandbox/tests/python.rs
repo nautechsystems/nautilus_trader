@@ -28,7 +28,10 @@ use nautilus_sandbox::{
     config::SandboxExecutionClientConfig, factory::SandboxExecutionClientFactory, python,
 };
 use nautilus_system::get_global_pyo3_registry;
-use pyo3::{Py, Python, types::PyModule};
+use pyo3::{
+    IntoPyObjectExt, Py, Python,
+    types::{PyAnyMethods, PyModule, PyTuple},
+};
 use rstest::rstest;
 
 const SANDBOX: &str = "SANDBOX";
@@ -173,5 +176,60 @@ fn test_sandbox_python_extract_preserves_matching_knobs() {
         assert!(engine_config.use_market_order_acks);
         assert!(engine_config.oto_full_trigger);
         assert_eq!(engine_config.price_protection_points, Some(50));
+    });
+}
+
+/// `latency_model` must sit at the end of the positional signature: inserting it between
+/// `fill_model` and `queue_position` shifts six existing positional parameters, silently
+/// rebinding every caller that passed them positionally.
+#[rstest]
+fn test_sandbox_config_positional_signature_is_backward_compatible() {
+    setup_exec_event_sender();
+    Python::initialize();
+
+    Python::attach(|py| {
+        register_sandbox_python_module(py);
+
+        let balances = vec![Money::from("100_000 USD")];
+        let args: Vec<Py<pyo3::PyAny>> = vec![
+            Venue::new(SANDBOX).into_py_any(py).unwrap(), // venue
+            balances.into_py_any(py).unwrap(),            // starting_balances
+            py.None(),                                    // account_id
+            py.None(),                                    // base_currency
+            py.None(),                                    // oms_type
+            py.None(),                                    // account_type
+            py.None(),                                    // default_leverage
+            py.None(),                                    // book_type
+            false.into_py_any(py).unwrap(),               // frozen_account
+            true.into_py_any(py).unwrap(),                // bar_execution
+            true.into_py_any(py).unwrap(),                // trade_execution
+            true.into_py_any(py).unwrap(),                // reject_stop_orders
+            true.into_py_any(py).unwrap(),                // support_gtd_orders
+            true.into_py_any(py).unwrap(),                // support_contingent_orders
+            true.into_py_any(py).unwrap(),                // use_position_ids
+            false.into_py_any(py).unwrap(),               // use_random_ids
+            true.into_py_any(py).unwrap(),                // use_reduce_only
+            py.None(),                                    // fee_model
+            py.None(),                                    // fill_model
+            true.into_py_any(py).unwrap(),                // queue_position
+        ];
+
+        let config = py
+            .get_type::<SandboxExecutionClientConfig>()
+            .call1(PyTuple::new(py, args).unwrap())
+            .expect("positional construction through queue_position must succeed");
+
+        assert!(
+            config
+                .getattr("queue_position")
+                .unwrap()
+                .extract::<bool>()
+                .unwrap(),
+            "the twentieth positional argument must still bind to queue_position",
+        );
+        assert!(
+            config.getattr("latency_model").unwrap().is_none(),
+            "latency_model must default to None when not passed",
+        );
     });
 }

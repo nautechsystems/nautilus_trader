@@ -56,8 +56,8 @@ use nautilus_common::{
         switchboard::{self},
     },
     runner::{
-        TradingCommandMessage, capture_trading_cmd, trading_cmd_is_dispatching,
-        try_get_trading_cmd_sender,
+        OrderEventDispatchGuard, TradingCommandMessage, capture_trading_cmd,
+        trading_cmd_is_dispatching, try_get_trading_cmd_sender,
     },
     timer::{TimeEvent, TimeEventCallback},
 };
@@ -204,6 +204,9 @@ impl ExecutionEngine {
             MessagingSwitchboard::exec_engine_process(),
             TypedIntoHandler::from(move |event: OrderEventAny| {
                 if let Some(rc) = weak2.upgrade() {
+                    // Marks the borrow below for anything this dispatch re-enters, so it defers
+                    // rather than sending another order event back into the engine
+                    let _dispatching = OrderEventDispatchGuard::enter();
                     rc.borrow_mut().process(&event);
                 }
             }),

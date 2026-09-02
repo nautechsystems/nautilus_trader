@@ -38,7 +38,7 @@ use crate::config::SandboxExecutionClientConfig;
 impl SandboxExecutionClientConfig {
     /// Configuration for `SandboxExecutionClient` instances.
     #[new]
-    #[pyo3(signature = (venue, starting_balances, account_id=None, base_currency=None, oms_type=None, account_type=None, default_leverage=None, book_type=None, frozen_account=false, bar_execution=true, trade_execution=true, reject_stop_orders=true, support_gtd_orders=true, support_contingent_orders=true, use_position_ids=true, use_random_ids=false, use_reduce_only=true, fee_model=None, fill_model=None, latency_model=None, queue_position=false, liquidity_consumption=false, bar_adaptive_high_low_ordering=false, use_market_order_acks=false, oto_full_trigger=false, price_protection_points=None))]
+    #[pyo3(signature = (venue, starting_balances, account_id=None, base_currency=None, oms_type=None, account_type=None, default_leverage=None, book_type=None, frozen_account=false, bar_execution=true, trade_execution=true, reject_stop_orders=true, support_gtd_orders=true, support_contingent_orders=true, use_position_ids=true, use_random_ids=false, use_reduce_only=true, fee_model=None, fill_model=None, queue_position=false, liquidity_consumption=false, bar_adaptive_high_low_ordering=false, use_market_order_acks=false, oto_full_trigger=false, price_protection_points=None, latency_model=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
         venue: Venue,
@@ -60,13 +60,13 @@ impl SandboxExecutionClientConfig {
         use_reduce_only: bool,
         fee_model: Option<Py<PyAny>>,
         fill_model: Option<Py<PyAny>>,
-        latency_model: Option<Py<PyAny>>,
         queue_position: bool,
         liquidity_consumption: bool,
         bar_adaptive_high_low_ordering: bool,
         use_market_order_acks: bool,
         oto_full_trigger: bool,
         price_protection_points: Option<u32>,
+        latency_model: Option<Py<PyAny>>,
     ) -> PyResult<Self> {
         // Generate the default account ID from the venue
         let account_id =
