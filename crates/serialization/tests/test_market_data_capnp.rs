@@ -47,6 +47,7 @@ use nautilus_serialization::capnp::{
     market_capnp,
 };
 use rstest::rstest;
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use ustr::Ustr;
 
@@ -1007,82 +1008,32 @@ fn test_order_book_deltas_with_multiple_deltas() {
 
 #[rstest]
 fn test_order_book_depth10_roundtrip() {
-    use nautilus_model::data::order::NULL_ORDER;
-
-    let mut bids = [NULL_ORDER; 10];
-    let mut asks = [NULL_ORDER; 10];
-
-    // Populate 5 bid levels
-    bids[0] = BookOrder::new(
-        OrderSide::Buy,
-        Price::from("100.00"),
-        Quantity::from("10.0"),
-        0,
-    );
-    bids[1] = BookOrder::new(
-        OrderSide::Buy,
-        Price::from("99.50"),
-        Quantity::from("5.0"),
-        0,
-    );
-    bids[2] = BookOrder::new(
-        OrderSide::Buy,
-        Price::from("99.00"),
-        Quantity::from("8.0"),
-        0,
-    );
-    bids[3] = BookOrder::new(
-        OrderSide::Buy,
-        Price::from("98.50"),
-        Quantity::from("12.0"),
-        0,
-    );
-    bids[4] = BookOrder::new(
-        OrderSide::Buy,
-        Price::from("98.00"),
-        Quantity::from("6.0"),
-        0,
-    );
-
-    // Populate 5 ask levels
-    asks[0] = BookOrder::new(
-        OrderSide::Sell,
-        Price::from("100.50"),
-        Quantity::from("9.0"),
-        0,
-    );
-    asks[1] = BookOrder::new(
-        OrderSide::Sell,
-        Price::from("101.00"),
-        Quantity::from("7.0"),
-        0,
-    );
-    asks[2] = BookOrder::new(
-        OrderSide::Sell,
-        Price::from("101.50"),
-        Quantity::from("11.0"),
-        0,
-    );
-    asks[3] = BookOrder::new(
-        OrderSide::Sell,
-        Price::from("102.00"),
-        Quantity::from("4.0"),
-        0,
-    );
-    asks[4] = BookOrder::new(
-        OrderSide::Sell,
-        Price::from("102.50"),
-        Quantity::from("15.0"),
-        0,
-    );
+    let bids = std::array::from_fn(|i| {
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::from_decimal_dp(Decimal::new(10_000 - 50 * i as i64, 2), 2).unwrap(),
+            Quantity::from_decimal_dp(Decimal::new(100 + i as i64, 1), 1).unwrap(),
+            0,
+        )
+    });
+    let asks = std::array::from_fn(|i| {
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from_decimal_dp(Decimal::new(10_050 + 50 * i as i64, 2), 2).unwrap(),
+            Quantity::from_decimal_dp(Decimal::new(200 + i as i64, 1), 1).unwrap(),
+            0,
+        )
+    });
+    let bid_counts = std::array::from_fn(|i| i as u32 + 1);
+    let ask_counts = std::array::from_fn(|i| i as u32 + 11);
 
     let depth = OrderBookDepth10::new(
         InstrumentId::from("BTCUSDT.BINANCE"),
         bids,
         asks,
-        [5, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [5, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        0,
+        bid_counts,
+        ask_counts,
+        7,
         100,
         1234567890.into(),
         1234567891.into(),
@@ -1105,15 +1056,13 @@ fn test_order_book_depth10_roundtrip() {
 
     assert_eq!(depth.instrument_id, decoded.instrument_id);
 
-    // Verify bid levels (first 5 should match, rest should be NULL_ORDER)
-    for i in 0..5 {
+    for i in 0..10 {
         assert_eq!(depth.bids[i].side, decoded.bids[i].side);
         assert_eq!(depth.bids[i].price, decoded.bids[i].price);
         assert_eq!(depth.bids[i].size, decoded.bids[i].size);
     }
 
-    // Verify ask levels (first 5 should match, rest should be NULL_ORDER)
-    for i in 0..5 {
+    for i in 0..10 {
         assert_eq!(depth.asks[i].side, decoded.asks[i].side);
         assert_eq!(depth.asks[i].price, decoded.asks[i].price);
         assert_eq!(depth.asks[i].size, decoded.asks[i].size);

@@ -62,6 +62,10 @@ use crate::{
     order_capnp, position_capnp, types_capnp,
 };
 
+const DECIMAL_FLAGS_RESERVED_MASK: u32 = 0x7F00_FFFF;
+const DECIMAL_SCALE_MASK: u32 = 0x00FF_0000;
+const DECIMAL_SCALE_SHIFT: u32 = 16;
+
 trait CapnpWriteExt<'a, T>
 where
     T: ToCapnp<'a>,
@@ -153,13 +157,30 @@ fn decimal_to_parts(value: &Decimal) -> (u64, u64, u64, u32) {
     (lo as u64, mid as u64, hi as u64, flags)
 }
 
-fn decimal_from_parts(lo: u64, mid: u64, hi: u64, flags: u32) -> Decimal {
+fn decimal_from_parts(lo: u64, mid: u64, hi: u64, flags: u32) -> Result<Decimal, Box<dyn Error>> {
+    if flags & DECIMAL_FLAGS_RESERVED_MASK != 0 {
+        return Err("Decimal flags contain unsupported bits".into());
+    }
+
+    let scale = (flags & DECIMAL_SCALE_MASK) >> DECIMAL_SCALE_SHIFT;
+    if scale > Decimal::MAX_SCALE {
+        return Err(format!(
+            "Decimal scale exceeds maximum {}, was {scale}",
+            Decimal::MAX_SCALE
+        )
+        .into());
+    }
+
+    let lo = u32::try_from(lo).map_err(|_| "Decimal lo limb exceeds u32")?;
+    let mid = u32::try_from(mid).map_err(|_| "Decimal mid limb exceeds u32")?;
+    let hi = u32::try_from(hi).map_err(|_| "Decimal hi limb exceeds u32")?;
+
     let mut bytes = [0u8; 16];
     bytes[0..4].copy_from_slice(&flags.to_le_bytes());
-    bytes[4..8].copy_from_slice(&(lo as u32).to_le_bytes());
-    bytes[8..12].copy_from_slice(&(mid as u32).to_le_bytes());
-    bytes[12..16].copy_from_slice(&(hi as u32).to_le_bytes());
-    Decimal::deserialize(bytes)
+    bytes[4..8].copy_from_slice(&lo.to_le_bytes());
+    bytes[8..12].copy_from_slice(&mid.to_le_bytes());
+    bytes[12..16].copy_from_slice(&hi.to_le_bytes());
+    Ok(Decimal::deserialize(bytes))
 }
 
 impl<'a> ToCapnp<'a> for Decimal {
@@ -182,7 +203,7 @@ impl<'a> FromCapnp<'a> for Decimal {
         let lo = reader.get_lo();
         let mid = reader.get_mid();
         let hi = reader.get_hi();
-        Ok(decimal_from_parts(lo, mid, hi, flags))
+        decimal_from_parts(lo, mid, hi, flags)
     }
 }
 
@@ -199,7 +220,7 @@ impl<'a> FromCapnp<'a> for TraderId {
 
     fn from_capnp(reader: Self::Reader) -> Result<Self, Box<dyn Error>> {
         let value = reader.get_value()?.to_str()?;
-        Ok(value.into())
+        Ok(Self::new_checked(value)?)
     }
 }
 
@@ -216,7 +237,7 @@ impl<'a> FromCapnp<'a> for StrategyId {
 
     fn from_capnp(reader: Self::Reader) -> Result<Self, Box<dyn Error>> {
         let value = reader.get_value()?.to_str()?;
-        Ok(value.into())
+        Ok(Self::new_checked(value)?)
     }
 }
 
@@ -233,7 +254,7 @@ impl<'a> FromCapnp<'a> for ActorId {
 
     fn from_capnp(reader: Self::Reader) -> Result<Self, Box<dyn Error>> {
         let value = reader.get_value()?.to_str()?;
-        Ok(value.into())
+        Ok(Self::new_checked(value)?)
     }
 }
 
@@ -250,7 +271,7 @@ impl<'a> FromCapnp<'a> for AccountId {
 
     fn from_capnp(reader: Self::Reader) -> Result<Self, Box<dyn Error>> {
         let value = reader.get_value()?.to_str()?;
-        Ok(value.into())
+        Ok(Self::new_checked(value)?)
     }
 }
 
@@ -267,7 +288,7 @@ impl<'a> FromCapnp<'a> for ClientId {
 
     fn from_capnp(reader: Self::Reader) -> Result<Self, Box<dyn Error>> {
         let value = reader.get_value()?.to_str()?;
-        Ok(value.into())
+        Ok(Self::new_checked(value)?)
     }
 }
 
@@ -284,7 +305,7 @@ impl<'a> FromCapnp<'a> for ClientOrderId {
 
     fn from_capnp(reader: Self::Reader) -> Result<Self, Box<dyn Error>> {
         let value = reader.get_value()?.to_str()?;
-        Ok(value.into())
+        Ok(Self::new_checked(value)?)
     }
 }
 
@@ -301,7 +322,7 @@ impl<'a> FromCapnp<'a> for VenueOrderId {
 
     fn from_capnp(reader: Self::Reader) -> Result<Self, Box<dyn Error>> {
         let value = reader.get_value()?.to_str()?;
-        Ok(value.into())
+        Ok(Self::new_checked(value)?)
     }
 }
 
@@ -318,7 +339,7 @@ impl<'a> FromCapnp<'a> for TradeId {
 
     fn from_capnp(reader: Self::Reader) -> Result<Self, Box<dyn Error>> {
         let value = reader.get_value()?.to_str()?;
-        Ok(value.into())
+        Ok(Self::new_checked(value)?)
     }
 }
 
@@ -335,7 +356,7 @@ impl<'a> FromCapnp<'a> for PositionId {
 
     fn from_capnp(reader: Self::Reader) -> Result<Self, Box<dyn Error>> {
         let value = reader.get_value()?.to_str()?;
-        Ok(value.into())
+        Ok(Self::new_checked(value)?)
     }
 }
 
@@ -352,7 +373,7 @@ impl<'a> FromCapnp<'a> for ExecAlgorithmId {
 
     fn from_capnp(reader: Self::Reader) -> Result<Self, Box<dyn Error>> {
         let value = reader.get_value()?.to_str()?;
-        Ok(value.into())
+        Ok(Self::new_checked(value)?)
     }
 }
 
@@ -369,7 +390,7 @@ impl<'a> FromCapnp<'a> for ComponentId {
 
     fn from_capnp(reader: Self::Reader) -> Result<Self, Box<dyn Error>> {
         let value = reader.get_value()?.to_str()?;
-        Ok(value.into())
+        Ok(Self::new_checked(value)?)
     }
 }
 
@@ -386,7 +407,7 @@ impl<'a> FromCapnp<'a> for OrderListId {
 
     fn from_capnp(reader: Self::Reader) -> Result<Self, Box<dyn Error>> {
         let value = reader.get_value()?.to_str()?;
-        Ok(value.into())
+        Ok(Self::new_checked(value)?)
     }
 }
 
@@ -403,7 +424,7 @@ impl<'a> FromCapnp<'a> for Symbol {
 
     fn from_capnp(reader: Self::Reader) -> Result<Self, Box<dyn Error>> {
         let value = reader.get_value()?.to_str()?;
-        Ok(value.into())
+        Ok(Self::new_checked(value)?)
     }
 }
 
@@ -420,7 +441,7 @@ impl<'a> FromCapnp<'a> for Venue {
 
     fn from_capnp(reader: Self::Reader) -> Result<Self, Box<dyn Error>> {
         let value = reader.get_value()?.to_str()?;
-        Ok(value.into())
+        Ok(Self::new_checked(value)?)
     }
 }
 
@@ -1217,7 +1238,13 @@ impl<'a> FromCapnp<'a> for Currency {
         let name = reader.get_name()?.to_str()?;
         let currency_type = currency_type_from_capnp(reader.get_currency_type()?);
 
-        Ok(Self::new(code, precision, iso4217, name, currency_type))
+        Ok(Self::new_checked(
+            code,
+            precision,
+            iso4217,
+            name,
+            currency_type,
+        )?)
     }
 }
 
@@ -1286,7 +1313,7 @@ impl<'a> FromCapnp<'a> for AccountBalance {
         let free_reader = reader.get_free()?;
         let free = Money::from_capnp(free_reader)?;
 
-        Ok(Self::new(total, locked, free))
+        Ok(Self::new_checked(total, locked, free)?)
     }
 }
 
@@ -1326,7 +1353,7 @@ impl<'a> FromCapnp<'a> for MarginBalance {
             None
         };
 
-        Ok(Self::new(initial, maintenance, instrument_id))
+        Ok(Self::new_checked(initial, maintenance, instrument_id)?)
     }
 }
 
@@ -4868,7 +4895,7 @@ impl<'a> FromCapnp<'a> for PositionAdjusted {
                 qty_change_reader.get_mid(),
                 qty_change_reader.get_hi(),
                 qty_change_reader.get_flags(),
-            ))
+            )?)
         } else {
             None
         };
@@ -4992,7 +5019,7 @@ mod tests {
         let currency = Currency::USD();
         let bytes = serialize_currency(&currency).unwrap();
         let decoded = deserialize_currency(&bytes).unwrap();
-        assert_eq!(currency, decoded);
+        assert_currency_fields(currency, decoded);
     }
 
     #[rstest]
@@ -5000,7 +5027,15 @@ mod tests {
         let currency = Currency::BTC();
         let bytes = serialize_currency(&currency).unwrap();
         let decoded = deserialize_currency(&bytes).unwrap();
-        assert_eq!(currency, decoded);
+        assert_currency_fields(currency, decoded);
+    }
+
+    fn assert_currency_fields(expected: Currency, actual: Currency) {
+        assert_eq!(actual.code, expected.code);
+        assert_eq!(actual.precision, expected.precision);
+        assert_eq!(actual.iso4217, expected.iso4217);
+        assert_eq!(actual.name, expected.name);
+        assert_eq!(actual.currency_type, expected.currency_type);
     }
 
     #[rstest]

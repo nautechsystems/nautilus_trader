@@ -24,6 +24,27 @@ use nautilus_model::identifiers::{
 use nautilus_serialization::capnp::{FromCapnp, ToCapnp, identifiers_capnp};
 use rstest::rstest;
 
+macro_rules! invalid_identifier_test {
+    ($name:ident, $id:ty, $schema:ident) => {
+        #[rstest]
+        fn $name() {
+            let value = "";
+            let expected_error = <$id>::new_checked(value).unwrap_err();
+            let mut message = capnp::message::Builder::new_default();
+            message
+                .init_root::<identifiers_capnp::$schema::Builder>()
+                .set_value(value);
+
+            let reader = message
+                .get_root_as_reader::<identifiers_capnp::$schema::Reader>()
+                .unwrap();
+            let error = <$id>::from_capnp(reader).unwrap_err();
+
+            assert_eq!(error.to_string(), expected_error.to_string());
+        }
+    };
+}
+
 #[rstest]
 fn test_trader_id_roundtrip() {
     let trader_id = TraderId::from("TRADER-001");
@@ -352,4 +373,39 @@ fn test_instrument_id_roundtrip() {
     let decoded = InstrumentId::from_capnp(root).unwrap();
 
     assert_eq!(instrument_id, decoded);
+}
+
+invalid_identifier_test!(test_trader_id_invalid, TraderId, trader_id);
+invalid_identifier_test!(test_strategy_id_invalid, StrategyId, strategy_id);
+invalid_identifier_test!(test_actor_id_invalid, ActorId, actor_id);
+invalid_identifier_test!(test_account_id_invalid, AccountId, account_id);
+invalid_identifier_test!(test_client_id_invalid, ClientId, client_id);
+invalid_identifier_test!(test_client_order_id_invalid, ClientOrderId, client_order_id);
+invalid_identifier_test!(test_venue_order_id_invalid, VenueOrderId, venue_order_id);
+invalid_identifier_test!(test_trade_id_invalid, TradeId, trade_id);
+invalid_identifier_test!(test_position_id_invalid, PositionId, position_id);
+invalid_identifier_test!(
+    test_exec_algorithm_id_invalid,
+    ExecAlgorithmId,
+    exec_algorithm_id
+);
+invalid_identifier_test!(test_component_id_invalid, ComponentId, component_id);
+invalid_identifier_test!(test_order_list_id_invalid, OrderListId, order_list_id);
+invalid_identifier_test!(test_symbol_invalid, Symbol, symbol);
+invalid_identifier_test!(test_venue_invalid, Venue, venue);
+
+#[rstest]
+fn test_instrument_id_invalid_symbol() {
+    let expected_error = Symbol::new_checked("").unwrap_err();
+    let mut message = capnp::message::Builder::new_default();
+    let mut builder = message.init_root::<identifiers_capnp::instrument_id::Builder>();
+    builder.reborrow().init_symbol().set_value("");
+    builder.init_venue().set_value("BINANCE");
+
+    let reader = message
+        .get_root_as_reader::<identifiers_capnp::instrument_id::Reader>()
+        .unwrap();
+    let error = InstrumentId::from_capnp(reader).unwrap_err();
+
+    assert_eq!(error.to_string(), expected_error.to_string());
 }

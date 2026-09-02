@@ -20,8 +20,9 @@
 use nautilus_model::enums::{
     AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
     BookType, ContingencyType, CurrencyType, InstrumentClass, InstrumentCloseType, LiquiditySide,
-    MarketStatusAction, OmsType, OptionKind, OrderSide, OrderStatus, OrderType, PositionSide,
-    PriceType, RecordFlag, TimeInForce, TrailingOffsetType, TriggerType,
+    MarketStatusAction, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
+    PositionAdjustmentType, PositionSide, PriceType, RecordFlag, TimeInForce, TrailingOffsetType,
+    TriggerType,
 };
 use nautilus_serialization::capnp::conversions::{
     account_type_from_capnp, account_type_to_capnp, aggregation_source_from_capnp,
@@ -34,9 +35,10 @@ use nautilus_serialization::capnp::conversions::{
     liquidity_side_from_capnp, liquidity_side_to_capnp, market_status_action_from_capnp,
     market_status_action_to_capnp, oms_type_from_capnp, oms_type_to_capnp, option_kind_from_capnp,
     option_kind_to_capnp, order_side_from_capnp, order_side_to_capnp, order_status_from_capnp,
-    order_status_to_capnp, order_type_from_capnp, order_type_to_capnp, position_side_from_capnp,
-    position_side_to_capnp, price_type_from_capnp, price_type_to_capnp, record_flag_from_capnp,
-    record_flag_to_capnp, time_in_force_from_capnp, time_in_force_to_capnp,
+    order_status_to_capnp, order_type_from_capnp, order_type_to_capnp,
+    position_adjustment_type_from_capnp, position_adjustment_type_to_capnp,
+    position_side_from_capnp, position_side_to_capnp, price_type_from_capnp, price_type_to_capnp,
+    record_flag_from_capnp, record_flag_to_capnp, time_in_force_from_capnp, time_in_force_to_capnp,
     trailing_offset_type_from_capnp, trailing_offset_type_to_capnp, trigger_type_from_capnp,
     trigger_type_to_capnp,
 };
@@ -46,6 +48,7 @@ use rstest::rstest;
 #[case(AccountType::Cash)]
 #[case(AccountType::Margin)]
 #[case(AccountType::Betting)]
+#[case(AccountType::Wallet)]
 fn test_account_type_roundtrip(#[case] value: AccountType) {
     let capnp_value = account_type_to_capnp(value);
     let decoded = account_type_from_capnp(capnp_value);
@@ -202,6 +205,15 @@ fn test_contingency_type_roundtrip(#[case] value: Option<ContingencyType>) {
 fn test_position_side_roundtrip(#[case] value: Option<PositionSide>) {
     let capnp_value = position_side_to_capnp(value);
     let decoded = position_side_from_capnp(capnp_value);
+    assert_eq!(value, decoded);
+}
+
+#[rstest]
+#[case(PositionAdjustmentType::Commission)]
+#[case(PositionAdjustmentType::Funding)]
+fn test_position_adjustment_type_roundtrip(#[case] value: PositionAdjustmentType) {
+    let capnp_value = position_adjustment_type_to_capnp(value);
+    let decoded = position_adjustment_type_from_capnp(capnp_value);
     assert_eq!(value, decoded);
 }
 
