@@ -139,7 +139,6 @@ struct BinarySearchState {
 /// - `profiler` - Reference to the pool profiler
 /// - `impact_bps` - Target impact in basis points
 /// - `zero_for_one` - Swap direction
-/// - `config` - Estimation configuration (only uses `safety_multiplier`)
 ///
 /// # Returns
 /// Estimated maximum size as U256
