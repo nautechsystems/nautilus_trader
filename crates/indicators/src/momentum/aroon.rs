@@ -162,29 +162,28 @@ impl AroonOscillator {
     }
 
     fn calculate_aroon(&mut self) {
-        let len = self.high_inputs.len();
-        debug_assert_eq!(len, self.period + 1);
+        debug_assert_eq!(self.high_inputs.len(), self.period + 1);
 
-        let mut max_idx = 0_usize;
+        // Scan the full window from newest to oldest so the enumeration index
+        // is the periods-since count directly and ties resolve to the most
+        // recent occurrence of the extreme.
+        let mut periods_since_high = 0_usize;
         let mut max_val = f64::MIN;
-        for (idx, &hi) in self.high_inputs.iter().enumerate() {
+        for (periods_back, &hi) in self.high_inputs.iter().rev().enumerate() {
             if hi > max_val {
                 max_val = hi;
-                max_idx = idx;
+                periods_since_high = periods_back;
             }
         }
 
-        let mut min_idx_rel = 0_usize;
+        let mut periods_since_low = 0_usize;
         let mut min_val = f64::MAX;
-        for (idx, &lo) in self.low_inputs.iter().skip(1).enumerate() {
+        for (periods_back, &lo) in self.low_inputs.iter().rev().enumerate() {
             if lo < min_val {
                 min_val = lo;
-                min_idx_rel = idx;
+                periods_since_low = periods_back;
             }
         }
-
-        let periods_since_high = len - 1 - max_idx;
-        let periods_since_low = self.period - 1 - min_idx_rel;
 
         self.aroon_up =
             Self::round(100.0 * (self.period - periods_since_high) as f64 / self.period as f64);
@@ -244,8 +243,8 @@ mod tests {
         aroon.update_raw(110.10, 109.70);
         assert!(aroon.initialized());
         assert_eq!(aroon.aroon_up, 100.0);
-        assert_eq!(aroon.aroon_down, 100.0);
-        assert_eq!(aroon.value, 0.0);
+        assert_eq!(aroon.aroon_down, 0.0);
+        assert_eq!(aroon.value, 100.0);
     }
 
     #[rstest]
@@ -280,7 +279,8 @@ mod tests {
         }
         assert!(aroon.initialized());
         assert_eq!(aroon.aroon_up, 30.0);
-        assert_eq!(aroon.value, -25.0);
+        assert_eq!(aroon.aroon_down, 0.0);
+        assert_eq!(aroon.value, 30.0);
     }
 
     #[rstest]
@@ -337,7 +337,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_ignore_oldest_low() {
+    fn test_lowest_low_at_oldest_bar() {
         let mut aroon = AroonOscillator::new(5);
         aroon.update_raw(10.0, 0.0);
         let inputs = [
@@ -353,7 +353,29 @@ mod tests {
         }
         assert!(aroon.initialized());
         assert_eq!(aroon.aroon_up, 100.0);
-        assert_eq!(aroon.aroon_down, 20.0);
-        assert_eq!(aroon.value, 80.0);
+        assert_eq!(aroon.aroon_down, 0.0);
+        assert_eq!(aroon.value, 100.0);
+    }
+
+    #[rstest]
+    fn test_tie_favors_most_recent_occurrence() {
+        let mut aroon = AroonOscillator::new(4);
+        let inputs = [
+            (110.0, 100.0),
+            (110.0, 100.0),
+            (105.0, 101.0),
+            (105.0, 101.0),
+            (105.0, 101.0),
+        ];
+
+        for &(h, l) in &inputs {
+            aroon.update_raw(h, l);
+        }
+        assert!(aroon.initialized());
+        // Highest high and lowest low both occur twice; the most recent
+        // occurrence (index 1, three periods back) determines the counts
+        assert_eq!(aroon.aroon_up, 25.0);
+        assert_eq!(aroon.aroon_down, 25.0);
+        assert_eq!(aroon.value, 0.0);
     }
 }

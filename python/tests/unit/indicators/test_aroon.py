@@ -103,8 +103,8 @@ def test_handle_bar_uses_bar_high_and_low() -> None:
     # Assert
     assert indicator.initialized
     assert indicator.aroon_up == 0.0
-    assert indicator.aroon_down == 100.0
-    assert indicator.value == -100.0
+    assert indicator.aroon_down == 0.0
+    assert indicator.value == 0.0
 
 
 def test_handle_quote_tick_updates_indicator() -> None:
@@ -155,8 +155,8 @@ def test_value_with_two_inputs() -> None:
     # Assert
     assert aroon.initialized
     assert aroon.aroon_up == 100.0
-    assert aroon.aroon_down == 100.0
-    assert aroon.value == 0
+    assert aroon.aroon_down == 0.0
+    assert aroon.value == 100.0
 
 
 def test_value_with_twenty_inputs(aroon: AroonOscillator) -> None:
@@ -186,9 +186,9 @@ def test_value_with_twenty_inputs(aroon: AroonOscillator) -> None:
     aroon.update_raw(110.04, 109.96)
 
     # Assert
-    assert aroon.aroon_up == 0.0
+    assert aroon.aroon_up == 10.0
     assert aroon.aroon_down == 20.0
-    assert aroon.value == -20.0
+    assert aroon.value == -10.0
 
 
 def test_reset_successfully_returns_indicator_to_fresh_state(aroon: AroonOscillator) -> None:
