@@ -24,10 +24,14 @@ event-driven architecture, providing research-to-live semantic parity.
 
 This crate provides feature flags to control source code inclusion during compilation:
 
-- `python`: Exposes the `TransportBackend` enum through [PyO3](https://pyo3.rs).
 - `extension-module`: Builds as a Python extension module.
-- `turmoil`: Enables deterministic network simulation testing with [turmoil](https://github.com/tokio-rs/turmoil).
-- `transport-sockudo`: Adds the [sockudo-ws](https://crates.io/crates/sockudo-ws) WebSocket backend, selectable via `WebSocketConfig.backend`.
+- `python`: Exposes the `TransportBackend` enum through [PyO3](https://pyo3.rs).
+- `simulation`: Enables deterministic simulation testing with
+  [MadSim](https://github.com/madsim-rs/madsim).
+- `transport-sockudo` (default): Adds the [sockudo-ws](https://crates.io/crates/sockudo-ws)
+  WebSocket backend, selectable through `WebSocketConfig.backend`.
+- `turmoil`: Enables deterministic network simulation testing with
+  [turmoil](https://github.com/tokio-rs/turmoil).
 
 ## WebSocket performance
 

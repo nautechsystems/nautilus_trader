@@ -46,8 +46,13 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
+//! - `extension-module`: Builds as a Python extension module.
+//! - `high-precision`: Enables
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode)
+//!   to use 128-bit value types.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-//! - `extension-module`: Builds the crate as a Python extension module.
+//! - `simulation`: Enables deterministic simulation testing with
+//!   [MadSim](https://github.com/madsim-rs/madsim).
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]

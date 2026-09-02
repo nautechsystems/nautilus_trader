@@ -35,10 +35,12 @@
 //! This crate provides feature flags to control source code inclusion during compilation,
 //! depending on the intended use case (Rust-only builds vs. Python bindings through PyO3).
 //!
-//! - `python`: Enables Python bindings via [PyO3](https://pyo3.rs).
-//! - `extension-module`: Builds as a Python extension module (used together with `python`).
-//!
-//! [High-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) (128-bit value types) is enabled by default.
+//! - `examples`: Enables the crate's example binaries.
+//! - `extension-module`: Builds as a Python extension module.
+//! - `high-precision` (default): Enables
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode)
+//!   to use 128-bit value types.
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //!
 //! # Documentation
 //!

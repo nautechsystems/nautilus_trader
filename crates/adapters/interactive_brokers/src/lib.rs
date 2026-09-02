@@ -28,17 +28,20 @@
 //! The system spans research, deterministic simulation, and live execution within a single
 //! event-driven architecture, providing research-to-live semantic parity.
 //!
-//! # Feature flags
+//! # Feature Flags
 //!
 //! This crate provides feature flags to control source code inclusion during compilation,
 //! depending on the intended use case (Rust-only builds vs. Python bindings through PyO3).
 //!
-//! - `python`: Enables PyO3 bindings for configs, enums, the historical client, the instrument
-//!   provider.
+//! - `examples`: Enables the crate's example binaries.
+//! - `execution` (default): Enables order execution and networking support.
+//! - `extension-module`: Builds the crate as a Python extension module. This is the feature used by
+//!   the `nautilus_trader` package and includes `python` and `gateway`.
 //! - `gateway`: Enables the Dockerized IB Gateway helper via
 //!   [`bollard`](https://crates.io/crates/bollard), including its PyO3 bindings when combined with
 //!   `python`.
-//! - `extension-module`: Builds as a Python extension module (used together with `python` and `gateway`).
+//! - `python`: Enables PyO3 bindings for configs, enums, the historical client, and the instrument
+//!   provider.
 //!
 //! # Documentation
 //!

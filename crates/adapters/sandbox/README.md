@@ -33,10 +33,12 @@ event-driven architecture, providing research-to-live semantic parity.
 
 This crate provides feature flags to control source code inclusion during compilation:
 
-- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+- `example-databento`: Enables the Databento example binary.
 - `extension-module`: Builds as a Python extension module.
-
-[High-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) (128-bit value types) is enabled by default.
+- `high-precision` (default): Enables
+  [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode)
+  to use 128-bit value types.
+- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
 ## Documentation
 

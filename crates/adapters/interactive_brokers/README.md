@@ -39,13 +39,16 @@ event-driven architecture, providing research-to-live semantic parity.
 
 This crate provides feature flags to control source code inclusion during compilation:
 
-- `python`: Enables PyO3 bindings for configs, enums, the historical client,
-  and the instrument provider.
-- `gateway`: Enables Dockerized IB Gateway support via `bollard`, including PyO3 bindings when
-  combined with `python`.
+- `examples`: Enables the crate's example binaries.
+- `execution` (default): Enables order execution and networking support.
 - `extension-module`: Builds the crate as a Python extension module. This is
   the feature used by the `nautilus_trader` package and includes `python` and
   `gateway`.
+- `gateway`: Enables the Dockerized IB Gateway helper via
+  [`bollard`](https://crates.io/crates/bollard), including its PyO3 bindings when combined with
+  `python`.
+- `python`: Enables PyO3 bindings for configs, enums, the historical client,
+  and the instrument provider.
 
 ## Default ports
 

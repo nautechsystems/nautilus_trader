@@ -31,9 +31,13 @@ event-driven architecture, providing research-to-live semantic parity.
 
 This crate provides feature flags to control source code inclusion during compilation:
 
-- `streaming`: Enables `persistence` dependency for catalog-based data streaming.
-- `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
 - `defi`: Enables DeFi (Decentralized Finance) support.
+- `extension-module`: Enables Python extension-module support.
+- `high-precision`: Enables
+  [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode)
+  to use 128-bit value types.
+- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+- `streaming`: Enables the `nautilus-persistence` dependency for catalog-based data streaming.
 
 ## Documentation
 

@@ -41,13 +41,17 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
+//! - `defi`: Enables DeFi replay APIs and data-engine routing.
 //! - `examples`: Enables example strategies and the EMA crossover backtest example.
+//! - `extension-module`: Builds as a Python extension module.
+//! - `high-precision`: Enables
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode)
+//!   to use 128-bit value types.
 //! - `mimalloc`: Uses [mimalloc](https://github.com/microsoft/mimalloc) as the global allocator for
 //!   bundled Rust examples.
-//! - `defi`: Enables DeFi replay APIs and data-engine routing.
-//! - `streaming`: Enables `persistence` dependency for streaming configuration.
+//! - `plugin`: Provides a compatibility flag without enabling additional code.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-//! - `extension-module`: Builds the crate as a Python extension module.
+//! - `streaming`: Enables the `nautilus-persistence` dependency for streaming configuration.
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]

@@ -23,12 +23,16 @@ event-driven architecture, providing research-to-live semantic parity.
 
 This crate provides feature flags to control source code inclusion during compilation:
 
-- `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
-- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-- `test-support`: Enables test fixtures, builders, specs, and defaults.
-- `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
+- `arrow`: Enables Apache Arrow schema and `RecordBatch` registries for custom data.
 - `defi`: Enables the DeFi (Decentralized Finance) domain model.
 - `extension-module`: Builds as a Python extension module.
+- `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
+- `high-precision`: Enables
+  [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode)
+  to use 128-bit value types.
+- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+- `python-arrow`: Enables Python bindings together with `PyArrow` `RecordBatch` bridging.
+- `test-support`: Enables test fixtures, builders, specs, and defaults.
 
 ## Documentation
 

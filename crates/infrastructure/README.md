@@ -33,10 +33,10 @@ event-driven architecture, providing research-to-live semantic parity.
 
 This crate provides feature flags to control source code inclusion during compilation:
 
-- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-- `redis`: Enables the Redis cache database and message bus backing implementations.
-- `postgres`: Enables the PostgreSQL SQLx models and cache database backend.
 - `extension-module`: Builds as a Python extension module.
+- `postgres`: Enables the PostgreSQL SQLx models and cache database backend.
+- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+- `redis` (default): Enables the Redis cache database and message bus backing implementations.
 
 ## Documentation
 

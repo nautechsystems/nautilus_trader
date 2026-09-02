@@ -42,10 +42,12 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `simulation`: Enables deterministic simulation support from `madsim`.
-//! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
+//! - `extension-module`: Builds as a Python extension module.
+//! - `ffi`: Enables the C foreign function interface (FFI) from
+//!   [cbindgen](https://github.com/mozilla/cbindgen).
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-//! - `extension-module`: Builds the crate as a Python extension module.
+//! - `simulation`: Enables deterministic simulation testing with
+//!   [MadSim](https://github.com/madsim-rs/madsim).
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]

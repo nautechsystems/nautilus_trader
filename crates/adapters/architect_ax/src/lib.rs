@@ -32,12 +32,13 @@
 //! The system spans research, deterministic simulation, and live execution within a single
 //! event-driven architecture, providing research-to-live semantic parity.
 //!
-//! # Feature flags
+//! # Feature Flags
 //!
 //! This crate provides feature flags to control source code inclusion during compilation:
 //!
-//! - `python`: Enables Python bindings via [PyO3](https://pyo3.rs).
-//! - `extension-module`: Builds as a Python extension module (used together with `python`).
+//! - `examples`: Enables the crate's example binaries.
+//! - `extension-module`: Builds as a Python extension module.
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //!
 //! # Documentation
 //!

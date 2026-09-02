@@ -34,13 +34,20 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-//! - `defi`: Enables DeFi (Decentralized Finance) support.
-//! - `indicators`: Includes the `nautilus-indicators` crate and indicator utilities.
+//! - `build-info-event-store`: Includes the event-store backend version in build information logs.
 //! - `capnp`: Enables [Cap'n Proto](https://capnproto.org/) serialization support.
+//! - `defi`: Enables DeFi (Decentralized Finance) support.
+//! - `extension-module`: Builds as a Python extension module.
+//! - `high-precision`: Enables
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode)
+//!   to use 128-bit value types.
+//! - `indicators`: Includes the `nautilus-indicators` crate and indicator utilities.
 //! - `live`: Enables the Tokio async runtime for live trading.
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `sbe`: Enables Simple Binary Encoding (SBE) serialization support.
+//! - `simulation`: Enables deterministic simulation testing with
+//!   [MadSim](https://github.com/madsim-rs/madsim).
 //! - `tracing-bridge`: Enables the `tracing` subscriber bridge for log integration.
-//! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]

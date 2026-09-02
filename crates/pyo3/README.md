@@ -17,13 +17,16 @@ event-driven architecture, providing research-to-live semantic parity.
 
 This crate provides feature flags to control source code inclusion during compilation:
 
-- `extension-module`: Builds as a Python extension module (automatically enabled by `maturin`).
+- `arrow`: Enables Apache Arrow support in dependent crates.
+- `betfair`: Enables the Betfair adapter and its Python bindings.
+- `defi`: Enables DeFi (Decentralized Finance) support, including blockchain adapters.
+- `extension-module`: Builds as a Python extension module and is automatically enabled by `maturin`.
 - `high-precision`: Uses 128-bit value types throughout the workspace.
+- `hypersync`: Enables [HyperSync](https://envio.dev/#hypersync) support for the blockchain adapter.
+- `mimalloc`: Sets [mimalloc](https://github.com/microsoft/mimalloc) as Rust's global allocator.
 - `postgres`: Enables PostgreSQL (sqlx) back-ends in dependent crates.
 - `redis`: Enables Redis based infrastructure in dependent crates.
-- `hypersync`: Enables hypersync support (fast parallel hash maps) where available.
 - `tracing-bridge`: Enables the `tracing` subscriber bridge for log integration.
-- `defi`: Enables DeFi (Decentralized Finance) support including blockchain adapters.
 
 ## License
 

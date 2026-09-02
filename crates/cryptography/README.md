@@ -30,6 +30,7 @@ event-driven architecture, providing research-to-live semantic parity.
 
 This crate provides feature flags to control source code inclusion during compilation:
 
+- `extension-module`: Builds as a Python extension module.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
 ## Documentation

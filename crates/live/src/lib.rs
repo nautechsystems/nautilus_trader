@@ -38,13 +38,18 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
+//! - `defi`: Enables DeFi (Decentralized Finance) support.
+//! - `examples`: Enables example strategies and testkit support for live nodes.
+//! - `extension-module`: Builds as a Python extension module.
+//! - `fuzz`: Provides shared libFuzzer integration for adapter fuzz binaries.
 //! - `node` (default): Enables the full live node, builder, config, and execution manager.
 //! - `plugin` (default): Keeps compatibility stubs for plug-in config validation.
-//! - `fuzz`: Provides shared libFuzzer integration for adapter fuzz binaries.
-//! - `streaming`: Enables `persistence` dependency for streaming configuration (requires `node`).
-//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs) (auto-enables `node` and `streaming`).
-//! - `defi`: Enables DeFi (Decentralized Finance) support.
-//! - `extension-module`: Builds the crate as a Python extension module.
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs) and auto-enables `node` and
+//!   `streaming`.
+//! - `simulation`: Enables deterministic simulation testing with
+//!   [MadSim](https://github.com/madsim-rs/madsim).
+//! - `streaming`: Enables the `nautilus-persistence` dependency for streaming configuration and
+//!   requires `node`.
 //!
 //! # Lean adapter builds
 //!

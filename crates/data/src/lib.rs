@@ -41,9 +41,13 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
-//! - `streaming`: Enables `persistence` dependency for catalog-based data streaming.
 //! - `defi`: Enables DeFi (Decentralized Finance) support.
+//! - `extension-module`: Enables Python extension-module support.
+//! - `high-precision`: Enables
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode)
+//!   to use 128-bit value types.
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `streaming`: Enables the `nautilus-persistence` dependency for catalog-based data streaming.
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]

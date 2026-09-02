@@ -20,6 +20,12 @@
 //! metadata, allocator-safe boundary values, opaque host tokens, and the
 //! `nautilus_plugin!` macro for exporting the standard entry symbol and
 //! manifest.
+//!
+//! # Feature Flags
+//!
+//! This crate provides feature flags to control source code inclusion during compilation:
+//!
+//! - `host`: Optional plug-in manifest compatibility flag.
 
 #![warn(clippy::pedantic)]
 #![allow(

@@ -25,9 +25,12 @@ event-driven architecture, providing research-to-live semantic parity.
 This crate provides feature flags to control source code inclusion during compilation:
 
 - `cloud`: Enables cloud storage backends (S3, Azure, GCP, HTTP) via `object_store`.
-- `python`: Enables Python bindings from [PyO3](https://pyo3.rs) (auto-enables `cloud`).
-- `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
+- `defi`: Enables DeFi (Decentralized Finance) support.
 - `extension-module`: Builds as a Python extension module.
+- `high-precision`: Enables
+  [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode)
+  to use 128-bit value types.
+- `python`: Enables Python bindings from [PyO3](https://pyo3.rs) and auto-enables `cloud`.
 
 ## Documentation
 

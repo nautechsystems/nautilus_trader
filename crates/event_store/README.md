@@ -154,6 +154,14 @@ Integrity checks include:
 - Cross-checking secondary indices against entries.
 - Validating manifest status and high-watermark fields.
 
+## Feature flags
+
+This crate provides feature flags to control source code inclusion during compilation:
+
+- `defi`: Enables DeFi (Decentralized Finance) support.
+- `live`: Enables live-runtime support through `nautilus-common`.
+- `persistence`: Enables Parquet catalog replay support through `nautilus-persistence`.
+
 ## Documentation
 
 - [Event Sourcing concept guide](../../docs/concepts/event_sourcing.md): design, replay, recovery,
