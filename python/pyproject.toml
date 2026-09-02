@@ -1,6 +1,6 @@
 [project]
 name = "nautilus-trader"
-version = "2.0.0rc4"
+version = "2.0.0rc5"
 description = "Production-grade Rust-native trading engine with deterministic event-driven architecture"
 authors = [{ name = "Nautech Systems", email = "info@nautechsystems.io" }]
 classifiers = [
@@ -67,8 +67,6 @@ include = ["**/*.pyi"]
 required-version = ">=0.12,<0.13"
 environments = ["sys_platform != 'win32' or platform_machine == 'AMD64'"]
 exclude-newer = "7 days"
-# Remove after maturin 1.15.0 clears the global release cooldown
-exclude-newer-package = { maturin = "2026-08-24T12:12:00Z" }
 # Block sdist builds for every third-party package in python/uv.lock so
 # unexpected loss of wheel publishing fails `uv lock` instead of silently
 # building from source. Kept in sync with python/uv.lock by

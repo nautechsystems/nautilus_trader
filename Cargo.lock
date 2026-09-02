@@ -359,7 +359,7 @@ dependencies = [
  "fixed-cache",
  "foldhash 0.2.0",
  "hashbrown 0.17.1",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itoa",
  "k256",
  "keccak-asm",
@@ -487,7 +487,7 @@ dependencies = [
  "alloy-rlp",
  "alloy-serde",
  "alloy-sol-types",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "serde",
  "serde_json",
  "serde_with",
@@ -560,7 +560,7 @@ dependencies = [
  "alloy-sol-macro-input",
  "const-hex",
  "heck",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "proc-macro-error3",
  "proc-macro2",
  "quote",
@@ -640,7 +640,7 @@ checksum = "8342aa5a7f8dee6d606307eebbc847d9799a823c7e4f37b9c1e32b08715f73c8"
 dependencies = [
  "alloy-json-rpc",
  "alloy-transport",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "reqwest 0.13.4",
  "serde_json",
  "tower",
@@ -1209,7 +1209,7 @@ dependencies = [
  "arrow-select",
  "chrono",
  "half",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itoa",
  "lexical-core",
  "memchr",
@@ -2148,7 +2148,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2714,7 +2714,7 @@ dependencies = [
  "datafusion-session",
  "datafusion-sql",
  "futures",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itertools 0.15.0",
  "log",
  "object_store",
@@ -2789,7 +2789,7 @@ dependencies = [
  "foldhash 0.2.0",
  "half",
  "hashbrown 0.17.1",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itertools 0.15.0",
  "libc",
  "log",
@@ -2993,7 +2993,7 @@ dependencies = [
  "datafusion-functions-aggregate-common",
  "datafusion-functions-window-common",
  "datafusion-physical-expr-common",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itertools 0.15.0",
  "serde_json",
  "sqlparser",
@@ -3007,7 +3007,7 @@ checksum = "2604994999d5aeca1d1df645ffc98bc787447aaff05dde27aad0342b48fc1fe0"
 dependencies = [
  "arrow 59.2.0",
  "datafusion-common",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itertools 0.15.0",
 ]
 
@@ -3163,7 +3163,7 @@ dependencies = [
  "datafusion-expr",
  "datafusion-expr-common",
  "datafusion-physical-expr",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itertools 0.15.0",
  "log",
  "regex",
@@ -3184,7 +3184,7 @@ dependencies = [
  "datafusion-physical-expr-common",
  "half",
  "hashbrown 0.17.1",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itertools 0.15.0",
  "parking_lot",
  "petgraph 0.8.3",
@@ -3217,7 +3217,7 @@ dependencies = [
  "datafusion-common",
  "datafusion-expr-common",
  "hashbrown 0.17.1",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itertools 0.15.0",
  "parking_lot",
  "pin-project",
@@ -3267,7 +3267,7 @@ dependencies = [
  "futures",
  "half",
  "hashbrown 0.17.1",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itertools 0.15.0",
  "log",
  "num-traits",
@@ -3320,7 +3320,7 @@ dependencies = [
  "datafusion-common",
  "datafusion-expr",
  "datafusion-functions-nested",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "log",
  "regex",
  "sqlparser",
@@ -3753,7 +3753,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3919,9 +3919,9 @@ dependencies = [
 
 [[package]]
 name = "flate2"
-version = "1.1.9"
+version = "1.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "843fba2746e448b37e26a819579957415c8cef339bf08564fe8b7ddbd959573c"
+checksum = "6e634e2e0ebac1ee034020da1ca582e17ffe4e0f5e985823721e168928136dcb"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
@@ -4186,7 +4186,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "http",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "slab",
  "tokio",
  "tokio-util",
@@ -4387,9 +4387,9 @@ dependencies = [
 
 [[package]]
 name = "hyper"
-version = "1.11.0"
+version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d22053281f852e11534f5198498373cbb59295120a20771d90f7ed1897490a72"
+checksum = "27b501faa50e7a26c3d3560ca625132f4078a17771f4810baf70475ae48cbe43"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -4779,9 +4779,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.14.0"
+version = "2.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9"
+checksum = "07aa2048142242915a31d35844fb311e0e53fcca590c3a0a40dcf1b841fa09eb"
 dependencies = [
  "equivalent",
  "hashbrown 0.17.1",
@@ -4824,7 +4824,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5229,9 +5229,9 @@ dependencies = [
 
 [[package]]
 name = "lru"
-version = "0.18.2"
+version = "0.18.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d2f2f9b4ba7e6b24d95e7e899329d35be83bcded72c8540cdd5368932d1d90a"
+checksum = "0d317b4b9eb398e6acce275758ec6125535505e7a146fb1a9b8bda2451b0ff4c"
 dependencies = [
  "hashbrown 0.17.1",
 ]
@@ -5370,9 +5370,9 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniz_oxide"
-version = "0.8.9"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
+checksum = "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c"
 dependencies = [
  "adler2",
  "simd-adler32",
@@ -5403,11 +5403,11 @@ checksum = "034a0ad7deebf0c2abcf2435950a6666c3c15ea9d8fad0c0f48efa8a7f843fed"
 
 [[package]]
 name = "nautilus-analysis"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "nautilus-core",
  "nautilus-model",
  "pyo3",
@@ -5418,7 +5418,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-architect-ax"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5465,7 +5465,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5473,7 +5473,7 @@ dependencies = [
  "blake3",
  "bon",
  "codspeed-criterion-compat",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "log",
  "mimalloc",
@@ -5503,7 +5503,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-betfair"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5551,7 +5551,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-binance"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5602,7 +5602,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-bitmex"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5648,7 +5648,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-blockchain"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy",
@@ -5693,7 +5693,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-bybit"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5741,7 +5741,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cli"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -5762,7 +5762,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-coinbase"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5785,7 +5785,7 @@ dependencies = [
  "nautilus-testkit",
  "nautilus-trading",
  "parking_lot",
- "pem 4.0.0",
+ "pem",
  "pyo3",
  "pyo3-stub-gen",
  "rstest",
@@ -5806,7 +5806,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy-primitives",
@@ -5819,7 +5819,7 @@ dependencies = [
  "derive_builder",
  "futures",
  "iai",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "libc",
  "log",
@@ -5855,7 +5855,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5864,7 +5864,7 @@ dependencies = [
  "codspeed-criterion-compat",
  "dashmap",
  "iai",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "log",
  "madsim",
@@ -5888,7 +5888,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cryptography"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "anyhow",
  "aws-lc-rs",
@@ -5896,7 +5896,7 @@ dependencies = [
  "ed25519-dalek",
  "log",
  "nautilus-core",
- "pem 4.0.0",
+ "pem",
  "pyo3",
  "pyo3-stub-gen",
  "rstest",
@@ -5906,7 +5906,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-data"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy-primitives",
@@ -5915,7 +5915,7 @@ dependencies = [
  "bon",
  "codspeed-criterion-compat",
  "futures",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "log",
  "nautilus-common",
@@ -5937,7 +5937,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-databento"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5947,7 +5947,7 @@ dependencies = [
  "databento",
  "dotenvy",
  "fallible-streaming-iterator",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "log",
  "nautilus-common",
@@ -5976,7 +5976,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-deribit"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6025,7 +6025,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-derive"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy",
@@ -6069,7 +6069,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-dydx"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6117,7 +6117,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-event-store"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6125,7 +6125,7 @@ dependencies = [
  "blake3",
  "bytes",
  "codspeed-criterion-compat",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -6146,7 +6146,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-execution"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6155,7 +6155,7 @@ dependencies = [
  "bytes",
  "codspeed-criterion-compat",
  "futures",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "log",
  "madsim",
@@ -6179,7 +6179,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-hyperliquid"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy",
@@ -6232,7 +6232,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "anyhow",
  "arraydeque",
@@ -6247,7 +6247,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-infrastructure"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6256,7 +6256,7 @@ dependencies = [
  "bytes",
  "derive_builder",
  "futures",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "log",
  "nautilus-common",
@@ -6285,7 +6285,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-interactive-brokers"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6326,7 +6326,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-kraken"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6342,7 +6342,7 @@ dependencies = [
  "derive_builder",
  "dotenvy",
  "futures-util",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "log",
  "nautilus-backtest",
@@ -6378,7 +6378,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-lighter"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6427,7 +6427,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-live"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6437,7 +6437,7 @@ dependencies = [
  "bytes",
  "codspeed-criterion-compat",
  "futures-util",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "libfuzzer-sys",
  "log",
  "madsim",
@@ -6470,7 +6470,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy-primitives",
@@ -6483,7 +6483,7 @@ dependencies = [
  "enum_dispatch",
  "iai",
  "implied-vol",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "log",
  "nautilus-core",
@@ -6505,7 +6505,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6551,7 +6551,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-okx"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6599,7 +6599,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6608,7 +6608,7 @@ dependencies = [
  "codspeed-criterion-compat",
  "datafusion",
  "futures",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "log",
  "nautilus-common",
@@ -6637,7 +6637,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence-macros"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6647,7 +6647,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-plugin"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "log",
  "nautilus-model",
@@ -6656,7 +6656,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-polymarket"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy",
@@ -6672,7 +6672,7 @@ dependencies = [
  "derive_builder",
  "dotenvy",
  "futures-util",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "log",
  "nautilus-common",
@@ -6712,13 +6712,13 @@ dependencies = [
 
 [[package]]
 name = "nautilus-portfolio"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
  "bon",
  "codspeed-criterion-compat",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "log",
  "nautilus-analysis",
  "nautilus-common",
@@ -6734,7 +6734,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "mimalloc",
  "nautilus-analysis",
@@ -6781,11 +6781,11 @@ dependencies = [
 
 [[package]]
 name = "nautilus-risk"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "bon",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -6803,7 +6803,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-sandbox"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6833,14 +6833,14 @@ dependencies = [
 
 [[package]]
 name = "nautilus-serialization"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "anyhow",
  "arrow 59.2.0",
  "capnp 0.27.0",
  "capnpc",
  "codspeed-criterion-compat",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "nautilus-core",
  "nautilus-model",
  "pretty_assertions",
@@ -6859,7 +6859,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-system"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6867,7 +6867,7 @@ dependencies = [
  "bon",
  "bytes",
  "futures",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "log",
  "nautilus-common",
@@ -6896,7 +6896,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-tardis"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6945,7 +6945,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-testkit"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6955,7 +6955,7 @@ dependencies = [
  "axum",
  "bon",
  "bytes",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itchy",
  "jiff",
  "log",
@@ -6984,7 +6984,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-trader"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "nautilus-common",
  "nautilus-core",
@@ -6993,12 +6993,12 @@ dependencies = [
 
 [[package]]
 name = "nautilus-trading"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
  "bon",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "log",
  "nautilus-analysis",
@@ -7022,7 +7022,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-tutorials"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "dotenvy",
  "nautilus-common",
@@ -7420,16 +7420,6 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pem"
-version = "3.0.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d30c53c26bc5b31a98cd02d20f25a7c8567146caf63ed593a9d87b2775291be"
-dependencies = [
- "base64 0.22.1",
- "serde_core",
-]
-
-[[package]]
-name = "pem"
 version = "4.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d354a98a3d1251555de99e8fdd8afda05573c31b82f59063a7b0a29b5527f120"
@@ -7461,7 +7451,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3672b37090dbd86368a4145bc067582552b29c27377cad4e0a306c97f9bd7772"
 dependencies = [
  "fixedbitset",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
 ]
 
 [[package]]
@@ -7472,7 +7462,7 @@ checksum = "8701b58ea97060d5e5b155d383a69952a60943f0e6dfe30b04c287beb0b27455"
 dependencies = [
  "fixedbitset",
  "hashbrown 0.15.5",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "serde",
 ]
 
@@ -7750,7 +7740,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
  "heck",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "log",
  "multimap",
  "once_cell",
@@ -7770,7 +7760,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -7783,7 +7773,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -7825,7 +7815,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4688ddedf473e32662b9b067670129a8afb8c18e351482c70d62ba4a88171e8b"
 dependencies = [
  "hashbrown 0.15.5",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "inventory",
  "jiff",
  "libc",
@@ -7912,7 +7902,7 @@ name = "pyo3-stub-gen"
 version = "0.20.0"
 dependencies = [
  "anyhow",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "inventory",
  "jiff",
  "log",
@@ -7933,7 +7923,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "11633044267957aeda9569863a3a57b3aa2aeebc7144439423c1ddde3d00d887"
 dependencies = [
  "heck",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "proc-macro2",
  "quote",
  "rustpython-parser",
@@ -8004,7 +7994,7 @@ dependencies = [
  "once_cell",
  "socket2 0.5.10",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -8181,12 +8171,12 @@ dependencies = [
 
 [[package]]
 name = "rcgen"
-version = "0.14.9"
+version = "0.14.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "091e7a8e7d86e6feb87a27ce8e2cba29d49eff9507afeebefab7eeb2ca667fb4"
+checksum = "8774e05a7d0de114588e6a28fe7e71694b82614ed569d86d8b389dfbc98b8ad8"
 dependencies = [
  "aws-lc-rs",
- "pem 3.0.6",
+ "pem",
  "rustls-pki-types",
  "time",
  "x509-parser",
@@ -8645,7 +8635,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -8704,7 +8694,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -9082,7 +9072,7 @@ version = "1.0.151"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
 dependencies = [
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itoa",
  "memchr",
  "serde",
@@ -9144,7 +9134,7 @@ dependencies = [
  "chrono",
  "hex",
  "indexmap 1.9.3",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "schemars 0.9.0",
  "schemars 1.2.2",
@@ -9172,7 +9162,7 @@ version = "0.9.34+deprecated"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
 dependencies = [
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itoa",
  "ryu",
  "serde",
@@ -9473,7 +9463,7 @@ dependencies = [
  "futures-util",
  "hashbrown 0.16.1",
  "hashlink",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "log",
  "memchr",
  "percent-encoding",
@@ -9827,10 +9817,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -10137,7 +10127,7 @@ version = "0.9.12+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf92845e79fc2e2def6a5d828f0801e29a2f8acc037becc5ab08595c7d5e9863"
 dependencies = [
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "serde_core",
  "serde_spanned",
  "toml_datetime 0.7.5+spec-1.1.0",
@@ -10152,7 +10142,7 @@ version = "1.1.4+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3aace63f4bbcdfc2c965b059de67119c89c4017a70d633be6c104910f67056f5"
 dependencies = [
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "serde_core",
  "serde_spanned",
  "toml_datetime 1.1.1+spec-1.1.0",
@@ -10185,7 +10175,7 @@ version = "0.25.13+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6975367e4d2ef766d86af01ffad14b622fecc8d4357a998fbc4deb6e9bacaf9b"
 dependencies = [
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "toml_datetime 1.1.1+spec-1.1.0",
  "toml_parser",
  "winnow 1.0.4",
@@ -10271,7 +10261,7 @@ checksum = "ebe5ef63511595f1344e2d5cfa636d973292adc0eec1f0ad45fae9f0851ab1d4"
 dependencies = [
  "futures-core",
  "futures-util",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "pin-project-lite",
  "slab",
  "sync_wrapper",
@@ -10421,7 +10411,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0061c28f1469e94771bb8aa626ce6b29265c2fb5034115046a170b0cba2e33d2"
 dependencies = [
  "bytes",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "rand 0.9.5",
  "rand_distr",
  "scoped-tls",
@@ -10431,9 +10421,9 @@ dependencies = [
 
 [[package]]
 name = "twox-hash"
-version = "2.1.3"
+version = "2.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8464ec13c3691491391d9fce00f6416c9a48e46972f72d7865688be2080192c9"
+checksum = "5283634e518fe9e82c7b20520bb4bc209009fd16c82077c802f8111ecbb0117a"
 
 [[package]]
 name = "typenum"
@@ -10891,7 +10881,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

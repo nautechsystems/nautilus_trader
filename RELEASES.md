@@ -1,6 +1,31 @@
+# NautilusTrader 2.0.0rc5
+
+Released on TBD (UTC).
+
+### Enhancements
+
+### Breaking Changes
+
+### Security
+
+### Fixes
+
+### Internal Improvements
+
+- Upgraded `flate2` crate to v1.1.10
+- Upgraded `indexmap` crate to v2.14.1
+- Upgraded `rcgen` crate to v0.14.10
+- Upgraded `linkify-it-py` package to v2.1.1
+
+### Documentation Updates
+
+### Deprecations
+
+---
+
 # NautilusTrader 2.0.0rc4
 
-Released on 1st September 2026 (UTC).
+Released on 2nd September 2026 (UTC).
 
 > [!NOTE]
 > The `OrderSide`, `PositionSide`, `ContingencyType`, `TrailingOffsetType`, and `TriggerType` changes
@@ -180,8 +205,6 @@ Released on 1st September 2026 (UTC).
 - Documented Polymarket quote sources and order book feed interaction
 - Documented Polymarket RTDS crypto TWAP delivery, reconnect, and conflict handling
 - Fixed broken OMS configuration link (#4877), thanks for reporting @aarushkandukoori
-
-### Deprecations
 
 ---
 

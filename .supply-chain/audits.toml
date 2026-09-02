@@ -1575,6 +1575,12 @@ criteria = "safe-to-deploy"
 delta = "0.1.10 -> 0.1.11"
 notes = "Reviewed the published 0.1.10 -> 0.1.11 crate. MSRV bump to 1.65 with no Windows toolchain-probing behavior change. Not exercised on this workspace's Linux or macOS builds. No new process, network, or credential behavior."
 
+[[audits.flate2]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.1.9 -> 1.1.10"
+notes = "Adds decoder reuse and reset APIs, stricter truncated and oversized gzip handling, no_std plumbing, and miniz_oxide 0.9 support. Reviewed existing FFI allocation, CStr, stream, and spare-capacity unsafe operations; changes only move standard-library paths to core and alloc and preserve pointer invariants. No new build script or filesystem, network, process, or credential behavior."
+
 [[audits.futures]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1683,6 +1689,12 @@ criteria = "safe-to-deploy"
 delta = "1.8.1 -> 1.9.0"
 notes = "Bug fixes, refactoring (StepArgs struct, case-insensitive trailers, HashSet), new H2 stream count APIs, FFI null-ptr validation. No new unsafe."
 
+[[audits.hyper]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.11.0 -> 1.11.1"
+notes = "Fixes HTTP/1 connection reuse, buffered-write flushing, head termination, and trailer token parsing, plus minimal HTTP/2 send capacity. Reviewed the published source; no new dependencies, unsafe blocks, network destinations, or ambient capabilities."
+
 [[audits.hypersync-client]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1760,6 +1772,12 @@ criteria = "safe-to-deploy"
 delta = "2.13.0 -> 2.13.1"
 notes = "12 methods made const fn via pattern-match rewrites. No logic changes, no new unsafe."
 
+[[audits.indexmap]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.14.0 -> 2.14.1"
+notes = "Refactors disjoint mutable lookup into shared functions that validate every index is in bounds and unique before constructing mutable references. Reviewed the moved pointer arithmetic; the aliasing and bounds invariants are preserved. Other changes centralize assertions and simplify equal-key lookup; no ambient capabilities."
+
 [[audits.ipnet]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1832,6 +1850,12 @@ criteria = "safe-to-deploy"
 delta = "0.16.4 -> 0.18.2"
 notes = "Upgrades hashbrown, constrains a returned mutable-reference lifetime, fixes pop panic safety by detaching before dropping a key, and adds find_and_promote. Reviewed linked-list unsafe pointer operations preserve node lifetime and list invariants; no ambient capability was added."
 
+[[audits.lru]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.18.2 -> 0.18.3"
+notes = "Adds a sparse constructor and replaces an unnecessary NonNull::new_unchecked call with checked construction. No new dependencies, unsafe operations, or ambient capabilities."
+
 [[audits.lz4_flex]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1843,6 +1867,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.13.1 -> 0.14.0"
 notes = "Reviewed the 0.13.1 to 0.14.0 delta: compression and decompression paths add table reuse, dictionary limits, and buffer-oriented APIs. Default safe encode and decode features remain enabled, and the reviewed source adds no unsafe blocks or ambient authority."
+
+[[audits.miniz_oxide]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.8.9 -> 0.9.1"
+notes = "Adds window-size and flush options, clone and reset support, limited decompression, a no_std serde fix, and compression and inflate correctness updates required by flate2. The published delta adds no unsafe code, build script, filesystem, network, process, or credential behavior."
 
 [[audits.num-bigint]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2041,6 +2071,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-run"
 delta = "0.14.8 -> 0.14.9"
 notes = "Refactors CA extension emission and encodes ExplicitNoCa as the DER-default empty BasicConstraints sequence, with parser-backed tests. No unsafe or ambient-capability change."
+
+[[audits.rcgen]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-run"
+delta = "0.14.9 -> 0.14.10"
+notes = "Fixes RFC 5280 encoding for CRL invalidity dates, reason codes, distribution points, and extension emission; moves ML-DSA to stable aws-lc-rs and removes unreachable RSA-PSS code. This crate is dev-only in the workspace. No unsafe or ambient capability is added."
 
 [[audits.redb]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2424,6 +2460,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.29.0 -> 0.30.0"
 notes = "Rejects malformed WebSocket keys, checks 64-bit frame lengths before narrowing on 32-bit targets, updates rand and sha1, and raises MSRV to 1.85. No new build script, filesystem, process, or network destination behavior."
+
+[[audits.twox-hash]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.1.3 -> 2.1.4"
+notes = "Adds portability documentation and lint-driven source cleanup. Reviewed SIMD and unchecked invariants; unsafe bodies and preconditions are unchanged. No dependency, build script, ambient capability, or hash behavior changes."
 
 [[audits.unicode-segmentation]]
 who = "Chris Sellers <chris@cjdsellers.io>"
