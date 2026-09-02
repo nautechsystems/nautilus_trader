@@ -260,7 +260,23 @@ impl Account for CashAccount {
             self.balances_locked.clear();
         }
 
+        let currencies: Vec<Currency> = event.balances.iter().map(|b| b.currency).collect();
+
         self.base_apply(event);
+
+        // A non-reported snapshot carries only the total, so re-derive locked and free
+        // from any reservations which survived above
+        for currency in currencies {
+            // A reported snapshot cleared the map, so its own `locked` figure stands
+            if self
+                .balances_locked
+                .keys()
+                .any(|(_, locked_currency)| *locked_currency == currency)
+            {
+                base::recalculate_balance(&mut self.base.balances, &self.balances_locked, currency);
+            }
+        }
+
         Ok(())
     }
 
@@ -363,6 +379,50 @@ mod tests {
         position::Position,
         types::{AccountBalance, Currency, Money, Price, Quantity},
     };
+
+    #[rstest]
+    fn test_unreported_snapshot_preserves_order_locks(
+        mut cash_account: CashAccount,
+        audusd_sim: CurrencyPair,
+    ) {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+        let usd = Currency::USD();
+
+        // The portfolio reserves collateral for a resting order
+        cash_account.update_balance_locked(instrument.id(), Money::from("500.00 USD"));
+        assert_eq!(
+            cash_account.balance_locked(Some(usd)).unwrap(),
+            Money::from("500.00 USD"),
+        );
+
+        // Total only, with no reservation figure and not flagged as a full snapshot
+        let refresh = AccountState::new(
+            cash_account.id,
+            AccountType::Cash,
+            vec![AccountBalance::new(
+                Money::from("1000.00 USD"),
+                Money::from("0.00 USD"),
+                Money::from("1000.00 USD"),
+            )],
+            vec![],
+            false, // is_reported
+            uuid4(),
+            1.into(),
+            1.into(),
+            Some(usd),
+        );
+        cash_account.apply(refresh).unwrap();
+
+        // The reservation must survive
+        assert_eq!(
+            cash_account.balance_locked(Some(usd)).unwrap(),
+            Money::from("500.00 USD"),
+        );
+        assert_eq!(
+            cash_account.balance_free(Some(usd)).unwrap(),
+            Money::from("500.00 USD"),
+        );
+    }
 
     #[rstest]
     fn test_display(cash_account: CashAccount) {

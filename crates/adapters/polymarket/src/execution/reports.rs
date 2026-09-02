@@ -838,7 +838,9 @@ pub(super) async fn fetch_and_emit_account_state(
         "Account state updated: balance={} pUSD",
         account_balance.total
     );
-    emitter.emit_account_state(vec![account_balance], vec![], true, ts_event, None);
+    // Not a full snapshot: `GET /balance-allowance` returns no reservation figure, so
+    // reporting it as one would clear the portfolio's locks from open orders
+    emitter.emit_account_state(vec![account_balance], vec![], false, ts_event, None);
     Ok(())
 }
 
