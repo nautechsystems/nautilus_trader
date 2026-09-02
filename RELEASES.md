@@ -4,7 +4,12 @@ Released on TBD (UTC).
 
 ### Enhancements
 
+- Added `Cache` APIs and Redis/PostgreSQL persistence for `InstrumentClose` data, with later values
+  replacing earlier values for the same instrument
+
 ### Breaking Changes
+
+- Changed v2 PostgreSQL cache startup to require the `instrument_close` table; run `nautilus database init`
 
 ### Security
 

@@ -29,14 +29,15 @@ mod serial_tests {
     use ahash::AHashMap;
     use bytes::Bytes;
     use nautilus_common::{cache::database::CacheDatabaseAdapter, testing::wait_until_async};
-    use nautilus_core::UUID4;
+    use nautilus_core::{UUID4, UnixNanos};
     use nautilus_infrastructure::sql::{
         cache::{PostgresCacheDatabase, get_pg_cache_database},
         queries::DatabaseQueries,
     };
     use nautilus_model::{
         accounts::AccountAny,
-        enums::{CurrencyType, OrderSide, OrderType},
+        data::InstrumentClose,
+        enums::{CurrencyType, InstrumentCloseType, OrderSide, OrderType},
         events::{
             OrderEventAny,
             order::spec::{OrderCancelRejectedSpec, OrderModifyRejectedSpec},
@@ -51,7 +52,7 @@ mod serial_tests {
         },
         orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
-        types::{Currency, Quantity},
+        types::{Currency, Price, Quantity},
     };
     use ustr::Ustr;
 
@@ -311,6 +312,49 @@ mod serial_tests {
         );
         assert_eq!(cached_position.quantity, position.quantity);
 
+        database.flush().unwrap();
+        database.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_instrument_close_replacement_survives_restart() {
+        let mut database = get_test_pg_cache_database().await.unwrap();
+        database.flush().unwrap();
+        let instrument_id = InstrumentId::from("BINARY-1.POLYMARKET");
+        let close = InstrumentClose::new(
+            instrument_id,
+            Price::from("1.00000"),
+            InstrumentCloseType::ContractExpired,
+            UnixNanos::from(10),
+            UnixNanos::from(11),
+        );
+        let replacement = InstrumentClose::new(
+            close.instrument_id,
+            Price::from("0.00000"),
+            InstrumentCloseType::EndOfSession,
+            UnixNanos::from(20),
+            UnixNanos::from(21),
+        );
+        let mut cache = get_cache(Some(Box::new(get_test_pg_cache_database().await.unwrap())));
+
+        cache.add_instrument_close(close).unwrap();
+        cache.add_instrument_close(replacement).unwrap();
+        assert_eq!(
+            cache.instrument_close(&close.instrument_id),
+            Some(&replacement)
+        );
+        cache.dispose();
+
+        let mut restarted_cache =
+            get_cache(Some(Box::new(get_test_pg_cache_database().await.unwrap())));
+        restarted_cache.cache_all().await.unwrap();
+
+        assert_eq!(
+            restarted_cache.instrument_close(&close.instrument_id),
+            Some(&replacement)
+        );
+
+        restarted_cache.dispose();
         database.flush().unwrap();
         database.close().unwrap();
     }

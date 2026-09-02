@@ -2394,6 +2394,11 @@ mod tests {
             &[],
         ),
         cache_mutation(
+            "add_instrument_close",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
             "add_quote",
             CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
             &[PAYLOAD_TYPE_QUOTES_RESPONSE],

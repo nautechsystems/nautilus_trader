@@ -34,14 +34,15 @@ use nautilus_model::defi::{
 use nautilus_model::{
     accounts::AccountAny,
     data::{
-        Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
-        MarkPriceUpdate, QuoteTick, TradeTick, greeks::OptionGreekValues,
+        Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentClose,
+        InstrumentStatus, MarkPriceUpdate, QuoteTick, TradeTick, greeks::OptionGreekValues,
         option_chain::OptionGreeks,
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, AssetClass, BookType, ContingencyType,
-        GreeksConvention, InstrumentClass, LiquiditySide, MarketStatusAction, OmsType, OptionKind,
-        OrderSide, OrderStatus, OrderType, PositionSide, PriceType, TimeInForce, TriggerType,
+        GreeksConvention, InstrumentClass, InstrumentCloseType, LiquiditySide, MarketStatusAction,
+        OmsType, OptionKind, OrderSide, OrderStatus, OrderType, PositionSide, PriceType,
+        TimeInForce, TriggerType,
     },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEmulated,
@@ -1474,6 +1475,108 @@ fn test_has_backing_after_set_database() {
 
     cache.set_database(Box::new(SnapshotBlobTestDatabase::default()));
     assert!(cache.has_backing());
+}
+
+#[rstest]
+fn test_cache_all_overwrites_instrument_closes() {
+    let instrument_id = InstrumentId::from("BINARY-1.POLYMARKET");
+    let cached = instrument_close_with_ts(instrument_id, 10);
+    let persisted = InstrumentClose::new(
+        instrument_id,
+        Price::from("0.00000"),
+        InstrumentCloseType::EndOfSession,
+        UnixNanos::from(20),
+        UnixNanos::from(21),
+    );
+    let database = SnapshotBlobTestDatabase {
+        instrument_closes: Arc::new(Mutex::new(AHashMap::from([(instrument_id, persisted)]))),
+        ..Default::default()
+    };
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+    cache.instrument_closes.insert(instrument_id, cached);
+
+    futures::executor::block_on(cache.cache_all()).unwrap();
+
+    assert_eq!(cache.instrument_close(&instrument_id), Some(&persisted));
+}
+
+#[rstest]
+fn test_add_instrument_close_does_not_mutate_when_persistence_fails() {
+    let close = instrument_close_with_ts(InstrumentId::from("BINARY-1.POLYMARKET"), 10);
+    let database = SnapshotBlobTestDatabase::fail_add_instrument_close();
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+
+    let error = cache.add_instrument_close(close).unwrap_err();
+
+    assert_eq!(error.to_string(), "add instrument close failed");
+    assert!(!cache.has_instrument_close(&close.instrument_id));
+}
+
+#[rstest]
+fn test_add_instrument_close_does_not_replace_when_persistence_fails() {
+    let instrument_id = InstrumentId::from("BINARY-1.POLYMARKET");
+    let first = instrument_close_with_ts(instrument_id, 10);
+    let replacement = InstrumentClose::new(
+        instrument_id,
+        Price::from("0.00000"),
+        InstrumentCloseType::EndOfSession,
+        UnixNanos::from(20),
+        UnixNanos::from(21),
+    );
+    let instrument_closes = Arc::new(Mutex::new(AHashMap::from([(instrument_id, first)])));
+    let database = SnapshotBlobTestDatabase {
+        instrument_closes: Arc::clone(&instrument_closes),
+        fail_add_instrument_close: true,
+        ..Default::default()
+    };
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+    futures::executor::block_on(cache.cache_all()).unwrap();
+
+    let error = cache.add_instrument_close(replacement).unwrap_err();
+
+    assert_eq!(error.to_string(), "add instrument close failed");
+    assert_eq!(cache.instrument_close(&instrument_id), Some(&first));
+    assert_eq!(instrument_closes.lock().get(&instrument_id), Some(&first));
+}
+
+#[rstest]
+fn test_add_instrument_close_persists_replacement() {
+    let instrument_id = InstrumentId::from("BINARY-1.POLYMARKET");
+    let first = instrument_close_with_ts(instrument_id, 10);
+    let replacement = InstrumentClose::new(
+        instrument_id,
+        Price::from("0.00000"),
+        InstrumentCloseType::EndOfSession,
+        UnixNanos::from(20),
+        UnixNanos::from(21),
+    );
+    let instrument_closes = Arc::new(Mutex::new(AHashMap::new()));
+    let database = SnapshotBlobTestDatabase {
+        instrument_closes: Arc::clone(&instrument_closes),
+        ..Default::default()
+    };
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+
+    cache.add_instrument_close(first).unwrap();
+    cache.add_instrument_close(replacement).unwrap();
+
+    assert_eq!(cache.instrument_close(&instrument_id), Some(&replacement));
+    assert_eq!(
+        instrument_closes.lock().get(&instrument_id),
+        Some(&replacement)
+    );
+
+    let database = SnapshotBlobTestDatabase {
+        instrument_closes,
+        ..Default::default()
+    };
+    let mut restored = Cache::new(None, Some(Box::new(database)));
+    futures::executor::block_on(restored.cache_all()).unwrap();
+
+    assert_eq!(
+        restored.instrument_close(&instrument_id),
+        Some(&replacement)
+    );
 }
 
 // -- EXECUTION -------------------------------------------------------------------------------
@@ -4450,6 +4553,36 @@ fn test_add_instrument_status_keeps_time_series(mut cache: Cache, audusd_sim: Cu
 }
 
 #[rstest]
+fn test_add_instrument_close_replaces_existing(mut cache: Cache) {
+    let instrument_id = InstrumentId::from("BINARY-1.POLYMARKET");
+    let first = instrument_close_with_ts(instrument_id, 10);
+    let replacement = InstrumentClose::new(
+        instrument_id,
+        Price::from("0.00000"),
+        InstrumentCloseType::EndOfSession,
+        UnixNanos::from(20),
+        UnixNanos::from(21),
+    );
+
+    cache.add_instrument_close(first).unwrap();
+    cache.add_instrument_close(replacement).unwrap();
+
+    assert_eq!(cache.instrument_close(&instrument_id), Some(&replacement));
+    assert_eq!(cache.instrument_close_ids(), vec![&instrument_id]);
+    assert!(cache.has_instrument_close(&instrument_id));
+}
+
+#[rstest]
+fn test_reset_clears_instrument_close(mut cache: Cache) {
+    let close = instrument_close_with_ts(InstrumentId::from("BINARY-1.POLYMARKET"), 10);
+    cache.add_instrument_close(close).unwrap();
+
+    cache.reset();
+
+    assert!(!cache.has_instrument_close(&close.instrument_id));
+}
+
+#[rstest]
 fn test_bar_when_empty(cache: Cache) {
     let bar = Bar::default();
     let result = cache.bar(&bar.bar_type);
@@ -4556,6 +4689,16 @@ fn instrument_status_with_ts(instrument_id: InstrumentId, ts_event: u64) -> Inst
     )
 }
 
+fn instrument_close_with_ts(instrument_id: InstrumentId, ts_event: u64) -> InstrumentClose {
+    InstrumentClose::new(
+        instrument_id,
+        Price::from("1.00000"),
+        InstrumentCloseType::ContractExpired,
+        UnixNanos::from(ts_event),
+        UnixNanos::from(ts_event),
+    )
+}
+
 #[rstest]
 fn test_cache_api_market_data_history_introspection() {
     let mut cache = cache_with_data_capacity(3, 10);
@@ -4564,11 +4707,13 @@ fn test_cache_api_market_data_history_introspection() {
     let index_price = index_price_with_ts(instrument_id, 2);
     let funding_rate = funding_rate_with_ts(instrument_id, 3);
     let instrument_status = instrument_status_with_ts(instrument_id, 4);
+    let instrument_close = instrument_close_with_ts(instrument_id, 5);
 
     cache.add_mark_price(mark_price).unwrap();
     cache.add_index_price(index_price).unwrap();
     cache.add_funding_rate(funding_rate).unwrap();
     cache.add_instrument_status(instrument_status).unwrap();
+    cache.add_instrument_close(instrument_close).unwrap();
 
     let cell = RefCell::new(cache);
     let api = CacheApi::new(&cell);
@@ -4581,6 +4726,8 @@ fn test_cache_api_market_data_history_introspection() {
     assert!(api.has_index_prices(&instrument_id));
     assert!(api.has_funding_rates(&instrument_id));
     assert!(api.has_instrument_statuses(&instrument_id));
+    assert!(api.has_instrument_close(&instrument_id));
+    assert_eq!(api.instrument_close(&instrument_id), Some(instrument_close));
     assert_eq!(api.funding_rates(&instrument_id), Some(vec![funding_rate]));
 }
 
@@ -6185,6 +6332,9 @@ fn test_purge_instrument_removes_from_cache_and_indices() {
     );
     cache.add_instrument_status(status).unwrap();
 
+    let close = instrument_close_with_ts(instrument_id, 10);
+    cache.add_instrument_close(close).unwrap();
+
     // Add a fully filled order and its filled-then-closed position so every associated
     // order is in `orders_closed` and every position is in `positions_closed`.
     let mut order_open = OrderTestBuilder::new(OrderType::Market)
@@ -6262,6 +6412,7 @@ fn test_purge_instrument_removes_from_cache_and_indices() {
     assert!(cache.index_price(&instrument_id).is_some());
     assert!(cache.funding_rate(&instrument_id).is_some());
     assert!(cache.instrument_status(&instrument_id).is_some());
+    assert_eq!(cache.instrument_close(&instrument_id), Some(&close));
 
     cache.purge_instrument(instrument_id);
 
@@ -6274,6 +6425,7 @@ fn test_purge_instrument_removes_from_cache_and_indices() {
     assert!(cache.index_price(&instrument_id).is_none());
     assert!(cache.funding_rate(&instrument_id).is_none());
     assert!(cache.instrument_status(&instrument_id).is_none());
+    assert!(cache.instrument_close(&instrument_id).is_none());
     assert!(!cache.index.instrument_orders.contains_key(&instrument_id));
     assert!(
         !cache
@@ -8255,6 +8407,7 @@ struct CacheDatabaseCallLog {
 #[derive(Default)]
 struct SnapshotBlobTestDatabase {
     general: AHashMap<String, Bytes>,
+    instrument_closes: Arc<Mutex<AHashMap<InstrumentId, InstrumentClose>>>,
     orders: AHashMap<ClientOrderId, OrderAny>,
     positions: AHashMap<PositionId, Position>,
     order_positions: AHashMap<ClientOrderId, PositionId>,
@@ -8263,6 +8416,7 @@ struct SnapshotBlobTestDatabase {
     strategy_state: AHashMap<String, Bytes>,
     database_calls: CacheDatabaseCalls,
     fail_add: bool,
+    fail_add_instrument_close: bool,
     fail_add_order: bool,
     fail_add_position: bool,
     fail_index_order_clients: bool,
@@ -8299,6 +8453,13 @@ impl SnapshotBlobTestDatabase {
     fn fail_add() -> Self {
         Self {
             fail_add: true,
+            ..Default::default()
+        }
+    }
+
+    fn fail_add_instrument_close() -> Self {
+        Self {
+            fail_add_instrument_close: true,
             ..Default::default()
         }
     }
@@ -8383,6 +8544,7 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
 
     async fn load_all(&self) -> anyhow::Result<CacheMap> {
         Ok(CacheMap {
+            instrument_closes: self.instrument_closes.lock().clone(),
             orders: self.orders.clone(),
             positions: self.positions.clone(),
             ..Default::default()
@@ -8399,6 +8561,12 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
 
     async fn load_instruments(&self) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>> {
         Ok(AHashMap::new())
+    }
+
+    async fn load_instrument_closes(
+        &self,
+    ) -> anyhow::Result<AHashMap<InstrumentId, InstrumentClose>> {
+        Ok(self.instrument_closes.lock().clone())
     }
 
     async fn load_synthetics(&self) -> anyhow::Result<AHashMap<InstrumentId, SyntheticInstrument>> {
@@ -8529,6 +8697,16 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     fn add_instrument(&self, _instrument: &InstrumentAny) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_instrument_close(&self, close: &InstrumentClose) -> anyhow::Result<()> {
+        if self.fail_add_instrument_close {
+            anyhow::bail!("add instrument close failed");
+        }
+        self.instrument_closes
+            .lock()
+            .insert(close.instrument_id, *close);
         Ok(())
     }
 

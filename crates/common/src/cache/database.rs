@@ -23,7 +23,7 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
     data::{
-        Bar, CustomData, DataType, FundingRateUpdate, QuoteTick, TradeTick,
+        Bar, CustomData, DataType, FundingRateUpdate, InstrumentClose, QuoteTick, TradeTick,
         greeks::{GreeksData, YieldCurveData},
     },
     events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
@@ -46,6 +46,7 @@ use crate::signal::Signal;
 pub struct CacheMap {
     pub currencies: AHashMap<Ustr, Currency>,
     pub instruments: AHashMap<InstrumentId, InstrumentAny>,
+    pub instrument_closes: AHashMap<InstrumentId, InstrumentClose>,
     pub synthetics: AHashMap<InstrumentId, SyntheticInstrument>,
     pub accounts: AHashMap<AccountId, AccountAny>,
     pub orders: AHashMap<ClientOrderId, OrderAny>,
@@ -116,6 +117,15 @@ pub trait CacheDatabaseAdapter {
     ///
     /// Returns an error if loading instruments fails.
     async fn load_instruments(&self) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>>;
+
+    /// Loads all instrument closes from the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading instrument closes fails.
+    async fn load_instrument_closes(
+        &self,
+    ) -> anyhow::Result<AHashMap<InstrumentId, InstrumentClose>>;
 
     /// Loads all synthetic instruments from the cache.
     ///
@@ -325,6 +335,15 @@ pub trait CacheDatabaseAdapter {
     ///
     /// Returns an error if adding an instrument fails.
     fn add_instrument(&self, instrument: &InstrumentAny) -> anyhow::Result<()>;
+
+    /// Adds an instrument close to the cache, replacing any existing value for the instrument.
+    /// Implementations must queue persistence without waiting for the database operation to
+    /// complete.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the instrument close cannot be queued for persistence.
+    fn add_instrument_close(&self, close: &InstrumentClose) -> anyhow::Result<()>;
 
     /// Adds a synthetic instrument to the cache.
     ///

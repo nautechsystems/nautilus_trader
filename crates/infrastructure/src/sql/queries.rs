@@ -17,7 +17,7 @@ use ahash::AHashMap;
 use nautilus_common::signal::Signal;
 use nautilus_model::{
     accounts::AccountAny,
-    data::{Bar, CustomData, DataType, HasTsInit, QuoteTick, TradeTick},
+    data::{Bar, CustomData, DataType, HasTsInit, InstrumentClose, QuoteTick, TradeTick},
     events::{
         AccountState, OrderEvent, OrderEventAny, OrderFilled, OrderInitialized, OrderSnapshot,
         position::snapshot::PositionSnapshot,
@@ -33,7 +33,7 @@ use sqlx::{PgPool, Postgres, Row, Transaction};
 use super::models::{orders::OrderSnapshotRow, positions::PositionSnapshotRow, types::SignalRow};
 use crate::sql::models::{
     accounts::AccountEventRow,
-    data::{BarRow, QuoteTickRow, TradeTickRow},
+    data::{BarRow, InstrumentCloseRow, QuoteTickRow, TradeTickRow},
     enums::{
         AggregationSourcePg, AggressorSidePg, AssetClassPg, BarAggregationPg, CurrencyTypePg,
         PriceTypePg, TrailingOffsetTypePg,
@@ -237,6 +237,53 @@ impl DatabaseQueries {
             .await
             .map(|rows| rows.into_iter().map(|row| row.0).collect())
             .map_err(|e| anyhow::anyhow!("Failed to load instruments: {e}"))
+    }
+
+    /// Inserts or replaces an `InstrumentClose`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL INSERT or UPDATE fails.
+    pub async fn add_instrument_close(
+        pool: &PgPool,
+        close: &InstrumentClose,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO "instrument_close" (
+                instrument_id, close_price, close_type, ts_event, ts_init, created_at
+            ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+            ON CONFLICT (instrument_id) DO UPDATE
+            SET close_price = EXCLUDED.close_price,
+                close_type = EXCLUDED.close_type,
+                ts_event = EXCLUDED.ts_event,
+                ts_init = EXCLUDED.ts_init
+            "#,
+        )
+        .bind(close.instrument_id.to_string())
+        .bind(close.close_price.to_string())
+        .bind(close.close_type.to_string())
+        .bind(close.ts_event.to_string())
+        .bind(close.ts_init.to_string())
+        .execute(pool)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to insert instrument close: {e}"))
+    }
+
+    /// Loads all `InstrumentClose` entries.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL SELECT or row decoding fails.
+    pub async fn load_instrument_closes(pool: &PgPool) -> anyhow::Result<Vec<InstrumentClose>> {
+        sqlx::query_as::<_, InstrumentCloseRow>(
+            "SELECT * FROM instrument_close ORDER BY instrument_id ASC",
+        )
+        .fetch_all(pool)
+        .await
+        .map(|rows| rows.into_iter().map(|row| row.0).collect())
+        .map_err(|e| anyhow::anyhow!("Failed to load instrument closes: {e}"))
     }
 
     /// Inserts an `OrderInitialized` event via the provided `pool`.

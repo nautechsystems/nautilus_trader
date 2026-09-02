@@ -45,7 +45,7 @@ use nautilus_execution::engine::{
 use nautilus_model::{
     accounts::{AccountAny, CashAccount},
     data::{
-        Bar, CustomData, DataType, FundingRateUpdate, QuoteTick, TradeTick,
+        Bar, CustomData, DataType, FundingRateUpdate, InstrumentClose, QuoteTick, TradeTick,
         greeks::{GreeksData, YieldCurveData},
     },
     enums::{OmsType, OrderSide, OrderType},
@@ -1252,6 +1252,12 @@ impl CacheDatabaseAdapter for StubCacheDatabase {
         Ok(AHashMap::new())
     }
 
+    async fn load_instrument_closes(
+        &self,
+    ) -> anyhow::Result<AHashMap<InstrumentId, InstrumentClose>> {
+        Ok(AHashMap::new())
+    }
+
     async fn load_synthetics(&self) -> anyhow::Result<AHashMap<InstrumentId, SyntheticInstrument>> {
         Ok(AHashMap::new())
     }
@@ -1367,6 +1373,10 @@ impl CacheDatabaseAdapter for StubCacheDatabase {
     }
 
     fn add_instrument(&self, _instrument: &InstrumentAny) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_instrument_close(&self, _close: &InstrumentClose) -> anyhow::Result<()> {
         Ok(())
     }
 

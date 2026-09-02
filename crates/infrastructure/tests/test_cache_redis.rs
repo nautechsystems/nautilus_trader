@@ -37,10 +37,10 @@ mod serial_tests {
     use nautilus_model::{
         accounts::AccountAny,
         data::{
-            DataType,
+            DataType, InstrumentClose,
             stubs::{ensure_stub_custom_data_registered, stub_custom_data},
         },
-        enums::{OrderSide, OrderStatus, OrderType},
+        enums::{InstrumentCloseType, OrderSide, OrderStatus, OrderType},
         events::{
             AccountState, OrderEventAny, OrderFilled, OrderSnapshot,
             account::stubs::{
@@ -51,15 +51,15 @@ mod serial_tests {
             position::snapshot::PositionSnapshot,
         },
         identifiers::{
-            AccountId, ActorId, ClientId, ClientOrderId, PositionId, StrategyId, TradeId, TraderId,
-            VenueOrderId,
+            AccountId, ActorId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId,
+            TradeId, TraderId, VenueOrderId,
         },
         instruments::{
             Instrument, InstrumentAny, SyntheticInstrument, stubs::crypto_perpetual_ethusdt,
         },
         orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
-        types::{Currency, Money, Quantity},
+        types::{Currency, Money, Price, Quantity},
     };
     use redis::AsyncCommands;
 
@@ -931,6 +931,68 @@ mod serial_tests {
         cache.dispose();
         adapter.flush().unwrap();
         adapter.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_instrument_close_replacement_survives_restart() {
+        let _guard = redis_test_mutex().lock().await;
+        let adapter = connect_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+        clear_test_trader(&adapter).await;
+        let instrument_id = InstrumentId::from("BINARY-1.POLYMARKET");
+        let close = InstrumentClose::new(
+            instrument_id,
+            Price::from("1.00000"),
+            InstrumentCloseType::ContractExpired,
+            UnixNanos::from(10),
+            UnixNanos::from(11),
+        );
+        let replacement = InstrumentClose::new(
+            close.instrument_id,
+            Price::from("0.00000"),
+            InstrumentCloseType::EndOfSession,
+            UnixNanos::from(20),
+            UnixNanos::from(21),
+        );
+        let mut cache = Cache::new(None, Some(Box::new(adapter)));
+
+        cache.add_instrument_close(close).unwrap();
+        cache.add_instrument_close(replacement).unwrap();
+        assert_eq!(
+            cache.instrument_close(&close.instrument_id),
+            Some(&replacement)
+        );
+        cache.dispose();
+
+        let restarted_adapter = connect_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+        let mut restarted_cache = Cache::new(None, Some(Box::new(restarted_adapter)));
+        restarted_cache.cache_all().await.unwrap();
+
+        assert_eq!(
+            restarted_cache.instrument_close(&close.instrument_id),
+            Some(&replacement)
+        );
+
+        restarted_cache.dispose();
+        let mut cleanup = connect_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+        clear_test_trader(&cleanup).await;
+        cleanup.close().unwrap();
+    }
+
+    async fn clear_test_trader(adapter: &RedisCacheDatabaseAdapter) {
+        let mut conn = adapter.database.con.clone();
+        let keys: Vec<String> = conn
+            .keys(format!("{}:*", adapter.database.trader_key))
+            .await
+            .unwrap();
+        if !keys.is_empty() {
+            conn.del::<_, ()>(&keys).await.unwrap();
+        }
     }
 
     #[tokio::test(flavor = "multi_thread")]

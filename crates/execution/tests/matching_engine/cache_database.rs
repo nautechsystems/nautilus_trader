@@ -25,7 +25,7 @@ use nautilus_core::UnixNanos;
 use nautilus_model::{
     accounts::AccountAny,
     data::{
-        Bar, CustomData, DataType, FundingRateUpdate, QuoteTick, TradeTick,
+        Bar, CustomData, DataType, FundingRateUpdate, InstrumentClose, QuoteTick, TradeTick,
         greeks::{GreeksData, YieldCurveData},
     },
     events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
@@ -119,6 +119,12 @@ impl CacheDatabaseAdapter for FailNthAddOrderDatabase {
     }
 
     async fn load_instruments(&self) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>> {
+        Ok(AHashMap::new())
+    }
+
+    async fn load_instrument_closes(
+        &self,
+    ) -> anyhow::Result<AHashMap<InstrumentId, InstrumentClose>> {
         Ok(AHashMap::new())
     }
 
@@ -237,6 +243,10 @@ impl CacheDatabaseAdapter for FailNthAddOrderDatabase {
     }
 
     fn add_instrument(&self, _instrument: &InstrumentAny) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_instrument_close(&self, _close: &InstrumentClose) -> anyhow::Result<()> {
         Ok(())
     }
 

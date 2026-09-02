@@ -71,6 +71,16 @@ CREATE TABLE IF NOT EXISTS "instrument" (
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Instrument closes are stored independently of instrument metadata.
+CREATE TABLE IF NOT EXISTS "instrument_close" (
+    instrument_id TEXT PRIMARY KEY NOT NULL,
+    close_price TEXT NOT NULL,
+    close_type TEXT NOT NULL,
+    ts_event TEXT NOT NULL,
+    ts_init TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS "order" (
     id TEXT PRIMARY KEY NOT NULL,
     trader_id TEXT REFERENCES trader(id) ON DELETE CASCADE,

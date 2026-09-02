@@ -67,8 +67,9 @@ use nautilus_model::defi::{Pool, PoolProfiler};
 use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{
-        Bar, BarType, FundingRateUpdate, GreeksData, IndexPriceUpdate, InstrumentStatus,
-        MarkPriceUpdate, QuoteTick, TradeTick, YieldCurveData, option_chain::OptionGreeks,
+        Bar, BarType, FundingRateUpdate, GreeksData, IndexPriceUpdate, InstrumentClose,
+        InstrumentStatus, MarkPriceUpdate, QuoteTick, TradeTick, YieldCurveData,
+        option_chain::OptionGreeks,
     },
     enums::{
         AggregationSource, ContingencyType, InstrumentClass, OmsType, OrderSide, PositionSide,
@@ -1542,6 +1543,16 @@ impl<'a> CacheApi<'a> {
         self.cache().instrument_status(instrument_id).copied()
     }
 
+    /// Returns the cached close for the `instrument_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn instrument_close(&self, instrument_id: &InstrumentId) -> Option<InstrumentClose> {
+        self.cache().instrument_close(instrument_id).copied()
+    }
+
     /// Returns the latest bar for the `bar_type` (if found).
     ///
     /// # Panics
@@ -1712,6 +1723,16 @@ impl<'a> CacheApi<'a> {
     #[must_use]
     pub fn has_instrument_statuses(&self, instrument_id: &InstrumentId) -> bool {
         self.cache().has_instrument_statuses(instrument_id)
+    }
+
+    /// Returns whether the cache contains a close for the `instrument_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn has_instrument_close(&self, instrument_id: &InstrumentId) -> bool {
+        self.cache().has_instrument_close(instrument_id)
     }
 
     /// Returns whether the cache contains bars for the `bar_type`.
@@ -2170,6 +2191,7 @@ pub struct Cache {
     general: AHashMap<String, Bytes>,
     currencies: AHashMap<Ustr, Currency>,
     instruments: AHashMap<InstrumentId, InstrumentAny>,
+    instrument_closes: AHashMap<InstrumentId, InstrumentClose>,
     synthetics: AHashMap<InstrumentId, SyntheticInstrument>,
     books: AHashMap<InstrumentId, OrderBook>,
     own_books: AHashMap<InstrumentId, OwnOrderBook>,
@@ -2212,6 +2234,7 @@ impl Debug for Cache {
             .field("index_prices", &self.index_prices)
             .field("funding_rates", &self.funding_rates)
             .field("instrument_statuses", &self.instrument_statuses)
+            .field("instrument_closes", &self.instrument_closes)
             .field("bars", &self.bars)
             .field("greeks", &self.greeks)
             .field("option_greeks", &self.option_greeks)
@@ -2256,6 +2279,7 @@ impl Cache {
             general: AHashMap::new(),
             currencies: AHashMap::new(),
             instruments: AHashMap::new(),
+            instrument_closes: AHashMap::new(),
             synthetics: AHashMap::new(),
             books: AHashMap::new(),
             own_books: AHashMap::new(),
@@ -2316,11 +2340,14 @@ impl Cache {
         Ok(())
     }
 
-    /// Loads all core caches (currencies, instruments, accounts, orders, positions) from the database.
+    /// Loads all core caches from the database.
+    ///
+    /// The loaded instrument closes replace all closes already held in memory. This includes values
+    /// added directly before the persistent cache is loaded.
     ///
     /// # Errors
     ///
-    /// Returns an error if loading all cache data fails.
+    /// Returns an error if loading cache data fails.
     pub async fn cache_all(&mut self) -> anyhow::Result<()> {
         let cache_map = match &self.database {
             Some(db) => db.load_all().await?,
@@ -2329,6 +2356,7 @@ impl Cache {
 
         self.currencies = cache_map.currencies;
         self.instruments = cache_map.instruments;
+        self.instrument_closes = cache_map.instrument_closes;
         self.synthetics = cache_map.synthetics;
         self.accounts = cache_map
             .accounts
@@ -3736,8 +3764,8 @@ impl Cache {
     ///
     /// All cache-owned data keyed by the instrument is removed: the instrument record,
     /// any synthetic with the same id, order book and own-order-book state, quote/trade
-    /// histories, mark/index/funding price histories, instrument status, bars for any
-    /// `BarType` referencing the instrument, and the `instrument_orders` /
+    /// histories, mark/index/funding price histories, instrument status and close, bars
+    /// for any `BarType` referencing the instrument, and the `instrument_orders` /
     /// `instrument_positions` index entries.
     ///
     /// For safety, an instrument is prevented from being purged while any associated
@@ -3808,6 +3836,7 @@ impl Cache {
         self.index_prices.remove(&instrument_id);
         self.funding_rates.remove(&instrument_id);
         self.instrument_statuses.remove(&instrument_id);
+        self.instrument_closes.remove(&instrument_id);
         self.greeks.remove(&instrument_id);
         self.option_greeks.remove(&instrument_id);
 
@@ -3899,6 +3928,7 @@ impl Cache {
         self.index_prices.clear();
         self.funding_rates.clear();
         self.instrument_statuses.clear();
+        self.instrument_closes.clear();
         self.bars.clear();
         self.accounts.clear();
         self.orders.clear();
@@ -4117,6 +4147,26 @@ impl Cache {
             .entry(status.instrument_id)
             .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity));
         statuses_deque.push_front(status);
+        Ok(())
+    }
+
+    /// Adds an instrument close to the cache.
+    ///
+    /// A close already cached for the same instrument is overwritten. With a backing database, the
+    /// replacement is queued for persistence before the in-memory value is updated. A later
+    /// database error is logged by the adapter and does not roll back the cached value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the close cannot be queued for persistence.
+    pub fn add_instrument_close(&mut self, close: InstrumentClose) -> anyhow::Result<()> {
+        log::debug!("Adding `InstrumentClose` for {}", close.instrument_id);
+
+        if let Some(database) = &self.database {
+            database.add_instrument_close(&close)?;
+        }
+
+        self.instrument_closes.insert(close.instrument_id, close);
         Ok(())
     }
 
@@ -7623,6 +7673,18 @@ impl Cache {
             .and_then(|statuses| statuses.front())
     }
 
+    /// Returns the close cached for `instrument_id`, if present.
+    #[must_use]
+    pub fn instrument_close(&self, instrument_id: &InstrumentId) -> Option<&InstrumentClose> {
+        self.instrument_closes.get(instrument_id)
+    }
+
+    /// Returns references to all instrument IDs with a cached close.
+    #[must_use]
+    pub fn instrument_close_ids(&self) -> Vec<&InstrumentId> {
+        self.instrument_closes.keys().collect()
+    }
+
     /// Gets a reference to the latest bar for the `bar_type`.
     #[must_use]
     pub fn bar(&self, bar_type: &BarType) -> Option<&Bar> {
@@ -7739,6 +7801,12 @@ impl Cache {
     #[must_use]
     pub fn has_instrument_statuses(&self, instrument_id: &InstrumentId) -> bool {
         self.instrument_status_count(instrument_id) > 0
+    }
+
+    /// Returns whether the cache contains a close for the `instrument_id`.
+    #[must_use]
+    pub fn has_instrument_close(&self, instrument_id: &InstrumentId) -> bool {
+        self.instrument_closes.contains_key(instrument_id)
     }
 
     /// Returns whether the cache contains bars for the `bar_type`.

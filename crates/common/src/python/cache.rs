@@ -23,7 +23,7 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::defi::{Pool, PoolProfiler};
 use nautilus_model::{
     data::{
-        Bar, BarType, FundingRateUpdate, InstrumentStatus, QuoteTick, TradeTick,
+        Bar, BarType, FundingRateUpdate, InstrumentClose, InstrumentStatus, QuoteTick, TradeTick,
         prices::{IndexPriceUpdate, MarkPriceUpdate},
     },
     enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType},
@@ -163,6 +163,15 @@ impl PyCache {
             .map_err(to_pyvalue_err)
     }
 
+    /// Adds an instrument close, replacing any close cached for the same instrument.
+    #[pyo3(name = "add_instrument_close")]
+    fn py_add_instrument_close(&mut self, close: InstrumentClose) -> PyResult<()> {
+        self.0
+            .borrow_mut()
+            .add_instrument_close(close)
+            .map_err(to_pyvalue_err)
+    }
+
     #[pyo3(name = "quote", signature = (instrument_id, index=0))]
     fn py_quote(&self, instrument_id: InstrumentId, index: usize) -> Option<QuoteTick> {
         self.0
@@ -258,6 +267,11 @@ impl PyCache {
         self.0.borrow().instrument_statuses(&instrument_id)
     }
 
+    #[pyo3(name = "instrument_close")]
+    fn py_instrument_close(&self, instrument_id: InstrumentId) -> Option<InstrumentClose> {
+        self.0.borrow().instrument_close(&instrument_id).copied()
+    }
+
     #[pyo3(name = "price")]
     fn py_price(&self, instrument_id: InstrumentId, price_type: PriceType) -> Option<Price> {
         self.0.borrow().price(&instrument_id, price_type)
@@ -306,6 +320,11 @@ impl PyCache {
     #[pyo3(name = "has_instrument_statuses")]
     fn py_has_instrument_statuses(&self, instrument_id: InstrumentId) -> bool {
         self.0.borrow().has_instrument_statuses(&instrument_id)
+    }
+
+    #[pyo3(name = "has_instrument_close")]
+    fn py_has_instrument_close(&self, instrument_id: InstrumentId) -> bool {
+        self.0.borrow().has_instrument_close(&instrument_id)
     }
 
     #[pyo3(name = "has_bars")]
@@ -1228,6 +1247,7 @@ impl PyCache {
 #[cfg(test)]
 mod tests {
     use nautilus_core::UnixNanos;
+    use nautilus_model::{data::stubs::stub_instrument_close, enums::InstrumentCloseType};
     use rstest::rstest;
 
     use super::*;
@@ -1260,6 +1280,27 @@ mod tests {
         assert_eq!(
             py_cache.py_order_lists(None, None, None, None),
             vec![order_list],
+        );
+    }
+
+    #[rstest]
+    fn test_add_instrument_close_replaces_existing() {
+        let first = stub_instrument_close();
+        let replacement = InstrumentClose::new(
+            first.instrument_id,
+            Price::from("0.00000"),
+            InstrumentCloseType::EndOfSession,
+            UnixNanos::from(3_u64),
+            UnixNanos::from(4_u64),
+        );
+        let mut py_cache = PyCache::from_rc(Rc::new(RefCell::new(Cache::default())));
+
+        py_cache.py_add_instrument_close(first).unwrap();
+        py_cache.py_add_instrument_close(replacement).unwrap();
+
+        assert_eq!(
+            py_cache.py_instrument_close(first.instrument_id),
+            Some(replacement)
         );
     }
 }
@@ -1953,6 +1994,12 @@ impl Cache {
         self.has_instrument_statuses(&instrument_id)
     }
 
+    /// Returns whether the cache contains a close for the `instrument_id`.
+    #[pyo3(name = "has_instrument_close")]
+    fn py_has_instrument_close(&self, instrument_id: InstrumentId) -> bool {
+        self.has_instrument_close(&instrument_id)
+    }
+
     /// Returns whether the cache contains bars for the `bar_type`.
     #[pyo3(name = "has_bars")]
     fn py_has_bars(&self, bar_type: BarType) -> bool {
@@ -2047,6 +2094,12 @@ impl Cache {
     #[pyo3(name = "instrument_statuses")]
     fn py_instrument_statuses(&self, instrument_id: InstrumentId) -> Option<Vec<InstrumentStatus>> {
         self.instrument_statuses(&instrument_id)
+    }
+
+    /// Returns the close cached for `instrument_id`, if present.
+    #[pyo3(name = "instrument_close")]
+    fn py_instrument_close(&self, instrument_id: InstrumentId) -> Option<InstrumentClose> {
+        self.instrument_close(&instrument_id).copied()
     }
 
     /// Gets a reference to the order book for the `instrument_id`.
