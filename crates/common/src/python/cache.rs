@@ -283,6 +283,26 @@ impl PyCache {
         self.0.borrow().order_book(&instrument_id).cloned()
     }
 
+    /// Returns the best bid/ask price and size for the `instrument_id`, without cloning the
+    /// resident order book.
+    ///
+    /// Prefer this over `order_book()` in hot paths that only need top-of-book values, since
+    /// `order_book()` clones the full book and its cost scales with depth.
+    #[pyo3(name = "top_of_book")]
+    fn py_top_of_book(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> Option<(Price, Quantity, Price, Quantity)> {
+        let cache = self.0.borrow();
+        let book = cache.order_book(&instrument_id)?;
+        Some((
+            book.best_bid_price()?,
+            book.best_bid_size()?,
+            book.best_ask_price()?,
+            book.best_ask_size()?,
+        ))
+    }
+
     #[pyo3(name = "has_order_book")]
     fn py_has_order_book(&self, instrument_id: InstrumentId) -> bool {
         self.0.borrow().has_order_book(&instrument_id)
