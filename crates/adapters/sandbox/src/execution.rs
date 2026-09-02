@@ -929,6 +929,12 @@ impl ExecutionClient for SandboxExecutionClient {
         self.cache.borrow().account_owned(&account_id)
     }
 
+    fn enforces_reduce_only(&self, _command: &SubmitOrder, order: &OrderAny) -> bool {
+        // Every matching engine is built from this config, and the engine clamps
+        // reduce-only fills against the position it holds at execution time.
+        order.is_reduce_only() && self.config.use_reduce_only
+    }
+
     fn generate_account_state(
         &self,
         balances: Vec<AccountBalance>,

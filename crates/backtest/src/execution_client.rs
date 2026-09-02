@@ -36,7 +36,7 @@ use nautilus_model::{
     enums::OmsType,
     events::OrderEventAny,
     identifiers::{AccountId, ClientId, ClientOrderId, TraderId, Venue},
-    orders::OrderAny,
+    orders::{Order, OrderAny},
     types::{AccountBalance, MarginBalance},
 };
 
@@ -161,6 +161,20 @@ impl ExecutionClient for BacktestExecutionClient {
 
     fn get_account(&self) -> Option<AccountAny> {
         self.cache.borrow().account_owned(&self.core.account_id)
+    }
+
+    fn enforces_reduce_only(&self, _command: &SubmitOrder, order: &OrderAny) -> bool {
+        order.is_reduce_only()
+            && self
+                .exchange
+                .upgrade()
+                .and_then(|exchange| {
+                    exchange
+                        .try_borrow()
+                        .ok()
+                        .map(|exchange| exchange.use_reduce_only())
+                })
+                .unwrap_or(false)
     }
 
     fn generate_account_state(
@@ -303,10 +317,11 @@ mod tests {
     use nautilus_core::UUID4;
     use nautilus_execution::models::latency::{LatencyModelHandle, StaticLatencyModel};
     use nautilus_model::{
-        enums::{AccountType, BookType, OmsType},
+        enums::{AccountType, BookType, OmsType, OrderSide, OrderType},
         identifiers::{InstrumentId, StrategyId},
+        orders::{Order, builder::OrderTestBuilder},
         stubs::TestDefault,
-        types::{Currency, Money},
+        types::{Currency, Money, Quantity},
     };
     use rstest::rstest;
 
@@ -314,6 +329,12 @@ mod tests {
     use crate::config::SimulatedVenueConfig;
 
     fn setup_client_with_latency() -> (BacktestExecutionClient, Rc<RefCell<SimulatedExchange>>) {
+        setup_client_with_reduce_only(true)
+    }
+
+    fn setup_client_with_reduce_only(
+        use_reduce_only: bool,
+    ) -> (BacktestExecutionClient, Rc<RefCell<SimulatedExchange>>) {
         let cache = Rc::new(RefCell::new(Cache::default()));
         let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
         let latency_model = StaticLatencyModel::new(
@@ -329,6 +350,7 @@ mod tests {
             .book_type(BookType::L2_MBP)
             .starting_balances(vec![Money::new(1_000.0, Currency::USD())])
             .latency_model(LatencyModelHandle::new(latency_model))
+            .use_reduce_only(use_reduce_only)
             .build()
             .unwrap();
         let exchange = Rc::new(RefCell::new(
@@ -389,6 +411,71 @@ mod tests {
             .into();
 
         assert!(Rc::ptr_eq(&upgraded, &exchange));
+    }
+
+    #[rstest]
+    #[case::enabled(true, true, true)]
+    #[case::disabled(false, true, false)]
+    #[case::not_reduce_only(true, false, false)]
+    fn test_enforces_reduce_only_follows_exchange_config(
+        #[case] use_reduce_only: bool,
+        #[case] reduce_only: bool,
+        #[case] expected: bool,
+    ) {
+        let (client, _exchange) = setup_client_with_reduce_only(use_reduce_only);
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(InstrumentId::from("AUD/USD.SIM"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(1))
+            .reduce_only(reduce_only)
+            .build();
+        let command = SubmitOrder::new(
+            TraderId::test_default(),
+            None,
+            StrategyId::test_default(),
+            order.instrument_id(),
+            order.client_order_id(),
+            order.init_event().clone(),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+
+        assert_eq!(client.enforces_reduce_only(&command, &order), expected);
+    }
+
+    #[rstest]
+    fn test_enforces_reduce_only_fails_closed_when_exchange_unavailable() {
+        let (client, exchange) = setup_client_with_reduce_only(true);
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(InstrumentId::from("AUD/USD.SIM"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(1))
+            .reduce_only(true)
+            .build();
+        let command = SubmitOrder::new(
+            TraderId::test_default(),
+            None,
+            StrategyId::test_default(),
+            order.instrument_id(),
+            order.client_order_id(),
+            order.init_event().clone(),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+
+        let borrow = exchange.borrow_mut();
+        assert!(!client.enforces_reduce_only(&command, &order));
+        drop(borrow);
+        drop(exchange);
+        assert!(!client.enforces_reduce_only(&command, &order));
     }
 
     #[rstest]

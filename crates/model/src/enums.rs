@@ -2019,7 +2019,8 @@ pub enum TimeInForce {
 pub enum TradingState {
     /// Normal trading operations.
     Active = 1,
-    /// Trading is completely halted, no new order commands will be emitted.
+    /// Trading is halted except for verified emergency position exits routed through an
+    /// execution client which enforces reduce-only for the order.
     Halted = 2,
     /// Only order commands which would cancel order, or reduce position sizes are permitted.
     Reducing = 3,

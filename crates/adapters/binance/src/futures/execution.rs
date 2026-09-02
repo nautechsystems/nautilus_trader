@@ -1335,6 +1335,23 @@ fn resolve_order_position_identity(
     Ok((position_side, venue_position_id))
 }
 
+fn binance_enforces_reduce_only(
+    is_hedge_mode: bool,
+    command: &SubmitOrder,
+    order: &OrderAny,
+) -> bool {
+    let close_position = command
+        .params
+        .as_ref()
+        .and_then(|params| params.get_bool(PARAMS_CLOSE_POSITION))
+        .unwrap_or(false);
+
+    order.is_reduce_only()
+        && !is_hedge_mode
+        && !close_position
+        && order_type_to_binance_futures(order.order_type()).is_ok()
+}
+
 fn validate_submit_position_id(
     submitted_position_id: Option<PositionId>,
     venue_position_id: Option<PositionId>,
@@ -1672,6 +1689,10 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
     fn get_account(&self) -> Option<AccountAny> {
         self.core.cache().account_owned(&self.core.account_id)
+    }
+
+    fn enforces_reduce_only(&self, command: &SubmitOrder, order: &OrderAny) -> bool {
+        binance_enforces_reduce_only(self.is_hedge_mode(), command, order)
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
@@ -3801,10 +3822,12 @@ fn is_instrument_for_product(instrument: &InstrumentAny, product_type: BinancePr
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
+        enums::OrderSide,
         instruments::stubs::{
             crypto_future_btcusdt, crypto_perpetual_ethusdt, currency_pair_btcusdt,
             perpetual_contract_eurusd, xbtusd_bitmex,
         },
+        orders::{Order, builder::OrderTestBuilder},
         types::Price,
     };
     use rstest::rstest;
@@ -3817,6 +3840,56 @@ mod tests {
             code,
             message: format!("test error {code}"),
         })
+    }
+
+    fn reduce_only_capability_command(order: &OrderAny, close_position: bool) -> SubmitOrder {
+        let params = close_position.then(|| {
+            let mut params = Params::new();
+            params.insert(PARAMS_CLOSE_POSITION.to_string(), true.into());
+            params
+        });
+
+        SubmitOrder::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            order.init_event().clone(),
+            None,
+            None,
+            params,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        )
+    }
+
+    #[rstest]
+    #[case::one_way(false, OrderType::Market, true, false, true)]
+    #[case::hedge(true, OrderType::Market, true, false, false)]
+    #[case::not_reduce_only(false, OrderType::Market, false, false, false)]
+    #[case::close_position(false, OrderType::Market, true, true, false)]
+    #[case::unsupported_order_type(false, OrderType::MarketToLimit, true, false, false)]
+    fn test_binance_enforces_reduce_only_predicate(
+        #[case] is_hedge_mode: bool,
+        #[case] order_type: OrderType,
+        #[case] reduce_only: bool,
+        #[case] close_position: bool,
+        #[case] expected: bool,
+    ) {
+        let order = OrderTestBuilder::new(order_type)
+            .instrument_id(InstrumentId::from("BTCUSDT-PERP.BINANCE"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(1))
+            .reduce_only(reduce_only)
+            .build();
+        let command = reduce_only_capability_command(&order, close_position);
+
+        assert_eq!(
+            binance_enforces_reduce_only(is_hedge_mode, &command, &order),
+            expected
+        );
     }
 
     #[rstest]
