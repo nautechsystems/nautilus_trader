@@ -477,7 +477,12 @@ impl ExecutionEventEmitter {
         }
     }
 
-    fn try_send_account_state(&self, state: AccountState) -> anyhow::Result<()> {
+    /// Emits an account state event and returns any channel error to the caller.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sender is uninitialized or its receiver is closed.
+    pub fn try_send_account_state(&self, state: AccountState) -> anyhow::Result<()> {
         let sender = self.sender.load();
         let sender = sender
             .as_ref()
