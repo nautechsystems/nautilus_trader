@@ -94,7 +94,7 @@ pub(super) async fn handle_batch_order_responses(
                     pending_submits,
                     pending_cancels,
                     account_id,
-                    batch_order.size_precision,
+                    batch_order.request.size_precision,
                     batch_order.price_precision,
                 ),
                 None,
@@ -110,7 +110,7 @@ pub(super) async fn handle_batch_order_responses(
                 order_identities,
                 pending_cancels,
                 account_id,
-                batch_order.size_precision,
+                batch_order.request.size_precision,
                 batch_order.price_precision,
             );
 
@@ -139,7 +139,7 @@ pub(super) async fn handle_batch_order_responses(
             pending_submits,
             pending_cancels,
             account_id,
-            batch_order.size_precision,
+            batch_order.request.size_precision,
             batch_order.price_precision,
         );
 
@@ -180,7 +180,7 @@ pub(super) async fn handle_batch_order_responses(
                         &order_identities,
                         &emitter,
                         account_id,
-                        batch_order.size_precision,
+                        batch_order.request.size_precision,
                         batch_order.price_precision,
                         clock,
                     )
@@ -224,36 +224,25 @@ pub(super) fn emit_market_order_submitted(
         return;
     }
 
-    emit_signed_base_quantity_update(
-        order,
-        is_quote_qty,
-        side,
-        amount,
-        expected_base_qty,
-        size_precision,
-        emitter,
-        clock,
-    );
+    let Ok(base_qty) = Quantity::from_decimal_dp(expected_base_qty, size_precision) else {
+        return;
+    };
+
+    emit_signed_base_quantity_update(order, is_quote_qty, side, amount, base_qty, emitter, clock);
 }
 
-#[expect(clippy::too_many_arguments)]
 pub(super) fn emit_signed_base_quantity_update(
     order: &mut OrderAny,
     is_quote_qty: bool,
     side: OrderSide,
     amount: Quantity,
-    expected_base_qty: Decimal,
-    size_precision: u8,
+    base_qty: Quantity,
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
 ) {
-    if expected_base_qty.is_zero() {
+    if base_qty.is_zero() {
         return;
     }
-
-    let Ok(base_qty) = Quantity::from_decimal_dp(expected_base_qty, size_precision) else {
-        return;
-    };
 
     if base_qty == order.quantity() && !order.is_quote_quantity() {
         return;
@@ -318,7 +307,7 @@ pub(super) async fn handle_single_order_response(
                 order_identities,
                 pending_cancels,
                 account_id,
-                batch_order.size_precision,
+                batch_order.request.size_precision,
                 batch_order.price_precision,
             ) {
                 execute_deferred_cancel(
@@ -342,7 +331,7 @@ pub(super) async fn handle_single_order_response(
                     order_identities,
                     emitter,
                     account_id,
-                    batch_order.size_precision,
+                    batch_order.request.size_precision,
                     batch_order.price_precision,
                     clock,
                 )
@@ -363,7 +352,7 @@ pub(super) async fn handle_single_order_response(
                     pending_submits,
                     pending_cancels,
                     account_id,
-                    batch_order.size_precision,
+                    batch_order.request.size_precision,
                     batch_order.price_precision,
                 ) {
                     execute_deferred_cancel(

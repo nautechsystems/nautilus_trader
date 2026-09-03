@@ -243,7 +243,7 @@ gives each client time to shut down cleanly.
 | Order Type             | Binary Options | Notes                                                                     |
 | ---------------------- | -------------- | ------------------------------------------------------------------------- |
 | `MARKET`               | ✓              | **BUY orders require quote quantity**, SELL orders require base quantity. |
-| `LIMIT`                | ✓              |                                                                           |
+| `LIMIT`                | ✓              | BUY orders accept base or quote quantity; SELL orders require base.       |
 | `STOP_MARKET`          | -              | *Not supported by Polymarket*.                                            |
 | `STOP_LIMIT`           | -              | *Not supported by Polymarket*.                                            |
 | `MARKET_IF_TOUCHED`    | -              | *Not supported by Polymarket*.                                            |
@@ -252,19 +252,45 @@ gives each client time to shut down cleanly.
 
 ### Quantity semantics
 
-Polymarket interprets order quantities differently depending on the order type *and* side:
+Polymarket interprets order quantities differently depending on the order type, side, and
+`quote_quantity` setting:
 
-- **Limit** orders interpret `quantity` as the number of conditional tokens (base units).
-- **Market SELL** orders also use base-unit quantities.
+- **Limit orders with `quote_quantity=False`** interpret `quantity` as the number of conditional
+  tokens (base units).
+- **Limit BUY orders with `quote_quantity=True`** interpret `quantity` as pUSD collateral:
+  - The adapter truncates collateral to cents, signs it as the maker amount, and derives shares at
+    the market's amount precision.
+  - It updates the local order to the signed share quantity before processing the venue response.
+  - The signed amounts must preserve the limit price exactly. Otherwise, the adapter rejects the
+    order before HTTP. For example, 10.00 pUSD at 0.33 is not representable, while 9.90 pUSD at
+    0.33 produces exactly 30 shares.
 - **Market BUY** orders interpret `quantity` as quote notional in **pUSD**.
+- **Market SELL** orders use base-unit quantities.
 
-As a result, a market buy order submitted with a base-denominated quantity will execute far
-more size than intended.
+Quote-sized limit SELL orders are not supported. The adapter denies them before submission. It also
+denies any limit order whose base or quote quantity truncates to zero at the two-decimal signing
+boundary.
+
+To cap a limit BUY by collateral, set `quote_quantity=True`:
+
+```python
+# Limit BUY with quote quantity (spend $10 pUSD at a limit price of 0.50)
+order = strategy.order_factory.limit(
+    instrument_id=instrument_id,
+    order_side=OrderSide.BUY,
+    quantity=instrument.make_qty(10.0),
+    price=instrument.make_price(0.50),
+    time_in_force=TimeInForce.GTC,
+    quote_quantity=True,
+)
+strategy.submit_order(order)
+```
 
 When submitting market BUY orders, set `quote_quantity=True` on the order. The adapter converts
 the quote amount (pUSD) to the signed base-unit share amount before posting to the CLOB. The
 Polymarket execution client denies base-denominated market buys to
-prevent unintended fills.
+prevent unintended fills. A market BUY submitted with a base-denominated quantity can execute far
+more size than intended.
 
 ```python
 # Market BUY with quote quantity (spend $10 pUSD)
@@ -309,7 +335,7 @@ resting `LIMIT` orders only.
 Read each market's `min_order_size` from its order book; active markets commonly report five
 shares. Marketable orders can also be rejected below **1 pUSD** in notional value with
 `invalid amount for a marketable BUY order … min size: $1`. The adapter leaves instrument
-`min_quantity` unset because market BUY quantities use pUSD while the other order quantities use
+`min_quantity` unset because quote-sized BUY quantities use pUSD while base-sized orders use
 shares.
 :::
 
@@ -344,8 +370,8 @@ sequential 15-order chunks.
 - Only `LIMIT` orders are batched. `MARKET` orders inside the list are routed to the
   single-order path, which signs a marketable order and submits it with `FAK` or `FOK`
   based on Nautilus `time_in_force`.
-- `reduce_only` orders, `quote_quantity` orders, and `post_only` with market TIF
-  (`IOC` or `FOK`) are rejected before submission.
+- `reduce_only` orders, quote-sized SELL orders, and `post_only` with market TIF (`IOC` or `FOK`)
+  are denied before submission.
 - A single eligible order falls through to `POST /order` so it keeps the single-order retry
   semantics; the batch path deliberately disables retry because the venue does not expose an
   idempotency key.
@@ -545,12 +571,15 @@ precision requirements**:
   - A limit order submitted with `FAK` or `FOK` must also satisfy the stricter market-order amount
     validation. The venue rejects values that are valid for a resting order but not for that
     market-order type.
-  - For a limit BUY, `quantity` is the nominal share quantity at the limit price. With `FAK` or
-    `FOK`, Polymarket spends the resulting pUSD maker budget, so price improvement can return more
-    shares; the adapter updates the order quantity to the actual fill.
-  - The adapter denies the order before signing when `quantity * price` is not an exact cent amount.
-    It does not round and recompute the nominal share quantity because that would change the signed
-    price/amount ratio.
+  - For a base-sized limit BUY, `quantity` is the nominal share quantity at the limit price. With
+    `FAK` or `FOK`, Polymarket spends the resulting pUSD maker budget, so price improvement can
+    return more shares; the adapter updates the order quantity to the actual fill.
+  - The adapter denies a base-sized limit BUY before signing when `quantity * price` is not an exact
+    cent amount. It does not round and recompute the nominal share quantity because that would
+    change the signed price/amount ratio.
+  - For a collateral-sized limit BUY, the adapter truncates the direct maker amount to cents. The
+    computed share amount uses the market tick decimals plus two size decimals. The signed integer
+    amounts must preserve the requested limit price exactly after this quantization.
 
 - **Resting limit order types (`GTC` and `GTD`):** More flexible precision based on
   market tick size.
@@ -568,14 +597,17 @@ precision requirements**:
 
 :::note
 
-- The adapter validates tick size before signing. It also denies limit `FAK` or `FOK` BUYs whose
-  maker amount has more than two decimal places. This applies to single and batch submissions.
+- The adapter validates tick size before signing. It also denies base-sized limit `FAK` or `FOK`
+  BUYs whose maker amount has more than two decimal places. This applies to single and batch
+  submissions.
 - The adapter requires instrument tick sizes to be exactly representable at four decimals. It
   rejects instrument definitions and tick-size events that do not meet this requirement; a rejected
   event leaves the current tick active.
 - Tick decimals control signing and amount precision. They do not change the instrument's canonical
   four-decimal price precision.
-- Resting `GTC` and `GTD` limit orders and all SELL orders keep their tick-derived amount precision.
+- Base-sized resting `GTC` and `GTD` limit orders and all SELL orders keep their tick-derived amount
+  precision. Collateral-sized limit BUYs use cents for the direct maker amount and tick-derived
+  precision for the computed share amount.
 - The adapter rejects limit prices outside the current market's `tick_size` to `1 - tick_size`
   range before signing.
 - The published `BinaryOption` advertises `min_price` and `max_price` equal to `tick_size` and
@@ -833,8 +865,9 @@ in `nautilus_polymarket::common::consts`.
 
 The user channel reports `original_size` on an `order` message as the signed `makerAmount`. For a
 market order type (`FAK` or `FOK`) BUY that amount is the pUSD budget rather than a share count, so
-a BUY of 100 shares at 0.01 reports `1`. The adapter divides by the order price to recover the
-submitted share quantity before the size reaches the fill tracker or an order status report.
+a BUY of 100 shares at 0.01 reports `1`. The adapter divides by the order price when it must express
+that venue amount as shares in an order status report. Locally submitted quote-sized limit BUYs use
+the share quantity derived during signing as their authoritative fill-tracker quantity.
 
 A SELL signs shares as its maker amount and needs no conversion. Resting types (`GTC` and `GTD`)
 pass through unchanged: their denomination is unconfirmed, and converting a share-denominated size
