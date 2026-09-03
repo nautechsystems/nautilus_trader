@@ -9121,7 +9121,10 @@ fn test_process_book_delta_buffers_until_f_last(
 }
 
 #[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
 fn test_process_book_deltas_buffers_until_f_last(
+    #[case] borrowed: bool,
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
@@ -9149,7 +9152,7 @@ fn test_process_book_deltas_buffers_until_f_last(
             delta_with_flag(instrument_id, 4_000, f_last),
         ],
     );
-    data_engine.process_data(Data::Deltas(Box::new(batch)));
+    dispatch_data(&mut data_engine, Data::Deltas(Box::new(batch)), borrowed);
 
     let published = saver.get_messages();
     assert_eq!(published.len(), 2);

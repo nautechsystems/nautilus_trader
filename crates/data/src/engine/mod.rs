@@ -1738,21 +1738,27 @@ impl DataEngine {
     }
 
     /// Processes a `Data` enum instance, dispatching to live handlers.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "callers hand over ownership; the payload is only moved when a DeFi handler consumes it"
+    )]
     pub fn process_data(&mut self, data: Data) {
-        match data {
-            Data::Deltas(deltas) => {
-                self.data_count += 1;
-                self.handle_deltas(*deltas);
-            }
-            #[cfg(feature = "defi")]
+        #[cfg(feature = "defi")]
+        let data = match data {
             Data::Defi(defi) => {
                 self.process_defi_data(*defi);
+                return;
             }
-            data => self.process_data_ref(DataRef::from(&data)),
-        }
+            data => data,
+        };
+
+        self.process_data_ref(DataRef::from(&data));
     }
 
     /// Processes a borrowed `Data` enum view, dispatching to live handlers.
+    ///
+    /// DeFi payloads are cloned because the DeFi handler may buffer them while a pool snapshot
+    /// is pending; no other variant clones its payload.
     pub fn process_data_ref(&mut self, data: DataRef<'_>) {
         #[cfg(feature = "defi")]
         let data = match data {
@@ -1767,7 +1773,7 @@ impl DataEngine {
 
         match data {
             DataRef::Delta(delta) => self.handle_delta(*delta),
-            DataRef::Deltas(deltas) => self.handle_deltas(deltas.clone()),
+            DataRef::Deltas(deltas) => self.handle_deltas(deltas),
             DataRef::Depth10(depth) => self.handle_depth10(*depth),
             DataRef::Quote(quote) => {
                 self.handle_quote(*quote);
@@ -2483,13 +2489,13 @@ impl DataEngine {
         self.reclaim_deltas_frame(mem::take(&mut deltas.deltas));
     }
 
-    fn handle_deltas(&mut self, mut deltas: OrderBookDeltas) {
+    fn handle_deltas(&mut self, deltas: &OrderBookDeltas) {
         if self.config.buffer_deltas {
             let instrument_id = deltas.instrument_id;
 
-            for delta in deltas.deltas {
+            for delta in &deltas.deltas {
                 let is_last = RecordFlag::F_LAST.matches(delta.flags);
-                self.buffer_delta(delta);
+                self.buffer_delta(*delta);
 
                 if is_last {
                     let mut deltas_to_publish = self
@@ -2503,8 +2509,7 @@ impl DataEngine {
             }
         } else {
             let topic = switchboard::get_book_deltas_topic(deltas.instrument_id);
-            msgbus::publish_deltas(topic, &deltas);
-            self.reclaim_deltas_frame(mem::take(&mut deltas.deltas));
+            msgbus::publish_deltas(topic, deltas);
         }
     }
 

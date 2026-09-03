@@ -366,7 +366,7 @@ impl Data {
     /// Returns whether the data is a type of order book data.
     #[must_use]
     pub fn is_order_book_data(&self) -> bool {
-        matches!(self, Self::Delta(_) | Self::Deltas(_) | Self::Depth10(_))
+        DataRef::from(self).is_order_book_data()
     }
 }
 
@@ -402,6 +402,12 @@ impl DataRef<'_> {
             #[cfg(feature = "defi")]
             Self::Defi(defi) => defi.instrument_id(),
         }
+    }
+
+    /// Returns whether the data is a type of order book data.
+    #[must_use]
+    pub fn is_order_book_data(&self) -> bool {
+        matches!(self, Self::Delta(_) | Self::Deltas(_) | Self::Depth10(_))
     }
 }
 
@@ -1117,6 +1123,7 @@ mod tests {
                 Some("CUSTOM.SIM".to_string()),
             )),
         ];
+        assert_eq!(data.len(), 13, "every non-DeFi Data variant needs a case");
 
         for data in &data {
             let data_ref = DataRef::from(data);
