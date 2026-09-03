@@ -68,9 +68,9 @@ use nautilus_model::{
         OrderType, PositionSide, TimeInForce, TriggerType,
     },
     events::{
-        AccountState, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderExpired, OrderFilled,
-        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderUpdated,
-        PositionEvent,
+        AccountState, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEventAny, OrderExpired,
+        OrderFilled, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected,
+        OrderUpdated, PositionEvent,
         order::spec::{
             OrderCancelRejectedSpec, OrderCanceledSpec, OrderExpiredSpec, OrderFillVoidedSpec,
             OrderFilledSpec, OrderModifyRejectedSpec, OrderPendingCancelSpec,
@@ -728,12 +728,12 @@ fn test_external_client_command_publishes_to_client_topic_and_skips_local_routin
 }
 
 #[rstest]
-fn test_external_client_submit_order_publishes_to_client_topic() {
+fn test_external_client_submit_order_publishes_only_while_eligible() {
     *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
 
     let instrument = audusd_sim();
     let external_client_id = ClientId::from("EXTERNAL");
-    let execution_engine = ExecutionEngine::new(
+    let mut execution_engine = ExecutionEngine::new(
         Rc::new(RefCell::new(TestClock::new())),
         Rc::new(RefCell::new(Cache::default())),
         Some(ExecutionEngineConfig {
@@ -772,13 +772,18 @@ fn test_external_client_submit_order_publishes_to_client_topic() {
     msgbus::subscribe_any(pattern, handler.clone(), None);
 
     execution_engine.execute(TradingCommand::SubmitOrder(command.clone()));
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &order,
+        AccountId::test_default(),
+    ));
+    execution_engine.execute(TradingCommand::SubmitOrder(command.clone()));
 
     msgbus::unsubscribe_any(pattern, &handler);
     let captured = saver.get_messages();
     let cache = execution_engine.cache().borrow();
     let cached_order = cache.order(&order.client_order_id()).unwrap();
     assert_eq!(captured.as_slice(), &[TradingCommand::SubmitOrder(command)]);
-    assert_eq!(cached_order.status(), OrderStatus::Initialized);
+    assert_eq!(cached_order.status(), OrderStatus::Submitted);
 }
 
 #[rstest]
@@ -1625,6 +1630,7 @@ fn test_submit_order_with_duplicate_client_order_id_handles_gracefully(
         OmsType::Netting,
         None,
     );
+    let submitted_order_ids = stub_client.submitted_order_ids();
     execution_engine
         .register_client(Box::new(stub_client))
         .unwrap();
@@ -1693,6 +1699,113 @@ fn test_submit_order_with_duplicate_client_order_id_handles_gracefully(
         order.client_order_id(),
         "Cached order should have correct client order ID"
     );
+    assert_eq!(
+        submitted_order_ids.borrow().as_slice(),
+        &[order.client_order_id()],
+    );
+}
+
+#[rstest]
+fn test_submit_order_list_with_terminal_leg_reconstructs_and_denies_missing_eligible_sibling(
+    mut execution_engine: ExecutionEngine,
+) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let account_id = AccountId::test_default();
+    let instrument = audusd_sim();
+    let stub_client = StubExecutionClient::new(
+        ClientId::from("STUB"),
+        account_id,
+        Venue::test_default(),
+        OmsType::Netting,
+        None,
+    );
+    let submitted_order_ids = stub_client.submitted_order_ids();
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let eligible = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-ELIGIBLE"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("1.00000"))
+        .build();
+    let mut terminal = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-TERMINAL"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("1.10000"))
+        .build();
+    terminal
+        .apply(OrderEventAny::Denied(OrderDenied::new(
+            trader_id,
+            strategy_id,
+            instrument.id,
+            terminal.client_order_id(),
+            "ALREADY_TERMINAL".into(),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )))
+        .unwrap();
+
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(terminal.clone(), None, Some(ClientId::from("STUB")), false)
+        .unwrap();
+
+    let order_list = OrderList::new(
+        OrderListId::from("L-STALE"),
+        instrument.id,
+        strategy_id,
+        vec![eligible.client_order_id(), terminal.client_order_id()],
+        UnixNanos::default(),
+    );
+    let command = SubmitOrderList {
+        trader_id,
+        client_id: Some(ClientId::from("STUB")),
+        strategy_id,
+        instrument_id: instrument.id,
+        order_list,
+        order_inits: vec![eligible.init_event().clone(), terminal.init_event().clone()],
+        exec_algorithm_id: None,
+        position_id: None,
+        params: None,
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        correlation_id: None,
+        causation_id: None,
+    };
+
+    execution_engine.execute(TradingCommand::SubmitOrderList(command));
+
+    let cache = execution_engine.cache().borrow();
+    let eligible = cache.order(&eligible.client_order_id()).unwrap();
+    let terminal = cache.order(&terminal.client_order_id()).unwrap();
+    assert_eq!(eligible.status(), OrderStatus::Denied);
+    let OrderEventAny::Denied(denied) = eligible.last_event() else {
+        panic!("Expected eligible sibling to be denied");
+    };
+    assert_eq!(denied.reason.as_str(), "ORDER_LIST_DENIED: L-STALE");
+    assert_eq!(terminal.status(), OrderStatus::Denied);
+    let OrderEventAny::Denied(denied) = terminal.last_event() else {
+        panic!("Expected terminal order to retain its denial");
+    };
+    assert_eq!(denied.reason.as_str(), "ALREADY_TERMINAL");
+    assert!(submitted_order_ids.borrow().is_empty());
 }
 
 #[rstest]
@@ -4008,6 +4121,7 @@ fn test_submit_bracket_order_list_with_all_duplicate_client_order_id_logs_does_n
         OmsType::Netting,
         None,
     );
+    let submitted_order_ids = stub_client.submitted_order_ids();
     execution_engine
         .register_client(Box::new(stub_client))
         .unwrap();
@@ -4142,9 +4256,14 @@ fn test_submit_bracket_order_list_with_all_duplicate_client_order_id_logs_does_n
         cache.order_exists(&take_profit.client_order_id()),
         "Take profit order should exist in cache"
     );
-
-    // Note: In the Python test, it checks command_count == 2, meaning only 2 commands were processed
-    // This suggests the duplicate submission was handled gracefully without creating new orders
+    assert_eq!(
+        submitted_order_ids.borrow().as_slice(),
+        &[
+            entry.client_order_id(),
+            stop_loss.client_order_id(),
+            take_profit.client_order_id(),
+        ],
+    );
 }
 
 #[rstest]
@@ -15602,7 +15721,7 @@ fn test_submit_order_list_denies_cached_orders_when_missing_order_has_no_init(
 }
 
 #[rstest]
-fn test_submit_order_routes_by_account_issuer_before_instrument_venue(
+fn test_modify_order_routes_by_account_issuer_before_instrument_venue(
     mut execution_engine: ExecutionEngine,
 ) {
     let trader_id = TraderId::test_default();
@@ -15616,7 +15735,7 @@ fn test_submit_order_routes_by_account_issuer_before_instrument_venue(
         None,
     )
     .with_handles_all_order_venues();
-    let account_submitted_order_ids = account_client.submitted_order_ids();
+    let account_modified_order_ids = account_client.modified_order_ids();
     execution_engine
         .register_client(Box::new(account_client))
         .unwrap();
@@ -15628,7 +15747,7 @@ fn test_submit_order_routes_by_account_issuer_before_instrument_venue(
         OmsType::Netting,
         None,
     );
-    let venue_submitted_order_ids = venue_client.submitted_order_ids();
+    let venue_modified_order_ids = venue_client.modified_order_ids();
     execution_engine
         .register_client(Box::new(venue_client))
         .unwrap();
@@ -15655,29 +15774,29 @@ fn test_submit_order_routes_by_account_issuer_before_instrument_venue(
         .add_order(order.clone(), None, None, true)
         .unwrap();
 
-    let submit_order = SubmitOrder {
+    let modify_order = ModifyOrder::new(
         trader_id,
+        None,
         strategy_id,
-        instrument_id: instrument.id,
-        client_order_id: order.client_order_id(),
-        order_init: order.init_event().clone(),
-        position_id: None,
-        params: None,
-        client_id: None,
-        exec_algorithm_id: None,
-        command_id: UUID4::new(),
-        ts_init: UnixNanos::default(),
-        correlation_id: None,
-        causation_id: None,
-    };
+        instrument.id,
+        order.client_order_id(),
+        None,
+        Some(Quantity::from(20)),
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
 
-    execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
+    execution_engine.execute(TradingCommand::ModifyOrder(modify_order));
 
     assert_eq!(
-        account_submitted_order_ids.borrow().as_slice(),
+        account_modified_order_ids.borrow().as_slice(),
         &[order.client_order_id()],
     );
-    assert!(venue_submitted_order_ids.borrow().is_empty());
+    assert!(venue_modified_order_ids.borrow().is_empty());
 }
 
 #[rstest]

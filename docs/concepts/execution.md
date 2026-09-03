@@ -531,7 +531,6 @@ cross or immediately match. Other venue rejections leave it `false`.
 | `QUANTITY_EXCEEDS_MAXIMUM`                       | The effective order quantity exceeds the instrument maximum.                          |
 | `QUANTITY_BELOW_MINIMUM`                         | The effective order quantity is below the instrument minimum.                         |
 | `INVALID_MAX_NOTIONAL_PER_ORDER`                 | The configured maximum notional per order is invalid.                                 |
-| `INVALID_ORDER_SIDE`                             | The order side is invalid for this operation.                                         |
 | `MISSING_EXPIRE_TIME`                            | A GTD order is missing its expire time.                                               |
 | `EXPIRE_TIME_IN_PAST`                            | The order's expire time is in the past.                                               |
 | `MISSING_TRAILING_OFFSET_TYPE`                   | The order is missing a required trailing offset type.                                 |

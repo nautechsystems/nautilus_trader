@@ -1908,6 +1908,23 @@ impl ExecutionEngine {
             log::debug!("{RECV}{CMD} {command:?}");
         }
 
+        match self.validate_submission(&command) {
+            SubmissionValidationResult::Valid => {}
+            SubmissionValidationResult::StaleOrder {
+                client_order_id,
+                status,
+            } => {
+                log::warn!(
+                    "Skipping stale submit command for {client_order_id} in status {status}"
+                );
+                return;
+            }
+            SubmissionValidationResult::Deny(reason) => {
+                self.deny_submission(&command, &reason);
+                return;
+            }
+        }
+
         if let Some(cid) = command.client_id()
             && self.external_clients.contains(&cid)
         {
@@ -1974,6 +1991,111 @@ impl ExecutionEngine {
             TradingCommand::CancelAllOrders(cmd) => self.handle_cancel_all_orders(client, &cmd),
             TradingCommand::QueryOrder(cmd) => self.handle_query_order(client, cmd),
             TradingCommand::QueryAccount(cmd) => self.handle_query_account(client, cmd),
+        }
+    }
+
+    fn validate_submission(&self, command: &TradingCommand) -> SubmissionValidationResult {
+        match command {
+            TradingCommand::SubmitOrder(cmd) => {
+                let cache = self.cache.borrow();
+                let Some(order) = cache.order(&cmd.client_order_id) else {
+                    return SubmissionValidationResult::Valid;
+                };
+
+                if matches!(
+                    order.status(),
+                    OrderStatus::Initialized | OrderStatus::Released
+                ) {
+                    SubmissionValidationResult::Valid
+                } else {
+                    SubmissionValidationResult::StaleOrder {
+                        client_order_id: order.client_order_id(),
+                        status: order.status(),
+                    }
+                }
+            }
+            TradingCommand::SubmitOrderList(cmd) => {
+                let cache = self.cache.borrow();
+                let has_ineligible_order = cmd
+                    .order_list
+                    .client_order_ids
+                    .iter()
+                    .filter_map(|client_order_id| cache.order(client_order_id))
+                    .any(|order| {
+                        !matches!(
+                            order.status(),
+                            OrderStatus::Initialized | OrderStatus::Released
+                        )
+                    });
+
+                if !has_ineligible_order {
+                    return SubmissionValidationResult::Valid;
+                }
+
+                SubmissionValidationResult::Deny(OrderDeniedReason::OrderListDenied {
+                    order_list_id: cmd.order_list.id,
+                })
+            }
+            _ => SubmissionValidationResult::Valid,
+        }
+    }
+
+    fn deny_submission(&self, command: &TradingCommand, reason: &OrderDeniedReason) {
+        let TradingCommand::SubmitOrderList(cmd) = command else {
+            return;
+        };
+
+        let cache = self.cache.borrow();
+        let mut orders: Vec<OrderAny> = cmd
+            .order_list
+            .client_order_ids
+            .iter()
+            .filter_map(|client_order_id| cache.order_owned(client_order_id))
+            .collect();
+        drop(cache);
+
+        for client_order_id in &cmd.order_list.client_order_ids {
+            if orders
+                .iter()
+                .any(|order| order.client_order_id() == *client_order_id)
+            {
+                continue;
+            }
+
+            let Some(order_init) = cmd
+                .order_inits
+                .iter()
+                .find(|init| init.client_order_id == *client_order_id)
+            else {
+                continue;
+            };
+
+            if let Some(order) = self.add_order_from_init(order_init, cmd.position_id, cmd) {
+                orders.push(order);
+            }
+        }
+
+        let mut eligible_orders = orders
+            .iter()
+            .filter(|order| {
+                matches!(
+                    order.status(),
+                    OrderStatus::Initialized | OrderStatus::Released
+                )
+            })
+            .peekable();
+
+        if eligible_orders.peek().is_none() {
+            log::warn!(
+                "Skipping stale submit command for order list {}",
+                cmd.order_list.id
+            );
+            return;
+        }
+
+        let reason = reason.to_string();
+        for order in eligible_orders {
+            self.deny_order(order, &reason);
         }
     }
 
@@ -4367,6 +4489,15 @@ impl ExecutionEngine {
 
         RefMut::map(cache, |c| c.own_order_book_mut(instrument_id).unwrap())
     }
+}
+
+enum SubmissionValidationResult {
+    Valid,
+    StaleOrder {
+        client_order_id: ClientOrderId,
+        status: OrderStatus,
+    },
+    Deny(OrderDeniedReason),
 }
 
 #[cfg(test)]
