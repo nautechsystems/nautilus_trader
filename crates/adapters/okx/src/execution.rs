@@ -46,6 +46,7 @@ use nautilus_live::{
     execution::{
         context::{OrderContext, OrderIdentity},
         failure::CommandFailure,
+        reports::retain_order_status_reports,
     },
     task::{TaskGroup, TaskGroupGuard},
 };
@@ -448,19 +449,7 @@ impl OKXExecutionClient {
             }
         }
 
-        if cmd.open_only {
-            reports.retain(|r| r.order_status.is_open());
-        }
-
-        if let Some(start) = cmd.start {
-            // Open orders are authoritative regardless of age; only closed
-            // history respects the report window.
-            reports.retain(|r| r.ts_last >= start || r.order_status.is_open());
-        }
-
-        if let Some(end) = cmd.end {
-            reports.retain(|r| r.ts_last <= end || r.order_status.is_open());
-        }
+        retain_order_status_reports(&mut reports, cmd);
 
         Ok(OrderReportSweep {
             reports,

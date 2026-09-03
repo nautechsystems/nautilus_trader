@@ -5330,7 +5330,7 @@ async fn test_generate_order_status_reports_paginates_across_multiple_pages() {
 
 #[rstest]
 #[tokio::test]
-async fn test_generate_order_status_reports_open_only_applies_time_window() {
+async fn test_generate_order_status_reports_open_only_ignores_time_window() {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
     *rest_state.open_orders_response.lock().await = json!({
@@ -5359,8 +5359,13 @@ async fn test_generate_order_status_reports_open_only_applies_time_window() {
         .generate_order_status_reports(&cmd)
         .await
         .expect("reports");
-    assert_eq!(reports.len(), 1);
-    assert_eq!(reports[0].venue_order_id.as_str(), "middle");
+    assert_eq!(
+        reports
+            .iter()
+            .map(|report| report.venue_order_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["early", "middle", "late"],
+    );
 
     tc.client.disconnect().await.expect("disconnect");
 }

@@ -76,6 +76,7 @@ criterion = { workspace = true }
 iai = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
+tempfile = { workspace = true }
 
 [[bench]]
 name = "greeks_criterion"

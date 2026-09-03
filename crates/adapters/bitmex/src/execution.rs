@@ -44,7 +44,10 @@ use nautilus_core::{
     Params, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControl};
+use nautilus_live::{
+    ExecutionClientCore, ExecutionEventEmitter, SocketControl,
+    execution::reports::retain_order_status_reports,
+};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType, OrderType, TrailingOffsetType},
@@ -796,13 +799,7 @@ impl ExecutionClient for BitmexExecutionClient {
             .await
             .context("failed to request BitMEX order status reports")?;
 
-        if let Some(start) = cmd.start {
-            reports.retain(|report| report.ts_last >= start);
-        }
-
-        if let Some(end) = cmd.end {
-            reports.retain(|report| report.ts_last <= end);
-        }
+        retain_order_status_reports(&mut reports, cmd);
 
         Self::log_report_receipt(reports.len(), "OrderStatusReport", cmd.log_receipt_level);
 

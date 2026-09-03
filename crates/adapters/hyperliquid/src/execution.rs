@@ -39,7 +39,7 @@ use nautilus_core::{
 };
 use nautilus_live::{
     ExecutionClientCore, ExecutionEventEmitter, SocketControl,
-    execution::context::OrderContext,
+    execution::{context::OrderContext, reports::retain_order_status_reports},
     task::{TaskGroup, TaskGroupGuard, TaskSpawner},
 };
 use nautilus_model::{
@@ -1981,13 +1981,13 @@ impl ExecutionClient for HyperliquidExecutionClient {
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
         let account_address = self.get_account_address()?;
 
-        let reports = self
+        let mut reports = self
             .http_client
             .request_order_status_reports(&account_address, cmd.instrument_id)
             .await
             .context("failed to generate order status reports")?;
 
-        let reports = filter_order_status_reports_for_command(reports, cmd);
+        retain_order_status_reports(&mut reports, cmd);
 
         log::debug!("Generated {} order status reports", reports.len());
         Ok(reports)
@@ -2386,30 +2386,6 @@ impl HyperliquidExecutionClient {
 
         log::debug!("Hyperliquid WebSocket execution stream started");
         Ok(())
-    }
-}
-
-fn filter_order_status_reports_for_command(
-    reports: Vec<OrderStatusReport>,
-    cmd: &GenerateOrderStatusReports,
-) -> Vec<OrderStatusReport> {
-    let reports = if cmd.open_only {
-        reports
-            .into_iter()
-            .filter(|r| r.order_status.is_open())
-            .collect()
-    } else {
-        reports
-    };
-
-    match (cmd.start, cmd.end) {
-        (Some(start), Some(end)) => reports
-            .into_iter()
-            .filter(|r| r.ts_last >= start && r.ts_last <= end)
-            .collect(),
-        (Some(start), None) => reports.into_iter().filter(|r| r.ts_last >= start).collect(),
-        (None, Some(end)) => reports.into_iter().filter(|r| r.ts_last <= end).collect(),
-        (None, None) => reports,
     }
 }
 
@@ -3428,7 +3404,7 @@ use crate::common::parse::determine_order_list_grouping;
 mod tests {
     use std::sync::Arc;
 
-    use nautilus_common::messages::{ExecutionEvent, execution::GenerateOrderStatusReports};
+    use nautilus_common::messages::ExecutionEvent;
     use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_realtime};
     use nautilus_live::{
         ExecutionEventEmitter,
@@ -3457,9 +3433,8 @@ mod tests {
         CancelEntry, ExecutionReport, FifoCache, HyperliquidHttpClient, HyperliquidWebSocketClient,
         PostRejectionRoute, StagedBracketChild, StagedBracketState, WsDispatchState,
         attach_known_client_order_id, build_ouo_resize_request, can_fast_cancel_order,
-        determine_order_list_grouping, filter_order_status_reports_for_command,
-        handle_execution_report, register_order_context_into, split_fast_cancel_requests,
-        validate_order_for_hyperliquid,
+        determine_order_list_grouping, handle_execution_report, register_order_context_into,
+        split_fast_cancel_requests, validate_order_for_hyperliquid,
     };
     use crate::{
         common::enums::HyperliquidEnvironment,
@@ -3647,107 +3622,6 @@ mod tests {
     fn cloid_for(id: &str) -> Ustr {
         let cloid = Cloid::from_client_order_id(ClientOrderId::from(id));
         Ustr::from(&cloid.to_hex())
-    }
-
-    #[rstest]
-    fn test_filter_order_status_reports_for_command_filters_open_only() {
-        let open_report =
-            make_status_report(Some("O-HER-FILTER-OPEN"), "v-open", OrderStatus::Accepted);
-        let closed_report =
-            make_status_report(Some("O-HER-FILTER-CLOSED"), "v-closed", OrderStatus::Filled);
-        let cmd = order_reports_command(true, None, None);
-
-        let filtered =
-            filter_order_status_reports_for_command(vec![open_report, closed_report], &cmd);
-
-        assert_eq!(filtered.len(), 1);
-        assert_eq!(
-            filtered[0].client_order_id,
-            Some(ClientOrderId::from("O-HER-FILTER-OPEN"))
-        );
-    }
-
-    #[rstest]
-    fn test_filter_order_status_reports_for_command_filters_time_range_inclusively() {
-        let mut before = make_status_report(
-            Some("O-HER-FILTER-BEFORE"),
-            "v-before",
-            OrderStatus::Accepted,
-        );
-        let mut at_start =
-            make_status_report(Some("O-HER-FILTER-START"), "v-start", OrderStatus::Accepted);
-        let mut at_end =
-            make_status_report(Some("O-HER-FILTER-END"), "v-end", OrderStatus::Accepted);
-        let mut after =
-            make_status_report(Some("O-HER-FILTER-AFTER"), "v-after", OrderStatus::Accepted);
-        before.ts_last = UnixNanos::from(9);
-        at_start.ts_last = UnixNanos::from(10);
-        at_end.ts_last = UnixNanos::from(20);
-        after.ts_last = UnixNanos::from(21);
-        let cmd =
-            order_reports_command(false, Some(UnixNanos::from(10)), Some(UnixNanos::from(20)));
-
-        let filtered =
-            filter_order_status_reports_for_command(vec![before, at_start, at_end, after], &cmd);
-        let filtered_ids: Vec<Option<ClientOrderId>> = filtered
-            .iter()
-            .map(|report| report.client_order_id)
-            .collect();
-
-        assert_eq!(
-            filtered_ids,
-            vec![
-                Some(ClientOrderId::from("O-HER-FILTER-START")),
-                Some(ClientOrderId::from("O-HER-FILTER-END")),
-            ]
-        );
-    }
-
-    #[rstest]
-    fn test_filter_order_status_reports_for_command_without_filters_preserves_reports() {
-        let open_report = make_status_report(
-            Some("O-HER-FILTER-KEEP-OPEN"),
-            "v-keep-open",
-            OrderStatus::Accepted,
-        );
-        let closed_report = make_status_report(
-            Some("O-HER-FILTER-KEEP-CLOSED"),
-            "v-keep-closed",
-            OrderStatus::Canceled,
-        );
-        let cmd = order_reports_command(false, None, None);
-
-        let filtered =
-            filter_order_status_reports_for_command(vec![open_report, closed_report], &cmd);
-        let filtered_ids: Vec<Option<ClientOrderId>> = filtered
-            .iter()
-            .map(|report| report.client_order_id)
-            .collect();
-
-        assert_eq!(
-            filtered_ids,
-            vec![
-                Some(ClientOrderId::from("O-HER-FILTER-KEEP-OPEN")),
-                Some(ClientOrderId::from("O-HER-FILTER-KEEP-CLOSED")),
-            ]
-        );
-    }
-
-    fn order_reports_command(
-        open_only: bool,
-        start: Option<UnixNanos>,
-        end: Option<UnixNanos>,
-    ) -> GenerateOrderStatusReports {
-        GenerateOrderStatusReports::new(
-            UUID4::new(),
-            UnixNanos::default(),
-            open_only,
-            None,
-            start,
-            end,
-            None,
-            None,
-        )
     }
 
     fn limit_order(

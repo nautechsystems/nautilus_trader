@@ -66,6 +66,7 @@ use nautilus_core::{
 };
 use nautilus_live::{
     ExecutionClientCore, ExecutionEventEmitter, SocketControlFactory,
+    execution::reports::retain_order_status_reports,
     task::{TaskGroup, TaskGroupGuard},
 };
 use nautilus_model::{
@@ -2768,19 +2769,7 @@ impl ExecutionClient for DydxExecutionClient {
             }
         }
 
-        // Filter by open_only if specified
-        if cmd.open_only {
-            reports.retain(|r| r.order_status.is_open());
-        }
-
-        // Filter by time range if specified
-        if let Some(start) = cmd.start {
-            reports.retain(|r| r.ts_last >= start);
-        }
-
-        if let Some(end) = cmd.end {
-            reports.retain(|r| r.ts_last <= end);
-        }
+        retain_order_status_reports(&mut reports, cmd);
 
         // Drop reports that conflict with the local cache: if we already have
         // the order in a terminal status (FILLED/CANCELED/EXPIRED/REJECTED/DENIED),

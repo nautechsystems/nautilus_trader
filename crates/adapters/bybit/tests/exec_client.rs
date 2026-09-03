@@ -56,7 +56,8 @@ use nautilus_common::{
     messages::{
         ExecutionEvent, SystemEvent,
         execution::{
-            CancelOrder, ExecutionReport, GeneratePositionStatusReports, ModifyOrder, SubmitOrder,
+            CancelOrder, ExecutionReport, GenerateOrderStatusReports,
+            GeneratePositionStatusReports, ModifyOrder, SubmitOrder,
         },
         system::SocketState,
     },
@@ -66,7 +67,9 @@ use nautilus_core::{UUID4, UnixNanos, params::Params};
 use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
-    enums::{AccountType, OmsType, OrderSide, TimeInForce, TrailingOffsetType, TriggerType},
+    enums::{
+        AccountType, OmsType, OrderSide, OrderStatus, TimeInForce, TrailingOffsetType, TriggerType,
+    },
     events::{AccountState, OrderDenied, OrderEventAny},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TraderId,
@@ -1167,6 +1170,41 @@ async fn test_exec_client_connect_disconnect() {
             .iter()
             .all(|endpoint| registry.handle(*BYBIT_CLIENT_ID, *endpoint).is_none())
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_reports_open_only_retains_recent_closed() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    client.connect().await.unwrap();
+    state
+        .rejected_orders_realtime
+        .store(true, Ordering::Relaxed);
+
+    let command = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        Some(InstrumentId::from("ETHUSDT-LINEAR.BYBIT")),
+        None,
+        None,
+        None,
+        None,
+    );
+    let reports = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 2);
+    assert_eq!(reports[0].venue_order_id, "test-order-id-12345".into());
+    assert_eq!(reports[0].order_status, OrderStatus::Rejected);
+    assert_eq!(reports[1].venue_order_id, "open-order-2".into());
+    assert_eq!(reports[1].order_status, OrderStatus::Accepted);
+
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]

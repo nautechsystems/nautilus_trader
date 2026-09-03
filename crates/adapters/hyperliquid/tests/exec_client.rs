@@ -6595,10 +6595,9 @@ async fn test_query_account_perp_endpoint_failure_emits_no_state() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_reports_filters_open_only_and_time_range() {
-    // Mock a frontendOpenOrders payload with 3 orders so the path's open_only
-    // filter has work to do; assert open_only=true keeps every entry the
-    // venue returns (frontendOpenOrders only ever returns open orders).
+async fn test_generate_order_status_reports_retains_open_reports_outside_time_range() {
+    // Mock a frontendOpenOrders payload with three orders so time bounds can prove that every
+    // non-closed report remains authoritative regardless of its last update.
     let state = TestServerState::default();
     *state.frontend_open_orders_response.lock().await = Some(json!([
         {
@@ -6636,9 +6635,7 @@ async fn test_generate_order_status_reports_filters_open_only_and_time_range() {
         .unwrap();
     assert_eq!(reports.len(), 3);
 
-    // Filter by `start` only: keep orders with ts_last >= start. Since
-    // timestamps are converted from ms to ns, choose a cutoff between the
-    // first and second order: 1700000005000 ms == 1700000005000 * 1e6 ns.
+    // Set the cutoff between the first and second order.
     let cutoff = UnixNanos::from(1_700_000_005_000_000_000u64);
     let cmd_start = GenerateOrderStatusReports::new(
         UUID4::new(),
@@ -6654,10 +6651,9 @@ async fn test_generate_order_status_reports_filters_open_only_and_time_range() {
         .generate_order_status_reports(&cmd_start)
         .await
         .unwrap();
-    assert_eq!(reports.len(), 2);
+    assert_eq!(reports.len(), 3);
 
-    // Filter by `end` only: keep orders with ts_last <= end. Set end before
-    // the third order's timestamp.
+    // Set the end before the third order.
     let end = UnixNanos::from(1_700_000_015_000_000_000u64);
     let cmd_end = GenerateOrderStatusReports::new(
         UUID4::new(),
@@ -6673,9 +6669,9 @@ async fn test_generate_order_status_reports_filters_open_only_and_time_range() {
         .generate_order_status_reports(&cmd_end)
         .await
         .unwrap();
-    assert_eq!(reports.len(), 2);
+    assert_eq!(reports.len(), 3);
 
-    // Both bounds: keep only the middle order.
+    // Both bounds still retain all non-closed reports.
     let cmd_both = GenerateOrderStatusReports::new(
         UUID4::new(),
         UnixNanos::default(),
@@ -6690,8 +6686,18 @@ async fn test_generate_order_status_reports_filters_open_only_and_time_range() {
         .generate_order_status_reports(&cmd_both)
         .await
         .unwrap();
-    assert_eq!(reports.len(), 1);
-    assert_eq!(reports[0].venue_order_id, VenueOrderId::from("100002"));
+    assert_eq!(reports.len(), 3);
+    assert_eq!(
+        reports
+            .iter()
+            .map(|report| report.venue_order_id)
+            .collect::<Vec<_>>(),
+        vec![
+            VenueOrderId::from("100001"),
+            VenueOrderId::from("100002"),
+            VenueOrderId::from("100003"),
+        ],
+    );
 
     client.disconnect().await.unwrap();
 }
