@@ -6806,7 +6806,7 @@ impl OKXHttpClient {
                     .collect_algo_reports(
                         account_id,
                         &pending,
-                        true,
+                        require_complete_active_coverage,
                         &mut instruments_cache,
                         ts_init,
                         start_ns,

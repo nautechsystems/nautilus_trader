@@ -5082,6 +5082,58 @@ async fn test_generate_order_status_reports_preserves_pending_after_history_not_
 }
 
 #[rstest]
+#[tokio::test]
+async fn test_generate_order_status_reports_excludes_old_terminal_pending_record() {
+    let empty = get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() });
+    let router = Router::new()
+        .route("/api/v5/trade/orders-pending", empty.clone())
+        .route("/api/v5/trade/orders-history", empty.clone())
+        .route(
+            "/api/v5/trade/orders-algo-pending",
+            get(|Query(params): Query<HashMap<String, String>>| async move {
+                if params
+                    .get("ordType")
+                    .is_some_and(|value| value == "trigger")
+                {
+                    let mut response = load_test_data("http_get_orders_algo_pending.json");
+                    response["data"][0]["state"] = json!("effective");
+                    response["data"][0]["uTime"] = json!("1");
+                    Json(response).into_response()
+                } else {
+                    Json(json!({"code": "0", "msg": "", "data": []})).into_response()
+                }
+            }),
+        )
+        .route("/api/v5/trade/orders-algo-history", empty.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let (mut client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+        });
+    client.on_instrument(btc_usdt_swap_instrument());
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        None,
+        Some(UnixNanos::from(2_000_000_u64)),
+        None,
+        None,
+        None,
+    );
+
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+
+    assert!(reports.is_empty());
+}
+
+#[rstest]
 #[case::service_unavailable(StatusCode::SERVICE_UNAVAILABLE, 2)]
 #[case::not_found(StatusCode::NOT_FOUND, 1)]
 #[tokio::test]
