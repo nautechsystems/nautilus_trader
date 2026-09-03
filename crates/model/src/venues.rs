@@ -76,6 +76,7 @@ impl Venue {
     }
 }
 
+/// A map of built-in `Venue` constants.
 pub static VENUE_MAP: LazyLock<Mutex<HashMap<&str, Venue>>> = LazyLock::new(|| {
     let mut map = HashMap::new();
     map.insert(Venue::CBCM().inner().as_str(), Venue::CBCM());

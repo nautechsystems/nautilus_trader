@@ -114,6 +114,11 @@
 // macro expansion; an item-level `allow` cannot reach the expansion
 #![allow(clippy::clone_on_copy)]
 
+// Re-exported so `enum_strum_serde!` can reach serde through `$crate`, which works in a consumer
+// that renames its serde dependency or does not depend on it directly.
+#[doc(hidden)]
+pub use serde as __serde;
+
 pub mod accounts;
 pub mod currencies;
 pub mod data;

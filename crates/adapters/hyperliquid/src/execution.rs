@@ -3239,7 +3239,7 @@ impl PostRejectionRoute {
         let Some(report) = self.dispatch_state.resolve_submission(&client_order_id) else {
             return;
         };
-        let is_terminal = !report.order_status.is_open();
+        let is_terminal = report.order_status.is_closed();
         let outcome = dispatch_order_event(&report, &self.dispatch_state, &self.emitter, ts_init);
 
         if outcome == DispatchOutcome::External {
@@ -3272,7 +3272,7 @@ fn handle_execution_report(
     match report {
         ExecutionReport::Order(order_report) => {
             let is_filled_marker = matches!(order_report.order_status, OrderStatus::Filled);
-            let is_open = order_report.order_status.is_open();
+            let is_terminal = order_report.order_status.is_closed();
             let client_order_id = order_report.client_order_id;
 
             let outcome = dispatch_order_event(&order_report, dispatch_state, emitter, ts_init);
@@ -3293,7 +3293,7 @@ fn handle_execution_report(
             // * `Tracked` non-marker terminal and `External` terminal: evict now
             //   so long-running sessions do not leak cloid mappings.
             if let Some(id) = client_order_id
-                && !is_open
+                && is_terminal
             {
                 match outcome {
                     DispatchOutcome::Skip => {}

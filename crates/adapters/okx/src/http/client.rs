@@ -4276,14 +4276,14 @@ impl OKXHttpClient {
 
             if let Some(start_ns) = start_ns
                 && report.ts_last < start_ns
-                && !report.order_status.is_open()
+                && report.order_status.is_closed()
             {
                 continue;
             }
 
             if let Some(end_ns) = end_ns
                 && report.ts_last > end_ns
-                && !report.order_status.is_open()
+                && report.order_status.is_closed()
             {
                 continue;
             }
@@ -4550,14 +4550,14 @@ impl OKXHttpClient {
 
             if let Some(start_ns) = start_ns
                 && report.ts_last < start_ns
-                && !report.order_status.is_open()
+                && report.order_status.is_closed()
             {
                 continue;
             }
 
             if let Some(end_ns) = end_ns
                 && report.ts_last > end_ns
-                && !report.order_status.is_open()
+                && report.order_status.is_closed()
             {
                 continue;
             }

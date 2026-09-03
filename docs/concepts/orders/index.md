@@ -46,9 +46,23 @@ target integration's capabilities before relying on an option.
   - `FILLED`
   - `VOIDED`
 
+These groups overlap, so open and closed are not opposites. `PENDING_UPDATE` and `PENDING_CANCEL`
+are both open and in-flight: the order is working at the venue while a modify or cancel request is
+outstanding. Four statuses are neither open nor closed: `INITIALIZED`, `EMULATED`, and `RELEASED`
+are active local, and `SUBMITTED` is in-flight until the venue acknowledges the order.
+
+:::warning[Open and closed are not complements]
+Test for a finished order with `is_closed`, never by negating `is_open`. An order at one of the four
+statuses above is not open, but it is not finished either. Every order is `SUBMITTED` immediately
+after submission, so code which treats "not open" as done abandons orders the venue is still
+processing. Use `is_inflight` for the awaiting-venue case.
+:::
+
 ### Order state flow
 
-The following diagram illustrates the order lifecycle and primary state transitions:
+The following diagram illustrates the order lifecycle and primary state transitions. Each status
+appears once, so `PENDING_UPDATE` and `PENDING_CANCEL` are drawn under In-Flight although they are
+also open:
 
 ```mermaid
 flowchart TB

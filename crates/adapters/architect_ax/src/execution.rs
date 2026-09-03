@@ -1092,15 +1092,19 @@ impl ExecutionClient for AxExecutionClient {
         }
 
         if cmd.open_only {
-            reports.retain(|r| r.order_status.is_open());
+            // AX reports a resting order as `PENDING`, which maps to `Submitted`: working at the
+            // venue but not yet acknowledged, so open-only must keep in-flight statuses too.
+            reports.retain(|r| r.order_status.is_open() || r.order_status.is_inflight());
         }
 
+        // Only closed history respects the report window; an order still working at the venue is
+        // authoritative regardless of how long it has rested without an update.
         if let Some(start) = cmd.start {
-            reports.retain(|r| r.ts_last >= start);
+            reports.retain(|r| !r.order_status.is_closed() || r.ts_last >= start);
         }
 
         if let Some(end) = cmd.end {
-            reports.retain(|r| r.ts_last <= end);
+            reports.retain(|r| !r.order_status.is_closed() || r.ts_last <= end);
         }
 
         Ok(reports)

@@ -502,7 +502,7 @@ impl DydxExecutionClient {
                                     ts_init,
                                 ) {
                                     Ok(report) => {
-                                        if !report.order_status.is_open()
+                                        if report.order_status.is_closed()
                                             && let Ok(cid) = ws_order.client_id.parse::<u32>()
                                         {
                                             let meta = ws_order

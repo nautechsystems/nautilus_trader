@@ -832,7 +832,12 @@ fails startup.
 The bulk methods take a filter command carrying `instrument_id`, `start`, and `end`, plus
 `open_only` for order reports and `venue_order_id` for fill reports. Apply every filter the venue
 endpoint supports and complete the rest locally. `open_only` separates the currently open orders a
-periodic check needs from the history a mass status needs. Log report counts at the command's
+periodic check needs from the history a mass status needs. Retain a report for `open_only` when its
+status is open **or** in-flight, not open alone: a venue holding an order it has not yet
+acknowledged reports it as `SUBMITTED`, which is in-flight rather than open. Apply `start` and `end`
+only to closed reports, since an order working at the venue is authoritative however long it has
+rested without an update. Test a report for a terminal status with `is_closed()`, never
+`!is_open()`, which classifies `SUBMITTED` as terminal. Log report counts at the command's
 `log_receipt_level` so periodic checks stay at debug while mass status logs at info.
 
 When a periodic check request fails, the engine marks that client failed for the cycle and stops

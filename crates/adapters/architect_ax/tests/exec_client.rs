@@ -879,6 +879,22 @@ async fn test_generate_order_status_reports_filters() {
                 "tag": null
             },
             {
+                "tn": 1704067203,
+                "ts": 1704067203,
+                "d": "B",
+                "o": "PENDING",
+                "oid": "OID-PENDING",
+                "p": "1.08420",
+                "q": 100,
+                "rq": 100,
+                "s": "EURUSD-PERP",
+                "tif": "GTC",
+                "u": "u",
+                "xq": 0,
+                "cid": null,
+                "tag": null
+            },
+            {
                 "tn": 1704067202,
                 "ts": 1704067202,
                 "d": "B",
@@ -895,7 +911,7 @@ async fn test_generate_order_status_reports_filters() {
                 "tag": null
             }
         ],
-        "total_count": 3,
+        "total_count": 4,
         "limit": 100,
         "offset": 0
     });
@@ -904,7 +920,7 @@ async fn test_generate_order_status_reports_filters() {
         .as_array()
         .unwrap()
         .iter()
-        .filter(|order| order["o"] == "ACCEPTED")
+        .filter(|order| order["o"] == "ACCEPTED" || order["o"] == "PENDING")
         .cloned()
         .collect::<Vec<_>>();
     *state.open_orders_payload.lock().await = Some(serde_json::json!({ "orders": open_orders }));
@@ -915,7 +931,7 @@ async fn test_generate_order_status_reports_filters() {
     client.connect().await.expect("Failed to connect");
     drain_rx(&mut rx);
 
-    // No filter -> all 3 reports
+    // No filter -> all 4 reports
     let cmd = GenerateOrderStatusReports::new(
         UUID4::new(),
         UnixNanos::default(),
@@ -930,7 +946,7 @@ async fn test_generate_order_status_reports_filters() {
         .generate_order_status_reports(&cmd)
         .await
         .expect("generate_order_status_reports");
-    assert_eq!(reports.len(), 3);
+    assert_eq!(reports.len(), 4);
 
     // Filter by instrument -> only XAU
     let cmd = GenerateOrderStatusReports::new(
@@ -958,10 +974,25 @@ async fn test_generate_order_status_reports_filters() {
         None,
     );
     let reports = client.generate_order_status_reports(&cmd).await.unwrap();
-    assert_eq!(reports.len(), 2);
-    assert!(reports.iter().all(|r| r.order_status.is_open()));
+    assert_eq!(reports.len(), 3);
+    assert!(
+        reports
+            .iter()
+            .all(|r| r.order_status.is_open() || r.order_status.is_inflight()),
+    );
+    // A resting `PENDING` order maps to `Submitted`, which is in-flight rather than open, and must
+    // still be reported under `open_only` or reconciliation treats it as missing at the venue.
+    assert_eq!(
+        reports
+            .iter()
+            .filter(|r| r.order_status == OrderStatus::Submitted)
+            .count(),
+        1,
+    );
 
-    // start cutoff that excludes the first order (ts=1704067200)
+    // A start cutoff at ts=1704067201 excludes closed history before it, but an order still
+    // working at the venue is authoritative regardless of how long it has rested. The only
+    // closed order in the fixture (OID-FILLED) sits on the cutoff, so nothing is dropped.
     let cmd = GenerateOrderStatusReports::new(
         UUID4::new(),
         UnixNanos::default(),
@@ -973,7 +1004,34 @@ async fn test_generate_order_status_reports_filters() {
         None,
     );
     let reports = client.generate_order_status_reports(&cmd).await.unwrap();
-    assert_eq!(reports.len(), 2);
+    assert_eq!(reports.len(), 4);
+    // OID-ACCEPTED predates the cutoff and is retained because it is not closed.
+    assert!(
+        reports
+            .iter()
+            .any(|r| r.venue_order_id.as_str() == "OID-ACCEPTED"
+                && r.ts_last.as_u64() < 1_704_067_201_000_000_000),
+    );
+
+    // A cutoff past the closed order drops it, while the open orders survive.
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        None,
+        Some(UnixNanos::from(1_704_067_202_000_000_000u64)),
+        None,
+        None,
+        None,
+    );
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+    assert_eq!(reports.len(), 3);
+    assert!(
+        !reports
+            .iter()
+            .any(|r| r.order_status == OrderStatus::Filled),
+        "closed history must respect the report window",
+    );
 
     client.disconnect().await.expect("Failed to disconnect");
 }

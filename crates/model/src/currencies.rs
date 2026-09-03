@@ -41,1355 +41,346 @@ use ustr::Ustr;
 
 use crate::{enums::CurrencyType, types::Currency};
 
-///////////////////////////////////////////////////////////////////////////////
-// Fiat currencies
-///////////////////////////////////////////////////////////////////////////////
-static AUD_LOCK: OnceLock<Currency> = OnceLock::new();
-static BRL_LOCK: OnceLock<Currency> = OnceLock::new();
-static CAD_LOCK: OnceLock<Currency> = OnceLock::new();
-static CHF_LOCK: OnceLock<Currency> = OnceLock::new();
-static CNY_LOCK: OnceLock<Currency> = OnceLock::new();
-static CNH_LOCK: OnceLock<Currency> = OnceLock::new();
-static CZK_LOCK: OnceLock<Currency> = OnceLock::new();
-static DKK_LOCK: OnceLock<Currency> = OnceLock::new();
-static EUR_LOCK: OnceLock<Currency> = OnceLock::new();
-static GBP_LOCK: OnceLock<Currency> = OnceLock::new();
-static HKD_LOCK: OnceLock<Currency> = OnceLock::new();
-static HUF_LOCK: OnceLock<Currency> = OnceLock::new();
-static ILS_LOCK: OnceLock<Currency> = OnceLock::new();
-static INR_LOCK: OnceLock<Currency> = OnceLock::new();
-static JPY_LOCK: OnceLock<Currency> = OnceLock::new();
-static KRW_LOCK: OnceLock<Currency> = OnceLock::new();
-static MXN_LOCK: OnceLock<Currency> = OnceLock::new();
-static NOK_LOCK: OnceLock<Currency> = OnceLock::new();
-static NZD_LOCK: OnceLock<Currency> = OnceLock::new();
-static PLN_LOCK: OnceLock<Currency> = OnceLock::new();
-static RUB_LOCK: OnceLock<Currency> = OnceLock::new();
-static SAR_LOCK: OnceLock<Currency> = OnceLock::new();
-static SEK_LOCK: OnceLock<Currency> = OnceLock::new();
-static SGD_LOCK: OnceLock<Currency> = OnceLock::new();
-static THB_LOCK: OnceLock<Currency> = OnceLock::new();
-static TRY_LOCK: OnceLock<Currency> = OnceLock::new();
-static TWD_LOCK: OnceLock<Currency> = OnceLock::new();
-static USD_LOCK: OnceLock<Currency> = OnceLock::new();
-static ZAR_LOCK: OnceLock<Currency> = OnceLock::new();
-
-///////////////////////////////////////////////////////////////////////////////
-// Commodity backed currencies
-///////////////////////////////////////////////////////////////////////////////
-static XAG_LOCK: OnceLock<Currency> = OnceLock::new();
-static XAU_LOCK: OnceLock<Currency> = OnceLock::new();
-static XPT_LOCK: OnceLock<Currency> = OnceLock::new();
-
-///////////////////////////////////////////////////////////////////////////////
-// Crypto currencies
-///////////////////////////////////////////////////////////////////////////////
-static ONEINCH_LOCK: OnceLock<Currency> = OnceLock::new();
-static AAVE_LOCK: OnceLock<Currency> = OnceLock::new();
-static ACA_LOCK: OnceLock<Currency> = OnceLock::new();
-static ADA_LOCK: OnceLock<Currency> = OnceLock::new();
-static APT_LOCK: OnceLock<Currency> = OnceLock::new();
-static ARB_LOCK: OnceLock<Currency> = OnceLock::new();
-static AVAX_LOCK: OnceLock<Currency> = OnceLock::new();
-static BCH_LOCK: OnceLock<Currency> = OnceLock::new();
-static BIO_LOCK: OnceLock<Currency> = OnceLock::new();
-static BTC_LOCK: OnceLock<Currency> = OnceLock::new();
-static BTTC_LOCK: OnceLock<Currency> = OnceLock::new();
-static BNB_LOCK: OnceLock<Currency> = OnceLock::new();
-static BRZ_LOCK: OnceLock<Currency> = OnceLock::new();
-static BSV_LOCK: OnceLock<Currency> = OnceLock::new();
-static BUSD_LOCK: OnceLock<Currency> = OnceLock::new();
-static CAKE_LOCK: OnceLock<Currency> = OnceLock::new();
-static CRV_LOCK: OnceLock<Currency> = OnceLock::new();
-static DASH_LOCK: OnceLock<Currency> = OnceLock::new();
-static DOGE_LOCK: OnceLock<Currency> = OnceLock::new();
-static DOT_LOCK: OnceLock<Currency> = OnceLock::new();
-static ENA_LOCK: OnceLock<Currency> = OnceLock::new();
-static EOS_LOCK: OnceLock<Currency> = OnceLock::new();
-static ETH_LOCK: OnceLock<Currency> = OnceLock::new();
-static ETHW_LOCK: OnceLock<Currency> = OnceLock::new();
-static FDUSD_LOCK: OnceLock<Currency> = OnceLock::new();
-static GWEI_LOCK: OnceLock<Currency> = OnceLock::new();
-static HYPE_LOCK: OnceLock<Currency> = OnceLock::new();
-static JOE_LOCK: OnceLock<Currency> = OnceLock::new();
-static LINK_LOCK: OnceLock<Currency> = OnceLock::new();
-static LTC_LOCK: OnceLock<Currency> = OnceLock::new();
-static LUNA_LOCK: OnceLock<Currency> = OnceLock::new();
-static MAMUSD_LOCK: OnceLock<Currency> = OnceLock::new();
-static NBT_LOCK: OnceLock<Currency> = OnceLock::new();
-static POL_LOCK: OnceLock<Currency> = OnceLock::new();
-static PROVE_LOCK: OnceLock<Currency> = OnceLock::new();
-static RLUSD_LOCK: OnceLock<Currency> = OnceLock::new();
-static SOL_LOCK: OnceLock<Currency> = OnceLock::new();
-static SUI_LOCK: OnceLock<Currency> = OnceLock::new();
-static TON_LOCK: OnceLock<Currency> = OnceLock::new();
-static TRX_LOCK: OnceLock<Currency> = OnceLock::new();
-static TRYB_LOCK: OnceLock<Currency> = OnceLock::new();
-static TUSD_LOCK: OnceLock<Currency> = OnceLock::new();
-static SHIB_LOCK: OnceLock<Currency> = OnceLock::new();
-static UNI_LOCK: OnceLock<Currency> = OnceLock::new();
-static VTC_LOCK: OnceLock<Currency> = OnceLock::new();
-static WBTC_LOCK: OnceLock<Currency> = OnceLock::new();
-static WSB_LOCK: OnceLock<Currency> = OnceLock::new();
-static XBT_LOCK: OnceLock<Currency> = OnceLock::new();
-static XEC_LOCK: OnceLock<Currency> = OnceLock::new();
-static XLM_LOCK: OnceLock<Currency> = OnceLock::new();
-static XMR_LOCK: OnceLock<Currency> = OnceLock::new();
-static XRP_LOCK: OnceLock<Currency> = OnceLock::new();
-static XTZ_LOCK: OnceLock<Currency> = OnceLock::new();
-static USDC_LOCK: OnceLock<Currency> = OnceLock::new();
-static USDC_POS_LOCK: OnceLock<Currency> = OnceLock::new();
-static USDG_LOCK: OnceLock<Currency> = OnceLock::new();
-static USDP_LOCK: OnceLock<Currency> = OnceLock::new();
-static PUSD_LOCK: OnceLock<Currency> = OnceLock::new();
-static USDT_LOCK: OnceLock<Currency> = OnceLock::new();
-static ZEC_LOCK: OnceLock<Currency> = OnceLock::new();
-
-impl Currency {
-    ///////////////////////////////////////////////////////////////////////////
-    // Fiat currencies
-    ///////////////////////////////////////////////////////////////////////////
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn AUD() -> Self {
-        *AUD_LOCK.get_or_init(|| Self {
-            code: Ustr::from("AUD"),
-            precision: 2,
-            iso4217: 36,
-            name: Ustr::from("Australian dollar"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn BRL() -> Self {
-        *BRL_LOCK.get_or_init(|| Self {
-            code: Ustr::from("BRL"),
-            precision: 2,
-            iso4217: 986,
-            name: Ustr::from("Brazilian real"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn CAD() -> Self {
-        *CAD_LOCK.get_or_init(|| Self {
-            code: Ustr::from("CAD"),
-            precision: 2,
-            iso4217: 124,
-            name: Ustr::from("Canadian dollar"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn CHF() -> Self {
-        *CHF_LOCK.get_or_init(|| Self {
-            code: Ustr::from("CHF"),
-            precision: 2,
-            iso4217: 756,
-            name: Ustr::from("Swiss franc"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn CNY() -> Self {
-        *CNY_LOCK.get_or_init(|| Self {
-            code: Ustr::from("CNY"),
-            precision: 2,
-            iso4217: 156,
-            name: Ustr::from("Chinese yuan"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn CNH() -> Self {
-        *CNH_LOCK.get_or_init(|| Self {
-            code: Ustr::from("CNH"),
-            precision: 2,
-            iso4217: 0,
-            name: Ustr::from("Chinese yuan (offshore)"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn CZK() -> Self {
-        *CZK_LOCK.get_or_init(|| Self {
-            code: Ustr::from("CZK"),
-            precision: 2,
-            iso4217: 203,
-            name: Ustr::from("Czech koruna"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn DKK() -> Self {
-        *DKK_LOCK.get_or_init(|| Self {
-            code: Ustr::from("DKK"),
-            precision: 2,
-            iso4217: 208,
-            name: Ustr::from("Danish krone"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn EUR() -> Self {
-        *EUR_LOCK.get_or_init(|| Self {
-            code: Ustr::from("EUR"),
-            precision: 2,
-            iso4217: 978,
-            name: Ustr::from("Euro"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn GBP() -> Self {
-        *GBP_LOCK.get_or_init(|| Self {
-            code: Ustr::from("GBP"),
-            precision: 2,
-            iso4217: 826,
-            name: Ustr::from("British Pound"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn HKD() -> Self {
-        *HKD_LOCK.get_or_init(|| Self {
-            code: Ustr::from("HKD"),
-            precision: 2,
-            iso4217: 344,
-            name: Ustr::from("Hong Kong dollar"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn HUF() -> Self {
-        *HUF_LOCK.get_or_init(|| Self {
-            code: Ustr::from("HUF"),
-            precision: 2,
-            iso4217: 348,
-            name: Ustr::from("Hungarian forint"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn ILS() -> Self {
-        *ILS_LOCK.get_or_init(|| Self {
-            code: Ustr::from("ILS"),
-            precision: 2,
-            iso4217: 376,
-            name: Ustr::from("Israeli new shekel"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn INR() -> Self {
-        *INR_LOCK.get_or_init(|| Self {
-            code: Ustr::from("INR"),
-            precision: 2,
-            iso4217: 356,
-            name: Ustr::from("Indian rupee"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn JPY() -> Self {
-        *JPY_LOCK.get_or_init(|| Self {
-            code: Ustr::from("JPY"),
-            precision: 0,
-            iso4217: 392,
-            name: Ustr::from("Japanese yen"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn KRW() -> Self {
-        *KRW_LOCK.get_or_init(|| Self {
-            code: Ustr::from("KRW"),
-            precision: 0,
-            iso4217: 410,
-            name: Ustr::from("South Korean won"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn MXN() -> Self {
-        *MXN_LOCK.get_or_init(|| Self {
-            code: Ustr::from("MXN"),
-            precision: 2,
-            iso4217: 484,
-            name: Ustr::from("Mexican peso"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn NOK() -> Self {
-        *NOK_LOCK.get_or_init(|| Self {
-            code: Ustr::from("NOK"),
-            precision: 2,
-            iso4217: 578,
-            name: Ustr::from("Norwegian krone"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn NZD() -> Self {
-        *NZD_LOCK.get_or_init(|| Self {
-            code: Ustr::from("NZD"),
-            precision: 2,
-            iso4217: 554,
-            name: Ustr::from("New Zealand dollar"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn PLN() -> Self {
-        *PLN_LOCK.get_or_init(|| Self {
-            code: Ustr::from("PLN"),
-            precision: 2,
-            iso4217: 985,
-            name: Ustr::from("Polish złoty"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn RUB() -> Self {
-        *RUB_LOCK.get_or_init(|| Self {
-            code: Ustr::from("RUB"),
-            precision: 2,
-            iso4217: 643,
-            name: Ustr::from("Russian ruble"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn SAR() -> Self {
-        *SAR_LOCK.get_or_init(|| Self {
-            code: Ustr::from("SAR"),
-            precision: 2,
-            iso4217: 682,
-            name: Ustr::from("Saudi riyal"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn SEK() -> Self {
-        *SEK_LOCK.get_or_init(|| Self {
-            code: Ustr::from("SEK"),
-            precision: 2,
-            iso4217: 752,
-            name: Ustr::from("Swedish krona"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn SGD() -> Self {
-        *SGD_LOCK.get_or_init(|| Self {
-            code: Ustr::from("SGD"),
-            precision: 2,
-            iso4217: 702,
-            name: Ustr::from("Singapore dollar"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn THB() -> Self {
-        *THB_LOCK.get_or_init(|| Self {
-            code: Ustr::from("THB"),
-            precision: 2,
-            iso4217: 764,
-            name: Ustr::from("Thai baht"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn TRY() -> Self {
-        *TRY_LOCK.get_or_init(|| Self {
-            code: Ustr::from("TRY"),
-            precision: 2,
-            iso4217: 949,
-            name: Ustr::from("Turkish lira"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn TWD() -> Self {
-        *TWD_LOCK.get_or_init(|| Self {
-            code: Ustr::from("TWD"),
-            precision: 2,
-            iso4217: 901,
-            name: Ustr::from("New Taiwan dollar"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn USD() -> Self {
-        *USD_LOCK.get_or_init(|| Self {
-            code: Ustr::from("USD"),
-            precision: 2,
-            iso4217: 840,
-            name: Ustr::from("United States dollar"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn ZAR() -> Self {
-        *ZAR_LOCK.get_or_init(|| Self {
-            code: Ustr::from("ZAR"),
-            precision: 2,
-            iso4217: 710,
-            name: Ustr::from("South African rand"),
-            currency_type: CurrencyType::Fiat,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn XAG() -> Self {
-        *XAG_LOCK.get_or_init(|| Self {
-            code: Ustr::from("XAG"),
-            precision: 2,
-            iso4217: 961,
-            name: Ustr::from("Silver (one troy ounce)"),
-            currency_type: CurrencyType::CommodityBacked,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn XAU() -> Self {
-        *XAU_LOCK.get_or_init(|| Self {
-            code: Ustr::from("XAU"),
-            precision: 2,
-            iso4217: 959,
-            name: Ustr::from("Gold (one troy ounce)"),
-            currency_type: CurrencyType::CommodityBacked,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn XPT() -> Self {
-        *XPT_LOCK.get_or_init(|| Self {
-            code: Ustr::from("XPT"),
-            precision: 2,
-            iso4217: 962,
-            name: Ustr::from("Platinum (one troy ounce)"),
-            currency_type: CurrencyType::CommodityBacked,
-        })
-    }
-
-    ///////////////////////////////////////////////////////////////////////////
-    // Crypto currencies
-    ///////////////////////////////////////////////////////////////////////////
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn ONEINCH() -> Self {
-        *ONEINCH_LOCK.get_or_init(|| Self {
-            code: Ustr::from("1INCH"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("1inch Network"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn AAVE() -> Self {
-        *AAVE_LOCK.get_or_init(|| Self {
-            code: Ustr::from("AAVE"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Aave"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn ACA() -> Self {
-        *ACA_LOCK.get_or_init(|| Self {
-            code: Ustr::from("ACA"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Acala Token"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn ADA() -> Self {
-        *ADA_LOCK.get_or_init(|| Self {
-            code: Ustr::from("ADA"),
-            precision: 6,
-            iso4217: 0,
-            name: Ustr::from("Cardano"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn APT() -> Self {
-        *APT_LOCK.get_or_init(|| Self {
-            code: Ustr::from("APT"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Aptos"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn ARB() -> Self {
-        *ARB_LOCK.get_or_init(|| Self {
-            code: Ustr::from("ARB"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Arbitrum"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn AVAX() -> Self {
-        *AVAX_LOCK.get_or_init(|| Self {
-            code: Ustr::from("AVAX"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Avalanche"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn BCH() -> Self {
-        *BCH_LOCK.get_or_init(|| Self {
-            code: Ustr::from("BCH"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Bitcoin Cash"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn BIO() -> Self {
-        *BIO_LOCK.get_or_init(|| Self {
-            code: Ustr::from("BIO"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("BioPassport"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn BTC() -> Self {
-        *BTC_LOCK.get_or_init(|| Self {
-            code: Ustr::from("BTC"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Bitcoin"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn BTTC() -> Self {
-        *BTTC_LOCK.get_or_init(|| Self {
-            code: Ustr::from("BTTC"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("BitTorrent"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn BNB() -> Self {
-        *BNB_LOCK.get_or_init(|| Self {
-            code: Ustr::from("BNB"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Binance Coin"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn BRZ() -> Self {
-        *BRZ_LOCK.get_or_init(|| Self {
-            code: Ustr::from("BRZ"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Brazilian Digital Token"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn BSV() -> Self {
-        *BSV_LOCK.get_or_init(|| Self {
-            code: Ustr::from("BSV"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Bitcoin SV"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn BUSD() -> Self {
-        *BUSD_LOCK.get_or_init(|| Self {
-            code: Ustr::from("BUSD"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Binance USD"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn CAKE() -> Self {
-        *CAKE_LOCK.get_or_init(|| Self {
-            code: Ustr::from("CAKE"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("PancakeSwap"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn CRV() -> Self {
-        *CRV_LOCK.get_or_init(|| Self {
-            code: Ustr::from("CRV"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Curve DAO Token"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn DASH() -> Self {
-        *DASH_LOCK.get_or_init(|| Self {
-            code: Ustr::from("DASH"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Dash"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn DOT() -> Self {
-        *DOT_LOCK.get_or_init(|| Self {
-            code: Ustr::from("DOT"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Polkadot"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn DOGE() -> Self {
-        *DOGE_LOCK.get_or_init(|| Self {
-            code: Ustr::from("DOGE"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Dogecoin"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn ENA() -> Self {
-        *ENA_LOCK.get_or_init(|| Self {
-            code: Ustr::from("ENA"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Ethena"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn EOS() -> Self {
-        *EOS_LOCK.get_or_init(|| Self {
-            code: Ustr::from("EOS"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("EOS"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn ETH() -> Self {
-        *ETH_LOCK.get_or_init(|| Self {
-            code: Ustr::from("ETH"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Ethereum"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn ETHW() -> Self {
-        *ETHW_LOCK.get_or_init(|| Self {
-            code: Ustr::from("ETHW"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("EthereumPoW"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn FDUSD() -> Self {
-        *FDUSD_LOCK.get_or_init(|| Self {
-            code: Ustr::from("FDUSD"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("First Digital USD"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn GWEI() -> Self {
-        *GWEI_LOCK.get_or_init(|| Self {
-            code: Ustr::from("GWEI"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Gwei"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn HYPE() -> Self {
-        *HYPE_LOCK.get_or_init(|| Self {
-            code: Ustr::from("HYPE"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Hyperliquid"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn JOE() -> Self {
-        *JOE_LOCK.get_or_init(|| Self {
-            code: Ustr::from("JOE"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("JOE"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn LINK() -> Self {
-        *LINK_LOCK.get_or_init(|| Self {
-            code: Ustr::from("LINK"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Chainlink"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn LTC() -> Self {
-        *LTC_LOCK.get_or_init(|| Self {
-            code: Ustr::from("LTC"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Litecoin"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn LUNA() -> Self {
-        *LUNA_LOCK.get_or_init(|| Self {
-            code: Ustr::from("LUNA"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Terra"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn MAMUSD() -> Self {
-        *MAMUSD_LOCK.get_or_init(|| Self {
-            code: Ustr::from("MAMUSD"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("MAMUSD"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn NBT() -> Self {
-        *NBT_LOCK.get_or_init(|| Self {
-            code: Ustr::from("NBT"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("NanoByte Token"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn POL() -> Self {
-        *POL_LOCK.get_or_init(|| Self {
-            code: Ustr::from("POL"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Polygon"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn PROVE() -> Self {
-        *PROVE_LOCK.get_or_init(|| Self {
-            code: Ustr::from("PROVE"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Prove AI"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn RLUSD() -> Self {
-        *RLUSD_LOCK.get_or_init(|| Self {
-            code: Ustr::from("RLUSD"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Ripple USD"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn SOL() -> Self {
-        *SOL_LOCK.get_or_init(|| Self {
-            code: Ustr::from("SOL"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Solana"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn SHIB() -> Self {
-        *SHIB_LOCK.get_or_init(|| Self {
-            code: Ustr::from("SHIB"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Shiba Inu"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn SUI() -> Self {
-        *SUI_LOCK.get_or_init(|| Self {
-            code: Ustr::from("SUI"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Sui"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn TON() -> Self {
-        *TON_LOCK.get_or_init(|| Self {
-            code: Ustr::from("TON"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Toncoin"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn TRX() -> Self {
-        *TRX_LOCK.get_or_init(|| Self {
-            code: Ustr::from("TRX"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("TRON"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn TRYB() -> Self {
-        *TRYB_LOCK.get_or_init(|| Self {
-            code: Ustr::from("TRYB"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("BiLira"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn TUSD() -> Self {
-        *TUSD_LOCK.get_or_init(|| Self {
-            code: Ustr::from("TUSD"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("TrueUSD"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn UNI() -> Self {
-        *UNI_LOCK.get_or_init(|| Self {
-            code: Ustr::from("UNI"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Uniswap"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn VTC() -> Self {
-        *VTC_LOCK.get_or_init(|| Self {
-            code: Ustr::from("VTC"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Vertcoin"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn WBTC() -> Self {
-        *WBTC_LOCK.get_or_init(|| Self {
-            code: Ustr::from("WBTC"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Wrapped Bitcoin"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn WSB() -> Self {
-        *WSB_LOCK.get_or_init(|| Self {
-            code: Ustr::from("WSB"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("WallStreetBets DApp"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn XBT() -> Self {
-        *XBT_LOCK.get_or_init(|| Self {
-            code: Ustr::from("XBT"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Bitcoin"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn XEC() -> Self {
-        *XEC_LOCK.get_or_init(|| Self {
-            code: Ustr::from("XEC"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("eCash"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn XLM() -> Self {
-        *XLM_LOCK.get_or_init(|| Self {
-            code: Ustr::from("XLM"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Stellar Lumen"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn XMR() -> Self {
-        *XMR_LOCK.get_or_init(|| Self {
-            code: Ustr::from("XMR"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Monero"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn USDT() -> Self {
-        *USDT_LOCK.get_or_init(|| Self {
-            code: Ustr::from("USDT"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Tether"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn XRP() -> Self {
-        *XRP_LOCK.get_or_init(|| Self {
-            code: Ustr::from("XRP"),
-            precision: 6,
-            iso4217: 0,
-            name: Ustr::from("XRP"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn XTZ() -> Self {
-        *XTZ_LOCK.get_or_init(|| Self {
-            code: Ustr::from("XTZ"),
-            precision: 6,
-            iso4217: 0,
-            name: Ustr::from("Tezos"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[must_use]
-    #[allow(non_snake_case)]
-    pub fn USDC() -> Self {
-        *USDC_LOCK.get_or_init(|| Self {
-            code: Ustr::from("USDC"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("USD Coin"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[must_use]
-    #[allow(non_snake_case)]
-    pub fn USDC_POS() -> Self {
-        *USDC_POS_LOCK.get_or_init(|| Self {
-            code: Ustr::from("USDC.e"),
-            precision: 6,
-            iso4217: 0,
-            name: Ustr::from("USD Coin (PoS)"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn USDG() -> Self {
-        *USDG_LOCK.get_or_init(|| Self {
-            code: Ustr::from("USDG"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Global Dollar"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn USDP() -> Self {
-        *USDP_LOCK.get_or_init(|| Self {
-            code: Ustr::from("USDP"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Pax Dollar"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn pUSD() -> Self {
-        *PUSD_LOCK.get_or_init(|| Self {
-            code: Ustr::from("pUSD"),
-            precision: 6,
-            iso4217: 0,
-            name: Ustr::from("Polymarket USD"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
-
-    #[allow(non_snake_case)]
-    #[must_use]
-    pub fn ZEC() -> Self {
-        *ZEC_LOCK.get_or_init(|| Self {
-            code: Ustr::from("ZEC"),
-            precision: 8,
-            iso4217: 0,
-            name: Ustr::from("Zcash"),
-            currency_type: CurrencyType::Crypto,
-        })
-    }
+/// Declares the built-in [`Currency`] constants.
+///
+/// Each row generates the accessor, its backing `OnceLock`, and the [`CURRENCY_MAP`] registration,
+/// so a currency cannot be declared without also being registered.
+macro_rules! currency_constants {
+    ($(
+        $accessor:ident => $code:literal, $precision:literal, $iso4217:literal, $name:literal,
+        $currency_type:ident;
+    )+) => {
+        impl Currency {
+            $(
+                #[doc = concat!("Returns the ", $name, " (`", $code, "`) currency.")]
+                #[allow(non_snake_case)]
+                #[must_use]
+                pub fn $accessor() -> Self {
+                    static LOCK: OnceLock<Currency> = OnceLock::new();
+                    *LOCK.get_or_init(|| Self {
+                        code: Ustr::from($code),
+                        precision: $precision,
+                        iso4217: $iso4217,
+                        name: Ustr::from($name),
+                        currency_type: CurrencyType::$currency_type,
+                    })
+                }
+            )+
+        }
+
+        /// A map of built-in `Currency` constants.
+        pub static CURRENCY_MAP: LazyLock<Mutex<HashMap<String, Currency>>> = LazyLock::new(|| {
+            let mut map = HashMap::new();
+            $(map.insert(Currency::$accessor().code.to_string(), Currency::$accessor());)+
+            Mutex::new(map)
+        });
+
+        #[cfg(test)]
+        fn all_currency_constants() -> Vec<Currency> {
+            vec![$(Currency::$accessor()),+]
+        }
+    };
 }
 
-/// A map of built-in `Currency` constants.
-pub static CURRENCY_MAP: LazyLock<Mutex<HashMap<String, Currency>>> = LazyLock::new(|| {
-    let mut map = HashMap::new();
-    ///////////////////////////////////////////////////////////////////////////
+currency_constants! {
     // Fiat currencies
-    ///////////////////////////////////////////////////////////////////////////
-    map.insert(Currency::AUD().code.to_string(), Currency::AUD());
-    map.insert(Currency::BRL().code.to_string(), Currency::BRL());
-    map.insert(Currency::CAD().code.to_string(), Currency::CAD());
-    map.insert(Currency::CHF().code.to_string(), Currency::CHF());
-    map.insert(Currency::CNY().code.to_string(), Currency::CNY());
-    map.insert(Currency::CNH().code.to_string(), Currency::CNH());
-    map.insert(Currency::CZK().code.to_string(), Currency::CZK());
-    map.insert(Currency::DKK().code.to_string(), Currency::DKK());
-    map.insert(Currency::EUR().code.to_string(), Currency::EUR());
-    map.insert(Currency::GBP().code.to_string(), Currency::GBP());
-    map.insert(Currency::HKD().code.to_string(), Currency::HKD());
-    map.insert(Currency::HUF().code.to_string(), Currency::HUF());
-    map.insert(Currency::ILS().code.to_string(), Currency::ILS());
-    map.insert(Currency::INR().code.to_string(), Currency::INR());
-    map.insert(Currency::JPY().code.to_string(), Currency::JPY());
-    map.insert(Currency::KRW().code.to_string(), Currency::KRW());
-    map.insert(Currency::MXN().code.to_string(), Currency::MXN());
-    map.insert(Currency::NOK().code.to_string(), Currency::NOK());
-    map.insert(Currency::NZD().code.to_string(), Currency::NZD());
-    map.insert(Currency::PLN().code.to_string(), Currency::PLN());
-    map.insert(Currency::RUB().code.to_string(), Currency::RUB());
-    map.insert(Currency::SAR().code.to_string(), Currency::SAR());
-    map.insert(Currency::SEK().code.to_string(), Currency::SEK());
-    map.insert(Currency::SGD().code.to_string(), Currency::SGD());
-    map.insert(Currency::THB().code.to_string(), Currency::THB());
-    map.insert(Currency::TRY().code.to_string(), Currency::TRY());
-    map.insert(Currency::USD().code.to_string(), Currency::USD());
-    map.insert(Currency::XAG().code.to_string(), Currency::XAG());
-    map.insert(Currency::XAU().code.to_string(), Currency::XAU());
-    map.insert(Currency::XPT().code.to_string(), Currency::XPT());
-    map.insert(Currency::ZAR().code.to_string(), Currency::ZAR());
-    ///////////////////////////////////////////////////////////////////////////
+    AUD => "AUD", 2, 36, "Australian dollar", Fiat;
+    BRL => "BRL", 2, 986, "Brazilian real", Fiat;
+    CAD => "CAD", 2, 124, "Canadian dollar", Fiat;
+    CHF => "CHF", 2, 756, "Swiss franc", Fiat;
+    CNY => "CNY", 2, 156, "Chinese yuan", Fiat;
+    CNH => "CNH", 2, 0, "Chinese yuan (offshore)", Fiat;
+    CZK => "CZK", 2, 203, "Czech koruna", Fiat;
+    DKK => "DKK", 2, 208, "Danish krone", Fiat;
+    EUR => "EUR", 2, 978, "Euro", Fiat;
+    GBP => "GBP", 2, 826, "British Pound", Fiat;
+    HKD => "HKD", 2, 344, "Hong Kong dollar", Fiat;
+    HUF => "HUF", 2, 348, "Hungarian forint", Fiat;
+    ILS => "ILS", 2, 376, "Israeli new shekel", Fiat;
+    INR => "INR", 2, 356, "Indian rupee", Fiat;
+    JPY => "JPY", 0, 392, "Japanese yen", Fiat;
+    KRW => "KRW", 0, 410, "South Korean won", Fiat;
+    MXN => "MXN", 2, 484, "Mexican peso", Fiat;
+    NOK => "NOK", 2, 578, "Norwegian krone", Fiat;
+    NZD => "NZD", 2, 554, "New Zealand dollar", Fiat;
+    PLN => "PLN", 2, 985, "Polish złoty", Fiat;
+    RUB => "RUB", 2, 643, "Russian ruble", Fiat;
+    SAR => "SAR", 2, 682, "Saudi riyal", Fiat;
+    SEK => "SEK", 2, 752, "Swedish krona", Fiat;
+    SGD => "SGD", 2, 702, "Singapore dollar", Fiat;
+    THB => "THB", 2, 764, "Thai baht", Fiat;
+    TRY => "TRY", 2, 949, "Turkish lira", Fiat;
+    TWD => "TWD", 2, 901, "New Taiwan dollar", Fiat;
+    USD => "USD", 2, 840, "United States dollar", Fiat;
+    ZAR => "ZAR", 2, 710, "South African rand", Fiat;
+
+    // Commodity backed currencies
+    XAG => "XAG", 2, 961, "Silver (one troy ounce)", CommodityBacked;
+    XAU => "XAU", 2, 959, "Gold (one troy ounce)", CommodityBacked;
+    XPT => "XPT", 2, 962, "Platinum (one troy ounce)", CommodityBacked;
+
     // Crypto currencies
-    ///////////////////////////////////////////////////////////////////////////
-    map.insert(Currency::AAVE().code.to_string(), Currency::AAVE());
-    map.insert(Currency::ACA().code.to_string(), Currency::ACA());
-    map.insert(Currency::ADA().code.to_string(), Currency::ADA());
-    map.insert(Currency::APT().code.to_string(), Currency::APT());
-    map.insert(Currency::ARB().code.to_string(), Currency::ARB());
-    map.insert(Currency::AVAX().code.to_string(), Currency::AVAX());
-    map.insert(Currency::BCH().code.to_string(), Currency::BCH());
-    map.insert(Currency::BIO().code.to_string(), Currency::BIO());
-    map.insert(Currency::BTC().code.to_string(), Currency::BTC());
-    map.insert(Currency::BTTC().code.to_string(), Currency::BTTC());
-    map.insert(Currency::BNB().code.to_string(), Currency::BNB());
-    map.insert(Currency::BRZ().code.to_string(), Currency::BRZ());
-    map.insert(Currency::BSV().code.to_string(), Currency::BSV());
-    map.insert(Currency::BUSD().code.to_string(), Currency::BUSD());
-    map.insert(Currency::CRV().code.to_string(), Currency::CRV());
-    map.insert(Currency::DASH().code.to_string(), Currency::DASH());
-    map.insert(Currency::DOGE().code.to_string(), Currency::DOGE());
-    map.insert(Currency::DOT().code.to_string(), Currency::DOT());
-    map.insert(Currency::ENA().code.to_string(), Currency::ENA());
-    map.insert(Currency::EOS().code.to_string(), Currency::EOS());
-    map.insert(Currency::ETH().code.to_string(), Currency::ETH());
-    map.insert(Currency::ETHW().code.to_string(), Currency::ETHW());
-    map.insert(Currency::FDUSD().code.to_string(), Currency::FDUSD());
-    map.insert(Currency::GWEI().code.to_string(), Currency::GWEI());
-    map.insert(Currency::HYPE().code.to_string(), Currency::HYPE());
-    map.insert(Currency::JOE().code.to_string(), Currency::JOE());
-    map.insert(Currency::LINK().code.to_string(), Currency::LINK());
-    map.insert(Currency::LTC().code.to_string(), Currency::LTC());
-    map.insert(Currency::LUNA().code.to_string(), Currency::LUNA());
-    map.insert(Currency::MAMUSD().code.to_string(), Currency::MAMUSD());
-    map.insert(Currency::NBT().code.to_string(), Currency::NBT());
-    map.insert(Currency::POL().code.to_string(), Currency::POL());
-    map.insert(Currency::PROVE().code.to_string(), Currency::PROVE());
-    map.insert(Currency::RLUSD().code.to_string(), Currency::RLUSD());
-    map.insert(Currency::SOL().code.to_string(), Currency::SOL());
-    map.insert(Currency::SUI().code.to_string(), Currency::SUI());
-    map.insert(Currency::TON().code.to_string(), Currency::TON());
-    map.insert(Currency::TRX().code.to_string(), Currency::TRX());
-    map.insert(Currency::TRYB().code.to_string(), Currency::TRYB());
-    map.insert(Currency::TUSD().code.to_string(), Currency::TUSD());
-    map.insert(Currency::UNI().code.to_string(), Currency::UNI());
-    map.insert(Currency::VTC().code.to_string(), Currency::VTC());
-    map.insert(Currency::WBTC().code.to_string(), Currency::WBTC());
-    map.insert(Currency::WSB().code.to_string(), Currency::WSB());
-    map.insert(Currency::XBT().code.to_string(), Currency::XBT());
-    map.insert(Currency::XEC().code.to_string(), Currency::XEC());
-    map.insert(Currency::XLM().code.to_string(), Currency::XLM());
-    map.insert(Currency::XMR().code.to_string(), Currency::XMR());
-    map.insert(Currency::XRP().code.to_string(), Currency::XRP());
-    map.insert(Currency::XTZ().code.to_string(), Currency::XTZ());
-    map.insert(Currency::USDC().code.to_string(), Currency::USDC());
-    map.insert(Currency::USDC_POS().code.to_string(), Currency::USDC_POS());
-    map.insert(Currency::USDG().code.to_string(), Currency::USDG());
-    map.insert(Currency::USDP().code.to_string(), Currency::USDP());
-    map.insert(Currency::pUSD().code.to_string(), Currency::pUSD());
-    map.insert(Currency::USDT().code.to_string(), Currency::USDT());
-    map.insert(Currency::ZEC().code.to_string(), Currency::ZEC());
-    Mutex::new(map)
-});
+    ONEINCH => "1INCH", 8, 0, "1inch Network", Crypto;
+    AAVE => "AAVE", 8, 0, "Aave", Crypto;
+    ACA => "ACA", 8, 0, "Acala Token", Crypto;
+    ADA => "ADA", 6, 0, "Cardano", Crypto;
+    APT => "APT", 8, 0, "Aptos", Crypto;
+    ARB => "ARB", 8, 0, "Arbitrum", Crypto;
+    AVAX => "AVAX", 8, 0, "Avalanche", Crypto;
+    BCH => "BCH", 8, 0, "Bitcoin Cash", Crypto;
+    BIO => "BIO", 8, 0, "BioPassport", Crypto;
+    BTC => "BTC", 8, 0, "Bitcoin", Crypto;
+    BTTC => "BTTC", 8, 0, "BitTorrent", Crypto;
+    BNB => "BNB", 8, 0, "Binance Coin", Crypto;
+    BRZ => "BRZ", 8, 0, "Brazilian Digital Token", Crypto;
+    BSV => "BSV", 8, 0, "Bitcoin SV", Crypto;
+    BUSD => "BUSD", 8, 0, "Binance USD", Crypto;
+    CAKE => "CAKE", 8, 0, "PancakeSwap", Crypto;
+    CRV => "CRV", 8, 0, "Curve DAO Token", Crypto;
+    DASH => "DASH", 8, 0, "Dash", Crypto;
+    DOT => "DOT", 8, 0, "Polkadot", Crypto;
+    DOGE => "DOGE", 8, 0, "Dogecoin", Crypto;
+    ENA => "ENA", 8, 0, "Ethena", Crypto;
+    EOS => "EOS", 8, 0, "EOS", Crypto;
+    ETH => "ETH", 8, 0, "Ethereum", Crypto;
+    ETHW => "ETHW", 8, 0, "EthereumPoW", Crypto;
+    FDUSD => "FDUSD", 8, 0, "First Digital USD", Crypto;
+    GWEI => "GWEI", 8, 0, "Gwei", Crypto;
+    HYPE => "HYPE", 8, 0, "Hyperliquid", Crypto;
+    JOE => "JOE", 8, 0, "JOE", Crypto;
+    LINK => "LINK", 8, 0, "Chainlink", Crypto;
+    LTC => "LTC", 8, 0, "Litecoin", Crypto;
+    LUNA => "LUNA", 8, 0, "Terra", Crypto;
+    MAMUSD => "MAMUSD", 8, 0, "MAMUSD", Crypto;
+    NBT => "NBT", 8, 0, "NanoByte Token", Crypto;
+    POL => "POL", 8, 0, "Polygon", Crypto;
+    PROVE => "PROVE", 8, 0, "Prove AI", Crypto;
+    RLUSD => "RLUSD", 8, 0, "Ripple USD", Crypto;
+    SOL => "SOL", 8, 0, "Solana", Crypto;
+    SHIB => "SHIB", 8, 0, "Shiba Inu", Crypto;
+    SUI => "SUI", 8, 0, "Sui", Crypto;
+    TON => "TON", 8, 0, "Toncoin", Crypto;
+    TRX => "TRX", 8, 0, "TRON", Crypto;
+    TRYB => "TRYB", 8, 0, "BiLira", Crypto;
+    TUSD => "TUSD", 8, 0, "TrueUSD", Crypto;
+    UNI => "UNI", 8, 0, "Uniswap", Crypto;
+    VTC => "VTC", 8, 0, "Vertcoin", Crypto;
+    WBTC => "WBTC", 8, 0, "Wrapped Bitcoin", Crypto;
+    WSB => "WSB", 8, 0, "WallStreetBets DApp", Crypto;
+    XBT => "XBT", 8, 0, "Bitcoin", Crypto;
+    XEC => "XEC", 8, 0, "eCash", Crypto;
+    XLM => "XLM", 8, 0, "Stellar Lumen", Crypto;
+    XMR => "XMR", 8, 0, "Monero", Crypto;
+    USDT => "USDT", 8, 0, "Tether", Crypto;
+    XRP => "XRP", 6, 0, "XRP", Crypto;
+    XTZ => "XTZ", 6, 0, "Tezos", Crypto;
+    USDC => "USDC", 8, 0, "USD Coin", Crypto;
+    USDC_POS => "USDC.e", 6, 0, "USD Coin (PoS)", Crypto;
+    USDG => "USDG", 8, 0, "Global Dollar", Crypto;
+    USDP => "USDP", 8, 0, "Pax Dollar", Crypto;
+    pUSD => "pUSD", 6, 0, "Polymarket USD", Crypto;
+    ZEC => "ZEC", 8, 0, "Zcash", Crypto;
+}
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use rstest::rstest;
 
     use super::*;
-    use crate::enums::CurrencyType;
+    use crate::types::fixed::FIXED_PRECISION;
 
     #[rstest]
-    fn test_usdg_currency_invariants() {
-        let usdg = Currency::USDG();
-        assert_eq!(usdg.code.as_str(), "USDG");
-        assert_eq!(usdg.precision, 8);
-        assert_eq!(usdg.iso4217, 0);
-        assert_eq!(usdg.name.as_str(), "Global Dollar");
-        assert_eq!(usdg.currency_type, CurrencyType::Crypto);
-        assert_eq!(Currency::try_from_str("USDG"), Some(usdg));
-        assert_eq!(Currency::from("USDG"), usdg);
-        assert_eq!(Currency::USDG(), usdg);
+    fn test_every_constant_is_registered_and_round_trips_by_code() {
+        for currency in all_currency_constants() {
+            let code = currency.code.as_str();
+
+            // `Currency::PartialEq` compares the code alone, and `try_from_str` and `From` are
+            // separate lookup bodies, so both need asserting field by field.
+            let try_from = Currency::try_from_str(code).expect("constant must be registered");
+            let from_str = Currency::from(code);
+
+            for (label, found) in [("try_from_str", try_from), ("from", from_str)] {
+                assert_eq!(found.code, currency.code, "{code} via {label}");
+                assert_eq!(found.precision, currency.precision, "{code} via {label}");
+                assert_eq!(found.iso4217, currency.iso4217, "{code} via {label}");
+                assert_eq!(found.name, currency.name, "{code} via {label}");
+                assert_eq!(
+                    found.currency_type, currency.currency_type,
+                    "{code} via {label}",
+                );
+            }
+        }
+    }
+
+    /// Every registered currency as `CODE|precision|iso4217|name|TYPE`.
+    ///
+    /// Captured from the hand-written definitions that `currency_constants!` replaced. The
+    /// accessors, the registry and the other tests all derive from the macro table, so this is the
+    /// only independent statement of each currency's metadata: editing a table row without
+    /// editing this list fails, which is what pins monetary precision.
+    const EXPECTED_CURRENCIES: &[&str] = &[
+        "1INCH|8|0|1inch Network|Crypto",
+        "AAVE|8|0|Aave|Crypto",
+        "ACA|8|0|Acala Token|Crypto",
+        "ADA|6|0|Cardano|Crypto",
+        "APT|8|0|Aptos|Crypto",
+        "ARB|8|0|Arbitrum|Crypto",
+        "AUD|2|36|Australian dollar|Fiat",
+        "AVAX|8|0|Avalanche|Crypto",
+        "BCH|8|0|Bitcoin Cash|Crypto",
+        "BIO|8|0|BioPassport|Crypto",
+        "BNB|8|0|Binance Coin|Crypto",
+        "BRL|2|986|Brazilian real|Fiat",
+        "BRZ|8|0|Brazilian Digital Token|Crypto",
+        "BSV|8|0|Bitcoin SV|Crypto",
+        "BTC|8|0|Bitcoin|Crypto",
+        "BTTC|8|0|BitTorrent|Crypto",
+        "BUSD|8|0|Binance USD|Crypto",
+        "CAD|2|124|Canadian dollar|Fiat",
+        "CAKE|8|0|PancakeSwap|Crypto",
+        "CHF|2|756|Swiss franc|Fiat",
+        "CNH|2|0|Chinese yuan (offshore)|Fiat",
+        "CNY|2|156|Chinese yuan|Fiat",
+        "CRV|8|0|Curve DAO Token|Crypto",
+        "CZK|2|203|Czech koruna|Fiat",
+        "DASH|8|0|Dash|Crypto",
+        "DKK|2|208|Danish krone|Fiat",
+        "DOGE|8|0|Dogecoin|Crypto",
+        "DOT|8|0|Polkadot|Crypto",
+        "ENA|8|0|Ethena|Crypto",
+        "EOS|8|0|EOS|Crypto",
+        "ETHW|8|0|EthereumPoW|Crypto",
+        "ETH|8|0|Ethereum|Crypto",
+        "EUR|2|978|Euro|Fiat",
+        "FDUSD|8|0|First Digital USD|Crypto",
+        "GBP|2|826|British Pound|Fiat",
+        "GWEI|8|0|Gwei|Crypto",
+        "HKD|2|344|Hong Kong dollar|Fiat",
+        "HUF|2|348|Hungarian forint|Fiat",
+        "HYPE|8|0|Hyperliquid|Crypto",
+        "ILS|2|376|Israeli new shekel|Fiat",
+        "INR|2|356|Indian rupee|Fiat",
+        "JOE|8|0|JOE|Crypto",
+        "JPY|0|392|Japanese yen|Fiat",
+        "KRW|0|410|South Korean won|Fiat",
+        "LINK|8|0|Chainlink|Crypto",
+        "LTC|8|0|Litecoin|Crypto",
+        "LUNA|8|0|Terra|Crypto",
+        "MAMUSD|8|0|MAMUSD|Crypto",
+        "MXN|2|484|Mexican peso|Fiat",
+        "NBT|8|0|NanoByte Token|Crypto",
+        "NOK|2|578|Norwegian krone|Fiat",
+        "NZD|2|554|New Zealand dollar|Fiat",
+        "PLN|2|985|Polish złoty|Fiat",
+        "POL|8|0|Polygon|Crypto",
+        "PROVE|8|0|Prove AI|Crypto",
+        "RLUSD|8|0|Ripple USD|Crypto",
+        "RUB|2|643|Russian ruble|Fiat",
+        "SAR|2|682|Saudi riyal|Fiat",
+        "SEK|2|752|Swedish krona|Fiat",
+        "SGD|2|702|Singapore dollar|Fiat",
+        "SHIB|8|0|Shiba Inu|Crypto",
+        "SOL|8|0|Solana|Crypto",
+        "SUI|8|0|Sui|Crypto",
+        "THB|2|764|Thai baht|Fiat",
+        "TON|8|0|Toncoin|Crypto",
+        "TRX|8|0|TRON|Crypto",
+        "TRYB|8|0|BiLira|Crypto",
+        "TRY|2|949|Turkish lira|Fiat",
+        "TUSD|8|0|TrueUSD|Crypto",
+        "TWD|2|901|New Taiwan dollar|Fiat",
+        "UNI|8|0|Uniswap|Crypto",
+        "USDC.e|6|0|USD Coin (PoS)|Crypto",
+        "USDC|8|0|USD Coin|Crypto",
+        "USDG|8|0|Global Dollar|Crypto",
+        "USDP|8|0|Pax Dollar|Crypto",
+        "USDT|8|0|Tether|Crypto",
+        "USD|2|840|United States dollar|Fiat",
+        "VTC|8|0|Vertcoin|Crypto",
+        "WBTC|8|0|Wrapped Bitcoin|Crypto",
+        "WSB|8|0|WallStreetBets DApp|Crypto",
+        "XAG|2|961|Silver (one troy ounce)|CommodityBacked",
+        "XAU|2|959|Gold (one troy ounce)|CommodityBacked",
+        "XBT|8|0|Bitcoin|Crypto",
+        "XEC|8|0|eCash|Crypto",
+        "XLM|8|0|Stellar Lumen|Crypto",
+        "XMR|8|0|Monero|Crypto",
+        "XPT|2|962|Platinum (one troy ounce)|CommodityBacked",
+        "XRP|6|0|XRP|Crypto",
+        "XTZ|6|0|Tezos|Crypto",
+        "ZAR|2|710|South African rand|Fiat",
+        "ZEC|8|0|Zcash|Crypto",
+        "pUSD|6|0|Polymarket USD|Crypto",
+    ];
+
+    #[rstest]
+    fn test_registered_currency_metadata_matches_the_pinned_list() {
+        let mut actual: Vec<String> = all_currency_constants()
+            .iter()
+            .map(|c| {
+                format!(
+                    "{}|{}|{}|{}|{:?}",
+                    c.code, c.precision, c.iso4217, c.name, c.currency_type
+                )
+            })
+            .collect();
+        actual.sort();
+
+        assert_eq!(
+            actual.len(),
+            EXPECTED_CURRENCIES.len(),
+            "currency count changed; update `EXPECTED_CURRENCIES`",
+        );
+
+        for (got, expected) in actual.iter().zip(EXPECTED_CURRENCIES) {
+            assert_eq!(got, expected);
+        }
     }
 
     #[rstest]
-    fn test_pusd_currency_invariants() {
-        // pUSD is Polymarket's CLOB V2 collateral token; the adapter assumes
-        // 6-decimal precision matching the underlying USDC backing, the code
-        // string `"pUSD"`, and discoverability via the global registry.
-        let pusd = Currency::pUSD();
-        assert_eq!(pusd.code.as_str(), "pUSD");
-        assert_eq!(pusd.precision, 6);
-        assert_eq!(pusd.iso4217, 0);
-        assert_eq!(pusd.currency_type, CurrencyType::Crypto);
+    fn test_currency_codes_are_unique() {
+        // Two rows sharing a code would collapse into a single registry entry.
+        let constants = all_currency_constants();
+        let codes: HashSet<Ustr> = constants.iter().map(|c| c.code).collect();
 
-        // Registered in the global map and round-trips by code.
-        let from_map = Currency::try_from_str("pUSD").expect("pUSD must be registered");
-        assert_eq!(from_map, pusd);
+        assert_eq!(
+            codes.len(),
+            constants.len(),
+            "currency codes must be unique"
+        );
+    }
 
-        // The locked accessor is idempotent.
-        assert_eq!(Currency::pUSD(), Currency::pUSD());
+    #[rstest]
+    fn test_registered_currencies_satisfy_value_invariants() {
+        for currency in all_currency_constants() {
+            let code = currency.code;
+
+            assert!(!currency.name.is_empty(), "{code} must carry a name");
+            assert!(
+                currency.precision <= FIXED_PRECISION,
+                "{code} precision {} exceeds `FIXED_PRECISION` {FIXED_PRECISION}",
+                currency.precision,
+            );
+
+            if currency.currency_type == CurrencyType::Crypto {
+                assert_eq!(
+                    currency.iso4217, 0,
+                    "{code} is crypto and must not carry an ISO 4217 code",
+                );
+            }
+        }
+    }
+
+    #[rstest]
+    fn test_unknown_codes_are_not_registered() {
+        assert_eq!(Currency::try_from_str("NOT_A_CURRENCY"), None);
+        assert_eq!(Currency::try_from_str(""), None);
+        assert_eq!(
+            Currency::try_from_str("btc"),
+            None,
+            "lookup is case sensitive"
+        );
     }
 }
