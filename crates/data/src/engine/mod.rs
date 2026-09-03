@@ -1012,6 +1012,7 @@ impl DataEngine {
             && self.external_clients.contains(client_id)
         {
             register_external_streaming_type(&cmd);
+            publish_external_data_command(*client_id, &cmd);
 
             if self.config.debug {
                 log::debug!("Skipping subscribe command for external client {client_id}: {cmd:?}");
@@ -1097,6 +1098,8 @@ impl DataEngine {
         if let Some(client_id) = cmd.client_id()
             && self.external_clients.contains(client_id)
         {
+            publish_external_data_command(*client_id, cmd);
+
             if self.config.debug {
                 log::debug!(
                     "Skipping unsubscribe command for external client {client_id}: {cmd:?}",
@@ -5122,6 +5125,14 @@ fn register_external_streaming_type(cmd: &SubscribeCommand) {
             .borrow_mut()
             .add_streaming_type(payload_type);
     }
+}
+
+fn publish_external_data_command<T>(client_id: ClientId, command: &T)
+where
+    T: Any,
+{
+    let topic = format!("commands.data.{client_id}");
+    msgbus::publish_any(topic.into(), command);
 }
 
 fn streaming_payload_type(cmd: &SubscribeCommand) -> Option<BusPayloadType> {

@@ -7422,6 +7422,63 @@ fn test_external_client_subscribe_registers_streamable_payload_types(
 }
 
 #[rstest]
+fn test_external_client_forwards_subscribe_and_unsubscribe_commands(
+    audusd_sim: CurrencyPair,
+    _stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let config = DataEngineConfig {
+        external_clients: Some(vec![client_id]),
+        ..DataEngineConfig::default()
+    };
+    let mut data_engine = DataEngine::new(clock, cache, Some(config));
+    let topic = format!("commands.data.{client_id}");
+
+    let subscribe = SubscribeCommand::Quotes(SubscribeQuotes::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::from(1),
+        None,
+        None,
+    ));
+    let (subscribe_handler, subscribe_saver) = get_any_saving_handler::<SubscribeCommand>(None);
+    msgbus::subscribe_any(topic.as_str().into(), subscribe_handler.clone(), None);
+
+    data_engine.execute(DataCommand::Subscribe(subscribe.clone()));
+
+    msgbus::unsubscribe_any(topic.as_str().into(), &subscribe_handler);
+    assert_eq!(
+        serde_json::to_value(subscribe_saver.get_messages()).unwrap(),
+        serde_json::to_value([subscribe]).unwrap(),
+    );
+
+    let unsubscribe = UnsubscribeCommand::Quotes(UnsubscribeQuotes::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::from(2),
+        None,
+        None,
+    ));
+    let (unsubscribe_handler, unsubscribe_saver) =
+        get_any_saving_handler::<UnsubscribeCommand>(None);
+    msgbus::subscribe_any(topic.as_str().into(), unsubscribe_handler, None);
+
+    data_engine.execute(DataCommand::Unsubscribe(unsubscribe.clone()));
+
+    assert_eq!(
+        serde_json::to_value(unsubscribe_saver.get_messages()).unwrap(),
+        serde_json::to_value([unsubscribe]).unwrap(),
+    );
+}
+
+#[rstest]
 fn test_regular_client_subscribe_does_not_register_streaming_payload_type(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,

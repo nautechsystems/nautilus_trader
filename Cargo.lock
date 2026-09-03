@@ -6254,6 +6254,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "bytes",
+ "codspeed-criterion-compat",
  "derive_builder",
  "futures",
  "indexmap 2.14.1",

@@ -77,7 +77,7 @@
 //! maintenance below 100ms (defaults are seconds to minutes). Cadence drifts
 //! by at most one body duration per fire.
 
-use std::{fmt::Debug, future::Future, pin::Pin, time::Duration};
+use std::{any::Any, fmt::Debug, future::Future, pin::Pin, time::Duration};
 
 use anyhow::Context;
 use indexmap::{IndexMap, IndexSet};
@@ -163,6 +163,16 @@ pub use state::{LiveNodeHandle, NodeRunMode, NodeState};
 /// which shows up as lapsed heartbeats and reconnects rather than as backpressure.
 const DISPATCHES_PER_YIELD: usize = 64;
 
+type StreamProcessorCallback = dyn Fn(&dyn Any, &serde_json::Value) -> anyhow::Result<()> + 'static;
+
+struct StreamProcessor(Box<StreamProcessorCallback>);
+
+impl Debug for StreamProcessor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(StreamProcessor)).finish()
+    }
+}
+
 /// High-level abstraction for a live Nautilus system node.
 ///
 /// Provides a simplified interface for running live systems
@@ -178,6 +188,7 @@ pub struct LiveNode {
     socket_registry: SocketReconnectRegistry,
     cache_database_factory: Option<Box<dyn CacheDatabaseFactory>>,
     external_msgbus: Option<ExternalMessageBusIngress>,
+    stream_processors: Vec<StreamProcessor>,
     shutdown_deadline: Option<dst::time::Instant>,
     #[cfg(feature = "plugin")]
     plugins: plugin::NodePlugins,
@@ -212,6 +223,7 @@ impl LiveNode {
             socket_registry,
             cache_database_factory,
             external_msgbus,
+            stream_processors: Vec::new(),
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
             plugins: plugin::NodePlugins,
@@ -286,6 +298,7 @@ impl LiveNode {
             socket_registry: SocketReconnectRegistry::default(),
             cache_database_factory: None,
             external_msgbus: None,
+            stream_processors: Vec::new(),
             shutdown_deadline: None,
             #[cfg(feature = "plugin")]
             plugins: plugin::NodePlugins,
@@ -336,6 +349,32 @@ impl LiveNode {
     #[must_use]
     pub fn handle(&self) -> LiveNodeHandle {
         self.handle.clone()
+    }
+
+    /// Adds a callback for supported typed external messages.
+    ///
+    /// While [`run`](Self::run) or [`run_with_mode`](Self::run_with_mode) services external ingress,
+    /// the node invokes processors in registration order before normal inbound streaming filters
+    /// for JSON or MessagePack payloads when [`msgbus::BusPayloadType::is_typed_message`] returns
+    /// `true`. Other encodings are skipped with a warning. Each callback receives the decoded
+    /// concrete value as [`Any`], allowing it to downcast to the concrete payload type. External
+    /// egress is suppressed while the processors run, so synchronous publications remain local.
+    pub fn add_stream_processor<F>(&mut self, callback: F)
+    where
+        F: Fn(&dyn Any) + 'static,
+    {
+        self.add_stream_processor_with_mapping(move |message, _| {
+            callback(message);
+            Ok(())
+        });
+    }
+
+    pub(crate) fn add_stream_processor_with_mapping<F>(&mut self, callback: F)
+    where
+        F: Fn(&dyn Any, &serde_json::Value) -> anyhow::Result<()> + 'static,
+    {
+        self.stream_processors
+            .push(StreamProcessor(Box::new(callback)));
     }
 
     /// Starts the live node without entering a select loop.
@@ -1753,7 +1792,7 @@ impl LiveNode {
                                 log::debug!("Residual external message bus message: {message}");
                                 residual_events += 1;
                             }
-                            Self::republish_external_msgbus_message(&message);
+                            self.process_external_msgbus_message(&message);
                         }
                         None => {
                             log::info!("External message bus ingress closed");
@@ -1937,6 +1976,27 @@ impl LiveNode {
         if let Err(e) = msgbus::republish_external_message(message) {
             log::error!(
                 "Failed to republish external message bus topic '{}': {e:#}",
+                message.topic
+            );
+        }
+    }
+
+    fn process_external_msgbus_message(&self, message: &BusMessage) {
+        if self.stream_processors.is_empty() {
+            Self::republish_external_msgbus_message(message);
+            return;
+        }
+
+        let mut process = |value: &dyn Any, mapping: &serde_json::Value| {
+            for processor in &self.stream_processors {
+                (processor.0)(value, mapping)?;
+            }
+            Ok(())
+        };
+
+        if let Err(e) = msgbus::process_external_typed_message(message, &mut process) {
+            log::error!(
+                "Failed to process external message bus topic '{}': {e:#}",
                 message.topic
             );
         }
@@ -3921,6 +3981,7 @@ mod tests {
         enums::SerializationEncoding,
         live::runner::{get_data_event_sender, get_exec_event_sender, get_system_event_sender},
         messages::{
+            data::{SubscribeCommand, SubscribeQuotes},
             execution::{QueryAccount, SubmitOrder, TradingCommand},
             system::{
                 QueueCondition, QueueState, ReconnectSocket, SocketState, SocketStateChanged,
@@ -7225,6 +7286,81 @@ mod tests {
         let result = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Sandbox);
 
         assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_stream_processor_receives_unregistered_typed_payload() {
+        let mut node = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Sandbox)
+            .unwrap()
+            .build()
+            .unwrap();
+        let command = SubscribeCommand::Quotes(SubscribeQuotes::new(
+            InstrumentId::from("AUD/USD.SIM"),
+            Some(ClientId::from("EXTERNAL")),
+            Some(Venue::from("SIM")),
+            UUID4::from("00000000-0000-4000-8000-000000000001"),
+            UnixNanos::from(1),
+            None,
+            None,
+        ));
+        let expected = serde_json::to_value(&command).unwrap();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let steps = Rc::new(RefCell::new(Vec::new()));
+        let received_processor = received.clone();
+        let first_steps = steps.clone();
+        node.add_stream_processor(move |message| {
+            let command = message
+                .downcast_ref::<SubscribeCommand>()
+                .expect("processor must receive the decoded concrete command");
+            received_processor
+                .borrow_mut()
+                .push(serde_json::to_value(command).unwrap());
+            first_steps.borrow_mut().push(1);
+        });
+        let second_steps = steps.clone();
+        node.add_stream_processor(move |_| second_steps.borrow_mut().push(2));
+        let republished = Rc::new(RefCell::new(Vec::new()));
+        let republished_handler = republished.clone();
+        let subscriber_steps = steps.clone();
+        msgbus::subscribe_any(
+            "external.test".into(),
+            ShareableMessageHandler::from_typed(move |command: &SubscribeCommand| {
+                republished_handler
+                    .borrow_mut()
+                    .push(serde_json::to_value(command).unwrap());
+                subscriber_steps.borrow_mut().push(3);
+            }),
+            None,
+        );
+        let message = BusMessage::with_str_topic(
+            "external.test",
+            BusPayloadType::SubscribeCommand,
+            Bytes::from(serde_json::to_vec(&command).unwrap()),
+            SerializationEncoding::Json,
+        );
+
+        assert!(
+            !msgbus::get_message_bus()
+                .borrow()
+                .is_streaming_type(BusPayloadType::SubscribeCommand)
+        );
+        node.process_external_msgbus_message(&message);
+
+        assert_eq!(*received.borrow(), vec![expected.clone()]);
+        assert_eq!(*steps.borrow(), vec![1, 2]);
+        assert!(republished.borrow().is_empty());
+
+        received.borrow_mut().clear();
+        steps.borrow_mut().clear();
+        msgbus::get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(BusPayloadType::SubscribeCommand);
+        node.process_external_msgbus_message(&message);
+
+        assert_eq!(*received.borrow(), vec![expected.clone()]);
+        assert_eq!(*republished.borrow(), vec![expected]);
+        assert_eq!(*steps.borrow(), vec![1, 2, 3]);
+        msgbus::get_message_bus().borrow_mut().dispose();
     }
 
     #[rstest]

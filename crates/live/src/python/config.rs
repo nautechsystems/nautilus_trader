@@ -106,6 +106,8 @@ pub fn json_value_to_py(py: Python<'_>, value: &serde_json::Value) -> PyResult<P
         serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
                 Ok(i.into_pyobject(py)?.into_any().unbind())
+            } else if let Some(u) = n.as_u64() {
+                Ok(u.into_pyobject(py)?.into_any().unbind())
             } else if let Some(f) = n.as_f64() {
                 Ok(f.into_pyobject(py)?.into_any().unbind())
             } else {
@@ -1231,5 +1233,29 @@ impl LiveNodeConfig {
     #[getter]
     fn controller(&self) -> Option<ImportableControllerConfig> {
         self.controller.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn json_value_to_py_preserves_unsigned_integer() {
+        Python::initialize();
+        Python::attach(|py| {
+            let expected = u64::MAX;
+            let value = serde_json::Value::from(expected);
+            let result = json_value_to_py(py, &value).expect("JSON value must convert to Python");
+
+            assert_eq!(
+                result
+                    .extract::<u64>(py)
+                    .expect("Python value must remain an unsigned integer"),
+                expected
+            );
+        });
     }
 }

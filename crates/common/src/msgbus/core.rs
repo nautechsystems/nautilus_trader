@@ -287,6 +287,7 @@ pub struct MessageBus {
     res_count: u64,
     pub_count: u64,
     external_egress: Option<Box<dyn MessageBusExternalEgress>>,
+    has_external_streams: bool,
     encoding: SerializationEncoding,
     encoding_market_data: Option<SerializationEncoding>,
     encoding_builtin: Option<SerializationEncoding>,
@@ -382,6 +383,7 @@ impl MessageBus {
             res_count: 0,
             pub_count: 0,
             external_egress: None,
+            has_external_streams: false,
             encoding: SerializationEncoding::Json,
             encoding_market_data: None,
             encoding_builtin: None,
@@ -424,12 +426,15 @@ impl MessageBus {
     }
 
     /// Sets external egress for serialized published messages.
+    ///
+    /// Typed message variants remain local because this method does not configure external streams.
     pub fn set_external_egress(
         &mut self,
         external_egress: Box<dyn MessageBusExternalEgress>,
         encoding: SerializationEncoding,
     ) {
         self.external_egress = Some(external_egress);
+        self.has_external_streams = false;
         self.encoding = encoding;
         self.encoding_market_data = None;
         self.encoding_builtin = None;
@@ -438,6 +443,8 @@ impl MessageBus {
     }
 
     /// Sets external egress and category encoding policy from a validated config.
+    ///
+    /// Typed message variants are enabled only when `config.external_streams` is non-empty.
     ///
     /// # Errors
     ///
@@ -450,6 +457,10 @@ impl MessageBus {
         config.validate()?;
 
         self.external_egress = Some(external_egress);
+        self.has_external_streams = config
+            .external_streams
+            .as_ref()
+            .is_some_and(|streams| !streams.is_empty());
         self.encoding = config.encoding;
         self.encoding_market_data = config.encoding_market_data;
         self.encoding_builtin = config.encoding_builtin;
@@ -459,13 +470,20 @@ impl MessageBus {
         Ok(())
     }
 
-    /// Sets the type names excluded from external publishing.
+    /// Sets the payload type names excluded from external publishing.
     pub fn set_types_filter(&mut self, filter: Vec<String>) {
-        self.types_filter = filter
-            .into_iter()
-            .map(|type_name| BusPayloadType::from_name(&type_name))
-            .filter(|payload_type| !payload_type.as_str().is_empty())
-            .collect();
+        self.types_filter.clear();
+
+        for type_name in filter {
+            let payload_type = BusPayloadType::from_name(&type_name);
+            if !payload_type.as_str().is_empty() {
+                self.types_filter.insert(payload_type);
+            }
+
+            if let Some(payload_type) = BusPayloadType::from_typed_name(&type_name) {
+                self.types_filter.insert(payload_type);
+            }
+        }
     }
 
     /// Registers a payload type for external-to-internal streaming.
@@ -489,6 +507,10 @@ impl MessageBus {
     #[must_use]
     pub(crate) fn has_external_egress(&self) -> bool {
         self.external_egress.is_some()
+    }
+
+    pub(crate) fn has_external_streams(&self) -> bool {
+        self.has_external_streams
     }
 
     pub(crate) fn external_egress(&self) -> Option<&dyn MessageBusExternalEgress> {
@@ -567,6 +589,7 @@ impl MessageBus {
         if let Some(mut external_egress) = self.external_egress.take() {
             external_egress.close();
         }
+        self.has_external_streams = false;
         self.has_backing = false;
         HAS_EXTERNAL_EGRESS.with(|flag| flag.set(false));
     }
@@ -707,6 +730,7 @@ impl MessageBus {
         if let Some(mut external_egress) = self.external_egress.take() {
             external_egress.close();
         }
+        self.has_external_streams = false;
         self.has_backing = false;
         HAS_EXTERNAL_EGRESS.with(|flag| flag.set(false));
         Ok(())
@@ -965,19 +989,22 @@ mod tests {
     }
 
     #[rstest]
-    fn set_types_filter_resolves_canonical_and_custom_names() {
+    fn set_types_filter_resolves_untyped_and_typed_names() {
         let mut msgbus = MessageBus::default();
 
         msgbus.set_types_filter(vec![
             "QuoteTick".to_string(),
             "ExternalCustomPayload".to_string(),
+            "OrderStatusReport".to_string(),
             String::new(),
         ]);
 
         let filter = msgbus.types_filter();
-        assert_eq!(filter.len(), 2);
+        assert_eq!(filter.len(), 4);
         assert!(filter.contains(&BusPayloadType::QuoteTick));
         assert!(filter.contains(&BusPayloadType::Custom(Ustr::from("ExternalCustomPayload"))));
+        assert!(filter.contains(&BusPayloadType::Custom(Ustr::from("OrderStatusReport"))));
+        assert!(filter.contains(&BusPayloadType::OrderStatusReport));
         assert!(!filter.contains(&BusPayloadType::Custom(Ustr::default())));
     }
 

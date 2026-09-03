@@ -92,7 +92,7 @@ use crate::{
         PluginConfig,
     },
     node::{LiveNode, LiveNodeHandle, NodeRunMode, config::RoutingConfig},
-    python::config::coerce_json_config,
+    python::config::{coerce_json_config, json_value_to_py},
 };
 
 /// Python-facing wrapper owning a [`LiveNode`].
@@ -898,6 +898,33 @@ impl PyLiveNode {
         PyLiveNodeHandle {
             inner: self.handle.clone(),
         }
+    }
+
+    /// Adds a callback for supported typed external messages.
+    ///
+    /// While `run` or `run_async` services external ingress, the node invokes callbacks in
+    /// registration order before normal inbound streaming filters for recognized JSON or
+    /// MessagePack typed payloads. Each callback receives an encoding-independent Python mapping
+    /// that follows the concrete payload's serialized object shape and adds a `payload_type` field.
+    /// Other encodings are skipped with a warning. External egress is suppressed while the callback
+    /// runs, so synchronous publications remain local. Callback exceptions are logged, stop the
+    /// remaining processors, and skip internal republishing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the node is no longer available for mutation.
+    #[pyo3(name = "add_stream_processor")]
+    fn py_add_stream_processor(&self, callback: Py<PyAny>) -> PyResult<()> {
+        self.node_mut()?
+            .add_stream_processor_with_mapping(move |_, mapping| {
+                Python::attach(|py| {
+                    let payload = json_value_to_py(py, mapping)?;
+                    callback.call1(py, (payload,))?;
+                    Ok(())
+                })
+                .map_err(|e: PyErr| anyhow::anyhow!("Python stream processor failed: {e}"))
+            });
+        Ok(())
     }
 
     /// Runs the live node on the caller's asyncio event loop.
