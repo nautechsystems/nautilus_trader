@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use arrow::{
     array::{
@@ -25,15 +25,12 @@ use arrow::{
     record_batch::RecordBatch,
 };
 use nautilus_model::{
-    data::TradeTick,
-    enums::AggressorSide,
-    identifiers::{InstrumentId, TradeId},
-    types::fixed::PRECISION_BYTES,
+    data::TradeTick, enums::AggressorSide, identifiers::TradeId, types::fixed::PRECISION_BYTES,
 };
 
 use super::{
-    DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION,
-    KEY_SIZE_PRECISION, decode_price, decode_quantity, extract_column, validate_precision_bytes,
+    DecodeDataFromRecordBatch, EncodingError, decode_price, decode_quantity, extract_column,
+    parse_price_size_metadata, validate_precision_bytes,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -53,30 +50,6 @@ impl ArrowSchemaProvider for TradeTick {
             None => Schema::new(fields),
         }
     }
-}
-
-fn parse_metadata(
-    metadata: &HashMap<String, String>,
-) -> Result<(InstrumentId, u8, u8), EncodingError> {
-    let instrument_id_str = metadata
-        .get(KEY_INSTRUMENT_ID)
-        .ok_or_else(|| EncodingError::MissingMetadata(KEY_INSTRUMENT_ID))?;
-    let instrument_id = InstrumentId::from_str(instrument_id_str)
-        .map_err(|e| EncodingError::ParseError(KEY_INSTRUMENT_ID, e.to_string()))?;
-
-    let price_precision = metadata
-        .get(KEY_PRICE_PRECISION)
-        .ok_or_else(|| EncodingError::MissingMetadata(KEY_PRICE_PRECISION))?
-        .parse::<u8>()
-        .map_err(|e| EncodingError::ParseError(KEY_PRICE_PRECISION, e.to_string()))?;
-
-    let size_precision = metadata
-        .get(KEY_SIZE_PRECISION)
-        .ok_or_else(|| EncodingError::MissingMetadata(KEY_SIZE_PRECISION))?
-        .parse::<u8>()
-        .map_err(|e| EncodingError::ParseError(KEY_SIZE_PRECISION, e.to_string()))?;
-
-    Ok((instrument_id, price_precision, size_precision))
 }
 
 impl EncodeToRecordBatch for TradeTick {
@@ -139,7 +112,7 @@ impl DecodeFromRecordBatch for TradeTick {
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Result<Vec<Self>, EncodingError> {
-        let (instrument_id, price_precision, size_precision) = parse_metadata(metadata)?;
+        let (instrument_id, price_precision, size_precision) = parse_price_size_metadata(metadata)?;
         let cols = record_batch.columns();
 
         let price_values = extract_column::<FixedSizeBinaryArray>(
@@ -242,13 +215,16 @@ mod tests {
         array::{Array, UInt8Array, UInt64Array},
         record_batch::RecordBatch,
     };
-    use nautilus_model::types::{
-        Price, Quantity, fixed::FIXED_SCALAR, price::PriceRaw, quantity::QuantityRaw,
+    use nautilus_model::{
+        identifiers::InstrumentId,
+        types::{Price, Quantity, fixed::FIXED_SCALAR, price::PriceRaw, quantity::QuantityRaw},
     };
     use rstest::rstest;
 
     use super::*;
-    use crate::arrow::{fixed_size_binary, get_raw_price, get_raw_quantity};
+    use crate::arrow::{
+        KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION, fixed_size_binary, get_raw_price, get_raw_quantity,
+    };
 
     #[rstest]
     fn test_get_schema() {

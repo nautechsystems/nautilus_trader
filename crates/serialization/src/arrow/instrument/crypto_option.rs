@@ -28,41 +28,18 @@ use arrow::{
 };
 use nautilus_core::Params;
 use nautilus_model::{
-    enums::OptionKind,
     identifiers::{InstrumentId, Symbol},
     instruments::crypto_option::CryptoOption,
     types::{money::Money, price::Price, quantity::Quantity},
 };
-#[allow(unused)]
 use rust_decimal::Decimal;
-#[allow(unused)]
-use serde_json::Value;
 
+use super::KEY_CLASS;
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
     KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, extract_column, extract_column_by_name_or_index,
     extract_optional_string_column_by_name, optional_ustr_value,
 };
-
-// Helper function to convert OptionKind to string
-fn option_kind_to_string(ok: OptionKind) -> String {
-    match ok {
-        OptionKind::Call => "Call".to_string(),
-        OptionKind::Put => "Put".to_string(),
-    }
-}
-
-// Helper function to parse OptionKind from string
-fn option_kind_from_str(s: &str) -> Result<OptionKind, EncodingError> {
-    match s {
-        "Call" => Ok(OptionKind::Call),
-        "Put" => Ok(OptionKind::Put),
-        _ => Err(EncodingError::ParseError(
-            "option_kind",
-            format!("Unknown option kind: {s}"),
-        )),
-    }
-}
 
 impl ArrowSchemaProvider for CryptoOption {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
@@ -100,7 +77,7 @@ impl ArrowSchemaProvider for CryptoOption {
         ];
 
         let mut final_metadata = HashMap::new();
-        final_metadata.insert("class".to_string(), "CryptoOption".to_string());
+        final_metadata.insert(KEY_CLASS.to_string(), "CryptoOption".to_string());
 
         if let Some(meta) = metadata {
             final_metadata.extend(meta);
@@ -153,7 +130,7 @@ impl EncodeToRecordBatch for CryptoOption {
             quote_currency_builder.append_value(co.quote_currency.to_string());
             settlement_currency_builder.append_value(co.settlement_currency.to_string());
             is_inverse_builder.append_value(co.is_inverse);
-            option_kind_builder.append_value(option_kind_to_string(co.option_kind));
+            option_kind_builder.append_value(super::option_kind_to_string(co.option_kind));
             strike_price_builder.append_value(co.strike_price.to_string());
             activation_ns_builder.append_value(co.activation_ns.as_u64());
             expiration_ns_builder.append_value(co.expiration_ns.as_u64());
@@ -232,7 +209,7 @@ impl EncodeToRecordBatch for CryptoOption {
         }
 
         let mut final_metadata = metadata.clone();
-        final_metadata.insert("class".to_string(), "CryptoOption".to_string());
+        final_metadata.insert(KEY_CLASS.to_string(), "CryptoOption".to_string());
 
         RecordBatch::try_new(
             Self::get_schema(Some(final_metadata)).into(),
@@ -286,12 +263,15 @@ impl EncodeToRecordBatch for CryptoOption {
     }
 }
 
-/// Helper function to decode CryptoOption from RecordBatch
-/// (Cannot implement DecodeFromRecordBatch trait due to `Into<Data>` bound)
+/// Decodes [`CryptoOption`] instruments from a record batch.
+///
+/// Not a [`DecodeFromRecordBatch`] implementation because that trait requires `Into<Data>`.
 ///
 /// # Errors
 ///
-/// Returns an `EncodingError` if the RecordBatch cannot be decoded.
+/// Returns an `EncodingError` if the record batch cannot be decoded.
+///
+/// [`DecodeFromRecordBatch`]: crate::arrow::DecodeFromRecordBatch
 pub fn decode_crypto_option_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
     record_batch: &RecordBatch,
@@ -402,7 +382,7 @@ pub fn decode_crypto_option_batch(
             i,
         )?;
         let is_inverse = is_inverse_values.value(i);
-        let option_kind = option_kind_from_str(option_kind_values.value(i))?;
+        let option_kind = super::option_kind_from_str(option_kind_values.value(i))?;
         let strike_price = Price::from_str(strike_price_values.value(i))
             .map_err(|e| EncodingError::ParseError("strike_price", format!("row {i}: {e}")))?;
         let activation_ns = nautilus_core::UnixNanos::from(activation_ns_values.value(i));

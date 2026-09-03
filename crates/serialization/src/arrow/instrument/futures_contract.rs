@@ -27,52 +27,19 @@ use arrow::{
 };
 use nautilus_core::Params;
 use nautilus_model::{
-    enums::AssetClass,
     identifiers::{InstrumentId, Symbol},
     instruments::futures_contract::FuturesContract,
     types::{price::Price, quantity::Quantity},
 };
-#[allow(unused)]
 use rust_decimal::Decimal;
-#[allow(unused)]
-use serde_json::Value;
 use ustr::Ustr;
 
+use super::KEY_CLASS;
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
     KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, extract_column, extract_column_by_name_or_index,
     extract_optional_string_column_by_name, optional_ustr_value,
 };
-
-// Helper function to convert AssetClass to string
-fn asset_class_to_string(ac: AssetClass) -> String {
-    match ac {
-        AssetClass::FX => "FX".to_string(),
-        AssetClass::Equity => "Equity".to_string(),
-        AssetClass::Commodity => "Commodity".to_string(),
-        AssetClass::Debt => "Debt".to_string(),
-        AssetClass::Index => "Index".to_string(),
-        AssetClass::Cryptocurrency => "Cryptocurrency".to_string(),
-        AssetClass::Alternative => "Alternative".to_string(),
-    }
-}
-
-// Helper function to parse AssetClass from string
-fn asset_class_from_str(s: &str) -> Result<AssetClass, EncodingError> {
-    match s {
-        "FX" => Ok(AssetClass::FX),
-        "Equity" => Ok(AssetClass::Equity),
-        "Commodity" => Ok(AssetClass::Commodity),
-        "Debt" => Ok(AssetClass::Debt),
-        "Index" => Ok(AssetClass::Index),
-        "Cryptocurrency" => Ok(AssetClass::Cryptocurrency),
-        "Alternative" => Ok(AssetClass::Alternative),
-        _ => Err(EncodingError::ParseError(
-            "asset_class",
-            format!("Unknown asset class: {s}"),
-        )),
-    }
-}
 
 impl ArrowSchemaProvider for FuturesContract {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
@@ -106,7 +73,7 @@ impl ArrowSchemaProvider for FuturesContract {
         ];
 
         let mut final_metadata = HashMap::new();
-        final_metadata.insert("class".to_string(), "FuturesContract".to_string());
+        final_metadata.insert(KEY_CLASS.to_string(), "FuturesContract".to_string());
 
         if let Some(meta) = metadata {
             final_metadata.extend(meta);
@@ -152,7 +119,7 @@ impl EncodeToRecordBatch for FuturesContract {
             id_builder.append_value(fc.id.to_string());
             raw_symbol_builder.append_value(fc.raw_symbol);
             underlying_builder.append_value(fc.underlying);
-            asset_class_builder.append_value(asset_class_to_string(fc.asset_class));
+            asset_class_builder.append_value(super::asset_class_to_string(fc.asset_class));
 
             if let Some(exchange) = fc.exchange {
                 exchange_builder.append_value(exchange);
@@ -226,7 +193,7 @@ impl EncodeToRecordBatch for FuturesContract {
         }
 
         let mut final_metadata = metadata.clone();
-        final_metadata.insert("class".to_string(), "FuturesContract".to_string());
+        final_metadata.insert(KEY_CLASS.to_string(), "FuturesContract".to_string());
 
         RecordBatch::try_new(
             Self::get_schema(Some(final_metadata)).into(),
@@ -276,12 +243,15 @@ impl EncodeToRecordBatch for FuturesContract {
     }
 }
 
-/// Helper function to decode FuturesContract from RecordBatch
-/// (Cannot implement DecodeFromRecordBatch trait due to `Into<Data>` bound)
+/// Decodes [`FuturesContract`] instruments from a record batch.
+///
+/// Not a [`DecodeFromRecordBatch`] implementation because that trait requires `Into<Data>`.
 ///
 /// # Errors
 ///
-/// Returns an `EncodingError` if the RecordBatch cannot be decoded.
+/// Returns an `EncodingError` if the record batch cannot be decoded.
+///
+/// [`DecodeFromRecordBatch`]: crate::arrow::DecodeFromRecordBatch
 pub fn decode_futures_contract_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
     record_batch: &RecordBatch,
@@ -344,7 +314,7 @@ pub fn decode_futures_contract_batch(
             .map_err(|e| EncodingError::ParseError("id", format!("row {i}: {e}")))?;
         let raw_symbol = Symbol::from(raw_symbol_values.value(i));
         let underlying = Ustr::from(underlying_values.value(i));
-        let asset_class = asset_class_from_str(asset_class_values.value(i))?;
+        let asset_class = super::asset_class_from_str(asset_class_values.value(i))?;
 
         let exchange = if exchange_values.is_null(i) {
             None

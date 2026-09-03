@@ -6,13 +6,14 @@ Released on TBD (UTC).
 
 - Added `Cache` APIs and Redis/PostgreSQL persistence for `InstrumentClose` data, with later values
   replacing earlier values for the same instrument
+- Added `avg_px` and report window fields to persisted execution reports
 
 ### Breaking Changes
 
 - Removed Coinbase `CreateOrderRequest.reduce_only`; reduce-only orders are rejected before submission
 - Changed `TradingState` to `ACTIVE=1`, `REDUCING=2`, and `HALTED=3`; update numeric and Cap'n Proto consumers
 - Changed `REDUCING` to allow only eligible reduce-only submissions, cancellations, and queries
-- Changed execution clients to reject `reduce_only` unless they send an enforcing venue instruction
+- Changed execution clients to reject `reduce_only` without an enforcing venue instruction (#4761), thanks @folknor
 - Changed backtest and sandbox venues to reject reduce-only orders when `use_reduce_only=false`
 - Changed v2 PostgreSQL cache startup to require the `instrument_close` table; run `nautilus database init`
 - Changed Binance `close_position` orders to require `reduce_only=true` in Nautilus
@@ -21,8 +22,21 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed position commissions and realized PnL after fill-void replay
+
 ### Internal Improvements
 
+- Added Cap'n Proto validation for decoded identifiers, currencies, balances, and decimals
+- Added crate feature documentation checks for README and Rustdoc lists
+- Improved Betfair execution client test synchronization (#4866), thanks @folknor
+- Pinned docs.rs checks to a compatible nightly toolchain
+- Refined Arrow serialization schemas and column resolution
+- Refined Cap'n Proto serialization conversions and wire contracts
+- Refined bar aggregation internals and shared aggregator state
+- Refined core crate coverage, FFI safety, and collection conversion
+- Standardized crate feature documentation across READMEs and Rustdoc
+- Updated Makefile help output to match the startup log header
+- Optimized pre-commit and CI convention hook runtime
 - Upgraded `flate2` crate to v1.1.10
 - Upgraded `indexmap` crate to v2.14.1
 - Upgraded `rcgen` crate to v0.14.10

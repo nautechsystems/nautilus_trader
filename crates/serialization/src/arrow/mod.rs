@@ -41,6 +41,7 @@ pub mod display;
 use std::{
     collections::HashMap,
     io::{self, Write},
+    str::FromStr,
 };
 
 use arrow::{
@@ -60,6 +61,7 @@ use nautilus_model::{
         option_chain::OptionGreeks, quote::QuoteTick, trade::TradeTick,
     },
     enums::BookAction,
+    identifiers::InstrumentId,
     types::{
         PRICE_ERROR, PRICE_UNDEF, Price, QUANTITY_UNDEF, Quantity,
         fixed::{PRECISION_BYTES, correct_price_raw, correct_quantity_raw},
@@ -578,6 +580,60 @@ pub fn optional_ustr_value(values: Option<&StringArray>, row: usize) -> Option<U
     values.and_then(|column| (!column.is_null(row)).then(|| Ustr::from(column.value(row))))
 }
 
+/// Parses the instrument ID and price precision from batch metadata.
+///
+/// # Errors
+///
+/// Returns an error if either key is missing or cannot be parsed.
+pub(crate) fn parse_price_metadata(
+    metadata: &HashMap<String, String>,
+) -> Result<(InstrumentId, u8), EncodingError> {
+    Ok((
+        parse_instrument_id(metadata)?,
+        parse_precision(metadata, KEY_PRICE_PRECISION)?,
+    ))
+}
+
+/// Parses the instrument ID, price precision, and size precision from batch metadata.
+///
+/// # Errors
+///
+/// Returns an error if any key is missing or cannot be parsed.
+pub(crate) fn parse_price_size_metadata(
+    metadata: &HashMap<String, String>,
+) -> Result<(InstrumentId, u8, u8), EncodingError> {
+    Ok((
+        parse_instrument_id(metadata)?,
+        parse_precision(metadata, KEY_PRICE_PRECISION)?,
+        parse_precision(metadata, KEY_SIZE_PRECISION)?,
+    ))
+}
+
+fn parse_instrument_id(metadata: &HashMap<String, String>) -> Result<InstrumentId, EncodingError> {
+    let value = metadata
+        .get(KEY_INSTRUMENT_ID)
+        .ok_or_else(|| EncodingError::MissingMetadata(KEY_INSTRUMENT_ID))?;
+
+    InstrumentId::from_str(value)
+        .map_err(|e| EncodingError::ParseError(KEY_INSTRUMENT_ID, e.to_string()))
+}
+
+/// Parses a precision value stored under `key` in batch metadata.
+///
+/// # Errors
+///
+/// Returns an error if the key is missing or the value is not a `u8`.
+pub(crate) fn parse_precision(
+    metadata: &HashMap<String, String>,
+    key: &'static str,
+) -> Result<u8, EncodingError> {
+    metadata
+        .get(key)
+        .ok_or_else(|| EncodingError::MissingMetadata(key))?
+        .parse::<u8>()
+        .map_err(|e| EncodingError::ParseError(key, e.to_string()))
+}
+
 /// Validates that a [`FixedSizeBinaryArray`] has the expected precision byte width.
 ///
 /// This detects precision mode mismatches that occur when catalog data was encoded
@@ -755,15 +811,13 @@ pub fn index_prices_to_arrow_record_batch_bytes(
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
 /// - Encoding fails: `EncodingError::ArrowError`.
-#[expect(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn instrument_status_to_arrow_record_batch_bytes(
     data: &[InstrumentStatus],
 ) -> Result<RecordBatch, EncodingError> {
-    if data.is_empty() {
+    let Some(first) = data.first() else {
         return Err(EncodingError::EmptyData);
-    }
+    };
 
-    let first = data.first().unwrap();
     let metadata = first.metadata();
     InstrumentStatus::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
 }
@@ -775,15 +829,13 @@ pub fn instrument_status_to_arrow_record_batch_bytes(
 /// Returns an error if:
 /// - `data` is empty: `EncodingError::EmptyData`.
 /// - Encoding fails: `EncodingError::ArrowError`.
-#[expect(clippy::missing_panics_doc)] // Guarded by empty check
 pub fn option_greeks_to_arrow_record_batch_bytes(
     data: &[OptionGreeks],
 ) -> Result<RecordBatch, EncodingError> {
-    if data.is_empty() {
+    let Some(first) = data.first() else {
         return Err(EncodingError::EmptyData);
-    }
+    };
 
-    let first = data.first().unwrap();
     let metadata = first.metadata();
     OptionGreeks::encode_batch(&metadata, data).map_err(EncodingError::ArrowError)
 }
@@ -837,6 +889,45 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_record_batch_byte_encoders_reject_empty_data() {
+        let results = [
+            book_deltas_to_arrow_record_batch_bytes(&[]),
+            book_depth10_to_arrow_record_batch_bytes(&[]),
+            quotes_to_arrow_record_batch_bytes(&[]),
+            trades_to_arrow_record_batch_bytes(&[]),
+            bars_to_arrow_record_batch_bytes(&[]),
+            mark_prices_to_arrow_record_batch_bytes(&[]),
+            index_prices_to_arrow_record_batch_bytes(&[]),
+            instrument_status_to_arrow_record_batch_bytes(&[]),
+            option_greeks_to_arrow_record_batch_bytes(&[]),
+            instrument_closes_to_arrow_record_batch_bytes(&[]),
+        ];
+
+        for result in results {
+            assert!(matches!(result, Err(EncodingError::EmptyData)));
+        }
+    }
+
+    #[rstest]
+    fn test_validate_precision_bytes_rejects_wrong_width() {
+        let array = fixed_size_binary::<1>(vec![&[0]]);
+
+        let error = validate_precision_bytes(&array, "price").unwrap_err();
+
+        let EncodingError::PrecisionMismatch {
+            field,
+            expected_bytes,
+            actual_bytes,
+        } = error
+        else {
+            panic!("unexpected error variant: {error:?}");
+        };
+        assert_eq!(field, "price");
+        assert_eq!(expected_bytes, PRECISION_BYTES);
+        assert_eq!(actual_bytes, 1);
+    }
 
     #[rstest]
     fn test_quotes_to_arrow_record_batch_rejects_mixed_instruments() {

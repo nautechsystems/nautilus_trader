@@ -28,6 +28,7 @@ use arrow::{
     record_batch::RecordBatch,
 };
 use nautilus_model::{
+    enums::{AssetClass, OptionKind},
     instruments::{
         Instrument, InstrumentAny, betting::BettingInstrument, binary_option::BinaryOption,
         cfd::Cfd, commodity::Commodity, crypto_future::CryptoFuture,
@@ -41,11 +42,7 @@ use nautilus_model::{
     types::{Currency, Price, Quantity},
 };
 
-#[allow(unused)]
-use crate::arrow::{
-    ArrowSchemaProvider, Data, DecodeDataFromRecordBatch, DecodeFromRecordBatch,
-    EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
-};
+use crate::arrow::{ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID};
 
 pub mod betting;
 pub mod binary_option;
@@ -128,6 +125,58 @@ pub(crate) fn decode_currency(
     ))
 }
 
+// The instrument modules that call these write the enums as PascalCase, which differs from the
+// `Display`/`FromStr` impls on the enums themselves (SCREAMING_SNAKE_CASE), so the mapping is
+// written out rather than derived. Other modules encode `asset_class` through the enum's own
+// impls instead, so a column's format follows the module that writes it.
+pub(crate) fn asset_class_to_string(value: AssetClass) -> String {
+    match value {
+        AssetClass::FX => "FX".to_string(),
+        AssetClass::Equity => "Equity".to_string(),
+        AssetClass::Commodity => "Commodity".to_string(),
+        AssetClass::Debt => "Debt".to_string(),
+        AssetClass::Index => "Index".to_string(),
+        AssetClass::Cryptocurrency => "Cryptocurrency".to_string(),
+        AssetClass::Alternative => "Alternative".to_string(),
+    }
+}
+
+pub(crate) fn asset_class_from_str(value: &str) -> Result<AssetClass, EncodingError> {
+    match value {
+        "FX" => Ok(AssetClass::FX),
+        "Equity" => Ok(AssetClass::Equity),
+        "Commodity" => Ok(AssetClass::Commodity),
+        "Debt" => Ok(AssetClass::Debt),
+        "Index" => Ok(AssetClass::Index),
+        "Cryptocurrency" => Ok(AssetClass::Cryptocurrency),
+        "Alternative" => Ok(AssetClass::Alternative),
+        _ => Err(EncodingError::ParseError(
+            "asset_class",
+            format!("Unknown asset class: {value}"),
+        )),
+    }
+}
+
+pub(crate) fn option_kind_to_string(value: OptionKind) -> String {
+    match value {
+        OptionKind::Call => "Call".to_string(),
+        OptionKind::Put => "Put".to_string(),
+    }
+}
+
+pub(crate) fn option_kind_from_str(value: &str) -> Result<OptionKind, EncodingError> {
+    match value {
+        "Call" => Ok(OptionKind::Call),
+        "Put" => Ok(OptionKind::Put),
+        _ => Err(EncodingError::ParseError(
+            "option_kind",
+            format!("Unknown option kind: {value}"),
+        )),
+    }
+}
+
+pub(crate) const KEY_CLASS: &str = "class";
+
 const INSTRUMENT_VALIDATION_FIELD: &str = "instrument";
 
 pub(crate) fn instrument_validation_error<T>(
@@ -143,525 +192,213 @@ pub(crate) fn instrument_validation_error<T>(
     )
 }
 
-impl ArrowSchemaProvider for InstrumentAny {
-    fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
-        let instrument_type = metadata
-            .as_ref()
-            .and_then(|m| m.get("class"))
-            .map_or("CurrencyPair", |s| s.as_str());
+/// Wires every [`InstrumentAny`] variant into the Arrow schema, encode, and decode paths from a
+/// single table of `(variant, instrument type, class name, decode function)` rows.
+macro_rules! impl_instrument_any_arrow {
+    ($(($variant:ident, $instrument:ty, $class:literal, $decode:path)),+ $(,)?) => {
+        impl ArrowSchemaProvider for InstrumentAny {
+            fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
+                let class = metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.get(KEY_CLASS))
+                    .map(String::as_str);
 
-        match instrument_type {
-            "BettingInstrument" => BettingInstrument::get_schema(metadata),
-            "BinaryOption" => BinaryOption::get_schema(metadata),
-            "Cfd" => Cfd::get_schema(metadata),
-            "Commodity" => Commodity::get_schema(metadata),
-            "CryptoFuture" => CryptoFuture::get_schema(metadata),
-            "CryptoFuturesSpread" => CryptoFuturesSpread::get_schema(metadata),
-            "CryptoOption" => CryptoOption::get_schema(metadata),
-            "CryptoOptionSpread" => CryptoOptionSpread::get_schema(metadata),
-            "CryptoPerpetual" => CryptoPerpetual::get_schema(metadata),
-            "CurrencyPair" => CurrencyPair::get_schema(metadata),
-            "Equity" => Equity::get_schema(metadata),
-            "FuturesContract" => FuturesContract::get_schema(metadata),
-            "FuturesSpread" => FuturesSpread::get_schema(metadata),
-            "IndexInstrument" => IndexInstrument::get_schema(metadata),
-            "OptionContract" => OptionContract::get_schema(metadata),
-            "OptionSpread" => OptionSpread::get_schema(metadata),
-            "PerpetualContract" => PerpetualContract::get_schema(metadata),
-            "TokenizedAsset" => TokenizedAsset::get_schema(metadata),
-            _ => {
-                // Fallback to CurrencyPair schema if type is unknown
-                CurrencyPair::get_schema(metadata)
+                match class {
+                    $(Some($class) => <$instrument>::get_schema(metadata),)+
+                    // Batches written without a class, or with one this build does not know,
+                    // decode against the `CurrencyPair` schema; that was the only instrument
+                    // schema when the column was introduced.
+                    _ => CurrencyPair::get_schema(metadata),
+                }
             }
         }
-    }
+
+        impl EncodeToRecordBatch for InstrumentAny {
+            fn encode_batch(
+                metadata: &HashMap<String, String>,
+                data: &[Self],
+            ) -> Result<RecordBatch, ArrowError> {
+                let Some(first) = data.first() else {
+                    return Err(ArrowError::InvalidArgumentError(
+                        "Cannot encode empty instrument batch".to_string(),
+                    ));
+                };
+
+                match first {
+                    $(Self::$variant(_) => {
+                        let mut instruments = Vec::with_capacity(data.len());
+
+                        for instrument in data {
+                            let Self::$variant(instrument) = instrument else {
+                                return Err(mixed_instrument_types());
+                            };
+
+                            instruments.push(instrument.clone());
+                        }
+
+                        <$instrument>::encode_batch(metadata, &instruments)
+                    })+
+                }
+            }
+
+            fn metadata(&self) -> HashMap<String, String> {
+                let class = match self {
+                    $(Self::$variant(_) => $class,)+
+                };
+
+                HashMap::from([
+                    (KEY_INSTRUMENT_ID.to_string(), Instrument::id(self).to_string()),
+                    (KEY_CLASS.to_string(), class.to_string()),
+                ])
+            }
+        }
+
+        fn decode_batch_for_class(
+            class: &str,
+            metadata: &HashMap<String, String>,
+            record_batch: &RecordBatch,
+        ) -> Result<Vec<InstrumentAny>, EncodingError> {
+            match class {
+                $($class => Ok($decode(metadata, record_batch)?
+                    .into_iter()
+                    .map(InstrumentAny::$variant)
+                    .collect()),)+
+                _ => Err(EncodingError::ParseError(
+                    KEY_CLASS,
+                    format!("Unknown instrument type: {class}"),
+                )),
+            }
+        }
+    };
 }
 
-impl EncodeToRecordBatch for InstrumentAny {
-    fn encode_batch(
-        #[allow(unused)] metadata: &HashMap<String, String>,
-        data: &[Self],
-    ) -> Result<RecordBatch, ArrowError> {
-        if data.is_empty() {
-            return Err(ArrowError::InvalidArgumentError(
-                "Cannot encode empty instrument batch".to_string(),
-            ));
-        }
-
-        let mut by_type: HashMap<String, Vec<&Self>> = HashMap::new();
-
-        for instrument in data {
-            let type_name = match instrument {
-                Self::Cfd(_) => "Cfd",
-                Self::Commodity(_) => "Commodity",
-                Self::CurrencyPair(_) => "CurrencyPair",
-                Self::Equity(_) => "Equity",
-                Self::CryptoFuture(_) => "CryptoFuture",
-                Self::CryptoFuturesSpread(_) => "CryptoFuturesSpread",
-                Self::CryptoPerpetual(_) => "CryptoPerpetual",
-                Self::CryptoOption(_) => "CryptoOption",
-                Self::CryptoOptionSpread(_) => "CryptoOptionSpread",
-                Self::FuturesContract(_) => "FuturesContract",
-                Self::FuturesSpread(_) => "FuturesSpread",
-                Self::IndexInstrument(_) => "IndexInstrument",
-                Self::OptionContract(_) => "OptionContract",
-                Self::OptionSpread(_) => "OptionSpread",
-                Self::BinaryOption(_) => "BinaryOption",
-                Self::Betting(_) => "BettingInstrument",
-                Self::PerpetualContract(_) => "PerpetualContract",
-                Self::TokenizedAsset(_) => "TokenizedAsset",
-            };
-            by_type
-                .entry(type_name.to_string())
-                .or_default()
-                .push(instrument);
-        }
-
-        if by_type.len() > 1 {
-            return Err(ArrowError::InvalidArgumentError(
-                "Cannot encode mixed instrument types in a single batch. Use separate batches for each type.".to_string(),
-            ));
-        }
-
-        let (type_name, instruments) = by_type.iter().next().unwrap();
-        match type_name.as_str() {
-            "Cfd" => {
-                let cfds: Vec<_> = instruments
-                    .iter()
-                    .map(|i| {
-                        if let Self::Cfd(c) = i {
-                            c
-                        } else {
-                            unreachable!()
-                        }
-                    })
-                    .cloned()
-                    .collect();
-                Cfd::encode_batch(metadata, &cfds)
-            }
-            "Commodity" => {
-                let commodities: Vec<_> = instruments
-                    .iter()
-                    .map(|i| {
-                        if let Self::Commodity(c) = i {
-                            c
-                        } else {
-                            unreachable!()
-                        }
-                    })
-                    .cloned()
-                    .collect();
-                Commodity::encode_batch(metadata, &commodities)
-            }
-            "BettingInstrument" => {
-                let betting: Vec<_> = instruments
-                    .iter()
-                    .map(|i| {
-                        if let Self::Betting(b) = i {
-                            b
-                        } else {
-                            unreachable!()
-                        }
-                    })
-                    .cloned()
-                    .collect();
-                BettingInstrument::encode_batch(metadata, &betting)
-            }
-            "BinaryOption" => {
-                let binary_options: Vec<_> = instruments
-                    .iter()
-                    .map(|i| {
-                        if let Self::BinaryOption(bo) = i {
-                            bo
-                        } else {
-                            unreachable!()
-                        }
-                    })
-                    .cloned()
-                    .collect();
-                BinaryOption::encode_batch(metadata, &binary_options)
-            }
-            "CryptoFuture" => {
-                let crypto_futures: Vec<_> = instruments
-                    .iter()
-                    .map(|i| {
-                        if let Self::CryptoFuture(cf) = i {
-                            cf
-                        } else {
-                            unreachable!()
-                        }
-                    })
-                    .cloned()
-                    .collect();
-                CryptoFuture::encode_batch(metadata, &crypto_futures)
-            }
-            "CryptoFuturesSpread" => {
-                let spreads: Vec<_> = instruments
-                    .iter()
-                    .map(|i| {
-                        if let Self::CryptoFuturesSpread(cfs) = i {
-                            cfs
-                        } else {
-                            unreachable!()
-                        }
-                    })
-                    .cloned()
-                    .collect();
-                CryptoFuturesSpread::encode_batch(metadata, &spreads)
-            }
-            "CryptoOption" => {
-                let crypto_options: Vec<_> = instruments
-                    .iter()
-                    .map(|i| {
-                        if let Self::CryptoOption(co) = i {
-                            co
-                        } else {
-                            unreachable!()
-                        }
-                    })
-                    .cloned()
-                    .collect();
-                CryptoOption::encode_batch(metadata, &crypto_options)
-            }
-            "CryptoOptionSpread" => {
-                let spreads: Vec<_> = instruments
-                    .iter()
-                    .map(|i| {
-                        if let Self::CryptoOptionSpread(cos) = i {
-                            cos
-                        } else {
-                            unreachable!()
-                        }
-                    })
-                    .cloned()
-                    .collect();
-                CryptoOptionSpread::encode_batch(metadata, &spreads)
-            }
-            "CryptoPerpetual" => {
-                let crypto_perps: Vec<_> = instruments
-                    .iter()
-                    .map(|i| {
-                        if let Self::CryptoPerpetual(cp) = i {
-                            cp
-                        } else {
-                            unreachable!()
-                        }
-                    })
-                    .cloned()
-                    .collect();
-                CryptoPerpetual::encode_batch(metadata, &crypto_perps)
-            }
-            "CurrencyPair" => {
-                let currency_pairs: Vec<_> = instruments
-                    .iter()
-                    .map(|i| {
-                        if let Self::CurrencyPair(cp) = i {
-                            cp
-                        } else {
-                            unreachable!()
-                        }
-                    })
-                    .cloned()
-                    .collect();
-                CurrencyPair::encode_batch(metadata, &currency_pairs)
-            }
-            "Equity" => {
-                let equities: Vec<_> = instruments
-                    .iter()
-                    .map(|i| {
-                        if let Self::Equity(e) = i {
-                            e
-                        } else {
-                            unreachable!()
-                        }
-                    })
-                    .cloned()
-                    .collect();
-                Equity::encode_batch(metadata, &equities)
-            }
-            "FuturesContract" => {
-                let futures_contracts: Vec<_> = instruments
-                    .iter()
-                    .map(|i| {
-                        if let Self::FuturesContract(fc) = i {
-                            fc
-                        } else {
-                            unreachable!()
-                        }
-                    })
-                    .cloned()
-                    .collect();
-                FuturesContract::encode_batch(metadata, &futures_contracts)
-            }
-            "FuturesSpread" => {
-                let futures_spreads: Vec<_> = instruments
-                    .iter()
-                    .map(|i| {
-                        if let Self::FuturesSpread(fs) = i {
-                            fs
-                        } else {
-                            unreachable!()
-                        }
-                    })
-                    .cloned()
-                    .collect();
-                FuturesSpread::encode_batch(metadata, &futures_spreads)
-            }
-            "IndexInstrument" => {
-                let index_instruments: Vec<_> = instruments
-                    .iter()
-                    .map(|i| {
-                        if let Self::IndexInstrument(ii) = i {
-                            ii
-                        } else {
-                            unreachable!()
-                        }
-                    })
-                    .cloned()
-                    .collect();
-                IndexInstrument::encode_batch(metadata, &index_instruments)
-            }
-            "OptionContract" => {
-                let option_contracts: Vec<_> = instruments
-                    .iter()
-                    .map(|i| {
-                        if let Self::OptionContract(oc) = i {
-                            oc
-                        } else {
-                            unreachable!()
-                        }
-                    })
-                    .cloned()
-                    .collect();
-                OptionContract::encode_batch(metadata, &option_contracts)
-            }
-            "OptionSpread" => {
-                let option_spreads: Vec<_> = instruments
-                    .iter()
-                    .map(|i| {
-                        if let Self::OptionSpread(os) = i {
-                            os
-                        } else {
-                            unreachable!()
-                        }
-                    })
-                    .cloned()
-                    .collect();
-                OptionSpread::encode_batch(metadata, &option_spreads)
-            }
-            "PerpetualContract" => {
-                let perpetual_contracts: Vec<_> = instruments
-                    .iter()
-                    .map(|i| {
-                        if let Self::PerpetualContract(pc) = i {
-                            pc
-                        } else {
-                            unreachable!()
-                        }
-                    })
-                    .cloned()
-                    .collect();
-                PerpetualContract::encode_batch(metadata, &perpetual_contracts)
-            }
-            "TokenizedAsset" => {
-                let tokenized_assets: Vec<_> = instruments
-                    .iter()
-                    .map(|i| {
-                        if let Self::TokenizedAsset(ta) = i {
-                            ta
-                        } else {
-                            unreachable!()
-                        }
-                    })
-                    .cloned()
-                    .collect();
-                TokenizedAsset::encode_batch(metadata, &tokenized_assets)
-            }
-            _ => Err(ArrowError::InvalidArgumentError(format!(
-                "Instrument type {type_name} serialization not yet implemented"
-            ))),
-        }
-    }
-
-    fn metadata(&self) -> HashMap<String, String> {
-        let mut metadata = HashMap::new();
-        metadata.insert(
-            KEY_INSTRUMENT_ID.to_string(),
-            Instrument::id(self).to_string(),
-        );
-
-        let type_name = match self {
-            Self::Cfd(_) => "Cfd",
-            Self::Commodity(_) => "Commodity",
-            Self::CurrencyPair(_) => "CurrencyPair",
-            Self::Equity(_) => "Equity",
-            Self::CryptoFuture(_) => "CryptoFuture",
-            Self::CryptoFuturesSpread(_) => "CryptoFuturesSpread",
-            Self::CryptoPerpetual(_) => "CryptoPerpetual",
-            Self::CryptoOption(_) => "CryptoOption",
-            Self::CryptoOptionSpread(_) => "CryptoOptionSpread",
-            Self::FuturesContract(_) => "FuturesContract",
-            Self::FuturesSpread(_) => "FuturesSpread",
-            Self::IndexInstrument(_) => "IndexInstrument",
-            Self::OptionContract(_) => "OptionContract",
-            Self::OptionSpread(_) => "OptionSpread",
-            Self::BinaryOption(_) => "BinaryOption",
-            Self::Betting(_) => "BettingInstrument",
-            Self::PerpetualContract(_) => "PerpetualContract",
-            Self::TokenizedAsset(_) => "TokenizedAsset",
-        };
-        metadata.insert("class".to_string(), type_name.to_string());
-        metadata
-    }
+fn mixed_instrument_types() -> ArrowError {
+    ArrowError::InvalidArgumentError(
+        "Cannot encode mixed instrument types in a single batch. Use separate batches for each type."
+            .to_string(),
+    )
 }
 
-/// Decode InstrumentAny from RecordBatch
-/// (Cannot implement DecodeFromRecordBatch trait due to `Into<Data>` bound)
+impl_instrument_any_arrow!(
+    (
+        Betting,
+        BettingInstrument,
+        "BettingInstrument",
+        betting::decode_betting_instrument_batch
+    ),
+    (
+        BinaryOption,
+        BinaryOption,
+        "BinaryOption",
+        binary_option::decode_binary_option_batch
+    ),
+    (Cfd, Cfd, "Cfd", cfd::decode_cfd_batch),
+    (
+        Commodity,
+        Commodity,
+        "Commodity",
+        commodity::decode_commodity_batch
+    ),
+    (
+        CryptoFuture,
+        CryptoFuture,
+        "CryptoFuture",
+        crypto_future::decode_crypto_future_batch
+    ),
+    (
+        CryptoFuturesSpread,
+        CryptoFuturesSpread,
+        "CryptoFuturesSpread",
+        crypto_futures_spread::decode_crypto_futures_spread_batch
+    ),
+    (
+        CryptoOption,
+        CryptoOption,
+        "CryptoOption",
+        crypto_option::decode_crypto_option_batch
+    ),
+    (
+        CryptoOptionSpread,
+        CryptoOptionSpread,
+        "CryptoOptionSpread",
+        crypto_option_spread::decode_crypto_option_spread_batch
+    ),
+    (
+        CryptoPerpetual,
+        CryptoPerpetual,
+        "CryptoPerpetual",
+        crypto_perpetual::decode_crypto_perpetual_batch
+    ),
+    (
+        CurrencyPair,
+        CurrencyPair,
+        "CurrencyPair",
+        currency_pair::decode_currency_pair_batch
+    ),
+    (Equity, Equity, "Equity", equity::decode_equity_batch),
+    (
+        FuturesContract,
+        FuturesContract,
+        "FuturesContract",
+        futures_contract::decode_futures_contract_batch
+    ),
+    (
+        FuturesSpread,
+        FuturesSpread,
+        "FuturesSpread",
+        futures_spread::decode_futures_spread_batch
+    ),
+    (
+        IndexInstrument,
+        IndexInstrument,
+        "IndexInstrument",
+        index_instrument::decode_index_instrument_batch
+    ),
+    (
+        OptionContract,
+        OptionContract,
+        "OptionContract",
+        option_contract::decode_option_contract_batch
+    ),
+    (
+        OptionSpread,
+        OptionSpread,
+        "OptionSpread",
+        option_spread::decode_option_spread_batch
+    ),
+    (
+        PerpetualContract,
+        PerpetualContract,
+        "PerpetualContract",
+        perpetual_contract::decode_perpetual_contract_batch
+    ),
+    (
+        TokenizedAsset,
+        TokenizedAsset,
+        "TokenizedAsset",
+        tokenized_asset::decode_tokenized_asset_batch
+    ),
+);
+
+/// Decodes `InstrumentAny` values from a record batch.
+///
+/// Not a [`DecodeFromRecordBatch`] implementation because that trait requires `Into<Data>`.
 ///
 /// # Errors
 ///
-/// Returns an `EncodingError` if the RecordBatch cannot be decoded.
+/// Returns an `EncodingError` if the record batch cannot be decoded.
+///
+/// [`DecodeFromRecordBatch`]: crate::arrow::DecodeFromRecordBatch
 pub fn decode_instrument_any_batch(
-    #[allow(unused)] metadata: &HashMap<String, String>,
+    metadata: &HashMap<String, String>,
     record_batch: &RecordBatch,
 ) -> Result<Vec<InstrumentAny>, EncodingError> {
-    let type_name = metadata
-        .get("class")
+    let class = metadata
+        .get(KEY_CLASS)
         .map(String::as_str)
-        .ok_or_else(|| EncodingError::MissingMetadata("class"))?;
+        .ok_or(EncodingError::MissingMetadata(KEY_CLASS))?;
 
-    match type_name {
-        "Cfd" => {
-            let cfds = cfd::decode_cfd_batch(metadata, record_batch)?;
-            Ok(cfds.into_iter().map(InstrumentAny::Cfd).collect())
-        }
-        "Commodity" => {
-            let commodities = commodity::decode_commodity_batch(metadata, record_batch)?;
-            Ok(commodities
-                .into_iter()
-                .map(InstrumentAny::Commodity)
-                .collect())
-        }
-        "BettingInstrument" => {
-            let betting = betting::decode_betting_instrument_batch(metadata, record_batch)?;
-            Ok(betting.into_iter().map(InstrumentAny::Betting).collect())
-        }
-        "BinaryOption" => {
-            let binary_options = binary_option::decode_binary_option_batch(metadata, record_batch)?;
-            Ok(binary_options
-                .into_iter()
-                .map(InstrumentAny::BinaryOption)
-                .collect())
-        }
-        "CryptoFuture" => {
-            let crypto_futures = crypto_future::decode_crypto_future_batch(metadata, record_batch)?;
-            Ok(crypto_futures
-                .into_iter()
-                .map(InstrumentAny::CryptoFuture)
-                .collect())
-        }
-        "CryptoFuturesSpread" => {
-            let spreads =
-                crypto_futures_spread::decode_crypto_futures_spread_batch(metadata, record_batch)?;
-            Ok(spreads
-                .into_iter()
-                .map(InstrumentAny::CryptoFuturesSpread)
-                .collect())
-        }
-        "CryptoOption" => {
-            let crypto_options = crypto_option::decode_crypto_option_batch(metadata, record_batch)?;
-            Ok(crypto_options
-                .into_iter()
-                .map(InstrumentAny::CryptoOption)
-                .collect())
-        }
-        "CryptoOptionSpread" => {
-            let spreads =
-                crypto_option_spread::decode_crypto_option_spread_batch(metadata, record_batch)?;
-            Ok(spreads
-                .into_iter()
-                .map(InstrumentAny::CryptoOptionSpread)
-                .collect())
-        }
-        "CryptoPerpetual" => {
-            let crypto_perps =
-                crypto_perpetual::decode_crypto_perpetual_batch(metadata, record_batch)?;
-            Ok(crypto_perps
-                .into_iter()
-                .map(InstrumentAny::CryptoPerpetual)
-                .collect())
-        }
-        "CurrencyPair" => {
-            let currency_pairs = currency_pair::decode_currency_pair_batch(metadata, record_batch)?;
-            Ok(currency_pairs
-                .into_iter()
-                .map(InstrumentAny::CurrencyPair)
-                .collect())
-        }
-        "Equity" => {
-            let equities = equity::decode_equity_batch(metadata, record_batch)?;
-            Ok(equities.into_iter().map(InstrumentAny::Equity).collect())
-        }
-        "FuturesContract" => {
-            let futures_contracts =
-                futures_contract::decode_futures_contract_batch(metadata, record_batch)?;
-            Ok(futures_contracts
-                .into_iter()
-                .map(InstrumentAny::FuturesContract)
-                .collect())
-        }
-        "FuturesSpread" => {
-            let futures_spreads =
-                futures_spread::decode_futures_spread_batch(metadata, record_batch)?;
-            Ok(futures_spreads
-                .into_iter()
-                .map(InstrumentAny::FuturesSpread)
-                .collect())
-        }
-        "IndexInstrument" => {
-            let index_instruments =
-                index_instrument::decode_index_instrument_batch(metadata, record_batch)?;
-            Ok(index_instruments
-                .into_iter()
-                .map(InstrumentAny::IndexInstrument)
-                .collect())
-        }
-        "OptionContract" => {
-            let option_contracts =
-                option_contract::decode_option_contract_batch(metadata, record_batch)?;
-            Ok(option_contracts
-                .into_iter()
-                .map(InstrumentAny::OptionContract)
-                .collect())
-        }
-        "OptionSpread" => {
-            let option_spreads = option_spread::decode_option_spread_batch(metadata, record_batch)?;
-            Ok(option_spreads
-                .into_iter()
-                .map(InstrumentAny::OptionSpread)
-                .collect())
-        }
-        "PerpetualContract" => {
-            let perpetual_contracts =
-                perpetual_contract::decode_perpetual_contract_batch(metadata, record_batch)?;
-            Ok(perpetual_contracts
-                .into_iter()
-                .map(InstrumentAny::PerpetualContract)
-                .collect())
-        }
-        "TokenizedAsset" => {
-            let tokenized_assets =
-                tokenized_asset::decode_tokenized_asset_batch(metadata, record_batch)?;
-            Ok(tokenized_assets
-                .into_iter()
-                .map(InstrumentAny::TokenizedAsset)
-                .collect())
-        }
-        _ => Err(EncodingError::ParseError(
-            "class",
-            format!("Unknown instrument type: {type_name}"),
-        )),
-    }
+    decode_batch_for_class(class, metadata, record_batch)
 }
 
 #[cfg(test)]
@@ -673,7 +410,11 @@ mod tests {
     use nautilus_model::{
         enums::{AssetClass, CurrencyType, OptionKind},
         identifiers::{InstrumentId, Symbol},
-        instruments::{Instrument, InstrumentAny, currency_pair::CurrencyPair, stubs::betting},
+        instruments::{
+            Instrument, InstrumentAny,
+            currency_pair::CurrencyPair,
+            stubs::{betting, currency_pair_btcusdt, equity_aapl},
+        },
         types::{Currency, Money, Price, Quantity},
     };
     use rstest::rstest;
@@ -685,10 +426,28 @@ mod tests {
     #[rstest]
     fn test_get_schema() {
         let mut metadata = HashMap::new();
-        metadata.insert("class".to_string(), "CurrencyPair".to_string());
+        metadata.insert(KEY_CLASS.to_string(), "CurrencyPair".to_string());
         let schema = InstrumentAny::get_schema(Some(metadata));
         assert!(schema.fields().len() >= 20);
         assert_eq!(schema.field(0).name(), "id");
+    }
+
+    #[rstest]
+    fn test_encode_batch_rejects_mixed_instrument_types() {
+        let instruments = [
+            InstrumentAny::CurrencyPair(currency_pair_btcusdt()),
+            InstrumentAny::Equity(equity_aapl()),
+        ];
+
+        let error = InstrumentAny::encode_batch(&HashMap::new(), &instruments).unwrap_err();
+
+        let ArrowError::InvalidArgumentError(message) = error else {
+            panic!("unexpected error variant: {error:?}");
+        };
+        assert_eq!(
+            message,
+            "Cannot encode mixed instrument types in a single batch. Use separate batches for each type."
+        );
     }
 
     #[rstest]
@@ -1219,7 +978,7 @@ mod tests {
     ))]
     fn test_decode_instrument_checked_constructor_error(#[case] instrument: InstrumentAny) {
         let metadata = instrument.metadata();
-        let class = metadata.get("class").unwrap();
+        let class = metadata.get(KEY_CLASS).unwrap();
         let first_row_price_precision = Instrument::price_precision(&instrument);
         let instruments = vec![instrument.clone(), instrument];
         let record_batch = InstrumentAny::encode_batch(&metadata, &instruments).unwrap();

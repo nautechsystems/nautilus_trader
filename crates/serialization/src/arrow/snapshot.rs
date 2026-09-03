@@ -13,16 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
-use arrow::{datatypes::Schema, error::ArrowError, record_batch::RecordBatch};
 use nautilus_model::events::{OrderSnapshot, PositionSnapshot};
 
-use super::{
-    ArrowSchemaProvider, DecodeTypedFromRecordBatch, EncodeToRecordBatch, EncodingError,
-    KEY_INSTRUMENT_ID,
-    json::{JsonFieldSpec, decode_batch, encode_batch, metadata_for_type, schema_for_type},
-};
+use super::json::{JsonFieldSpec, impl_json_arrow};
 
 const ORDER_SNAPSHOT_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
@@ -102,47 +95,8 @@ const POSITION_SNAPSHOT_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8_json("replay_state", true),
 ];
 
-fn instrument_metadata(type_name: &'static str, instrument_id: &str) -> HashMap<String, String> {
-    let mut metadata = metadata_for_type(type_name);
-    metadata.insert(KEY_INSTRUMENT_ID.to_string(), instrument_id.to_string());
-    metadata
-}
-
-macro_rules! impl_snapshot_arrow {
-    ($type:ty, $type_name:expr, $fields:expr) => {
-        impl ArrowSchemaProvider for $type {
-            fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
-                schema_for_type($type_name, metadata, $fields)
-            }
-        }
-
-        impl EncodeToRecordBatch for $type {
-            fn encode_batch(
-                metadata: &HashMap<String, String>,
-                data: &[Self],
-            ) -> Result<RecordBatch, ArrowError> {
-                encode_batch($type_name, metadata, data, $fields)
-            }
-
-            fn metadata(&self) -> HashMap<String, String> {
-                instrument_metadata($type_name, &self.instrument_id.to_string())
-            }
-        }
-
-        impl DecodeTypedFromRecordBatch for $type {
-            fn decode_typed_batch(
-                metadata: &HashMap<String, String>,
-                record_batch: RecordBatch,
-            ) -> Result<Vec<Self>, EncodingError> {
-                decode_batch(metadata, &record_batch, $fields, Some($type_name))
-            }
-        }
-    };
-}
-
-impl_snapshot_arrow!(OrderSnapshot, "OrderSnapshot", ORDER_SNAPSHOT_FIELDS);
-impl_snapshot_arrow!(
-    PositionSnapshot,
+impl_json_arrow!(instrument OrderSnapshot, "OrderSnapshot", ORDER_SNAPSHOT_FIELDS);
+impl_json_arrow!(instrument PositionSnapshot,
     "PositionSnapshot",
     POSITION_SNAPSHOT_FIELDS
 );
@@ -164,6 +118,7 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+    use crate::arrow::{DecodeTypedFromRecordBatch, EncodeToRecordBatch, json::encode_batch};
 
     #[rstest]
     fn test_order_snapshot_round_trip_preserves_decimal_precision() {

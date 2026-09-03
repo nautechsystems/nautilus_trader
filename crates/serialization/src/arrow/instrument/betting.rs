@@ -17,29 +17,25 @@
 
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
-#[allow(unused_imports)]
 use arrow::{
     array::{
-        Array, BinaryArray, BinaryBuilder, Float64Array, Float64Builder, Int64Array, Int64Builder,
-        StringArray, StringBuilder, UInt8Array, UInt64Array,
+        Array, BinaryArray, BinaryBuilder, Float64Array, StringArray, StringBuilder, UInt8Array,
+        UInt64Array,
     },
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
     record_batch::RecordBatch,
 };
-#[allow(unused_imports)]
 use nautilus_core::Params;
 use nautilus_model::{
     identifiers::{InstrumentId, Symbol},
     instruments::betting::BettingInstrument,
     types::{money::Money, price::Price, quantity::Quantity},
 };
-#[allow(unused)]
 use rust_decimal::Decimal;
-#[allow(unused)]
-use serde_json::Value;
 use ustr::Ustr;
 
+use super::KEY_CLASS;
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
     KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, extract_column, extract_column_by_name_or_index,
@@ -90,7 +86,7 @@ impl ArrowSchemaProvider for BettingInstrument {
         ];
 
         let mut final_metadata = HashMap::new();
-        final_metadata.insert("class".to_string(), "BettingInstrument".to_string());
+        final_metadata.insert(KEY_CLASS.to_string(), "BettingInstrument".to_string());
 
         if let Some(meta) = metadata {
             final_metadata.extend(meta);
@@ -240,7 +236,7 @@ impl EncodeToRecordBatch for BettingInstrument {
         }
 
         let mut final_metadata = metadata.clone();
-        final_metadata.insert("class".to_string(), "BettingInstrument".to_string());
+        final_metadata.insert(KEY_CLASS.to_string(), "BettingInstrument".to_string());
 
         RecordBatch::try_new(
             Self::get_schema(Some(final_metadata)).into(),
@@ -302,12 +298,15 @@ impl EncodeToRecordBatch for BettingInstrument {
     }
 }
 
-/// Helper function to decode BettingInstrument from RecordBatch
-/// (Cannot implement DecodeFromRecordBatch trait due to `Into<Data>` bound)
+/// Decodes [`BettingInstrument`] instruments from a record batch.
+///
+/// Not a [`DecodeFromRecordBatch`] implementation because that trait requires `Into<Data>`.
 ///
 /// # Errors
 ///
-/// Returns an `EncodingError` if the RecordBatch cannot be decoded.
+/// Returns an `EncodingError` if the record batch cannot be decoded.
+///
+/// [`DecodeFromRecordBatch`]: crate::arrow::DecodeFromRecordBatch
 pub fn decode_betting_instrument_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
     record_batch: &RecordBatch,
