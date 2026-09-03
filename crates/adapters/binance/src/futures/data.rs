@@ -194,17 +194,29 @@ impl BinanceFuturesDataClient {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
         let socket_factory = SocketControlFactory::new(client_id, Some(*BINANCE_VENUE));
+        let api_key = config
+            .api_key
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+        let api_secret = config
+            .api_secret
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
 
         let http_client = BinanceFuturesHttpClient::new(
             product_type,
             config.environment,
             clock,
-            config.api_key.clone(),
-            config.api_secret.clone(),
+            api_key.clone(),
+            api_secret.clone(),
             config.base_url_http.clone(),
             Some(config.recv_window_ms),
             None, // timeout_secs
-            config.proxy_url.clone(),
+            proxy_url.clone(),
             false, // treat_expired_as_canceled
         )?;
 
@@ -221,13 +233,13 @@ impl BinanceFuturesDataClient {
         let ws_client = BinanceFuturesWebSocketClient::new(
             product_type,
             config.environment,
-            config.api_key.clone(),
-            config.api_secret.clone(),
+            api_key,
+            api_secret,
             market_url,
             Some(BINANCE_WS_HEARTBEAT_SECS),
             config.transport_backend,
         )?
-        .with_proxy(config.proxy_url.clone())
+        .with_proxy(proxy_url.clone())
         .with_socket_control(socket_factory.clone(), MARKET_STREAMS_ENDPOINT);
 
         let public_url = config.base_url_ws.clone().map_or_else(
@@ -252,7 +264,7 @@ impl BinanceFuturesDataClient {
             Some(BINANCE_WS_HEARTBEAT_SECS),
             config.transport_backend,
         )?
-        .with_proxy(config.proxy_url.clone())
+        .with_proxy(proxy_url)
         .with_socket_control(socket_factory, PUBLIC_STREAMS_ENDPOINT);
 
         let session_tasks = TaskGroup::new();

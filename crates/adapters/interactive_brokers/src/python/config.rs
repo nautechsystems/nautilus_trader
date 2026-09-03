@@ -15,7 +15,7 @@
 
 //! Python bindings for Interactive Brokers configuration types.
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::{python::to_pyvalue_err, string::secret::SecretString};
 use nautilus_model::identifiers::InstrumentId;
 use pyo3::prelude::*;
 
@@ -420,8 +420,8 @@ impl DockerizedIBGatewayConfig {
         vnc_port: Option<u16>,
     ) -> Self {
         Self {
-            username,
-            password,
+            username: username.map(SecretString::from),
+            password: password.map(SecretString::from),
             trading_mode: trading_mode.unwrap_or_default(),
             read_only_api: read_only_api.unwrap_or(true),
             timeout: timeout.unwrap_or(300),
@@ -433,8 +433,8 @@ impl DockerizedIBGatewayConfig {
 
     /// Returns the username.
     #[getter]
-    fn username(&self) -> Option<String> {
-        self.username.clone()
+    fn username(&self) -> Option<&str> {
+        self.username.as_ref().map(SecretString::expose_secret)
     }
 
     #[getter]

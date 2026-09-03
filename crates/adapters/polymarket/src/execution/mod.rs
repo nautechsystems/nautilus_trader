@@ -125,7 +125,7 @@ impl PolymarketExecutionClient {
     ) -> anyhow::Result<Self> {
         let proxy_url = config.validated_proxy_url()?;
         let secrets = Secrets::resolve(
-            config.private_key.as_deref(),
+            config.private_key.clone(),
             config.api_key.clone(),
             config.api_secret.clone(),
             config.passphrase.clone(),

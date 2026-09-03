@@ -16,7 +16,11 @@
 //! Builder types for Bybit REST query parameters and filters.
 
 use derive_builder::Builder;
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroize;
 
 use crate::common::{
     enums::{
@@ -901,25 +905,34 @@ pub struct BybitApiKeyPermissionUpdate {
 ///
 /// # References
 /// - <https://bybit-exchange.github.io/docs/v5/user/modify-sub-apikey>
-#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default, Builder)]
 #[serde(rename_all = "camelCase")]
-#[builder(default)]
 #[builder(setter(into))]
 pub struct BybitUpdateSubApiParams {
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     // Bybit accepts `readOnly` as a 0/1 integer on the wire; the builder takes
     // a `bool` and `opt_bool_as_int` serialises it to match.
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none", with = "opt_bool_as_int")]
     #[builder(setter(strip_option))]
     pub read_only: Option<bool>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
     pub ips: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
     pub permissions: Option<BybitApiKeyPermissionUpdate>,
+}
+
+impl Zeroize for BybitUpdateSubApiParams {
+    fn zeroize(&mut self) {
+        self.api_key.zeroize();
+    }
 }
 
 /// Body parameters for `POST /v5/user/update-api`.
@@ -993,8 +1006,29 @@ pub struct BybitSubApiKeysParams {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use zeroize::Zeroize;
 
     use super::*;
+
+    #[rstest]
+    fn test_update_sub_api_preserves_wire_value_and_redacts_debug() {
+        let mut params = BybitUpdateSubApiParamsBuilder::default()
+            .api_key("sub-api-key-secret".to_string())
+            .read_only(true)
+            .build()
+            .unwrap();
+
+        let value = serde_json::to_value(&params).unwrap();
+        let debug = format!("{params:?}");
+
+        assert_eq!(value["apiKey"], "sub-api-key-secret");
+        assert_eq!(value["readOnly"], 1);
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains("sub-api-key-secret"));
+
+        params.zeroize();
+        assert!(params.api_key.is_none());
+    }
 
     #[rstest]
     fn test_amend_entry_builds_with_only_order_id() {

@@ -236,10 +236,10 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         py,
         PolymarketExecutionClientConfig {
             account_id,
-            private_key: Some(SMOKE_PRIVATE_KEY.to_string()),
-            api_key: Some(SMOKE_API_KEY.to_string()),
-            api_secret: Some(SMOKE_API_SECRET.to_string()),
-            passphrase: Some(SMOKE_PASSPHRASE.to_string()),
+            private_key: Some(SMOKE_PRIVATE_KEY.into()),
+            api_key: Some(SMOKE_API_KEY.into()),
+            api_secret: Some(SMOKE_API_SECRET.into()),
+            passphrase: Some(SMOKE_PASSPHRASE.into()),
             heartbeat_enabled: true,
             instrument_config: Some(PolymarketInstrumentProviderConfig {
                 load_ids: Some(vec![scoped]),

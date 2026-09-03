@@ -355,10 +355,10 @@ fn create_test_exec_config_with_retries(
     max_retries: u32,
 ) -> PolymarketExecutionClientConfig {
     PolymarketExecutionClientConfig {
-        private_key: Some(TEST_PRIVATE_KEY.to_string()),
-        api_key: Some("00000000-0000-0000-0000-000000000001".to_string()),
-        api_secret: Some(TEST_API_SECRET_B64.to_string()),
-        passphrase: Some("test_pass".to_string()),
+        private_key: Some(TEST_PRIVATE_KEY.into()),
+        api_key: Some("00000000-0000-0000-0000-000000000001".into()),
+        api_secret: Some(TEST_API_SECRET_B64.into()),
+        passphrase: Some("test_pass".into()),
         funder: None,
         base_url_http: Some(format!("http://{addr}")),
         base_url_ws: Some(format!("ws://{addr}/ws")),
@@ -12191,7 +12191,7 @@ async fn test_group_cancel_orders_bounds_retries_and_result_processing(
     }
     let addr = start_mock_server(state.clone()).await;
     let mut config = create_test_exec_config_with_retries(addr, 1);
-    config.private_key = Some(private_key.to_string());
+    config.private_key = Some(private_key.into());
     let (mut client, mut rx, cache) = create_test_execution_client_from_config(config);
     client.start().unwrap();
 

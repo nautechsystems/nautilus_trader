@@ -17,6 +17,9 @@
 
 use std::num::NonZeroU32;
 
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::{ratelimiter::quota::Quota, websocket::TransportBackend};
 use serde::{Deserialize, Serialize};
@@ -84,7 +87,7 @@ pub struct DydxAdapterConfig {
     ///
     /// Use `DydxCredential::resolve()` to resolve from config or environment.
     #[serde(default)]
-    pub private_key: Option<String>,
+    pub private_key: Option<SecretString>,
     /// Authenticator IDs for permissioned key trading.
     ///
     /// When provided, transactions will include a TxExtension to enable trading
@@ -122,7 +125,7 @@ pub struct DydxAdapterConfig {
     pub grpc_rate_limit_per_second: Option<u32>,
     /// Optional proxy URL for HTTP and WebSocket transports.
     #[serde(default)]
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// WebSocket transport backend (defaults to `Tungstenite`).
     #[serde(default)]
     #[builder(default)]
@@ -281,7 +284,7 @@ pub struct DydxDataClientConfig {
     #[builder(default)]
     pub network: DydxNetwork,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// WebSocket transport backend (defaults to `Tungstenite`).
     #[serde(default)]
     #[builder(default)]
@@ -357,7 +360,7 @@ pub struct DydxExecutionClientConfig {
     /// If not provided, falls back to environment variable:
     /// - Mainnet: `DYDX_PRIVATE_KEY`
     /// - Testnet: `DYDX_TESTNET_PRIVATE_KEY`
-    pub private_key: Option<String>,
+    pub private_key: Option<SecretString>,
     /// Wallet address.
     ///
     /// If not provided, falls back to environment variable:
@@ -385,7 +388,7 @@ pub struct DydxExecutionClientConfig {
     #[serde(default = "default_grpc_rate_limit_per_second")]
     pub grpc_rate_limit_per_second: Option<u32>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// WebSocket transport backend (defaults to `Tungstenite`).
     #[serde(default)]
     #[builder(default)]
@@ -471,6 +474,38 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_config_debug_redacts_credentials() {
+        let adapter = DydxAdapterConfig {
+            private_key: Some("adapter-private-key".into()),
+            proxy_url: Some("http://user:adapter-proxy@localhost".into()),
+            ..Default::default()
+        };
+        let data = DydxDataClientConfig {
+            proxy_url: Some("http://user:data-proxy@localhost".into()),
+            ..Default::default()
+        };
+        let execution = DydxExecutionClientConfig {
+            private_key: Some("exec-private-key".into()),
+            proxy_url: Some("http://user:exec-proxy@localhost".into()),
+            ..Default::default()
+        };
+
+        let formatted = format!("{adapter:?} {data:?} {execution:?}");
+
+        assert_eq!(formatted.matches(REDACTED).count(), 5);
+
+        for secret in [
+            "adapter-private-key",
+            "adapter-proxy",
+            "data-proxy",
+            "exec-private-key",
+            "exec-proxy",
+        ] {
+            assert!(!formatted.contains(secret));
+        }
+    }
 
     #[rstest]
     fn test_config_get_chain_id_mainnet() {

@@ -416,23 +416,33 @@ impl HyperliquidExecutionClient {
         config: HyperliquidExecutionClientConfig,
     ) -> anyhow::Result<Self> {
         let secrets = Secrets::resolve(
-            config.private_key.as_deref(),
+            config
+                .private_key
+                .as_ref()
+                .map(|value| value.expose_secret()),
             config.vault_address.as_deref(),
             config.environment,
         )
         .context("Hyperliquid execution client requires private key")?;
 
         let account_address = resolve_execution_account_address(
-            config.private_key.as_deref(),
+            config
+                .private_key
+                .as_ref()
+                .map(|value| value.expose_secret()),
             config.vault_address.as_deref(),
             config.account_address.as_deref(),
             config.environment,
         )?;
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
 
         let mut http_client = HyperliquidHttpClient::with_secrets(
             &secrets,
             config.http_timeout_secs,
-            config.proxy_url.clone(),
+            proxy_url.clone(),
         )
         .context("failed to create Hyperliquid HTTP client")?;
 
@@ -457,7 +467,7 @@ impl HyperliquidExecutionClient {
             config.environment,
             Some(core.account_id),
             config.transport_backend,
-            config.proxy_url.clone(),
+            proxy_url,
         );
         ws_client = ws_client.with_socket_control(SocketControl::new(
             core.client_id,

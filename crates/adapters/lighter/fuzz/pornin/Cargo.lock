@@ -1330,6 +1330,7 @@ dependencies = [
  "toml",
  "ustr",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]

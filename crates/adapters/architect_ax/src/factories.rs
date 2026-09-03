@@ -100,9 +100,11 @@ impl DataClientFactory for AxDataClientFactory {
         let client_id = ClientId::from(name);
 
         let http_client = if ax_config.has_api_credentials() {
-            let credential =
-                Credential::resolve(ax_config.api_key.clone(), ax_config.api_secret.clone())
-                    .ok_or_else(|| anyhow::anyhow!("API credentials not configured"))?;
+            let credential = Credential::resolve(
+                ax_config.api_key.clone().map(|value| value.into_inner()),
+                ax_config.api_secret.clone().map(|value| value.into_inner()),
+            )
+            .ok_or_else(|| anyhow::anyhow!("API credentials not configured"))?;
 
             AxHttpClient::with_credentials(
                 credential.api_key().to_string(),
@@ -113,7 +115,10 @@ impl DataClientFactory for AxDataClientFactory {
                 ax_config.max_retries,
                 ax_config.retry_delay_initial_ms,
                 ax_config.retry_delay_max_ms,
-                ax_config.proxy_url.clone(),
+                ax_config
+                    .proxy_url
+                    .as_ref()
+                    .map(|url| url.expose_secret().to_owned()),
             )
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?
         } else {
@@ -124,7 +129,10 @@ impl DataClientFactory for AxDataClientFactory {
                 ax_config.max_retries,
                 ax_config.retry_delay_initial_ms,
                 ax_config.retry_delay_max_ms,
-                ax_config.proxy_url.clone(),
+                ax_config
+                    .proxy_url
+                    .as_ref()
+                    .map(|url| url.expose_secret().to_owned()),
             )
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?
         };
@@ -136,7 +144,10 @@ impl DataClientFactory for AxDataClientFactory {
             ws_url,
             ax_config.heartbeat_interval_secs,
             ax_config.transport_backend,
-            ax_config.proxy_url.clone(),
+            ax_config
+                .proxy_url
+                .as_ref()
+                .map(|url| url.expose_secret().to_owned()),
         );
 
         let client = AxDataClient::new(client_id, ax_config, http_client, ws_client)?;

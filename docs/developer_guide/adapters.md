@@ -385,7 +385,9 @@ Adapter configs then add only venue semantics:
 - Use an enum for a closed set such as environment, product family, account mode, or endpoint.
 - Use `Option<T>` only when absence has a distinct meaning, including runtime credential fallback.
 - Keep data and execution config separate when their capabilities or credentials differ.
-- Implement a redacted `Debug` for any config that can hold secrets.
+- Store fields that must not appear in `Debug` as `SecretString`. Derive `Debug` when every sensitive
+  field uses a redacting type; write a custom implementation only when a field cannot use one or the
+  type requires more restrictive output.
 - Keep Python config projection thin. It converts types and delegates to the Rust config.
 
 Centralize default HTTP and WebSocket endpoint resolution so one environment selection cannot mix
@@ -400,23 +402,130 @@ commonly under `common/credential.rs`. Keep configs as data transfer objects: re
 when constructing the credential, factory, or client, not in Python wrappers or individual request
 methods.
 
+#### Classify sensitive values
+
+Classify a value before choosing its type and diagnostic output. Apply the more restrictive rule
+when a venue gives one value more than one role.
+
+| Value class                  | Examples                                                                                                      | Diagnostic output                                                                       |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Secret material              | Passwords, private keys, API secrets, passphrases, bearer and session tokens, refresh tokens, and signatures. | Always show `<redacted>`.                                                               |
+| Credential identity          | API keys, client IDs, usernames, and account identifiers used during authentication.                          | Redact by default. Use a masked API key only when operational correlation requires it.  |
+| Secret-bearing location      | Proxy URLs, RPC URLs, request paths, and query parameters that can contain credentials.                       | Redact the complete location from logs and errors.                                      |
+| Deliberately public identity | Wallet addresses, vault addresses, and public account names that the venue exposes publicly.                  | Show only when the type and adapter contract deliberately classify the value as public. |
+
+Do not infer that an API key, username, or URL is safe to print because it is not sufficient to
+authenticate by itself. Configs often cross logging, exception, and Python representation
+boundaries where partial credential identity remains sensitive.
+
+#### Use the common secret types
+
+Use `nautilus_core::string::secret` and `zeroize` instead of defining adapter-local redaction or
+zeroization conventions.
+
+| Mechanism                     | Use                                                                                                                                   |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `SecretString`                | Own a string that must zeroize on drop and render as `<redacted>` with `Debug`.                                                       |
+| `REDACTED`                    | Replace an unconditional secret field in a custom `Debug` or `Display` implementation.                                                |
+| `redact_option`               | Preserve `Some` versus `None` while redacting an optional field in a custom `Debug`.                                                  |
+| `mask_api_key`                | Correlate an API key only through an explicit masked-identity method. Do not use it for secret material.                              |
+| `Zeroizing<T>`                | Bound the lifetime of an owned plaintext `String`, byte buffer, decoded key, canonical payload, or serialized authentication message. |
+| `Zeroize` and `ZeroizeOnDrop` | Clear secret-bearing fields in structs that cannot use `SecretString`, including byte arrays and signing types.                       |
+| `zeroize_json_value`          | Clear owned strings in a mutable JSON value after serializing secret-bearing fields.                                                  |
+
+#### Use `SecretString` safely
+
+- Treat serialization as plaintext. `SecretString` uses the underlying string for wire-format
+  compatibility, so never serialize a config, credential, or authentication model for diagnostics.
+- Do not use ordinary `SecretString` equality to verify attacker-controlled secrets; it is not
+  constant-time.
+- Borrow plaintext through `expose_secret()` only at the signing, encoding, or transport boundary
+  that needs it.
+- Consume with `into_inner()` only to transfer ownership. If the receiving API requires `String`,
+  create that final copy at the call boundary and do not retain it in adapter code.
+- Take `&SecretString` when a function only reads the value. Take it by value when the function
+  retains or consumes it.
+- Put secret-bearing fields in the authenticated wire model instead of creating a second model only
+  to change `Debug`. Derive `Serialize` and derive `Debug` when every sensitive field redacts.
+- Write a custom `Debug` for credentials backed by byte arrays, signing keys, or other types that
+  cannot store their secret fields as `SecretString`.
+- Avoid `Display` for secret-bearing types unless a caller requires it. Any implementation must
+  redact secret material.
+
+#### Resolve and share credentials
+
 - Define environment variable names once and select them from typed environment and product values.
+- Document the established environment variable names in the adapter's integration guide.
 - Resolve all fields as one credential set. Public clients may remain unauthenticated, but an
   authenticated client rejects an incomplete or invalid set before sending a request.
-- Store secret fields in owned memory and zeroize them on drop. Redact secrets and private keys from
-  `Debug`. If logs need credential identity, log only a masked API key.
+- Convert config and environment strings into zeroizing owners at the credential boundary. Do not
+  retain a non-zeroizing plaintext copy in adapter state after conversion.
 - Share credential storage across transports only when they use the same key material. Keep HTTP,
   WebSocket, and transaction signing methods separate when their canonical payloads differ.
-- Test explicit values, environment fallback, missing fields, redacted output, and deterministic
-  signature vectors.
 
-Use the repository's established environment variable names for each venue and environment.
-Document the exact names in the adapter's integration guide, where users need them.
+#### Project credentials into Python
 
-Never include credentials, signatures, or secret material in errors, INFO logs, or DEBUG logs.
-Do not add adapter-level logs of raw authenticated requests or WebSocket payloads. Shared transport
-TRACE logs can contain raw outbound payloads, so treat TRACE output as sensitive and redact it
-before sharing.
+- Convert credential strings accepted by a Python constructor to `SecretString` at the Rust
+  boundary.
+- Apply the Rust `Debug` and `Display` redaction rules to Python `__repr__` and `__str__`.
+- Expose only a presence check for secret material and secret-bearing locations.
+- Return credential identity, such as a username, only when an existing public API or another
+  explicit caller needs it. Document the choice and keep the value out of diagnostics.
+- Never expose passwords, private keys, API secrets, passphrases, tokens, or signatures through
+  plaintext getters.
+
+#### Bound plaintext lifetime
+
+- Zeroize each owned plaintext allocation after its final use, including normalized and decoded keys,
+  secret-bearing signing payloads, serialized authentication messages, encoded form values, and
+  mutable request models.
+- Prefer borrowed slices and existing zeroizing owners over intermediate `String` and `Vec<u8>`
+  copies.
+- Limit the guarantee to allocations the adapter owns. Serialization libraries, transports, TLS,
+  and the operating system may make copies the adapter cannot reach.
+- Keep plaintext lifetimes short; do not promise process-wide or transport-wide erasure.
+
+#### Redact diagnostics and transport errors
+
+- Never include credentials, signatures, secret material, or secret-bearing URLs in errors or logs
+  at any level.
+- Log request metadata such as the method, field count, and byte lengths instead of credentials or
+  authentication payloads. Shared transports log metadata rather than payload contents.
+- Treat TRACE as developer-facing diagnostic output. Raw inbound payloads are allowed when their
+  schema cannot contain credential material.
+- Treat raw private-stream TRACE output as sensitive because it can disclose orders, balances,
+  positions, and account identity. Redact it before sharing.
+- Prefer metadata or a sanitized, bounded excerpt when either can diagnose the protocol.
+- Clear mutable source models after serialization when they own another plaintext copy.
+- Never log a raw authentication request or response, or any frame whose schema can contain secret
+  material.
+
+| Surface                      | Required handling                                                                                                | Zeroization boundary                                                   |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| HTTP secret body             | Use `HttpClient::request_with_secret_body`.                                                                      | The client retains the zeroizing owner; lower layers may copy it.      |
+| HTTP path or `HashMap` query | Use `HttpClient::request_with_url_redacted`.                                                                     | The URL is removed from logs and transport errors.                     |
+| HTTP typed query             | Use `HttpClient::request_with_params_url_redacted`.                                                              | The URL is removed from logs and transport errors.                     |
+| HTTP headers and proxy       | Create credential-bearing strings at the client boundary, avoid clones, and do not retain them in adapter state. | The shared client or transport may retain copies.                      |
+| WebSocket authentication     | Keep fields and serialized frames in `SecretString`; create the final `String` immediately before `send_text`.   | The shared client has no secret-owner-preserving send method.          |
+| Unsupported combination      | Extend the common client instead of implementing adapter-local URL or error scrubbing.                           | The common API must define the resulting ownership and redaction rule. |
+
+#### Verify credential handling
+
+Test the secret-handling contract as well as successful authentication:
+
+- Cover explicit values, environment fallback, incomplete credentials, and invalid credentials.
+- Assert that config, credential, request, response, and client `Debug` output omits the exact input
+  secrets. Test `Display` separately for every secret-bearing type that implements it.
+- Assert that Python `__repr__` and `__str__` omit credential identity and secret material. Test
+  presence checks and every deliberately exposed identity getter.
+- Assert that serialization and transport preserve the exact wire value where the venue requires
+  plaintext.
+- Force transport failures for credential-bearing URLs and assert that both `Display` and `Debug`
+  error output omit the URL, path secret, and query secret.
+- Use compile-time trait assertions for `Zeroize` or `ZeroizeOnDrop`, and test explicit clearing for
+  mutable request and response models.
+- Keep deterministic signature vectors so redaction and zeroization changes cannot alter signing
+  bytes, field order, or encoding.
 
 ### Symbols and instrument identity
 
@@ -1446,8 +1555,9 @@ Parsing may remain in the handler when it depends on handler-owned protocol stat
 external execution ownership remains a client decision.
 
 When reporting malformed frames, log the parse error separately from a sanitized, bounded payload
-excerpt. Never log a raw authenticated frame. Log a peer close code and reason at the transport
-layer that receives it; the adapter should not duplicate the shared transport log.
+excerpt. Never log a raw authentication frame or a frame whose schema can contain secret material.
+Log a peer close code and reason at the transport layer that receives it; the adapter should not
+duplicate the shared transport log.
 
 Dispatch module layout, intermediate enum names, context registries, venue bindings, and state
 containers remain adapter-specific. Prefer the smallest design that makes protocol ownership and

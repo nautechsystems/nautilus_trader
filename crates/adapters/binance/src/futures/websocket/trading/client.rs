@@ -34,7 +34,7 @@ use std::{
 };
 
 use arc_swap::ArcSwap;
-use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::{REDACTED, SecretString};
 use nautilus_live::{SocketControl, task::TaskGroup};
 use nautilus_network::{
     mode::ConnectionMode,
@@ -98,7 +98,7 @@ pub struct BinanceFuturesWsTradingClient {
     request_id_counter: Arc<AtomicU64>,
     cancellation_token: Arc<Mutex<CancellationToken>>,
     transport_backend: TransportBackend,
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
     recv_window_ms: Option<u64>,
     socket_control: Option<SocketControl>,
 }
@@ -152,7 +152,7 @@ impl BinanceFuturesWsTradingClient {
     /// Configures the proxy used by the WebSocket connection.
     #[must_use]
     pub fn with_proxy(mut self, proxy_url: Option<String>) -> Self {
-        self.proxy_url = proxy_url;
+        self.proxy_url = proxy_url.map(SecretString::from);
         self
     }
 
@@ -236,7 +236,10 @@ impl BinanceFuturesWsTradingClient {
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         };
 
         let keyed_quotas = vec![(
@@ -493,7 +496,7 @@ mod tests {
         .with_recv_window(Some(30_000));
 
         assert_eq!(
-            client.proxy_url.as_deref(),
+            client.proxy_url.as_ref().map(SecretString::expose_secret),
             Some("http://proxy.example:8080")
         );
         assert_eq!(client.recv_window_ms, Some(30_000));

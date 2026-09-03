@@ -118,11 +118,15 @@ impl DataClientFactory for DydxDataClientFactory {
             max_delay_ms: dydx_config.retry_delay_max_ms,
             ..Default::default()
         });
+        let proxy_url = dydx_config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
 
         let http_client = DydxHttpClient::new(
             Some(http_url),
             dydx_config.http_timeout_secs,
-            dydx_config.proxy_url.clone(),
+            proxy_url.clone(),
             dydx_config.network,
             retry_config,
         )?;
@@ -132,7 +136,7 @@ impl DataClientFactory for DydxDataClientFactory {
             Arc::new(InstrumentCache::new()),
             Some(20),
             dydx_config.transport_backend,
-            dydx_config.proxy_url.clone(),
+            proxy_url,
             dydx_config.max_ws_connections,
             dydx_config.per_channel_subscription_limit,
         );
@@ -251,7 +255,10 @@ impl ExecutionClientFactory for DydxExecutionClientFactory {
             log::debug!("Using wallet address from config/env: {addr}");
             addr
         } else if let Some(credential) = DydxCredential::resolve(
-            dydx_config.private_key.as_deref(),
+            dydx_config
+                .private_key
+                .as_ref()
+                .map(|value| value.expose_secret()),
             dydx_config.network,
             dydx_config.authenticator_ids.clone(),
         )? {

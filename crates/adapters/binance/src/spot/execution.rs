@@ -43,6 +43,7 @@ use nautilus_common::{
 use nautilus_core::{
     Params, UUID4, UnixNanos,
     datetime::{NANOSECONDS_IN_MILLISECOND, checked_mins_to_nanos},
+    string::secret::SecretString,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -142,8 +143,8 @@ pub struct BinanceSpotExecutionClient {
     ws_trading_dispatch_active: Arc<AtomicBool>,
     ws_user_data_client: Arc<Mutex<Option<BinanceSpotWsTradingClient>>>,
     ws_user_data_dispatch_active: Arc<AtomicBool>,
-    listen_key: Option<String>,
-    us_credentials: Option<(String, String)>,
+    listen_key: Option<SecretString>,
+    us_credentials: Option<(SecretString, SecretString)>,
     ws_authenticated: Arc<tokio::sync::Notify>,
     ws_user_data_subscribed: Arc<tokio::sync::Notify>,
     session_tasks: TaskGroup,
@@ -163,8 +164,14 @@ impl BinanceSpotExecutionClient {
     ) -> anyhow::Result<Self> {
         config.validate()?;
         let (api_key, api_secret) = resolve_credentials(
-            config.api_key.clone(),
-            config.api_secret.clone(),
+            config
+                .api_key
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
+            config
+                .api_secret
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
             config.environment,
             config.product_type,
         )?;
@@ -176,6 +183,10 @@ impl BinanceSpotExecutionClient {
                 get_http_base_url_with_us(config.product_type, config.environment, true).to_string()
             })
         });
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
 
         let http_client = BinanceSpotHttpClient::new_with_json_responses(
             config.environment,
@@ -185,7 +196,7 @@ impl BinanceSpotExecutionClient {
             base_url_http,
             Some(config.recv_window_ms),
             None, // timeout_secs
-            config.proxy_url.clone(),
+            proxy_url.clone(),
             config.us,
         )
         .context("failed to construct Binance Spot HTTP client")?;
@@ -212,12 +223,14 @@ impl BinanceSpotExecutionClient {
                     Some(BINANCE_WS_HEARTBEAT_SECS),
                     config.transport_backend,
                 )
-                .with_proxy(config.proxy_url.clone())
+                .with_proxy(proxy_url)
                 .with_recv_window(Some(config.recv_window_ms))
                 .with_socket_control(socket_factory.control("binance-spot-trading")),
             )
         };
-        let us_credentials = config.us.then_some((api_key, api_secret));
+        let us_credentials = config
+            .us
+            .then_some((SecretString::from(api_key), SecretString::from(api_secret)));
 
         let session_tasks = TaskGroup::new();
         let pending_tasks = TaskGroup::new();
@@ -615,23 +628,31 @@ impl BinanceSpotExecutionClient {
             .us_credentials
             .clone()
             .context("Binance US user data credentials are unavailable")?;
-        let listen_key = self
+        let response = self
             .http_client
             .inner()
             .create_listen_key()
             .await
-            .context("failed to create Binance US listen key")?
-            .listen_key;
+            .context("failed to create Binance US listen key")?;
+        let listen_key = response.into_listen_key();
         self.listen_key = Some(listen_key.clone());
-        let url = get_spot_user_stream_url(self.config.base_url_ws.as_deref(), &listen_key);
+        let url = get_spot_user_stream_url(
+            self.config.base_url_ws.as_deref(),
+            listen_key.expose_secret(),
+        );
         let mut ws_user_data = BinanceSpotWsTradingClient::new(
             Some(url),
-            api_key,
-            api_secret,
+            api_key.expose_secret().to_owned(),
+            api_secret.expose_secret().to_owned(),
             Some(BINANCE_WS_HEARTBEAT_SECS),
             self.config.transport_backend,
         )
-        .with_proxy(self.config.proxy_url.clone())
+        .with_proxy(
+            self.config
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
+        )
         .with_socket_control(self.socket_factory.control("binance-spot-user-streams"));
         *self.ws_user_data_client.lock() = Some(ws_user_data.clone());
         ws_user_data
@@ -696,7 +717,7 @@ impl BinanceSpotExecutionClient {
 
                 if let Err(e) = keepalive_http
                     .inner()
-                    .extend_listen_key(&keepalive_key)
+                    .extend_listen_key(keepalive_key.expose_secret())
                     .await
                 {
                     log::warn!("Binance US listen key keepalive failed: {e}");
@@ -730,8 +751,16 @@ impl BinanceSpotExecutionClient {
         }
 
         if let Some(listen_key) = self.listen_key.clone() {
-            match self.http_client.inner().close_listen_key(&listen_key).await {
-                Ok(()) if self.listen_key.as_deref() == Some(listen_key.as_str()) => {
+            match self
+                .http_client
+                .inner()
+                .close_listen_key(listen_key.expose_secret())
+                .await
+            {
+                Ok(())
+                    if self.listen_key.as_ref().map(SecretString::expose_secret)
+                        == Some(listen_key.expose_secret()) =>
+                {
                     self.listen_key = None;
                 }
                 Ok(()) => {}

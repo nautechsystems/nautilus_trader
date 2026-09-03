@@ -33,7 +33,10 @@ use std::{
 };
 
 use futures_util::Stream;
-use nautilus_core::{AtomicMap, string::secret::REDACTED};
+use nautilus_core::{
+    AtomicMap,
+    string::secret::{REDACTED, SecretString},
+};
 use nautilus_live::{
     SocketControl, SocketControlFactory,
     task::{TaskJoinOutcome, TaskSlot, finish_task},
@@ -93,7 +96,7 @@ struct ConnectionSlot {
 /// transparent to the data client.
 #[derive(Clone)]
 pub struct BinanceFuturesWebSocketClient {
-    url: String,
+    url: SecretString,
     product_type: BinanceProductType,
     credential: Option<Arc<SigningCredential>>,
     heartbeat: Option<u64>,
@@ -106,7 +109,7 @@ pub struct BinanceFuturesWebSocketClient {
     request_id_counter: Arc<AtomicU64>,
     instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
     transport_backend: TransportBackend,
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
     socket_factory: Option<SocketControlFactory>,
     socket_endpoint: Option<String>,
 }
@@ -148,8 +151,9 @@ impl BinanceFuturesWebSocketClient {
             }
         }
 
-        let url =
-            url_override.unwrap_or_else(|| get_ws_base_url(product_type, environment).to_string());
+        let url = SecretString::from(
+            url_override.unwrap_or_else(|| get_ws_base_url(product_type, environment).to_string()),
+        );
 
         let credential = match (api_key, api_secret) {
             (Some(key), Some(secret)) => Some(Arc::new(SigningCredential::new(key, secret))),
@@ -178,7 +182,7 @@ impl BinanceFuturesWebSocketClient {
     /// Configures the proxy used by every connection in the stream pool.
     #[must_use]
     pub fn with_proxy(mut self, proxy_url: Option<String>) -> Self {
-        self.proxy_url = proxy_url;
+        self.proxy_url = proxy_url.map(SecretString::from);
         self
     }
 
@@ -592,7 +596,7 @@ impl BinanceFuturesWebSocketClient {
         };
 
         let config = WebSocketConfig {
-            url: self.url.clone(),
+            url: self.url.expose_secret().to_owned(),
             headers,
             heartbeat_interval_secs: self.heartbeat,
             heartbeat_payload: None,
@@ -605,7 +609,10 @@ impl BinanceFuturesWebSocketClient {
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         };
 
         let keyed_quotas = vec![(
@@ -903,7 +910,7 @@ mod tests {
         .with_proxy(Some("socks5://proxy.example:1080".to_string()));
 
         assert_eq!(
-            client.proxy_url.as_deref(),
+            client.proxy_url.as_ref().map(SecretString::expose_secret),
             Some("socks5://proxy.example:1080")
         );
     }

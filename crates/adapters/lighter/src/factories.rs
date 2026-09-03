@@ -194,7 +194,7 @@ mod tests {
             .account_id(AccountId::from("LIGHTER-001"))
             .account_index(12_345)
             .api_key_index(5)
-            .private_key(PRIVATE_KEY_HEX.to_string())
+            .private_key(PRIVATE_KEY_HEX.into())
             .build()
     }
 
@@ -320,7 +320,7 @@ mod tests {
             .account_id(AccountId::from("LIGHTER_ROBINHOOD-001"))
             .account_index(12_345)
             .api_key_index(5)
-            .private_key(PRIVATE_KEY_HEX.to_string())
+            .private_key(PRIVATE_KEY_HEX.into())
             .deployment(LighterDeployment::Robinhood)
             .build();
 

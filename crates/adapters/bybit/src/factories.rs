@@ -241,8 +241,8 @@ mod tests {
         let factory = BybitExecutionClientFactory::new();
         let config = BybitExecutionClientConfig {
             product_types: vec![BybitProductType::Spot],
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
             ..Default::default()
         };
 
@@ -265,8 +265,8 @@ mod tests {
         let factory = BybitExecutionClientFactory::new();
         let config = BybitExecutionClientConfig {
             product_types: vec![BybitProductType::Linear, BybitProductType::Inverse],
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
             ..Default::default()
         };
 

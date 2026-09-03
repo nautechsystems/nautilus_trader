@@ -386,7 +386,7 @@ fn execution_config(
         .client_id(AccountId::from(EXEC_CLIENT_NAME))
         .chain(chains::ARBITRUM.clone())
         .wallet_address(wallet.to_string())
-        .http_rpc_url(execution_rpc_url)
+        .http_rpc_url(execution_rpc_url.into())
         .verification(verification)
         .signer_private_key_env(SIGNER_ENV.to_string())
         .tokens(vec![WETH.to_string(), USDC.to_string()])

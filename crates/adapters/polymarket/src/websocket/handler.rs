@@ -24,6 +24,7 @@ use std::{
 };
 
 use ahash::AHashMap;
+use nautilus_core::string::secret::SecretString;
 use nautilus_network::{
     RECONNECTED,
     websocket::{AuthTracker, SubscriptionState, WebSocketClient},
@@ -32,6 +33,7 @@ use serde_json::value::RawValue;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender}; // tokio-import-ok
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
+use zeroize::Zeroize;
 
 use super::{
     client::{POLYMARKET_HEARTBEAT_PAYLOAD, POLYMARKET_HEARTBEAT_SECS, WsChannel},
@@ -229,11 +231,11 @@ impl FeedHandler {
             return;
         };
 
-        let req = UserSubscribeRequest {
+        let mut req = UserSubscribeRequest {
             auth: PolymarketWsAuth {
-                api_key: cred.api_key().to_string(),
+                api_key: SecretString::from(cred.api_key_str()),
                 secret: cred.api_secret(),
-                passphrase: cred.passphrase().to_string(),
+                passphrase: SecretString::from(cred.passphrase()),
             },
             msg_type: "user",
         };
@@ -241,7 +243,10 @@ impl FeedHandler {
         // Begin auth tracking; discard receiver, state is queried via is_authenticated()
         drop(self.auth_tracker.begin());
 
-        match serde_json::to_string(&req) {
+        let payload = serde_json::to_string(&req);
+        req.zeroize();
+
+        match payload {
             Ok(payload) => {
                 // auth_tracker.succeed() is NOT called here; sending the request only
                 // confirms delivery to the server, not that the credentials were accepted.

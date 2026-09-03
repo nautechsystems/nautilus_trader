@@ -27,6 +27,7 @@ use cosmrs::{
     tx,
 };
 use nautilus_core::{hex, string::secret::REDACTED};
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Account prefix for dYdX addresses.
 ///
@@ -43,13 +44,16 @@ const BECH32_PREFIX_DYDX: &str = "dydx";
 /// # Security
 ///
 /// Private key bytes should be treated as sensitive material.
+#[derive(Zeroize, ZeroizeOnDrop)]
 pub struct Wallet {
     /// Raw private key bytes (32 bytes for secp256k1).
     /// Stored separately because SigningKey doesn't implement Clone or expose bytes.
     private_key_bytes: Box<[u8]>,
     /// Pre-computed dYdX address (bech32 encoded).
+    #[zeroize(skip)]
     address: String,
     /// Pre-computed Cosmos SDK account ID.
+    #[zeroize(skip)]
     account_id: AccountId,
 }
 
@@ -221,5 +225,22 @@ impl Subaccount {
     #[must_use]
     pub fn new(address: String, number: u32) -> Self {
         Self { address, number }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn wallet_zeroize_clears_private_key_bytes() {
+        let private_key = hex::encode([1_u8; 32]);
+        let mut wallet = Wallet::from_private_key(&private_key).unwrap();
+
+        wallet.zeroize();
+
+        assert!(wallet.private_key_bytes.iter().all(|byte| *byte == 0));
     }
 }

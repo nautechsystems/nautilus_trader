@@ -17,8 +17,9 @@
 
 use std::time::Duration;
 
-use nautilus_core::{UUID4, time::get_atomic_clock_realtime};
+use nautilus_core::{UUID4, string::secret::SecretString, time::get_atomic_clock_realtime};
 use tokio_util::sync::CancellationToken;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use super::{
     handler::HandlerCommand,
@@ -33,12 +34,12 @@ pub const DERIBIT_DATA_SESSION_NAME: &str = "nautilus-data";
 pub const DERIBIT_EXECUTION_SESSION_NAME: &str = "nautilus-execution";
 
 /// Authentication state storing OAuth tokens.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Zeroize, ZeroizeOnDrop)]
 pub struct AuthState {
     /// Access token for API requests.
-    pub access_token: String,
+    pub access_token: SecretString,
     /// Refresh token for obtaining new access tokens.
-    pub refresh_token: String,
+    pub refresh_token: SecretString,
     /// Token expiration time in seconds from authentication.
     pub expires_in: u64,
     /// Timestamp when tokens were obtained (Unix milliseconds).
@@ -100,21 +101,22 @@ pub fn send_auth_request(
     let nonce = UUID4::new().to_string();
     let signature = credential.sign_ws_auth(timestamp, &nonce, "");
 
-    let auth_params = DeribitAuthParams {
+    let mut auth_params = DeribitAuthParams {
         grant_type: "client_signature".to_string(),
-        client_id: credential.api_key().to_string(),
+        client_id: SecretString::from(credential.api_key()),
         timestamp,
-        signature,
+        signature: SecretString::from(signature),
         nonce,
-        data: String::new(),
+        data: SecretString::default(),
         scope,
     };
 
-    match serde_json::to_value(&auth_params) {
-        Ok(auth_params_value) => {
-            if let Err(e) = cmd_tx.send(HandlerCommand::Authenticate {
-                auth_params: auth_params_value,
-            }) {
+    let serialized = serde_json::to_string(&auth_params).map(SecretString::from);
+    auth_params.zeroize();
+
+    match serialized {
+        Ok(auth_params) => {
+            if let Err(e) = cmd_tx.send(HandlerCommand::Authenticate { auth_params }) {
                 log::error!("Failed to send auth command: {e}");
             }
         }
@@ -133,7 +135,7 @@ pub fn send_auth_request(
 /// authentication cycle begins.
 pub async fn refresh_token_after_delay(
     expires_in: u64,
-    refresh_token: String,
+    refresh_token: SecretString,
     cmd_tx: tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
     cancel_token: CancellationToken,
 ) {
@@ -152,14 +154,58 @@ pub async fn refresh_token_after_delay(
     }
 
     log::debug!("Refreshing authentication token...");
-    let refresh_params = DeribitRefreshTokenParams {
+    let mut refresh_params = DeribitRefreshTokenParams {
         grant_type: "refresh_token".to_string(),
         refresh_token,
     };
 
-    if let Ok(auth_params_value) = serde_json::to_value(&refresh_params) {
-        let _ = cmd_tx.send(HandlerCommand::Authenticate {
-            auth_params: auth_params_value,
-        });
+    let serialized = serde_json::to_string(&refresh_params).map(SecretString::from);
+    refresh_params.zeroize();
+
+    if let Ok(auth_params) = serialized {
+        let _ = cmd_tx.send(HandlerCommand::Authenticate { auth_params });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    fn assert_zeroize_on_drop<T: ZeroizeOnDrop>() {}
+
+    #[rstest]
+    fn test_auth_state_zeroizes_on_drop() {
+        assert_zeroize_on_drop::<AuthState>();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_refresh_token_serialization_is_unchanged() {
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let refresh_token = ["refresh-", "token-value"].concat();
+
+        refresh_token_after_delay(
+            0,
+            SecretString::from(refresh_token.clone()),
+            cmd_tx,
+            CancellationToken::new(),
+        )
+        .await;
+
+        let command = cmd_rx.try_recv().expect("refresh command");
+        let HandlerCommand::Authenticate { auth_params } = command else {
+            panic!("expected authenticate command");
+        };
+        let auth_params: serde_json::Value =
+            serde_json::from_str(auth_params.expose_secret()).expect("valid auth params");
+        assert_eq!(
+            auth_params,
+            serde_json::json!({
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+            })
+        );
     }
 }

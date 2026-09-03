@@ -124,7 +124,7 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         DeriveExecutionClientConfig {
             account_id,
             wallet_address: Some(TEST_WALLET_ADDRESS.to_string()),
-            session_key: Some(TEST_SESSION_KEY.to_string()),
+            session_key: Some(TEST_SESSION_KEY.into()),
             subaccount_id: Some(TEST_SUBACCOUNT_ID),
             environment: DeriveEnvironment::Testnet,
             max_fee_per_contract: Some(Decimal::ONE),

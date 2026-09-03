@@ -29,7 +29,11 @@ use std::{
 
 use ahash::AHashMap;
 use nautilus_common::cache::fifo::FifoCacheMap;
-use nautilus_core::{AtomicSet, AtomicTime, UUID4, UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{
+    AtomicSet, AtomicTime, UUID4, UnixNanos,
+    string::secret::{SecretString, zeroize_json_value},
+    time::get_atomic_clock_realtime,
+};
 use nautilus_model::{
     data::{Bar, CustomData, Data, DataType, InstrumentStatus},
     enums::{MarketStatusAction, OrderSide, OrderType},
@@ -147,7 +151,7 @@ pub enum HandlerCommand {
     /// Authenticate with credentials.
     Authenticate {
         /// Serialized auth params (DeribitAuthParams or DeribitRefreshTokenParams).
-        auth_params: serde_json::Value,
+        auth_params: SecretString,
     },
     /// Enable heartbeat with interval.
     SetHeartbeat { interval: u64 },
@@ -371,8 +375,17 @@ impl DeribitWsFeedHandler {
         payload: String,
         rate_limit_keys: Option<&[Ustr]>,
     ) -> Result<(), DeribitWsError> {
+        self.send_secret_with_retry(payload.into(), rate_limit_keys)
+            .await
+    }
+
+    async fn send_secret_with_retry(
+        &self,
+        payload: SecretString,
+        rate_limit_keys: Option<&[Ustr]>,
+    ) -> Result<(), DeribitWsError> {
         if let Some(client) = &self.inner {
-            let keys_owned: Option<Vec<Ustr>> = rate_limit_keys.map(|k| k.to_vec());
+            let keys_owned: Option<Vec<Ustr>> = rate_limit_keys.map(<[Ustr]>::to_vec);
             self.retry_manager
                 .execute_with_retry(
                     "websocket_send",
@@ -381,7 +394,7 @@ impl DeribitWsFeedHandler {
                         let keys = keys_owned.clone();
                         async move {
                             client
-                                .send_text(payload, keys.as_deref())
+                                .send_text(payload.expose_secret().to_owned(), keys.as_deref())
                                 .await
                                 .map_err(|e| DeribitWsError::Send(e.to_string()))
                         }
@@ -392,6 +405,47 @@ impl DeribitWsFeedHandler {
                 .await
         } else {
             Err(DeribitWsError::NotConnected)
+        }
+    }
+
+    async fn handle_authenticate(&mut self, auth_params: SecretString) {
+        let request_id = self.next_request_id();
+        log::debug!("Authenticating: request_id={request_id}");
+
+        let auth_params: serde_json::Value = match serde_json::from_str(auth_params.expose_secret())
+        {
+            Ok(auth_params) => auth_params,
+            Err(e) => {
+                log::error!("Failed to deserialize auth params: {e}");
+                self.auth_tracker.fail(format!("Serialization failed: {e}"));
+                return;
+            }
+        };
+        self.pending_requests
+            .insert(request_id, PendingRequestType::Authenticate);
+
+        let mut request = DeribitJsonRpcRequest::new(
+            request_id,
+            DeribitWsMethod::PublicAuth.as_method_str(),
+            auth_params,
+        );
+        let serialized = serde_json::to_string(&request).map(SecretString::from);
+        zeroize_json_value(&mut request.params);
+        drop(request);
+
+        match serialized {
+            Ok(payload) => {
+                if let Err(e) = self.send_secret_with_retry(payload, None).await {
+                    self.pending_requests.remove(&request_id);
+                    log::error!("Authentication send failed: {e}");
+                    self.auth_tracker.fail(format!("Send failed: {e}"));
+                }
+            }
+            Err(e) => {
+                self.pending_requests.remove(&request_id);
+                log::error!("Failed to serialize auth request: {e}");
+                self.auth_tracker.fail(format!("Serialization failed: {e}"));
+            }
         }
     }
 
@@ -790,33 +844,7 @@ impl DeribitWsFeedHandler {
                 }
             }
             HandlerCommand::Authenticate { auth_params } => {
-                let request_id = self.next_request_id();
-                log::debug!("Authenticating: request_id={request_id}");
-
-                // Track this request for response correlation
-                self.pending_requests
-                    .insert(request_id, PendingRequestType::Authenticate);
-
-                let request = DeribitJsonRpcRequest::new(
-                    request_id,
-                    DeribitWsMethod::PublicAuth.as_method_str(),
-                    auth_params,
-                );
-
-                match serde_json::to_string(&request) {
-                    Ok(payload) => {
-                        if let Err(e) = self.send_with_retry(payload, None).await {
-                            self.pending_requests.remove(&request_id);
-                            log::error!("Authentication send failed: {e}");
-                            self.auth_tracker.fail(format!("Send failed: {e}"));
-                        }
-                    }
-                    Err(e) => {
-                        self.pending_requests.remove(&request_id);
-                        log::error!("Failed to serialize auth request: {e}");
-                        self.auth_tracker.fail(format!("Serialization failed: {e}"));
-                    }
-                }
+                self.handle_authenticate(auth_params).await;
             }
             HandlerCommand::SetHeartbeat { interval } => {
                 if let Err(e) = self.handle_set_heartbeat(interval).await {

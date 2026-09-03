@@ -33,7 +33,10 @@ use std::{
 };
 
 use futures_util::Stream;
-use nautilus_core::{AtomicMap, string::secret::REDACTED};
+use nautilus_core::{
+    AtomicMap,
+    string::secret::{REDACTED, SecretString},
+};
 use nautilus_live::{
     SocketControl, SocketControlFactory,
     task::{TaskJoinOutcome, TaskSlot, finish_task},
@@ -95,7 +98,7 @@ pub struct BinanceSpotWebSocketClient {
     request_id_counter: Arc<AtomicU64>,
     instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
     transport_backend: TransportBackend,
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
     socket_factory: Option<SocketControlFactory>,
     socket_endpoint: Option<String>,
 }
@@ -131,9 +134,12 @@ impl BinanceSpotWebSocketClient {
     ) -> anyhow::Result<Self> {
         let url = url.unwrap_or(BINANCE_SPOT_SBE_WS_URL.to_string());
 
-        let credential = match (api_key, api_secret) {
+        let credential = match (
+            api_key.map(SecretString::from),
+            api_secret.map(SecretString::from),
+        ) {
             (Some(key), Some(secret)) => {
-                let credential = Ed25519Credential::new(key, &secret).map_err(|e| {
+                let credential = Ed25519Credential::new(key, secret).map_err(|e| {
                     anyhow::anyhow!(
                         "Binance Spot SBE market-data streams require an Ed25519 API key \
                          (HMAC keys are not supported): {e}"
@@ -165,7 +171,7 @@ impl BinanceSpotWebSocketClient {
     /// Configures the proxy used by every connection in the stream pool.
     #[must_use]
     pub fn with_proxy(mut self, proxy_url: Option<String>) -> Self {
-        self.proxy_url = proxy_url;
+        self.proxy_url = proxy_url.map(SecretString::from);
         self
     }
 
@@ -594,7 +600,10 @@ impl BinanceSpotWebSocketClient {
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         };
 
         let keyed_quotas = vec![(
@@ -858,7 +867,7 @@ mod tests {
                 .with_proxy(Some("socks5://proxy.example:1080".to_string()));
 
         assert_eq!(
-            client.proxy_url.as_deref(),
+            client.proxy_url.as_ref().map(SecretString::expose_secret),
             Some("socks5://proxy.example:1080")
         );
     }

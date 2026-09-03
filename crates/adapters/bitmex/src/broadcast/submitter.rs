@@ -46,6 +46,7 @@ use std::{
 
 use futures_util::future;
 use nautilus_common::live::get_runtime;
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::{
     enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
     identifiers::{ClientOrderId, InstrumentId, OrderListId},
@@ -186,9 +187,9 @@ pub struct SubmitBroadcasterConfig {
     /// Number of HTTP clients in the pool.
     pub pool_size: usize,
     /// BitMEX API key (None will source from environment).
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     /// BitMEX API secret (None will source from environment).
-    pub api_secret: Option<String>,
+    pub api_secret: Option<SecretString>,
     /// Base URL for BitMEX HTTP API.
     pub base_url: Option<String>,
     /// BitMEX environment (mainnet or testnet).
@@ -218,7 +219,7 @@ pub struct SubmitBroadcasterConfig {
     /// Each transport instance uses the proxy at its index. If the list is shorter
     /// than pool_size, remaining transports will use no proxy. If longer, extra proxies
     /// are ignored.
-    pub proxy_urls: Vec<Option<String>>,
+    pub proxy_urls: Vec<Option<SecretString>>,
 }
 
 impl Default for SubmitBroadcasterConfig {
@@ -424,11 +425,15 @@ impl SubmitBroadcaster {
 
         for i in 0..config.pool_size {
             // Assign proxy from config list, or None if index exceeds list length
-            let proxy_url = config.proxy_urls.get(i).and_then(|p| p.clone());
+            let proxy_url = config
+                .proxy_urls
+                .get(i)
+                .and_then(|value| value.as_ref())
+                .map(|value| value.expose_secret().to_owned());
 
             let client = BitmexHttpClient::with_credentials(
-                config.api_key.clone(),
-                config.api_secret.clone(),
+                config.api_key.clone().map(SecretString::into_inner),
+                config.api_secret.clone().map(SecretString::into_inner),
                 base_url.clone(),
                 config.timeout_secs,
                 config.max_retries,
@@ -885,8 +890,25 @@ mod tests {
         reports::OrderStatusReport,
         types::{Price, Quantity},
     };
+    use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_config_debug_redacts_credentials() {
+        let config = SubmitBroadcasterConfig {
+            api_key: Some("submit-key-sentinel".into()),
+            api_secret: Some("submit-secret-sentinel".into()),
+            proxy_urls: vec![Some("http://submit-user:submit-password@localhost".into())],
+            ..Default::default()
+        };
+
+        let debug = format!("{config:?}");
+
+        assert!(!debug.contains("submit-key-sentinel"));
+        assert!(!debug.contains("submit-secret-sentinel"));
+        assert!(!debug.contains("submit-password"));
+    }
 
     /// Mock executor for testing.
     #[derive(Clone)]
@@ -1460,8 +1482,8 @@ mod tests {
     async fn test_testnet_config_sets_base_url() {
         let config = SubmitBroadcasterConfig {
             pool_size: 1,
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
             environment: BitmexEnvironment::Testnet,
             base_url: None,
             ..Default::default()
@@ -1474,8 +1496,8 @@ mod tests {
     #[tokio::test]
     async fn test_constructor_honors_default_pool_size() {
         let config = SubmitBroadcasterConfig {
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
             base_url: Some("http://127.0.0.1:19999".to_string()),
             ..Default::default()
         };
@@ -1927,19 +1949,34 @@ mod tests {
     async fn test_proxy_urls_populated_from_config() {
         let config = SubmitBroadcasterConfig {
             pool_size: 3,
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
             proxy_urls: vec![
-                Some("http://proxy1:8080".to_string()),
-                Some("http://proxy2:8080".to_string()),
-                Some("http://proxy3:8080".to_string()),
+                Some("http://proxy1:8080".into()),
+                Some("http://proxy2:8080".into()),
+                Some("http://proxy3:8080".into()),
             ],
             ..Default::default()
         };
 
         assert_eq!(config.proxy_urls.len(), 3);
-        assert_eq!(config.proxy_urls[0], Some("http://proxy1:8080".to_string()));
-        assert_eq!(config.proxy_urls[1], Some("http://proxy2:8080".to_string()));
-        assert_eq!(config.proxy_urls[2], Some("http://proxy3:8080".to_string()));
+        assert_eq!(
+            config.proxy_urls[0]
+                .as_ref()
+                .map(SecretString::expose_secret),
+            Some("http://proxy1:8080"),
+        );
+        assert_eq!(
+            config.proxy_urls[1]
+                .as_ref()
+                .map(SecretString::expose_secret),
+            Some("http://proxy2:8080"),
+        );
+        assert_eq!(
+            config.proxy_urls[2]
+                .as_ref()
+                .map(SecretString::expose_secret),
+            Some("http://proxy3:8080"),
+        );
     }
 }

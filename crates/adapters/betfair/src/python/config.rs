@@ -15,6 +15,7 @@
 
 //! Python bindings for Betfair configuration.
 
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::identifiers::AccountId;
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
@@ -89,10 +90,10 @@ impl BetfairDataClientConfig {
     ) -> Self {
         Self {
             account_currency: account_currency.unwrap_or_else(|| "GBP".to_string()),
-            username,
-            password,
-            app_key,
-            proxy_url,
+            username: username.map(SecretString::from),
+            password: password.map(SecretString::from),
+            app_key: app_key.map(SecretString::from),
+            proxy_url: proxy_url.map(SecretString::from),
             request_rate_per_second,
             default_min_notional,
             event_type_ids: stringify_ids(event_type_ids),
@@ -115,6 +116,12 @@ impl BetfairDataClientConfig {
             subscribe_race_data,
             subscribe_cricket_data,
         }
+    }
+
+    /// Returns the username.
+    #[getter]
+    fn username(&self) -> Option<&str> {
+        self.username.as_ref().map(SecretString::expose_secret)
     }
 
     #[getter]
@@ -186,10 +193,10 @@ impl BetfairExecutionClientConfig {
         Self {
             account_id: account_id.unwrap_or_else(|| AccountId::from("BETFAIR-001")),
             account_currency: account_currency.unwrap_or_else(|| "GBP".to_string()),
-            username,
-            password,
-            app_key,
-            proxy_url,
+            username: username.map(SecretString::from),
+            password: password.map(SecretString::from),
+            app_key: app_key.map(SecretString::from),
+            proxy_url: proxy_url.map(SecretString::from),
             request_rate_per_second,
             order_request_rate_per_second,
             stream_host,
@@ -208,6 +215,12 @@ impl BetfairExecutionClientConfig {
             use_market_version,
             stream_gap_recovery_lookback_mins,
         }
+    }
+
+    /// Returns the username.
+    #[getter]
+    fn username(&self) -> Option<&str> {
+        self.username.as_ref().map(SecretString::expose_secret)
     }
 
     #[getter]

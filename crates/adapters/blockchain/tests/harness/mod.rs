@@ -530,11 +530,11 @@ async fn fork_verification_config(
         verifiers: vec![
             BlockchainVerificationProviderConfig {
                 identity: provider_identity("verifier-a", "operator-b", "domain-b"),
-                http_rpc_url: verifier_urls[0].to_string(),
+                http_rpc_url: verifier_urls[0].into(),
             },
             BlockchainVerificationProviderConfig {
                 identity: provider_identity("verifier-b", "operator-c", "domain-c"),
-                http_rpc_url: verifier_urls[1].to_string(),
+                http_rpc_url: verifier_urls[1].into(),
             },
         ],
         chain_anchor: BlockchainChainAnchorConfig {

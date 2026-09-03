@@ -188,18 +188,18 @@ impl BlockchainDataClientCore {
             log::debug!("WebSocket RPC URL: {REDACTED}");
             Some(Self::initialize_rpc_client(
                 chain.name,
-                wss_rpc_url,
+                wss_rpc_url.into_inner(),
                 config.transport_backend,
-                config.proxy_url.clone(),
+                config.proxy_url.clone().map(|value| value.into_inner()),
             ))
         } else {
             log::debug!("Using HyperSync for live data (no WebSocket RPC)");
             None
         };
         let http_rpc_client = Arc::new(BlockchainHttpRpcClient::new(
-            config.http_rpc_url.clone(),
+            config.http_rpc_url.clone().into_inner(),
             config.rpc_requests_per_second,
-            config.proxy_url.clone(),
+            config.proxy_url.clone().map(|value| value.into_inner()),
         ));
         let multicall_calls_per_rpc_request = config.multicall_calls_per_rpc_request;
         let erc20_contract = Erc20Contract::new(
@@ -2802,7 +2802,7 @@ mod tests {
         let config = BlockchainDataClientConfig::builder()
             .chain(chain)
             .dex_ids(vec![DexType::UniswapV3])
-            .http_rpc_url("http://127.0.0.1:9".to_string())
+            .http_rpc_url("http://127.0.0.1:9".into())
             .use_hypersync_for_live_data(true)
             .maybe_from_block(Some(WETH_USDT_CREATION_BLOCK))
             .build();

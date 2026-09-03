@@ -15,6 +15,7 @@
 
 //! Python bindings for BitMEX configuration.
 
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
@@ -72,11 +73,11 @@ impl BitmexDataClientConfig {
     ) -> Self {
         let defaults = Self::default();
         Self {
-            api_key,
-            api_secret,
+            api_key: api_key.map(SecretString::from),
+            api_secret: api_secret.map(SecretString::from),
             base_url_http,
             base_url_ws,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             max_retries: max_retries.unwrap_or(defaults.max_retries),
             retry_delay_initial_ms: retry_delay_initial_ms
@@ -164,11 +165,11 @@ impl BitmexExecutionClientConfig {
     ) -> Self {
         let defaults = Self::default();
         Self {
-            api_key,
-            api_secret,
+            api_key: api_key.map(SecretString::from),
+            api_secret: api_secret.map(SecretString::from),
             base_url_http,
             base_url_ws,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             max_retries: max_retries.unwrap_or(defaults.max_retries),
             retry_delay_initial_ms: retry_delay_initial_ms
@@ -187,8 +188,10 @@ impl BitmexExecutionClientConfig {
                 .unwrap_or(defaults.max_requests_per_minute),
             submitter_pool_size,
             canceller_pool_size,
-            submitter_proxy_urls,
-            canceller_proxy_urls,
+            submitter_proxy_urls: submitter_proxy_urls
+                .map(|values| values.into_iter().map(SecretString::from).collect()),
+            canceller_proxy_urls: canceller_proxy_urls
+                .map(|values| values.into_iter().map(SecretString::from).collect()),
             deadmans_switch_timeout_secs,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
         }

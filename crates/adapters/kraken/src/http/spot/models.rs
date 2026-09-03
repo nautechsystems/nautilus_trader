@@ -15,13 +15,17 @@
 
 //! Data models for Kraken Spot HTTP API responses.
 
+use std::fmt::Debug;
+
 use indexmap::IndexMap;
+use nautilus_core::string::secret::SecretString;
 use rust_decimal::Decimal;
 use serde::{
     Deserialize, Deserializer, Serialize,
     de::{MapAccess, SeqAccess, Visitor},
 };
 use ustr::Ustr;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::common::{
     enums::{
@@ -275,10 +279,18 @@ pub struct ServerTime {
 
 // WebSocket Token Models
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct WebSocketToken {
-    pub token: String,
+    pub token: SecretString,
     pub expires: i32,
+}
+
+impl WebSocketToken {
+    /// Consumes the response and returns the WebSocket token.
+    #[must_use]
+    pub fn into_token(mut self) -> SecretString {
+        std::mem::take(&mut self.token)
+    }
 }
 
 // Spot Private Trading Models
@@ -464,10 +476,29 @@ mod tests {
 
     use super::*;
 
+    fn assert_zeroize_on_drop<T: ZeroizeOnDrop>() {}
+
     fn load_test_data(filename: &str) -> String {
         let path = format!("test_data/{filename}");
         std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("Failed to load test data from {path}: {e}"))
+    }
+
+    #[rstest]
+    fn test_websocket_token_zeroizes_on_drop() {
+        assert_zeroize_on_drop::<WebSocketToken>();
+
+        let token = WebSocketToken {
+            token: SecretString::from("websocket-token-value"),
+            expires: 900,
+        };
+        let formatted = format!("{token:?}");
+
+        assert_eq!(
+            formatted,
+            "WebSocketToken { token: <redacted>, expires: 900 }"
+        );
+        assert!(!formatted.contains(token.token.expose_secret()));
     }
 
     #[rstest]

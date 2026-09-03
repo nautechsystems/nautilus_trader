@@ -27,6 +27,9 @@
 
 use std::fmt::Debug;
 
+use nautilus_core::string::secret::REDACTED;
+use zeroize::{Zeroize, ZeroizeOnDrop};
+
 use super::sig::Signature;
 use crate::signing::{
     curve::{Point, SCALAR_BYTES, Scalar},
@@ -39,17 +42,28 @@ const PUBLIC_KEY_BYTES: usize = 40;
 /// A Schnorr private key over the ECgFp5 scalar field.
 ///
 /// The wrapped [`Scalar`] is canonical (`< n`). Intentionally non-`Copy` so the
-/// type cannot be silently duplicated past a future `Drop`/zeroize owner; the
-/// `Debug` impl is redacted so accidental logging cannot leak the secret limbs.
-/// Memory zeroization of secret material is deferred to the live signing
-/// wire-up (Phase G), where the long-lived key store will own the
-/// `PrivateKey` and apply `zeroize` on drop.
+/// type cannot be silently duplicated past its zeroizing owner. The `Debug`
+/// impl is redacted so accidental logging cannot leak the secret limbs.
 #[derive(Clone)]
 pub struct PrivateKey(Scalar);
 
+impl Zeroize for PrivateKey {
+    fn zeroize(&mut self) {
+        self.0.0.zeroize();
+    }
+}
+
+impl Drop for PrivateKey {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for PrivateKey {}
+
 impl Debug for PrivateKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("PrivateKey(<redacted>)")
+        write!(f, "PrivateKey({REDACTED})")
     }
 }
 
@@ -182,11 +196,20 @@ mod tests {
         let sk = PrivateKey::from_le_bytes_reduce(secret_pattern);
         let formatted = format!("{sk:?}");
 
-        assert_eq!(formatted, "PrivateKey(<redacted>)");
+        assert_eq!(formatted, format!("PrivateKey({REDACTED})"));
         assert!(
             !formatted.contains("ab") && !formatted.contains("AB"),
             "Debug must not leak secret bytes, was {formatted}",
         );
+    }
+
+    #[rstest]
+    fn private_key_zeroize_clears_secret_limbs() {
+        let mut private_key = PrivateKey::from_le_bytes_reduce([0xAB; SCALAR_BYTES]);
+
+        private_key.zeroize();
+
+        assert!(private_key.as_scalar().is_zero());
     }
 
     #[rstest]

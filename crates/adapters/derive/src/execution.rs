@@ -49,6 +49,7 @@ use nautilus_common::{
 };
 use nautilus_core::{
     AtomicMap, Params, UUID4, UnixNanos,
+    string::secret::SecretString,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -171,7 +172,7 @@ impl DeriveExecutionClient {
 
         let credential = DeriveCredential::resolve(
             config.wallet_address.clone(),
-            config.session_key.clone(),
+            config.session_key.clone().map(SecretString::into_inner),
             config.subaccount_id,
             config.environment,
         )?;
@@ -186,11 +187,15 @@ impl DeriveExecutionClient {
             config.retry_delay_initial_ms,
             config.retry_delay_max_ms,
         );
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
         let http_client = DeriveHttpClient::with_credentials(
             config.rest_url(),
             http_credentials,
             Some(config.http_timeout_secs),
-            config.proxy_url.clone(),
+            proxy_url.clone(),
             Some(retry_config),
         )
         .context("failed to create Derive HTTP client")?;
@@ -204,7 +209,7 @@ impl DeriveExecutionClient {
             Some(config.ws_url()),
             config.environment,
             config.transport_backend,
-            config.proxy_url.clone(),
+            proxy_url,
             ws_credentials,
             config.max_matching_requests_per_second,
             config.max_per_instrument_matching_requests_per_second,
@@ -3173,7 +3178,7 @@ mod tests {
     fn test_config() -> DeriveExecutionClientConfig {
         DeriveExecutionClientConfig {
             wallet_address: Some(TEST_WALLET.to_string()),
-            session_key: Some(TEST_SESSION_KEY.to_string()),
+            session_key: Some(TEST_SESSION_KEY.into()),
             subaccount_id: Some(TEST_SUBACCOUNT),
             environment: DeriveEnvironment::Testnet,
             domain_separator: Some(

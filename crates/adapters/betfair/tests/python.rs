@@ -73,9 +73,9 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
     let config = Py::new(
         py,
         BetfairDataClientConfig {
-            username: Some(SMOKE_USERNAME.to_string()),
-            password: Some(SMOKE_PASSWORD.to_string()),
-            app_key: Some(SMOKE_APP_KEY.to_string()),
+            username: Some(SMOKE_USERNAME.into()),
+            password: Some(SMOKE_PASSWORD.into()),
+            app_key: Some(SMOKE_APP_KEY.into()),
             market_types: Some(vec!["MATCH_ODDS".to_string()]),
             ..BetfairDataClientConfig::default()
         },
@@ -107,7 +107,13 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
 
     assert_eq!(extracted_factory.name(), BETFAIR);
     assert_eq!(extracted_factory.config_type(), "BetfairDataClientConfig");
-    assert_eq!(betfair_config.username.as_deref(), Some(SMOKE_USERNAME));
+    assert_eq!(
+        betfair_config
+            .username
+            .as_ref()
+            .map(|value| value.expose_secret()),
+        Some(SMOKE_USERNAME),
+    );
     assert_eq!(
         betfair_config.market_types.as_deref(),
         Some(&["MATCH_ODDS".to_string()][..])
@@ -125,9 +131,9 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         py,
         BetfairExecutionClientConfig {
             account_id,
-            username: Some(SMOKE_USERNAME.to_string()),
-            password: Some(SMOKE_PASSWORD.to_string()),
-            app_key: Some(SMOKE_APP_KEY.to_string()),
+            username: Some(SMOKE_USERNAME.into()),
+            password: Some(SMOKE_PASSWORD.into()),
+            app_key: Some(SMOKE_APP_KEY.into()),
             ..BetfairExecutionClientConfig::default()
         },
     )

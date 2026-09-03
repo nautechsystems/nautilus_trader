@@ -63,7 +63,7 @@ pub struct Credential {
 impl Debug for Credential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(Credential))
-            .field("api_key", &self.api_key)
+            .field("api_key", &REDACTED)
             .field("api_secret", &REDACTED)
             .finish()
     }
@@ -355,18 +355,12 @@ mod tests {
 
         let debug_output = format!("{credential:?}");
 
-        assert!(
-            debug_output.contains(REDACTED),
-            "Debug output should redact secret"
-        );
+        assert_eq!(debug_output.matches(REDACTED).count(), 2);
         assert!(
             !debug_output.contains("super_secret"),
             "Debug output should not contain raw secret"
         );
-        assert!(
-            debug_output.contains("my_api_key"),
-            "Debug output should contain API key"
-        );
+        assert!(!debug_output.contains("my_api_key"));
     }
 
     #[rstest]

@@ -16,7 +16,11 @@
 //! Binance Futures HTTP query parameter builders.
 
 use derive_builder::Builder;
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroize;
 
 use crate::common::enums::{
     BinanceAlgoType, BinanceFuturesOrderType, BinanceIncomeType, BinanceMarginType,
@@ -593,11 +597,11 @@ pub struct BatchModifyItem {
 }
 
 /// Listen key request parameters.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Zeroize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListenKeyParams {
     /// The listen key to extend or close.
-    pub listen_key: String,
+    pub listen_key: SecretString,
 }
 
 /// Query parameters for `POST /fapi/v1/algoOrder` (new algo order).
@@ -755,8 +759,26 @@ pub struct BinanceCancelAllAlgoOrdersParams {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use zeroize::Zeroize;
 
     use super::*;
+
+    #[rstest]
+    fn test_listen_key_params_preserve_wire_value_and_redact_debug() {
+        let mut params = ListenKeyParams {
+            listen_key: SecretString::from("listen-key-secret"),
+        };
+
+        let serialized = serde_urlencoded::to_string(&params).unwrap();
+        let debug = format!("{params:?}");
+
+        assert_eq!(serialized, "listenKey=listen-key-secret");
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains(params.listen_key.expose_secret()));
+
+        params.zeroize();
+        assert!(params.listen_key.expose_secret().is_empty());
+    }
 
     #[rstest]
     fn test_depth_params_builder() {

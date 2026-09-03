@@ -45,6 +45,7 @@ use nautilus_core::{
         NANOSECONDS_IN_DAY, NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND,
         checked_mins_to_nanos,
     },
+    string::secret::SecretString,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -181,8 +182,8 @@ pub struct BinanceFuturesExecutionClient {
     ws_client: Arc<Mutex<Option<BinanceFuturesWebSocketClient>>>,
     socket_factory: SocketControlFactory,
     ws_trading_client: Option<BinanceFuturesWsTradingClient>,
-    listen_key: Arc<RwLock<Option<String>>>,
-    recovery_listen_key: Arc<RwLock<Option<String>>>,
+    listen_key: Arc<RwLock<Option<SecretString>>>,
+    recovery_listen_key: Arc<RwLock<Option<SecretString>>>,
     cancellation_token: CancellationToken,
     triggered_algo_order_ids: Arc<AtomicSet<ClientOrderId>>,
     algo_client_order_ids: Arc<AtomicSet<ClientOrderId>>,
@@ -218,11 +219,21 @@ impl BinanceFuturesExecutionClient {
         }
 
         let (api_key, api_secret) = resolve_credentials(
-            config.api_key.clone(),
-            config.api_secret.clone(),
+            config
+                .api_key
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
+            config
+                .api_secret
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
             config.environment,
             product_type,
         )?;
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
 
         let clock = get_atomic_clock_realtime();
         let socket_factory = SocketControlFactory::new(core.client_id, Some(*BINANCE_VENUE));
@@ -236,7 +247,7 @@ impl BinanceFuturesExecutionClient {
             config.base_url_http.clone(),
             Some(config.recv_window_ms),
             None, // timeout_secs
-            config.proxy_url.clone(),
+            proxy_url.clone(),
             config.treat_expired_as_canceled,
         )
         .context("failed to construct Binance Futures HTTP client")?;
@@ -262,7 +273,7 @@ impl BinanceFuturesExecutionClient {
                     Some(BINANCE_WS_HEARTBEAT_SECS),
                     config.transport_backend,
                 )
-                .with_proxy(config.proxy_url.clone())
+                .with_proxy(proxy_url)
                 .with_recv_window(Some(config.recv_window_ms))
                 .with_socket_control(socket_factory.control("binance-futures-trading")),
             )
@@ -944,7 +955,7 @@ impl BinanceFuturesExecutionClient {
 
     async fn close_listen_key_slot(
         &self,
-        slot: &RwLock<Option<String>>,
+        slot: &RwLock<Option<SecretString>>,
         context: &str,
     ) -> anyhow::Result<()> {
         let key = slot.read().clone();
@@ -953,11 +964,11 @@ impl BinanceFuturesExecutionClient {
         };
 
         self.http_client
-            .close_listen_key(&key)
+            .close_listen_key(key.expose_secret())
             .await
             .with_context(|| context.to_string())?;
         let mut owned = slot.write();
-        if owned.as_deref() == Some(key.as_str()) {
+        if owned.as_ref().map(SecretString::expose_secret) == Some(key.expose_secret()) {
             *owned = None;
         }
         Ok(())
@@ -1751,7 +1762,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             .create_listen_key()
             .await
             .context("failed to create listen key")?;
-        let listen_key = listen_key_response.listen_key;
+        let listen_key = listen_key_response.into_listen_key();
         log::debug!("Listen key created successfully");
 
         {
@@ -1760,8 +1771,14 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         }
 
         let (api_key, api_secret) = resolve_credentials(
-            self.config.api_key.clone(),
-            self.config.api_secret.clone(),
+            self.config
+                .api_key
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
+            self.config
+                .api_secret
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
             self.config.environment,
             self.product_type,
         )?;
@@ -1806,15 +1823,16 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let ws_build_params = WsBuildParams {
             product_type: self.product_type,
             environment: self.config.environment,
-            api_key: api_key.clone(),
-            api_secret: api_secret.clone(),
+            api_key: SecretString::from(api_key.clone()),
+            api_secret: SecretString::from(api_secret.clone()),
             private_base_url: private_base_url.clone(),
             transport_backend: self.config.transport_backend,
             proxy_url: self.config.proxy_url.clone(),
             socket_factory: self.socket_factory.clone(),
         };
 
-        let ws_client = build_and_connect_user_stream(&ws_build_params, &listen_key).await?;
+        let ws_client =
+            build_and_connect_user_stream(&ws_build_params, listen_key.expose_secret()).await?;
         let stream = ws_client.stream();
         *self.ws_client.lock() = Some(ws_client);
 
@@ -1850,7 +1868,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                             };
 
                             if let Some(ref key) = key {
-                                match http_client.keepalive_listen_key(key).await {
+                                match http_client.keepalive_listen_key(key.expose_secret()).await {
                                     Ok(()) => {
                                         log::debug!("Listen key keepalive sent successfully");
                                         consecutive_failures = 0;

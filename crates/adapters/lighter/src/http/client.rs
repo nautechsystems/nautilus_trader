@@ -19,7 +19,8 @@ use std::{collections::HashMap, sync::Arc};
 
 use jiff::Timestamp;
 use nautilus_core::{
-    AtomicTime, UnixNanos, consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime,
+    AtomicTime, UnixNanos, consts::NAUTILUS_USER_AGENT, string::secret::SecretString,
+    time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{Bar, BarType, FundingRateUpdate, OrderBookDeltas, TradeTick},
@@ -34,6 +35,7 @@ use nautilus_network::{
 use rust_decimal::Decimal;
 use serde::{Serialize, de::DeserializeOwned};
 use url::form_urlencoded;
+use zeroize::Zeroizing;
 
 use crate::{
     common::{
@@ -413,7 +415,12 @@ impl LighterRawHttpClient {
             .authorization
             .as_ref()
             .or(query.auth.as_ref())
-            .map(|auth| HashMap::from([(HEADER_AUTHORIZATION.to_string(), auth.clone())]));
+            .map(|auth| {
+                HashMap::from([(
+                    HEADER_AUTHORIZATION.to_string(),
+                    auth.expose_secret().to_owned(),
+                )])
+            });
         self.send_get_request_with_headers(ENDPOINT_MAKER_ONLY_API_KEYS, Some(&params), headers)
             .await
     }
@@ -496,7 +503,7 @@ impl LighterRawHttpClient {
                     async move {
                         let response = self
                             .client
-                            .request_with_params(
+                            .request_with_params_url_redacted(
                                 Method::GET,
                                 url,
                                 params,
@@ -969,13 +976,13 @@ impl LighterHttpClient {
     pub async fn get_maker_only_api_keys(
         &self,
         account_index: i64,
-        auth_token: impl Into<String>,
+        auth_token: impl Into<SecretString>,
     ) -> LighterHttpResult<LighterMakerOnlyApiKeys> {
-        let query = LighterMakerOnlyApiKeysQuery {
+        let query = Zeroizing::new(LighterMakerOnlyApiKeysQuery {
             authorization: Some(auth_token.into()),
             auth: None,
             account_index,
-        };
+        });
         self.inner.get_maker_only_api_keys(&query).await
     }
 
@@ -988,10 +995,10 @@ impl LighterHttpClient {
         &self,
         l1_address: &str,
         referral_code: &str,
-        auth_token: &str,
+        auth_token: &SecretString,
     ) -> LighterHttpResult<LighterResultCode> {
         self.inner
-            .use_referral(l1_address, referral_code, auth_token)
+            .use_referral(l1_address, referral_code, auth_token.expose_secret())
             .await
     }
 
@@ -1047,8 +1054,9 @@ impl LighterHttpClient {
     pub async fn request_trades(
         &self,
         instrument: &InstrumentAny,
-        mut query: LighterTradesQuery,
+        query: LighterTradesQuery,
     ) -> LighterHttpResult<Vec<TradeTick>> {
+        let mut query = Zeroizing::new(query);
         if query.market_id.is_none() {
             query.market_id = Some(self.market_index(instrument)?);
         }

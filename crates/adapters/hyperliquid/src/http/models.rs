@@ -13,10 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 
 use alloy_primitives::{Address, keccak256};
-use nautilus_core::hex;
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::{hex, string::secret::SecretString};
 use nautilus_model::identifiers::{ClientOrderId, VenueOrderId};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -723,9 +725,9 @@ pub struct HyperliquidOrderInfo {
 #[derive(Debug, Clone, Serialize)]
 pub struct HyperliquidSignature {
     /// R component of the signature.
-    pub r: String,
+    pub r: SecretString,
     /// S component of the signature.
-    pub s: String,
+    pub s: SecretString,
     /// V component (recovery ID) of the signature.
     pub v: u64,
 }
@@ -733,16 +735,28 @@ pub struct HyperliquidSignature {
 impl HyperliquidSignature {
     /// Creates a new [`HyperliquidSignature`] from pre-formatted components.
     #[must_use]
-    pub fn new(r: String, s: String, v: u64) -> Self {
-        Self { r, s, v }
+    pub fn new(r: impl Into<SecretString>, s: impl Into<SecretString>, v: u64) -> Self {
+        Self {
+            r: r.into(),
+            s: s.into(),
+            v,
+        }
     }
 
     /// Formats as Ethereum hex signature: `0x` + r(64) + s(64) + v(2).
     #[must_use]
-    pub fn to_hex(&self) -> String {
-        let r = self.r.strip_prefix("0x").unwrap_or(&self.r);
-        let s = self.s.strip_prefix("0x").unwrap_or(&self.s);
-        format!("0x{r}{s}{:02x}", self.v)
+    pub fn to_hex(&self) -> SecretString {
+        let r = self
+            .r
+            .expose_secret()
+            .strip_prefix("0x")
+            .unwrap_or(self.r.expose_secret());
+        let s = self
+            .s
+            .expose_secret()
+            .strip_prefix("0x")
+            .unwrap_or(self.s.expose_secret());
+        SecretString::from(format!("0x{r}{s}{:02x}", self.v))
     }
 
     /// Parses a hex signature string (0x + 64 hex r + 64 hex s + 2 hex v) into components.
@@ -761,7 +775,7 @@ impl HyperliquidSignature {
         let v = u64::from_str_radix(&sig_hex[128..130], 16)
             .map_err(|e| format!("Failed to parse v component: {e}"))?;
 
-        Ok(Self { r, s, v })
+        Ok(Self::new(r, s, v))
     }
 }
 
@@ -858,6 +872,42 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[rstest]
+    fn test_signature_serialization_and_debug_redaction() {
+        let signature = HyperliquidSignature::new(
+            "0x1111111111111111111111111111111111111111111111111111111111111111".to_string(),
+            "0x2222222222222222222222222222222222222222222222222222222222222222".to_string(),
+            27,
+        );
+        let wire = serde_json::to_value(&signature).unwrap();
+        let debug = format!("{signature:?}");
+
+        assert_eq!(wire["r"], signature.r.expose_secret());
+        assert_eq!(wire["s"], signature.s.expose_secret());
+        assert_eq!(wire["v"], signature.v);
+        assert_eq!(debug.matches(REDACTED).count(), 2);
+        assert!(!debug.contains(signature.r.expose_secret()));
+        assert!(!debug.contains(signature.s.expose_secret()));
+    }
+
+    #[rstest]
+    fn test_exchange_action_request_debug_redacts_signature() {
+        let request = HyperliquidExchangeActionRequest {
+            action: HyperliquidExchangeAction::Noop,
+            nonce: 1_700_000_000_000,
+            signature: SecretString::from("0xsigned-action"),
+            vault_address: Some("0xvault".to_string()),
+            expires_after: Some(1_700_000_001_000),
+        };
+        let wire = serde_json::to_value(&request).unwrap();
+        let debug = format!("{request:?}");
+
+        assert_eq!(wire["signature"], "0xsigned-action");
+        assert_eq!(wire["nonce"], 1_700_000_000_000_u64);
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains("0xsigned-action"));
+    }
 
     #[rstest]
     fn test_meta_deserialization() {
@@ -1927,7 +1977,7 @@ pub struct HyperliquidExchangeActionRequest {
     /// Request nonce for replay protection (milliseconds timestamp recommended).
     pub nonce: u64,
     /// ECC signature over the action and nonce.
-    pub signature: String,
+    pub signature: SecretString,
     /// Optional vault address for sub-account trading.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vault_address: Option<String>,

@@ -602,7 +602,9 @@ mod tests {
         },
         testing::wait_until_async,
     };
-    use nautilus_core::{Params, UUID4, UnixNanos, datetime::NANOSECONDS_IN_SECOND};
+    use nautilus_core::{
+        Params, UUID4, UnixNanos, datetime::NANOSECONDS_IN_SECOND, string::secret::SecretString,
+    };
     use nautilus_execution::client::core::ExecutionClientCore;
     use nautilus_model::{
         data::{DataType, QuoteTick},
@@ -684,7 +686,7 @@ mod tests {
         let config = PolymarketDataClientConfig {
             proxy_url: proxy_url
                 .as_ref()
-                .map(|proxy_url| proxy_url.expose().to_string()),
+                .map(|proxy_url| SecretString::from(proxy_url.expose())),
             ..PolymarketDataClientConfig::default()
         };
 

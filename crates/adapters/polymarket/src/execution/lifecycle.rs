@@ -28,7 +28,7 @@ use nautilus_common::{
     live::runner::get_exec_event_sender,
     msgbus::{self, TypedHandler},
 };
-use nautilus_core::{collections::AtomicMap, time::AtomicTime};
+use nautilus_core::{collections::AtomicMap, string::secret::SecretString, time::AtomicTime};
 use nautilus_live::task::TaskGroupGuard;
 use nautilus_model::{
     events::{OrderEventAny, OrderFilled, PositionEvent},
@@ -270,7 +270,7 @@ impl PolymarketExecutionClient {
             .funder
             .clone()
             .unwrap_or_else(|| self.secrets.address.clone());
-        let user_api_key = self.secrets.credential.api_key().to_string();
+        let user_api_key = SecretString::from(self.secrets.credential.api_key_str().to_string());
 
         let fill_tracker = self.fill_tracker.clone();
         let pending_submits = self.pending_submits.clone();
@@ -291,7 +291,7 @@ impl PolymarketExecutionClient {
                 account_id,
                 clock,
                 user_address: &user_address,
-                user_api_key: &user_api_key,
+                user_api_key: user_api_key.expose_secret(),
             };
 
             loop {
@@ -955,15 +955,15 @@ mod tests {
         let client = PolymarketExecutionClient::new(
             core,
             crate::config::PolymarketExecutionClientConfig {
-                private_key: Some(TEST_PRIVATE_KEY.to_string()),
-                api_key: Some("test_api_key".to_string()),
-                api_secret: Some(TEST_API_SECRET_B64.to_string()),
-                passphrase: Some("test_pass".to_string()),
+                private_key: Some(TEST_PRIVATE_KEY.into()),
+                api_key: Some("test_api_key".into()),
+                api_secret: Some(TEST_API_SECRET_B64.into()),
+                passphrase: Some("test_pass".into()),
                 funder: None,
                 base_url_http: Some(base_url_http.to_string()),
                 base_url_ws: Some("ws://127.0.0.1:3000/ws".to_string()),
                 base_url_data_api: Some(base_url_data_api.to_string()),
-                proxy_url,
+                proxy_url: proxy_url.map(SecretString::from),
                 ..crate::config::PolymarketExecutionClientConfig::default()
             },
         )
@@ -1006,7 +1006,14 @@ mod tests {
             .collect::<Vec<_>>();
         let expected_auth = format!("Basic {}", BASE64.encode(format!("{USERNAME}:{SECRET}")));
 
-        assert_eq!(client.config.proxy_url.as_deref(), Some(proxy_url.as_str()));
+        assert_eq!(
+            client
+                .config
+                .proxy_url
+                .as_ref()
+                .map(SecretString::expose_secret),
+            Some(proxy_url.as_str())
+        );
         assert_eq!(client.ws_client.proxy_url().unwrap().expose(), proxy_url);
         assert_eq!(
             request_lines,

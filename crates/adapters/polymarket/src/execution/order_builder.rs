@@ -29,7 +29,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{UnixNanos, string::secret::SecretString, time::get_atomic_clock_realtime};
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
     events::OrderDeniedReason,
@@ -351,14 +351,14 @@ impl PolymarketOrderBuilder {
             timestamp: timestamp_ms.to_string(),
             metadata: ZERO_BYTES32.to_string(),
             builder: POLYMARKET_NAUTILUS_BUILDER_CODE.to_string(),
-            signature: String::new(),
+            signature: SecretString::default(),
         };
 
         let signature = self
             .order_signer
             .sign_order(&poly_order, neg_risk)
             .map_err(|e| anyhow::anyhow!("EIP-712 signing failed: {e}"))?;
-        poly_order.signature = signature;
+        poly_order.signature = SecretString::from(signature);
 
         Ok(poly_order)
     }
@@ -974,7 +974,7 @@ mod tests {
         assert_eq!(order.maker, deposit_wallet);
         assert_eq!(order.signer, deposit_wallet);
         assert_eq!(order.signature_type, SignatureType::Poly1271);
-        assert_eq!(order.signature.len(), 636);
+        assert_eq!(order.signature.expose_secret().len(), 636);
     }
 
     #[rstest]
@@ -1160,7 +1160,7 @@ mod tests {
         assert_eq!(order.metadata, ZERO_BYTES32);
         assert_eq!(order.side, PolymarketOrderSide::Buy);
         assert!(!order.timestamp.is_empty());
-        assert!(!order.signature.is_empty());
+        assert!(!order.signature.expose_secret().is_empty());
         // Wire amounts are micro-pUSD / micro-share mantissas (10^6 scale).
         // Quote-denominated BUY: 10 pUSD spend -> 20 shares at price 0.50.
         assert_eq!(order.maker_amount, dec!(10_000_000));
@@ -1213,7 +1213,7 @@ mod tests {
         assert_eq!(order.side, PolymarketOrderSide::Sell);
         assert_eq!(order.maker_amount, dec!(20_000_000));
         assert_eq!(order.taker_amount, dec!(10_000_000));
-        assert!(!order.signature.is_empty());
+        assert!(!order.signature.expose_secret().is_empty());
     }
 
     #[rstest]

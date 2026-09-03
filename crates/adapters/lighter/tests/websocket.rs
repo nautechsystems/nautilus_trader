@@ -1730,7 +1730,7 @@ async fn test_subscribe_account_includes_auth_field() {
     let token = "schnorr-signature-bytes".to_string();
     harness
         .client
-        .subscribe_account(LighterWsChannel::AccountAll(123_456), token.clone())
+        .subscribe_account(LighterWsChannel::AccountAll(123_456), token.clone().into())
         .await
         .expect("subscribe_account");
 
@@ -1944,7 +1944,7 @@ async fn test_reconnect_replays_authenticated_and_public_subscriptions() {
         .store(true, Ordering::Relaxed);
     harness
         .client
-        .subscribe_account(LighterWsChannel::AccountAll(789), token.clone())
+        .subscribe_account(LighterWsChannel::AccountAll(789), token.clone().into())
         .await
         .expect("subscribe_account");
 

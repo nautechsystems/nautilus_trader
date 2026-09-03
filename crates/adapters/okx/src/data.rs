@@ -137,19 +137,35 @@ impl OKXDataClient {
     pub fn new(client_id: ClientId, config: OKXDataClientConfig) -> anyhow::Result<Self> {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
+        let api_key = config
+            .api_key
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+        let api_secret = config
+            .api_secret
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+        let api_passphrase = config
+            .api_passphrase
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
 
         let http_client = if config.has_api_credentials() {
             OKXHttpClient::with_credentials(
-                config.api_key.clone(),
-                config.api_secret.clone(),
-                config.api_passphrase.clone(),
+                api_key,
+                api_secret,
+                api_passphrase,
                 Some(config.http_base_url()),
                 config.http_timeout_secs,
                 config.max_retries,
                 config.retry_delay_initial_ms,
                 config.retry_delay_max_ms,
                 config.environment,
-                config.proxy_url.clone(),
+                proxy_url.clone(),
             )?
         } else {
             OKXHttpClient::new(
@@ -159,7 +175,7 @@ impl OKXDataClient {
                 config.retry_delay_initial_ms,
                 config.retry_delay_max_ms,
                 config.environment,
-                config.proxy_url.clone(),
+                proxy_url.clone(),
             )?
         };
 
@@ -172,7 +188,7 @@ impl OKXDataClient {
             Some(OKX_WS_HEARTBEAT_SECS),
             None,
             config.transport_backend,
-            config.proxy_url.clone(),
+            proxy_url.clone(),
         )
         .context("failed to construct OKX public websocket client")?
         .with_socket_control(SocketControl::new(
@@ -191,7 +207,7 @@ impl OKXDataClient {
                 Some(OKX_WS_HEARTBEAT_SECS),
                 None,
                 config.transport_backend,
-                config.proxy_url.clone(),
+                proxy_url,
             )
             .context("failed to construct OKX business websocket client")?
             .with_socket_control(SocketControl::new(

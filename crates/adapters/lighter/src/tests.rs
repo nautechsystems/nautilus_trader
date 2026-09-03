@@ -362,7 +362,7 @@ fn credential_environment_child() {
         Ok("data_partial") => {
             let config = LighterDataClientConfig {
                 api_key_index: Some(5),
-                private_key: Some(PRIVATE_KEY_HEX.to_string()),
+                private_key: Some(PRIVATE_KEY_HEX.into()),
                 account_index: None,
                 ..Default::default()
             };
@@ -372,7 +372,7 @@ fn credential_environment_child() {
             let config = LighterDataClientConfig {
                 api_key_index: Some(5),
                 account_index: Some(12_345),
-                private_key: Some(PRIVATE_KEY_HEX.to_string()),
+                private_key: Some(PRIVATE_KEY_HEX.into()),
                 ..Default::default()
             };
             assert!(create_data_client(config).has_credentials());
@@ -381,7 +381,7 @@ fn credential_environment_child() {
             let config = LighterDataClientConfig {
                 api_key_index: Some(5),
                 account_index: Some(12_345),
-                private_key: Some("   ".to_string()),
+                private_key: Some("   ".into()),
                 ..Default::default()
             };
             assert!(create_data_client(config).has_credentials());
@@ -440,9 +440,9 @@ fn assert_partial_configs_lack_credentials() {
     let configs = [
         (Some(5), None, None),
         (None, Some(12_345), None),
-        (None, None, Some(PRIVATE_KEY_HEX.to_string())),
-        (None, Some(12_345), Some(PRIVATE_KEY_HEX.to_string())),
-        (Some(5), None, Some(PRIVATE_KEY_HEX.to_string())),
+        (None, None, Some(PRIVATE_KEY_HEX.into())),
+        (None, Some(12_345), Some(PRIVATE_KEY_HEX.into())),
+        (Some(5), None, Some(PRIVATE_KEY_HEX.into())),
         (Some(5), Some(12_345), None),
     ];
 
@@ -462,7 +462,7 @@ fn assert_blank_configs_lack_credentials() {
         let config = LighterDataClientConfig {
             api_key_index: Some(5),
             account_index: Some(12_345),
-            private_key: Some(private_key.to_string()),
+            private_key: Some(private_key.into()),
             ..Default::default()
         };
         assert!(!config.has_credentials());

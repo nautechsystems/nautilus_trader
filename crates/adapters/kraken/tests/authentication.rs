@@ -84,7 +84,10 @@ async fn test_http_client_get_websockets_token() {
     // Get WebSocket token
     let token = client.get_websockets_token().await.unwrap();
 
-    assert_eq!(token.token, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    assert_eq!(
+        token.token.expose_secret(),
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    );
     assert_eq!(token.expires, 900);
 }
 
@@ -106,8 +109,8 @@ async fn test_websocket_client_authenticate() {
 
     // Create WebSocket client with credentials (API secret must be base64-encoded)
     let config = KrakenDataClientConfig {
-        api_key: Some("test_api_key".to_string()),
-        api_secret: Some("dGVzdF9hcGlfc2VjcmV0X2Jhc2U2NA==".to_string()), // Base64 encoded
+        api_key: Some("test_api_key".into()),
+        api_secret: Some("dGVzdF9hcGlfc2VjcmV0X2Jhc2U2NA==".into()), // Base64 encoded
         base_url: Some(base_url),
         ..Default::default()
     };

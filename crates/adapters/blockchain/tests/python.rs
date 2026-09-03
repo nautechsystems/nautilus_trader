@@ -82,7 +82,7 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
         py,
         BlockchainDataClientConfig::builder()
             .chain(Arc::new(chains::ETHEREUM.clone()))
-            .http_rpc_url("https://eth-mainnet.example.com".to_string())
+            .http_rpc_url("https://eth-mainnet.example.com".into())
             .build(),
     )
     .expect("config should convert to Python object")
@@ -116,7 +116,7 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
         "BlockchainDataClientConfig"
     );
     assert_eq!(
-        blockchain_config.http_rpc_url,
+        blockchain_config.http_rpc_url.expose_secret(),
         "https://eth-mainnet.example.com"
     );
     assert_eq!(
@@ -213,11 +213,7 @@ fn assert_execution_config_constructs_from_python(
         .expect("execution config repr should succeed")
         .extract()
         .expect("execution config repr should be a string");
-    let getter_url: String = config
-        .getattr("http_rpc_url")
-        .expect("http_rpc_url getter should exist")
-        .extract()
-        .expect("http_rpc_url getter should return a string");
+    assert!(!config.hasattr("http_rpc_url").unwrap());
 
     let getter_value: String = config
         .getattr("signer_private_key_env")
@@ -270,7 +266,6 @@ fn assert_execution_config_constructs_from_python(
     assert!(!repr.contains(PATH_SECRET));
     assert!(!repr.contains(QUERY_SECRET));
     assert!(!repr.contains(&http_rpc_url));
-    assert_eq!(getter_url, http_rpc_url);
     assert_eq!(extracted.chain.chain_id, 42161);
     assert_eq!(extracted.signer_private_key_env, "BLOCKCHAIN_PRIVATE_KEY");
     assert_eq!(
@@ -424,9 +419,12 @@ fn assert_data_config_extracts_transport_backend_from_python_constructor(
     assert!(!repr.contains(WSS_QUERY_SECRET));
     assert!(!repr.contains(&http_rpc_url));
     assert!(!repr.contains(&wss_rpc_url));
-    assert_eq!(blockchain_config.http_rpc_url, http_rpc_url);
+    assert_eq!(blockchain_config.http_rpc_url.expose_secret(), http_rpc_url);
     assert_eq!(
-        blockchain_config.wss_rpc_url.as_deref(),
+        blockchain_config
+            .wss_rpc_url
+            .as_ref()
+            .map(|value| value.expose_secret()),
         Some(wss_rpc_url.as_str())
     );
     assert_eq!(

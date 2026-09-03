@@ -247,9 +247,9 @@ mod tests {
         let config = OKXExecutionClientConfig {
             account_id: AccountId::from("OKX-001"),
             instrument_types: vec![OKXInstrumentType::Spot],
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            api_passphrase: Some("test_pass".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
+            api_passphrase: Some("test_pass".into()),
             ..Default::default()
         };
 
@@ -273,9 +273,9 @@ mod tests {
         let config = OKXExecutionClientConfig {
             account_id: AccountId::from("OKX-001"),
             instrument_types: vec![OKXInstrumentType::Swap, OKXInstrumentType::Futures],
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            api_passphrase: Some("test_pass".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
+            api_passphrase: Some("test_pass".into()),
             ..Default::default()
         };
 

@@ -126,7 +126,7 @@ enum BinanceFuturesEndpointScope {
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct BinanceFuturesRequestScope {
     endpoint: BinanceFuturesEndpointScope,
-    proxy_url: Option<String>,
+    proxy_url_digest: Option<[u8; 32]>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -260,7 +260,7 @@ impl BinanceRawFuturesHttpClient {
         let endpoint = Self::endpoint_scope(environment, base_url_override);
         let request_scope = BinanceFuturesRequestScope {
             endpoint: endpoint.clone(),
-            proxy_url: proxy_url.map(ToOwned::to_owned),
+            proxy_url_digest: proxy_url.map(Self::sha256),
         };
         let request_limiter = Self::request_rate_limiter(request_scope, request_quota);
         let mut limiters = vec![request_limiter];
@@ -298,12 +298,14 @@ impl BinanceRawFuturesHttpClient {
     }
 
     fn account_scope(credential: &SigningCredential) -> BinanceFuturesAccountScope {
-        let digest = digest::digest(&digest::SHA256, credential.api_key().as_bytes());
-        let bytes = digest
+        BinanceFuturesAccountScope(Self::sha256(credential.api_key()))
+    }
+
+    fn sha256(value: &str) -> [u8; 32] {
+        digest::digest(&digest::SHA256, value.as_bytes())
             .as_ref()
             .try_into()
-            .expect("SHA-256 digest must contain 32 bytes");
-        BinanceFuturesAccountScope(bytes)
+            .expect("SHA-256 digest must contain 32 bytes")
     }
 
     fn request_rate_limiter(
@@ -969,7 +971,7 @@ impl BinanceRawFuturesHttpClient {
     /// Returns an error if the request fails.
     pub async fn keepalive_listen_key(&self, listen_key: &str) -> BinanceFuturesHttpResult<()> {
         let params = ListenKeyParams {
-            listen_key: listen_key.to_string(),
+            listen_key: listen_key.into(),
         };
         let _: serde_json::Value = self
             .request_put("listenKey", Some(&params), true, false)
@@ -984,7 +986,7 @@ impl BinanceRawFuturesHttpClient {
     /// Returns an error if the request fails.
     pub async fn close_listen_key(&self, listen_key: &str) -> BinanceFuturesHttpResult<()> {
         let params = ListenKeyParams {
-            listen_key: listen_key.to_string(),
+            listen_key: listen_key.into(),
         };
         let _: serde_json::Value = self
             .request_delete("listenKey", Some(&params), true, false)

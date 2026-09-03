@@ -825,7 +825,7 @@ fn build_config(addr: SocketAddr) -> LighterExecutionClientConfig {
         account_id: account_id(),
         account_index: Some(TEST_ACCOUNT_INDEX),
         api_key_index: Some(TEST_API_KEY_INDEX),
-        private_key: Some(PRIVATE_KEY_HEX.to_string()),
+        private_key: Some(PRIVATE_KEY_HEX.into()),
         base_url_http: Some(format!("http://{addr}")),
         base_url_ws: Some(format!("ws://{addr}/stream")),
         proxy_url: None,

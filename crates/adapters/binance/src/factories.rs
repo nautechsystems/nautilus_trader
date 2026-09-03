@@ -256,8 +256,8 @@ mod tests {
             product_type,
             use_ws_trading: false,
             oms_type,
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
             ..Default::default()
         };
         let cache = Rc::new(RefCell::new(Cache::default()));

@@ -38,6 +38,7 @@ use nautilus_common::{
 use nautilus_core::{
     Params, UUID4, UnixNanos,
     env::get_or_env_var,
+    string::secret::SecretString,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -121,8 +122,18 @@ impl BybitExecutionClient {
         config: BybitExecutionClientConfig,
     ) -> anyhow::Result<Self> {
         let (key_var, secret_var) = credential_env_vars(config.environment);
-        let api_key = get_or_env_var(config.api_key.clone(), key_var)?;
-        let api_secret = get_or_env_var(config.api_secret.clone(), secret_var)?;
+        let api_key = get_or_env_var(
+            config.api_key.clone().map(SecretString::into_inner),
+            key_var,
+        )?;
+        let api_secret = get_or_env_var(
+            config.api_secret.clone().map(SecretString::into_inner),
+            secret_var,
+        )?;
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
 
         let http_client = BybitHttpClient::with_credentials(
             api_key.clone(),
@@ -133,7 +144,7 @@ impl BybitExecutionClient {
             config.retry_delay_initial_ms,
             config.retry_delay_max_ms,
             config.recv_window_ms,
-            config.proxy_url.clone(),
+            proxy_url.clone(),
         )?;
         http_client.set_use_spot_position_reports(config.use_spot_position_reports);
 
@@ -144,7 +155,7 @@ impl BybitExecutionClient {
             Some(config.ws_private_url()),
             config.heartbeat_interval_secs,
             config.transport_backend,
-            config.proxy_url.clone(),
+            proxy_url.clone(),
         )
         .with_socket_control(SocketControl::new(
             core.client_id,
@@ -163,7 +174,7 @@ impl BybitExecutionClient {
             Some(config.ws_trade_url()),
             config.heartbeat_interval_secs,
             config.transport_backend,
-            config.proxy_url.clone(),
+            proxy_url,
         )
         .with_socket_control(SocketControl::new(
             core.client_id,
@@ -2289,8 +2300,8 @@ mod tests {
             cache.clone(),
         );
         let config = BybitExecutionClientConfig {
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
             ..Default::default()
         };
 

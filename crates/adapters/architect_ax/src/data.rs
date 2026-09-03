@@ -469,9 +469,14 @@ impl DataClient for AxDataClient {
             });
 
         let credential = if self.config.has_api_credentials() {
-            let credential =
-                Credential::resolve(self.config.api_key.clone(), self.config.api_secret.clone())
-                    .context("API credentials not configured")?;
+            let credential = Credential::resolve(
+                self.config.api_key.clone().map(|value| value.into_inner()),
+                self.config
+                    .api_secret
+                    .clone()
+                    .map(|value| value.into_inner()),
+            )
+            .context("API credentials not configured")?;
 
             let token = self
                 .http_client

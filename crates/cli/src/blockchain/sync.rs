@@ -99,7 +99,7 @@ pub(crate) async fn run_sync_dex(
     let config = BlockchainDataClientConfig::builder()
         .chain(Arc::new(chain.to_owned()))
         .dex_ids(vec![dex_type])
-        .http_rpc_url(rpc_http_url)
+        .http_rpc_url(rpc_http_url.into())
         .maybe_multicall_calls_per_rpc_request(multicall_calls_per_rpc_request)
         .use_hypersync_for_live_data(true)
         .postgres_cache_database_config(postgres_connect_options)
@@ -142,7 +142,7 @@ pub(crate) async fn run_sync_blocks(
     );
     let config = BlockchainDataClientConfig::builder()
         .chain(chain.clone())
-        .http_rpc_url(String::new()) // we dont need to http rpc url for block syncing
+        .http_rpc_url(String::new().into()) // we dont need to http rpc url for block syncing
         .use_hypersync_for_live_data(true)
         .postgres_cache_database_config(postgres_connect_options)
         .build();

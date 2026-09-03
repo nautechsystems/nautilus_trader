@@ -33,7 +33,7 @@ use axum::{
     routing::{get, post},
 };
 use jiff::Timestamp;
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, string::secret::SecretString};
 use nautilus_lighter::{
     common::enums::{
         LighterCandleResolution, LighterEnvironment, LighterFundingResolution, LighterMarketStatus,
@@ -877,10 +877,10 @@ async fn domain_client_request_trades_fills_market_id_and_parses_ticks() {
     let ticks = client
         .request_trades(
             &instrument,
-            LighterTradesQuery {
-                limit: 50,
-                ..Default::default()
-            },
+            LighterTradesQueryBuilder::default()
+                .limit(50)
+                .build()
+                .unwrap(),
         )
         .await
         .unwrap();
@@ -1942,7 +1942,13 @@ async fn handle_paginated_candles(
 }
 
 async fn handle_trades(Query(query): Query<LighterTradesQuery>) -> Response {
-    assert_eq!(query.authorization.as_deref(), Some("bearer-token"));
+    assert_eq!(
+        query
+            .authorization
+            .as_ref()
+            .map(SecretString::expose_secret),
+        Some("bearer-token")
+    );
     assert_eq!(query.market_id, Some(0));
     assert_eq!(query.account_index, Some(712_440));
     assert_eq!(query.order_index, Some(281_476_929_510_110));
@@ -1966,7 +1972,10 @@ async fn handle_trades_with_page_size_limit(Query(query): Query<LighterTradesQue
 async fn handle_account_active_orders(
     Query(query): Query<LighterAccountActiveOrdersQuery>,
 ) -> Response {
-    assert_eq!(query.auth.as_deref(), Some("auth-token"));
+    assert_eq!(
+        query.auth.as_ref().map(SecretString::expose_secret),
+        Some("auth-token")
+    );
     assert_eq!(query.account_index, 712_440);
     assert_eq!(query.market_id, 0);
     (StatusCode::OK, HTTP_ORDERS).into_response()
@@ -1975,7 +1984,13 @@ async fn handle_account_active_orders(
 async fn handle_account_inactive_orders(
     Query(query): Query<LighterAccountInactiveOrdersQuery>,
 ) -> Response {
-    assert_eq!(query.authorization.as_deref(), Some("bearer-token"));
+    assert_eq!(
+        query
+            .authorization
+            .as_ref()
+            .map(SecretString::expose_secret),
+        Some("bearer-token")
+    );
     assert_eq!(query.account_index, 712_440);
     assert_eq!(query.market_id, Some(0));
     assert_eq!(query.ask_filter, Some(1));

@@ -40,7 +40,7 @@ use nautilus_core::{
     AtomicMap,
     consts::NAUTILUS_USER_AGENT,
     env::{get_env_var, get_or_env_var},
-    string::secret::REDACTED,
+    string::secret::{REDACTED, SecretString},
 };
 use nautilus_live::{
     SocketControl,
@@ -248,7 +248,7 @@ pub struct OKXWebSocketClient {
     /// WebSocket transport backend (defaults to `Tungstenite`).
     transport_backend: TransportBackend,
     /// Optional proxy URL for the WebSocket transport.
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
     cancellation_token: CancellationToken,
     socket_control: Option<Arc<SocketControl>>,
 }
@@ -381,7 +381,7 @@ impl OKXWebSocketClient {
             index_pair_subscribers: Arc::new(DashMap::new()),
             index_pair_transition: Arc::new(tokio::sync::Mutex::new(())),
             transport_backend,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             cancellation_token: CancellationToken::new(),
             socket_control: None,
         })
@@ -649,7 +649,10 @@ impl OKXWebSocketClient {
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         };
 
         let keyed_quotas = vec![
@@ -845,14 +848,16 @@ impl OKXWebSocketClient {
                                 let auth_message = super::messages::OKXAuthentication {
                                     op: "login",
                                     args: vec![super::messages::OKXAuthenticationArg {
-                                        api_key: cred.api_key().to_string(),
-                                        passphrase: cred.api_passphrase().to_string(),
+                                        api_key: SecretString::from(cred.api_key()),
+                                        passphrase: SecretString::from(cred.api_passphrase()),
                                         timestamp,
-                                        sign: signature,
+                                        sign: SecretString::from(signature),
                                     }],
                                 };
 
-                                if let Ok(payload) = serde_json::to_string(&auth_message) {
+                                if let Ok(payload) =
+                                    serde_json::to_string(&auth_message).map(SecretString::from)
+                                {
                                     if let Err(e) = cmd_tx_for_reconnect
                                         .send(HandlerCommand::Authenticate { payload })
                                     {
@@ -981,19 +986,20 @@ impl OKXWebSocketClient {
         let auth_message = OKXAuthentication {
             op: "login",
             args: vec![OKXAuthenticationArg {
-                api_key: credential.api_key().to_string(),
-                passphrase: credential.api_passphrase().to_string(),
+                api_key: SecretString::from(credential.api_key()),
+                passphrase: SecretString::from(credential.api_passphrase()),
                 timestamp,
-                sign: signature,
+                sign: SecretString::from(signature),
             }],
         };
 
-        let payload = serde_json::to_string(&auth_message).map_err(|e| {
-            Error::Io(std::io::Error::other(format!(
-                "Failed to serialize auth message: {e}"
-            )))
-        })?;
-
+        let payload = serde_json::to_string(&auth_message)
+            .map(SecretString::from)
+            .map_err(|e| {
+                Error::Io(std::io::Error::other(format!(
+                    "Failed to serialize auth message: {e}"
+                )))
+            })?;
         self.cmd_tx
             .read()
             .await

@@ -15,6 +15,8 @@
 
 //! Binance Futures HTTP response models.
 
+use std::fmt::Debug;
+
 use anyhow::Context;
 use nautilus_core::{
     UUID4, UnixNanos,
@@ -22,6 +24,7 @@ use nautilus_core::{
         deserialize_decimal_or_zero, deserialize_optional_decimal_from_str,
         serialize_decimal_as_str, serialize_optional_decimal_as_str,
     },
+    string::secret::SecretString,
 };
 use nautilus_model::{
     enums::{
@@ -37,6 +40,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ustr::Ustr;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
     common::{
@@ -1349,11 +1353,19 @@ pub struct BatchOrderError {
 }
 
 /// Listen key response from user data stream endpoints.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Zeroize, ZeroizeOnDrop)]
 #[serde(rename_all = "camelCase")]
 pub struct ListenKeyResponse {
     /// The listen key for WebSocket user data stream.
-    pub listen_key: String,
+    pub listen_key: SecretString,
+}
+
+impl ListenKeyResponse {
+    /// Consumes the response and returns the listen key.
+    #[must_use]
+    pub fn into_listen_key(mut self) -> SecretString {
+        std::mem::take(&mut self.listen_key)
+    }
 }
 
 /// Algo order response from Binance Futures Algo Service API.
@@ -1805,9 +1817,12 @@ mod tests {
     use nautilus_model::identifiers::ClientOrderId;
     use rstest::rstest;
     use rust_decimal_macros::dec;
+    use zeroize::Zeroize;
 
     use super::*;
     use crate::common::testing::load_fixture_string;
+
+    fn assert_zeroize_on_drop<T: ZeroizeOnDrop>() {}
 
     #[rstest]
     fn test_parse_account_info_v2() {
@@ -2128,11 +2143,23 @@ mod tests {
 
     #[rstest]
     fn test_parse_listen_key_response() {
+        assert_zeroize_on_drop::<ListenKeyResponse>();
+
         let json =
             r#"{"listenKey": "pqia91ma19a5s61cv6a81va65sdf19v8a65a1a5s61cv6a81va65sdf19v8a65a1"}"#;
-        let response: ListenKeyResponse =
+        let mut response: ListenKeyResponse =
             serde_json::from_str(json).expect("Failed to parse listen key");
-        assert!(!response.listen_key.is_empty());
+
+        let debug = format!("{response:?}");
+        assert_eq!(
+            response.listen_key.expose_secret(),
+            "pqia91ma19a5s61cv6a81va65sdf19v8a65a1a5s61cv6a81va65sdf19v8a65a1"
+        );
+        assert_eq!(debug, "ListenKeyResponse { listen_key: <redacted> }");
+        assert!(!debug.contains(response.listen_key.expose_secret()));
+
+        response.zeroize();
+        assert!(response.listen_key.expose_secret().is_empty());
     }
 
     #[rstest]

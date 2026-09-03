@@ -57,7 +57,7 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
     let config = Py::new(
         py,
         TardisDataClientConfig {
-            tardis_ws_url: Some("ws://localhost:8001".to_string()),
+            tardis_ws_url: Some("ws://localhost:8001".into()),
             ..TardisDataClientConfig::default()
         },
     )
@@ -89,7 +89,10 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
     assert_eq!(extracted_factory.name(), TARDIS);
     assert_eq!(extracted_factory.config_type(), "TardisDataClientConfig");
     assert_eq!(
-        tardis_config.tardis_ws_url.as_deref(),
+        tardis_config
+            .tardis_ws_url
+            .as_ref()
+            .map(|value| value.expose_secret()),
         Some("ws://localhost:8001")
     );
     assert_eq!(client.client_id(), ClientId::from("TARDIS-DATA-EXTRACTED"));

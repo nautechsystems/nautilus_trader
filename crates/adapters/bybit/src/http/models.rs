@@ -15,6 +15,7 @@
 
 //! Data transfer objects for deserializing Bybit HTTP API payloads.
 
+use nautilus_core::string::secret::SecretString;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -1489,7 +1490,7 @@ pub struct BybitApiKeyPermissions {
 }
 
 /// Account details from API key info.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.adapters.bybit", from_py_object)
@@ -1502,9 +1503,9 @@ pub struct BybitApiKeyPermissions {
 pub struct BybitAccountDetails {
     pub id: String,
     pub note: String,
-    pub api_key: String,
+    pub api_key: SecretString,
     pub read_only: u8,
-    pub secret: String,
+    pub secret: SecretString,
     #[serde(rename = "type")]
     pub key_type: u8,
     pub permissions: BybitApiKeyPermissions,
@@ -1551,7 +1552,7 @@ impl BybitAccountDetails {
     #[getter]
     #[must_use]
     pub fn api_key(&self) -> &str {
-        &self.api_key
+        self.api_key.expose_secret()
     }
 
     #[getter]
@@ -1757,13 +1758,13 @@ pub type BybitEscrowSubMembersResponse = BybitResponse<BybitSubMembersPagedResul
 /// # References
 ///
 /// - <https://bybit-exchange.github.io/docs/v5/user/list-sub-apikeys>
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitSubApiKeyInfo {
     pub id: String,
     #[serde(default)]
     pub ips: Vec<String>,
-    pub api_key: String,
+    pub api_key: SecretString,
     #[serde(default)]
     pub note: String,
     pub status: i32,
@@ -1773,7 +1774,7 @@ pub struct BybitSubApiKeyInfo {
     #[serde(rename = "type")]
     pub key_type: BybitApiKeyType,
     #[serde(with = "masked_secret")]
-    pub secret: Option<String>,
+    pub secret: Option<SecretString>,
     #[serde(with = "bool_or_int")]
     pub read_only: bool,
     #[serde(default)]
@@ -1831,17 +1832,17 @@ pub type BybitSubApiKeysResponse = BybitResponse<BybitSubApiKeysResult>;
 /// set; only the number of permission buckets populated inside `permissions`
 /// differs. Because [`BybitApiKeyPermissions`] covers the superset of both,
 /// the two endpoints reuse a single DTO.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitApiKeyUpdateResult {
     pub id: String,
     #[serde(default)]
     pub note: String,
-    pub api_key: String,
+    pub api_key: SecretString,
     #[serde(with = "bool_or_int")]
     pub read_only: bool,
     #[serde(with = "masked_secret")]
-    pub secret: Option<String>,
+    pub secret: Option<SecretString>,
     pub permissions: BybitApiKeyPermissions,
     #[serde(default)]
     pub ips: Vec<String>,
@@ -2412,6 +2413,8 @@ mod tests {
             serde_json::from_str(&json).expect("parse sub apikeys");
         assert_eq!(response.result.keys.len(), 1);
         let key = &response.result.keys[0];
+        let debug = format!("{key:?}");
+
         assert!(!key.read_only);
         assert_eq!(key.secret, None);
         assert_eq!(key.key_type, BybitApiKeyType::Hmac);
@@ -2422,6 +2425,9 @@ mod tests {
         assert!(key.permissions.earn.is_empty());
         assert_eq!(response.result.next_page_cursor.as_deref(), Some(""));
         assert!(!response.result.has_more_pages());
+        assert!(debug.contains("api_key: <redacted>"));
+        assert!(debug.contains("secret: None"));
+        assert!(!debug.contains("XXXXXX"));
     }
 
     #[rstest]
@@ -2429,11 +2435,16 @@ mod tests {
         let json = load_test_json("http_post_user_update_sub_api.json");
         let response: BybitUpdateSubApiResponse =
             serde_json::from_str(&json).expect("parse update sub api");
+        let debug = format!("{:?}", response.result);
+
         assert!(!response.result.read_only);
         assert_eq!(response.result.secret, None);
         assert_eq!(response.result.ips, vec!["*"]);
         assert_eq!(response.result.permissions.spot, vec!["SpotTrade"]);
         assert_eq!(response.result.permissions.wallet, vec!["AccountTransfer"]);
+        assert!(debug.contains("api_key: <redacted>"));
+        assert!(debug.contains("secret: None"));
+        assert!(!debug.contains("xxxxxx"));
     }
 
     #[rstest]
@@ -2478,6 +2489,7 @@ mod tests {
         let json = load_test_json("http_get_user_query_api.json");
         let response: BybitAccountDetailsResponse =
             serde_json::from_str(&json).expect("parse account details");
+        let debug = format!("{:?}", response.result);
 
         assert_eq!(
             response.result.permissions.fiat_global_pay,
@@ -2490,5 +2502,8 @@ mod tests {
         assert_eq!(response.result.permissions.bit_card, vec!["BitCard"]);
         assert_eq!(response.result.permissions.byx_post, vec!["ByXPost"]);
         assert_eq!(response.result.unified, Some(0));
+        assert!(debug.contains("api_key: <redacted>"));
+        assert!(debug.contains("secret: <redacted>"));
+        assert!(!debug.contains("api_key: \"XXXXXXXX\""));
     }
 }

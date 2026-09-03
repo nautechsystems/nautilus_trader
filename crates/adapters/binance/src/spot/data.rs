@@ -261,35 +261,42 @@ impl BinanceSpotDataClient {
                 get_http_base_url_with_us(config.product_type, config.environment, true).to_string()
             })
         });
+        let api_key = config
+            .api_key
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+        let api_secret = config
+            .api_secret
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
 
         let http_client = BinanceSpotHttpClient::new_with_json_responses(
             config.environment,
             clock,
-            config.api_key.clone(),
-            config.api_secret.clone(),
+            api_key.clone(),
+            api_secret.clone(),
             base_url_http,
             Some(config.recv_window_ms),
             None, // timeout_secs
-            config.proxy_url.clone(),
+            proxy_url.clone(),
             config.us,
         )?;
 
         let creds = if spot_market_data_mode == BinanceSpotMarketDataMode::Sbe {
-            resolve_credentials(
-                config.api_key.clone(),
-                config.api_secret.clone(),
-                config.environment,
-                config.product_type,
-            )
-            .inspect_err(|e| {
-                log::warn!(
-                    "Failed to resolve Binance API credentials ({e}). \
+            resolve_credentials(api_key, api_secret, config.environment, config.product_type)
+                .inspect_err(|e| {
+                    log::warn!(
+                        "Failed to resolve Binance API credentials ({e}). \
                      Spot SBE WebSocket streams require an Ed25519 API key. \
                      Set the appropriate env vars for your environment, \
                      or provide api_key/api_secret in the data client config"
-                );
-            })
-            .ok()
+                    );
+                })
+                .ok()
         } else {
             None
         };
@@ -305,7 +312,7 @@ impl BinanceSpotDataClient {
                     Some(BINANCE_WS_HEARTBEAT_SECS),
                     config.transport_backend,
                 )?
-                .with_proxy(config.proxy_url.clone())
+                .with_proxy(proxy_url)
                 .with_socket_control(socket_factory, "binance-spot-sbe-data-streams"),
             ),
             BinanceSpotMarketDataMode::Json => SpotWsClient::JsonPublic(
@@ -318,7 +325,7 @@ impl BinanceSpotDataClient {
                     Some(BINANCE_WS_HEARTBEAT_SECS),
                     config.transport_backend,
                 )
-                .with_proxy(config.proxy_url.clone())
+                .with_proxy(proxy_url)
                 .with_socket_control(socket_factory, "binance-spot-json-data-streams"),
             ),
         };

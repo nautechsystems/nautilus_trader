@@ -302,7 +302,7 @@ impl CoinbaseRawHttpClient {
 
         Ok(HashMap::from([(
             "Authorization".to_string(),
-            format!("Bearer {jwt}"),
+            format!("Bearer {}", jwt.expose_secret()),
         )]))
     }
 

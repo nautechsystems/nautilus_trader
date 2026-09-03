@@ -1467,7 +1467,7 @@ mod tests {
         let config = BlockchainDataClientConfig::builder()
             .chain(pool.chain.clone())
             .dex_ids(vec![DexType::UniswapV3])
-            .http_rpc_url("http://127.0.0.1:9".to_string())
+            .http_rpc_url("http://127.0.0.1:9".into())
             .use_hypersync_for_live_data(true)
             .maybe_from_block(Some(WETH_USDT_CREATION_BLOCK))
             .build();
@@ -1680,7 +1680,7 @@ mod tests {
         let config = BlockchainDataClientConfig::builder()
             .chain(chain)
             .dex_ids(vec![DexType::UniswapV3])
-            .http_rpc_url("http://127.0.0.1:9".to_string())
+            .http_rpc_url("http://127.0.0.1:9".into())
             .use_hypersync_for_live_data(true)
             .build();
         let mut core = BlockchainDataClientCore::new(

@@ -71,8 +71,8 @@ fn setup_exec_channel() -> tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent> 
 
 fn create_test_exec_config(addr: SocketAddr) -> AxExecutionClientConfig {
     AxExecutionClientConfig {
-        api_key: Some("test_api_key".to_string()),
-        api_secret: Some("test_api_secret".to_string()),
+        api_key: Some("test_api_key".into()),
+        api_secret: Some("test_api_secret".into()),
         environment: AxEnvironment::Sandbox,
         base_url_http: Some(format!("http://{addr}")),
         base_url_orders: Some(format!("http://{addr}")),
@@ -137,13 +137,16 @@ fn add_test_account_to_cache(cache: &Rc<RefCell<Cache>>, account_id: AccountId) 
 #[tokio::test]
 async fn test_exec_config_creation() {
     let config = AxExecutionClientConfig {
-        api_key: Some("test_api_key".to_string()),
-        api_secret: Some("test_api_secret".to_string()),
+        api_key: Some("test_api_key".into()),
+        api_secret: Some("test_api_secret".into()),
         environment: AxEnvironment::Sandbox,
         ..Default::default()
     };
 
-    assert_eq!(config.api_key, Some("test_api_key".to_string()));
+    assert_eq!(
+        config.api_key.as_ref().map(|value| value.expose_secret()),
+        Some("test_api_key")
+    );
     assert_eq!(config.environment, AxEnvironment::Sandbox);
     assert_eq!(config.account_id, AccountId::from("AX-001"));
 }

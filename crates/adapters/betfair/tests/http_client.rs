@@ -53,7 +53,7 @@ async fn live_send_betting_parses_api_exception() {
             serde_json::json!({"filter": {}, "maxResults": 1001}),
         )
         .await;
-    logout_live_session(client.app_key(), &session_token).await;
+    logout_live_session(client.app_key(), session_token.expose_secret()).await;
     client.disconnect().await;
     let err = result.expect_err("maxResults above 1000 must return TOO_MUCH_DATA");
 
@@ -87,7 +87,7 @@ async fn live_send_accounts_parses_api_exception() {
             serde_json::json!({"fromRecord": -1, "recordCount": 1}),
         )
         .await;
-    logout_live_session(client.app_key(), &session_token).await;
+    logout_live_session(client.app_key(), session_token.expose_secret()).await;
     client.disconnect().await;
     let err = result.expect_err("negative fromRecord must return INVALID_INPUT_DATA");
 

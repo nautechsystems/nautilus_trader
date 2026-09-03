@@ -30,7 +30,12 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::serialization::{deserialize_decimal, deserialize_optional_decimal};
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::{
+    serialization::{deserialize_decimal, deserialize_optional_decimal},
+    string::secret::SecretString,
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -460,7 +465,7 @@ pub struct DeriveTicker {
 
 /// Order record returned by `private/order`, `private/get_orders`,
 /// `private/get_order_history`, and the `{subaccount_id}.orders` WS channel.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeriveOrder {
     /// Order amount in base units.
     #[serde(deserialize_with = "deserialize_decimal")]
@@ -511,7 +516,7 @@ pub struct DeriveOrder {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replaced_order_id: Option<String>,
     /// 65-byte order signature, `0x`-prefixed hex.
-    pub signature: String,
+    pub signature: SecretString,
     /// Signature expiry (UNIX seconds).
     pub signature_expiry_sec: i64,
     /// Session-key signer address.
@@ -1175,6 +1180,7 @@ mod tests {
         // rename or field-order regression surfaces against a single fixture.
         let body = load_json("perps/http_order_eth_partially_filled.json");
         let order: DeriveOrder = serde_json::from_value(body).unwrap();
+        let debug = format!("{order:?}");
         assert_eq!(order.amount.to_string(), "2.0");
         assert_eq!(order.filled_amount.to_string(), "1.5");
         assert_eq!(order.average_price.to_string(), "3500.25");
@@ -1193,6 +1199,8 @@ mod tests {
         assert!(!order.is_transfer);
         assert!(order.quote_id.is_none());
         assert!(order.replaced_order_id.is_none());
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains("0xdead"));
     }
 
     #[rstest]

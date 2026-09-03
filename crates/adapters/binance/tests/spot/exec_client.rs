@@ -1564,8 +1564,8 @@ fn create_test_execution_client_with_transport_and_gtd_and_ws_setup_timeout(
         use_ws_trading,
         ws_trading_setup_timeout_ms,
         use_gtd,
-        api_key: Some("test_api_key".to_string()),
-        api_secret: Some("test_api_secret".to_string()),
+        api_key: Some("test_api_key".into()),
+        api_secret: Some("test_api_secret".into()),
         ..Default::default()
     };
 
@@ -1587,8 +1587,8 @@ fn create_test_execution_client_us(
         base_url_ws: Some(base_url_ws),
         use_ws_trading: true,
         us: true,
-        api_key: Some("test_api_key".to_string()),
-        api_secret: Some("test_api_secret".to_string()),
+        api_key: Some("test_api_key".into()),
+        api_secret: Some("test_api_secret".into()),
         ..Default::default()
     };
 

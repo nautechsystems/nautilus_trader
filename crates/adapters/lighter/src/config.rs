@@ -24,9 +24,7 @@
 //! - Connectivity
 //! - Operational behavior
 
-use std::fmt::Debug;
-
-use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::{
     identifiers::{AccountId, Venue},
     types::Currency,
@@ -43,7 +41,7 @@ use crate::common::{
 const WS_READONLY_QUERY_PARAM: &str = "readonly";
 
 /// Configuration for the Lighter data client.
-#[derive(Clone, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
@@ -73,13 +71,13 @@ pub struct LighterDataClientConfig {
     pub api_key_index: Option<u8>,
     /// Hex-encoded private key for REST auth tokens. Falls back to the
     /// environment variable selected by `deployment` and `environment`.
-    pub private_key: Option<String>,
+    pub private_key: Option<SecretString>,
     /// Optional REST URL override.
     pub base_url_http: Option<String>,
     /// Optional WebSocket URL override.
     pub base_url_ws: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// HTTP request timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
@@ -167,35 +165,12 @@ impl LighterDataClientConfig {
         let has_account = self.account_index.is_some() || env_var_is_set(account_var);
         let has_secret = self
             .private_key
-            .as_deref()
+            .as_ref()
+            .map(SecretString::expose_secret)
             .is_some_and(|s| !s.trim().is_empty())
             || env_var_is_set(secret_var);
 
         has_key && has_account && has_secret
-    }
-}
-
-impl Debug for LighterDataClientConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(LighterDataClientConfig))
-            .field("environment", &self.environment)
-            .field("deployment", &self.deployment)
-            .field("venue", &self.venue)
-            .field("account_index", &self.account_index)
-            .field("api_key_index", &self.api_key_index)
-            .field("private_key", &self.private_key.as_ref().map(|_| REDACTED))
-            .field("base_url_http", &self.base_url_http)
-            .field("base_url_ws", &self.base_url_ws)
-            .field("proxy_url", &self.proxy_url)
-            .field("http_timeout_secs", &self.http_timeout_secs)
-            .field("ws_timeout_secs", &self.ws_timeout_secs)
-            .field(
-                "update_instruments_interval_mins",
-                &self.update_instruments_interval_mins,
-            )
-            .field("rest_quota_per_min", &self.rest_quota_per_min)
-            .field("transport_backend", &self.transport_backend)
-            .finish()
     }
 }
 
@@ -227,7 +202,7 @@ fn ensure_readonly_ws_url(url: String) -> String {
 }
 
 /// Configuration for the Lighter execution client.
-#[derive(Clone, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
@@ -261,13 +236,13 @@ pub struct LighterExecutionClientConfig {
     pub api_key_index: Option<u8>,
     /// Hex-encoded private key for the API key (Schnorr / ecgfp5). Falls back
     /// to the environment variable selected by `deployment` and `environment`.
-    pub private_key: Option<String>,
+    pub private_key: Option<SecretString>,
     /// Optional REST URL override.
     pub base_url_http: Option<String>,
     /// Optional WebSocket URL override.
     pub base_url_ws: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// HTTP request timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
@@ -312,29 +287,6 @@ impl Default for LighterExecutionClientConfig {
     }
 }
 
-impl Debug for LighterExecutionClientConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(LighterExecutionClientConfig))
-            .field("environment", &self.environment)
-            .field("deployment", &self.deployment)
-            .field("venue", &self.venue)
-            .field("account_id", &self.account_id)
-            .field("account_index", &self.account_index)
-            .field("api_key_index", &self.api_key_index)
-            .field("private_key", &self.private_key.as_ref().map(|_| REDACTED))
-            .field("base_url_http", &self.base_url_http)
-            .field("base_url_ws", &self.base_url_ws)
-            .field("proxy_url", &self.proxy_url)
-            .field("http_timeout_secs", &self.http_timeout_secs)
-            .field("ws_timeout_secs", &self.ws_timeout_secs)
-            .field("market_order_slippage_bps", &self.market_order_slippage_bps)
-            .field("rest_quota_per_min", &self.rest_quota_per_min)
-            .field("sendtx_quota_per_min", &self.sendtx_quota_per_min)
-            .field("transport_backend", &self.transport_backend)
-            .finish()
-    }
-}
-
 impl LighterExecutionClientConfig {
     /// Returns `true` when all fields required to sign and submit
     /// authenticated transactions are configured.
@@ -345,7 +297,8 @@ impl LighterExecutionClientConfig {
     pub fn has_credentials(&self) -> bool {
         let key_set = self
             .private_key
-            .as_deref()
+            .as_ref()
+            .map(SecretString::expose_secret)
             .is_some_and(|s| !s.trim().is_empty());
         key_set && self.account_index.is_some() && self.api_key_index.is_some()
     }
@@ -388,6 +341,7 @@ impl LighterExecutionClientConfig {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::string::secret::REDACTED;
     use rstest::rstest;
 
     use super::*;
@@ -400,7 +354,7 @@ mod tests {
         let config = LighterDataClientConfig {
             api_key_index: Some(5),
             account_index: Some(12_345),
-            private_key: Some(PRIVATE_KEY_HEX.to_string()),
+            private_key: Some(PRIVATE_KEY_HEX.into()),
             ..Default::default()
         };
 
@@ -412,7 +366,7 @@ mod tests {
         let config = LighterDataClientConfig {
             api_key_index: Some(5),
             account_index: Some(12_345),
-            private_key: Some(PRIVATE_KEY_HEX.to_string()),
+            private_key: Some(PRIVATE_KEY_HEX.into()),
             ..Default::default()
         };
 
@@ -583,7 +537,7 @@ mod tests {
             account_id: AccountId::from("LIGHTER-001"),
             api_key_index: Some(5),
             account_index: Some(12_345),
-            private_key: Some(PRIVATE_KEY_HEX.to_string()),
+            private_key: Some(PRIVATE_KEY_HEX.into()),
             base_url_http: None,
             base_url_ws: None,
             proxy_url: None,

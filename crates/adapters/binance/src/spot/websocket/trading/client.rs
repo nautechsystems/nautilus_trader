@@ -34,7 +34,7 @@ use std::{
 };
 
 use arc_swap::ArcSwap;
-use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::{REDACTED, SecretString};
 use nautilus_live::{SocketControl, task::TaskGroup};
 use nautilus_network::{
     mode::ConnectionMode,
@@ -89,7 +89,7 @@ pub fn binance_ws_order_quota() -> Quota {
 /// complementing the HTTP client with lower-latency order submission.
 #[derive(Clone)]
 pub struct BinanceSpotWsTradingClient {
-    url: String,
+    url: SecretString,
     credential: Arc<SigningCredential>,
     heartbeat: Option<u64>,
     signal: Arc<AtomicBool>,
@@ -103,7 +103,7 @@ pub struct BinanceSpotWsTradingClient {
     request_id_counter: Arc<AtomicU64>,
     cancellation_token: Arc<Mutex<CancellationToken>>,
     transport_backend: TransportBackend,
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
     recv_window_ms: Option<u64>,
     socket_control: Option<SocketControl>,
 }
@@ -111,7 +111,7 @@ pub struct BinanceSpotWsTradingClient {
 impl Debug for BinanceSpotWsTradingClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(BinanceSpotWsTradingClient))
-            .field("url", &self.url)
+            .field("url", &REDACTED)
             .field("credential", &REDACTED)
             .field("heartbeat", &self.heartbeat)
             .finish_non_exhaustive()
@@ -128,7 +128,8 @@ impl BinanceSpotWsTradingClient {
         heartbeat: Option<u64>,
         transport_backend: TransportBackend,
     ) -> Self {
-        let url = url.unwrap_or_else(|| BINANCE_SPOT_SBE_WS_API_URL.to_string());
+        let url =
+            SecretString::from(url.unwrap_or_else(|| BINANCE_SPOT_SBE_WS_API_URL.to_string()));
         let credential = Arc::new(SigningCredential::new(api_key, api_secret));
 
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -158,7 +159,7 @@ impl BinanceSpotWsTradingClient {
     /// Configures the proxy used by the WebSocket connection.
     #[must_use]
     pub fn with_proxy(mut self, proxy_url: Option<String>) -> Self {
-        self.proxy_url = proxy_url;
+        self.proxy_url = proxy_url.map(SecretString::from);
         self
     }
 
@@ -287,7 +288,7 @@ impl BinanceSpotWsTradingClient {
         )];
 
         let config = WebSocketConfig {
-            url: self.url.clone(),
+            url: self.url.expose_secret().to_owned(),
             headers,
             heartbeat_interval_secs: self.heartbeat,
             heartbeat_payload: None,
@@ -300,7 +301,10 @@ impl BinanceSpotWsTradingClient {
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         };
 
         // Configure rate limits for order operations
@@ -588,9 +592,27 @@ mod tests {
         .with_recv_window(Some(45_000));
 
         assert_eq!(
-            client.proxy_url.as_deref(),
+            client.proxy_url.as_ref().map(SecretString::expose_secret),
             Some("http://proxy.example:8080")
         );
         assert_eq!(client.recv_window_ms, Some(45_000));
+    }
+
+    #[rstest]
+    fn test_url_is_redacted() {
+        let url = "wss://stream.example/ws/private-listen-key";
+        let client = BinanceSpotWsTradingClient::new(
+            Some(url.to_string()),
+            "api-key".to_string(),
+            "hmac-secret".to_string(),
+            None,
+            TransportBackend::default(),
+        );
+
+        let debug = format!("{client:?}");
+
+        assert_eq!(client.url.expose_secret(), url);
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains("private-listen-key"));
     }
 }

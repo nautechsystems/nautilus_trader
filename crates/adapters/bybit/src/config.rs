@@ -17,6 +17,9 @@
 
 use std::collections::HashMap;
 
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
@@ -39,9 +42,9 @@ use crate::common::{
 )]
 pub struct BybitDataClientConfig {
     /// Optional API key for authenticated REST/WebSocket requests.
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     /// Optional API secret for authenticated REST/WebSocket requests.
-    pub api_secret: Option<String>,
+    pub api_secret: Option<SecretString>,
     /// Product types to subscribe to (e.g., Linear, Spot, Inverse, Option).
     #[builder(default = vec![BybitProductType::Linear])]
     pub product_types: Vec<BybitProductType>,
@@ -55,7 +58,7 @@ pub struct BybitDataClientConfig {
     /// Optional override for the private WebSocket URL.
     pub base_url_ws_private: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// REST timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
@@ -184,9 +187,9 @@ impl BybitDataClientConfig {
 )]
 pub struct BybitExecutionClientConfig {
     /// API key for authenticated requests.
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     /// API secret for authenticated requests.
-    pub api_secret: Option<String>,
+    pub api_secret: Option<SecretString>,
     /// Product types to support (e.g., Linear, Spot, Inverse, Option).
     #[builder(default = vec![BybitProductType::Linear])]
     pub product_types: Vec<BybitProductType>,
@@ -200,7 +203,7 @@ pub struct BybitExecutionClientConfig {
     /// Optional override for the trade WebSocket URL.
     pub base_url_ws_trade: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// REST timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
@@ -317,6 +320,37 @@ mod tests {
     use super::*;
 
     #[rstest]
+    fn test_config_debug_redacts_credentials() {
+        let data = BybitDataClientConfig {
+            api_key: Some("data-api-key".into()),
+            api_secret: Some("data-api-secret".into()),
+            proxy_url: Some("http://user:data-proxy@localhost".into()),
+            ..Default::default()
+        };
+        let execution = BybitExecutionClientConfig {
+            api_key: Some("exec-api-key".into()),
+            api_secret: Some("exec-api-secret".into()),
+            proxy_url: Some("http://user:exec-proxy@localhost".into()),
+            ..Default::default()
+        };
+
+        let formatted = format!("{data:?} {execution:?}");
+
+        assert_eq!(formatted.matches(REDACTED).count(), 6);
+
+        for secret in [
+            "data-api-key",
+            "data-api-secret",
+            "data-proxy",
+            "exec-api-key",
+            "exec-api-secret",
+            "exec-proxy",
+        ] {
+            assert!(!formatted.contains(secret));
+        }
+    }
+
+    #[rstest]
     fn test_data_config_default() {
         let config = BybitDataClientConfig::default();
 
@@ -329,8 +363,8 @@ mod tests {
     #[rstest]
     fn test_data_config_with_credentials() {
         let config = BybitDataClientConfig {
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
             ..Default::default()
         };
 
@@ -441,8 +475,8 @@ mod tests {
     #[rstest]
     fn test_exec_config_with_credentials() {
         let config = BybitExecutionClientConfig {
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
             ..Default::default()
         };
 

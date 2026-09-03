@@ -522,8 +522,8 @@ async fn wait_for_server(addr: SocketAddr) {
 fn create_test_exec_config(addr: SocketAddr) -> KrakenExecutionClientConfig {
     KrakenExecutionClientConfig {
         account_id: test_account_id(),
-        api_key: "test_key".to_string(),
-        api_secret: "c2VjcmV0".to_string(),
+        api_key: "test_key".into(),
+        api_secret: "c2VjcmV0".into(),
         product_type: KrakenProductType::Futures,
         environment: KrakenEnvironment::Live,
         base_url: Some(format!("http://{addr}")),
@@ -536,8 +536,8 @@ fn create_test_exec_config(addr: SocketAddr) -> KrakenExecutionClientConfig {
 fn create_test_spot_exec_config(addr: SocketAddr) -> KrakenExecutionClientConfig {
     KrakenExecutionClientConfig {
         account_id: test_account_id(),
-        api_key: "test_key".to_string(),
-        api_secret: "c2VjcmV0".to_string(),
+        api_key: "test_key".into(),
+        api_secret: "c2VjcmV0".into(),
         product_type: KrakenProductType::Spot,
         environment: KrakenEnvironment::Live,
         base_url: Some(format!("http://{addr}")),

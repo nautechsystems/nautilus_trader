@@ -31,7 +31,9 @@ use std::{
 use arc_swap::ArcSwap;
 #[cfg(test)]
 use nautilus_common::live::get_runtime;
-use nautilus_core::{AtomicMap, AtomicSet, UUID4, consts::NAUTILUS_USER_AGENT};
+use nautilus_core::{
+    AtomicMap, AtomicSet, UUID4, consts::NAUTILUS_USER_AGENT, string::secret::SecretString,
+};
 use nautilus_live::{
     SocketControl,
     task::{SharedTaskSlot, TaskJoinOutcome},
@@ -55,6 +57,7 @@ use nautilus_network::{
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
+use zeroize::Zeroizing;
 
 use crate::{
     common::{
@@ -122,7 +125,7 @@ pub struct BybitWebSocketClient {
     bars_timestamp_on_close: Arc<AtomicBool>,
     transport_backend: TransportBackend,
     cancellation_token: Arc<ArcSwap<CancellationToken>>,
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
     socket_control: Option<SocketControl>,
 }
 
@@ -288,7 +291,7 @@ impl BybitWebSocketClient {
             mm_level: Arc::new(AtomicU8::new(0)),
             transport_backend,
             cancellation_token: Arc::new(ArcSwap::from_pointee(CancellationToken::new())),
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             socket_control: None,
         }
     }
@@ -358,7 +361,7 @@ impl BybitWebSocketClient {
             mm_level: Arc::new(AtomicU8::new(0)),
             transport_backend,
             cancellation_token: Arc::new(ArcSwap::from_pointee(CancellationToken::new())),
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             socket_control: None,
         }
     }
@@ -421,7 +424,7 @@ impl BybitWebSocketClient {
             mm_level: Arc::new(AtomicU8::new(0)),
             transport_backend,
             cancellation_token: Arc::new(ArcSwap::from_pointee(CancellationToken::new())),
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             socket_control: None,
         }
     }
@@ -477,15 +480,20 @@ impl BybitWebSocketClient {
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         };
 
         let message_rate_limiter = Arc::new(RateLimiter::<Ustr, MonotonicClock>::new_with_quota(
             None,
             vec![],
         ));
-        let connection_rate_limiter =
-            websocket_connection_limiter(&self.url, self.proxy_url.as_deref());
+        let connection_rate_limiter = websocket_connection_limiter(
+            &self.url,
+            self.proxy_url.as_ref().map(SecretString::expose_secret),
+        );
         let connection_rate_keys: Arc<[Ustr]> = Arc::from([websocket_connection_key()]);
         let client = WebSocketClient::builder()
             .config(config.clone())
@@ -602,16 +610,18 @@ impl BybitWebSocketClient {
                                     + WEBSOCKET_AUTH_WINDOW_MS;
                                 let signature = cred.sign_websocket_auth(expires);
 
-                                let auth_message = BybitAuthRequest {
+                                let auth_message = Zeroizing::new(BybitAuthRequest {
                                     op: BybitWsOperation::Auth,
                                     args: vec![
                                         Value::String(cred.api_key().to_string()),
                                         Value::Number(expires.into()),
                                         Value::String(signature),
                                     ],
-                                };
+                                });
 
-                                if let Ok(payload) = serde_json::to_string(&auth_message) {
+                                if let Ok(payload) =
+                                    serde_json::to_string(&*auth_message).map(SecretString::from)
+                                {
                                     let cmd = HandlerCommand::Authenticate { payload };
                                     if let Err(e) = cmd_tx_for_reconnect.send(cmd) {
                                         log::error!(
@@ -2095,16 +2105,17 @@ impl BybitWebSocketClient {
         let expires = jiff::Timestamp::now().as_millisecond() + WEBSOCKET_AUTH_WINDOW_MS;
         let signature = credential.sign_websocket_auth(expires);
 
-        let auth_message = BybitAuthRequest {
+        let auth_message = Zeroizing::new(BybitAuthRequest {
             op: BybitWsOperation::Auth,
             args: vec![
                 Value::String(credential.api_key().to_string()),
                 Value::Number(expires.into()),
                 Value::String(signature),
             ],
-        };
+        });
 
-        let payload = serde_json::to_string(&auth_message)?;
+        let payload = SecretString::from(serde_json::to_string(&*auth_message)?);
+        drop(auth_message);
 
         // Begin auth attempt so succeed() will update state
         let _rx = self.auth_tracker.begin();

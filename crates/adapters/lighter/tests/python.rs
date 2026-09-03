@@ -125,7 +125,7 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
             environment: LighterEnvironment::Testnet,
             account_index: Some(12_345),
             api_key_index: Some(5),
-            private_key: Some(PRIVATE_KEY_HEX.to_string()),
+            private_key: Some(PRIVATE_KEY_HEX.into()),
             http_timeout_secs: 7,
             rest_quota_per_min: Some(24_000),
             ..LighterDataClientConfig::default()
@@ -183,7 +183,7 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
             .environment(LighterEnvironment::Testnet)
             .account_index(12_345)
             .api_key_index(5)
-            .private_key(PRIVATE_KEY_HEX.to_string())
+            .private_key(PRIVATE_KEY_HEX.into())
             .rest_quota_per_min(24_000)
             .sendtx_quota_per_min(4_000)
             .build(),

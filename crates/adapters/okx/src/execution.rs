@@ -122,31 +122,47 @@ impl OKXExecutionClient {
         core: ExecutionClientCore,
         config: OKXExecutionClientConfig,
     ) -> anyhow::Result<Self> {
+        let api_key = config
+            .api_key
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+        let api_secret = config
+            .api_secret
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+        let api_passphrase = config
+            .api_passphrase
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
         let http_client = OKXHttpClient::with_credentials(
-            config.api_key.clone(),
-            config.api_secret.clone(),
-            config.api_passphrase.clone(),
+            api_key.clone(),
+            api_secret.clone(),
+            api_passphrase.clone(),
             Some(config.http_base_url()),
             config.http_timeout_secs,
             config.max_retries,
             config.retry_delay_initial_ms,
             config.retry_delay_max_ms,
             config.environment,
-            config.proxy_url.clone(),
+            proxy_url.clone(),
         )?;
 
         let account_id = core.account_id;
 
         let ws_private = OKXWebSocketClient::with_credentials(
             Some(config.ws_private_url()),
-            config.api_key.clone(),
-            config.api_secret.clone(),
-            config.api_passphrase.clone(),
+            api_key.clone(),
+            api_secret.clone(),
+            api_passphrase.clone(),
             Some(account_id),
             Some(OKX_WS_HEARTBEAT_SECS),
             config.auth_timeout_secs,
             config.transport_backend,
-            config.proxy_url.clone(),
+            proxy_url.clone(),
         )
         .context("failed to construct OKX private websocket client")?
         .with_socket_control(SocketControl::new(
@@ -157,14 +173,14 @@ impl OKXExecutionClient {
 
         let ws_business = OKXWebSocketClient::with_credentials(
             Some(config.ws_business_url()),
-            config.api_key.clone(),
-            config.api_secret.clone(),
-            config.api_passphrase.clone(),
+            api_key,
+            api_secret,
+            api_passphrase,
             Some(account_id),
             Some(OKX_WS_HEARTBEAT_SECS),
             config.auth_timeout_secs,
             config.transport_backend,
-            config.proxy_url.clone(),
+            proxy_url,
         )
         .context("failed to construct OKX business websocket client")?
         .with_socket_control(SocketControl::new(
@@ -3950,9 +3966,9 @@ mod tests {
 
     fn build_test_exec_client_with_cache() -> (OKXExecutionClient, Rc<RefCell<Cache>>) {
         let config = OKXExecutionClientConfig {
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            api_passphrase: Some("test_pass".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
+            api_passphrase: Some("test_pass".into()),
             ..OKXExecutionClientConfig::default()
         };
 
@@ -4064,9 +4080,9 @@ mod tests {
         });
 
         let config = OKXExecutionClientConfig {
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
-            api_passphrase: Some("test_pass".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
+            api_passphrase: Some("test_pass".into()),
             base_url_http: Some(base_url_http),
             ..OKXExecutionClientConfig::default()
         };

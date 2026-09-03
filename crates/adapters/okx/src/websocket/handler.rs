@@ -25,12 +25,14 @@
 
 use std::{
     collections::VecDeque,
+    fmt::Debug,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
 };
 
+use nautilus_core::string::secret::{REDACTED, SecretString};
 use nautilus_model::identifiers::ClientOrderId;
 use nautilus_network::{
     RECONNECTED,
@@ -60,14 +62,13 @@ use crate::{
 };
 
 /// Commands sent from the outer client to the inner message handler.
-#[derive(Debug)]
 pub enum HandlerCommand {
     /// Set the WebSocketClient for the handler to use.
     SetClient(WebSocketClient),
     /// Disconnect the WebSocket connection.
     Disconnect,
     /// Send authentication payload to the WebSocket.
-    Authenticate { payload: String },
+    Authenticate { payload: SecretString },
     /// Subscribe to the given channels.
     Subscribe { args: Vec<OKXSubscriptionArg> },
     /// Unsubscribe from the given channels.
@@ -80,6 +81,41 @@ pub enum HandlerCommand {
         client_order_ids: Vec<ClientOrderId>,
         op: Option<OKXWsOperation>,
     },
+}
+
+impl Debug for HandlerCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SetClient(_) => f.write_str("SetClient"),
+            Self::Disconnect => f.write_str("Disconnect"),
+            Self::Authenticate { .. } => f
+                .debug_struct(stringify!(Authenticate))
+                .field("payload", &REDACTED)
+                .finish(),
+            Self::Subscribe { args } => f
+                .debug_struct(stringify!(Subscribe))
+                .field("args", args)
+                .finish(),
+            Self::Unsubscribe { args } => f
+                .debug_struct(stringify!(Unsubscribe))
+                .field("args", args)
+                .finish(),
+            Self::Send {
+                rate_limit_keys,
+                request_id,
+                client_order_ids,
+                op,
+                ..
+            } => f
+                .debug_struct(stringify!(Send))
+                .field("payload", &REDACTED)
+                .field("rate_limit_keys", rate_limit_keys)
+                .field("request_id", request_id)
+                .field("client_order_ids", client_order_ids)
+                .field("op", op)
+                .finish(),
+        }
+    }
 }
 
 pub(super) struct OKXWsFeedHandler {
@@ -130,8 +166,17 @@ impl OKXWsFeedHandler {
         payload: String,
         rate_limit_keys: Option<&[Ustr]>,
     ) -> Result<(), OKXWsError> {
+        self.send_secret_with_retry(payload.into(), rate_limit_keys)
+            .await
+    }
+
+    async fn send_secret_with_retry(
+        &self,
+        payload: SecretString,
+        rate_limit_keys: Option<&[Ustr]>,
+    ) -> Result<(), OKXWsError> {
         if let Some(client) = &self.inner {
-            let keys_owned: Option<Vec<Ustr>> = rate_limit_keys.map(|k| k.to_vec());
+            let keys_owned: Option<Vec<Ustr>> = rate_limit_keys.map(<[Ustr]>::to_vec);
             self.retry_manager
                 .execute_with_retry(
                     "websocket_send",
@@ -140,7 +185,7 @@ impl OKXWsFeedHandler {
                         let keys = keys_owned.clone();
                         async move {
                             client
-                                .send_text(payload, keys.as_deref())
+                                .send_text(payload.expose_secret().to_owned(), keys.as_deref())
                                 .await
                                 .map_err(|e| OKXWsError::SendFailed(e.to_string()))
                         }
@@ -186,7 +231,7 @@ impl OKXWsFeedHandler {
                             return None;
                         }
                         HandlerCommand::Authenticate { payload } => {
-                            if let Err(e) = self.send_with_retry(
+                            if let Err(e) = self.send_secret_with_retry(
                                 payload,
                                 Some(OKX_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice()),
                             ).await {
@@ -803,6 +848,26 @@ mod tests {
             AuthTracker::new(),
             SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
         )
+    }
+
+    #[rstest]
+    fn test_command_debug_redacts_payloads() {
+        let payload = "authentication-secret";
+        let authenticate = HandlerCommand::Authenticate {
+            payload: SecretString::from(payload.to_string()),
+        };
+        let send = HandlerCommand::Send {
+            payload: payload.to_string(),
+            rate_limit_keys: None,
+            request_id: None,
+            client_order_ids: Vec::new(),
+            op: None,
+        };
+
+        let debug = format!("{authenticate:?} {send:?}");
+
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains(payload));
     }
 
     #[rstest]

@@ -25,12 +25,14 @@
 //! methods. Trade fills are emitted at `MATCHED`, retained until terminal settlement, and reversed
 //! with `OrderFillVoided` if the trade reaches `FAILED`.
 
-use std::str::FromStr;
+use std::{fmt::Debug, str::FromStr};
 
 use anyhow::Context;
 use indexmap::IndexMap;
 use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
-use nautilus_core::{UUID4, UnixNanos, collections::AtomicMap, time::AtomicTime};
+use nautilus_core::{
+    UUID4, UnixNanos, collections::AtomicMap, string::secret::REDACTED, time::AtomicTime,
+};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
@@ -123,7 +125,6 @@ struct PendingTerminalOrder {
 }
 
 /// Immutable context borrowed from the async block's owned values.
-#[derive(Debug)]
 pub(crate) struct WsDispatchContext<'a> {
     pub token_instruments: &'a AtomicMap<Ustr, InstrumentAny>,
     pub fill_tracker: &'a OrderFillTrackerMap,
@@ -134,6 +135,22 @@ pub(crate) struct WsDispatchContext<'a> {
     pub clock: &'static AtomicTime,
     pub user_address: &'a str,
     pub user_api_key: &'a str,
+}
+
+impl Debug for WsDispatchContext<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(WsDispatchContext))
+            .field("token_instruments", &self.token_instruments)
+            .field("fill_tracker", &self.fill_tracker)
+            .field("pending_submits", &self.pending_submits)
+            .field("order_identities", &self.order_identities)
+            .field("emitter", &self.emitter)
+            .field("account_id", &self.account_id)
+            .field("clock", &self.clock)
+            .field("user_address", &self.user_address)
+            .field("user_api_key", &REDACTED)
+            .finish()
+    }
 }
 
 /// Top-level router: synchronous, returns signal for async account refresh.

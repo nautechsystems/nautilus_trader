@@ -336,7 +336,7 @@ impl BlockchainExecutionClient {
         let chain = Arc::new(config.chain.clone());
         let cache = BlockchainCache::new(chain.clone());
         let http_rpc_client = Arc::new(BlockchainHttpRpcClient::new(
-            config.http_rpc_url.clone(),
+            config.http_rpc_url.clone().into_inner(),
             config.rpc_requests_per_second,
             None,
         ));
@@ -353,7 +353,7 @@ impl BlockchainExecutionClient {
         );
         let verification = VerificationCoordinator::new(
             http_rpc_client.clone(),
-            &config.http_rpc_url,
+            config.http_rpc_url.expose_secret(),
             verification_config,
             config.rpc_requests_per_second,
         )?;
@@ -6656,7 +6656,8 @@ mod tests {
                         operator_id: "operator-b".to_string(),
                         failure_domain_ids: vec!["domain-b".to_string()],
                     },
-                    http_rpc_url: format!("{http_rpc_url}{verifier_separator}source=verifier-a"),
+                    http_rpc_url: format!("{http_rpc_url}{verifier_separator}source=verifier-a")
+                        .into(),
                 },
                 BlockchainVerificationProviderConfig {
                     identity: BlockchainProviderIdentity {
@@ -6664,7 +6665,8 @@ mod tests {
                         operator_id: "operator-c".to_string(),
                         failure_domain_ids: vec!["domain-c".to_string()],
                     },
-                    http_rpc_url: format!("{http_rpc_url}{verifier_separator}source=verifier-b"),
+                    http_rpc_url: format!("{http_rpc_url}{verifier_separator}source=verifier-b")
+                        .into(),
                 },
             ],
             chain_anchor: BlockchainChainAnchorConfig {
@@ -6686,7 +6688,7 @@ mod tests {
             .client_id(AccountId::from("BLOCKCHAIN-001"))
             .chain(chains::ARBITRUM.clone())
             .wallet_address(WALLET.to_string())
-            .http_rpc_url(http_rpc_url)
+            .http_rpc_url(http_rpc_url.into())
             .verification(verification)
             .signer_private_key_env(signer_env.to_string())
             .router_addresses(vec![ROUTER.to_string()])

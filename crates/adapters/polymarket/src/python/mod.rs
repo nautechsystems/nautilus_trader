@@ -29,7 +29,10 @@ pub mod loader;
 pub mod sort;
 
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
-use nautilus_core::python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err};
+use nautilus_core::{
+    python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err},
+    string::secret::SecretString,
+};
 use nautilus_execution::{models::fee::FeeModel, python::fee::PyFeeModel};
 use nautilus_model::{
     data::ensure_rust_extractor_registered,
@@ -333,7 +336,8 @@ fn extract_data_config_from_pyobject(
         .transpose()?;
     let proxy_url = getattr_optional(obj, "proxy_url")?
         .map(|value| value.extract::<String>())
-        .transpose()?;
+        .transpose()?
+        .map(SecretString::from);
     let http_timeout_secs = getattr_optional(obj, "http_timeout_secs")?
         .map(|value| value.extract::<u64>())
         .transpose()?
@@ -729,7 +733,10 @@ mod tests {
             assert_eq!(rust_config.ws_timeout_secs, 41);
             assert_eq!(rust_config.ws_max_subscriptions, 512);
             assert_eq!(
-                rust_config.proxy_url.as_deref(),
+                rust_config
+                    .proxy_url
+                    .as_ref()
+                    .map(|value| value.expose_secret()),
                 Some("http://proxy.example:18085")
             );
             assert!(!rust_config.resolve_poll_enabled);

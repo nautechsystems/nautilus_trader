@@ -26,10 +26,14 @@
 use std::str::FromStr;
 
 use ahash::AHashMap;
-use nautilus_core::serialization::{deserialize_decimal, deserialize_optional_decimal};
+use nautilus_core::{
+    serialization::{deserialize_decimal, deserialize_optional_decimal},
+    string::secret::SecretString,
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize, de::Visitor};
 use ustr::Ustr;
+use zeroize::Zeroize;
 
 use crate::common::{
     consts::{
@@ -572,35 +576,39 @@ pub struct UnmatchedOrder {
 }
 
 /// Authentication request sent on stream connect.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Zeroize)]
 pub struct Authentication {
     pub op: String,
     pub id: Option<u64>,
     #[serde(rename = "appKey")]
-    pub app_key: String,
-    pub session: String,
+    pub app_key: SecretString,
+    pub session: SecretString,
 }
 
 impl Authentication {
     /// Creates a new authentication request.
     #[must_use]
-    pub fn new(app_key: String, session: String) -> Self {
+    pub fn new(app_key: impl Into<SecretString>, session: impl Into<SecretString>) -> Self {
         Self {
             op: STREAM_OP_AUTHENTICATION.to_string(),
             id: None,
-            app_key,
-            session,
+            app_key: app_key.into(),
+            session: session.into(),
         }
     }
 
     /// Creates a correlated authentication request.
     #[must_use]
-    pub fn with_id(app_key: String, session: String, id: u64) -> Self {
+    pub fn with_id(
+        app_key: impl Into<SecretString>,
+        session: impl Into<SecretString>,
+        id: u64,
+    ) -> Self {
         Self {
             op: STREAM_OP_AUTHENTICATION.to_string(),
             id: Some(id),
-            app_key,
-            session,
+            app_key: app_key.into(),
+            session: session.into(),
         }
     }
 }
@@ -1225,5 +1233,28 @@ mod tests {
             }
             other => panic!("Expected OrderChange, was {other:?}"),
         }
+    }
+
+    #[rstest]
+    fn test_authentication_serializes_and_redacts_debug() {
+        let authentication = Authentication::with_id(
+            "application-key-token".to_string(),
+            "session-token-value".to_string(),
+            42,
+        );
+
+        let json = serde_json::to_value(&authentication).unwrap();
+        let formatted = format!("{authentication:?}");
+
+        assert_eq!(json["op"], STREAM_OP_AUTHENTICATION);
+        assert_eq!(json["id"], 42);
+        assert_eq!(json["appKey"], "application-key-token");
+        assert_eq!(json["session"], "session-token-value");
+        assert_eq!(
+            formatted,
+            "Authentication { op: \"authentication\", id: Some(42), app_key: <redacted>, session: <redacted> }",
+        );
+        assert!(!formatted.contains("application-key-token"));
+        assert!(!formatted.contains("session-token-value"));
     }
 }

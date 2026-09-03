@@ -555,8 +555,8 @@ async fn start_test_server()
 fn create_test_exec_config(addr: SocketAddr) -> DeribitExecutionClientConfig {
     DeribitExecutionClientConfig {
         account_id: AccountId::from("DERIBIT-001"),
-        api_key: Some("test_api_key".to_string()),
-        api_secret: Some("test_api_secret".to_string()),
+        api_key: Some("test_api_key".into()),
+        api_secret: Some("test_api_secret".into()),
         product_types: vec![DeribitProductType::Future],
         base_url_http: Some(format!("http://{addr}/api/v2")),
         base_url_ws: Some(format!("ws://{addr}/ws/api/v2")),

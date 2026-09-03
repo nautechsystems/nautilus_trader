@@ -17,7 +17,7 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::{python::to_pyvalue_err, string::secret::SecretString};
 use nautilus_model::{enums::OmsType, identifiers::AccountId, types::Currency};
 use nautilus_network::websocket::TransportBackend;
 use pyo3::{
@@ -157,15 +157,15 @@ impl BinanceDataClientConfig {
             environment: environment.unwrap_or(defaults.environment),
             base_url_http: base_url_http.or(defaults.base_url_http),
             base_url_ws: base_url_ws.or(defaults.base_url_ws),
-            api_key: api_key.or(defaults.api_key),
-            api_secret: api_secret.or(defaults.api_secret),
+            api_key: api_key.map(SecretString::from).or(defaults.api_key),
+            api_secret: api_secret.map(SecretString::from).or(defaults.api_secret),
             spot_market_data_mode: spot_market_data_mode.unwrap_or(defaults.spot_market_data_mode),
             instrument_provider: instrument_provider.unwrap_or(defaults.instrument_provider),
             instrument_refresh_interval_secs: instrument_refresh_interval_secs
                 .unwrap_or(defaults.instrument_refresh_interval_secs),
             instrument_status_poll_secs: instrument_status_poll_secs
                 .unwrap_or(defaults.instrument_status_poll_secs),
-            proxy_url: proxy_url.or(defaults.proxy_url),
+            proxy_url: proxy_url.map(SecretString::from).or(defaults.proxy_url),
             recv_window_ms: recv_window_ms.unwrap_or(defaults.recv_window_ms),
             us,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
@@ -267,11 +267,11 @@ impl BinanceExecutionClientConfig {
             default_taker_fee: default_taker_fee
                 .map_or_else(|| Ok(defaults.default_taker_fee), Decimal::try_from)
                 .unwrap_or(defaults.default_taker_fee),
-            proxy_url: proxy_url.or(defaults.proxy_url),
+            proxy_url: proxy_url.map(SecretString::from).or(defaults.proxy_url),
             recv_window_ms: recv_window_ms.unwrap_or(defaults.recv_window_ms),
             us,
-            api_key: api_key.or(defaults.api_key),
-            api_secret: api_secret.or(defaults.api_secret),
+            api_key: api_key.map(SecretString::from).or(defaults.api_key),
+            api_secret: api_secret.map(SecretString::from).or(defaults.api_secret),
             futures_leverages,
             futures_margin_types,
             bnfcr_currency: bnfcr_currency.unwrap_or(defaults.bnfcr_currency),
@@ -356,8 +356,14 @@ mod tests {
             Some("https://http.example")
         );
         assert_eq!(config.base_url_ws.as_deref(), Some("wss://ws.example"));
-        assert_eq!(config.api_key.as_deref(), Some("api-key"));
-        assert_eq!(config.api_secret.as_deref(), Some("api-secret"));
+        assert_eq!(
+            config.api_key.as_ref().map(SecretString::expose_secret),
+            Some("api-key"),
+        );
+        assert_eq!(
+            config.api_secret.as_ref().map(SecretString::expose_secret),
+            Some("api-secret"),
+        );
         assert_eq!(
             config.spot_market_data_mode,
             BinanceSpotMarketDataMode::Json
@@ -365,7 +371,7 @@ mod tests {
         assert_eq!(config.instrument_refresh_interval_secs, 30);
         assert_eq!(config.instrument_status_poll_secs, 15);
         assert_eq!(
-            config.proxy_url.as_deref(),
+            config.proxy_url.as_ref().map(SecretString::expose_secret),
             Some("http://proxy.example:8080")
         );
         assert_eq!(config.recv_window_ms, 45_000);
@@ -469,12 +475,18 @@ mod tests {
         assert_eq!(config.oms_type, Some(OmsType::Hedging));
         assert_eq!(config.default_taker_fee, Decimal::try_from(0.0015).unwrap());
         assert_eq!(
-            config.proxy_url.as_deref(),
+            config.proxy_url.as_ref().map(SecretString::expose_secret),
             Some("http://proxy.example:8080")
         );
         assert_eq!(config.recv_window_ms, 60_000);
-        assert_eq!(config.api_key.as_deref(), Some("api-key"));
-        assert_eq!(config.api_secret.as_deref(), Some("api-secret"));
+        assert_eq!(
+            config.api_key.as_ref().map(SecretString::expose_secret),
+            Some("api-key"),
+        );
+        assert_eq!(
+            config.api_secret.as_ref().map(SecretString::expose_secret),
+            Some("api-secret"),
+        );
         assert_eq!(config.futures_leverages, Some(leverages));
         assert_eq!(config.futures_margin_types, Some(margin_types));
         assert_eq!(config.bnfcr_currency, Currency::USDC());

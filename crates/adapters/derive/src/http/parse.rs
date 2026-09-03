@@ -16,6 +16,8 @@
 //! HTTP response parsing utilities for the Derive execution client.
 
 use anyhow::Context;
+#[cfg(test)]
+use nautilus_core::string::secret::SecretString;
 use nautilus_core::{Params, UUID4, UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND};
 use nautilus_model::{
     enums::{LiquiditySide, OrderType, PositionSide},
@@ -473,7 +475,7 @@ mod tests {
             order_type: DeriveOrderType::Limit,
             quote_id: None,
             replaced_order_id: None,
-            signature: "0x00".to_string(),
+            signature: SecretString::from("0x00"),
             signature_expiry_sec: 1_700_000_999,
             signer: "0xsigner".into(),
             subaccount_id: 30769,

@@ -1072,7 +1072,7 @@ fn test_config(rest: SocketAddr, ws: SocketAddr) -> DeriveExecutionClientConfig 
     DeriveExecutionClientConfig {
         account_id: AccountId::from("DERIVE-001"),
         wallet_address: Some(TEST_WALLET.to_string()),
-        session_key: Some(TEST_SESSION_KEY.to_string()),
+        session_key: Some(TEST_SESSION_KEY.into()),
         subaccount_id: Some(TEST_SUBACCOUNT),
         base_url_rest: Some(rest_url(rest)),
         base_url_ws: Some(ws_url(ws)),

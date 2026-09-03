@@ -28,7 +28,12 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use futures_util::{StreamExt, stream::FuturesUnordered};
-use nautilus_core::{AtomicTime, nanos::UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{
+    AtomicTime,
+    nanos::UnixNanos,
+    string::secret::{REDACTED, SecretString},
+    time::get_atomic_clock_realtime,
+};
 use nautilus_model::{identifiers::AccountId, instruments::InstrumentAny, types::Currency};
 use nautilus_network::{
     RECONNECTED,
@@ -39,6 +44,7 @@ use nautilus_network::{
 use rust_decimal::Decimal;
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
+use zeroize::Zeroize;
 
 use super::{
     account_state::LighterAccountStateReconciler,
@@ -103,7 +109,7 @@ pub enum HandlerCommand {
     /// account-scoped channels.
     Subscribe {
         channel: LighterWsChannel,
-        auth: Option<String>,
+        auth: Option<SecretString>,
         response_tx: Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
     },
     /// Unsubscribe from a channel.
@@ -156,7 +162,7 @@ impl Debug for HandlerCommand {
             Self::Subscribe { channel, auth, .. } => f
                 .debug_struct(stringify!(Subscribe))
                 .field("channel", channel)
-                .field("authed", &auth.is_some())
+                .field("auth", auth)
                 .finish(),
             Self::Unsubscribe { channel } => f
                 .debug_struct(stringify!(Unsubscribe))
@@ -201,7 +207,7 @@ impl Debug for HandlerCommand {
             Self::SendTx { tx_type, .. } => f
                 .debug_struct(stringify!(SendTx))
                 .field("tx_type", tx_type)
-                .field("tx_info", &"<redacted>")
+                .field("tx_info", &REDACTED)
                 .finish(),
         }
     }
@@ -250,8 +256,8 @@ struct CachedOrderBook {
 
 struct SubscriptionAttempt {
     channel: LighterWsChannel,
-    auth: Option<String>,
-    pending_auth: Option<String>,
+    auth: Option<SecretString>,
+    pending_auth: Option<SecretString>,
     generation: u64,
     retries: u8,
     response_txs: Vec<tokio::sync::oneshot::Sender<Result<(), String>>>,
@@ -358,6 +364,11 @@ impl FeedHandler {
     }
 
     async fn send_with_retry(&self, payload: String) -> Result<(), LighterWsError> {
+        self.send_secret_with_retry(SecretString::from(payload))
+            .await
+    }
+
+    async fn send_secret_with_retry(&self, payload: SecretString) -> Result<(), LighterWsError> {
         if let Some(client) = &self.inner {
             self.retry_manager
                 .execute_with_retry(
@@ -367,7 +378,7 @@ impl FeedHandler {
                         async move {
                             client
                                 .send_text(
-                                    payload,
+                                    payload.expose_secret().to_owned(),
                                     Some(LIGHTER_WS_MESSAGE_RATE_LIMIT_KEY.as_slice()),
                                 )
                                 .await
@@ -412,22 +423,35 @@ impl FeedHandler {
     async fn dispatch_subscribe(
         &self,
         channel: LighterWsChannel,
-        auth: Option<String>,
+        auth: Option<SecretString>,
     ) -> Result<(), String> {
         let topic = channel.topic_key();
 
         let authed = auth.is_some();
-        let request = match auth {
-            Some(token) => LighterWsRequest::subscribe_auth(channel.subscription_channel(), token),
+        let mut request = match auth {
+            Some(token) => LighterWsRequest::subscribe_auth(
+                channel.subscription_channel(),
+                token.expose_secret(),
+            ),
             None => LighterWsRequest::subscribe(channel.subscription_channel()),
         };
 
-        match serde_json::to_string(&request) {
+        let payload = serde_json::to_string(&request);
+        request.zeroize();
+
+        match payload {
             Ok(payload) => {
                 // Avoid logging the serialized payload for authenticated channels;
                 // it embeds a live Lighter L2 bearer token.
                 log::debug!("Sending Lighter subscribe: topic={topic} authed={authed}");
-                if let Err(e) = self.send_with_retry(payload).await {
+                let result = if authed {
+                    self.send_secret_with_retry(SecretString::from(payload))
+                        .await
+                } else {
+                    self.send_with_retry(payload).await
+                };
+
+                if let Err(e) = result {
                     log::error!("Error subscribing to {topic}: {e}");
                     Err(e.to_string())
                 } else {
@@ -718,15 +742,20 @@ impl FeedHandler {
     fn queue_subscribe(
         &mut self,
         channel: LighterWsChannel,
-        auth: Option<String>,
+        auth: Option<SecretString>,
         response_tx: Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
     ) {
         let topic = Ustr::from(channel.topic_key().as_str());
         if let Some(attempt) = self.subscription_attempts.get_mut(&topic) {
             attempt.channel = channel;
-            let effective_auth = attempt.pending_auth.as_ref().or(attempt.auth.as_ref());
+            let effective_auth = attempt
+                .pending_auth
+                .as_ref()
+                .or(attempt.auth.as_ref())
+                .map(SecretString::expose_secret);
             let auth_changed = auth
                 .as_ref()
+                .map(SecretString::expose_secret)
                 .is_some_and(|auth| Some(auth) != effective_auth);
 
             if auth_changed {
@@ -3395,7 +3424,7 @@ mod tests {
         let token = "schnorr-signature-bytes-do-not-leak";
         let cmd = HandlerCommand::Subscribe {
             channel: LighterWsChannel::AccountAll(1234),
-            auth: Some(token.to_string()),
+            auth: Some(SecretString::from(token)),
             response_tx: None,
         };
 
@@ -3405,7 +3434,7 @@ mod tests {
             !dbg.contains(token),
             "Debug output must not contain the auth token, found: {dbg}",
         );
-        assert!(dbg.contains("authed"), "Debug should include authed flag");
+        assert!(dbg.contains(REDACTED));
     }
 
     #[tokio::test]
@@ -4012,14 +4041,31 @@ mod tests {
         let (old_tx, old_rx) = tokio::sync::oneshot::channel();
         let (fresh_tx, mut fresh_rx) = tokio::sync::oneshot::channel();
 
-        handler.queue_subscribe(channel.clone(), Some("old-token".to_string()), Some(old_tx));
+        handler.queue_subscribe(
+            channel.clone(),
+            Some(SecretString::from("old-token")),
+            Some(old_tx),
+        );
         let (queued_topic, old_generation) = handler.pending_subs.pop_front().unwrap();
         handler.inflight_subs.insert(queued_topic, old_generation);
-        handler.queue_subscribe(channel, Some("fresh-token".to_string()), Some(fresh_tx));
+        handler.queue_subscribe(
+            channel,
+            Some(SecretString::from("fresh-token")),
+            Some(fresh_tx),
+        );
 
         let attempt = &handler.subscription_attempts[&topic];
-        assert_eq!(attempt.auth.as_deref(), Some("old-token"));
-        assert_eq!(attempt.pending_auth.as_deref(), Some("fresh-token"));
+        assert_eq!(
+            attempt.auth.as_ref().map(SecretString::expose_secret),
+            Some("old-token")
+        );
+        assert_eq!(
+            attempt
+                .pending_auth
+                .as_ref()
+                .map(SecretString::expose_secret),
+            Some("fresh-token")
+        );
         assert_eq!(attempt.response_txs.len(), 1);
         assert_eq!(attempt.pending_response_txs.len(), 1);
 
@@ -4031,7 +4077,10 @@ mod tests {
         ));
         let attempt = &handler.subscription_attempts[&topic];
         assert_ne!(attempt.generation, old_generation);
-        assert_eq!(attempt.auth.as_deref(), Some("fresh-token"));
+        assert_eq!(
+            attempt.auth.as_ref().map(SecretString::expose_secret),
+            Some("fresh-token")
+        );
         assert!(attempt.pending_auth.is_none());
         assert_eq!(
             handler.pending_subs.front(),
@@ -4068,7 +4117,11 @@ mod tests {
 
         // Predecessor completes on its control ack and is removed before any
         // pending auth exists.
-        handler.queue_subscribe(channel.clone(), Some("old-token".to_string()), Some(old_tx));
+        handler.queue_subscribe(
+            channel.clone(),
+            Some(SecretString::from("old-token")),
+            Some(old_tx),
+        );
         let (queued_topic, old_generation) = handler.pending_subs.pop_front().unwrap();
         handler.inflight_subs.insert(queued_topic, old_generation);
         assert!(handler.complete_subscription(topic.as_str(), CompletionKind::ControlAck));
@@ -4076,7 +4129,11 @@ mod tests {
         assert!(handler.subscription_attempts.is_empty());
 
         // The fresh command then creates and dispatches a brand-new attempt.
-        handler.queue_subscribe(channel, Some("fresh-token".to_string()), Some(fresh_tx));
+        handler.queue_subscribe(
+            channel,
+            Some(SecretString::from("fresh-token")),
+            Some(fresh_tx),
+        );
         let (_, fresh_generation) = handler.pending_subs.pop_front().unwrap();
         handler.inflight_subs.insert(topic, fresh_generation);
 
@@ -4104,15 +4161,26 @@ mod tests {
         let (old_tx, old_rx) = tokio::sync::oneshot::channel();
         let (fresh_tx, fresh_rx) = tokio::sync::oneshot::channel();
 
-        handler.queue_subscribe(channel.clone(), Some("old-token".to_string()), Some(old_tx));
+        handler.queue_subscribe(
+            channel.clone(),
+            Some(SecretString::from("old-token")),
+            Some(old_tx),
+        );
         let generation = handler.pending_subs[0].1;
-        handler.queue_subscribe(channel, Some("fresh-token".to_string()), Some(fresh_tx));
+        handler.queue_subscribe(
+            channel,
+            Some(SecretString::from("fresh-token")),
+            Some(fresh_tx),
+        );
 
         assert_eq!(handler.pending_subs.len(), 1);
         assert_eq!(handler.pending_subs[0], (topic, generation));
         let attempt = &handler.subscription_attempts[&topic];
         assert_eq!(attempt.generation, generation);
-        assert_eq!(attempt.auth.as_deref(), Some("fresh-token"));
+        assert_eq!(
+            attempt.auth.as_ref().map(SecretString::expose_secret),
+            Some("fresh-token")
+        );
         assert!(attempt.pending_auth.is_none());
         assert_eq!(attempt.response_txs.len(), 2);
         assert!(attempt.pending_response_txs.is_empty());
@@ -4132,15 +4200,32 @@ mod tests {
         let (old_tx, mut old_rx) = tokio::sync::oneshot::channel();
         let (fresh_tx, mut fresh_rx) = tokio::sync::oneshot::channel();
 
-        handler.queue_subscribe(channel.clone(), Some("old-token".to_string()), Some(old_tx));
+        handler.queue_subscribe(
+            channel.clone(),
+            Some(SecretString::from("old-token")),
+            Some(old_tx),
+        );
         handler.reset_subscription_attempts_after_reconnect();
         let (_, replay_generation) = handler.pending_subs.pop_front().unwrap();
         handler.inflight_subs.insert(topic, replay_generation);
-        handler.queue_subscribe(channel, Some("fresh-token".to_string()), Some(fresh_tx));
+        handler.queue_subscribe(
+            channel,
+            Some(SecretString::from("fresh-token")),
+            Some(fresh_tx),
+        );
 
         let attempt = &handler.subscription_attempts[&topic];
-        assert_eq!(attempt.auth.as_deref(), Some("old-token"));
-        assert_eq!(attempt.pending_auth.as_deref(), Some("fresh-token"));
+        assert_eq!(
+            attempt.auth.as_ref().map(SecretString::expose_secret),
+            Some("old-token")
+        );
+        assert_eq!(
+            attempt
+                .pending_auth
+                .as_ref()
+                .map(SecretString::expose_secret),
+            Some("fresh-token")
+        );
         assert_eq!(attempt.response_txs.len(), 1);
         assert_eq!(attempt.pending_response_txs.len(), 1);
 
@@ -4148,7 +4233,10 @@ mod tests {
 
         let attempt = &handler.subscription_attempts[&topic];
         assert_ne!(attempt.generation, replay_generation);
-        assert_eq!(attempt.auth.as_deref(), Some("fresh-token"));
+        assert_eq!(
+            attempt.auth.as_ref().map(SecretString::expose_secret),
+            Some("fresh-token")
+        );
         assert!(attempt.pending_auth.is_none());
         assert_eq!(attempt.response_txs.len(), 2);
         assert!(attempt.pending_response_txs.is_empty());
@@ -4183,7 +4271,11 @@ mod tests {
         let (old_tx, mut old_rx) = tokio::sync::oneshot::channel();
         let (fresh_tx, mut fresh_rx) = tokio::sync::oneshot::channel();
 
-        handler.queue_subscribe(channel.clone(), Some("old-token".to_string()), Some(old_tx));
+        handler.queue_subscribe(
+            channel.clone(),
+            Some(SecretString::from("old-token")),
+            Some(old_tx),
+        );
         let (_, generation) = handler.pending_subs.pop_front().unwrap();
         handler.inflight_subs.insert(topic, generation);
         handler
@@ -4191,14 +4283,21 @@ mod tests {
             .get_mut(&topic)
             .unwrap()
             .retries = 2;
-        handler.queue_subscribe(channel, Some("fresh-token".to_string()), Some(fresh_tx));
+        handler.queue_subscribe(
+            channel,
+            Some(SecretString::from("fresh-token")),
+            Some(fresh_tx),
+        );
 
         handler.schedule_subscription_retry(topic, generation, "retry");
 
         let attempt = &handler.subscription_attempts[&topic];
         assert_eq!(attempt.retries, 3);
         assert_ne!(attempt.generation, generation);
-        assert_eq!(attempt.auth.as_deref(), Some("fresh-token"));
+        assert_eq!(
+            attempt.auth.as_ref().map(SecretString::expose_secret),
+            Some("fresh-token")
+        );
         assert!(attempt.pending_auth.is_none());
         assert_eq!(attempt.response_txs.len(), 2);
         assert!(attempt.pending_response_txs.is_empty());
@@ -4226,7 +4325,7 @@ mod tests {
 
         handler.queue_subscribe(
             channel,
-            Some("rotated-auth-token".to_string()),
+            Some(SecretString::from("rotated-auth-token")),
             Some(response_tx),
         );
 

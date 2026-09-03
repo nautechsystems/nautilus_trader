@@ -56,8 +56,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
 
     let ax_config = AxDataClientConfig {
-        api_key: std::env::var("AX_API_KEY").ok(),
-        api_secret: std::env::var("AX_API_SECRET").ok(),
+        api_key: std::env::var("AX_API_KEY").ok().map(Into::into),
+        api_secret: std::env::var("AX_API_SECRET").ok().map(Into::into),
         environment: AX_ENVIRONMENT,
         ..Default::default()
     };

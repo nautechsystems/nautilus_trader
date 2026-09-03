@@ -32,6 +32,7 @@ use std::{
 };
 
 use ahash::AHashMap;
+use nautilus_core::string::secret::SecretString;
 use nautilus_live::task::{SharedTaskSlot, TaskJoinOutcome};
 use nautilus_network::{
     RECONNECTED,
@@ -53,11 +54,11 @@ pub(super) enum HandlerCommand {
     /// Hand the active [`WebSocketClient`] to the handler.
     SetClient(WebSocketClient),
     /// Send a JSON-RPC request and resolve the oneshot when the venue replies.
-    /// `params` is a pre-serialized `Value` so the handler stays agnostic to the
+    /// `params` is pre-serialized JSON so the handler stays agnostic to the
     /// per-method param types (login, subscribe, signed `private/*` bodies).
     Request {
         method: &'static str,
-        params: Value,
+        params: SecretString,
         connection_epoch: Option<u64>,
         response_tx: tokio::sync::oneshot::Sender<Result<Value, DeriveWsError>>,
     },
@@ -85,7 +86,7 @@ struct SendCommand {
     id: u64,
     token: u64,
     connection_epoch: u64,
-    payload: String,
+    payload: SecretString,
 }
 
 #[derive(Debug)]
@@ -299,7 +300,7 @@ impl FeedHandler {
     fn dispatch_request(
         &mut self,
         method: &'static str,
-        params: Value,
+        params: SecretString,
         connection_epoch: Option<u64>,
         response_tx: tokio::sync::oneshot::Sender<Result<Value, DeriveWsError>>,
     ) {
@@ -335,7 +336,7 @@ impl FeedHandler {
     fn enqueue_request(
         &mut self,
         method: &'static str,
-        params: Value,
+        params_json: SecretString,
         connection_epoch: u64,
         response_tx: tokio::sync::oneshot::Sender<Result<Value, DeriveWsError>>,
     ) {
@@ -346,9 +347,17 @@ impl FeedHandler {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let token = self.next_send_token;
         self.next_send_token = self.next_send_token.wrapping_add(1);
+        let params: Value = match serde_json::from_str(params_json.expose_secret()) {
+            Ok(params) => params,
+            Err(e) => {
+                let _ = response_tx.send(Err(DeriveWsError::Serde(e)));
+                return;
+            }
+        };
+        drop(params_json);
         let request = JsonRpcRequest::new(id, method, params);
         let payload = match serde_json::to_string(&request) {
-            Ok(p) => p,
+            Ok(payload) => SecretString::from(payload),
             Err(e) => {
                 let _ = response_tx.send(Err(DeriveWsError::Serde(e)));
                 return;
@@ -497,7 +506,11 @@ async fn run_send_worker(
 ) {
     while let Some(command) = send_rx.recv().await {
         if let Err(e) = client
-            .send_text_on_connection(command.payload, None, command.connection_epoch)
+            .send_text_on_connection(
+                command.payload.expose_secret().to_owned(),
+                None,
+                command.connection_epoch,
+            )
             .await
             && failure_tx
                 .send(SendFailure {
@@ -547,6 +560,7 @@ pub(super) fn trades_subscribe_params(instrument_type: &str, currency: &str) -> 
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::string::secret::zeroize_json_value;
     use rstest::rstest;
     use serde_json::json;
 
@@ -554,6 +568,34 @@ mod tests {
 
     fn unauthenticated_epoch() -> Arc<AtomicU64> {
         Arc::new(AtomicU64::new(u64::MAX))
+    }
+
+    fn secret_json(mut value: Value) -> SecretString {
+        let serialized = SecretString::from(value.to_string());
+        zeroize_json_value(&mut value);
+        serialized
+    }
+
+    #[rstest]
+    fn test_queued_request_debug_redacts_payload() {
+        let secret = "signature-secret";
+        let (response_tx, _response_rx) = tokio::sync::oneshot::channel();
+        let command = HandlerCommand::Request {
+            method: "public/login",
+            params: SecretString::from(format!(r#"{{"signature":"{secret}"}}"#)),
+            connection_epoch: None,
+            response_tx,
+        };
+        let send = SendCommand {
+            id: 1,
+            token: 1,
+            connection_epoch: 1,
+            payload: SecretString::from(format!(r#"{{"signature":"{secret}"}}"#)),
+        };
+
+        let debug = format!("{command:?} {send:?}");
+
+        assert!(!debug.contains(secret));
     }
 
     fn feed_handler(
@@ -630,7 +672,8 @@ mod tests {
         );
 
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
-        let params = serde_json::to_value(WsSubscribeParams { channels: vec![] }).unwrap();
+        let params =
+            secret_json(serde_json::to_value(WsSubscribeParams { channels: vec![] }).unwrap());
         handler.dispatch_request("public/login", params, None, response_tx);
 
         let outcome = response_rx.await.expect("oneshot resolved");
@@ -661,13 +704,13 @@ mod tests {
 
         let (first_tx, _first_rx) = tokio::sync::oneshot::channel();
         let (second_tx, _second_rx) = tokio::sync::oneshot::channel();
-        handler.enqueue_request("first", json!({"sequence": 1}), 0, first_tx);
-        handler.enqueue_request("second", json!({"sequence": 2}), 0, second_tx);
+        handler.enqueue_request("first", secret_json(json!({"sequence": 1})), 0, first_tx);
+        handler.enqueue_request("second", secret_json(json!({"sequence": 2})), 0, second_tx);
 
         let first = send_rx.recv().await.expect("first queued send");
         let second = send_rx.recv().await.expect("second queued send");
-        let first_payload: Value = serde_json::from_str(&first.payload).unwrap();
-        let second_payload: Value = serde_json::from_str(&second.payload).unwrap();
+        let first_payload: Value = serde_json::from_str(first.payload.expose_secret()).unwrap();
+        let second_payload: Value = serde_json::from_str(second.payload.expose_secret()).unwrap();
 
         assert_eq!(first.id, 1);
         assert_eq!(second.id, 2);
@@ -697,7 +740,7 @@ mod tests {
         handler.send_tx = Some(send_tx);
 
         let (old_tx, old_rx) = tokio::sync::oneshot::channel();
-        handler.enqueue_request("first", json!({}), 0, old_tx);
+        handler.enqueue_request("first", secret_json(json!({})), 0, old_tx);
         let old_send = send_rx.recv().await.expect("old queued send");
         let old_pending = handler.pending.remove(&old_send.id).unwrap();
         old_pending.response_tx.send(Ok(Value::Null)).unwrap();
@@ -705,7 +748,7 @@ mod tests {
 
         next_id.store(old_send.id, Ordering::Relaxed);
         let (new_tx, new_rx) = tokio::sync::oneshot::channel();
-        handler.enqueue_request("second", json!({}), 0, new_tx);
+        handler.enqueue_request("second", secret_json(json!({})), 0, new_tx);
         let new_send = send_rx.recv().await.expect("new queued send");
         handler.handle_send_failure(SendFailure {
             id: old_send.id,
@@ -754,8 +797,8 @@ mod tests {
 
         let (first_tx, first_rx) = tokio::sync::oneshot::channel();
         let (second_tx, second_rx) = tokio::sync::oneshot::channel();
-        handler.enqueue_request("first", json!({}), 0, first_tx);
-        handler.enqueue_request("second", json!({}), 0, second_tx);
+        handler.enqueue_request("first", secret_json(json!({})), 0, first_tx);
+        handler.enqueue_request("second", secret_json(json!({})), 0, second_tx);
         handler.shutdown_send_path("disconnect requested").await;
         tokio::task::yield_now().await;
 
@@ -816,7 +859,7 @@ mod tests {
         let (send_tx, _send_rx) = tokio::sync::mpsc::unbounded_channel();
         handler.send_tx = Some(send_tx);
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
-        handler.enqueue_request("request", json!({}), 0, response_tx);
+        handler.enqueue_request("request", secret_json(json!({})), 0, response_tx);
 
         handler.fail_uncorrelated_error(crate::http::models::JsonRpcError {
             code: -32700,
@@ -860,8 +903,8 @@ mod tests {
         handler.send_tx = Some(send_tx);
         let (first_tx, first_rx) = tokio::sync::oneshot::channel();
         let (second_tx, second_rx) = tokio::sync::oneshot::channel();
-        handler.enqueue_request("first", json!({}), 0, first_tx);
-        handler.enqueue_request("second", json!({}), 0, second_tx);
+        handler.enqueue_request("first", secret_json(json!({})), 0, first_tx);
+        handler.enqueue_request("second", secret_json(json!({})), 0, second_tx);
 
         handler.fail_uncorrelated_error(crate::http::models::JsonRpcError {
             code: -32600,

@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
+    fmt::Debug,
     str::FromStr,
     sync::{
         Arc,
@@ -29,7 +30,9 @@ use dashmap::DashMap;
 use nautilus_common::cache::{InstrumentLookupError, fifo::FifoCacheMap};
 #[cfg(test)]
 use nautilus_common::live::get_runtime;
-use nautilus_core::AtomicMap;
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::{AtomicMap, string::secret::SecretString};
 use nautilus_live::{
     SocketControl,
     task::{SharedTaskSlot, TaskJoinOutcome},
@@ -141,7 +144,7 @@ pub struct HyperliquidWebSocketClient {
     connect_lock: Arc<tokio::sync::Mutex<()>>,
     account_id: Option<AccountId>,
     transport_backend: TransportBackend,
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
     socket_sink: Option<SocketStateSink>,
     socket_control: Option<SocketControl>,
 }
@@ -228,7 +231,7 @@ impl HyperliquidWebSocketClient {
             connect_lock: Arc::new(tokio::sync::Mutex::new(())),
             account_id,
             transport_backend,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             socket_sink: None,
             socket_control: None,
         }
@@ -284,7 +287,10 @@ impl HyperliquidWebSocketClient {
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         };
         let client = WebSocketClient::builder()
             .config(cfg)
@@ -2346,6 +2352,23 @@ mod tests {
         common::{consts::INFLIGHT_MAX, enums::HyperliquidBarInterval},
         websocket::handler::subscription_to_key,
     };
+
+    #[rstest]
+    fn test_debug_redacts_proxy_url() {
+        let proxy_url = "http://user:password@proxy.example:8080";
+        let client = HyperliquidWebSocketClient::new(
+            Some("wss://test".to_string()),
+            HyperliquidEnvironment::Testnet,
+            None,
+            TransportBackend::default(),
+            Some(proxy_url.to_string()),
+        );
+
+        let debug = format!("{client:?}");
+
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains(proxy_url));
+    }
 
     #[tokio::test]
     async fn test_drop_clone_does_not_stop_handler() {

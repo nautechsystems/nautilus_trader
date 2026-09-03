@@ -105,6 +105,10 @@ impl KrakenFuturesDataClient {
         let session_tasks = TaskGroup::new();
         let cancellation_token = session_tasks.cancellation_token();
         let command_tasks = TaskGroup::new();
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
 
         let http = KrakenFuturesHttpClient::new(
             config.environment,
@@ -113,7 +117,7 @@ impl KrakenFuturesDataClient {
             None,
             None,
             None,
-            config.proxy_url.clone(),
+            proxy_url.clone(),
             config
                 .max_requests_per_second
                 .unwrap_or(KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND),
@@ -125,7 +129,7 @@ impl KrakenFuturesDataClient {
             None,
             None,
             config.transport_backend,
-            config.proxy_url.clone(),
+            proxy_url,
         )
         .with_socket_control(SocketControl::new(
             client_id,
@@ -241,7 +245,10 @@ impl KrakenFuturesDataClient {
                 None,
                 None,
                 self.config.transport_backend,
-                self.config.proxy_url.clone(),
+                self.config
+                    .proxy_url
+                    .as_ref()
+                    .map(|value| value.expose_secret().to_owned()),
             )
             .with_socket_control(SocketControl::new(
                 self.client_id,

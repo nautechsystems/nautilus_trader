@@ -116,18 +116,30 @@ impl DeribitDataClient {
     pub fn new(client_id: ClientId, config: DeribitDataClientConfig) -> anyhow::Result<Self> {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
+        let api_key = config
+            .api_key
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+        let api_secret = config
+            .api_secret
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
 
         let http_client = if config.has_api_credentials() {
             DeribitHttpClient::new_with_env(
-                config.api_key.clone(),
-                config.api_secret.clone(),
+                api_key.clone(),
+                api_secret.clone(),
                 config.base_url_http.clone(),
                 config.environment,
                 config.http_timeout_secs,
                 config.max_retries,
                 config.retry_delay_initial_ms,
                 config.retry_delay_max_ms,
-                config.proxy_url.clone(),
+                proxy_url.clone(),
             )?
         } else {
             DeribitHttpClient::new(
@@ -137,19 +149,19 @@ impl DeribitDataClient {
                 config.max_retries,
                 config.retry_delay_initial_ms,
                 config.retry_delay_max_ms,
-                config.proxy_url.clone(),
+                proxy_url.clone(),
             )?
         };
 
         let ws_client = DeribitWebSocketClient::new(
             Some(config.ws_url()),
-            config.api_key.clone(),
-            config.api_secret.clone(),
+            api_key,
+            api_secret,
             config.heartbeat_interval_secs,
             config.auth_timeout_secs,
             config.environment,
             config.transport_backend,
-            config.proxy_url.clone(),
+            proxy_url,
         )?
         .with_socket_control(SocketControl::new(
             client_id,

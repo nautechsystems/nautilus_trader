@@ -120,23 +120,30 @@ impl CoinbaseDataClient {
         let data_sender = get_data_event_sender();
 
         let retry_config = data_client_retry_config();
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
 
         let http_client = match CoinbaseCredential::resolve(
-            config.api_key.as_deref(),
-            config.api_secret.as_deref(),
+            config.api_key.as_ref().map(|value| value.expose_secret()),
+            config
+                .api_secret
+                .as_ref()
+                .map(|value| value.expose_secret()),
         ) {
             Some(credential) => CoinbaseHttpClient::with_credentials(
                 credential,
                 config.environment,
                 config.http_timeout_secs,
-                config.proxy_url.clone(),
+                proxy_url.clone(),
                 Some(retry_config),
             )
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
             None => CoinbaseHttpClient::new(
                 config.environment,
                 config.http_timeout_secs,
-                config.proxy_url.clone(),
+                proxy_url.clone(),
                 Some(retry_config),
             )
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
@@ -147,16 +154,12 @@ impl CoinbaseDataClient {
         }
 
         let ws_url = config.ws_url();
-        let ws_client = CoinbaseWebSocketClient::new(
-            &ws_url,
-            config.transport_backend,
-            config.proxy_url.clone(),
-        )
-        .with_socket_control(SocketControl::new(
-            client_id,
-            Some(*COINBASE_VENUE),
-            "coinbase-data-streams",
-        ));
+        let ws_client = CoinbaseWebSocketClient::new(&ws_url, config.transport_backend, proxy_url)
+            .with_socket_control(SocketControl::new(
+                client_id,
+                Some(*COINBASE_VENUE),
+                "coinbase-data-streams",
+            ));
         let provider = CoinbaseInstrumentProvider::new(http_client.clone());
 
         let deriv_polls = DerivPollManager::new(

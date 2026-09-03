@@ -1401,7 +1401,10 @@ async fn test_spot_raw_get_websockets_token_with_credentials() {
     assert!(result.is_ok(), "Failed to get websockets token: {result:?}");
 
     let token = result.unwrap();
-    assert_eq!(token.token, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    assert_eq!(
+        token.token.expose_secret(),
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    );
     assert_eq!(token.expires, 900);
 }
 

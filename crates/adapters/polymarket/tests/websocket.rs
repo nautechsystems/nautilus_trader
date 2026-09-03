@@ -93,7 +93,12 @@ fn load_json(filename: &str) -> Value {
 }
 
 fn test_credential() -> Credential {
-    Credential::new("test_api_key", TEST_API_SECRET_B64, "test_pass".to_string()).unwrap()
+    Credential::new(
+        "test_api_key".into(),
+        TEST_API_SECRET_B64.into(),
+        "test_pass".into(),
+    )
+    .unwrap()
 }
 
 async fn handle_market_upgrade(

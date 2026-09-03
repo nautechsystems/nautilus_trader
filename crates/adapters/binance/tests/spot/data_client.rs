@@ -843,10 +843,8 @@ fn create_test_data_client_with_mode(
     let config = BinanceDataClientConfig {
         base_url_http: Some(base_url_http),
         base_url_ws: Some(base_url_ws),
-        api_key: Some("test-api-key".to_string()),
-        api_secret: Some(
-            "MC4CAQAwBQYDK2VwBCIEIJ1hsZ3v/VpguoRK9JLsLMREScVpezJpGXA7rAMcrn9g".to_string(),
-        ),
+        api_key: Some("test-api-key".into()),
+        api_secret: Some("MC4CAQAwBQYDK2VwBCIEIJ1hsZ3v/VpguoRK9JLsLMREScVpezJpGXA7rAMcrn9g".into()),
         spot_market_data_mode,
         ..Default::default()
     };

@@ -18,7 +18,9 @@ use nautilus_common::messages::execution::{
     GenerateFillReports, GenerateOrderStatusReport, GenerateOrderStatusReports,
     GeneratePositionStatusReports, QueryAccount, QueryOrder,
 };
-use nautilus_core::{UnixNanos, collections::AtomicMap, time::AtomicTime};
+use nautilus_core::{
+    UnixNanos, collections::AtomicMap, string::secret::SecretString, time::AtomicTime,
+};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
@@ -86,7 +88,7 @@ impl PolymarketExecutionClient {
         FillContext {
             account_id: self.core.account_id,
             user_address,
-            api_key: self.secrets.credential.api_key().as_str(),
+            api_key: self.secrets.credential.api_key_str(),
             pusd: get_pusd_currency(),
             clock: self.clock,
         }
@@ -418,7 +420,7 @@ impl PolymarketExecutionClient {
             .funder
             .clone()
             .unwrap_or_else(|| self.secrets.address.clone());
-        let api_key = self.secrets.credential.api_key().to_string();
+        let api_key = SecretString::from(self.secrets.credential.api_key_str().to_string());
         let load_ids = self.config.reconciliation_load_ids().map(Vec::from);
         let cached_filled = cached_order.filled_qty();
 
@@ -428,7 +430,7 @@ impl PolymarketExecutionClient {
                     let ctx = FillContext {
                         account_id,
                         user_address: &user_address,
-                        api_key: &api_key,
+                        api_key: api_key.expose_secret(),
                         pusd: get_pusd_currency(),
                         clock,
                     };

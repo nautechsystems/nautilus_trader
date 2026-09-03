@@ -32,6 +32,9 @@
 //! signature}` instead of headers.
 
 use alloy::signers::{SignerSync, local::PrivateKeySigner};
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
 use thiserror::Error;
 
 use crate::signing::encoding::utc_now_ms;
@@ -58,7 +61,7 @@ pub struct AuthHeaders {
     /// Millisecond UNIX timestamp string (`X-LYRATIMESTAMP`).
     pub timestamp: String,
     /// 0x-prefixed signature hex (`X-LYRASIGNATURE`).
-    pub signature: String,
+    pub signature: SecretString,
 }
 
 /// Body sent on the WebSocket `public/login` request.
@@ -69,7 +72,7 @@ pub struct WsLogin {
     /// Millisecond UNIX timestamp string.
     pub timestamp: String,
     /// 0x-prefixed signature hex.
-    pub signature: String,
+    pub signature: SecretString,
 }
 
 /// Builds REST auth headers using the system clock as the reference time.
@@ -138,17 +141,17 @@ pub fn build_ws_login_at(
     })
 }
 
-fn sign_message(message: &str, signer: &PrivateKeySigner) -> Result<String, AuthError> {
+fn sign_message(message: &str, signer: &PrivateKeySigner) -> Result<SecretString, AuthError> {
     let signature =
         signer
             .sign_message_sync(message.as_bytes())
             .map_err(|e| AuthError::SigningFailed {
                 message: e.to_string(),
             })?;
-    Ok(format!(
+    Ok(SecretString::from(format!(
         "0x{}",
         alloy_primitives::hex::encode(signature.as_bytes())
-    ))
+    )))
 }
 
 #[cfg(test)]
@@ -171,17 +174,21 @@ mod tests {
     fn test_rest_headers_contain_three_fields() {
         let signer: PrivateKeySigner = SESSION_KEY_HEX.parse().unwrap();
         let headers = build_rest_auth_headers_at(TEST_WALLET, &signer, 1_700_000_000_000).unwrap();
+        let debug = format!("{headers:?}");
+
         assert_eq!(headers.wallet, TEST_WALLET);
         assert_eq!(headers.timestamp, "1700000000000");
-        assert!(headers.signature.starts_with("0x"));
-        assert_eq!(headers.signature.len(), 2 + 130);
+        assert!(headers.signature.expose_secret().starts_with("0x"));
+        assert_eq!(headers.signature.expose_secret().len(), 2 + 130);
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains(headers.signature.expose_secret()));
     }
 
     #[rstest]
     fn test_rest_signature_recovers_signer_address() {
         let signer: PrivateKeySigner = SESSION_KEY_HEX.parse().unwrap();
         let headers = build_rest_auth_headers_at(TEST_WALLET, &signer, 1_700_000_000_000).unwrap();
-        let raw = hex::decode(headers.signature.trim_start_matches("0x")).unwrap();
+        let raw = hex::decode(headers.signature.expose_secret().trim_start_matches("0x")).unwrap();
         let signature = Signature::try_from(raw.as_slice()).unwrap();
         // EIP-191 prefixed hash of the timestamp string is the digest the
         // session key signed; recovery returns the session-key address.
@@ -198,9 +205,13 @@ mod tests {
         let now = 1_700_000_001_234;
         let rest = build_rest_auth_headers_at(TEST_WALLET, &signer, now).unwrap();
         let ws = build_ws_login_at(TEST_WALLET, &signer, now).unwrap();
+        let debug = format!("{ws:?}");
+
         assert_eq!(rest.timestamp, ws.timestamp);
         assert_eq!(rest.signature, ws.signature);
         assert_eq!(rest.wallet, ws.wallet);
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains(ws.signature.expose_secret()));
     }
 
     #[rstest]
@@ -215,7 +226,7 @@ mod tests {
     fn test_signature_format_is_lowercase_hex() {
         let signer: PrivateKeySigner = SESSION_KEY_HEX.parse().unwrap();
         let headers = build_rest_auth_headers_at(TEST_WALLET, &signer, 1_700_000_000_000).unwrap();
-        let sig = headers.signature.trim_start_matches("0x");
+        let sig = headers.signature.expose_secret().trim_start_matches("0x");
         assert!(
             sig.chars()
                 .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),

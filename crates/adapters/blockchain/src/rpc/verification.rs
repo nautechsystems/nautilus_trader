@@ -407,7 +407,7 @@ impl VerificationCoordinator {
              }| {
                 VerificationRpcClient::new(
                     identity.clone(),
-                    http_rpc_url.clone(),
+                    http_rpc_url.clone().into_inner(),
                     rpc_requests_per_second,
                 )
             },
@@ -1204,8 +1204,8 @@ fn validate_config(
 
     let endpoints = [
         normalize_endpoint(authoritative_url)?,
-        normalize_endpoint(&config.verifiers[0].http_rpc_url)?,
-        normalize_endpoint(&config.verifiers[1].http_rpc_url)?,
+        normalize_endpoint(config.verifiers[0].http_rpc_url.expose_secret())?,
+        normalize_endpoint(config.verifiers[1].http_rpc_url.expose_secret())?,
     ];
     ensure_distinct(endpoints.iter().map(String::as_str), "provider endpoints")?;
 
@@ -2086,11 +2086,11 @@ mod tests {
             verifiers: vec![
                 BlockchainVerificationProviderConfig {
                     identity: identity("verifier-a", "operator-b", "domain-b"),
-                    http_rpc_url: "https://verifier-a.example.com".to_string(),
+                    http_rpc_url: "https://verifier-a.example.com".into(),
                 },
                 BlockchainVerificationProviderConfig {
                     identity: identity("verifier-b", "operator-c", "domain-c"),
-                    http_rpc_url: "https://verifier-b.example.com".to_string(),
+                    http_rpc_url: "https://verifier-b.example.com".into(),
                 },
             ],
             chain_anchor: BlockchainChainAnchorConfig {
@@ -2122,8 +2122,8 @@ mod tests {
         let verifier_b_addr = start_mock_rpc_server(verifier_b).await;
         let authoritative_url = format!("http://{authoritative_addr}");
         let mut config = config();
-        config.verifiers[0].http_rpc_url = format!("http://{verifier_a_addr}");
-        config.verifiers[1].http_rpc_url = format!("http://{verifier_b_addr}");
+        config.verifiers[0].http_rpc_url = format!("http://{verifier_a_addr}").into();
+        config.verifiers[1].http_rpc_url = format!("http://{verifier_b_addr}").into();
         let authoritative_rpc = Arc::new(BlockchainHttpRpcClient::new(
             authoritative_url.clone(),
             None,
@@ -2158,7 +2158,7 @@ mod tests {
     #[rstest]
     fn topology_rejects_remote_cleartext_verifier_endpoint() {
         let mut config = config();
-        config.verifiers[0].http_rpc_url = "http://verifier-a.example.com".to_string();
+        config.verifiers[0].http_rpc_url = "http://verifier-a.example.com".into();
 
         let error = validate_config("https://authoritative.example.com", &config).unwrap_err();
 
@@ -2492,7 +2492,7 @@ mod tests {
     #[rstest]
     fn topology_rejects_normalized_duplicate_endpoint() {
         let mut config = config();
-        config.verifiers[0].http_rpc_url = "https://AUTHORITATIVE.example.com/".to_string();
+        config.verifiers[0].http_rpc_url = "https://AUTHORITATIVE.example.com/".into();
 
         let error = validate_config("https://authoritative.example.com", &config).unwrap_err();
 
@@ -2502,7 +2502,7 @@ mod tests {
     #[rstest]
     fn topology_rejects_endpoint_fragment() {
         let mut config = config();
-        config.verifiers[0].http_rpc_url = "https://verifier-a.example.com/#alias".to_string();
+        config.verifiers[0].http_rpc_url = "https://verifier-a.example.com/#alias".into();
 
         let error = validate_config("https://authoritative.example.com", &config).unwrap_err();
 

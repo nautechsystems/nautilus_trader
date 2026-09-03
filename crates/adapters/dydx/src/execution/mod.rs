@@ -235,7 +235,10 @@ impl DydxExecutionClient {
         let http_client = DydxHttpClient::new(
             Some(config.base_url.clone()),
             config.timeout_secs,
-            config.proxy_url.clone(),
+            config
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
             config.network,
             Some(retry_config),
         )?;
@@ -245,7 +248,10 @@ impl DydxExecutionClient {
 
         // Use private WebSocket client for authenticated subaccount subscriptions
         let credential = DydxCredential::resolve(
-            config.private_key.as_deref(),
+            config
+                .private_key
+                .as_ref()
+                .map(|value| value.expose_secret()),
             config.network,
             config.authenticator_ids.clone(),
         )?
@@ -259,7 +265,10 @@ impl DydxExecutionClient {
             instrument_cache.clone(),
             Some(20),
             config.transport_backend,
-            config.proxy_url.clone(),
+            config
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         )
         .with_socket_factory(SocketControlFactory::new(core.client_id, Some(*DYDX_VENUE)));
 
@@ -301,9 +310,9 @@ impl DydxExecutionClient {
 
         // 1. Try private key from config
         if let Some(ref pk) = config.private_key
-            && !pk.trim().is_empty()
+            && !pk.expose_secret().trim().is_empty()
         {
-            return Ok(pk.clone());
+            return Ok(pk.expose_secret().to_owned());
         }
 
         // 2. Try private key from env var
@@ -3312,7 +3321,7 @@ mod tests {
             grpc_url: "http://127.0.0.1:1".to_string(),
             grpc_urls: vec!["http://127.0.0.1:1".to_string()],
             wallet_address: Some("dydx1test".to_string()),
-            private_key: Some(TEST_PRIVATE_KEY.to_string()),
+            private_key: Some(TEST_PRIVATE_KEY.into()),
             ..Default::default()
         };
 

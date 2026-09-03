@@ -15,8 +15,9 @@
 
 //! Configuration structures for the Hyperliquid adapter.
 
-use std::fmt::Debug;
-
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
@@ -34,7 +35,7 @@ use crate::common::{
 /// a full WebSocket reconnect after `stale_stream_max_targeted_resubscribes`
 /// failed attempts; fresh data resets the ladder. See the Hyperliquid integration
 /// guide ("Stream health and recovery") for details.
-#[derive(Clone, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
@@ -46,13 +47,13 @@ use crate::common::{
 )]
 pub struct HyperliquidDataClientConfig {
     /// Optional private key for authenticated endpoints.
-    pub private_key: Option<String>,
+    pub private_key: Option<SecretString>,
     /// Override for the WebSocket URL.
     pub base_url_ws: Option<String>,
     /// Override for the HTTP info URL.
     pub base_url_http: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// The target environment (mainnet or testnet).
     #[builder(default)]
     pub environment: HyperliquidEnvironment,
@@ -129,7 +130,8 @@ impl HyperliquidDataClientConfig {
     #[must_use]
     pub fn has_credentials(&self) -> bool {
         self.private_key
-            .as_deref()
+            .as_ref()
+            .map(SecretString::expose_secret)
             .is_some_and(|s| !s.trim().is_empty())
     }
 
@@ -150,55 +152,8 @@ impl HyperliquidDataClientConfig {
     }
 }
 
-impl Debug for HyperliquidDataClientConfig {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct(stringify!(HyperliquidDataClientConfig))
-            .field(
-                "private_key",
-                &self.private_key.as_ref().map(|_| "[REDACTED]"),
-            )
-            .field("base_url_ws", &self.base_url_ws)
-            .field("base_url_http", &self.base_url_http)
-            .field("proxy_url", &self.proxy_url)
-            .field("environment", &self.environment)
-            .field("http_timeout_secs", &self.http_timeout_secs)
-            .field("ws_timeout_secs", &self.ws_timeout_secs)
-            .field(
-                "stale_stream_receive_timeout_secs",
-                &self.stale_stream_receive_timeout_secs,
-            )
-            .field(
-                "stream_health_check_interval_secs",
-                &self.stream_health_check_interval_secs,
-            )
-            .field(
-                "stale_stream_warning_cooldown_secs",
-                &self.stale_stream_warning_cooldown_secs,
-            )
-            .field(
-                "stale_stream_recovery_enabled",
-                &self.stale_stream_recovery_enabled,
-            )
-            .field(
-                "stale_stream_recovery_cooldown_secs",
-                &self.stale_stream_recovery_cooldown_secs,
-            )
-            .field(
-                "stale_stream_max_targeted_resubscribes",
-                &self.stale_stream_max_targeted_resubscribes,
-            )
-            .field(
-                "update_instruments_interval_mins",
-                &self.update_instruments_interval_mins,
-            )
-            .field("transport_backend", &self.transport_backend)
-            .finish()
-    }
-}
-
 /// Configuration for the Hyperliquid execution client.
-#[derive(Clone, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
@@ -217,7 +172,7 @@ pub struct HyperliquidExecutionClientConfig {
     /// If not provided, falls back to environment variable:
     /// - Mainnet: `HYPERLIQUID_PK`
     /// - Testnet: `HYPERLIQUID_TESTNET_PK`
-    pub private_key: Option<String>,
+    pub private_key: Option<SecretString>,
     /// Optional vault address for vault operations.
     ///
     /// If not provided, falls back to environment variable:
@@ -238,7 +193,7 @@ pub struct HyperliquidExecutionClientConfig {
     /// Override for the exchange API URL.
     pub base_url_exchange: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// The target environment (mainnet or testnet).
     #[builder(default)]
     pub environment: HyperliquidEnvironment,
@@ -312,7 +267,8 @@ impl HyperliquidExecutionClientConfig {
     #[must_use]
     pub fn has_credentials(&self) -> bool {
         self.private_key
-            .as_deref()
+            .as_ref()
+            .map(SecretString::expose_secret)
             .is_some_and(|s| !s.trim().is_empty())
     }
 
@@ -330,42 +286,6 @@ impl HyperliquidExecutionClientConfig {
         self.base_url_http
             .clone()
             .unwrap_or_else(|| info_url(self.environment).to_string())
-    }
-}
-
-impl Debug for HyperliquidExecutionClientConfig {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct(stringify!(HyperliquidExecutionClientConfig))
-            .field("account_id", &self.account_id)
-            .field(
-                "private_key",
-                &self.private_key.as_ref().map(|_| "[REDACTED]"),
-            )
-            .field("vault_address", &self.vault_address)
-            .field("account_address", &self.account_address)
-            .field("base_url_ws", &self.base_url_ws)
-            .field("base_url_http", &self.base_url_http)
-            .field("base_url_exchange", &self.base_url_exchange)
-            .field("proxy_url", &self.proxy_url)
-            .field("environment", &self.environment)
-            .field("http_timeout_secs", &self.http_timeout_secs)
-            .field("max_retries", &self.max_retries)
-            .field("retry_delay_initial_ms", &self.retry_delay_initial_ms)
-            .field("retry_delay_max_ms", &self.retry_delay_max_ms)
-            .field("normalize_prices", &self.normalize_prices)
-            .field("market_order_slippage_bps", &self.market_order_slippage_bps)
-            .field(
-                "include_builder_attribution",
-                &self.include_builder_attribution,
-            )
-            .field("transport_backend", &self.transport_backend)
-            .field("ws_post_timeout_secs", &self.ws_post_timeout_secs)
-            .field(
-                "outcome_settlement_poll_secs",
-                &self.outcome_settlement_poll_secs,
-            )
-            .finish()
     }
 }
 
@@ -473,13 +393,13 @@ stale_stream_max_targeted_resubscribes = 5
     fn test_data_config_debug_redacts_private_key() {
         let config = HyperliquidDataClientConfig {
             private_key: Some(
-                "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+                "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
             ),
             ..HyperliquidDataClientConfig::default()
         };
         let debug = format!("{config:?}");
 
-        assert!(debug.contains("[REDACTED]"));
+        assert!(debug.contains(REDACTED));
         assert!(!debug.contains("0123456789abcdef"));
     }
 
@@ -487,13 +407,13 @@ stale_stream_max_targeted_resubscribes = 5
     fn test_exec_config_debug_redacts_private_key() {
         let config = HyperliquidExecutionClientConfig {
             private_key: Some(
-                "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+                "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
             ),
             ..HyperliquidExecutionClientConfig::default()
         };
         let debug = format!("{config:?}");
 
-        assert!(debug.contains("[REDACTED]"));
+        assert!(debug.contains(REDACTED));
         assert!(!debug.contains("0123456789abcdef"));
     }
 }

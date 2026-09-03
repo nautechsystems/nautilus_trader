@@ -126,20 +126,24 @@ impl BybitDataClient {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
         let socket_factory = SocketControlFactory::new(client_id, Some(*BYBIT_VENUE));
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
 
         let http_client = if let (Some(api_key), Some(api_secret)) =
             (config.api_key.clone(), config.api_secret.clone())
         {
             BybitHttpClient::with_credentials(
-                api_key,
-                api_secret,
+                api_key.into_inner(),
+                api_secret.into_inner(),
                 Some(config.http_base_url()),
                 config.http_timeout_secs,
                 config.max_retries,
                 config.retry_delay_initial_ms,
                 config.retry_delay_max_ms,
                 config.recv_window_ms,
-                config.proxy_url.clone(),
+                proxy_url.clone(),
             )?
         } else {
             BybitHttpClient::new(
@@ -149,7 +153,7 @@ impl BybitDataClient {
                 config.retry_delay_initial_ms,
                 config.retry_delay_max_ms,
                 config.recv_window_ms,
-                config.proxy_url.clone(),
+                proxy_url.clone(),
             )?
         };
 
@@ -169,7 +173,7 @@ impl BybitDataClient {
                     Some(config.ws_public_url_for(*product_type)),
                     config.heartbeat_interval_secs,
                     config.transport_backend,
-                    config.proxy_url.clone(),
+                    proxy_url.clone(),
                 )
                 .with_socket_control(
                     socket_factory.control(format!("bybit-{}-data-streams", product_type.as_str())),

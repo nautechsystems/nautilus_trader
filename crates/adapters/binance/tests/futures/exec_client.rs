@@ -1587,8 +1587,8 @@ fn create_test_execution_client_with_config(
         base_url_http: Some(base_url_http),
         base_url_ws: Some(base_url_ws),
         use_ws_trading: false,
-        api_key: Some("test_api_key".to_string()),
-        api_secret: Some("test_api_secret".to_string()),
+        api_key: Some("test_api_key".into()),
+        api_secret: Some("test_api_secret".into()),
         futures_leverages,
         instrument_provider,
         use_position_ids,
@@ -6931,8 +6931,8 @@ fn create_test_execution_client_with_ws_trading(
         base_url_ws: Some(base_url_ws),
         base_url_ws_trading: Some(base_url_ws_trading),
         use_ws_trading: true,
-        api_key: Some("test_api_key".to_string()),
-        api_secret: Some("test_api_secret".to_string()),
+        api_key: Some("test_api_key".into()),
+        api_secret: Some("test_api_secret".into()),
         ..Default::default()
     };
 

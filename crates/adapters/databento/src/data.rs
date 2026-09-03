@@ -19,7 +19,6 @@
 //! handles live market data subscriptions, and provides access to historical data on demand.
 
 use std::{
-    fmt::Debug,
     path::PathBuf,
     str::FromStr,
     sync::{
@@ -50,7 +49,6 @@ use nautilus_common::{
 use nautilus_core::{
     AtomicMap, Params, UnixNanos,
     datetime::{NANOSECONDS_IN_DAY, datetime_to_unix_nanos},
-    string::secret::REDACTED,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::task::TaskGroup;
@@ -93,7 +91,7 @@ const TRADE_SCHEMAS: &[dbn::Schema] = &[
 ];
 
 /// Configuration for the Databento data client.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.adapters.databento", from_py_object)
@@ -124,19 +122,6 @@ nautilus_core::impl_pyo3_config_getters!(DatabentoDataClientConfig {
     bars_timestamp_on_close: bool,
     venue_dataset_map: IndexMap<String, String>,
 });
-
-impl Debug for DatabentoDataClientConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(DatabentoDataClientConfig))
-            .field("credential", &REDACTED)
-            .field("publishers_filepath", &self.publishers_filepath)
-            .field("venue_dataset_map", &self.venue_dataset_map)
-            .field("use_exchange_as_venue", &self.use_exchange_as_venue)
-            .field("bars_timestamp_on_close", &self.bars_timestamp_on_close)
-            .field("reconnect_timeout_mins", &self.reconnect_timeout_mins)
-            .finish()
-    }
-}
 
 impl DatabentoDataClientConfig {
     /// Creates a new [`DatabentoDataClientConfig`] instance.

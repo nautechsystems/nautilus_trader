@@ -24,6 +24,9 @@ use std::{sync::Arc, time::Duration};
 
 use anyhow::Context;
 use dashmap::DashMap;
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
 use nautilus_live::{
     SocketControlFactory,
     task::{TaskJoinOutcome, TaskSlot, finish_task},
@@ -61,11 +64,11 @@ const RECOVERY_RETRY_MAX_MS: u64 = 30_000;
 pub(crate) struct WsBuildParams {
     pub product_type: BinanceProductType,
     pub environment: BinanceEnvironment,
-    pub api_key: String,
-    pub api_secret: String,
+    pub api_key: SecretString,
+    pub api_secret: SecretString,
     pub private_base_url: String,
     pub transport_backend: TransportBackend,
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     pub socket_factory: SocketControlFactory,
 }
 
@@ -74,8 +77,8 @@ pub(crate) struct WsBuildParams {
 /// the execution client.
 pub(crate) struct RecoveryCtx {
     pub http_client: BinanceFuturesHttpClient,
-    pub listen_key: Arc<RwLock<Option<String>>>,
-    pub recovery_listen_key: Arc<RwLock<Option<String>>>,
+    pub listen_key: Arc<RwLock<Option<SecretString>>>,
+    pub recovery_listen_key: Arc<RwLock<Option<SecretString>>>,
     pub ws_client: Arc<Mutex<Option<BinanceFuturesWebSocketClient>>>,
     pub ws_task: Arc<tokio::sync::Mutex<TaskSlot<()>>>,
     pub recovery_lock: Arc<tokio::sync::Mutex<()>>,
@@ -96,14 +99,19 @@ pub(crate) async fn build_and_connect_user_stream(
     let mut ws_client = BinanceFuturesWebSocketClient::new(
         params.product_type,
         params.environment,
-        Some(params.api_key.clone()),
-        Some(params.api_secret.clone()),
+        Some(params.api_key.expose_secret().to_owned()),
+        Some(params.api_secret.expose_secret().to_owned()),
         Some(private_url),
         Some(BINANCE_WS_HEARTBEAT_SECS),
         params.transport_backend,
     )
     .context("failed to construct Binance Futures private WebSocket client")?
-    .with_proxy(params.proxy_url.clone())
+    .with_proxy(
+        params
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned()),
+    )
     .with_socket_control(
         params.socket_factory.clone(),
         "binance-futures-user-streams",
@@ -212,12 +220,13 @@ where
         .create_listen_key()
         .await
         .context("failed to create listen key during recovery")?;
-    let new_listen_key = response.listen_key;
+    let new_listen_key = response.into_listen_key();
     *ctx.recovery_listen_key.write() = Some(new_listen_key.clone());
 
     emit_open_order_reports(ctx).await?;
 
-    let new_ws = build_and_connect_user_stream(&ctx.ws_build_params, &new_listen_key).await?;
+    let new_ws =
+        build_and_connect_user_stream(&ctx.ws_build_params, new_listen_key.expose_secret()).await?;
     let new_stream = new_ws.stream();
 
     let old_ws = ctx.ws_client.lock().take();
@@ -273,11 +282,11 @@ async fn close_recovery_listen_key(ctx: &RecoveryCtx) -> anyhow::Result<()> {
     };
 
     ctx.http_client
-        .close_listen_key(&key)
+        .close_listen_key(key.expose_secret())
         .await
         .context("failed to close uncommitted recovery listen key")?;
     let mut pending = ctx.recovery_listen_key.write();
-    if pending.as_deref() == Some(key.as_str()) {
+    if pending.as_ref().map(SecretString::expose_secret) == Some(key.expose_secret()) {
         *pending = None;
     }
     Ok(())
@@ -483,6 +492,36 @@ mod tests {
         },
     };
 
+    #[rstest]
+    fn test_ws_build_params_protects_credentials() {
+        let params = WsBuildParams {
+            product_type: BinanceProductType::UsdM,
+            environment: BinanceEnvironment::Live,
+            api_key: SecretString::from("test-api-key"),
+            api_secret: SecretString::from("test-api-secret"),
+            private_base_url: "wss://fstream.binance.com".to_string(),
+            transport_backend: TransportBackend::default(),
+            proxy_url: Some(SecretString::from("http://user:password@proxy:8080")),
+            socket_factory: SocketControlFactory::new(*BINANCE_CLIENT_ID, Some(*BINANCE_VENUE)),
+        };
+
+        assert_eq!(format!("{:?}", params.api_key), REDACTED);
+        assert_eq!(format!("{:?}", params.api_secret), REDACTED);
+        assert_eq!(
+            format!("{:?}", params.proxy_url),
+            format!("Some({REDACTED})")
+        );
+        assert_eq!(params.private_base_url, "wss://fstream.binance.com");
+    }
+
+    #[rstest]
+    fn test_listen_key_redacts_debug() {
+        let key = SecretString::from("listen-key-secret".to_string());
+
+        assert_eq!(key.expose_secret(), "listen-key-secret");
+        assert_eq!(format!("{key:?}"), REDACTED);
+    }
+
     #[derive(Clone, Copy)]
     enum RecoveryServerMode {
         MissingRegular,
@@ -610,8 +649,8 @@ mod tests {
             ws_build_params: WsBuildParams {
                 product_type: BinanceProductType::UsdM,
                 environment: BinanceEnvironment::Live,
-                api_key: "test-api-key".to_string(),
-                api_secret: "test-api-secret".to_string(),
+                api_key: SecretString::from("test-api-key"),
+                api_secret: SecretString::from("test-api-secret"),
                 private_base_url: "ws://127.0.0.1:1".to_string(),
                 transport_backend: TransportBackend::default(),
                 proxy_url: None,

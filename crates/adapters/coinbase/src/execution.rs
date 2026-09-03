@@ -308,13 +308,22 @@ impl CoinbaseExecutionClient {
         core: ExecutionClientCore,
         config: CoinbaseExecutionClientConfig,
     ) -> anyhow::Result<Self> {
-        let credential =
-            CoinbaseCredential::resolve(config.api_key.as_deref(), config.api_secret.as_deref())
-                .ok_or_else(|| {
+        let credential = CoinbaseCredential::resolve(
+            config.api_key.as_ref().map(|value| value.expose_secret()),
+            config
+                .api_secret
+                .as_ref()
+                .map(|value| value.expose_secret()),
+        )
+        .ok_or_else(|| {
                     anyhow::anyhow!(
                         "Coinbase credentials not available; set COINBASE_API_KEY and COINBASE_API_SECRET or pass them in the config"
                     )
                 })?;
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
 
         let retry_config = RetryConfig {
             max_retries: config.max_retries,
@@ -331,7 +340,7 @@ impl CoinbaseExecutionClient {
             credential.clone(),
             config.environment,
             config.http_timeout_secs,
-            config.proxy_url.clone(),
+            proxy_url.clone(),
             Some(retry_config),
         )
         .map_err(|e| anyhow::anyhow!("Failed to create Coinbase HTTP client: {e}"))?;
@@ -345,7 +354,7 @@ impl CoinbaseExecutionClient {
             &ws_url,
             credential,
             config.transport_backend,
-            config.proxy_url.clone(),
+            proxy_url,
         )
         .with_socket_control(SocketControl::new(
             core.client_id,
@@ -570,15 +579,24 @@ impl ExecutionClient for CoinbaseExecutionClient {
                 .await
                 .context("failed to close stale Coinbase user WebSocket")?;
             let credential = CoinbaseCredential::resolve(
-                self.config.api_key.as_deref(),
-                self.config.api_secret.as_deref(),
+                self.config
+                    .api_key
+                    .as_ref()
+                    .map(|value| value.expose_secret()),
+                self.config
+                    .api_secret
+                    .as_ref()
+                    .map(|value| value.expose_secret()),
             )
             .ok_or_else(|| anyhow::anyhow!("Coinbase credentials unavailable for WS reset"))?;
             self.ws_user = CoinbaseWebSocketClient::with_credential(
                 &self.config.ws_url(),
                 credential,
                 self.config.transport_backend,
-                self.config.proxy_url.clone(),
+                self.config
+                    .proxy_url
+                    .as_ref()
+                    .map(|value| value.expose_secret().to_owned()),
             );
         }
 

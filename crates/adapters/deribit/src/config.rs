@@ -15,6 +15,9 @@
 
 //! Configuration structures for the Deribit adapter.
 
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
@@ -41,9 +44,9 @@ use crate::{
 )]
 pub struct DeribitDataClientConfig {
     /// Optional API key for authenticated endpoints.
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     /// Optional API secret for authenticated endpoints.
-    pub api_secret: Option<String>,
+    pub api_secret: Option<SecretString>,
     /// Product types to load (e.g., Future, Option, Spot).
     #[builder(default = vec![DeribitProductType::Future])]
     pub product_types: Vec<DeribitProductType>,
@@ -52,7 +55,7 @@ pub struct DeribitDataClientConfig {
     /// Optional override for the WebSocket URL.
     pub base_url_ws: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// The Deribit environment (mainnet or testnet).
     #[builder(default)]
     pub environment: DeribitEnvironment,
@@ -157,9 +160,9 @@ pub struct DeribitExecutionClientConfig {
     #[builder(default = AccountId::from("DERIBIT-001"))]
     pub account_id: AccountId,
     /// Optional API key for authenticated endpoints.
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     /// Optional API secret for authenticated endpoints.
-    pub api_secret: Option<String>,
+    pub api_secret: Option<SecretString>,
     /// Product types to load (e.g., Future, Option, Spot).
     #[builder(default = vec![DeribitProductType::Future])]
     pub product_types: Vec<DeribitProductType>,
@@ -168,7 +171,7 @@ pub struct DeribitExecutionClientConfig {
     /// Optional override for the WebSocket URL.
     pub base_url_ws: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// The Deribit environment (mainnet or testnet).
     #[builder(default)]
     pub environment: DeribitEnvironment,
@@ -247,6 +250,37 @@ mod tests {
     use super::*;
 
     #[rstest]
+    fn test_config_debug_redacts_credentials() {
+        let data = DeribitDataClientConfig {
+            api_key: Some("data-api-key".into()),
+            api_secret: Some("data-api-secret".into()),
+            proxy_url: Some("http://user:data-proxy@localhost".into()),
+            ..Default::default()
+        };
+        let execution = DeribitExecutionClientConfig {
+            api_key: Some("exec-api-key".into()),
+            api_secret: Some("exec-api-secret".into()),
+            proxy_url: Some("http://user:exec-proxy@localhost".into()),
+            ..Default::default()
+        };
+
+        let formatted = format!("{data:?} {execution:?}");
+
+        assert_eq!(formatted.matches(REDACTED).count(), 6);
+
+        for secret in [
+            "data-api-key",
+            "data-api-secret",
+            "data-proxy",
+            "exec-api-key",
+            "exec-api-secret",
+            "exec-proxy",
+        ] {
+            assert!(!formatted.contains(secret));
+        }
+    }
+
+    #[rstest]
     fn test_default_config() {
         let config = DeribitDataClientConfig::default();
         assert_eq!(config.environment, DeribitEnvironment::Mainnet);
@@ -287,8 +321,8 @@ mod tests {
     #[rstest]
     fn test_has_api_credentials_in_config() {
         let config = DeribitDataClientConfig {
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
             ..Default::default()
         };
         assert!(config.has_api_credentials());

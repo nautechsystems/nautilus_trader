@@ -53,6 +53,7 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
+zeroize = { workspace = true }
 
 madsim = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }

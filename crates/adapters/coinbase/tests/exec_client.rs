@@ -1697,8 +1697,8 @@ fn make_exec_client_with_events_and_cache(
     );
 
     let config = CoinbaseExecutionClientConfig {
-        api_key: Some(test_api_key()),
-        api_secret: Some(test_pem_key()),
+        api_key: Some(test_api_key().into()),
+        api_secret: Some(test_pem_key().into()),
         base_url_rest: Some(format!("http://{addr}")),
         account_type,
         ..CoinbaseExecutionClientConfig::default()

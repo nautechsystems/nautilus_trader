@@ -715,8 +715,8 @@ async fn start_test_server()
 
 fn create_test_exec_config(addr: SocketAddr) -> BybitExecutionClientConfig {
     BybitExecutionClientConfig {
-        api_key: Some("test_api_key".to_string()),
-        api_secret: Some("test_api_secret".to_string()),
+        api_key: Some("test_api_key".into()),
+        api_secret: Some("test_api_secret".into()),
         product_types: vec![BybitProductType::Linear],
         environment: BybitEnvironment::Mainnet,
         base_url_http: Some(format!("http://{addr}")),
@@ -1363,8 +1363,8 @@ async fn test_exec_client_demo_mode_skips_trade_ws() {
     );
 
     let config = BybitExecutionClientConfig {
-        api_key: Some("test_api_key".to_string()),
-        api_secret: Some("test_api_secret".to_string()),
+        api_key: Some("test_api_key".into()),
+        api_secret: Some("test_api_secret".into()),
         product_types: vec![BybitProductType::Linear],
         environment: BybitEnvironment::Demo,
         base_url_http: Some(format!("http://{addr}")),
@@ -1633,8 +1633,8 @@ async fn test_exec_client_submit_order_list_demo() {
     );
 
     let config = BybitExecutionClientConfig {
-        api_key: Some("test_api_key".to_string()),
-        api_secret: Some("test_api_secret".to_string()),
+        api_key: Some("test_api_key".into()),
+        api_secret: Some("test_api_secret".into()),
         product_types: vec![BybitProductType::Linear],
         environment: BybitEnvironment::Demo,
         base_url_http: Some(format!("http://{addr}")),
@@ -2250,8 +2250,8 @@ async fn test_exec_client_submit_order_list_denies_all_on_invalid_leg() {
     );
 
     let config = BybitExecutionClientConfig {
-        api_key: Some("test_api_key".to_string()),
-        api_secret: Some("test_api_secret".to_string()),
+        api_key: Some("test_api_key".into()),
+        api_secret: Some("test_api_secret".into()),
         product_types: vec![BybitProductType::Linear],
         environment: BybitEnvironment::Demo,
         base_url_http: Some(format!("http://{addr}")),

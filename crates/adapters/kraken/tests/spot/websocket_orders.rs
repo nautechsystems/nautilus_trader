@@ -33,6 +33,7 @@ use axum::{
 };
 use futures_util::StreamExt;
 use nautilus_common::testing::wait_until_async;
+use nautilus_core::string::secret::SecretString;
 use nautilus_kraken::{
     KrakenDataClientConfig, KrakenSpotWebSocketClient,
     common::enums::{KrakenOrderSide, KrakenOrderType},
@@ -112,7 +113,7 @@ fn make_add_order_params(symbol: &str) -> KrakenWsAddOrderParams {
         side: KrakenOrderSide::Buy,
         order_qty: dec!(0.001),
         symbol: symbol.to_string(),
-        token: "test-token".to_string(),
+        token: SecretString::from("test-token"),
         limit_price: Some(dec!(50000)),
         time_in_force: None,
         expire_time: None,

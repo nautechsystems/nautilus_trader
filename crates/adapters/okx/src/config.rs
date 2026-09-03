@@ -15,9 +15,7 @@
 
 //! Configuration structures for the OKX adapter.
 
-use std::fmt::Debug;
-
-use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
@@ -34,7 +32,7 @@ use crate::common::{
 };
 
 /// Configuration for the OKX data client.
-#[derive(Clone, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
@@ -46,11 +44,11 @@ use crate::common::{
 )]
 pub struct OKXDataClientConfig {
     /// Optional API key for authenticated endpoints.
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     /// Optional API secret for authenticated endpoints.
-    pub api_secret: Option<String>,
+    pub api_secret: Option<SecretString>,
     /// Optional API passphrase for authenticated endpoints.
-    pub api_passphrase: Option<String>,
+    pub api_passphrase: Option<SecretString>,
     /// Instrument types to load and subscribe to.
     #[builder(default = vec![OKXInstrumentType::Spot])]
     pub instrument_types: Vec<OKXInstrumentType>,
@@ -69,7 +67,7 @@ pub struct OKXDataClientConfig {
     /// Optional override for the business WebSocket URL.
     pub base_url_ws_business: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// The API environment (live or demo).
     #[builder(default)]
     pub environment: OKXEnvironment,
@@ -140,48 +138,6 @@ impl Default for OKXDataClientConfig {
     }
 }
 
-impl Debug for OKXDataClientConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(OKXDataClientConfig))
-            .field("api_key", &self.api_key.as_ref().map(|_| REDACTED))
-            .field("api_secret", &self.api_secret.as_ref().map(|_| REDACTED))
-            .field(
-                "api_passphrase",
-                &self.api_passphrase.as_ref().map(|_| REDACTED),
-            )
-            .field("instrument_types", &self.instrument_types)
-            .field("contract_types", &self.contract_types)
-            .field("load_spreads", &self.load_spreads)
-            .field("instrument_families", &self.instrument_families)
-            .field("base_url_http", &self.base_url_http)
-            .field("base_url_ws_public", &self.base_url_ws_public)
-            .field("base_url_ws_business", &self.base_url_ws_business)
-            .field("proxy_url", &self.proxy_url)
-            .field("environment", &self.environment)
-            .field("region", &self.region)
-            .field("http_timeout_secs", &self.http_timeout_secs)
-            .field("max_retries", &self.max_retries)
-            .field("retry_delay_initial_ms", &self.retry_delay_initial_ms)
-            .field("retry_delay_max_ms", &self.retry_delay_max_ms)
-            .field(
-                "update_instruments_interval_mins",
-                &self.update_instruments_interval_mins,
-            )
-            .field(
-                "book_stale_check_interval_secs",
-                &self.book_stale_check_interval_secs,
-            )
-            .field("book_stale_threshold_secs", &self.book_stale_threshold_secs)
-            .field(
-                "book_snapshot_timeout_secs",
-                &self.book_snapshot_timeout_secs,
-            )
-            .field("vip_level", &self.vip_level)
-            .field("transport_backend", &self.transport_backend)
-            .finish()
-    }
-}
-
 impl OKXDataClientConfig {
     /// Creates a new configuration with default settings.
     #[must_use]
@@ -234,7 +190,7 @@ impl OKXDataClientConfig {
 }
 
 /// Configuration for the OKX execution client.
-#[derive(Clone, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
@@ -249,11 +205,11 @@ pub struct OKXExecutionClientConfig {
     #[builder(default = AccountId::from("OKX-001"))]
     pub account_id: AccountId,
     /// Optional API key for authenticated endpoints.
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     /// Optional API secret for authenticated endpoints.
-    pub api_secret: Option<String>,
+    pub api_secret: Option<SecretString>,
     /// Optional API passphrase for authenticated endpoints.
-    pub api_passphrase: Option<String>,
+    pub api_passphrase: Option<SecretString>,
     /// Instrument types the execution client should support.
     #[builder(default = vec![OKXInstrumentType::Spot])]
     pub instrument_types: Vec<OKXInstrumentType>,
@@ -269,7 +225,7 @@ pub struct OKXExecutionClientConfig {
     /// Optional override for the business WebSocket URL.
     pub base_url_ws_business: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// The API environment (live or demo).
     #[builder(default)]
     pub environment: OKXEnvironment,
@@ -332,39 +288,6 @@ impl Default for OKXExecutionClientConfig {
     }
 }
 
-impl Debug for OKXExecutionClientConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(OKXExecutionClientConfig))
-            .field("account_id", &self.account_id)
-            .field("api_key", &self.api_key.as_ref().map(|_| REDACTED))
-            .field("api_secret", &self.api_secret.as_ref().map(|_| REDACTED))
-            .field(
-                "api_passphrase",
-                &self.api_passphrase.as_ref().map(|_| REDACTED),
-            )
-            .field("instrument_types", &self.instrument_types)
-            .field("contract_types", &self.contract_types)
-            .field("instrument_families", &self.instrument_families)
-            .field("base_url_http", &self.base_url_http)
-            .field("base_url_ws_private", &self.base_url_ws_private)
-            .field("base_url_ws_business", &self.base_url_ws_business)
-            .field("proxy_url", &self.proxy_url)
-            .field("environment", &self.environment)
-            .field("region", &self.region)
-            .field("http_timeout_secs", &self.http_timeout_secs)
-            .field("load_spreads", &self.load_spreads)
-            .field("use_mm_mass_cancel", &self.use_mm_mass_cancel)
-            .field("max_retries", &self.max_retries)
-            .field("retry_delay_initial_ms", &self.retry_delay_initial_ms)
-            .field("retry_delay_max_ms", &self.retry_delay_max_ms)
-            .field("margin_mode", &self.margin_mode)
-            .field("use_spot_margin", &self.use_spot_margin)
-            .field("auth_timeout_secs", &self.auth_timeout_secs)
-            .field("transport_backend", &self.transport_backend)
-            .finish()
-    }
-}
-
 impl OKXExecutionClientConfig {
     /// Creates a new configuration with default settings.
     #[must_use]
@@ -409,6 +332,7 @@ impl OKXExecutionClientConfig {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::string::secret::REDACTED;
     use rstest::rstest;
 
     use super::*;
@@ -423,16 +347,16 @@ mod tests {
     #[rstest]
     fn test_data_config_debug_redacts_credentials() {
         let config = OKXDataClientConfig {
-            api_key: Some(DATA_API_KEY.to_string()),
-            api_secret: Some(DATA_API_SECRET.to_string()),
-            api_passphrase: Some(DATA_API_PASSPHRASE.to_string()),
+            api_key: Some(DATA_API_KEY.into()),
+            api_secret: Some(DATA_API_SECRET.into()),
+            api_passphrase: Some(DATA_API_PASSPHRASE.into()),
             environment: OKXEnvironment::Demo,
             http_timeout_secs: 71,
             ..Default::default()
         };
 
         let debug_output = format!("{config:?}");
-        let redacted = format!("Some({REDACTED:?})");
+        let redacted = format!("Some({REDACTED})");
 
         assert!(!debug_output.contains(DATA_API_KEY));
         assert!(!debug_output.contains(DATA_API_SECRET));
@@ -448,15 +372,15 @@ mod tests {
     fn test_exec_config_debug_redacts_credentials() {
         let config = OKXExecutionClientConfig {
             account_id: AccountId::from("OKX-042"),
-            api_key: Some(EXEC_API_KEY.to_string()),
-            api_secret: Some(EXEC_API_SECRET.to_string()),
-            api_passphrase: Some(EXEC_API_PASSPHRASE.to_string()),
+            api_key: Some(EXEC_API_KEY.into()),
+            api_secret: Some(EXEC_API_SECRET.into()),
+            api_passphrase: Some(EXEC_API_PASSPHRASE.into()),
             max_retries: 13,
             ..Default::default()
         };
 
         let debug_output = format!("{config:?}");
-        let redacted = format!("Some({REDACTED:?})");
+        let redacted = format!("Some({REDACTED})");
 
         assert!(!debug_output.contains(EXEC_API_KEY));
         assert!(!debug_output.contains(EXEC_API_SECRET));
@@ -474,7 +398,7 @@ mod tests {
         let exec_debug = format!(
             "{:?}",
             OKXExecutionClientConfig {
-                api_secret: Some(String::new()),
+                api_secret: Some(String::new().into()),
                 ..Default::default()
             }
         );
@@ -483,7 +407,7 @@ mod tests {
         assert!(data_debug.contains("api_secret: None"));
         assert!(data_debug.contains("api_passphrase: None"));
         assert!(exec_debug.contains("api_key: None"));
-        assert!(exec_debug.contains(&format!("api_secret: Some({REDACTED:?})")));
+        assert!(exec_debug.contains(&format!("api_secret: Some({REDACTED})")));
         assert!(exec_debug.contains("api_passphrase: None"));
     }
 

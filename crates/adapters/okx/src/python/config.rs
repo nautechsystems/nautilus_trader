@@ -15,6 +15,7 @@
 
 //! Python bindings for OKX configuration.
 
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
@@ -80,9 +81,9 @@ impl OKXDataClientConfig {
     ) -> Self {
         let defaults = Self::default();
         Self {
-            api_key,
-            api_secret,
-            api_passphrase,
+            api_key: api_key.map(SecretString::from),
+            api_secret: api_secret.map(SecretString::from),
+            api_passphrase: api_passphrase.map(SecretString::from),
             instrument_types: instrument_types.unwrap_or(defaults.instrument_types),
             contract_types: None,
             load_spreads,
@@ -90,7 +91,7 @@ impl OKXDataClientConfig {
             base_url_http,
             base_url_ws_public,
             base_url_ws_business,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             environment: environment.unwrap_or(defaults.environment),
             region: region.unwrap_or(defaults.region),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
@@ -172,16 +173,16 @@ impl OKXExecutionClientConfig {
         let defaults = Self::default();
         Self {
             account_id,
-            api_key,
-            api_secret,
-            api_passphrase,
+            api_key: api_key.map(SecretString::from),
+            api_secret: api_secret.map(SecretString::from),
+            api_passphrase: api_passphrase.map(SecretString::from),
             instrument_types: instrument_types.unwrap_or(defaults.instrument_types),
             contract_types: None,
             instrument_families: None,
             base_url_http,
             base_url_ws_private,
             base_url_ws_business,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             environment: environment.unwrap_or(defaults.environment),
             region: region.unwrap_or(defaults.region),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),

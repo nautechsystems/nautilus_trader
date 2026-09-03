@@ -132,10 +132,22 @@ impl BitmexExecutionClient {
         let clock = get_atomic_clock_realtime();
         let emitter =
             ExecutionEventEmitter::new(clock, trader_id, account_id, AccountType::Margin, None);
+        let api_key = config
+            .api_key
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+        let api_secret = config
+            .api_secret
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
         let http_client = BitmexHttpClient::new(
             Some(config.http_base_url()),
-            config.api_key.clone(),
-            config.api_secret.clone(),
+            api_key.clone(),
+            api_secret.clone(),
             config.environment,
             config.http_timeout_secs,
             config.max_retries,
@@ -144,19 +156,19 @@ impl BitmexExecutionClient {
             config.recv_window_ms,
             config.max_requests_per_second,
             config.max_requests_per_minute,
-            config.proxy_url.clone(),
+            proxy_url.clone(),
         )
         .context("failed to construct BitMEX HTTP client")?;
         let ws_client = BitmexWebSocketClient::new_with_env(
             Some(config.ws_url()),
-            config.api_key.clone(),
-            config.api_secret.clone(),
+            api_key,
+            api_secret,
             Some(account_id),
             config.heartbeat_interval_secs,
             config.auth_timeout_secs,
             config.environment,
             config.transport_backend,
-            config.proxy_url.clone(),
+            proxy_url,
         )
         .context("failed to construct BitMEX execution websocket client")?
         .with_socket_control(SocketControl::new(
@@ -1409,8 +1421,8 @@ mod tests {
             cache.clone(),
         );
         let config = BitmexExecutionClientConfig {
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
             base_url_http: Some("http://127.0.0.1:9/api/v1".to_string()),
             base_url_ws: Some("ws://127.0.0.1:9/realtime".to_string()),
             ..Default::default()
@@ -1565,8 +1577,8 @@ mod tests {
             cache,
         );
         let config = BitmexExecutionClientConfig {
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
             account_id: Some(AccountId::from("BITMEX-319111")),
             base_url_http: Some("http://127.0.0.1:9/api/v1".to_string()),
             base_url_ws: Some("ws://127.0.0.1:9/realtime".to_string()),

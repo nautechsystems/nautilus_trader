@@ -187,11 +187,14 @@ mod tests {
         let chain = Arc::new(chains::ETHEREUM.clone());
         let config = BlockchainDataClientConfig::builder()
             .chain(chain)
-            .http_rpc_url("https://eth-mainnet.example.com".to_string())
+            .http_rpc_url("https://eth-mainnet.example.com".into())
             .build();
 
         assert_eq!(config.chain.name, Blockchain::Ethereum);
-        assert_eq!(config.http_rpc_url, "https://eth-mainnet.example.com");
+        assert_eq!(
+            config.http_rpc_url.expose_secret(),
+            "https://eth-mainnet.example.com",
+        );
     }
 
     #[rstest]

@@ -17,10 +17,12 @@
 
 use ahash::AHashMap;
 use jiff::{Timestamp, civil::Date};
+use nautilus_core::string::secret::SecretString;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display};
 use ustr::Ustr;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::common::{
     enums::{
@@ -382,11 +384,19 @@ pub struct AxTickerResponse {
 ///
 /// # References
 /// - <https://docs.architect.exchange/api-reference/user-management/get-user-token>
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 #[serde(rename_all = "snake_case")]
 pub struct AxAuthenticateResponse {
     /// Session token for authenticated requests.
-    pub token: String,
+    pub token: SecretString,
+}
+
+impl AxAuthenticateResponse {
+    /// Consumes the response and returns the session token.
+    #[must_use]
+    pub fn into_token(mut self) -> SecretString {
+        std::mem::take(&mut self.token)
+    }
 }
 
 /// Response payload returned by `POST /place-order`.
@@ -1054,13 +1064,13 @@ pub struct AxTransactionsResponse {
 ///
 /// # References
 /// - <https://docs.architect.exchange/api-reference/user-management/get-user-token>
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Zeroize)]
 #[serde(rename_all = "snake_case")]
 pub struct AuthenticateApiKeyRequest {
     /// API key.
-    pub api_key: String,
+    pub api_key: SecretString,
     /// API secret.
-    pub api_secret: String,
+    pub api_secret: SecretString,
     /// Token expiration in seconds.
     pub expiration_seconds: i32,
 }
@@ -1069,8 +1079,8 @@ impl AuthenticateApiKeyRequest {
     /// Creates a new [`AuthenticateApiKeyRequest`].
     #[must_use]
     pub fn new(
-        api_key: impl Into<String>,
-        api_secret: impl Into<String>,
+        api_key: impl Into<SecretString>,
+        api_secret: impl Into<SecretString>,
         expiration_seconds: i32,
     ) -> Self {
         Self {
@@ -1318,11 +1328,13 @@ mod tests {
 
     use super::*;
 
+    fn assert_zeroize_on_drop<T: ZeroizeOnDrop>() {}
+
     #[rstest]
     fn test_deserialize_authenticate_response() {
         let json = include_str!("../../test_data/http_authenticate.json");
         let response: AxAuthenticateResponse = serde_json::from_str(json).unwrap();
-        assert!(response.token.starts_with("test-token"));
+        assert!(response.token.expose_secret().starts_with("test-token"));
     }
 
     #[rstest]
@@ -1762,5 +1774,37 @@ mod tests {
         assert_eq!(json["oid"], "O-TEST");
         assert!(json.get("p").is_none());
         assert!(json.get("q").is_none());
+    }
+
+    #[rstest]
+    fn test_authenticate_request_serializes_and_redacts_debug() {
+        let request = AuthenticateApiKeyRequest::new("api-key-token", "api-secret-value", 3600);
+
+        let json = serde_json::to_value(&request).unwrap();
+        let formatted = format!("{request:?}");
+
+        assert_eq!(json["api_key"], "api-key-token");
+        assert_eq!(json["api_secret"], "api-secret-value");
+        assert_eq!(json["expiration_seconds"], 3600);
+        assert_eq!(
+            formatted,
+            "AuthenticateApiKeyRequest { api_key: <redacted>, api_secret: <redacted>, expiration_seconds: 3600 }",
+        );
+        assert!(!formatted.contains("api-key-token"));
+        assert!(!formatted.contains("api-secret-value"));
+    }
+
+    #[rstest]
+    fn test_authenticate_response_redacts_debug() {
+        assert_zeroize_on_drop::<AxAuthenticateResponse>();
+
+        let response = AxAuthenticateResponse {
+            token: SecretString::from("session-token-value"),
+        };
+
+        let formatted = format!("{response:?}");
+
+        assert_eq!(formatted, "AxAuthenticateResponse { token: <redacted> }");
+        assert!(!formatted.contains("session-token-value"));
     }
 }

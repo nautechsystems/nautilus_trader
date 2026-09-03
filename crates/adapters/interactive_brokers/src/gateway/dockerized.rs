@@ -37,6 +37,8 @@ use bollard::query_parameters::{
 #[cfg(feature = "gateway")]
 use futures_util::StreamExt;
 #[cfg(feature = "gateway")]
+use nautilus_core::string::secret::SecretString;
+#[cfg(feature = "gateway")]
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "gateway")]
@@ -101,9 +103,9 @@ pub struct DockerizedIBGateway {
     /// Docker client.
     pub(crate) docker: Docker,
     /// Username for IB account.
-    username: String,
+    username: SecretString,
     /// Password for IB account.
-    password: String,
+    password: SecretString,
     /// Host address (always 127.0.0.1).
     host: String,
     /// Port for the gateway.
@@ -170,19 +172,17 @@ impl DockerizedIBGateway {
     /// Returns an error if:
     /// - Username or password is not provided and not available in environment variables
     /// - Docker client creation fails
-    pub fn new(config: DockerizedIBGatewayConfig) -> anyhow::Result<Self> {
-        // Load username from config or environment (clone to avoid partial move)
+    pub fn new(mut config: DockerizedIBGatewayConfig) -> anyhow::Result<Self> {
         let username = config
             .username
-            .clone()
-            .or_else(|| std::env::var("TWS_USERNAME").ok())
+            .take()
+            .or_else(|| std::env::var("TWS_USERNAME").ok().map(SecretString::from))
             .ok_or_else(|| anyhow::anyhow!("username not set nor available in env TWS_USERNAME"))?;
 
-        // Load password from config or environment (clone to avoid partial move)
         let password = config
             .password
-            .clone()
-            .or_else(|| std::env::var("TWS_PASSWORD").ok())
+            .take()
+            .or_else(|| std::env::var("TWS_PASSWORD").ok().map(SecretString::from))
             .ok_or_else(|| anyhow::anyhow!("password not set nor available in env TWS_PASSWORD"))?;
 
         // Connect to Docker
@@ -383,8 +383,8 @@ impl DockerizedIBGateway {
             crate::config::TradingMode::Live => "live",
         };
         let env = vec![
-            format!("TWS_USERID={}", self.username),
-            format!("TWS_PASSWORD={}", self.password),
+            format!("TWS_USERID={}", self.username.expose_secret()),
+            format!("TWS_PASSWORD={}", self.password.expose_secret()),
             format!("TRADING_MODE={}", mode_str),
             format!(
                 "READ_ONLY_API={}",
@@ -591,14 +591,18 @@ mod tests {
     fn new_reports_the_host_api_port(#[case] trading_mode: TradingMode, #[case] expected: u16) {
         let gateway = DockerizedIBGateway::new(
             crate::config::DockerizedIBGatewayConfig::builder()
-                .username("test-user".to_string())
-                .password("test-password".to_string())
+                .username("test-user".into())
+                .password("test-password".into())
                 .trading_mode(trading_mode)
                 .build(),
         )
         .unwrap();
 
         assert_eq!(gateway.port(), expected);
+        assert_eq!(gateway.username.expose_secret(), "test-user");
+        assert_eq!(gateway.password.expose_secret(), "test-password");
+        assert!(gateway.config.username.is_none());
+        assert!(gateway.config.password.is_none());
     }
 
     #[rstest]

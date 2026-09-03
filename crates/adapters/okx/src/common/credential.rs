@@ -44,7 +44,7 @@ pub struct Credential {
 impl Debug for Credential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(Credential))
-            .field("api_key", &self.api_key)
+            .field("api_key", &REDACTED)
             .field("api_passphrase", &REDACTED)
             .field("api_secret", &REDACTED)
             .finish()
@@ -252,6 +252,8 @@ mod tests {
             API_PASSPHRASE.to_string(),
         );
         let dbg_out = format!("{credential:?}");
+        assert_eq!(dbg_out.matches(REDACTED).count(), 3);
+        assert!(!dbg_out.contains(API_KEY));
         assert!(dbg_out.contains("api_secret: \"<redacted>\""));
         assert!(dbg_out.contains("api_passphrase: \"<redacted>\""));
         assert!(!dbg_out.contains("chNOO"));

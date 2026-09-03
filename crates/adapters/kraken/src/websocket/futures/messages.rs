@@ -15,11 +15,15 @@
 
 //! Data models for Kraken Futures WebSocket v1 API messages.
 
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use strum::{AsRefStr, EnumString};
 use ustr::Ustr;
+use zeroize::Zeroize;
 
 use crate::common::{
     enums::{KrakenFillType, KrakenFuturesOrderType, KrakenOrderSide},
@@ -342,7 +346,13 @@ pub struct KrakenFuturesBookLevel {
 #[derive(Debug, Clone, Serialize)]
 pub struct KrakenFuturesChallengeRequest {
     pub event: KrakenFuturesEvent,
-    pub api_key: String,
+    pub api_key: SecretString,
+}
+
+impl Zeroize for KrakenFuturesChallengeRequest {
+    fn zeroize(&mut self) {
+        self.api_key.zeroize();
+    }
 }
 
 /// Challenge response from WebSocket.
@@ -357,9 +367,17 @@ pub struct KrakenFuturesChallengeResponse {
 pub struct KrakenFuturesPrivateSubscribeRequest {
     pub event: KrakenFuturesEvent,
     pub feed: KrakenFuturesFeed,
-    pub api_key: String,
-    pub original_challenge: String,
-    pub signed_challenge: String,
+    pub api_key: SecretString,
+    pub original_challenge: SecretString,
+    pub signed_challenge: SecretString,
+}
+
+impl Zeroize for KrakenFuturesPrivateSubscribeRequest {
+    fn zeroize(&mut self) {
+        self.api_key.zeroize();
+        self.original_challenge.zeroize();
+        self.signed_challenge.zeroize();
+    }
 }
 
 /// Open order from Kraken Futures WebSocket.
@@ -492,6 +510,56 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+
+    fn test_api_key() -> String {
+        ["api-key-", "12345678"].concat()
+    }
+
+    #[rstest]
+    fn test_challenge_request_serialization_redaction_and_zeroization() {
+        let mut request = KrakenFuturesChallengeRequest {
+            event: KrakenFuturesEvent::Challenge,
+            api_key: SecretString::from(test_api_key()),
+        };
+        let wire = serde_json::to_value(&request).unwrap();
+        let debug = format!("{request:?}");
+
+        assert_eq!(wire["event"], "challenge");
+        assert_eq!(wire["api_key"], "api-key-12345678");
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains("api-key-12345678"));
+
+        request.zeroize();
+        assert!(request.api_key.expose_secret().is_empty());
+    }
+
+    #[rstest]
+    fn test_private_request_serialization_redaction_and_zeroization() {
+        let mut request = KrakenFuturesPrivateSubscribeRequest {
+            event: KrakenFuturesEvent::Subscribe,
+            feed: KrakenFuturesFeed::OpenOrders,
+            api_key: SecretString::from(test_api_key()),
+            original_challenge: SecretString::from("original-challenge"),
+            signed_challenge: SecretString::from("signed-challenge"),
+        };
+        let wire = serde_json::to_value(&request).unwrap();
+        let debug = format!("{request:?}");
+
+        assert_eq!(wire["event"], "subscribe");
+        assert_eq!(wire["feed"], "open_orders");
+        assert_eq!(wire["api_key"], "api-key-12345678");
+        assert_eq!(wire["original_challenge"], "original-challenge");
+        assert_eq!(wire["signed_challenge"], "signed-challenge");
+        assert_eq!(debug.matches(REDACTED).count(), 3);
+        assert!(!debug.contains("api-key-12345678"));
+        assert!(!debug.contains("original-challenge"));
+        assert!(!debug.contains("signed-challenge"));
+
+        request.zeroize();
+        assert!(request.api_key.expose_secret().is_empty());
+        assert!(request.original_challenge.expose_secret().is_empty());
+        assert!(request.signed_challenge.expose_secret().is_empty());
+    }
 
     #[rstest]
     fn test_deserialize_ticker_data() {

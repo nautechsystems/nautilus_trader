@@ -318,6 +318,7 @@ url = { version = "2.5.8", default-features = false }
 ustr = { version = "1.1.0", features = ["serde"] }
 uuid = { version = "1.26.0", features = ["v4", "serde"] }
 webpki-roots = "1.0.9"
+zeroize = { version = "1.9.0", features = ["alloc", "zeroize_derive"] }
 
 # -----------------------------------------------------------------------------
 # Adapter dependencies
@@ -359,7 +360,6 @@ tonic = { version = "0.13.1", default-features = false, features = [
   "tls-aws-lc",
   "tls-webpki-roots",
 ] }
-zeroize = { version = "1.9.0", features = ["alloc", "zeroize_derive"] }
 
 # -----------------------------------------------------------------------------
 # Dev dependencies

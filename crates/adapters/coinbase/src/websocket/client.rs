@@ -29,7 +29,9 @@ use std::{
 };
 
 use arc_swap::ArcSwap;
-use nautilus_core::AtomicMap;
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::{AtomicMap, string::secret::SecretString};
 use nautilus_live::{
     SocketControl,
     task::{TaskJoinOutcome, TaskSlot, finish_task},
@@ -105,7 +107,7 @@ pub struct CoinbaseWebSocketClient {
     task_handle: TaskSlot<()>,
     shutdown_errors: Vec<String>,
     transport_backend: TransportBackend,
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
     socket_control: Option<SocketControl>,
 }
 
@@ -154,7 +156,7 @@ impl CoinbaseWebSocketClient {
             task_handle: TaskSlot::new(),
             shutdown_errors: Vec::new(),
             transport_backend,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             socket_control: None,
         }
     }
@@ -261,7 +263,10 @@ impl CoinbaseWebSocketClient {
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         };
 
         let keyed_quotas = vec![(
@@ -391,12 +396,12 @@ impl CoinbaseWebSocketClient {
             self.credential.as_ref().and_then(|c| c.build_ws_jwt().ok())
         };
 
-        let sub = CoinbaseWsSubscription {
+        let sub = protect_subscription(CoinbaseWsSubscription {
             msg_type: CoinbaseWsAction::Subscribe,
             product_ids: product_ids.to_vec(),
             channel,
             jwt,
-        };
+        })?;
 
         let channel_str = channel.as_ref();
 
@@ -411,7 +416,11 @@ impl CoinbaseWebSocketClient {
 
         let cmd_tx = self.cmd_tx.read().await;
         cmd_tx
-            .send(HandlerCommand::Subscribe(sub))
+            .send(HandlerCommand::Subscribe {
+                channel: sub.channel,
+                product_ids: sub.product_ids,
+                payload: sub.payload,
+            })
             .map_err(|e| anyhow::anyhow!("Failed to send Subscribe command: {e}"))
     }
 
@@ -423,12 +432,12 @@ impl CoinbaseWebSocketClient {
     ) -> anyhow::Result<()> {
         let jwt = self.credential.as_ref().and_then(|c| c.build_ws_jwt().ok());
 
-        let unsub = CoinbaseWsSubscription {
+        let unsub = protect_subscription(CoinbaseWsSubscription {
             msg_type: CoinbaseWsAction::Unsubscribe,
             product_ids: product_ids.to_vec(),
             channel,
             jwt,
-        };
+        })?;
 
         let channel_str = channel.as_ref();
 
@@ -443,7 +452,11 @@ impl CoinbaseWebSocketClient {
 
         let cmd_tx = self.cmd_tx.read().await;
         cmd_tx
-            .send(HandlerCommand::Unsubscribe(unsub))
+            .send(HandlerCommand::Unsubscribe {
+                channel: unsub.channel,
+                product_ids: unsub.product_ids,
+                payload: unsub.payload,
+            })
             .map_err(|e| anyhow::anyhow!("Failed to send Unsubscribe command: {e}"))
     }
 
@@ -622,6 +635,24 @@ impl Drop for CoinbaseWebSocketClient {
     }
 }
 
+struct ProtectedSubscription {
+    channel: CoinbaseWsChannel,
+    product_ids: Vec<Ustr>,
+    payload: SecretString,
+}
+
+fn protect_subscription(
+    mut subscription: CoinbaseWsSubscription,
+) -> Result<ProtectedSubscription, serde_json::Error> {
+    let payload = SecretString::from(serde_json::to_string(&subscription)?);
+
+    Ok(ProtectedSubscription {
+        channel: subscription.channel,
+        product_ids: std::mem::take(&mut subscription.product_ids),
+        payload,
+    })
+}
+
 fn resubscribe_all(
     subscriptions: &SubscriptionState,
     credential: &Option<CoinbaseCredential>,
@@ -698,7 +729,19 @@ fn resubscribe_all(
             jwt,
         };
 
-        if let Err(e) = cmd_tx.send(HandlerCommand::Subscribe(sub)) {
+        let sub = match protect_subscription(sub) {
+            Ok(sub) => sub,
+            Err(e) => {
+                log::error!("Failed to serialize subscription for {topic}: {e}");
+                continue;
+            }
+        };
+
+        if let Err(e) = cmd_tx.send(HandlerCommand::Subscribe {
+            channel: sub.channel,
+            product_ids: sub.product_ids,
+            payload: sub.payload,
+        }) {
             log::error!("Failed to resubscribe {topic}: {e}");
         }
     }
@@ -710,6 +753,21 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_debug_redacts_proxy_url() {
+        let proxy_url = "http://user:password@proxy.example:8080";
+        let client = CoinbaseWebSocketClient::new(
+            "wss://test",
+            TransportBackend::default(),
+            Some(proxy_url.to_string()),
+        );
+
+        let debug = format!("{client:?}");
+
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains(proxy_url));
+    }
 
     #[rstest]
     fn test_drop_clone_does_not_signal_handler() {
@@ -732,11 +790,16 @@ mod tests {
         let cmd = rx.try_recv().unwrap();
 
         match cmd {
-            HandlerCommand::Subscribe(sub) => {
-                assert_eq!(sub.channel, CoinbaseWsChannel::Level2);
-                assert_eq!(sub.product_ids.len(), 1);
-                assert_eq!(sub.product_ids[0], "BTC-USD");
-                assert!(sub.jwt.is_none());
+            HandlerCommand::Subscribe {
+                channel,
+                product_ids,
+                payload,
+            } => {
+                let payload: serde_json::Value =
+                    serde_json::from_str(payload.expose_secret()).unwrap();
+                assert_eq!(channel, CoinbaseWsChannel::Level2);
+                assert_eq!(product_ids, vec![Ustr::from("BTC-USD")]);
+                assert!(payload.get("jwt").is_none());
             }
             other => panic!("Expected Subscribe, was {other:?}"),
         }
@@ -753,9 +816,13 @@ mod tests {
         let cmd = rx.try_recv().unwrap();
 
         match cmd {
-            HandlerCommand::Subscribe(sub) => {
-                assert_eq!(sub.channel, CoinbaseWsChannel::Heartbeats);
-                assert!(sub.product_ids.is_empty());
+            HandlerCommand::Subscribe {
+                channel,
+                product_ids,
+                ..
+            } => {
+                assert_eq!(channel, CoinbaseWsChannel::Heartbeats);
+                assert!(product_ids.is_empty());
             }
             other => panic!("Expected Subscribe, was {other:?}"),
         }
@@ -773,8 +840,8 @@ mod tests {
         let cmd1 = rx.try_recv().unwrap();
         let cmd2 = rx.try_recv().unwrap();
 
-        assert!(matches!(cmd1, HandlerCommand::Subscribe(_)));
-        assert!(matches!(cmd2, HandlerCommand::Subscribe(_)));
+        assert!(matches!(cmd1, HandlerCommand::Subscribe { .. }));
+        assert!(matches!(cmd2, HandlerCommand::Subscribe { .. }));
         assert!(rx.try_recv().is_err());
     }
 
@@ -820,11 +887,37 @@ mod tests {
         let cmd = rx.try_recv().unwrap();
 
         match cmd {
-            HandlerCommand::Subscribe(sub) => {
-                assert_eq!(sub.channel, expected_channel);
+            HandlerCommand::Subscribe { channel, .. } => {
+                assert_eq!(channel, expected_channel);
             }
             other => panic!("Expected Subscribe, was {other:?}"),
         }
+    }
+
+    #[rstest]
+    fn test_protected_subscription_preserves_wire_jwt_and_redacts_command_debug() {
+        let jwt = "jwt-secret-value";
+        let subscription = CoinbaseWsSubscription {
+            msg_type: CoinbaseWsAction::Subscribe,
+            product_ids: vec![Ustr::from("BTC-USD")],
+            channel: CoinbaseWsChannel::User,
+            jwt: Some(SecretString::from(jwt)),
+        };
+        let subscription_debug = format!("{subscription:?}");
+        let protected = protect_subscription(subscription).unwrap();
+        let payload: serde_json::Value =
+            serde_json::from_str(protected.payload.expose_secret()).unwrap();
+        let command = HandlerCommand::Subscribe {
+            channel: protected.channel,
+            product_ids: protected.product_ids,
+            payload: protected.payload,
+        };
+        let debug = format!("{command:?}");
+
+        assert_eq!(payload["jwt"], jwt);
+        assert!(subscription_debug.contains(REDACTED));
+        assert!(!subscription_debug.contains(jwt));
+        assert!(!debug.contains(jwt));
     }
 
     #[rstest]

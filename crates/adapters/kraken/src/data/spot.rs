@@ -134,6 +134,10 @@ impl KrakenSpotDataClient {
         let cancellation_token = session_tasks.cancellation_token();
         let command_tasks = TaskGroup::new();
         let socket_factory = SocketControlFactory::new(client_id, Some(*KRAKEN_VENUE));
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
 
         let http = KrakenSpotHttpClient::new(
             config.environment,
@@ -142,18 +146,15 @@ impl KrakenSpotDataClient {
             None,
             None,
             None,
-            config.proxy_url.clone(),
+            proxy_url.clone(),
             config
                 .max_requests_per_second
                 .unwrap_or(KRAKEN_SPOT_DEFAULT_RATE_LIMIT_PER_SECOND),
         )?;
 
-        let ws = KrakenSpotWebSocketClient::new(
-            config.clone(),
-            cancellation_token.clone(),
-            config.proxy_url.clone(),
-        )
-        .with_socket_control(socket_factory.control("kraken-spot-data-streams"));
+        let ws =
+            KrakenSpotWebSocketClient::new(config.clone(), cancellation_token.clone(), proxy_url)
+                .with_socket_control(socket_factory.control("kraken-spot-data-streams"));
 
         Ok(Self {
             clock: get_atomic_clock_realtime(),
@@ -272,7 +273,10 @@ impl KrakenSpotDataClient {
             self.ws = KrakenSpotWebSocketClient::new(
                 self.config.clone(),
                 self.cancellation_token.clone(),
-                self.config.proxy_url.clone(),
+                self.config
+                    .proxy_url
+                    .as_ref()
+                    .map(|value| value.expose_secret().to_owned()),
             )
             .with_socket_control(self.socket_factory.control("kraken-spot-data-streams"));
         }
@@ -320,7 +324,10 @@ impl KrakenSpotDataClient {
             let ws_l3 = KrakenSpotWebSocketClient::l3(
                 self.config.clone(),
                 self.cancellation_token.clone(),
-                self.config.proxy_url.clone(),
+                self.config
+                    .proxy_url
+                    .as_ref()
+                    .map(|value| value.expose_secret().to_owned()),
             )
             .with_socket_control(self.socket_factory.control("kraken-spot-l3-data-streams"));
 

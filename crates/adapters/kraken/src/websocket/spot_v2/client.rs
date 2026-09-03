@@ -24,7 +24,9 @@ use std::{
 };
 
 use arc_swap::ArcSwap;
-use nautilus_core::AtomicMap;
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::{AtomicMap, string::secret::SecretString};
 use nautilus_live::{
     SocketControl,
     task::{TaskGroup, TaskShutdownError},
@@ -84,18 +86,18 @@ pub struct KrakenSpotWebSocketClient {
     handler_tasks: Arc<TaskGroup>,
     connect_lock: Arc<tokio::sync::Mutex<()>>,
     subscriptions: SubscriptionState,
-    subscription_payloads: Arc<tokio::sync::RwLock<HashMap<String, String>>>,
+    subscription_payloads: Arc<tokio::sync::RwLock<HashMap<String, SecretString>>>,
     auth_tracker: AuthTracker,
     cancellation_token: CancellationToken,
     req_id_counter: Arc<AtomicU64>,
-    auth_token: Arc<tokio::sync::RwLock<Option<String>>>,
+    auth_token: Arc<tokio::sync::RwLock<Option<SecretString>>>,
     account_id: Arc<RwLock<Option<AccountId>>>,
     truncated_id_map: Arc<AtomicMap<String, ClientOrderId>>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     l2_depths: L2Depths,
     l3_depths: Arc<parking_lot::Mutex<ahash::AHashMap<String, u32>>>,
     transport_backend: TransportBackend,
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
     socket_control: Option<SocketControl>,
 }
 
@@ -167,7 +169,7 @@ impl KrakenSpotWebSocketClient {
         let connection_mode = Arc::new(ArcSwap::from_pointee(initial_mode));
 
         let transport_backend = config.transport_backend;
-        config.proxy_url = proxy_url.clone();
+        config.proxy_url = proxy_url.clone().map(SecretString::from);
 
         Self {
             url,
@@ -190,7 +192,7 @@ impl KrakenSpotWebSocketClient {
             l2_depths: L2Depths::default(),
             l3_depths: Arc::new(parking_lot::Mutex::new(ahash::AHashMap::new())),
             transport_backend,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             socket_control: None,
         }
     }
@@ -235,7 +237,7 @@ impl KrakenSpotWebSocketClient {
     }
 
     /// Returns the current cached authentication token, if any.
-    pub async fn auth_token(&self) -> Option<String> {
+    pub async fn auth_token(&self) -> Option<SecretString> {
         self.auth_token.read().await.clone()
     }
 
@@ -244,14 +246,16 @@ impl KrakenSpotWebSocketClient {
     /// Returns `None` when the lock is contended or no token is cached. Used by
     /// the synchronous order-routing path where the auth token is normally
     /// uncontended; callers fall back to REST when the lock is unavailable.
-    pub fn auth_token_blocking(&self) -> Option<String> {
-        self.auth_token.try_read().ok().and_then(|g| g.clone())
+    pub fn auth_token_blocking(&self) -> Option<SecretString> {
+        self.auth_token
+            .try_read()
+            .ok()
+            .and_then(|guard| guard.clone())
     }
 
-    /// Returns a clone of the auth token handle for components that need
-    /// non-async, lock-free read access (e.g. compensating cancels triggered
-    /// from the timeout task in `OrderRequestState`).
-    pub fn auth_token_handle(&self) -> Arc<tokio::sync::RwLock<Option<String>>> {
+    /// Returns the shared auth token handle for internal components that need
+    /// non-async access, such as timeout-triggered compensating cancels.
+    pub(crate) fn auth_token_handle(&self) -> Arc<tokio::sync::RwLock<Option<SecretString>>> {
         self.auth_token.clone()
     }
 
@@ -301,7 +305,10 @@ impl KrakenSpotWebSocketClient {
             idle_timeout_ms: (self.config.ws_idle_timeout_ms != 0)
                 .then_some(self.config.ws_idle_timeout_ms),
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         };
 
         let keyed_quotas = vec![
@@ -407,7 +414,10 @@ impl KrakenSpotWebSocketClient {
                                     let auth_token = auth_token_for_reconnect.read().await.clone();
                                     match auth_token {
                                         Some(token) => {
-                                            match update_auth_token_in_payload(payload, &token) {
+                                            match update_auth_token_in_payload(
+                                                payload.expose_secret(),
+                                                token.expose_secret(),
+                                            ) {
                                                 Ok(p) => p,
                                                 Err(e) => {
                                                     log::error!("Failed to update auth token: {e}");
@@ -650,7 +660,7 @@ impl KrakenSpotWebSocketClient {
             KrakenWsChannel::Executions | KrakenWsChannel::Balances
         );
         let token = if is_private {
-            Some(self.auth_token.read().await.clone().ok_or_else(|| {
+            Some(self.auth_token().await.ok_or_else(|| {
                 KrakenWsError::AuthenticationError(
                     "Authentication token required for private channels. Call authenticate() first"
                         .to_string(),
@@ -826,7 +836,7 @@ impl KrakenSpotWebSocketClient {
             KrakenWsChannel::Executions | KrakenWsChannel::Balances
         );
         let token = if is_private {
-            Some(self.auth_token.read().await.clone().ok_or_else(|| {
+            Some(self.auth_token().await.ok_or_else(|| {
                 KrakenWsError::AuthenticationError(
                     "Authentication token required for private channels. Call authenticate() first"
                         .to_string(),
@@ -878,14 +888,15 @@ impl KrakenSpotWebSocketClient {
         Ok(())
     }
 
-    async fn send_command(&self, request: &KrakenWsRequest) -> Result<String, KrakenWsError> {
-        let payload =
-            serde_json::to_string(request).map_err(|e| KrakenWsError::JsonError(e.to_string()))?;
+    async fn send_command(&self, request: &KrakenWsRequest) -> Result<SecretString, KrakenWsError> {
+        let payload = SecretString::from(
+            serde_json::to_string(request).map_err(|e| KrakenWsError::JsonError(e.to_string()))?,
+        );
 
         log::trace!(
             "Sending WebSocket request: method={:?} ({} bytes)",
             request.method,
-            payload.len(),
+            payload.expose_secret().len(),
         );
 
         let cmd = match request.method {
@@ -1118,7 +1129,7 @@ impl KrakenSpotWebSocketClient {
             )));
         }
 
-        let token = self.auth_token.read().await.clone().ok_or_else(|| {
+        let token = self.auth_token().await.ok_or_else(|| {
             KrakenWsError::AuthenticationError(
                 "Authentication token required for level3. Call authenticate() first".to_string(),
             )
@@ -1204,7 +1215,7 @@ impl KrakenSpotWebSocketClient {
         }
         self.subscriptions.mark_unsubscribe(&key);
 
-        let token = self.auth_token.read().await.clone();
+        let token = self.auth_token().await;
         let req_id = self.get_next_req_id();
         let request = KrakenWsRequest {
             method: KrakenWsMethod::Unsubscribe,
@@ -1302,7 +1313,7 @@ impl KrakenSpotWebSocketClient {
                 depth: Some(depth),
                 interval: None,
                 event_trigger: None,
-                token: Some(new_token),
+                token: Some(new_token.clone()),
                 snap_orders: None,
                 snap_trades: None,
             })),
@@ -1427,7 +1438,7 @@ impl KrakenSpotWebSocketClient {
     ) -> Result<(), KrakenWsError> {
         let req_id = self.get_next_req_id();
 
-        let token = self.auth_token.read().await.clone().ok_or_else(|| {
+        let token = self.auth_token().await.ok_or_else(|| {
             KrakenWsError::AuthenticationError(
                 "Authentication token required for executions channel. Call authenticate() first"
                     .to_string(),
@@ -1560,8 +1571,10 @@ impl KrakenSpotWebSocketClient {
     }
 }
 
-/// Helper function to refresh authentication token via HTTP API.
-async fn refresh_auth_token(config: &KrakenDataClientConfig) -> Result<String, KrakenWsError> {
+/// Refreshes the authentication token via the HTTP API.
+async fn refresh_auth_token(
+    config: &KrakenDataClientConfig,
+) -> Result<SecretString, KrakenWsError> {
     let api_key = config
         .api_key
         .clone()
@@ -1572,15 +1585,18 @@ async fn refresh_auth_token(config: &KrakenDataClientConfig) -> Result<String, K
         .ok_or_else(|| KrakenWsError::AuthenticationError("Missing API secret".to_string()))?;
 
     let http_client = KrakenSpotHttpClient::with_credentials(
-        api_key,
-        api_secret,
+        api_key.into_inner(),
+        api_secret.into_inner(),
         config.environment,
         Some(config.http_base_url()),
         config.timeout_secs,
         None,
         None,
         None,
-        config.proxy_url.clone(),
+        config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned()),
         config
             .max_requests_per_second
             .unwrap_or(KRAKEN_SPOT_DEFAULT_RATE_LIMIT_PER_SECOND),
@@ -1595,14 +1611,17 @@ async fn refresh_auth_token(config: &KrakenDataClientConfig) -> Result<String, K
 
     log::debug!(
         "WebSocket authentication token refreshed: token_length={}, expires={}",
-        ws_token.token.len(),
+        ws_token.token.expose_secret().len(),
         ws_token.expires
     );
 
-    Ok(ws_token.token)
+    Ok(ws_token.into_token())
 }
 
-fn update_auth_token_in_payload(payload: &str, new_token: &str) -> Result<String, KrakenWsError> {
+fn update_auth_token_in_payload(
+    payload: &str,
+    new_token: &str,
+) -> Result<SecretString, KrakenWsError> {
     let mut value: serde_json::Value =
         serde_json::from_str(payload).map_err(|e| KrakenWsError::JsonError(e.to_string()))?;
 
@@ -1610,7 +1629,9 @@ fn update_auth_token_in_payload(payload: &str, new_token: &str) -> Result<String
         params["token"] = serde_json::Value::String(new_token.to_string());
     }
 
-    serde_json::to_string(&value).map_err(|e| KrakenWsError::JsonError(e.to_string()))
+    serde_json::to_string(&value)
+        .map(SecretString::from)
+        .map_err(|e| KrakenWsError::JsonError(e.to_string()))
 }
 
 #[inline]
@@ -1659,6 +1680,23 @@ mod tests {
 
     use super::*;
     use crate::config::KrakenDataClientConfig;
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_debug_redacts_auth_state_and_proxy_url() {
+        let client = KrakenSpotWebSocketClient::new(
+            KrakenDataClientConfig::default(),
+            CancellationToken::new(),
+            Some("http://user:proxy-secret@localhost".to_string()),
+        );
+        *client.auth_token.write().await = Some(SecretString::from("auth-token".to_string()));
+
+        let debug = format!("{client:?}");
+
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains("proxy-secret"));
+        assert!(!debug.contains("auth-token"));
+    }
 
     const SECRET_MARKER: &str = "OUTBOUND_SECRET_MARKER";
 
@@ -1754,7 +1792,7 @@ mod tests {
                 depth: None,
                 interval: None,
                 event_trigger: None,
-                token: Some(SECRET_MARKER.to_string()),
+                token: Some(SecretString::from(SECRET_MARKER)),
                 snap_orders: Some(true),
                 snap_trades: Some(false),
             })),
@@ -1923,7 +1961,7 @@ mod tests {
         let SpotHandlerCommand::Subscribe { payload } = cmd else {
             panic!("expected subscribe command");
         };
-        assert_book_subscribe_payload(&payload, "BTC/USD", 10);
+        assert_book_subscribe_payload(payload.expose_secret(), "BTC/USD", 10);
 
         assert_eq!(client.subscriptions.get_reference_count(key), 1);
         assert!(client.subscriptions_contains(key));
@@ -1978,7 +2016,7 @@ mod tests {
         client.subscriptions.confirm_subscribe(key);
         client.l3_depths.lock().insert("BTC/USD".to_string(), 1000);
 
-        *client.auth_token.write().await = Some("test-token".to_string());
+        *client.auth_token.write().await = Some(SecretString::from("test-token".to_string()));
 
         let err = client
             .subscribe_book_l3(Ustr::from("BTC/USD"), 10)
@@ -2024,7 +2062,7 @@ mod tests {
             .subscription_payloads
             .write()
             .await
-            .insert(key.to_string(), "payload".to_string());
+            .insert(key.to_string(), SecretString::from("payload".to_string()));
 
         client
             .unsubscribe_book(InstrumentId::from("BTC/USD.KRAKEN"))
@@ -2040,9 +2078,13 @@ mod tests {
         let SpotHandlerCommand::Unsubscribe { payload } = cmd else {
             panic!("expected unsubscribe command");
         };
-        assert!(payload.contains(r#""method":"unsubscribe""#));
-        assert!(payload.contains(r#""channel":"book""#));
-        assert!(payload.contains(r#""BTC/USD""#));
+        assert!(
+            payload
+                .expose_secret()
+                .contains(r#""method":"unsubscribe""#),
+        );
+        assert!(payload.expose_secret().contains(r#""channel":"book""#));
+        assert!(payload.expose_secret().contains(r#""BTC/USD""#));
     }
 
     #[rstest]
@@ -2072,8 +2114,8 @@ mod tests {
     fn test_update_auth_token_in_payload_for_level3() {
         let original = r#"{"method":"subscribe","params":{"channel":"level3","symbol":["BTC/USD"],"depth":1000,"snapshot":true,"token":"OLD"},"req_id":1}"#;
         let rewritten = update_auth_token_in_payload(original, "NEW").unwrap();
-        assert!(rewritten.contains(r#""token":"NEW""#));
-        assert!(!rewritten.contains(r#""token":"OLD""#));
+        assert!(rewritten.expose_secret().contains(r#""token":"NEW""#));
+        assert!(!rewritten.expose_secret().contains(r#""token":"OLD""#));
     }
 
     #[rstest]

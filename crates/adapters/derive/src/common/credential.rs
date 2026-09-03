@@ -41,7 +41,10 @@
 use std::fmt::{Debug, Display};
 
 use anyhow::Context;
-use nautilus_core::env::{get_or_env_var, get_or_env_var_opt};
+use nautilus_core::{
+    env::{get_or_env_var, get_or_env_var_opt},
+    string::secret::REDACTED,
+};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::common::enums::DeriveEnvironment;
@@ -147,7 +150,7 @@ impl Debug for DeriveCredential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(DeriveCredential))
             .field("wallet_address", &self.wallet_address)
-            .field("session_key", &"***redacted***")
+            .field("session_key", &REDACTED)
             .field("subaccount_id", &self.subaccount_id)
             .finish()
     }

@@ -378,7 +378,7 @@ fn build_config(addr: SocketAddr) -> LighterDataClientConfig {
         base_url_ws: Some(format!("ws://{addr}/stream")),
         account_index: Some(12_345),
         api_key_index: Some(5),
-        private_key: Some(PRIVATE_KEY_HEX.to_string()),
+        private_key: Some(PRIVATE_KEY_HEX.into()),
         // Disable the periodic refresh loop; tests drive bootstrap directly
         // via `connect()` and request_instruments(). A nonzero interval would
         // leak a background task across the entire crate's test run.

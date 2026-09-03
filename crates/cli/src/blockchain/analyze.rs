@@ -486,7 +486,7 @@ async fn create_data_client(
     let config = BlockchainDataClientConfig::builder()
         .chain(Arc::new(chain.clone()))
         .dex_ids(vec![dex_type])
-        .http_rpc_url(rpc_http_url)
+        .http_rpc_url(rpc_http_url.into())
         .maybe_multicall_calls_per_rpc_request(multicall_calls_per_rpc_request)
         .use_hypersync_for_live_data(true)
         .postgres_cache_database_config(postgres_connect_options)

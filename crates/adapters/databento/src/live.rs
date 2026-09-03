@@ -43,7 +43,8 @@ use databento::{
 };
 use indexmap::IndexMap;
 use nautilus_core::{
-    AtomicMap, UnixNanos, consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime,
+    AtomicMap, UnixNanos, consts::NAUTILUS_USER_AGENT, string::secret::SecretString,
+    time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{Data, InstrumentStatus, OrderBookDelta, OrderBookDeltas},
@@ -566,7 +567,7 @@ impl DatabentoFeedHandler {
         let timeout = Duration::from_secs(5); // Hardcoded timeout for now
 
         let gateway_addr = self.gateway_addr.clone();
-        let api_key = self.credential.api_key().to_owned();
+        let api_key = SecretString::from(self.credential.api_key().to_owned());
         let dataset = self.dataset.clone();
 
         let result = tokio::time::timeout(timeout, async move {
@@ -577,7 +578,7 @@ impl DatabentoFeedHandler {
                 base
             };
             base.user_agent_extension(NAUTILUS_USER_AGENT.into())
-                .key(api_key)?
+                .key(api_key.expose_secret().to_owned())?
                 .dataset(dataset)
                 .build()
                 .await

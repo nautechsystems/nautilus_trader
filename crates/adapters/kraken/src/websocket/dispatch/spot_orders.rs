@@ -25,7 +25,7 @@ use std::{
 
 use ahash::AHashMap;
 use dashmap::DashMap;
-use nautilus_core::{UUID4, time::AtomicTime};
+use nautilus_core::{UUID4, string::secret::SecretString, time::AtomicTime};
 use nautilus_live::task::TaskSpawner;
 use nautilus_model::{
     events::{
@@ -104,7 +104,7 @@ pub struct OrderRequestState {
     account_id: AccountId,
     /// WS auth token shared with the client; used to build compensating
     /// cancels when a submit request times out.
-    auth_token: Arc<tokio::sync::RwLock<Option<String>>>,
+    auth_token: Arc<tokio::sync::RwLock<Option<SecretString>>>,
     task_spawner: RwLock<TaskSpawner>,
     /// Clock used to stamp local timeout diagnostics.
     clock: &'static AtomicTime,
@@ -123,7 +123,7 @@ impl OrderRequestState {
         timeout: Duration,
         trader_id: TraderId,
         account_id: AccountId,
-        auth_token: Arc<tokio::sync::RwLock<Option<String>>>,
+        auth_token: Arc<tokio::sync::RwLock<Option<SecretString>>>,
         task_spawner: TaskSpawner,
         clock: &'static AtomicTime,
     ) -> Self {
@@ -252,8 +252,10 @@ impl OrderRequestState {
         envelope.req_id = Some(req_id);
         identity.ts_sent_ns = ts_now_ns;
 
-        let payload = serde_json::to_string(&envelope)
-            .map_err(|e| anyhow::anyhow!("serialize WS order request: {e}"))?;
+        let payload = SecretString::from(
+            serde_json::to_string(&envelope)
+                .map_err(|e| anyhow::anyhow!("serialize WS order request: {e}"))?,
+        );
 
         let cmd_tx = self
             .cmd_tx()
@@ -410,7 +412,12 @@ impl OrderRequestState {
     /// the original request remains resolvable by a late response or
     /// reconciliation.
     fn send_compensating_cancel(&self, cl_ord_ids: &[ClientOrderId]) {
-        let Some(token) = self.auth_token.try_read().ok().and_then(|g| g.clone()) else {
+        let Some(token) = self
+            .auth_token
+            .try_read()
+            .ok()
+            .and_then(|guard| guard.clone())
+        else {
             log::error!(
                 "Submit timeout: no auth token for compensating cancel cl_ord_ids={cl_ord_ids:?}; \
                  relying on reconciliation to recover any orphan order",
@@ -431,7 +438,7 @@ impl OrderRequestState {
         };
 
         let payload = match serde_json::to_string(&envelope) {
-            Ok(p) => p,
+            Ok(payload) => SecretString::from(payload),
             Err(e) => {
                 log::warn!("Submit timeout: compensating cancel serialise failed: {e}");
                 return;
@@ -795,6 +802,7 @@ impl OrderRequestState {
 mod tests {
     use std::sync::atomic::AtomicU64;
 
+    use nautilus_core::string::secret::REDACTED;
     use nautilus_live::task::TaskGroup;
     use nautilus_model::{
         enums::{OrderSide, OrderType},
@@ -826,7 +834,7 @@ mod tests {
         pub(super) cmd_rx: tokio::sync::mpsc::UnboundedReceiver<SpotHandlerCommand>,
         pub(super) event_rx: tokio::sync::mpsc::UnboundedReceiver<OrderEventAny>,
         pub(super) dispatch_state: Arc<WsDispatchState>,
-        pub(super) auth_token: Arc<tokio::sync::RwLock<Option<String>>>,
+        pub(super) auth_token: Arc<tokio::sync::RwLock<Option<SecretString>>>,
         pub(super) pending_tasks: TaskGroup,
         pub(super) cmd_tx_handle:
             Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<SpotHandlerCommand>>>,
@@ -862,6 +870,19 @@ mod tests {
             pending_tasks,
             cmd_tx_handle,
         }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn debug_redacts_auth_token() {
+        let harness = make_harness(100);
+        *harness.auth_token.write().await =
+            Some(SecretString::from("kraken-auth-token".to_string()));
+
+        let debug = format!("{:?}", harness.state);
+
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains("kraken-auth-token"));
     }
 
     fn register_default_identity(dispatch_state: &WsDispatchState, cl_ord_id: ClientOrderId) {
@@ -905,7 +926,7 @@ mod tests {
             side: KrakenOrderSide::Buy,
             order_qty: dec!(0.001),
             symbol: "BTC/USD".to_string(),
-            token: token.to_string(),
+            token: SecretString::from(token),
             limit_price: Some(dec!(50000)),
             time_in_force: None,
             expire_time: None,
@@ -937,7 +958,7 @@ mod tests {
             side: KrakenOrderSide::Buy,
             order_qty: dec!(0.001),
             symbol: "BTC/USD".to_string(),
-            token: "test-token".to_string(),
+            token: SecretString::from("test-token"),
             limit_price: Some(dec!(50000)),
             time_in_force: None,
             expire_time: None,
@@ -959,8 +980,12 @@ mod tests {
                 payload,
             } => {
                 assert_eq!(rid, req_id);
-                assert!(payload.contains("\"add_order\""));
-                assert!(payload.contains(&format!("\"req_id\":{req_id}")));
+                assert!(payload.expose_secret().contains("\"add_order\""));
+                assert!(
+                    payload
+                        .expose_secret()
+                        .contains(&format!("\"req_id\":{req_id}")),
+                );
             }
             _ => panic!("wrong cmd variant"),
         }
@@ -981,7 +1006,7 @@ mod tests {
             side: KrakenOrderSide::Buy,
             order_qty: dec!(0.001),
             symbol: "BTC/USD".to_string(),
-            token: "TKN".to_string(),
+            token: SecretString::from("TKN"),
             limit_price: Some(dec!(50000)),
             time_in_force: None,
             expire_time: None,
@@ -1005,7 +1030,7 @@ mod tests {
 
         match cmd {
             SpotHandlerCommand::SendOrderRequest { payload, .. } => {
-                assert!(payload.contains("\"add_order\""));
+                assert!(payload.expose_secret().contains("\"add_order\""));
             }
             other => panic!("expected SendOrderRequest, was {other:?}"),
         }
@@ -1020,7 +1045,7 @@ mod tests {
             order_qty: Some(dec!(0.005)),
             limit_price: None,
             trigger_price: None,
-            token: "TKN".to_string(),
+            token: SecretString::from("TKN"),
         };
         let identity = PendingRequest {
             operation: PendingOperation::Amend,
@@ -1034,7 +1059,7 @@ mod tests {
         let _ = state.amend(params, identity, 1).expect("amend ok");
         let cmd = rx.try_recv().unwrap();
         if let SpotHandlerCommand::SendOrderRequest { payload, .. } = cmd {
-            assert!(payload.contains("\"amend_order\""));
+            assert!(payload.expose_secret().contains("\"amend_order\""));
         } else {
             panic!("wrong variant");
         }
@@ -1046,7 +1071,7 @@ mod tests {
         let params = KrakenWsCancelOrderParams {
             order_id: Some(vec!["O-VENUE".to_string()]),
             cl_ord_id: None,
-            token: "TKN".to_string(),
+            token: SecretString::from("TKN"),
         };
         let identity = PendingRequest {
             operation: PendingOperation::Cancel,
@@ -1060,7 +1085,7 @@ mod tests {
         let _ = state.cancel(params, identity, 1).expect("cancel ok");
         let cmd = rx.try_recv().unwrap();
         if let SpotHandlerCommand::SendOrderRequest { payload, .. } = cmd {
-            assert!(payload.contains("\"cancel_order\""));
+            assert!(payload.expose_secret().contains("\"cancel_order\""));
         } else {
             panic!("wrong variant");
         }
@@ -1072,7 +1097,7 @@ mod tests {
         let params = KrakenWsBatchAddParams {
             symbol: "BTC/USD".to_string(),
             orders: vec![],
-            token: "TKN".to_string(),
+            token: SecretString::from("TKN"),
         };
         let identity = PendingRequest {
             operation: PendingOperation::BatchAdd,
@@ -1086,7 +1111,7 @@ mod tests {
         let _ = state.batch_add(params, identity, 1).expect("batch ok");
         let cmd = rx.try_recv().unwrap();
         if let SpotHandlerCommand::SendOrderRequest { payload, .. } = cmd {
-            assert!(payload.contains("\"batch_add\""));
+            assert!(payload.expose_secret().contains("\"batch_add\""));
         } else {
             panic!("wrong variant");
         }
@@ -1444,7 +1469,7 @@ mod tests {
         let mut harness = make_harness(50);
         let cl_ord_id = ClientOrderId::from(CLIENT_ORDER_ID);
         register_default_identity(&harness.dispatch_state, cl_ord_id);
-        *harness.auth_token.write().await = Some("TEST-TOKEN".to_string());
+        *harness.auth_token.write().await = Some(SecretString::from("TEST-TOKEN".to_string()));
 
         let params = make_add_order_params("TEST-TOKEN");
         let req_id = harness
@@ -1453,7 +1478,11 @@ mod tests {
             .expect("submit ok");
 
         let payloads = recv_send_payloads_until_cancel(&mut harness.cmd_rx).await;
-        assert!(payloads.iter().any(|p| p.contains("\"cancel_order\"")));
+        assert!(
+            payloads
+                .iter()
+                .any(|p| p.expose_secret().contains("\"cancel_order\"")),
+        );
         assert_eq!(harness.state.pending_len(), 1);
         assert!(harness.event_rx.try_recv().is_err());
 
@@ -1482,7 +1511,7 @@ mod tests {
         let mut harness = make_harness(50);
         let cl_ord_id = ClientOrderId::from(CLIENT_ORDER_ID);
         register_default_identity(&harness.dispatch_state, cl_ord_id);
-        *harness.auth_token.write().await = Some("TEST-TOKEN".to_string());
+        *harness.auth_token.write().await = Some(SecretString::from("TEST-TOKEN".to_string()));
 
         let params = make_add_order_params("TEST-TOKEN");
         let req_id = harness
@@ -1778,7 +1807,7 @@ mod tests {
 
     fn drain_send_payloads(
         rx: &mut tokio::sync::mpsc::UnboundedReceiver<SpotHandlerCommand>,
-    ) -> Vec<String> {
+    ) -> Vec<SecretString> {
         let mut out = Vec::new();
 
         while let Ok(cmd) = rx.try_recv() {
@@ -1794,7 +1823,7 @@ mod tests {
     // sleep against the global runtime.
     async fn recv_send_payloads_until_cancel(
         rx: &mut tokio::sync::mpsc::UnboundedReceiver<SpotHandlerCommand>,
-    ) -> Vec<String> {
+    ) -> Vec<SecretString> {
         let mut out = Vec::new();
 
         loop {
@@ -1806,7 +1835,7 @@ mod tests {
             let SpotHandlerCommand::SendOrderRequest { payload, .. } = cmd else {
                 continue;
             };
-            let is_cancel = payload.contains("\"cancel_order\"");
+            let is_cancel = payload.expose_secret().contains("\"cancel_order\"");
             out.push(payload);
 
             if is_cancel {
@@ -1820,7 +1849,7 @@ mod tests {
         let mut harness = make_harness(50);
         let cl_ord_id = ClientOrderId::from(CLIENT_ORDER_ID);
         register_default_identity(&harness.dispatch_state, cl_ord_id);
-        *harness.auth_token.write().await = Some("TEST-TOKEN".to_string());
+        *harness.auth_token.write().await = Some(SecretString::from("TEST-TOKEN".to_string()));
 
         let params = make_add_order_params("TEST-TOKEN");
         let identity = make_identity(PendingOperation::Submit);
@@ -1831,16 +1860,19 @@ mod tests {
 
         let payloads = recv_send_payloads_until_cancel(&mut harness.cmd_rx).await;
         assert!(
-            payloads.iter().any(|p| p.contains("\"add_order\"")),
+            payloads
+                .iter()
+                .any(|p| p.expose_secret().contains("\"add_order\"")),
             "original add_order missing: {payloads:?}",
         );
         let cancel = payloads
             .iter()
-            .find(|p| p.contains("\"cancel_order\""))
+            .find(|p| p.expose_secret().contains("\"cancel_order\""))
             .expect("compensating cancel_order missing");
         assert!(
-            cancel.contains(CLIENT_ORDER_ID),
-            "compensating cancel must reference cl_ord_id, was {cancel}",
+            cancel.expose_secret().contains(CLIENT_ORDER_ID),
+            "compensating cancel must reference cl_ord_id, was {}",
+            cancel.expose_secret(),
         );
 
         assert_eq!(harness.state.pending_len(), 1);
@@ -1855,7 +1887,7 @@ mod tests {
         let mut harness = make_harness(50);
         let cl_ord_id = ClientOrderId::from(CLIENT_ORDER_ID);
         register_default_identity(&harness.dispatch_state, cl_ord_id);
-        *harness.auth_token.write().await = Some("TEST-TOKEN".to_string());
+        *harness.auth_token.write().await = Some(SecretString::from("TEST-TOKEN".to_string()));
 
         let params = make_add_order_params("TEST-TOKEN");
         let identity = make_identity(PendingOperation::Submit);
@@ -1868,9 +1900,10 @@ mod tests {
 
         let cancel = payloads
             .iter()
-            .find(|p| p.contains("\"cancel_order\""))
+            .find(|p| p.expose_secret().contains("\"cancel_order\""))
             .expect("compensating cancel missing");
-        let cancel_value: serde_json::Value = serde_json::from_str(cancel).expect("valid json");
+        let cancel_value: serde_json::Value =
+            serde_json::from_str(cancel.expose_secret()).expect("valid json");
         let cancel_req_id = cancel_value["req_id"].as_u64().expect("req_id present");
 
         for success in [true, false] {
@@ -1904,7 +1937,9 @@ mod tests {
 
         let payloads = drain_send_payloads(&mut harness.cmd_rx);
         assert!(
-            payloads.iter().all(|p| !p.contains("\"cancel_order\"")),
+            payloads
+                .iter()
+                .all(|p| !p.expose_secret().contains("\"cancel_order\"")),
             "no compensating cancel expected without token, was {payloads:?}",
         );
     }
@@ -1916,12 +1951,12 @@ mod tests {
         let cl_b = ClientOrderId::from("O-B");
         register_default_identity(&harness.dispatch_state, cl_a);
         register_default_identity(&harness.dispatch_state, cl_b);
-        *harness.auth_token.write().await = Some("TEST-TOKEN".to_string());
+        *harness.auth_token.write().await = Some(SecretString::from("TEST-TOKEN".to_string()));
 
         let params = KrakenWsBatchAddParams {
             symbol: "BTC/USD".to_string(),
             orders: vec![],
-            token: "TEST-TOKEN".to_string(),
+            token: SecretString::from("TEST-TOKEN"),
         };
         let identity = PendingRequest {
             operation: PendingOperation::BatchAdd,
@@ -1940,16 +1975,16 @@ mod tests {
         let payloads = recv_send_payloads_until_cancel(&mut harness.cmd_rx).await;
         let cancel = payloads
             .iter()
-            .find(|p| p.contains("\"cancel_order\""))
+            .find(|p| p.expose_secret().contains("\"cancel_order\""))
             .expect("compensating cancel missing");
-        assert!(cancel.contains("O-A") && cancel.contains("O-B"));
+        assert!(cancel.expose_secret().contains("O-A") && cancel.expose_secret().contains("O-B"),);
         assert_eq!(harness.state.pending_len(), 1);
         assert!(harness.event_rx.try_recv().is_err());
 
         let batch_req_id = payloads
             .iter()
-            .find(|p| p.contains("\"batch_add\""))
-            .and_then(|p| serde_json::from_str::<serde_json::Value>(p).ok())
+            .find(|p| p.expose_secret().contains("\"batch_add\""))
+            .and_then(|p| serde_json::from_str::<serde_json::Value>(p.expose_secret()).ok())
             .and_then(|v| v["req_id"].as_u64())
             .expect("batch req_id missing");
         let response = KrakenWsOrderResponse {
@@ -2014,7 +2049,7 @@ mod tests {
         let mut harness = make_harness(50);
         let cl_ord_id = ClientOrderId::from(CLIENT_ORDER_ID);
         register_default_identity(&harness.dispatch_state, cl_ord_id);
-        *harness.auth_token.write().await = Some("TEST-TOKEN".to_string());
+        *harness.auth_token.write().await = Some(SecretString::from("TEST-TOKEN".to_string()));
 
         let params = make_add_order_params("TEST-TOKEN");
         harness
@@ -2035,7 +2070,7 @@ mod tests {
         let mut harness = make_harness(50);
         let cl_ord_id = ClientOrderId::from(CLIENT_ORDER_ID);
         register_default_identity(&harness.dispatch_state, cl_ord_id);
-        *harness.auth_token.write().await = Some("TEST-TOKEN".to_string());
+        *harness.auth_token.write().await = Some(SecretString::from("TEST-TOKEN".to_string()));
         harness.pending_tasks.begin_shutdown();
         harness
             .pending_tasks
@@ -2078,7 +2113,7 @@ mod tests {
             side: KrakenOrderSide::Buy,
             order_qty: dec!(0.001),
             symbol: "BTC/USD".to_string(),
-            token: String::new(),
+            token: SecretString::default(),
             limit_price: Some(dec!(50000)),
             time_in_force: None,
             expire_time: None,

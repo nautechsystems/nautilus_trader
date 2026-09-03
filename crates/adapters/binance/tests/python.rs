@@ -124,8 +124,8 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
             account_id,
             product_type: BinanceProductType::UsdM,
             environment: BinanceEnvironment::Testnet,
-            api_key: Some(SMOKE_API_KEY.to_string()),
-            api_secret: Some(SMOKE_API_SECRET.to_string()),
+            api_key: Some(SMOKE_API_KEY.into()),
+            api_secret: Some(SMOKE_API_SECRET.into()),
             use_ws_trading: false,
             ..BinanceExecutionClientConfig::default()
         },

@@ -150,20 +150,21 @@ pub mod opt_bool_as_int {
 /// `"******"`, while the update endpoints return `""`. Surfacing `Option<String>`
 /// keeps callers from accidentally treating the sentinel as a real credential.
 pub mod masked_secret {
+    use nautilus_core::string::secret::SecretString;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-    pub fn serialize<S: Serializer>(value: &Option<String>, s: S) -> Result<S::Ok, S::Error> {
+    pub fn serialize<S: Serializer>(value: &Option<SecretString>, s: S) -> Result<S::Ok, S::Error> {
         match value {
             Some(v) => v.serialize(s),
             None => "".serialize(s),
         }
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<SecretString>, D::Error> {
         let raw = Option::<String>::deserialize(d)?;
         Ok(match raw.as_deref() {
             None | Some("" | "******") => None,
-            Some(_) => raw,
+            Some(_) => raw.map(SecretString::from),
         })
     }
 }

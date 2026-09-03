@@ -4677,7 +4677,7 @@ impl StreamSession<'_> {
 
         let _ = http_client
             .with_session_token(|token| {
-                client.update_auth(self.app_key, token.to_string());
+                client.update_auth(self.app_key, token.clone());
             })
             .await;
     }
@@ -4698,7 +4698,7 @@ async fn apply_stream_session_refresh(
 
     let _ = http_client
         .with_session_token(|token| {
-            stream_client.update_auth(app_key, token.to_string());
+            stream_client.update_auth(app_key, token.clone());
             if session_refresh.replaced {
                 let _ = stream_client.request_reconnect();
             }

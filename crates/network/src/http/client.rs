@@ -17,7 +17,7 @@
 
 use std::{borrow::Cow, collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 
-use nautilus_core::collections::into_ustr_vec;
+use nautilus_core::{collections::into_ustr_vec, string::secret::SecretString};
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use reqwest::{
     Method, Response, Url,
@@ -225,6 +225,34 @@ impl HttpClient {
             .await
     }
 
+    /// Sends an HTTP request whose body contains secret material.
+    ///
+    /// The body retains its zeroizing owner until the transport releases the last byte buffer.
+    /// Transport, TLS, and operating-system layers may make additional plaintext copies that this
+    /// client cannot zeroize.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unable to send the request or if it times out.
+    #[expect(clippy::too_many_arguments)]
+    pub async fn request_with_secret_body(
+        &self,
+        method: Method,
+        url: String,
+        params: Option<&HashMap<String, Vec<String>>>,
+        headers: Option<HashMap<String, String>>,
+        body: SecretString,
+        timeout_secs: Option<u64>,
+        keys: Option<Vec<String>>,
+    ) -> Result<HttpResponse, HttpClientError> {
+        let keys = keys.map(into_ustr_vec);
+        self.await_rate_limits(keys.as_deref()).await;
+
+        self.client
+            .send_request_with_secret_body(method, url, params, headers, body, timeout_secs)
+            .await
+    }
+
     /// Sends an HTTP request while redacting the URL from logs and transport errors.
     ///
     /// Use this for endpoints whose path or other URL components can carry credentials.
@@ -276,6 +304,33 @@ impl HttpClient {
 
         self.client
             .send_request_with_query(method, url, params, headers, body, timeout_secs)
+            .await
+    }
+
+    /// Sends an HTTP request with serializable query parameters while redacting the URL from logs
+    /// and transport errors.
+    ///
+    /// Use this for query parameters that can carry credentials.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unable to send request or times out.
+    #[expect(clippy::too_many_arguments)]
+    pub async fn request_with_params_url_redacted<P: serde::Serialize>(
+        &self,
+        method: Method,
+        url: String,
+        params: Option<&P>,
+        headers: Option<HashMap<String, String>>,
+        body: Option<Vec<u8>>,
+        timeout_secs: Option<u64>,
+        keys: Option<Vec<String>>,
+    ) -> Result<HttpResponse, HttpClientError> {
+        let keys = keys.map(into_ustr_vec);
+        self.await_rate_limits(keys.as_deref()).await;
+
+        self.client
+            .send_request_with_query_url_redacted(method, url, params, headers, body, timeout_secs)
             .await
     }
 
@@ -419,8 +474,37 @@ impl InnerHttpClient {
         body: Option<Vec<u8>>,
         timeout_secs: Option<u64>,
     ) -> Result<HttpResponse, HttpClientError> {
-        self.send_request_with_redaction(method, url, params, headers, body, timeout_secs, false)
-            .await
+        self.send_request_with_redaction(
+            method,
+            url,
+            params,
+            headers,
+            body.map(RequestBody::Plain),
+            timeout_secs,
+            false,
+        )
+        .await
+    }
+
+    async fn send_request_with_secret_body(
+        &self,
+        method: Method,
+        url: String,
+        params: Option<&HashMap<String, Vec<String>>>,
+        headers: Option<HashMap<String, String>>,
+        body: SecretString,
+        timeout_secs: Option<u64>,
+    ) -> Result<HttpResponse, HttpClientError> {
+        self.send_request_with_redaction(
+            method,
+            url,
+            params,
+            headers,
+            Some(RequestBody::Secret(body)),
+            timeout_secs,
+            false,
+        )
+        .await
     }
 
     async fn send_request_with_url_redacted(
@@ -432,8 +516,16 @@ impl InnerHttpClient {
         body: Option<Vec<u8>>,
         timeout_secs: Option<u64>,
     ) -> Result<HttpResponse, HttpClientError> {
-        self.send_request_with_redaction(method, url, params, headers, body, timeout_secs, true)
-            .await
+        self.send_request_with_redaction(
+            method,
+            url,
+            params,
+            headers,
+            body.map(RequestBody::Plain),
+            timeout_secs,
+            true,
+        )
+        .await
     }
 
     #[expect(clippy::too_many_arguments)]
@@ -443,7 +535,7 @@ impl InnerHttpClient {
         url: String,
         params: Option<&HashMap<String, Vec<String>>>,
         headers: Option<HashMap<String, String>>,
-        body: Option<Vec<u8>>,
+        body: Option<RequestBody>,
         timeout_secs: Option<u64>,
         redact_url: bool,
     ) -> Result<HttpResponse, HttpClientError> {
@@ -477,8 +569,37 @@ impl InnerHttpClient {
         body: Option<Vec<u8>>,
         timeout_secs: Option<u64>,
     ) -> Result<HttpResponse, HttpClientError> {
-        self.send_request_internal(method, &url, query, headers, body, timeout_secs, false)
-            .await
+        self.send_request_internal(
+            method,
+            &url,
+            query,
+            headers,
+            body.map(RequestBody::Plain),
+            timeout_secs,
+            false,
+        )
+        .await
+    }
+
+    async fn send_request_with_query_url_redacted<Q: serde::Serialize>(
+        &self,
+        method: Method,
+        url: String,
+        query: Option<&Q>,
+        headers: Option<HashMap<String, String>>,
+        body: Option<Vec<u8>>,
+        timeout_secs: Option<u64>,
+    ) -> Result<HttpResponse, HttpClientError> {
+        self.send_request_internal(
+            method,
+            &url,
+            query,
+            headers,
+            body.map(RequestBody::Plain),
+            timeout_secs,
+            true,
+        )
+        .await
     }
 
     /// Internal implementation for sending HTTP requests.
@@ -493,7 +614,7 @@ impl InnerHttpClient {
         url: &str,
         query: Option<&Q>,
         headers: Option<HashMap<String, String>>,
-        body: Option<Vec<u8>>,
+        body: Option<RequestBody>,
         timeout_secs: Option<u64>,
         redact_url: bool,
     ) -> Result<HttpResponse, HttpClientError> {
@@ -502,7 +623,7 @@ impl InnerHttpClient {
 
         let mut request_builder = self.client.request(method, reqwest_url);
         let extra_header_count = headers.as_ref().map_or(0, HashMap::len);
-        let body_len = body.as_ref().map_or(0, Vec::len);
+        let body_len = body.as_ref().map_or(0, RequestBody::len);
 
         if let Some(headers) = headers {
             let mut header_map = HeaderMap::with_capacity(headers.len());
@@ -534,8 +655,8 @@ impl InnerHttpClient {
         }
 
         let request = match body {
-            Some(b) => request_builder
-                .body(b)
+            Some(body) => request_builder
+                .body(body.into_reqwest())
                 .build()
                 .map_err(|e| http_client_error(e, redact_url))?,
             None => request_builder
@@ -649,6 +770,35 @@ impl InnerHttpClient {
         }
 
         Ok(buf.freeze())
+    }
+}
+
+enum RequestBody {
+    Plain(Vec<u8>),
+    Secret(SecretString),
+}
+
+impl RequestBody {
+    fn len(&self) -> usize {
+        match self {
+            Self::Plain(body) => body.len(),
+            Self::Secret(body) => body.expose_secret().len(),
+        }
+    }
+
+    fn into_reqwest(self) -> reqwest::Body {
+        match self {
+            Self::Plain(body) => body.into(),
+            Self::Secret(body) => bytes::Bytes::from_owner(SecretBody(body)).into(),
+        }
+    }
+}
+
+struct SecretBody(SecretString);
+
+impl AsRef<[u8]> for SecretBody {
+    fn as_ref(&self) -> &[u8] {
+        self.0.expose_secret().as_bytes()
     }
 }
 
@@ -1096,6 +1246,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_request_with_secret_body_preserves_wire_body() {
+        let addr = start_test_server().await.unwrap();
+        let client = HttpClient::builder()
+            .headers(HashMap::from([(
+                "x-default".to_string(),
+                "default-secret".to_string(),
+            )]))
+            .build()
+            .unwrap();
+        let headers = HashMap::from([("x-request".to_string(), "request-secret".to_string())]);
+
+        let response = client
+            .request_with_secret_body(
+                Method::POST,
+                format!("http://{addr}/capture"),
+                None,
+                Some(headers),
+                SecretString::from("credential-body"),
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
+        assert_eq!(
+            response.body.as_ref(),
+            b"POST\n/capture\n\ndefault-secret\nrequest-secret\ncredential-body"
+        );
+    }
+
+    #[tokio::test]
     async fn test_request_with_params_serializes_query_fields() {
         #[derive(serde::Serialize)]
         struct Query<'a> {
@@ -1139,6 +1321,48 @@ mod tests {
         assert_eq!(
             response.body.as_ref(),
             b"GET\n/capture\nsymbol=BTC%2FUSDT&limit=37\ndefault-d\nrequest-e\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_request_with_params_url_redacted_preserves_query_fields() {
+        #[derive(serde::Serialize)]
+        struct Query<'a> {
+            auth: &'a str,
+            market_id: i16,
+        }
+
+        let addr = start_test_server().await.unwrap();
+        let client = HttpClient::builder()
+            .headers(HashMap::from([(
+                "x-default".to_string(),
+                "default-f".to_string(),
+            )]))
+            .build()
+            .unwrap();
+        let headers = HashMap::from([("x-request".to_string(), "request-g".to_string())]);
+        let params = Query {
+            auth: "token/42",
+            market_id: 7,
+        };
+
+        let response = client
+            .request_with_params_url_redacted(
+                Method::GET,
+                format!("http://{addr}/capture"),
+                Some(&params),
+                Some(headers),
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
+        assert_eq!(
+            response.body.as_ref(),
+            b"GET\n/capture\nauth=token%2F42&market_id=7\ndefault-f\nrequest-g\n"
         );
     }
 
@@ -1504,6 +1728,43 @@ mod tests {
             assert!(!rendered.contains(PATH_SECRET));
             assert!(!rendered.contains(QUERY_SECRET));
             assert!(!rendered.contains(&url));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_request_with_params_url_redacted_removes_query_from_error() {
+        const QUERY_SECRET: &str = "transport-query-secret";
+        #[derive(serde::Serialize)]
+        struct Query<'a> {
+            auth: &'a str,
+        }
+
+        let (addr, drop_task) = spawn_connection_dropper().await;
+        let url = format!("http://{addr}/trades");
+        let params = Query { auth: QUERY_SECRET };
+        let client = HttpClient::builder().timeout_secs(1).build().unwrap();
+
+        let error = client
+            .request_with_params_url_redacted(
+                Method::GET,
+                url,
+                Some(&params),
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .expect_err("a dropped connection should fail");
+        drop_task.abort();
+        let task_error = drop_task
+            .await
+            .expect_err("connection dropper should be cancelled");
+
+        assert!(task_error.is_cancelled());
+        for rendered in [error.to_string(), format!("{error:?}")] {
+            assert!(!rendered.contains("auth="));
+            assert!(!rendered.contains(QUERY_SECRET));
         }
     }
 

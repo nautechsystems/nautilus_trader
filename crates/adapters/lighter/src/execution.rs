@@ -55,6 +55,7 @@ use nautilus_core::{
     UUID4, UnixNanos,
     datetime::unix_nanos_to_iso8601,
     params::Params,
+    string::secret::SecretString,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -260,7 +261,7 @@ impl LighterExecutionClient {
         );
 
         let credential = Credential::resolve_for_deployment(
-            config.private_key.clone(),
+            config.private_key.clone().map(SecretString::into_inner),
             config.account_index,
             config.api_key_index,
             config.deployment,
@@ -282,7 +283,10 @@ impl LighterExecutionClient {
             config.environment,
             Some(config.http_url()),
             config.http_timeout_secs,
-            config.proxy_url.clone(),
+            config
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
             resolve_quota(config.rest_quota_per_min),
             Some(Arc::clone(&tx_rate_limiter)),
         )
@@ -361,7 +365,10 @@ impl LighterExecutionClient {
             registry,
             config.transport_backend,
             config.ws_timeout_secs,
-            config.proxy_url.clone(),
+            config
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         );
 
         ws_client.with_socket_control(socket_factory.control(USER_STREAMS_ENDPOINT))
@@ -712,18 +719,12 @@ impl LighterExecutionClient {
             "Lighter account detail returned an empty L1 address"
         );
 
-        let auth_token = Zeroizing::new(
-            build_auth_token_for(credential)
-                .context("failed to mint Lighter auth token for referral attribution")?,
-        );
+        let auth_token = build_auth_token_for(credential)
+            .context("failed to mint Lighter auth token for referral attribution")?;
         let referral_code = Zeroizing::new(referral_code.to_string());
 
         self.http_client
-            .use_referral(
-                &detail.l1_address,
-                referral_code.as_str(),
-                auth_token.as_str(),
-            )
+            .use_referral(&detail.l1_address, referral_code.as_str(), &auth_token)
             .await
             .context("failed to apply Lighter referral code")?;
 
@@ -1425,7 +1426,7 @@ impl LighterExecutionClient {
                     &channels,
                     &cancellation_token,
                     AUTH_TOKEN_REFRESH_BACKOFF,
-                    |credential| -> anyhow::Result<String> { build_auth_token_for(credential) },
+                    build_auth_token_for,
                     |channel, token| {
                         let ws_client = ws_client.clone();
                         async move { ws_client.subscribe_account(channel, token).await }
@@ -2326,8 +2327,8 @@ async fn refresh_auth_token_until_rotated<MintToken, Subscribe, SubscribeFuture>
     mut subscribe: Subscribe,
 ) -> AuthTokenRefreshOutcome
 where
-    MintToken: FnMut(&Credential) -> anyhow::Result<String>,
-    Subscribe: FnMut(LighterWsChannel, String) -> SubscribeFuture,
+    MintToken: FnMut(&Credential) -> anyhow::Result<SecretString>,
+    Subscribe: FnMut(LighterWsChannel, SecretString) -> SubscribeFuture,
     SubscribeFuture: Future<Output = Result<(), crate::websocket::error::LighterWsError>>,
 {
     let retry_started = tokio::time::Instant::now();
@@ -2387,8 +2388,8 @@ async fn rotate_auth_token_once<MintToken, Subscribe, SubscribeFuture>(
     subscribe: &mut Subscribe,
 ) -> anyhow::Result<()>
 where
-    MintToken: FnMut(&Credential) -> anyhow::Result<String>,
-    Subscribe: FnMut(LighterWsChannel, String) -> SubscribeFuture,
+    MintToken: FnMut(&Credential) -> anyhow::Result<SecretString>,
+    Subscribe: FnMut(LighterWsChannel, SecretString) -> SubscribeFuture,
     SubscribeFuture: Future<Output = Result<(), crate::websocket::error::LighterWsError>>,
 {
     let token =
@@ -4686,16 +4687,13 @@ impl ExecutionClient for LighterExecutionClient {
         // the fact that the order is currently live and reconciliation
         // needs to know about it.
         for market_index in market_indices {
-            let active = match self
-                .http_client
-                .get_account_active_orders(&LighterAccountActiveOrdersQuery {
-                    authorization: None,
-                    auth: Some(auth.clone()),
-                    account_index: credential.account_index(),
-                    market_id: market_index,
-                })
-                .await
-            {
+            let query = Zeroizing::new(LighterAccountActiveOrdersQuery {
+                authorization: None,
+                auth: Some(auth.clone()),
+                account_index: credential.account_index(),
+                market_id: market_index,
+            });
+            let active = match self.http_client.get_account_active_orders(&query).await {
                 Ok(response) => response,
                 Err(e) => {
                     let detail = format!(
@@ -4777,20 +4775,18 @@ impl ExecutionClient for LighterExecutionClient {
                         ));
                     }
 
-                    match self
-                        .http_client
-                        .get_account_inactive_orders(&LighterAccountInactiveOrdersQuery {
-                            authorization: None,
-                            auth: Some(auth.clone()),
-                            account_index: credential.account_index(),
-                            market_id: Some(market_id),
-                            ask_filter: None,
-                            between_timestamps: between_timestamps.clone(),
-                            cursor: cursor.clone(),
-                            limit: LIGHTER_REST_PAGE_SIZE,
-                        })
-                        .await
-                    {
+                    let query = Zeroizing::new(LighterAccountInactiveOrdersQuery {
+                        authorization: None,
+                        auth: Some(auth.clone()),
+                        account_index: credential.account_index(),
+                        market_id: Some(market_id),
+                        ask_filter: None,
+                        between_timestamps: between_timestamps.clone(),
+                        cursor: cursor.clone(),
+                        limit: LIGHTER_REST_PAGE_SIZE,
+                    });
+
+                    match self.http_client.get_account_inactive_orders(&query).await {
                         Ok(inactive) => {
                             for order in &inactive.orders {
                                 let Some(report) = parse_http_order_to_report(
@@ -5245,7 +5241,7 @@ impl LighterExecutionClient {
                 pages <= MAX_RECONCILIATION_PAGES,
                 "Lighter fill reconciliation exceeded {MAX_RECONCILIATION_PAGES} pages",
             );
-            let query = LighterTradesQuery {
+            let query = Zeroizing::new(LighterTradesQuery {
                 authorization: None,
                 auth: Some(auth.clone()),
                 market_id,
@@ -5262,13 +5258,13 @@ impl LighterExecutionClient {
                 trade_type: None,
                 limit: LIGHTER_REST_PAGE_SIZE,
                 aggregate: None,
-            };
+            });
 
             let response = match self.http_client.get_trades(&query).await {
                 Ok(response) => response,
                 Err(e) => {
                     // `{e:#}` preserves the venue's status/body across the
-                    // outer context wrap; `scrub_auth` masks any `auth=`
+                    // outer context wrap; `scrub_auth` redacts any `auth=`
                     // query value the HTTP layer's error included.
                     log::warn!(
                         "Lighter get_trades failed (market_id={:?}, account_index={}, cursor={:?}): {}",
@@ -5559,7 +5555,7 @@ async fn seed_active_markets_from_inactive_orders(
     http_client: &LighterHttpClient,
     dispatch: &WsDispatchState,
     credential: &Credential,
-    auth: &str,
+    auth: &SecretString,
     between_timestamps: Option<String>,
 ) -> anyhow::Result<()> {
     let mut cursor: Option<String> = None;
@@ -5573,17 +5569,18 @@ async fn seed_active_markets_from_inactive_orders(
             pages <= MAX_RECONCILIATION_PAGES,
             "Lighter active-market seed exceeded {MAX_RECONCILIATION_PAGES} pages",
         );
+        let query = Zeroizing::new(LighterAccountInactiveOrdersQuery {
+            authorization: None,
+            auth: Some(auth.clone()),
+            account_index: credential.account_index(),
+            market_id: None,
+            ask_filter: None,
+            between_timestamps: between_timestamps.clone(),
+            cursor: cursor.clone(),
+            limit: LIGHTER_REST_PAGE_SIZE,
+        });
         let response = http_client
-            .get_account_inactive_orders(&LighterAccountInactiveOrdersQuery {
-                authorization: None,
-                auth: Some(auth.to_string()),
-                account_index: credential.account_index(),
-                market_id: None,
-                ask_filter: None,
-                between_timestamps: between_timestamps.clone(),
-                cursor: cursor.clone(),
-                limit: LIGHTER_REST_PAGE_SIZE,
-            })
+            .get_account_inactive_orders(&query)
             .await
             .context("failed to seed Lighter active markets from inactive orders")?;
 
@@ -6272,7 +6269,7 @@ mod tests {
             account_id: account_id(),
             account_index: Some(TEST_ACCOUNT_INDEX),
             api_key_index: Some(TEST_API_KEY_INDEX),
-            private_key: Some(TEST_PRIVATE_KEY.to_string()),
+            private_key: Some(TEST_PRIVATE_KEY.into()),
             base_url_http: Some("http://127.0.0.1:1".to_string()),
             base_url_ws: Some("ws://127.0.0.1:1/stream".to_string()),
             proxy_url: None,
@@ -6746,7 +6743,7 @@ mod tests {
                         if attempt == 0 {
                             Err(anyhow::anyhow!("mint unavailable"))
                         } else {
-                            Ok(format!("token-{attempt}"))
+                            Ok(format!("token-{attempt}").into())
                         }
                     }
                 },
@@ -6801,7 +6798,7 @@ mod tests {
                     let mint_attempts = Arc::clone(&mint_attempts);
                     move |_| {
                         let attempt = mint_attempts.fetch_add(1, Ordering::AcqRel);
-                        Ok(format!("token-{attempt}"))
+                        Ok(format!("token-{attempt}").into())
                     }
                 },
                 {

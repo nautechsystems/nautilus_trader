@@ -1204,7 +1204,7 @@ const TEST_PRIVATE_KEY: &str = "0x1234567890abcdef1234567890abcdef1234567890abcd
 
 fn create_test_exec_config(addr: SocketAddr) -> HyperliquidExecutionClientConfig {
     HyperliquidExecutionClientConfig {
-        private_key: Some(TEST_PRIVATE_KEY.to_string()),
+        private_key: Some(TEST_PRIVATE_KEY.into()),
         base_url_http: Some(format!("http://{addr}/info")),
         base_url_exchange: Some(format!("http://{addr}/exchange")),
         base_url_ws: Some(format!("ws://{addr}/ws")),
@@ -7220,7 +7220,7 @@ async fn test_get_account_address_uses_explicit_account_address() {
 
     let explicit_address = "0xcafebabedeadbeef000000000000000000000001";
     let config = HyperliquidExecutionClientConfig {
-        private_key: Some(TEST_PRIVATE_KEY.to_string()),
+        private_key: Some(TEST_PRIVATE_KEY.into()),
         base_url_http: Some(format!("http://{addr}/info")),
         base_url_exchange: Some(format!("http://{addr}/exchange")),
         base_url_ws: Some(format!("ws://{addr}/ws")),

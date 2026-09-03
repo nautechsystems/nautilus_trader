@@ -30,7 +30,9 @@ use alloy::{
     sol_types::SolValue,
 };
 use alloy_primitives::{Address, B256, U256, keccak256};
+use nautilus_core::string::secret::REDACTED;
 use thiserror::Error;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
     common::consts::MIN_SIGNATURE_TTL,
@@ -129,7 +131,6 @@ pub fn compute_typed_data_hash(domain_separator: B256, action_hash: B256) -> B25
 /// The struct binds the EIP-712 action context to the module-specific payload
 /// and tracks the resulting 65-byte signature. Compose it via [`SignedAction::new`],
 /// then call [`SignedAction::sign`] with the session-key signer.
-#[derive(Debug)]
 pub struct SignedAction<'a, M: ModuleData> {
     ctx: ActionContext,
     module_data: &'a M,
@@ -137,6 +138,35 @@ pub struct SignedAction<'a, M: ModuleData> {
     action_typehash: B256,
     signature: Option<[u8; 65]>,
 }
+
+impl<M> std::fmt::Debug for SignedAction<'_, M>
+where
+    M: ModuleData + std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(SignedAction))
+            .field("ctx", &self.ctx)
+            .field("module_data", &self.module_data)
+            .field("domain_separator", &self.domain_separator)
+            .field("action_typehash", &self.action_typehash)
+            .field("signature", &self.signature.map(|_| REDACTED))
+            .finish()
+    }
+}
+
+impl<M: ModuleData> Zeroize for SignedAction<'_, M> {
+    fn zeroize(&mut self) {
+        self.signature.zeroize();
+    }
+}
+
+impl<M: ModuleData> Drop for SignedAction<'_, M> {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
+impl<M: ModuleData> ZeroizeOnDrop for SignedAction<'_, M> {}
 
 impl<'a, M: ModuleData> SignedAction<'a, M> {
     /// Constructs a new unsigned action.
@@ -429,7 +459,9 @@ mod tests {
 
         let mut action = SignedAction::new(ctx, &trade, fixed_domain(), fixed_typehash());
         let raw = action.sign(&signer).expect("sign must succeed");
+        let debug = format!("{action:?}");
         assert_eq!(raw.len(), 65);
+        assert!(debug.contains(REDACTED));
 
         // Recover the signer from the signature and verify it matches the
         // session key. This is the venue's verification path inverted.
@@ -438,6 +470,9 @@ mod tests {
             .recover_address_from_prehash(&typed_data_hash)
             .expect("recover");
         assert_eq!(recovered, signer.address());
+
+        action.zeroize();
+        assert!(action.signature.is_none());
     }
 
     #[rstest]

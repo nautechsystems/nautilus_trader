@@ -129,10 +129,16 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
         None,
         None,
         normalize_symbols,
-        config.proxy_url.clone(),
+        config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned()),
     )?;
     let mut machine_client = TardisMachineClient::new(
-        config.tardis_ws_url.as_deref(),
+        config
+            .tardis_ws_url
+            .as_ref()
+            .map(|value| value.expose_secret()),
         normalize_symbols,
         book_snapshot_output,
     )?;

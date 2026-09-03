@@ -135,10 +135,14 @@ impl DeriveDataClient {
     pub fn new(client_id: ClientId, config: DeriveDataClientConfig) -> anyhow::Result<Self> {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
         let http_client = DeriveHttpClient::new(
             config.rest_url(),
             Some(config.http_timeout_secs),
-            config.proxy_url.clone(),
+            proxy_url.clone(),
             None,
         )?;
         let provider = DeriveInstrumentProvider::with_expired(
@@ -150,7 +154,7 @@ impl DeriveDataClient {
             Some(config.ws_url()),
             config.environment,
             config.transport_backend,
-            config.proxy_url.clone(),
+            proxy_url,
         )
         .with_socket_control(SocketControl::new(
             client_id,

@@ -116,20 +116,30 @@ impl HyperliquidDataClient {
         // not when they're invalid (fail fast on malformed keys)
         let (pk_var, _) = credential_env_vars(config.environment);
         let has_credentials = config.has_credentials() || std::env::var(pk_var).is_ok();
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
 
         let mut http_client = if has_credentials {
-            let secrets =
-                Secrets::resolve(config.private_key.as_deref(), None, config.environment)?;
+            let secrets = Secrets::resolve(
+                config
+                    .private_key
+                    .as_ref()
+                    .map(|value| value.expose_secret()),
+                None,
+                config.environment,
+            )?;
             HyperliquidHttpClient::with_secrets(
                 &secrets,
                 config.http_timeout_secs,
-                config.proxy_url.clone(),
+                proxy_url.clone(),
             )?
         } else {
             HyperliquidHttpClient::new(
                 config.environment,
                 config.http_timeout_secs,
-                config.proxy_url.clone(),
+                proxy_url.clone(),
             )?
         };
 
@@ -143,7 +153,7 @@ impl HyperliquidDataClient {
             config.environment,
             None,
             config.transport_backend,
-            config.proxy_url.clone(),
+            proxy_url,
         );
         let ws_client = ws_client.with_socket_control(SocketControl::new(
             client_id,

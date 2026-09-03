@@ -33,6 +33,8 @@ use alloy::{
     sol_types::{SolStruct, SolValue, eip712_domain},
 };
 use alloy_primitives::{Address, B256, FixedBytes, U256, address, keccak256};
+#[cfg(test)]
+use nautilus_core::string::secret::SecretString;
 use rust_decimal::Decimal;
 
 use crate::{
@@ -515,7 +517,7 @@ mod tests {
             timestamp: "1713398400000".to_string(),
             metadata: ZERO_BYTES32.to_string(),
             builder: ZERO_BYTES32.to_string(),
-            signature: String::new(),
+            signature: SecretString::default(),
         }
     }
 
@@ -835,7 +837,7 @@ mod tests {
             timestamp: timestamp.to_string(),
             metadata: ZERO_BYTES32.to_string(),
             builder: builder.to_string(),
-            signature: String::new(),
+            signature: SecretString::default(),
         }
     }
 

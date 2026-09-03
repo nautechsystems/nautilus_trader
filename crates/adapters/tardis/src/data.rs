@@ -527,11 +527,17 @@ impl DataClient for TardisDataClient {
         let extract_bbo_as_quotes = self.config.extract_bbo_as_quotes;
 
         let http_client = TardisHttpClient::new(
-            self.config.api_key.as_deref(),
+            self.config
+                .api_key
+                .as_ref()
+                .map(|value| value.expose_secret()),
             None,
             None,
             self.config.normalize_symbols,
-            self.config.proxy_url.clone(),
+            self.config
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         )?;
 
         let exchanges: AHashSet<_> = if is_stream_mode {
@@ -544,7 +550,12 @@ impl DataClient for TardisDataClient {
             self.config.options.iter().map(|opt| opt.exchange).collect()
         };
 
-        let base_url = resolve_ws_base_url(self.config.tardis_ws_url.as_deref())?;
+        let base_url = resolve_ws_base_url(
+            self.config
+                .tardis_ws_url
+                .as_ref()
+                .map(|value| value.expose_secret()),
+        )?;
         let (instrument_map, instruments) = http_client
             .bootstrap_instruments(&exchanges)
             .await

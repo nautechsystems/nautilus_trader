@@ -14,10 +14,14 @@
 
 //! WebSocket message types for Bybit public and private channels.
 
+use std::fmt::Debug;
+
+use nautilus_core::string::secret::{REDACTED, zeroize_json_value};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ustr::Ustr;
+use zeroize::Zeroize;
 
 use crate::{
     common::{
@@ -46,10 +50,27 @@ pub struct BybitSubscription {
 }
 
 /// Bybit WebSocket authentication message.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct BybitAuthRequest {
     pub op: BybitWsOperation,
     pub args: Vec<serde_json::Value>,
+}
+
+impl Debug for BybitAuthRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(BybitAuthRequest))
+            .field("op", &self.op)
+            .field("args", &REDACTED)
+            .finish()
+    }
+}
+
+impl Zeroize for BybitAuthRequest {
+    fn zeroize(&mut self) {
+        for arg in &mut self.args {
+            zeroize_json_value(arg);
+        }
+    }
 }
 
 /// Wire-level frame deserialized from a Bybit WebSocket message.
@@ -1071,6 +1092,28 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn auth_request_serializes_and_redacts_debug() {
+        let request = BybitAuthRequest {
+            op: BybitWsOperation::Auth,
+            args: vec![
+                serde_json::json!("api-key-value"),
+                serde_json::json!(1_700_000_000_000_u64),
+                serde_json::json!("signature-value"),
+            ],
+        };
+
+        let json = serde_json::to_value(&request).unwrap();
+        let formatted = format!("{request:?}");
+
+        assert_eq!(json["args"][0], "api-key-value");
+        assert_eq!(json["args"][1], 1_700_000_000_000_u64);
+        assert_eq!(json["args"][2], "signature-value");
+        assert!(formatted.contains(REDACTED));
+        assert!(!formatted.contains("api-key-value"));
+        assert!(!formatted.contains("signature-value"));
+    }
     use crate::common::testing::load_test_json;
 
     #[rstest]

@@ -15,6 +15,7 @@
 
 //! Python bindings for dYdX configuration.
 
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::identifiers::AccountId;
 use pyo3::prelude::*;
 
@@ -32,7 +33,7 @@ impl DydxDataClientConfig {
     fn py_new(proxy_url: Option<String>, network: Option<DydxNetwork>) -> Self {
         Self {
             network: network.unwrap_or_default(),
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             ..Self::default()
         }
     }
@@ -71,10 +72,10 @@ impl DydxExecutionClientConfig {
         Self {
             account_id,
             network: network.unwrap_or_default(),
-            private_key,
+            private_key: private_key.map(SecretString::from),
             wallet_address,
             subaccount_number,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             ..Self::default()
         }
     }

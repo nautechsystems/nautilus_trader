@@ -15,9 +15,9 @@
 
 //! Configuration types for Kraken data and execution clients.
 
-use std::fmt::Debug;
-
+#[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::{enums::AccountType, identifiers::AccountId};
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
@@ -28,7 +28,7 @@ use crate::common::{
 };
 
 /// Configuration for the Kraken data client.
-#[derive(Clone, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
@@ -39,8 +39,8 @@ use crate::common::{
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.kraken")
 )]
 pub struct KrakenDataClientConfig {
-    pub api_key: Option<String>,
-    pub api_secret: Option<String>,
+    pub api_key: Option<SecretString>,
+    pub api_secret: Option<SecretString>,
     #[builder(default = KrakenProductType::Spot)]
     pub product_type: KrakenProductType,
     #[builder(default = KrakenEnvironment::Live)]
@@ -54,7 +54,7 @@ pub struct KrakenDataClientConfig {
     #[builder(default = true)]
     pub validate_l3_checksum: bool,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     #[builder(default = 30)]
     pub timeout_secs: u64,
     #[builder(default = 30)]
@@ -104,28 +104,6 @@ impl Default for KrakenDataClientConfig {
     }
 }
 
-impl Debug for KrakenDataClientConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(KrakenDataClientConfig))
-            .field("api_key", &self.api_key.as_ref().map(|_| REDACTED))
-            .field("api_secret", &self.api_secret.as_ref().map(|_| REDACTED))
-            .field("product_type", &self.product_type)
-            .field("environment", &self.environment)
-            .field("base_url", &self.base_url)
-            .field("ws_public_url", &self.ws_public_url)
-            .field("ws_private_url", &self.ws_private_url)
-            .field("ws_l3_url", &self.ws_l3_url)
-            .field("validate_l3_checksum", &self.validate_l3_checksum)
-            .field("proxy_url", &self.proxy_url)
-            .field("timeout_secs", &self.timeout_secs)
-            .field("heartbeat_interval_secs", &self.heartbeat_interval_secs)
-            .field("ws_idle_timeout_ms", &self.ws_idle_timeout_ms)
-            .field("max_requests_per_second", &self.max_requests_per_second)
-            .field("transport_backend", &self.transport_backend)
-            .finish()
-    }
-}
-
 impl KrakenDataClientConfig {
     /// Validates config invariants.
     ///
@@ -171,7 +149,7 @@ impl KrakenDataClientConfig {
 }
 
 /// Configuration for the Kraken execution client.
-#[derive(Clone, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
@@ -185,9 +163,9 @@ pub struct KrakenExecutionClientConfig {
     #[builder(default = AccountId::from("KRAKEN-001"))]
     pub account_id: AccountId,
     #[builder(default)]
-    pub api_key: String,
+    pub api_key: SecretString,
     #[builder(default)]
-    pub api_secret: String,
+    pub api_secret: SecretString,
     #[builder(default = KrakenProductType::Spot)]
     pub product_type: KrakenProductType,
     #[builder(default = KrakenEnvironment::Live)]
@@ -195,7 +173,7 @@ pub struct KrakenExecutionClientConfig {
     pub base_url: Option<String>,
     pub ws_url: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     #[builder(default = 30)]
     pub timeout_secs: u64,
     #[builder(default = 30)]
@@ -289,36 +267,6 @@ impl Default for KrakenExecutionClientConfig {
     }
 }
 
-impl Debug for KrakenExecutionClientConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(KrakenExecutionClientConfig))
-            .field("account_id", &self.account_id)
-            .field("api_key", &REDACTED)
-            .field("api_secret", &REDACTED)
-            .field("product_type", &self.product_type)
-            .field("environment", &self.environment)
-            .field("base_url", &self.base_url)
-            .field("ws_url", &self.ws_url)
-            .field("proxy_url", &self.proxy_url)
-            .field("timeout_secs", &self.timeout_secs)
-            .field("heartbeat_interval_secs", &self.heartbeat_interval_secs)
-            .field("auth_timeout_secs", &self.auth_timeout_secs)
-            .field("max_requests_per_second", &self.max_requests_per_second)
-            .field("transport_backend", &self.transport_backend)
-            .field("spot_account_type", &self.spot_account_type)
-            .field("default_leverage", &self.default_leverage)
-            .field("use_spot_position_reports", &self.use_spot_position_reports)
-            .field(
-                "spot_positions_quote_currency",
-                &self.spot_positions_quote_currency,
-            )
-            .field("margin_balance_asset", &self.margin_balance_asset)
-            .field("use_ws_trade", &self.use_ws_trade)
-            .field("ws_request_timeout_secs", &self.ws_request_timeout_secs)
-            .finish()
-    }
-}
-
 impl KrakenExecutionClientConfig {
     /// Returns the HTTP base URL for the configured product type and environment.
     pub fn http_base_url(&self) -> String {
@@ -374,16 +322,16 @@ mod tests {
     #[rstest]
     fn test_data_config_debug_redacts_credentials() {
         let config = KrakenDataClientConfig {
-            api_key: Some(DATA_API_KEY.to_string()),
-            api_secret: Some(DATA_API_SECRET.to_string()),
+            api_key: Some(DATA_API_KEY.into()),
+            api_secret: Some(DATA_API_SECRET.into()),
             product_type: KrakenProductType::Futures,
             timeout_secs: 41,
             ..Default::default()
         };
 
         let debug_output = format!("{config:?}");
-        let api_key_marker = format!("api_key: Some({REDACTED:?})");
-        let api_secret_marker = format!("api_secret: Some({REDACTED:?})");
+        let api_key_marker = format!("api_key: Some({REDACTED})");
+        let api_secret_marker = format!("api_secret: Some({REDACTED})");
 
         assert!(!debug_output.contains(DATA_API_KEY));
         assert!(!debug_output.contains(DATA_API_SECRET));
@@ -396,16 +344,16 @@ mod tests {
     #[rstest]
     fn test_exec_config_debug_redacts_credentials() {
         let config = KrakenExecutionClientConfig {
-            api_key: EXEC_API_KEY.to_string(),
-            api_secret: EXEC_API_SECRET.to_string(),
+            api_key: EXEC_API_KEY.into(),
+            api_secret: EXEC_API_SECRET.into(),
             product_type: KrakenProductType::Futures,
             timeout_secs: 43,
             ..Default::default()
         };
 
         let debug_output = format!("{config:?}");
-        let api_key_marker = format!("api_key: {REDACTED:?}");
-        let api_secret_marker = format!("api_secret: {REDACTED:?}");
+        let api_key_marker = format!("api_key: {REDACTED}");
+        let api_secret_marker = format!("api_secret: {REDACTED}");
 
         assert!(!debug_output.contains(EXEC_API_KEY));
         assert!(!debug_output.contains(EXEC_API_SECRET));

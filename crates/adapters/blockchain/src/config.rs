@@ -16,7 +16,7 @@
 use std::{any::Any, fmt::Debug};
 
 use nautilus_common::factories::ClientConfig;
-use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::{REDACTED, SecretString};
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::{
     defi::{Chain, DexType, SharedChain},
@@ -49,7 +49,7 @@ impl Default for DexPoolFilters {
 }
 
 /// Configuration for blockchain data clients.
-#[derive(Clone, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
@@ -71,7 +71,7 @@ pub struct BlockchainDataClientConfig {
     #[serde(default)]
     pub use_hypersync_for_live_data: bool,
     /// The HTTP URL for the blockchain RPC endpoint.
-    pub http_rpc_url: String,
+    pub http_rpc_url: SecretString,
     /// The maximum number of RPC requests allowed per second.
     pub rpc_requests_per_second: Option<u32>,
     /// The maximum number of Multicall calls per one RPC request.
@@ -79,9 +79,9 @@ pub struct BlockchainDataClientConfig {
     #[serde(default = "default_multicall_calls_per_rpc_request")]
     pub multicall_calls_per_rpc_request: u32,
     /// The WebSocket secure URL for the blockchain RPC endpoint.
-    pub wss_rpc_url: Option<String>,
+    pub wss_rpc_url: Option<SecretString>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// The block from which to sync historical data.
     pub from_block: Option<u64>,
     /// Filtering criteria that define which DEX pools to include in the data universe.
@@ -94,34 +94,6 @@ pub struct BlockchainDataClientConfig {
     #[builder(default)]
     #[serde(default)]
     pub transport_backend: TransportBackend,
-}
-
-impl Debug for BlockchainDataClientConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(BlockchainDataClientConfig))
-            .field("chain", &self.chain)
-            .field("dex_ids", &self.dex_ids)
-            .field(
-                "use_hypersync_for_live_data",
-                &self.use_hypersync_for_live_data,
-            )
-            .field("http_rpc_url", &REDACTED)
-            .field("rpc_requests_per_second", &self.rpc_requests_per_second)
-            .field(
-                "multicall_calls_per_rpc_request",
-                &self.multicall_calls_per_rpc_request,
-            )
-            .field("wss_rpc_url", &self.wss_rpc_url.as_ref().map(|_| REDACTED))
-            .field("proxy_url", &self.proxy_url.as_ref().map(|_| REDACTED))
-            .field("from_block", &self.from_block)
-            .field("pool_filters", &self.pool_filters)
-            .field(
-                "postgres_cache_database_config",
-                &self.postgres_cache_database_config,
-            )
-            .field("transport_backend", &self.transport_backend)
-            .finish()
-    }
 }
 
 #[cfg(feature = "python")]
@@ -164,7 +136,7 @@ nautilus_core::impl_pyo3_config_getters!(BlockchainProviderIdentity {
 });
 
 /// Configuration for one read-only verification RPC provider.
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
@@ -178,21 +150,11 @@ pub struct BlockchainVerificationProviderConfig {
     /// Stable provider and failure-domain identity.
     pub identity: BlockchainProviderIdentity,
     /// The read-only JSON-RPC endpoint.
-    pub http_rpc_url: String,
-}
-
-impl Debug for BlockchainVerificationProviderConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(BlockchainVerificationProviderConfig))
-            .field("identity", &self.identity)
-            .field("http_rpc_url", &REDACTED)
-            .finish()
-    }
+    pub http_rpc_url: SecretString,
 }
 
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(BlockchainVerificationProviderConfig {
-    http_rpc_url: String,
     identity: BlockchainProviderIdentity,
 });
 
@@ -424,7 +386,7 @@ nautilus_core::impl_pyo3_config_getters!(QuoteSpendLimit {
     token_out: String,
 });
 
-#[derive(Clone, Serialize, Deserialize, bon::Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
@@ -444,7 +406,7 @@ pub struct BlockchainExecutionClientConfig {
     /// Token universe: set of ERC-20 token addresses to monitor for balance tracking.
     pub tokens: Option<Vec<String>>,
     /// The HTTP URL for the blockchain RPC endpoint.
-    pub http_rpc_url: String,
+    pub http_rpc_url: SecretString,
     /// Independent provider topology, chain checkpoint, and deployment manifest identity.
     #[serde(default)]
     pub verification: Option<BlockchainVerificationConfig>,
@@ -505,44 +467,6 @@ pub struct BlockchainExecutionClientConfig {
     pub transport_backend: TransportBackend,
 }
 
-impl Debug for BlockchainExecutionClientConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(BlockchainExecutionClientConfig))
-            .field("client_id", &self.client_id)
-            .field("chain", &self.chain)
-            .field("wallet_address", &self.wallet_address)
-            .field("tokens", &self.tokens)
-            .field("http_rpc_url", &REDACTED)
-            .field("verification", &self.verification)
-            .field("rpc_requests_per_second", &self.rpc_requests_per_second)
-            .field("signer_private_key_env", &self.signer_private_key_env)
-            .field("payload_key_env", &self.payload_key_env)
-            .field("payload_key_retired_env", &self.payload_key_retired_env)
-            .field("payload_deployment_id", &self.payload_deployment_id)
-            .field("router_addresses", &self.router_addresses)
-            .field("weth_address", &self.weth_address)
-            .field("unlimited_approval", &self.unlimited_approval)
-            .field("max_fee_per_gas_wei", &self.max_fee_per_gas_wei)
-            .field("base_fee_buffer_bps", &self.base_fee_buffer_bps)
-            .field("gas_limit", &self.gas_limit)
-            .field("gas_buffer_bps", &self.gas_buffer_bps)
-            .field("allowed_token_pairs", &self.allowed_token_pairs)
-            .field("quote_spend_limits", &self.quote_spend_limits)
-            .field("slippage_bps", &self.slippage_bps)
-            .field("max_slippage_bps", &self.max_slippage_bps)
-            .field("max_order_amount", &self.max_order_amount)
-            .field("deadline_seconds", &self.deadline_seconds)
-            .field("max_quote_age_blocks", &self.max_quote_age_blocks)
-            .field("receipt_timeout_secs", &self.receipt_timeout_secs)
-            .field(
-                "postgres_cache_database_config",
-                &self.postgres_cache_database_config,
-            )
-            .field("transport_backend", &self.transport_backend)
-            .finish()
-    }
-}
-
 impl ClientConfig for BlockchainExecutionClientConfig {
     fn as_any(&self) -> &dyn Any {
         self
@@ -555,7 +479,6 @@ nautilus_core::impl_pyo3_config_getters!(BlockchainExecutionClientConfig {
     deadline_seconds: Option<u64>,
     gas_buffer_bps: u32,
     gas_limit: u64,
-    http_rpc_url: String,
     verification: Option<BlockchainVerificationConfig>,
     max_fee_per_gas_wei: u64,
     max_order_amount: Option<u64>,
@@ -600,7 +523,10 @@ native_currency_decimals = 18
         )
         .unwrap();
 
-        assert_eq!(config.http_rpc_url, "https://eth-mainnet.example.com");
+        assert_eq!(
+            config.http_rpc_url.expose_secret(),
+            "https://eth-mainnet.example.com"
+        );
         assert_eq!(config.chain.chain_id, 1);
         assert!(config.dex_ids.is_empty());
         assert!(!config.use_hypersync_for_live_data);
@@ -653,7 +579,10 @@ native_currency_decimals = 18
         )
         .unwrap();
 
-        assert_eq!(config.http_rpc_url, "https://eth-mainnet.example.com");
+        assert_eq!(
+            config.http_rpc_url.expose_secret(),
+            "https://eth-mainnet.example.com"
+        );
         assert_eq!(config.chain.chain_id, 1);
         assert_eq!(
             config.wallet_address,
@@ -801,14 +730,14 @@ native_currency_decimals = 18
         let wss_rpc_url = format!("wss://rpc.example.com/ws?api_key={WSS_QUERY_SECRET}");
         let config = BlockchainDataClientConfig::builder()
             .chain(Arc::new(chains::ETHEREUM.clone()))
-            .http_rpc_url(http_rpc_url.clone())
-            .wss_rpc_url(wss_rpc_url.clone())
+            .http_rpc_url(http_rpc_url.clone().into())
+            .wss_rpc_url(wss_rpc_url.clone().into())
             .build();
 
         let debug = format!("{config:?}");
 
-        assert!(debug.contains("http_rpc_url: \"<redacted>\""));
-        assert!(debug.contains("wss_rpc_url: Some(\"<redacted>\")"));
+        assert!(debug.contains("http_rpc_url: <redacted>"));
+        assert!(debug.contains("wss_rpc_url: Some(<redacted>)"));
         assert!(!debug.contains(HTTP_USERINFO_SECRET));
         assert!(!debug.contains(WSS_QUERY_SECRET));
         assert!(!debug.contains(&http_rpc_url));
@@ -824,7 +753,7 @@ native_currency_decimals = 18
             .client_id(AccountId::from("BLOCKCHAIN-001"))
             .chain(chains::ETHEREUM.clone())
             .wallet_address("0x0000000000000000000000000000000000000000".to_string())
-            .http_rpc_url(http_rpc_url.clone())
+            .http_rpc_url(http_rpc_url.clone().into())
             .signer_private_key_env("BLOCKCHAIN_PRIVATE_KEY".to_string())
             .router_addresses(vec![
                 "0xE592427A0AEce92De3Edee1F18E0157C05861564".to_string(),
@@ -848,7 +777,7 @@ native_currency_decimals = 18
 
         let debug = format!("{config:?}");
 
-        assert!(debug.contains("http_rpc_url: \"<redacted>\""));
+        assert!(debug.contains("http_rpc_url: <redacted>"));
         assert!(!debug.contains(PATH_SECRET));
         assert!(!debug.contains(QUERY_SECRET));
         assert!(!debug.contains(&http_rpc_url));

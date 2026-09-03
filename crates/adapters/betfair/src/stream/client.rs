@@ -20,6 +20,7 @@
 //! on reconnection.
 
 use std::{
+    fmt::Debug,
     sync::{
         Arc, OnceLock,
         atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
@@ -28,6 +29,7 @@ use std::{
 };
 
 use bytes::Bytes;
+use nautilus_core::string::secret::{REDACTED, SecretString};
 use nautilus_live::task::{SharedTaskSlot, TaskJoinOutcome};
 use nautilus_network::{
     SocketState, SocketStateSink,
@@ -40,6 +42,7 @@ use nautilus_network::{
 use parking_lot::{Mutex, MutexGuard};
 use tokio::sync::watch; // tokio-import-ok
 use tokio_tungstenite::tungstenite::stream::Mode;
+use zeroize::Zeroizing;
 
 use super::{
     config::{
@@ -323,13 +326,13 @@ impl BetfairStreamClient {
     /// Returns an error if the connection fails or authentication cannot be sent.
     pub async fn connect(
         credential: &BetfairCredential,
-        session_token: String,
+        session_token: impl Into<SecretString>,
         handler: TcpMessageHandler,
         config: BetfairStreamConfig,
     ) -> Result<Self, BetfairStreamError> {
         Self::connect_inner(
             credential,
-            session_token,
+            session_token.into(),
             StreamHandler::Raw(handler),
             config,
             HeartbeatTimeoutSource::Server,
@@ -345,7 +348,7 @@ impl BetfairStreamClient {
     /// Returns an error if the connection fails or authentication cannot be sent.
     pub(crate) async fn connect_with_state_sink(
         credential: &BetfairCredential,
-        session_token: String,
+        session_token: SecretString,
         handler: StreamMessageHandler,
         config: BetfairStreamConfig,
         heartbeat_timeout_source: HeartbeatTimeoutSource,
@@ -364,7 +367,7 @@ impl BetfairStreamClient {
 
     async fn connect_inner(
         credential: &BetfairCredential,
-        session_token: String,
+        session_token: SecretString,
         handler: StreamHandler,
         config: BetfairStreamConfig,
         heartbeat_timeout_source: HeartbeatTimeoutSource,
@@ -373,17 +376,16 @@ impl BetfairStreamClient {
         config
             .validate()
             .map_err(|e| BetfairStreamError::ProtocolError(e.to_string()))?;
-        let auth = Authentication::with_id(
-            credential.app_key().to_string(),
+        let auth = Zeroizing::new(Authentication::with_id(
+            credential.app_key(),
             session_token,
             AUTH_REQUEST_ID,
-        );
-        let auth_bytes_vec = serde_json::to_vec(&auth)?;
-        let auth_bytes = Bytes::from(auth_bytes_vec.clone());
+        ));
+        let auth_bytes = Zeroizing::new(serde_json::to_vec(&*auth)?);
         let reconnect_auth = Arc::new(ReconnectAuthState::default());
         let (auth_tx, auth_rx) = watch::channel(StreamAuth {
             generation: 0,
-            bytes: auth_bytes,
+            bytes: auth_bytes.clone(),
         });
         let mode = if config.use_tls {
             Mode::Tls
@@ -688,7 +690,7 @@ impl BetfairStreamClient {
             let auth = auth_reconnect.borrow().clone();
             reconnect_auth_replay.record_replay(auth.generation);
 
-            replay.push(auth.bytes);
+            replay.push(Bytes::copy_from_slice(&auth.bytes));
 
             {
                 let _state = lock_stream_state(&market_state_replay);
@@ -772,7 +774,7 @@ impl BetfairStreamClient {
         reconnect_auth.set_handle(socket.reconnect_handle());
 
         socket
-            .send_bytes(auth_bytes_vec)
+            .send_bytes(auth_bytes.as_slice().to_vec())
             .await
             .map_err(|e| BetfairStreamError::ConnectionFailed(e.to_string()))?;
 
@@ -1046,10 +1048,10 @@ impl BetfairStreamClient {
 
     /// Pushes refreshed auth bytes so the next reconnection or subscription uses
     /// the current session token instead of the one from initial connect.
-    pub fn update_auth(&self, app_key: &str, session_token: String) {
+    pub fn update_auth(&self, app_key: &str, session_token: impl Into<SecretString>) {
         update_auth_state(
             &self.auth_tx,
-            &Authentication::with_id(app_key.to_string(), session_token, AUTH_REQUEST_ID),
+            &Authentication::with_id(app_key, session_token, AUTH_REQUEST_ID),
         );
     }
 
@@ -1143,7 +1145,7 @@ impl BetfairRaceStreamClient {
     /// Returns an error if the connection fails or the initial send fails.
     pub async fn connect(
         credential: &BetfairCredential,
-        session_token: String,
+        session_token: impl Into<SecretString>,
         handler: TcpMessageHandler,
         config: BetfairStreamConfig,
         race_fatal_tx: tokio::sync::mpsc::UnboundedSender<()>,
@@ -1151,7 +1153,7 @@ impl BetfairRaceStreamClient {
         let subscription = AuxiliaryStreamSubscription::race(race_fatal_tx)?;
         Self::connect_with_subscription(
             credential,
-            session_token,
+            session_token.into(),
             StreamHandler::Raw(handler),
             config,
             subscription,
@@ -1162,7 +1164,7 @@ impl BetfairRaceStreamClient {
 
     pub(crate) async fn connect_decoded(
         credential: &BetfairCredential,
-        session_token: String,
+        session_token: SecretString,
         handler: StreamMessageHandler,
         config: BetfairStreamConfig,
         race_fatal_tx: tokio::sync::mpsc::UnboundedSender<()>,
@@ -1190,7 +1192,7 @@ impl BetfairRaceStreamClient {
     /// Returns an error if the connection fails or the initial send fails.
     pub async fn connect_cricket(
         credential: &BetfairCredential,
-        session_token: String,
+        session_token: impl Into<SecretString>,
         handler: TcpMessageHandler,
         config: BetfairStreamConfig,
         cricket_fatal_tx: tokio::sync::mpsc::UnboundedSender<()>,
@@ -1198,7 +1200,7 @@ impl BetfairRaceStreamClient {
         let subscription = AuxiliaryStreamSubscription::cricket(cricket_fatal_tx)?;
         Self::connect_with_subscription(
             credential,
-            session_token,
+            session_token.into(),
             StreamHandler::Raw(handler),
             config,
             subscription,
@@ -1209,7 +1211,7 @@ impl BetfairRaceStreamClient {
 
     pub(crate) async fn connect_cricket_decoded(
         credential: &BetfairCredential,
-        session_token: String,
+        session_token: SecretString,
         handler: StreamMessageHandler,
         config: BetfairStreamConfig,
         cricket_fatal_tx: tokio::sync::mpsc::UnboundedSender<()>,
@@ -1229,7 +1231,7 @@ impl BetfairRaceStreamClient {
 
     async fn connect_with_subscription(
         credential: &BetfairCredential,
-        session_token: String,
+        session_token: SecretString,
         handler: StreamHandler,
         config: BetfairStreamConfig,
         subscription: AuxiliaryStreamSubscription,
@@ -1242,13 +1244,12 @@ impl BetfairRaceStreamClient {
             fatal_tx,
         } = subscription;
 
-        let auth = Authentication::new(credential.app_key().to_string(), session_token);
-        let auth_bytes_vec = serde_json::to_vec(&auth)?;
-        let auth_bytes = Bytes::from(auth_bytes_vec.clone());
+        let auth = Zeroizing::new(Authentication::new(credential.app_key(), session_token));
+        let auth_bytes = Zeroizing::new(serde_json::to_vec(&*auth)?);
         let reconnect_auth = Arc::new(ReconnectAuthState::default());
         let (auth_tx, auth_rx) = watch::channel(StreamAuth {
             generation: 0,
-            bytes: auth_bytes,
+            bytes: auth_bytes.clone(),
         });
 
         let mode = if config.use_tls {
@@ -1304,11 +1305,13 @@ impl BetfairRaceStreamClient {
         let reconnect_replay: SocketReconnectReplay = Arc::new(move || {
             let auth = auth_reconnect.borrow().clone();
             reconnect_auth_replay.record_replay(auth.generation);
-            let mut combined = Vec::with_capacity(auth.bytes.len() + 2 + sub_reconnect.len());
+            let mut combined = Zeroizing::new(Vec::with_capacity(
+                auth.bytes.len() + 2 + sub_reconnect.len(),
+            ));
             combined.extend_from_slice(&auth.bytes);
             combined.extend_from_slice(b"\r\n");
             combined.extend_from_slice(&sub_reconnect);
-            vec![Bytes::from(combined)]
+            vec![Bytes::copy_from_slice(&combined)]
         });
 
         let url = format!("{}:{}", config.host, config.port);
@@ -1342,12 +1345,13 @@ impl BetfairRaceStreamClient {
             .map_err(|e| BetfairStreamError::ConnectionFailed(e.to_string()))?;
         reconnect_auth.set_handle(socket.reconnect_handle());
 
-        let mut combined = Vec::with_capacity(auth_bytes_vec.len() + 2 + sub_bytes.len());
-        combined.extend_from_slice(&auth_bytes_vec);
+        let mut combined =
+            Zeroizing::new(Vec::with_capacity(auth_bytes.len() + 2 + sub_bytes.len()));
+        combined.extend_from_slice(&auth_bytes);
         combined.extend_from_slice(b"\r\n");
         combined.extend_from_slice(&sub_bytes);
         socket
-            .send_bytes(combined)
+            .send_bytes(combined.as_slice().to_vec())
             .await
             .map_err(|e| BetfairStreamError::ConnectionFailed(e.to_string()))?;
 
@@ -1367,11 +1371,8 @@ impl BetfairRaceStreamClient {
 
     /// Pushes refreshed auth bytes so the next reconnection uses
     /// the current session token instead of the one from initial connect.
-    pub fn update_auth(&self, app_key: &str, session_token: String) {
-        update_auth_state(
-            &self.auth_tx,
-            &Authentication::new(app_key.to_string(), session_token),
-        );
+    pub fn update_auth(&self, app_key: &str, session_token: impl Into<SecretString>) {
+        update_auth_state(&self.auth_tx, &Authentication::new(app_key, session_token));
     }
 
     /// Requests replacement of the active stream transport.
@@ -1408,7 +1409,7 @@ fn update_auth_state(auth_tx: &watch::Sender<StreamAuth>, auth: &Authentication)
     let Ok(bytes) = serde_json::to_vec(auth) else {
         return;
     };
-    let bytes = Bytes::from(bytes);
+    let bytes = Zeroizing::new(bytes);
     auth_tx.send_if_modified(|current| {
         if current.bytes == bytes {
             return false;
@@ -1646,10 +1647,19 @@ impl AuxiliaryStreamSubscription {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct StreamAuth {
     generation: u64,
-    bytes: Bytes,
+    bytes: Zeroizing<Vec<u8>>,
+}
+
+impl Debug for StreamAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(StreamAuth))
+            .field("generation", &self.generation)
+            .field("bytes", &REDACTED)
+            .finish()
+    }
 }
 
 #[derive(Debug, Default)]
@@ -1865,21 +1875,24 @@ mod tests {
             }
         };
         let initial = make_auth("initial");
-        let initial_bytes = Bytes::from(serde_json::to_vec(&initial).unwrap());
+        let initial_bytes = serde_json::to_vec(&initial).unwrap();
         let (auth_tx, auth_rx) = watch::channel(StreamAuth {
             generation: 7,
-            bytes: initial_bytes.clone(),
+            bytes: Zeroizing::new(initial_bytes.clone()),
         });
 
         update_auth_state(&auth_tx, &initial);
+        let debug = format!("{:?}", auth_rx.borrow());
         assert_eq!(auth_rx.borrow().generation, 7);
-        assert_eq!(auth_rx.borrow().bytes, initial_bytes);
+        assert_eq!(auth_rx.borrow().bytes.as_slice(), initial_bytes);
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains("initial"));
 
         let replacement = make_auth("replacement");
-        let replacement_bytes = Bytes::from(serde_json::to_vec(&replacement).unwrap());
+        let replacement_bytes = serde_json::to_vec(&replacement).unwrap();
         update_auth_state(&auth_tx, &replacement);
         assert_eq!(auth_rx.borrow().generation, 8);
-        assert_eq!(auth_rx.borrow().bytes, replacement_bytes);
+        assert_eq!(auth_rx.borrow().bytes.as_slice(), replacement_bytes);
 
         update_auth_state(&auth_tx, &replacement);
         assert_eq!(auth_rx.borrow().generation, 8);
@@ -2228,7 +2241,7 @@ mod tests {
         let client = if cricket {
             BetfairRaceStreamClient::connect_cricket_decoded(
                 &credential,
-                "test-session".to_string(),
+                "test-session".into(),
                 Arc::new(|_| {}),
                 config,
                 fatal_tx,
@@ -2239,7 +2252,7 @@ mod tests {
         } else {
             BetfairRaceStreamClient::connect_decoded(
                 &credential,
-                "test-session".to_string(),
+                "test-session".into(),
                 Arc::new(|_| {}),
                 config,
                 fatal_tx,

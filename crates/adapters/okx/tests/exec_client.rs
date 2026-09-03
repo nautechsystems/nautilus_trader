@@ -3273,9 +3273,9 @@ fn create_test_execution_client_configured(
         base_url_http: Some(base_url.to_string()),
         base_url_ws_private: Some("ws://127.0.0.1:19999/ws/v5/private".to_string()),
         base_url_ws_business: Some("ws://127.0.0.1:19999/ws/v5/business".to_string()),
-        api_key: Some("test_key".to_string()),
-        api_secret: Some("test_secret".to_string()),
-        api_passphrase: Some("test_passphrase".to_string()),
+        api_key: Some("test_key".into()),
+        api_secret: Some("test_secret".into()),
+        api_passphrase: Some("test_passphrase".into()),
         ..Default::default()
     };
     configure(&mut config);
