@@ -13,7 +13,6 @@ if ! [[ "$INSTALL_ATTEMPTS" =~ ^[0-9]+$ ]] || [ "$INSTALL_ATTEMPTS" -lt 1 ]; the
   exit 1
 fi
 
-# Helper to parse capnp version consistently
 get_capnp_version() {
   capnp --version 2> /dev/null | awk '{print $NF}' || echo ""
 }

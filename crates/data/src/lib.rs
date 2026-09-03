@@ -76,7 +76,7 @@
 )]
 #![allow(
     clippy::unused_self,
-    reason = "engine helpers take &self for method-style organization"
+    reason = "engine operations take &self for method-style organization"
 )]
 #![allow(
     clippy::large_types_passed_by_value,
@@ -100,7 +100,7 @@
 )]
 #![allow(
     clippy::inline_always,
-    reason = "hot-path helpers in aggregation are intentionally always inlined"
+    reason = "hot-path aggregation functions are intentionally always inlined"
 )]
 #![allow(
     clippy::match_same_arms,

@@ -3315,7 +3315,7 @@ fn test_process_modify_order_rejected_not_found(
     assert_eq!(rejected.client_order_id, client_order_id);
 }
 
-// Rejected post-only modify must keep FIFO; helper must not re-key.
+// Rejected post-only modify must keep FIFO; the rejected update must not re-key.
 #[rstest]
 fn test_rejected_post_only_modify_preserves_fifo_priority(
     instrument_eth_usdt: InstrumentAny,
@@ -12200,7 +12200,7 @@ fn test_modify_then_iterate_fills_at_new_limit_price(
 }
 
 // Trailing recompute that yields no new prices must not dispatch a
-// duplicate `OrderUpdated`; the helper's `unchanged` skip handles this.
+// duplicate `OrderUpdated`; the `unchanged` guard handles this.
 // Uses the cache-applying handler so each event mutates the cached order.
 #[rstest]
 fn test_trailing_stop_no_recompute_skips_resync(

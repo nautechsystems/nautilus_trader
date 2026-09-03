@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Shared helpers for the Kraken dispatch integration tests.
+//! Shared fixtures for the Kraken dispatch integration tests.
 //!
 //! Rust compiles each file in `tests/` as a standalone binary, so files placed
 //! here under `tests/common/` are only pulled in via `mod common;` from the

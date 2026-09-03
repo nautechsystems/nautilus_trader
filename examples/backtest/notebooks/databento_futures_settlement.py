@@ -70,7 +70,7 @@ class FuturesSettlementConfig(StrategyConfig):
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.future_id = future_id
@@ -84,7 +84,7 @@ class FuturesSettlementStrategy(Strategy):
 
     def __init__(self, config: FuturesSettlementConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._future_id = config.future_id

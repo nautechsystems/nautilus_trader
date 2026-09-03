@@ -62,7 +62,7 @@ class OptionGreeksTesterConfig(DataActorConfig):
         log_commands: bool = True,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         self.actor_id = ActorId.from_str(actor_id) if isinstance(actor_id, str) else actor_id
         self.log_events = log_events
@@ -78,7 +78,7 @@ class OptionGreeksTester(DataActor):
 
     def __init__(self, config: OptionGreeksTesterConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._subscribed_ids: list[InstrumentId] = []

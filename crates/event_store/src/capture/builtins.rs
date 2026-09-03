@@ -3859,7 +3859,7 @@ mod tests {
     ) {
         // The TradingCommand envelope dispatch must route every variant to the matching
         // per-type extractor and forward both correlation_id and causation_id intact.
-        // A swap of args inside any extract_*_headers helper or a misrouted wrapper arm
+        // A swap of args inside any extract_*_headers function or a misrouted wrapper arm
         // is caught by exercising each variant with distinct populated values.
         let (envelope, corr, caus) = builder();
         let registry = default_registry();

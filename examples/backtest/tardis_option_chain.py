@@ -138,7 +138,7 @@ class OptionChainBacktestConfig(StrategyConfig):
         **_kwargs: Any,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.series_id = series_id
@@ -157,7 +157,7 @@ class OptionChainBacktest(Strategy):
 
     def __init__(self, config: OptionChainBacktestConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._series_id = OptionSeriesId.from_str(config.series_id)

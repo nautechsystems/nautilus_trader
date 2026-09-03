@@ -16,7 +16,7 @@ ecosystem, including:
 - UUID generation and management.
 - Mathematical functions and interpolation utilities.
 - Correctness validation functions.
-- Serialization traits and helpers.
+- Serialization traits and codecs.
 - Cross-platform environment utilities.
 - Abstractions over common collections.
 

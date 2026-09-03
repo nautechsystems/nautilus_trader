@@ -1954,7 +1954,7 @@ mod conditional_order_tests {
         assert!(params.reduce_only.unwrap());
     }
 
-    // Helper function to create conditional order params using actual client logic
+    // Create conditional order params through the client logic
     fn create_conditional_order_params_with_side(
         order_type: OrderType,
         side: BybitOrderSide,

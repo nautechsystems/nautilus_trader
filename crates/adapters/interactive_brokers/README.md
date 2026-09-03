@@ -44,7 +44,7 @@ This crate provides feature flags to control source code inclusion during compil
 - `extension-module`: Builds the crate as a Python extension module. This is
   the feature used by the `nautilus_trader` package and includes `python` and
   `gateway`.
-- `gateway`: Enables the Dockerized IB Gateway helper via
+- `gateway`: Enables the Dockerized IB Gateway manager via
   [`bollard`](https://crates.io/crates/bollard), including its PyO3 bindings when combined with
   `python`.
 - `python`: Enables PyO3 bindings for configs, enums, the historical client,

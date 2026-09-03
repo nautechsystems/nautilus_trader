@@ -93,13 +93,13 @@ fields up front. Adapter code written in Rust has two additional derived
 constructors that enforce the invariant centrally; prefer them over
 `AccountBalance::new` whenever the venue reports only two of the three values:
 
-| Rust helper                             | When to use                                                              |
+| Rust constructor                        | When to use                                                              |
 | --------------------------------------- | ------------------------------------------------------------------------ |
 | `AccountBalance::from_total_and_locked` | Venue reports total and locked; `free` is derived from the two.          |
 | `AccountBalance::from_total_and_free`   | Venue reports total and free; `locked` is derived from the two.          |
 | `AccountBalance::new`                   | All three values are already known and consistent (tests, pass-through). |
 
-Each helper clamps the venue-reported field into `[0, total]` when `total >= 0`,
+Each derived constructor clamps the venue-reported field into `[0, total]` when `total >= 0`,
 so transient overshoots from venue rounding never leave the account in a broken
 state.
 
@@ -378,7 +378,7 @@ Live adapters translate venue responses into `AccountBalance` and
 
 ### Building `AccountBalance`
 
-Prefer the derived helpers so that clamping and the `total == locked + free`
+Prefer the derived constructors so that clamping and the `total == locked + free`
 invariant are enforced centrally. Hand-computing three fields and passing them
 to `AccountBalance::new` is only appropriate for pass-through paths where all
 three values are already authoritative (e.g., tests).

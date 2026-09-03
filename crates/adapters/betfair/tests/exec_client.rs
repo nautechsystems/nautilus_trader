@@ -7388,7 +7388,7 @@ const STREAM_CLOSED_MSG: &[u8] =
 ///
 /// The mock pushes the method name first and the params second, publishing after each, so a
 /// predicate over the method list can wake between the two and read params that are not yet
-/// recorded. Counting the later of the two collections makes every waiter on this helper
+/// recorded. Counting the later of the two collections makes every caller of this function
 /// observe a request whose payload is already readable.
 fn betting_method_count(state: &MockState, method: &str) -> usize {
     state

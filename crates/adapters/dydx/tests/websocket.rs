@@ -3215,7 +3215,7 @@ async fn test_block_height_field_names_differ() {
     assert_eq!(channel_data.block_height, "200");
 }
 
-/// Helper to receive the first message matching a predicate from the WS receiver.
+/// Receives the first WebSocket message matching a predicate.
 async fn recv_matching<F>(
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<DydxWsOutputMessage>,
     predicate: F,

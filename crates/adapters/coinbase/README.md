@@ -8,8 +8,8 @@
 
 [NautilusTrader](https://nautilustrader.io) adapter for the [Coinbase Advanced Trade](https://docs.cdp.coinbase.com/coinbase-app/docs/advanced-trade-apis) API.
 
-The `nautilus-coinbase` crate provides client bindings (HTTP & WebSocket), data models,
-and helper utilities that wrap the official **Coinbase Advanced Trade API**.
+The `nautilus-coinbase` crate provides client bindings (HTTP & WebSocket) and data models
+for the official **Coinbase Advanced Trade API**.
 
 ## NautilusTrader
 

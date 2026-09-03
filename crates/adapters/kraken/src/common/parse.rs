@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Conversion helpers that translate Kraken API schemas into Nautilus domain models.
+//! Converters that translate Kraken API schemas into Nautilus domain models.
 
 use std::str::FromStr;
 

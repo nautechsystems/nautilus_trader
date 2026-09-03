@@ -101,7 +101,7 @@
 )]
 #![allow(
     clippy::inline_always,
-    reason = "hot-path helpers in throttler and clock are intentionally always inlined"
+    reason = "hot-path throttler and clock functions are intentionally always inlined"
 )]
 #![allow(
     clippy::match_same_arms,

@@ -1133,10 +1133,10 @@ mod tests {
     fn test_pattern_for_non_composite_is_literal(
         mut switchboard: MessagingSwitchboard,
         instrument_id: InstrumentId,
-        #[case] helper: PatternFn,
+        #[case] pattern_fn: PatternFn,
         #[case] expected: &str,
     ) {
-        let pattern = helper(&mut switchboard, instrument_id);
+        let pattern = pattern_fn(&mut switchboard, instrument_id);
         assert_eq!(pattern.as_ref(), expected);
     }
 
@@ -1153,18 +1153,18 @@ mod tests {
     #[rstest]
     #[case::book_deltas(MessagingSwitchboard::get_book_deltas_pattern as PatternFn)]
     #[case::book_depth10(MessagingSwitchboard::get_book_depth10_pattern as PatternFn)]
-    fn test_pattern_helper_is_idempotent(
+    fn test_pattern_function_is_idempotent(
         mut switchboard: MessagingSwitchboard,
         instrument_id: InstrumentId,
-        #[case] helper: PatternFn,
+        #[case] pattern_fn: PatternFn,
     ) {
-        let first = helper(&mut switchboard, instrument_id);
-        let second = helper(&mut switchboard, instrument_id);
+        let first = pattern_fn(&mut switchboard, instrument_id);
+        let second = pattern_fn(&mut switchboard, instrument_id);
         assert_eq!(first, second);
     }
 
     #[rstest]
-    fn test_book_snapshots_pattern_helper_is_idempotent(
+    fn test_book_snapshots_pattern_is_idempotent(
         mut switchboard: MessagingSwitchboard,
         instrument_id: InstrumentId,
     ) {

@@ -13,10 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Helper functions for parsing RPC log entries.
+//! Parses Ethereum JSON-RPC log entries.
 //!
-//! These functions work with `RpcLog` from the standard Ethereum JSON-RPC format,
-//! converting hex strings to the appropriate types.
+//! Converts `RpcLog` fields and hex strings to their domain types.
 
 use alloy::primitives::Address;
 use nautilus_core::hex;

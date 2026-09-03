@@ -168,7 +168,7 @@ def test_data_actor_config_fields_are_writable_from_python_subclasses() -> None:
 
         def __init__(self) -> None:
             """
-            Initialize the helper.
+            Initialize the instance.
             """
             self.actor_id = ActorId("ACTOR-002")
             self.log_events = False

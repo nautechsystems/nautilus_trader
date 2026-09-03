@@ -7176,7 +7176,7 @@ async fn test_reconcile_mass_status_skips_position_report_when_fills_exist() {
     assert!(matches!(result.events[0], OrderEventAny::Filled(_)));
 }
 
-/// Helper to create a position from a fill for testing
+/// Creates a test position from a fill.
 fn create_test_position(
     instrument: &InstrumentAny,
     position_id: PositionId,

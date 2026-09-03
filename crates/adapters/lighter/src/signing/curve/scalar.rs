@@ -22,7 +22,7 @@
 //! `-1/n[0] mod 2^64`.
 //!
 //! All arithmetic primitives execute as branch-free limb-wise sequences so
-//! timing reveals nothing about secret operands. The variable-time helpers are
+//! timing reveals nothing about secret operands. The variable-time operations are
 //! confined to encode/decode-style boundaries (`from_le_bytes_reduce`) and the
 //! signed-window recoding used by the variable-time scalar multiplication.
 
@@ -135,7 +135,7 @@ impl Scalar {
     }
 
     /// Decode 40 little-endian bytes, reducing modulo `n` if the encoded value
-    /// exceeds the canonical range. Mirrors the upstream Lighter helper.
+    /// exceeds the canonical range. Mirrors the upstream Lighter routine.
     #[must_use]
     pub fn from_le_bytes_reduce(bytes: [u8; SCALAR_BYTES]) -> Self {
         let mut limbs = [0u64; LIMBS];
@@ -285,7 +285,7 @@ impl Scalar {
     /// `sum(ss[i] * 2^(w*i)) == self mod 2^(w * len)`. When `w * len >= 320`,
     /// the recoding spans the entire scalar and the top digit is non-negative.
     ///
-    /// `w` MUST satisfy `2 <= w <= 10`. This helper is variable-time and is
+    /// `w` MUST satisfy `2 <= w <= 10`. This recoding is variable-time and is
     /// only suitable for non-secret window selection.
     pub fn recode_signed(self, ss: &mut [i32], w: u32) {
         recode_signed_from_limbs(&self.0, ss, w);
@@ -293,7 +293,7 @@ impl Scalar {
 }
 
 /// Recode an arbitrary little-endian limb sequence into signed window digits.
-/// Standalone helper exposed mainly for testing parity with the upstream code.
+/// Exposed mainly for testing parity with the upstream code.
 pub fn recode_signed_from_limbs(limbs: &[u64], ss: &mut [i32], w: u32) {
     debug_assert!((2..=10).contains(&w), "window width must be in 2..=10");
 
@@ -740,7 +740,7 @@ mod tests {
             }
         }
 
-        /// `split_to_4_bit_limbs` and the test's reconstruction helper are
+        /// `split_to_4_bit_limbs` and `reconstruct_from_4_bit_nibbles` are
         /// inverses for any canonical scalar.
         #[rstest]
         fn prop_split_to_4_bit_limbs_round_trip(s in arb_scalar()) {

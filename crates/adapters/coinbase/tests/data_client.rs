@@ -979,7 +979,7 @@ async fn test_data_client_request_book_snapshot_does_not_retry_on_failure() {
     client.disconnect().await.unwrap();
 }
 
-// Helper: build the deriv-poll subscribe/unsubscribe commands for the
+// Build the deriv-poll subscribe/unsubscribe commands for the
 // lifecycle tests below. Keeps the individual tests readable.
 fn subscribe_index_cmd(instrument_id: InstrumentId) -> SubscribeIndexPrices {
     SubscribeIndexPrices::new(

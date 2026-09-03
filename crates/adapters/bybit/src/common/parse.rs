@@ -24,7 +24,7 @@ pub use nautilus_core::serialization::{
 };
 use serde::{Deserialize, de::Error};
 
-/// Serde helper for Bybit `ON`/`OFF` string fields that represent booleans.
+/// Serde adapter for Bybit `ON`/`OFF` string fields that represent booleans.
 ///
 /// Use as `#[serde(with = "on_off_bool")]`. Unknown values deserialize as an
 /// error rather than silently coercing, so field renames surface rather than
@@ -48,7 +48,7 @@ pub mod on_off_bool {
     }
 }
 
-/// Serde helper that accepts `readOnly` as either a bool or `0`/`1` integer.
+/// Serde adapter that accepts `readOnly` as either a bool or `0`/`1` integer.
 ///
 /// Bybit returns `readOnly` as a bool on `/v5/user/list-sub-apikeys` and as an
 /// integer on `/v5/user/query-api` and the two update endpoints. Deserializing
@@ -143,7 +143,7 @@ pub mod opt_bool_as_int {
     }
 }
 
-/// Serde helper that treats the masked secret literal (`"******"`) and empty
+/// Serde adapter that treats the masked secret literal (`"******"`) and empty
 /// strings as `None`, preserving real values as `Some`.
 ///
 /// Bybit responses never expose a usable secret: `list-sub-apikeys` returns

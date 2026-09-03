@@ -105,7 +105,7 @@ def _quotes(instrument: object, count: int) -> list[QuoteTick]:
 class _BarCollector(Strategy):
     def __init__(self, config: object = None) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
 
@@ -172,7 +172,7 @@ def test_internal_tick_aggregation_includes_first_tick() -> None:
 class _QuoteEmaStrategy(Strategy):
     def __init__(self, config: object = None) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
 

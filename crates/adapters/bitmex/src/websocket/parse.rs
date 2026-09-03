@@ -1133,7 +1133,7 @@ pub fn parse_wallet_msg(msg: &BitmexWalletMsg, ts_init: UnixNanos) -> AccountSta
     let currency = get_currency(&currency_str);
 
     // Wallet messages do not expose locked margin; treat the full balance as free
-    // and let the centralized helper enforce `total == locked + free` at currency precision.
+    // and let the centralized constructor enforce `total == locked + free` at currency precision.
     let divisor = bitmex_currency_divisor(msg.currency.as_str());
     let amount_dec = Decimal::from(msg.amount.unwrap_or(0)) / divisor;
 
@@ -1216,7 +1216,6 @@ mod tests {
         testing::load_test_json,
     };
 
-    // Helper function to create a test perpetual instrument for tests
     fn create_test_perpetual_instrument_with_precisions(
         price_precision: u8,
         size_precision: u8,

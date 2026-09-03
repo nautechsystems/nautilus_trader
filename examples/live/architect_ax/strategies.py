@@ -75,7 +75,7 @@ class BBMeanReversionConfig(StrategyConfig):
         **_kwargs: Any,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -96,7 +96,7 @@ class BBMeanReversion(Strategy):
 
     def __init__(self, config: BBMeanReversionConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         if config.trade_size <= 0:
             raise ValueError("trade_size must be positive")
@@ -239,7 +239,7 @@ class OrderBookImbalanceConfig(StrategyConfig):
         **_kwargs: Any,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -257,7 +257,7 @@ class OrderBookImbalance(Strategy):
 
     def __init__(self, config: OrderBookImbalanceConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         if config.max_trade_size <= 0:
             raise ValueError("max_trade_size must be positive")

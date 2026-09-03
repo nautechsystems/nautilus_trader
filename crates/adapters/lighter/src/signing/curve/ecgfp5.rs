@@ -120,7 +120,7 @@ const NUM_DIGITS: usize = (319 + WINDOW as usize) / WINDOW as usize;
 /// A point on the ECgFp5 curve in fractional `(x, u) = (X/Z, U/T)` coordinates.
 ///
 /// The neutral element is encoded as `(0, 1, 0, 1)`. Two values are equal in
-/// the group whenever `u1 * t2 == u2 * t1`; the [`Self::eq_point`] helper
+/// the group whenever `u1 * t2 == u2 * t1`; [`Self::eq_point`]
 /// performs that cross-multiplication without an inversion. `PartialEq` is
 /// deliberately not derived because numerically distinct `(X, Z, U, T)` tuples
 /// can represent the same group element.

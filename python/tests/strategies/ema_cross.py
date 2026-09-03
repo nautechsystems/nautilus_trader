@@ -72,7 +72,7 @@ class EMACrossConfig(StrategyConfig):
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         # The pyo3 base initialises its state in `__new__`, so `__init__`
         # falls through to `object.__init__` which only accepts `self`.
@@ -105,7 +105,7 @@ class EMACross(Strategy):
 
     def __init__(self, config: EMACrossConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)

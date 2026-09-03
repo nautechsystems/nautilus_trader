@@ -248,7 +248,7 @@ class PlainStrategyConfig:
 
     def __init__(self, strategy_id: StrategyId = None, order_id_tag: object = None) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         self.strategy_id = strategy_id
         self.order_id_tag = order_id_tag
@@ -275,7 +275,7 @@ class NonForwardingStrategy(Strategy):
 
     def __init__(self, config: object = None) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         # Deliberately does not forward to `super().__init__()`
 
@@ -2250,7 +2250,7 @@ POSITION_CALLBACKS = [
 def _make_recording_method(method_name: str) -> object:
     def method(self: object, *args: object) -> None:
         """
-        Run the helper method.
+        Run the method.
         """
         self.calls.append((method_name, args))
 

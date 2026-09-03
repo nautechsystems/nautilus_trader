@@ -54,7 +54,7 @@ use crate::{
     exchanges::{extended::DexExtended, get_dex_extended},
     hypersync::{
         client::{HyperSyncClient, PoolEventStreamItem},
-        helpers::{extract_block_number, extract_event_signature_bytes},
+        log::{extract_block_number, extract_event_signature_bytes},
     },
     rpc::{
         BlockchainRpcClient, BlockchainRpcClientAny,

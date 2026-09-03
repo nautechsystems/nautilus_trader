@@ -396,13 +396,13 @@ fi
 version_alignment_violations=""
 
 if [[ -f "Cargo.toml" ]]; then
-  # Helper to extract version from Cargo.toml dependency line
+  # Extracts the version from a Cargo.toml dependency line
   # Handles plain versions and common prefixes (^, =, ~, >=, etc.)
   get_version() {
     grep -E "^$1[[:space:]]*=" Cargo.toml | head -1 | grep -oE '"[~^=<>]*[0-9]+\.[0-9]+(\.[0-9]+)?([-+][a-zA-Z0-9.]+)?"' | head -1 | sed 's/"//g; s/^[~^=<>]*//' || echo ""
   }
 
-  # Helper to extract major.minor from version
+  # Extracts major.minor from a version
   get_major_minor() {
     echo "$1" | cut -d. -f1,2
   }

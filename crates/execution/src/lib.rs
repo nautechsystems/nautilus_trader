@@ -81,7 +81,7 @@
 )]
 #![allow(
     clippy::unused_self,
-    reason = "engine and matching helpers take &self for method-style organization"
+    reason = "engine and matching operations take &self for method-style organization"
 )]
 #![allow(
     clippy::large_types_passed_by_value,
@@ -105,7 +105,7 @@
 )]
 #![allow(
     clippy::inline_always,
-    reason = "hot-path helpers in matching engine are intentionally always inlined"
+    reason = "hot-path matching engine functions are intentionally always inlined"
 )]
 #![allow(
     clippy::match_same_arms,

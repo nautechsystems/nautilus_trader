@@ -16,7 +16,7 @@
 //! Utilities for safely moving UTF-8 strings across the FFI boundary.
 //!
 //! Interoperability between Rust and C/C++/Python often requires raw pointers to *null terminated*
-//! strings.  This module provides convenience helpers that:
+//! strings. This module provides conversion functions that:
 //!
 //! - Convert raw `*const c_char` pointers to Rust [`String`], [`&str`], byte slices, or
 //!   `ustr::Ustr` values.

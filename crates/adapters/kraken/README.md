@@ -8,8 +8,8 @@
 
 [NautilusTrader](https://nautilustrader.io) adapter for the [Kraken](https://www.kraken.com/) exchange.
 
-The `nautilus-kraken` crate provides client bindings (HTTP & WebSocket), data models,
-and helper utilities that wrap the official **Kraken API v2**.
+The `nautilus-kraken` crate provides client bindings (HTTP & WebSocket) and data models
+for the official **Kraken API v2**.
 
 The official Kraken API reference can be found at <https://docs.kraken.com/api/>.
 

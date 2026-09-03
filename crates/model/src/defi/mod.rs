@@ -23,7 +23,7 @@
 //! • `dex`      - DEX protocol definitions (Uniswap V3, PancakeSwap, …).
 //! • `data`     - Domain events & state snapshots that flow through the system (Block, `PoolSwap`).
 //! • `types`    - Numeric value types (Money, Quantity, Price) shared across the DeFi layer.
-//! • `rpc`      - Lightweight JSON-RPC helpers used by on-chain adapters.
+//! • `rpc`      - Lightweight JSON-RPC types and parsers used by on-chain adapters.
 
 pub mod amm;
 pub mod chain;

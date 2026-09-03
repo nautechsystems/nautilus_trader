@@ -16,7 +16,7 @@
 //! Bar aggregation machinery.
 //!
 //! Defines the `BarAggregator` trait and core aggregation types (tick, volume, value, time),
-//! along with the `BarBuilder` and `BarAggregatorCore` helpers for constructing bars.
+//! along with the `BarBuilder` and `BarAggregatorCore` components for constructing bars.
 
 use std::{
     any::Any,

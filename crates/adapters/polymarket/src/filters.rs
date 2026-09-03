@@ -569,7 +569,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_predicate_filter_outcome_helper(
+    fn test_predicate_filter_outcome_constructor(
         yes_instrument: InstrumentAny,
         no_instrument: InstrumentAny,
         no_outcome_instrument: InstrumentAny,

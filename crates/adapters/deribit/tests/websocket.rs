@@ -59,10 +59,6 @@ use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 
-// ------------------------------------------------------------------------------------------------
-// Test Data Helpers
-// ------------------------------------------------------------------------------------------------
-
 fn data_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data")
 }

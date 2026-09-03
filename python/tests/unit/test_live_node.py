@@ -73,7 +73,7 @@ class RequiredConfigLiveActorConfig(DataActorConfig):
         log_commands: bool = True,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         self.actor_id = actor_id
         self.log_events = log_events
@@ -91,7 +91,7 @@ class RequiredConfigLiveActor(DataActor):
 
     def __init__(self, config: RequiredConfigLiveActorConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         type(self).received_actor_id = str(config.actor_id)
@@ -145,7 +145,7 @@ class DefaultIdLiveStrategy(Strategy):
 
     def __init__(self, config: StrategyConfig | None = None) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         type(self).instances.append(self)
@@ -160,7 +160,7 @@ class DefaultIdLiveActor(DataActor):
 
     def __init__(self, config: DataActorConfig | None = None) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         type(self).instances.append(self)
@@ -181,7 +181,7 @@ class NonForwardingLiveActor(DataActor):
 
     def __init__(self, _config: object = None) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         # Deliberately does not forward to `super().__init__()`
         type(self).instances.append(self)
@@ -202,7 +202,7 @@ class InternalConfigLiveActor(DataActor):
 
     def __init__(self) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(DataActorConfig(actor_id=ActorId("INTERNAL-CONFIG-ACTOR")))
         type(self).instances.append(self)

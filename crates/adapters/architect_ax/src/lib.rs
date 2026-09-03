@@ -21,8 +21,8 @@
 //! innovations from digital asset perpetual exchanges with the safety and risk management of
 //! traditional futures exchanges. Licensed under the [Bermuda Monetary Authority (BMA)](https://www.bma.bm/).
 //!
-//! The `nautilus-architect-ax` crate provides client bindings (HTTP & WebSocket), data models, and
-//! helper utilities that wrap the official AX Exchange API.
+//! The `nautilus-architect-ax` crate provides client bindings (HTTP & WebSocket) and data models
+//! for the official AX Exchange API.
 //!
 //! # NautilusTrader
 //!

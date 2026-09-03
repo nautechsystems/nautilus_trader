@@ -94,7 +94,6 @@ impl TestServerState {
     }
 }
 
-// SBE encoding helpers
 fn create_sbe_header(block_length: u16, template_id: u16) -> [u8; 8] {
     let mut header = [0u8; 8];
     header[0..2].copy_from_slice(&block_length.to_le_bytes());

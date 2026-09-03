@@ -280,7 +280,7 @@ class TestDataProvider:
     """
     Load test data from a source checkout or the project's GitHub repository.
 
-    The CSV helper methods (`quotes_from_fxcm_bars`, `trades_from_binance_csv`,
+    The CSV loader methods (`quotes_from_fxcm_bars`, `trades_from_binance_csv`,
     etc.) read from the local `test_data/` directory only and require a source
     checkout.
 

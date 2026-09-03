@@ -654,7 +654,7 @@ mod tests {
                 currency.code,
             );
             // When total is non-negative, locked must also be non-negative; when total is
-            // negative the helper passes venue values through so locked may be negative too.
+            // negative the constructor passes venue values through so locked may be negative too.
             if balance.total.raw >= 0 {
                 assert!(
                     balance.locked.raw >= 0,

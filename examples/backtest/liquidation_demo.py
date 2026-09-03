@@ -63,7 +63,7 @@ class MarketBuyOnStart(Strategy):
 
     def __init__(self, instrument_id: InstrumentId, trade_size: Quantity) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self._instrument_id = instrument_id

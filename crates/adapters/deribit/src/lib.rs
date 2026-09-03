@@ -15,8 +15,8 @@
 
 //! [NautilusTrader](https://nautilustrader.io) adapter for the [Deribit](https://www.deribit.com) cryptocurrency exchange.
 //!
-//! The `nautilus-deribit` crate provides client bindings (HTTP & WebSocket), data
-//! models and helper utilities that wrap the official **Deribit API v2**.
+//! The `nautilus-deribit` crate provides client bindings (HTTP & WebSocket) and data
+//! models for the official **Deribit API v2**.
 //!
 //! Deribit uses JSON-RPC 2.0 over both HTTP and WebSocket transports (not REST).
 //! WebSocket is preferred for subscriptions and real-time data.

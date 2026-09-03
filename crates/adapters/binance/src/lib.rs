@@ -16,8 +16,8 @@
 //! [NautilusTrader](https://nautilustrader.io) adapter for the
 //! [Binance](https://www.binance.com/) cryptocurrency exchange.
 //!
-//! The `nautilus-binance` crate provides client bindings (HTTP & WebSocket), data
-//! models, and helper utilities that wrap the official **Binance API**. Live data and
+//! The `nautilus-binance` crate provides client bindings (HTTP & WebSocket) and data
+//! models for the official **Binance API**. Live data and
 //! execution clients are available for:
 //!
 //! - Spot markets, including Binance US (api.binance.com)

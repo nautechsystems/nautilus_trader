@@ -314,7 +314,7 @@ fn test_money_raw_overflow_returns_error() {
 }
 
 #[rstest]
-fn test_price_with_helper_functions() {
+fn test_price_capnp_conversion_roundtrip() {
     let price = Price::from("123.45");
     let bytes = nautilus_serialization::capnp::conversions::serialize_price(&price).unwrap();
     let decoded = nautilus_serialization::capnp::conversions::deserialize_price(&bytes).unwrap();
@@ -322,7 +322,7 @@ fn test_price_with_helper_functions() {
 }
 
 #[rstest]
-fn test_quantity_with_helper_functions() {
+fn test_quantity_capnp_conversion_roundtrip() {
     let qty = Quantity::from("100.5");
     let bytes = nautilus_serialization::capnp::conversions::serialize_quantity(&qty).unwrap();
     let decoded = nautilus_serialization::capnp::conversions::deserialize_quantity(&bytes).unwrap();

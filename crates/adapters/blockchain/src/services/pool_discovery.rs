@@ -35,7 +35,7 @@ use crate::{
     exchanges::extended::DexExtended,
     hypersync::{
         client::{HyperSyncClient, PoolEventStreamItem},
-        helpers::extract_block_number,
+        log::extract_block_number,
     },
 };
 

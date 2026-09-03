@@ -60,7 +60,7 @@ class EMACrossTWAPConfig(EMACrossConfig):
         **kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(
             instrument_id=instrument_id,
@@ -82,7 +82,7 @@ class EMACrossTWAP(EMACross):
 
     def __init__(self, config: EMACrossTWAPConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._exec_algorithm_id = ExecAlgorithmId(config.exec_algorithm_id)

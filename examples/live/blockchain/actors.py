@@ -60,7 +60,7 @@ class BlockchainActorConfig(DataActorConfig):
         pools: list[InstrumentId | str] | None = None,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         self.actor_id = ActorId.from_str(actor_id) if isinstance(actor_id, str) else actor_id
         self.log_events = log_events
@@ -81,7 +81,7 @@ class BlockchainActor(DataActor):
 
     def __init__(self, config: BlockchainActorConfig | None = None) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         if config is None:
             config = BlockchainActorConfig()

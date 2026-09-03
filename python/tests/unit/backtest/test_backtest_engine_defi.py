@@ -63,7 +63,7 @@ class RequiredConfigDefiBlockActorConfig(DataActorConfig):
         log_commands: bool = True,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         self.actor_id = actor_id
         self.log_events = log_events
@@ -81,7 +81,7 @@ class RequiredConfigDefiBlockActor(DataActor):
 
     def __init__(self, config: RequiredConfigDefiBlockActorConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         type(self).received_actor_id = str(config.actor_id)

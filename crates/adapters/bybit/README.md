@@ -8,8 +8,8 @@
 
 [NautilusTrader](https://nautilustrader.io) adapter for the [Bybit](https://www.bybit.com/) exchange.
 
-The `nautilus-bybit` crate provides client bindings (HTTP & WebSocket), data models,
-and helper utilities that wrap the official **Bybit API**.
+The `nautilus-bybit` crate provides client bindings (HTTP & WebSocket) and data models
+for the official **Bybit API**.
 
 ## NautilusTrader
 

@@ -108,7 +108,7 @@ class SpotSwapQuoterConfig(StrategyConfig):
         **_kwargs: Any,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.spot_instrument_id = spot_instrument_id
@@ -130,7 +130,7 @@ class SpotSwapQuoter(Strategy):
 
     def __init__(self, config: SpotSwapQuoterConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._config = config

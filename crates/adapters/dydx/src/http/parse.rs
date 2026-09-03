@@ -307,7 +307,7 @@ pub fn parse_instrument_any(
     let instrument_id = parse_instrument_id(definition.ticker);
     let raw_symbol = Symbol::from(definition.ticker.as_str());
 
-    // Parse currencies from ticker using helper function
+    // Parse base and quote currencies from the ticker
     let (base_str, quote_str) = parse_ticker_currencies(&definition.ticker)
         .context(format!("Failed to parse ticker '{}'", definition.ticker))?;
 
@@ -398,7 +398,7 @@ pub fn parse_instrument_any(
     Ok(InstrumentAny::CryptoPerpetual(instrument))
 }
 
-/// Serde helper for fields encoded as a string of a `Display`/`FromStr` value.
+/// Serde adapter for fields encoded as a string of a `Display`/`FromStr` value.
 pub(super) mod display_fromstr {
     use std::{fmt::Display, str::FromStr};
 
@@ -423,7 +423,7 @@ pub(super) mod display_fromstr {
     }
 }
 
-/// Serde helper for `Option<T>` fields encoded as a string (or null/missing) of a
+/// Serde adapter for `Option<T>` fields encoded as a string (or null/missing) of a
 /// `Display`/`FromStr` value. Pair with `#[serde(default)]` so missing fields parse as `None`.
 pub(super) mod display_fromstr_opt {
     use std::{fmt::Display, str::FromStr};

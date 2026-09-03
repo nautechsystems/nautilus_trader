@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! JSON / string parsing helpers for Python inputs.
+//! JSON / string parsers for Python inputs.
 
 use pyo3::{
     prelude::*,
@@ -22,7 +22,7 @@ use pyo3::{
 
 use super::{to_pykey_err, to_pyvalue_err};
 
-/// Helper function to get a required string value from a Python dictionary.
+/// Extracts a required string value from a Python dictionary.
 ///
 /// # Returns
 ///
@@ -37,7 +37,7 @@ pub fn get_required_string(dict: &Bound<'_, PyDict>, key: &str) -> PyResult<Stri
         .extract()
 }
 
-/// Helper function to get a required value from a Python dictionary and extract it.
+/// Extracts a required value from a Python dictionary.
 ///
 /// # Returns
 ///
@@ -57,7 +57,7 @@ where
         .map_err(PyErr::from)
 }
 
-/// Helper function to get an optional value from a Python dictionary.
+/// Extracts an optional value from a Python dictionary.
 ///
 /// # Returns
 ///
@@ -85,7 +85,7 @@ where
     }
 }
 
-/// Helper function to get a required value, parse it with a closure, and handle parse errors.
+/// Extracts and parses a required value from a Python dictionary.
 ///
 /// # Returns
 ///
@@ -102,7 +102,7 @@ where
     parser(value_str).map_err(|e| to_pyvalue_err(format!("Failed to parse '{key}': {e}")))
 }
 
-/// Helper function to get an optional value, parse it with a closure, and handle parse errors.
+/// Extracts and parses an optional value from a Python dictionary.
 ///
 /// # Returns
 ///
@@ -126,7 +126,7 @@ where
         .map_err(|e| to_pyvalue_err(format!("Failed to parse '{key}': {e}")))
 }
 
-/// Helper function to get a required `PyList` from a Python dictionary.
+/// Extracts a required `PyList` from a Python dictionary.
 ///
 /// # Returns
 ///

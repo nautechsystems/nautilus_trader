@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Helper functions for stubbing identifiers in tests.
+//! Identifier stubs for tests.
 
 use nautilus_core::UUID4;
 use rstest::fixture;

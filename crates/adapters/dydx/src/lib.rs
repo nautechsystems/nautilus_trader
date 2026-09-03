@@ -15,8 +15,8 @@
 
 //! [NautilusTrader](https://nautilustrader.io) adapter for the [dYdX](https://dydx.trade/) decentralized derivatives exchange.
 //!
-//! The `nautilus-dydx` crate provides client bindings (HTTP, WebSocket & gRPC), data
-//! models, and helper utilities that wrap the official **dYdX v4 API**.
+//! The `nautilus-dydx` crate provides client bindings (HTTP, WebSocket & gRPC) and data
+//! models for the official **dYdX v4 API**.
 //!
 //! # Official Documentation
 //!

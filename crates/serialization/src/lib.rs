@@ -73,7 +73,7 @@
 )]
 #![allow(
     clippy::implicit_hasher,
-    reason = "serialization metadata uses a standardized HashMap<String, String> shape across traits and helpers"
+    reason = "serialization metadata uses a standardized HashMap<String, String> shape across traits and codecs"
 )]
 #![allow(
     clippy::similar_names,
@@ -105,7 +105,7 @@ pub mod arrow;
 /// Re-export custom data registration for use by persistence and tests.
 #[cfg(feature = "arrow")]
 pub use arrow::custom::ensure_custom_data_registered;
-/// Re-export MsgPack serialization helpers for consumers expecting to configure codecs via this crate.
+/// Re-exports MsgPack codecs for consumers configuring serialization through this crate.
 pub use nautilus_core::serialization::msgpack;
 
 #[cfg(feature = "capnp")]

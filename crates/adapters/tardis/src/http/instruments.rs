@@ -317,7 +317,6 @@ mod tests {
     use super::*;
     use crate::common::testing::load_test_json;
 
-    // Helper to create a basic instrument info for testing
     fn create_test_instrument(
         available_since: u64,
         available_to: Option<u64>,

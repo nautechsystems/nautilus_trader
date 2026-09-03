@@ -43,7 +43,7 @@ This crate provides feature flags to control source code inclusion during compil
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
 Python bindings are intentionally narrow: configuration, enums, factory wiring, and the
-integrator revocation helper. Data and execution clients are consumed directly through the Rust
+integrator revocation operation. Data and execution clients are consumed directly through the Rust
 trait surface.
 
 ## Integrator attribution

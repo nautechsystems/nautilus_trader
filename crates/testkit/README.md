@@ -17,7 +17,7 @@ across the entire NautilusTrader ecosystem with automated data downloads and val
 - **Path resolution**: Platform-agnostic test data path management.
 - **Precision handling**: Support for both 64-bit and 128-bit precision test data.
 - **Event collection**: Draining and correlating the data events a client emits.
-- **Common patterns**: Reusable test utilities and helper functions.
+- **Common patterns**: Reusable fixtures and test support.
 
 ## NautilusTrader
 

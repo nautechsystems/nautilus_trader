@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings exposing OKX HTTP helper functions and data conversions.
+//! Python bindings for OKX HTTP methods and data conversions.
 
 use jiff::Timestamp;
 use nautilus_core::python::{

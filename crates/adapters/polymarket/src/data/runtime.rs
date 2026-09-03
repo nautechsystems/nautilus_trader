@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Shared runtime helpers for the Polymarket data client.
+//! Runtime state coordination for the Polymarket data client.
 
 use std::sync::Arc;
 

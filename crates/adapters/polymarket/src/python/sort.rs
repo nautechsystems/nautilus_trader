@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python wrappers for Polymarket trade-parsing helpers.
+//! Python bindings for Polymarket trade parsing.
 
 use pyo3::{prelude::*, types::PyDict};
 

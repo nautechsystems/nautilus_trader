@@ -119,7 +119,7 @@ def test_custom_data_python_backend_equality_uses_identity() -> None:
 
         def __init__(self, value: object) -> None:
             """
-            Initialize the helper.
+            Initialize the instance.
             """
             self.value = value
             self.ts_event = 1
@@ -178,7 +178,7 @@ def test_deserialize_custom_from_json() -> None:
 
         def __init__(self, value: object = 0, ts_event: object = 0, ts_init: object = 0) -> None:
             """
-            Initialize the helper.
+            Initialize the instance.
             """
             self.value = value
             self.ts_event = ts_event

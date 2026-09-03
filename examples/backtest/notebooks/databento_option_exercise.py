@@ -69,7 +69,7 @@ class OptionExerciseConfig(StrategyConfig):
 
     def __init__(self, future_id: InstrumentId, option_id: InstrumentId, **_kwargs: object) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.future_id = future_id
@@ -83,7 +83,7 @@ class OptionExerciseStrategy(Strategy):
 
     def __init__(self, config: OptionExerciseConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._option_id = config.option_id

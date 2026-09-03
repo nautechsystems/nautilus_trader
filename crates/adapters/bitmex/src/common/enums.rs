@@ -1277,8 +1277,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_helper_methods() {
-        // Test try_from_order_type helper
+    fn test_order_type_and_time_in_force_conversions() {
         let result = BitmexOrderType::try_from_order_type(OrderType::Limit);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), BitmexOrderType::Limit);
@@ -1286,7 +1285,6 @@ mod tests {
         let result = BitmexOrderType::try_from_order_type(OrderType::MarketToLimit);
         assert!(result.is_err());
 
-        // Test try_from_time_in_force helper
         let result = BitmexTimeInForce::try_from_time_in_force(TimeInForce::Ioc);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), BitmexTimeInForce::ImmediateOrCancel);

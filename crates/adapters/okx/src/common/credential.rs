@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! OKX API credential storage and request signing helpers.
+//! OKX API credential resolution, storage, and request signing.
 
 #![allow(unused_assignments)] // Fields are accessed externally, false positive from nightly
 

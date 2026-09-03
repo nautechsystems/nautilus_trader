@@ -563,7 +563,7 @@ mod tests {
         let sk = PrivateKey::from_le_bytes_reduce(decode_scalar_bytes(&v.sk));
         // Pick a nonzero, fixture-derived `k` - any non-zero canonical scalar
         // is valid. Guarding against `k == 0` and non-canonical limbs makes
-        // the helper fail loudly on the test scaffold rather than producing
+        // the assertion fail loudly on the test scaffold rather than producing
         // an undefined signature if the XOR happens to land on a bad value.
         let mut k_bytes = decode_scalar_bytes(&v.sk);
         k_bytes[0] ^= 0x01;

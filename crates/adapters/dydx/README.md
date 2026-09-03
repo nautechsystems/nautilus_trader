@@ -8,8 +8,8 @@
 
 [NautilusTrader](https://nautilustrader.io) adapter for the [dYdX v4](https://dydx.exchange/) decentralized exchange.
 
-The `nautilus-dydx` crate provides client bindings (HTTP, WebSocket & gRPC), data models
-and helper utilities that wrap the official **dYdX v4 API**.
+The `nautilus-dydx` crate provides client bindings (HTTP, WebSocket & gRPC) and data models
+for the official **dYdX v4 API**.
 
 dYdX v4 is built as a standalone Cosmos SDK appchain using CometBFT consensus. The order book
 and matching engine run on-chain as part of the validator process. Orders are submitted as

@@ -1368,7 +1368,7 @@ mod tests {
     }
 
     /// Builds a minimal [`DeribitPublicTrade`] via JSON to exercise the HTTP
-    /// trade-tick path. Mirrors the WS-side `make_trade_msg` helper.
+    /// trade-tick path. Mirrors the WS-side `make_trade_msg` fixture constructor.
     fn make_public_trade(
         trade_id: &str,
         block_trade_id: Option<&str>,

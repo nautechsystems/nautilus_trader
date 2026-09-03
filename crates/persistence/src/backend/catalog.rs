@@ -1459,7 +1459,7 @@ impl ParquetDataCatalog {
         Ok(all_files)
     }
 
-    /// Helper method to reconstruct full URI for remote object store paths
+    /// Reconstructs the full URI for a remote object store path.
     #[must_use]
     pub fn reconstruct_full_uri(&self, path_str: &str) -> String {
         if path_str.contains("://") {
@@ -1502,7 +1502,7 @@ impl ParquetDataCatalog {
         }
     }
 
-    /// Helper method to join paths using forward slashes (object store convention)
+    /// Joins paths with the forward slashes required by object stores.
     #[must_use]
     fn join_paths(base: &str, path: &str) -> String {
         make_object_store_path(base, &[path])
@@ -1559,7 +1559,7 @@ impl ParquetDataCatalog {
         }
     }
 
-    /// Helper method to check if the original URI uses a remote object store scheme
+    /// Returns whether the original URI uses a remote object store scheme.
     #[must_use]
     pub fn is_remote_uri(&self) -> bool {
         self.original_uri
@@ -2931,7 +2931,7 @@ impl ParquetDataCatalog {
         Ok(path)
     }
 
-    /// Helper method to rename a parquet file by moving it via object store operations
+    /// Renames a Parquet file through object store move operations.
     fn rename_parquet_file(
         &self,
         directory: &str,
@@ -3124,7 +3124,7 @@ impl ParquetDataCatalog {
         path.to_string()
     }
 
-    /// Helper method to move a file using object store rename operation
+    /// Moves a file with the object store rename operation.
     ///
     /// # Errors
     ///
@@ -3138,7 +3138,7 @@ impl ParquetDataCatalog {
         })
     }
 
-    /// Helper method to execute async operations with a runtime
+    /// Executes an async operation with a runtime.
     ///
     /// # Errors
     ///
@@ -3433,7 +3433,7 @@ impl ParquetDataCatalog {
         self.read_run_data("backtest", instance_id)
     }
 
-    /// Helper function to read data from a run instance (backtest or live).
+    /// Reads data from a backtest or live run instance.
     ///
     /// This function reads all data associated with a specific run instance
     /// from feather files stored in the catalog.
@@ -3716,7 +3716,7 @@ impl ParquetDataCatalog {
     /// ```
     /// Lists feather files for a specific data class in a subdirectory.
     ///
-    /// This helper function finds all `.feather` files in the specified subdirectory
+    /// Finds all `.feather` files in the specified subdirectory
     /// (backtest or live) for the given instance ID and data class.
     fn list_feather_files(
         &self,
@@ -4998,7 +4998,7 @@ fn get_interval_set(intervals: &[(u64, u64)]) -> IntervalTree<u64> {
 
 /// Converts an interval tree result back to a closed interval tuple.
 ///
-/// This helper function converts the bounded interval representation used by
+/// Converts the bounded interval representation used by
 /// the interval tree back into the (start, end) tuple format used throughout
 /// the catalog.
 ///

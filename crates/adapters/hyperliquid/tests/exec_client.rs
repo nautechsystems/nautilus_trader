@@ -3197,7 +3197,7 @@ async fn test_generate_order_status_report_terminal_oid_fallback_returns_report(
     assert_eq!(
         report.client_order_id,
         Some(ClientOrderId::new(cloid_hex.as_str())),
-        "helper leaves the API-reported cloid intact for downstream resolution",
+        "report preserves the API-reported cloid for downstream resolution",
     );
 
     client.disconnect().await.unwrap();
@@ -3206,9 +3206,9 @@ async fn test_generate_order_status_report_terminal_oid_fallback_returns_report(
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_generate_order_status_report_terminal_mismatched_cloid_still_returned() {
-    // A cloid mismatch no longer shortcircuits the helper. The downstream
+    // A cloid mismatch no longer short-circuits the order-status request. The downstream
     // Python resolver uses venue_order_id to rebind the report to the
-    // correct logical client_order_id, so the helper forwards the API
+    // correct logical client_order_id, so the HTTP client forwards the API
     // response as-is.
     let coid = ClientOrderId::new("O-20240101-000003");
     let other_coid_hex =
@@ -3244,7 +3244,7 @@ async fn test_generate_order_status_report_terminal_mismatched_cloid_still_retur
         .generate_order_status_report(&cmd)
         .await
         .unwrap()
-        .expect("helper must forward valid oid matches regardless of cloid");
+        .expect("order-status lookup must forward valid oid matches regardless of cloid");
     assert_eq!(report.order_status, OrderStatus::Canceled);
     assert_eq!(report.venue_order_id, VenueOrderId::from("333333"));
 
@@ -3256,7 +3256,7 @@ async fn test_generate_order_status_report_terminal_mismatched_cloid_still_retur
 async fn test_generate_order_status_report_terminal_missing_cloid_trusts_oid() {
     // Orders placed without a cloid (or external/synthetic orders the engine
     // reconciled from the venue) have no cloid on the API response. The
-    // helper must still surface the oid match so downstream reconciliation
+    // order-status lookup must still surface the oid match so downstream reconciliation
     // can resolve the logical client_order_id by venue_order_id.
     let coid = ClientOrderId::new("O-20240101-000004");
 
@@ -3298,7 +3298,7 @@ async fn test_generate_order_status_report_terminal_missing_cloid_trusts_oid() {
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_generate_order_status_report_oid_only_returns_terminal() {
-    // When only venue_order_id is supplied, the helper must still surface a
+    // When only venue_order_id is supplied, the order-status lookup must still surface a
     // terminal report (no cloid validation applies without a coid to check).
     let state = TestServerState::default();
     *state.frontend_open_orders_response.lock().await = Some(json!([]));
@@ -4687,7 +4687,7 @@ async fn test_query_order_forwards_old_leg_fill_during_modify() {
 async fn test_query_order_oid_fallback_runs_when_cloid_request_errors() {
     // Sustained frontendOpenOrders outage: both the cloid-open probe and the
     // frontendOpenOrders call inside request_order_status_report must fail,
-    // so the handler + HTTP helper must both tolerate the outage and still
+    // so the handler and HTTP request path must both tolerate the outage and still
     // resolve the order via info_order_status.
     let coid = ClientOrderId::new("O-QUERY-003");
 

@@ -74,7 +74,7 @@ class SignalHarvestConfig(StrategyConfig):
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -89,7 +89,7 @@ class SignalHarvest(Strategy):
 
     def __init__(self, config: SignalHarvestConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
@@ -305,7 +305,7 @@ class BookChurnConfig(StrategyConfig):
 
     def __init__(self, instrument_id: str, trade_size: str, **_kwargs: object) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -319,7 +319,7 @@ class BookChurn(Strategy):
 
     def __init__(self, config: BookChurnConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
@@ -445,7 +445,7 @@ class RoutedOrderProbeConfig(StrategyConfig):
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -460,7 +460,7 @@ class RoutedOrderProbe(Strategy):
 
     def __init__(self, config: RoutedOrderProbeConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
@@ -532,7 +532,7 @@ class RoutedOrderExecutionAlgorithmConfig(DataActorConfig):
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         self.actor_id = actor_id
         self.exec_algorithm_id = exec_algorithm_id
@@ -552,7 +552,7 @@ class RoutedOrderDataActorExecutionAlgorithm(DataActor):
 
     def __init__(self, config: RoutedOrderExecutionAlgorithmConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._signal_name = config.signal_name
@@ -600,7 +600,7 @@ class RoutedOrderExecutionAlgorithm(ExecutionAlgorithm):
 
     def __init__(self, config: RoutedOrderExecutionAlgorithmConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._signal_name = config.signal_name
@@ -666,7 +666,7 @@ class DoubleSpawnExecutionAlgorithm(ExecutionAlgorithm):
 
     def __init__(self, config: RoutedOrderExecutionAlgorithmConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
 
@@ -707,7 +707,7 @@ class OversizedSpawnExecutionAlgorithm(ExecutionAlgorithm):
 
     def __init__(self, config: RoutedOrderExecutionAlgorithmConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
 
@@ -760,7 +760,7 @@ class MarketDataAuditActorConfig(DataActorConfig):
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         self.actor_id = actor_id
         self.log_events = log_events
@@ -782,7 +782,7 @@ class MarketDataAuditActor(DataActor):
 
     def __init__(self, config: MarketDataAuditActorConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
@@ -924,7 +924,7 @@ class StreamingWhipsawConfig(StrategyConfig):
 
     def __init__(self, instrument_id: str, trade_size: str, **_kwargs: object) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -938,7 +938,7 @@ class StreamingWhipsaw(Strategy):
 
     def __init__(self, config: StreamingWhipsawConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)

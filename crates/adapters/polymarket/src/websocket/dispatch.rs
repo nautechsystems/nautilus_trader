@@ -2810,7 +2810,6 @@ mod tests {
         };
         let mut state = WsDispatchState::default();
 
-        // Helper to build order updates
         let make_order =
             |size_matched: &str, ts: &str, event_type: PolymarketEventType| PolymarketUserOrder {
                 asset_id,
@@ -2833,7 +2832,6 @@ mod tests {
                 event_type,
             };
 
-        // Helper to build maker trades
         let make_trade = |trade_id: &str, matched_amount: f64, ts: &str| PolymarketUserTrade {
             asset_id,
             bucket_index: 0,

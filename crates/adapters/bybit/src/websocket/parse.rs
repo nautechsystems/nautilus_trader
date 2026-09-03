@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Parsing helpers for Bybit WebSocket payloads.
+//! Parsers for Bybit WebSocket payloads.
 
 use std::convert::TryFrom;
 

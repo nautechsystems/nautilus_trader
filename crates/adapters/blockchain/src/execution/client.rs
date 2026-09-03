@@ -108,8 +108,8 @@ use crate::{
     },
     rpc::{
         error::BroadcastError,
-        helpers as rpc_helpers,
         http::{BlockchainHttpRpcClient, EXECUTION_RPC_TIMEOUT_SECS},
+        log as rpc_log,
         types::{RpcCallType, RpcTransaction, RpcTransactionReceipt},
         verification::{
             VerificationCoordinator, VerificationOutcome, Verified, VerifiedBlockHeader,
@@ -4223,7 +4223,7 @@ async fn validate_profiler_event_verified(
     let matching_logs = receipt
         .logs
         .iter()
-        .filter(|log| rpc_helpers::extract_log_index(log).ok() == Some(position.log_index))
+        .filter(|log| rpc_log::extract_log_index(log).ok() == Some(position.log_index))
         .collect::<Vec<_>>();
     anyhow::ensure!(
         matching_logs.len() == 1,
@@ -4232,7 +4232,7 @@ async fn validate_profiler_event_verified(
         position.log_index
     );
     let log = matching_logs[0];
-    let log_transaction_hash = B256::from_str(&rpc_helpers::extract_transaction_hash(log)?)
+    let log_transaction_hash = B256::from_str(&rpc_log::extract_transaction_hash(log)?)
         .with_context(|| "Invalid profiler log transaction hash")?;
     let log_block_hash = log
         .block_hash
@@ -4241,13 +4241,13 @@ async fn validate_profiler_event_verified(
     anyhow::ensure!(
         !log.removed
             && log_transaction_hash == transaction_hash
-            && rpc_helpers::extract_block_number(log)? == position.number
-            && rpc_helpers::extract_transaction_index(log)? == position.transaction_index
+            && rpc_log::extract_block_number(log)? == position.number
+            && rpc_log::extract_transaction_index(log)? == position.transaction_index
             && B256::from_str(log_block_hash)? == expected_block_hash,
         "Profiler log position does not match its ingestion watermark"
     );
     anyhow::ensure!(
-        rpc_helpers::extract_address(log)? == pool_address,
+        rpc_log::extract_address(log)? == pool_address,
         "Profiler watermark log did not come from expected pool {pool_address}"
     );
     let signature = log
@@ -4753,7 +4753,7 @@ fn validate_finalized_swap_fill(
         plan.pool_address
     );
     let log = swap_logs[0];
-    let log_transaction_hash = B256::from_str(&rpc_helpers::extract_transaction_hash(log)?)
+    let log_transaction_hash = B256::from_str(&rpc_log::extract_transaction_hash(log)?)
         .with_context(|| "Invalid finalized Swap log transaction hash")?;
     let log_block_hash = log
         .block_hash
@@ -4761,8 +4761,8 @@ fn validate_finalized_swap_fill(
         .ok_or_else(|| anyhow::anyhow!("Finalized Swap log has no block hash"))?;
     anyhow::ensure!(
         log_transaction_hash == included.tx_hash
-            && rpc_helpers::extract_block_number(log)? == included.block_number
-            && u64::from(rpc_helpers::extract_transaction_index(log)?)
+            && rpc_log::extract_block_number(log)? == included.block_number
+            && u64::from(rpc_log::extract_transaction_index(log)?)
                 == included.receipt.transaction_index
             && B256::from_str(log_block_hash)
                 .with_context(|| "Invalid finalized Swap log block hash")?

@@ -8,8 +8,8 @@
 
 [NautilusTrader](https://nautilustrader.io) adapter for the [BitMEX](https://bitmex.com) cryptocurrency exchange.
 
-The `nautilus-bitmex` crate provides client bindings (HTTP & WebSocket), data
-models and helper utilities that wrap the official **BitMEX API**.
+The `nautilus-bitmex` crate provides client bindings (HTTP & WebSocket) and data
+models for the official **BitMEX API**.
 
 The official BitMEX API reference can be found at <https://www.bitmex.com/app/apiOverview>.
 

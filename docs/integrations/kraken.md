@@ -315,7 +315,7 @@ time rather than silently coercing them.
 | Operation    | Spot | Futures | Notes                                                  |
 | ------------ | ---- | ------- | ------------------------------------------------------ |
 | Batch Submit | ✓    | ✓       | Spot chunks at 15 orders. Futures chunks at 10.        |
-| Batch Modify | -    | ✓       | Futures HTTP helper only. Execution sends one command. |
+| Batch Modify | -    | ✓       | Futures HTTP method only. Execution sends one command. |
 | Batch Cancel | ✓    | ✓       | Auto-chunks into batches of 50.                        |
 
 :::note

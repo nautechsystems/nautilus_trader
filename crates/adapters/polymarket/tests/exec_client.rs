@@ -8103,7 +8103,10 @@ fn make_closed_limit_order(
     order.apply(accepted).unwrap();
     let canceled = TestOrderEventStubs::canceled(&order, account_id, Some(venue_order_id));
     order.apply(canceled).unwrap();
-    assert!(order.is_closed(), "helper must produce a closed order");
+    assert!(
+        order.is_closed(),
+        "make_closed_limit_order must produce a closed order"
+    );
     order
 }
 

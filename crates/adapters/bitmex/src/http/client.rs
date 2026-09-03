@@ -565,7 +565,7 @@ impl BitmexRawHttpClient {
     /// Get the instrument definition for the specified symbol.
     ///
     /// BitMEX responds to `/instrument?symbol=...` with an array, even when
-    /// a single symbol is requested. This helper returns the first element of
+    /// a single symbol is requested. This method returns the first element of
     /// that array and yields `Ok(None)` when the venue returns an empty list
     /// (e.g. unknown symbol).
     ///

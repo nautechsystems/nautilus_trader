@@ -13,6 +13,7 @@ Released on TBD (UTC).
 ### Breaking Changes
 
 - Removed Coinbase `CreateOrderRequest.reduce_only`; reduce-only orders are rejected before submission
+- Renamed blockchain log parsing modules to `hypersync::log` and `rpc::log`; update Rust imports
 - Changed `TradingState` to `ACTIVE=1`, `REDUCING=2`, and `HALTED=3`; update numeric and Cap'n Proto consumers
 - Changed `REDUCING` to allow only eligible reduce-only submissions, cancellations, and queries
 - Changed execution clients to reject `reduce_only` without an enforcing venue instruction (#4761), thanks @folknor
@@ -41,6 +42,7 @@ Released on TBD (UTC).
 - Refined bar aggregation internals and shared aggregator state
 - Refined core crate coverage, FFI safety, and collection conversion
 - Standardized crate feature documentation across READMEs and Rustdoc
+- Standardized code and documentation terminology with domain-specific names
 - Updated Makefile help output to match the startup log header
 - Optimized pre-commit and CI convention hook runtime
 - Upgraded `flate2` crate to v1.1.10

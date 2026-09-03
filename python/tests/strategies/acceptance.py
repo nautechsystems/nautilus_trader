@@ -154,7 +154,7 @@ class BarEntryExitConfig(StrategyConfig):
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -171,7 +171,7 @@ class BarEntryExit(Strategy):
 
     def __init__(self, config: BarEntryExitConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         from nautilus_trader.model import BarType
@@ -231,7 +231,7 @@ class TickScheduledConfig(StrategyConfig):
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -245,7 +245,7 @@ class TickScheduled(Strategy):
 
     def __init__(self, config: TickScheduledConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
@@ -301,7 +301,7 @@ class OrderBookImbalanceConfig(StrategyConfig):
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -318,7 +318,7 @@ class OrderBookImbalance(Strategy):
 
     def __init__(self, config: OrderBookImbalanceConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
@@ -420,7 +420,7 @@ class MultiInstrumentTickScheduledConfig(StrategyConfig):
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_actions = instrument_actions
@@ -433,7 +433,7 @@ class MultiInstrumentTickScheduled(Strategy):
 
     def __init__(self, config: MultiInstrumentTickScheduledConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._actions: dict[InstrumentId, dict[int, list[tuple[OrderSide, Quantity]]]] = {}
@@ -514,7 +514,7 @@ class EMACrossStopEntryConfig(StrategyConfig):
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -572,7 +572,7 @@ class EMACrossTrailingStopConfig(StrategyConfig):
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -591,7 +591,7 @@ class EMACrossTrailingStopConfig(StrategyConfig):
 class _EMACrossTrailingWorkflow(Strategy):
     def __init__(self, config: object) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
@@ -840,7 +840,7 @@ class CascadingStopConfig(StrategyConfig):
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -855,7 +855,7 @@ class CascadingStop(Strategy):
 
     def __init__(self, config: CascadingStopConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
@@ -926,7 +926,7 @@ class MultiCascadeConfig(StrategyConfig):
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -942,7 +942,7 @@ class MultiCascade(Strategy):
 
     def __init__(self, config: MultiCascadeConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
@@ -1035,7 +1035,7 @@ class DualTimerConfig(StrategyConfig):
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -1050,7 +1050,7 @@ class DualTimer(Strategy):
 
     def __init__(self, config: DualTimerConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
@@ -1124,7 +1124,7 @@ class MACDStrategyConfig(StrategyConfig):
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -1146,7 +1146,7 @@ class MACDTradeTickStrategy(Strategy):
 
     def __init__(self, config: MACDStrategyConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)

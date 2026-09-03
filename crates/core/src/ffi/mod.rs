@@ -36,7 +36,7 @@ use std::{
 
 /// Executes `f`, aborting the process if it panics.
 ///
-/// FFI exports always call this helper so a panic never unwinds across the
+/// FFI exports always call `abort_on_panic` so a panic never unwinds across the
 /// `extern "C"` boundary. Unwinding into C/Python is undefined behaviour and
 /// can silently corrupt the foreign stack; aborting instead preserves the
 /// fail-fast guarantee with effectively no debugging downside (the panic

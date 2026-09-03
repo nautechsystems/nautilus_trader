@@ -1307,7 +1307,7 @@ mod tests {
         http::models::{DeribitInstrument, DeribitJsonRpcResponse},
     };
 
-    /// Helper function to create a test instrument (BTC-PERPETUAL).
+    /// Creates a BTC-PERPETUAL test instrument.
     fn test_perpetual_instrument() -> InstrumentAny {
         let json = load_test_json("http_get_instruments.json");
         let response: DeribitJsonRpcResponse<Vec<DeribitInstrument>> =

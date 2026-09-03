@@ -3344,7 +3344,7 @@ async fn test_modify_order_venue_rejection_emits_modify_rejected() {
 /// `cancel_all_orders` consults both pieces of state: the cache for the
 /// open-orders iteration, the dispatch state for `lookup_venue_order_id`.
 /// Tests that exercise the full open-iteration path go through this
-/// helper so the two stay in sync.
+/// `seed_open_order` so the two stay in sync.
 async fn seed_open_order(
     client: &LighterExecutionClient,
     cache: &Rc<RefCell<Cache>>,

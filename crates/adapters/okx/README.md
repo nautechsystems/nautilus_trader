@@ -8,8 +8,8 @@
 
 [NautilusTrader](https://nautilustrader.io) adapter for the [OKX](https://www.okx.com/) cryptocurrency exchange.
 
-The `nautilus-okx` crate provides client bindings (HTTP & WebSocket), data
-models and helper utilities that wrap the official **OKX v5 API**.
+The `nautilus-okx` crate provides client bindings (HTTP & WebSocket) and data
+models for the official **OKX v5 API**.
 
 The official OKX API reference can be found at <https://www.okx.com/docs-v5/en/>.
 

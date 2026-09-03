@@ -189,7 +189,6 @@ fn portfolio(
 
 use indexmap::IndexMap;
 
-// Helpers
 fn get_cash_account(accountid: Option<&str>) -> AccountState {
     AccountState::new(
         match accountid {

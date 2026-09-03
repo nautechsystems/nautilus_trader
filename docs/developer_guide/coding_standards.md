@@ -113,7 +113,7 @@ A venue adapter exposes its canonical identity constants plus the supported publ
 - stateless loaders (`load_*`, `stream_*`, `convert_*`) and intentional utilities
   (`decode_*`, `get_*_arrow_schema_map`)
 
-Keep the facade thin. Never add raw HTTP or WebSocket clients, wire models, endpoint helpers
+Keep the facade thin. Never add raw HTTP or WebSocket clients, wire models, endpoint URL resolvers
 (`get_*_url`, `*_HTTP_URL`), caches, or other internals to `__all__` merely for structural parity.
 Data providers (such as `databento` and `tardis`), the `blockchain` data client, the `sandbox`
 execution client, and the multi-venue `interactive_brokers` broker omit venue constants because the

@@ -188,7 +188,7 @@ fn dispatch_data(data_engine: &mut DataEngine, data: Data, borrowed: bool) {
     assert_eq!(data_engine.data_count(), count + 1);
 }
 
-// Test helper for registering a mock data client
+// Registers a mock data client for tests
 fn register_mock_client(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,

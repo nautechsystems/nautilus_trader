@@ -550,7 +550,7 @@ impl BybitWebSocketClient {
                 recv_window_ms,
             );
 
-            // Helper closure to resubscribe all tracked subscriptions after reconnection
+            // Resubscribe all tracked subscriptions after reconnection
             let resubscribe_all = || async {
                 let topics = subscriptions.all_topics();
 

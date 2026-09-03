@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! BitMEX WebSocket message structures and helper types.
+//! BitMEX WebSocket message structures and supporting types.
 
 use std::{collections::HashMap, fmt::Debug};
 
