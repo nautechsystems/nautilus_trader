@@ -421,11 +421,14 @@ fn run_streaming(
             .map(|item| item.map_err(anyhow::Error::from))
             .peekable();
 
-        if stream.peek().is_none() {
-            log::warn!("No data found for config: {:?}", data_config.data_type());
-            continue;
+        match stream.peek() {
+            Some(Ok(_)) => streams.push(stream),
+            // Surface a failed query in config order, before opening later ones
+            Some(Err(_)) => {
+                stream.next().transpose()?;
+            }
+            None => log::warn!("No data found for config: {:?}", data_config.data_type()),
         }
-        streams.push(stream);
     }
 
     stream_chunks(
