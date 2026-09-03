@@ -62,12 +62,14 @@ pub(crate) async fn sync_ws_subscription_with_resolution_and_terminal_async(
 
     let is_terminal = crate::providers::extract_condition_id(&instrument_id)
         .is_ok_and(|condition_id| closed_condition_ids.lock().contains(&condition_id));
-    let wants_subscribe = !is_terminal
-        && (active_quote_subs.contains(&instrument_id)
-            || active_delta_subs.contains(&instrument_id)
-            || active_trade_subs.contains(&instrument_id)
-            || active_instrument_status_subs.contains(&instrument_id)
-            || active_instrument_close_subs.contains(&instrument_id));
+    // Resolution subscriptions remain open until the official winner arrives
+    let wants_resolution = active_instrument_status_subs.contains(&instrument_id)
+        || active_instrument_close_subs.contains(&instrument_id);
+    let wants_subscribe = wants_resolution
+        || (!is_terminal
+            && (active_quote_subs.contains(&instrument_id)
+                || active_delta_subs.contains(&instrument_id)
+                || active_trade_subs.contains(&instrument_id)));
     let is_open = ws_open_tokens.contains(&token_id);
 
     if wants_subscribe && !is_open {
@@ -194,6 +196,49 @@ mod tests {
         let (quotes, deltas, trades, status, close, closed, open, mutex) = make_state();
         let inst = instrument_id();
         status.insert(inst);
+
+        sync_ws_subscription_with_resolution_and_terminal_async(
+            inst,
+            inst.symbol.as_str().to_string(),
+            quotes,
+            deltas,
+            trades,
+            status,
+            close,
+            closed,
+            open.clone(),
+            mutex,
+            ws,
+        )
+        .await;
+
+        assert!(open.contains(&token_ustr()));
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(HandlerCommand::SubscribeMarket(ids)) if ids == vec![inst.symbol.as_str().to_string()]
+        ));
+    }
+
+    #[rstest]
+    #[case::status(true, false)]
+    #[case::close(false, true)]
+    #[tokio::test]
+    async fn sync_ws_keeps_terminal_condition_open_for_resolution_intent(
+        #[case] status_intent: bool,
+        #[case] close_intent: bool,
+    ) {
+        let (ws, mut rx) = make_handle();
+        let (quotes, deltas, trades, status, close, closed, open, mutex) = make_state();
+        let inst = instrument_id();
+        closed.lock().insert("0xCOND".to_string());
+
+        if status_intent {
+            status.insert(inst);
+        }
+
+        if close_intent {
+            close.insert(inst);
+        }
 
         sync_ws_subscription_with_resolution_and_terminal_async(
             inst,

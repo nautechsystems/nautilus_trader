@@ -23,8 +23,9 @@ mod watchlist;
 #[allow(unused_imports)]
 pub(crate) use self::{
     apply::{
-        PendingResolution, ResolveApplyBatchStats, ResolveApplyResult, ResolveBatchErrorMode,
-        ResolveContext, apply_condition_resolution, fetch_and_apply_resolutions_by_condition_ids,
+        PendingResolution, PendingResolutionGuard, ResolveApplyBatchStats, ResolveApplyResult,
+        ResolveBatchErrorMode, ResolveContext, apply_condition_resolution,
+        fetch_and_apply_resolutions_by_condition_ids,
     },
     parsing::{
         StrictResolvedMarket, build_resolved_market_from_clob_market, build_strict_resolved_market,

@@ -66,6 +66,43 @@ pub(crate) struct PendingResolution {
     pub(crate) winning_outcome: String,
 }
 
+pub(crate) struct PendingResolutionGuard {
+    pending_resolutions: Arc<DashMap<String, PendingResolution>>,
+    condition_id: String,
+    resolution: PendingResolution,
+    armed: bool,
+}
+
+impl PendingResolutionGuard {
+    pub(crate) fn new(
+        pending_resolutions: Arc<DashMap<String, PendingResolution>>,
+        condition_id: String,
+        resolution: PendingResolution,
+    ) -> Self {
+        Self {
+            pending_resolutions,
+            condition_id,
+            resolution,
+            armed: true,
+        }
+    }
+
+    pub(crate) fn disarm(mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for PendingResolutionGuard {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+
+        self.pending_resolutions
+            .remove_if(&self.condition_id, |_, current| current == &self.resolution);
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ResolveApplyResult {
     Applied { emitted_closes: usize },
@@ -257,14 +294,13 @@ pub(crate) async fn apply_condition_resolution(
     ctx.pending_resolutions
         .insert(condition_id_string.clone(), pending_resolution.clone());
 
-    let result =
-        apply_condition_resolution_inner(ctx, condition_id, winning_asset_id, winning_outcome)
-            .await;
-    ctx.pending_resolutions
-        .remove_if(&condition_id_string, |_, current| {
-            current == &pending_resolution
-        });
-    result
+    let _pending_guard = PendingResolutionGuard::new(
+        ctx.pending_resolutions.clone(),
+        condition_id_string,
+        pending_resolution,
+    );
+
+    apply_condition_resolution_inner(ctx, condition_id, winning_asset_id, winning_outcome).await
 }
 
 async fn apply_condition_resolution_inner(
@@ -330,13 +366,7 @@ async fn apply_condition_resolution_inner(
             let token_id = loaded
                 .get(&instrument_id)
                 .map(|instrument| instrument.raw_symbol().as_str().to_string())
-                .or_else(|| {
-                    instrument_id
-                        .symbol
-                        .as_str()
-                        .rsplit_once('-')
-                        .map(|(_, token_id)| token_id.to_string())
-                });
+                .or_else(|| crate::providers::extract_token_id(&instrument_id).ok());
             let Some(token_id) = token_id else {
                 log::error!("Cannot apply resolution for {instrument_id}: token ID is unavailable");
                 continue;
@@ -443,13 +473,7 @@ async fn apply_condition_resolution_inner(
                 let token_id = loaded
                     .get(&instrument_id)
                     .map(|instrument| instrument.raw_symbol().as_str().to_string())
-                    .or_else(|| {
-                        instrument_id
-                            .symbol
-                            .as_str()
-                            .rsplit_once('-')
-                            .map(|(_, token_id)| token_id.to_string())
-                    });
+                    .or_else(|| crate::providers::extract_token_id(&instrument_id).ok());
 
                 if let Some(token_id) = token_id {
                     reconciliation_targets

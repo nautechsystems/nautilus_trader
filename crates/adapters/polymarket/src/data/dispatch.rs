@@ -68,8 +68,8 @@ use crate::{
         query::GetGammaMarketsParams,
     },
     resolve::{
-        PendingResolution, ResolveApplyResult, ResolveContext, ResolveWatchEntry,
-        apply_condition_resolution,
+        PendingResolution, PendingResolutionGuard, ResolveApplyResult, ResolveContext,
+        ResolveWatchEntry, apply_condition_resolution,
     },
     rtds::PolymarketRtdsFeed,
     websocket::{
@@ -913,13 +913,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                         let token_id = loaded
                             .get(instrument_id)
                             .map(|instrument| instrument.raw_symbol().as_str().to_string())
-                            .or_else(|| {
-                                instrument_id
-                                    .symbol
-                                    .as_str()
-                                    .rsplit_once('-')
-                                    .map(|(_, token_id)| token_id.to_string())
-                            });
+                            .or_else(|| crate::providers::extract_token_id(instrument_id).ok());
                         token_id.is_some_and(|token_id| distinct_assets.contains(token_id.as_str()))
                     })
                 });
@@ -946,12 +940,16 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
             let resolve_ctx = ctx.resolve_context();
             let tasks = ctx.tasks.clone();
             let pending_resolutions = ctx.pending_resolutions.clone();
-            let resolve_watch_apply_mutex = ctx.resolve_watch_apply_mutex.clone();
             let pending_condition_id = condition_id.clone();
             let pending_resolution = PendingResolution {
                 winning_asset_id: winning_asset_id.clone(),
                 winning_outcome: winning_outcome.clone(),
             };
+            let pending_guard = PendingResolutionGuard::new(
+                pending_resolutions,
+                pending_condition_id,
+                pending_resolution,
+            );
             let future = async move {
                 let result = apply_condition_resolution(
                     &resolve_ctx,
@@ -960,6 +958,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                     &winning_outcome,
                 )
                 .await;
+                pending_guard.disarm();
 
                 if let ResolveApplyResult::Applied { emitted_closes } = result
                     && emitted_closes > 0
@@ -971,10 +970,6 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
             };
 
             if let Err(e) = tasks.spawn(future) {
-                let _guard = resolve_watch_apply_mutex.lock();
-                pending_resolutions.remove_if(&pending_condition_id, |_, current| {
-                    current == &pending_resolution
-                });
                 log::debug!("Skipping Polymarket data task after shutdown began: {e}");
             }
         }
@@ -3293,6 +3288,41 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
+    async fn market_resolved_clears_pending_claim_when_forced_cancelled() {
+        let (ctx, _data_rx) = make_ws_ctx();
+        let instrument = seed_instrument_with_context(
+            &ctx,
+            "0xTOKEN_YES",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-BTC"),
+                expiration_ns: Some(UnixNanos::from(1_000_000_000)),
+                ..SeedInstrumentContext::default()
+            },
+        );
+        ctx.active_instrument_status_subs.insert(instrument.id());
+        assert!(upsert_data_resolve_watch_entry_from_instrument(
+            &ctx.resolve_poll_watchlist,
+            &instrument,
+        ));
+
+        let _guard = ctx.ws_sub_mutex.lock().await;
+        handle_market_message(
+            make_market_resolved("0xCOND-BTC", "0xTOKEN_YES", "0xTOKEN_NO"),
+            &ctx,
+        );
+        assert!(ctx.pending_resolutions.contains_key("0xCOND-BTC"));
+
+        ctx.task_group.as_ref().expect("task group").abort();
+        ctx.wait_for_tasks().await;
+
+        assert!(ctx.pending_resolutions.is_empty());
+        assert!(!ctx.closed_condition_ids.lock().contains("0xCOND-BTC"));
+    }
+
+    #[rstest]
+    #[tokio::test]
     async fn market_resolved_rolls_back_pending_claim_when_task_admission_is_closed() {
         let (ctx, mut data_rx) = make_ws_ctx();
         let instrument = seed_instrument_with_context(
@@ -5081,7 +5111,7 @@ mod tests {
             ]))],
             vec![],
         );
-        let addr = start_scripted_auto_load_test_server(state).await;
+        let addr = start_scripted_auto_load_test_server(state.clone()).await;
         let (mut client, mut data_rx) = create_test_client(addr);
         client.config.auto_load_debounce_ms = 0;
         client.config.auto_load_max_retries = 0;
@@ -5121,6 +5151,19 @@ mod tests {
             client
                 .resolve_poll_watchlist
                 .contains_key(&TEST_CONDITION_ID.to_string())
+        );
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { !state.market_payloads.lock().await.is_empty() }
+            },
+            StdDuration::from_secs(3),
+        )
+        .await;
+        assert!(
+            client
+                .ws_open_tokens
+                .contains(&Ustr::from(TEST_TOKEN_ID_YES))
         );
 
         let ws_ctx = make_client_ws_ctx(&client);

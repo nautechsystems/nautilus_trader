@@ -223,9 +223,10 @@ We recommend using environment variables to manage your credentials.
 
 ## Data capability
 
-Polymarket supports live `L2_MBP` order book deltas, quotes, and trades. Instrument definitions are
-published by bootstrap, configured refreshes, on-demand loading, single-instrument requests,
-new-market discovery, and tick-size changes.
+Polymarket supports live `L2_MBP` order book deltas, quotes, trades, and resolution
+`InstrumentStatus`/`InstrumentClose` events. Instrument definitions are published by bootstrap,
+configured refreshes, on-demand loading, single-instrument requests, new-market discovery, and
+tick-size changes.
 
 ## Orders capability
 
