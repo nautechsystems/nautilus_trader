@@ -2734,7 +2734,9 @@ mod tests {
             runner.bind_senders();
             let system_command = test_system_command();
 
-            get_system_command_sender().send(system_command).unwrap();
+            get_system_command_sender()
+                .send(system_command.clone())
+                .unwrap();
             get_system_event_sender().send(test_system_event()).unwrap();
 
             let system_commands = runner
