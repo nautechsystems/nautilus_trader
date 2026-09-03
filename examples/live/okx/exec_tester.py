@@ -102,7 +102,7 @@ def main() -> None:
             use_hyphens_in_client_order_ids=False,  # OKX requires alphanumeric clOrdId
             instrument_id=INSTRUMENT_ID,
             client_id=ClientId.from_str(OKX),
-            external_order_claims=[INSTRUMENT_ID],
+            external_order_instrument_ids=[INSTRUMENT_ID],
             order_qty=Quantity.from_str(ORDER_QTY),
             subscribe_quotes=True,
             subscribe_trades=True,

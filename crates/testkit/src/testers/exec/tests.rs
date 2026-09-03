@@ -144,6 +144,38 @@ fn test_config_creation(config: ExecTesterConfig) {
 }
 
 #[rstest]
+fn test_external_order_instrument_ids_reflect_runtime_update(mut config: ExecTesterConfig) {
+    let strategy_id = StrategyId::from("EXEC_TESTER-001");
+    let initial_instrument_id = InstrumentId::from("AUD/USD.SIM");
+    let updated_instrument_id = InstrumentId::from("EUR/USD.SIM");
+    config.base.external_order_instrument_ids = Some(vec![initial_instrument_id]);
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache.clone());
+    cache
+        .borrow_mut()
+        .register_external_order_claims(strategy_id, &[initial_instrument_id])
+        .unwrap();
+
+    tester
+        .set_external_order_instrument_ids(vec![updated_instrument_id])
+        .unwrap();
+
+    assert_eq!(
+        tester.external_order_instrument_ids(),
+        Some(vec![updated_instrument_id])
+    );
+    assert_eq!(
+        cache.borrow().external_order_claim(&initial_instrument_id),
+        None
+    );
+    assert_eq!(
+        cache.borrow().external_order_claim(&updated_instrument_id),
+        Some(strategy_id)
+    );
+}
+
+#[rstest]
 fn test_config_default() {
     let config = ExecTesterConfig::default();
 

@@ -102,7 +102,7 @@ def main() -> None:
             strategy_id=STRATEGY_ID,
             instrument_id=INSTRUMENT_ID,
             client_id=ClientId.from_str(BINANCE),
-            external_order_claims=[INSTRUMENT_ID],
+            external_order_instrument_ids=[INSTRUMENT_ID],
             order_qty=Quantity.from_str(ORDER_QTY),
             subscribe_book=True,
             subscribe_quotes=True,

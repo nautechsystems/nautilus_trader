@@ -430,13 +430,16 @@ For a complete parameter list see the `StrategyConfig`
 
 ### Order management
 
-| Setting                     | Default | Description                                                                                  |
-| --------------------------- | ------- | -------------------------------------------------------------------------------------------- |
-| `oms_type`                  | None    | [OMS type](../concepts/execution.md#oms-configuration) for position ID and order processing. |
-| `use_uuid_client_order_ids` | False   | Use UUID4 values for client order IDs.                                                       |
-| `external_order_claims`     | None    | Instrument IDs whose external orders and reconciliation activity this strategy claims.       |
-| `manage_contingent_orders`  | False   | Manage open, non-active-local OTO, OCO, and OUO relationships.                               |
-| `manage_gtd_expiry`         | False   | Manage GTD expirations for orders.                                                           |
+| Setting                         | Default | Description                                                                                  |
+| ------------------------------- | ------- | -------------------------------------------------------------------------------------------- |
+| `oms_type`                      | None    | [OMS type](../concepts/execution.md#oms-configuration) for position ID and order processing. |
+| `use_uuid_client_order_ids`     | False   | Use UUID4 values for client order IDs.                                                       |
+| `external_order_instrument_ids` | None    | Serializable intent to claim external orders and reconciliation activity by instrument.      |
+| `manage_contingent_orders`      | False   | Manage open, non-active-local OTO, OCO, and OUO relationships.                               |
+| `manage_gtd_expiry`             | False   | Manage GTD expirations for orders.                                                           |
+
+See [Claiming external orders](../concepts/strategies.md#claiming-external-orders) for active claim
+lifecycle and runtime updates.
 
 The `OrderEmulator` retains active-local contingent orders. See
 [Advanced orders](../concepts/orders/advanced.md#strategy-managed-contingencies) for ownership and

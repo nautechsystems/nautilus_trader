@@ -94,7 +94,7 @@ def main() -> None:
             strategy_id=STRATEGY_ID,
             instrument_id=INSTRUMENT_ID,
             client_id=ClientId.from_str(BYBIT),
-            external_order_claims=[INSTRUMENT_ID],
+            external_order_instrument_ids=[INSTRUMENT_ID],
             order_qty=Quantity.from_str(ORDER_QTY),
             subscribe_quotes=True,
             subscribe_trades=True,

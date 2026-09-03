@@ -18,8 +18,6 @@
 //! This module provides the execution manager for reconciling execution state between
 //! the local cache and connected venues, as well as purging old state during live trading.
 
-#[cfg(feature = "node")]
-use std::collections::HashSet;
 use std::{cell::RefCell, fmt::Debug, rc::Rc, str::FromStr, sync::LazyLock, time::Duration};
 
 use indexmap::{IndexMap, IndexSet};
@@ -531,7 +529,6 @@ pub struct ExecutionManager {
     cache: Rc<RefCell<Cache>>,
     config: ExecutionManagerConfig,
     inflight_checks: IndexMap<ClientOrderId, InflightCheck>,
-    external_order_claims: IndexMap<InstrumentId, StrategyId>,
     processed_fills: RecencyMap<FillKey>,
     recon_check_retries: IndexMap<ClientOrderId, u32>,
     order_query_recency: RecencyMap<ClientOrderId>,
@@ -553,7 +550,6 @@ impl Debug for ExecutionManager {
         f.debug_struct(stringify!(ExecutionManager))
             .field("config", &self.config)
             .field("inflight_checks", &self.inflight_checks)
-            .field("external_order_claims", &self.external_order_claims)
             .field("processed_fills", &self.processed_fills)
             .field("recon_check_retries", &self.recon_check_retries)
             .finish_non_exhaustive()
@@ -578,7 +574,6 @@ impl ExecutionManager {
             cache,
             config,
             inflight_checks: IndexMap::new(),
-            external_order_claims: IndexMap::new(),
             processed_fills: RecencyMap::default(),
             recon_check_retries: IndexMap::new(),
             order_query_recency: RecencyMap::default(),
@@ -1569,9 +1564,9 @@ impl ExecutionManager {
 
             let strategy_id = cached_order.as_ref().map_or_else(
                 || {
-                    self.external_order_claims
-                        .get(&instrument_id)
-                        .copied()
+                    self.cache
+                        .borrow()
+                        .external_order_claim(&instrument_id)
                         .unwrap_or_else(|| StrategyId::from("EXTERNAL"))
                 },
                 Order::strategy_id,
@@ -3342,20 +3337,7 @@ impl ExecutionManager {
     /// Returns any external order claim for the given instrument ID.
     #[must_use]
     pub fn get_external_order_claim(&self, instrument_id: &InstrumentId) -> Option<StrategyId> {
-        self.external_order_claims.get(instrument_id).copied()
-    }
-
-    /// Returns the instruments with external order claims owned by `strategy_id`.
-    #[must_use]
-    #[cfg(feature = "node")]
-    pub(crate) fn get_external_order_claims_for_strategy(
-        &self,
-        strategy_id: StrategyId,
-    ) -> HashSet<InstrumentId> {
-        self.external_order_claims
-            .iter()
-            .filter_map(|(instrument_id, owner)| (*owner == strategy_id).then_some(*instrument_id))
-            .collect()
+        self.cache.borrow().external_order_claim(instrument_id)
     }
 
     /// Claims external orders for a specific strategy and instrument.
@@ -3368,37 +3350,9 @@ impl ExecutionManager {
         instrument_id: InstrumentId,
         strategy_id: StrategyId,
     ) -> anyhow::Result<()> {
-        if let Some(existing) = self.external_order_claims.get(&instrument_id) {
-            anyhow::bail!("External order claim for {instrument_id} already exists for {existing}");
-        }
-
-        self.external_order_claims
-            .insert(instrument_id, strategy_id);
-        Ok(())
-    }
-
-    #[cfg(feature = "node")]
-    pub(crate) fn register_external_order_claims(
-        &mut self,
-        strategy_id: StrategyId,
-        instrument_ids: &HashSet<InstrumentId>,
-    ) {
-        self.external_order_claims.extend(
-            instrument_ids
-                .iter()
-                .map(|instrument_id| (*instrument_id, strategy_id)),
-        );
-    }
-
-    /// Deregisters all external order claims owned by `strategy_id`.
-    ///
-    /// Coordinated live-node callers should use
-    /// `LiveNode::deregister_external_order_claims` so the reconciliation
-    /// manager and execution engine remain consistent.
-    #[cfg(feature = "node")]
-    pub(crate) fn deregister_external_order_claims(&mut self, strategy_id: StrategyId) {
-        self.external_order_claims
-            .retain(|_, owner| *owner != strategy_id);
+        self.cache
+            .borrow_mut()
+            .register_external_order_claims(strategy_id, &[instrument_id])
     }
 
     /// Records position activity for reconciliation tracking, scoped per (instrument, account).
@@ -4905,28 +4859,31 @@ impl ExecutionManager {
         fill_queue: Option<&mut ReconciliationFillQueue>,
         commission_client: Option<&dyn ExecutionClient>,
     ) -> (Vec<OrderEventAny>, Option<ExternalOrderMetadata>) {
-        let (strategy_id, tags) =
-            if let Some(claimed_strategy) = self.external_order_claims.get(&report.instrument_id) {
-                let order_id = report
-                    .client_order_id
-                    .map_or_else(|| report.venue_order_id.to_string(), |id| id.to_string());
-                log::info!(
-                    color = LogColor::Blue as u8;
-                    "External order {} for {} claimed by strategy {}",
-                    order_id,
-                    report.instrument_id,
-                    claimed_strategy,
-                );
-                (*claimed_strategy, None)
+        let (strategy_id, tags) = if let Some(claimed_strategy) = self
+            .cache
+            .borrow()
+            .external_order_claim(&report.instrument_id)
+        {
+            let order_id = report
+                .client_order_id
+                .map_or_else(|| report.venue_order_id.to_string(), |id| id.to_string());
+            log::info!(
+                color = LogColor::Blue as u8;
+                "External order {} for {} claimed by strategy {}",
+                order_id,
+                report.instrument_id,
+                claimed_strategy,
+            );
+            (claimed_strategy, None)
+        } else {
+            // Unclaimed orders use EXTERNAL strategy ID with tag distinguishing source
+            let tag = if is_synthetic {
+                *TAG_RECONCILIATION
             } else {
-                // Unclaimed orders use EXTERNAL strategy ID with tag distinguishing source
-                let tag = if is_synthetic {
-                    *TAG_RECONCILIATION
-                } else {
-                    *TAG_VENUE
-                };
-                (StrategyId::from("EXTERNAL"), Some(vec![tag]))
+                *TAG_VENUE
             };
+            (StrategyId::from("EXTERNAL"), Some(vec![tag]))
+        };
 
         // Filter unclaimed venue orders (but not synthetic reconciliation orders)
         if self.config.filter_unclaimed_external && !is_synthetic {

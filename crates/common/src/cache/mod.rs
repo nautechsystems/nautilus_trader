@@ -2206,6 +2206,7 @@ pub struct Cache {
     greeks: AHashMap<InstrumentId, GreeksData>,
     option_greeks: AHashMap<InstrumentId, OptionGreeks>,
     yield_curves: AHashMap<String, YieldCurveData>,
+    external_order_claims: AHashMap<InstrumentId, StrategyId>,
     accounts: AHashMap<AccountId, SharedCell<AccountAny>>,
     orders: AHashMap<ClientOrderId, SharedCell<OrderAny>>,
     order_lists: AHashMap<OrderListId, OrderList>,
@@ -2239,6 +2240,7 @@ impl Debug for Cache {
             .field("greeks", &self.greeks)
             .field("option_greeks", &self.option_greeks)
             .field("yield_curves", &self.yield_curves)
+            .field("external_order_claims", &self.external_order_claims)
             .field("accounts", &self.accounts)
             .field("orders", &self.orders)
             .field("order_lists", &self.order_lists)
@@ -2294,6 +2296,7 @@ impl Cache {
             greeks: AHashMap::new(),
             option_greeks: AHashMap::new(),
             yield_curves: AHashMap::new(),
+            external_order_claims: AHashMap::new(),
             accounts: AHashMap::new(),
             orders: AHashMap::new(),
             order_lists: AHashMap::new(),
@@ -2309,6 +2312,111 @@ impl Cache {
     #[must_use]
     pub fn memory_address(&self) -> String {
         format!("{:?}", std::ptr::from_ref(self))
+    }
+
+    /// Returns the strategy claiming external orders for `instrument_id`.
+    #[must_use]
+    pub fn external_order_claim(&self, instrument_id: &InstrumentId) -> Option<StrategyId> {
+        self.external_order_claims.get(instrument_id).copied()
+    }
+
+    /// Returns instrument IDs with an external order claim.
+    ///
+    /// Passing `Some(strategy_id)` filters the result to claims owned by that strategy. Passing
+    /// `None` returns every claimed instrument ID.
+    #[must_use]
+    pub fn external_order_claim_instrument_ids(
+        &self,
+        strategy_id: Option<StrategyId>,
+    ) -> AHashSet<InstrumentId> {
+        self.external_order_claims
+            .iter()
+            .filter_map(|(instrument_id, owner)| {
+                strategy_id
+                    .is_none_or(|strategy_id| *owner == strategy_id)
+                    .then_some(*instrument_id)
+            })
+            .collect()
+    }
+
+    /// Replaces the external order claims owned by `strategy_id`.
+    ///
+    /// External orders, fills, and materialized reconciliation activity for matching instrument
+    /// IDs are assigned to the strategy. Existing claims owned by other strategies are preserved.
+    ///
+    /// The operation is atomic: either every requested instrument is claimed or the cache is
+    /// unchanged. Passing an empty slice clears all claims owned by the strategy.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an instrument is repeated or claimed by another strategy.
+    pub fn set_external_order_claims(
+        &mut self,
+        strategy_id: StrategyId,
+        instrument_ids: &[InstrumentId],
+    ) -> anyhow::Result<()> {
+        let mut requested = AHashSet::with_capacity(instrument_ids.len());
+
+        for instrument_id in instrument_ids {
+            if !requested.insert(*instrument_id) {
+                anyhow::bail!(
+                    "External order claim for {instrument_id} appears more than once for {strategy_id}"
+                );
+            }
+
+            if let Some(existing) = self.external_order_claims.get(instrument_id)
+                && *existing != strategy_id
+            {
+                anyhow::bail!(
+                    "External order claim for {instrument_id} already exists for {existing}"
+                );
+            }
+        }
+
+        self.external_order_claims
+            .retain(|_, owner| *owner != strategy_id);
+        self.external_order_claims.extend(
+            requested
+                .into_iter()
+                .map(|instrument_id| (instrument_id, strategy_id)),
+        );
+
+        Ok(())
+    }
+
+    /// Adds external order claims for `strategy_id` without replacing its existing claims.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an instrument is repeated or already has a claim.
+    pub fn register_external_order_claims(
+        &mut self,
+        strategy_id: StrategyId,
+        instrument_ids: &[InstrumentId],
+    ) -> anyhow::Result<()> {
+        let mut requested = AHashSet::with_capacity(instrument_ids.len());
+
+        for instrument_id in instrument_ids {
+            if !requested.insert(*instrument_id) {
+                anyhow::bail!(
+                    "External order claim for {instrument_id} appears more than once for {strategy_id}"
+                );
+            }
+
+            if let Some(existing) = self.external_order_claims.get(instrument_id) {
+                anyhow::bail!(
+                    "External order claim for {instrument_id} already exists for {existing}"
+                );
+            }
+        }
+
+        self.external_order_claims.extend(
+            requested
+                .into_iter()
+                .map(|instrument_id| (instrument_id, strategy_id)),
+        );
+
+        Ok(())
     }
 
     /// Sets the cache database adapter for persistence.
@@ -3914,7 +4022,8 @@ impl Cache {
     ///
     /// All stateful fields are reset to their initial value. Instruments,
     /// currencies, and synthetics are retained when `drop_instruments_on_reset`
-    /// is `false` so that repeated backtest runs can reuse the same dataset.
+    /// is `false` so that repeated backtest runs can reuse the same dataset. External order claims
+    /// are retained so registered strategy routing remains configured across resets.
     pub fn reset(&mut self) {
         log::debug!("Resetting cache");
 

@@ -1205,7 +1205,8 @@ impl Trader {
     ///
     /// # Errors
     ///
-    /// Returns an error if any component fails to dispose.
+    /// Returns an error if any component fails to dispose or the cache is already borrowed while
+    /// retiring a strategy.
     pub fn dispose_components(&mut self) -> anyhow::Result<()> {
         for actor_id in self.actor_ids.clone() {
             log::debug!("Disposing actor {actor_id}");
@@ -1235,7 +1236,7 @@ impl Trader {
     ///
     /// # Errors
     ///
-    /// Returns an error if any strategy fails to dispose.
+    /// Returns an error if any strategy fails to dispose or the cache is already borrowed.
     pub fn clear_strategies(&mut self) -> anyhow::Result<()> {
         for strategy_id in self.strategy_ids.clone() {
             log::debug!("Disposing strategy {strategy_id}");
@@ -1414,9 +1415,10 @@ impl Trader {
     ///
     /// # Errors
     ///
-    /// Returns an error if the strategy is not registered, or if disposal fails. A failed disposal
-    /// keeps the strategy registered and tracked, and leaves it `Faulted`; see
-    /// [`Component::dispose`]. Calling this again retires the strategy.
+    /// Returns an error if the strategy is not registered, the cache is already borrowed, or
+    /// disposal fails. A cache borrow failure preserves the strategy registration and its external
+    /// order claims. A failed disposal keeps the strategy registered and tracked, and leaves it
+    /// `Faulted`; see [`Component::dispose`]. Calling this again retires the strategy.
     pub fn remove_strategy(&mut self, strategy_id: &StrategyId) -> anyhow::Result<()> {
         if !self.strategy_ids.contains(strategy_id) {
             anyhow::bail!("Cannot remove strategy, {strategy_id} not found");
@@ -1449,7 +1451,20 @@ impl Trader {
 
     /// Disposes a strategy, then releases everything its registration created.
     fn retire_strategy(&mut self, strategy_id: StrategyId) -> anyhow::Result<()> {
+        // Check before disposal so a borrow failure cannot leave a disposed strategy registered.
+        {
+            let _cache = self
+                .cache
+                .try_borrow_mut()
+                .map_err(|e| anyhow::anyhow!("Cannot clear external order claims: {e}"))?;
+        }
+
         Self::dispose_registered_component(strategy_id.inner())?;
+
+        self.cache
+            .try_borrow_mut()
+            .map_err(|e| anyhow::anyhow!("Cannot clear external order claims: {e}"))?
+            .set_external_order_claims(strategy_id, &[])?;
 
         self.remove_strategy_subscriptions(strategy_id);
         self.release_component(ComponentId::from(strategy_id));
@@ -3551,6 +3566,88 @@ mod tests {
                 .endpoint_map::<StrategyCommand>()
                 .is_registered(endpoint)
         );
+    }
+
+    #[rstest]
+    fn test_remove_strategy_clears_external_order_claims() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let trader_id = TraderId::test_default();
+        let instance_id = UUID4::new();
+        let strategy_id = StrategyId::from("Test-Strategy");
+        let instrument_id = InstrumentId::from("AUDUSD.SIM");
+
+        let mut trader = Trader::new(
+            trader_id,
+            instance_id,
+            Environment::Backtest,
+            clock_factory,
+            cache.clone(),
+            portfolio,
+        );
+        trader
+            .add_strategy(TestStrategy::new(StrategyConfig {
+                strategy_id: Some(strategy_id),
+                ..Default::default()
+            }))
+            .unwrap();
+        cache
+            .borrow_mut()
+            .set_external_order_claims(strategy_id, &[instrument_id])
+            .unwrap();
+
+        trader.remove_strategy(&strategy_id).unwrap();
+
+        assert_eq!(cache.borrow().external_order_claim(&instrument_id), None);
+    }
+
+    #[rstest]
+    fn test_remove_strategy_cache_borrow_failure_preserves_strategy_and_claims() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let strategy_id = StrategyId::from("Test-Strategy");
+        let instrument_id = InstrumentId::from("AUDUSD.SIM");
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache.clone(),
+            portfolio,
+        );
+        trader
+            .add_strategy(TestStrategy::new(StrategyConfig {
+                strategy_id: Some(strategy_id),
+                ..Default::default()
+            }))
+            .unwrap();
+        cache
+            .borrow_mut()
+            .set_external_order_claims(strategy_id, &[instrument_id])
+            .unwrap();
+
+        let cache_borrow = cache.borrow();
+        let error = trader.remove_strategy(&strategy_id).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Cannot clear external order claims: RefCell already borrowed"
+        );
+        assert_eq!(
+            cache_borrow.external_order_claim(&instrument_id),
+            Some(strategy_id)
+        );
+        assert_eq!(trader.strategy_ids(), vec![strategy_id]);
+        assert_eq!(
+            component_state(&strategy_id.inner()).unwrap(),
+            ComponentState::Ready
+        );
+
+        drop(cache_borrow);
+        trader.remove_strategy(&strategy_id).unwrap();
+
+        assert!(trader.strategy_ids().is_empty());
+        assert_eq!(cache.borrow().external_order_claim(&instrument_id), None);
     }
 
     #[rstest]

@@ -117,7 +117,6 @@ pub struct ExecutionEngine {
     default_client_id: Option<ClientId>,
     routing_map: HashMap<Venue, ClientId>,
     oms_overrides: HashMap<StrategyId, OmsType>,
-    external_order_claims: HashMap<InstrumentId, StrategyId>,
     external_clients: HashSet<ClientId>,
     pos_id_generator: PositionIdGenerator,
     config: ExecutionEngineConfig,
@@ -151,7 +150,6 @@ impl ExecutionEngine {
             default_client_id: None,
             routing_map: HashMap::new(),
             oms_overrides: HashMap::new(),
-            external_order_claims: HashMap::new(),
             external_clients: config
                 .as_ref()
                 .and_then(|c| c.external_clients.clone())
@@ -330,7 +328,11 @@ impl ExecutionEngine {
     #[must_use]
     /// Returns the set of instruments that have external order claims.
     pub fn get_external_order_claims_instruments(&self) -> HashSet<InstrumentId> {
-        self.external_order_claims.keys().copied().collect()
+        self.cache
+            .borrow()
+            .external_order_claim_instrument_ids(None)
+            .into_iter()
+            .collect()
     }
 
     #[must_use]
@@ -342,19 +344,7 @@ impl ExecutionEngine {
     #[must_use]
     /// Returns any external order claim for the given instrument ID.
     pub fn get_external_order_claim(&self, instrument_id: &InstrumentId) -> Option<StrategyId> {
-        self.external_order_claims.get(instrument_id).copied()
-    }
-
-    /// Returns the instruments with external order claims owned by `strategy_id`.
-    #[must_use]
-    pub fn get_external_order_claims_for_strategy(
-        &self,
-        strategy_id: StrategyId,
-    ) -> HashSet<InstrumentId> {
-        self.external_order_claims
-            .iter()
-            .filter_map(|(instrument_id, owner)| (*owner == strategy_id).then_some(*instrument_id))
-            .collect()
+        self.cache.borrow().external_order_claim(instrument_id)
     }
 
     /// Registers a new execution client.
@@ -597,20 +587,10 @@ impl ExecutionEngine {
         strategy_id: StrategyId,
         instrument_ids: &HashSet<InstrumentId>,
     ) -> anyhow::Result<()> {
-        // Validate all instruments first
-        for instrument_id in instrument_ids {
-            if let Some(existing) = self.external_order_claims.get(instrument_id) {
-                anyhow::bail!(
-                    "External order claim for {instrument_id} already exists for {existing}"
-                );
-            }
-        }
-
-        // If validation passed, insert all claims
-        for instrument_id in instrument_ids {
-            self.external_order_claims
-                .insert(*instrument_id, strategy_id);
-        }
+        let instrument_ids: Vec<_> = instrument_ids.iter().copied().collect();
+        self.cache
+            .borrow_mut()
+            .register_external_order_claims(strategy_id, &instrument_ids)?;
 
         if !instrument_ids.is_empty() {
             log::info!("Registered external order claims for {strategy_id}: {instrument_ids:?}");
@@ -619,39 +599,16 @@ impl ExecutionEngine {
         Ok(())
     }
 
-    /// Commits external order claims for `strategy_id` without validation.
-    ///
-    /// The caller must have preflighted every instrument against
-    /// [`Self::get_external_order_claim`]: an existing claim is overwritten
-    /// without error. Coordinated live-node callers should use
-    /// `LiveNode::register_external_order_claims`, which preflights both the
-    /// execution engine and the reconciliation manager before committing;
-    /// ordinary callers should use
-    /// [`Self::register_external_order_claims`] instead.
-    pub fn commit_external_order_claims(
-        &mut self,
-        strategy_id: StrategyId,
-        instrument_ids: &HashSet<InstrumentId>,
-    ) {
-        self.external_order_claims.extend(
-            instrument_ids
-                .iter()
-                .map(|instrument_id| (*instrument_id, strategy_id)),
-        );
-
-        if !instrument_ids.is_empty() {
-            log::info!("Registered external order claims for {strategy_id}: {instrument_ids:?}");
-        }
-    }
-
     /// Deregisters all external order claims owned by `strategy_id`.
     ///
-    /// Coordinated live-node callers should use
-    /// `LiveNode::deregister_external_order_claims` so the execution engine and
-    /// reconciliation manager remain consistent.
+    /// # Panics
+    ///
+    /// Panics if the shared cache is already borrowed.
     pub fn deregister_external_order_claims(&mut self, strategy_id: StrategyId) {
-        self.external_order_claims
-            .retain(|_, owner| *owner != strategy_id);
+        self.cache
+            .borrow_mut()
+            .set_external_order_claims(strategy_id, &[])
+            .expect("clearing external order claims cannot fail");
     }
 
     /// # Errors
@@ -1351,9 +1308,9 @@ impl ExecutionEngine {
     }
 
     fn resolve_external_strategy(&self, instrument_id: &InstrumentId) -> StrategyId {
-        self.external_order_claims
-            .get(instrument_id)
-            .copied()
+        self.cache
+            .borrow()
+            .external_order_claim(instrument_id)
             .unwrap_or_else(StrategyId::external)
     }
 

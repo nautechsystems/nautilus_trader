@@ -102,12 +102,42 @@ pub type BatchModifyOrder = (
 /// [`StrategyNative`] and [`Component`] bounds. Implementations that only need
 /// behavioral callbacks do not own or implement native runtime state.
 pub trait Strategy: DataActor {
-    /// Returns the external order claims for this strategy.
+    /// Returns the instrument IDs this strategy intends to claim for external order routing.
     ///
-    /// These are instrument IDs whose external orders should be claimed by this strategy
-    /// during reconciliation.
-    fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
+    /// Live strategy registration materializes this configuration intent as active cache claims.
+    fn external_order_instrument_ids(&self) -> Option<Vec<InstrumentId>> {
         None
+    }
+
+    /// Replaces this strategy's active external order claims with `instrument_ids`.
+    ///
+    /// External orders, fills, and materialized reconciliation activity for matching instrument
+    /// IDs are assigned to the strategy. Passing an empty vector releases every claim owned by the
+    /// strategy. Existing cached orders keep their assigned strategy ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the strategy is not registered, the cache is already borrowed, an
+    /// instrument is repeated, or an instrument is claimed by another strategy.
+    fn set_external_order_instrument_ids(
+        &mut self,
+        instrument_ids: Vec<InstrumentId>,
+    ) -> anyhow::Result<()>
+    where
+        Self: StrategyNative,
+    {
+        let core = StrategyNative::strategy_core_mut(self);
+        let strategy_id = registered_strategy_id(core)?;
+        if !core.actor.is_registered() {
+            anyhow::bail!("Strategy {strategy_id} is not registered with a trader");
+        }
+        let cache = core.cache_rc();
+        cache
+            .try_borrow_mut()
+            .map_err(|e| anyhow::anyhow!("Cannot set external order claims: {e}"))?
+            .set_external_order_claims(strategy_id, &instrument_ids)?;
+        core.config.external_order_instrument_ids = Some(instrument_ids);
+        Ok(())
     }
 
     /// Returns the runtime strategy ID, when configured or registered.
@@ -3005,6 +3035,82 @@ mod tests {
         assert!(strategy.is_registered());
         let _ = strategy.order().generate_client_order_id();
         let _ = strategy.portfolio().is_initialized();
+    }
+
+    #[rstest]
+    fn test_set_external_order_instrument_ids_replaces_claims_atomically() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+        let cache = strategy.core.cache_rc();
+        let strategy_id = StrategyId::from("TEST-001");
+        let other_strategy_id = StrategyId::from("OTHER-001");
+        let audusd = InstrumentId::from("AUDUSD.SIM");
+        let eurusd = InstrumentId::from("EURUSD.SIM");
+        let gbpusd = InstrumentId::from("GBPUSD.SIM");
+
+        strategy
+            .set_external_order_instrument_ids(vec![audusd, eurusd])
+            .unwrap();
+        cache
+            .borrow_mut()
+            .set_external_order_claims(other_strategy_id, &[gbpusd])
+            .unwrap();
+
+        let result = strategy.set_external_order_instrument_ids(vec![eurusd, gbpusd]);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "External order claim for GBPUSD.SIM already exists for OTHER-001"
+        );
+        assert_eq!(
+            cache.borrow().external_order_claim(&audusd),
+            Some(strategy_id)
+        );
+        assert_eq!(
+            cache.borrow().external_order_claim(&eurusd),
+            Some(strategy_id)
+        );
+        assert_eq!(
+            cache.borrow().external_order_claim(&gbpusd),
+            Some(other_strategy_id)
+        );
+        assert_eq!(
+            strategy.core.config.external_order_instrument_ids,
+            Some(vec![audusd, eurusd])
+        );
+
+        strategy
+            .set_external_order_instrument_ids(vec![eurusd])
+            .unwrap();
+
+        assert_eq!(cache.borrow().external_order_claim(&audusd), None);
+        assert_eq!(
+            cache.borrow().external_order_claim(&eurusd),
+            Some(strategy_id)
+        );
+        assert_eq!(
+            cache.borrow().external_order_claim(&gbpusd),
+            Some(other_strategy_id)
+        );
+        assert_eq!(
+            strategy.core.config.external_order_instrument_ids,
+            Some(vec![eurusd])
+        );
+    }
+
+    #[rstest]
+    fn test_set_external_order_instrument_ids_rejects_unregistered_strategy() {
+        let mut strategy = create_test_strategy();
+
+        let error = strategy
+            .set_external_order_instrument_ids(vec![InstrumentId::from("AUDUSD.SIM")])
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Strategy TEST-001 is not registered with a trader"
+        );
+        assert!(strategy.core.config.external_order_instrument_ids.is_none());
     }
 
     #[rstest]
@@ -6317,7 +6423,7 @@ mod tests {
     }
 
     nautilus_strategy!(MacroTestCustomField, inner, {
-        fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
+        fn external_order_instrument_ids(&self) -> Option<Vec<InstrumentId>> {
             None
         }
     });
@@ -6364,6 +6470,6 @@ mod tests {
         assert_eq!(custom.strategy_id(), config.strategy_id);
         assert_eq!(custom.config().order_id_tag, config.order_id_tag);
         assert_eq!(custom.actor_id(), ActorId::from("MACRO-001"));
-        assert!(custom.external_order_claims().is_none());
+        assert!(custom.external_order_instrument_ids().is_none());
     }
 }

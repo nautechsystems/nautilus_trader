@@ -325,8 +325,9 @@ Bybit emits venue-initiated fills with `execType` set to:
 The adapter flags each as exchange-generated and logs a warning containing the
 execution ID, symbol, side, quantity, and price. Fills flow through the normal
 `FillReport` path; because these orders carry an empty `orderLinkId`, the
-execution engine treats them as external and assigns them via
-`external_order_claims` (or the `EXTERNAL` strategy by default).
+execution engine treats them as external and assigns them through the
+instrument's active external order claim, configured initially with
+`external_order_instrument_ids`, or to the `EXTERNAL` strategy by default.
 
 Bybit also publishes an ADL ranking on position updates via the
 `adlRankIndicator` field. The range is 0 (flat / no position) to 5 (next to

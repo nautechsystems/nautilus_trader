@@ -332,6 +332,129 @@ fn test_cache_view_borrow_panics_when_mutably_borrowed() {
 }
 
 #[rstest]
+fn test_set_external_order_claims_replaces_only_strategy_claims(mut cache: Cache) {
+    let strategy_id = StrategyId::from("CLAIMS-001");
+    let other_strategy_id = StrategyId::from("CLAIMS-002");
+    let audusd = InstrumentId::from("AUD/USD.SIM");
+    let gbpusd = InstrumentId::from("GBP/USD.SIM");
+    let usdjpy = InstrumentId::from("USD/JPY.SIM");
+
+    cache
+        .set_external_order_claims(strategy_id, &[audusd, gbpusd])
+        .unwrap();
+    cache
+        .set_external_order_claims(other_strategy_id, &[usdjpy])
+        .unwrap();
+    cache
+        .set_external_order_claims(strategy_id, &[gbpusd])
+        .unwrap();
+
+    assert_eq!(cache.external_order_claim(&audusd), None);
+    assert_eq!(cache.external_order_claim(&gbpusd), Some(strategy_id));
+    assert_eq!(cache.external_order_claim(&usdjpy), Some(other_strategy_id));
+    assert_eq!(
+        cache.external_order_claim_instrument_ids(None),
+        AHashSet::from([gbpusd, usdjpy])
+    );
+    assert_eq!(
+        cache.external_order_claim_instrument_ids(Some(strategy_id)),
+        AHashSet::from([gbpusd])
+    );
+}
+
+#[rstest]
+fn test_set_external_order_claims_conflict_changes_nothing(mut cache: Cache) {
+    let strategy_id = StrategyId::from("CLAIMS-001");
+    let other_strategy_id = StrategyId::from("CLAIMS-002");
+    let audusd = InstrumentId::from("AUD/USD.SIM");
+    let gbpusd = InstrumentId::from("GBP/USD.SIM");
+    let usdjpy = InstrumentId::from("USD/JPY.SIM");
+
+    cache
+        .set_external_order_claims(strategy_id, &[audusd])
+        .unwrap();
+    cache
+        .set_external_order_claims(other_strategy_id, &[gbpusd])
+        .unwrap();
+
+    let error = cache
+        .set_external_order_claims(other_strategy_id, &[usdjpy, audusd])
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "External order claim for AUD/USD.SIM already exists for CLAIMS-001"
+    );
+    assert_eq!(cache.external_order_claim(&audusd), Some(strategy_id));
+    assert_eq!(cache.external_order_claim(&gbpusd), Some(other_strategy_id));
+    assert_eq!(cache.external_order_claim(&usdjpy), None);
+}
+
+#[rstest]
+fn test_set_external_order_claims_repeated_instrument_changes_nothing(mut cache: Cache) {
+    let strategy_id = StrategyId::from("CLAIMS-001");
+    let audusd = InstrumentId::from("AUD/USD.SIM");
+    let gbpusd = InstrumentId::from("GBP/USD.SIM");
+    cache
+        .set_external_order_claims(strategy_id, &[audusd])
+        .unwrap();
+
+    let error = cache
+        .set_external_order_claims(strategy_id, &[gbpusd, gbpusd])
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "External order claim for GBP/USD.SIM appears more than once for CLAIMS-001"
+    );
+    assert_eq!(cache.external_order_claim(&audusd), Some(strategy_id));
+    assert_eq!(cache.external_order_claim(&gbpusd), None);
+}
+
+#[rstest]
+fn test_register_external_order_claims_is_additive_strict_and_atomic(mut cache: Cache) {
+    let strategy_id = StrategyId::from("CLAIMS-001");
+    let audusd = InstrumentId::from("AUD/USD.SIM");
+    let gbpusd = InstrumentId::from("GBP/USD.SIM");
+    let usdjpy = InstrumentId::from("USD/JPY.SIM");
+
+    cache
+        .register_external_order_claims(strategy_id, &[audusd])
+        .unwrap();
+    cache
+        .register_external_order_claims(strategy_id, &[gbpusd])
+        .unwrap();
+
+    let error = cache
+        .register_external_order_claims(strategy_id, &[usdjpy, audusd])
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "External order claim for AUD/USD.SIM already exists for CLAIMS-001"
+    );
+    assert_eq!(cache.external_order_claim(&audusd), Some(strategy_id));
+    assert_eq!(cache.external_order_claim(&gbpusd), Some(strategy_id));
+    assert_eq!(cache.external_order_claim(&usdjpy), None);
+}
+
+#[rstest]
+fn test_reset_preserves_external_order_claims(mut cache: Cache) {
+    let strategy_id = StrategyId::from("CLAIMS-001");
+    let instrument_id = InstrumentId::from("AUDUSD.SIM");
+    cache
+        .set_external_order_claims(strategy_id, &[instrument_id])
+        .unwrap();
+
+    cache.reset();
+
+    assert_eq!(
+        cache.external_order_claim(&instrument_id),
+        Some(strategy_id)
+    );
+}
+
+#[rstest]
 fn test_cache_api_empty_read_surface_returns_empty(cache: Cache) {
     let cell = RefCell::new(cache);
     let api = CacheApi::new(&cell);

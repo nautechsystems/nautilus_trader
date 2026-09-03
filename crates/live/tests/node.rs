@@ -173,19 +173,19 @@ nautilus_strategy!(StopOnStartStrategy);
 #[derive(Debug)]
 struct ClaimingTestStrategy {
     core: StrategyCore,
-    external_order_claims: Vec<InstrumentId>,
+    external_order_instrument_ids: Vec<InstrumentId>,
 }
 
 impl ClaimingTestStrategy {
     fn new(strategy_id: StrategyId, instrument_id: InstrumentId) -> Self {
-        let external_order_claims = vec![instrument_id];
+        let external_order_instrument_ids = vec![instrument_id];
         Self {
             core: StrategyCore::new(StrategyConfig {
                 strategy_id: Some(strategy_id),
-                external_order_claims: Some(external_order_claims.clone()),
+                external_order_instrument_ids: Some(external_order_instrument_ids.clone()),
                 ..Default::default()
             }),
-            external_order_claims,
+            external_order_instrument_ids,
         }
     }
 }
@@ -193,8 +193,8 @@ impl ClaimingTestStrategy {
 impl DataActor for ClaimingTestStrategy {}
 
 nautilus_strategy!(ClaimingTestStrategy, {
-    fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
-        Some(self.external_order_claims.clone())
+    fn external_order_instrument_ids(&self) -> Option<Vec<InstrumentId>> {
+        Some(self.external_order_instrument_ids.clone())
     }
 });
 

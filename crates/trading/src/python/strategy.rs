@@ -107,7 +107,7 @@ impl StrategyConfig {
         strategy_id=None,
         order_id_tag=None,
         oms_type=None,
-        external_order_claims=None,
+        external_order_instrument_ids=None,
         manage_contingent_orders=false,
         manage_gtd_expiry=false,
         manage_stop=false,
@@ -131,7 +131,7 @@ impl StrategyConfig {
         strategy_id: Option<StrategyId>,
         order_id_tag: Option<String>,
         oms_type: Option<OmsType>,
-        external_order_claims: Option<Vec<InstrumentId>>,
+        external_order_instrument_ids: Option<Vec<InstrumentId>>,
         manage_contingent_orders: bool,
         manage_gtd_expiry: bool,
         manage_stop: bool,
@@ -152,7 +152,7 @@ impl StrategyConfig {
             use_uuid_client_order_ids,
             use_hyphens_in_client_order_ids,
             oms_type,
-            external_order_claims,
+            external_order_instrument_ids,
             manage_contingent_orders,
             manage_gtd_expiry,
             manage_stop,
@@ -184,8 +184,8 @@ impl StrategyConfig {
     }
 
     #[getter]
-    fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
-        self.external_order_claims.clone()
+    fn external_order_instrument_ids(&self) -> Option<Vec<InstrumentId>> {
+        self.external_order_instrument_ids.clone()
     }
 
     #[getter]
@@ -953,8 +953,8 @@ impl StrategyNative for PyStrategyInner {
 }
 
 impl Strategy for PyStrategyInner {
-    fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
-        self.core.config.external_order_claims.clone()
+    fn external_order_instrument_ids(&self) -> Option<Vec<InstrumentId>> {
+        self.core.config.external_order_instrument_ids.clone()
     }
 
     fn on_market_exit(&mut self) {
@@ -1380,15 +1380,18 @@ impl PyStrategy {
         self.inner_mut().config = config;
     }
 
-    /// Updates configured external order claim instrument IDs before registration.
-    pub fn set_external_order_claims(&mut self, external_order_claims: Option<Vec<InstrumentId>>) {
-        self.inner_mut().core.config.external_order_claims = external_order_claims;
+    /// Updates the configured external order instrument IDs before registration.
+    pub fn set_external_order_instrument_ids(
+        &mut self,
+        external_order_instrument_ids: Option<Vec<InstrumentId>>,
+    ) {
+        self.inner_mut().core.config.external_order_instrument_ids = external_order_instrument_ids;
     }
 
-    /// Returns the configured external order claim instrument IDs.
+    /// Returns the configured external order instrument IDs.
     #[must_use]
-    pub fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
-        self.inner().external_order_claims()
+    pub fn external_order_instrument_ids(&self) -> Option<Vec<InstrumentId>> {
+        self.inner().external_order_instrument_ids()
     }
 
     /// Updates the runtime component identity used until a strategy ID is assigned.
@@ -1635,6 +1638,24 @@ impl PyStrategy {
                 "Strategy must be registered with a trader before accessing cache",
             ))
         }
+    }
+
+    /// Replaces this strategy's active external order claims with `instrument_ids`.
+    ///
+    /// Passing an empty list releases every claim owned by the strategy. Existing cached orders
+    /// keep their assigned strategy ID. The original Python config object is not changed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the strategy is not registered, the cache is already borrowed, an
+    /// instrument is repeated, or an instrument is claimed by another strategy.
+    #[pyo3(name = "set_external_order_instrument_ids")]
+    fn py_set_external_order_instrument_ids(
+        &mut self,
+        instrument_ids: Vec<InstrumentId>,
+    ) -> PyResult<()> {
+        Strategy::set_external_order_instrument_ids(self.inner_mut(), instrument_ids)
+            .map_err(to_pyruntime_err)
     }
 
     #[getter]
@@ -4334,17 +4355,17 @@ class IndicatorEventStrategy:
     }
 
     #[rstest::rstest]
-    fn test_external_order_claims_returns_configured_instruments() {
+    fn test_external_order_instrument_ids_returns_configured_instruments() {
         let claims = vec![
             InstrumentId::from("AUDUSD.SIM"),
             InstrumentId::from("BTCUSDT.BINANCE"),
         ];
         let strategy = PyStrategy::new(Some(StrategyConfig {
-            external_order_claims: Some(claims.clone()),
+            external_order_instrument_ids: Some(claims.clone()),
             ..Default::default()
         }));
 
-        assert_eq!(strategy.external_order_claims(), Some(claims));
+        assert_eq!(strategy.external_order_instrument_ids(), Some(claims));
     }
 
     #[rstest::rstest]

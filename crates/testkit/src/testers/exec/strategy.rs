@@ -109,8 +109,8 @@ pub(super) enum LimitOrderMaintenanceState {
 }
 
 nautilus_strategy!(ExecTester, {
-    fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
-        self.config.base.external_order_claims.clone()
+    fn external_order_instrument_ids(&self) -> Option<Vec<InstrumentId>> {
+        self.core.config.external_order_instrument_ids.clone()
     }
 
     fn on_order_accepted(&mut self, event: OrderAccepted) {

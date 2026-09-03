@@ -2264,6 +2264,18 @@ mod tests {
 
     const CACHE_MUTATION_COVERAGE: &[CacheMutationCoverage] = &[
         cache_mutation(
+            // Startup configuration is reapplied during strategy registration, but runtime claim
+            // changes are not captured or persisted for recovery.
+            "set_external_order_claims",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "register_external_order_claims",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
             "set_database",
             CacheMutationRecoveryClass::SnapshotOwned,
             &[],

@@ -349,8 +349,9 @@ Upstream references:
 The execution engine creates external orders from runtime status reports when
 the order is not already in cache. This covers first-seen exchange-generated
 orders (the typical case for a live liquidation or ADL event). The engine
-assigns the order to any strategy that has claimed the instrument via
-`external_order_claims`, or to the `EXTERNAL` strategy by default.
+assigns the order through the instrument's active external order claim,
+configured initially with `external_order_instrument_ids`, or to the `EXTERNAL`
+strategy by default.
 
 :::note
 The status report and fill report are emitted bundled as a single

@@ -851,6 +851,55 @@ Even though it often makes sense to define a strategy which will trade a single
 instrument. The number of instruments a single strategy can work with is only limited by machine resources.
 :::
 
+### Claiming external orders
+
+Live adapters can report venue orders that a strategy did not submit or that NautilusTrader has not
+yet observed locally. NautilusTrader creates these as external orders and assigns them to the
+`EXTERNAL` strategy unless an active claim identifies another strategy as their owner.
+
+Set `external_order_instrument_ids` to list the instruments a strategy intends to claim for
+external orders, fills, and materialized reconciliation activity:
+
+```python
+from nautilus_trader.config import StrategyConfig
+from nautilus_trader.model import InstrumentId
+
+
+config = StrategyConfig(
+    external_order_instrument_ids=[
+        InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
+    ],
+)
+```
+
+`external_order_instrument_ids` is serializable configuration intent. When a live node registers the
+strategy, the runtime materializes that intent as active external order claims in the shared cache.
+Each claim assigns one `InstrumentId` to one `StrategyId`. Registration fails without changing the
+active claims if the shared cache is already borrowed, the list repeats an instrument, or any listed
+instrument already has a claim, including a claim for the same strategy.
+
+After registration, call `set_external_order_instrument_ids(...)` to replace the strategy's complete
+active claim set. The method retains listed claims already owned by the strategy, releases omitted
+claims, and acquires listed instruments that have no owner. Passing an empty list releases every
+claim owned by the strategy. If an instrument appears more than once or belongs to another strategy,
+the call fails and leaves the active claim set unchanged. A change affects ownership decisions made
+after the update; it does not reassign external orders already held in the cache.
+
+The strategy must be registered before it can update active claims, and the update fails if the
+shared cache is already borrowed. For Python strategies, this method changes active routing state;
+the original `strategy.config` object continues to show the construction intent. Stopping a strategy
+retains its active claims so routing remains stable if it restarts. Removing the strategy from its
+trader releases the claims. A cache reset also preserves them.
+
+:::warning
+Transferring an instrument between strategies requires two calls: the existing owner releases the
+instrument before the new owner claims it. The transfer is not atomic across strategies. An external
+report processed between those calls has no active claim and is assigned to the `EXTERNAL` strategy.
+:::
+
+See [External order creation](execution.md#external-order-creation) for how execution and
+reconciliation use active claims.
+
 ### Managed GTD expiry
 
 It's possible for the strategy to manage expiry for orders with a time in force of GTD (*Good 'till Date*).

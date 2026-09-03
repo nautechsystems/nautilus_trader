@@ -97,7 +97,7 @@ def main() -> None:
             strategy_id=STRATEGY_ID,
             instrument_id=instrument_id,
             client_id=ClientId.from_str(BETFAIR),
-            external_order_claims=[instrument_id],
+            external_order_instrument_ids=[instrument_id],
             order_qty=Quantity.from_str(ORDER_QTY),
             subscribe_quotes=False,
             subscribe_trades=False,

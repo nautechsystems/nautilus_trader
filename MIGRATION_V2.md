@@ -140,11 +140,13 @@ means exactly `READY`, so it is not an equivalent replacement while a component 
 stopped, degraded, disposed, or faulted. Inspect `state()` on `DataActor` and `Strategy`, or the
 `state` property on `ExecutionAlgorithm`, and compare it with `ComponentState.PRE_INITIALIZED`.
 
-Read the v1 `Strategy` runtime properties `order_id_tag`, `oms_type`, `external_order_claims`,
-`manage_contingent_orders`, `manage_gtd_expiry`, `use_uuid_client_order_ids`, and
-`use_hyphens_in_client_order_ids` through the same-name properties on `Strategy.config`. The two
-client-order-ID formatting options on a strategy-owned `OrderFactory` use the same config. A
-standalone factory has no equivalent flag readback.
+Read the v1 `Strategy` runtime properties `order_id_tag`, `oms_type`, `manage_contingent_orders`,
+`manage_gtd_expiry`, `use_uuid_client_order_ids`, and `use_hyphens_in_client_order_ids` through the
+same-name properties on `Strategy.config`. Read the configured v1 `external_order_claims` value
+through `Strategy.config.external_order_instrument_ids`. In v2, that field records serializable
+configuration intent; call `Strategy.set_external_order_instrument_ids(...)` after registration to
+replace the active claims. The two client-order-ID formatting options on a strategy-owned
+`OrderFactory` use the same config. A standalone factory has no equivalent flag readback.
 
 Historical requests use type-specific batch callbacks in v2:
 

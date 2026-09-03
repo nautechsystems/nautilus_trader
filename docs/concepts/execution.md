@@ -764,15 +764,47 @@ authoritative position report can reconcile the current venue position separatel
 
 When a report references an order that is absent from the cache, the engine creates an *external
 order*. This covers venue-initiated ADL, liquidation, or settlement, orders placed by another
-process, and orders not yet observed locally. The engine assigns ownership to:
+process, and orders not yet observed locally.
 
-- The strategy that claimed the instrument through `register_external_order_claims`.
+The naming distinguishes configuration intent from live ownership state:
+
+- `external_order_instrument_ids` is the serializable strategy configuration intent. It names the
+  instruments whose external orders should be assigned to the strategy when it is registered.
+- An external order claim is an active cache entry that maps one `InstrumentId` to one `StrategyId`.
+  The code uses `external_order_claims` for the collection of these live entries.
+
+Live strategy registration materializes the configured instrument IDs with
+`register_external_order_claims`. This operation is additive and strict: it rejects a repeated
+instrument or any instrument that already has a claim, including a claim for the same strategy.
+
+The strategy method `set_external_order_instrument_ids(...)` delegates to the cache operation
+`set_external_order_claims`. This operation treats its input as the strategy's complete desired
+active set. It can retain or release that strategy's existing claims and acquire unclaimed
+instruments, but it cannot take a claim from another strategy. Validation covers the complete input
+before changing the cache, so a conflict leaves every existing claim unchanged.
+
+The `ExecutionManager` and `ExecutionEngine` read the same canonical claim map from the cache when
+they process external reports. They assign an external order to:
+
+- The strategy identified by the active claim for the report's instrument.
 - The `EXTERNAL` strategy as a default fallback.
+
+An active-claim update is therefore visible to both components without a coordination message. The
+claim present when an external order is created determines the assignment. Existing cached orders
+keep their assigned `StrategyId`; changing a claim does not reassign them.
+
+Transferring an instrument between strategies requires the current owner to release it before the
+new owner claims it. There is no atomic handoff across strategies. A report processed between the
+release and acquisition has no active claim and is assigned to `EXTERNAL`. Cache resets preserve
+active claims so registered routing remains configured, while retiring a strategy clears its claims.
 
 The external order uses the report's `client_order_id` when present and otherwise derives one from
 the `venue_order_id`. The engine adds the order to the cache, registers its venue order ID, and
 emits the applicable `OrderAccepted`, `OrderFilled`, `OrderCanceled`, or `OrderExpired` events.
 Positions then update through the normal event pipeline.
+
+See [Claiming external orders](strategies.md#claiming-external-orders) for strategy configuration
+and runtime updates.
 
 ## Related guides
 

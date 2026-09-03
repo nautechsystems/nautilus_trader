@@ -1904,6 +1904,41 @@ def test_strategy_data_operations_succeed_when_registered() -> None:
         engine.dispose()
 
 
+def test_strategy_set_external_order_instrument_ids_updates_active_claims() -> None:
+    """
+    Test a strategy can replace its active external order claims.
+    """
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    first = Strategy(StrategyConfig(strategy_id=StrategyId("FIRST-001")))
+    second = Strategy(StrategyConfig(strategy_id=StrategyId("SECOND-002")))
+    instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+
+    try:
+        engine.add_strategy(first)
+        engine.add_strategy(second)
+
+        assert first.set_external_order_instrument_ids([instrument_id]) is None
+
+        with pytest.raises(RuntimeError) as exc_info:
+            second.set_external_order_instrument_ids([instrument_id])
+
+        assert str(exc_info.value) == (
+            "External order claim for AUD/USD.SIM already exists for FIRST-001"
+        )
+
+        assert first.set_external_order_instrument_ids([]) is None
+        assert second.set_external_order_instrument_ids([instrument_id]) is None
+
+        with pytest.raises(RuntimeError) as exc_info:
+            first.set_external_order_instrument_ids([instrument_id])
+
+        assert str(exc_info.value) == (
+            "External order claim for AUD/USD.SIM already exists for SECOND-002"
+        )
+    finally:
+        engine.dispose()
+
+
 def test_strategy_subscription_validation_precedes_registration() -> None:
     """
     Test strategy subscription validation precedes registration.
@@ -2020,7 +2055,7 @@ def test_strategy_config_defaults() -> None:
     assert config.strategy_id is None
     assert config.order_id_tag is None
     assert config.oms_type is None
-    assert config.external_order_claims is None
+    assert config.external_order_instrument_ids is None
     assert config.manage_contingent_orders is False
     assert config.manage_gtd_expiry is False
     assert config.manage_stop is False
@@ -2039,12 +2074,12 @@ def test_strategy_config_with_explicit_values() -> None:
     """
     Test strategy config with explicit values.
     """
-    external_order_claims = [InstrumentId.from_str("ETH/USDT.BINANCE")]
+    external_order_instrument_ids = [InstrumentId.from_str("ETH/USDT.BINANCE")]
     config = StrategyConfig(
         StrategyId("S-002"),
         "002",
         OmsType.HEDGING,
-        external_order_claims,
+        external_order_instrument_ids,
         True,
         True,
         True,
@@ -2062,7 +2097,7 @@ def test_strategy_config_with_explicit_values() -> None:
     assert config.strategy_id == StrategyId("S-002")
     assert config.order_id_tag == "002"
     assert config.oms_type == OmsType.HEDGING
-    assert config.external_order_claims == external_order_claims
+    assert config.external_order_instrument_ids == external_order_instrument_ids
     assert config.manage_contingent_orders is True
     assert config.manage_gtd_expiry is True
     assert config.manage_stop is True

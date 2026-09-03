@@ -59,8 +59,8 @@ deprecation warning and reconciles for compatibility. A future release rejects t
 startup error. See the origin rows in
 [Startup reconciliation](#startup-reconciliation).
 
-This is separate from `external_order_claims` (see
-[Reconciliation configuration](#reconciliation-configuration)), which attributes venue-sourced
+This is separate from external order claims (see
+[Reconciliation configuration](#reconciliation-configuration)), which attribute venue-sourced
 orders to a *strategy*. The execution-client origin records which *client* an order belongs to.
 
 ## Reconciliation configuration
@@ -83,9 +83,10 @@ declare the bound use the compatibility fill-adjustment path, which can generate
 with information loss. Some venues also filter or drop older execution data.
 :::
 
-Each strategy can claim venue-sourced external orders and materialized reconciliation activity
-for an instrument ID via the `external_order_claims` config parameter. This lets a strategy
-resume managing open orders and positions when no cached state exists.
+Each strategy can configure `external_order_instrument_ids` as its intent to claim venue-sourced
+external orders and materialized reconciliation activity for specific instruments. Live strategy
+registration materializes that intent as active claims, which the strategy can replace at runtime.
+This lets a strategy resume managing open orders and positions when no cached state exists.
 
 Unclaimed external orders use strategy ID `EXTERNAL` with tag `VENUE`. Unclaimed orders
 generated during position reconciliation use strategy ID `EXTERNAL` with tag `RECONCILIATION`.
