@@ -572,6 +572,7 @@ async fn mock_handler(req: Request, state: Arc<TestServerState>) -> Response {
         }
         "/0/private/GetWebSocketsToken" => mock_websockets_token(req.headers().clone()).await,
         "/0/private/Balance" => mock_spot_balance().await,
+        "/0/private/BalanceEx" => mock_spot_balance_ex().await,
         "/0/private/TradeBalance" => {
             let body_bytes = axum::body::to_bytes(req.into_body(), usize::MAX)
                 .await
@@ -673,6 +674,16 @@ async fn mock_spot_balance() -> Response {
     let data = std::fs::read_to_string("test_data/http_spot_balance.json").unwrap_or_else(|_| {
         r#"{"error":[],"result":{"ZUSD":"10000.00","XXBT":"0.5","ETH":"2.0"}}"#.to_string()
     });
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(Body::from(data))
+        .unwrap()
+}
+
+async fn mock_spot_balance_ex() -> Response {
+    let data = std::fs::read_to_string("test_data/http_spot_balance_ex.json")
+        .expect("Failed to load http_spot_balance_ex.json");
     Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/json")
@@ -3236,9 +3247,9 @@ async fn test_spot_request_account_state_margin_with_gbp_asset_tags_currency() {
         .find(|b| b.currency.code.as_str() == "USD")
     {
         assert_eq!(
-            usd.locked.as_decimal(),
-            Decimal::ZERO,
-            "USD wallet should stay unlocked when margin target is GBP"
+            usd.locked.as_decimal().normalize(),
+            dec!(1500),
+            "USD wallet should carry only its own BalanceEx hold, not the GBP margin lock"
         );
     }
 }
@@ -3290,7 +3301,7 @@ async fn test_spot_request_account_state_margin_locked_from_free_margin() {
 
 #[rstest]
 #[tokio::test]
-async fn test_spot_request_account_state_margin_other_wallets_unlocked() {
+async fn test_spot_request_account_state_margin_other_wallets_lock_own_holds() {
     let state = Arc::new(TestServerState::default());
     let app = create_router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -3323,19 +3334,95 @@ async fn test_spot_request_account_state_margin_other_wallets_unlocked() {
         .await
         .unwrap();
 
-    for balance in state
+    // Fixture holds from test_data/http_spot_balance_ex.json.
+    for (code, expected_locked) in [("XBT", dec!(0.1)), ("ETH", dec!(0))] {
+        let balance = state
+            .balances
+            .iter()
+            .find(|b| b.currency.code.as_str() == code)
+            .unwrap_or_else(|| panic!("expected {code} wallet balance"));
+
+        assert_eq!(
+            balance.locked.as_decimal().normalize(),
+            expected_locked.normalize(),
+            "non-margin-asset wallet {code} must lock only its own BalanceEx hold, \
+             never the TradeBalance used margin"
+        );
+        assert_eq!(
+            balance.free.as_decimal(),
+            balance.total.as_decimal() - balance.locked.as_decimal(),
+            "free must derive from total minus the venue hold for {code}"
+        );
+    }
+}
+
+/// Cash balances must report the venue-held portion of each wallet.
+///
+/// Wallet balances are sourced from `BalanceEx`, whose per-asset `hold_trade` gives the amount
+/// Kraken has reserved against resting orders. Sourcing them from `Balance` (totals only) forces
+/// `locked = 0`, so `free` would report reserved funds as available.
+#[rstest]
+#[tokio::test]
+async fn test_spot_request_account_state_cash_locks_held_amounts() {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let account_id = AccountId::new("KRAKEN-001");
+    let state = client
+        .request_account_state(account_id, AccountType::Cash, None)
+        .await
+        .unwrap();
+
+    // Fixture values from test_data/http_spot_balance_ex.json.
+    let usd = state
         .balances
         .iter()
-        .filter(|b| b.currency.code.as_str() != "USD")
-    {
-        assert_eq!(
-            balance.locked.as_decimal(),
-            Decimal::ZERO,
-            "non-margin-asset wallet {} must have locked=0",
-            balance.currency.code
-        );
-        assert_eq!(balance.free, balance.total);
-    }
+        .find(|b| b.currency.code.as_str() == "USD")
+        .expect("expected USD balance");
+    assert_eq!(usd.total.as_decimal().normalize(), dec!(200000));
+    assert_eq!(usd.locked.as_decimal().normalize(), dec!(1500));
+    assert_eq!(usd.free.as_decimal().normalize(), dec!(198500));
+
+    let xbt = state
+        .balances
+        .iter()
+        .find(|b| b.currency.code.as_str() == "XBT")
+        .expect("expected XBT balance");
+    assert_eq!(xbt.total.as_decimal().normalize(), dec!(0.5));
+    assert_eq!(xbt.locked.as_decimal().normalize(), dec!(0.1));
+    assert_eq!(xbt.free.as_decimal().normalize(), dec!(0.4));
+
+    // A wallet with nothing held still reports the full balance as free.
+    let eth = state
+        .balances
+        .iter()
+        .find(|b| b.currency.code.as_str() == "ETH")
+        .expect("expected ETH balance");
+    assert_eq!(eth.locked.as_decimal(), Decimal::ZERO);
+    assert_eq!(eth.free, eth.total);
 }
 
 #[rstest]

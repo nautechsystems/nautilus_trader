@@ -1157,6 +1157,27 @@ impl KrakenSpotRawHttpClient {
         })
     }
 
+    /// Requests account balances including held amounts (requires authentication).
+    ///
+    /// Unlike [`Self::get_balance`], which reports only total wallet amounts, this additionally
+    /// reports `hold_trade`: the portion of each balance Kraken has reserved against resting
+    /// orders. Required to populate `locked` on cash balances.
+    pub async fn get_balance_ex(&self) -> anyhow::Result<BalanceExResponse, KrakenHttpError> {
+        if self.credential.is_none() {
+            return Err(KrakenHttpError::AuthenticationError(
+                "API credentials required for BalanceEx".to_string(),
+            ));
+        }
+
+        let response: KrakenResponse<BalanceExResponse> = self
+            .send_request(Method::POST, "/0/private/BalanceEx", None, true)
+            .await?;
+
+        response.result.ok_or_else(|| {
+            KrakenHttpError::ParseError("Missing result in extended balance response".to_string())
+        })
+    }
+
     /// Requests margin account summary (requires authentication).
     ///
     /// Unlike `get_balance` which returns per-currency wallet amounts, this returns margin
@@ -1799,7 +1820,10 @@ impl KrakenSpotHttpClient {
     /// `TradeBalance`. Kraken reports these values across all collateral, which
     /// avoids clamping free margin to one wallet bucket in multi-asset accounts.
     ///
-    /// The single shared fetch keeps Kraken rate-limit usage symmetric with `Balance`
+    /// Wallet balances come from `BalanceEx`, whose per-asset `hold_trade` gives the amount
+    /// Kraken has reserved against resting orders and populates `locked`.
+    ///
+    /// The single shared fetch keeps Kraken rate-limit usage symmetric with `BalanceEx`
     /// (one request per account update), instead of two as if `request_account_state`
     /// and `request_margin_metrics` were called in sequence.
     pub async fn request_account_state_with_metrics(
@@ -1808,7 +1832,7 @@ impl KrakenSpotHttpClient {
         account_type: AccountType,
         margin_balance_asset: Option<&str>,
     ) -> anyhow::Result<(AccountState, IndexMap<String, String>)> {
-        let balances_raw = self.inner.get_balance().await?;
+        let balances_raw = self.inner.get_balance_ex().await?;
         let ts_init = self.generate_ts_init();
 
         let (margins, metrics, margin_entry, target_code) = if account_type == AccountType::Margin {
@@ -1838,8 +1862,8 @@ impl KrakenSpotHttpClient {
 
         let balances: Vec<AccountBalance> = balances_raw
             .iter()
-            .filter_map(|(currency_code, amount_str)| {
-                let amount = Decimal::from_str_exact(amount_str).ok()?;
+            .filter_map(|(currency_code, entry)| {
+                let amount = Decimal::from_str_exact(&entry.balance).ok()?;
                 if amount.is_zero() {
                     return None;
                 }
@@ -1853,8 +1877,9 @@ impl KrakenSpotHttpClient {
                     return None;
                 }
 
+                let locked = Decimal::from_str_exact(&entry.hold_trade).ok()?;
                 let currency = Currency::new(normalized_code, 8, 0, "0", CurrencyType::Crypto);
-                AccountBalance::from_total_and_locked(amount, Decimal::ZERO, currency).ok()
+                AccountBalance::from_total_and_locked(amount, locked, currency).ok()
             })
             .chain(margin_entry)
             .collect();

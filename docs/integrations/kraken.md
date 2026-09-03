@@ -437,6 +437,13 @@ the exchange state at startup or during operation.
 - Time-bounded queries: Supports filtering by start/end timestamps.
 - All fill types: Market, limit, and conditional order fills.
 
+**Account balances:**
+
+- Wallet balances: Fetched from `POST /0/private/BalanceEx`, which reports both the
+  total and the held (`hold_trade`) amount per asset. The held amount populates
+  `AccountBalance.locked`, so `free` excludes funds Kraken has reserved against
+  resting orders.
+
 **Margin position reports** (when `spot_account_type=Margin`):
 
 - Open positions: Fetched from `POST /0/private/OpenPositions` and aggregated

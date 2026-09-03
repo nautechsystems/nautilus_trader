@@ -357,6 +357,7 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
             r#"{"error":[],"result":{"token":"TEST-TOKEN","expires":900}}"#.to_string(),
         ),
         "/0/private/Balance" => json_response(load_test_data("http_spot_balance.json")),
+        "/0/private/BalanceEx" => json_response(load_test_data("http_spot_balance_ex.json")),
         "/0/private/AddOrder" => {
             state.submit_request_count.fetch_add(1, Ordering::Relaxed);
             match state.command_responses.lock().await.submit {
