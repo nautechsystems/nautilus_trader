@@ -298,11 +298,12 @@ done < <(rg -n --no-heading \
   "${GLOBS[@]}" --type rust crates 2> /dev/null || true)
 
 # Renamed Timestamp/Zoned imports must not bypass the bare-call checks above.
+# ripgrep omits the path when it searches one explicit file
 while IFS= read -r file; do
   while IFS= read -r alias; do
     [[ -z "$alias" ]] && continue
-    while IFS=: read -r hit_file line_num content; do
-      check_rule1_hit "$hit_file" "$line_num" "$content"
+    while IFS=: read -r line_num content; do
+      check_rule1_hit "$file" "$line_num" "$content"
     done < <(rg -n --no-heading "\\b${alias}::now\\(\\)" "$file" 2> /dev/null || true)
   done < <(jiff_clock_aliases "$file")
 done < <(rg -lU 'use\s+jiff::[^;]*\b(Timestamp|Zoned)[[:space:]]+as[[:space:]]' \
@@ -396,12 +397,13 @@ for rule5_file in "${RULE5_FILES[@]}"; do
     continue
   fi
 
-  while IFS=: read -r file line_num content; do
-    [[ -z "$file" ]] && continue
+  # ripgrep omits the path when it searches one explicit file
+  while IFS=: read -r line_num content; do
+    [[ -z "$line_num" ]] && continue
     is_doc_comment "$content" && continue
     [[ "$content" =~ $ALLOW_MARKER ]] && continue
 
-    report "rule5" "$file" "$line_num" "$content" \
+    report "rule5" "$rule5_file" "$line_num" "$content" \
       "Use IndexMap / IndexSet for deterministic iteration order"
   done < <(rg -n --no-heading '\bAHash(Map|Set)\b' "$rule5_file" 2> /dev/null || true)
 done

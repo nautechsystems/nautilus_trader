@@ -40,6 +40,13 @@ run_hook() {
   set -e
 }
 
+# Reports carry ANSI color between the rule and the path, so compare plain text
+strip_color() {
+  local esc
+  esc=$(printf '\033')
+  sed "s/${esc}\[[0-9;]*m//g" "$1"
+}
+
 valid_case="$CASE_ROOT/valid"
 create_case "$valid_case"
 printf '%s\n' 'pub fn deterministic() {}' > "$valid_case/crates/common/src/lib.rs"
@@ -82,6 +89,19 @@ for rule in 1 2 3 4 5 6 7; do
   fi
 done
 
+# Rule 5 searches one explicit file, where ripgrep omits the path, so assert
+# the reported location rather than detection alone.
+strip_color "$invalid_case/output.txt" > "$invalid_case/plain.txt"
+for expected in \
+  "Error (rule5): crates/live/src/execution/manager.rs:1" \
+  "Error (rule5): crates/live/src/execution/manager.rs:2"; do
+  if ! rg -Fq "$expected" "$invalid_case/plain.txt"; then
+    echo "Expected a violation reported as: $expected"
+    cat "$invalid_case/output.txt"
+    exit 1
+  fi
+done
+
 # Bare clock reads are resolved from per-file import facts and the inline
 # `#[cfg(test)]` boundary rather than from the matched line, so cover both
 # sides of each decision and two hits in one file.
@@ -108,9 +128,7 @@ if [ "$RUN_STATUS" -ne 1 ]; then
   exit 1
 fi
 
-# Reports carry ANSI colour between the rule and the path, so compare plain text.
-esc=$(printf '\033')
-sed "s/${esc}\[[0-9;]*m//g" "$bare_case/output.txt" > "$bare_case/plain.txt"
+strip_color "$bare_case/output.txt" > "$bare_case/plain.txt"
 
 for expected in \
   "Error (rule1): crates/core/src/lib.rs:2" \
@@ -148,13 +166,18 @@ if [ "$RUN_STATUS" -ne 1 ]; then
   exit 1
 fi
 
-# This path reports a mangled file and line, so assert on detection instead of
-# the location and keep the case valid once that is fixed.
-if ! rg -Fq "Error (rule1):" "$alias_case/output.txt" ||
-  ! rg -Fq "Found 1 DST convention violation(s)" "$alias_case/output.txt"; then
-  echo "Expected exactly one rule1 violation for the renamed jiff clock read"
-  cat "$alias_case/output.txt"
-  exit 1
-fi
+# The alias scan also searches one explicit file, so assert the reported
+# location and content rather than detection alone.
+strip_color "$alias_case/output.txt" > "$alias_case/plain.txt"
+for expected in \
+  "Error (rule1): crates/core/src/lib.rs:2" \
+  "Found: pub fn renamed() { let _ = Ts::now(); }" \
+  "Found 1 DST convention violation(s)"; do
+  if ! rg -Fq "$expected" "$alias_case/plain.txt"; then
+    echo "Expected the renamed jiff clock read reported as: $expected"
+    cat "$alias_case/output.txt"
+    exit 1
+  fi
+done
 
 echo "DST convention hook tests passed"

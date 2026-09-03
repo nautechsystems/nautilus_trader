@@ -32,25 +32,6 @@ NC='\033[0m' # No Color
 
 VIOLATIONS=0
 
-# Regex patterns (bash extended regex)
-FN_RE='^[[:space:]]*(pub(\([^)]*\))?[[:space:]]+)?(async[[:space:]]+)?(unsafe[[:space:]]+)?(fn|const fn)[[:space:]]'
-FN_NAME_RE='fn[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*)'
-DOC_RE='^[[:space:]]*///'
-PANIC_BODY_RE='\.(unwrap|expect)\(|panic!\(|assert!|assert_eq!|assert_ne!|unreachable!\(|todo!\(|unimplemented!\('
-
-# Helper: read file into lines array (0-indexed, lines[0] = line 1)
-read_file_lines() {
-  if type mapfile &> /dev/null; then
-    mapfile -t lines < "$1"
-  else
-    lines=()
-    while IFS= read -r _line || [[ -n "$_line" ]]; do
-      lines+=("$_line")
-    done < "$1"
-  fi
-  total=${#lines[@]}
-}
-
 manifest_feature_names() {
   awk '
     /^[[:space:]]*\[features\][[:space:]]*(#.*)?$/ {
@@ -156,183 +137,154 @@ check_feature_docs() {
 }
 
 # =============================================================================
-# Use rg to find all files and line numbers with `# Panics` or `# Errors`
+# Rust doc sections: `# Panics` and `# Errors` (crates/**/*.rs)
 # =============================================================================
 
-current_file=""
+# One awk pass reads every file with a matching heading and reports each
+# violation as a kind, line, function name, and path record; the path comes
+# last so a tab in it cannot split the fields.
+doc_section_files=$(rg -l '/// # (Panics|Errors)' crates --type rust --sort path 2> /dev/null) || true
 
-while IFS=: read -r file line_num match; do
-  [[ -z "$file" ]] && continue
+doc_section_output=""
+if [[ -n "$doc_section_files" ]]; then
+  doc_section_output=$(LC_ALL=C awk '
+    # Name from the first `fn <name>` on the line, or empty
+    function fn_name_of(text) {
+      if (!match(text, /fn[[:space:]]+[a-zA-Z_][a-zA-Z0-9_]*/)) return ""
+      text = substr(text, RSTART, RLENGTH)
+      sub(/^fn[[:space:]]+/, "", text)
+      return text
+    }
 
-  # Load file into array only when we encounter a new file
-  if [[ "$file" != "$current_file" ]]; then
-    current_file="$file"
-    read_file_lines "$file"
-  fi
+    # Line of the fn declaration within the 20 lines after the heading, or 0
+    function fn_line_after(i,    j) {
+      for (j = i + 1; j <= i + 20 && j <= total; j++) {
+        if (lines[j] ~ /^[[:space:]]*(pub(\([^)]*\))?[[:space:]]+)?(async[[:space:]]+)?(unsafe[[:space:]]+)?(fn|const fn)[[:space:]]/) return j
+      }
+      return 0
+    }
 
-  idx=$((line_num - 1))
+    # Declaration text up to and including the first line carrying `{`
+    function signature_from(fn_line,    j, signature) {
+      signature = ""
+      for (j = fn_line; j <= fn_line + 40 && j <= total; j++) {
+        signature = signature lines[j]
+        if (index(lines[j], "{") > 0) break
+      }
+      return signature
+    }
 
-  if [[ "$match" == *'# Panics'* ]]; then
-    # --- Check `# Panics` docs ---
+    # Whether the first non-doc line above the heading carries `marker`
+    function is_suppressed(i, marker,    j) {
+      for (j = i - 1; j >= 1; j--) {
+        if (lines[j] ~ /^[[:space:]]*\/\/\//) continue
+        return index(lines[j], marker) > 0
+      }
+      return 0
+    }
 
-    # Check for suppression above the doc block
-    suppressed=false
-    j=$((idx - 1))
-    while [[ $j -ge 0 ]]; do
-      if [[ "${lines[j]}" =~ $DOC_RE ]]; then
-        j=$((j - 1))
-        continue
-      fi
-      if [[ "${lines[j]}" == *'panics-doc-ok'* ]]; then
-        suppressed=true
-      fi
-      break
-    done
-    [[ "$suppressed" == true ]] && continue
+    # Function name for a "does not panic" claim under the heading, or empty
+    function contradiction_fn(i,    j, k, lower, name) {
+      for (j = i + 1; j <= i + 4 && j <= total; j++) {
+        lower = tolower(lines[j])
+        if (index(lower, "does not panic") == 0 && index(lower, "will never panic") == 0) continue
+        for (k = i + 1; k <= i + 15 && k <= total; k++) {
+          name = fn_name_of(lines[k])
+          if (name != "") return name
+        }
+        return "<unknown>"
+      }
+      return ""
+    }
 
-    # Check for self-contradictory "does not panic" text
-    contradictory=false
-    for ((j = idx + 1; j <= idx + 4 && j < total; j++)); do
-      lower="$(printf '%s' "${lines[j]}" | tr '[:upper:]' '[:lower:]')"
-      if [[ "$lower" == *'does not panic'* ]] || [[ "$lower" == *'will never panic'* ]]; then
-        fn_context="<unknown>"
-        for ((k = idx + 1; k < total && k <= idx + 15; k++)); do
-          if [[ "${lines[k]}" =~ $FN_NAME_RE ]]; then
-            fn_context="${BASH_REMATCH[1]}"
-            break
-          fi
-        done
-        echo -e "${RED}Error:${NC} Self-contradictory \`# Panics\` doc on \`${fn_context}\` in $file:$line_num"
-        echo "  Doc says function does not panic under a \`# Panics\` heading"
-        echo "  Remove the \`# Panics\` section entirely"
-        echo
-        VIOLATIONS=$((VIOLATIONS + 1))
-        contradictory=true
-        break
-      fi
-    done
-    [[ "$contradictory" == true ]] && continue
+    # Whether the brace-delimited body from `fn_line` has no panic token
+    function body_lacks_panic(fn_line,    j, depth, opens, closes, body_start, body_end, parts) {
+      depth = 0
+      body_start = 0
+      body_end = 0
+      for (j = fn_line; j <= fn_line + 500 && j <= total; j++) {
+        opens = split(lines[j], parts, "{") - 1
+        closes = split(lines[j], parts, "}") - 1
+        depth += opens - closes
+        if (body_start == 0 && opens > 0) body_start = j
+        if (body_start > 0 && depth <= 0) {
+          body_end = j
+          break
+        }
+      }
+      if (body_end == 0) return 0
+      for (j = body_start; j <= body_end; j++) {
+        if (lines[j] ~ /\.(unwrap|expect)\(|panic!\(|assert!|assert_eq!|assert_ne!|unreachable!\(|todo!\(|unimplemented!\(/) return 0
+      }
+      return 1
+    }
 
-    # Find fn declaration
-    fn_idx=""
-    for ((j = idx + 1; j < total && j <= idx + 20; j++)); do
-      if [[ "${lines[j]}" =~ $FN_RE ]]; then
-        fn_idx=$j
-        break
-      fi
-    done
-    [[ -z "$fn_idx" ]] && continue
+    function check_panics(file, i,    name, fn_line) {
+      if (is_suppressed(i, "panics-doc-ok")) return
+      name = contradiction_fn(i)
+      if (name != "") {
+        print "contradictory\t" i "\t" name "\t" file
+        return
+      }
+      fn_line = fn_line_after(i)
+      if (fn_line == 0) return
+      if (signature_from(fn_line) !~ /->.*(Result|PyResult)/) return
+      if (body_lacks_panic(fn_line)) print "panics\t" i "\t" fn_name_of(lines[fn_line]) "\t" file
+    }
 
-    # Extract fn name
-    fn_name=""
-    if [[ "${lines[fn_idx]}" =~ $FN_NAME_RE ]]; then
-      fn_name="${BASH_REMATCH[1]}"
-    fi
+    function check_errors(file, i,    fn_line) {
+      if (is_suppressed(i, "errors-doc-ok")) return
+      fn_line = fn_line_after(i)
+      if (fn_line == 0) return
+      if (signature_from(fn_line) !~ /->.*(Result|PyResult|Option)/) print "errors\t" i "\t" fn_name_of(lines[fn_line]) "\t" file
+    }
 
-    # Build signature to check return type
-    sig=""
-    for ((j = fn_idx; j < total && j <= fn_idx + 40; j++)); do
-      sig+="${lines[j]}"
-      if [[ "${lines[j]}" == *'{'* ]]; then
-        break
-      fi
-    done
+    {
+      file = $0
+      total = 0
+      while ((status = (getline line < file)) > 0) lines[++total] = line
+      close(file)
+      if (status < 0) {
+        print "ERROR: cannot read " file > "/dev/stderr"
+        exit 1
+      }
 
-    # Only check Result-returning functions
-    if [[ ! "$sig" =~ -\>.*(Result|PyResult) ]]; then
-      continue
-    fi
+      for (i = 1; i <= total; i++) {
+        if (lines[i] !~ /\/\/\/ # (Panics|Errors)/) continue
+        if (index(lines[i], "# Panics") > 0) check_panics(file, i)
+        else check_errors(file, i)
+      }
+      split("", lines)
+    }
+  ' <<< "$doc_section_files")
+fi
 
-    # Find function body boundaries via brace counting
-    brace_count=0
-    body_start=""
-    body_end=""
-    for ((j = fn_idx; j < total && j <= fn_idx + 500; j++)); do
-      l="${lines[j]}"
-      opens="${l//[^\{]/}"
-      closes="${l//[^\}]/}"
-      brace_count=$((brace_count + ${#opens} - ${#closes}))
-      if [[ -z "$body_start" ]] && [[ ${#opens} -gt 0 ]]; then
-        body_start=$j
-      fi
-      if [[ -n "$body_start" ]] && [[ $brace_count -le 0 ]]; then
-        body_end=$j
-        break
-      fi
-    done
-    [[ -z "$body_end" ]] && continue
+while IFS=$'\t' read -r kind line_num fn_name file; do
+  [[ -z "$kind" ]] && continue
 
-    # Check body for panic tokens
-    has_panic=false
-    for ((j = body_start; j <= body_end; j++)); do
-      if [[ "${lines[j]}" =~ $PANIC_BODY_RE ]]; then
-        has_panic=true
-        break
-      fi
-    done
-
-    if [[ "$has_panic" == false ]]; then
+  case "$kind" in
+    contradictory)
+      echo -e "${RED}Error:${NC} Self-contradictory \`# Panics\` doc on \`${fn_name}\` in $file:$line_num"
+      echo "  Doc says function does not panic under a \`# Panics\` heading"
+      echo "  Remove the \`# Panics\` section entirely"
+      echo
+      ;;
+    panics)
       echo -e "${RED}Error:${NC} False \`# Panics\` doc on \`${fn_name}\` in $file:$line_num"
       echo "  Function returns Result and contains no panic-inducing code"
       echo "  Remove the \`# Panics\` section, use \`# Errors\` instead,"
       echo "  or add \`// panics-doc-ok\` if the panic is in a called function"
       echo
-      VIOLATIONS=$((VIOLATIONS + 1))
-    fi
-
-  else
-    # --- Check `# Errors` docs ---
-
-    # Check for suppression above the doc block
-    suppressed=false
-    j=$((idx - 1))
-    while [[ $j -ge 0 ]]; do
-      if [[ "${lines[j]}" =~ $DOC_RE ]]; then
-        j=$((j - 1))
-        continue
-      fi
-      if [[ "${lines[j]}" == *'errors-doc-ok'* ]]; then
-        suppressed=true
-      fi
-      break
-    done
-    [[ "$suppressed" == true ]] && continue
-
-    # Find fn declaration
-    fn_idx=""
-    for ((j = idx + 1; j < total && j <= idx + 20; j++)); do
-      if [[ "${lines[j]}" =~ $FN_RE ]]; then
-        fn_idx=$j
-        break
-      fi
-    done
-    [[ -z "$fn_idx" ]] && continue
-
-    # Extract fn name
-    fn_name=""
-    if [[ "${lines[fn_idx]}" =~ $FN_NAME_RE ]]; then
-      fn_name="${BASH_REMATCH[1]}"
-    fi
-
-    # Build signature to check return type
-    sig=""
-    for ((j = fn_idx; j < total && j <= fn_idx + 40; j++)); do
-      sig+="${lines[j]}"
-      if [[ "${lines[j]}" == *'{'* ]]; then
-        break
-      fi
-    done
-
-    if [[ ! "$sig" =~ -\>.*(Result|PyResult|Option) ]]; then
+      ;;
+    errors)
       echo -e "${RED}Error:${NC} False \`# Errors\` doc on \`${fn_name}\` in $file:$line_num"
       echo "  Function does not return Result or Option"
       echo "  Remove the \`# Errors\` section"
       echo
-      VIOLATIONS=$((VIOLATIONS + 1))
-    fi
-  fi
-
-done < <(rg -n '/// # (Panics|Errors)' crates --type rust --sort path 2> /dev/null || true)
+      ;;
+  esac
+  VIOLATIONS=$((VIOLATIONS + 1))
+done <<< "$doc_section_output"
 
 while IFS= read -r manifest; do
   expected=$(manifest_feature_names "$manifest")
@@ -347,31 +299,28 @@ done < <(rg --files crates -g Cargo.toml 2> /dev/null | LC_ALL=C sort)
 # Markdown table checks (docs/**/*.md)
 # =============================================================================
 
-while IFS= read -r md_file; do
-  [[ -f "$md_file" ]] || continue
+# One ripgrep pass per rule; each hit is reported as file:line:content. Hidden
+# files are included because the replaced find walk scanned them.
+report_markdown_hits() {
+  local message="$1"
+  local pattern="$2"
+  local hit
 
-  # Hyphen-split words in table rows: "configu- ration"
-  while IFS= read -r match; do
-    [[ -z "$match" ]] && continue
-    echo -e "${RED}Error:${NC} Possible word split in ${md_file}:${match}"
+  while IFS= read -r hit; do
+    [[ -z "$hit" ]] && continue
+    echo -e "${RED}Error:${NC} $message in $hit"
     VIOLATIONS=$((VIOLATIONS + 1))
-  done < <(rg -n '^\|.*[a-z]- [a-z]' "$md_file" 2> /dev/null || true)
+  done < <(rg -n --no-heading --hidden "$pattern" docs -g '*.md' --sort path 2> /dev/null || true)
+}
 
-  # Soft hyphens (U+00AD)
-  while IFS= read -r match; do
-    [[ -z "$match" ]] && continue
-    echo -e "${RED}Error:${NC} Soft hyphen (U+00AD) in ${md_file}:${match}"
-    VIOLATIONS=$((VIOLATIONS + 1))
-  done < <(rg -n '\x{00AD}' "$md_file" 2> /dev/null || true)
+# Hyphen-split words in table rows: "configu- ration"
+report_markdown_hits "Possible word split" '^\|.*[a-z]- [a-z]'
 
-  # Table lines ending with a trailing hyphen on a word fragment
-  while IFS= read -r match; do
-    [[ -z "$match" ]] && continue
-    echo -e "${RED}Error:${NC} Trailing hyphen at end of table line in ${md_file}:${match}"
-    VIOLATIONS=$((VIOLATIONS + 1))
-  done < <(rg -n '^\|.*[a-z]-\s*$' "$md_file" 2> /dev/null || true)
+# Soft hyphens (U+00AD)
+report_markdown_hits "Soft hyphen (U+00AD)" '\x{00AD}'
 
-done < <(find docs -type f -name "*.md" 2> /dev/null || true)
+# Table lines ending with a trailing hyphen on a word fragment
+report_markdown_hits "Trailing hyphen at end of table line" '^\|.*[a-z]-\s*$'
 
 if [ $VIOLATIONS -gt 0 ]; then
   echo -e "${RED}Found $VIOLATIONS documentation convention violation(s)${NC}"
