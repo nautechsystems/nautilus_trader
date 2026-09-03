@@ -99,9 +99,9 @@ use nautilus_core::{
 use nautilus_model::defi::DefiData;
 use nautilus_model::{
     data::{
-        Bar, BarType, CustomData, Data, DataType, FundingRateUpdate, HasTsInit, IndexPriceUpdate,
-        InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, BarType, CustomData, Data, DataRef, DataType, FundingRateUpdate, HasTsInit,
+        IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDelta,
+        OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
         option_chain::{OptionGreeks, StrikeRange},
     },
     enums::{
@@ -1736,10 +1736,25 @@ impl DataEngine {
 
     /// Processes a `Data` enum instance, dispatching to live handlers.
     pub fn process_data(&mut self, data: Data) {
-        #[cfg(feature = "defi")]
-        let data = match data {
+        match data {
+            Data::Deltas(deltas) => {
+                self.data_count += 1;
+                self.handle_deltas(*deltas);
+            }
+            #[cfg(feature = "defi")]
             Data::Defi(defi) => {
                 self.process_defi_data(*defi);
+            }
+            data => self.process_data_ref(DataRef::from(&data)),
+        }
+    }
+
+    /// Processes a borrowed `Data` enum view, dispatching to live handlers.
+    pub fn process_data_ref(&mut self, data: DataRef<'_>) {
+        #[cfg(feature = "defi")]
+        let data = match data {
+            DataRef::Defi(defi) => {
+                self.process_defi_data(defi.clone());
                 return;
             }
             data => data,
@@ -1748,42 +1763,42 @@ impl DataEngine {
         self.data_count += 1;
 
         match data {
-            Data::Delta(delta) => self.handle_delta(delta),
-            Data::Deltas(deltas) => self.handle_deltas(*deltas),
-            Data::Depth10(depth) => self.handle_depth10(*depth),
-            Data::Quote(quote) => {
-                self.handle_quote(quote);
+            DataRef::Delta(delta) => self.handle_delta(*delta),
+            DataRef::Deltas(deltas) => self.handle_deltas(deltas.clone()),
+            DataRef::Depth10(depth) => self.handle_depth10(*depth),
+            DataRef::Quote(quote) => {
+                self.handle_quote(*quote);
                 self.drain_deferred_commands();
             }
-            Data::Trade(trade) => self.handle_trade(trade),
-            Data::Bar(bar) => self.handle_bar(bar),
-            Data::MarkPrice(mark_price) => {
-                self.handle_mark_price(mark_price);
+            DataRef::Trade(trade) => self.handle_trade(*trade),
+            DataRef::Bar(bar) => self.handle_bar(*bar),
+            DataRef::MarkPrice(mark_price) => {
+                self.handle_mark_price(*mark_price);
                 self.drain_deferred_commands();
             }
-            Data::IndexPrice(index_price) => {
-                self.handle_index_price(index_price);
+            DataRef::IndexPrice(index_price) => {
+                self.handle_index_price(*index_price);
                 self.drain_deferred_commands();
             }
-            Data::FundingRate(funding_rate) => {
-                self.handle_funding_rate(funding_rate);
+            DataRef::FundingRate(funding_rate) => {
+                self.handle_funding_rate(*funding_rate);
                 self.drain_deferred_commands();
             }
-            Data::OptionGreeks(greeks) => {
-                self.cache.borrow_mut().add_option_greeks(greeks);
-                self.feed_option_greeks_to_pre_bootstrap_chain(&greeks);
+            DataRef::OptionGreeks(greeks) => {
+                self.cache.borrow_mut().add_option_greeks(*greeks);
+                self.feed_option_greeks_to_pre_bootstrap_chain(greeks);
                 let topic = switchboard::get_option_greeks_topic(greeks.instrument_id);
-                msgbus::publish_option_greeks(topic, &greeks);
+                msgbus::publish_option_greeks(topic, greeks);
                 self.drain_deferred_commands();
             }
-            Data::InstrumentStatus(status) => {
-                self.handle_instrument_status(status);
+            DataRef::InstrumentStatus(status) => {
+                self.handle_instrument_status(*status);
                 self.drain_deferred_commands();
             }
-            Data::InstrumentClose(close) => self.handle_instrument_close(close),
-            Data::Custom(custom) => self.handle_custom_data(&custom),
+            DataRef::InstrumentClose(close) => self.handle_instrument_close(*close),
+            DataRef::Custom(custom) => self.handle_custom_data(custom),
             #[cfg(feature = "defi")]
-            Data::Defi(_) => unreachable!("handled before market data dispatch"),
+            DataRef::Defi(_) => unreachable!("handled before market data dispatch"),
         }
     }
 

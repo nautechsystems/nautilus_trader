@@ -87,9 +87,9 @@ use nautilus_model::enums::CurrencyType;
 use nautilus_model::enums::{BookAction, OrderSide};
 use nautilus_model::{
     data::{
-        Bar, BarType, BookOrder, CustomData, DEPTH10_LEN, Data, DataType, FundingRateUpdate,
-        IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDelta,
-        OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, BarType, BookOrder, CustomData, DEPTH10_LEN, Data, DataRef, DataType,
+        FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate,
+        OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
         greeks::OptionGreekValues,
         option_chain::{OptionChainSlice, OptionGreeks, StrikeRange},
         stubs::{
@@ -174,6 +174,18 @@ fn data_client(
 ) -> DataClientAdapter {
     let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     DataClientAdapter::new(client_id, Some(venue), true, true, client)
+}
+
+fn dispatch_data(data_engine: &mut DataEngine, data: Data, borrowed: bool) {
+    let count = data_engine.data_count();
+
+    if borrowed {
+        data_engine.process_data_ref(DataRef::from(&data));
+    } else {
+        data_engine.process_data(data);
+    }
+
+    assert_eq!(data_engine.data_count(), count + 1);
 }
 
 // Test helper for registering a mock data client
@@ -8963,7 +8975,10 @@ fn test_process_instrument(
 }
 
 #[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
 fn test_process_book_delta(
+    #[case] borrowed: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
@@ -8994,7 +9009,7 @@ fn test_process_book_delta(
     msgbus::subscribe_book_deltas(topic.into(), handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::Delta(delta));
+    dispatch_data(&mut data_engine, Data::Delta(delta), borrowed);
     let _cache = &data_engine.get_cache();
     let messages = saver.get_messages();
 
@@ -9100,7 +9115,10 @@ fn test_process_book_deltas_buffers_until_f_last(
 }
 
 #[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
 fn test_process_book_deltas(
+    #[case] borrowed: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
@@ -9131,7 +9149,7 @@ fn test_process_book_deltas(
     msgbus::subscribe_book_deltas(topic.into(), handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::Deltas(deltas.clone()));
+    dispatch_data(&mut data_engine, Data::Deltas(deltas.clone()), borrowed);
     let _cache = &data_engine.get_cache();
     let messages = saver.get_messages();
 
@@ -9140,7 +9158,10 @@ fn test_process_book_deltas(
 }
 
 #[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
 fn test_process_book_depth10(
+    #[case] borrowed: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
@@ -9171,7 +9192,7 @@ fn test_process_book_depth10(
     msgbus::subscribe_book_depth10(topic.into(), handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::from(depth));
+    dispatch_data(&mut data_engine, Data::from(depth), borrowed);
     let _cache = &data_engine.get_cache();
     let messages = saver.get_messages();
 
@@ -9180,7 +9201,10 @@ fn test_process_book_depth10(
 }
 
 #[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
 fn test_process_quote_tick(
+    #[case] borrowed: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
@@ -9208,7 +9232,7 @@ fn test_process_quote_tick(
     msgbus::subscribe_quotes(topic.into(), handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::Quote(quote));
+    dispatch_data(&mut data_engine, Data::Quote(quote), borrowed);
     let cache = &data_engine.get_cache();
     let messages = saver.get_messages();
 
@@ -9218,7 +9242,10 @@ fn test_process_quote_tick(
 }
 
 #[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
 fn test_process_trade_tick(
+    #[case] borrowed: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
@@ -9246,7 +9273,7 @@ fn test_process_trade_tick(
     msgbus::subscribe_trades(topic.into(), handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::Trade(trade));
+    dispatch_data(&mut data_engine, Data::Trade(trade), borrowed);
     let cache = &data_engine.get_cache();
     let messages = saver.get_messages();
 
@@ -9791,7 +9818,10 @@ fn test_reset_clears_synthetic_subscriptions(stub_msgbus: Rc<RefCell<MessageBus>
 }
 
 #[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
 fn test_process_mark_price(
+    #[case] borrowed: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
@@ -9824,7 +9854,7 @@ fn test_process_mark_price(
     msgbus::subscribe_mark_prices(topic.into(), typed_handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::MarkPrice(mark_price));
+    dispatch_data(&mut data_engine, Data::MarkPrice(mark_price), borrowed);
     let cache = &data_engine.get_cache();
     let messages = saving_handler.get_messages();
 
@@ -9845,7 +9875,10 @@ fn test_process_mark_price(
 }
 
 #[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
 fn test_process_index_price(
+    #[case] borrowed: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
@@ -9879,7 +9912,7 @@ fn test_process_index_price(
     msgbus::subscribe_index_prices(topic.into(), typed_handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::IndexPrice(index_price));
+    dispatch_data(&mut data_engine, Data::IndexPrice(index_price), borrowed);
     let cache = &data_engine.get_cache();
     let messages = saving_handler.get_messages();
 
@@ -9995,7 +10028,10 @@ fn test_process_funding_rate(
 }
 
 #[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
 fn test_process_funding_rate_data_variant(
+    #[case] borrowed: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
@@ -10031,7 +10067,7 @@ fn test_process_funding_rate_data_variant(
     msgbus::subscribe_funding_rates(topic.into(), typed_handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::FundingRate(funding_rate));
+    dispatch_data(&mut data_engine, Data::FundingRate(funding_rate), borrowed);
     let cache = &data_engine.get_cache();
     let messages = saving_handler.get_messages();
 
@@ -10097,7 +10133,13 @@ fn test_process_funding_rate_updates_existing(
 }
 
 #[rstest]
-fn test_process_bar(data_engine: Rc<RefCell<DataEngine>>, data_client: DataClientAdapter) {
+#[case::owned(false)]
+#[case::borrowed(true)]
+fn test_process_bar(
+    #[case] borrowed: bool,
+    data_engine: Rc<RefCell<DataEngine>>,
+    data_client: DataClientAdapter,
+) {
     let client_id = data_client.client_id;
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
@@ -10122,7 +10164,7 @@ fn test_process_bar(data_engine: Rc<RefCell<DataEngine>>, data_client: DataClien
     msgbus::subscribe_bars(topic.into(), handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::Bar(bar));
+    dispatch_data(&mut data_engine, Data::Bar(bar), borrowed);
     let cache = &data_engine.get_cache();
     let messages = saver.get_messages();
 
@@ -10132,7 +10174,10 @@ fn test_process_bar(data_engine: Rc<RefCell<DataEngine>>, data_client: DataClien
 }
 
 #[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
 fn test_process_instrument_status(
+    #[case] borrowed: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
@@ -10170,7 +10215,7 @@ fn test_process_instrument_status(
     msgbus::subscribe_any(topic.into(), handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::InstrumentStatus(status));
+    dispatch_data(&mut data_engine, Data::InstrumentStatus(status), borrowed);
     let cache = data_engine.get_cache();
     let messages = msgbus::stubs::get_saved_messages::<InstrumentStatus>(&handler);
 
@@ -10181,6 +10226,34 @@ fn test_process_instrument_status(
         cache.instrument_statuses(&audusd_sim.id),
         Some(vec![status]),
     );
+}
+
+#[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
+fn test_process_instrument_close(
+    #[case] borrowed: bool,
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+) {
+    let close = InstrumentClose::new(
+        audusd_sim.id,
+        Price::from("0.8000"),
+        InstrumentCloseType::EndOfSession,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    let (handler, saver) = get_any_saving_handler::<InstrumentClose>(None);
+    let topic = switchboard::get_instrument_close_topic(close.instrument_id);
+    msgbus::subscribe_any(topic.into(), handler, None);
+
+    dispatch_data(
+        &mut data_engine.borrow_mut(),
+        Data::InstrumentClose(close),
+        borrowed,
+    );
+
+    assert_eq!(saver.get_messages(), vec![close]);
 }
 
 #[rstest]
@@ -14133,11 +14206,19 @@ fn test_subscribe_option_chain_atm_relative_requests_forward_prices(
     );
 }
 
+#[derive(Clone, Copy)]
+enum OptionGreeksDispatch {
+    DataOwned,
+    TypedAny,
+    DataBorrowed,
+}
+
 #[rstest]
-#[case::data_enum(true)]
-#[case::typed_any(false)]
+#[case::data_owned(OptionGreeksDispatch::DataOwned)]
+#[case::typed_any(OptionGreeksDispatch::TypedAny)]
+#[case::data_borrowed(OptionGreeksDispatch::DataBorrowed)]
 fn test_option_chain_deferred_bootstrap_from_greeks_keeps_bootstrap_event(
-    #[case] use_data_enum: bool,
+    #[case] dispatch: OptionGreeksDispatch,
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
 ) {
@@ -14230,12 +14311,14 @@ fn test_option_chain_deferred_bootstrap_from_greeks_keeps_bootstrap_event(
         ts_init: UnixNanos::from(1u64),
     };
 
-    if use_data_enum {
-        data_engine
+    match dispatch {
+        OptionGreeksDispatch::DataOwned => data_engine
             .borrow_mut()
-            .process_data(Data::OptionGreeks(greeks));
-    } else {
-        data_engine.borrow_mut().process(&greeks);
+            .process_data(Data::OptionGreeks(greeks)),
+        OptionGreeksDispatch::TypedAny => data_engine.borrow_mut().process(&greeks),
+        OptionGreeksDispatch::DataBorrowed => data_engine
+            .borrow_mut()
+            .process_data_ref(DataRef::OptionGreeks(&greeks)),
     }
 
     let recorded = recorder.borrow();
@@ -14862,7 +14945,10 @@ fn test_custom_data_response_does_not_publish_payload_to_custom_topic(
 }
 
 #[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
 fn test_process_custom_data_through_any_publishes_to_custom_topic(
+    #[case] borrowed: bool,
     _stub_msgbus: Rc<RefCell<MessageBus>>,
     data_engine: Rc<RefCell<DataEngine>>,
 ) {
@@ -14883,7 +14969,7 @@ fn test_process_custom_data_through_any_publishes_to_custom_topic(
     assert_eq!(saver.get_messages(), vec![custom.clone()]);
     assert_eq!(data_engine.data_count(), 1);
 
-    data_engine.process_data(Data::Custom(custom.clone()));
+    dispatch_data(&mut data_engine, Data::Custom(custom.clone()), borrowed);
 
     assert_eq!(saver.get_messages(), vec![custom.clone(), custom]);
     assert_eq!(data_engine.data_count(), 2);
@@ -14939,7 +15025,10 @@ fn test_execute_defi_command_counters(data_engine: Rc<RefCell<DataEngine>>) {
 
 #[cfg(feature = "defi")]
 #[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
 fn test_process_defi_data_increments_data_count(
+    #[case] borrowed: bool,
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
 ) {
@@ -14959,7 +15048,11 @@ fn test_process_defi_data_increments_data_count(
 
     let mut data_engine = data_engine.borrow_mut();
     assert_eq!(data_engine.data_count(), 0);
-    data_engine.process_defi_data(DefiData::Block(block));
+    dispatch_data(
+        &mut data_engine,
+        Data::Defi(Box::new(DefiData::Block(block))),
+        borrowed,
+    );
     assert_eq!(data_engine.data_count(), 1);
 }
 

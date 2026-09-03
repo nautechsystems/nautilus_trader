@@ -52,7 +52,7 @@ use nautilus_data::client::DataClientAdapter;
 use nautilus_execution::models::fill::FillModelHandle;
 use nautilus_model::{
     accounts::{Account, AccountAny},
-    data::{Data, HasTsInit},
+    data::{Data, DataRef, HasTsInit},
     enums::{AccountType, AggregationSource, BookType},
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -848,7 +848,7 @@ impl BacktestEngine {
                 break;
             }
 
-            self.route_data_to_exchange(&d)?;
+            self.route_data_to_exchange(DataRef::from(&d))?;
             self.kernel.data_engine.borrow_mut().process_data(d);
 
             // Drain deferred commands, then process exchange queues
@@ -1426,15 +1426,18 @@ impl BacktestEngine {
         summary
     }
 
-    fn route_data_to_exchange(&mut self, data: &Data) -> anyhow::Result<()> {
+    fn route_data_to_exchange(&mut self, data: DataRef<'_>) -> anyhow::Result<()> {
         if matches!(
             data,
-            Data::MarkPrice(_) | Data::IndexPrice(_) | Data::OptionGreeks(_) | Data::Custom(_)
+            DataRef::MarkPrice(_)
+                | DataRef::IndexPrice(_)
+                | DataRef::OptionGreeks(_)
+                | DataRef::Custom(_)
         ) {
             return Ok(());
         }
         #[cfg(feature = "defi")]
-        if matches!(data, Data::Defi(_)) {
+        if matches!(data, DataRef::Defi(_)) {
             return Ok(());
         }
 
@@ -1444,31 +1447,38 @@ impl BacktestEngine {
             let mut processed_book_data = false;
 
             match data {
-                Data::Delta(delta) => {
+                DataRef::Delta(delta) => {
                     exchange_ref.process_order_book_delta(*delta)?;
                     processed_book_data = true;
                 }
-                Data::Deltas(deltas) => {
+                DataRef::Deltas(deltas) => {
                     exchange_ref.process_order_book_deltas(deltas)?;
                     processed_book_data = true;
                 }
-                Data::Depth10(depth) => {
+                DataRef::Depth10(depth) => {
                     exchange_ref.process_order_book_depth10(depth)?;
                     processed_book_data = true;
                 }
-                Data::Quote(quote) => exchange_ref.process_quote_tick(quote)?,
-                Data::Trade(trade) => exchange_ref.process_trade_tick(trade)?,
-                Data::Bar(bar) => exchange_ref.process_bar(*bar)?,
-                Data::InstrumentStatus(status) => {
+                DataRef::Quote(quote) => exchange_ref.process_quote_tick(quote)?,
+                DataRef::Trade(trade) => exchange_ref.process_trade_tick(trade)?,
+                DataRef::Bar(bar) => exchange_ref.process_bar(*bar)?,
+                DataRef::InstrumentStatus(status) => {
                     exchange_ref.process_instrument_status(*status)?;
                 }
-                Data::InstrumentClose(close) => exchange_ref.process_instrument_close(*close)?,
-                Data::FundingRate(funding) => {
+                DataRef::InstrumentClose(close) => {
+                    exchange_ref.process_instrument_close(*close)?;
+                }
+                DataRef::FundingRate(funding) => {
                     let settlement_ns =
                         exchange_ref.process_funding_rate_deferred(*funding, data.ts_init())?;
                     self.schedule_funding_settlement_if_required(venue, settlement_ns);
                 }
-                _ => {}
+                DataRef::MarkPrice(_)
+                | DataRef::IndexPrice(_)
+                | DataRef::OptionGreeks(_)
+                | DataRef::Custom(_) => unreachable!("filtered before exchange routing"),
+                #[cfg(feature = "defi")]
+                DataRef::Defi(_) => unreachable!("filtered before exchange routing"),
             }
 
             drop(exchange_ref);
@@ -3434,7 +3444,7 @@ mod tests {
         );
 
         engine
-            .route_data_to_exchange(&Data::InstrumentStatus(status))
+            .route_data_to_exchange(DataRef::InstrumentStatus(&status))
             .unwrap();
 
         let exchange = engine.venues.get(&instrument_id.venue).unwrap().borrow();
