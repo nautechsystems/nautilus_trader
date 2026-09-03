@@ -27,6 +27,7 @@ use arrow::{
 };
 use nautilus_core::Params;
 use nautilus_model::{
+    enums::AssetClass,
     identifiers::{InstrumentId, Symbol},
     instruments::futures_contract::FuturesContract,
     types::{price::Price, quantity::Quantity},
@@ -119,7 +120,7 @@ impl EncodeToRecordBatch for FuturesContract {
             id_builder.append_value(fc.id.to_string());
             raw_symbol_builder.append_value(fc.raw_symbol);
             underlying_builder.append_value(fc.underlying);
-            asset_class_builder.append_value(super::asset_class_to_string(fc.asset_class));
+            asset_class_builder.append_value(fc.asset_class);
 
             if let Some(exchange) = fc.exchange {
                 exchange_builder.append_value(exchange);
@@ -314,7 +315,8 @@ pub fn decode_futures_contract_batch(
             .map_err(|e| EncodingError::ParseError("id", format!("row {i}: {e}")))?;
         let raw_symbol = Symbol::from(raw_symbol_values.value(i));
         let underlying = Ustr::from(underlying_values.value(i));
-        let asset_class = super::asset_class_from_str(asset_class_values.value(i))?;
+        let asset_class = AssetClass::from_str(asset_class_values.value(i))
+            .map_err(|e| EncodingError::ParseError("asset_class", format!("row {i}: {e}")))?;
 
         let exchange = if exchange_values.is_null(i) {
             None

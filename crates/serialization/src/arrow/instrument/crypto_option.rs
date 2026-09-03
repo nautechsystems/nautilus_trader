@@ -28,6 +28,7 @@ use arrow::{
 };
 use nautilus_core::Params;
 use nautilus_model::{
+    enums::OptionKind,
     identifiers::{InstrumentId, Symbol},
     instruments::crypto_option::CryptoOption,
     types::{money::Money, price::Price, quantity::Quantity},
@@ -130,7 +131,7 @@ impl EncodeToRecordBatch for CryptoOption {
             quote_currency_builder.append_value(co.quote_currency.to_string());
             settlement_currency_builder.append_value(co.settlement_currency.to_string());
             is_inverse_builder.append_value(co.is_inverse);
-            option_kind_builder.append_value(super::option_kind_to_string(co.option_kind));
+            option_kind_builder.append_value(co.option_kind);
             strike_price_builder.append_value(co.strike_price.to_string());
             activation_ns_builder.append_value(co.activation_ns.as_u64());
             expiration_ns_builder.append_value(co.expiration_ns.as_u64());
@@ -382,7 +383,8 @@ pub fn decode_crypto_option_batch(
             i,
         )?;
         let is_inverse = is_inverse_values.value(i);
-        let option_kind = super::option_kind_from_str(option_kind_values.value(i))?;
+        let option_kind = OptionKind::from_str(option_kind_values.value(i))
+            .map_err(|e| EncodingError::ParseError("option_kind", format!("row {i}: {e}")))?;
         let strike_price = Price::from_str(strike_price_values.value(i))
             .map_err(|e| EncodingError::ParseError("strike_price", format!("row {i}: {e}")))?;
         let activation_ns = nautilus_core::UnixNanos::from(activation_ns_values.value(i));

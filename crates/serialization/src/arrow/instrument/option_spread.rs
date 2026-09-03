@@ -27,6 +27,7 @@ use arrow::{
 };
 use nautilus_core::Params;
 use nautilus_model::{
+    enums::AssetClass,
     identifiers::{InstrumentId, Symbol},
     instruments::option_spread::OptionSpread,
     types::{price::Price, quantity::Quantity},
@@ -122,7 +123,7 @@ impl EncodeToRecordBatch for OptionSpread {
             raw_symbol_builder.append_value(os.raw_symbol);
             underlying_builder.append_value(os.underlying);
             strategy_type_builder.append_value(os.strategy_type);
-            asset_class_builder.append_value(super::asset_class_to_string(os.asset_class));
+            asset_class_builder.append_value(os.asset_class);
 
             if let Some(exchange) = os.exchange {
                 exchange_builder.append_value(exchange);
@@ -329,7 +330,8 @@ pub fn decode_option_spread_batch(
         let raw_symbol = Symbol::from(raw_symbol_values.value(i));
         let underlying = Ustr::from(underlying_values.value(i));
         let strategy_type = Ustr::from(strategy_type_values.value(i));
-        let asset_class = super::asset_class_from_str(asset_class_values.value(i))?;
+        let asset_class = AssetClass::from_str(asset_class_values.value(i))
+            .map_err(|e| EncodingError::ParseError("asset_class", format!("row {i}: {e}")))?;
 
         let exchange = if exchange_values.is_null(i) {
             None

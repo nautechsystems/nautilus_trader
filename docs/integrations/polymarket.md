@@ -1065,7 +1065,7 @@ Resolution uses strict winner inference:
 
 When the client applies a resolution, it emits one `InstrumentStatus` close and one
 `InstrumentClose` per tracked leg. The winner leg closes at `1`, and the losing leg closes at `0`.
-The close type is `InstrumentCloseType.ContractExpired`. This event closes Nautilus exposure and
+The close type is `InstrumentCloseType.CONTRACT_EXPIRED`. This event closes Nautilus exposure and
 does not redeem tokens or claim funds on-chain.
 
 The same apply path handles WebSocket `market_resolved` events, automatic polling, and manual

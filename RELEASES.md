@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Added `Cache` APIs and Redis/PostgreSQL persistence for `InstrumentClose` data, with later values
   replacing earlier values for the same instrument
 - Added `avg_px` and report window fields to persisted execution reports
+- Added the standard Python enum surface (`from_str`, `name`, `value`, `variants`) to `BarIntervalType`
 
 ### Breaking Changes
 
@@ -17,6 +18,9 @@ Released on TBD (UTC).
 - Changed backtest and sandbox venues to reject reduce-only orders when `use_reduce_only=false`
 - Changed v2 PostgreSQL cache startup to require the `instrument_close` table; run `nautilus database init`
 - Changed Binance `close_position` orders to require `reduce_only=true` in Nautilus
+- Changed Arrow instrument `asset_class` and `option_kind` columns to the canonical enum labels
+  such as `EQUITY` and `CALL`; existing catalogs still decode, but earlier versions cannot read
+  newly written files
 
 ### Security
 
@@ -27,6 +31,7 @@ Released on TBD (UTC).
 ### Internal Improvements
 
 - Added Cap'n Proto validation for decoded identifiers, currencies, balances, and decimals
+- Added serde support for `BetSide` and `OtoTriggerMode`
 - Added crate feature documentation checks for README and Rustdoc lists
 - Improved Betfair execution client test synchronization (#4866), thanks @folknor
 - Pinned docs.rs checks to a compatible nightly toolchain
@@ -43,6 +48,9 @@ Released on TBD (UTC).
 - Upgraded `linkify-it-py` package to v2.1.1
 
 ### Documentation Updates
+
+- Corrected documented enum values for instrument classes, wallet accounts, position entry sides,
+  and Polymarket close types
 
 ### Deprecations
 

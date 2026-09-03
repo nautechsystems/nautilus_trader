@@ -27,6 +27,7 @@ use arrow::{
 };
 use nautilus_core::Params;
 use nautilus_model::{
+    enums::AssetClass,
     identifiers::{InstrumentId, Symbol},
     instruments::binary_option::BinaryOption,
     types::{money::Money, price::Price, quantity::Quantity},
@@ -118,7 +119,7 @@ impl EncodeToRecordBatch for BinaryOption {
         for bo in data {
             id_builder.append_value(bo.id.to_string());
             raw_symbol_builder.append_value(bo.raw_symbol);
-            asset_class_builder.append_value(super::asset_class_to_string(bo.asset_class));
+            asset_class_builder.append_value(bo.asset_class);
             currency_builder.append_value(bo.currency.to_string());
             price_precision_builder.append_value(bo.price_precision);
             size_precision_builder.append_value(bo.size_precision);
@@ -333,7 +334,8 @@ pub fn decode_binary_option_batch(
         let id = InstrumentId::from_str(id_values.value(i))
             .map_err(|e| EncodingError::ParseError("id", format!("row {i}: {e}")))?;
         let raw_symbol = Symbol::from(raw_symbol_values.value(i));
-        let asset_class = super::asset_class_from_str(asset_class_values.value(i))?;
+        let asset_class = AssetClass::from_str(asset_class_values.value(i))
+            .map_err(|e| EncodingError::ParseError("asset_class", format!("row {i}: {e}")))?;
         let currency = super::decode_currency(
             currency_values.value(i),
             "currency",

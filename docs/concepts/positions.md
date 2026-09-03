@@ -332,7 +332,7 @@ panics if the calculation fails.
 ### Position state
 
 - `side`: Current position side (`LONG`, `SHORT`, or `FLAT`).
-- `entry`: Opening side for the current cycle (`Buy` for `LONG`, `Sell` for `SHORT`). Updates when
+- `entry`: Opening side for the current cycle (`BUY` for `LONG`, `SELL` for `SHORT`). Updates when
   the position reverses direction.
 - `quantity`: Current absolute position size.
 - `signed_qty`: Signed position size (positive for `LONG`, negative for `SHORT`).

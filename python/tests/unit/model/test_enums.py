@@ -20,6 +20,7 @@ import pytest
 
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import AggressorSide
+from nautilus_trader.model import BarIntervalType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import InstrumentClass
@@ -180,6 +181,22 @@ def test_model_enums_from_str(enum_type: object, member: object, name: object) -
     assert enum_type.from_str(name) == member
     assert member.name == name
     assert isinstance(hash(member), int)
+
+
+def test_bar_interval_type_exposes_standard_enum_surface() -> None:
+    """
+    Test bar interval type exposes the standard model enum surface.
+    """
+    assert list(BarIntervalType.variants()) == [
+        BarIntervalType.LEFT_OPEN,
+        BarIntervalType.RIGHT_OPEN,
+    ]
+    assert BarIntervalType.from_str("LEFT_OPEN") == BarIntervalType.LEFT_OPEN
+    assert BarIntervalType("RIGHT_OPEN") == BarIntervalType.RIGHT_OPEN
+    assert BarIntervalType.LEFT_OPEN.name == "LEFT_OPEN"
+    assert str(BarIntervalType.LEFT_OPEN) == "LEFT_OPEN"
+    assert BarIntervalType.LEFT_OPEN.value == 1
+    assert BarIntervalType.RIGHT_OPEN.value == 2
 
 
 def test_trading_state_values_progress_by_restriction() -> None:

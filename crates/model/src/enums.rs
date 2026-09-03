@@ -2102,6 +2102,7 @@ enum_strum_serde!(AggressorSide);
 enum_strum_serde!(AssetClass);
 enum_strum_serde!(BarAggregation);
 enum_strum_serde!(BarIntervalType);
+enum_strum_serde!(BetSide);
 enum_strum_serde!(BookAction);
 enum_strum_serde!(BookType);
 enum_strum_serde!(ContingencyType);
@@ -2118,6 +2119,7 @@ enum_strum_serde!(OptionKind);
 enum_strum_serde!(OrderSide);
 enum_strum_serde!(OrderStatus);
 enum_strum_serde!(OrderType);
+enum_strum_serde!(OtoTriggerMode);
 enum_strum_serde!(PositionAdjustmentType);
 enum_strum_serde!(PositionSide);
 enum_strum_serde!(PriceType);
@@ -2225,6 +2227,46 @@ mod tests {
     #[case(r#"{"contingency":"NO_CONTINGENCY","trailing_offset":"NO_TRAILING_OFFSET","trigger":"INVALID"}"#)]
     fn test_optional_order_types_serde_rejects_invalid_values(#[case] json: &str) {
         assert!(serde_json::from_str::<OptionalOrderTypes>(json).is_err());
+    }
+
+    #[rstest]
+    #[case::bet_side_back(BetSide::Back, r#""BACK""#)]
+    #[case::bet_side_lay(BetSide::Lay, r#""LAY""#)]
+    fn test_bet_side_serde_uses_canonical_label(#[case] value: BetSide, #[case] expected: &str) {
+        let json = serde_json::to_string(&value).unwrap();
+
+        assert_eq!(json, expected);
+        assert_eq!(serde_json::from_str::<BetSide>(&json).unwrap(), value);
+    }
+
+    #[rstest]
+    #[case::oto_trigger_mode_partial(OtoTriggerMode::Partial, r#""PARTIAL""#)]
+    #[case::oto_trigger_mode_full(OtoTriggerMode::Full, r#""FULL""#)]
+    fn test_oto_trigger_mode_serde_uses_canonical_label(
+        #[case] value: OtoTriggerMode,
+        #[case] expected: &str,
+    ) {
+        let json = serde_json::to_string(&value).unwrap();
+
+        assert_eq!(json, expected);
+        assert_eq!(
+            serde_json::from_str::<OtoTriggerMode>(&json).unwrap(),
+            value
+        );
+    }
+
+    #[rstest]
+    #[case::pascal(r#""Back""#, BetSide::Back)]
+    #[case::lower(r#""lay""#, BetSide::Lay)]
+    fn test_bet_side_serde_is_case_insensitive(#[case] json: &str, #[case] expected: BetSide) {
+        assert_eq!(serde_json::from_str::<BetSide>(json).unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case::wrong_domain(r#""BUY""#)]
+    #[case::empty(r#""""#)]
+    fn test_bet_side_serde_rejects_unknown_label(#[case] json: &str) {
+        assert!(serde_json::from_str::<BetSide>(json).is_err());
     }
 
     #[rstest]
