@@ -48,8 +48,7 @@ use nautilus_common::{
         ExecutionReport,
         execution::{
             BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
-            PARAMS_EMERGENCY_EXIT, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
-            TradingCommand,
+            QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
         },
     },
     msgbus::{
@@ -1925,7 +1924,6 @@ impl ExecutionEngine {
         self.event_count = 0;
         self.report_count = 0;
         self.filtered_unclaimed_external_order_count = 0;
-
         log::info!("Reset");
     }
 
@@ -1956,10 +1954,6 @@ impl ExecutionEngine {
         if let Some(cid) = command.client_id()
             && self.external_clients.contains(&cid)
         {
-            if self.deny_external_emergency_exit(&command, cid) {
-                return;
-            }
-
             let topic = format!("commands.trading.{cid}");
             msgbus::publish_any(topic.into(), &command);
 
@@ -2024,46 +2018,6 @@ impl ExecutionEngine {
             TradingCommand::QueryOrder(cmd) => self.handle_query_order(client, cmd),
             TradingCommand::QueryAccount(cmd) => self.handle_query_account(client, cmd),
         }
-    }
-
-    fn deny_external_emergency_exit(&self, command: &TradingCommand, client_id: ClientId) -> bool {
-        let TradingCommand::SubmitOrder(cmd) = command else {
-            return false;
-        };
-        let is_verified_emergency_exit = cmd
-            .params
-            .as_ref()
-            .and_then(|params| params.get_bool(PARAMS_EMERGENCY_EXIT))
-            .unwrap_or(false);
-
-        if !is_verified_emergency_exit {
-            return false;
-        }
-
-        let cached_order = {
-            self.cache
-                .borrow()
-                .order(&cmd.client_order_id)
-                .map(|o| o.clone())
-        };
-        let order = cached_order
-            .or_else(|| self.add_order_from_init(&cmd.order_init, cmd.position_id, cmd));
-        let Some(order) = order else {
-            log::error!(
-                "Cannot deny external emergency exit: client_order_id={}, external_client_id={client_id}, suppressed_command={cmd}",
-                cmd.client_order_id,
-            );
-            return true;
-        };
-
-        let reason = OrderDeniedReason::ReduceOnlyEnforcementNotEstablished {
-            client_id,
-            instrument_id: order.instrument_id(),
-        }
-        .to_string();
-        self.deny_order(&order, &reason);
-
-        true
     }
 
     fn routing_context_for_command(command: &TradingCommand) -> String {
@@ -2183,23 +2137,6 @@ impl ExecutionEngine {
                 client_id,
                 order_venue,
                 client_venue,
-            }
-            .to_string();
-            self.deny_order(&order, &reason);
-            return;
-        }
-
-        let is_verified_emergency_exit = cmd
-            .params
-            .as_ref()
-            .and_then(|params| params.get_bool(PARAMS_EMERGENCY_EXIT))
-            .unwrap_or(false);
-        // This marker records risk-engine provenance in the supported pipeline; it is not an
-        // authentication boundary for components that publish directly to execution.
-        if is_verified_emergency_exit && !client.enforces_reduce_only(&cmd, &order) {
-            let reason = OrderDeniedReason::ReduceOnlyNotEnforced {
-                client_id: client.client_id(),
-                instrument_id: order.instrument_id(),
             }
             .to_string();
             self.deny_order(&order, &reason);

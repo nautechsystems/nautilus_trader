@@ -117,7 +117,7 @@ use crate::{
         consts::{
             OKX_FIELD_SCODE, OKX_FIELD_SMSG, OKX_HTTP_URL, OKX_NAUTILUS_BROKER_ID,
             OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE, OKX_SUPPORTED_ORDER_TYPES,
-            OKX_SUPPORTED_TIME_IN_FORCE,
+            OKX_SUPPORTED_TIME_IN_FORCE, okx_reduce_only_wire_value,
         },
         credential::Credential,
         enums::{
@@ -6273,9 +6273,15 @@ impl OKXHttpClient {
             speed_bump
         };
 
-        // reduceOnly is not applicable to options per OKX docs
-        let reduce_only = if instrument_type == OKXInstrumentType::Option {
-            None
+        let reduce_only = if reduce_only == Some(true) {
+            okx_reduce_only_wire_value(
+                instrument_type,
+                td_mode,
+                order_side,
+                position_side,
+                reduce_only,
+            )
+            .map_err(OKXHttpError::ValidationError)?
         } else {
             reduce_only
         };

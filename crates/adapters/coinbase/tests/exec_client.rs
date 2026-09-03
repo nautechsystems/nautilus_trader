@@ -58,7 +58,7 @@ use nautilus_common::{
         ExecutionEvent,
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GeneratePositionStatusReports,
-            GeneratePositionStatusReportsBuilder, ModifyOrder,
+            GeneratePositionStatusReportsBuilder, ModifyOrder, SubmitOrder, SubmitOrderList,
         },
     },
     testing::wait_until_async,
@@ -69,9 +69,11 @@ use nautilus_model::{
     enums::{AccountType, OmsType, OrderSide, OrderType, PositionSide, TimeInForce},
     events::OrderEventAny,
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId,
+        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId,
+        VenueOrderId,
     },
     instruments::InstrumentAny,
+    orders::{Order, OrderList, builder::OrderTestBuilder},
     types::{Price, Quantity},
 };
 use nautilus_network::retry::RetryConfig;
@@ -1561,7 +1563,7 @@ async fn test_http_request_position_status_report_single_product() {
 
 #[rstest]
 #[tokio::test]
-async fn test_http_submit_order_threads_leverage_margin_type_reduce_only() {
+async fn test_http_submit_order_rejects_reduce_only_before_transport() {
     use nautilus_coinbase::common::enums::CoinbaseMarginType;
 
     let state = TestState::default();
@@ -1573,7 +1575,7 @@ async fn test_http_submit_order_threads_leverage_margin_type_reduce_only() {
     let addr = start_mock_server(state.clone()).await;
     let client = create_http_client(addr);
 
-    let _ = client
+    let error = client
         .submit_order(
             ClientOrderId::new("client-500"),
             btc_usd_instrument_id(),
@@ -1592,14 +1594,13 @@ async fn test_http_submit_order_threads_leverage_margin_type_reduce_only() {
             None,
         )
         .await
-        .expect("submit should succeed");
+        .unwrap_err();
 
-    let requests = state.requests_for("/orders");
-    assert_eq!(requests.len(), 1);
-    let body = requests[0].body.as_ref().expect("POST body captured");
-    assert_eq!(body["leverage"], "5");
-    assert_eq!(body["margin_type"], "CROSS");
-    assert_eq!(body["reduce_only"], true);
+    assert_eq!(
+        error.to_string(),
+        "Reduce-only orders are not supported by Coinbase Advanced Trade"
+    );
+    assert!(state.requests_for("/orders").is_empty());
 }
 
 // reduce_only must not leak into the wire payload when the order is not
@@ -1665,6 +1666,18 @@ fn make_exec_client_with_events(
     CoinbaseExecutionClient,
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
 ) {
+    let (client, rx, _) = make_exec_client_with_events_and_cache(addr, account_type);
+    (client, rx)
+}
+
+fn make_exec_client_with_events_and_cache(
+    addr: std::net::SocketAddr,
+    account_type: AccountType,
+) -> (
+    CoinbaseExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    std::rc::Rc<std::cell::RefCell<Cache>>,
+) {
     // The emitter inside the exec client publishes on the global runner
     // sender; install a fresh channel so tests can either observe events or
     // drop the receiver when they only call report-generation methods.
@@ -1680,7 +1693,7 @@ fn make_exec_client_with_events(
         AccountId::from("COINBASE-001"),
         account_type,
         None,
-        cache,
+        cache.clone(),
     );
 
     let config = CoinbaseExecutionClientConfig {
@@ -1694,6 +1707,7 @@ fn make_exec_client_with_events(
     (
         CoinbaseExecutionClient::new(core, config).expect("exec client construction"),
         rx,
+        cache,
     )
 }
 
@@ -1754,6 +1768,168 @@ async fn assert_no_order_event_matching<F>(
             );
         }
     }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_submit_order_denies_reduce_only() {
+    let state = TestState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) =
+        make_exec_client_with_events_and_cache(addr, AccountType::Cash);
+    client.start().unwrap();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-REDUCE-ONLY"))
+        .instrument_id(btc_usd_instrument_id())
+        .client_order_id(ClientOrderId::from("O-REDUCE-ONLY"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("0.1"))
+        .price(Price::from("50000.00"))
+        .reduce_only(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(*COINBASE_CLIENT_ID), false)
+        .unwrap();
+
+    client
+        .submit_order(SubmitOrder::from_order(
+            &order,
+            TraderId::from("TRADER-001"),
+            Some(*COINBASE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        ))
+        .unwrap();
+
+    let event = rx.try_recv().expect("missing OrderDenied");
+    let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+        panic!("Expected OrderDenied, was {event:?}");
+    };
+    assert_eq!(denied.client_order_id, order.client_order_id());
+    assert_eq!(denied.reason.as_str(), "UNSUPPORTED_REDUCE_ONLY");
+    assert!(rx.try_recv().is_err());
+    assert!(state.requests_for("/orders").is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_submit_order_denies_instrument_missing_from_client_cache() {
+    let state = TestState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) =
+        make_exec_client_with_events_and_cache(addr, AccountType::Cash);
+    client.start().unwrap();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-MISSING-INSTRUMENT"))
+        .instrument_id(btc_usd_instrument_id())
+        .client_order_id(ClientOrderId::from("O-MISSING-INSTRUMENT"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("0.2"))
+        .price(Price::from("49000.00"))
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(*COINBASE_CLIENT_ID), false)
+        .unwrap();
+
+    client
+        .submit_order(SubmitOrder::from_order(
+            &order,
+            TraderId::from("TRADER-001"),
+            Some(*COINBASE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        ))
+        .unwrap();
+
+    let event = rx.try_recv().expect("missing OrderDenied");
+    let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+        panic!("Expected OrderDenied, was {event:?}");
+    };
+    assert_eq!(denied.client_order_id, order.client_order_id());
+    assert_eq!(
+        denied.reason.as_str(),
+        "INSTRUMENT_NOT_FOUND: BTC-USD.COINBASE"
+    );
+    assert!(rx.try_recv().is_err());
+    assert!(state.requests_for("/orders").is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_submit_order_list_denies_all_orders() {
+    let state = TestState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) =
+        make_exec_client_with_events_and_cache(addr, AccountType::Cash);
+    client.start().unwrap();
+    let first = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-ORDER-LIST"))
+        .instrument_id(btc_usd_instrument_id())
+        .client_order_id(ClientOrderId::from("O-LIST-1"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("0.1"))
+        .price(Price::from("50000.00"))
+        .reduce_only(true)
+        .build();
+    let second = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-ORDER-LIST"))
+        .instrument_id(btc_usd_instrument_id())
+        .client_order_id(ClientOrderId::from("O-LIST-2"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("0.2"))
+        .price(Price::from("49000.00"))
+        .build();
+
+    for order in [&first, &second] {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(*COINBASE_CLIENT_ID), false)
+            .unwrap();
+    }
+    let order_list = OrderList::new(
+        OrderListId::from("OL-COINBASE-1"),
+        first.instrument_id(),
+        first.strategy_id(),
+        vec![first.client_order_id(), second.client_order_id()],
+        UnixNanos::default(),
+    );
+    let cmd = SubmitOrderList::new(
+        TraderId::from("TRADER-001"),
+        Some(*COINBASE_CLIENT_ID),
+        first.strategy_id(),
+        order_list,
+        vec![first.init_event().clone(), second.init_event().clone()],
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    client.submit_order_list(cmd).unwrap();
+
+    for client_order_id in [first.client_order_id(), second.client_order_id()] {
+        let event = rx.try_recv().expect("missing OrderDenied");
+        let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+            panic!("Expected OrderDenied, was {event:?}");
+        };
+        assert_eq!(denied.client_order_id, client_order_id);
+        assert_eq!(
+            denied.reason.as_str(),
+            "UNSUPPORTED_ORDER_LIST: order lists are not supported by Coinbase Advanced Trade"
+        );
+    }
+    assert!(rx.try_recv().is_err());
+    assert!(state.requests_for("/orders").is_empty());
 }
 
 #[rstest]

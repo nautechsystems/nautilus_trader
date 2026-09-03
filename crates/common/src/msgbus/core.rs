@@ -556,7 +556,6 @@ impl MessageBus {
         self.endpoints_exec_reports.clear();
         self.endpoints_order_events.clear();
         self.endpoints_data.clear();
-
         self.routers_typed.clear();
         self.endpoints_typed.clear();
         self.clear_streaming_types();

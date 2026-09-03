@@ -689,6 +689,10 @@ reports for reconciliation. They must support these boundaries consistently:
 - Release shared clock, cache, or account borrows before publishing account state because
   subscribers may access the same state synchronously.
 
+Keep deterministic adapter-specific checks in one `validate_order` function that returns
+`OrderDeniedReason`. Call it before emitting `OrderSubmitted` from single-order and order-list
+submission paths.
+
 Do not infer support from a venue API alone. Implement and test the Nautilus command and event
 semantics, then advertise the capability.
 

@@ -34,6 +34,7 @@ use nautilus_common::{
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
         GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
         GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
+        SubmitOrderList,
     },
 };
 use nautilus_core::{
@@ -47,6 +48,7 @@ use nautilus_live::{
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, LiquiditySide, OmsType, OrderStatus, OrderType, TriggerType},
+    events::OrderDeniedReason,
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, Venue,
         VenueOrderId,
@@ -1025,28 +1027,12 @@ impl ExecutionClient for CoinbaseExecutionClient {
             return Ok(());
         }
 
-        // The connect-time bootstrap caches only the product family this
-        // client was configured for (Cash -> spot, Margin -> futures). An
-        // instrument outside that family is either not loaded yet or lives on
-        // the other venue scope, so deny instead of forwarding to the venue
-        // where the account type cannot reconcile the order's state.
-        let instrument_id = order.instrument_id();
-        let symbol_key = instrument_id.symbol.as_str();
-        if !self.instruments_cache.contains_key(symbol_key) {
-            let scope = if self.is_margin() {
-                "a Coinbase futures / perpetual product"
-            } else {
-                "a Coinbase spot product"
-            };
-            self.emitter.emit_order_denied(
-                &order,
-                &format!(
-                    "Instrument {} is not {scope} in this client's bootstrap cache",
-                    order.instrument_id()
-                ),
-            );
+        if let Err(reason) = validate_order(&order, &self.instruments_cache) {
+            self.emitter.emit_order_denied(&order, &reason.to_string());
             return Ok(());
         }
+
+        let instrument_id = order.instrument_id();
 
         // The user channel does not need a product-wide alias registration:
         // `order_contexts` (keyed by `client_order_id`) records the
@@ -1189,6 +1175,20 @@ impl ExecutionClient for CoinbaseExecutionClient {
             }
             Ok(())
         });
+
+        Ok(())
+    }
+
+    fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
+        let orders = self.core.get_orders_for_list(&cmd.order_list)?;
+        let denied = OrderDeniedReason::UnsupportedOrderList {
+            detail: "order lists are not supported by Coinbase Advanced Trade".to_string(),
+        }
+        .to_string();
+
+        for order in &orders {
+            self.emitter.emit_order_denied(order, &denied);
+        }
 
         Ok(())
     }
@@ -1553,6 +1553,22 @@ impl ExecutionClient for CoinbaseExecutionClient {
 
         Ok(())
     }
+}
+
+fn validate_order(
+    order: &impl Order,
+    instruments_cache: &AHashMap<String, InstrumentAny>,
+) -> Result<(), OrderDeniedReason> {
+    if order.is_reduce_only() {
+        return Err(OrderDeniedReason::UnsupportedReduceOnly);
+    }
+
+    let instrument_id = order.instrument_id();
+    if !instruments_cache.contains_key(instrument_id.symbol.as_str()) {
+        return Err(OrderDeniedReason::InstrumentNotFound { instrument_id });
+    }
+
+    Ok(())
 }
 
 fn handle_coinbase_submit_failure(

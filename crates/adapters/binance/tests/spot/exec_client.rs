@@ -2603,6 +2603,37 @@ async fn test_submit_independent_order_list_is_denied_without_http_request() {
 
 #[rstest]
 #[tokio::test]
+async fn test_submit_order_list_denies_all_orders_when_reduce_only_is_present() {
+    let (client, mut rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let reduce_only_id = ClientOrderId::new("spot-reduce-only-001");
+    let regular_id = ClientOrderId::new("spot-regular-001");
+    let orders = [
+        add_limit_order_for_instrument_to_cache(&cache, test_instrument_id(), reduce_only_id, true),
+        add_limit_order_to_cache(&cache, regular_id),
+    ];
+
+    client
+        .submit_order_list(submit_order_list_command(&orders))
+        .unwrap();
+
+    for client_order_id in [reduce_only_id, regular_id] {
+        let event = rx.try_recv().expect("missing OrderDenied");
+        let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+            panic!("Expected OrderDenied, was {event:?}");
+        };
+        assert_eq!(denied.client_order_id, client_order_id);
+        assert_eq!(denied.reason.as_str(), "UNSUPPORTED_REDUCE_ONLY");
+    }
+    assert!(rx.try_recv().is_err());
+    assert_eq!(request_count.load(Ordering::Relaxed), 0);
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_cancel_all_orders_generates_canceled_events() {
     let addr = start_exec_test_server().await;
     let base_url = format!("http://{addr}");
@@ -2943,6 +2974,34 @@ async fn test_explicit_venue_submit_rejection_emits_order_rejected() {
 
 #[rstest]
 #[tokio::test]
+async fn test_submit_order_denies_reduce_only() {
+    let (client, mut rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let client_order_id = ClientOrderId::new("reduce-only-test-001");
+    let order = add_limit_order_for_instrument_to_cache(
+        &cache,
+        test_instrument_id(),
+        client_order_id,
+        true,
+    );
+
+    client.submit_order(submit_order_command(&order)).unwrap();
+
+    let event = rx.try_recv().expect("missing OrderDenied");
+    let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+        panic!("Expected OrderDenied, was {event:?}");
+    };
+    assert_eq!(denied.client_order_id, client_order_id);
+    assert_eq!(denied.reason.as_str(), "UNSUPPORTED_REDUCE_ONLY");
+    assert!(rx.try_recv().is_err());
+    assert_eq!(request_count.load(Ordering::Relaxed), 0);
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_local_submit_failure_emits_order_rejected() {
     let (client, mut rx, cache, request_count) =
         connected_client_with_command_responses(CommandResponses::default()).await;
@@ -2952,6 +3011,7 @@ async fn test_local_submit_failure_emits_order_rejected() {
         &cache,
         InstrumentId::from("ETHUSDT.BINANCE"),
         client_order_id,
+        false,
     );
 
     client
@@ -3438,13 +3498,14 @@ fn add_limit_order_to_cache(
     cache: &Rc<RefCell<Cache>>,
     client_order_id: ClientOrderId,
 ) -> OrderAny {
-    add_limit_order_for_instrument_to_cache(cache, test_instrument_id(), client_order_id)
+    add_limit_order_for_instrument_to_cache(cache, test_instrument_id(), client_order_id, false)
 }
 
 fn add_limit_order_for_instrument_to_cache(
     cache: &Rc<RefCell<Cache>>,
     instrument_id: InstrumentId,
     client_order_id: ClientOrderId,
+    reduce_only: bool,
 ) -> OrderAny {
     let order = LimitOrder::new(
         test_trader_id(),
@@ -3457,7 +3518,7 @@ fn add_limit_order_for_instrument_to_cache(
         TimeInForce::Gtc,
         None,
         true,
-        false,
+        reduce_only,
         false,
         None,
         None,
@@ -3529,7 +3590,7 @@ fn add_open_order_to_cache(
     account_id: AccountId,
     venue_order_id: VenueOrderId,
 ) {
-    add_limit_order_for_instrument_to_cache(cache, instrument_id, client_order_id);
+    add_limit_order_for_instrument_to_cache(cache, instrument_id, client_order_id, false);
     let accepted = OrderAccepted::new(
         test_trader_id(),
         test_strategy_id(),

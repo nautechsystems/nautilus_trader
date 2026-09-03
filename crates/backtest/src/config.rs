@@ -473,7 +473,8 @@ pub struct BacktestVenueConfig {
     /// Trade IDs are always deterministic and not affected by this flag.
     #[builder(default)]
     use_random_ids: bool,
-    /// If the `reduce_only` execution instruction on orders will be honored.
+    /// If the `reduce_only` execution instruction on orders will be enforced.
+    /// If false, reduce-only orders are rejected.
     #[builder(default = true)]
     use_reduce_only: bool,
     /// If bars should be processed by the matching engine(s) (and move the market).

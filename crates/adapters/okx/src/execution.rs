@@ -71,7 +71,8 @@ use crate::{
         consts::{
             OKX_CONDITIONAL_ORDER_TYPES, OKX_RECONCILIATION_LOOKBACK_DEFAULT_MINS,
             OKX_RECONCILIATION_LOOKBACK_MAX_MINS, OKX_SUCCESS_CODE, OKX_VENUE,
-            OKX_WS_HEARTBEAT_SECS, resolve_instrument_families, validate_okx_client_order_id,
+            OKX_WS_HEARTBEAT_SECS, okx_reduce_only_wire_value, resolve_instrument_families,
+            validate_okx_client_order_id,
         },
         enums::{OKXInstrumentType, OKXMarginMode, OKXTradeMode, is_advance_algo_order},
         failure::{classify_okx_http_failure, classify_okx_venue_code, classify_okx_ws_failure},
@@ -2230,9 +2231,9 @@ impl ExecutionClient for OKXExecutionClient {
                 return Ok(());
             }
 
-            if let Err(reason) = validate_okx_client_order_id(cmd.client_order_id.as_str()) {
-                let denied = OrderDeniedReason::InvalidClientOrderId { detail: reason };
-                self.emitter.emit_order_denied(&order, &denied.to_string());
+            let trade_mode = self.trade_mode_for_order(cmd.instrument_id, &cmd.params);
+            if let Err(reason) = validate_order(&*order, trade_mode, OrderSubmission::Single) {
+                self.emitter.emit_order_denied(&order, &reason.to_string());
                 return Ok(());
             }
 
@@ -2268,52 +2269,36 @@ impl ExecutionClient for OKXExecutionClient {
         }
 
         let inst_type = okx_instrument_type_from_symbol(cmd.instrument_id.symbol.as_str());
+        let trade_mode = self.trade_mode_for_order(cmd.instrument_id, &cmd.params);
 
         // Validate all orders before emitting any submitted events
-        let cache = self.core.cache();
+        let orders = self.core.get_orders_for_list(&cmd.order_list)?;
 
-        // Pre-validate every clOrdId so an invalid leg denies the whole list atomically;
+        // Pre-validate every order so an invalid leg denies the whole list atomically;
         // otherwise sibling legs would be left in the cache without a terminal event.
-        let invalid: Vec<(ClientOrderId, String)> = cmd
-            .order_list
-            .client_order_ids
+        let invalid: Vec<(ClientOrderId, OrderDeniedReason)> = orders
             .iter()
-            .filter_map(|cid| {
-                validate_okx_client_order_id(cid.as_str())
+            .filter_map(|order| {
+                validate_order(order, trade_mode, OrderSubmission::List)
                     .err()
-                    .map(|r| (*cid, r))
+                    .map(|reason| (order.client_order_id(), reason))
             })
             .collect();
 
         if !invalid.is_empty() {
             let order_list_id = cmd.order_list.id;
-            for client_order_id in &cmd.order_list.client_order_ids {
-                let order = cache.try_order(client_order_id)?;
+
+            for order in &orders {
                 let denied = invalid
                     .iter()
-                    .find(|(cid, _)| cid == client_order_id)
+                    .find(|(client_order_id, _)| client_order_id == &order.client_order_id())
                     .map_or_else(
                         || OrderDeniedReason::OrderListDenied { order_list_id },
-                        |(_, r)| OrderDeniedReason::InvalidClientOrderId { detail: r.clone() },
+                        |(_, reason)| reason.clone(),
                     );
-                self.emitter.emit_order_denied(&order, &denied.to_string());
+                self.emitter.emit_order_denied(order, &denied.to_string());
             }
             return Ok(());
-        }
-
-        for client_order_id in &cmd.order_list.client_order_ids {
-            let order = cache.try_order(client_order_id)?;
-
-            if self.is_conditional_order(order.order_type()) {
-                anyhow::bail!("Conditional orders not supported in order lists: {client_order_id}");
-            }
-
-            if order.time_in_force() != TimeInForce::Gtc {
-                anyhow::bail!(
-                    "Only GTC orders supported in order lists: {client_order_id} has {:?}",
-                    order.time_in_force()
-                );
-            }
         }
 
         // Build batch payload and emit submitted events
@@ -2324,14 +2309,13 @@ impl ExecutionClient for OKXExecutionClient {
         let rpi_taker_access = get_param_as_bool(&cmd.params, "rpi_taker_access");
         let rpi_px_round = get_param_as_bool(&cmd.params, "rpi_px_round");
 
-        for client_order_id in &cmd.order_list.client_order_ids {
-            let order = cache.order(client_order_id).expect("validated above");
-            let context = OrderContext::from(order.as_ref());
+        for order in &orders {
+            let context = OrderContext::from(order);
 
             batch_orders.push((
                 inst_type,
                 cmd.instrument_id,
-                self.trade_mode_for_order(cmd.instrument_id, &cmd.params),
+                trade_mode,
                 context.identity.client_order_id,
                 context.identity.order_side,
                 None, // position_side: WS client defaults to Net for derivatives
@@ -2353,10 +2337,8 @@ impl ExecutionClient for OKXExecutionClient {
                 .insert(context.identity.client_order_id, context.identity);
 
             log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
-            self.emitter.emit_order_submitted(&order);
+            self.emitter.emit_order_submitted(order);
         }
-
-        drop(cache);
 
         let ws_private = self.ws_private.clone();
         let emitter = self.emitter.clone();
@@ -2973,6 +2955,56 @@ impl OKXExecutionClient {
     }
 }
 
+fn validate_order(
+    order: &impl Order,
+    trade_mode: OKXTradeMode,
+    submission: OrderSubmission,
+) -> Result<(), OrderDeniedReason> {
+    if let Err(detail) = validate_okx_client_order_id(order.client_order_id().as_str()) {
+        return Err(OrderDeniedReason::InvalidClientOrderId { detail });
+    }
+
+    if is_spread_instrument(order.instrument_id()) && order.is_reduce_only() {
+        return Err(OrderDeniedReason::UnsupportedReduceOnly);
+    }
+
+    if order.is_reduce_only()
+        && okx_reduce_only_wire_value(
+            okx_instrument_type_from_symbol(order.instrument_id().symbol.as_str()),
+            trade_mode,
+            order.order_side(),
+            None,
+            Some(true),
+        )
+        .is_err()
+    {
+        return Err(OrderDeniedReason::UnsupportedReduceOnly);
+    }
+
+    if matches!(submission, OrderSubmission::List) {
+        if OKX_CONDITIONAL_ORDER_TYPES.contains(&order.order_type()) {
+            return Err(OrderDeniedReason::UnsupportedOrderList {
+                detail: format!(
+                    "conditional order {} is not supported",
+                    order.client_order_id()
+                ),
+            });
+        }
+
+        if order.time_in_force() != TimeInForce::Gtc {
+            return Err(OrderDeniedReason::UnsupportedOrderList {
+                detail: format!(
+                    "order {} has unsupported time in force {}",
+                    order.client_order_id(),
+                    order.time_in_force()
+                ),
+            });
+        }
+    }
+
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OrderCommandRoute {
     RegularWs,
@@ -3000,6 +3032,12 @@ enum CancelAllOrdersRoute {
     BatchWs,
     MassCancelHttp,
     SpreadHttp,
+}
+
+#[derive(Clone, Copy)]
+enum OrderSubmission {
+    Single,
+    List,
 }
 
 fn emit_submit_failure(
@@ -3382,6 +3420,82 @@ mod tests {
                 false,
             ),
             QueryOrderRoute::Spread,
+        );
+    }
+
+    #[rstest]
+    fn test_validate_order_allows_conditional_single_submission() {
+        let order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(InstrumentId::from("ETH-USDT-SWAP.OKX"))
+            .client_order_id(ClientOrderId::from("OCONDITIONALSINGLE"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1"))
+            .trigger_price(Price::from("1000.00"))
+            .build();
+
+        assert_eq!(
+            validate_order(&order, OKXTradeMode::Cross, OrderSubmission::Single),
+            Ok(())
+        );
+    }
+
+    #[rstest]
+    fn test_validate_order_denies_conditional_order_in_list() {
+        let order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(InstrumentId::from("ETH-USDT-SWAP.OKX"))
+            .client_order_id(ClientOrderId::from("OCONDITIONALLIST"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("2"))
+            .trigger_price(Price::from("900.00"))
+            .build();
+
+        assert_eq!(
+            validate_order(&order, OKXTradeMode::Cross, OrderSubmission::List),
+            Err(OrderDeniedReason::UnsupportedOrderList {
+                detail: "conditional order OCONDITIONALLIST is not supported".to_string(),
+            })
+        );
+    }
+
+    #[rstest]
+    fn test_validate_order_denies_non_gtc_order_in_list() {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("ETH-USDT-SWAP.OKX"))
+            .client_order_id(ClientOrderId::from("OIOCLIST"))
+            .side(OrderSide::Buy)
+            .price(Price::from("2000.00"))
+            .quantity(Quantity::from("3"))
+            .time_in_force(TimeInForce::Ioc)
+            .build();
+
+        assert_eq!(
+            validate_order(&order, OKXTradeMode::Cross, OrderSubmission::List),
+            Err(OrderDeniedReason::UnsupportedOrderList {
+                detail: "order OIOCLIST has unsupported time in force IOC".to_string(),
+            })
+        );
+    }
+
+    #[rstest]
+    #[case::cash("BTC-USDT.OKX", OKXTradeMode::Cash)]
+    #[case::option("BTC-USD-241217-92000-C.OKX", OKXTradeMode::Cross)]
+    #[case::event("BTC-ABOVE-DAILY-260224-1600-65000.OKX", OKXTradeMode::Cross)]
+    fn test_validate_order_denies_unsupported_reduce_only(
+        #[case] instrument_id: &str,
+        #[case] trade_mode: OKXTradeMode,
+    ) {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from(instrument_id))
+            .client_order_id(ClientOrderId::from("OREDUCEUNSUPPORTED"))
+            .side(OrderSide::Sell)
+            .price(Price::from("2000.00"))
+            .quantity(Quantity::from("1"))
+            .reduce_only(true)
+            .build();
+
+        assert_eq!(
+            validate_order(&order, trade_mode, OrderSubmission::Single),
+            Err(OrderDeniedReason::UnsupportedReduceOnly)
         );
     }
 

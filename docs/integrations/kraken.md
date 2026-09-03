@@ -287,12 +287,12 @@ more events per instrument than L2. Recommended settings:
 
 ### Execution instructions
 
-| Instruction      | Spot | Futures | Notes                                                          |
-| ---------------- | ---- | ------- | -------------------------------------------------------------- |
-| `post_only`      | ✓    | ✓       | Available for limit orders.                                    |
-| `reduce_only`    | ✓    | ✓       | Spot requires `spot_account_type=Margin` (margin orders only). |
-| `quote_quantity` | ✓    | -       | Spot only. Volume in quote currency (`viqc`); REST routed.     |
-| `display_qty`    | ✓    | -       | Spot only. Iceberg orders (`displayvol`).                      |
+| Instruction      | Spot | Futures | Notes                                                      |
+| ---------------- | ---- | ------- | ---------------------------------------------------------- |
+| `post_only`      | ✓    | ✓       | Available for limit orders.                                |
+| `reduce_only`    | ✓    | ✓       | Spot requires a margin account and resolved leverage.      |
+| `quote_quantity` | ✓    | -       | Spot only. Volume in quote currency (`viqc`); REST routed. |
+| `display_qty`    | ✓    | -       | Spot only. Iceberg orders (`displayvol`).                  |
 
 ### Trigger types
 
@@ -569,8 +569,9 @@ an invalid tier produces an `OrderDenied` event and never hits the venue.
 ### Reduce-only
 
 Margin orders can carry `reduce_only=True` so they reduce an existing position
-without opening a larger opposite position. The adapter denies cash orders with
-`reduce_only` before sending them to Kraken.
+without opening a larger opposite position. Set `spot_account_type=Margin` and supply
+either `default_leverage` or per-order `params={"leverage": N}`. The adapter denies
+cash orders with `reduce_only` before sending them to Kraken.
 
 ### Account state
 

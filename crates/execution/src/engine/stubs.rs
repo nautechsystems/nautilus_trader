@@ -36,7 +36,6 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
     instruments::InstrumentAny,
-    orders::{Order, OrderAny},
     types::{AccountBalance, MarginBalance},
 };
 
@@ -65,7 +64,6 @@ pub struct StubExecutionClient {
     queried_account_ids: Rc<RefCell<Vec<AccountId>>>,
     registered_external_order_ids: Rc<RefCell<Vec<ClientOrderId>>>,
     handles_all_order_venues: bool,
-    enforces_reduce_only: bool,
     submit_order_error: Option<String>,
     submit_order_list_error: Option<String>,
 }
@@ -99,7 +97,6 @@ impl StubExecutionClient {
             queried_account_ids: Rc::new(RefCell::new(Vec::new())),
             registered_external_order_ids: Rc::new(RefCell::new(Vec::new())),
             handles_all_order_venues: false,
-            enforces_reduce_only: false,
             submit_order_error: None,
             submit_order_list_error: None,
         }
@@ -109,13 +106,6 @@ impl StubExecutionClient {
     #[must_use]
     pub fn with_handles_all_order_venues(mut self) -> Self {
         self.handles_all_order_venues = true;
-        self
-    }
-
-    /// Configures this stub to enforce reduce-only orders.
-    #[must_use]
-    pub fn with_enforces_reduce_only(mut self) -> Self {
-        self.enforces_reduce_only = true;
         self
     }
 
@@ -215,10 +205,6 @@ impl ExecutionClient for StubExecutionClient {
 
     fn handles_order_venue(&self, venue: Venue) -> bool {
         self.handles_all_order_venues || self.venue == venue
-    }
-
-    fn enforces_reduce_only(&self, _command: &SubmitOrder, order: &OrderAny) -> bool {
-        self.enforces_reduce_only && order.is_reduce_only()
     }
 
     fn oms_type(&self) -> OmsType {

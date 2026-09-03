@@ -2650,8 +2650,8 @@ pub(crate) static ARENA: ::capnp::private::arena::GeneratedCodeArena = ::capnp::
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TradingState {
     Active = 0,
-    Halted = 1,
-    Reducing = 2,
+    Reducing = 1,
+    Halted = 2,
 }
 
 impl ::capnp::introspect::Introspect for TradingState {
@@ -2665,8 +2665,8 @@ impl ::core::convert::TryFrom<u16> for TradingState {
     fn try_from(value: u16) -> ::core::result::Result<Self, <TradingState as ::core::convert::TryFrom<u16>>::Error> {
         match value {
             0 => ::core::result::Result::Ok(Self::Active),
-            1 => ::core::result::Result::Ok(Self::Halted),
-            2 => ::core::result::Result::Ok(Self::Reducing),
+            1 => ::core::result::Result::Ok(Self::Reducing),
+            2 => ::core::result::Result::Ok(Self::Halted),
             n => ::core::result::Result::Err(::capnp::NotInSchema(n)),
         }
     }
@@ -2703,15 +2703,15 @@ pub(crate) static ENCODED_NODE: [::capnp::Word; 32] = [
     ::capnp::word(29, 0, 0, 0, 58, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(1, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(21, 0, 0, 0, 58, 0, 0, 0),
+    ::capnp::word(21, 0, 0, 0, 74, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(2, 0, 0, 0, 0, 0, 0, 0),
-    ::capnp::word(13, 0, 0, 0, 74, 0, 0, 0),
+    ::capnp::word(17, 0, 0, 0, 58, 0, 0, 0),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
     ::capnp::word(97, 99, 116, 105, 118, 101, 0, 0),
-    ::capnp::word(104, 97, 108, 116, 101, 100, 0, 0),
     ::capnp::word(114, 101, 100, 117, 99, 105, 110, 103),
     ::capnp::word(0, 0, 0, 0, 0, 0, 0, 0),
+    ::capnp::word(104, 97, 108, 116, 101, 100, 0, 0),
 ];
 pub(crate) fn get_annotation_types(child_index: Option<u16>, index: u32) -> ::capnp::introspect::Type {
     ::capnp::introspect::panic_invalid_annotation_indices(child_index, index)

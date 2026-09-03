@@ -182,6 +182,15 @@ def test_model_enums_from_str(enum_type: object, member: object, name: object) -
     assert isinstance(hash(member), int)
 
 
+def test_trading_state_values_progress_by_restriction() -> None:
+    """
+    Test trading state values progress by restriction.
+    """
+    assert TradingState.ACTIVE.value == 1
+    assert TradingState.REDUCING.value == 2
+    assert TradingState.HALTED.value == 3
+
+
 def test_pool_liquidity_update_type_from_str() -> None:
     """
     Test pool liquidity update type from str.

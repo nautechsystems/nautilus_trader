@@ -203,10 +203,6 @@ impl Debug for SimulatedExchange {
 }
 
 impl SimulatedExchange {
-    pub(crate) const fn use_reduce_only(&self) -> bool {
-        self.use_reduce_only
-    }
-
     /// Creates a new [`SimulatedExchange`] instance from a venue configuration.
     ///
     /// # Errors

@@ -55,6 +55,7 @@ static EXEC_RECONCILE_REPORT_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new(
 static RISK_EXECUTE_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static RISK_QUEUE_EXECUTE_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static RISK_PROCESS_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
+static RISK_EVENTS_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
 static ORDER_EMULATOR_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static PORTFOLIO_ACCOUNT_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static PORTFOLIO_ORDER_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
@@ -212,6 +213,13 @@ macro_rules! define_switchboard {
             #[must_use]
             pub fn risk_engine_process() -> MStr<Endpoint> {
                 *RISK_PROCESS_ENDPOINT.get_or_init(|| "RiskEngine.process".into())
+            }
+
+            /// Pub/sub topic carrying risk engine state events.
+            #[inline]
+            #[must_use]
+            pub fn risk_events_topic() -> MStr<Topic> {
+                *RISK_EVENTS_TOPIC.get_or_init(|| "events.risk".into())
             }
 
             #[inline]

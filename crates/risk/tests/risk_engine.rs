@@ -26,8 +26,8 @@ use nautilus_common::{
     clock::{Clock, TestClock},
     messages::{
         execution::{
-            BatchModifyOrders, CancelOrder, ModifyOrder, PARAMS_CLOSE_POSITION,
-            PARAMS_EMERGENCY_EXIT, SubmitOrder, SubmitOrderList, TradingCommand,
+            BatchModifyOrders, CancelOrder, ModifyOrder, PARAMS_CLOSE_POSITION, SubmitOrder,
+            SubmitOrderList, TradingCommand,
         },
         system::trading::TradingStateChanged,
     },
@@ -1136,7 +1136,7 @@ fn test_submit_order_with_default_settings_then_sends_to_client(
 }
 
 #[rstest]
-fn test_submit_order_when_risk_bypassed_sends_to_execution_engine(
+fn test_submit_order_when_risk_bypassed_ignores_trading_state(
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
     trader_id: TraderId,
@@ -1146,6 +1146,7 @@ fn test_submit_order_when_risk_bypassed_sends_to_execution_engine(
 ) {
     consume_fixture(process_order_event_handler);
     let mut risk_engine = get_risk_engine(None, None, None, true);
+    risk_engine.set_trading_state(TradingState::Halted);
 
     // TODO: Limit -> Market
     let order = OrderTestBuilder::new(OrderType::Limit)
@@ -3430,6 +3431,7 @@ fn test_submit_close_position_exempts_placeholder_bound(
         })
         .quantity(quantity)
         .trigger_price(Price::from("10"))
+        .reduce_only(true)
         .build();
     assert!(order.would_reduce_only(position_side, quantity));
 
@@ -3459,6 +3461,7 @@ fn test_submit_close_position_exempts_placeholder_bound(
         None,
     );
 
+    risk_engine.set_trading_state(TradingState::Reducing);
     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
 
     let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
@@ -3488,7 +3491,7 @@ enum InvalidClosePositionShape {
     InversePerpetualContract,
     OrderInstrumentMismatch,
     UnsupportedOrderType,
-    ReduceOnly,
+    MissingReduceOnly,
     MissingPositionId,
     PositionNotFound,
     OrderPositionMismatch,
@@ -3513,7 +3516,7 @@ enum InvalidClosePositionValue {
 #[case::inverse_perpetual_contract(InvalidClosePositionShape::InversePerpetualContract)]
 #[case::order_instrument_mismatch(InvalidClosePositionShape::OrderInstrumentMismatch)]
 #[case::unsupported_order_type(InvalidClosePositionShape::UnsupportedOrderType)]
-#[case::reduce_only(InvalidClosePositionShape::ReduceOnly)]
+#[case::missing_reduce_only(InvalidClosePositionShape::MissingReduceOnly)]
 #[case::missing_position_id(InvalidClosePositionShape::MissingPositionId)]
 #[case::position_not_found(InvalidClosePositionShape::PositionNotFound)]
 #[case::order_position_mismatch(InvalidClosePositionShape::OrderPositionMismatch)]
@@ -3521,7 +3524,7 @@ enum InvalidClosePositionValue {
 #[case::position_instrument_mismatch(InvalidClosePositionShape::PositionInstrumentMismatch)]
 #[case::wrong_side(InvalidClosePositionShape::WrongSide)]
 #[case::quantity_exceeds_position(InvalidClosePositionShape::QuantityExceedsPosition)]
-fn test_submit_invalid_close_position_shape_does_not_bypass_max_quantity(
+fn test_submit_invalid_close_position_shape_is_denied(
     #[case] shape: InvalidClosePositionShape,
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
@@ -3652,6 +3655,7 @@ fn test_submit_invalid_close_position_shape_does_not_bypass_max_quantity(
             .quantity(Quantity::from("2"))
             .price(Price::from("9.00"))
             .trigger_price(Price::from("10.00"))
+            .reduce_only(true)
             .build()
     } else {
         OrderTestBuilder::new(OrderType::StopMarket)
@@ -3659,7 +3663,10 @@ fn test_submit_invalid_close_position_shape_does_not_bypass_max_quantity(
             .side(order_side)
             .quantity(Quantity::from("2"))
             .trigger_price(Price::from("10.00"))
-            .reduce_only(matches!(shape, InvalidClosePositionShape::ReduceOnly))
+            .reduce_only(!matches!(
+                shape,
+                InvalidClosePositionShape::MissingReduceOnly
+            ))
             .build()
     };
     let order_position_id = if matches!(shape, InvalidClosePositionShape::OrderPositionMismatch) {
@@ -3706,15 +3713,23 @@ fn test_submit_invalid_close_position_shape_does_not_bypass_max_quantity(
     let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
     let execute_messages = get_execute_order_event_handler_messages(&execute_order_event_handler);
     assert_eq!(process_messages.len(), 1);
+    let expected_reason = match shape {
+        InvalidClosePositionShape::PositionNotFound => OrderDeniedReason::PositionNotFound {
+            position_id: PositionId::from("P-NOT-FOUND"),
+        },
+        InvalidClosePositionShape::PositionClosed
+        | InvalidClosePositionShape::WrongSide
+        | InvalidClosePositionShape::QuantityExceedsPosition => {
+            OrderDeniedReason::ReduceOnlyWouldIncreasePosition { position_id }
+        }
+        _ => OrderDeniedReason::QuantityExceedsMaximum {
+            effective_quantity: Quantity::from("2"),
+            max_quantity: Quantity::from("1"),
+        },
+    };
     assert_eq!(
         process_messages[0].message().unwrap(),
-        Ustr::from(
-            &OrderDeniedReason::QuantityExceedsMaximum {
-                effective_quantity: Quantity::from("2"),
-                max_quantity: Quantity::from("1"),
-            }
-            .to_string()
-        )
+        Ustr::from(&expected_reason.to_string())
     );
     assert!(execute_messages.is_empty());
 }
@@ -3860,6 +3875,7 @@ fn test_submit_close_position_preserves_quantity_and_trigger_checks(
         .side(OrderSide::Sell)
         .quantity(Quantity::from(quantity))
         .trigger_price(Price::from(trigger_price))
+        .reduce_only(true)
         .build();
     risk_engine
         .cache()
@@ -3968,25 +3984,7 @@ fn close_position_params(close_position: bool) -> Params {
     params
 }
 
-fn emergency_exit_params(emergency_exit: bool) -> Params {
-    let mut params = Params::new();
-    params.insert(PARAMS_EMERGENCY_EXIT.to_string(), emergency_exit.into());
-    params
-}
-
-fn emergency_exit_quote(instrument_id: InstrumentId) -> QuoteTick {
-    QuoteTick::new(
-        instrument_id,
-        Price::from("10.00"),
-        Price::from("10.01"),
-        Quantity::from("100.000"),
-        Quantity::from("100.000"),
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
-}
-
-fn emergency_exit_order(
+fn reducing_order(
     instrument_id: InstrumentId,
     client_order_id: ClientOrderId,
     side: OrderSide,
@@ -4002,13 +4000,12 @@ fn emergency_exit_order(
         .build()
 }
 
-fn emergency_exit_command(
+fn reducing_command(
     trader_id: TraderId,
     client_id: ClientId,
     strategy_id: StrategyId,
     order: &OrderAny,
     position_id: Option<PositionId>,
-    emergency_exit: bool,
     ts_init: UnixNanos,
 ) -> SubmitOrder {
     SubmitOrder::new(
@@ -4020,7 +4017,7 @@ fn emergency_exit_command(
         order.init_event().clone(),
         None,
         position_id,
-        Some(emergency_exit_params(emergency_exit)),
+        None,
         UUID4::new(),
         ts_init,
         None,
@@ -4028,160 +4025,12 @@ fn emergency_exit_command(
 }
 
 #[rstest]
-fn test_submit_emergency_exit_when_trading_halted_forwards_to_execution(
-    strategy_id_ema_cross: StrategyId,
-    client_id_binance: ClientId,
-    trader_id: TraderId,
-    instrument_eth_usdt: InstrumentAny,
-    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
-    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
-    mut simple_cache: Cache,
-) {
-    simple_cache
-        .add_instrument(instrument_eth_usdt.clone())
-        .unwrap();
-    simple_cache.add_quote(quote_ethusdt_binance()).unwrap();
-    add_margin_account_for_close_position(&mut simple_cache);
-    let position_id = PositionId::from("P-EMERGENCY-EXIT");
-    add_position_for_close_position(
-        &mut simple_cache,
-        &instrument_eth_usdt,
-        Quantity::from("2.000"),
-        position_id,
-        PositionSide::Long,
-    );
-    let order = emergency_exit_order(
-        instrument_eth_usdt.id(),
-        ClientOrderId::from("O-EMERGENCY-EXIT"),
-        OrderSide::Sell,
-        Quantity::from("1.000"),
-        true,
-    );
-    simple_cache
-        .add_order(
-            order.clone(),
-            Some(position_id),
-            Some(client_id_binance),
-            false,
-        )
-        .unwrap();
-    let mut risk_engine =
-        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
-    let command = emergency_exit_command(
-        trader_id,
-        client_id_binance,
-        strategy_id_ema_cross,
-        &order,
-        Some(position_id),
-        true,
-        risk_engine.clock().borrow().timestamp_ns(),
-    );
-
-    risk_engine.set_trading_state(TradingState::Halted);
-    risk_engine.execute(TradingCommand::SubmitOrder(command));
-
-    let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
-    let execute_messages = get_execute_order_event_handler_messages(&execute_order_event_handler);
-    assert!(process_messages.is_empty());
-    assert_eq!(execute_messages.len(), 1);
-    let TradingCommand::SubmitOrder(forwarded) = &execute_messages[0] else {
-        panic!("Expected SubmitOrder command");
-    };
-    assert_eq!(forwarded.client_order_id, order.client_order_id());
-    assert_eq!(forwarded.position_id, Some(position_id));
-    assert!(forwarded.order_init.reduce_only);
-    assert_eq!(
-        forwarded
-            .params
-            .as_ref()
-            .and_then(|params| params.get_bool(PARAMS_EMERGENCY_EXIT)),
-        Some(true)
-    );
-}
-
-#[rstest]
-#[case::active(false)]
-#[case::bypass(true)]
-fn test_submit_order_strips_caller_emergency_exit_param(
-    #[case] bypass: bool,
-    strategy_id_ema_cross: StrategyId,
-    client_id_binance: ClientId,
-    trader_id: TraderId,
-    instrument_eth_usdt: InstrumentAny,
-    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
-    mut simple_cache: Cache,
-) {
-    simple_cache
-        .add_instrument(instrument_eth_usdt.clone())
-        .unwrap();
-    simple_cache.add_quote(quote_ethusdt_binance()).unwrap();
-    add_margin_account_for_close_position(&mut simple_cache);
-    let position_id = PositionId::from("P-EMERGENCY-EXIT-PROVENANCE");
-    add_position_for_close_position(
-        &mut simple_cache,
-        &instrument_eth_usdt,
-        Quantity::from("2.000"),
-        position_id,
-        PositionSide::Long,
-    );
-    let order = emergency_exit_order(
-        instrument_eth_usdt.id(),
-        ClientOrderId::from("O-EMERGENCY-EXIT-PROVENANCE"),
-        OrderSide::Sell,
-        Quantity::from("1.000"),
-        true,
-    );
-    simple_cache
-        .add_order(
-            order.clone(),
-            Some(position_id),
-            Some(client_id_binance),
-            false,
-        )
-        .unwrap();
-    let mut risk_engine = get_risk_engine(
-        Some(Rc::new(RefCell::new(simple_cache))),
-        Some(RiskEngineConfig {
-            bypass,
-            ..RiskEngineConfig::default()
-        }),
-        None,
-        false,
-    );
-    let command = emergency_exit_command(
-        trader_id,
-        client_id_binance,
-        strategy_id_ema_cross,
-        &order,
-        Some(position_id),
-        true,
-        risk_engine.clock().borrow().timestamp_ns(),
-    );
-
-    risk_engine.execute(TradingCommand::SubmitOrder(command));
-
-    let execute_messages = get_execute_order_event_handler_messages(&execute_order_event_handler);
-    assert_eq!(execute_messages.len(), 1);
-    let TradingCommand::SubmitOrder(forwarded) = &execute_messages[0] else {
-        panic!("Expected SubmitOrder command");
-    };
-    assert!(
-        forwarded
-            .params
-            .as_ref()
-            .and_then(|params| params.get_bool(PARAMS_EMERGENCY_EXIT))
-            .is_none()
-    );
-}
-
-#[rstest]
-#[case::submitted_quantity_exceeds_position("10.000", "6.000", "4.000", false)]
-#[case::submitted_quantity_equals_position("4.000", "0.000", "4.000", true)]
-fn test_submit_emergency_exit_uses_submitted_quantity_bound(
-    #[case] submitted_quantity: &str,
-    #[case] filled_quantity: &str,
-    #[case] position_quantity: &str,
+#[case::reducing(TradingState::Reducing, true, None)]
+#[case::halted(TradingState::Halted, false, Some("TRADING_HALTED"))]
+fn test_submit_reduce_only_respects_trading_state(
+    #[case] state: TradingState,
     #[case] should_forward: bool,
+    #[case] denied_prefix: Option<&str>,
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
     trader_id: TraderId,
@@ -4195,50 +4044,21 @@ fn test_submit_emergency_exit_uses_submitted_quantity_bound(
         .unwrap();
     simple_cache.add_quote(quote_ethusdt_binance()).unwrap();
     add_margin_account_for_close_position(&mut simple_cache);
-    let position_id = PositionId::from("P-EMERGENCY-EXIT-QUANTITY");
-    let position_quantity = Quantity::from(position_quantity);
+    let position_id = PositionId::from("P-TRADING-STATE");
     add_position_for_close_position(
         &mut simple_cache,
         &instrument_eth_usdt,
-        position_quantity,
+        Quantity::from("2.000"),
         position_id,
         PositionSide::Long,
     );
-    let mut order = emergency_exit_order(
+    let order = reducing_order(
         instrument_eth_usdt.id(),
-        ClientOrderId::from("O-EMERGENCY-EXIT-QUANTITY"),
+        ClientOrderId::from("O-TRADING-STATE"),
         OrderSide::Sell,
-        Quantity::from(submitted_quantity),
+        Quantity::from("1.000"),
         true,
     );
-    let filled_quantity = Quantity::from(filled_quantity);
-    if filled_quantity.is_positive() {
-        order
-            .apply(OrderEventAny::Accepted(order_accepted(
-                &order,
-                Some(VenueOrderId::from("V-EMERGENCY-EXIT-QUANTITY")),
-                Some(AccountId::from("BINANCE-001")),
-            )))
-            .unwrap();
-        let fill = order_filled(
-            &order,
-            &instrument_eth_usdt,
-            None,
-            Some(AccountId::from("BINANCE-001")),
-            Some(VenueOrderId::from("V-EMERGENCY-EXIT-QUANTITY")),
-            None,
-            Some(filled_quantity),
-            Some(Price::from("10")),
-            None,
-            None,
-            None,
-        );
-        order.apply(OrderEventAny::Filled(fill)).unwrap();
-    }
-    assert_eq!(order.quantity(), Quantity::from(submitted_quantity));
-    assert_eq!(order.filled_qty(), filled_quantity);
-    assert_eq!(order.leaves_qty(), position_quantity);
-    assert!(order.would_reduce_only(PositionSide::Long, position_quantity));
     simple_cache
         .add_order(
             order.clone(),
@@ -4249,17 +4069,16 @@ fn test_submit_emergency_exit_uses_submitted_quantity_bound(
         .unwrap();
     let mut risk_engine =
         get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
-    let command = emergency_exit_command(
+    let command = reducing_command(
         trader_id,
         client_id_binance,
         strategy_id_ema_cross,
         &order,
         Some(position_id),
-        true,
         risk_engine.clock().borrow().timestamp_ns(),
     );
 
-    risk_engine.set_trading_state(TradingState::Halted);
+    risk_engine.set_trading_state(state);
     risk_engine.execute(TradingCommand::SubmitOrder(command));
 
     let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
@@ -4269,33 +4088,34 @@ fn test_submit_emergency_exit_uses_submitted_quantity_bound(
         assert!(process_messages.is_empty());
         assert_eq!(execute_messages.len(), 1);
     } else {
-        // `deny_order` returns early for an order past `Initialized`, so a partially filled
-        // order is blocked without an `OrderDenied` event; not reaching execution is the assertion.
-        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
-        assert!(process_messages.is_empty());
+        assert_eq!(process_messages.len(), 1);
+        assert!(
+            process_messages[0]
+                .message()
+                .unwrap()
+                .starts_with(denied_prefix.unwrap())
+        );
         assert!(execute_messages.is_empty());
     }
 }
 
 #[derive(Debug, Clone, Copy)]
-enum InvalidEmergencyExit {
+enum InvalidReducingSubmission {
     WrongSide,
     QuantityExceedsPosition,
     MissingPositionId,
     MismatchedCachedPosition,
-    MissingIntent,
     NotReduceOnly,
 }
 
 #[rstest]
-#[case::wrong_side(InvalidEmergencyExit::WrongSide)]
-#[case::quantity_exceeds_position(InvalidEmergencyExit::QuantityExceedsPosition)]
-#[case::missing_position_id(InvalidEmergencyExit::MissingPositionId)]
-#[case::mismatched_cached_position(InvalidEmergencyExit::MismatchedCachedPosition)]
-#[case::missing_intent(InvalidEmergencyExit::MissingIntent)]
-#[case::not_reduce_only(InvalidEmergencyExit::NotReduceOnly)]
-fn test_submit_invalid_emergency_exit_when_trading_halted_denies(
-    #[case] invalid: InvalidEmergencyExit,
+#[case::wrong_side(InvalidReducingSubmission::WrongSide)]
+#[case::quantity_exceeds_position(InvalidReducingSubmission::QuantityExceedsPosition)]
+#[case::missing_position_id(InvalidReducingSubmission::MissingPositionId)]
+#[case::mismatched_cached_position(InvalidReducingSubmission::MismatchedCachedPosition)]
+#[case::not_reduce_only(InvalidReducingSubmission::NotReduceOnly)]
+fn test_submit_invalid_order_when_trading_reducing_denies(
+    #[case] invalid: InvalidReducingSubmission,
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
     trader_id: TraderId,
@@ -4309,7 +4129,7 @@ fn test_submit_invalid_emergency_exit_when_trading_halted_denies(
         .unwrap();
     simple_cache.add_quote(quote_ethusdt_binance()).unwrap();
     add_margin_account_for_close_position(&mut simple_cache);
-    let position_id = PositionId::from("P-INVALID-EMERGENCY-EXIT");
+    let position_id = PositionId::from("P-INVALID-REDUCING");
     add_position_for_close_position(
         &mut simple_cache,
         &instrument_eth_usdt,
@@ -4317,27 +4137,27 @@ fn test_submit_invalid_emergency_exit_when_trading_halted_denies(
         position_id,
         PositionSide::Long,
     );
-    let order = emergency_exit_order(
+    let order = reducing_order(
         instrument_eth_usdt.id(),
-        ClientOrderId::from("O-INVALID-EMERGENCY-EXIT"),
-        if matches!(invalid, InvalidEmergencyExit::WrongSide) {
+        ClientOrderId::from("O-INVALID-REDUCING"),
+        if matches!(invalid, InvalidReducingSubmission::WrongSide) {
             OrderSide::Buy
         } else {
             OrderSide::Sell
         },
-        if matches!(invalid, InvalidEmergencyExit::QuantityExceedsPosition) {
+        if matches!(invalid, InvalidReducingSubmission::QuantityExceedsPosition) {
             Quantity::from("3.000")
         } else {
             Quantity::from("1.000")
         },
-        !matches!(invalid, InvalidEmergencyExit::NotReduceOnly),
+        !matches!(invalid, InvalidReducingSubmission::NotReduceOnly),
     );
     simple_cache
         .add_order(
             order.clone(),
             Some(
-                if matches!(invalid, InvalidEmergencyExit::MismatchedCachedPosition) {
-                    PositionId::from("P-OTHER-EMERGENCY-EXIT")
+                if matches!(invalid, InvalidReducingSubmission::MismatchedCachedPosition) {
+                    PositionId::from("P-OTHER-REDUCING")
                 } else {
                     position_id
                 },
@@ -4348,46 +4168,33 @@ fn test_submit_invalid_emergency_exit_when_trading_halted_denies(
         .unwrap();
     let mut risk_engine =
         get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
-    let command = emergency_exit_command(
+    let command = reducing_command(
         trader_id,
         client_id_binance,
         strategy_id_ema_cross,
         &order,
-        (!matches!(invalid, InvalidEmergencyExit::MissingPositionId)).then_some(position_id),
-        !matches!(invalid, InvalidEmergencyExit::MissingIntent),
+        (!matches!(invalid, InvalidReducingSubmission::MissingPositionId)).then_some(position_id),
         risk_engine.clock().borrow().timestamp_ns(),
     );
 
-    risk_engine.set_trading_state(TradingState::Halted);
+    risk_engine.set_trading_state(TradingState::Reducing);
     risk_engine.execute(TradingCommand::SubmitOrder(command));
 
     let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
     let execute_messages = get_execute_order_event_handler_messages(&execute_order_event_handler);
     assert_eq!(process_messages.len(), 1);
     assert_eq!(process_messages[0].event_type(), OrderEventType::Denied);
-    // Wrong side and excess quantity are caught by the reduce-only pre-check
-    // before classification; the remaining cases reach the gateway and keep
-    // the ordinary halted denial.
-    let expected_reason = match invalid {
-        InvalidEmergencyExit::WrongSide | InvalidEmergencyExit::QuantityExceedsPosition => {
-            "REDUCE_ONLY_WOULD_INCREASE_POSITION"
-        }
-        InvalidEmergencyExit::MissingPositionId
-        | InvalidEmergencyExit::MismatchedCachedPosition
-        | InvalidEmergencyExit::MissingIntent
-        | InvalidEmergencyExit::NotReduceOnly => "TRADING_HALTED",
-    };
-    assert!(
-        process_messages[0]
-            .message()
-            .unwrap()
-            .starts_with(expected_reason)
-    );
     assert!(execute_messages.is_empty());
 }
 
 #[rstest]
-fn test_submit_order_list_strips_caller_emergency_exit_param(
+#[case::exceeds("10.000", "6.000", "4.000", false)]
+#[case::equals("4.000", "0.000", "4.000", true)]
+fn test_submit_reduce_only_uses_submitted_quantity_bound(
+    #[case] submitted_quantity: &str,
+    #[case] filled_quantity: &str,
+    #[case] position_quantity: &str,
+    #[case] should_forward: bool,
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
     trader_id: TraderId,
@@ -4400,178 +4207,47 @@ fn test_submit_order_list_strips_caller_emergency_exit_param(
         .unwrap();
     simple_cache.add_quote(quote_ethusdt_binance()).unwrap();
     add_margin_account_for_close_position(&mut simple_cache);
-    let position_id = PositionId::from("P-EMERGENCY-EXIT-LIST-PROVENANCE");
+    let position_id = PositionId::from("P-REDUCING-QUANTITY");
+    let position_quantity = Quantity::from(position_quantity);
     add_position_for_close_position(
         &mut simple_cache,
         &instrument_eth_usdt,
-        Quantity::from("2.000"),
+        position_quantity,
         position_id,
         PositionSide::Long,
     );
-    let order = emergency_exit_order(
+    let mut order = reducing_order(
         instrument_eth_usdt.id(),
-        ClientOrderId::from("O-EMERGENCY-EXIT-LIST-PROVENANCE"),
+        ClientOrderId::from("O-REDUCING-QUANTITY"),
         OrderSide::Sell,
-        Quantity::from("1.000"),
+        Quantity::from(submitted_quantity),
         true,
     );
-    simple_cache
-        .add_order(
-            order.clone(),
-            Some(position_id),
-            Some(client_id_binance),
-            true,
-        )
-        .unwrap();
-    let mut risk_engine =
-        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
-    let order_list = OrderList::new(
-        OrderListId::new("EMERGENCY-EXIT-LIST-PROVENANCE"),
-        instrument_eth_usdt.id(),
-        strategy_id_ema_cross,
-        vec![order.client_order_id()],
-        risk_engine.clock().borrow().timestamp_ns(),
-    );
-    let command = SubmitOrderList::new(
-        trader_id,
-        Some(client_id_binance),
-        strategy_id_ema_cross,
-        order_list,
-        vec![order.init_event().clone()],
-        None,
-        Some(position_id),
-        Some(emergency_exit_params(true)),
-        UUID4::new(),
-        risk_engine.clock().borrow().timestamp_ns(),
-        None,
-    );
-
-    risk_engine.execute(TradingCommand::SubmitOrderList(command));
-
-    let execute_messages = get_execute_order_event_handler_messages(&execute_order_event_handler);
-    assert_eq!(execute_messages.len(), 1);
-    let TradingCommand::SubmitOrderList(forwarded) = &execute_messages[0] else {
-        panic!("Expected SubmitOrderList command");
-    };
-    assert!(
-        forwarded
-            .params
-            .as_ref()
-            .and_then(|params| params.get_bool(PARAMS_EMERGENCY_EXIT))
-            .is_none()
-    );
-}
-
-#[rstest]
-fn test_submit_emergency_exit_order_list_when_trading_halted_denies(
-    strategy_id_ema_cross: StrategyId,
-    client_id_binance: ClientId,
-    trader_id: TraderId,
-    instrument_eth_usdt: InstrumentAny,
-    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
-    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
-    mut simple_cache: Cache,
-) {
-    simple_cache
-        .add_instrument(instrument_eth_usdt.clone())
-        .unwrap();
-    simple_cache.add_quote(quote_ethusdt_binance()).unwrap();
-    add_margin_account_for_close_position(&mut simple_cache);
-    let position_id = PositionId::from("P-EMERGENCY-EXIT-LIST");
-    add_position_for_close_position(
-        &mut simple_cache,
-        &instrument_eth_usdt,
-        Quantity::from("2.000"),
-        position_id,
-        PositionSide::Long,
-    );
-    let order = emergency_exit_order(
-        instrument_eth_usdt.id(),
-        ClientOrderId::from("O-EMERGENCY-EXIT-LIST"),
-        OrderSide::Sell,
-        Quantity::from("1.000"),
-        true,
-    );
-    simple_cache
-        .add_order(
-            order.clone(),
-            Some(position_id),
-            Some(client_id_binance),
-            true,
-        )
-        .unwrap();
-    let mut risk_engine =
-        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
-    let order_list = OrderList::new(
-        OrderListId::new("EMERGENCY-EXIT-LIST"),
-        instrument_eth_usdt.id(),
-        strategy_id_ema_cross,
-        vec![order.client_order_id()],
-        risk_engine.clock().borrow().timestamp_ns(),
-    );
-    let command = SubmitOrderList::new(
-        trader_id,
-        Some(client_id_binance),
-        strategy_id_ema_cross,
-        order_list,
-        vec![order.init_event().clone()],
-        None,
-        Some(position_id),
-        Some(emergency_exit_params(true)),
-        UUID4::new(),
-        risk_engine.clock().borrow().timestamp_ns(),
-        None,
-    );
-
-    risk_engine.set_trading_state(TradingState::Halted);
-    risk_engine.execute(TradingCommand::SubmitOrderList(command));
-
-    let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
-    let execute_messages = get_execute_order_event_handler_messages(&execute_order_event_handler);
-    assert_eq!(process_messages.len(), 1);
-    assert_eq!(
-        process_messages[0].message(),
-        Some(Ustr::from("TRADING_HALTED"))
-    );
-    assert!(execute_messages.is_empty());
-}
-
-#[rstest]
-fn test_submit_emergency_exit_when_over_max_notional_denies(
-    strategy_id_ema_cross: StrategyId,
-    client_id_binance: ClientId,
-    trader_id: TraderId,
-    mut instrument_eth_usdt: InstrumentAny,
-    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
-    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
-    mut simple_cache: Cache,
-) {
-    let InstrumentAny::CryptoPerpetual(instrument) = &mut instrument_eth_usdt else {
-        unreachable!();
-    };
-    instrument.max_notional = None;
-    simple_cache
-        .add_instrument(instrument_eth_usdt.clone())
-        .unwrap();
-    simple_cache
-        .add_quote(emergency_exit_quote(instrument_eth_usdt.id()))
-        .unwrap();
-    add_margin_account_for_close_position(&mut simple_cache);
-    let position_id = PositionId::from("P-EMERGENCY-EXIT-NOTIONAL");
-    add_position_for_close_position(
-        &mut simple_cache,
-        &instrument_eth_usdt,
-        Quantity::from("2.000"),
-        position_id,
-        PositionSide::Long,
-    );
-    let order = emergency_exit_order(
-        instrument_eth_usdt.id(),
-        ClientOrderId::from("O-EMERGENCY-EXIT-NOTIONAL"),
-        OrderSide::Sell,
-        Quantity::from("1.000"),
-        true,
-    );
+    let filled_quantity = Quantity::from(filled_quantity);
+    if filled_quantity.is_positive() {
+        let venue_order_id = VenueOrderId::from("V-REDUCING-QUANTITY");
+        order
+            .apply(OrderEventAny::Accepted(order_accepted(
+                &order,
+                Some(venue_order_id),
+                Some(AccountId::from("BINANCE-001")),
+            )))
+            .unwrap();
+        let fill = order_filled(
+            &order,
+            &instrument_eth_usdt,
+            None,
+            Some(AccountId::from("BINANCE-001")),
+            Some(venue_order_id),
+            None,
+            Some(filled_quantity),
+            Some(Price::from("10")),
+            None,
+            None,
+            None,
+        );
+        order.apply(OrderEventAny::Filled(fill)).unwrap();
+    }
     simple_cache
         .add_order(
             order.clone(),
@@ -4582,116 +4258,20 @@ fn test_submit_emergency_exit_when_over_max_notional_denies(
         .unwrap();
     let mut risk_engine =
         get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
-    risk_engine.set_max_notional_per_order(instrument_eth_usdt.id(), dec!(1));
-    let command = emergency_exit_command(
+    let command = reducing_command(
         trader_id,
         client_id_binance,
         strategy_id_ema_cross,
         &order,
         Some(position_id),
-        true,
         risk_engine.clock().borrow().timestamp_ns(),
     );
 
-    risk_engine.set_trading_state(TradingState::Halted);
+    risk_engine.set_trading_state(TradingState::Reducing);
     risk_engine.execute(TradingCommand::SubmitOrder(command));
 
-    let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
     let execute_messages = get_execute_order_event_handler_messages(&execute_order_event_handler);
-    assert_eq!(process_messages.len(), 1);
-    assert!(
-        process_messages[0]
-            .message()
-            .unwrap()
-            .starts_with("NOTIONAL_EXCEEDS_MAX_PER_ORDER")
-    );
-    assert!(execute_messages.is_empty());
-}
-
-#[rstest]
-fn test_submit_emergency_exit_when_over_rate_limit_denies(
-    strategy_id_ema_cross: StrategyId,
-    client_id_binance: ClientId,
-    trader_id: TraderId,
-    instrument_eth_usdt: InstrumentAny,
-    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
-    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
-    mut simple_cache: Cache,
-) {
-    simple_cache
-        .add_instrument(instrument_eth_usdt.clone())
-        .unwrap();
-    simple_cache
-        .add_quote(emergency_exit_quote(instrument_eth_usdt.id()))
-        .unwrap();
-    add_margin_account_for_close_position(&mut simple_cache);
-    let position_id = PositionId::from("P-EMERGENCY-EXIT-RATE");
-    add_position_for_close_position(
-        &mut simple_cache,
-        &instrument_eth_usdt,
-        Quantity::from("2.000"),
-        position_id,
-        PositionSide::Long,
-    );
-    let orders = (0..11)
-        .map(|index| {
-            emergency_exit_order(
-                instrument_eth_usdt.id(),
-                ClientOrderId::new(format!("O-EMERGENCY-EXIT-RATE-{index}")),
-                OrderSide::Sell,
-                Quantity::from("1.000"),
-                true,
-            )
-        })
-        .collect::<Vec<_>>();
-
-    for order in &orders {
-        simple_cache
-            .add_order(
-                order.clone(),
-                Some(position_id),
-                Some(client_id_binance),
-                false,
-            )
-            .unwrap();
-    }
-    let config = RiskEngineConfig {
-        debug: true,
-        bypass: false,
-        max_order_submit: RateLimit::new(10, 1000),
-        max_order_modify: RateLimit::new(5, 1000),
-        max_notional_per_order: AHashMap::new(),
-        full_position_exit_venues: AHashSet::new(),
-    };
-    let mut risk_engine = get_risk_engine(
-        Some(Rc::new(RefCell::new(simple_cache))),
-        Some(config),
-        None,
-        false,
-    );
-    risk_engine.set_trading_state(TradingState::Halted);
-
-    for order in &orders {
-        let command = emergency_exit_command(
-            trader_id,
-            client_id_binance,
-            strategy_id_ema_cross,
-            order,
-            Some(position_id),
-            true,
-            risk_engine.clock().borrow().timestamp_ns(),
-        );
-        risk_engine.execute(TradingCommand::SubmitOrder(command));
-    }
-
-    let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
-    let execute_messages = get_execute_order_event_handler_messages(&execute_order_event_handler);
-    assert_eq!(execute_messages.len(), 10);
-    assert_eq!(process_messages.len(), 1);
-    assert_eq!(
-        process_messages[0].message(),
-        Some(Ustr::from("RATE_LIMIT_EXCEEDED"))
-    );
+    assert_eq!(execute_messages.len(), usize::from(should_forward));
 }
 
 #[rstest]
@@ -6864,7 +6444,7 @@ fn test_modify_order_when_negative_price_for_commodity_then_allows(
 }
 
 #[rstest]
-fn test_modify_order_when_risk_bypassed_sends_to_execution_engine(
+fn test_modify_order_when_risk_bypassed_ignores_trading_state(
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
     trader_id: TraderId,
@@ -6874,6 +6454,7 @@ fn test_modify_order_when_risk_bypassed_sends_to_execution_engine(
     execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
 ) {
     let mut risk_engine = get_risk_engine(None, None, None, true);
+    risk_engine.set_trading_state(TradingState::Halted);
 
     // Order intentionally not in the cache: bypass skips all validation
     let modify_order = ModifyOrder::new(
@@ -8081,7 +7662,11 @@ fn test_set_trading_state_publishes_trading_state_changed_event() {
     );
 
     let handler = msgbus::stubs::get_message_saving_handler::<TradingStateChanged>(None);
-    msgbus::subscribe_any("events.risk".into(), handler.clone(), None);
+    msgbus::subscribe_any(
+        MessagingSwitchboard::risk_events_topic().into(),
+        handler.clone(),
+        None,
+    );
 
     risk_engine.set_trading_state(TradingState::Halted);
 
@@ -9456,12 +9041,18 @@ fn test_submit_sell_when_reducing_and_net_long_then_allows(
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Sell)
         .quantity(Quantity::from("1.000"))
+        .reduce_only(true)
         .build();
 
     risk_engine
         .cache()
         .borrow_mut()
-        .add_order(order.clone(), None, Some(client_id_binance), false)
+        .add_order(
+            order.clone(),
+            Some(PositionId::from("P-003")),
+            Some(client_id_binance),
+            false,
+        )
         .unwrap();
 
     let submit_order = SubmitOrder::new(
@@ -9472,7 +9063,7 @@ fn test_submit_sell_when_reducing_and_net_long_then_allows(
         order.client_order_id(),
         order.init_event().clone(),
         None,
-        None,
+        Some(PositionId::from("P-003")),
         None,
         UUID4::new(),
         risk_engine.clock().borrow().timestamp_ns(),
@@ -9487,7 +9078,7 @@ fn test_submit_sell_when_reducing_and_net_long_then_allows(
 }
 
 #[rstest]
-fn test_submit_order_list_reducing_uses_each_orders_own_instrument(
+fn test_submit_order_list_when_reducing_denies_every_order(
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
     trader_id: TraderId,
@@ -9550,10 +9141,7 @@ fn test_submit_order_list_reducing_uses_each_orders_own_instrument(
     risk_engine.portfolio_mut().initialize_positions();
     risk_engine.set_trading_state(TradingState::Reducing);
 
-    // Order on instrument_a should pass (no position on A). Order on instrument_b
-    // is a BUY that would extend the existing LONG -> denied with B's instrument_id
-    // in the reason. Representative is instrument_a; reverting to the representative
-    // would let order_b through.
+    // REDUCING rejects lists as a unit, regardless of the individual order sides
     let order_a = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_a.id())
         .client_order_id(ClientOrderId::from("O-REDUCE-001"))
@@ -9601,27 +9189,25 @@ fn test_submit_order_list_reducing_uses_each_orders_own_instrument(
     risk_engine.execute(TradingCommand::SubmitOrderList(submit));
 
     let saved = get_process_order_event_handler_messages(&process_order_event_handler);
-    assert!(
-        !saved.is_empty(),
-        "REDUCING should have produced denial events",
-    );
     let denial_messages: Vec<String> = saved
         .iter()
         .filter(|e| e.event_type() == OrderEventType::Denied)
         .filter_map(|e| e.message().map(|m| m.as_str().to_string()))
         .collect();
+    assert_eq!(denial_messages.len(), 2);
+    assert!(
+        denial_messages
+            .iter()
+            .any(|m| m.contains(&instrument_a.id().to_string())),
+        "expected denial reason to name instrument {}, found: {denial_messages:?}",
+        instrument_a.id(),
+    );
     assert!(
         denial_messages
             .iter()
             .any(|m| m.contains(&instrument_b.id().to_string())),
         "expected denial reason to name instrument {}, found: {denial_messages:?}",
         instrument_b.id(),
-    );
-    assert!(
-        !denial_messages
-            .iter()
-            .any(|m| m.contains(&instrument_a.id().to_string()) && m.contains("REDUCING")),
-        "instrument_a should not appear in a REDUCING denial reason: {denial_messages:?}",
     );
 }
 
@@ -9850,7 +9436,14 @@ fn test_submit_order_with_zero_price_on_non_spread_instrument_then_denies(
 }
 
 #[rstest]
-fn test_modify_order_when_trading_halted_then_rejects(
+#[case::reducing(
+    TradingState::Reducing,
+    "TRADING_STATE_REDUCING: side=BUY, instrument_id=AUD/USD.SIM"
+)]
+#[case::halted(TradingState::Halted, "TRADING_HALTED")]
+fn test_modify_order_when_trading_restricted_then_rejects(
+    #[case] state: TradingState,
+    #[case] expected_reason: &str,
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
     trader_id: TraderId,
@@ -9898,7 +9491,7 @@ fn test_modify_order_when_trading_halted_then_rejects(
     let mut risk_engine =
         get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
 
-    risk_engine.set_trading_state(TradingState::Halted);
+    risk_engine.set_trading_state(state);
 
     let modify_order = ModifyOrder::new(
         trader_id,
@@ -9925,11 +9518,9 @@ fn test_modify_order_when_trading_halted_then_rejects(
         saved_process_messages[0].event_type(),
         OrderEventType::ModifyRejected
     );
-    assert!(
-        saved_process_messages[0]
-            .message()
-            .unwrap()
-            .contains("HALTED")
+    assert_eq!(
+        saved_process_messages[0].message().unwrap(),
+        Ustr::from(expected_reason)
     );
 
     let saved_execute_messages =

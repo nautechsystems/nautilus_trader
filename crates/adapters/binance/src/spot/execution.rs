@@ -53,8 +53,8 @@ use nautilus_model::{
     accounts::AccountAny,
     enums::{ContingencyType, LiquiditySide, OmsType, OrderStatus, OrderType, TimeInForce},
     events::{
-        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny,
-        OrderExpired, OrderFilled, OrderModifyRejected, OrderRejected, OrderUpdated,
+        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDeniedReason,
+        OrderEventAny, OrderExpired, OrderFilled, OrderModifyRejected, OrderRejected, OrderUpdated,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, Venue,
@@ -1621,6 +1621,11 @@ impl ExecutionClient for BinanceSpotExecutionClient {
             return Ok(());
         }
 
+        if let Err(reason) = validate_order(&order) {
+            self.emitter.emit_order_denied(&order, &reason.to_string());
+            return Ok(());
+        }
+
         if order.time_in_force() == TimeInForce::Gtd && self.config.use_gtd {
             time_in_force_to_binance_spot(order.time_in_force(), self.config.use_gtd)?;
         }
@@ -1642,6 +1647,15 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         self.ensure_ws_user_data_active()?;
 
         let orders = self.core.get_orders_for_list(&cmd.order_list)?;
+
+        if let Some(reason) = orders.iter().find_map(|order| validate_order(order).err()) {
+            let reason = reason.to_string();
+
+            for order in &orders {
+                self.emitter.emit_order_denied(order, &reason);
+            }
+            return Ok(());
+        }
 
         if let Some(order) = orders.iter().find(|order| order.is_closed()) {
             let reason = format!("Cannot submit closed order {}", order.client_order_id());
@@ -2059,6 +2073,14 @@ impl ExecutionClient for BinanceSpotExecutionClient {
 
         Ok(())
     }
+}
+
+fn validate_order(order: &impl Order) -> Result<(), OrderDeniedReason> {
+    if order.is_reduce_only() {
+        return Err(OrderDeniedReason::UnsupportedReduceOnly);
+    }
+
+    Ok(())
 }
 
 struct DispatchActiveGuard(Arc<AtomicBool>);

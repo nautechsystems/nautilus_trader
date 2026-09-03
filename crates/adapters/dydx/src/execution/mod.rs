@@ -1527,12 +1527,13 @@ impl ExecutionClient for DydxExecutionClient {
                 // Build the order message based on order type
                 let (msg, order_type_str) = match order.order_type() {
                     OrderType::Market => {
-                        let msg = order_builder.build_market_order(
+                        let msg = order_builder.build_market_order_with_reduce_only(
                             instrument_id,
                             client_id_u32,
                             client_metadata,
                             order.order_side(),
                             order.quantity(),
+                            order.is_reduce_only(),
                             block_height,
                         )?;
                         (msg, "market")

@@ -1399,7 +1399,6 @@ impl CoinbaseHttpClient {
             leverage: leverage.map(|d| d.normalize().to_string()),
             margin_type,
             retail_portfolio_id,
-            reduce_only,
         };
 
         self.inner
@@ -1604,9 +1603,10 @@ pub fn build_order_configuration(
     let price = price.map(|p| p.as_decimal());
     let trigger = trigger_price.map(|p| p.as_decimal());
 
-    if reduce_only && matches!(order_type, OrderType::Market) {
-        log::debug!("Coinbase MARKET orders do not accept reduce_only; ignoring flag");
-    }
+    anyhow::ensure!(
+        !reduce_only,
+        "Reduce-only orders are not supported by Coinbase Advanced Trade"
+    );
 
     match order_type {
         OrderType::Market => {

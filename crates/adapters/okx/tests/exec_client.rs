@@ -4188,6 +4188,96 @@ fn collect_order_denied_events(events: Vec<ExecutionEvent>) -> HashMap<ClientOrd
 
 #[rstest]
 #[tokio::test]
+async fn test_submit_spread_order_denies_reduce_only() {
+    let addr = start_exec_test_server().await;
+    let base_url = format!("http://{addr}");
+    let (mut client, mut rx, cache) = create_test_execution_client(&base_url);
+    client.start().unwrap();
+    let _ = drain_events(&mut rx);
+    let instrument_id = InstrumentId::from("BCH-USDT_BCH-USDT-SWAP.OKX");
+    let client_order_id = ClientOrderId::from("OREDUCESPREAD1");
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("STRATEGY-001"))
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("2000.00"))
+        .quantity(Quantity::from("1"))
+        .time_in_force(TimeInForce::Gtc)
+        .reduce_only(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+    let cmd = SubmitOrder::from_order(
+        &order,
+        TraderId::from("TESTER-001"),
+        Some(*OKX_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    client.submit_order(cmd).unwrap();
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1, "events: {events:?}");
+    let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = &events[0] else {
+        panic!("Expected OrderDenied, was {:?}", events[0]);
+    };
+    assert_eq!(denied.client_order_id, client_order_id);
+    assert_eq!(denied.reason.as_str(), "UNSUPPORTED_REDUCE_ONLY");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_cash_order_denies_reduce_only() {
+    let addr = start_exec_test_server().await;
+    let base_url = format!("http://{addr}");
+    let (mut client, mut rx, cache) = create_test_execution_client(&base_url);
+    client.start().unwrap();
+    let _ = drain_events(&mut rx);
+    let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+    let client_order_id = ClientOrderId::from("OREDUCECASH1");
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("STRATEGY-001"))
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("2000.00"))
+        .quantity(Quantity::from("1"))
+        .time_in_force(TimeInForce::Gtc)
+        .reduce_only(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+    let cmd = SubmitOrder::from_order(
+        &order,
+        TraderId::from("TESTER-001"),
+        Some(*OKX_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    client.submit_order(cmd).unwrap();
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1, "events: {events:?}");
+    let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = &events[0] else {
+        panic!("Expected OrderDenied, was {:?}", events[0]);
+    };
+    assert_eq!(denied.client_order_id, client_order_id);
+    assert_eq!(denied.reason.as_str(), "UNSUPPORTED_REDUCE_ONLY");
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_submit_order_denies_when_clord_id_exceeds_32_chars() {
     let addr = start_exec_test_server().await;
     let base_url = format!("http://{addr}");
@@ -4317,6 +4407,61 @@ async fn test_submit_order_list_denies_every_leg_when_any_clord_id_invalid() {
         reason_b.contains("ORDER_LIST_DENIED") && reason_b.contains("OL-001"),
         "sibling B reason was: {reason_b}"
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_list_errors_before_events_when_order_is_missing() {
+    let addr = start_exec_test_server().await;
+    let base_url = format!("http://{addr}");
+    let (mut client, mut rx, cache) = create_test_execution_client(&base_url);
+
+    client.start().unwrap();
+    let _ = drain_events(&mut rx);
+
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("STRATEGY-001");
+    let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+    let cached_id = ClientOrderId::from("OCACHED1");
+    let missing_id = ClientOrderId::from("OMISSING1");
+    let cached_order = build_test_limit_order(instrument_id, cached_id);
+    let missing_order = build_test_limit_order(instrument_id, missing_id);
+
+    cache
+        .borrow_mut()
+        .add_order(cached_order.clone(), None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+
+    let order_list = OrderList::new(
+        OrderListId::new("OL-MISSING"),
+        instrument_id,
+        strategy_id,
+        vec![cached_id, missing_id],
+        UnixNanos::default(),
+    );
+    let cmd = SubmitOrderList::new(
+        trader_id,
+        Some(*OKX_CLIENT_ID),
+        strategy_id,
+        order_list,
+        vec![
+            OrderInitialized::from(&cached_order),
+            OrderInitialized::from(&missing_order),
+        ],
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    let error = client
+        .submit_order_list(cmd)
+        .expect_err("missing order should fail the list submission");
+
+    assert!(error.to_string().contains(missing_id.as_str()));
+    assert!(drain_events(&mut rx).is_empty());
 }
 
 #[rstest]

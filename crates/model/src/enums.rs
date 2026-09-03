@@ -2019,11 +2019,10 @@ pub enum TimeInForce {
 pub enum TradingState {
     /// Normal trading operations.
     Active = 1,
-    /// Trading is halted except for verified emergency position exits routed through an
-    /// execution client which enforces reduce-only for the order.
-    Halted = 2,
-    /// Only order commands which would cancel order, or reduce position sizes are permitted.
-    Reducing = 3,
+    /// Only cancels, queries, and eligible reduce-only submissions are permitted.
+    Reducing = 2,
+    /// Only cancels and queries are permitted.
+    Halted = 3,
 }
 
 /// The trailing offset type for an order type which specifies a trailing stop/trigger or limit price.
@@ -2269,6 +2268,15 @@ mod tests {
     #[case::max_u8(255, None)]
     fn test_aggressor_side_from_u8(#[case] value: u8, #[case] expected: Option<AggressorSide>) {
         assert_eq!(AggressorSide::from_u8(value), expected);
+    }
+
+    #[rstest]
+    #[case::active(TradingState::Active, 1)]
+    #[case::reducing(TradingState::Reducing, 2)]
+    #[case::halted(TradingState::Halted, 3)]
+    fn test_trading_state_discriminants(#[case] state: TradingState, #[case] value: usize) {
+        assert_eq!(state as usize, value);
+        assert_eq!(TradingState::from_repr(value), Some(state));
     }
 
     #[rstest]

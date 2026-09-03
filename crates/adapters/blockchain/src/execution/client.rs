@@ -59,7 +59,7 @@ use nautilus_model::{
         wallet::{TokenBalance, WalletBalance},
     },
     enums::{CurrencyType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType},
-    events::{OrderCanceled, OrderEventAny, OrderFilled, OrderRejected},
+    events::{OrderCanceled, OrderDeniedReason, OrderEventAny, OrderFilled, OrderRejected},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, TradeId, Venue, VenueOrderId},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -130,6 +130,7 @@ const ORDER_LIST_UNSUPPORTED: &str =
 const ORDER_MODIFY_UNSUPPORTED: &str = "Order modification is not supported";
 /// Rejection reason for order cancellations, which immutable on-chain swaps cannot support.
 const ORDER_CANCEL_UNSUPPORTED: &str = "Order cancellation is not supported";
+
 /// Error for venue report probes that cannot answer without implying absence.
 const VENUE_EXECUTION_REPORTS_UNSUPPORTED: &str =
     "Venue execution reports are not supported on the blockchain execution client";
@@ -5698,6 +5699,11 @@ impl ExecutionClient for BlockchainExecutionClient {
             return Ok(());
         }
 
+        if let Err(reason) = validate_order(&order) {
+            self.emitter.emit_order_denied(&order, &reason.to_string());
+            return Ok(());
+        }
+
         if !self.pending_tasks.is_open() {
             self.emitter
                 .emit_order_denied(&order, "Blockchain execution client is shutting down");
@@ -6282,6 +6288,14 @@ impl ExecutionClient for BlockchainExecutionClient {
         );
         Ok(None)
     }
+}
+
+fn validate_order(order: &impl Order) -> Result<(), OrderDeniedReason> {
+    if order.is_reduce_only() {
+        return Err(OrderDeniedReason::UnsupportedReduceOnly);
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -18159,6 +18173,37 @@ mod tests {
         let addr = start_mock_rpc_server(state.clone()).await;
         let (client, cache) = swap_client_with_cache(test_config(format!("http://{addr}")));
         (client, state, cache)
+    }
+
+    #[tokio::test]
+    async fn submit_order_denies_reduce_only_without_side_effects() {
+        let (mut client, state, cache) = unsupported_client_with_mock_rpc().await;
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("S-001"))
+            .instrument_id(test_pool().instrument_id)
+            .client_order_id(ClientOrderId::from("O-REDUCE-ONLY"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("0.001"))
+            .reduce_only(true)
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&order)).unwrap();
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 1, "was: {events:?}");
+        let OrderEventAny::Denied(denied) = &events[0] else {
+            panic!("expected OrderDenied, was {:?}", events[0]);
+        };
+        assert_eq!(denied.client_order_id, order.client_order_id());
+        assert_eq!(denied.reason.as_str(), "UNSUPPORTED_REDUCE_ONLY");
+        assert!(state.recorded_requests().is_empty());
+        assert!(client.in_flight.lock().is_none());
     }
 
     #[tokio::test]

@@ -987,6 +987,25 @@ fn make_test_order(
         .build()
 }
 
+fn make_reduce_only_test_order(
+    instrument_id: &str,
+    client_order_id: &str,
+    price: &str,
+    quantity: &str,
+) -> OrderAny {
+    OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(InstrumentId::from(instrument_id))
+        .client_order_id(ClientOrderId::from(client_order_id))
+        .side(OrderSide::Sell)
+        .price(Price::from(price))
+        .quantity(Quantity::from(quantity))
+        .time_in_force(TimeInForce::Gtc)
+        .reduce_only(true)
+        .build()
+}
+
 fn make_accepted_test_order(
     instrument_id: &str,
     client_order_id: &str,
@@ -2687,6 +2706,116 @@ async fn test_submit_order_registers_customer_order_ref() {
         .iter()
         .any(|m| m == METHOD_PLACE_ORDERS);
     assert!(has_place_orders, "Expected placeOrders call");
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_denies_reduce_only_before_submission() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    let instrument_id = "1.181005744-86362-0.BETFAIR";
+    let client_order_id = ClientOrderId::from("O-REDUCE-ONLY");
+    let order = make_reduce_only_test_order(instrument_id, client_order_id.as_str(), "2.58", "10");
+    add_order_to_cache(&cache, order.clone());
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    client.submit_order(make_submit_order_cmd(&order)).unwrap();
+
+    let events = drain_events(&mut rx, Duration::from_millis(300)).await;
+    let denials = events
+        .iter()
+        .filter_map(|event| match event {
+            ExecutionEvent::Order(OrderEventAny::Denied(denied)) => {
+                Some((denied.client_order_id, denied.reason.as_str()))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(denials, vec![(client_order_id, "UNSUPPORTED_REDUCE_ONLY")],);
+    assert!(
+        !events.iter().any(|event| matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Submitted(_) | OrderEventAny::Accepted(_))
+        )),
+        "reduce-only order advanced before denial: {events:?}",
+    );
+    assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 0);
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_list_denies_all_orders_when_reduce_only_is_present() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    let instrument_id = "1.181005744-86362-0.BETFAIR";
+    let reduce_only =
+        make_reduce_only_test_order(instrument_id, "O-LIST-REDUCE-ONLY", "2.58", "10");
+    let valid = make_test_order(instrument_id, "O-LIST-VALID", "3.00", "5");
+    for order in [&reduce_only, &valid] {
+        add_order_to_cache(&cache, order.clone());
+    }
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let (cmd, _) = make_submit_order_list_cmd(instrument_id, &[reduce_only.clone(), valid.clone()]);
+    client.submit_order_list(cmd).unwrap();
+
+    let events = drain_events(&mut rx, Duration::from_millis(300)).await;
+    let denials = events
+        .iter()
+        .filter_map(|event| match event {
+            ExecutionEvent::Order(OrderEventAny::Denied(denied)) => {
+                Some((denied.client_order_id, denied.reason.as_str()))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        denials,
+        vec![
+            (reduce_only.client_order_id(), "UNSUPPORTED_REDUCE_ONLY",),
+            (valid.client_order_id(), "UNSUPPORTED_REDUCE_ONLY"),
+        ],
+    );
+    assert!(
+        !events.iter().any(|event| matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Submitted(_) | OrderEventAny::Accepted(_))
+        )),
+        "invalid order list advanced before denial: {events:?}",
+    );
+    assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 0);
 
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());

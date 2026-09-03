@@ -757,9 +757,50 @@ async fn list_submit_ambiguous_partial_failure_retains_attempted_children_only()
 }
 
 #[rstest]
+fn submit_order_denies_reduce_only() {
+    let (client, mut rx, cache) = create_test_execution_client();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(create_test_stock_instrument())
+        .client_order_id(ClientOrderId::from("O-IB-REDUCE-ONLY"))
+        .side(OrderSide::Sell)
+        .price(Price::from("100.00"))
+        .quantity(Quantity::from(1))
+        .reduce_only(true)
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(*IB_CLIENT_ID), false)
+        .unwrap();
+    let cmd = SubmitOrder::from_order(
+        &order,
+        client.core.trader_id,
+        Some(client.core.client_id),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    client.submit_order(cmd).unwrap();
+
+    match next_order_event(&mut rx) {
+        OrderEventAny::Denied(event) => {
+            assert_eq!(event.client_order_id, order.client_order_id());
+            assert_eq!(event.reason.as_str(), "UNSUPPORTED_REDUCE_ONLY");
+        }
+        event => panic!("Expected OrderDenied, was {event:?}"),
+    }
+    assert!(rx.try_recv().is_err());
+}
+
+#[rstest]
 fn submit_order_denies_when_client_not_ready() {
-    let (client, mut rx, _) = create_test_execution_client();
+    let (client, mut rx, cache) = create_test_execution_client();
     let order = create_test_limit_order(ClientOrderId::from("O-IB-001"));
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(*IB_CLIENT_ID), false)
+        .unwrap();
     let cmd = SubmitOrder::from_order(
         &order,
         client.core.trader_id,
@@ -784,10 +825,73 @@ fn submit_order_denies_when_client_not_ready() {
 }
 
 #[rstest]
+fn submit_order_list_denies_all_orders_when_reduce_only_is_present() {
+    let (client, mut rx, cache) = create_test_execution_client();
+    let reduce_only = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(create_test_stock_instrument())
+        .client_order_id(ClientOrderId::from("O-IB-REDUCE-ONLY"))
+        .side(OrderSide::Sell)
+        .price(Price::from("100.00"))
+        .quantity(Quantity::from(1))
+        .reduce_only(true)
+        .submit(true)
+        .build();
+    let regular = create_test_limit_order(ClientOrderId::from("O-IB-REGULAR"));
+    for order in [&reduce_only, &regular] {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(*IB_CLIENT_ID), false)
+            .unwrap();
+    }
+    let order_list = OrderList::new(
+        OrderListId::from("OL-IB-REDUCE-ONLY"),
+        reduce_only.instrument_id(),
+        reduce_only.strategy_id(),
+        vec![reduce_only.client_order_id(), regular.client_order_id()],
+        UnixNanos::default(),
+    );
+    let cmd = SubmitOrderList::new(
+        client.core.trader_id,
+        Some(client.core.client_id),
+        reduce_only.strategy_id(),
+        order_list,
+        vec![
+            OrderInitialized::from(&reduce_only),
+            OrderInitialized::from(&regular),
+        ],
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    client.submit_order_list(cmd).unwrap();
+
+    for client_order_id in [reduce_only.client_order_id(), regular.client_order_id()] {
+        match next_order_event(&mut rx) {
+            OrderEventAny::Denied(event) => {
+                assert_eq!(event.client_order_id, client_order_id);
+                assert_eq!(event.reason.as_str(), "UNSUPPORTED_REDUCE_ONLY");
+            }
+            event => panic!("Expected OrderDenied, was {event:?}"),
+        }
+    }
+    assert!(rx.try_recv().is_err());
+}
+
+#[rstest]
 fn submit_order_list_denies_all_orders_when_client_not_ready() {
-    let (client, mut rx, _) = create_test_execution_client();
+    let (client, mut rx, cache) = create_test_execution_client();
     let order1 = create_test_limit_order(ClientOrderId::from("O-IB-001"));
     let order2 = create_test_limit_order(ClientOrderId::from("O-IB-002"));
+    for order in [&order1, &order2] {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(*IB_CLIENT_ID), false)
+            .unwrap();
+    }
     let order_list = OrderList::new(
         OrderListId::from("OL-IB-001"),
         order1.instrument_id(),

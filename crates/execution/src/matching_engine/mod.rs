@@ -2927,6 +2927,12 @@ impl OrderMatchingEngine {
                 );
             }
 
+            if order.is_reduce_only() && !self.config.use_reduce_only {
+                break 'validate Some(
+                    "Reduce-only orders are not supported by this matching engine".into(),
+                );
+            }
+
             let position = self.position_for_order_in_cache(&cache_borrow, order);
 
             // Check not shorting an equity without a MARGIN account
@@ -6543,6 +6549,49 @@ mod tests {
 
         assert!(matches!(action, PostMatchOrderAction::NoMaintenance));
         assert_eq!(clone_count.get(), 0);
+    }
+
+    #[rstest]
+    fn test_process_order_rejects_reduce_only_when_support_is_disabled() {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let mut engine = OrderMatchingEngine::new(
+            instrument.clone(),
+            1,
+            FillModelHandle::default(),
+            FeeModelAny::default().into(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(Cache::default())),
+            OrderMatchingEngineConfig::builder()
+                .use_reduce_only(false)
+                .build(),
+        );
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let events_handler = Rc::clone(&events);
+        engine.set_event_handler(Rc::new(move |event| {
+            events_handler.borrow_mut().push(event);
+        }));
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.000"))
+            .reduce_only(true)
+            .submit(true)
+            .build();
+
+        engine.process_order(&mut order, AccountId::from("ACCOUNT-001"));
+
+        let events = events.borrow();
+        assert_eq!(events.len(), 1);
+        let OrderEventAny::Rejected(rejected) = &events[0] else {
+            panic!("Expected OrderRejected, was {:?}", events[0]);
+        };
+        assert_eq!(
+            rejected.reason.as_str(),
+            "Reduce-only orders are not supported by this matching engine"
+        );
     }
 
     #[rstest]

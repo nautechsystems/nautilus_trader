@@ -38,8 +38,8 @@ use nautilus_common::{
     messages::{
         ExecutionReport,
         execution::{
-            BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder, PARAMS_EMERGENCY_EXIT,
-            QueryAccount, SubmitOrder, SubmitOrderList, TradingCommand,
+            BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount,
+            SubmitOrder, SubmitOrderList, TradingCommand,
         },
     },
     msgbus::{
@@ -728,25 +728,20 @@ fn test_external_client_command_publishes_to_client_topic_and_skips_local_routin
 }
 
 #[rstest]
-#[case::emergency_exit(true)]
-#[case::ordinary(false)]
-fn test_external_client_submit_order_denied_only_when_emergency_exit(#[case] emergency_exit: bool) {
+fn test_external_client_submit_order_publishes_to_client_topic() {
     *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
 
-    let trader_id = TraderId::test_default();
-    let strategy_id = StrategyId::test_default();
     let instrument = audusd_sim();
     let external_client_id = ClientId::from("EXTERNAL");
-    let clock = Rc::new(RefCell::new(TestClock::new()));
-    let cache = Rc::new(RefCell::new(Cache::default()));
-    let config = ExecutionEngineConfig {
-        external_clients: Some(vec![external_client_id]),
-        ..Default::default()
-    };
-    let execution_engine = ExecutionEngine::new(clock, cache, Some(config));
+    let execution_engine = ExecutionEngine::new(
+        Rc::new(RefCell::new(TestClock::new())),
+        Rc::new(RefCell::new(Cache::default())),
+        Some(ExecutionEngineConfig {
+            external_clients: Some(vec![external_client_id]),
+            ..Default::default()
+        }),
+    );
     let order = OrderTestBuilder::new(OrderType::Market)
-        .trader_id(trader_id)
-        .strategy_id(strategy_id)
         .instrument_id(instrument.id)
         .side(OrderSide::Sell)
         .quantity(Quantity::from(1))
@@ -757,27 +752,20 @@ fn test_external_client_submit_order_denied_only_when_emergency_exit(#[case] eme
         .borrow_mut()
         .add_order(order.clone(), None, Some(external_client_id), true)
         .unwrap();
-
-    let params = emergency_exit.then(|| {
-        let mut params = Params::new();
-        params.insert(PARAMS_EMERGENCY_EXIT.to_string(), true.into());
-        params
-    });
-    let command = SubmitOrder {
-        trader_id,
-        strategy_id,
-        position_id: None,
-        params,
-        client_order_id: order.client_order_id(),
-        order_init: order.init_event().clone(),
-        command_id: UUID4::new(),
-        ts_init: UnixNanos::default(),
-        client_id: Some(external_client_id),
-        instrument_id: instrument.id,
-        exec_algorithm_id: None,
-        correlation_id: None,
-        causation_id: None,
-    };
+    let command = SubmitOrder::new(
+        order.trader_id(),
+        Some(external_client_id),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
     let topic = format!("commands.trading.{external_client_id}");
     let pattern: msgbus::MStr<msgbus::Pattern> = topic.as_str().into();
     let (handler, saver) = get_any_saving_handler::<TradingCommand>(None);
@@ -789,84 +777,8 @@ fn test_external_client_submit_order_denied_only_when_emergency_exit(#[case] eme
     let captured = saver.get_messages();
     let cache = execution_engine.cache().borrow();
     let cached_order = cache.order(&order.client_order_id()).unwrap();
-
-    if emergency_exit {
-        assert!(captured.is_empty());
-        assert_eq!(cached_order.status(), OrderStatus::Denied);
-        let OrderEventAny::Denied(denied) = cached_order.last_event() else {
-            panic!("Expected OrderDenied event");
-        };
-        assert_eq!(
-            denied.reason.as_str(),
-            "REDUCE_ONLY_ENFORCEMENT_NOT_ESTABLISHED: client_id=EXTERNAL, instrument_id=AUD/USD.SIM",
-        );
-    } else {
-        assert_eq!(captured.as_slice(), &[TradingCommand::SubmitOrder(command)]);
-        assert_eq!(cached_order.status(), OrderStatus::Initialized);
-    }
-}
-
-#[rstest]
-fn test_external_client_emergency_exit_cache_miss_is_denied() {
-    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
-
-    let trader_id = TraderId::test_default();
-    let strategy_id = StrategyId::test_default();
-    let instrument = audusd_sim();
-    let external_client_id = ClientId::from("EXTERNAL");
-    let clock = Rc::new(RefCell::new(TestClock::new()));
-    let cache = Rc::new(RefCell::new(Cache::default()));
-    let config = ExecutionEngineConfig {
-        external_clients: Some(vec![external_client_id]),
-        ..Default::default()
-    };
-    let execution_engine = ExecutionEngine::new(clock, cache, Some(config));
-    let order = OrderTestBuilder::new(OrderType::Market)
-        .trader_id(trader_id)
-        .strategy_id(strategy_id)
-        .instrument_id(instrument.id)
-        .side(OrderSide::Sell)
-        .quantity(Quantity::from(1))
-        .reduce_only(true)
-        .build();
-    let mut params = Params::new();
-    params.insert(PARAMS_EMERGENCY_EXIT.to_string(), true.into());
-    let command = SubmitOrder {
-        trader_id,
-        strategy_id,
-        position_id: None,
-        params: Some(params),
-        client_order_id: order.client_order_id(),
-        order_init: order.init_event().clone(),
-        command_id: UUID4::new(),
-        ts_init: UnixNanos::default(),
-        client_id: Some(external_client_id),
-        instrument_id: instrument.id,
-        exec_algorithm_id: None,
-        correlation_id: None,
-        causation_id: None,
-    };
-    let topic = format!("commands.trading.{external_client_id}");
-    let pattern: msgbus::MStr<msgbus::Pattern> = topic.as_str().into();
-    let (handler, saver) = get_any_saving_handler::<TradingCommand>(None);
-    msgbus::subscribe_any(pattern, handler.clone(), None);
-
-    execution_engine.execute(TradingCommand::SubmitOrder(command));
-
-    msgbus::unsubscribe_any(pattern, &handler);
-    let captured = saver.get_messages();
-    let cache = execution_engine.cache().borrow();
-    let cached_order = cache.order(&order.client_order_id()).unwrap();
-
-    assert!(captured.is_empty());
-    assert_eq!(cached_order.status(), OrderStatus::Denied);
-    let OrderEventAny::Denied(denied) = cached_order.last_event() else {
-        panic!("Expected OrderDenied event");
-    };
-    assert_eq!(
-        denied.reason.as_str(),
-        "REDUCE_ONLY_ENFORCEMENT_NOT_ESTABLISHED: client_id=EXTERNAL, instrument_id=AUD/USD.SIM",
-    );
+    assert_eq!(captured.as_slice(), &[TradingCommand::SubmitOrder(command)]);
+    assert_eq!(cached_order.status(), OrderStatus::Initialized);
 }
 
 #[rstest]
@@ -4402,89 +4314,6 @@ fn test_submit_order_denies_when_client_does_not_handle_instrument_venue(
         panic!("Expected OrderDenied event");
     }
     assert!(submitted_order_ids.borrow().is_empty());
-}
-
-#[rstest]
-#[case::non_capable(false)]
-#[case::capable(true)]
-fn test_submit_emergency_exit_requires_capable_route(
-    #[case] capable: bool,
-    mut execution_engine: ExecutionEngine,
-) {
-    let trader_id = TraderId::test_default();
-    let strategy_id = StrategyId::test_default();
-    let instrument = audusd_sim();
-    let client_id = ClientId::from("STUB");
-    let mut client = StubExecutionClient::new(
-        client_id,
-        AccountId::from("TEST-ACCOUNT"),
-        instrument.id.venue,
-        OmsType::Netting,
-        None,
-    );
-
-    if capable {
-        client = client.with_enforces_reduce_only();
-    }
-    let submitted_order_ids = client.submitted_order_ids();
-    execution_engine.register_client(Box::new(client)).unwrap();
-    execution_engine
-        .cache()
-        .borrow_mut()
-        .add_instrument(instrument.clone().into())
-        .unwrap();
-    let order = OrderTestBuilder::new(OrderType::Market)
-        .trader_id(trader_id)
-        .strategy_id(strategy_id)
-        .instrument_id(instrument.id)
-        .side(OrderSide::Sell)
-        .quantity(Quantity::from(1))
-        .reduce_only(true)
-        .build();
-    execution_engine
-        .cache()
-        .borrow_mut()
-        .add_order(order.clone(), None, Some(client_id), true)
-        .unwrap();
-    let mut params = Params::new();
-    params.insert(PARAMS_EMERGENCY_EXIT.to_string(), true.into());
-    let submit_order = SubmitOrder {
-        trader_id,
-        strategy_id,
-        position_id: None,
-        params: Some(params),
-        client_order_id: order.client_order_id(),
-        order_init: order.init_event().clone(),
-        command_id: UUID4::new(),
-        ts_init: UnixNanos::default(),
-        client_id: Some(client_id),
-        instrument_id: instrument.id,
-        exec_algorithm_id: None,
-        correlation_id: None,
-        causation_id: None,
-    };
-
-    execution_engine.execute(TradingCommand::SubmitOrder(submit_order));
-
-    let cache = execution_engine.cache().borrow();
-    let cached_order = cache.order(&order.client_order_id()).unwrap();
-    if capable {
-        assert_eq!(cached_order.status(), OrderStatus::Initialized);
-        assert_eq!(
-            submitted_order_ids.borrow().as_slice(),
-            &[order.client_order_id()]
-        );
-    } else {
-        assert_eq!(cached_order.status(), OrderStatus::Denied);
-        let OrderEventAny::Denied(denied) = cached_order.last_event() else {
-            panic!("Expected OrderDenied event");
-        };
-        assert_eq!(
-            denied.reason.as_str(),
-            "REDUCE_ONLY_NOT_ENFORCED: client_id=STUB, instrument_id=AUD/USD.SIM",
-        );
-        assert!(submitted_order_ids.borrow().is_empty());
-    }
 }
 
 #[rstest]

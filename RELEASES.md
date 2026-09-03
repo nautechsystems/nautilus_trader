@@ -9,7 +9,13 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 
+- Removed Coinbase `CreateOrderRequest.reduce_only`; reduce-only orders are rejected before submission
+- Changed `TradingState` to `ACTIVE=1`, `REDUCING=2`, and `HALTED=3`; update numeric and Cap'n Proto consumers
+- Changed `REDUCING` to allow only eligible reduce-only submissions, cancellations, and queries
+- Changed execution clients to reject `reduce_only` unless they send an enforcing venue instruction
+- Changed backtest and sandbox venues to reject reduce-only orders when `use_reduce_only=false`
 - Changed v2 PostgreSQL cache startup to require the `instrument_close` table; run `nautilus database init`
+- Changed Binance `close_position` orders to require `reduce_only=true` in Nautilus
 
 ### Security
 

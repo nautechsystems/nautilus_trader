@@ -2130,6 +2130,11 @@ impl ExecutionClient for BetfairExecutionClient {
 
         let order = self.core.get_order(&cmd.client_order_id)?;
 
+        if let Err(reason) = validate_order(&order) {
+            self.emitter.emit_order_denied(&order, &reason.to_string());
+            return Ok(());
+        }
+
         if self.submissions_halted() {
             log::warn!(
                 "Halting submit for {} while the execution stream is unavailable or reconciling",
@@ -2975,6 +2980,18 @@ impl ExecutionClient for BetfairExecutionClient {
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         self.process_pending_resync();
 
+        let orders = self.core.get_orders_for_list(&cmd.order_list)?;
+
+        if let Some(reason) = orders.iter().find_map(|order| validate_order(order).err()) {
+            let reason = reason.to_string();
+
+            for order in &orders {
+                self.emitter.emit_order_denied(order, &reason);
+            }
+
+            return Ok(());
+        }
+
         if self.submissions_halted() {
             log::warn!(
                 "Halting submit_order_list ({} orders) while the execution stream is \
@@ -2998,16 +3015,14 @@ impl ExecutionClient for BetfairExecutionClient {
 
         let mut candidates = Vec::new();
 
-        for client_order_id in &cmd.order_list.client_order_ids {
-            let order = self.core.get_order(client_order_id)?;
-
+        for order in orders {
             if order.is_closed() {
-                log::warn!("Skipping closed order {client_order_id}");
+                log::warn!("Skipping closed order {}", order.client_order_id());
                 continue;
             }
 
             let instruction = create_place_instruction(&order, selection_id, handicap)?;
-            candidates.push((instruction, order.clone()));
+            candidates.push((instruction, order));
         }
 
         let mut instructions = Vec::new();
@@ -3322,6 +3337,21 @@ impl BetfairExecutionClient {
 
             Ok(())
         });
+    }
+}
+
+fn validate_order(order: &impl Order) -> Result<(), OrderDeniedReason> {
+    if order.is_reduce_only() {
+        return Err(OrderDeniedReason::UnsupportedReduceOnly);
+    }
+
+    match order.order_type() {
+        OrderType::Limit => Ok(()),
+        OrderType::Market if order.time_in_force() != TimeInForce::AtTheClose => Err(
+            OrderDeniedReason::UnsupportedTimeInForce(order.time_in_force()),
+        ),
+        OrderType::Market => Ok(()),
+        order_type => Err(OrderDeniedReason::UnsupportedOrderType { order_type }),
     }
 }
 
@@ -5007,6 +5037,75 @@ mod tests {
         http::models::{AccountDetailsResponse, CancelInstructionReport},
         stream::messages::stream_decode,
     };
+
+    fn validation_order_builder(order_type: OrderType) -> OrderTestBuilder {
+        let mut order = OrderTestBuilder::new(order_type);
+        order
+            .instrument_id(InstrumentId::from("1.234567-12345-0.0.BETFAIR"))
+            .quantity(Quantity::from(10));
+
+        match order_type {
+            OrderType::Limit => {
+                order.price(Price::from("2.0"));
+            }
+            OrderType::StopMarket => {
+                order.trigger_price(Price::from("2.0"));
+            }
+            _ => {}
+        }
+
+        order
+    }
+
+    #[rstest]
+    #[case(OrderType::Limit, TimeInForce::Gtc)]
+    #[case(OrderType::Market, TimeInForce::AtTheClose)]
+    fn test_validate_order_accepts_supported_orders(
+        #[case] order_type: OrderType,
+        #[case] time_in_force: TimeInForce,
+    ) {
+        let order = validation_order_builder(order_type)
+            .time_in_force(time_in_force)
+            .build();
+
+        assert_eq!(validate_order(&order), Ok(()));
+    }
+
+    #[rstest]
+    fn test_validate_order_denies_reduce_only() {
+        let order = validation_order_builder(OrderType::Limit)
+            .reduce_only(true)
+            .build();
+
+        assert_eq!(
+            validate_order(&order),
+            Err(OrderDeniedReason::UnsupportedReduceOnly),
+        );
+    }
+
+    #[rstest]
+    fn test_validate_order_denies_unsupported_order_type() {
+        let order = validation_order_builder(OrderType::StopMarket).build();
+
+        assert_eq!(
+            validate_order(&order),
+            Err(OrderDeniedReason::UnsupportedOrderType {
+                order_type: OrderType::StopMarket,
+            }),
+        );
+    }
+
+    #[rstest]
+    fn test_validate_order_denies_unsupported_market_time_in_force() {
+        let order = validation_order_builder(OrderType::Market)
+            .time_in_force(TimeInForce::Gtc)
+            .build();
+
+        assert_eq!(
+            validate_order(&order),
+            Err(OrderDeniedReason::UnsupportedTimeInForce(TimeInForce::Gtc)),
+        );
+    }
 
     #[rstest]
     #[case(

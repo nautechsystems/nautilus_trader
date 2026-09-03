@@ -297,13 +297,13 @@ pub enum OrderDeniedReason {
         /// The order list that failed risk checks.
         order_list_id: OrderListId,
     },
-    /// Trading is halted; new orders are denied.
+    /// Trading is halted; new submissions and modifications are denied.
     #[error("TRADING_HALTED")]
     TradingHalted,
-    /// Trading is reducing; the order would increase exposure.
+    /// Trading is reducing; only eligible reduce-only submissions are permitted.
     #[error("TRADING_STATE_REDUCING: side={order_side}, instrument_id={instrument_id}")]
     TradingStateReducing {
-        /// The side of the order that would increase exposure.
+        /// The side of the denied order.
         order_side: OrderSide,
         /// The instrument the order applies to.
         instrument_id: InstrumentId,
@@ -338,24 +338,6 @@ pub enum OrderDeniedReason {
         /// The execution client's venue.
         client_venue: Venue,
     },
-    /// The routed execution client does not enforce reduce-only for this order.
-    #[error("REDUCE_ONLY_NOT_ENFORCED: client_id={client_id}, instrument_id={instrument_id}")]
-    ReduceOnlyNotEnforced {
-        /// The selected execution client.
-        client_id: ClientId,
-        /// The submitted instrument.
-        instrument_id: InstrumentId,
-    },
-    /// Reduce-only enforcement is not established for the external execution route.
-    #[error(
-        "REDUCE_ONLY_ENFORCEMENT_NOT_ESTABLISHED: client_id={client_id}, instrument_id={instrument_id}"
-    )]
-    ReduceOnlyEnforcementNotEstablished {
-        /// The external execution client.
-        client_id: ClientId,
-        /// The submitted instrument.
-        instrument_id: InstrumentId,
-    },
     /// Submitting the order to the execution client failed.
     #[error("SUBMIT_FAILED: {detail}")]
     SubmitFailed {
@@ -389,6 +371,9 @@ pub enum OrderDeniedReason {
         /// The unsupported order type.
         order_type: OrderType,
     },
+    /// The execution client or venue does not support the requested reduce-only instruction.
+    #[error("UNSUPPORTED_REDUCE_ONLY")]
+    UnsupportedReduceOnly,
     /// The order's time in force is not supported.
     #[error("UNSUPPORTED_TIME_IN_FORCE: {0}")]
     UnsupportedTimeInForce(TimeInForce),
@@ -483,20 +468,18 @@ impl OrderDeniedCode {
             Self::OrderListDenied => {
                 "The order was denied because its order list failed risk checks."
             }
-            Self::TradingHalted => "Trading is halted; new orders are denied.",
-            Self::TradingStateReducing => "Trading is reducing; the order would increase exposure.",
+            Self::TradingHalted => {
+                "Trading is halted; new submissions and modifications are denied."
+            }
+            Self::TradingStateReducing => {
+                "Trading is reducing; only eligible reduce-only submissions are permitted."
+            }
             Self::RateLimitExceeded => "The order submission rate limit was exceeded.",
             Self::StreamReconciling => {
                 "The execution stream is unavailable or recovering; retry after recovery."
             }
             Self::NoExecutionClient => "No execution client was found for the routed command.",
             Self::ClientVenueMismatch => "The execution client does not handle the order venue.",
-            Self::ReduceOnlyNotEnforced => {
-                "The routed execution client does not enforce reduce-only for this order."
-            }
-            Self::ReduceOnlyEnforcementNotEstablished => {
-                "Reduce-only enforcement is not established for the external execution route."
-            }
             Self::SubmitFailed => "Submitting the order to the execution client failed.",
             Self::InvalidClientOrderId => "The client order ID is invalid for the venue.",
             Self::InvalidPositionId => {
@@ -504,6 +487,9 @@ impl OrderDeniedCode {
             }
             Self::UnsupportedOrderList => "The venue does not support the requested order list.",
             Self::UnsupportedOrderType => "The order type is not supported.",
+            Self::UnsupportedReduceOnly => {
+                "The execution client or venue does not support the requested reduce-only instruction."
+            }
             Self::UnsupportedTimeInForce => "The order's time in force is not supported.",
             Self::UnsupportedTpSl => {
                 "The venue does not support the requested take-profit/stop-loss parameters."
@@ -748,10 +734,6 @@ mod tests {
             order_venue: Venue::from("XCME"),
             client_venue: Venue::from("IB"),
         };
-        let external_capability = OrderDeniedReason::ReduceOnlyEnforcementNotEstablished {
-            client_id: ClientId::from("EXTERNAL"),
-            instrument_id: InstrumentId::from("AUD/USD.SIM"),
-        };
         let submit_failed = OrderDeniedReason::SubmitFailed {
             detail: "transport closed".to_string(),
         };
@@ -763,10 +745,6 @@ mod tests {
         assert_eq!(
             missing_client.to_string(),
             "NO_EXECUTION_CLIENT: client_id=SIM, venue=SIM"
-        );
-        assert_eq!(
-            external_capability.to_string(),
-            "REDUCE_ONLY_ENFORCEMENT_NOT_ESTABLISHED: client_id=EXTERNAL, instrument_id=AUD/USD.SIM"
         );
         assert_eq!(
             mismatch.to_string(),
@@ -796,6 +774,7 @@ mod tests {
         let unsupported_order_type = OrderDeniedReason::UnsupportedOrderType {
             order_type: OrderType::TrailingStopMarket,
         };
+        let unsupported_reduce_only = OrderDeniedReason::UnsupportedReduceOnly;
         let unsupported_tp_sl = OrderDeniedReason::UnsupportedTpSl {
             detail: "TP/SL trigger prices are not supported in demo mode".to_string(),
         };
@@ -815,6 +794,10 @@ mod tests {
         assert_eq!(
             unsupported_order_type.to_string(),
             "UNSUPPORTED_ORDER_TYPE: TRAILING_STOP_MARKET"
+        );
+        assert_eq!(
+            unsupported_reduce_only.to_string(),
+            "UNSUPPORTED_REDUCE_ONLY"
         );
         assert_eq!(
             unsupported_tp_sl.to_string(),
@@ -955,14 +938,6 @@ mod tests {
                 order_venue: Venue::from("XCME"),
                 client_venue: Venue::from("IB"),
             },
-            OrderDeniedReason::ReduceOnlyNotEnforced {
-                client_id: ClientId::from("IB"),
-                instrument_id: InstrumentId::from("ES.XCME"),
-            },
-            OrderDeniedReason::ReduceOnlyEnforcementNotEstablished {
-                client_id: ClientId::from("IB"),
-                instrument_id: InstrumentId::from("ES.XCME"),
-            },
             OrderDeniedReason::SubmitFailed {
                 detail: "boom".to_string(),
             },
@@ -979,6 +954,7 @@ mod tests {
             OrderDeniedReason::UnsupportedOrderType {
                 order_type: OrderType::TrailingStopMarket,
             },
+            OrderDeniedReason::UnsupportedReduceOnly,
             OrderDeniedReason::UnsupportedTimeInForce(TimeInForce::Gtd),
             OrderDeniedReason::UnsupportedTpSl {
                 detail: "boom".to_string(),

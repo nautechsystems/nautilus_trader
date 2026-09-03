@@ -187,13 +187,13 @@ from its type, time-in-force, and expiry, so no manual tagging is needed.
 
 How the adapter handles the flag depends on the order type:
 
-| Order type                                | `reduce_only` behavior                                                                  |
-| ----------------------------------------- | --------------------------------------------------------------------------------------- |
-| `LIMIT`, `STOP_LIMIT`, `LIMIT_IF_TOUCHED` | Forwarded with your time in force. Use `IOC` or the chain rejects it.                   |
-| `MARKET`                                  | Dropped. The order fills like an ordinary market order and can open or flip a position. |
-| `STOP_MARKET`, `MARKET_IF_TOUCHED`        | Forwarded, but these carry no time in force, so the chain always rejects them.          |
+| Order type                                | `reduce_only` behavior                                                         |
+| ----------------------------------------- | ------------------------------------------------------------------------------ |
+| `MARKET`                                  | Forwarded as an IOC order.                                                     |
+| `LIMIT`, `STOP_LIMIT`, `LIMIT_IF_TOUCHED` | Forwarded with your time in force. Use `IOC` or the chain rejects it.          |
+| `STOP_MARKET`, `MARKET_IF_TOUCHED`        | Forwarded, but these carry no time in force, so the chain always rejects them. |
 
-Set `reduce_only` only on the first group, and only together with `IOC`.
+Set `reduce_only` on market orders or use it with `IOC` on the supported limit order types.
 
 ### Time in force options
 

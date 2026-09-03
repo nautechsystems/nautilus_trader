@@ -878,7 +878,7 @@ async fn test_submit_margin_cross_order_preserves_reduce_only_on_wire() {
 }
 
 #[tokio::test]
-async fn test_submit_cash_spot_order_omits_reduce_only_on_wire() {
+async fn test_submit_cash_spot_order_rejects_reduce_only() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
@@ -892,7 +892,7 @@ async fn test_submit_cash_spot_order_omits_reduce_only_on_wire() {
         .await
         .expect("client inactive");
 
-    client
+    let error = client
         .submit_order(
             TraderId::from("TRADER-001"),
             StrategyId::from("STRATEGY-001"),
@@ -920,26 +920,13 @@ async fn test_submit_cash_spot_order_omits_reduce_only_on_wire() {
             None,
         )
         .await
-        .expect("submit spot order failed");
+        .unwrap_err();
 
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move { !state.order_messages.lock().await.is_empty() }
-        },
-        Duration::from_secs(1),
-    )
-    .await;
-
-    let messages = state.order_messages().await;
-    let arg = &messages[0]["args"][0];
-
-    assert_eq!(messages[0]["op"], "order");
-    assert_eq!(arg["tdMode"], "cash");
-    assert!(
-        arg.get("reduceOnly").is_none(),
-        "cash spot orders must not carry reduceOnly"
+    assert_eq!(
+        error.to_string(),
+        "Client error: OKX cash orders do not support reduce-only instructions"
     );
+    assert!(state.order_messages().await.is_empty());
 
     client.close().await.expect("close failed");
 }
@@ -1007,6 +994,60 @@ async fn test_submit_swap_hedge_mode_order_omits_reduce_only_on_wire() {
         arg.get("reduceOnly").is_none(),
         "hedge-mode orders apply reduce-only via posSide and must not carry reduceOnly"
     );
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_submit_swap_hedge_mode_rejects_non_closing_reduce_only_order() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url).await;
+    client.cache_instruments(&load_swap_instruments());
+    client.cache_inst_id_code(Ustr::from("BTC-USD-SWAP"), 10_458);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    let error = client
+        .submit_order(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRATEGY-001"),
+            InstrumentId::from("BTC-USD-SWAP.OKX"),
+            OKXTradeMode::Cross,
+            ClientOrderId::from("Oswaphedgeinvalidreduceonly1"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("1"),
+            Some(TimeInForce::Gtc),
+            Some(Price::from("65000.1")),
+            None,
+            Some(false),
+            Some(true),
+            None,
+            Some(PositionSide::Long),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "Client error: OKX BUY orders on the LONG side do not enforce reduce-only"
+    );
+    assert!(state.order_messages().await.is_empty());
 
     client.close().await.expect("close failed");
 }
@@ -1109,7 +1150,7 @@ async fn test_batch_submit_orders_scope_reduce_only_on_wire() {
                 Some(Price::from("65000.1")),
                 None,
                 Some(false),
-                Some(true),
+                Some(false),
                 None,
                 None,
                 None,

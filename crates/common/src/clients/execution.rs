@@ -27,7 +27,6 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
     instruments::InstrumentAny,
-    orders::OrderAny,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
@@ -73,18 +72,6 @@ pub trait ExecutionClient {
     /// the instrument's exchange venue.
     fn handles_order_venue(&self, venue: Venue) -> bool {
         self.venue() == venue
-    }
-
-    /// Returns whether this client, for this exact command and cached order, will use a
-    /// downstream execution path that prevents any execution which would increase or reverse the
-    /// position once it reaches flat.
-    ///
-    /// The guarantee may be native venue enforcement or matching-engine enforcement against
-    /// execution-time position state. Serializing a flag the venue ignores, selecting a nominal
-    /// closing side, relying on balance rejection, or checking a cached position before submission
-    /// is not sufficient because an in-flight fill can make that check stale.
-    fn enforces_reduce_only(&self, _command: &SubmitOrder, _order: &OrderAny) -> bool {
-        false
     }
 
     /// Returns whether a bulk position status report request provides complete coverage for the

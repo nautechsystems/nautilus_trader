@@ -537,12 +537,9 @@ and on WebSocket reconnect) and the authenticated `futures_balance_summary`
 WebSocket channel. Position reports come from the REST `cfm/positions`
 endpoints.
 
-Coinbase's Advanced Trade API does not document a `reduce_only` field on
-the create-order schema, even though the venue's failure-reason enum
-acknowledges the concept. The client threads `reduce_only` through its
-`submit_order` signature for API parity and includes the flag on the wire
-only when set to `true`; if the venue later accepts it, no client changes
-are required.
+Coinbase's Advanced Trade API does not document a `reduce_only` field on the create-order schema.
+The execution client rejects reduce-only orders before transport instead of submitting them without
+the instruction.
 
 The adapter logs a warning when a REST order status report describes a
 forced-close order, and when the CFM balance summary reports a liquidation

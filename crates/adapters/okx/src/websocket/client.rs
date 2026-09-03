@@ -82,7 +82,7 @@ use super::{
 use crate::common::{
     consts::{
         OKX_NAUTILUS_BROKER_ID, OKX_SUPPORTED_ORDER_TYPES, OKX_SUPPORTED_TIME_IN_FORCE,
-        OKX_WS_PUBLIC_URL, OKX_WS_TOPIC_DELIMITER, select_book_channel,
+        OKX_WS_PUBLIC_URL, OKX_WS_TOPIC_DELIMITER, okx_reduce_only_wire_value, select_book_channel,
     },
     credential::Credential,
     enums::{
@@ -2590,7 +2590,6 @@ impl OKXWebSocketClient {
                 if position_side.is_none() {
                     builder.pos_side(OKXPositionSide::Net);
                 }
-                // reduceOnly is not applicable to options per OKX docs
             }
             OKXInstrumentType::Events => {}
             _ => {
@@ -2602,8 +2601,16 @@ impl OKXWebSocketClient {
             }
         }
 
-        if should_send_reduce_only(instrument_type, td_mode, position_side, reduce_only) {
-            builder.reduce_only(true);
+        if let Some(reduce_only) = okx_reduce_only_wire_value(
+            instrument_type,
+            td_mode,
+            order_side,
+            position_side,
+            reduce_only,
+        )
+        .map_err(OKXWsError::ClientError)?
+        {
+            builder.reduce_only(reduce_only);
         }
 
         if let Some(attach_algo_ords) = attach_algo_ords {
@@ -3173,8 +3180,11 @@ impl OKXWebSocketClient {
                     builder.px(p.to_string());
                 }
 
-                if should_send_reduce_only(inst_type, td_mode, pos_side, reduce_only) {
-                    builder.reduce_only(true);
+                if let Some(reduce_only) =
+                    okx_reduce_only_wire_value(inst_type, td_mode, ord_side, pos_side, reduce_only)
+                        .map_err(OKXWsError::ClientError)?
+                {
+                    builder.reduce_only(reduce_only);
                 }
 
                 let speed_bump = if inst_type == OKXInstrumentType::Events {
@@ -3552,24 +3562,6 @@ impl OKXWebSocketClient {
             .await
             .send(cmd)
             .map_err(|e| OKXWsError::HandlerUnavailable(e.to_string()))
-    }
-}
-
-fn should_send_reduce_only(
-    instrument_type: OKXInstrumentType,
-    td_mode: OKXTradeMode,
-    position_side: Option<PositionSide>,
-    reduce_only: Option<bool>,
-) -> bool {
-    if reduce_only != Some(true) {
-        return false;
-    }
-
-    match instrument_type {
-        OKXInstrumentType::Spot | OKXInstrumentType::Margin => td_mode != OKXTradeMode::Cash,
-        OKXInstrumentType::Swap | OKXInstrumentType::Futures => position_side.is_none(),
-        OKXInstrumentType::Any => true,
-        OKXInstrumentType::Option | OKXInstrumentType::Events => false,
     }
 }
 

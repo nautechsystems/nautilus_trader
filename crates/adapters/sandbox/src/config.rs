@@ -110,7 +110,8 @@ pub struct SandboxExecutionClientConfig {
     /// Trade IDs are always deterministic and not affected by this flag.
     #[builder(default)]
     pub use_random_ids: bool,
-    /// If the `reduce_only` execution instruction on orders will be honored.
+    /// If the `reduce_only` execution instruction on orders will be enforced.
+    /// If false, reduce-only orders are rejected.
     #[builder(default = true)]
     pub use_reduce_only: bool,
     /// If limit order queue position tracking is enabled during trade execution.

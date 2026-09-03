@@ -1318,38 +1318,15 @@ fn resolve_order_position_identity(
     is_hedge_mode: bool,
     use_position_ids: bool,
     order: &OrderAny,
-    close_position: bool,
 ) -> anyhow::Result<(Option<BinancePositionSide>, Option<PositionId>)> {
-    // `close_position` retires an entire hedge leg, so it carries close intent on its own
-    // and cannot be combined with `reduce_only`, which otherwise selects the closing side.
-    let position_side = determine_position_side(
-        is_hedge_mode,
-        order.order_side(),
-        order.is_reduce_only() || close_position,
-    );
+    let position_side =
+        determine_position_side(is_hedge_mode, order.order_side(), order.is_reduce_only());
     let venue_position_id = make_venue_position_id(
         use_position_ids,
         order.instrument_id(),
         Some(position_side.unwrap_or(BinancePositionSide::Both)),
     )?;
     Ok((position_side, venue_position_id))
-}
-
-fn binance_enforces_reduce_only(
-    is_hedge_mode: bool,
-    command: &SubmitOrder,
-    order: &OrderAny,
-) -> bool {
-    let close_position = command
-        .params
-        .as_ref()
-        .and_then(|params| params.get_bool(PARAMS_CLOSE_POSITION))
-        .unwrap_or(false);
-
-    order.is_reduce_only()
-        && !is_hedge_mode
-        && !close_position
-        && order_type_to_binance_futures(order.order_type()).is_ok()
 }
 
 fn validate_submit_position_id(
@@ -1689,10 +1666,6 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
     fn get_account(&self) -> Option<AccountAny> {
         self.core.cache().account_owned(&self.core.account_id)
-    }
-
-    fn enforces_reduce_only(&self, command: &SubmitOrder, order: &OrderAny) -> bool {
-        binance_enforces_reduce_only(self.is_hedge_mode(), command, order)
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
@@ -3089,78 +3062,17 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             return Ok(());
         }
 
-        // Validate before submission (Initialized -> Denied is valid,
-        // but Submitted -> Denied is not, so validate before emitting OrderSubmitted)
-        if let Some(offset_type) = order.trailing_offset_type() {
-            if offset_type != TrailingOffsetType::BasisPoints {
-                anyhow::bail!(
-                    "Binance only supports TrailingOffsetType::BasisPoints, received {offset_type:?}"
-                );
-            }
-
-            if let Some(offset) = order.trailing_offset() {
-                trailing_offset_to_callback_rate(offset)?;
-            }
-        }
-
-        let close_position = cmd
-            .params
-            .as_ref()
-            .and_then(|p| p.get_bool(PARAMS_CLOSE_POSITION))
-            .unwrap_or(false);
-
-        if close_position {
-            let order_type = order.order_type();
-
-            if !matches!(
-                order_type,
-                OrderType::StopMarket | OrderType::MarketIfTouched
-            ) {
-                anyhow::bail!(
-                    "`close_position` is not supported for order type {order_type:?} on Binance"
-                );
-            }
-
-            if order.is_reduce_only() {
-                anyhow::bail!("`close_position` cannot be combined with `reduce_only` on Binance");
-            }
-        }
-
-        if let Some(pm_str) = cmd.params.as_ref().and_then(|p| p.get_str("price_match")) {
-            BinancePriceMatch::from_param(pm_str)?;
-            let order_type = order.order_type();
-            anyhow::ensure!(
-                !order.is_post_only(),
-                "price_match cannot be combined with post-only orders"
-            );
-            anyhow::ensure!(
-                order_type == OrderType::Limit,
-                "price_match is not supported for order type {order_type:?}"
-            );
-        }
-
-        let lifetime = determine_futures_order_lifetime(
-            self.product_type,
-            order.order_type(),
-            order.time_in_force(),
-            order.expire_time(),
-            order.is_post_only(),
-            self.config.use_gtd,
-            self.clock.get_time_ns(),
-        )?;
-
-        let (position_side, venue_position_id) = resolve_order_position_identity(
-            self.is_hedge_mode(),
-            self.config.use_position_ids,
-            &order,
-            close_position,
-        )?;
-        validate_submit_position_id(cmd.position_id, venue_position_id)?;
+        let validated = validate_order(self, &cmd, &order)?;
 
         log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
         self.emitter.emit_order_submitted(&order);
 
-        self.submit_order_internal(&cmd, lifetime, position_side, venue_position_id)
+        self.submit_order_internal(
+            &cmd,
+            validated.lifetime,
+            validated.position_side,
+            validated.venue_position_id,
+        )
     }
 
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
@@ -3225,7 +3137,6 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     self.is_hedge_mode(),
                     self.config.use_position_ids,
                     order,
-                    close_position,
                 )
                 .map(|(_, venue_position_id)| venue_position_id)
             })
@@ -3707,6 +3618,89 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
     }
 }
 
+fn validate_order(
+    client: &BinanceFuturesExecutionClient,
+    cmd: &SubmitOrder,
+    order: &OrderAny,
+) -> anyhow::Result<ValidatedOrder> {
+    if let Some(offset_type) = order.trailing_offset_type() {
+        anyhow::ensure!(
+            offset_type == TrailingOffsetType::BasisPoints,
+            "Binance only supports TrailingOffsetType::BasisPoints, received {offset_type:?}"
+        );
+
+        if let Some(offset) = order.trailing_offset() {
+            trailing_offset_to_callback_rate(offset)?;
+        }
+    }
+
+    let close_position = cmd
+        .params
+        .as_ref()
+        .and_then(|params| params.get_bool(PARAMS_CLOSE_POSITION))
+        .unwrap_or(false);
+
+    if close_position {
+        let order_type = order.order_type();
+        anyhow::ensure!(
+            order.is_reduce_only(),
+            "`close_position` requires `reduce_only=true` on the Nautilus order"
+        );
+        anyhow::ensure!(
+            matches!(
+                order_type,
+                OrderType::StopMarket | OrderType::MarketIfTouched
+            ),
+            "`close_position` is not supported for order type {order_type:?} on Binance"
+        );
+    }
+
+    if let Some(price_match) = cmd
+        .params
+        .as_ref()
+        .and_then(|params| params.get_str("price_match"))
+    {
+        BinancePriceMatch::from_param(price_match)?;
+        let order_type = order.order_type();
+        anyhow::ensure!(
+            !order.is_post_only(),
+            "price_match cannot be combined with post-only orders"
+        );
+        anyhow::ensure!(
+            order_type == OrderType::Limit,
+            "price_match is not supported for order type {order_type:?}"
+        );
+    }
+
+    let lifetime = determine_futures_order_lifetime(
+        client.product_type,
+        order.order_type(),
+        order.time_in_force(),
+        order.expire_time(),
+        order.is_post_only(),
+        client.config.use_gtd,
+        client.clock.get_time_ns(),
+    )?;
+    let (position_side, venue_position_id) = resolve_order_position_identity(
+        client.is_hedge_mode(),
+        client.config.use_position_ids,
+        order,
+    )?;
+    validate_submit_position_id(cmd.position_id, venue_position_id)?;
+
+    Ok(ValidatedOrder {
+        lifetime,
+        position_side,
+        venue_position_id,
+    })
+}
+
+struct ValidatedOrder {
+    lifetime: FuturesOrderLifetime,
+    position_side: Option<BinancePositionSide>,
+    venue_position_id: Option<PositionId>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum BinanceFuturesAlgoLookup {
     Skip,
@@ -3822,12 +3816,10 @@ fn is_instrument_for_product(instrument: &InstrumentAny, product_type: BinancePr
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        enums::OrderSide,
         instruments::stubs::{
             crypto_future_btcusdt, crypto_perpetual_ethusdt, currency_pair_btcusdt,
             perpetual_contract_eurusd, xbtusd_bitmex,
         },
-        orders::{Order, builder::OrderTestBuilder},
         types::Price,
     };
     use rstest::rstest;
@@ -3840,56 +3832,6 @@ mod tests {
             code,
             message: format!("test error {code}"),
         })
-    }
-
-    fn reduce_only_capability_command(order: &OrderAny, close_position: bool) -> SubmitOrder {
-        let params = close_position.then(|| {
-            let mut params = Params::new();
-            params.insert(PARAMS_CLOSE_POSITION.to_string(), true.into());
-            params
-        });
-
-        SubmitOrder::new(
-            order.trader_id(),
-            None,
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            order.init_event().clone(),
-            None,
-            None,
-            params,
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-        )
-    }
-
-    #[rstest]
-    #[case::one_way(false, OrderType::Market, true, false, true)]
-    #[case::hedge(true, OrderType::Market, true, false, false)]
-    #[case::not_reduce_only(false, OrderType::Market, false, false, false)]
-    #[case::close_position(false, OrderType::Market, true, true, false)]
-    #[case::unsupported_order_type(false, OrderType::MarketToLimit, true, false, false)]
-    fn test_binance_enforces_reduce_only_predicate(
-        #[case] is_hedge_mode: bool,
-        #[case] order_type: OrderType,
-        #[case] reduce_only: bool,
-        #[case] close_position: bool,
-        #[case] expected: bool,
-    ) {
-        let order = OrderTestBuilder::new(order_type)
-            .instrument_id(InstrumentId::from("BTCUSDT-PERP.BINANCE"))
-            .side(OrderSide::Sell)
-            .quantity(Quantity::from(1))
-            .reduce_only(reduce_only)
-            .build();
-        let command = reduce_only_capability_command(&order, close_position);
-
-        assert_eq!(
-            binance_enforces_reduce_only(is_hedge_mode, &command, &order),
-            expected
-        );
     }
 
     #[rstest]

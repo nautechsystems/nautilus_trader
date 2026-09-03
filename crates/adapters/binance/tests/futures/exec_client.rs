@@ -2247,12 +2247,6 @@ async fn test_submit_algo_order_in_hedge_mode_omits_reduce_only() {
     assert!(!query.contains_key("reduceOnly"));
 }
 
-/// Binance retires a whole hedge leg with `closePosition=true` submitted on the
-/// side that closes that leg: `SELL`+`positionSide=LONG` for the long leg and
-/// `BUY`+`positionSide=SHORT` for the short leg. `positionSide` must therefore
-/// follow close intent, which `close_position` expresses on its own - the wire
-/// `reduceOnly` field is forbidden alongside `positionSide`, and the internal
-/// `reduce_only` flag cannot be combined with `close_position` at all.
 #[rstest]
 #[case::close_long_leg(OrderSide::Sell, "LONG")]
 #[case::close_short_leg(OrderSide::Buy, "SHORT")]
@@ -2273,7 +2267,7 @@ async fn test_submit_close_position_in_hedge_mode_emits_closing_position_side(
     client.connect().await.unwrap();
 
     let client_order_id = ClientOrderId::new("hedge-close-position-test-001");
-    let order_any = add_stop_market_order_to_cache(&cache, client_order_id, order_side, false);
+    let order_any = add_stop_market_order_to_cache(&cache, client_order_id, order_side, true);
 
     client
         .submit_order(submit_order_command_with_params(
@@ -2302,17 +2296,12 @@ async fn test_submit_close_position_in_hedge_mode_emits_closing_position_side(
     assert!(!query.contains_key("quantity"));
 }
 
-/// `close_position` already carries close intent, so pairing it with the internal
-/// `reduce_only` flag is refused locally before anything reaches the venue. This
-/// is the second half of the hedge-mode full-exit trap: the flag that would
-/// otherwise select the closing `positionSide` is exactly the flag that is
-/// rejected here.
 #[rstest]
 #[case::hedge(true)]
 #[case::one_way(false)]
 #[tokio::test]
-async fn test_submit_close_position_with_reduce_only_is_denied_locally(#[case] hedge_mode: bool) {
-    let (addr, _captured_query) =
+async fn test_submit_close_position_translates_reduce_only_intent(#[case] hedge_mode: bool) {
+    let (addr, captured_query) =
         start_exec_test_server_with_algo_capture_and_hedge_mode(hedge_mode).await;
     let base_url_http = format!("http://{addr}");
     let base_url_ws = format!("ws://{addr}/ws");
@@ -2326,17 +2315,57 @@ async fn test_submit_close_position_with_reduce_only_is_denied_locally(#[case] h
     let client_order_id = ClientOrderId::new("hedge-close-position-reduce-only-001");
     let order_any = add_stop_market_order_to_cache(&cache, client_order_id, OrderSide::Sell, true);
 
-    let error = client
+    client
         .submit_order(submit_order_command_with_params(
             &order_any,
+            Some(close_position_params()),
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || {
+            let captured_query = captured_query.clone();
+
+            async move { captured_query.lock().is_some() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let query = captured_query.lock().clone().unwrap();
+    assert_eq!(query.get("closePosition").map(String::as_str), Some("true"));
+    assert!(!query.contains_key("reduceOnly"));
+    assert!(!query.contains_key("quantity"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_close_position_requires_reduce_only_intent() {
+    let (addr, captured_query) =
+        start_exec_test_server_with_algo_capture_and_hedge_mode(false).await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let client_order_id = ClientOrderId::new("close-position-without-reduce-only-001");
+    let order = add_stop_market_order_to_cache(&cache, client_order_id, OrderSide::Sell, false);
+
+    let error = client
+        .submit_order(submit_order_command_with_params(
+            &order,
             Some(close_position_params()),
         ))
         .unwrap_err();
 
     assert_eq!(
         error.to_string(),
-        "`close_position` cannot be combined with `reduce_only` on Binance",
+        "`close_position` requires `reduce_only=true` on the Nautilus order"
     );
+    assert!(captured_query.lock().is_none());
 }
 
 /// An explicit-quantity hedge-mode exit is close-only purely by virtue of its

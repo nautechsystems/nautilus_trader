@@ -3693,37 +3693,3 @@ fn test_submit_order_through_exec_engine_no_reentrant_panic(
         "Expected order events through the exec event channel"
     );
 }
-
-#[rstest]
-#[case::enabled(true, true, true)]
-#[case::disabled(false, true, false)]
-#[case::not_reduce_only(true, false, false)]
-fn test_enforces_reduce_only_follows_config(
-    trader_id: TraderId,
-    account_id: AccountId,
-    venue: Venue,
-    instrument: InstrumentAny,
-    #[case] use_reduce_only: bool,
-    #[case] reduce_only: bool,
-    #[case] expected: bool,
-) {
-    let ctx = create_test_context_with(trader_id, account_id, venue, |config| {
-        config.use_reduce_only = use_reduce_only;
-    });
-    let order = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument.id())
-        .side(OrderSide::Sell)
-        .quantity(Quantity::from("0.001"))
-        .reduce_only(reduce_only)
-        .build();
-    let command = SubmitOrder::from_order(
-        &order,
-        trader_id,
-        None,
-        None,
-        UUID4::new(),
-        UnixNanos::default(),
-    );
-
-    assert_eq!(ctx.client.enforces_reduce_only(&command, &order), expected);
-}
