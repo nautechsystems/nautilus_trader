@@ -244,6 +244,7 @@ def test_new_above_max_period_raises_value_error() -> None:
 
     Release wheels compile with `panic = "abort"`, so this has to come back
     through the checked constructor as a `ValueError` instead of unwinding.
+
     """
     # Act, Assert
     with pytest.raises(ValueError, match="exceeds MAX_PERIOD"):
