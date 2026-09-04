@@ -8,10 +8,11 @@ Released on TBD (UTC).
   replacing earlier values for the same instrument
 - Added `avg_px` and report window fields to persisted execution reports
 - Added the standard Python enum surface (`from_str`, `name`, `value`, `variants`) to `BarIntervalType`
-- Added Polymarket collateral-sized limit BUY orders with exact limit price preservation
-- Added Bybit self-match prevention, set with `smp_type` on the execution client config or per order
+- Added remote resolution for `TestDataProvider` CSV loaders so they work from an installed wheel
 - Added user-defined portfolio statistics through `Portfolio.register_statistic()`, with a
   `PortfolioStatistic` base class for Python implementations
+- Added Bybit self-match prevention, set with `smp_type` on the execution client config or per order
+- Added Polymarket collateral-sized limit BUY orders with exact limit price preservation
 
 ### Breaking Changes
 
@@ -39,18 +40,21 @@ Released on TBD (UTC).
 ### Fixes
 
 - Fixed position commissions and realized PnL after fill-void replay
+- Fixed nanosecond precision loss when `TestDataProvider` parses timestamps
 
 ### Internal Improvements
 
 - Added Cap'n Proto validation for decoded identifiers, currencies, balances, and decimals
 - Added serde support for `BetSide` and `OtoTriggerMode`
 - Added crate feature documentation checks for README and Rustdoc lists
+- Added acceptance tests running the documentation guides and resolving their documented imports
 - Improved Betfair execution client test synchronization (#4866), thanks @folknor
 - Pinned docs.rs checks to a compatible nightly toolchain
 - Refined Arrow serialization schemas and column resolution
 - Refined Cap'n Proto serialization conversions and wire contracts
 - Refined bar aggregation internals and shared aggregator state
 - Refined core crate coverage, FFI safety, and collection conversion
+- Refined example and test config subclasses to keyword-only fields without a `__new__` override
 - Standardized crate feature documentation across READMEs and Rustdoc
 - Standardized code and documentation terminology with domain-specific names
 - Updated Makefile help output to match the startup log header
@@ -62,6 +66,14 @@ Released on TBD (UTC).
 
 ### Documentation Updates
 
+- Added a troubleshooting section for import errors caused by installing the 1.x line
+- Added the NumPy and pandas prerequisites the wheel does not install
+- Added an environment report snippet to the bug report template
+- Added an explicit statement that the documentation covers v2 only
+- Changed install commands to require `--pre` for the v2 wheel (#4919), thanks for reporting @pcoughlin
+- Changed the getting started and tutorial guides to run on bundled sample data without a download
+- Simplified documented `StrategyConfig` and `DataActorConfig` subclassing to keyword-only fields
+- Fixed the actor configuration example rejecting a positional argument
 - Corrected documented enum values for instrument classes, wallet accounts, position entry sides,
   and Polymarket close types
 

@@ -69,9 +69,10 @@
 # ## Prerequisites
 #
 # - Python 3.12+
-# - [NautilusTrader](https://pypi.org/project/nautilus_trader/) installed
-#   (`pip install nautilus_trader`). The `visualization` extra is only needed
-#   if you also want to regenerate the panels at the end of the tutorial.
+# - [NautilusTrader](https://pypi.org/project/nautilus_trader/) 2.x installed
+#   (`pip install -U --pre nautilus_trader`). The `visualization` extra is only
+#   needed if you also want to regenerate the panels at the end of the tutorial.
+# - pandas (`pip install pandas`). The wheel declares no runtime dependencies.
 # - The sibling [`ema_cross.py`](./ema_cross.py) file. Keep it next to this
 #   tutorial when downloading or converting it with Jupytext.
 

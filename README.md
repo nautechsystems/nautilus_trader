@@ -266,13 +266,8 @@ We recommend using the latest supported version of Python and installing [nautil
 
 ### From PyPI
 
-To install the latest binary wheel (or sdist package) from PyPI using Python's pip package manager:
-
-```bash
-pip install -U nautilus_trader
-```
-
-To test the v2 release-candidate wheels from PyPI:
+This repository and the [documentation](https://nautilustrader.io/docs/latest) cover v2. To install
+the v2 release-candidate wheels from PyPI using Python's pip package manager:
 
 ```bash
 pip install -U nautilus_trader --pre
@@ -282,10 +277,18 @@ The v2 release-candidate wheels use `2.0.0rcN` versions and are intended for com
 before the final `2.0.0` release. We do not recommend using release candidates in production
 environments, such as live trading controlling real capital.
 
+The `--pre` flag is required until `2.0.0` is released. Without it, pip installs the latest stable
+v1 wheel, whose Python API differs from the v2 documentation:
+
+```bash
+# Installs the latest stable v1 wheel, which cannot run the v2 documentation
+pip install -U nautilus_trader
+```
+
 Install optional dependencies for interactive tearsheets and charts with the `visualization` extra:
 
 ```bash
-pip install -U "nautilus_trader[visualization]"
+pip install -U "nautilus_trader[visualization]" --pre
 ```
 
 See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation#extras) for details.

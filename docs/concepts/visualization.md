@@ -22,7 +22,7 @@ The visualization system requires the `visualization` extra. It installs Pandas 
 DataFrame handling, Plotly for interactive figures, and Kaleido for static image export:
 
 ```bash
-uv pip install "nautilus_trader[visualization]"
+uv pip install --pre "nautilus_trader[visualization]"
 ```
 
 :::

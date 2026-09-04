@@ -58,15 +58,18 @@
 # ## Prerequisites
 #
 # - Python 3.12+
-# - [NautilusTrader](https://pypi.org/project/nautilus_trader/) installed
-#   (`pip install nautilus_trader`)
+# - [NautilusTrader](https://pypi.org/project/nautilus_trader/) 2.x installed
+#   (`pip install -U --pre nautilus_trader`)
+# - pandas (`pip install pandas`). The wheel declares no runtime dependencies.
 # - The sibling [`orderbook_data.py`](./orderbook_data.py) and
 #   [`orderbook_imbalance.py`](./orderbook_imbalance.py) files. Keep them next
 #   to this tutorial when downloading or converting it with Jupytext.
-# - Binance T_DEPTH CSVs for the day you want to replay. The bundled tutorial
-#   uses BTCUSDT 2022-11-01 from
-#   [data.binance.vision](https://data.binance.vision). Place them under the
-#   directory in `NAUTILUS_DATA_DIR/Binance/`.
+# - Optionally, Binance T_DEPTH CSVs for the day you want to replay. The
+#   documented run uses BTCUSDT 2022-11-01 from
+#   [data.binance.vision](https://data.binance.vision), placed under
+#   `NAUTILUS_DATA_DIR/Binance/`. Without them the tutorial falls back to a
+#   bundled 100-row sample of each file, which runs end to end but is too short
+#   to trigger the strategy.
 
 # %%
 import os
@@ -100,7 +103,7 @@ from nautilus_trader.model import (
 )
 from nautilus_trader.persistence import ParquetDataCatalog
 
-from orderbook_data import deltas_from_frame
+from orderbook_data import deltas_from_frame, sample_data_path
 
 # %% [markdown]
 # ## Loading data
@@ -115,20 +118,22 @@ from orderbook_data import deltas_from_frame
 DATA_DIR = Path(os.environ.get("NAUTILUS_DATA_DIR", "~/Downloads/Data")).expanduser() / "Binance"
 
 # %%
-data_path = DATA_DIR
-raw_files = [f for f in data_path.iterdir() if f.is_file()]
-assert raw_files, f"Unable to find any data files in directory {data_path}"
-raw_files
+path_snap = DATA_DIR / "BTCUSDT_T_DEPTH_2022-11-01_depth_snap.csv"
+path_update = DATA_DIR / "BTCUSDT_T_DEPTH_2022-11-01_depth_update.csv"
+
+if not (path_snap.is_file() and path_update.is_file()):
+    path_snap = sample_data_path("binance/btcusdt-depth-snap.csv")
+    path_update = sample_data_path("binance/btcusdt-depth-update.csv")
+
+path_snap, path_update
 
 # %%
 # Initial L2 snapshot of the book at session open.
-path_snap = data_path / "BTCUSDT_T_DEPTH_2022-11-01_depth_snap.csv"
 df_snap = load_binance_order_book_deltas(path_snap)
 df_snap.head()
 
 # %%
 # Per-level deltas for the day; capped to 1M rows for a reasonable run time.
-path_update = data_path / "BTCUSDT_T_DEPTH_2022-11-01_depth_update.csv"
 nrows = 1_000_000
 df_update = load_binance_order_book_deltas(path_update, nrows=nrows)
 df_update.head()
@@ -270,6 +275,9 @@ node.generate_account_report(config.id, venue=Venue("BINANCE"))
 
 # %% [markdown]
 # ## What the run produces
+#
+# The figures below come from the full T_DEPTH files. The bundled sample covers
+# 100 rows of each, so it completes without firing any orders.
 #
 # With one million updates the data spans roughly the first eleven minutes of
 # the trading day after the initial snapshot is rebuilt. The renderer below

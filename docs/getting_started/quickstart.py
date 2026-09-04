@@ -9,7 +9,11 @@
 # ## Prerequisites
 #
 # - Python 3.12+
-# - `pip install nautilus_trader`
+# - NautilusTrader 2.x installed (`pip install -U --pre nautilus_trader`). The `--pre`
+#   flag is required while 2.x ships as `2.0.0rcN`; without it pip installs the 1.x
+#   line, whose Python API differs and cannot run this page.
+# - NumPy and pandas (`pip install numpy pandas`). The wheel declares no runtime
+#   dependencies, so it does not pull them in.
 
 # %% [markdown]
 # ## Write a strategy

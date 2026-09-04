@@ -11,7 +11,11 @@
 # %% [markdown]
 # ## Prerequisites
 # - Python 3.12+
-# - [NautilusTrader](https://pypi.org/project/nautilus_trader/) latest release installed (`pip install nautilus_trader`)
+# - [NautilusTrader](https://pypi.org/project/nautilus_trader/) 2.x installed
+#   (`pip install -U --pre nautilus_trader`). The `--pre` flag is required while 2.x
+#   ships as `2.0.0rcN`.
+# - pandas (`pip install pandas`), used by the reports at the end. The wheel
+#   declares no runtime dependencies.
 
 # %%
 from decimal import Decimal

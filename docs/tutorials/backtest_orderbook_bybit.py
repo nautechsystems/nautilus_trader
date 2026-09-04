@@ -51,14 +51,17 @@
 # ## Prerequisites
 #
 # - Python 3.12+
-# - [NautilusTrader](https://pypi.org/project/nautilus_trader/) installed
-#   (`pip install nautilus_trader`)
+# - [NautilusTrader](https://pypi.org/project/nautilus_trader/) 2.x installed
+#   (`pip install -U --pre nautilus_trader`)
+# - pandas (`pip install pandas`). The wheel declares no runtime dependencies.
 # - The sibling [`orderbook_data.py`](./orderbook_data.py) and
 #   [`orderbook_imbalance.py`](./orderbook_imbalance.py) files. Keep them next
 #   to this tutorial when downloading or converting it with Jupytext.
-# - A daily Bybit `ob500` ZIP, e.g.
+# - Optionally, a daily Bybit `ob500` ZIP, e.g.
 #   `2024-12-01_XRPUSDT_ob500.data.zip` from
-#   [public.bybit.com](https://public.bybit.com).
+#   [public.bybit.com](https://public.bybit.com). Without one the tutorial falls
+#   back to a bundled 50-message sample of that archive, which runs end to end
+#   over a few seconds of the book.
 
 # %%
 import os
@@ -94,23 +97,27 @@ from nautilus_trader.persistence import ParquetDataCatalog
 from orderbook_data import (
     deltas_from_frame,
     load_bybit_order_book_deltas,
+    sample_data_path,
 )
 
 # %% [markdown]
 # ## Loading data
+#
+# Place the daily archive under `NAUTILUS_DATA_DIR/Bybit/` to replay a full day.
+# The tutorial otherwise reads the bundled sample so it runs without a download.
 
 # %%
 DATA_DIR = Path(os.environ.get("NAUTILUS_DATA_DIR", "~/Downloads/Data")).expanduser() / "Bybit"
 
 # %%
-data_path = DATA_DIR
-raw_files = [f for f in data_path.iterdir() if f.is_file()]
-assert raw_files, f"Unable to find any data files in directory {data_path}"
-raw_files
+path_update = DATA_DIR / "2024-12-01_XRPUSDT_ob500.data.zip"
+if not path_update.is_file():
+    path_update = sample_data_path("bybit/xrpusdt-ob500.data.zip")
+
+path_update
 
 # %%
 # Read the first 1M deltas; the full file is larger.
-path_update = data_path / "2024-12-01_XRPUSDT_ob500.data.zip"
 nrows = 1_000_000
 df_raw = load_bybit_order_book_deltas(path_update, nrows=nrows)
 df_raw.head()
@@ -240,6 +247,9 @@ node.generate_account_report(config.id, venue=Venue("BYBIT"))
 
 # %% [markdown]
 # ## What the run produces
+#
+# The figures below come from a full-day `ob500` archive. The bundled sample
+# replays 3,967 deltas and fires 2 of these orders.
 #
 # The Bybit `ob500` archive sometimes starts a minute before the file's
 # nominal date, so the first trades land just before midnight UTC and the

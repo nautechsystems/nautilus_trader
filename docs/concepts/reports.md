@@ -365,7 +365,7 @@ fig.write_image("equity.png")  # Export to PNG (requires kaleido)
 Install visualization dependencies:
 
 ```bash
-uv pip install "nautilus_trader[visualization]"
+uv pip install --pre "nautilus_trader[visualization]"
 ```
 
 ## Report generation patterns
