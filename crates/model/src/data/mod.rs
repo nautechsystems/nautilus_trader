@@ -13,9 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Data types for the trading domain model.
+//! Data types and shared representations for the trading domain model.
+//!
+//! [`Data`] provides an owned, heterogeneous representation of built-in data, while [`DataRef`]
+//! provides borrowed access to the same variants. [`DataBatch`] preserves concrete element types
+//! for homogeneous storage and exposes individual items through the borrowed representation.
 
 pub mod bar;
+pub mod batch;
 pub mod bet;
 pub mod black_scholes;
 pub mod close;
@@ -55,6 +60,7 @@ use crate::defi::DefiData;
 // Re-exports
 #[rustfmt::skip]  // Keep these grouped
 pub use bar::{Bar, BarSpecification, BarType};
+pub use batch::{BatchView, DataBatch};
 pub use black_scholes::Greeks;
 pub use close::InstrumentClose;
 #[cfg(feature = "python")]
@@ -123,9 +129,9 @@ pub enum Data {
 /// A borrowed view of a built-in Nautilus data type.
 #[derive(Clone, Copy, Debug)]
 pub enum DataRef<'a> {
-    Delta(&'a OrderBookDelta),
-    Deltas(&'a OrderBookDeltas),
-    Depth10(&'a OrderBookDepth10),
+    BookDelta(&'a OrderBookDelta),
+    BookDeltas(&'a OrderBookDeltas),
+    BookDepth10(&'a OrderBookDepth10),
     Quote(&'a QuoteTick),
     Trade(&'a TradeTick),
     Bar(&'a Bar),
@@ -143,9 +149,9 @@ pub enum DataRef<'a> {
 impl<'a> From<&'a Data> for DataRef<'a> {
     fn from(value: &'a Data) -> Self {
         match value {
-            Data::Delta(delta) => Self::Delta(delta),
-            Data::Deltas(deltas) => Self::Deltas(deltas),
-            Data::Depth10(depth) => Self::Depth10(depth),
+            Data::Delta(delta) => Self::BookDelta(delta),
+            Data::Deltas(deltas) => Self::BookDeltas(deltas),
+            Data::Depth10(depth) => Self::BookDepth10(depth),
             Data::Quote(quote) => Self::Quote(quote),
             Data::Trade(trade) => Self::Trade(trade),
             Data::Bar(bar) => Self::Bar(bar),
@@ -375,9 +381,9 @@ impl DataRef<'_> {
     #[must_use]
     pub fn instrument_id(&self) -> InstrumentId {
         match self {
-            Self::Delta(delta) => delta.instrument_id,
-            Self::Deltas(deltas) => deltas.instrument_id,
-            Self::Depth10(depth) => depth.instrument_id,
+            Self::BookDelta(delta) => delta.instrument_id,
+            Self::BookDeltas(deltas) => deltas.instrument_id,
+            Self::BookDepth10(depth) => depth.instrument_id,
             Self::Quote(quote) => quote.instrument_id,
             Self::Trade(trade) => trade.instrument_id,
             Self::Bar(bar) => bar.bar_type.instrument_id(),
@@ -407,7 +413,10 @@ impl DataRef<'_> {
     /// Returns whether the data is a type of order book data.
     #[must_use]
     pub fn is_order_book_data(&self) -> bool {
-        matches!(self, Self::Delta(_) | Self::Deltas(_) | Self::Depth10(_))
+        matches!(
+            self,
+            Self::BookDelta(_) | Self::BookDeltas(_) | Self::BookDepth10(_)
+        )
     }
 }
 
@@ -472,9 +481,9 @@ impl HasTsInit for Data {
 impl HasTsInit for DataRef<'_> {
     fn ts_init(&self) -> UnixNanos {
         match self {
-            Self::Delta(d) => d.ts_init,
-            Self::Deltas(d) => d.ts_init,
-            Self::Depth10(d) => d.ts_init,
+            Self::BookDelta(d) => d.ts_init,
+            Self::BookDeltas(d) => d.ts_init,
+            Self::BookDepth10(d) => d.ts_init,
             Self::Quote(q) => q.ts_init,
             Self::Trade(t) => t.ts_init,
             Self::Bar(b) => b.ts_init,
@@ -1132,13 +1141,13 @@ mod tests {
             assert_eq!(data_ref.ts_init(), data.ts_init());
 
             match (data, data_ref) {
-                (Data::Delta(expected), DataRef::Delta(actual)) => {
+                (Data::Delta(expected), DataRef::BookDelta(actual)) => {
                     assert!(std::ptr::eq(expected, actual));
                 }
-                (Data::Deltas(expected), DataRef::Deltas(actual)) => {
+                (Data::Deltas(expected), DataRef::BookDeltas(actual)) => {
                     assert!(std::ptr::eq(expected.as_ref(), actual));
                 }
-                (Data::Depth10(expected), DataRef::Depth10(actual)) => {
+                (Data::Depth10(expected), DataRef::BookDepth10(actual)) => {
                     assert!(std::ptr::eq(expected.as_ref(), actual));
                 }
                 (Data::Quote(expected), DataRef::Quote(actual)) => {

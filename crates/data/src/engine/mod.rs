@@ -1772,9 +1772,9 @@ impl DataEngine {
         self.data_count += 1;
 
         match data {
-            DataRef::Delta(delta) => self.handle_delta(*delta),
-            DataRef::Deltas(deltas) => self.handle_deltas(deltas),
-            DataRef::Depth10(depth) => self.handle_depth10(*depth),
+            DataRef::BookDelta(delta) => self.handle_delta(*delta),
+            DataRef::BookDeltas(deltas) => self.handle_deltas(deltas),
+            DataRef::BookDepth10(depth) => self.handle_depth10(*depth),
             DataRef::Quote(quote) => {
                 self.handle_quote(*quote);
                 self.drain_deferred_commands();

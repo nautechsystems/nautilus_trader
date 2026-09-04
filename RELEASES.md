@@ -203,6 +203,7 @@ Released on 2nd September 2026 (UTC).
 - Refined Python actor setup across runtime paths
 - Standardized Rust blocking locks on `parking_lot`
 - Optimized `BacktestEngine` processing when simulation modules and liquidation are disabled
+- Optimized `BacktestEngine` replay with shared typed data batches, thanks @faysou
 - Optimized `IdsGenerator` trade ID formatting
 - Optimized `MatchingEngine` L1 pending order queue scans
 - Optimized `OrderMatchingEngine` queue tracking and liquidity consumption
