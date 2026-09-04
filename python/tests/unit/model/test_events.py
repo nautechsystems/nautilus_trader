@@ -926,6 +926,82 @@ def test_order_updated_to_dict_roundtrip(
     assert restored == event
 
 
+def test_order_updated_to_dict_roundtrip_preserves_protection_price(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    audusd_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    account_id: AccountId,
+    uuid: UUID4,
+) -> None:
+    """
+    Test order updated to dict roundtrip preserves protection price.
+    """
+    event = OrderUpdated(
+        trader_id=trader_id,
+        strategy_id=strategy_id,
+        instrument_id=audusd_id,
+        client_order_id=client_order_id,
+        quantity=Quantity.from_int(500_000),
+        event_id=uuid,
+        ts_event=1,
+        ts_init=2,
+        reconciliation=True,
+        venue_order_id=venue_order_id,
+        account_id=account_id,
+        price=Price.from_str("1.00010"),
+        trigger_price=Price.from_str("1.00005"),
+        protection_price=Price.from_str("0.99900"),
+        is_quote_quantity=True,
+    )
+
+    restored = OrderUpdated.from_dict(event.to_dict())
+
+    assert event.protection_price == Price.from_str("0.99900")
+    assert restored.protection_price == event.protection_price
+    assert restored.price == event.price
+    assert restored.trigger_price == event.trigger_price
+    assert restored.quantity == event.quantity
+    assert restored.is_quote_quantity == event.is_quote_quantity
+    assert restored.reconciliation == event.reconciliation
+    assert restored == event
+
+
+def test_order_rejected_to_dict_roundtrip_preserves_due_post_only(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    audusd_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    account_id: AccountId,
+    uuid: UUID4,
+) -> None:
+    """
+    Test order rejected to dict roundtrip preserves due post only.
+    """
+    event = OrderRejected(
+        trader_id=trader_id,
+        strategy_id=strategy_id,
+        instrument_id=audusd_id,
+        client_order_id=client_order_id,
+        account_id=account_id,
+        reason="POST_ONLY_WOULD_TAKE",
+        event_id=uuid,
+        ts_event=1,
+        ts_init=2,
+        reconciliation=True,
+        due_post_only=True,
+    )
+
+    restored = OrderRejected.from_dict(event.to_dict())
+
+    assert event.due_post_only is True
+    assert restored.due_post_only is True
+    assert restored.reason == event.reason
+    assert restored.reconciliation == event.reconciliation
+    assert restored == event
+
+
 def test_order_pending_update(
     trader_id: TraderId,
     strategy_id: StrategyId,

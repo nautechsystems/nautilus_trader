@@ -356,6 +356,13 @@ impl OrderEvent for OrderUpdated {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }
+    fn causation_id(&self) -> Option<UUID4> {
+        self.causation_id
+    }
+
+    fn protection_price(&self) -> Option<Price> {
+        self.protection_price
+    }
 }
 
 #[cfg(test)]

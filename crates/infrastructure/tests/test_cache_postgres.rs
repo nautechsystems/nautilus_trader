@@ -28,6 +28,7 @@ mod serial_tests {
 
     use ahash::AHashMap;
     use bytes::Bytes;
+    use indexmap::IndexMap;
     use nautilus_common::{cache::database::CacheDatabaseAdapter, testing::wait_until_async};
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_infrastructure::sql::{
@@ -37,14 +38,22 @@ mod serial_tests {
     use nautilus_model::{
         accounts::AccountAny,
         data::InstrumentClose,
-        enums::{CurrencyType, InstrumentCloseType, OrderSide, OrderType},
+        enums::{
+            CurrencyType, InstrumentCloseType, LiquiditySide, OrderSide, OrderType, TimeInForce,
+        },
         events::{
             OrderEventAny,
-            order::spec::{OrderCancelRejectedSpec, OrderModifyRejectedSpec},
+            order::spec::{
+                OrderAcceptedSpec, OrderCancelRejectedSpec, OrderCanceledSpec, OrderDeniedSpec,
+                OrderEmulatedSpec, OrderExpiredSpec, OrderFillVoidedSpec, OrderFilledSpec,
+                OrderInitializedSpec, OrderModifyRejectedSpec, OrderPendingCancelSpec,
+                OrderPendingUpdateSpec, OrderRejectedSpec, OrderReleasedSpec, OrderSubmittedSpec,
+                OrderTriggeredSpec, OrderUpdatedSpec,
+            },
         },
         identifiers::{
-            AccountId, ActorId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId,
-            TradeId, TraderId, VenueOrderId,
+            AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId,
+            StrategyId, TradeId, TraderId, VenueOrderId,
         },
         instruments::{
             Instrument, InstrumentAny,
@@ -52,8 +61,9 @@ mod serial_tests {
         },
         orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
-        types::{Currency, Price, Quantity},
+        types::{Currency, Money, Price, Quantity},
     };
+    use sqlx::PgPool;
     use ustr::Ustr;
 
     use crate::get_cache;
@@ -495,26 +505,17 @@ mod serial_tests {
     // Test inserting and loading OrderCancelRejected events from PostgreSQL.
     //
     // This test verifies that order cancel rejection events can be persisted to and
-    // retrieved from the PostgreSQL cache. Currently on hold pending schema updates.
-    //
-    // TODO: Complete database schema with proper foreign key constraints:
-    // - Add FK constraint from order_events to orders table
-    // - Add FK constraint to instruments table for instrument_id
-    // - Add FK constraint to accounts table for account_id
-    // - Verify referential integrity with comprehensive integration tests
-    //
-    // Related: Database schema migration for cache persistence layer
-    #[ignore = "Waiting on PostgreSQL schema completion - needs FK constraints"]
+    // retrieved from the PostgreSQL cache.
     #[tokio::test(flavor = "multi_thread")]
     async fn test_order_cancel_rejected_insert_and_load() {
-        let db = get_test_pg_cache_database().await.expect("connect db");
-        let pool = &db.pool;
+        let mut db = get_test_pg_cache_database().await.expect("connect db");
+        let instrument_id = seed_order_event_dependencies(&db).await;
+        let pool = db.pool.clone();
 
         let client_id_str = UUID4::new().to_string();
         let client_order_id = ClientOrderId::from(client_id_str.as_str());
 
         let strategy_id = StrategyId::from("S-1");
-        let instrument_id = InstrumentId::from("INSTRUMENT.VENUE");
         let reason = Ustr::from("TEST_REJECT");
         let venue_order_id = Some(VenueOrderId::from("V1"));
         let account_id = Some(AccountId::from("A-1"));
@@ -529,14 +530,16 @@ mod serial_tests {
             .build();
 
         // Insert into database
-        DatabaseQueries::add_order_event(pool, Box::new(event), None)
+        DatabaseQueries::add_order_event(&pool, Box::new(event), None)
             .await
             .unwrap();
 
         // Load back events
-        let events = DatabaseQueries::load_order_events(pool, &client_order_id)
+        let events = DatabaseQueries::load_order_events(&pool, &client_order_id)
             .await
             .unwrap();
+
+        delete_order_events(&pool, &client_order_id).await;
 
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -546,32 +549,26 @@ mod serial_tests {
             }
             other => panic!("Expected OrderCancelRejected, was {other:?}"),
         }
+
+        db.flush().unwrap();
+        db.close().unwrap();
     }
 
     // Test inserting and loading OrderModifyRejected events from PostgreSQL.
     //
     // This test verifies that order modification rejection events can be persisted to and
-    // retrieved from the PostgreSQL cache. Currently on hold pending schema updates.
-    //
-    // TODO: Complete database schema with proper foreign key constraints:
-    // - Add FK constraint from order_events to orders table
-    // - Add FK constraint to instruments table for instrument_id
-    // - Add FK constraint to accounts table for account_id
-    // - Verify referential integrity with comprehensive integration tests
-    //
-    // Related: Database schema migration for cache persistence layer
-    #[ignore = "Waiting on PostgreSQL schema completion - needs FK constraints"]
+    // retrieved from the PostgreSQL cache.
     #[tokio::test(flavor = "multi_thread")]
     async fn test_order_modify_rejected_insert_and_load() {
-        let db = get_test_pg_cache_database().await.expect("connect db");
-        let pool = &db.pool;
+        let mut db = get_test_pg_cache_database().await.expect("connect db");
+        let instrument_id = seed_order_event_dependencies(&db).await;
+        let pool = db.pool.clone();
 
         let client_id_str = UUID4::new().to_string();
         let client_order_id = ClientOrderId::from(client_id_str.as_str());
 
         let trader_id = TraderId::from("TRADER-002");
         let strategy_id = StrategyId::from("S-2");
-        let instrument_id = InstrumentId::from("INSTRUMENT.VENUE");
         let reason = Ustr::from("TEST_MOD_REJECT");
         let venue_order_id = Some(VenueOrderId::from("V2"));
         let account_id = Some(AccountId::from("A-2"));
@@ -587,13 +584,15 @@ mod serial_tests {
             .maybe_account_id(account_id)
             .build();
 
-        DatabaseQueries::add_order_event(pool, Box::new(event), None)
+        DatabaseQueries::add_order_event(&pool, Box::new(event), None)
             .await
             .unwrap();
 
-        let events = DatabaseQueries::load_order_events(pool, &client_order_id)
+        let events = DatabaseQueries::load_order_events(&pool, &client_order_id)
             .await
             .unwrap();
+
+        delete_order_events(&pool, &client_order_id).await;
 
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -603,6 +602,450 @@ mod serial_tests {
             }
             other => panic!("Expected OrderModifyRejected, was {other:?}"),
         }
+
+        db.flush().unwrap();
+        db.close().unwrap();
+    }
+
+    /// Seeds the foreign-key dependencies that `order_event` rows require.
+    async fn seed_order_event_dependencies(database: &PostgresCacheDatabase) -> InstrumentId {
+        let instrument = currency_pair_ethusdt();
+        let instrument_id = instrument.id();
+        database
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        database.add_currency(&instrument.quote_currency()).unwrap();
+        database
+            .add_instrument(&InstrumentAny::CurrencyPair(instrument))
+            .unwrap();
+
+        // Writes go through the database channel, so wait for the foreign-key row to land
+        let pool = database.pool.clone();
+        wait_until_async(
+            || async {
+                DatabaseQueries::load_instrument(&pool, &instrument_id)
+                    .await
+                    .is_ok_and(|instrument| instrument.is_some())
+            },
+            Duration::from_secs(3),
+        )
+        .await;
+
+        instrument_id
+    }
+
+    /// Removes the event rows for `client_order_id`.
+    ///
+    /// These tests persist a single event without its `OrderInitialized`, which no order replay
+    /// can assemble. Leaving the rows behind would break every later test that loads all orders.
+    async fn delete_order_events(pool: &PgPool, client_order_id: &ClientOrderId) {
+        sqlx::query(r#"DELETE FROM "order_event" WHERE client_order_id = $1"#)
+            .bind(client_order_id.to_string())
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    async fn assert_event_round_trip(pool: &PgPool, event: &OrderEventAny) {
+        let client_order_id = event.client_order_id();
+        DatabaseQueries::add_order_event(pool, event.clone().into_boxed(), None)
+            .await
+            .unwrap();
+
+        let loaded = DatabaseQueries::load_order_events(pool, &client_order_id)
+            .await
+            .unwrap();
+
+        delete_order_events(pool, &client_order_id).await;
+
+        assert_eq!(loaded.len(), 1, "expected one event for {client_order_id}");
+        assert_eq!(
+            loaded[0], *event,
+            "round trip changed the event for {client_order_id}"
+        );
+    }
+
+    /// Every `OrderEventAny` variant survives a Postgres round trip unchanged.
+    ///
+    /// Regression coverage for the `todo!()` deserializers that panicked the engine on cache load
+    /// whenever a persisted order event was one of the ten unimplemented kinds.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_every_order_event_kind_round_trips() {
+        let mut database = get_test_pg_cache_database().await.unwrap();
+        let instrument_id = seed_order_event_dependencies(&database).await;
+        let pool = database.pool.clone();
+
+        let trader_id = TraderId::from("TRADER-007");
+        let strategy_id = StrategyId::from("S-042");
+        let venue_order_id = VenueOrderId::from("V-4242");
+        let account_id = AccountId::from("SIM-007");
+        let currency = Currency::from("USDT");
+        let causation_id = UUID4::new();
+
+        // Distinct, non-default values so a dropped or swapped field fails the equality assert
+        let unique =
+            |suffix: &str| ClientOrderId::from(format!("O-{}-{suffix}", UUID4::new()).as_str());
+
+        let mut exec_algorithm_params = IndexMap::new();
+        exec_algorithm_params.insert(Ustr::from("horizon"), Ustr::from("30"));
+
+        let mut initialized = OrderInitializedSpec::builder()
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(unique("initialized"))
+            .order_side(OrderSide::Buy)
+            .order_type(OrderType::Limit)
+            .quantity(Quantity::from("3.5"))
+            .time_in_force(TimeInForce::Gtc)
+            .post_only(true)
+            .reduce_only(true)
+            .quote_quantity(true)
+            .reconciliation(true)
+            .price(Price::from("1500.10"))
+            .exec_algorithm_id(ExecAlgorithmId::from("TWAP"))
+            .exec_algorithm_params(exec_algorithm_params)
+            .exec_spawn_id(ClientOrderId::from("O-SPAWN-1"))
+            .tags(vec![Ustr::from("tag-1"), Ustr::from("tag-2")])
+            .build();
+        initialized.causation_id = Some(causation_id);
+        assert_event_round_trip(&pool, &OrderEventAny::Initialized(initialized)).await;
+
+        let mut canceled = OrderCanceledSpec::builder()
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(unique("canceled"))
+            .reconciliation(true)
+            .venue_order_id(venue_order_id)
+            .account_id(account_id)
+            .ts_event(UnixNanos::from(111_222_333_444_555_666_u64))
+            .ts_init(UnixNanos::from(777_888_999_111_222_333_u64))
+            .build();
+        canceled.causation_id = Some(causation_id);
+        assert_event_round_trip(&pool, &OrderEventAny::Canceled(canceled)).await;
+
+        let mut denied = OrderDeniedSpec::builder()
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(unique("denied"))
+            .reason(Ustr::from("RISK_LIMIT"))
+            .ts_event(UnixNanos::from(11_u64))
+            .ts_init(UnixNanos::from(22_u64))
+            .build();
+        denied.causation_id = Some(causation_id);
+        assert_event_round_trip(&pool, &OrderEventAny::Denied(denied)).await;
+
+        let mut emulated = OrderEmulatedSpec::builder()
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(unique("emulated"))
+            .ts_event(UnixNanos::from(33_u64))
+            .ts_init(UnixNanos::from(44_u64))
+            .build();
+        emulated.causation_id = Some(causation_id);
+        assert_event_round_trip(&pool, &OrderEventAny::Emulated(emulated)).await;
+
+        let mut expired = OrderExpiredSpec::builder()
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(unique("expired"))
+            .reconciliation(true)
+            .venue_order_id(venue_order_id)
+            .account_id(account_id)
+            .build();
+        expired.causation_id = Some(causation_id);
+        assert_event_round_trip(&pool, &OrderEventAny::Expired(expired)).await;
+
+        let mut pending_cancel = OrderPendingCancelSpec::builder()
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(unique("pending-cancel"))
+            .account_id(account_id)
+            .reconciliation(true)
+            .venue_order_id(venue_order_id)
+            .build();
+        pending_cancel.causation_id = Some(causation_id);
+        assert_event_round_trip(&pool, &OrderEventAny::PendingCancel(pending_cancel)).await;
+
+        let mut pending_update = OrderPendingUpdateSpec::builder()
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(unique("pending-update"))
+            .account_id(account_id)
+            .reconciliation(true)
+            .venue_order_id(venue_order_id)
+            .build();
+        pending_update.causation_id = Some(causation_id);
+        assert_event_round_trip(&pool, &OrderEventAny::PendingUpdate(pending_update)).await;
+
+        let mut rejected = OrderRejectedSpec::builder()
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(unique("rejected"))
+            .account_id(account_id)
+            .reason(Ustr::from("DUPLICATE_LINK_ID"))
+            .reconciliation(true)
+            .due_post_only(true)
+            .build();
+        rejected.causation_id = Some(causation_id);
+        assert_event_round_trip(&pool, &OrderEventAny::Rejected(rejected)).await;
+
+        let mut released = OrderReleasedSpec::builder()
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(unique("released"))
+            .released_price(Price::from("1234.56"))
+            .build();
+        released.causation_id = Some(causation_id);
+        assert_event_round_trip(&pool, &OrderEventAny::Released(released)).await;
+
+        let mut triggered = OrderTriggeredSpec::builder()
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(unique("triggered"))
+            .reconciliation(true)
+            .venue_order_id(venue_order_id)
+            .account_id(account_id)
+            .build();
+        triggered.causation_id = Some(causation_id);
+        assert_event_round_trip(&pool, &OrderEventAny::Triggered(triggered)).await;
+
+        let mut updated = OrderUpdatedSpec::builder()
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(unique("updated"))
+            .quantity(Quantity::from("7.5"))
+            .reconciliation(true)
+            .venue_order_id(venue_order_id)
+            .account_id(account_id)
+            .price(Price::from("1500.10"))
+            .trigger_price(Price::from("1499.90"))
+            .protection_price(Price::from("1450.00"))
+            .is_quote_quantity(true)
+            .build();
+        updated.causation_id = Some(causation_id);
+        assert_event_round_trip(&pool, &OrderEventAny::Updated(updated)).await;
+
+        let mut accepted = OrderAcceptedSpec::builder()
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(unique("accepted"))
+            .venue_order_id(venue_order_id)
+            .account_id(account_id)
+            .reconciliation(true)
+            .build();
+        accepted.causation_id = Some(causation_id);
+        assert_event_round_trip(&pool, &OrderEventAny::Accepted(accepted)).await;
+
+        let mut submitted = OrderSubmittedSpec::builder()
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(unique("submitted"))
+            .account_id(account_id)
+            .build();
+        submitted.causation_id = Some(causation_id);
+        assert_event_round_trip(&pool, &OrderEventAny::Submitted(submitted)).await;
+
+        let mut cancel_rejected = OrderCancelRejectedSpec::builder()
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(unique("cancel-rejected"))
+            .reason(Ustr::from("UNKNOWN_ORDER"))
+            .reconciliation(true)
+            .venue_order_id(venue_order_id)
+            .account_id(account_id)
+            .build();
+        cancel_rejected.causation_id = Some(causation_id);
+        assert_event_round_trip(&pool, &OrderEventAny::CancelRejected(cancel_rejected)).await;
+
+        let mut modify_rejected = OrderModifyRejectedSpec::builder()
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(unique("modify-rejected"))
+            .reason(Ustr::from("PRICE_INVALID"))
+            .reconciliation(true)
+            .venue_order_id(venue_order_id)
+            .account_id(account_id)
+            .build();
+        modify_rejected.causation_id = Some(causation_id);
+        assert_event_round_trip(&pool, &OrderEventAny::ModifyRejected(modify_rejected)).await;
+
+        let mut info = IndexMap::new();
+        info.insert(Ustr::from("venue_note"), Ustr::from("partial"));
+
+        let mut filled = OrderFilledSpec::builder()
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(unique("filled"))
+            .venue_order_id(venue_order_id)
+            .account_id(account_id)
+            .trade_id(TradeId::from("T-991"))
+            .order_side(OrderSide::Buy)
+            .order_type(OrderType::Limit)
+            .last_qty(Quantity::from("2.5"))
+            .last_px(Price::from("1501.25"))
+            .currency(currency)
+            .liquidity_side(LiquiditySide::Maker)
+            .reconciliation(true)
+            .position_id(PositionId::from("P-77"))
+            .commission(Money::new(0.15, currency))
+            .info(info.clone())
+            .build();
+        filled.causation_id = Some(causation_id);
+        assert_event_round_trip(&pool, &OrderEventAny::Filled(filled)).await;
+
+        let mut fill_voided = OrderFillVoidedSpec::builder()
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(unique("fill-voided"))
+            .venue_order_id(venue_order_id)
+            .account_id(account_id)
+            .correction_id(Ustr::from("CORR-1"))
+            .trade_id(TradeId::from("T-992"))
+            .voided_qty(Quantity::from("1.5"))
+            .commission_voided(Money::new(0.05, currency))
+            .order_side(OrderSide::Sell)
+            .order_type(OrderType::Market)
+            .last_px(Price::from("1499.00"))
+            .currency(currency)
+            .liquidity_side(LiquiditySide::Taker)
+            .position_id(PositionId::from("P-78"))
+            .reason(Ustr::from("VENUE_CORRECTION"))
+            .info(info)
+            .reconciliation(true)
+            .is_reopened(true)
+            .build();
+        fill_voided.causation_id = Some(causation_id);
+        assert_event_round_trip(&pool, &OrderEventAny::FillVoided(fill_voided)).await;
+
+        database.flush().unwrap();
+        database.close().unwrap();
+    }
+
+    /// A fill persisted to `position_event` keeps the fields that are not part of the position.
+    ///
+    /// `position_event` is decoded by the same row mapping as `order_event`, so both tables have to
+    /// carry every `OrderFilled` field. The restart-recovery tests use stub fills whose
+    /// `reconciliation`, `info`, and `causation_id` are already at their defaults, so only distinct
+    /// values here can prove those columns are written and read.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_position_event_round_trip_keeps_non_position_fill_fields() {
+        let mut database = get_test_pg_cache_database().await.unwrap();
+        let instrument_id = seed_order_event_dependencies(&database).await;
+        let pool = database.pool.clone();
+
+        let position_id = PositionId::from("P-NON-POSITION-FIELDS");
+        let currency = Currency::from("USDT");
+        let mut info = IndexMap::new();
+        info.insert(Ustr::from("venue_note"), Ustr::from("corrected"));
+
+        let mut fill = OrderFilledSpec::builder()
+            .trader_id(TraderId::from("TRADER-009"))
+            .strategy_id(StrategyId::from("S-009"))
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-POSITION-FIELDS-1"))
+            .venue_order_id(VenueOrderId::from("V-909"))
+            .account_id(AccountId::from("SIM-009"))
+            .trade_id(TradeId::from("T-909"))
+            .order_side(OrderSide::Buy)
+            .order_type(OrderType::Market)
+            .last_qty(Quantity::from("1.0"))
+            .last_px(Price::from("1600.00"))
+            .currency(currency)
+            .liquidity_side(LiquiditySide::Taker)
+            .reconciliation(true)
+            .position_id(position_id)
+            .commission(Money::new(0.25, currency))
+            .info(info)
+            .build();
+        fill.causation_id = Some(UUID4::new());
+
+        DatabaseQueries::add_position(&pool, position_id, &fill)
+            .await
+            .unwrap();
+
+        let loaded = DatabaseQueries::load_position_events(&pool, &position_id)
+            .await
+            .unwrap();
+
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].reconciliation, fill.reconciliation);
+        assert_eq!(loaded[0].info, fill.info);
+        assert_eq!(loaded[0].causation_id, fill.causation_id);
+        assert_eq!(loaded[0], fill);
+
+        database.flush().unwrap();
+        database.close().unwrap();
+    }
+
+    /// An event row written before the new columns existed still decodes.
+    ///
+    /// `due_post_only` and `is_reopened` were added by `ALTER TABLE`, so a database that predates
+    /// them can present NULL. The column default carries the same meaning as a missing value, so
+    /// decoding falls back to `false` rather than failing the whole cache load.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_order_event_row_with_null_new_columns_decodes() {
+        let mut database = get_test_pg_cache_database().await.unwrap();
+        let instrument_id = seed_order_event_dependencies(&database).await;
+        let pool = database.pool.clone();
+
+        let client_order_id = ClientOrderId::from("O-LEGACY-NULL-COLUMNS-1");
+        delete_order_events(&pool, &client_order_id).await;
+
+        sqlx::query(r#"INSERT INTO "trader" (id) VALUES ($1) ON CONFLICT (id) DO NOTHING"#)
+            .bind("TRADER-LEGACY")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            r#"INSERT INTO "order_event"
+               (id, kind, trader_id, strategy_id, instrument_id, client_order_id, reason,
+                account_id, reconciliation, ts_event, ts_init, due_post_only)
+               VALUES ($1, 'OrderRejected', 'TRADER-LEGACY', 'S-LEGACY', $2, $3, 'LEGACY_REASON',
+                       'SIM-LEGACY', true, '1', '2', NULL)"#,
+        )
+        .bind(UUID4::new().to_string())
+        .bind(instrument_id.to_string())
+        .bind(client_order_id.to_string())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let loaded = DatabaseQueries::load_order_events(&pool, &client_order_id)
+            .await
+            .unwrap();
+
+        delete_order_events(&pool, &client_order_id).await;
+
+        assert_eq!(loaded.len(), 1);
+        match &loaded[0] {
+            OrderEventAny::Rejected(event) => {
+                assert!(!event.due_post_only);
+                assert!(event.reconciliation);
+                assert_eq!(event.reason, Ustr::from("LEGACY_REASON"));
+                assert_eq!(event.causation_id, None);
+            }
+            other => panic!("Expected OrderRejected, was {other:?}"),
+        }
+
+        database.flush().unwrap();
+        database.close().unwrap();
     }
 
     /// Tests that data is flushed immediately with the current hardcoded `buffer_interval=0`.

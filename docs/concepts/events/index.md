@@ -78,6 +78,7 @@ Every concrete Python order event exposes these fields:
 | `event_id`        | Unique event identifier.                                     |
 | `ts_event`        | UNIX timestamp (nanoseconds) when the event occurred.        |
 | `ts_init`         | UNIX timestamp (nanoseconds) when the event was initialized. |
+| `causation_id`    | Source event or report which caused this event, if known.    |
 
 Each order event page lists its type-specific fields. These include `venue_order_id`, `account_id`,
 and `reconciliation` only on the Python event classes that expose them. For example,

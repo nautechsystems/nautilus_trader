@@ -32,6 +32,7 @@ impl OrderRejected {
     /// Represents an event where an order has been rejected by the trading venue.
     #[expect(clippy::too_many_arguments)]
     #[new]
+    #[pyo3(signature = (trader_id, strategy_id, instrument_id, client_order_id, account_id, reason, event_id, ts_event, ts_init, reconciliation, due_post_only=false))]
     fn py_new(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -43,6 +44,7 @@ impl OrderRejected {
         ts_event: u64,
         ts_init: u64,
         reconciliation: bool,
+        due_post_only: bool,
     ) -> PyResult<Self> {
         let reason = Ustr::from_str(reason).map_err(to_pyvalue_err)?;
         Ok(Self::new(
@@ -56,7 +58,7 @@ impl OrderRejected {
             ts_event.into(),
             ts_init.into(),
             reconciliation,
-            false, // due_post_only defaults to false for Python constructor
+            due_post_only,
         ))
     }
 
@@ -74,6 +76,12 @@ impl OrderRejected {
 
     fn __str__(&self) -> String {
         self.to_string()
+    }
+
+    #[getter]
+    #[pyo3(name = "causation_id")]
+    fn py_causation_id(&self) -> Option<UUID4> {
+        self.causation_id
     }
 
     #[staticmethod]
