@@ -61,11 +61,11 @@ use tokio::{
 
 /// Circuit breaker for a logical phase, not routine synchronization.
 ///
-/// Waits are event-driven and unbounded on their own; this bound exists only so a
-/// genuine regression reports the expected and observed state instead of hanging
-/// until the harness kills the process. It is deliberately well below the harness
-/// slow-test thresholds so that diagnostic still fires, and far above the ~2s
-/// scheduling gaps that made the previous wall-clock waits flaky under load.
+/// Event-driven waits are unbounded on their own; this bound makes a genuine
+/// regression fail before the harness kills the process. It also bounds polling
+/// where no suitable notification exists. The duration is deliberately well below
+/// the harness slow-test thresholds and far above the two-second scheduling gaps seen
+/// under load.
 #[allow(dead_code)]
 pub(crate) const PHASE_TIMEOUT: Duration = Duration::from_secs(15);
 

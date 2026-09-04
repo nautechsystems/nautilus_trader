@@ -263,8 +263,12 @@ see the [Rust guide](rust.md#testing-conventions).
 
 ## Waiting for asynchronous effects
 
-In Rust tests, prefer `wait_until_async(...)` from `nautilus_common::testing` to arbitrary sleeps.
-It stops as soon as the condition succeeds and applies a bounded timeout.
+In Rust tests, prefer a notification channel or another event owned by the test over repeated
+condition evaluation. Subscribe before reading the authoritative state, then recheck it after every
+notification so a transition between the read and the await cannot be missed. When no suitable
+signal exists, use `wait_until_async(...)` from `nautilus_common::testing`; it stops as soon as the
+condition succeeds and applies a bounded timeout. Use a fixed sleep only when the time window itself
+is under test.
 
 ## Mocks
 

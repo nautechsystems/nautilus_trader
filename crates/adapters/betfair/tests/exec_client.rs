@@ -59,6 +59,7 @@ use nautilus_common::{
         },
         system::SocketState,
     },
+    testing::wait_until_async,
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
@@ -164,14 +165,24 @@ async fn connect_execution_ready(client: &mut BetfairExecutionClient) {
 }
 
 async fn wait_for_connection_state(client: &BetfairExecutionClient, expected: bool) {
-    tokio::time::timeout(PHASE_TIMEOUT, client.wait_for_connection_state(expected))
-        .await
-        .unwrap_or_else(|_| {
-            panic!(
-                "deadline elapsed waiting for connection state {expected}; state after deadline: {}",
-                client.is_connected()
-            )
-        });
+    // `timeout_at` polls the inner future first, so reject a state observed after its deadline.
+    let deadline = tokio::time::Instant::now() + PHASE_TIMEOUT;
+    tokio::time::timeout_at(
+        deadline,
+        wait_until_async(
+            || async {
+                client.is_connected() == expected && tokio::time::Instant::now() <= deadline
+            },
+            PHASE_TIMEOUT,
+        ),
+    )
+    .await
+    .unwrap_or_else(|_| {
+        panic!(
+            "deadline elapsed waiting for connection state {expected}; state after deadline: {}",
+            client.is_connected()
+        )
+    });
 }
 
 async fn wait_for_reconciliation_state(client: &BetfairExecutionClient, expected: bool) {

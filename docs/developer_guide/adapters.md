@@ -1760,10 +1760,12 @@ When HTTP and WebSocket tests share fixture loaders or model builders, place tes
 when no test code is shared.
 
 Client tests should drive public methods through mock HTTP or WebSocket servers. Assert emitted
-events, requests, connection state, subscription state, retry count, and shutdown behavior. Wait
-on observable state with [`wait_until_async`](../../crates/common/src/testing.rs) when possible. A
-short sleep is valid when the time window itself is under test or no protocol signal exists, but
-it should not mask a missing synchronization point.
+events, requests, connection state, subscription state, retry count, and shutdown behavior. Prefer
+a notification owned by the test or mock when the operation exposes one. Subscribe before reading
+the authoritative state, then recheck it after every notification so a transition between the read
+and the await cannot be missed. When no suitable signal exists, use
+[`wait_until_async`](../../crates/common/src/testing.rs). A short sleep is valid when the time window
+itself is under test, but it should not mask a missing synchronization point.
 
 Shared repository test policy uses `#[rstest]` for Rust test functions, permits
 `#[tokio::test]` for async tests, and rejects arrange/act/assert comments. The
