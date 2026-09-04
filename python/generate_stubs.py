@@ -204,6 +204,7 @@ EXTRA_REEXPORTS: dict[str, tuple[str, ...]] = {
             "TearsheetYearlyReturnsChart"
         ),
         "from nautilus_trader.analysis.reporter import ReportProvider as ReportProvider",
+        ("from nautilus_trader.analysis.statistic import PortfolioStatistic as PortfolioStatistic"),
         (
             "from nautilus_trader.analysis.tearsheet import create_bars_with_fills as "
             "create_bars_with_fills"

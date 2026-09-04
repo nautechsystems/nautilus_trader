@@ -2140,25 +2140,7 @@ impl BacktestEngine {
             return;
         }
 
-        let accounts = cache.accounts_all_owned();
-        let mut snapshots = Vec::new();
-        for position in &positions {
-            snapshots.extend(cache.position_snapshots(Some(&position.id), None));
-        }
-        let recorded = self.kernel.portfolio.borrow().recorded_realized_pnls();
-        let portfolio = self.kernel.portfolio.borrow();
-        let portfolio_snapshots = accounts
-            .iter()
-            .flat_map(|account| portfolio.snapshots(&account.id()))
-            .collect::<Vec<_>>();
-        let analyzer = PortfolioAnalyzer::from_accounts_with_snapshots(
-            &accounts,
-            &positions,
-            &snapshots,
-            &portfolio_snapshots,
-            recorded,
-        );
-        log_portfolio_performance(&analyzer);
+        log_portfolio_performance(&self.kernel.portfolio.borrow().analyzer());
     }
 
     fn total_positions_with_snapshots(cache: &Cache, cached_positions_count: usize) -> usize {

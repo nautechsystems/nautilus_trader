@@ -150,7 +150,7 @@ impl CanonicalScenario {
                     "blake3:405c9f219087dbff0f0641cfdc5fc41c84296981f4158bc9ea0978a1c81aee2c"
                         .to_string(),
                 result_digest:
-                    "blake3:af914f615d2c5442f15ea99d86a4b988c5596a39e552db60e13d626d5bcd378f"
+                    "blake3:7dd768c892f560c967c2aae291c6b9315d619bafab1b43b6a9f80cfad81e6914"
                         .to_string(),
             },
             Self::ScheduledMarketOrders => CanonicalFingerprint {
@@ -183,7 +183,7 @@ impl CanonicalScenario {
                     "blake3:7702ff4aa9ca1d26061419e9185a5bcfed0418fb0f24725ee36fd7d4323d79f5"
                         .to_string(),
                 result_digest:
-                    "blake3:896e7bcacc5551d80e4e6e95eace2e216d91629dd1430372d5f58a2923e2ae60"
+                    "blake3:4aaa0bdd015b1d4df4c1c850d3f1527f3d099ac717dd38500625c1d0ed24b403"
                         .to_string(),
             },
             Self::BarEmaCross => CanonicalFingerprint {

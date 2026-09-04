@@ -10,10 +10,19 @@ Released on TBD (UTC).
 - Added the standard Python enum surface (`from_str`, `name`, `value`, `variants`) to `BarIntervalType`
 - Added Polymarket collateral-sized limit BUY orders with exact limit price preservation
 - Added Bybit self-match prevention, set with `smp_type` on the execution client config or per order
+- Added user-defined portfolio statistics through `Portfolio.register_statistic()`, with a
+  `PortfolioStatistic` base class for Python implementations
 
 ### Breaking Changes
 
 - Removed Coinbase `CreateOrderRequest.reduce_only`; reduce-only orders are rejected before submission
+- Removed the dormant `PortfolioStatistic::calculate_from_orders` trait method; no analyzer
+  supplied order data to statistics
+- Changed `PortfolioAnalyzer.realized_pnls()` to return records in ascending event-time order
+  rather than position-derived records followed by recorded ones
+- Changed registered PnL statistics to run on every analyzed currency, including runs that closed
+  no trades, where they receive an empty list; `Win Rate` and its peers now report NaN for such
+  runs rather than being absent
 - Renamed blockchain log parsing modules to `hypersync::log` and `rpc::log`; update Rust imports
 - Changed `TradingState` to `ACTIVE=1`, `REDUCING=2`, and `HALTED=3`; update numeric and Cap'n Proto consumers
 - Changed `REDUCING` to allow only eligible reduce-only submissions, cancellations, and queries

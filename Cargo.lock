@@ -5408,6 +5408,7 @@ dependencies = [
  "ahash 0.8.12",
  "anyhow",
  "indexmap 2.14.1",
+ "log",
  "nautilus-core",
  "nautilus-model",
  "pyo3",

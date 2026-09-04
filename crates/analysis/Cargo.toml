@@ -46,6 +46,7 @@ nautilus-model = { workspace = true, features = ["test-support"] }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 indexmap = { workspace = true }
+log = { workspace = true }
 rust_decimal = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }

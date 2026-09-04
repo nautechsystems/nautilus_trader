@@ -94,25 +94,25 @@ V2 uses specific names for component and model identities:
 
 Collection and lifecycle inspection also changes shape:
 
-| v1 member                      | v2 member                                                     |
-| ------------------------------ | ------------------------------------------------------------- |
-| `Order.events`                 | `Order.events()`                                              |
-| `Position.adjustments`         | `Position.adjustments()`                                      |
-| `Position.client_order_ids`    | `Position.client_order_ids()`                                 |
-| `Position.events`              | `Position.events()`                                           |
-| `Position.trade_ids`           | `Position.trade_ids()`                                        |
-| `Position.venue_order_ids`     | `Position.venue_order_ids()`                                  |
-| `OrderList.orders`             | `client_order_ids()`, then resolve each ID through the cache  |
-| `OrderList.first`              | Resolve `first_client_order_id` through the cache             |
-| `Portfolio.initialized`        | `Portfolio.is_initialized()`                                  |
-| `Portfolio.analyzer`           | `statistics()`, `snapshots()`, and `nautilus_trader.analysis` |
-| `Actor.state`/`Strategy.state` | `DataActor.state()`/`Strategy.state()`                        |
-| `ExecAlgorithm.state`          | `ExecutionAlgorithm.state` remains a property                 |
-| `Component.is_running`         | `is_running()`                                                |
-| `Component.is_stopped`         | `is_stopped()`                                                |
-| `Component.is_disposed`        | `is_disposed()`                                               |
-| `Component.is_degraded`        | `is_degraded()`                                               |
-| `Component.is_faulted`         | `is_faulted()`                                                |
+| v1 member                      | v2 member                                                    |
+| ------------------------------ | ------------------------------------------------------------ |
+| `Order.events`                 | `Order.events()`                                             |
+| `Position.adjustments`         | `Position.adjustments()`                                     |
+| `Position.client_order_ids`    | `Position.client_order_ids()`                                |
+| `Position.events`              | `Position.events()`                                          |
+| `Position.trade_ids`           | `Position.trade_ids()`                                       |
+| `Position.venue_order_ids`     | `Position.venue_order_ids()`                                 |
+| `OrderList.orders`             | `client_order_ids()`, then resolve each ID through the cache |
+| `OrderList.first`              | Resolve `first_client_order_id` through the cache            |
+| `Portfolio.initialized`        | `Portfolio.is_initialized()`                                 |
+| `Portfolio.analyzer`           | `statistics()`, `snapshots()`, and `register_statistic()`    |
+| `Actor.state`/`Strategy.state` | `DataActor.state()`/`Strategy.state()`                       |
+| `ExecAlgorithm.state`          | `ExecutionAlgorithm.state` remains a property                |
+| `Component.is_running`         | `is_running()`                                               |
+| `Component.is_stopped`         | `is_stopped()`                                               |
+| `Component.is_disposed`        | `is_disposed()`                                              |
+| `Component.is_degraded`        | `is_degraded()`                                              |
+| `Component.is_faulted`         | `is_faulted()`                                               |
 
 Portfolio query names also change without compatibility aliases:
 
@@ -546,6 +546,36 @@ These additional reports also take the run config ID first:
 The [getting-started backtest guides](docs/getting_started/index.md) show the current high-level
 `BacktestNode` and low-level `BacktestEngine` APIs.
 
+### Port a custom portfolio statistic
+
+Subclass `PortfolioStatistic` from `nautilus_trader.analysis` as in v1 and register it on the
+Portfolio rather than on an analyzer. The class name still derives the statistic name, so
+`MyCustomRatio` registers as "My Custom Ratio" exactly as it did in v1.
+
+```python
+from nautilus_trader.analysis import PortfolioStatistic
+
+
+class TradeCount(PortfolioStatistic):
+    def calculate_from_realized_pnls(self, realized_pnls: list[float]) -> float | None:
+        return float(len(realized_pnls))
+
+
+engine.portfolio.register_statistic(TradeCount())
+```
+
+Two changes affect a ported class:
+
+- v1 passed `pd.Series`; v2 passes `dict[int, float]` keyed by UNIX nanoseconds for returns and
+  `list[float]` for realized PnLs. Rewrite any Series-specific code.
+- `calculate_from_orders` is gone. No v1 or v2 analyzer ever supplied order data to it, so a v1
+  implementation of that method never ran.
+
+The protected `_check_valid_returns` and `_downsample_to_daily_bins` helpers and the
+`fully_qualified_name()` classmethod have no v2 equivalent. Registrations reach
+`Portfolio.statistics()`, `BacktestResult`, and the post-run analysis log, and survive repeated
+queries and analyzer resets. See [Custom statistics](docs/concepts/portfolio.md#custom-statistics).
+
 ### Live node inspection and host-loop integration
 
 V2 exposes the Rust-owned cache and portfolio through `node.cache` and `node.portfolio`. These
@@ -718,6 +748,13 @@ Account for these differences from v1:
   `KeyError` for a duplicate trade ID and does not validate both identities on every apply.
 - `PortfolioConfig.use_mark_prices` defaults to `true`; v1 defaulted to `false`. Set it to `false` to
   skip mark prices.
+- `PortfolioAnalyzer.realized_pnls()` returns records in ascending event-time order. V1 returned
+  position-derived records followed by recorded ones, which was not chronological.
+- Registered PnL statistics run for every analyzed currency, including runs that closed no trades,
+  where they receive an empty list. `Win Rate` and its peers therefore report NaN for such runs
+  rather than being absent.
+- A portfolio statistic that raises no longer propagates. V2 logs the error and routes it through
+  `sys.unraisablehook`, because the calculation crosses into Rust where there is no error channel.
 - Backtest venues no longer accept `settlement_prices`. Add `InstrumentClose` data with
   `close_type=InstrumentCloseType.CONTRACT_EXPIRED`; its exact `close_price` settles futures, binary
   contracts, and option close legs at expiry.
@@ -782,6 +819,8 @@ These gaps can affect migration but do not block supported cutover workflows:
   through order emulation triggers.
 - V2 `BacktestNode` catalog configuration does not support v1 data-client factories, a download
   engine, on-the-fly downloads, custom data, or data frames.
+- `BacktestNode` builds its engines internally, so a custom portfolio statistic cannot be registered
+  before a node run. Use `BacktestEngine` directly when a run needs one.
 - Instrument-provider filter dictionaries are not a common v2 adapter contract. Hyperliquid v2
   loads its configured instrument universe and does not accept the v1 `instrument_provider` field.
   Check each adapter's Rust/PyO3 config rather than copying v1 provider examples.

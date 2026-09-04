@@ -13,14 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 
+use nautilus_analysis::{Returns, analyzer::Statistic, statistic::PortfolioStatistic};
 use nautilus_common::{
     cache::Cache,
     clock::{Clock, TestClock},
     msgbus::{self, MessageBus, MessagingSwitchboard, TypedHandler},
 };
-use nautilus_core::{UUID4, UnixNanos, approx_eq};
+use nautilus_core::{UUID4, UnixNanos, approx_eq, datetime::NANOSECONDS_IN_DAY};
 use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{Bar, BarType, MarkPriceUpdate, QuoteTick},
@@ -10045,4 +10046,133 @@ fn test_portfolio_statistics_returns_snapshot(
             .values()
             .all(|m| m.contains_key("PnL (total)"))
     );
+}
+
+/// Counts the inputs of each category so a missing or empty feed is distinguishable.
+#[derive(Debug)]
+struct InputCountStatistic;
+
+impl PortfolioStatistic for InputCountStatistic {
+    type Item = f64;
+
+    fn name(&self) -> String {
+        "Input Count".to_string()
+    }
+
+    fn calculate_from_returns(&self, returns: &Returns) -> Option<f64> {
+        Some(returns.len() as f64)
+    }
+
+    fn calculate_from_realized_pnls(&self, realized_pnls: &[f64]) -> Option<f64> {
+        Some(realized_pnls.len() as f64)
+    }
+
+    fn calculate_from_positions(&self, positions: &[Position]) -> Option<f64> {
+        Some(positions.len() as f64)
+    }
+}
+
+#[rstest]
+fn test_registered_statistic_reaches_portfolio_statistics(
+    mut simple_cache: Cache,
+    clock: TestClock,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_id = AccountId::new("SIM-001");
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        None,
+    );
+
+    portfolio.update_account(&get_cash_account(Some(account_id.as_str())));
+
+    let position_id = PositionId::new("P-CUSTOM-1");
+    let fill_open = make_fill_for_account(
+        &instrument_audusd,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("100000"),
+        Price::new(0.80000, instrument_audusd.price_precision()),
+        position_id,
+    );
+    let mut position = Position::new(&instrument_audusd, fill_open);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionOpened(get_open_position(&position)));
+
+    // A non-zero close timestamp is what records the position return, so the returns
+    // category has authoritative input to assert against.
+    let fill_close = OrderFilledSpec::builder()
+        .instrument_id(instrument_audusd.id())
+        .client_order_id(ClientOrderId::new("O-P-CUSTOM-1-SELL"))
+        .venue_order_id(VenueOrderId::new("V-P-CUSTOM-1-SELL"))
+        .account_id(account_id)
+        .trade_id(TradeId::new("T-P-CUSTOM-1-SELL"))
+        .order_side(OrderSide::Sell)
+        .last_qty(Quantity::from("100000"))
+        .last_px(Price::new(0.80100, instrument_audusd.price_precision()))
+        .currency(instrument_audusd.settlement_currency())
+        .position_id(position_id)
+        .ts_event(UnixNanos::from(NANOSECONDS_IN_DAY))
+        .build();
+    position.apply(&fill_close);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_position(&position)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionClosed(get_close_position(
+        &position,
+    )));
+
+    let statistic: Statistic = Arc::new(InputCountStatistic);
+    portfolio.register_statistic(Arc::clone(&statistic));
+
+    // Post-run analysis logging seeds its analyzer from this same map.
+    let registered = portfolio.registered_statistics();
+
+    assert!(registered.contains_key("Input Count"));
+    assert!(registered.contains_key("Long Ratio"));
+
+    // A second query proves the registration outlives the analyzer built for the first.
+    for _ in 0..2 {
+        let statistics = portfolio.statistics();
+
+        assert_eq!(statistics.returns_series.len(), 1);
+        assert_eq!(statistics.general["Input Count"], 1.0);
+        assert_eq!(statistics.pnls["USD"]["Input Count"], 1.0);
+        assert_eq!(statistics.returns["Input Count"], 1.0);
+        assert!(statistics.general.contains_key("Long Ratio"));
+    }
+
+    portfolio.deregister_statistic(&statistic);
+    let statistics = portfolio.statistics();
+
+    assert!(!statistics.general.contains_key("Input Count"));
+    assert!(!statistics.returns.contains_key("Input Count"));
+    assert!(statistics.general.contains_key("Long Ratio"));
+}
+
+#[rstest]
+fn test_deregister_statistics_clears_defaults(simple_cache: Cache, clock: TestClock) {
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        None,
+    );
+    portfolio.update_account(&get_cash_account(Some("SIM-001")));
+
+    assert!(!portfolio.registered_statistics().is_empty());
+
+    portfolio.deregister_statistics();
+
+    assert!(portfolio.registered_statistics().is_empty());
+    assert!(portfolio.statistics().general.is_empty());
 }
