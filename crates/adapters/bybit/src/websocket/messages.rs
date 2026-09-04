@@ -27,10 +27,10 @@ use crate::{
     common::{
         enums::{
             BybitBboSideType, BybitCancelType, BybitCreateType, BybitExecType, BybitMarketUnit,
-            BybitOrderSide, BybitOrderStatus, BybitOrderType, BybitPositionIdx, BybitPositionSide,
-            BybitPositionStatus, BybitProductType, BybitSmpType, BybitStopOrderType,
-            BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection, BybitTriggerType,
-            BybitWsOrderRequestOp,
+            BybitOrderSide, BybitOrderSmpType, BybitOrderStatus, BybitOrderType, BybitPositionIdx,
+            BybitPositionSide, BybitPositionStatus, BybitProductType, BybitSmpType,
+            BybitStopOrderType, BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection,
+            BybitTriggerType, BybitWsOrderRequestOp,
         },
         parse::{
             deserialize_decimal_or_zero, deserialize_i32_or_string, deserialize_i64_or_string,
@@ -318,6 +318,8 @@ pub struct BybitWsPlaceOrderParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_iv: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub smp_type: Option<BybitOrderSmpType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mmp: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub position_idx: Option<BybitPositionIdx>,
@@ -471,6 +473,8 @@ pub struct BybitWsBatchPlaceItem {
     pub tp_limit_price: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_iv: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub smp_type: Option<BybitOrderSmpType>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mmp: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1189,6 +1193,7 @@ mod tests {
             sl_limit_price: None,
             tp_limit_price: None,
             order_iv: Some("0.80".to_string()),
+            smp_type: None,
             mmp: Some(true),
             position_idx: None,
             bbo_side_type: None,
@@ -1230,6 +1235,7 @@ mod tests {
             sl_limit_price: None,
             tp_limit_price: None,
             order_iv: None,
+            smp_type: None,
             mmp: None,
             position_idx: None,
             bbo_side_type: None,
@@ -1238,8 +1244,58 @@ mod tests {
 
         let json = serde_json::to_string(&params).unwrap();
         assert!(!json.contains("orderIv"));
+        assert!(!json.contains("smpType"));
         assert!(!json.contains("mmp"));
         assert!(!json.contains("positionIdx"));
+    }
+
+    #[rstest]
+    #[case(BybitOrderSmpType::None, "None")]
+    #[case(BybitOrderSmpType::CancelMaker, "CancelMaker")]
+    #[case(BybitOrderSmpType::CancelTaker, "CancelTaker")]
+    #[case(BybitOrderSmpType::CancelBoth, "CancelBoth")]
+    fn serialize_place_params_includes_smp_type_when_set(
+        #[case] smp_type: BybitOrderSmpType,
+        #[case] expected: &str,
+    ) {
+        let params = BybitWsPlaceOrderParams {
+            category: BybitProductType::Linear,
+            symbol: Ustr::from("BTCUSDT"),
+            side: BybitOrderSide::Buy,
+            order_type: BybitOrderType::Limit,
+            qty: "0.01".to_string(),
+            is_leverage: None,
+            market_unit: None,
+            price: Some("50000".to_string()),
+            time_in_force: Some(BybitTimeInForce::Gtc),
+            order_link_id: Some("smp-1".to_string()),
+            reduce_only: None,
+            close_on_trigger: None,
+            trigger_price: None,
+            trigger_by: None,
+            trigger_direction: None,
+            tpsl_mode: None,
+            take_profit: None,
+            stop_loss: None,
+            tp_trigger_by: None,
+            sl_trigger_by: None,
+            sl_trigger_price: None,
+            tp_trigger_price: None,
+            sl_order_type: None,
+            tp_order_type: None,
+            sl_limit_price: None,
+            tp_limit_price: None,
+            order_iv: None,
+            smp_type: Some(smp_type),
+            mmp: None,
+            position_idx: None,
+            bbo_side_type: None,
+            bbo_level: None,
+        };
+
+        let json: serde_json::Value = serde_json::to_value(&params).unwrap();
+
+        assert_eq!(json.get("smpType").and_then(Value::as_str), Some(expected));
     }
 
     #[rstest]
@@ -1272,6 +1328,7 @@ mod tests {
             sl_limit_price: None,
             tp_limit_price: None,
             order_iv: None,
+            smp_type: None,
             mmp: None,
             position_idx: None,
             bbo_side_type: Some(BybitBboSideType::Queue),
@@ -1319,6 +1376,7 @@ mod tests {
             sl_limit_price: None,
             tp_limit_price: None,
             order_iv: None,
+            smp_type: None,
             mmp: None,
             position_idx: Some(idx),
             bbo_side_type: None,
@@ -1363,6 +1421,7 @@ mod tests {
             sl_limit_price: None,
             tp_limit_price: None,
             order_iv: None,
+            smp_type: None,
             mmp: None,
             position_idx: idx,
             bbo_side_type: None,

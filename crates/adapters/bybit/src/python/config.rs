@@ -15,13 +15,16 @@
 
 //! Python bindings for Bybit configuration.
 
-use nautilus_core::string::secret::SecretString;
+use nautilus_core::{python::to_pyvalue_err, string::secret::SecretString};
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
-use pyo3::pymethods;
+use pyo3::{PyResult, pymethods};
 
 use crate::{
-    common::enums::{BybitEnvironment, BybitMarginMode, BybitProductType},
+    common::{
+        enums::{BybitEnvironment, BybitMarginMode, BybitProductType},
+        parse::parse_smp_type,
+    },
     config::{BybitDataClientConfig, BybitExecutionClientConfig},
 };
 
@@ -135,6 +138,7 @@ impl BybitExecutionClientConfig {
         use_spot_position_reports = None,
         auto_repay_spot_borrows = None,
         margin_mode = None,
+        smp_type = None,
         transport_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
@@ -158,10 +162,16 @@ impl BybitExecutionClientConfig {
         use_spot_position_reports: Option<bool>,
         auto_repay_spot_borrows: Option<bool>,
         margin_mode: Option<BybitMarginMode>,
+        smp_type: Option<String>,
         transport_backend: Option<TransportBackend>,
-    ) -> Self {
+    ) -> PyResult<Self> {
+        let smp_type = smp_type
+            .map(|value| parse_smp_type(&value))
+            .transpose()
+            .map_err(to_pyvalue_err)?;
+
         let defaults = Self::default();
-        Self {
+        Ok(Self {
             api_key: api_key.map(SecretString::from),
             api_secret: api_secret.map(SecretString::from),
             product_types: product_types.unwrap_or(defaults.product_types),
@@ -187,8 +197,15 @@ impl BybitExecutionClientConfig {
             futures_leverages: None,
             position_mode: None,
             margin_mode,
+            smp_type,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
-        }
+        })
+    }
+
+    #[getter]
+    #[pyo3(name = "smp_type")]
+    fn py_smp_type(&self) -> Option<String> {
+        self.smp_type.map(|smp_type| smp_type.as_ref().to_string())
     }
 
     #[getter]

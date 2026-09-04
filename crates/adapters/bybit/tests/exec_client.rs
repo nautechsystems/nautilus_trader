@@ -44,7 +44,10 @@ use axum::{
 use nautilus_bybit::{
     common::{
         consts::{BYBIT_CLIENT_ID, BYBIT_VENUE},
-        enums::{BybitEnvironment, BybitMarginMode, BybitPositionMode, BybitProductType},
+        enums::{
+            BybitEnvironment, BybitMarginMode, BybitOrderSmpType, BybitPositionMode,
+            BybitProductType,
+        },
     },
     config::BybitExecutionClientConfig,
     execution::BybitExecutionClient,
@@ -90,6 +93,7 @@ struct TestServerState {
     trade_ws_connections: Arc<AtomicUsize>,
     trade_order_ret_code: Arc<AtomicUsize>,
     trade_order_requests: Arc<AtomicUsize>,
+    trade_order_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
     trade_order_req_id_present: Arc<AtomicBool>,
     authenticated: Arc<AtomicBool>,
     subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
@@ -114,6 +118,7 @@ impl Default for TestServerState {
             trade_ws_connections: Arc::new(AtomicUsize::new(0)),
             trade_order_ret_code: Arc::new(AtomicUsize::new(0)),
             trade_order_requests: Arc::new(AtomicUsize::new(0)),
+            trade_order_payloads: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             trade_order_req_id_present: Arc::new(AtomicBool::new(false)),
             authenticated: Arc::new(AtomicBool::new(false)),
             subscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
@@ -621,6 +626,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                     }
                     Some("order.create" | "order.amend" | "order.cancel") => {
                         state.trade_order_requests.fetch_add(1, Ordering::Relaxed);
+                        state.trade_order_payloads.lock().await.push(value.clone());
                         let req_id = value.get("reqId").and_then(|v| v.as_str());
                         state.trade_order_req_id_present.store(
                             req_id.is_some_and(|req_id| !req_id.is_empty()),
@@ -1502,6 +1508,122 @@ async fn test_exec_client_query_order() {
         other => panic!("Expected OrderStatusReport, was {other:?}"),
     }
 
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::derivatives_config_default(
+    "ETHUSDT-LINEAR",
+    Some(BybitOrderSmpType::CancelMaker),
+    None,
+    Some("CancelMaker")
+)]
+#[case::spot_param_overrides_config(
+    "BTCUSDT-SPOT",
+    Some(BybitOrderSmpType::CancelMaker),
+    Some("CancelBoth"),
+    Some("CancelBoth")
+)]
+#[case::spot_param_without_config("BTCUSDT-SPOT", None, Some("CancelTaker"), Some("CancelTaker"))]
+#[case::unset_omits_field("ETHUSDT-LINEAR", None, None, None)]
+#[tokio::test]
+async fn test_exec_client_submit_order_sends_configured_smp_type(
+    #[case] symbol: &str,
+    #[case] configured: Option<BybitOrderSmpType>,
+    #[case] param: Option<&str>,
+    #[case] expected: Option<&str>,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let mut config = create_test_exec_config(addr);
+    config.product_types = vec![BybitProductType::Linear, BybitProductType::Spot];
+    config.smp_type = configured;
+
+    let (mut client, mut rx, cache) = create_test_execution_client_with_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || async { state.subscriptions.lock().await.len() >= 4 },
+        Duration::from_secs(10),
+    )
+    .await;
+    drain_execution_events(&mut rx).await;
+
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("S-001");
+    let client_id = *BYBIT_CLIENT_ID;
+    let instrument_id = InstrumentId::new(Symbol::from(symbol), *BYBIT_VENUE);
+    let client_order_id = ClientOrderId::from("test-smp-submit");
+    let order = OrderAny::Market(MarketOrder::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        OrderSide::Buy,
+        Quantity::from("0.01"),
+        TimeInForce::Gtc,
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ));
+    let init = order.init_event().clone();
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(client_id), false)
+        .unwrap();
+
+    let params = param.map(|value| {
+        let mut params = Params::new();
+        params.insert("smp_type".to_string(), json!(value));
+        params
+    });
+
+    let command = SubmitOrder::new(
+        trader_id,
+        Some(client_id),
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        init,
+        None,
+        None,
+        params,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    client.submit_order(command).unwrap();
+
+    wait_until_async(
+        || async { state.trade_order_payloads.lock().await.len() == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let payloads = state.trade_order_payloads.lock().await;
+    assert_eq!(payloads.len(), 1);
+    assert_eq!(payloads[0]["op"].as_str(), Some("order.create"));
+
+    let order_args = &payloads[0]["args"][0];
+
+    assert_eq!(
+        order_args.get("orderLinkId").and_then(Value::as_str),
+        Some(client_order_id.as_str())
+    );
+    assert_eq!(order_args.get("smpType").and_then(Value::as_str), expected);
+
+    drop(payloads);
     client.disconnect().await.unwrap();
 }
 

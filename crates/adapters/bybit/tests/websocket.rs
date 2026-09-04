@@ -1990,6 +1990,7 @@ mod conditional_order_tests {
                 None,  // position_idx
                 None,  // bbo_side_type
                 None,  // bbo_level
+                None,  // smp_type
             )
             .unwrap()
     }
@@ -2047,6 +2048,7 @@ mod conditional_order_tests {
                 sl_limit_price: None,
                 tp_limit_price: None,
                 order_iv: None,
+                smp_type: None,
                 mmp: None,
                 position_idx: None,
                 bbo_side_type: None,
@@ -2081,6 +2083,7 @@ mod conditional_order_tests {
                 sl_limit_price: None,
                 tp_limit_price: None,
                 order_iv: None,
+                smp_type: None,
                 mmp: None,
                 position_idx: None,
                 bbo_side_type: None,
@@ -2367,6 +2370,7 @@ async fn test_batch_place_orders_with_cache_keys() {
         sl_limit_price: None,
         tp_limit_price: None,
         order_iv: None,
+        smp_type: None,
         mmp: None,
         position_idx: None,
         bbo_side_type: None,
@@ -2913,6 +2917,7 @@ async fn test_batch_place_order_with_order_iv_and_mmp() {
         sl_limit_price: None,
         tp_limit_price: None,
         order_iv: Some("0.80".to_string()),
+        smp_type: None,
         mmp: Some(true),
         position_idx: None,
         bbo_side_type: None,
@@ -2995,6 +3000,7 @@ async fn test_batch_place_order_with_bbo_serializes_bbo_and_omits_price() {
         sl_limit_price: None,
         tp_limit_price: None,
         order_iv: None,
+        smp_type: None,
         mmp: None,
         position_idx: None,
         bbo_side_type: Some(BybitBboSideType::Counterparty),
@@ -3076,6 +3082,7 @@ async fn test_batch_place_order_omits_order_iv_when_none() {
         sl_limit_price: None,
         tp_limit_price: None,
         order_iv: None,
+        smp_type: None,
         mmp: None,
         position_idx: None,
         bbo_side_type: None,

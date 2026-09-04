@@ -1095,7 +1095,10 @@ pub enum BybitMarketUnit {
     QuoteCoin,
 }
 
-/// Self-match prevention type.
+/// Self-match prevention type reported on an order or execution.
+///
+/// `Other` is a catch-all for values Bybit adds after this enum was written. Requests use
+/// [`BybitOrderSmpType`], which has no catch-all, so an unknown value cannot reach the venue.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum BybitSmpType {
     None,
@@ -1104,6 +1107,18 @@ pub enum BybitSmpType {
     CancelBoth,
     #[serde(other)]
     Other,
+}
+
+/// Self-match prevention type accepted on an order request.
+///
+/// Mirrors [`BybitSmpType`] without its inbound catch-all, so every value this type can hold is one
+/// Bybit accepts on an order.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, AsRefStr, Serialize, Deserialize)]
+pub enum BybitOrderSmpType {
+    None,
+    CancelMaker,
+    CancelTaker,
+    CancelBoth,
 }
 
 #[cfg(test)]

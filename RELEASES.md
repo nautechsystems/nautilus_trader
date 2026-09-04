@@ -9,6 +9,7 @@ Released on TBD (UTC).
 - Added `avg_px` and report window fields to persisted execution reports
 - Added the standard Python enum surface (`from_str`, `name`, `value`, `variants`) to `BarIntervalType`
 - Added Polymarket collateral-sized limit BUY orders with exact limit price preservation
+- Added Bybit self-match prevention, set with `smp_type` on the execution client config or per order
 
 ### Breaking Changes
 

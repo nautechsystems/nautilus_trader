@@ -29,9 +29,9 @@ use nautilus_bybit::{
     common::{
         consts::BYBIT_VENUE,
         enums::{
-            BybitAccountType, BybitBboSideType, BybitEnvironment, BybitMarginMode, BybitOrderType,
-            BybitPositionIdx, BybitProductType, BybitRepayStatus, BybitTpSlMode, BybitTriggerType,
-            BybitUnifiedMarginStatus,
+            BybitAccountType, BybitBboSideType, BybitEnvironment, BybitMarginMode,
+            BybitOrderSmpType, BybitOrderType, BybitPositionIdx, BybitProductType,
+            BybitRepayStatus, BybitTpSlMode, BybitTriggerType, BybitUnifiedMarginStatus,
         },
         urls::bybit_http_base_url,
     },
@@ -3403,6 +3403,7 @@ async fn test_submit_order_stop_market_with_trigger_price() {
             None,  // position_idx
             None,  // bbo_side_type
             None,  // bbo_level
+            None,  // smp_type
             None,  // native_tp_sl
         )
         .await;
@@ -3491,6 +3492,7 @@ async fn test_submit_order_stop_limit_with_trigger_price_and_limit_price() {
             None,  // position_idx
             None,  // bbo_side_type
             None,  // bbo_level
+            None,  // smp_type
             None,  // native_tp_sl
         )
         .await;
@@ -3581,6 +3583,7 @@ async fn test_submit_order_market_if_touched_trigger_direction() {
             None,
             None,
             None,
+            None,
         )
         .await;
 
@@ -3653,6 +3656,7 @@ async fn test_submit_order_post_only() {
             None,
             None,
             None,
+            None,
         )
         .await;
 
@@ -3718,6 +3722,7 @@ async fn test_submit_order_with_bbo_sends_bbo_and_omits_price() {
             Some(BybitBboSideType::Queue),
             Some("3".to_string()),
             None,
+            None,
         )
         .await;
 
@@ -3731,6 +3736,76 @@ async fn test_submit_order_with_bbo_sends_bbo_and_omits_price() {
     assert_eq!(order.price, None);
     assert_eq!(order.bbo_side_type.as_deref(), Some("Queue"));
     assert_eq!(order.bbo_level.as_deref(), Some("3"));
+}
+
+#[rstest]
+#[case(Some(BybitOrderSmpType::None), Some("None"))]
+#[case(Some(BybitOrderSmpType::CancelMaker), Some("CancelMaker"))]
+#[case(Some(BybitOrderSmpType::CancelTaker), Some("CancelTaker"))]
+#[case(Some(BybitOrderSmpType::CancelBoth), Some("CancelBoth"))]
+#[case(None, None)]
+#[tokio::test]
+async fn test_submit_order_serializes_smp_type(
+    #[case] smp_type: Option<BybitOrderSmpType>,
+    #[case] expected: Option<&str>,
+) {
+    let (addr, state) = start_order_capture_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        5_000,
+        None,
+    )
+    .unwrap();
+
+    let instruments = client
+        .request_instruments(BybitProductType::Linear, None, None)
+        .await
+        .unwrap();
+
+    for instrument in instruments {
+        client.cache_instrument(instrument);
+    }
+
+    let result = client
+        .submit_order(
+            AccountId::from("BYBIT-UNIFIED"),
+            BybitProductType::Linear,
+            InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), *BYBIT_VENUE),
+            ClientOrderId::from("smp-test-1"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("0.001"),
+            Some(TimeInForce::Gtc),
+            Some(Price::from("50000.00")),
+            None,
+            None,
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            smp_type,
+            None,
+        )
+        .await;
+
+    assert!(result.is_ok(), "Order submission should succeed");
+
+    let orders = state.order_submissions.lock().await;
+    assert_eq!(orders.len(), 1);
+
+    let body = &orders[0].raw_body;
+
+    assert_eq!(body.get("smpType").and_then(|v| v.as_str()), expected);
 }
 
 #[rstest]
@@ -3793,6 +3868,7 @@ async fn test_submit_order_with_native_tp_sl_serializes_fields() {
             false,
             false,
             false,
+            None,
             None,
             None,
             None,
@@ -3892,6 +3968,7 @@ async fn test_submit_order_with_explicit_partial_tpsl_mode_is_preserved() {
             None,
             None,
             None,
+            None,
             Some(&native_tp_sl),
         )
         .await;
@@ -3961,6 +4038,7 @@ async fn test_submit_order_spot_market_base_quantity() {
             None,  // position_idx
             None,  // bbo_side_type
             None,  // bbo_level
+            None,  // smp_type
             None,  // native_tp_sl
         )
         .await;
@@ -4037,6 +4115,7 @@ async fn test_submit_order_spot_market_quote_quantity() {
             None,  // position_idx
             None,  // bbo_side_type
             None,  // bbo_level
+            None,  // smp_type
             None,  // native_tp_sl
         )
         .await;
@@ -4113,6 +4192,7 @@ async fn test_submit_order_linear_does_not_send_market_unit() {
             None,  // position_idx
             None,  // bbo_side_type
             None,  // bbo_level
+            None,  // smp_type
             None,  // native_tp_sl
         )
         .await;
@@ -4186,6 +4266,7 @@ async fn test_submit_order_limit_if_touched_trigger_direction() {
             false,
             false,
             false,
+            None,
             None,
             None,
             None,
@@ -4271,6 +4352,7 @@ async fn test_submit_order_serializes_position_idx(
             false,
             false,
             position_idx,
+            None,
             None,
             None,
             None,

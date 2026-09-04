@@ -191,6 +191,7 @@ async fn close_position(
             None,
             None,
             None,
+            None,
         )
         .await?;
 

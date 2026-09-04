@@ -26,9 +26,9 @@ use crate::common::{
     enums::{
         BybitAccountType, BybitBboSideType, BybitExecType, BybitInstrumentStatus,
         BybitKlineInterval, BybitMarginMode, BybitMarketUnit, BybitOpenOnly, BybitOptionType,
-        BybitOrderFilter, BybitOrderSide, BybitOrderStatus, BybitOrderType, BybitPositionIdx,
-        BybitPositionMode, BybitProductType, BybitSmpType, BybitStopOrderType, BybitTimeInForce,
-        BybitTpSlMode, BybitTriggerDirection, BybitTriggerType,
+        BybitOrderFilter, BybitOrderSide, BybitOrderSmpType, BybitOrderStatus, BybitOrderType,
+        BybitPositionIdx, BybitPositionMode, BybitProductType, BybitStopOrderType,
+        BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection, BybitTriggerType,
     },
     parse::opt_bool_as_int,
 };
@@ -458,7 +458,7 @@ pub struct BybitBatchPlaceOrderEntry {
     pub close_on_trigger: Option<bool>,
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub smp_type: Option<BybitSmpType>,
+    pub smp_type: Option<BybitOrderSmpType>,
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mmp: Option<bool>,
