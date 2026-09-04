@@ -835,9 +835,9 @@ fn generate_l2_delta_data(instrument_id: InstrumentId, event_count: usize) -> Ve
         let ask = order_book_delta(instrument_id, OrderSide::Sell, base + 10, sequence + 1, ts);
 
         if i.is_multiple_of(2) {
-            data.push(Data::Delta(bid));
+            data.push(Data::BookDelta(bid));
         } else {
-            data.push(Data::Deltas(Box::new(OrderBookDeltas::new(
+            data.push(Data::BookDeltas(Box::new(OrderBookDeltas::new(
                 instrument_id,
                 vec![bid, ask],
             ))));
@@ -896,7 +896,7 @@ fn generate_depth10_data(instrument_id: InstrumentId, depth_count: usize) -> Vec
                 );
             }
 
-            Data::Depth10(Box::new(OrderBookDepth10::new(
+            Data::BookDepth10(Box::new(OrderBookDepth10::new(
                 instrument_id,
                 bids,
                 asks,

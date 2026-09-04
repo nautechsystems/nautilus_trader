@@ -102,7 +102,7 @@ The loader returns a `Vec<BetfairDataItem>`:
 | :------------------ | :---------------------------------------------- | :--------------------------- |
 | `Instrument`        | Runner definition from market definition.       | No (added separately)        |
 | `Status`            | Market status transition (PreOpen, Trading...). | No (`Data` has no variant)   |
-| `Deltas`            | Order book snapshot or delta update.            | Yes, `Data::Deltas`          |
+| `Deltas`            | Order book snapshot or delta update.            | Yes, `Data::BookDeltas`      |
 | `Trade`             | Incremental trade tick from cumulative volumes. | Yes, `Data::Trade`           |
 | `Ticker`            | Last traded price, volume, BSP near/far.        | -                            |
 | `StartingPrice`     | Betfair Starting Price for a runner.            | -                            |
@@ -127,7 +127,7 @@ for item in items {
             instruments.insert(inst.id(), *inst);
         }
         BetfairDataItem::Deltas(d) => {
-            data.push(Data::Deltas(Box::new(d)));
+            data.push(Data::BookDeltas(Box::new(d)));
         }
         BetfairDataItem::Trade(t) => {
             data.push(Data::Trade(t));
@@ -140,7 +140,7 @@ for item in items {
 }
 ```
 
-`Data::Deltas` boxes its `OrderBookDeltas` payload to keep the enum small.
+`Data::BookDeltas` boxes its `OrderBookDeltas` payload to keep the enum small.
 
 Instruments are re-emitted on every market definition update in the stream,
 so the map deduplicates them by keeping the latest version.

@@ -500,7 +500,7 @@ async fn test_subscribe_book_depth_mbp10() {
 
     let msg = recv_msg(&mut msg_rx).await;
     match msg {
-        DatabentoMessage::Data(Data::Depth10(depth)) => {
+        DatabentoMessage::Data(Data::BookDepth10(depth)) => {
             assert_eq!(depth.instrument_id.symbol.as_str(), RAW_SYMBOL);
             // Bids descending, asks ascending
             for i in 0..9 {
@@ -518,7 +518,7 @@ async fn test_subscribe_book_depth_mbp10() {
                 );
             }
         }
-        other => panic!("expected Data::Depth10, was {other:?}"),
+        other => panic!("expected Data::BookDepth10, was {other:?}"),
     }
 
     cmd_tx.send(HandlerCommand::Close).unwrap();
@@ -560,10 +560,10 @@ async fn test_subscribe_book_deltas_mbo() {
 
     let msg = recv_msg(&mut msg_rx).await;
     match msg {
-        DatabentoMessage::Data(Data::Deltas(deltas)) => {
+        DatabentoMessage::Data(Data::BookDeltas(deltas)) => {
             assert!(!deltas.deltas.is_empty(), "expected at least one delta");
         }
-        other => panic!("expected Data::Deltas, was {other:?}"),
+        other => panic!("expected Data::BookDeltas, was {other:?}"),
     }
 
     cmd_tx.send(HandlerCommand::Close).unwrap();
@@ -600,7 +600,7 @@ async fn test_mbo_single_f_last_emits_one_delta() {
 
     let msg = recv_msg(&mut msg_rx).await;
     match msg {
-        DatabentoMessage::Data(Data::Deltas(deltas)) => {
+        DatabentoMessage::Data(Data::BookDeltas(deltas)) => {
             assert_eq!(deltas.instrument_id.symbol.as_str(), RAW_SYMBOL);
             assert_eq!(deltas.deltas.len(), 1);
             assert_eq!(deltas.flags, 128);
@@ -610,7 +610,7 @@ async fn test_mbo_single_f_last_emits_one_delta() {
             assert_eq!(deltas.deltas[0].sequence, 1);
             assert_eq!(deltas.deltas[0].ts_event, 101_000_000_000u64);
         }
-        other => panic!("expected Data::Deltas, was {other:?}"),
+        other => panic!("expected Data::BookDeltas, was {other:?}"),
     }
 
     cmd_tx.send(HandlerCommand::Close).unwrap();
@@ -991,7 +991,7 @@ async fn test_mbo_buffering_waits_for_f_last() {
 
     let msg = recv_msg(&mut msg_rx).await;
     match msg {
-        DatabentoMessage::Data(Data::Deltas(deltas)) => {
+        DatabentoMessage::Data(Data::BookDeltas(deltas)) => {
             assert_eq!(
                 deltas.deltas.len(),
                 3,
@@ -999,7 +999,7 @@ async fn test_mbo_buffering_waits_for_f_last() {
                 deltas.deltas.len()
             );
         }
-        other => panic!("expected Data::Deltas, was {other:?}"),
+        other => panic!("expected Data::BookDeltas, was {other:?}"),
     }
 
     cmd_tx.send(HandlerCommand::Close).unwrap();
@@ -1047,7 +1047,7 @@ async fn test_mbo_snapshot_buffered_until_delta() {
 
     let msg = recv_msg(&mut msg_rx).await;
     match msg {
-        DatabentoMessage::Data(Data::Deltas(deltas)) => {
+        DatabentoMessage::Data(Data::BookDeltas(deltas)) => {
             assert_eq!(
                 deltas.deltas.len(),
                 3,
@@ -1055,7 +1055,7 @@ async fn test_mbo_snapshot_buffered_until_delta() {
                 deltas.deltas.len()
             );
         }
-        other => panic!("expected Data::Deltas, was {other:?}"),
+        other => panic!("expected Data::BookDeltas, was {other:?}"),
     }
 
     cmd_tx.send(HandlerCommand::Close).unwrap();
@@ -1099,10 +1099,10 @@ async fn test_mbo_multiple_instruments() {
 
     for msg in [msg1, msg2] {
         match msg {
-            DatabentoMessage::Data(Data::Deltas(deltas)) => {
+            DatabentoMessage::Data(Data::BookDeltas(deltas)) => {
                 symbols.push(deltas.instrument_id.symbol.to_string());
             }
-            other => panic!("expected Data::Deltas, was {other:?}"),
+            other => panic!("expected Data::BookDeltas, was {other:?}"),
         }
     }
 
@@ -1295,7 +1295,7 @@ async fn test_replay_subscription_buffers_until_past_start() {
 
     let msg = recv_msg(&mut msg_rx).await;
     match msg {
-        DatabentoMessage::Data(Data::Deltas(deltas)) => {
+        DatabentoMessage::Data(Data::BookDeltas(deltas)) => {
             assert_eq!(
                 deltas.deltas.len(),
                 3,
@@ -1303,7 +1303,7 @@ async fn test_replay_subscription_buffers_until_past_start() {
                 deltas.deltas.len()
             );
         }
-        other => panic!("expected Data::Deltas, was {other:?}"),
+        other => panic!("expected Data::BookDeltas, was {other:?}"),
     }
 
     cmd_tx.send(HandlerCommand::Close).unwrap();

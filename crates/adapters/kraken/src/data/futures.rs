@@ -427,7 +427,7 @@ impl KrakenFuturesDataClient {
 
                         if has_book_sub
                             && let Err(e) =
-                                sender.send(DataEvent::Data(Data::Deltas(Box::new(deltas))))
+                                sender.send(DataEvent::Data(Data::BookDeltas(Box::new(deltas))))
                         {
                             log::error!("Failed to send book snapshot deltas: {e}");
                         }
@@ -469,7 +469,7 @@ impl KrakenFuturesDataClient {
 
                         if has_book_sub
                             && let Err(e) =
-                                sender.send(DataEvent::Data(Data::Deltas(Box::new(deltas))))
+                                sender.send(DataEvent::Data(Data::BookDeltas(Box::new(deltas))))
                         {
                             log::error!("Failed to send book delta: {e}");
                         }

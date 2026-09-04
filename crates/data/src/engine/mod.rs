@@ -1848,9 +1848,9 @@ impl DataEngine {
         self.data_count += 1;
 
         match data {
-            Data::Delta(delta) => self.handle_delta_pipeline(delta),
-            Data::Deltas(deltas) => self.handle_deltas_pipeline(&deltas),
-            Data::Depth10(depth) => self.handle_depth10_pipeline(*depth),
+            Data::BookDelta(delta) => self.handle_delta_pipeline(delta),
+            Data::BookDeltas(deltas) => self.handle_deltas_pipeline(&deltas),
+            Data::BookDepth10(depth) => self.handle_depth10_pipeline(*depth),
             Data::Quote(quote) => self.handle_quote_pipeline(quote),
             Data::Trade(trade) => self.handle_trade_pipeline(trade),
             Data::Bar(bar) => self.handle_bar_pipeline(bar),

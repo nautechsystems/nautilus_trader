@@ -41,17 +41,6 @@ struct ReplayKey {
 fn replay_key(data: DataRef<'_>) -> ReplayKey {
     let ts = data.ts_init();
     match data {
-        #[cfg(feature = "defi")]
-        DataRef::Defi(defi) => {
-            let (block_number, transaction_index, log_index, phase) = replay_position(defi);
-            ReplayKey {
-                ts,
-                block_number,
-                transaction_index,
-                log_index,
-                phase,
-            }
-        }
         DataRef::BookDelta(_)
         | DataRef::BookDeltas(_)
         | DataRef::BookDepth10(_)
@@ -71,6 +60,17 @@ fn replay_key(data: DataRef<'_>) -> ReplayKey {
             log_index: 0,
             phase: 0,
         },
+        #[cfg(feature = "defi")]
+        DataRef::Defi(defi) => {
+            let (block_number, transaction_index, log_index, phase) = replay_position(defi);
+            ReplayKey {
+                ts,
+                block_number,
+                transaction_index,
+                log_index,
+                phase,
+            }
+        }
     }
 }
 

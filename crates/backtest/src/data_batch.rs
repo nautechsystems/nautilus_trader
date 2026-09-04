@@ -39,9 +39,9 @@ enum DataKind {
 impl From<&Data> for DataKind {
     fn from(data: &Data) -> Self {
         match data {
-            Data::Delta(_) => Self::BookDelta,
-            Data::Deltas(_) => Self::BookDeltas,
-            Data::Depth10(_) => Self::BookDepth10,
+            Data::BookDelta(_) => Self::BookDelta,
+            Data::BookDeltas(_) => Self::BookDeltas,
+            Data::BookDepth10(_) => Self::BookDepth10,
             Data::Quote(_) => Self::Quote,
             Data::Trade(_) => Self::Trade,
             Data::Bar(_) => Self::Bar,
@@ -102,9 +102,9 @@ impl ReplayBatch {
         }
 
         match kind {
-            DataKind::BookDelta => collect_batch!(data, Delta, BookDelta),
-            DataKind::BookDeltas => collect_batch!(data, Deltas, BookDeltas, boxed),
-            DataKind::BookDepth10 => collect_batch!(data, Depth10, BookDepth10, boxed),
+            DataKind::BookDelta => collect_batch!(data, BookDelta, BookDelta),
+            DataKind::BookDeltas => collect_batch!(data, BookDeltas, BookDeltas, boxed),
+            DataKind::BookDepth10 => collect_batch!(data, BookDepth10, BookDepth10, boxed),
             DataKind::Quote => collect_batch!(data, Quote, Quote),
             DataKind::Trade => collect_batch!(data, Trade, Trade),
             DataKind::Bar => collect_batch!(data, Bar, Bar),
@@ -140,9 +140,9 @@ impl ReplayBatch {
 
     pub(super) fn get_owned(&self, index: usize) -> Option<Data> {
         match self.get(index)? {
-            DataRef::BookDelta(data) => Some(Data::Delta(*data)),
-            DataRef::BookDeltas(data) => Some(Data::Deltas(Box::new(data.clone()))),
-            DataRef::BookDepth10(data) => Some(Data::Depth10(Box::new(*data))),
+            DataRef::BookDelta(data) => Some(Data::BookDelta(*data)),
+            DataRef::BookDeltas(data) => Some(Data::BookDeltas(Box::new(data.clone()))),
+            DataRef::BookDepth10(data) => Some(Data::BookDepth10(Box::new(*data))),
             DataRef::Quote(data) => Some(Data::Quote(*data)),
             DataRef::Trade(data) => Some(Data::Trade(*data)),
             DataRef::Bar(data) => Some(Data::Bar(*data)),
@@ -193,9 +193,9 @@ mod tests {
     fn test_homogeneous_data_uses_typed_storage_for_every_non_defi_static_variant() {
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let data = vec![
-            Data::Delta(stub_delta()),
-            Data::Deltas(Box::new(stub_deltas())),
-            Data::Depth10(Box::new(stub_depth10())),
+            Data::BookDelta(stub_delta()),
+            Data::BookDeltas(Box::new(stub_deltas())),
+            Data::BookDepth10(Box::new(stub_depth10())),
             Data::Quote(QuoteTick::default()),
             Data::Trade(stub_trade_ethusdt_buy()),
             Data::Bar(stub_bar()),
@@ -290,7 +290,7 @@ mod tests {
     fn test_mixed_data_remains_one_compatibility_batch() {
         let batch = ReplayBatch::from_data(vec![
             Data::Quote(QuoteTick::default()),
-            Data::Deltas(Box::new(stub_deltas())),
+            Data::BookDeltas(Box::new(stub_deltas())),
             Data::Quote(QuoteTick::default()),
         ]);
 
@@ -317,7 +317,7 @@ mod tests {
         let deltas = stub_deltas();
         let deltas_len = deltas.deltas.len();
         let deltas_ptr = deltas.deltas.as_ptr();
-        let batch = ReplayBatch::from_data(vec![Data::Deltas(Box::new(deltas))]);
+        let batch = ReplayBatch::from_data(vec![Data::BookDeltas(Box::new(deltas))]);
         let Some(DataRef::BookDeltas(converted)) = batch.get(0) else {
             panic!("expected deltas batch item");
         };

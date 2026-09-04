@@ -1795,7 +1795,7 @@ async fn test_subscribe_l1_mbp_uses_book_ticker_and_rejects_invalid_depth() {
     let data = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected L1 deltas");
-    let Data::Deltas(deltas) = data else {
+    let Data::BookDeltas(deltas) = data else {
         panic!("expected L1 deltas");
     };
     assert_eq!(*deltas, expected_l1_deltas(quote, 12345));
@@ -2052,14 +2052,14 @@ async fn test_subscribe_book_deltas() {
     let snapshot = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected REST depth snapshot data");
-    let Data::Deltas(snapshot) = snapshot else {
+    let Data::BookDeltas(snapshot) = snapshot else {
         panic!("expected order book deltas");
     };
 
     let replayed = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected replayed depth diff data");
-    let Data::Deltas(replayed) = replayed else {
+    let Data::BookDeltas(replayed) = replayed else {
         panic!("expected order book deltas");
     };
 
@@ -2198,14 +2198,14 @@ async fn test_subscribe_book_deltas_accepts_first_overlapping_diff_with_older_pu
     let snapshot = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected REST depth snapshot data");
-    let Data::Deltas(snapshot) = snapshot else {
+    let Data::BookDeltas(snapshot) = snapshot else {
         panic!("expected order book deltas");
     };
 
     let replayed = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected replayed depth diff data");
-    let Data::Deltas(replayed) = replayed else {
+    let Data::BookDeltas(replayed) = replayed else {
         panic!("expected order book deltas");
     };
 
@@ -2341,14 +2341,14 @@ async fn test_subscribe_book_deltas_waits_for_first_depth_update_before_snapshot
     let snapshot = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected REST depth snapshot data after first diff");
-    let Data::Deltas(snapshot) = snapshot else {
+    let Data::BookDeltas(snapshot) = snapshot else {
         panic!("expected order book deltas");
     };
 
     let replayed = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected replayed depth diff data after first diff");
-    let Data::Deltas(replayed) = replayed else {
+    let Data::BookDeltas(replayed) = replayed else {
         panic!("expected order book deltas");
     };
 
@@ -2416,14 +2416,14 @@ async fn test_subscribe_book_deltas_keeps_buffered_diffs_across_overlap_retry() 
     let snapshot = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected REST depth snapshot data after overlap retry");
-    let Data::Deltas(snapshot) = snapshot else {
+    let Data::BookDeltas(snapshot) = snapshot else {
         panic!("expected order book deltas");
     };
 
     let replayed = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected retained replayed depth diff data");
-    let Data::Deltas(replayed) = replayed else {
+    let Data::BookDeltas(replayed) = replayed else {
         panic!("expected order book deltas");
     };
 
@@ -2492,14 +2492,14 @@ async fn test_subscribe_book_deltas_retries_transient_depth_snapshot_failure() {
     let snapshot = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected REST depth snapshot data after retry");
-    let Data::Deltas(snapshot) = snapshot else {
+    let Data::BookDeltas(snapshot) = snapshot else {
         panic!("expected order book deltas");
     };
 
     let replayed = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected replayed depth diff data after retry");
-    let Data::Deltas(replayed) = replayed else {
+    let Data::BookDeltas(replayed) = replayed else {
         panic!("expected order book deltas");
     };
 

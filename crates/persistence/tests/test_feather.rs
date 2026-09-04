@@ -114,7 +114,7 @@ async fn test_write_data_enum_all_types() {
         UnixNanos::from(3000),
         UnixNanos::from(3000),
     );
-    writer.write_data(Data::Delta(delta)).await.unwrap();
+    writer.write_data(Data::BookDelta(delta)).await.unwrap();
 
     let funding_rate = FundingRateUpdate::new(
         instrument_id,
@@ -169,7 +169,7 @@ async fn test_write_data_orderbook_deltas() {
 
     // Test writing OrderBookDeltas via write_data
     writer
-        .write_data(Data::Deltas(Box::new(deltas)))
+        .write_data(Data::BookDeltas(Box::new(deltas)))
         .await
         .unwrap();
     writer.flush().await.unwrap();
@@ -316,7 +316,7 @@ async fn test_write_orderbook_deltas_clear_first_preserves_precision() {
     let deltas = OrderBookDeltas::new(instrument_id, vec![clear, add]);
 
     writer
-        .write_data(Data::Deltas(Box::new(deltas)))
+        .write_data(Data::BookDeltas(Box::new(deltas)))
         .await
         .unwrap();
     writer.flush().await.unwrap();
@@ -380,7 +380,7 @@ async fn test_write_orderbook_deltas_all_sentinel_metadata_fallback() {
     let deltas = OrderBookDeltas::new(instrument_id, vec![clear1, clear2]);
 
     writer
-        .write_data(Data::Deltas(Box::new(deltas)))
+        .write_data(Data::BookDeltas(Box::new(deltas)))
         .await
         .unwrap();
     writer.flush().await.unwrap();

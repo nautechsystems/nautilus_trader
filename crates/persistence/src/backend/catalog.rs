@@ -413,11 +413,11 @@ impl ParquetDataCatalog {
 
         for d in data.iter().cloned() {
             match d {
-                Data::Deltas(_) => {}
-                Data::Delta(d) => {
+                Data::BookDelta(d) => {
                     deltas.push(d);
                 }
-                Data::Depth10(d) => {
+                Data::BookDeltas(_) => {}
+                Data::BookDepth10(d) => {
                     depth10s.push(*d);
                 }
                 Data::Quote(d) => {

@@ -1230,7 +1230,7 @@ fn quote_with_size(instrument_id: InstrumentId, bid: &str, ask: &str, size: &str
 }
 
 fn bid_delta(instrument_id: InstrumentId, price: &str, sequence: u64, ts: u64) -> Data {
-    Data::Delta(OrderBookDelta::new(
+    Data::BookDelta(OrderBookDelta::new(
         instrument_id,
         BookAction::Add,
         BookOrder::new(

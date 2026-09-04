@@ -582,7 +582,7 @@ async fn test_mcm_handler_emits_book_deltas() {
         .expect("channel closed");
 
     assert!(
-        matches!(event, DataEvent::Data(Data::Deltas(_))),
+        matches!(event, DataEvent::Data(Data::BookDeltas(_))),
         "Expected Deltas event from MCM, found: {event:?}"
     );
 
@@ -806,7 +806,7 @@ async fn test_data_client_handles_sub_image_snapshot() {
 
     for _ in 0..30 {
         match tokio::time::timeout(Duration::from_secs(3), rx.recv()).await {
-            Ok(Some(DataEvent::Data(Data::Deltas(_)))) => {
+            Ok(Some(DataEvent::Data(Data::BookDeltas(_)))) => {
                 found_deltas = true;
 
                 if found_instrument {
@@ -885,7 +885,7 @@ async fn test_data_client_handles_resub_delta_emits_deltas() {
 
     for _ in 0..40 {
         match tokio::time::timeout(Duration::from_secs(3), rx.recv()).await {
-            Ok(Some(DataEvent::Data(Data::Deltas(d)))) => {
+            Ok(Some(DataEvent::Data(Data::BookDeltas(d)))) => {
                 delta_count += 1;
                 let symbol = d.instrument_id.symbol.as_str();
 
@@ -959,7 +959,7 @@ async fn test_data_client_handles_live_race_message_emits_deltas(
 
     for _ in 0..40 {
         match tokio::time::timeout(Duration::from_secs(3), rx.recv()).await {
-            Ok(Some(DataEvent::Data(Data::Deltas(_)))) => {
+            Ok(Some(DataEvent::Data(Data::BookDeltas(_)))) => {
                 delta_count += 1;
                 if delta_count >= expected_min_deltas {
                     break;
@@ -1097,7 +1097,7 @@ async fn test_data_client_handles_bsp_sub_image_emits_instrument_and_deltas() {
                 }
                 idx += 1;
             }
-            Ok(Some(DataEvent::Data(Data::Deltas(_)))) => {
+            Ok(Some(DataEvent::Data(Data::BookDeltas(_)))) => {
                 if !deltas_seen {
                     deltas_seen = true;
                     deltas_idx = Some(idx);

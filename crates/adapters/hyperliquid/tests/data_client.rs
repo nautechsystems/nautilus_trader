@@ -1855,7 +1855,7 @@ async fn test_data_client_subscribe_book_deltas() {
         .expect("channel closed");
 
     assert!(
-        matches!(event, DataEvent::Data(Data::Deltas(_))),
+        matches!(event, DataEvent::Data(Data::BookDeltas(_))),
         "Expected Deltas event, was: {event:?}"
     );
 

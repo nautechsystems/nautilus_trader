@@ -552,7 +552,7 @@ impl BinanceSpotDataClient {
                 if let Some(instrument) = cache.get(&symbol)
                     && let Some(deltas) = parse_depth_snapshot(event, instrument, ts_init)
                 {
-                    Self::send_data(data_sender, Data::Deltas(Box::new(deltas)));
+                    Self::send_data(data_sender, Data::BookDeltas(Box::new(deltas)));
                 }
             }
             BinanceSpotWsMessage::DepthDiff(ref event) => {
@@ -653,7 +653,7 @@ impl BinanceSpotDataClient {
                 if let Some(instrument) = cache.get(&symbol)
                     && let Some(deltas) = parse_json_depth_snapshot(event, instrument, ts_init)
                 {
-                    Self::send_data(data_sender, Data::Deltas(Box::new(deltas)));
+                    Self::send_data(data_sender, Data::BookDeltas(Box::new(deltas)));
                 }
             }
             BinanceSpotPublicWsMessage::DepthDiff(ref event) => {
@@ -745,7 +745,7 @@ impl BinanceSpotDataClient {
         Self::send_data(data_sender, Data::Quote(quote));
         if l1_book_subscriptions.contains_key(&quote.instrument_id) {
             let deltas = quote_to_l1_deltas(quote, sequence);
-            Self::send_data(data_sender, Data::Deltas(Box::new(deltas)));
+            Self::send_data(data_sender, Data::BookDeltas(Box::new(deltas)));
         }
     }
 
@@ -782,7 +782,7 @@ impl BinanceSpotDataClient {
             }
         }
 
-        Self::send_data(data_sender, Data::Deltas(Box::new(deltas)));
+        Self::send_data(data_sender, Data::BookDeltas(Box::new(deltas)));
     }
 
     #[expect(
@@ -1150,14 +1150,14 @@ impl BinanceSpotDataClient {
                 };
 
                 if let Err(e) =
-                    sender.send(DataEvent::Data(Data::Deltas(Box::new(snapshot_deltas))))
+                    sender.send(DataEvent::Data(Data::BookDeltas(Box::new(snapshot_deltas))))
                 {
                     log::error!("Failed to send snapshot: {e}");
                 }
 
                 for update in replay_ready {
                     if let Err(e) =
-                        sender.send(DataEvent::Data(Data::Deltas(Box::new(update.deltas))))
+                        sender.send(DataEvent::Data(Data::BookDeltas(Box::new(update.deltas))))
                     {
                         log::error!("Failed to send replayed deltas: {e}");
                     }
@@ -1216,7 +1216,7 @@ impl BinanceSpotDataClient {
                         replayed += 1;
 
                         if let Err(e) =
-                            sender.send(DataEvent::Data(Data::Deltas(Box::new(update.deltas))))
+                            sender.send(DataEvent::Data(Data::BookDeltas(Box::new(update.deltas))))
                         {
                             log::error!("Failed to send replayed deltas: {e}");
                         }

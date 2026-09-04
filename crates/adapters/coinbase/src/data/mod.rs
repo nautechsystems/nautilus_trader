@@ -372,7 +372,7 @@ fn dispatch_ws_message(
             }
         }
         NautilusWsMessage::Deltas(deltas) => {
-            if let Err(e) = data_sender.send(DataEvent::Data(Data::Deltas(Box::new(deltas)))) {
+            if let Err(e) = data_sender.send(DataEvent::Data(Data::BookDeltas(Box::new(deltas)))) {
                 log::error!("Failed to send order book deltas: {e}");
             }
         }

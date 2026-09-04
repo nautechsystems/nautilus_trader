@@ -20,7 +20,7 @@
 //! - `DataEngine::process_data(Data::Trade(..))` -> `handle_trade` -> `Cache::add_trade`
 //!   -> `msgbus::publish_trade` (publish has no subscribers in this bench).
 //! - Direct `Cache::add_trade` to isolate cache write cost from engine plus publish.
-//! - `DataEngine::process_data(Data::Delta(..))` -> `handle_delta` -> wrap into
+//! - `DataEngine::process_data(Data::BookDelta(..))` -> `handle_delta` -> wrap into
 //!   `OrderBookDeltas` -> `msgbus::publish_deltas`. The default path wraps every
 //!   incremental delta; the buffered path flushes on `F_LAST`.
 //!
@@ -154,7 +154,7 @@ fn bench_process_delta(c: &mut Criterion) {
         b.iter(|| {
             engine
                 .borrow_mut()
-                .process_data(Data::Delta(black_box(delta)));
+                .process_data(Data::BookDelta(black_box(delta)));
         });
     });
 
@@ -175,7 +175,7 @@ fn bench_process_delta_batch(c: &mut Criterion) {
                 b.iter(|| {
                     let mut e = engine.borrow_mut();
                     for _ in 0..n {
-                        e.process_data(Data::Delta(black_box(delta)));
+                        e.process_data(Data::BookDelta(black_box(delta)));
                     }
                 });
             },
@@ -211,7 +211,7 @@ fn bench_process_delta_buffered(c: &mut Criterion) {
                         } else {
                             body
                         };
-                        e.process_data(Data::Delta(black_box(delta)));
+                        e.process_data(Data::BookDelta(black_box(delta)));
                     }
                 });
             },

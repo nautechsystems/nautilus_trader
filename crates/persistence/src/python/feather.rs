@@ -304,7 +304,7 @@ impl PyStreamingFeatherWriter {
             let mut writer = self.writer.borrow_mut();
             let runtime = get_runtime();
             return runtime
-                .block_on(async { writer.write_data(Data::Delta(delta)).await })
+                .block_on(async { writer.write_data(Data::BookDelta(delta)).await })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write OrderBookDelta: {e}")));
         }
 
@@ -312,7 +312,7 @@ impl PyStreamingFeatherWriter {
             let mut writer = self.writer.borrow_mut();
             let runtime = get_runtime();
             return runtime
-                .block_on(async { writer.write_data(Data::Depth10(Box::new(depth))).await })
+                .block_on(async { writer.write_data(Data::BookDepth10(Box::new(depth))).await })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write OrderBookDepth10: {e}")));
         }
 

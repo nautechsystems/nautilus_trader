@@ -123,7 +123,7 @@ pub fn parse_book_msg_vec(
         if let Some(instrument) = instruments.get(&msg.symbol) {
             let instrument_id = instrument.id();
             let price_precision = instrument.price_precision();
-            deltas.push(Data::Delta(parse_book_msg(
+            deltas.push(Data::BookDelta(parse_book_msg(
                 &msg,
                 &action,
                 instrument,
@@ -140,7 +140,7 @@ pub fn parse_book_msg_vec(
     }
 
     // Set F_LAST on the last delta so data engine knows the batch is complete
-    if let Some(Data::Delta(last_delta)) = deltas.last_mut() {
+    if let Some(Data::BookDelta(last_delta)) = deltas.last_mut() {
         *last_delta = OrderBookDelta::new(
             last_delta.instrument_id,
             last_delta.action,
@@ -169,7 +169,7 @@ pub fn parse_book10_msg_vec(
             let instrument_id = instrument.id();
             let price_precision = instrument.price_precision();
             match parse_book10_msg(&msg, instrument, instrument_id, price_precision, ts_init) {
-                Ok(depth) => depths.push(Data::Depth10(Box::new(depth))),
+                Ok(depth) => depths.push(Data::BookDepth10(Box::new(depth))),
                 Err(e) => {
                     log::error!("Failed to parse orderBook10 for symbol={}: {e}", msg.symbol);
                 }

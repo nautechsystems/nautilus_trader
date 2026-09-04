@@ -887,7 +887,7 @@ impl DatabentoFeedHandler {
                 };
 
                 if let Some(msg) = record.get::<dbn::MboMsg>() {
-                    if let Some(Data::Delta(delta)) = &data1 {
+                    if let Some(Data::BookDelta(delta)) = &data1 {
                         initialized_books.insert(delta.instrument_id);
 
                         log::trace!(
@@ -902,7 +902,7 @@ impl DatabentoFeedHandler {
                             &mut buffering_start,
                             &mut buffered_deltas,
                         ) {
-                            Some(deltas) => data1 = Some(Data::Deltas(Box::new(deltas))),
+                            Some(deltas) => data1 = Some(Data::BookDeltas(Box::new(deltas))),
                             None => continue,
                         }
                     } else {
@@ -927,7 +927,9 @@ impl DatabentoFeedHandler {
                             &mut buffering_start,
                             &mut buffered_deltas,
                         ) {
-                            self.send_msg(DatabentoMessage::Data(Data::Deltas(Box::new(deltas))));
+                            self.send_msg(DatabentoMessage::Data(Data::BookDeltas(Box::new(
+                                deltas,
+                            ))));
                         }
 
                         continue;

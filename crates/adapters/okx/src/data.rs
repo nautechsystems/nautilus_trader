@@ -1254,7 +1254,7 @@ fn dispatch_parsed_data(
             }
         }
         NautilusWsMessage::Deltas(deltas) => {
-            let data = Data::Deltas(Box::new(deltas));
+            let data = Data::BookDeltas(Box::new(deltas));
             if let Err(e) = data_sender.send(DataEvent::Data(data)) {
                 log::error!("Failed to emit data event: {e}");
             }

@@ -476,7 +476,7 @@ fn handle_ws_message(
             if has_book_sub {
                 match parse_orderbook_deltas(msg, instrument, ts_init) {
                     Ok(deltas) => {
-                        send_data(data_sender, Data::Deltas(Box::new(deltas)));
+                        send_data(data_sender, Data::BookDeltas(Box::new(deltas)));
                     }
                     Err(e) => log::error!("Failed to parse orderbook deltas: {e}"),
                 }
@@ -2311,7 +2311,7 @@ mod tests {
         );
 
         let event1 = rx.try_recv().unwrap();
-        assert!(matches!(event1, DataEvent::Data(Data::Deltas(_))));
+        assert!(matches!(event1, DataEvent::Data(Data::BookDeltas(_))));
 
         let event2 = rx.try_recv().unwrap();
         assert!(matches!(event2, DataEvent::Data(Data::Quote(_))));

@@ -898,22 +898,22 @@ impl FeatherWriter {
     )]
     pub async fn write_data(&mut self, data: Data) -> Result<(), Box<dyn std::error::Error>> {
         match data {
+            Data::BookDelta(delta) => self.write(delta).await,
+            Data::BookDeltas(deltas) => {
+                // Batch write so chunk_metadata can skip a leading BookAction::Clear sentinel
+                self.write_batch(deltas.deltas.clone()).await
+            }
+            Data::BookDepth10(depth) => self.write(*depth).await,
             Data::Quote(quote) => self.write(quote).await,
             Data::Trade(trade) => self.write(trade).await,
             Data::Bar(bar) => self.write(bar).await,
-            Data::Delta(delta) => self.write(delta).await,
-            Data::Depth10(depth) => self.write(*depth).await,
-            Data::IndexPrice(price) => self.write(price).await,
             Data::MarkPrice(price) => self.write(price).await,
+            Data::IndexPrice(price) => self.write(price).await,
             Data::FundingRate(funding) => self.write(funding).await,
             Data::OptionGreeks(greeks) => self.write(greeks).await,
             Data::InstrumentStatus(status) => self.write(status).await,
             Data::InstrumentClose(close) => self.write(close).await,
             Data::Custom(custom) => self.write_custom_data(&custom).await,
-            Data::Deltas(deltas) => {
-                // Batch write so chunk_metadata can skip a leading BookAction::Clear sentinel
-                self.write_batch(deltas.deltas.clone()).await
-            }
             #[cfg(feature = "defi")]
             Data::Defi(_) => Err("Unsupported Data::Defi variant for feather writes".into()),
             #[allow(unreachable_patterns)]
@@ -1646,7 +1646,7 @@ mod tests {
             UnixNanos::from(3000),
             UnixNanos::from(3000),
         );
-        writer.write_data(Data::Delta(delta)).await.unwrap();
+        writer.write_data(Data::BookDelta(delta)).await.unwrap();
 
         writer.flush().await.unwrap();
     }
@@ -1817,7 +1817,7 @@ mod tests {
 
         // Test writing OrderBookDeltas via write_data
         writer
-            .write_data(Data::Deltas(Box::new(book_deltas)))
+            .write_data(Data::BookDeltas(Box::new(book_deltas)))
             .await
             .unwrap();
         writer.flush().await.unwrap();

@@ -89,7 +89,7 @@ impl L3Sink for DataEventSink<'_> {
     fn emit_deltas(&mut self, deltas: OrderBookDeltas) {
         if let Err(e) = self
             .sender
-            .send(DataEvent::Data(Data::Deltas(Box::new(deltas))))
+            .send(DataEvent::Data(Data::BookDeltas(Box::new(deltas))))
         {
             log::error!("Failed to send L3 deltas: {e}");
         }
@@ -639,7 +639,7 @@ impl KrakenSpotDataClient {
 
                             if let Err(e) = context
                                 .sender
-                                .send(DataEvent::Data(Data::Deltas(Box::new(deltas))))
+                                .send(DataEvent::Data(Data::BookDeltas(Box::new(deltas))))
                             {
                                 log::error!("Failed to send deltas: {e}");
                             }
@@ -1349,7 +1349,7 @@ mod tests {
         assert_eq!(request.reason, "snapshot checksum mismatch");
 
         let event = receiver.try_recv().expect("expected clear event");
-        let DataEvent::Data(Data::Deltas(deltas)) = event else {
+        let DataEvent::Data(Data::BookDeltas(deltas)) = event else {
             panic!("expected deltas event");
         };
 
@@ -1406,7 +1406,7 @@ mod tests {
             &mut l2_books,
         );
 
-        let DataEvent::Data(Data::Deltas(snapshot_deltas)) =
+        let DataEvent::Data(Data::BookDeltas(snapshot_deltas)) =
             receiver.try_recv().expect("expected snapshot deltas")
         else {
             panic!("expected snapshot deltas");
@@ -1431,7 +1431,7 @@ mod tests {
             &mut l2_books,
         );
 
-        let DataEvent::Data(Data::Deltas(bid_update_deltas)) =
+        let DataEvent::Data(Data::BookDeltas(bid_update_deltas)) =
             receiver.try_recv().expect("expected bid update deltas")
         else {
             panic!("expected bid update deltas");
@@ -1458,7 +1458,7 @@ mod tests {
             &mut l2_books,
         );
 
-        let DataEvent::Data(Data::Deltas(ask_update_deltas)) =
+        let DataEvent::Data(Data::BookDeltas(ask_update_deltas)) =
             receiver.try_recv().expect("expected ask update deltas")
         else {
             panic!("expected ask update deltas");

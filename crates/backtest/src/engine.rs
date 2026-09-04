@@ -898,21 +898,21 @@ impl BacktestEngine {
 
     fn settlement_scope(data: DataRef<'_>) -> SettlementScope {
         match data {
-            DataRef::MarkPrice(_)
-            | DataRef::IndexPrice(_)
-            | DataRef::OptionGreeks(_)
-            | DataRef::Custom(_) => SettlementScope::Data(None),
-            #[cfg(feature = "defi")]
-            DataRef::Defi(_) => SettlementScope::Data(None),
             DataRef::BookDelta(_)
             | DataRef::BookDeltas(_)
             | DataRef::BookDepth10(_)
             | DataRef::Quote(_)
             | DataRef::Trade(_)
-            | DataRef::Bar(_)
-            | DataRef::FundingRate(_)
-            | DataRef::InstrumentStatus(_)
-            | DataRef::InstrumentClose(_) => SettlementScope::Data(Some(data.instrument_id())),
+            | DataRef::Bar(_) => SettlementScope::Data(Some(data.instrument_id())),
+            DataRef::MarkPrice(_) | DataRef::IndexPrice(_) => SettlementScope::Data(None),
+            DataRef::FundingRate(_) => SettlementScope::Data(Some(data.instrument_id())),
+            DataRef::OptionGreeks(_) => SettlementScope::Data(None),
+            DataRef::InstrumentStatus(_) | DataRef::InstrumentClose(_) => {
+                SettlementScope::Data(Some(data.instrument_id()))
+            }
+            DataRef::Custom(_) => SettlementScope::Data(None),
+            #[cfg(feature = "defi")]
+            DataRef::Defi(_) => SettlementScope::Data(None),
         }
     }
 
@@ -1482,21 +1482,22 @@ impl BacktestEngine {
                 DataRef::Quote(quote) => exchange_ref.process_quote_tick(quote)?,
                 DataRef::Trade(trade) => exchange_ref.process_trade_tick(trade)?,
                 DataRef::Bar(bar) => exchange_ref.process_bar(*bar)?,
-                DataRef::InstrumentStatus(status) => {
-                    exchange_ref.process_instrument_status(*status)?;
-                }
-                DataRef::InstrumentClose(close) => {
-                    exchange_ref.process_instrument_close(*close)?;
+                DataRef::MarkPrice(_) | DataRef::IndexPrice(_) => {
+                    unreachable!("filtered before exchange routing")
                 }
                 DataRef::FundingRate(funding) => {
                     let settlement_ns =
                         exchange_ref.process_funding_rate_deferred(*funding, data.ts_init())?;
                     Self::schedule_funding_settlement_if_required(clock, venue, settlement_ns);
                 }
-                DataRef::MarkPrice(_)
-                | DataRef::IndexPrice(_)
-                | DataRef::OptionGreeks(_)
-                | DataRef::Custom(_) => unreachable!("filtered before exchange routing"),
+                DataRef::OptionGreeks(_) => unreachable!("filtered before exchange routing"),
+                DataRef::InstrumentStatus(status) => {
+                    exchange_ref.process_instrument_status(*status)?;
+                }
+                DataRef::InstrumentClose(close) => {
+                    exchange_ref.process_instrument_close(*close)?;
+                }
+                DataRef::Custom(_) => unreachable!("filtered before exchange routing"),
                 #[cfg(feature = "defi")]
                 DataRef::Defi(_) => unreachable!("filtered before exchange routing"),
             }

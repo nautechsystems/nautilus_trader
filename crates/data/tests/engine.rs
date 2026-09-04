@@ -1218,7 +1218,7 @@ fn test_emit_quotes_from_book_depths_publishes_top_of_book(stub_msgbus: Rc<RefCe
     let quote_topic = switchboard::get_quotes_topic(instrument_id);
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
-    data_engine.process_data(Data::Depth10(Box::new(depth)));
+    data_engine.process_data(Data::BookDepth10(Box::new(depth)));
 
     let messages = saver.get_messages();
     assert_eq!(
@@ -1230,7 +1230,7 @@ fn test_emit_quotes_from_book_depths_publishes_top_of_book(stub_msgbus: Rc<RefCe
     assert!(cached_quote.is_some(), "synthetic quote should be cached",);
 
     // Same top-of-book: must not republish
-    data_engine.process_data(Data::Depth10(Box::new(depth)));
+    data_engine.process_data(Data::BookDepth10(Box::new(depth)));
     assert_eq!(saver.get_messages().len(), 1);
 
     // Shifted top-of-book: must republish
@@ -1243,7 +1243,7 @@ fn test_emit_quotes_from_book_depths_publishes_top_of_book(stub_msgbus: Rc<RefCe
     );
     shifted.ts_event = UnixNanos::from(depth.ts_event.as_u64() + 1);
     shifted.ts_init = UnixNanos::from(depth.ts_init.as_u64() + 1);
-    data_engine.process_data(Data::Depth10(Box::new(shifted)));
+    data_engine.process_data(Data::BookDepth10(Box::new(shifted)));
 
     let messages = saver.get_messages();
     assert_eq!(
@@ -1287,7 +1287,7 @@ fn test_emit_quotes_from_book_depths_skips_no_order_side_padding(
     let quote_topic = switchboard::get_quotes_topic(instrument_id);
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
-    data_engine.process_data(Data::Depth10(Box::new(depth)));
+    data_engine.process_data(Data::BookDepth10(Box::new(depth)));
 
     assert!(
         saver.get_messages().is_empty(),
@@ -4306,7 +4306,7 @@ fn test_composite_book_deltas_route_to_per_underlying_book(
     data_engine.execute(sub);
 
     let delta = OrderBookDeltaTestBuilder::new(esz1_id).build();
-    data_engine.process_data(Data::Delta(delta));
+    data_engine.process_data(Data::BookDelta(delta));
 
     let cache_view = cache.borrow();
     let esz1_book = cache_view
@@ -4380,8 +4380,12 @@ fn test_composite_book_deltas_route_each_underlying_independently(
     )));
     data_engine.execute(sub);
 
-    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esz1_id).build()));
-    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esh2_id).build()));
+    data_engine.process_data(Data::BookDelta(
+        OrderBookDeltaTestBuilder::new(esz1_id).build(),
+    ));
+    data_engine.process_data(Data::BookDelta(
+        OrderBookDeltaTestBuilder::new(esh2_id).build(),
+    ));
 
     let cache_view = cache.borrow();
     assert_eq!(
@@ -4443,13 +4447,17 @@ fn test_reset_unsubscribes_composite_book_deltas(
     )));
     data_engine.execute(sub);
 
-    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esz1_id).build()));
+    data_engine.process_data(Data::BookDelta(
+        OrderBookDeltaTestBuilder::new(esz1_id).build(),
+    ));
     let pre_reset_count = cache.borrow().order_book(&esz1_id).unwrap().update_count;
     assert_eq!(pre_reset_count, 1);
 
     data_engine.reset();
 
-    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esz1_id).build()));
+    data_engine.process_data(Data::BookDelta(
+        OrderBookDeltaTestBuilder::new(esz1_id).build(),
+    ));
     let post_reset_count = cache.borrow().order_book(&esz1_id).unwrap().update_count;
     assert_eq!(
         post_reset_count, pre_reset_count,
@@ -4526,7 +4534,9 @@ fn test_composite_and_exact_book_deltas_apply_once_per_publish(
         ),
     )));
 
-    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esz1_id).build()));
+    data_engine.process_data(Data::BookDelta(
+        OrderBookDeltaTestBuilder::new(esz1_id).build(),
+    ));
 
     let cache_view = cache.borrow();
     assert_eq!(
@@ -4622,8 +4632,12 @@ fn test_unsubscribe_composite_keeps_overlapping_exact_alive(
         ),
     )));
 
-    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esz1_id).build()));
-    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esh2_id).build()));
+    data_engine.process_data(Data::BookDelta(
+        OrderBookDeltaTestBuilder::new(esz1_id).build(),
+    ));
+    data_engine.process_data(Data::BookDelta(
+        OrderBookDeltaTestBuilder::new(esh2_id).build(),
+    ));
 
     let cache_view = cache.borrow();
     assert_eq!(
@@ -4712,7 +4726,7 @@ fn test_unsubscribe_composite_deltas_keeps_composite_depth10_alive(
 
     let mut depth = stub_depth10();
     depth.instrument_id = esz1_id;
-    data_engine.process_data(Data::Depth10(Box::new(depth)));
+    data_engine.process_data(Data::BookDepth10(Box::new(depth)));
 
     let cache_view = cache.borrow();
     let esz1_book = cache_view
@@ -4803,7 +4817,9 @@ fn test_unsubscribe_composite_deltas_keeps_exact_depth10_deltas_handler_alive(
         ),
     )));
 
-    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esz1_id).build()));
+    data_engine.process_data(Data::BookDelta(
+        OrderBookDeltaTestBuilder::new(esz1_id).build(),
+    ));
 
     let cache_view = cache.borrow();
     assert_eq!(
@@ -4886,7 +4902,7 @@ fn test_snapshot_after_deltas_keeps_depth10_handler_alive(
 
     let mut depth = stub_depth10();
     depth.instrument_id = esz1_id;
-    data_engine.process_data(Data::Depth10(Box::new(depth)));
+    data_engine.process_data(Data::BookDepth10(Box::new(depth)));
 
     let cache_view = cache.borrow();
     let book = cache_view
@@ -5561,7 +5577,7 @@ fn test_emit_quotes_from_book_publishes_on_delta_apply(
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
     let deltas = Box::new(deltas);
-    data_engine.process_data(Data::Deltas(deltas.clone()));
+    data_engine.process_data(Data::BookDeltas(deltas.clone()));
 
     assert_eq!(
         saver.get_messages().len(),
@@ -5570,7 +5586,7 @@ fn test_emit_quotes_from_book_publishes_on_delta_apply(
     );
 
     // Same deltas, same top-of-book: idempotent
-    data_engine.process_data(Data::Deltas(deltas));
+    data_engine.process_data(Data::BookDeltas(deltas));
     assert_eq!(saver.get_messages().len(), 1);
 }
 
@@ -5623,7 +5639,7 @@ fn test_emit_quotes_from_book_publishes_on_depth_apply(
     let quote_topic = switchboard::get_quotes_topic(instrument_id);
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
-    data_engine.process_data(Data::Depth10(Box::new(depth)));
+    data_engine.process_data(Data::BookDepth10(Box::new(depth)));
 
     let messages = saver.get_messages();
     assert_eq!(
@@ -9066,7 +9082,7 @@ fn test_process_book_delta(
     msgbus::subscribe_book_deltas(topic.into(), handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    dispatch_data(&mut data_engine, Data::Delta(delta), borrowed);
+    dispatch_data(&mut data_engine, Data::BookDelta(delta), borrowed);
     let _cache = &data_engine.get_cache();
     let messages = saver.get_messages();
 
@@ -9093,14 +9109,18 @@ fn test_process_book_delta_buffers_until_f_last(
     msgbus::subscribe_book_deltas(topic.into(), handler, None);
 
     let f_last = RecordFlag::F_LAST as u8;
-    data_engine.process_data(Data::Delta(delta_with_flag(instrument_id, 1_000, 0)));
-    data_engine.process_data(Data::Delta(delta_with_flag(instrument_id, 2_000, 0)));
+    data_engine.process_data(Data::BookDelta(delta_with_flag(instrument_id, 1_000, 0)));
+    data_engine.process_data(Data::BookDelta(delta_with_flag(instrument_id, 2_000, 0)));
     assert!(
         saver.get_messages().is_empty(),
         "buffered deltas must not publish before F_LAST"
     );
 
-    data_engine.process_data(Data::Delta(delta_with_flag(instrument_id, 3_000, f_last)));
+    data_engine.process_data(Data::BookDelta(delta_with_flag(
+        instrument_id,
+        3_000,
+        f_last,
+    )));
     let first = saver.get_messages();
     assert_eq!(first.len(), 1);
     assert_eq!(
@@ -9113,7 +9133,11 @@ fn test_process_book_delta_buffers_until_f_last(
     );
     assert_eq!(first[0].flags, f_last);
 
-    data_engine.process_data(Data::Delta(delta_with_flag(instrument_id, 4_000, f_last)));
+    data_engine.process_data(Data::BookDelta(delta_with_flag(
+        instrument_id,
+        4_000,
+        f_last,
+    )));
     let second = saver.get_messages();
     assert_eq!(second.len(), 2);
     assert_eq!(second[1].deltas.len(), 1);
@@ -9152,7 +9176,11 @@ fn test_process_book_deltas_buffers_until_f_last(
             delta_with_flag(instrument_id, 4_000, f_last),
         ],
     );
-    dispatch_data(&mut data_engine, Data::Deltas(Box::new(batch)), borrowed);
+    dispatch_data(
+        &mut data_engine,
+        Data::BookDeltas(Box::new(batch)),
+        borrowed,
+    );
 
     let published = saver.get_messages();
     assert_eq!(published.len(), 2);
@@ -9209,7 +9237,7 @@ fn test_process_book_deltas(
     msgbus::subscribe_book_deltas(topic.into(), handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    dispatch_data(&mut data_engine, Data::Deltas(deltas.clone()), borrowed);
+    dispatch_data(&mut data_engine, Data::BookDeltas(deltas.clone()), borrowed);
     let _cache = &data_engine.get_cache();
     let messages = saver.get_messages();
 
@@ -12738,7 +12766,9 @@ fn test_process_book_snapshot_publish(
     // Process deltas to populate the order book
     let delta = OrderBookDeltaTestBuilder::new(audusd_sim.id).build();
     let deltas = Box::new(OrderBookDeltas::new(audusd_sim.id, vec![delta]));
-    data_engine.borrow_mut().process_data(Data::Deltas(deltas));
+    data_engine
+        .borrow_mut()
+        .process_data(Data::BookDeltas(deltas));
 
     // Advance clock past the interval to trigger snapshot timer
     let advance_ns = 200_000_000u64; // 200ms in nanoseconds
@@ -13517,7 +13547,9 @@ fn execute_book_snapshot_unsubscribe(
 fn process_book_delta(data_engine: &Rc<RefCell<DataEngine>>, instrument_id: InstrumentId) {
     let delta = OrderBookDeltaTestBuilder::new(instrument_id).build();
     let deltas = Box::new(OrderBookDeltas::new(instrument_id, vec![delta]));
-    data_engine.borrow_mut().process_data(Data::Deltas(deltas));
+    data_engine
+        .borrow_mut()
+        .process_data(Data::BookDeltas(deltas));
 }
 
 fn advance_clock_and_dispatch(clock: &Rc<RefCell<TestClock>>, advance_ns: u64) {
@@ -15559,7 +15591,7 @@ fn test_process_pipeline_delta_publishes_on_pipeline_topic_only(
     msgbus::subscribe_book_deltas(live_topic.into(), live_handler, None);
     msgbus::subscribe_book_deltas(pipeline_topic.into(), pipeline_handler, None);
 
-    data_engine.process_pipeline(Data::Delta(delta));
+    data_engine.process_pipeline(Data::BookDelta(delta));
 
     assert!(
         live_saver.get_messages().is_empty(),
@@ -15596,7 +15628,7 @@ fn test_process_pipeline_deltas_publishes_on_pipeline_topic_only(
     msgbus::subscribe_book_deltas(live_topic.into(), live_handler, None);
     msgbus::subscribe_book_deltas(pipeline_topic.into(), pipeline_handler, None);
 
-    data_engine.process_pipeline(Data::Deltas(Box::new(deltas.clone())));
+    data_engine.process_pipeline(Data::BookDeltas(Box::new(deltas.clone())));
 
     assert!(
         live_saver.get_messages().is_empty(),
@@ -15631,7 +15663,7 @@ fn test_process_pipeline_depth10_publishes_on_pipeline_topic_only(
     msgbus::subscribe_book_depth10(live_topic.into(), live_handler, None);
     msgbus::subscribe_book_depth10(pipeline_topic.into(), pipeline_handler, None);
 
-    data_engine.process_pipeline(Data::Depth10(Box::new(depth)));
+    data_engine.process_pipeline(Data::BookDepth10(Box::new(depth)));
 
     assert!(
         live_saver.get_messages().is_empty(),
@@ -15814,7 +15846,7 @@ fn test_process_pipeline_depth10_skips_derived_quote_emission(
     let quote_topic = switchboard::get_quotes_topic(instrument_id);
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
-    data_engine.process_pipeline(Data::Depth10(Box::new(depth)));
+    data_engine.process_pipeline(Data::BookDepth10(Box::new(depth)));
 
     assert!(
         saver.get_messages().is_empty(),
@@ -21084,7 +21116,7 @@ fn test_book_response_skips_cache_write_when_subscription_active(
     data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(sub)));
 
     let live_delta = OrderBookDeltaTestBuilder::new(instrument_id).build();
-    data_engine.process_data(Data::Delta(live_delta));
+    data_engine.process_data(Data::BookDelta(live_delta));
 
     let maintained_count = cache
         .borrow()
@@ -21485,7 +21517,7 @@ fn test_book_deltas_response_skips_cache_write_when_subscription_active(
     data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(sub)));
 
     let live_delta = OrderBookDeltaTestBuilder::new(instrument_id).build();
-    data_engine.process_data(Data::Delta(live_delta));
+    data_engine.process_data(Data::BookDelta(live_delta));
     let maintained_count = cache
         .borrow()
         .order_book(&instrument_id)
@@ -22414,7 +22446,7 @@ fn test_book_deltas_replay_respects_cache_ownership(
     data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(sub)));
 
     let live_delta = OrderBookDeltaTestBuilder::new(instrument_id).build();
-    data_engine.process_data(Data::Delta(live_delta));
+    data_engine.process_data(Data::BookDelta(live_delta));
     let owned_count = cache
         .borrow()
         .order_book(&instrument_id)

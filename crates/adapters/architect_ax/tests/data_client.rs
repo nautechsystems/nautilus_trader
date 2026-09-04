@@ -545,7 +545,7 @@ async fn test_data_client_subscribe_book_deltas_via_channel() {
         assert!(!timeout.is_zero(), "Timeout waiting for book deltas event");
 
         match tokio::time::timeout(timeout, rx.recv()).await {
-            Ok(Some(DataEvent::Data(Data::Deltas(deltas)))) => {
+            Ok(Some(DataEvent::Data(Data::BookDeltas(deltas)))) => {
                 assert_eq!(deltas.instrument_id.symbol.as_str(), "EURUSD-PERP");
                 break;
             }

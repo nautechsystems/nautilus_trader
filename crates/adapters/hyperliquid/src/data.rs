@@ -476,7 +476,7 @@ impl HyperliquidDataClient {
                                 }
                                 NautilusWsMessage::Deltas(deltas) => {
                                     if let Err(e) = data_sender
-                                        .send(DataEvent::Data(Data::Deltas(
+                                        .send(DataEvent::Data(Data::BookDeltas(
                                             Box::new(deltas),
                                         )))
                                     {
@@ -485,7 +485,7 @@ impl HyperliquidDataClient {
                                 }
                                 NautilusWsMessage::Depth10(depth) => {
                                     if let Err(e) =
-                                        data_sender.send(DataEvent::Data(Data::Depth10(depth)))
+                                        data_sender.send(DataEvent::Data(Data::BookDepth10(depth)))
                                     {
                                         log::error!("Failed to send order book depth10: {e}");
                                     }

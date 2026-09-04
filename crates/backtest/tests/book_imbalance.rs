@@ -104,7 +104,7 @@ fn book_deltas(instrument_id: InstrumentId) -> Vec<Data> {
         } else {
             BookAction::Update
         };
-        Data::Deltas(Box::new(OrderBookDeltas::new(
+        Data::BookDeltas(Box::new(OrderBookDeltas::new(
             instrument_id,
             vec![
                 OrderBookDelta::new(
