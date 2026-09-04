@@ -24,7 +24,7 @@ use nautilus_common::{
 use nautilus_model::{
     data::{OrderBookDeltas, OrderBookDepth10, QuoteTick},
     enums::InstrumentClass,
-    identifiers::{InstrumentId, Venue},
+    identifiers::{ClientId, InstrumentId, Venue},
     instruments::Instrument,
     orderbook::OrderBook,
 };
@@ -53,6 +53,19 @@ pub(crate) type BookSnapshotKey = (InstrumentId, NonZeroUsize);
 
 /// Outcome of decrementing a book snapshot subscription.
 pub(crate) enum BookSnapshotUnsubscribeResult {
+    /// No matching subscription was found.
+    NotSubscribed,
+    /// The reference count was decremented but other consumers remain.
+    Decremented,
+    /// The last consumer was removed; tear down associated state.
+    Removed,
+}
+
+/// Reference count key for a book deltas subscription.
+pub(crate) type BookDeltasKey = (InstrumentId, Option<ClientId>, Option<Venue>);
+
+/// Outcome of decrementing a book deltas subscription.
+pub(crate) enum BookDeltasUnsubscribeResult {
     /// No matching subscription was found.
     NotSubscribed,
     /// The reference count was decremented but other consumers remain.

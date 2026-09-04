@@ -59,8 +59,8 @@ use anyhow::Context;
 pub use bar::BarAggregatorSubscription;
 use bar::{BarAggregatorKey, bar_aggregator_key};
 use book::{
-    BookSnapshotInfo, BookSnapshotInfos, BookSnapshotKey, BookSnapshotUnsubscribeResult,
-    BookSnapshotter, BookUpdater,
+    BookDeltasKey, BookDeltasUnsubscribeResult, BookSnapshotInfo, BookSnapshotInfos,
+    BookSnapshotKey, BookSnapshotUnsubscribeResult, BookSnapshotter, BookUpdater,
 };
 pub(crate) use commands::{DeferredCommand, DeferredCommandQueue};
 use config::DataEngineConfig;
@@ -205,14 +205,6 @@ pub struct DataEngine {
     #[cfg(feature = "defi")]
     pub(crate) pool_event_buffers: AHashMap<InstrumentId, Vec<DefiData>>,
 }
-
-enum BookDeltasUnsubscribeResult {
-    NotSubscribed,
-    Decremented,
-    Removed,
-}
-
-type BookDeltasKey = (InstrumentId, Option<ClientId>, Option<Venue>);
 
 impl DataEngine {
     /// Creates a new [`DataEngine`] instance.
