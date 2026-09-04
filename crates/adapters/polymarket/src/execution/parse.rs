@@ -91,7 +91,6 @@ pub fn determine_order_side(
         match order_side {
             OrderSide::Buy => OrderSide::Sell,
             OrderSide::Sell => OrderSide::Buy,
-            other => other,
         }
     }
 }
@@ -187,7 +186,7 @@ pub(super) fn parse_validated_order_status_report(
         ctx.instrument_id,
         ctx.client_order_id,
         ctx.venue_order_id,
-        order_side,
+        order_side.into(),
         OrderType::Limit,
         time_in_force,
         order_status,
@@ -480,8 +479,8 @@ pub fn instrument_fee_exponent(instrument: &InstrumentAny) -> f64 {
 /// Polymarket ships a fractional exponent in the future.
 ///
 /// `price` must be strictly inside `(0, 1)`. The SDK relies on its
-/// order-builder pipeline to enforce this; this helper is public so we
-/// repeat the precondition here.
+/// order-builder pipeline to enforce this. Because [`adjust_market_buy_amount`]
+/// is public, it repeats the precondition here.
 ///
 /// # Errors
 ///
@@ -753,7 +752,7 @@ pub fn parse_timestamp(ts_str: &str) -> Option<UnixNanos> {
 mod tests {
     use nautilus_execution::models::fee::{FeeModel, ProbabilityPriceFeeModel};
     use nautilus_model::{
-        enums::OrderType,
+        enums::{OrderSide, OrderType},
         instruments::{Instrument, InstrumentAny, stubs::binary_option},
         orders::{OrderAny, builder::OrderTestBuilder, stubs::TestOrderStubs},
     };
@@ -1204,7 +1203,7 @@ mod tests {
     // drift from the reference SDK is caught locally.
 
     /// `platform_fee = (amount / price) * rate * (price * (1 - price))^exponent`
-    /// Pure-Decimal port of the SDK's test-only fee helper, matching their
+    /// Pure-Decimal port of the SDK's test-only fee calculation, matching its
     /// integer-exponent path so the conservation tests below stay exact.
     fn calc_platform_fee_sdk(
         amount: Decimal,
@@ -1412,7 +1411,7 @@ mod tests {
 
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id, instrument_id);
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, Some(OrderSide::Buy));
         assert_eq!(report.order_type, OrderType::Limit);
         assert_eq!(report.time_in_force, TimeInForce::Gtc);
         assert_eq!(report.order_status, OrderStatus::Accepted);
@@ -1431,7 +1430,7 @@ mod tests {
     }
 
     // Verifies parse_order_status_report wires `snap_filled_qty_to_quantity`
-    // correctly. Helper-level cases live above; this guards the integration.
+    // correctly. Unit-level cases live above; this guards the integration.
     #[rstest]
     // CLOB cent-tick underfill at MATCHED: snap UP to original_size.
     #[case::matched_underfill_dust(PolymarketOrderStatus::Matched, dec!(100.000000), dec!(99.995000), 100.000000)]

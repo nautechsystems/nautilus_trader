@@ -84,6 +84,23 @@ def test_book_order_construction(bid_order: object) -> None:
     assert bid_order.order_id == 1
 
 
+def test_book_order_construction_with_legacy_no_order_side() -> None:
+    """
+    Test book order construction with the legacy no-order-side alias.
+    """
+    order = BookOrder(
+        OrderSide.NO_ORDER_SIDE,
+        Price.from_str("0"),
+        Quantity.from_str("0"),
+        0,
+    )
+
+    assert order.side is None
+    assert order.price == Price.from_str("0")
+    assert order.size == Quantity.from_str("0")
+    assert order.order_id == 0
+
+
 def test_book_order_equality() -> None:
     """
     Test book order equality.
@@ -239,19 +256,11 @@ def test_order_book_delta_clear(audusd_id: InstrumentId) -> None:
     """
     Test order book delta clear.
     """
-    null_order = BookOrder(OrderSide.NO_ORDER_SIDE, Price.from_str("0"), Quantity.from_str("0"), 0)
-    delta = OrderBookDelta(
-        instrument_id=audusd_id,
-        action=BookAction.CLEAR,
-        order=null_order,
-        flags=0,
-        sequence=5,
-        ts_event=0,
-        ts_init=0,
-    )
+    delta = OrderBookDelta.clear(audusd_id, sequence=5, ts_event=0, ts_init=0)
 
     assert delta.instrument_id == audusd_id
     assert delta.action == BookAction.CLEAR
+    assert delta.order.side is None
     assert delta.sequence == 5
 
 

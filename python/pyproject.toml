@@ -1,6 +1,6 @@
 [project]
 name = "nautilus-trader"
-version = "2.0.0rc4"
+version = "2.0.0rc5"
 description = "Production-grade Rust-native trading engine with deterministic event-driven architecture"
 authors = [{ name = "Nautech Systems", email = "info@nautechsystems.io" }]
 classifiers = [
@@ -40,7 +40,7 @@ docs = "https://nautilustrader.io/docs"
 
 [build-system]
 # Keep the maturin pin exact; scripts/maturin-version.bash uses it for CI wheel builds.
-requires = ["maturin==1.14.1", "patchelf"]
+requires = ["maturin==1.15.0", "patchelf"]
 build-backend = "maturin"
 
 [tool.maturin]
@@ -65,6 +65,7 @@ include = ["**/*.pyi"]
 
 [tool.uv]
 required-version = ">=0.12,<0.13"
+environments = ["sys_platform != 'win32' or platform_machine == 'AMD64'"]
 exclude-newer = "7 days"
 # Block sdist builds for every third-party package in python/uv.lock so
 # unexpected loss of wheel publishing fails `uv lock` instead of silently
@@ -99,6 +100,7 @@ no-build-package = [
   "maturin",
   "mdit-py-plugins",
   "mdurl",
+  "memray",
   "myst-parser",
   "narwhals",
   "numpy",
@@ -113,10 +115,12 @@ no-build-package = [
   "pytest",
   "pytest-asyncio",
   "pytest-cov",
+  "pytest-memray",
   "pytest-xdist",
   "python-dateutil",
   "pyyaml",
   "requests",
+  "rich",
   "roman-numerals",
   "ruff",
   "simplejson",
@@ -132,6 +136,7 @@ no-build-package = [
   "sphinxcontrib-jsmath",
   "sphinxcontrib-qthelp",
   "sphinxcontrib-serializinghtml",
+  "textual",
   "ty",
   "typing-extensions",
   "tzdata",
@@ -142,13 +147,14 @@ no-build-package = [
 ]
 
 [dependency-groups]
-dev = ["maturin==1.14.1", "ruff>=0.16.3", "ty>=0.0.72"]
+dev = ["maturin==1.15.0", "ruff>=0.16.4", "ty>=0.0.74"]
 test = [
   "pytest>=9.1.1",
   "pytest-asyncio>=1.4.0",
   "pytest-cov>=7.1.0",
+  "pytest-memray>=1.10.0; sys_platform == 'darwin' or sys_platform == 'linux'",
   "pytest-xdist[psutil]>=3.8.0",
-  "uvicorn>=0.52.3",
+  "uvicorn>=0.52.4",
   "uvloop>=0.22.1; sys_platform != 'win32'",
 ]
 docs = [
@@ -177,6 +183,7 @@ exclude = [
 select = ["ALL"]
 
 ignore = [
+  "COM812", # Ruff formatter controls trailing commas
   "D200", # One-line docstrings use the multi-line form by convention (docformatter --make-summary-multi-line)
   "D203", # Conflicts with D211; ruff ignores D203 automatically, listed here to silence the warning
   "D212", # Multi-line docstring summaries start on the second line by convention (docformatter --pre-summary-newline); D213 applies instead
@@ -201,7 +208,6 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 "nautilus_trader/**/*.pyi" = [
   "A002",
   "ANN401",
-  "COM812",
   "CPY001",
   "D",
   "E501",
@@ -217,7 +223,6 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 "python/nautilus_trader/**/*.pyi" = [
   "A002",
   "ANN401",
-  "COM812",
   "CPY001",
   "D",
   "E501",
@@ -388,6 +393,12 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
   "TC001",
   "TC003",
 ] # Root-relative form used by repository-wide checks
+"memray_tests/**/*.py" = [
+  "S101",
+] # Memory tests use assertions like the main test suite
+"python/memray_tests/**/*.py" = [
+  "S101",
+] # Root-relative form used by repository-wide checks
 "tests/unit/persistence/test_option_greeks_replay.py" = ["ERA001"]
 "python/tests/unit/persistence/test_option_greeks_replay.py" = [
   "ERA001",
@@ -418,7 +429,9 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 "python/generate_docstrings.py" = ["ARG001", "PLR0912", "PLR0915", "T201"]
 ".pre-commit-hooks/check_pyo3_names.py" = ["PLR0912", "PLR0915", "S603", "T201"]
 "scripts/check-example-imports.py" = ["T201"]
-"scripts/check-markdown-tables.py" = ["T201"]
+"scripts/check-markdown-tables.py" = ["INP001"]
+"scripts/extract-doc-links.py" = ["INP001"]
+"scripts/security-audit.py" = ["INP001"]
 "scripts/ci/check_commit_message.py" = ["S603", "T201"]
 "scripts/ci/test_*.py" = [
   "S101",

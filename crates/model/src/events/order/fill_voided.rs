@@ -46,30 +46,54 @@ use crate::{
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct OrderFillVoided {
+    /// The trader ID associated with the event.
     pub trader_id: TraderId,
+    /// The strategy ID associated with the event.
     pub strategy_id: StrategyId,
+    /// The instrument ID associated with the event.
     pub instrument_id: InstrumentId,
+    /// The client order ID associated with the event.
     pub client_order_id: ClientOrderId,
+    /// The venue order ID associated with the event.
     pub venue_order_id: VenueOrderId,
+    /// The account ID associated with the event.
     pub account_id: AccountId,
+    /// The venue identifier for the correction which voided the fill.
     pub correction_id: Ustr,
+    /// The trade ID of the voided fill.
     pub trade_id: TradeId,
+    /// The quantity removed from the order by the void.
     pub voided_qty: Quantity,
+    /// The commission reversed by the void, if any.
     pub commission_voided: Option<Money>,
+    /// The order side of the voided fill.
     pub order_side: OrderSide,
+    /// The order type of the voided fill.
     pub order_type: OrderType,
+    /// The last price of the voided fill.
     pub last_px: Price,
+    /// The currency of the voided fill.
     pub currency: Currency,
+    /// The liquidity side of the voided fill.
     pub liquidity_side: LiquiditySide,
+    /// The position ID associated with the voided fill, if any.
     pub position_id: Option<PositionId>,
+    /// The reason the fill was voided.
     pub reason: Option<Ustr>,
+    /// The venue specific information for the void.
     pub info: Option<IndexMap<Ustr, Ustr>>,
+    /// The unique identifier for the event.
     pub event_id: UUID4,
+    /// UNIX timestamp (nanoseconds) when the event occurred.
     pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the event was initialized.
     pub ts_init: UnixNanos,
+    /// If the event was generated during reconciliation.
     pub reconciliation: bool,
+    /// If the void reopened an order which had already closed.
     #[serde(default)]
     pub is_reopened: bool,
+    /// The causation ID associated with the event.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub causation_id: Option<UUID4>,
 }
@@ -345,5 +369,20 @@ impl OrderEvent for OrderFillVoided {
 
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
+    }
+    fn causation_id(&self) -> Option<UUID4> {
+        self.causation_id
+    }
+
+    fn correction_id(&self) -> Option<Ustr> {
+        Some(self.correction_id)
+    }
+
+    fn is_reopened(&self) -> bool {
+        self.is_reopened
+    }
+
+    fn info(&self) -> Option<IndexMap<Ustr, Ustr>> {
+        self.info.clone()
     }
 }

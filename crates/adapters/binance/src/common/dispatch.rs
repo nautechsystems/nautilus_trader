@@ -21,18 +21,17 @@
 //! - Tracked orders produce proper order events (OrderAccepted, OrderFilled, etc.).
 //! - Untracked orders fall back to execution reports for reconciliation.
 
-use std::sync::Mutex;
-
 use dashmap::DashMap;
 use nautilus_common::cache::fifo::FifoCache;
-use nautilus_core::{MUTEX_POISONED, UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::{OrderSide, OrderType},
     events::{OrderAccepted, OrderEventAny},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, VenueOrderId},
     types::{Price, Quantity},
 };
+use parking_lot::Mutex;
 
 /// The type of operation a pending WS API request represents.
 #[derive(Debug, Clone, Copy)]
@@ -66,6 +65,7 @@ pub struct OrderIdentity {
     pub order_type: OrderType,
     pub price: Option<Price>,
     pub quantity: Quantity,
+    pub venue_position_id: Option<PositionId>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -100,30 +100,23 @@ impl Default for WsDispatchState {
     }
 }
 
-#[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
 impl WsDispatchState {
     pub fn has_emitted_accepted(&self, cid: &ClientOrderId) -> bool {
-        self.emitted_accepted
-            .lock()
-            .expect(MUTEX_POISONED)
-            .contains(cid)
+        self.emitted_accepted.lock().contains(cid)
     }
 
     /// Marks an order as having emitted an OrderAccepted event.
     pub fn insert_accepted(&self, cid: ClientOrderId) {
-        self.emitted_accepted.lock().expect(MUTEX_POISONED).add(cid);
+        self.emitted_accepted.lock().add(cid);
     }
 
     pub fn has_filled(&self, cid: &ClientOrderId) -> bool {
-        self.filled_orders
-            .lock()
-            .expect(MUTEX_POISONED)
-            .contains(cid)
+        self.filled_orders.lock().contains(cid)
     }
 
     /// Marks an order as having received a fill.
     pub fn insert_filled(&self, cid: ClientOrderId) {
-        self.filled_orders.lock().expect(MUTEX_POISONED).add(cid);
+        self.filled_orders.lock().add(cid);
     }
 
     pub fn insert_algo_order_id(&self, cid: ClientOrderId, venue_order_id: VenueOrderId) {
@@ -159,14 +152,8 @@ impl WsDispatchState {
     pub fn cleanup_terminal(&self, cid: ClientOrderId) {
         self.order_identities.remove(&cid);
         self.algo_order_ids.remove(&cid);
-        self.emitted_accepted
-            .lock()
-            .expect(MUTEX_POISONED)
-            .remove(&cid);
-        self.filled_orders
-            .lock()
-            .expect(MUTEX_POISONED)
-            .remove(&cid);
+        self.emitted_accepted.lock().remove(&cid);
+        self.filled_orders.lock().remove(&cid);
     }
 }
 

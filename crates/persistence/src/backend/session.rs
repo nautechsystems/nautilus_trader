@@ -15,7 +15,7 @@
 
 use std::{
     sync::{
-        Arc, Mutex, PoisonError,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
     vec::IntoIter,
@@ -37,6 +37,7 @@ use nautilus_serialization::arrow::{
     DataStreamingError, DecodeDataFromRecordBatch, EncodeToRecordBatch, EncodingError, WriteStream,
 };
 use object_store::ObjectStore;
+use parking_lot::Mutex;
 use url::Url;
 
 use super::{
@@ -84,10 +85,7 @@ struct ErrorSlot {
 
 impl ErrorSlot {
     fn record(&self, error: QueryError) {
-        self.error
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get_or_insert(error);
+        self.error.lock().get_or_insert(error);
         self.failed.store(true, Ordering::Release);
     }
 
@@ -96,10 +94,7 @@ impl ErrorSlot {
     }
 
     fn take(&self) -> Option<QueryError> {
-        self.error
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
+        self.error.lock().take()
     }
 }
 

@@ -39,7 +39,7 @@ explores different interleavings; reusing it selects the same interleaving.
 
 [FoundationDB](https://apple.github.io/foundationdb/testing.html) uses the pattern to test a
 production distributed database. In the Rust ecosystem,
-[madsim](https://github.com/madsim-rs/madsim) intercepts `tokio` primitives to provide a
+[madsim](https://crates.io/crates/madsim) intercepts `tokio` primitives to provide a
 deterministic scheduler.
 
 DST targets concurrency defects such as:
@@ -216,7 +216,7 @@ suitability requires a separate audit before they enter the DST path.
 
 ## Network seed soaks
 
-[Turmoil](https://github.com/tokio-rs/turmoil) simulates the network under a seeded scheduler. The
+[Turmoil](https://crates.io/crates/turmoil) simulates the network under a seeded scheduler. The
 `nautilus-network` transport tests use it to reach link and reconnect orderings outside the madsim
 runtime swap.
 
@@ -665,14 +665,15 @@ The dedicated workflow and local pre-flight use the same DST targets:
 | `make pre-flight`           | `check-code-sim` > `cargo-test-doc` > `cargo-test-sim` > `cargo-test-extras` | Fails early on DST lint while keeping doctests ahead of nextest binaries. |
 
 `check-code-sim` runs pinned stable Clippy with `--features simulation` and `cfg(madsim)` across
-`nautilus-common`, `nautilus-core`, `nautilus-network`, `nautilus-execution`, and `nautilus-live`.
+`nautilus-common`, `nautilus-core`, `nautilus-event-store`, `nautilus-network`,
+`nautilus-execution`, and `nautilus-live`.
 
 `cargo-test-sim` uses two feature-coherent nextest invocations:
 
-| Precision | Packages                                                                                      | Features                    | Selection                                                                         |
-| --------- | --------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------- |
-| Standard  | `nautilus-common`, `nautilus-core`, `nautilus-network`, `nautilus-execution`, `nautilus-live` | `simulation`                | All compatible common, network, and execution tests; focused live and core tests. |
-| High      | `nautilus-common`, `nautilus-execution`                                                       | `simulation,high-precision` | All tests in both packages.                                                       |
+| Precision | Packages                                                                                                              | Features                    | Selection                                                                                      |
+| --------- | --------------------------------------------------------------------------------------------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------- |
+| Standard  | `nautilus-common`, `nautilus-core`, `nautilus-event-store`, `nautilus-network`, `nautilus-execution`, `nautilus-live` | `simulation`                | All compatible common, event-store, network, and execution tests; focused live and core tests. |
+| High      | `nautilus-common`, `nautilus-execution`                                                                               | `simulation,high-precision` | All tests in both packages.                                                                    |
 
 Nextest compiles the selected library and test targets, so the gate does not run a separate Cargo
 build. The two invocations resolve each feature set once across their package sets. Together they
@@ -693,6 +694,17 @@ tasks without a madsim runtime, and most wait for wall-clock progress.
 `live::dst::tests::test_dst_wall_clock_advances_with_virtual_time` runs under `#[madsim::test]` and
 asserts that `nanos_since_unix_epoch` advances with `madsim::time::sleep`. This pins virtual
 wall-clock behavior inside the runtime.
+
+#### Event store tests
+
+The standard-precision run executes all simulation-compatible `nautilus-event-store` tests. It
+exercises the synchronous event and marker writers under `cfg(madsim)`, including deterministic
+sequence ordering. Tests that depend on blocking OS threads retain native coverage and are gated
+out because those threads run outside madsim's scheduling control.
+
+The static convention hook retains its existing 17-crate production-code scope. This smoke lane
+compiles and tests the event store's existing simulation implementation without extending that
+contract.
 
 #### Live startup reconciliation
 

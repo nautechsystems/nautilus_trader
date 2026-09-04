@@ -16,7 +16,7 @@
 //! Turmoil integration tests for the sockudo `WebSocketClient` backend.
 //!
 //! Mirrors `turmoil_websocket.rs` but selects [`TransportBackend::Sockudo`] so the
-//! sockudo handshake helpers and adapter are exercised over a turmoil
+//! sockudo handshake and adapter are exercised over a turmoil
 //! `TcpStream`. The server side uses tungstenite's `accept_async`: both backends
 //! speak the same wire protocol, and sockudo only ships a client API.
 

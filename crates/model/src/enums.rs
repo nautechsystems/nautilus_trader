@@ -15,9 +15,9 @@
 
 //! Enumerations for the trading domain model.
 
-use std::str::FromStr;
+use std::{borrow::Cow, fmt::Display, marker::PhantomData, str::FromStr};
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serializer};
 use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
 
 use crate::enum_strum_serde;
@@ -181,12 +181,7 @@ pub enum AggressorSide {
 
 impl FromU8 for AggressorSide {
     fn from_u8(value: u8) -> Option<Self> {
-        match value {
-            0 => Some(Self::NoAggressor),
-            1 => Some(Self::Buy),
-            2 => Some(Self::Sell),
-            _ => None,
-        }
+        Self::from_repr(usize::from(value))
     }
 }
 
@@ -244,16 +239,7 @@ pub enum AssetClass {
 
 impl FromU8 for AssetClass {
     fn from_u8(value: u8) -> Option<Self> {
-        match value {
-            1 => Some(Self::FX),
-            2 => Some(Self::Equity),
-            3 => Some(Self::Commodity),
-            4 => Some(Self::Debt),
-            5 => Some(Self::Index),
-            6 => Some(Self::Cryptocurrency),
-            7 => Some(Self::Alternative),
-            _ => None,
-        }
+        Self::from_repr(usize::from(value))
     }
 }
 
@@ -426,16 +412,10 @@ impl BetSide {
 }
 
 impl From<OrderSide> for BetSide {
-    /// Returns the equivalent [`BetSide`] for a given [`OrderSide`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if `side` is [`OrderSide::NoOrderSide`].
     fn from(side: OrderSide) -> Self {
         match side {
             OrderSide::Buy => Self::Back,
             OrderSide::Sell => Self::Lay,
-            OrderSide::NoOrderSide => panic!("Invalid `OrderSide` for `BetSide`, was {side}"),
         }
     }
 }
@@ -487,13 +467,7 @@ pub enum BookAction {
 
 impl FromU8 for BookAction {
     fn from_u8(value: u8) -> Option<Self> {
-        match value {
-            1 => Some(Self::Add),
-            2 => Some(Self::Update),
-            3 => Some(Self::Delete),
-            4 => Some(Self::Clear),
-            _ => None,
-        }
+        Self::from_repr(usize::from(value))
     }
 }
 
@@ -543,24 +517,21 @@ pub enum BookType {
 
 impl FromU8 for BookType {
     fn from_u8(value: u8) -> Option<Self> {
-        match value {
-            1 => Some(Self::L1_MBP),
-            2 => Some(Self::L2_MBP),
-            3 => Some(Self::L3_MBO),
-            _ => None,
-        }
+        Self::from_repr(usize::from(value))
     }
 }
 
 /// The order contingency type which specifies the behavior of linked orders.
 ///
 /// [FIX 5.0 SP2 : ContingencyType <1385> field](https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_1385.html).
+///
+/// Python retains `NO_CONTINGENCY` as a compatibility alias for `None`. The alias is not an enum
+/// variant and may be removed in a future version.
 #[repr(C)]
 #[derive(
     Copy,
     Clone,
     Debug,
-    Default,
     Display,
     Hash,
     PartialEq,
@@ -590,9 +561,6 @@ impl FromU8 for BookType {
     pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.model")
 )]
 pub enum ContingencyType {
-    /// Not a contingent order.
-    #[default]
-    NoContingency = 0,
     /// One-Cancels-the-Other.
     Oco = 1,
     /// One-Triggers-the-Other.
@@ -868,11 +836,7 @@ pub enum InstrumentCloseType {
 /// Convert the given `value` to an [`InstrumentCloseType`].
 impl FromU8 for InstrumentCloseType {
     fn from_u8(value: u8) -> Option<Self> {
-        match value {
-            1 => Some(Self::EndOfSession),
-            2 => Some(Self::ContractExpired),
-            _ => None,
-        }
+        Self::from_repr(usize::from(value))
     }
 }
 
@@ -1037,28 +1001,10 @@ pub enum MarketStatusAction {
     NotAvailableForTrading = 15,
 }
 
-/// Convert the given `value` to an [`OrderSide`].
+/// Convert the given `value` to a [`MarketStatusAction`].
 impl FromU16 for MarketStatusAction {
     fn from_u16(value: u16) -> Option<Self> {
-        match value {
-            0 => Some(Self::None),
-            1 => Some(Self::PreOpen),
-            2 => Some(Self::PreCross),
-            3 => Some(Self::Quoting),
-            4 => Some(Self::Cross),
-            5 => Some(Self::Rotation),
-            6 => Some(Self::NewPriceIndication),
-            7 => Some(Self::Trading),
-            8 => Some(Self::Halt),
-            9 => Some(Self::Pause),
-            10 => Some(Self::Suspend),
-            11 => Some(Self::PreClose),
-            12 => Some(Self::Close),
-            13 => Some(Self::PostClose),
-            14 => Some(Self::ShortSellRestrictionChange),
-            15 => Some(Self::NotAvailableForTrading),
-            _ => None,
-        }
+        Self::from_repr(usize::from(value))
     }
 }
 
@@ -1246,13 +1192,15 @@ pub enum OtoTriggerMode {
     Full = 1,
 }
 
-/// The order side for a specific order, or action related to orders.
+/// The order side (BUY or SELL).
+///
+/// Python retains `NO_ORDER_SIDE` as a compatibility alias for `None`. The alias is not an enum
+/// variant and may be removed in a future version.
 #[repr(C)]
 #[derive(
     Copy,
     Clone,
     Debug,
-    Default,
     Display,
     Hash,
     PartialEq,
@@ -1282,9 +1230,6 @@ pub enum OtoTriggerMode {
     pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.model")
 )]
 pub enum OrderSide {
-    /// No order side is specified.
-    #[default]
-    NoOrderSide = 0,
     /// The order is a BUY.
     Buy = 1,
     /// The order is a SELL.
@@ -1292,75 +1237,12 @@ pub enum OrderSide {
 }
 
 impl OrderSide {
-    /// Returns the specified [`OrderSideSpecified`] (BUY or SELL) for this side.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `self` is [`OrderSide::NoOrderSide`].
-    #[must_use]
-    pub fn as_specified(&self) -> OrderSideSpecified {
-        match &self {
-            Self::Buy => OrderSideSpecified::Buy,
-            Self::Sell => OrderSideSpecified::Sell,
-            Self::NoOrderSide => panic!("Order invariant failed: side must be `Buy` or `Sell`"),
-        }
-    }
-}
-
-/// Convert the given `value` to an [`OrderSide`].
-impl FromU8 for OrderSide {
-    fn from_u8(value: u8) -> Option<Self> {
-        match value {
-            0 => Some(Self::NoOrderSide),
-            1 => Some(Self::Buy),
-            2 => Some(Self::Sell),
-            _ => None,
-        }
-    }
-}
-
-/// The specified order side (BUY or SELL).
-#[repr(C)]
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Display,
-    Hash,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    AsRefStr,
-    FromRepr,
-    EnumIter,
-    EnumString,
-)]
-#[strum(ascii_case_insensitive)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-pub enum OrderSideSpecified {
-    /// The order is a BUY.
-    Buy = 1,
-    /// The order is a SELL.
-    Sell = 2,
-}
-
-impl OrderSideSpecified {
     /// Returns the opposite order side.
     #[must_use]
     pub fn opposite(&self) -> Self {
         match &self {
             Self::Buy => Self::Sell,
             Self::Sell => Self::Buy,
-        }
-    }
-
-    /// Converts this specified side into an [`OrderSide`].
-    #[must_use]
-    pub fn as_order_side(&self) -> OrderSide {
-        match &self {
-            Self::Buy => OrderSide::Buy,
-            Self::Sell => OrderSide::Sell,
         }
     }
 }
@@ -1453,13 +1335,17 @@ pub enum OrderStatus {
 }
 
 impl OrderStatus {
-    /// Returns whether the order status represents an open/working order.
+    /// Returns whether the order status represents an open (working) order at the venue.
+    ///
+    /// This excludes `Submitted`, which is in-flight rather than working. When filtering venue
+    /// order status reports for orders the venue still holds, use `is_open() || is_inflight()`:
+    /// a venue that reports a resting order as pending maps it to `Submitted`, and testing
+    /// `is_open()` alone silently drops it from reconciliation.
     #[must_use]
     pub const fn is_open(self) -> bool {
         matches!(
             self,
-            Self::Submitted
-                | Self::Accepted
+            Self::Accepted
                 | Self::Triggered
                 | Self::PendingUpdate
                 | Self::PendingCancel
@@ -1478,6 +1364,18 @@ impl OrderStatus {
                 | Self::Expired
                 | Self::Filled
                 | Self::Voided
+        )
+    }
+
+    /// Returns whether the order status represents an in-flight request to the venue.
+    ///
+    /// `PENDING_UPDATE` and `PENDING_CANCEL` are both open and in-flight: the order is working at
+    /// the venue while a modify or cancel request is outstanding.
+    #[must_use]
+    pub const fn is_inflight(self) -> bool {
+        matches!(
+            self,
+            Self::Submitted | Self::PendingUpdate | Self::PendingCancel
         )
     }
 
@@ -1589,21 +1487,19 @@ pub enum PositionAdjustmentType {
 
 impl FromU8 for PositionAdjustmentType {
     fn from_u8(value: u8) -> Option<Self> {
-        match value {
-            1 => Some(Self::Commission),
-            2 => Some(Self::Funding),
-            _ => None,
-        }
+        Self::from_repr(usize::from(value))
     }
 }
 
-/// The market side for a specific position, or action related to positions.
+/// The position side (FLAT, LONG, or SHORT).
+///
+/// Python retains `NO_POSITION_SIDE` as a compatibility alias for `None`. The alias is not an enum
+/// variant and may be removed in a future version.
 #[repr(C)]
 #[derive(
     Copy,
     Clone,
     Debug,
-    Default,
     Display,
     Hash,
     PartialEq,
@@ -1633,10 +1529,7 @@ impl FromU8 for PositionAdjustmentType {
     pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.model")
 )]
 pub enum PositionSide {
-    /// No position side is specified (only valid in the context of a filter for actions involving positions).
-    #[default]
-    NoPositionSide = 0,
-    /// A neural/flat position, where no position is currently held in the market.
+    /// A neutral/flat position, where no position is currently held in the market.
     Flat = 1,
     /// A long position in the market, typically acquired through one or many BUY orders.
     Long = 2,
@@ -1644,63 +1537,252 @@ pub enum PositionSide {
     Short = 3,
 }
 
-impl PositionSide {
-    /// Returns the specified [`PositionSideSpecified`] (`Long`, `Short`, or `Flat`) for this side.
+/// Serde compatibility for an optional order side previously encoded with `NO_ORDER_SIDE`.
+pub mod serde_option_order_side {
+    use serde::{Deserializer, Serializer};
+
+    use super::{OrderSide, deserialize_optional_enum, serialize_optional_enum};
+
+    /// Serializes an optional order side using the legacy no-side token.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `self` is [`PositionSide::NoPositionSide`].
-    #[must_use]
-    pub fn as_specified(&self) -> PositionSideSpecified {
-        match &self {
-            Self::Long => PositionSideSpecified::Long,
-            Self::Short => PositionSideSpecified::Short,
-            Self::Flat => PositionSideSpecified::Flat,
-            Self::NoPositionSide => {
-                panic!("Position invariant failed: side must be `Long`, `Short`, or `Flat`")
+    /// Returns an error if the serializer cannot encode the value.
+    pub fn serialize<S>(value: &Option<OrderSide>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serialize_optional_enum(value.as_ref(), serializer, "NO_ORDER_SIDE")
+    }
+
+    /// Deserializes an optional order side from a side token or null.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the input is not a valid order side.
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<OrderSide>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserialize_optional_enum(
+            deserializer,
+            "NO_ORDER_SIDE",
+            "BUY, SELL, NO_ORDER_SIDE, or null",
+        )
+    }
+}
+
+/// Serde compatibility for an optional position side previously encoded with `NO_POSITION_SIDE`.
+pub mod serde_option_position_side {
+    use serde::{Deserializer, Serializer};
+
+    use super::{PositionSide, deserialize_optional_enum, serialize_optional_enum};
+
+    /// Serializes an optional position side using the legacy no-side token.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the serializer cannot encode the value.
+    pub fn serialize<S>(value: &Option<PositionSide>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serialize_optional_enum(value.as_ref(), serializer, "NO_POSITION_SIDE")
+    }
+
+    /// Deserializes an optional position side from a side token or null.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the input is not a valid position side.
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<PositionSide>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserialize_optional_enum(
+            deserializer,
+            "NO_POSITION_SIDE",
+            "FLAT, LONG, SHORT, NO_POSITION_SIDE, or null",
+        )
+    }
+}
+
+/// Serde compatibility for an optional contingency type previously encoded with `NO_CONTINGENCY`.
+pub mod serde_option_contingency_type {
+    use serde::{Deserializer, Serializer};
+
+    use super::{ContingencyType, deserialize_optional_enum, serialize_optional_enum};
+
+    /// Serializes an optional contingency type using the legacy no-contingency token.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the serializer cannot encode the value.
+    pub fn serialize<S>(value: &Option<ContingencyType>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serialize_optional_enum(value.as_ref(), serializer, "NO_CONTINGENCY")
+    }
+
+    /// Deserializes an optional contingency type from a contingency token or null.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the input is not a valid contingency type.
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<ContingencyType>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserialize_optional_enum(
+            deserializer,
+            "NO_CONTINGENCY",
+            "OCO, OTO, OUO, NO_CONTINGENCY, or null",
+        )
+    }
+}
+
+/// Serde compatibility for an optional trailing offset type previously encoded with
+/// `NO_TRAILING_OFFSET`.
+pub mod serde_option_trailing_offset_type {
+    use serde::{Deserializer, Serializer};
+
+    use super::{TrailingOffsetType, deserialize_optional_enum, serialize_optional_enum};
+
+    /// Serializes an optional trailing offset type using the legacy no-offset token.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the serializer cannot encode the value.
+    pub fn serialize<S>(
+        value: &Option<TrailingOffsetType>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serialize_optional_enum(value.as_ref(), serializer, "NO_TRAILING_OFFSET")
+    }
+
+    /// Deserializes an optional trailing offset type from an offset token or null.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the input is not a valid trailing offset type.
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<TrailingOffsetType>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserialize_optional_enum(
+            deserializer,
+            "NO_TRAILING_OFFSET",
+            "PRICE, BASIS_POINTS, TICKS, PRICE_TIER, NO_TRAILING_OFFSET, or null",
+        )
+    }
+}
+
+/// Serde compatibility for an optional trigger type previously encoded with `NO_TRIGGER`.
+pub mod serde_option_trigger_type {
+    use serde::{Deserializer, Serializer};
+
+    use super::{TriggerType, deserialize_optional_enum, serialize_optional_enum};
+
+    /// Serializes an optional trigger type using the legacy no-trigger token.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the serializer cannot encode the value.
+    pub fn serialize<S>(value: &Option<TriggerType>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serialize_optional_enum(value.as_ref(), serializer, "NO_TRIGGER")
+    }
+
+    /// Deserializes an optional trigger type from a trigger token or null.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the input is not a valid trigger type.
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<TriggerType>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserialize_optional_enum(
+            deserializer,
+            "NO_TRIGGER",
+            "a trigger type, NO_TRIGGER, or null",
+        )
+    }
+}
+
+fn serialize_optional_enum<S, T>(
+    value: Option<&T>,
+    serializer: S,
+    none_token: &'static str,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+    T: AsRef<str>,
+{
+    serializer.serialize_str(value.map_or(none_token, AsRef::as_ref))
+}
+
+fn deserialize_optional_enum<'de, D, T>(
+    deserializer: D,
+    none_token: &'static str,
+    expected: &'static str,
+) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: FromStr,
+    T::Err: Display,
+{
+    struct OptionalEnumVisitor<T> {
+        none_token: &'static str,
+        expected: &'static str,
+        marker: PhantomData<T>,
+    }
+
+    impl<'de, T> serde::de::Visitor<'de> for OptionalEnumVisitor<T>
+    where
+        T: FromStr,
+        T::Err: Display,
+    {
+        type Value = Option<T>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str(self.expected)
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let value = Cow::<'de, str>::deserialize(deserializer)?;
+            if value.eq_ignore_ascii_case(self.none_token) {
+                Ok(None)
+            } else {
+                T::from_str(&value)
+                    .map(Some)
+                    .map_err(serde::de::Error::custom)
             }
         }
     }
-}
 
-/// The specified position side (FLAT, LONG, or SHORT).
-#[repr(C)]
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Display,
-    Hash,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    AsRefStr,
-    FromRepr,
-    EnumIter,
-    EnumString,
-)]
-#[strum(ascii_case_insensitive)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-pub enum PositionSideSpecified {
-    /// A neural/flat position, where no position is currently held in the market.
-    Flat = 1,
-    /// A long position in the market, typically acquired through one or many BUY orders.
-    Long = 2,
-    /// A short position in the market, typically acquired through one or many SELL orders.
-    Short = 3,
-}
-
-impl PositionSideSpecified {
-    /// Converts this specified side into a [`PositionSide`].
-    #[must_use]
-    pub fn as_position_side(&self) -> PositionSide {
-        match &self {
-            Self::Long => PositionSide::Long,
-            Self::Short => PositionSide::Short,
-            Self::Flat => PositionSide::Flat,
-        }
-    }
+    deserializer.deserialize_option(OptionalEnumVisitor {
+        none_token,
+        expected,
+        marker: PhantomData,
+    })
 }
 
 /// The type of price for an instrument in a market.
@@ -1902,19 +1984,21 @@ pub enum TimeInForce {
 pub enum TradingState {
     /// Normal trading operations.
     Active = 1,
-    /// Trading is completely halted, no new order commands will be emitted.
-    Halted = 2,
-    /// Only order commands which would cancel order, or reduce position sizes are permitted.
-    Reducing = 3,
+    /// Only cancels, queries, and eligible reduce-only submissions are permitted.
+    Reducing = 2,
+    /// Only cancels and queries are permitted.
+    Halted = 3,
 }
 
 /// The trailing offset type for an order type which specifies a trailing stop/trigger or limit price.
+///
+/// Python retains `NO_TRAILING_OFFSET` as a compatibility alias for `None`. The alias is not an enum
+/// variant and may be removed in a future version.
 #[repr(C)]
 #[derive(
     Copy,
     Clone,
     Debug,
-    Default,
     Display,
     Hash,
     PartialEq,
@@ -1944,9 +2028,6 @@ pub enum TradingState {
     pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.model")
 )]
 pub enum TrailingOffsetType {
-    /// No trailing offset type is specified (invalid for trailing type orders).
-    #[default]
-    NoTrailingOffset = 0,
     /// The trailing offset is based on a market price.
     Price = 1,
     /// The trailing offset is based on a percentage represented in basis points, of a market price.
@@ -1958,12 +2039,14 @@ pub enum TrailingOffsetType {
 }
 
 /// The trigger type for the stop/trigger price of an order.
+///
+/// Python retains `NO_TRIGGER` as a compatibility alias for `None`. The alias is not an enum variant
+/// and may be removed in a future version.
 #[repr(C)]
 #[derive(
     Copy,
     Clone,
     Debug,
-    Default,
     Display,
     Hash,
     PartialEq,
@@ -1993,9 +2076,6 @@ pub enum TrailingOffsetType {
     pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.model")
 )]
 pub enum TriggerType {
-    /// No trigger type is specified (invalid for orders with a trigger).
-    #[default]
-    NoTrigger = 0,
     /// The default trigger type set by the trading venue.
     Default = 1,
     /// Based on the last traded price for the instrument.
@@ -2022,6 +2102,7 @@ enum_strum_serde!(AggressorSide);
 enum_strum_serde!(AssetClass);
 enum_strum_serde!(BarAggregation);
 enum_strum_serde!(BarIntervalType);
+enum_strum_serde!(BetSide);
 enum_strum_serde!(BookAction);
 enum_strum_serde!(BookType);
 enum_strum_serde!(ContingencyType);
@@ -2036,12 +2117,11 @@ enum_strum_serde!(MarketStatusAction);
 enum_strum_serde!(OmsType);
 enum_strum_serde!(OptionKind);
 enum_strum_serde!(OrderSide);
-enum_strum_serde!(OrderSideSpecified);
 enum_strum_serde!(OrderStatus);
 enum_strum_serde!(OrderType);
+enum_strum_serde!(OtoTriggerMode);
 enum_strum_serde!(PositionAdjustmentType);
 enum_strum_serde!(PositionSide);
-enum_strum_serde!(PositionSideSpecified);
 enum_strum_serde!(PriceType);
 enum_strum_serde!(RecordFlag);
 enum_strum_serde!(TimeInForce);
@@ -2052,8 +2132,142 @@ enum_strum_serde!(TriggerType);
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use serde::{Serialize, de::DeserializeOwned};
+    use strum::IntoEnumIterator;
 
     use super::*;
+
+    #[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+    struct OptionalSides {
+        #[serde(with = "serde_option_order_side")]
+        order: Option<OrderSide>,
+        #[serde(with = "serde_option_position_side")]
+        position: Option<PositionSide>,
+    }
+
+    #[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+    struct OptionalOrderTypes {
+        #[serde(with = "serde_option_contingency_type")]
+        contingency: Option<ContingencyType>,
+        #[serde(with = "serde_option_trailing_offset_type")]
+        trailing_offset: Option<TrailingOffsetType>,
+        #[serde(with = "serde_option_trigger_type")]
+        trigger: Option<TriggerType>,
+    }
+
+    #[rstest]
+    fn test_optional_sides_serde_preserves_legacy_none_tokens() {
+        let value = OptionalSides {
+            order: None,
+            position: None,
+        };
+
+        let json = serde_json::to_string(&value).unwrap();
+        let decoded: OptionalSides = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(
+            json,
+            r#"{"order":"NO_ORDER_SIDE","position":"NO_POSITION_SIDE"}"#
+        );
+        assert_eq!(decoded, value);
+    }
+
+    #[rstest]
+    fn test_optional_sides_serde_accepts_null_and_valid_sides() {
+        let json = r#"{"order":null,"position":"LONG"}"#;
+        let decoded: OptionalSides = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            decoded,
+            OptionalSides {
+                order: None,
+                position: Some(PositionSide::Long),
+            }
+        );
+    }
+
+    #[rstest]
+    fn test_optional_order_types_serde_preserves_legacy_none_tokens() {
+        let value = OptionalOrderTypes {
+            contingency: None,
+            trailing_offset: None,
+            trigger: None,
+        };
+
+        let json = serde_json::to_string(&value).unwrap();
+        let decoded: OptionalOrderTypes = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(
+            json,
+            r#"{"contingency":"NO_CONTINGENCY","trailing_offset":"NO_TRAILING_OFFSET","trigger":"NO_TRIGGER"}"#,
+        );
+        assert_eq!(decoded, value);
+    }
+
+    #[rstest]
+    fn test_optional_order_types_serde_accepts_null_and_valid_values() {
+        let json = r#"{"contingency":null,"trailing_offset":"PRICE","trigger":"LAST_PRICE"}"#;
+        let decoded: OptionalOrderTypes = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            decoded,
+            OptionalOrderTypes {
+                contingency: None,
+                trailing_offset: Some(TrailingOffsetType::Price),
+                trigger: Some(TriggerType::LastPrice),
+            },
+        );
+    }
+
+    #[rstest]
+    #[case(r#"{"contingency":"INVALID","trailing_offset":"NO_TRAILING_OFFSET","trigger":"NO_TRIGGER"}"#)]
+    #[case(
+        r#"{"contingency":"NO_CONTINGENCY","trailing_offset":"INVALID","trigger":"NO_TRIGGER"}"#
+    )]
+    #[case(r#"{"contingency":"NO_CONTINGENCY","trailing_offset":"NO_TRAILING_OFFSET","trigger":"INVALID"}"#)]
+    fn test_optional_order_types_serde_rejects_invalid_values(#[case] json: &str) {
+        assert!(serde_json::from_str::<OptionalOrderTypes>(json).is_err());
+    }
+
+    #[rstest]
+    #[case::bet_side_back(BetSide::Back, r#""BACK""#)]
+    #[case::bet_side_lay(BetSide::Lay, r#""LAY""#)]
+    fn test_bet_side_serde_uses_canonical_label(#[case] value: BetSide, #[case] expected: &str) {
+        let json = serde_json::to_string(&value).unwrap();
+
+        assert_eq!(json, expected);
+        assert_eq!(serde_json::from_str::<BetSide>(&json).unwrap(), value);
+    }
+
+    #[rstest]
+    #[case::oto_trigger_mode_partial(OtoTriggerMode::Partial, r#""PARTIAL""#)]
+    #[case::oto_trigger_mode_full(OtoTriggerMode::Full, r#""FULL""#)]
+    fn test_oto_trigger_mode_serde_uses_canonical_label(
+        #[case] value: OtoTriggerMode,
+        #[case] expected: &str,
+    ) {
+        let json = serde_json::to_string(&value).unwrap();
+
+        assert_eq!(json, expected);
+        assert_eq!(
+            serde_json::from_str::<OtoTriggerMode>(&json).unwrap(),
+            value
+        );
+    }
+
+    #[rstest]
+    #[case::pascal(r#""Back""#, BetSide::Back)]
+    #[case::lower(r#""lay""#, BetSide::Lay)]
+    fn test_bet_side_serde_is_case_insensitive(#[case] json: &str, #[case] expected: BetSide) {
+        assert_eq!(serde_json::from_str::<BetSide>(json).unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case::wrong_domain(r#""BUY""#)]
+    #[case::empty(r#""""#)]
+    fn test_bet_side_serde_rejects_unknown_label(#[case] json: &str) {
+        assert!(serde_json::from_str::<BetSide>(json).is_err());
+    }
 
     #[rstest]
     #[case::no_aggressor(0, Some(AggressorSide::NoAggressor))]
@@ -2063,6 +2277,15 @@ mod tests {
     #[case::max_u8(255, None)]
     fn test_aggressor_side_from_u8(#[case] value: u8, #[case] expected: Option<AggressorSide>) {
         assert_eq!(AggressorSide::from_u8(value), expected);
+    }
+
+    #[rstest]
+    #[case::active(TradingState::Active, 1)]
+    #[case::reducing(TradingState::Reducing, 2)]
+    #[case::halted(TradingState::Halted, 3)]
+    fn test_trading_state_discriminants(#[case] state: TradingState, #[case] value: usize) {
+        assert_eq!(state as usize, value);
+        assert_eq!(TradingState::from_repr(value), Some(state));
     }
 
     #[rstest]
@@ -2228,5 +2451,598 @@ mod tests {
     fn test_instrument_class_parent_suffix_roundtrip(#[case] class: InstrumentClass) {
         let suffix = class.parent_suffix().unwrap();
         assert_eq!(InstrumentClass::try_from_parent_suffix(suffix), Some(class));
+    }
+
+    /// Asserts the string and serde contract shared by every enum registered with
+    /// [`enum_strum_serde`]: `AsRef` and `Display` agree, parsing accepts the emitted name in any
+    /// ASCII case, and JSON round-trips through that same name.
+    fn assert_enum_string_contract<T>(type_name: &str)
+    where
+        T: IntoEnumIterator
+            + Copy
+            + std::fmt::Debug
+            + PartialEq
+            + Display
+            + AsRef<str>
+            + FromStr
+            + Serialize
+            + DeserializeOwned,
+    {
+        for variant in T::iter() {
+            let wire = variant.to_string();
+            assert_eq!(
+                variant.as_ref(),
+                wire,
+                "{type_name}::{variant:?} must expose the same name through `AsRef` and `Display`",
+            );
+            assert_eq!(
+                T::from_str(&wire).ok(),
+                Some(variant),
+                "{type_name} must parse `{wire}` back to {variant:?}",
+            );
+            assert_eq!(
+                T::from_str(&wire.to_ascii_lowercase()).ok(),
+                Some(variant),
+                "{type_name} must parse `{wire}` case-insensitively",
+            );
+            let json = serde_json::to_string(&variant).unwrap();
+            assert_eq!(
+                json,
+                format!("\"{wire}\""),
+                "{type_name}::{variant:?} must serialize as its display name",
+            );
+            assert_eq!(
+                serde_json::from_str::<T>(&json).unwrap(),
+                variant,
+                "{type_name}::{variant:?} must round-trip through JSON",
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_enum_string_and_serde_contract() {
+        macro_rules! assert_contract {
+            ($($t:ty),+ $(,)?) => {
+                $(assert_enum_string_contract::<$t>(stringify!($t));)+
+            };
+        }
+
+        assert_contract!(
+            AccountType,
+            AggregationSource,
+            AggressorSide,
+            AssetClass,
+            BarAggregation,
+            BarIntervalType,
+            BetSide,
+            BookAction,
+            BookType,
+            ContingencyType,
+            ContinuousFutureAdjustmentType,
+            CurrencyType,
+            GreeksConvention,
+            InstrumentClass,
+            InstrumentCloseType,
+            LiquiditySide,
+            MarketStatus,
+            MarketStatusAction,
+            OmsType,
+            OptionKind,
+            OrderSide,
+            OrderStatus,
+            OrderType,
+            OtoTriggerMode,
+            PositionAdjustmentType,
+            PositionSide,
+            PriceType,
+            RecordFlag,
+            TimeInForce,
+            TradingState,
+            TrailingOffsetType,
+            TriggerType,
+        );
+    }
+
+    /// Every enum variant's wire name, as `Type::Variant=NAME`.
+    ///
+    /// These names are persisted in catalogs and exchanged with adapters and the Python bindings,
+    /// so a variant rename or a change to strum's casing rules must be a deliberate edit here.
+    const EXPECTED_WIRE_NAMES: &[&str] = &[
+        "AccountType::Betting=BETTING",
+        "AccountType::Cash=CASH",
+        "AccountType::Margin=MARGIN",
+        "AccountType::Wallet=WALLET",
+        "AggregationSource::External=EXTERNAL",
+        "AggregationSource::Internal=INTERNAL",
+        "AggressorSide::Buy=BUY",
+        "AggressorSide::NoAggressor=NO_AGGRESSOR",
+        "AggressorSide::Sell=SELL",
+        "AssetClass::Alternative=ALTERNATIVE",
+        "AssetClass::Commodity=COMMODITY",
+        "AssetClass::Cryptocurrency=CRYPTOCURRENCY",
+        "AssetClass::Debt=DEBT",
+        "AssetClass::Equity=EQUITY",
+        "AssetClass::FX=FX",
+        "AssetClass::Index=INDEX",
+        "BarAggregation::Day=DAY",
+        "BarAggregation::Hour=HOUR",
+        "BarAggregation::Millisecond=MILLISECOND",
+        "BarAggregation::Minute=MINUTE",
+        "BarAggregation::Month=MONTH",
+        "BarAggregation::Renko=RENKO",
+        "BarAggregation::Second=SECOND",
+        "BarAggregation::Tick=TICK",
+        "BarAggregation::TickImbalance=TICK_IMBALANCE",
+        "BarAggregation::TickRuns=TICK_RUNS",
+        "BarAggregation::Value=VALUE",
+        "BarAggregation::ValueImbalance=VALUE_IMBALANCE",
+        "BarAggregation::ValueRuns=VALUE_RUNS",
+        "BarAggregation::Volume=VOLUME",
+        "BarAggregation::VolumeImbalance=VOLUME_IMBALANCE",
+        "BarAggregation::VolumeRuns=VOLUME_RUNS",
+        "BarAggregation::Week=WEEK",
+        "BarAggregation::Year=YEAR",
+        "BarIntervalType::LeftOpen=LEFT_OPEN",
+        "BarIntervalType::RightOpen=RIGHT_OPEN",
+        "BetSide::Back=BACK",
+        "BetSide::Lay=LAY",
+        "BookAction::Add=ADD",
+        "BookAction::Clear=CLEAR",
+        "BookAction::Delete=DELETE",
+        "BookAction::Update=UPDATE",
+        "BookType::L1_MBP=L1_MBP",
+        "BookType::L2_MBP=L2_MBP",
+        "BookType::L3_MBO=L3_MBO",
+        "ContingencyType::Oco=OCO",
+        "ContingencyType::Oto=OTO",
+        "ContingencyType::Ouo=OUO",
+        "ContinuousFutureAdjustmentType::BackwardRatio=BACKWARD_RATIO",
+        "ContinuousFutureAdjustmentType::BackwardSpread=BACKWARD_SPREAD",
+        "ContinuousFutureAdjustmentType::ForwardRatio=FORWARD_RATIO",
+        "ContinuousFutureAdjustmentType::ForwardSpread=FORWARD_SPREAD",
+        "CurrencyType::CommodityBacked=COMMODITY_BACKED",
+        "CurrencyType::Crypto=CRYPTO",
+        "CurrencyType::Fiat=FIAT",
+        "GreeksConvention::BlackScholes=BLACK_SCHOLES",
+        "GreeksConvention::PriceAdjusted=PRICE_ADJUSTED",
+        "InstrumentClass::BinaryOption=BINARY_OPTION",
+        "InstrumentClass::Bond=BOND",
+        "InstrumentClass::Cfd=CFD",
+        "InstrumentClass::Forward=FORWARD",
+        "InstrumentClass::Future=FUTURE",
+        "InstrumentClass::FuturesSpread=FUTURES_SPREAD",
+        "InstrumentClass::Option=OPTION",
+        "InstrumentClass::OptionSpread=OPTION_SPREAD",
+        "InstrumentClass::SportsBetting=SPORTS_BETTING",
+        "InstrumentClass::Spot=SPOT",
+        "InstrumentClass::Swap=SWAP",
+        "InstrumentClass::Warrant=WARRANT",
+        "InstrumentCloseType::ContractExpired=CONTRACT_EXPIRED",
+        "InstrumentCloseType::EndOfSession=END_OF_SESSION",
+        "LiquiditySide::Maker=MAKER",
+        "LiquiditySide::NoLiquiditySide=NO_LIQUIDITY_SIDE",
+        "LiquiditySide::Taker=TAKER",
+        "MarketStatus::Closed=CLOSED",
+        "MarketStatus::Halted=HALTED",
+        "MarketStatus::NotAvailable=NOT_AVAILABLE",
+        "MarketStatus::Open=OPEN",
+        "MarketStatus::Paused=PAUSED",
+        "MarketStatus::Suspended=SUSPENDED",
+        "MarketStatusAction::Close=CLOSE",
+        "MarketStatusAction::Cross=CROSS",
+        "MarketStatusAction::Halt=HALT",
+        "MarketStatusAction::NewPriceIndication=NEW_PRICE_INDICATION",
+        "MarketStatusAction::None=NONE",
+        "MarketStatusAction::NotAvailableForTrading=NOT_AVAILABLE_FOR_TRADING",
+        "MarketStatusAction::Pause=PAUSE",
+        "MarketStatusAction::PostClose=POST_CLOSE",
+        "MarketStatusAction::PreClose=PRE_CLOSE",
+        "MarketStatusAction::PreCross=PRE_CROSS",
+        "MarketStatusAction::PreOpen=PRE_OPEN",
+        "MarketStatusAction::Quoting=QUOTING",
+        "MarketStatusAction::Rotation=ROTATION",
+        "MarketStatusAction::ShortSellRestrictionChange=SHORT_SELL_RESTRICTION_CHANGE",
+        "MarketStatusAction::Suspend=SUSPEND",
+        "MarketStatusAction::Trading=TRADING",
+        "OmsType::Hedging=HEDGING",
+        "OmsType::Netting=NETTING",
+        "OmsType::Unspecified=UNSPECIFIED",
+        "OptionKind::Call=CALL",
+        "OptionKind::Put=PUT",
+        "OrderSide::Buy=BUY",
+        "OrderSide::Sell=SELL",
+        "OrderStatus::Accepted=ACCEPTED",
+        "OrderStatus::Canceled=CANCELED",
+        "OrderStatus::Denied=DENIED",
+        "OrderStatus::Emulated=EMULATED",
+        "OrderStatus::Expired=EXPIRED",
+        "OrderStatus::Filled=FILLED",
+        "OrderStatus::Initialized=INITIALIZED",
+        "OrderStatus::PartiallyFilled=PARTIALLY_FILLED",
+        "OrderStatus::PendingCancel=PENDING_CANCEL",
+        "OrderStatus::PendingUpdate=PENDING_UPDATE",
+        "OrderStatus::Rejected=REJECTED",
+        "OrderStatus::Released=RELEASED",
+        "OrderStatus::Submitted=SUBMITTED",
+        "OrderStatus::Triggered=TRIGGERED",
+        "OrderStatus::Voided=VOIDED",
+        "OrderType::Limit=LIMIT",
+        "OrderType::LimitIfTouched=LIMIT_IF_TOUCHED",
+        "OrderType::Market=MARKET",
+        "OrderType::MarketIfTouched=MARKET_IF_TOUCHED",
+        "OrderType::MarketToLimit=MARKET_TO_LIMIT",
+        "OrderType::StopLimit=STOP_LIMIT",
+        "OrderType::StopMarket=STOP_MARKET",
+        "OrderType::TrailingStopLimit=TRAILING_STOP_LIMIT",
+        "OrderType::TrailingStopMarket=TRAILING_STOP_MARKET",
+        "OtoTriggerMode::Full=FULL",
+        "OtoTriggerMode::Partial=PARTIAL",
+        "PositionAdjustmentType::Commission=COMMISSION",
+        "PositionAdjustmentType::Funding=FUNDING",
+        "PositionSide::Flat=FLAT",
+        "PositionSide::Long=LONG",
+        "PositionSide::Short=SHORT",
+        "PriceType::Ask=ASK",
+        "PriceType::Bid=BID",
+        "PriceType::Last=LAST",
+        "PriceType::Mark=MARK",
+        "PriceType::Mid=MID",
+        "RecordFlag::F_LAST=F_LAST",
+        "RecordFlag::F_MBP=F_MBP",
+        "RecordFlag::F_SNAPSHOT=F_SNAPSHOT",
+        "RecordFlag::F_TOB=F_TOB",
+        "RecordFlag::RESERVED_1=RESERVED_1",
+        "RecordFlag::RESERVED_2=RESERVED_2",
+        "TimeInForce::AtTheClose=AT_THE_CLOSE",
+        "TimeInForce::AtTheOpen=AT_THE_OPEN",
+        "TimeInForce::Day=DAY",
+        "TimeInForce::Fok=FOK",
+        "TimeInForce::Gtc=GTC",
+        "TimeInForce::Gtd=GTD",
+        "TimeInForce::Ioc=IOC",
+        "TradingState::Active=ACTIVE",
+        "TradingState::Halted=HALTED",
+        "TradingState::Reducing=REDUCING",
+        "TrailingOffsetType::BasisPoints=BASIS_POINTS",
+        "TrailingOffsetType::Price=PRICE",
+        "TrailingOffsetType::PriceTier=PRICE_TIER",
+        "TrailingOffsetType::Ticks=TICKS",
+        "TriggerType::BidAsk=BID_ASK",
+        "TriggerType::Default=DEFAULT",
+        "TriggerType::DoubleBidAsk=DOUBLE_BID_ASK",
+        "TriggerType::DoubleLast=DOUBLE_LAST",
+        "TriggerType::IndexPrice=INDEX_PRICE",
+        "TriggerType::LastOrBidAsk=LAST_OR_BID_ASK",
+        "TriggerType::LastPrice=LAST_PRICE",
+        "TriggerType::MarkPrice=MARK_PRICE",
+        "TriggerType::MidPoint=MID_POINT",
+    ];
+
+    #[rstest]
+    fn test_enum_wire_names_are_stable() {
+        let mut actual = Vec::new();
+        macro_rules! collect_wire_names {
+            ($($t:ty),+ $(,)?) => {
+                $(for variant in <$t>::iter() {
+                    actual.push(format!("{}::{variant:?}={variant}", stringify!($t)));
+                })+
+            };
+        }
+
+        collect_wire_names!(
+            AccountType,
+            AggregationSource,
+            AggressorSide,
+            AssetClass,
+            BarAggregation,
+            BarIntervalType,
+            BetSide,
+            BookAction,
+            BookType,
+            ContingencyType,
+            ContinuousFutureAdjustmentType,
+            CurrencyType,
+            GreeksConvention,
+            InstrumentClass,
+            InstrumentCloseType,
+            LiquiditySide,
+            MarketStatus,
+            MarketStatusAction,
+            OmsType,
+            OptionKind,
+            OrderSide,
+            OrderStatus,
+            OrderType,
+            OtoTriggerMode,
+            PositionAdjustmentType,
+            PositionSide,
+            PriceType,
+            RecordFlag,
+            TimeInForce,
+            TradingState,
+            TrailingOffsetType,
+            TriggerType,
+        );
+
+        actual.sort();
+
+        assert_eq!(
+            actual.len(),
+            EXPECTED_WIRE_NAMES.len(),
+            "variant count changed; update `EXPECTED_WIRE_NAMES`",
+        );
+
+        for (got, expected) in actual.iter().zip(EXPECTED_WIRE_NAMES) {
+            assert_eq!(got, expected);
+        }
+    }
+
+    /// Pins each numeric discriminant to its variant with literal values.
+    ///
+    /// These numbers are written into Parquet catalogs and SBE payloads, and `MarketStatusAction`
+    /// additionally mirrors Databento's external DBN `StatusMsg.action` numbering. The conversions
+    /// delegate to the derived `from_repr`, so comparing them against `from_repr` would be a
+    /// tautology: only literal expected values catch a renumbered variant, which would otherwise
+    /// change encode and decode together and silently misread already-persisted data.
+    macro_rules! assert_numeric_mapping {
+        ($t:ty, $from:ident, $width:ty, $($value:literal => $variant:expr),+ $(,)?) => {{
+            let valid: &[$width] = &[$($value),+];
+            $(
+                assert_eq!(
+                    <$t>::$from($value),
+                    Some($variant),
+                    "{}::{}({}) must map to the pinned variant",
+                    stringify!($t),
+                    stringify!($from),
+                    $value,
+                );
+            )+
+
+            for value in <$width>::MIN..=<$width>::MAX {
+                if !valid.contains(&value) {
+                    assert_eq!(
+                        <$t>::$from(value),
+                        None,
+                        "{} must reject {value}",
+                        stringify!($t),
+                    );
+                }
+            }
+        }};
+    }
+
+    #[rstest]
+    fn test_from_u8_pins_numeric_discriminants() {
+        assert_numeric_mapping!(
+            AggressorSide, from_u8, u8,
+            0 => AggressorSide::NoAggressor,
+            1 => AggressorSide::Buy,
+            2 => AggressorSide::Sell,
+        );
+        assert_numeric_mapping!(
+            AssetClass, from_u8, u8,
+            1 => AssetClass::FX,
+            2 => AssetClass::Equity,
+            3 => AssetClass::Commodity,
+            4 => AssetClass::Debt,
+            5 => AssetClass::Index,
+            6 => AssetClass::Cryptocurrency,
+            7 => AssetClass::Alternative,
+        );
+        assert_numeric_mapping!(
+            BookAction, from_u8, u8,
+            1 => BookAction::Add,
+            2 => BookAction::Update,
+            3 => BookAction::Delete,
+            4 => BookAction::Clear,
+        );
+        assert_numeric_mapping!(
+            BookType, from_u8, u8,
+            1 => BookType::L1_MBP,
+            2 => BookType::L2_MBP,
+            3 => BookType::L3_MBO,
+        );
+        assert_numeric_mapping!(
+            InstrumentCloseType, from_u8, u8,
+            1 => InstrumentCloseType::EndOfSession,
+            2 => InstrumentCloseType::ContractExpired,
+        );
+        assert_numeric_mapping!(
+            PositionAdjustmentType, from_u8, u8,
+            1 => PositionAdjustmentType::Commission,
+            2 => PositionAdjustmentType::Funding,
+        );
+    }
+
+    #[rstest]
+    fn test_market_status_action_from_u16_pins_numeric_discriminants() {
+        assert_numeric_mapping!(
+            MarketStatusAction, from_u16, u16,
+            0 => MarketStatusAction::None,
+            1 => MarketStatusAction::PreOpen,
+            2 => MarketStatusAction::PreCross,
+            3 => MarketStatusAction::Quoting,
+            4 => MarketStatusAction::Cross,
+            5 => MarketStatusAction::Rotation,
+            6 => MarketStatusAction::NewPriceIndication,
+            7 => MarketStatusAction::Trading,
+            8 => MarketStatusAction::Halt,
+            9 => MarketStatusAction::Pause,
+            10 => MarketStatusAction::Suspend,
+            11 => MarketStatusAction::PreClose,
+            12 => MarketStatusAction::Close,
+            13 => MarketStatusAction::PostClose,
+            14 => MarketStatusAction::ShortSellRestrictionChange,
+            15 => MarketStatusAction::NotAvailableForTrading,
+        );
+    }
+
+    #[rstest]
+    #[case(OrderStatus::Initialized, false, false, false, false)]
+    #[case(OrderStatus::Denied, false, true, false, false)]
+    #[case(OrderStatus::Emulated, false, false, false, false)]
+    #[case(OrderStatus::Released, false, false, false, false)]
+    #[case(OrderStatus::Submitted, false, false, false, true)]
+    #[case(OrderStatus::Accepted, true, false, true, false)]
+    #[case(OrderStatus::Rejected, false, true, false, false)]
+    #[case(OrderStatus::Canceled, false, true, false, false)]
+    #[case(OrderStatus::Expired, false, true, false, false)]
+    #[case(OrderStatus::Triggered, true, false, true, false)]
+    #[case(OrderStatus::PendingUpdate, true, false, true, true)]
+    #[case(OrderStatus::PendingCancel, true, false, false, true)]
+    #[case(OrderStatus::PartiallyFilled, true, false, true, false)]
+    #[case(OrderStatus::Filled, false, true, false, false)]
+    #[case(OrderStatus::Voided, false, true, false, false)]
+    fn test_order_status_predicates(
+        #[case] status: OrderStatus,
+        #[case] expected_open: bool,
+        #[case] expected_closed: bool,
+        #[case] expected_cancellable: bool,
+        #[case] expected_inflight: bool,
+    ) {
+        assert_eq!(status.is_open(), expected_open, "{status} is_open");
+        assert_eq!(status.is_closed(), expected_closed, "{status} is_closed");
+        assert_eq!(
+            status.is_cancellable(),
+            expected_cancellable,
+            "{status} is_cancellable",
+        );
+        assert_eq!(
+            status.is_inflight(),
+            expected_inflight,
+            "{status} is_inflight"
+        );
+    }
+
+    #[rstest]
+    fn test_order_status_predicates_hold_across_all_variants() {
+        for status in OrderStatus::iter() {
+            assert!(
+                !(status.is_open() && status.is_closed()),
+                "{status} cannot be both open and closed",
+            );
+            assert!(
+                !status.is_cancellable() || status.is_open(),
+                "{status} must be open to be cancellable",
+            );
+            assert!(
+                !(status.is_inflight() && status.is_closed()),
+                "{status} cannot be both in-flight and closed",
+            );
+        }
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy, OrderSide::Sell)]
+    #[case(OrderSide::Sell, OrderSide::Buy)]
+    fn test_order_side_opposite(#[case] side: OrderSide, #[case] expected: OrderSide) {
+        assert_eq!(side.opposite(), expected);
+        assert_eq!(side.opposite().opposite(), side);
+    }
+
+    #[rstest]
+    #[case(BetSide::Back, BetSide::Lay)]
+    #[case(BetSide::Lay, BetSide::Back)]
+    fn test_bet_side_opposite(#[case] side: BetSide, #[case] expected: BetSide) {
+        assert_eq!(side.opposite(), expected);
+        assert_eq!(side.opposite().opposite(), side);
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy, BetSide::Back)]
+    #[case(OrderSide::Sell, BetSide::Lay)]
+    fn test_bet_side_from_order_side(#[case] side: OrderSide, #[case] expected: BetSide) {
+        assert_eq!(BetSide::from(side), expected);
+    }
+
+    #[rstest]
+    #[case(RecordFlag::F_LAST, 0b0000_0000, false)]
+    #[case(RecordFlag::F_LAST, 0b1000_0000, true)]
+    #[case(RecordFlag::F_LAST, 0b0111_1111, false)]
+    #[case(RecordFlag::F_TOB, 0b1100_0000, true)]
+    #[case(RecordFlag::F_TOB, 0b1000_0000, false)]
+    #[case(RecordFlag::F_SNAPSHOT, 0b0010_0000, true)]
+    #[case(RecordFlag::F_SNAPSHOT, 0b1101_1111, false)]
+    #[case(RecordFlag::F_MBP, 0b0001_0000, true)]
+    #[case(RecordFlag::RESERVED_2, 0b0000_1000, true)]
+    #[case(RecordFlag::RESERVED_1, 0b0000_0100, true)]
+    #[case(RecordFlag::RESERVED_1, 0b0000_1000, false)]
+    #[case(RecordFlag::F_LAST, u8::MAX, true)]
+    fn test_record_flag_matches(
+        #[case] flag: RecordFlag,
+        #[case] value: u8,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(flag.matches(value), expected);
+    }
+
+    #[rstest]
+    fn test_record_flag_matches_only_its_own_bit() {
+        for flag in RecordFlag::iter() {
+            let bit = flag as u8;
+            assert_eq!(bit.count_ones(), 1, "{flag} must occupy exactly one bit");
+            assert!(flag.matches(bit), "{flag} must match its own bit");
+            assert!(
+                !flag.matches(!bit),
+                "{flag} must not match the inverse mask"
+            );
+        }
+    }
+
+    #[rstest]
+    #[case(InstrumentClass::Future, true)]
+    #[case(InstrumentClass::FuturesSpread, true)]
+    #[case(InstrumentClass::Option, true)]
+    #[case(InstrumentClass::OptionSpread, true)]
+    #[case(InstrumentClass::Spot, false)]
+    #[case(InstrumentClass::Swap, false)]
+    #[case(InstrumentClass::Forward, false)]
+    #[case(InstrumentClass::Cfd, false)]
+    #[case(InstrumentClass::Bond, false)]
+    #[case(InstrumentClass::Warrant, false)]
+    #[case(InstrumentClass::SportsBetting, false)]
+    #[case(InstrumentClass::BinaryOption, false)]
+    fn test_instrument_class_has_expiration(
+        #[case] class: InstrumentClass,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(class.has_expiration(), expected);
+    }
+
+    #[rstest]
+    fn test_optional_sides_serde_round_trips_present_values() {
+        let value = OptionalSides {
+            order: Some(OrderSide::Sell),
+            position: Some(PositionSide::Short),
+        };
+
+        let json = serde_json::to_string(&value).unwrap();
+
+        assert_eq!(json, r#"{"order":"SELL","position":"SHORT"}"#);
+        assert_eq!(serde_json::from_str::<OptionalSides>(&json).unwrap(), value);
+    }
+
+    #[rstest]
+    #[case(r#"{"order":"no_order_side","position":"FLAT"}"#)]
+    #[case(r#"{"order":"No_Order_Side","position":"FLAT"}"#)]
+    fn test_optional_sides_serde_accepts_none_token_in_any_case(#[case] json: &str) {
+        let decoded: OptionalSides = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            decoded,
+            OptionalSides {
+                order: None,
+                position: Some(PositionSide::Flat),
+            },
+        );
+    }
+
+    #[rstest]
+    #[case(r#"{"order":"INVALID","position":"FLAT"}"#)]
+    #[case(r#"{"order":5,"position":"FLAT"}"#)]
+    #[case(r#"{"order":"BUY","position":"INVALID"}"#)]
+    #[case(r#"{"order":"BUY","position":true}"#)]
+    fn test_optional_sides_serde_rejects_invalid_values(#[case] json: &str) {
+        assert!(serde_json::from_str::<OptionalSides>(json).is_err());
     }
 }

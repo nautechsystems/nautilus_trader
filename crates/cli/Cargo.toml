@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-cli"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,7 +11,6 @@ keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
-publish = false # Depends on unpublished nautilus-blockchain
 
 [lints]
 workspace = true

@@ -49,6 +49,9 @@ pub struct PoolFlash {
     pub pool_identifier: PoolIdentifier,
     /// The blockchain block number at which the flash loan was executed.
     pub block: u64,
+    /// The hash of the block observed when this flash loan was ingested.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_hash: Option<String>,
     /// The unique hash identifier of the blockchain transaction containing the flash loan.
     pub transaction_hash: String,
     /// The index position of the transaction within the block.
@@ -101,6 +104,7 @@ impl PoolFlash {
             instrument_id,
             pool_identifier,
             block: block_number,
+            block_hash: None,
             transaction_hash,
             transaction_index,
             log_index,

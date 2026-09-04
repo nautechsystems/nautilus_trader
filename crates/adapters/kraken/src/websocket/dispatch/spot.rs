@@ -323,16 +323,12 @@ fn status_tracked(
             // The fill itself is emitted from the trade-side of dispatch via
             // fill_tracked; nothing to do here.
         }
-        OrderStatus::Filled
-            // Terminal-fill marker. If the same execution carries fill data
-            // (`exec_id` is present) the fill side runs next and is
-            // responsible for cumulative tracking + cleanup; only do the
-            // cleanup here when this is a status-only Filled marker without
-            // an accompanying fill payload.
-            if !has_fill => {
-                state.insert_filled(client_order_id);
-                state.cleanup_terminal(&client_order_id);
-            }
+
+        // Fill dispatch handles cleanup when the report includes a fill
+        OrderStatus::Filled if !has_fill => {
+            state.insert_filled(client_order_id);
+            state.cleanup_terminal(&client_order_id);
+        }
         OrderStatus::Canceled => {
             ensure_accepted_emitted(
                 client_order_id,

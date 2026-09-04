@@ -15,6 +15,7 @@
 
 //! Python bindings for Deribit configuration.
 
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
@@ -69,12 +70,12 @@ impl DeribitDataClientConfig {
     ) -> Self {
         let defaults = Self::default();
         Self {
-            api_key,
-            api_secret,
+            api_key: api_key.map(SecretString::from),
+            api_secret: api_secret.map(SecretString::from),
             product_types: product_types.unwrap_or(defaults.product_types),
             base_url_http,
             base_url_ws,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             environment: environment.unwrap_or(defaults.environment),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             max_retries: max_retries.unwrap_or(defaults.max_retries),
@@ -143,12 +144,12 @@ impl DeribitExecutionClientConfig {
         let defaults = Self::default();
         Self {
             account_id,
-            api_key,
-            api_secret,
+            api_key: api_key.map(SecretString::from),
+            api_secret: api_secret.map(SecretString::from),
             product_types: product_types.unwrap_or(defaults.product_types),
             base_url_http,
             base_url_ws,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             environment: environment.unwrap_or(defaults.environment),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             max_retries: max_retries.unwrap_or(defaults.max_retries),

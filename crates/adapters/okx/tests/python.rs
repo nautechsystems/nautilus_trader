@@ -126,9 +126,9 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         OKXExecutionClientConfig {
             account_id,
             environment: OKXEnvironment::Demo,
-            api_key: Some(SMOKE_API_KEY.to_string()),
-            api_secret: Some(SMOKE_API_SECRET.to_string()),
-            api_passphrase: Some(SMOKE_API_PASSPHRASE.to_string()),
+            api_key: Some(SMOKE_API_KEY.into()),
+            api_secret: Some(SMOKE_API_SECRET.into()),
+            api_passphrase: Some(SMOKE_API_PASSPHRASE.into()),
             instrument_types: vec![OKXInstrumentType::Swap],
             margin_mode: Some(OKXMarginMode::Cross),
             ..OKXExecutionClientConfig::default()

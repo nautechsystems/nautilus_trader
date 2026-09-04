@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! String-case conversion helpers (`CamelCase` ⇄ `snake_case`).
+//! String-case converters (`CamelCase` to `snake_case`).
 
 use pyo3::prelude::*;
 use pyo3_stub_gen::derive::gen_stub_pyfunction;

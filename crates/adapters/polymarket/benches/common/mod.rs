@@ -20,7 +20,7 @@
 //! `include_str!` from `test_data/`. Neither form reads the filesystem at runtime.
 //!
 //! Each criterion bench is a separate compilation unit that pulls in this
-//! module, but uses only a subset of the helpers and fixtures. Without the
+//! module, but uses only a subset of the benchmark routines and fixtures. Without the
 //! module-level `allow`, the unused subset in any given bench triggers
 //! per-crate dead-code warnings.
 
@@ -40,7 +40,7 @@ use ustr::Ustr;
 pub(crate) const ACCOUNT_ID: &str = "POLYMARKET-001";
 
 /// Production owner field shape (the L2 API key, a UUID4 string). Matches the
-/// value `PolymarketClobHttpClient::post_order` injects via `credential.api_key()`,
+/// value `PolymarketClobHttpClient::post_order` injects via `credential.api_key_str()`,
 /// not the maker wallet address.
 pub(crate) const API_KEY: &str = "00000000-0000-0000-0000-000000000001";
 pub(crate) const API_SECRET_B64: &str = "dGVzdC1zZWNyZXQtMzItYnl0ZXMtbG9uZy12YWx1ZS0wMQ==";
@@ -48,7 +48,7 @@ pub(crate) const PASSPHRASE: &str = "test-passphrase";
 
 #[must_use]
 pub(crate) fn bench_credential() -> Credential {
-    Credential::new(API_KEY, API_SECRET_B64, PASSPHRASE.to_string()).unwrap()
+    Credential::new(API_KEY.into(), API_SECRET_B64.into(), PASSPHRASE.into()).unwrap()
 }
 
 /// Token (asset) id used across every WS fixture below.
@@ -78,34 +78,27 @@ fn binary_option(token_id: &str, outcome: &str) -> InstrumentAny {
     let raw_symbol = Symbol::new(token_id);
     let instrument_id = InstrumentId::new(symbol, *POLYMARKET_VENUE);
 
-    let binary = BinaryOption::new(
-        instrument_id,
-        raw_symbol,
-        AssetClass::Alternative,
-        Currency::pUSD(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        2, // price_precision: tick 0.01 for this token
-        6, // size_precision: 6-decimal collateral increments
-        Price::from("0.01"),
-        Quantity::from("0.000001"),
-        Some(Ustr::from(outcome)),
-        Some(Ustr::from("bench-question")),
-        None,
-        None,
-        None,
-        None,
-        Some(Price::from("0.999")),
-        Some(Price::from("0.001")),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    );
+    let binary = BinaryOption::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .asset_class(AssetClass::Alternative)
+        .currency(Currency::pUSD())
+        .activation_ns(UnixNanos::default())
+        .expiration_ns(UnixNanos::default())
+        // price_precision: tick 0.01 for this token
+        .price_precision(2)
+        // size_precision: 6-decimal collateral increments
+        .size_precision(6)
+        .price_increment(Price::from("0.01"))
+        .size_increment(Quantity::from("0.000001"))
+        .outcome(Ustr::from(outcome))
+        .description(Ustr::from("bench-question"))
+        .max_price(Price::from("0.999"))
+        .min_price(Price::from("0.001"))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
 
     InstrumentAny::BinaryOption(binary)
 }

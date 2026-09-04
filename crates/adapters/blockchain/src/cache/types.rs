@@ -35,132 +35,45 @@ pub struct U160Pg(pub U160);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct U128Pg(pub u128);
 
-// Implement Type trait for SqlI256
-impl Type<Postgres> for I256Pg {
-    fn type_info() -> PgTypeInfo {
-        PgTypeInfo::with_name("i256")
-    }
+macro_rules! impl_pg_numeric {
+    ($wrapper:ty, $inner:ty, $pg_type:literal, $display_name:literal) => {
+        impl Type<Postgres> for $wrapper {
+            fn type_info() -> PgTypeInfo {
+                PgTypeInfo::with_name($pg_type)
+            }
+        }
+
+        // PostgreSQL numeric values require decimal Display encoding
+        impl<'q> Encode<'q, Postgres> for $wrapper {
+            fn encode_by_ref(
+                &self,
+                buf: &mut <Postgres as Database>::ArgumentBuffer,
+            ) -> Result<IsNull, BoxDynError> {
+                let value = self.0.to_string();
+                <&str as Encode<Postgres>>::encode(&value, buf)
+            }
+        }
+
+        impl<'r> Decode<'r, Postgres> for $wrapper {
+            fn decode(
+                value: sqlx::postgres::PgValueRef<'r>,
+            ) -> Result<Self, sqlx::error::BoxDynError> {
+                let value = <String as Decode<Postgres>>::decode(value)?;
+                let value = <$inner>::from_str(&value)
+                    .map_err(|e| format!("Failed to parse {}: {e}", $display_name))?;
+                Ok(Self(value))
+            }
+        }
+
+        impl PgHasArrayType for $wrapper {
+            fn array_type_info() -> PgTypeInfo {
+                PgTypeInfo::with_name(concat!("_", $pg_type))
+            }
+        }
+    };
 }
 
-// Implement Type trait for SqlU256
-impl Type<Postgres> for U256Pg {
-    fn type_info() -> PgTypeInfo {
-        PgTypeInfo::with_name("u256")
-    }
-}
-
-// Implement Type trait for U160Pg
-impl Type<Postgres> for U160Pg {
-    fn type_info() -> PgTypeInfo {
-        PgTypeInfo::with_name("u160")
-    }
-}
-
-// Implement Type trait for U128Pg
-impl Type<Postgres> for U128Pg {
-    fn type_info() -> PgTypeInfo {
-        PgTypeInfo::with_name("u128")
-    }
-}
-
-impl<'q> Encode<'q, Postgres> for I256Pg {
-    fn encode_by_ref(
-        &self,
-        buf: &mut <Postgres as Database>::ArgumentBuffer,
-    ) -> Result<IsNull, BoxDynError> {
-        let s = self.0.to_string();
-        <&str as Encode<Postgres>>::encode(&s, buf)
-    }
-}
-
-impl<'q> Encode<'q, Postgres> for U256Pg {
-    fn encode_by_ref(
-        &self,
-        buf: &mut <Postgres as Database>::ArgumentBuffer,
-    ) -> Result<IsNull, BoxDynError> {
-        // Ensure we send decimal format, not hex format to PostgreSQL
-        let decimal_str = format!("{}", self.0);
-        <&str as Encode<Postgres>>::encode(&decimal_str, buf)
-    }
-}
-
-impl<'q> Encode<'q, Postgres> for U160Pg {
-    fn encode_by_ref(
-        &self,
-        buf: &mut <Postgres as Database>::ArgumentBuffer,
-    ) -> Result<IsNull, BoxDynError> {
-        let decimal_str = format!("{}", self.0);
-        <&str as Encode<Postgres>>::encode(&decimal_str, buf)
-    }
-}
-
-impl<'q> Encode<'q, Postgres> for U128Pg {
-    fn encode_by_ref(
-        &self,
-        buf: &mut <Postgres as Database>::ArgumentBuffer,
-    ) -> Result<IsNull, BoxDynError> {
-        let decimal_str = self.0.to_string();
-        <&str as Encode<Postgres>>::encode(&decimal_str, buf)
-    }
-}
-
-// Implement Decode trait for SqlI256
-impl<'r> Decode<'r, Postgres> for I256Pg {
-    fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
-        let s = <String as Decode<Postgres>>::decode(value)?;
-        let i256 = I256::from_str(&s).map_err(|e| format!("Failed to parse I256: {e}"))?;
-        Ok(Self(i256))
-    }
-}
-
-// Implement Decode trait for SqlU256
-impl<'r> Decode<'r, Postgres> for U256Pg {
-    fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
-        let s = <String as Decode<Postgres>>::decode(value)?;
-        let u256 = U256::from_str(&s).map_err(|e| format!("Failed to parse U256: {e}"))?;
-        Ok(Self(u256))
-    }
-}
-
-// Implement Decode trait for U160Pg
-impl<'r> Decode<'r, Postgres> for U160Pg {
-    fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
-        let s = <String as Decode<Postgres>>::decode(value)?;
-        let u160 = U160::from_str(&s).map_err(|e| format!("Failed to parse U160: {e}"))?;
-        Ok(Self(u160))
-    }
-}
-
-// Implement Decode trait for U128Pg
-impl<'r> Decode<'r, Postgres> for U128Pg {
-    fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
-        let s = <String as Decode<Postgres>>::decode(value)?;
-        let u128_val = u128::from_str(&s).map_err(|e| format!("Failed to parse U128: {e}"))?;
-        Ok(Self(u128_val))
-    }
-}
-
-// Implement PgHasArrayType for array support
-impl PgHasArrayType for I256Pg {
-    fn array_type_info() -> PgTypeInfo {
-        PgTypeInfo::with_name("_i256")
-    }
-}
-
-impl PgHasArrayType for U256Pg {
-    fn array_type_info() -> PgTypeInfo {
-        PgTypeInfo::with_name("_u256")
-    }
-}
-
-impl PgHasArrayType for U160Pg {
-    fn array_type_info() -> PgTypeInfo {
-        PgTypeInfo::with_name("_u160")
-    }
-}
-
-impl PgHasArrayType for U128Pg {
-    fn array_type_info() -> PgTypeInfo {
-        PgTypeInfo::with_name("_u128")
-    }
-}
+impl_pg_numeric!(I256Pg, I256, "i256", "I256");
+impl_pg_numeric!(U256Pg, U256, "u256", "U256");
+impl_pg_numeric!(U160Pg, U160, "u160", "U160");
+impl_pg_numeric!(U128Pg, u128, "u128", "U128");

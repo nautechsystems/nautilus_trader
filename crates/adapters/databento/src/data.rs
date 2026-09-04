@@ -19,13 +19,13 @@
 //! handles live market data subscriptions, and provides access to historical data on demand.
 
 use std::{
-    fmt::Debug,
     path::PathBuf,
     str::FromStr,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::Duration,
 };
 
 use ahash::AHashMap;
@@ -33,7 +33,7 @@ use databento::{dbn, live::Subscription};
 use indexmap::IndexMap;
 use nautilus_common::{
     clients::DataClient,
-    live::{runner::get_data_event_sender, runtime::get_runtime, task::TaskHandles},
+    live::runner::get_data_event_sender,
     messages::{
         DataEvent, DataResponse,
         data::{
@@ -47,17 +47,18 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, MUTEX_POISONED, Params, UnixNanos,
+    AtomicMap, Params, UnixNanos,
     datetime::{NANOSECONDS_IN_DAY, datetime_to_unix_nanos},
-    string::secret::REDACTED,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+use nautilus_live::task::TaskGroup;
 use nautilus_model::{
     data::{CustomData, Data},
     enums::BarAggregation,
     identifiers::{ClientId, InstrumentId, Symbol, Venue},
     instruments::{Instrument, InstrumentAny},
 };
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -90,7 +91,7 @@ const TRADE_SCHEMAS: &[dbn::Schema] = &[
 ];
 
 /// Configuration for the Databento data client.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.adapters.databento", from_py_object)
@@ -121,19 +122,6 @@ nautilus_core::impl_pyo3_config_getters!(DatabentoDataClientConfig {
     bars_timestamp_on_close: bool,
     venue_dataset_map: IndexMap<String, String>,
 });
-
-impl Debug for DatabentoDataClientConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(DatabentoDataClientConfig))
-            .field("credential", &REDACTED)
-            .field("publishers_filepath", &self.publishers_filepath)
-            .field("venue_dataset_map", &self.venue_dataset_map)
-            .field("use_exchange_as_venue", &self.use_exchange_as_venue)
-            .field("bars_timestamp_on_close", &self.bars_timestamp_on_close)
-            .field("reconnect_timeout_mins", &self.reconnect_timeout_mins)
-            .finish()
-    }
-}
 
 impl DatabentoDataClientConfig {
     /// Creates a new [`DatabentoDataClientConfig`] instance.
@@ -179,27 +167,16 @@ impl DatabentoDataClientConfig {
 )]
 #[derive(Debug)]
 pub struct DatabentoDataClient {
-    /// Client identifier.
     client_id: ClientId,
-    /// Client configuration.
     config: DatabentoDataClientConfig,
-    /// Connection state.
     is_connected: AtomicBool,
-    /// Historical client for on-demand data requests.
     historical: DatabentoHistoricalClient,
-    /// Data loader for venue-to-dataset mapping.
     loader: DatabentoDataLoader,
-    /// Feed handler command senders per dataset.
     cmd_channels: Arc<Mutex<AHashMap<String, tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>>,
-    /// Task handles for lifecycle management.
-    task_handles: Arc<TaskHandles>,
-    /// Cancellation token for graceful shutdown.
+    task_handles: TaskGroup,
     cancellation_token: CancellationToken,
-    /// Publisher to venue mapping.
     publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
-    /// Symbol to venue mapping (for caching).
     symbol_venue_map: Arc<AtomicMap<Symbol, Venue>>,
-    /// Data event sender for forwarding data to the async runner.
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
 }
 
@@ -242,6 +219,8 @@ impl DatabentoDataClient {
 
         let data_sender = get_data_event_sender();
 
+        let task_handles = TaskGroup::new();
+
         Ok(Self {
             client_id,
             config,
@@ -249,8 +228,8 @@ impl DatabentoDataClient {
             historical,
             loader,
             cmd_channels: Arc::new(Mutex::new(AHashMap::new())),
-            task_handles: Arc::new(TaskHandles::default()),
-            cancellation_token: CancellationToken::new(),
+            cancellation_token: task_handles.cancellation_token(),
+            task_handles,
             publisher_venue_map: Arc::new(publisher_venue_map),
             symbol_venue_map: Arc::new(AtomicMap::new()),
             data_sender,
@@ -283,7 +262,7 @@ impl DatabentoDataClient {
 
     /// Gets or creates a feed handler for the specified dataset.
     fn get_or_create_feed_handler(&self, dataset: &str) -> bool {
-        let mut channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
+        let mut channels = self.cmd_channels.lock();
 
         if !channels.contains_key(dataset) {
             log::debug!("Creating new feed handler for dataset: {dataset}");
@@ -305,7 +284,7 @@ impl DatabentoDataClient {
         start_after_subscribe: bool,
     ) -> anyhow::Result<()> {
         let tx = {
-            let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
+            let channels = self.cmd_channels.lock();
             channels
                 .get(dataset)
                 .cloned()
@@ -322,7 +301,7 @@ impl DatabentoDataClient {
     }
 
     fn send_close_to_active_feeds(&self) {
-        let channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
+        let channels = self.cmd_channels.lock();
         for (dataset, tx) in channels.iter() {
             if let Err(e) = tx.send(HandlerCommand::Close) {
                 log::warn!("Failed to send close command to dataset {dataset}: {e}");
@@ -331,12 +310,21 @@ impl DatabentoDataClient {
     }
 
     fn clear_feed_channels(&self) {
-        let mut channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
+        let mut channels = self.cmd_channels.lock();
         channels.clear();
     }
 
     fn abort_active_tasks(&self) {
-        self.task_handles.abort_all();
+        self.task_handles.begin_shutdown();
+    }
+
+    fn spawn_task<F>(&self, future: F)
+    where
+        F: std::future::Future<Output = ()> + Send + 'static,
+    {
+        if let Err(e) = self.task_handles.spawn(future) {
+            log::debug!("Skipping Databento task after shutdown began: {e}");
+        }
     }
 
     /// Initializes the live feed handler for streaming data.
@@ -361,21 +349,18 @@ impl DatabentoDataClient {
             self.config.reconnect_timeout_mins,
         );
 
-        let feed_handle = get_runtime().spawn(async move {
+        let feed_future = async move {
             if let Err(e) = feed_handler.run().await {
                 log::error!("Feed handler error: {e}");
             }
-            feed_channels
-                .lock()
-                .expect(MUTEX_POISONED)
-                .remove(&feed_dataset);
-        });
+            feed_channels.lock().remove(&feed_dataset);
+        };
 
         let cancellation_token = self.cancellation_token.clone();
         let data_sender = self.data_sender.clone();
 
         // Spawn message processing task with cancellation support
-        let msg_handle = get_runtime().spawn(async move {
+        let msg_future = async move {
             let mut msg_rx = msg_rx;
 
             loop {
@@ -438,10 +423,15 @@ impl DatabentoDataClient {
                     }
                 }
             }
-        });
+        };
 
-        self.task_handles.push(feed_handle);
-        self.task_handles.push(msg_handle);
+        if let Err(e) = self.task_handles.spawn(feed_future) {
+            log::warn!("Skipping Databento feed task after shutdown began: {e}");
+        }
+
+        if let Err(e) = self.task_handles.spawn(msg_future) {
+            log::warn!("Skipping Databento message task after shutdown began: {e}");
+        }
 
         cmd_tx
     }
@@ -481,15 +471,16 @@ impl DataClient for DatabentoDataClient {
         self.clear_feed_channels();
         self.cancellation_token.cancel();
         self.abort_active_tasks();
-
-        self.cancellation_token = CancellationToken::new();
-
         self.is_connected.store(false, Ordering::Relaxed);
+
         Ok(())
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
         log::debug!("Resetting");
+        self.send_close_to_active_feeds();
+        self.clear_feed_channels();
+        self.abort_active_tasks();
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
@@ -502,8 +493,15 @@ impl DataClient for DatabentoDataClient {
     async fn connect(&mut self) -> anyhow::Result<()> {
         log::debug!("Connecting...");
 
-        if self.cancellation_token.is_cancelled() {
-            self.cancellation_token = CancellationToken::new();
+        if !self.task_handles.is_open() {
+            self.task_handles
+                .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to terminate Databento tasks: {e}"))?;
+            self.task_handles
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start Databento task generation: {e}"))?;
+            self.cancellation_token = self.task_handles.cancellation_token();
         }
 
         self.is_connected.store(true, Ordering::Relaxed);
@@ -517,20 +515,18 @@ impl DataClient for DatabentoDataClient {
 
         self.send_close_to_active_feeds();
         self.clear_feed_channels();
+        self.task_handles.begin_shutdown();
 
-        for handle in self.task_handles.take_all() {
-            if let Err(e) = handle.await
-                && !e.is_cancelled()
-            {
-                log::error!("Task join error: {e}");
-            }
-        }
+        let tasks_result = self
+            .task_handles
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to terminate Databento tasks: {e}"));
 
         self.is_connected.store(false, Ordering::Relaxed);
-        self.cancellation_token = CancellationToken::new();
 
         log::info!("Disconnected");
-        Ok(())
+        tasks_result
     }
 
     /// Returns whether the client is currently connected.
@@ -746,7 +742,7 @@ impl DataClient for DatabentoDataClient {
         let request_params = request.params;
         let (query_start, query_end) = resolve_request_time_range(start_nanos, end_nanos);
 
-        get_runtime().spawn(async move {
+        self.spawn_task(async move {
             let query_params = instruments_query_params(dataset, query_start, query_end);
 
             match historical_client.get_range_instruments(query_params).await {
@@ -803,7 +799,7 @@ impl DataClient for DatabentoDataClient {
         let request_params = request.params;
         let (query_start, query_end) = resolve_request_time_range(start_nanos, end_nanos);
 
-        get_runtime().spawn(async move {
+        self.spawn_task(async move {
             let query_params =
                 instrument_query_params(dataset, instrument_id, query_start, query_end);
 
@@ -859,7 +855,7 @@ impl DataClient for DatabentoDataClient {
             .to_string();
         let (query_start, query_end) = resolve_request_time_range(start_nanos, end_nanos);
 
-        get_runtime().spawn(async move {
+        self.spawn_task(async move {
             seed_price_precision_if_needed(
                 &historical_client,
                 dataset.as_str(),
@@ -941,7 +937,7 @@ impl DataClient for DatabentoDataClient {
                 .to_string();
         let (query_start, query_end) = resolve_request_time_range(start_nanos, end_nanos);
 
-        get_runtime().spawn(async move {
+        self.spawn_task(async move {
             seed_price_precision_if_needed(
                 &historical_client,
                 dataset.as_str(),
@@ -1022,7 +1018,7 @@ impl DataClient for DatabentoDataClient {
         let timestamp_on_close = self.config.bars_timestamp_on_close;
         let (query_start, query_end) = resolve_request_time_range(start_nanos, end_nanos);
 
-        get_runtime().spawn(async move {
+        self.spawn_task(async move {
             seed_price_precision_if_needed(
                 &historical_client,
                 dataset.as_str(),
@@ -1128,7 +1124,7 @@ impl DataClient for DatabentoDataClient {
         let price_precision = price_precision_from_params(request_params.as_ref())?;
         let (query_start, query_end) = resolve_request_time_range(start_nanos, end_nanos);
 
-        get_runtime().spawn(async move {
+        self.spawn_task(async move {
             seed_price_precision_if_needed(
                 &historical_client,
                 dataset.as_str(),
@@ -1205,7 +1201,7 @@ impl DataClient for DatabentoDataClient {
         let price_precision = price_precision_from_params(request_params.as_ref())?;
         let (query_start, query_end) = resolve_request_time_range(start_nanos, end_nanos);
 
-        get_runtime().spawn(async move {
+        self.spawn_task(async move {
             seed_price_precision_if_needed(
                 &historical_client,
                 dataset.as_str(),
@@ -1508,17 +1504,22 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_stop_aborts_active_tasks_and_marks_disconnected() {
+    async fn test_stop_closes_task_admission_until_disconnect_drains() {
         let mut client = test_data_client();
 
-        let handle = tokio::spawn(async { std::future::pending::<()>().await });
-        client.task_handles.push(handle);
+        client
+            .task_handles
+            .spawn(async { std::future::pending::<()>().await })
+            .unwrap();
         client.is_connected.store(true, Ordering::Relaxed);
 
         client.stop().unwrap();
 
-        assert!(client.task_handles.is_empty());
+        assert!(!client.task_handles.is_open());
         assert!(client.is_disconnected());
+
+        client.disconnect().await.unwrap();
+        assert!(client.task_handles.is_empty());
     }
 
     #[rstest]
@@ -1581,32 +1582,21 @@ mod tests {
 
     fn currency_pair_with_ts_init(instrument_id: &str, ts_init: UnixNanos) -> InstrumentAny {
         let instrument_id = InstrumentId::from(instrument_id);
-        InstrumentAny::CurrencyPair(CurrencyPair::new(
-            instrument_id,
-            instrument_id.symbol,
-            Currency::from("BTC"),
-            Currency::from("USDT"),
-            2,
-            6,
-            Price::from("0.01"),
-            Quantity::from("0.000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            ts_init,
-        ))
+        InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(instrument_id.symbol)
+                .base_currency(Currency::from("BTC"))
+                .quote_currency(Currency::from("USDT"))
+                .price_precision(2)
+                .size_precision(6)
+                .price_increment(Price::from("0.01"))
+                .size_increment(Quantity::from("0.000001"))
+                .ts_event(UnixNanos::default())
+                .ts_init(ts_init)
+                .build()
+                .unwrap(),
+        )
     }
 
     #[rstest]
@@ -1866,7 +1856,7 @@ mod tests {
         };
 
         assert!(result.is_err());
-        assert!(client.cmd_channels.lock().expect(MUTEX_POISONED).is_empty());
+        assert!(client.cmd_channels.lock().is_empty());
     }
 
     #[rstest]

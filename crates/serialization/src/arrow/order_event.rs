@@ -13,20 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
-use arrow::{datatypes::Schema, error::ArrowError, record_batch::RecordBatch};
 use nautilus_model::events::{
     OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated, OrderExpired,
     OrderFillVoided, OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
     OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered, OrderUpdated,
 };
 
-use super::{
-    ArrowSchemaProvider, DecodeTypedFromRecordBatch, EncodeToRecordBatch, EncodingError,
-    KEY_INSTRUMENT_ID,
-    json::{JsonFieldSpec, decode_batch, encode_batch, metadata_for_type, schema_for_type},
-};
+use super::json::{JsonFieldSpec, impl_json_arrow};
 
 const ORDER_INITIALIZED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("trader_id", false),
@@ -298,81 +291,38 @@ const ORDER_FILL_VOIDED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("causation_id", true),
 ];
 
-fn instrument_metadata(type_name: &'static str, instrument_id: &str) -> HashMap<String, String> {
-    let mut metadata = metadata_for_type(type_name);
-    metadata.insert(KEY_INSTRUMENT_ID.to_string(), instrument_id.to_string());
-    metadata
-}
-
-macro_rules! impl_order_event_arrow {
-    ($type:ty, $type_name:expr, $fields:expr) => {
-        impl ArrowSchemaProvider for $type {
-            fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
-                schema_for_type($type_name, metadata, $fields)
-            }
-        }
-
-        impl EncodeToRecordBatch for $type {
-            fn encode_batch(
-                metadata: &HashMap<String, String>,
-                data: &[Self],
-            ) -> Result<RecordBatch, ArrowError> {
-                encode_batch($type_name, metadata, data, $fields)
-            }
-
-            fn metadata(&self) -> HashMap<String, String> {
-                instrument_metadata($type_name, &self.instrument_id.to_string())
-            }
-        }
-
-        impl DecodeTypedFromRecordBatch for $type {
-            fn decode_typed_batch(
-                metadata: &HashMap<String, String>,
-                record_batch: RecordBatch,
-            ) -> Result<Vec<Self>, EncodingError> {
-                decode_batch(metadata, &record_batch, $fields, Some($type_name))
-            }
-        }
-    };
-}
-
-impl_order_event_arrow!(
-    OrderInitialized,
+impl_json_arrow!(instrument OrderInitialized,
     "OrderInitialized",
     ORDER_INITIALIZED_FIELDS
 );
-impl_order_event_arrow!(OrderDenied, "OrderDenied", ORDER_DENIED_FIELDS);
-impl_order_event_arrow!(OrderEmulated, "OrderEmulated", ORDER_EMULATED_FIELDS);
-impl_order_event_arrow!(OrderSubmitted, "OrderSubmitted", ORDER_SUBMITTED_FIELDS);
-impl_order_event_arrow!(OrderAccepted, "OrderAccepted", ORDER_ACCEPTED_FIELDS);
-impl_order_event_arrow!(OrderRejected, "OrderRejected", ORDER_REJECTED_FIELDS);
-impl_order_event_arrow!(
-    OrderPendingCancel,
+impl_json_arrow!(instrument OrderDenied, "OrderDenied", ORDER_DENIED_FIELDS);
+impl_json_arrow!(instrument OrderEmulated, "OrderEmulated", ORDER_EMULATED_FIELDS);
+impl_json_arrow!(instrument OrderSubmitted, "OrderSubmitted", ORDER_SUBMITTED_FIELDS);
+impl_json_arrow!(instrument OrderAccepted, "OrderAccepted", ORDER_ACCEPTED_FIELDS);
+impl_json_arrow!(instrument OrderRejected, "OrderRejected", ORDER_REJECTED_FIELDS);
+impl_json_arrow!(instrument OrderPendingCancel,
     "OrderPendingCancel",
     ORDER_PENDING_CANCEL_FIELDS
 );
-impl_order_event_arrow!(OrderCanceled, "OrderCanceled", ORDER_CANCELED_FIELDS);
-impl_order_event_arrow!(
-    OrderCancelRejected,
+impl_json_arrow!(instrument OrderCanceled, "OrderCanceled", ORDER_CANCELED_FIELDS);
+impl_json_arrow!(instrument OrderCancelRejected,
     "OrderCancelRejected",
     ORDER_CANCEL_REJECTED_FIELDS
 );
-impl_order_event_arrow!(OrderExpired, "OrderExpired", ORDER_EXPIRED_FIELDS);
-impl_order_event_arrow!(OrderTriggered, "OrderTriggered", ORDER_TRIGGERED_FIELDS);
-impl_order_event_arrow!(
-    OrderPendingUpdate,
+impl_json_arrow!(instrument OrderExpired, "OrderExpired", ORDER_EXPIRED_FIELDS);
+impl_json_arrow!(instrument OrderTriggered, "OrderTriggered", ORDER_TRIGGERED_FIELDS);
+impl_json_arrow!(instrument OrderPendingUpdate,
     "OrderPendingUpdate",
     ORDER_PENDING_UPDATE_FIELDS
 );
-impl_order_event_arrow!(OrderReleased, "OrderReleased", ORDER_RELEASED_FIELDS);
-impl_order_event_arrow!(
-    OrderModifyRejected,
+impl_json_arrow!(instrument OrderReleased, "OrderReleased", ORDER_RELEASED_FIELDS);
+impl_json_arrow!(instrument OrderModifyRejected,
     "OrderModifyRejected",
     ORDER_MODIFY_REJECTED_FIELDS
 );
-impl_order_event_arrow!(OrderUpdated, "OrderUpdated", ORDER_UPDATED_FIELDS);
-impl_order_event_arrow!(OrderFilled, "OrderFilled", ORDER_FILLED_FIELDS);
-impl_order_event_arrow!(OrderFillVoided, "OrderFillVoided", ORDER_FILL_VOIDED_FIELDS);
+impl_json_arrow!(instrument OrderUpdated, "OrderUpdated", ORDER_UPDATED_FIELDS);
+impl_json_arrow!(instrument OrderFilled, "OrderFilled", ORDER_FILLED_FIELDS);
+impl_json_arrow!(instrument OrderFillVoided, "OrderFillVoided", ORDER_FILL_VOIDED_FIELDS);
 
 #[cfg(test)]
 mod tests {
@@ -399,6 +349,7 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
+    use crate::arrow::{ArrowSchemaProvider, DecodeTypedFromRecordBatch, EncodeToRecordBatch};
 
     #[rstest]
     fn test_order_initialized_round_trip(order_initialized_buy_limit: OrderInitialized) {

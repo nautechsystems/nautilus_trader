@@ -66,9 +66,9 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "alloy"
-version = "2.2.0"
+version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7bdf7932042b511ad4ad67f7eeac896df62439ac91a8c516d678b79cbe3f9c27"
+checksum = "9867f85f660948ddbef071ae484027654c04b62c7decd5b61464a7ed1f8931a0"
 dependencies = [
  "alloy-consensus",
  "alloy-contract",
@@ -114,7 +114,7 @@ dependencies = [
  "either",
  "k256",
  "once_cell",
- "rand 0.8.7",
+ "rand 0.8.8",
  "secp256k1 0.30.0",
  "serde",
  "serde_json",
@@ -163,9 +163,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-core"
-version = "1.6.1"
+version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8421a5ee9019b6d89f92935d0f8facd9f6ca088b41d7cc47244a02ccde4545f"
+checksum = "e88cf3d065edfb29a13278215b8521d3ef72a41e2432e019c1f0dd8e30649a5d"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-json-abi",
@@ -176,9 +176,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-dyn-abi"
-version = "1.6.1"
+version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a04eb4abc2b5074a18e687ee63918f407cc7990083cba9b999445f839796060"
+checksum = "d9f1a3f2206f2ba4206fdeeddce6640eed3e26b8a13ac41444adb66b76d8e650"
 dependencies = [
  "alloy-json-abi",
  "alloy-primitives",
@@ -281,9 +281,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-json-abi"
-version = "1.6.1"
+version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6cee30dd4c2f4b23f434fdf675e7bf9681b86768141277266c6f548ef25cba0a"
+checksum = "208699c66c453fbb4c50d2e602f8ceff8a5f1fa48ac8b6ee3b6357fdc93da311"
 dependencies = [
  "alloy-primitives",
  "alloy-sol-type-parser",
@@ -347,9 +347,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-primitives"
-version = "1.6.1"
+version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f007e257069855bdf21d27762fd3f3705a613f805c9a08309bf353503f081d71"
+checksum = "9c902f0ca3f8353c41e3e1ec3cf26be49412525bc48ab9d3c4710d7be4f01832"
 dependencies = [
  "alloy-rlp",
  "bytes",
@@ -359,7 +359,7 @@ dependencies = [
  "fixed-cache",
  "foldhash 0.2.0",
  "hashbrown 0.17.1",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itoa",
  "k256",
  "keccak-asm",
@@ -487,7 +487,7 @@ dependencies = [
  "alloy-rlp",
  "alloy-serde",
  "alloy-sol-types",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "serde",
  "serde_json",
  "serde_with",
@@ -532,15 +532,15 @@ dependencies = [
  "alloy-signer",
  "async-trait",
  "k256",
- "rand 0.8.7",
+ "rand 0.8.8",
  "thiserror 2.0.20",
 ]
 
 [[package]]
 name = "alloy-sol-macro"
-version = "1.6.1"
+version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5655c38d5f84955bf727b2eeb62fddd91ebb98fd1d7ae6eb77f73ea88f9b9cf"
+checksum = "fdcbd48d60e029be4a325c3a2f1312761caea4ed249f18ba9e8ed24ca1bf01e6"
 dependencies = [
  "alloy-sol-macro-expander",
  "alloy-sol-macro-input",
@@ -552,15 +552,15 @@ dependencies = [
 
 [[package]]
 name = "alloy-sol-macro-expander"
-version = "1.6.1"
+version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6277c780e07b76951e09a59788dde230d1582612324177d11a43a61e21a6bb83"
+checksum = "59c9f7c535f99a7e7b64cc520968b09ed14cec3715572fcc277cfbff602808cd"
 dependencies = [
  "alloy-json-abi",
  "alloy-sol-macro-input",
  "const-hex",
  "heck",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "proc-macro-error3",
  "proc-macro2",
  "quote",
@@ -571,9 +571,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-sol-macro-input"
-version = "1.6.1"
+version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9762b2ad3e5a0c09886de54fe549ab0056681df843cb082e2df7e1c0eb270d30"
+checksum = "1abd404fbc12f543823005146b73fd07621bdc0baaa950d26995c543a9d73811"
 dependencies = [
  "alloy-json-abi",
  "const-hex",
@@ -589,9 +589,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-sol-type-parser"
-version = "1.6.1"
+version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da4c7130f0f01f4719678bda3db3bc7267fc2f7f9d0565e3bd964cd2bb45050d"
+checksum = "40a7fd71864526bfeca8903010d5bb7fd28a0a4f5cc55818304c9cad8f0d63ab"
 dependencies = [
  "serde",
  "winnow 1.0.4",
@@ -599,9 +599,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-sol-types"
-version = "1.6.1"
+version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d96e74d6213180f78dbdccddce8af02a639c160c94b0a543fa35c77c58b8a7fc"
+checksum = "adfc2ba3fb0e865de4934bcad6d37fc51e9ffcd5294be1322eab38e4494e051b"
 dependencies = [
  "alloy-json-abi",
  "alloy-primitives",
@@ -640,7 +640,7 @@ checksum = "8342aa5a7f8dee6d606307eebbc847d9799a823c7e4f37b9c1e32b08715f73c8"
 dependencies = [
  "alloy-json-rpc",
  "alloy-transport",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "reqwest 0.13.4",
  "serde_json",
  "tower",
@@ -1007,7 +1007,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1df2c09229cbc5a028b1d70e00fdb2acee28b1055dfb5ca73eea49c5a25c4e7c"
 dependencies = [
  "num-traits",
- "rand 0.8.7",
+ "rand 0.8.8",
 ]
 
 [[package]]
@@ -1017,7 +1017,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94893f1e0c6eeab764ade8dc4c0db24caf4fe7cbbaafc0eba0a9030f447b5185"
 dependencies = [
  "num-traits",
- "rand 0.8.7",
+ "rand 0.8.8",
 ]
 
 [[package]]
@@ -1027,7 +1027,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "246a225cc6131e9ee4f24619af0f19d67761fff15d7ccc22e42b80846e69449a"
 dependencies = [
  "num-traits",
- "rand 0.8.7",
+ "rand 0.8.8",
 ]
 
 [[package]]
@@ -1037,7 +1037,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "367c9c827ed431bff6868b7aa926e05b16eb46603cc8b6e768e4a5553fa1d155"
 dependencies = [
  "num-traits",
- "rand 0.8.7",
+ "rand 0.8.8",
 ]
 
 [[package]]
@@ -1209,7 +1209,7 @@ dependencies = [
  "arrow-select",
  "chrono",
  "half",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itoa",
  "lexical-core",
  "memchr",
@@ -1398,7 +1398,7 @@ checksum = "82f6aeea286b8eb4dd3431a1be1b59d290ace00f5bfd8e2a159bc2a05e2c1667"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -1664,7 +1664,7 @@ dependencies = [
  "cc",
  "cfg-if",
  "constant_time_eq",
- "cpufeatures 0.3.0",
+ "cpufeatures 0.3.1",
 ]
 
 [[package]]
@@ -1765,7 +1765,7 @@ version = "3.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6dee98b0db6a962de883bf5d20362dee4d7ca0d12fe39a7c6c73c844e1cd7c1f"
 dependencies = [
- "darling 0.23.0",
+ "darling 0.20.11",
  "ident_case",
  "prettyplease",
  "proc-macro2",
@@ -1776,9 +1776,9 @@ dependencies = [
 
 [[package]]
 name = "borsh"
-version = "1.8.0"
+version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a88b7ea17d208c4193f2c1e6de3c35fe71f98c96982d5ced308bdcc749ff6e1f"
+checksum = "553c5d846a6ba5150c65e3b1b8ec073bcf1abc20f9b7220de384a4443ea4e20a"
 dependencies = [
  "borsh-derive",
  "bytes",
@@ -1787,15 +1787,15 @@ dependencies = [
 
 [[package]]
 name = "borsh-derive"
-version = "1.8.0"
+version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8f347189c62a579b8cd5f80714efa178f52e461dc2e6d701d264f5ff22e566c"
+checksum = "12cdfe656708a01f89b451a7d36466e6fe6c414de0aa18fc54f864f6f9ca9f56"
 dependencies = [
  "once_cell",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -1967,12 +1967,12 @@ checksum = "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527"
 
 [[package]]
 name = "chacha20"
-version = "0.10.1"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d524456ba66e72eb8b115ff89e01e497f8e6d11d78b70b1aa13c0fbd97540a81"
+checksum = "65c35e4b699c7e15ccbe7ee35c005e4fc0a278d22238a2857e6ce2dadeda1b06"
 dependencies = [
  "cfg-if",
- "cpufeatures 0.3.0",
+ "cpufeatures 0.3.1",
  "rand_core 0.10.1",
 ]
 
@@ -2056,7 +2056,7 @@ dependencies = [
  "heck",
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -2148,14 +2148,14 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
 name = "combine"
-version = "4.6.7"
+version = "4.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba5a308b75df32fe02788e748662718f03fde005016435c444eea572398219fd"
+checksum = "cfc320937d09e6de266b31b9afb480f197d7a861be86be7cb2ea7e5d1bfffc5e"
 dependencies = [
  "bytes",
  "futures-core",
@@ -2348,9 +2348,9 @@ dependencies = [
 
 [[package]]
 name = "cpufeatures"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b2a41393f66f16b0823bb79094d54ac5fbd34ab292ddafb9a0456ac9f87d201"
+checksum = "5ca28b0ae3115b884660db4118d803791fd6756b6e88f39c0f3f7859060d7566"
 dependencies = [
  "libc",
 ]
@@ -2372,9 +2372,9 @@ checksum = "217698eaf96b4a3f0bc4f3662aaa55bdf913cd54d7204591faa790070c6d0853"
 
 [[package]]
 name = "crc32fast"
-version = "1.5.0"
+version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9481c1c90cbf2ac953f07c8d4a58aa3945c425b7185c9154d67a65e4230da511"
+checksum = "8498c871161e1742aaa9d52551b2d6ebdd4c3d45a3be423e3728f33b955be550"
 dependencies = [
  "cfg-if",
 ]
@@ -2497,7 +2497,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5eed333089e2e1c1ac8c6c0398e5e2497b4c9926ca6d0365ed1e099afa5bc23"
 dependencies = [
  "cfg-if",
- "cpufeatures 0.3.0",
+ "cpufeatures 0.3.1",
  "curve25519-dalek-derive",
  "digest 0.11.3",
  "fiat-crypto",
@@ -2657,9 +2657,9 @@ checksum = "4583a4551df46e2792f82ceeac45e850d2e2d5debba0b91f102385cda5b11f06"
 
 [[package]]
 name = "databento"
-version = "0.59.0"
+version = "0.60.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5bcdafe88edf696d032e9d6992d5ce1a2c6aa1575ec80d0111c43408a23528e"
+checksum = "4efb863155778771bcfe472fffb24e130c192276821b8dfa7cf7a1426c56484a"
 dependencies = [
  "async-compression",
  "bon",
@@ -2714,7 +2714,7 @@ dependencies = [
  "datafusion-session",
  "datafusion-sql",
  "futures",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itertools 0.15.0",
  "log",
  "object_store",
@@ -2789,7 +2789,7 @@ dependencies = [
  "foldhash 0.2.0",
  "half",
  "hashbrown 0.17.1",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itertools 0.15.0",
  "libc",
  "log",
@@ -2993,7 +2993,7 @@ dependencies = [
  "datafusion-functions-aggregate-common",
  "datafusion-functions-window-common",
  "datafusion-physical-expr-common",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itertools 0.15.0",
  "serde_json",
  "sqlparser",
@@ -3007,7 +3007,7 @@ checksum = "2604994999d5aeca1d1df645ffc98bc787447aaff05dde27aad0342b48fc1fe0"
 dependencies = [
  "arrow 59.2.0",
  "datafusion-common",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itertools 0.15.0",
 ]
 
@@ -3148,7 +3148,7 @@ checksum = "15192effab05d38cce10e92a6fb48c967b5f166b27b7195a165a72b232569c58"
 dependencies = [
  "datafusion-doc",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -3163,7 +3163,7 @@ dependencies = [
  "datafusion-expr",
  "datafusion-expr-common",
  "datafusion-physical-expr",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itertools 0.15.0",
  "log",
  "regex",
@@ -3184,7 +3184,7 @@ dependencies = [
  "datafusion-physical-expr-common",
  "half",
  "hashbrown 0.17.1",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itertools 0.15.0",
  "parking_lot",
  "petgraph 0.8.3",
@@ -3217,7 +3217,7 @@ dependencies = [
  "datafusion-common",
  "datafusion-expr-common",
  "hashbrown 0.17.1",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itertools 0.15.0",
  "parking_lot",
  "pin-project",
@@ -3267,7 +3267,7 @@ dependencies = [
  "futures",
  "half",
  "hashbrown 0.17.1",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itertools 0.15.0",
  "log",
  "num-traits",
@@ -3320,7 +3320,7 @@ dependencies = [
  "datafusion-common",
  "datafusion-expr",
  "datafusion-functions-nested",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "log",
  "regex",
  "sqlparser",
@@ -3328,9 +3328,9 @@ dependencies = [
 
 [[package]]
 name = "dbn"
-version = "0.67.0"
+version = "0.68.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa0f381095ebd6402a89d29526ae6e96edc5d15131d735e25e303f92e0c66521"
+checksum = "6fee7369468ef2f30433088e2c0ba4a12386d004d79c5a9450cace625aaa5df8"
 dependencies = [
  "async-compression",
  "async-stream",
@@ -3350,9 +3350,9 @@ dependencies = [
 
 [[package]]
 name = "dbn-macros"
-version = "0.67.0"
+version = "0.68.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b4db0c288db84da99799a9ba311614430d42f01f9ca93a345db559a8d480b39"
+checksum = "a0c522f9c4644e2260dd67f1648cab045f1c7af868a01717ea11956a1487f341"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -3558,7 +3558,7 @@ checksum = "c6232dd377dcc64799954cbd3a9bb882e9cdc1308ccd87b1c098f1fb2eaf82a8"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -3725,7 +3725,7 @@ checksum = "a65863d15a4ce2888bd2f0f543cc963d3879c3a022c8ee43f6141d479a3ac815"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -3753,7 +3753,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3896,7 +3896,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "835c052cb0c08c1acf6ffd71c022172e18723949c8282f2b9f27efbc51e64534"
 dependencies = [
  "byteorder",
- "rand 0.8.7",
+ "rand 0.8.8",
  "rustc-hex",
  "static_assertions",
 ]
@@ -3919,9 +3919,9 @@ dependencies = [
 
 [[package]]
 name = "flate2"
-version = "1.1.9"
+version = "1.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "843fba2746e448b37e26a819579957415c8cef339bf08564fe8b7ddbd959573c"
+checksum = "6e634e2e0ebac1ee034020da1ca582e17ffe4e0f5e985823721e168928136dcb"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
@@ -4054,7 +4054,7 @@ checksum = "9fb9654ba8355388abeb8dcb4fc62f511300867002afc858860463bdd9fe0c44"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -4176,9 +4176,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.4.17"
+version = "0.4.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f877e75f39e9827ec50a572dd592684ac28c029578726c85f1b2aa6ab807449"
+checksum = "ef8e5e5a340588f4452631496976cf8636d4a7ecf600239fdc27615d2530bc16"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -4186,7 +4186,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "http",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "slab",
  "tokio",
  "tokio-util",
@@ -4387,9 +4387,9 @@ dependencies = [
 
 [[package]]
 name = "hyper"
-version = "1.11.0"
+version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d22053281f852e11534f5198498373cbb59295120a20771d90f7ed1897490a72"
+checksum = "27b501faa50e7a26c3d3560ca625132f4078a17771f4810baf70475ae48cbe43"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -4467,7 +4467,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -4512,7 +4512,7 @@ dependencies = [
  "nohash-hasher",
  "num_cpus",
  "parquet 57.3.1",
- "rand 0.8.7",
+ "rand 0.8.8",
  "rayon",
  "reqwest 0.12.28",
  "reqwest-eventsource",
@@ -4779,9 +4779,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.14.0"
+version = "2.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9"
+checksum = "07aa2048142242915a31d35844fb311e0e53fcca590c3a0a40dcf1b841fa09eb"
 dependencies = [
  "equivalent",
  "hashbrown 0.17.1",
@@ -4806,9 +4806,9 @@ checksum = "6a756c3fac73139e83f14c2d742155dd2b78d3ee56597b419a0579b7bdd6dd78"
 
 [[package]]
 name = "is-macro"
-version = "0.3.7"
+version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d57a3e447e24c22647738e4607f1df1e0ec6f72e16182c4cd199f647cdfb0e4"
+checksum = "8267aa6001e25494f3015f9663bbd88a18240c74483afa5f0934a1b3e4c388e9"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -4824,7 +4824,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5052,7 +5052,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8f198d1db720e4940b5a493201d199d9f24f568f8f746bd13706243a2f71598"
 dependencies = [
  "cfg-if",
- "cpufeatures 0.3.0",
+ "cpufeatures 0.3.1",
 ]
 
 [[package]]
@@ -5219,9 +5219,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.33"
+version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
+checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 dependencies = [
  "serde_core",
  "value-bag",
@@ -5229,9 +5229,9 @@ dependencies = [
 
 [[package]]
 name = "lru"
-version = "0.18.2"
+version = "0.18.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d2f2f9b4ba7e6b24d95e7e899329d35be83bcded72c8540cdd5368932d1d90a"
+checksum = "0d317b4b9eb398e6acce275758ec6125535505e7a146fb1a9b8bda2451b0ff4c"
 dependencies = [
  "hashbrown 0.17.1",
 ]
@@ -5282,7 +5282,7 @@ dependencies = [
  "madsim-macros",
  "naive-timer",
  "panic-message",
- "rand 0.8.7",
+ "rand 0.8.8",
  "rand_xoshiro",
  "rustversion",
  "serde",
@@ -5370,9 +5370,9 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniz_oxide"
-version = "0.8.9"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
+checksum = "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c"
 dependencies = [
  "adler2",
  "simd-adler32",
@@ -5403,11 +5403,12 @@ checksum = "034a0ad7deebf0c2abcf2435950a6666c3c15ea9d8fad0c0f48efa8a7f843fed"
 
 [[package]]
 name = "nautilus-analysis"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
+ "log",
  "nautilus-core",
  "nautilus-model",
  "pyo3",
@@ -5418,7 +5419,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-architect-ax"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5442,6 +5443,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
+ "parking_lot",
  "pyo3",
  "pyo3-async-runtimes",
  "pyo3-stub-gen",
@@ -5464,7 +5466,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5472,7 +5474,7 @@ dependencies = [
  "blake3",
  "bon",
  "codspeed-criterion-compat",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "log",
  "mimalloc",
@@ -5489,6 +5491,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
+ "parking_lot",
  "pyo3",
  "pyo3-stub-gen",
  "rstest",
@@ -5501,7 +5504,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-betfair"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5529,6 +5532,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
+ "parking_lot",
  "proptest",
  "pyo3",
  "pyo3-stub-gen",
@@ -5548,7 +5552,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-binance"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5571,6 +5575,7 @@ dependencies = [
  "log",
  "nautilus-common",
  "nautilus-core",
+ "nautilus-execution",
  "nautilus-live",
  "nautilus-model",
  "nautilus-network",
@@ -5578,6 +5583,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
+ "parking_lot",
  "pyo3",
  "pyo3-stub-gen",
  "rstest",
@@ -5597,7 +5603,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-bitmex"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5621,6 +5627,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
+ "parking_lot",
  "pyo3",
  "pyo3-async-runtimes",
  "pyo3-stub-gen",
@@ -5642,7 +5649,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-blockchain"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy",
@@ -5666,6 +5673,7 @@ dependencies = [
  "nautilus-network",
  "nautilus-system",
  "nautilus-trading",
+ "parking_lot",
  "pyo3",
  "pyo3-stub-gen",
  "rstest",
@@ -5681,11 +5689,12 @@ dependencies = [
  "toml 1.1.4+spec-1.1.0",
  "turmoil",
  "ustr",
+ "zeroize",
 ]
 
 [[package]]
 name = "nautilus-bybit"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5710,6 +5719,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
+ "parking_lot",
  "pyo3",
  "pyo3-async-runtimes",
  "pyo3-stub-gen",
@@ -5732,7 +5742,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cli"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -5753,7 +5763,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-coinbase"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5775,7 +5785,8 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
- "pem 4.0.0",
+ "parking_lot",
+ "pem",
  "pyo3",
  "pyo3-stub-gen",
  "rstest",
@@ -5796,12 +5807,11 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy-primitives",
  "anyhow",
- "async-stream",
  "async-trait",
  "bon",
  "bytes",
@@ -5810,7 +5820,7 @@ dependencies = [
  "derive_builder",
  "futures",
  "iai",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "libc",
  "log",
@@ -5819,6 +5829,7 @@ dependencies = [
  "nautilus-indicators",
  "nautilus-model",
  "nautilus-serialization",
+ "parking_lot",
  "proptest",
  "pyo3",
  "pyo3-async-runtimes",
@@ -5845,7 +5856,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5854,10 +5865,11 @@ dependencies = [
  "codspeed-criterion-compat",
  "dashmap",
  "iai",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "log",
  "madsim",
+ "parking_lot",
  "proptest",
  "pyo3",
  "pyo3-stub-gen",
@@ -5873,11 +5885,12 @@ dependencies = [
  "toml 1.1.4+spec-1.1.0",
  "ustr",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
 name = "nautilus-cryptography"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "anyhow",
  "aws-lc-rs",
@@ -5885,7 +5898,7 @@ dependencies = [
  "ed25519-dalek",
  "log",
  "nautilus-core",
- "pem 4.0.0",
+ "pem",
  "pyo3",
  "pyo3-stub-gen",
  "rstest",
@@ -5895,7 +5908,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-data"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy-primitives",
@@ -5904,7 +5917,7 @@ dependencies = [
  "bon",
  "codspeed-criterion-compat",
  "futures",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "log",
  "nautilus-common",
@@ -5912,6 +5925,7 @@ dependencies = [
  "nautilus-model",
  "nautilus-persistence",
  "nautilus-serialization",
+ "parking_lot",
  "proptest",
  "pyo3",
  "pyo3-stub-gen",
@@ -5925,7 +5939,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-databento"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5935,7 +5949,7 @@ dependencies = [
  "databento",
  "dotenvy",
  "fallible-streaming-iterator",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "log",
  "nautilus-common",
@@ -5946,6 +5960,7 @@ dependencies = [
  "nautilus-serialization",
  "nautilus-system",
  "nautilus-testkit",
+ "parking_lot",
  "proptest",
  "pyo3",
  "pyo3-async-runtimes",
@@ -5963,7 +5978,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-deribit"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5991,6 +6006,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
+ "parking_lot",
  "pyo3",
  "pyo3-async-runtimes",
  "pyo3-stub-gen",
@@ -6011,7 +6027,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-derive"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy",
@@ -6036,6 +6052,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
+ "parking_lot",
  "pyo3",
  "pyo3-stub-gen",
  "rstest",
@@ -6054,7 +6071,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-dydx"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6080,6 +6097,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
+ "parking_lot",
  "pyo3",
  "pyo3-async-runtimes",
  "pyo3-stub-gen",
@@ -6097,11 +6115,12 @@ dependencies = [
  "toml 1.1.4+spec-1.1.0",
  "tonic",
  "ustr",
+ "zeroize",
 ]
 
 [[package]]
 name = "nautilus-event-store"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6109,7 +6128,7 @@ dependencies = [
  "blake3",
  "bytes",
  "codspeed-criterion-compat",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -6117,6 +6136,7 @@ dependencies = [
  "nautilus-model",
  "nautilus-persistence",
  "nautilus-system",
+ "parking_lot",
  "proptest",
  "redb",
  "rmp-serde",
@@ -6129,7 +6149,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-execution"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6138,13 +6158,14 @@ dependencies = [
  "bytes",
  "codspeed-criterion-compat",
  "futures",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "log",
  "madsim",
  "nautilus-common",
  "nautilus-core",
  "nautilus-model",
+ "parking_lot",
  "proptest",
  "pyo3",
  "pyo3-stub-gen",
@@ -6161,7 +6182,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-hyperliquid"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy",
@@ -6190,6 +6211,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
+ "parking_lot",
  "pyo3",
  "pyo3-async-runtimes",
  "pyo3-stub-gen",
@@ -6213,7 +6235,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "anyhow",
  "arraydeque",
@@ -6228,16 +6250,17 @@ dependencies = [
 
 [[package]]
 name = "nautilus-infrastructure"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
  "async-stream",
  "async-trait",
  "bytes",
+ "codspeed-criterion-compat",
  "derive_builder",
  "futures",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "log",
  "nautilus-common",
@@ -6266,7 +6289,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-interactive-brokers"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6287,6 +6310,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
+ "parking_lot",
  "pyo3",
  "pyo3-async-runtimes",
  "pyo3-stub-gen",
@@ -6306,7 +6330,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-kraken"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6322,7 +6346,7 @@ dependencies = [
  "derive_builder",
  "dotenvy",
  "futures-util",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "log",
  "nautilus-backtest",
@@ -6335,6 +6359,7 @@ dependencies = [
  "nautilus-tardis",
  "nautilus-testkit",
  "nautilus-trading",
+ "parking_lot",
  "proptest",
  "pyo3",
  "pyo3-async-runtimes",
@@ -6357,7 +6382,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-lighter"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6382,6 +6407,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
+ "parking_lot",
  "proptest",
  "pyo3",
  "pyo3-async-runtimes",
@@ -6405,15 +6431,17 @@ dependencies = [
 
 [[package]]
 name = "nautilus-live"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
+ "arc-swap",
  "async-trait",
  "bon",
  "bytes",
  "codspeed-criterion-compat",
- "indexmap 2.14.0",
+ "futures-util",
+ "indexmap 2.14.1",
  "libfuzzer-sys",
  "log",
  "madsim",
@@ -6429,6 +6457,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
+ "parking_lot",
  "pyo3",
  "pyo3-stub-gen",
  "rstest",
@@ -6438,13 +6467,14 @@ dependencies = [
  "serde_json",
  "tabled",
  "tokio",
+ "tokio-util",
  "toml 1.1.4+spec-1.1.0",
  "ustr",
 ]
 
 [[package]]
 name = "nautilus-model"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy-primitives",
@@ -6457,10 +6487,11 @@ dependencies = [
  "enum_dispatch",
  "iai",
  "implied-vol",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "log",
  "nautilus-core",
+ "parking_lot",
  "proptest",
  "pyo3",
  "pyo3-stub-gen",
@@ -6472,13 +6503,14 @@ dependencies = [
  "serde_json",
  "strum 0.28.0",
  "tabled",
+ "tempfile",
  "thiserror 2.0.20",
  "ustr",
 ]
 
 [[package]]
 name = "nautilus-network"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6495,6 +6527,7 @@ dependencies = [
  "nautilus-common",
  "nautilus-core",
  "nautilus-cryptography",
+ "parking_lot",
  "proptest",
  "pyo3",
  "pyo3-stub-gen",
@@ -6523,7 +6556,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-okx"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6549,6 +6582,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
+ "parking_lot",
  "pyo3",
  "pyo3-async-runtimes",
  "pyo3-stub-gen",
@@ -6570,7 +6604,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6579,7 +6613,7 @@ dependencies = [
  "codspeed-criterion-compat",
  "datafusion",
  "futures",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "log",
  "nautilus-common",
@@ -6589,6 +6623,7 @@ dependencies = [
  "nautilus-serialization",
  "nautilus-testkit",
  "object_store",
+ "parking_lot",
  "parquet 59.2.0",
  "pretty_assertions",
  "proptest",
@@ -6607,7 +6642,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence-macros"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6617,7 +6652,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-plugin"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "log",
  "nautilus-model",
@@ -6626,7 +6661,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-polymarket"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy",
@@ -6642,7 +6677,7 @@ dependencies = [
  "derive_builder",
  "dotenvy",
  "futures-util",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "log",
  "nautilus-common",
@@ -6656,6 +6691,7 @@ dependencies = [
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
+ "parking_lot",
  "proptest",
  "pyo3",
  "pyo3-async-runtimes",
@@ -6681,13 +6717,13 @@ dependencies = [
 
 [[package]]
 name = "nautilus-portfolio"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
  "bon",
  "codspeed-criterion-compat",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "log",
  "nautilus-analysis",
  "nautilus-common",
@@ -6703,7 +6739,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "mimalloc",
  "nautilus-analysis",
@@ -6750,11 +6786,11 @@ dependencies = [
 
 [[package]]
 name = "nautilus-risk"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "bon",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -6772,7 +6808,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-sandbox"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6802,14 +6838,14 @@ dependencies = [
 
 [[package]]
 name = "nautilus-serialization"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "anyhow",
  "arrow 59.2.0",
  "capnp 0.27.0",
  "capnpc",
  "codspeed-criterion-compat",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "nautilus-core",
  "nautilus-model",
  "pretty_assertions",
@@ -6828,7 +6864,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-system"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6836,7 +6872,8 @@ dependencies = [
  "bon",
  "bytes",
  "futures",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
+ "jiff",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -6846,8 +6883,10 @@ dependencies = [
  "nautilus-persistence",
  "nautilus-portfolio",
  "nautilus-risk",
+ "nautilus-serialization",
  "nautilus-testkit",
  "nautilus-trading",
+ "parking_lot",
  "proptest",
  "pyo3",
  "pyo3-stub-gen",
@@ -6855,13 +6894,14 @@ dependencies = [
  "serde",
  "serde_json",
  "sysinfo",
+ "tempfile",
  "toml 1.1.4+spec-1.1.0",
  "ustr",
 ]
 
 [[package]]
 name = "nautilus-tardis"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6910,7 +6950,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-testkit"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6920,7 +6960,7 @@ dependencies = [
  "axum",
  "bon",
  "bytes",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itchy",
  "jiff",
  "log",
@@ -6931,6 +6971,7 @@ dependencies = [
  "nautilus-portfolio",
  "nautilus-serialization",
  "nautilus-trading",
+ "parking_lot",
  "parquet 59.2.0",
  "pyo3",
  "pyo3-stub-gen",
@@ -6948,7 +6989,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-trader"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "nautilus-common",
  "nautilus-core",
@@ -6957,12 +6998,12 @@ dependencies = [
 
 [[package]]
 name = "nautilus-trading"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
  "bon",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "log",
  "nautilus-analysis",
@@ -6986,7 +7027,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-tutorials"
-version = "0.63.0"
+version = "0.64.0"
 dependencies = [
  "dotenvy",
  "nautilus-common",
@@ -7384,16 +7425,6 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pem"
-version = "3.0.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d30c53c26bc5b31a98cd02d20f25a7c8567146caf63ed593a9d87b2775291be"
-dependencies = [
- "base64 0.22.1",
- "serde_core",
-]
-
-[[package]]
-name = "pem"
 version = "4.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d354a98a3d1251555de99e8fdd8afda05573c31b82f59063a7b0a29b5527f120"
@@ -7425,7 +7456,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3672b37090dbd86368a4145bc067582552b29c27377cad4e0a306c97f9bd7772"
 dependencies = [
  "fixedbitset",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
 ]
 
 [[package]]
@@ -7436,7 +7467,7 @@ checksum = "8701b58ea97060d5e5b155d383a69952a60943f0e6dfe30b04c287beb0b27455"
 dependencies = [
  "fixedbitset",
  "hashbrown 0.15.5",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "serde",
 ]
 
@@ -7484,7 +7515,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3c80231409c20246a13fddb31776fb942c38553c51e871f8cbd687a4cfb5843d"
 dependencies = [
  "phf_shared 0.11.3",
- "rand 0.8.7",
+ "rand 0.8.8",
 ]
 
 [[package]]
@@ -7714,7 +7745,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
  "heck",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "log",
  "multimap",
  "once_cell",
@@ -7734,7 +7765,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -7747,7 +7778,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -7788,8 +7819,8 @@ version = "0.29.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4688ddedf473e32662b9b067670129a8afb8c18e351482c70d62ba4a88171e8b"
 dependencies = [
- "hashbrown 0.17.1",
- "indexmap 2.14.0",
+ "hashbrown 0.15.5",
+ "indexmap 2.14.1",
  "inventory",
  "jiff",
  "libc",
@@ -7876,7 +7907,7 @@ name = "pyo3-stub-gen"
 version = "0.20.0"
 dependencies = [
  "anyhow",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "inventory",
  "jiff",
  "log",
@@ -7897,7 +7928,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "11633044267957aeda9569863a3a57b3aa2aeebc7144439423c1ddde3d00d887"
 dependencies = [
  "heck",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "proc-macro2",
  "quote",
  "rustpython-parser",
@@ -7927,7 +7958,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.3",
  "rustls",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "thiserror 2.0.20",
  "tokio",
  "tracing",
@@ -7966,9 +7997,9 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -8000,9 +8031,9 @@ checksum = "dc33ff2d4973d518d823d61aa239014831e521c75da58e3df4840d3f47749d09"
 
 [[package]]
 name = "rand"
-version = "0.8.7"
+version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22f6172bdec972074665ed81ed53b71da00bfc44b65a753cfde883ec4c702a1a"
+checksum = "e058c7de0b26af77780c769414d6257830bb240f3c38477dbc2c16e5f54d6d4c"
 dependencies = [
  "libc",
  "rand_chacha 0.3.1",
@@ -8145,12 +8176,12 @@ dependencies = [
 
 [[package]]
 name = "rcgen"
-version = "0.14.9"
+version = "0.14.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "091e7a8e7d86e6feb87a27ce8e2cba29d49eff9507afeebefab7eeb2ca667fb4"
+checksum = "8774e05a7d0de114588e6a28fe7e71694b82614ed569d86d8b389dfbc98b8ad8"
 dependencies = [
  "aws-lc-rs",
- "pem 3.0.6",
+ "pem",
  "rustls-pki-types",
  "time",
  "x509-parser",
@@ -8224,7 +8255,7 @@ checksum = "92ecd8964f8453721699a1ed72037b0db49ce2f5a5138486ee89bed6f67cdf3a"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -8512,7 +8543,7 @@ dependencies = [
  "parity-scale-codec",
  "primitive-types",
  "proptest",
- "rand 0.8.7",
+ "rand 0.8.8",
  "rand 0.9.5",
  "rlp",
  "ruint-macro",
@@ -8537,7 +8568,7 @@ dependencies = [
  "borsh",
  "bytes",
  "num-traits",
- "rand 0.8.7",
+ "rand 0.8.8",
  "rkyv",
  "serde",
  "serde_json",
@@ -8609,7 +8640,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -8668,7 +8699,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -8829,7 +8860,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "serde_derive_internals",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -8881,7 +8912,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b50c5943d326858130af85e049f2661ba3c78b26589b8ab98e65e80ae44a1252"
 dependencies = [
  "bitcoin_hashes",
- "rand 0.8.7",
+ "rand 0.8.8",
  "secp256k1-sys 0.10.1",
  "serde",
 ]
@@ -9026,7 +9057,7 @@ checksum = "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -9037,7 +9068,7 @@ checksum = "f852137cce035d6a4df67ccce505ff6b3e9fd3a10e3e52b24dc71e650bb1a9bd"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -9046,7 +9077,7 @@ version = "1.0.151"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
 dependencies = [
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itoa",
  "memchr",
  "serde",
@@ -9073,7 +9104,7 @@ checksum = "8d3b1629de253c70a0508c3899572da79ca359fdab27c7920ff00406df418906"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -9108,7 +9139,7 @@ dependencies = [
  "chrono",
  "hex",
  "indexmap 1.9.3",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "jiff",
  "schemars 0.9.0",
  "schemars 1.2.2",
@@ -9136,7 +9167,7 @@ version = "0.9.34+deprecated"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
 dependencies = [
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "itoa",
  "ryu",
  "serde",
@@ -9171,7 +9202,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aacc4cc499359472b4abe1bf11d0b12e688af9a805fa5e3016f9a386dc2d0214"
 dependencies = [
  "cfg-if",
- "cpufeatures 0.3.0",
+ "cpufeatures 0.3.1",
  "digest 0.11.3",
 ]
 
@@ -9206,7 +9237,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4"
 dependencies = [
  "cfg-if",
- "cpufeatures 0.3.0",
+ "cpufeatures 0.3.1",
  "digest 0.11.3",
 ]
 
@@ -9437,7 +9468,7 @@ dependencies = [
  "futures-util",
  "hashbrown 0.16.1",
  "hashlink",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "log",
  "memchr",
  "percent-encoding",
@@ -9707,9 +9738,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "3.0.3"
+version = "3.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53e9bae58849f64dfa4f5d5ae372c8341f7305f82a3868709269343628b659a3"
+checksum = "e6275cddf4610d1775e6d1fe9469b2e77d0f39fd98fb7450901b821e0c53649f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -9718,9 +9749,9 @@ dependencies = [
 
 [[package]]
 name = "syn-solidity"
-version = "1.6.1"
+version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "083be3061e64d362cbe6ef12cfe1307ba3884326d8856448fe8a120fa2c44ebf"
+checksum = "e452eb8cb83fc8b81597eb07c8d39f770d04905af9c5bffce8bea7213df29960"
 dependencies = [
  "paste",
  "proc-macro2",
@@ -9794,7 +9825,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -9888,7 +9919,7 @@ checksum = "bc04cd3e1236dd4a98afca4569f2deb3f120e5422a4023be2cb683f8486292af"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -10027,7 +10058,7 @@ checksum = "78773a2a397f451582ce068015985c33193cf6dea8b74d2a639fe457b2f07b0e"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -10089,6 +10120,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "libc",
  "pin-project-lite",
  "tokio",
@@ -10100,7 +10132,7 @@ version = "0.9.12+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf92845e79fc2e2def6a5d828f0801e29a2f8acc037becc5ab08595c7d5e9863"
 dependencies = [
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "serde_core",
  "serde_spanned",
  "toml_datetime 0.7.5+spec-1.1.0",
@@ -10115,7 +10147,7 @@ version = "1.1.4+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3aace63f4bbcdfc2c965b059de67119c89c4017a70d633be6c104910f67056f5"
 dependencies = [
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "serde_core",
  "serde_spanned",
  "toml_datetime 1.1.1+spec-1.1.0",
@@ -10148,7 +10180,7 @@ version = "0.25.13+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6975367e4d2ef766d86af01ffad14b622fecc8d4357a998fbc4deb6e9bacaf9b"
 dependencies = [
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "toml_datetime 1.1.1+spec-1.1.0",
  "toml_parser",
  "winnow 1.0.4",
@@ -10234,7 +10266,7 @@ checksum = "ebe5ef63511595f1344e2d5cfa636d973292adc0eec1f0ad45fae9f0851ab1d4"
 dependencies = [
  "futures-core",
  "futures-util",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "pin-project-lite",
  "slab",
  "sync_wrapper",
@@ -10384,7 +10416,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0061c28f1469e94771bb8aa626ce6b29265c2fb5034115046a170b0cba2e33d2"
 dependencies = [
  "bytes",
- "indexmap 2.14.0",
+ "indexmap 2.14.1",
  "rand 0.9.5",
  "rand_distr",
  "scoped-tls",
@@ -10394,9 +10426,9 @@ dependencies = [
 
 [[package]]
 name = "twox-hash"
-version = "2.1.3"
+version = "2.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8464ec13c3691491391d9fce00f6416c9a48e46972f72d7865688be2080192c9"
+checksum = "5283634e518fe9e82c7b20520bb4bc209009fd16c82077c802f8111ecbb0117a"
 
 [[package]]
 name = "typenum"
@@ -10434,7 +10466,7 @@ version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fac967d0ba617b6fd7f558750a2924a7086998ae52524b75aba74a719c11264"
 dependencies = [
- "rand 0.8.7",
+ "rand 0.8.8",
 ]
 
 [[package]]
@@ -10553,7 +10585,7 @@ dependencies = [
  "getopts",
  "log",
  "phf_codegen",
- "rand 0.8.7",
+ "rand 0.8.8",
 ]
 
 [[package]]
@@ -10614,9 +10646,9 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "uuid"
-version = "1.24.1"
+version = "1.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2cefc03fd367c0c6d4305de1b312cf00248c4114f4a0418ce6a6af769e3b0bd9"
+checksum = "b5772d71c9be8a8a6ac2117d949c5b224c1b72241bb611d9a3012edcf8af7812"
 dependencies = [
  "getrandom 0.4.3",
  "js-sys",
@@ -10854,7 +10886,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -11251,7 +11283,7 @@ checksum = "34df6fc39dbd26ddc9c10e6a2984476e13acce22e64e4487636ef494369225da"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 3.0.3",
+ "syn 3.0.4",
 ]
 
 [[package]]

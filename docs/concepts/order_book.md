@@ -114,7 +114,7 @@ This is an explicit check: applying a delta does not call it. The Rust `apply_de
 `apply_deltas` methods separately validate the incoming instrument ID against the book and return
 `BookIntegrityError::InstrumentMismatch` on mismatch.
 
-For a nonzero order ID, a delta with `NoOrderSide` first tries to resolve the side from the ladder
+For a nonzero order ID, a delta whose side is `None` first tries to resolve the side from the ladder
 cache. If no side is cached, an `Add` returns `BookIntegrityError::NoOrderSide`, while an `Update`
 or `Delete` is skipped. If the ID exists on both sides, an `Add` returns
 `BookIntegrityError::AmbiguousOrderSide`, while an `Update` or `Delete` is skipped with a warning.

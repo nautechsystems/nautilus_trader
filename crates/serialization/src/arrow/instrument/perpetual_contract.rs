@@ -33,12 +33,10 @@ use nautilus_model::{
     instruments::perpetual_contract::PerpetualContract,
     types::{money::Money, price::Price, quantity::Quantity},
 };
-#[allow(unused)]
 use rust_decimal::Decimal;
-#[allow(unused)]
-use serde_json::Value;
 use ustr::Ustr;
 
+use super::KEY_CLASS;
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
     KEY_PRICE_PRECISION, extract_column, extract_column_by_name_or_index,
@@ -79,7 +77,7 @@ impl ArrowSchemaProvider for PerpetualContract {
         ];
 
         let mut final_metadata = HashMap::new();
-        final_metadata.insert("class".to_string(), "PerpetualContract".to_string());
+        final_metadata.insert(KEY_CLASS.to_string(), "PerpetualContract".to_string());
 
         if let Some(meta) = metadata {
             final_metadata.extend(meta);
@@ -213,7 +211,7 @@ impl EncodeToRecordBatch for PerpetualContract {
         }
 
         let mut final_metadata = metadata.clone();
-        final_metadata.insert("class".to_string(), "PerpetualContract".to_string());
+        final_metadata.insert(KEY_CLASS.to_string(), "PerpetualContract".to_string());
 
         RecordBatch::try_new(
             Self::get_schema(Some(final_metadata)).into(),
@@ -261,12 +259,15 @@ impl EncodeToRecordBatch for PerpetualContract {
     }
 }
 
-/// Helper function to decode PerpetualContract from RecordBatch
-/// (Cannot implement DecodeFromRecordBatch trait due to `Into<Data>` bound)
+/// Decodes [`PerpetualContract`] instruments from a record batch.
+///
+/// Not a [`DecodeFromRecordBatch`] implementation because that trait requires `Into<Data>`.
 ///
 /// # Errors
 ///
-/// Returns an `EncodingError` if the RecordBatch cannot be decoded.
+/// Returns an `EncodingError` if the record batch cannot be decoded.
+///
+/// [`DecodeFromRecordBatch`]: crate::arrow::DecodeFromRecordBatch
 pub fn decode_perpetual_contract_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
     record_batch: &RecordBatch,
@@ -522,37 +523,37 @@ pub fn decode_perpetual_contract_batch(
 
         let tick_scheme = optional_ustr_value(tick_scheme_values, i);
 
-        let perp = PerpetualContract::new_checked(
-            id,
-            raw_symbol,
-            underlying,
-            asset_class,
-            base_currency,
-            quote_currency,
-            settlement_currency,
-            is_inverse,
-            price_prec,
-            size_prec,
-            price_increment,
-            size_increment,
-            Some(multiplier),
-            Some(lot_size),
-            max_quantity,
-            min_quantity,
-            max_notional,
-            min_notional,
-            max_price,
-            min_price,
-            Some(margin_init),
-            Some(margin_maint),
-            Some(maker_fee),
-            Some(taker_fee),
-            tick_scheme,
-            info,
-            ts_event,
-            ts_init,
-        )
-        .map_err(|e| super::instrument_validation_error::<PerpetualContract>(i, e))?;
+        let perp = PerpetualContract::builder()
+            .instrument_id(id)
+            .raw_symbol(raw_symbol)
+            .underlying(underlying)
+            .asset_class(asset_class)
+            .maybe_base_currency(base_currency)
+            .quote_currency(quote_currency)
+            .settlement_currency(settlement_currency)
+            .is_inverse(is_inverse)
+            .price_precision(price_prec)
+            .size_precision(size_prec)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .multiplier(multiplier)
+            .lot_size(lot_size)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_max_notional(max_notional)
+            .maybe_min_notional(min_notional)
+            .maybe_max_price(max_price)
+            .maybe_min_price(min_price)
+            .margin_init(margin_init)
+            .margin_maint(margin_maint)
+            .maker_fee(maker_fee)
+            .taker_fee(taker_fee)
+            .maybe_tick_scheme(tick_scheme)
+            .maybe_info(info)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .map_err(|e| super::instrument_validation_error::<PerpetualContract>(i, e))?;
 
         result.push(perp);
     }

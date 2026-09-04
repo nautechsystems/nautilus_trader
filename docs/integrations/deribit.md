@@ -17,7 +17,7 @@ Components:
 
 - `DeribitRawHttpClient`: Low-level HTTP client owning JSON-RPC framing, signing, rate limits, and retries.
 - `DeribitHttpClient`: Domain HTTP client parsing venue responses into Nautilus types; reach the raw client with `inner()`.
-- `DeribitWebSocketClient`: Low-level WebSocket connectivity (JSON-RPC over WebSocket).
+- `DeribitWebSocketClient`: Low-level WebSocket connectivity for Rust callers.
 - `DeribitDataClient`: Market data feed manager.
 - `DeribitDataClientFactory`: Data client factory.
 - `DeribitExecutionClient`: Account management and trade execution gateway.
@@ -27,8 +27,8 @@ Python surface available from `nautilus_trader.adapters.deribit`:
 
 - `DeribitDataClientConfig`, `DeribitExecutionClientConfig`
 - `DeribitDataClientFactory`, `DeribitExecutionClientFactory`
-- `DeribitHttpClient`, `DeribitWebSocketClient`
-- `DeribitCurrency`, `DeribitEnvironment`, `DeribitProductType`, `DeribitUpdateInterval`
+- `DeribitHttpClient`
+- `DeribitCurrency`, `DeribitEnvironment`, `DeribitProductType`
 - `DeribitBookSummary`, `DeribitVolatilityIndex`
 - `get_deribit_http_base_url`, `get_deribit_ws_url`
 - `DERIBIT`, `DERIBIT_CLIENT_ID`, and `DERIBIT_VENUE`

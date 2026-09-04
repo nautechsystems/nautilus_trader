@@ -25,8 +25,9 @@ mod runtime;
 mod subscriptions;
 
 use std::{
+    future::Future,
     sync::{
-        Arc, Mutex as StdMutex,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -37,7 +38,7 @@ use dashmap::DashMap;
 use nautilus_common::{
     cache::InstrumentLookupError,
     clients::DataClient,
-    live::{get_runtime, runner::get_data_event_sender},
+    live::runner::get_data_event_sender,
     messages::{
         DataEvent,
         data::{
@@ -54,7 +55,10 @@ use nautilus_core::{
     AtomicMap, AtomicSet,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{SocketControl, SocketControlFactory};
+use nautilus_live::{
+    SocketControl, SocketControlFactory,
+    task::{TaskGroup, TaskSpawner},
+};
 use nautilus_model::{
     data::QuoteTick,
     enums::BookType,
@@ -64,12 +68,12 @@ use nautilus_model::{
     orderbook::OrderBook,
 };
 use nautilus_network::websocket::proxy::ProxyUrl;
-use tokio::task::JoinHandle;
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use self::{
-    instruments::TokenMeta,
+    instruments::{InstrumentUpdateState, TokenMeta},
     requests::{
         request_book_snapshot, request_data, request_instrument, request_instruments,
         request_trades,
@@ -117,9 +121,10 @@ pub struct PolymarketDataClient {
     ws_client: PolymarketMarketConnectionPool,
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
-    tasks: Vec<JoinHandle<()>>,
+    tasks: TaskGroup,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    instrument_update_state: Arc<Mutex<InstrumentUpdateState>>,
     token_meta: Arc<DashMap<Ustr, TokenMeta>>,
     order_books: Arc<DashMap<InstrumentId, OrderBook>>,
     last_quotes: Arc<DashMap<InstrumentId, QuoteTick>>,
@@ -127,19 +132,21 @@ pub struct PolymarketDataClient {
     active_delta_subs: Arc<AtomicSet<InstrumentId>>,
     active_trade_subs: Arc<AtomicSet<InstrumentId>>,
     resolve_poll_watchlist: Arc<AtomicMap<String, ResolveWatchEntry>>,
-    resolve_watch_apply_mutex: Arc<StdMutex<()>>,
+    resolve_watch_apply_mutex: Arc<Mutex<()>>,
     pending_snapshot_after_tick_change: Arc<AtomicSet<InstrumentId>>,
     new_market_inflight_keys: Arc<DashMap<String, ()>>,
     new_market_fetch_semaphore: Arc<tokio::sync::Semaphore>,
     ws_open_tokens: Arc<AtomicSet<Ustr>>,
     ws_sub_mutex: Arc<tokio::sync::Mutex<()>>,
-    pending_auto_loads: Arc<StdMutex<AHashSet<InstrumentId>>>,
+    pending_auto_loads: Arc<Mutex<AHashSet<InstrumentId>>>,
     auto_load_scheduled: Arc<AtomicBool>,
-    closed_condition_ids: Arc<StdMutex<AHashSet<String>>>,
+    closed_condition_ids: Arc<Mutex<AHashSet<String>>>,
     position_event_handler: Option<TypedHandler<PositionEvent>>,
     rtds_feed: PolymarketRtdsFeed,
     rtds_socket_control: Option<SocketControl>,
     proxy_url: Option<ProxyUrl>,
+    reset_pending: bool,
+    shutdown_errors: Vec<String>,
 }
 
 impl PolymarketDataClient {
@@ -198,6 +205,8 @@ impl PolymarketDataClient {
         let rtds_url = config.rtds_url();
         let rtds_transport_backend = config.transport_backend;
         let rtds_data_sender = data_sender.clone();
+        let tasks = TaskGroup::new();
+        let cancellation_token = tasks.cancellation_token();
 
         Self {
             clock,
@@ -208,10 +217,11 @@ impl PolymarketDataClient {
             data_api_client,
             ws_client,
             is_connected: AtomicBool::new(false),
-            cancellation_token: CancellationToken::new(),
-            tasks: Vec::new(),
+            cancellation_token,
+            tasks,
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
+            instrument_update_state: Arc::new(Mutex::new(InstrumentUpdateState::default())),
             token_meta: Arc::new(DashMap::new()),
             order_books: Arc::new(DashMap::new()),
             last_quotes: Arc::new(DashMap::new()),
@@ -219,7 +229,7 @@ impl PolymarketDataClient {
             active_delta_subs: Arc::new(AtomicSet::new()),
             active_trade_subs: Arc::new(AtomicSet::new()),
             resolve_poll_watchlist: Arc::new(AtomicMap::new()),
-            resolve_watch_apply_mutex: Arc::new(StdMutex::new(())),
+            resolve_watch_apply_mutex: Arc::new(Mutex::new(())),
             pending_snapshot_after_tick_change: Arc::new(AtomicSet::new()),
             new_market_inflight_keys: Arc::new(DashMap::new()),
             new_market_fetch_semaphore: Arc::new(tokio::sync::Semaphore::new(
@@ -227,9 +237,9 @@ impl PolymarketDataClient {
             )),
             ws_open_tokens: Arc::new(AtomicSet::new()),
             ws_sub_mutex: Arc::new(tokio::sync::Mutex::new(())),
-            pending_auto_loads: Arc::new(StdMutex::new(AHashSet::new())),
+            pending_auto_loads: Arc::new(Mutex::new(AHashSet::new())),
             auto_load_scheduled: Arc::new(AtomicBool::new(false)),
-            closed_condition_ids: Arc::new(StdMutex::new(AHashSet::new())),
+            closed_condition_ids: Arc::new(Mutex::new(AHashSet::new())),
             position_event_handler: None,
             rtds_feed: PolymarketRtdsFeed::new_with_proxy_and_socket_control(
                 rtds_url,
@@ -241,6 +251,8 @@ impl PolymarketDataClient {
             ),
             rtds_socket_control,
             proxy_url,
+            reset_pending: false,
+            shutdown_errors: Vec::new(),
         }
     }
 
@@ -361,10 +373,7 @@ impl PolymarketDataClient {
             initialize_state();
             return true;
         };
-        let closed = self
-            .closed_condition_ids
-            .lock()
-            .expect("closed_condition_ids mutex poisoned");
+        let closed = self.closed_condition_ids.lock();
 
         if closed.contains(&condition_id) {
             log::debug!(
@@ -395,7 +404,7 @@ impl PolymarketDataClient {
         let ws_sub_mutex = self.ws_sub_mutex.clone();
         let ws = self.ws_client.handle();
 
-        get_runtime().spawn(sync_ws_subscription_with_terminal_async(
+        if let Err(e) = self.tasks.spawn(sync_ws_subscription_with_terminal_async(
             instrument_id,
             token_id_str,
             active_quote_subs,
@@ -405,7 +414,9 @@ impl PolymarketDataClient {
             ws_open_tokens,
             ws_sub_mutex,
             ws,
-        ));
+        )) {
+            log::debug!("Skipping Polymarket data task after shutdown began: {e}");
+        }
     }
 }
 
@@ -682,5 +693,14 @@ impl DataClient for PolymarketDataClient {
             .request_reconcile(crate::rtds::ReconcileReason::DesiredChanged);
 
         Ok(())
+    }
+}
+
+pub(super) fn spawn_task<F>(tasks: &TaskSpawner, future: F)
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    if let Err(e) = tasks.spawn(future) {
+        log::debug!("Skipping Polymarket data task after shutdown began: {e}");
     }
 }

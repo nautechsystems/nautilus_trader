@@ -100,7 +100,7 @@ async fn test_handler_emits_l1_md_message() {
         Err(_) => panic!("Timeout waiting for L1 message"),
     }
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -142,7 +142,7 @@ async fn test_handler_emits_trade_md_message() {
     .expect("Timeout waiting for trade message");
 
     assert_eq!(trade.s.as_str(), "EURUSD-PERP");
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -180,7 +180,7 @@ async fn test_handler_emits_l2_md_message() {
         Err(_) => panic!("Timeout waiting for order book message"),
     }
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -221,7 +221,7 @@ async fn test_handler_emits_candle_md_message() {
 
     assert_eq!(candle.symbol.as_str(), "EURUSD-PERP");
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -263,7 +263,7 @@ async fn test_handler_forwards_raw_message_even_when_instrument_missing() {
         other => panic!("expected BookL1, was {other:?}"),
     }
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -545,7 +545,7 @@ async fn test_data_client_subscribe_book_deltas_via_channel() {
         assert!(!timeout.is_zero(), "Timeout waiting for book deltas event");
 
         match tokio::time::timeout(timeout, rx.recv()).await {
-            Ok(Some(DataEvent::Data(Data::Deltas(deltas)))) => {
+            Ok(Some(DataEvent::Data(Data::BookDeltas(deltas)))) => {
                 assert_eq!(deltas.instrument_id.symbol.as_str(), "EURUSD-PERP");
                 break;
             }

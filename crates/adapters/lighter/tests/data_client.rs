@@ -78,7 +78,7 @@ use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::{BarSpecification, BarType, Data, OrderBookDeltas},
     enums::{AggregationSource, BarAggregation, BookAction, BookType, PriceType, RecordFlag},
-    identifiers::{ClientId, InstrumentId},
+    identifiers::{ClientId, InstrumentId, Venue},
     instruments::Instrument,
     orderbook::{OrderBook, analysis::book_check_integrity},
     types::Price,
@@ -378,7 +378,7 @@ fn build_config(addr: SocketAddr) -> LighterDataClientConfig {
         base_url_ws: Some(format!("ws://{addr}/stream")),
         account_index: Some(12_345),
         api_key_index: Some(5),
-        private_key: Some(PRIVATE_KEY_HEX.to_string()),
+        private_key: Some(PRIVATE_KEY_HEX.into()),
         // Disable the periodic refresh loop; tests drive bootstrap directly
         // via `connect()` and request_instruments(). A nonzero interval would
         // leak a background task across the entire crate's test run.
@@ -530,11 +530,11 @@ async fn collect_managed_book_batches(
 
     await_subscribe_count(state, 1).await;
     let snapshot = next_event_matching(rx, Duration::from_secs(2), |event| {
-        matches!(event, DataEvent::Data(Data::Deltas(_)))
+        matches!(event, DataEvent::Data(Data::BookDeltas(_)))
     })
     .await
     .expect("expected snapshot deltas");
-    let DataEvent::Data(Data::Deltas(snapshot)) = snapshot else {
+    let DataEvent::Data(Data::BookDeltas(snapshot)) = snapshot else {
         unreachable!("event predicate requires deltas")
     };
 
@@ -553,11 +553,11 @@ async fn collect_managed_book_batches(
 
     await_subscribe_count(state, 2).await;
     let incremental = next_event_matching(rx, Duration::from_secs(2), |event| {
-        matches!(event, DataEvent::Data(Data::Deltas(_)))
+        matches!(event, DataEvent::Data(Data::BookDeltas(_)))
     })
     .await
     .expect("expected incremental deltas");
-    let DataEvent::Data(Data::Deltas(incremental)) = incremental else {
+    let DataEvent::Data(Data::BookDeltas(incremental)) = incremental else {
         unreachable!("event predicate requires deltas")
     };
 
@@ -770,13 +770,13 @@ async fn test_subscribe_book_deltas_emits_deltas() {
     assert_eq!(subs[0]["channel"], "order_book/0");
 
     let event = next_event_matching(&mut rx, Duration::from_secs(2), |e| {
-        matches!(e, DataEvent::Data(Data::Deltas(_)))
+        matches!(e, DataEvent::Data(Data::BookDeltas(_)))
     })
     .await
     .expect("expected Deltas event");
 
     match event {
-        DataEvent::Data(Data::Deltas(deltas)) => {
+        DataEvent::Data(Data::BookDeltas(deltas)) => {
             assert_eq!(deltas.instrument_id, instrument_id);
             assert!(!deltas.deltas.is_empty());
         }
@@ -922,13 +922,13 @@ async fn test_subscribe_book_depth10_emits_depth10_only() {
     assert_eq!(state.subscribes().await[0]["channel"], "order_book/0");
 
     let event = next_event_matching(&mut rx, Duration::from_secs(2), |e| {
-        matches!(e, DataEvent::Data(Data::Depth10(_)))
+        matches!(e, DataEvent::Data(Data::BookDepth10(_)))
     })
     .await
     .expect("expected Depth10 event");
 
     match event {
-        DataEvent::Data(Data::Depth10(depth)) => {
+        DataEvent::Data(Data::BookDepth10(depth)) => {
             assert_eq!(depth.instrument_id, instrument_id);
         }
         other => panic!("expected Depth10 event, was {other:?}"),
@@ -1468,13 +1468,13 @@ async fn test_book_deltas_and_depth10_share_order_book_stream() {
     await_subscribe_count(&state, 1).await;
 
     let event = next_event_matching(&mut rx, Duration::from_secs(2), |e| {
-        matches!(e, DataEvent::Data(Data::Deltas(_)))
+        matches!(e, DataEvent::Data(Data::BookDeltas(_)))
     })
     .await
     .expect("expected initial Deltas event");
 
     match event {
-        DataEvent::Data(Data::Deltas(deltas)) => {
+        DataEvent::Data(Data::BookDeltas(deltas)) => {
             assert_eq!(deltas.instrument_id, instrument_id);
         }
         other => panic!("expected Deltas event, was {other:?}"),
@@ -1505,13 +1505,13 @@ async fn test_book_deltas_and_depth10_share_order_book_stream() {
     assert_eq!(subs[0]["channel"], "order_book/0");
 
     let event = next_event_matching(&mut rx, Duration::from_secs(2), |e| {
-        matches!(e, DataEvent::Data(Data::Depth10(_)))
+        matches!(e, DataEvent::Data(Data::BookDepth10(_)))
     })
     .await
     .expect("expected cached Depth10 event");
 
     match event {
-        DataEvent::Data(Data::Depth10(depth)) => {
+        DataEvent::Data(Data::BookDepth10(depth)) => {
             assert_eq!(depth.instrument_id, instrument_id);
         }
         other => panic!("expected Depth10 event, was {other:?}"),
@@ -1519,7 +1519,7 @@ async fn test_book_deltas_and_depth10_share_order_book_stream() {
 
     let next = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await;
     assert!(
-        !matches!(next, Ok(Some(DataEvent::Data(Data::Deltas(_))))),
+        !matches!(next, Ok(Some(DataEvent::Data(Data::BookDeltas(_))))),
         "late depth10 subscriber must not re-emit deltas",
     );
 
@@ -1590,13 +1590,13 @@ async fn test_book_depth10_and_deltas_share_order_book_stream() {
     await_subscribe_count(&state, 1).await;
 
     let event = next_event_matching(&mut rx, Duration::from_secs(2), |e| {
-        matches!(e, DataEvent::Data(Data::Depth10(_)))
+        matches!(e, DataEvent::Data(Data::BookDepth10(_)))
     })
     .await
     .expect("expected initial Depth10 event");
 
     match event {
-        DataEvent::Data(Data::Depth10(depth)) => {
+        DataEvent::Data(Data::BookDepth10(depth)) => {
             assert_eq!(depth.instrument_id, instrument_id);
         }
         other => panic!("expected Depth10 event, was {other:?}"),
@@ -1627,13 +1627,13 @@ async fn test_book_depth10_and_deltas_share_order_book_stream() {
     assert_eq!(subs[0]["channel"], "order_book/0");
 
     let event = next_event_matching(&mut rx, Duration::from_secs(2), |e| {
-        matches!(e, DataEvent::Data(Data::Deltas(_)))
+        matches!(e, DataEvent::Data(Data::BookDeltas(_)))
     })
     .await
     .expect("expected cached Deltas event");
 
     match event {
-        DataEvent::Data(Data::Deltas(deltas)) => {
+        DataEvent::Data(Data::BookDeltas(deltas)) => {
             assert_eq!(deltas.instrument_id, instrument_id);
         }
         other => panic!("expected Deltas event, was {other:?}"),
@@ -1641,7 +1641,7 @@ async fn test_book_depth10_and_deltas_share_order_book_stream() {
 
     let next = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await;
     assert!(
-        !matches!(next, Ok(Some(DataEvent::Data(Data::Depth10(_))))),
+        !matches!(next, Ok(Some(DataEvent::Data(Data::BookDepth10(_))))),
         "late deltas subscriber must not re-emit depth10",
     );
 
@@ -2070,6 +2070,32 @@ async fn test_unsubscribe_bars_is_noop_for_unsupported_resolution() {
             None,
         ))
         .expect("unsubscribe_bars must not error on unsupported resolution");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_socket_state_events_use_configured_venue() {
+    let (addr, state) = start_server().await;
+    let venue = Venue::new("LIGHTER_CUSTOM");
+    let mut config = build_config(addr);
+    config.venue = Some(venue);
+    let (mut client, _rx, mut system_rx) = build_client_with_system_events(config);
+
+    client.connect().await.expect("connect");
+    await_connection_count(&state, 1).await;
+
+    let change = next_socket_state(&mut system_rx).await;
+    let endpoint = Ustr::from("lighter-data-streams");
+
+    assert_eq!(DataClient::client_id(&client), client_id());
+    assert_eq!(DataClient::venue(&client), Some(venue));
+    assert_eq!(change.client_id, client_id());
+    assert_eq!(change.venue, Some(venue));
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Connected);
+
+    client.disconnect().await.expect("disconnect");
+    await_connection_count(&state, 0).await;
 }
 
 #[rstest]

@@ -21,6 +21,7 @@
 use nautilus_core::UnixNanos;
 use nautilus_model::types::Price;
 use nautilus_persistence_macros::custom_data;
+use rust_decimal::Decimal;
 
 /// Polymarket RTDS crypto price sample from the `crypto_prices` topic.
 ///
@@ -38,6 +39,36 @@ pub struct PolymarketRtdsCryptoPrice {
     /// RTDS envelope timestamp in Unix milliseconds.
     pub message_timestamp_ms: u64,
     /// UNIX timestamp (nanoseconds) when the price event occurred.
+    pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the instance was initialized.
+    pub ts_init: UnixNanos,
+}
+
+/// Chainlink-computed crypto TWAP sample relayed by Polymarket RTDS.
+///
+/// The adapter derives `value` only from the exact signed E18 provider field.
+/// The numeric display field in the RTDS payload is never authoritative.
+///
+/// RTDS provides only live `update` frames for this type. Subscriptions begin with the next update
+/// and have no snapshot, history, or replay after reconnect.
+///
+/// The adapter suppresses older observations and exact same-timestamp redeliveries. A changed
+/// value at the same observation timestamp is reported as a protocol error and is not emitted.
+/// The previous observation remains authoritative, so emission resumes only at a newer timestamp.
+#[custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.adapters.polymarket")]
+pub struct PolymarketRtdsCryptoTwap {
+    /// Lowercase slash-delimited venue symbol, e.g. `btc/usd`.
+    pub symbol: String,
+    /// Provider TWAP lookback window in seconds (`30` or `60`).
+    pub window_seconds: u32,
+    /// Exact Chainlink-computed TWAP decoded from its signed E18 integer.
+    #[custom_data_field(serde)]
+    pub value: Decimal,
+    /// Chainlink observation timestamp in Unix milliseconds.
+    pub observation_timestamp_ms: u64,
+    /// RTDS publisher timestamp in Unix milliseconds.
+    pub message_timestamp_ms: u64,
+    /// UNIX timestamp (nanoseconds) when the Chainlink observation occurred.
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the instance was initialized.
     pub ts_init: UnixNanos,
@@ -77,18 +108,62 @@ pub struct PolymarketRtdsEquityPrice {
 /// Safe to call multiple times (idempotent via internal `Once` guards).
 pub fn register_polymarket_custom_data() {
     let _ = nautilus_model::data::ensure_custom_data_json_registered::<PolymarketRtdsCryptoPrice>();
+    let _ = nautilus_model::data::ensure_custom_data_json_registered::<PolymarketRtdsCryptoTwap>();
     let _ = nautilus_model::data::ensure_custom_data_json_registered::<PolymarketRtdsEquityPrice>();
 }
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::UnixNanos;
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
-    use super::register_polymarket_custom_data;
+    use super::{PolymarketRtdsCryptoTwap, register_polymarket_custom_data};
 
     #[rstest]
     fn test_register_polymarket_custom_data_is_idempotent() {
         register_polymarket_custom_data();
         register_polymarket_custom_data();
+    }
+
+    #[rstest]
+    fn test_crypto_twap_json_round_trip_preserves_exact_decimal() {
+        let value = PolymarketRtdsCryptoTwap::new(
+            "btc/usd".to_string(),
+            60,
+            dec!(64997.810000000000000001),
+            1786179814000,
+            1786179814147,
+            UnixNanos::from_millis(1786179814000),
+            UnixNanos::from_millis(1786179814148),
+        );
+
+        let encoded = serde_json::to_string(&value).expect("serialize exact TWAP value");
+        let decoded: PolymarketRtdsCryptoTwap =
+            serde_json::from_str(&encoded).expect("deserialize exact TWAP value");
+
+        let adjacent = PolymarketRtdsCryptoTwap::new(
+            "btc/usd".to_string(),
+            60,
+            dec!(64997.810000000000000002),
+            1786179814000,
+            1786179814147,
+            UnixNanos::from_millis(1786179814000),
+            UnixNanos::from_millis(1786179814148),
+        );
+        let adjacent_encoded =
+            serde_json::to_string(&adjacent).expect("serialize adjacent exact TWAP value");
+
+        assert_eq!(decoded, value);
+        assert_eq!(decoded.value, dec!(64997.810000000000000001));
+        assert!(
+            encoded.contains("\"value\":\"64997.810000000000000001\""),
+            "encoded TWAP value was {encoded}"
+        );
+        assert!(
+            adjacent_encoded.contains("\"value\":\"64997.810000000000000002\""),
+            "encoded adjacent TWAP value was {adjacent_encoded}"
+        );
+        assert_ne!(encoded, adjacent_encoded);
     }
 }

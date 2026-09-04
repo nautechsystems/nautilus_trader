@@ -19,7 +19,7 @@ use std::{
     net::SocketAddr,
     path::PathBuf,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
@@ -44,6 +44,7 @@ use nautilus_polymarket::{
         pool::PolymarketMarketConnectionPool,
     },
 };
+use parking_lot::Mutex;
 use rstest::rstest;
 use serde_json::{Value, json};
 
@@ -92,7 +93,12 @@ fn load_json(filename: &str) -> Value {
 }
 
 fn test_credential() -> Credential {
-    Credential::new("test_api_key", TEST_API_SECRET_B64, "test_pass".to_string()).unwrap()
+    Credential::new(
+        "test_api_key".into(),
+        TEST_API_SECRET_B64.into(),
+        "test_pass".into(),
+    )
+    .unwrap()
 }
 
 async fn handle_market_upgrade(
@@ -332,6 +338,8 @@ async fn test_market_heartbeat_uses_control_frames_before_initial_subscription()
     assert_eq!(state.ping_count.load(Ordering::Relaxed), 1);
     assert!(state.received_market_texts.lock().await.is_empty());
 
+    // The handler runs on the global live runtime, so use real time for its shutdown deadlines
+    tokio::time::resume();
     client.disconnect().await.expect("disconnect failed");
 }
 
@@ -839,7 +847,7 @@ async fn test_reconnect_resubscribes_all_market_assets() {
     let socket_states = Arc::new(Mutex::new(Vec::new()));
     let socket_states_callback = Arc::clone(&socket_states);
     let sink = SocketStateSink::new(move |state| {
-        socket_states_callback.lock().unwrap().push(state);
+        socket_states_callback.lock().push(state);
     });
 
     let mut client =
@@ -908,12 +916,12 @@ async fn test_reconnect_resubscribes_all_market_assets() {
         "reconnect should replay an exact initial market subscribe payload"
     );
     wait_until_async(
-        || async { socket_states.lock().unwrap().len() == 3 },
+        || async { socket_states.lock().len() == 3 },
         Duration::from_secs(5),
     )
     .await;
     assert_eq!(
-        *socket_states.lock().unwrap(),
+        *socket_states.lock(),
         vec![
             SocketState::Connected,
             SocketState::Disconnected,
@@ -922,7 +930,7 @@ async fn test_reconnect_resubscribes_all_market_assets() {
     );
 
     client.disconnect().await.expect("disconnect failed");
-    assert_eq!(socket_states.lock().unwrap().len(), 3);
+    assert_eq!(socket_states.lock().len(), 3);
 }
 
 #[rstest]

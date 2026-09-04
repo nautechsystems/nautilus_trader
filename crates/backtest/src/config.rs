@@ -42,6 +42,8 @@ use nautilus_model::{
     identifiers::{ClientId, InstrumentId, TraderId, Venue},
     types::{Currency, Money},
 };
+#[cfg(feature = "streaming")]
+use nautilus_persistence::config::DataCatalogConfig;
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
 use nautilus_system::config::{NautilusKernelConfig, StreamingConfig};
@@ -49,7 +51,7 @@ use nautilus_trading::ImportableControllerConfig;
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
-use crate::modules::{SimulationModule, SimulationModuleAny};
+use crate::modules::{SimulationModuleAny, SimulationModuleHandle};
 
 /// Represents a type of market data for catalog queries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -169,6 +171,10 @@ pub struct BacktestEngineConfig {
     pub controller: Option<ImportableControllerConfig>,
     /// The configuration for streaming to feather files.
     pub streaming: Option<StreamingConfig>,
+    /// Configurations for existing data catalogs.
+    #[cfg(feature = "streaming")]
+    #[builder(default)]
+    pub catalogs: Vec<DataCatalogConfig>,
     /// If logging should be bypassed.
     #[builder(default)]
     pub bypass_logging: bool,
@@ -257,6 +263,11 @@ impl NautilusKernelConfig for BacktestEngineConfig {
     fn streaming(&self) -> Option<StreamingConfig> {
         self.streaming.clone()
     }
+
+    #[cfg(feature = "streaming")]
+    fn catalogs(&self) -> Vec<DataCatalogConfig> {
+        self.catalogs.clone()
+    }
 }
 
 impl Default for BacktestEngineConfig {
@@ -270,7 +281,7 @@ impl Default for BacktestEngineConfig {
 ///
 /// Constructed via [`bon::Builder`] so callers only specify what differs from
 /// the documented defaults. Field types mirror the internal
-/// `SimulatedExchange` shapes (trait objects for modules, runtime model handles,
+/// `SimulatedExchange` shapes (runtime handles for modules and models,
 /// and typed `Money` balances), which is why this is distinct from the
 /// YAML-friendly [`BacktestVenueConfig`] used by `BacktestNode`.
 #[allow(missing_debug_implementations)]
@@ -294,7 +305,7 @@ pub struct SimulatedVenueConfig {
     pub leverages: AHashMap<InstrumentId, Decimal>,
     pub margin_model: Option<MarginModelHandle>,
     #[builder(default)]
-    pub modules: Vec<Box<dyn SimulationModule>>,
+    pub modules: Vec<SimulationModuleHandle>,
     #[builder(default)]
     pub fill_model: FillModelHandle,
     #[builder(default)]
@@ -462,7 +473,8 @@ pub struct BacktestVenueConfig {
     /// Trade IDs are always deterministic and not affected by this flag.
     #[builder(default)]
     use_random_ids: bool,
-    /// If the `reduce_only` execution instruction on orders will be honored.
+    /// If the `reduce_only` execution instruction on orders will be enforced.
+    /// If false, reduce-only orders are rejected.
     #[builder(default = true)]
     use_reduce_only: bool,
     /// If bars should be processed by the matching engine(s) (and move the market).

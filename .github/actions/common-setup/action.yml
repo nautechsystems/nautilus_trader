@@ -190,7 +190,7 @@ runs:
     - name: Install cargo-nextest
       if: inputs.build-type != 'pre-commit' && runner.os != 'macOS'
       # https://github.com/taiki-e/install-action
-      uses: taiki-e/install-action@6c6fd71fe4fb72c3697d269963d0e15df8adedad # v2.85.10
+      uses: taiki-e/install-action@37f7c5781271959fb65b6b35224e28652ff2b63d # v2.87.0
       with:
         tool: cargo-nextest@${{ steps.nextest-version.outputs.version }}
 
@@ -250,7 +250,7 @@ runs:
 
     # > --------------------------------------------------
     # > UV
-    - name: Get uv version from pyproject.toml
+    - name: Get uv version
       id: uv-version
       shell: bash
       run: |
@@ -258,7 +258,7 @@ runs:
 
     - name: Install uv
       # https://github.com/astral-sh/setup-uv
-      uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       with:
         version: ${{ steps.uv-version.outputs.version }}
         enable-cache: >-
@@ -273,7 +273,9 @@ runs:
       if: inputs.build-type == 'pre-commit'
       shell: bash
       run: >-
-        VIRTUAL_ENV="" uv sync
+        VIRTUAL_ENV=""
+        UV_PROJECT_ENVIRONMENT="$(bash "$GITHUB_WORKSPACE/scripts/uv-project-environment.bash")"
+        uv sync
         --project python
         --group dev
         --extra visualization

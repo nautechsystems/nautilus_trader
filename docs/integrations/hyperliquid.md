@@ -13,7 +13,7 @@ with Hyperliquid's REST and WebSocket APIs without requiring external client lib
 The Hyperliquid adapter includes multiple components:
 
 - `HyperliquidHttpClient`: HTTP API connectivity, instrument loading and parsing, and reconciliation reports.
-- `HyperliquidWebSocketClient`: WebSocket API connectivity for market data, user streams, and post trading requests.
+- `HyperliquidWebSocketClient`: WebSocket API connectivity for Rust callers.
 - `HyperliquidDataClient`: Market data feed manager.
 - `HyperliquidExecutionClient`: Account management and trade execution gateway.
 - `HyperliquidDataClientFactory`: Factory for Hyperliquid data clients (used by the live node builder).
@@ -215,10 +215,23 @@ To subscribe in your strategy:
 InstrumentId.from_str("PURR-USDC-SPOT.HYPERLIQUID")
 ```
 
+Spot instruments loaded from `spotMeta` preserve venue metadata in `CurrencyPair.info`:
+
+| Field         | Value                                           |
+| ------------- | ----------------------------------------------- |
+| `name`        | Raw venue pair label                            |
+| `tokens`      | Base and quote indexes into `spotMeta.tokens`   |
+| `index`       | Pair index before the `10000` spot asset offset |
+| `isCanonical` | Venue canonical classification                  |
+
+Read `info.get("isCanonical")` in Python or `Params.get_bool("isCanonical")` in Rust to inspect
+the venue's canonical classification.
+
 :::note
 Spot instruments may include vault tokens (prefixed with `vntls:`). Hyperliquid does not list
 these in `spotMeta`, so the HTTP client synthesizes a `{coin}-USDC-SPOT` instrument on first
-sight to keep balances and fills resolvable.
+sight to keep balances and fills resolvable. These synthetic instruments carry no venue metadata:
+`info` is `None` in Rust and an empty dict in Python.
 :::
 
 ### Perpetual futures
@@ -331,18 +344,24 @@ instruments = await client.load_instrument_definitions(
 
 ### Open-order and position reconciliation
 
-Open-order and position reconciliation covers standard perpetuals and every HIP-3 dex represented by
-the execution client's cached perpetual instruments, without separate reconciliation configuration.
-A `LiveNode` initializes this cache from the instrument universe when the execution client connects.
-Direct `HyperliquidHttpClient` callers get the same coverage for the instruments they add with
-`cache_instrument()`.
+#### Startup mass status
 
-An unfiltered request queries the default perp dex and each cached builder dex, then combines their
-reports; position reconciliation also includes spot holdings. For perpetual filters, a request
-filtered to a HIP-3 instrument derives the builder dex from the symbol's dex prefix and queries only
-that dex. A standard perpetual filter queries only the default dex. Spot and outcome position filters
-keep their existing spot-only routing. If any required request fails, reconciliation returns an error
-rather than a partial snapshot.
+At `LiveNode` startup, unfiltered open-order and position reconciliation queries the default perp dex
+and each unique HIP-3 dex named by the wallet's recent historical orders or fills. Cached dexes
+without wallet activity do not generate startup requests. If either history response reaches its
+2,000-record limit, reconciliation instead queries every dex returned by the venue's current perp
+dex list so bounded history cannot hide older open orders or positions. Position reconciliation also
+includes spot holdings.
+
+#### Command and direct requests
+
+Outside startup mass status, unfiltered `LiveNode` open-order and position report commands and direct
+`HyperliquidHttpClient` requests query the default perp dex and each builder dex represented by the
+cached perpetual instruments. For perpetual filters, a request filtered to a HIP-3 instrument derives
+the builder dex from the symbol's dex prefix and queries only that dex. A standard perpetual filter
+queries only the default dex. Spot and outcome position filters keep their existing spot-only
+routing. If any required request fails, reconciliation returns an error rather than a partial
+snapshot.
 
 ### Differences from standard perpetuals
 
@@ -395,10 +414,8 @@ use the sanitized form. Symbols without `*` or `?` are passed through
 unchanged.
 
 The substitution is lossy: two distinct venue names such as `dex:FOO*` and
-`dex:FOO?` would normalize onto the same Nautilus symbol. The instrument
-loader detects collisions, keeps the first definition, and logs a warning
-with the dropped venue name; the dropped instrument will not be tradeable
-through Nautilus until the venue rename resolves the collision.
+`dex:FOO?` would normalize onto the same Nautilus symbol. Such collisions use
+the first-write-wins behavior described in [Instrument loading](#instrument-loading).
 
 ## HIP-4 outcome markets
 
@@ -515,7 +532,7 @@ await client.submit_split_outcome(50, Decimal("1.0"))
 # Burn a matched Yes + No pair back to USDH (amount=None merges the max)
 await client.submit_merge_outcome(50, None)
 
-# Multi-outcome priceBucket helpers
+# Multi-outcome priceBucket operations
 await client.submit_merge_question(9, None)
 await client.submit_negate_outcome(9, 52, Decimal("1.0"))
 ```
@@ -588,6 +605,11 @@ The data client loads the full Hyperliquid universe once at connect. One pass co
 markets, standard perpetuals, every HIP-3 builder-deployed perp dex, and HIP-4 outcome side
 tokens; the client config exposes no per-product or per-symbol filter. Strategies select the
 instruments they trade through their own `instrument_id` configuration.
+
+The loader includes every pair in `spotMeta.universe`, including non-canonical pairs. When several
+pairs share a base token, it caches the canonical pair first so balances and fills that identify the
+asset by its base token resolve to the canonical Nautilus instrument. Any later definition whose
+Nautilus symbol collides with an earlier definition is dropped with a warning and cannot be traded.
 
 To pick up newly listed markets on the data side, issue a `RequestInstruments` or reconnect the
 data client; either refetches and recaches the whole universe. The execution client bootstraps

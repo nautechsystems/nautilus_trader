@@ -87,9 +87,9 @@ use nautilus_model::enums::CurrencyType;
 use nautilus_model::enums::{BookAction, OrderSide};
 use nautilus_model::{
     data::{
-        Bar, BarType, BookOrder, CustomData, DEPTH10_LEN, Data, DataType, FundingRateUpdate,
-        IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDelta,
-        OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, BarType, BookOrder, CustomData, DEPTH10_LEN, Data, DataRef, DataType,
+        FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate,
+        OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
         greeks::OptionGreekValues,
         option_chain::{OptionChainSlice, OptionGreeks, StrikeRange},
         stubs::{
@@ -176,7 +176,19 @@ fn data_client(
     DataClientAdapter::new(client_id, Some(venue), true, true, client)
 }
 
-// Test helper for registering a mock data client
+fn dispatch_data(data_engine: &mut DataEngine, data: Data, borrowed: bool) {
+    let count = data_engine.data_count();
+
+    if borrowed {
+        data_engine.process_data_ref(DataRef::from(&data));
+    } else {
+        data_engine.process_data(data);
+    }
+
+    assert_eq!(data_engine.data_count(), count + 1);
+}
+
+// Registers a mock data client for tests
 fn register_mock_client(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
@@ -1146,63 +1158,45 @@ fn test_unsubscribe_depth10_keeps_deltas_book_updater(
 }
 
 fn make_es_future(instrument_id: &str, symbol: &str) -> FuturesContract {
-    FuturesContract::new(
-        InstrumentId::from(instrument_id),
-        Symbol::from(symbol),
-        AssetClass::Index,
-        Some(Ustr::from("XCME")),
-        Ustr::from("ES"),
-        UnixNanos::default(),
-        UnixNanos::from(2_000_000_000_000_000_000u64),
-        Currency::USD(),
-        2,
-        Price::from("0.01"),
-        Quantity::from(1),
-        Quantity::from(1),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    FuturesContract::builder()
+        .instrument_id(InstrumentId::from(instrument_id))
+        .raw_symbol(Symbol::from(symbol))
+        .asset_class(AssetClass::Index)
+        .exchange(Ustr::from("XCME"))
+        .underlying(Ustr::from("ES"))
+        .activation_ns(UnixNanos::default())
+        .expiration_ns(UnixNanos::from(2_000_000_000_000_000_000u64))
+        .currency(Currency::USD())
+        .price_precision(2)
+        .price_increment(Price::from("0.01"))
+        .multiplier(Quantity::from(1))
+        .lot_size(Quantity::from(1))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 fn make_es_option(instrument_id: &str, symbol: &str, kind: OptionKind) -> OptionContract {
-    OptionContract::new(
-        InstrumentId::from(instrument_id),
-        Symbol::from(symbol),
-        AssetClass::Index,
-        Some(Ustr::from("XCME")),
-        Ustr::from("ES"),
-        kind,
-        Price::from("4000.00"),
-        Currency::USD(),
-        UnixNanos::default(),
-        UnixNanos::from(2_000_000_000_000_000_000u64),
-        2,
-        Price::from("0.01"),
-        Quantity::from(1),
-        Quantity::from(1),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    OptionContract::builder()
+        .instrument_id(InstrumentId::from(instrument_id))
+        .raw_symbol(Symbol::from(symbol))
+        .asset_class(AssetClass::Index)
+        .exchange(Ustr::from("XCME"))
+        .underlying(Ustr::from("ES"))
+        .option_kind(kind)
+        .strike_price(Price::from("4000.00"))
+        .currency(Currency::USD())
+        .activation_ns(UnixNanos::default())
+        .expiration_ns(UnixNanos::from(2_000_000_000_000_000_000u64))
+        .price_precision(2)
+        .price_increment(Price::from("0.01"))
+        .multiplier(Quantity::from(1))
+        .lot_size(Quantity::from(1))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 #[rstest]
@@ -1224,7 +1218,7 @@ fn test_emit_quotes_from_book_depths_publishes_top_of_book(stub_msgbus: Rc<RefCe
     let quote_topic = switchboard::get_quotes_topic(instrument_id);
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
-    data_engine.process_data(Data::Depth10(Box::new(depth)));
+    data_engine.process_data(Data::BookDepth10(Box::new(depth)));
 
     let messages = saver.get_messages();
     assert_eq!(
@@ -1236,7 +1230,7 @@ fn test_emit_quotes_from_book_depths_publishes_top_of_book(stub_msgbus: Rc<RefCe
     assert!(cached_quote.is_some(), "synthetic quote should be cached",);
 
     // Same top-of-book: must not republish
-    data_engine.process_data(Data::Depth10(Box::new(depth)));
+    data_engine.process_data(Data::BookDepth10(Box::new(depth)));
     assert_eq!(saver.get_messages().len(), 1);
 
     // Shifted top-of-book: must republish
@@ -1249,7 +1243,7 @@ fn test_emit_quotes_from_book_depths_publishes_top_of_book(stub_msgbus: Rc<RefCe
     );
     shifted.ts_event = UnixNanos::from(depth.ts_event.as_u64() + 1);
     shifted.ts_init = UnixNanos::from(depth.ts_init.as_u64() + 1);
-    data_engine.process_data(Data::Depth10(Box::new(shifted)));
+    data_engine.process_data(Data::BookDepth10(Box::new(shifted)));
 
     let messages = saver.get_messages();
     assert_eq!(
@@ -1293,11 +1287,11 @@ fn test_emit_quotes_from_book_depths_skips_no_order_side_padding(
     let quote_topic = switchboard::get_quotes_topic(instrument_id);
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
-    data_engine.process_data(Data::Depth10(Box::new(depth)));
+    data_engine.process_data(Data::BookDepth10(Box::new(depth)));
 
     assert!(
         saver.get_messages().is_empty(),
-        "fully-padded NoOrderSide depth must not publish a synthetic quote",
+        "fully padded no-side depth must not publish a synthetic quote",
     );
     assert!(
         cache.borrow().quote(&instrument_id).is_none(),
@@ -4312,7 +4306,7 @@ fn test_composite_book_deltas_route_to_per_underlying_book(
     data_engine.execute(sub);
 
     let delta = OrderBookDeltaTestBuilder::new(esz1_id).build();
-    data_engine.process_data(Data::Delta(delta));
+    data_engine.process_data(Data::BookDelta(delta));
 
     let cache_view = cache.borrow();
     let esz1_book = cache_view
@@ -4386,8 +4380,12 @@ fn test_composite_book_deltas_route_each_underlying_independently(
     )));
     data_engine.execute(sub);
 
-    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esz1_id).build()));
-    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esh2_id).build()));
+    data_engine.process_data(Data::BookDelta(
+        OrderBookDeltaTestBuilder::new(esz1_id).build(),
+    ));
+    data_engine.process_data(Data::BookDelta(
+        OrderBookDeltaTestBuilder::new(esh2_id).build(),
+    ));
 
     let cache_view = cache.borrow();
     assert_eq!(
@@ -4449,13 +4447,17 @@ fn test_reset_unsubscribes_composite_book_deltas(
     )));
     data_engine.execute(sub);
 
-    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esz1_id).build()));
+    data_engine.process_data(Data::BookDelta(
+        OrderBookDeltaTestBuilder::new(esz1_id).build(),
+    ));
     let pre_reset_count = cache.borrow().order_book(&esz1_id).unwrap().update_count;
     assert_eq!(pre_reset_count, 1);
 
     data_engine.reset();
 
-    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esz1_id).build()));
+    data_engine.process_data(Data::BookDelta(
+        OrderBookDeltaTestBuilder::new(esz1_id).build(),
+    ));
     let post_reset_count = cache.borrow().order_book(&esz1_id).unwrap().update_count;
     assert_eq!(
         post_reset_count, pre_reset_count,
@@ -4532,7 +4534,9 @@ fn test_composite_and_exact_book_deltas_apply_once_per_publish(
         ),
     )));
 
-    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esz1_id).build()));
+    data_engine.process_data(Data::BookDelta(
+        OrderBookDeltaTestBuilder::new(esz1_id).build(),
+    ));
 
     let cache_view = cache.borrow();
     assert_eq!(
@@ -4628,8 +4632,12 @@ fn test_unsubscribe_composite_keeps_overlapping_exact_alive(
         ),
     )));
 
-    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esz1_id).build()));
-    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esh2_id).build()));
+    data_engine.process_data(Data::BookDelta(
+        OrderBookDeltaTestBuilder::new(esz1_id).build(),
+    ));
+    data_engine.process_data(Data::BookDelta(
+        OrderBookDeltaTestBuilder::new(esh2_id).build(),
+    ));
 
     let cache_view = cache.borrow();
     assert_eq!(
@@ -4718,7 +4726,7 @@ fn test_unsubscribe_composite_deltas_keeps_composite_depth10_alive(
 
     let mut depth = stub_depth10();
     depth.instrument_id = esz1_id;
-    data_engine.process_data(Data::Depth10(Box::new(depth)));
+    data_engine.process_data(Data::BookDepth10(Box::new(depth)));
 
     let cache_view = cache.borrow();
     let esz1_book = cache_view
@@ -4809,7 +4817,9 @@ fn test_unsubscribe_composite_deltas_keeps_exact_depth10_deltas_handler_alive(
         ),
     )));
 
-    data_engine.process_data(Data::Delta(OrderBookDeltaTestBuilder::new(esz1_id).build()));
+    data_engine.process_data(Data::BookDelta(
+        OrderBookDeltaTestBuilder::new(esz1_id).build(),
+    ));
 
     let cache_view = cache.borrow();
     assert_eq!(
@@ -4892,7 +4902,7 @@ fn test_snapshot_after_deltas_keeps_depth10_handler_alive(
 
     let mut depth = stub_depth10();
     depth.instrument_id = esz1_id;
-    data_engine.process_data(Data::Depth10(Box::new(depth)));
+    data_engine.process_data(Data::BookDepth10(Box::new(depth)));
 
     let cache_view = cache.borrow();
     let book = cache_view
@@ -5567,7 +5577,7 @@ fn test_emit_quotes_from_book_publishes_on_delta_apply(
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
     let deltas = Box::new(deltas);
-    data_engine.process_data(Data::Deltas(deltas.clone()));
+    data_engine.process_data(Data::BookDeltas(deltas.clone()));
 
     assert_eq!(
         saver.get_messages().len(),
@@ -5576,7 +5586,7 @@ fn test_emit_quotes_from_book_publishes_on_delta_apply(
     );
 
     // Same deltas, same top-of-book: idempotent
-    data_engine.process_data(Data::Deltas(deltas));
+    data_engine.process_data(Data::BookDeltas(deltas));
     assert_eq!(saver.get_messages().len(), 1);
 }
 
@@ -5629,7 +5639,7 @@ fn test_emit_quotes_from_book_publishes_on_depth_apply(
     let quote_topic = switchboard::get_quotes_topic(instrument_id);
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
-    data_engine.process_data(Data::Depth10(Box::new(depth)));
+    data_engine.process_data(Data::BookDepth10(Box::new(depth)));
 
     let messages = saver.get_messages();
     assert_eq!(
@@ -7428,6 +7438,63 @@ fn test_external_client_subscribe_registers_streamable_payload_types(
 }
 
 #[rstest]
+fn test_external_client_forwards_subscribe_and_unsubscribe_commands(
+    audusd_sim: CurrencyPair,
+    _stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let config = DataEngineConfig {
+        external_clients: Some(vec![client_id]),
+        ..DataEngineConfig::default()
+    };
+    let mut data_engine = DataEngine::new(clock, cache, Some(config));
+    let topic = format!("commands.data.{client_id}");
+
+    let subscribe = SubscribeCommand::Quotes(SubscribeQuotes::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::from(1),
+        None,
+        None,
+    ));
+    let (subscribe_handler, subscribe_saver) = get_any_saving_handler::<SubscribeCommand>(None);
+    msgbus::subscribe_any(topic.as_str().into(), subscribe_handler.clone(), None);
+
+    data_engine.execute(DataCommand::Subscribe(subscribe.clone()));
+
+    msgbus::unsubscribe_any(topic.as_str().into(), &subscribe_handler);
+    assert_eq!(
+        serde_json::to_value(subscribe_saver.get_messages()).unwrap(),
+        serde_json::to_value([subscribe]).unwrap(),
+    );
+
+    let unsubscribe = UnsubscribeCommand::Quotes(UnsubscribeQuotes::new(
+        audusd_sim.id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::from(2),
+        None,
+        None,
+    ));
+    let (unsubscribe_handler, unsubscribe_saver) =
+        get_any_saving_handler::<UnsubscribeCommand>(None);
+    msgbus::subscribe_any(topic.as_str().into(), unsubscribe_handler, None);
+
+    data_engine.execute(DataCommand::Unsubscribe(unsubscribe.clone()));
+
+    assert_eq!(
+        serde_json::to_value(unsubscribe_saver.get_messages()).unwrap(),
+        serde_json::to_value([unsubscribe]).unwrap(),
+    );
+}
+
+#[rstest]
 fn test_regular_client_subscribe_does_not_register_streaming_payload_type(
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
@@ -8981,7 +9048,10 @@ fn test_process_instrument(
 }
 
 #[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
 fn test_process_book_delta(
+    #[case] borrowed: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
@@ -9012,7 +9082,7 @@ fn test_process_book_delta(
     msgbus::subscribe_book_deltas(topic.into(), handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::Delta(delta));
+    dispatch_data(&mut data_engine, Data::BookDelta(delta), borrowed);
     let _cache = &data_engine.get_cache();
     let messages = saver.get_messages();
 
@@ -9039,14 +9109,18 @@ fn test_process_book_delta_buffers_until_f_last(
     msgbus::subscribe_book_deltas(topic.into(), handler, None);
 
     let f_last = RecordFlag::F_LAST as u8;
-    data_engine.process_data(Data::Delta(delta_with_flag(instrument_id, 1_000, 0)));
-    data_engine.process_data(Data::Delta(delta_with_flag(instrument_id, 2_000, 0)));
+    data_engine.process_data(Data::BookDelta(delta_with_flag(instrument_id, 1_000, 0)));
+    data_engine.process_data(Data::BookDelta(delta_with_flag(instrument_id, 2_000, 0)));
     assert!(
         saver.get_messages().is_empty(),
         "buffered deltas must not publish before F_LAST"
     );
 
-    data_engine.process_data(Data::Delta(delta_with_flag(instrument_id, 3_000, f_last)));
+    data_engine.process_data(Data::BookDelta(delta_with_flag(
+        instrument_id,
+        3_000,
+        f_last,
+    )));
     let first = saver.get_messages();
     assert_eq!(first.len(), 1);
     assert_eq!(
@@ -9059,7 +9133,11 @@ fn test_process_book_delta_buffers_until_f_last(
     );
     assert_eq!(first[0].flags, f_last);
 
-    data_engine.process_data(Data::Delta(delta_with_flag(instrument_id, 4_000, f_last)));
+    data_engine.process_data(Data::BookDelta(delta_with_flag(
+        instrument_id,
+        4_000,
+        f_last,
+    )));
     let second = saver.get_messages();
     assert_eq!(second.len(), 2);
     assert_eq!(second[1].deltas.len(), 1);
@@ -9067,7 +9145,10 @@ fn test_process_book_delta_buffers_until_f_last(
 }
 
 #[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
 fn test_process_book_deltas_buffers_until_f_last(
+    #[case] borrowed: bool,
     audusd_sim: CurrencyPair,
     stub_msgbus: Rc<RefCell<MessageBus>>,
 ) {
@@ -9095,7 +9176,11 @@ fn test_process_book_deltas_buffers_until_f_last(
             delta_with_flag(instrument_id, 4_000, f_last),
         ],
     );
-    data_engine.process_data(Data::Deltas(Box::new(batch)));
+    dispatch_data(
+        &mut data_engine,
+        Data::BookDeltas(Box::new(batch)),
+        borrowed,
+    );
 
     let published = saver.get_messages();
     assert_eq!(published.len(), 2);
@@ -9118,7 +9203,10 @@ fn test_process_book_deltas_buffers_until_f_last(
 }
 
 #[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
 fn test_process_book_deltas(
+    #[case] borrowed: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
@@ -9149,7 +9237,7 @@ fn test_process_book_deltas(
     msgbus::subscribe_book_deltas(topic.into(), handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::Deltas(deltas.clone()));
+    dispatch_data(&mut data_engine, Data::BookDeltas(deltas.clone()), borrowed);
     let _cache = &data_engine.get_cache();
     let messages = saver.get_messages();
 
@@ -9158,7 +9246,10 @@ fn test_process_book_deltas(
 }
 
 #[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
 fn test_process_book_depth10(
+    #[case] borrowed: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
@@ -9189,7 +9280,7 @@ fn test_process_book_depth10(
     msgbus::subscribe_book_depth10(topic.into(), handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::from(depth));
+    dispatch_data(&mut data_engine, Data::from(depth), borrowed);
     let _cache = &data_engine.get_cache();
     let messages = saver.get_messages();
 
@@ -9198,7 +9289,10 @@ fn test_process_book_depth10(
 }
 
 #[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
 fn test_process_quote_tick(
+    #[case] borrowed: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
@@ -9226,7 +9320,7 @@ fn test_process_quote_tick(
     msgbus::subscribe_quotes(topic.into(), handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::Quote(quote));
+    dispatch_data(&mut data_engine, Data::Quote(quote), borrowed);
     let cache = &data_engine.get_cache();
     let messages = saver.get_messages();
 
@@ -9236,7 +9330,10 @@ fn test_process_quote_tick(
 }
 
 #[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
 fn test_process_trade_tick(
+    #[case] borrowed: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
@@ -9264,7 +9361,7 @@ fn test_process_trade_tick(
     msgbus::subscribe_trades(topic.into(), handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::Trade(trade));
+    dispatch_data(&mut data_engine, Data::Trade(trade), borrowed);
     let cache = &data_engine.get_cache();
     let messages = saver.get_messages();
 
@@ -9809,7 +9906,10 @@ fn test_reset_clears_synthetic_subscriptions(stub_msgbus: Rc<RefCell<MessageBus>
 }
 
 #[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
 fn test_process_mark_price(
+    #[case] borrowed: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
@@ -9842,7 +9942,7 @@ fn test_process_mark_price(
     msgbus::subscribe_mark_prices(topic.into(), typed_handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::MarkPrice(mark_price));
+    dispatch_data(&mut data_engine, Data::MarkPrice(mark_price), borrowed);
     let cache = &data_engine.get_cache();
     let messages = saving_handler.get_messages();
 
@@ -9863,7 +9963,10 @@ fn test_process_mark_price(
 }
 
 #[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
 fn test_process_index_price(
+    #[case] borrowed: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
@@ -9897,7 +10000,7 @@ fn test_process_index_price(
     msgbus::subscribe_index_prices(topic.into(), typed_handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::IndexPrice(index_price));
+    dispatch_data(&mut data_engine, Data::IndexPrice(index_price), borrowed);
     let cache = &data_engine.get_cache();
     let messages = saving_handler.get_messages();
 
@@ -10013,7 +10116,10 @@ fn test_process_funding_rate(
 }
 
 #[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
 fn test_process_funding_rate_data_variant(
+    #[case] borrowed: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
@@ -10049,7 +10155,7 @@ fn test_process_funding_rate_data_variant(
     msgbus::subscribe_funding_rates(topic.into(), typed_handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::FundingRate(funding_rate));
+    dispatch_data(&mut data_engine, Data::FundingRate(funding_rate), borrowed);
     let cache = &data_engine.get_cache();
     let messages = saving_handler.get_messages();
 
@@ -10115,7 +10221,13 @@ fn test_process_funding_rate_updates_existing(
 }
 
 #[rstest]
-fn test_process_bar(data_engine: Rc<RefCell<DataEngine>>, data_client: DataClientAdapter) {
+#[case::owned(false)]
+#[case::borrowed(true)]
+fn test_process_bar(
+    #[case] borrowed: bool,
+    data_engine: Rc<RefCell<DataEngine>>,
+    data_client: DataClientAdapter,
+) {
     let client_id = data_client.client_id;
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
@@ -10140,7 +10252,7 @@ fn test_process_bar(data_engine: Rc<RefCell<DataEngine>>, data_client: DataClien
     msgbus::subscribe_bars(topic.into(), handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::Bar(bar));
+    dispatch_data(&mut data_engine, Data::Bar(bar), borrowed);
     let cache = &data_engine.get_cache();
     let messages = saver.get_messages();
 
@@ -10150,7 +10262,10 @@ fn test_process_bar(data_engine: Rc<RefCell<DataEngine>>, data_client: DataClien
 }
 
 #[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
 fn test_process_instrument_status(
+    #[case] borrowed: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
@@ -10188,7 +10303,7 @@ fn test_process_instrument_status(
     msgbus::subscribe_any(topic.into(), handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::InstrumentStatus(status));
+    dispatch_data(&mut data_engine, Data::InstrumentStatus(status), borrowed);
     let cache = data_engine.get_cache();
     let messages = msgbus::stubs::get_saved_messages::<InstrumentStatus>(&handler);
 
@@ -10199,6 +10314,34 @@ fn test_process_instrument_status(
         cache.instrument_statuses(&audusd_sim.id),
         Some(vec![status]),
     );
+}
+
+#[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
+fn test_process_instrument_close(
+    #[case] borrowed: bool,
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+) {
+    let close = InstrumentClose::new(
+        audusd_sim.id,
+        Price::from("0.8000"),
+        InstrumentCloseType::EndOfSession,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    let (handler, saver) = get_any_saving_handler::<InstrumentClose>(None);
+    let topic = switchboard::get_instrument_close_topic(close.instrument_id);
+    msgbus::subscribe_any(topic.into(), handler, None);
+
+    dispatch_data(
+        &mut data_engine.borrow_mut(),
+        Data::InstrumentClose(close),
+        borrowed,
+    );
+
+    assert_eq!(saver.get_messages(), vec![close]);
 }
 
 #[rstest]
@@ -11878,32 +12021,34 @@ fn test_process_defi_pools_publishes_distinct_tradable_instruments(
     let expected_invalid = pool_invalid.clone();
     let venue = id_a.venue;
     let expected = |pool: &Pool| {
-        InstrumentAny::CurrencyPair(CurrencyPair::new(
-            pool.instrument_id,
-            pool.instrument_id.symbol,
-            Currency::new("BASE", 8, 0, "Base token", CurrencyType::Crypto),
-            Currency::new("QUOTE", 6, 0, "Quote token", CurrencyType::Crypto),
-            6,
-            8,
-            Price::from("0.000001"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            pool.fee.map(|fee| Decimal::new(i64::from(fee), 6)),
-            None,
-            None,
-            pool.ts_event,
-            pool.ts_init,
-        ))
+        InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(pool.instrument_id)
+                .raw_symbol(pool.instrument_id.symbol)
+                .base_currency(Currency::new(
+                    "BASE",
+                    8,
+                    0,
+                    "Base token",
+                    CurrencyType::Crypto,
+                ))
+                .quote_currency(Currency::new(
+                    "QUOTE",
+                    6,
+                    0,
+                    "Quote token",
+                    CurrencyType::Crypto,
+                ))
+                .price_precision(6)
+                .size_precision(8)
+                .price_increment(Price::from("0.000001"))
+                .size_increment(Quantity::from("0.00000001"))
+                .maybe_taker_fee(pool.fee.map(|fee| Decimal::new(i64::from(fee), 6)))
+                .ts_event(pool.ts_event)
+                .ts_init(pool.ts_init)
+                .build()
+                .unwrap(),
+        )
     };
     let expected_a = expected(&pool_a);
     let expected_b = expected(&pool_b);
@@ -12621,7 +12766,9 @@ fn test_process_book_snapshot_publish(
     // Process deltas to populate the order book
     let delta = OrderBookDeltaTestBuilder::new(audusd_sim.id).build();
     let deltas = Box::new(OrderBookDeltas::new(audusd_sim.id, vec![delta]));
-    data_engine.borrow_mut().process_data(Data::Deltas(deltas));
+    data_engine
+        .borrow_mut()
+        .process_data(Data::BookDeltas(deltas));
 
     // Advance clock past the interval to trigger snapshot timer
     let advance_ns = 200_000_000u64; // 200ms in nanoseconds
@@ -13400,7 +13547,9 @@ fn execute_book_snapshot_unsubscribe(
 fn process_book_delta(data_engine: &Rc<RefCell<DataEngine>>, instrument_id: InstrumentId) {
     let delta = OrderBookDeltaTestBuilder::new(instrument_id).build();
     let deltas = Box::new(OrderBookDeltas::new(instrument_id, vec![delta]));
-    data_engine.borrow_mut().process_data(Data::Deltas(deltas));
+    data_engine
+        .borrow_mut()
+        .process_data(Data::BookDeltas(deltas));
 }
 
 fn advance_clock_and_dispatch(clock: &Rc<RefCell<TestClock>>, advance_ns: u64) {
@@ -13452,38 +13601,32 @@ fn make_crypto_option(
     let settlement = Currency::from(settlement_str);
     let activation = UnixNanos::from(1_671_696_000_000_000_000u64);
 
-    InstrumentAny::CryptoOption(CryptoOption::new(
-        instrument_id,
-        raw_symbol,
-        underlying,
-        quote,
-        settlement,
-        false,
-        kind,
-        Price::from(strike),
-        activation,
-        expiration_ns,
-        3,
-        1,
-        Price::from("0.001"),
-        Quantity::from("0.1"),
-        Some(Quantity::from(1)),
-        Some(Quantity::from(1)),
-        Some(Quantity::from("9000.0")),
-        Some(Quantity::from("0.1")),
-        None,
-        Some(Money::new(10.00, Currency::USD())),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        0.into(),
-        0.into(),
-    ))
+    InstrumentAny::CryptoOption(
+        CryptoOption::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(raw_symbol)
+            .underlying(underlying)
+            .quote_currency(quote)
+            .settlement_currency(settlement)
+            .is_inverse(false)
+            .option_kind(kind)
+            .strike_price(Price::from(strike))
+            .activation_ns(activation)
+            .expiration_ns(expiration_ns)
+            .price_precision(3)
+            .size_precision(1)
+            .price_increment(Price::from("0.001"))
+            .size_increment(Quantity::from("0.1"))
+            .multiplier(Quantity::from(1))
+            .lot_size(Quantity::from(1))
+            .max_quantity(Quantity::from("9000.0"))
+            .min_quantity(Quantity::from("0.1"))
+            .min_notional(Money::new(10.00, Currency::USD()))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap(),
+    )
 }
 
 fn make_btc_option(strike: &str, kind: OptionKind) -> InstrumentAny {
@@ -14155,11 +14298,19 @@ fn test_subscribe_option_chain_atm_relative_requests_forward_prices(
     );
 }
 
+#[derive(Clone, Copy)]
+enum OptionGreeksDispatch {
+    DataOwned,
+    TypedAny,
+    DataBorrowed,
+}
+
 #[rstest]
-#[case::data_enum(true)]
-#[case::typed_any(false)]
+#[case::data_owned(OptionGreeksDispatch::DataOwned)]
+#[case::typed_any(OptionGreeksDispatch::TypedAny)]
+#[case::data_borrowed(OptionGreeksDispatch::DataBorrowed)]
 fn test_option_chain_deferred_bootstrap_from_greeks_keeps_bootstrap_event(
-    #[case] use_data_enum: bool,
+    #[case] dispatch: OptionGreeksDispatch,
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
 ) {
@@ -14252,12 +14403,14 @@ fn test_option_chain_deferred_bootstrap_from_greeks_keeps_bootstrap_event(
         ts_init: UnixNanos::from(1u64),
     };
 
-    if use_data_enum {
-        data_engine
+    match dispatch {
+        OptionGreeksDispatch::DataOwned => data_engine
             .borrow_mut()
-            .process_data(Data::OptionGreeks(greeks));
-    } else {
-        data_engine.borrow_mut().process(&greeks);
+            .process_data(Data::OptionGreeks(greeks)),
+        OptionGreeksDispatch::TypedAny => data_engine.borrow_mut().process(&greeks),
+        OptionGreeksDispatch::DataBorrowed => data_engine
+            .borrow_mut()
+            .process_data_ref(DataRef::OptionGreeks(&greeks)),
     }
 
     let recorded = recorder.borrow();
@@ -14335,14 +14488,15 @@ fn synthetic_index_with_components(
     component_b: InstrumentId,
 ) -> SyntheticInstrument {
     let formula = format!("({component_a} + {component_b}) / 2.0");
-    SyntheticInstrument::new(
-        Symbol::new(symbol),
-        2,
-        vec![component_a, component_b],
-        &formula,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    SyntheticInstrument::builder()
+        .symbol(Symbol::new(symbol))
+        .price_precision(2)
+        .components(vec![component_a, component_b])
+        .formula(&formula)
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 fn subscribe_synthetic_quotes_cmd(instrument_id: InstrumentId) -> DataCommand {
@@ -14883,7 +15037,10 @@ fn test_custom_data_response_does_not_publish_payload_to_custom_topic(
 }
 
 #[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
 fn test_process_custom_data_through_any_publishes_to_custom_topic(
+    #[case] borrowed: bool,
     _stub_msgbus: Rc<RefCell<MessageBus>>,
     data_engine: Rc<RefCell<DataEngine>>,
 ) {
@@ -14904,7 +15061,7 @@ fn test_process_custom_data_through_any_publishes_to_custom_topic(
     assert_eq!(saver.get_messages(), vec![custom.clone()]);
     assert_eq!(data_engine.data_count(), 1);
 
-    data_engine.process_data(Data::Custom(custom.clone()));
+    dispatch_data(&mut data_engine, Data::Custom(custom.clone()), borrowed);
 
     assert_eq!(saver.get_messages(), vec![custom.clone(), custom]);
     assert_eq!(data_engine.data_count(), 2);
@@ -14960,7 +15117,10 @@ fn test_execute_defi_command_counters(data_engine: Rc<RefCell<DataEngine>>) {
 
 #[cfg(feature = "defi")]
 #[rstest]
+#[case::owned(false)]
+#[case::borrowed(true)]
 fn test_process_defi_data_increments_data_count(
+    #[case] borrowed: bool,
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
 ) {
@@ -14980,7 +15140,11 @@ fn test_process_defi_data_increments_data_count(
 
     let mut data_engine = data_engine.borrow_mut();
     assert_eq!(data_engine.data_count(), 0);
-    data_engine.process_defi_data(DefiData::Block(block));
+    dispatch_data(
+        &mut data_engine,
+        Data::Defi(Box::new(DefiData::Block(block))),
+        borrowed,
+    );
     assert_eq!(data_engine.data_count(), 1);
 }
 
@@ -15427,7 +15591,7 @@ fn test_process_pipeline_delta_publishes_on_pipeline_topic_only(
     msgbus::subscribe_book_deltas(live_topic.into(), live_handler, None);
     msgbus::subscribe_book_deltas(pipeline_topic.into(), pipeline_handler, None);
 
-    data_engine.process_pipeline(Data::Delta(delta));
+    data_engine.process_pipeline(Data::BookDelta(delta));
 
     assert!(
         live_saver.get_messages().is_empty(),
@@ -15464,7 +15628,7 @@ fn test_process_pipeline_deltas_publishes_on_pipeline_topic_only(
     msgbus::subscribe_book_deltas(live_topic.into(), live_handler, None);
     msgbus::subscribe_book_deltas(pipeline_topic.into(), pipeline_handler, None);
 
-    data_engine.process_pipeline(Data::Deltas(Box::new(deltas.clone())));
+    data_engine.process_pipeline(Data::BookDeltas(Box::new(deltas.clone())));
 
     assert!(
         live_saver.get_messages().is_empty(),
@@ -15499,7 +15663,7 @@ fn test_process_pipeline_depth10_publishes_on_pipeline_topic_only(
     msgbus::subscribe_book_depth10(live_topic.into(), live_handler, None);
     msgbus::subscribe_book_depth10(pipeline_topic.into(), pipeline_handler, None);
 
-    data_engine.process_pipeline(Data::Depth10(Box::new(depth)));
+    data_engine.process_pipeline(Data::BookDepth10(Box::new(depth)));
 
     assert!(
         live_saver.get_messages().is_empty(),
@@ -15682,7 +15846,7 @@ fn test_process_pipeline_depth10_skips_derived_quote_emission(
     let quote_topic = switchboard::get_quotes_topic(instrument_id);
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
-    data_engine.process_pipeline(Data::Depth10(Box::new(depth)));
+    data_engine.process_pipeline(Data::BookDepth10(Box::new(depth)));
 
     assert!(
         saver.get_messages().is_empty(),
@@ -20952,7 +21116,7 @@ fn test_book_response_skips_cache_write_when_subscription_active(
     data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(sub)));
 
     let live_delta = OrderBookDeltaTestBuilder::new(instrument_id).build();
-    data_engine.process_data(Data::Delta(live_delta));
+    data_engine.process_data(Data::BookDelta(live_delta));
 
     let maintained_count = cache
         .borrow()
@@ -21353,7 +21517,7 @@ fn test_book_deltas_response_skips_cache_write_when_subscription_active(
     data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(sub)));
 
     let live_delta = OrderBookDeltaTestBuilder::new(instrument_id).build();
-    data_engine.process_data(Data::Delta(live_delta));
+    data_engine.process_data(Data::BookDelta(live_delta));
     let maintained_count = cache
         .borrow()
         .order_book(&instrument_id)
@@ -22282,7 +22446,7 @@ fn test_book_deltas_replay_respects_cache_ownership(
     data_engine.execute(DataCommand::Subscribe(SubscribeCommand::BookDeltas(sub)));
 
     let live_delta = OrderBookDeltaTestBuilder::new(instrument_id).build();
-    data_engine.process_data(Data::Delta(live_delta));
+    data_engine.process_data(Data::BookDelta(live_delta));
     let owned_count = cache
         .borrow()
         .order_book(&instrument_id)

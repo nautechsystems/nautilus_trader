@@ -17,7 +17,7 @@ use nautilus_core::ffi::{abort_on_panic, cvec::CVec};
 
 use crate::{
     data::order::BookOrder,
-    enums::OrderSide,
+    ffi::{data::order::BookOrderFfi, enums::OrderSideOptional},
     orderbook::{BookLevel, BookPrice},
     types::{Price, quantity::QuantityRaw},
 };
@@ -26,19 +26,28 @@ use crate::{
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 /// # Safety
 ///
-/// `orders` must uniquely own a valid `Vec<BookOrder>` allocation transferred from Rust.
+/// `orders` must uniquely own a valid `Vec<BookOrderFfi>` allocation transferred from Rust.
+///
+/// # Panics
+///
+/// Panics if `order_side` is `NoOrderSide`.
 ///
 /// Returns an owning pointer to the heap-allocated `BookLevel` which the caller must
 /// eventually pass to [`level_drop`].
 pub unsafe extern "C" fn level_new(
-    order_side: OrderSide,
+    order_side: OrderSideOptional,
     price: Price,
     orders: CVec,
 ) -> *mut BookLevel {
-    let orders = unsafe { orders.into_vec::<BookOrder>() };
+    let orders = unsafe { orders.into_vec::<BookOrderFfi>() }
+        .into_iter()
+        .map(Into::into)
+        .collect::<Vec<BookOrder>>();
     let price = BookPrice {
         value: price,
-        side: order_side.as_specified(),
+        side: order_side
+            .as_option()
+            .expect("Order side must be Buy or Sell"),
     };
     let mut level = BookLevel::new(price);
     level.add_bulk(&orders);
@@ -70,8 +79,8 @@ pub extern "C" fn level_clone(level: &BookLevel) -> *mut BookLevel {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn level_side(level: &BookLevel) -> OrderSide {
-    level.price.side.as_order_side()
+pub extern "C" fn level_side(level: &BookLevel) -> OrderSideOptional {
+    Some(level.price.side).into()
 }
 
 #[unsafe(no_mangle)]
@@ -82,7 +91,7 @@ pub extern "C" fn level_price(level: &BookLevel) -> Price {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn level_orders(level: &BookLevel) -> CVec {
-    let orders_vec: Vec<BookOrder> = level.orders.values().copied().collect();
+    let orders_vec: Vec<BookOrderFfi> = level.orders.values().copied().map(Into::into).collect();
     orders_vec.into()
 }
 
@@ -118,14 +127,14 @@ pub unsafe extern "C" fn vec_drop_book_levels(v: CVec) {
     }
 }
 
-/// Drops a `CVec` of `BookOrder` values.
+/// Drops a `CVec` of `BookOrderFfi` values.
 ///
 /// # Safety
 ///
-/// `v` must uniquely own a valid `Vec<BookOrder>` allocation transferred from Rust.
+/// `v` must uniquely own a valid `Vec<BookOrderFfi>` allocation transferred from Rust.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn vec_drop_book_orders(v: CVec) {
-    let orders = unsafe { v.into_vec::<BookOrder>() };
+    let orders = unsafe { v.into_vec::<BookOrderFfi>() };
     drop(orders); // Memory freed here
 }
 
@@ -146,7 +155,8 @@ mod tests {
     fn test_level_new_preserves_valid_behavior() {
         let order = stub_book_order();
         let price = order.price;
-        let level_ptr = unsafe { level_new(order.side, price, vec![order].into()) };
+        let orders = vec![BookOrderFfi::from(order)];
+        let level_ptr = unsafe { level_new(order.side.into(), price, orders.into()) };
 
         // SAFETY: `level_ptr` was just returned by `level_new`
         let level = unsafe { &*level_ptr };

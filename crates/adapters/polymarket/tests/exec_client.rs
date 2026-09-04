@@ -79,7 +79,7 @@ use nautilus_model::{
 use nautilus_network::http::HttpClient;
 use nautilus_polymarket::{
     common::{
-        consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE},
+        consts::{POLYMARKET_CLIENT_ID, POLYMARKET_PRICE_PRECISION, POLYMARKET_VENUE},
         enums::SignatureType,
     },
     config::{PolymarketExecutionClientConfig, PolymarketInstrumentProviderConfig},
@@ -108,6 +108,10 @@ const DEFAULT_ACCEPTED_ORDER_ID: &str =
     "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
 const CANCEL_ALREADY_DONE_ORDER_ID: &str =
     "0xb816482a1234567890abcdef1234567890abcdef1234567890abcdef12345678";
+const FAK_NO_MATCH_REASON: &str = concat!(
+    "no orders found to match with FAK order. ",
+    "FAK orders are partially filled or killed if no match is found.",
+);
 const TEST_TOKEN_ID: &str =
     "71321045679252212594626385532706912750332728571942532289631379312455583992563";
 
@@ -351,10 +355,10 @@ fn create_test_exec_config_with_retries(
     max_retries: u32,
 ) -> PolymarketExecutionClientConfig {
     PolymarketExecutionClientConfig {
-        private_key: Some(TEST_PRIVATE_KEY.to_string()),
-        api_key: Some("00000000-0000-0000-0000-000000000001".to_string()),
-        api_secret: Some(TEST_API_SECRET_B64.to_string()),
-        passphrase: Some("test_pass".to_string()),
+        private_key: Some(TEST_PRIVATE_KEY.into()),
+        api_key: Some("00000000-0000-0000-0000-000000000001".into()),
+        api_secret: Some(TEST_API_SECRET_B64.into()),
+        passphrase: Some("test_pass".into()),
         funder: None,
         base_url_http: Some(format!("http://{addr}")),
         base_url_ws: Some(format!("ws://{addr}/ws")),
@@ -4374,7 +4378,7 @@ async fn test_generate_order_status_report_single_returns_report() {
     let report = result.unwrap();
     assert_eq!(report.instrument_id, instrument_id);
     assert_eq!(report.account_id, AccountId::from("POLYMARKET-001"));
-    assert_eq!(report.order_side, OrderSide::Buy,);
+    assert_eq!(report.order_side, Some(OrderSide::Buy));
     assert_eq!(report.order_type, OrderType::Limit,);
     assert_eq!(report.filled_qty, Quantity::zero(4));
     assert!(report.price.is_some());
@@ -4813,7 +4817,6 @@ async fn test_limit_submit_normalizes_signed_quantity_for_reporting(#[case] side
     response["side"] = json!(match side {
         OrderSide::Buy => "BUY",
         OrderSide::Sell => "SELL",
-        _ => unreachable!(),
     });
     *state.single_order_response.lock().await = Some(response);
     let mut trade = load_json("http_trade_report.json");
@@ -5918,7 +5921,7 @@ async fn test_generate_order_status_report_validates_confirmed_recovery_side(
     assert_eq!(report.venue_order_id, venue_order_id);
     assert_eq!(report.filled_qty, Quantity::new(10.0, 4));
     assert_eq!(report.quantity, Quantity::new(10.0, 4));
-    assert_eq!(report.order_side, OrderSide::Buy);
+    assert_eq!(report.order_side, Some(OrderSide::Buy));
     assert_eq!(report.avg_px, Some(dec!(0.5)));
 }
 
@@ -6913,6 +6916,41 @@ async fn test_submit_market_order_posts_order_type_from_time_in_force(
 
 #[rstest]
 #[tokio::test]
+async fn test_submit_market_order_fak_no_match_rejects_immediately() {
+    let state = TestServerState::default();
+    *state.order_response.lock().await = Some(json!({
+        "success": true,
+        "orderID": "0xmarket-fak-rejected",
+        "errorMsg": FAK_NO_MATCH_REASON,
+    }));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+    let order = make_market_order("O-MKT-FAK-NO-MATCH", instrument_id, OrderSide::Buy, true);
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
+    assert_order_event(recv_execution_event(&mut rx).await, "Updated");
+    let rejected = assert_order_event(recv_execution_event(&mut rx).await, "Rejected");
+
+    assert_eq!(rejected.client_order_id(), order.client_order_id());
+    assert_eq!(order_event_reason(&rejected), FAK_NO_MATCH_REASON);
+    assert_eq!(state.single_order_get_count.load(Ordering::Acquire), 0);
+    assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_submit_market_order_buy_uses_balance_projection() {
     let state = TestServerState::default();
     *state.balance_response.lock().await = json!({
@@ -7444,10 +7482,17 @@ async fn test_submit_market_order_ambiguous_retry_then_bad_request_remains_unkno
 
 #[rstest]
 #[tokio::test]
-async fn test_submit_market_order_ambiguous_retry_then_response_rejection_remains_unknown() {
+async fn test_submit_market_order_ambiguous_retry_then_fak_no_match_remains_unknown() {
     let state = TestServerState::default();
     *state.order_post_500_remaining.lock().await = 1;
-    *state.order_response.lock().await = Some(load_json("http_order_response_failed.json"));
+    state
+        .order_response_uses_request_hash
+        .store(true, Ordering::Release);
+    *state.order_response.lock().await = Some(json!({
+        "errorMsg": FAK_NO_MATCH_REASON,
+        "orderID": DEFAULT_ACCEPTED_ORDER_ID,
+        "success": true
+    }));
 
     let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, cache) = create_test_execution_client_with_retries(addr, 1);
@@ -7456,7 +7501,7 @@ async fn test_submit_market_order_ambiguous_retry_then_response_rejection_remain
     let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
     add_instrument_to_cache(&cache, instrument_id);
     let order = make_market_order(
-        "O-MKT-RETRY-AMBIGUOUS-THEN-RESPONSE-REJECTION",
+        "O-MKT-RETRY-AMBIGUOUS-THEN-NO-MATCH",
         instrument_id,
         OrderSide::Buy,
         true,
@@ -7481,6 +7526,16 @@ async fn test_submit_market_order_ambiguous_retry_then_response_rejection_remain
     )
     .await;
     assert_no_execution_event(&mut rx).await;
+
+    let body = state.last_body.lock().await.clone().unwrap();
+    let signed_order: PolymarketOrder = serde_json::from_value(body["order"].clone()).unwrap();
+    let expected_venue_order_id = format!("{:#x}", order_hash(&signed_order, false).unwrap());
+
+    assert_ne!(DEFAULT_ACCEPTED_ORDER_ID, expected_venue_order_id);
+    assert_eq!(
+        *state.open_order_ids.lock().await,
+        HashSet::from([expected_venue_order_id])
+    );
 }
 
 #[rstest]
@@ -8048,7 +8103,10 @@ fn make_closed_limit_order(
     order.apply(accepted).unwrap();
     let canceled = TestOrderEventStubs::canceled(&order, account_id, Some(venue_order_id));
     order.apply(canceled).unwrap();
-    assert!(order.is_closed(), "helper must produce a closed order");
+    assert!(
+        order.is_closed(),
+        "make_closed_limit_order must produce a closed order"
+    );
     order
 }
 
@@ -8220,7 +8278,7 @@ fn make_cancel_cmd(client_order_id: &str, instrument_id: InstrumentId) -> Cancel
 fn make_cancel_all_cmd(
     strategy_id: StrategyId,
     instrument_id: InstrumentId,
-    order_side: OrderSide,
+    order_side: Option<OrderSide>,
 ) -> CancelAllOrders {
     CancelAllOrders::new(
         TraderId::from("TESTER-001"),
@@ -8324,7 +8382,8 @@ fn add_instrument_to_cache_with_values(
     size_precision: u8,
     taker_fee: Decimal,
 ) {
-    let price_increment = Price::from(tick_size);
+    let price_increment =
+        Price::from_decimal_dp(tick_size.parse().unwrap(), POLYMARKET_PRICE_PRECISION).unwrap();
     let size_increment = if size_precision == 0 {
         Quantity::from("1")
     } else {
@@ -8343,34 +8402,24 @@ fn add_instrument_to_cache_with_values(
         .expect("valid test instrument metadata")
     });
 
-    let instrument = BinaryOption::new(
-        instrument_id,
-        raw_symbol,
-        AssetClass::Alternative,
-        Currency::pUSD(),
-        UnixNanos::default(), // activation_ns
-        UnixNanos::default(), // expiration_ns
-        price_increment.precision,
-        size_precision,
-        price_increment,
-        size_increment,
-        outcome,
-        None, // description
-        None, // max_quantity
-        None, // min_quantity
-        None, // max_notional
-        None, // min_notional
-        None, // max_price
-        None, // min_price
-        None, // margin_init
-        None, // margin_maint
-        None, // maker_fee
-        Some(taker_fee),
-        None, // tick_scheme
-        info,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    );
+    let instrument = BinaryOption::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .asset_class(AssetClass::Alternative)
+        .currency(Currency::pUSD())
+        .activation_ns(UnixNanos::default())
+        .expiration_ns(UnixNanos::default())
+        .price_precision(POLYMARKET_PRICE_PRECISION)
+        .size_precision(size_precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .maybe_outcome(outcome)
+        .taker_fee(taker_fee)
+        .maybe_info(info)
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
     cache
         .borrow_mut()
         .add_instrument(InstrumentAny::BinaryOption(instrument))
@@ -8623,21 +8672,33 @@ async fn test_submit_order_denied_for_reduce_only() {
 
 #[rstest]
 #[tokio::test]
-async fn test_submit_order_denied_for_quote_quantity() {
+async fn test_submit_collateral_limit_buy_signs_and_normalizes_exact_quantity(
+    #[values(
+        TimeInForce::Gtc,
+        TimeInForce::Gtd,
+        TimeInForce::Ioc,
+        TimeInForce::Fok
+    )]
+    time_in_force: TimeInForce,
+) {
     let state = TestServerState::default();
-    let addr = start_mock_server(state).await;
+    *state.order_response.lock().await = Some(constructed_order_response("live"));
+    let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
     client.start().unwrap();
 
     let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
-    let order = make_limit_order(
-        "O-QUOTE",
+    add_instrument_to_cache_with_tick(&cache, instrument_id, "0.005", 6);
+    let order = make_limit_order_at_price_and_quantity(
+        "O-COLLATERAL-LIMIT-BUY",
         instrument_id,
         OrderSide::Buy,
         false, // reduce_only
         true,  // quote_quantity
         false, // post_only
-        TimeInForce::Gtc,
+        time_in_force,
+        Price::from("0.505"),
+        Quantity::from("10.109"),
     );
     cache
         .borrow_mut()
@@ -8647,8 +8708,182 @@ async fn test_submit_order_denied_for_quote_quantity() {
 
     client.submit_order(cmd).unwrap();
 
-    let event = rx.try_recv().unwrap();
-    assert_order_event(event, "Denied");
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
+    let updated = assert_order_event(recv_execution_event(&mut rx).await, "Updated");
+    let OrderEventAny::Updated(updated) = updated else {
+        unreachable!()
+    };
+    assert_eq!(updated.quantity.as_decimal(), dec!(20));
+    assert!(!updated.is_quote_quantity);
+    assert_order_event(recv_execution_event(&mut rx).await, "Accepted");
+
+    assert_eq!(*state.order_post_count.lock().await, 1);
+    let body = state.last_body.lock().await.clone().unwrap();
+    let signed_order = body.get("order").unwrap();
+    assert_eq!(
+        signed_order.get("makerAmount").and_then(Value::as_str),
+        Some("10100000"),
+    );
+    assert_eq!(
+        signed_order.get("takerAmount").and_then(Value::as_str),
+        Some("20000000"),
+    );
+    assert_eq!(
+        body.get("orderType").and_then(Value::as_str),
+        Some(polymarket_order_type(time_in_force)),
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_collateral_limit_sell_is_denied_before_post() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let order = make_limit_order(
+        "O-COLLATERAL-LIMIT-SELL",
+        instrument_id,
+        OrderSide::Sell,
+        false,
+        true,
+        false,
+        TimeInForce::Gtc,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    let denied = assert_order_event(rx.try_recv().unwrap(), "Denied");
+    assert_eq!(
+        order_event_reason(&denied),
+        "VALIDATION_FAILED: Limit SELL orders require quote_quantity=false (amount in shares)",
+    );
+    assert_eq!(*state.order_post_count.lock().await, 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_collateral_limit_buy_below_cent_is_denied_before_post() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let order = make_limit_order_at_price_and_quantity(
+        "O-COLLATERAL-LIMIT-BELOW-CENT",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        true,
+        false,
+        TimeInForce::Gtc,
+        Price::from("0.50"),
+        Quantity::from("0.009"),
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    let denied = assert_order_event(rx.try_recv().unwrap(), "Denied");
+    assert_eq!(
+        order_event_reason(&denied),
+        "VALIDATION_FAILED: Polymarket limit order amount 0.009 pUSD truncates to zero at 2 decimal places",
+    );
+    assert_eq!(*state.order_post_count.lock().await, 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_collateral_limit_buy_denies_inexact_signed_price_before_post() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_tick(&cache, instrument_id, "0.001", 6);
+    let order = make_limit_order_at_price_and_quantity(
+        "O-COLLATERAL-LIMIT-INEXACT-PRICE",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        true,
+        false,
+        TimeInForce::Gtc,
+        Price::from("0.989"),
+        Quantity::from("5"),
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
+    let rejected = assert_order_event(recv_execution_event(&mut rx).await, "Rejected");
+    assert_eq!(
+        order_event_reason(&rejected),
+        "Polymarket collateral-sized limit BUY amount 5 pUSD cannot preserve limit price 0.989 after venue quantization",
+    );
+    assert_eq!(*state.order_post_count.lock().await, 0);
+    assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_collateral_limit_buy_rejects_inexact_local_quantity_before_post() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_tick(&cache, instrument_id, "0.01", 2);
+    let order = make_limit_order_at_price_and_quantity(
+        "O-COLLATERAL-LIMIT-INEXACT-LOCAL",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        true,
+        false,
+        TimeInForce::Gtc,
+        Price::from("0.56"),
+        Quantity::from("0.07"),
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
+    let rejected = assert_order_event(recv_execution_event(&mut rx).await, "Rejected");
+    assert_eq!(
+        order_event_reason(&rejected),
+        "Signed limit order share quantity 0.125 cannot be represented exactly at instrument size precision 2",
+    );
+    assert_eq!(*state.order_post_count.lock().await, 0);
+    assert_no_execution_event(&mut rx).await;
 }
 
 #[rstest]
@@ -8976,7 +9211,6 @@ async fn test_submit_limit_order_serializes_amount_matrix(
     let (expected_maker, expected_taker) = match side {
         OrderSide::Buy => (notional_amount, quantity_amount),
         OrderSide::Sell => (quantity_amount, notional_amount),
-        _ => unreachable!(),
     };
     assert_eq!(
         signed_order.get("makerAmount").and_then(Value::as_str),
@@ -9190,7 +9424,51 @@ async fn test_submit_order_rejected_on_http_failure_response() {
 
 #[rstest]
 #[tokio::test]
-async fn test_submit_order_http_5xx_submit_outcome_unknown() {
+async fn test_submit_order_fak_no_match_rejects_immediately() {
+    let state = TestServerState::default();
+    *state.order_response.lock().await = Some(json!({
+        "success": true,
+        "orderID": "0xfak-rejected",
+        "errorMsg": FAK_NO_MATCH_REASON,
+    }));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+    let order = make_limit_order(
+        "O-FAK-NO-MATCH",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        TimeInForce::Ioc,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
+    let rejected = assert_order_event(recv_execution_event(&mut rx).await, "Rejected");
+
+    assert_eq!(rejected.client_order_id(), order.client_order_id());
+    assert_eq!(order_event_reason(&rejected), FAK_NO_MATCH_REASON);
+    assert_eq!(state.single_order_get_count.load(Ordering::Acquire), 0);
+    assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
+#[case::base(false)]
+#[case::collateral(true)]
+#[tokio::test]
+async fn test_submit_order_http_5xx_submit_outcome_unknown(#[case] quote_quantity: bool) {
     let state = TestServerState::default();
     *state.order_response_status.lock().await = StatusCode::INTERNAL_SERVER_ERROR;
     *state.order_response.lock().await = Some(load_json("http_order_response_error_500.json"));
@@ -9199,16 +9477,18 @@ async fn test_submit_order_http_5xx_submit_outcome_unknown() {
     client.start().unwrap();
 
     let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
-    add_instrument_to_cache(&cache, instrument_id);
+    add_instrument_to_cache_with_tick(&cache, instrument_id, "0.005", 6);
 
-    let order = make_limit_order(
+    let order = make_limit_order_at_price_and_quantity(
         "O-REJECT-500",
         instrument_id,
         OrderSide::Buy,
         false,
-        false,
+        quote_quantity,
         false,
         TimeInForce::Gtc,
+        Price::from("0.505"),
+        Quantity::from("10.10"),
     );
     cache
         .borrow_mut()
@@ -9218,9 +9498,15 @@ async fn test_submit_order_http_5xx_submit_outcome_unknown() {
 
     client.submit_order(cmd).unwrap();
 
-    // Submitted
-    let event = recv_execution_event(&mut rx).await;
-    assert_order_event(event, "Submitted");
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
+    if quote_quantity {
+        let updated = assert_order_event(recv_execution_event(&mut rx).await, "Updated");
+        let OrderEventAny::Updated(updated) = updated else {
+            unreachable!()
+        };
+        assert_eq!(updated.quantity.as_decimal(), dec!(20));
+        assert!(!updated.is_quote_quantity);
+    }
 
     wait_until_async(
         || {
@@ -9644,12 +9930,29 @@ async fn test_submit_order_ambiguous_retry_then_mismatched_order_id_remains_unkn
 }
 
 #[rstest]
+#[case::fok_unfilled(
+    TimeInForce::Fok,
+    "O-FOK-RETRY-AMBIGUOUS-THEN-UNFILLED",
+    "order couldn't be fully filled. FOK orders are fully filled or killed."
+)]
+#[case::fak_no_match(
+    TimeInForce::Ioc,
+    "O-FAK-RETRY-AMBIGUOUS-THEN-NO-MATCH",
+    FAK_NO_MATCH_REASON
+)]
 #[tokio::test]
-async fn test_submit_fok_order_ambiguous_retry_then_unfilled_response_remains_unknown() {
+async fn test_submit_order_ambiguous_retry_then_immediate_rejection_remains_unknown(
+    #[case] time_in_force: TimeInForce,
+    #[case] client_order_id: &str,
+    #[case] reason: &str,
+) {
     let state = TestServerState::default();
     *state.order_post_500_remaining.lock().await = 1;
+    state
+        .order_response_uses_request_hash
+        .store(true, Ordering::Release);
     *state.order_response.lock().await = Some(json!({
-        "errorMsg": "order couldn't be fully filled. FOK orders are fully filled or killed.",
+        "errorMsg": reason,
         "orderID": DEFAULT_ACCEPTED_ORDER_ID,
         "success": true
     }));
@@ -9661,13 +9964,13 @@ async fn test_submit_fok_order_ambiguous_retry_then_unfilled_response_remains_un
     let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
     add_instrument_to_cache(&cache, instrument_id);
     let order = make_limit_order(
-        "O-FOK-RETRY-AMBIGUOUS-THEN-UNFILLED",
+        client_order_id,
         instrument_id,
         OrderSide::Buy,
         false,
         false,
         false,
-        TimeInForce::Fok,
+        time_in_force,
     );
     cache
         .borrow_mut()
@@ -9688,6 +9991,16 @@ async fn test_submit_fok_order_ambiguous_retry_then_unfilled_response_remains_un
     )
     .await;
     assert_no_execution_event(&mut rx).await;
+
+    let body = state.last_body.lock().await.clone().unwrap();
+    let signed_order: PolymarketOrder = serde_json::from_value(body["order"].clone()).unwrap();
+    let expected_venue_order_id = format!("{:#x}", order_hash(&signed_order, false).unwrap());
+
+    assert_ne!(DEFAULT_ACCEPTED_ORDER_ID, expected_venue_order_id);
+    assert_eq!(
+        *state.open_order_ids.lock().await,
+        HashSet::from([expected_venue_order_id])
+    );
 }
 
 #[rstest]
@@ -9821,7 +10134,6 @@ async fn test_submit_order_list_serializes_amount_matrix(
         let (expected_maker, expected_taker) = match side {
             OrderSide::Buy => (notional_amount, quantity_amount),
             OrderSide::Sell => (quantity_amount, notional_amount),
-            _ => unreachable!(),
         };
         assert_eq!(
             signed_order.get("makerAmount").and_then(Value::as_str),
@@ -10078,6 +10390,69 @@ async fn test_submit_order_list_fok_unfilled_error_rejects_immediately() {
         let rejected = assert_order_event(recv_execution_event(&mut rx).await, "Rejected");
         assert_eq!(order_event_reason(&rejected), reason);
     }
+    assert_eq!(state.single_order_get_count.load(Ordering::Acquire), 0);
+    assert_no_execution_event(&mut rx).await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_list_fak_no_match_rejects_only_failed_leg() {
+    let state = TestServerState::default();
+    *state.batch_order_response.lock().await = Some(json!([
+        {"success": true, "orderID": "0xbatch-fak-rejected", "errorMsg": FAK_NO_MATCH_REASON},
+        {
+            "success": true,
+            "orderID": "0xbatch-fak-matched",
+            "status": "matched",
+            "errorMsg": FAK_NO_MATCH_REASON
+        }
+    ]));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache(&cache, instrument_id);
+    let orders: Vec<OrderAny> = ["O-BATCH-FAK-REJECTED", "O-BATCH-FAK-MATCHED"]
+        .into_iter()
+        .map(|client_order_id| {
+            make_limit_order(
+                client_order_id,
+                instrument_id,
+                OrderSide::Buy,
+                false,
+                false,
+                false,
+                TimeInForce::Ioc,
+            )
+        })
+        .collect();
+
+    for order in &orders {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+    }
+
+    client
+        .submit_order_list(make_submit_order_list_cmd(instrument_id, &orders))
+        .unwrap();
+
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
+    let rejected = assert_order_event(recv_execution_event(&mut rx).await, "Rejected");
+    let accepted = assert_order_event(recv_execution_event(&mut rx).await, "Accepted");
+
+    assert_eq!(
+        rejected.client_order_id(),
+        ClientOrderId::from("O-BATCH-FAK-REJECTED")
+    );
+    assert_eq!(order_event_reason(&rejected), FAK_NO_MATCH_REASON);
+    assert_eq!(
+        accepted.client_order_id(),
+        ClientOrderId::from("O-BATCH-FAK-MATCHED")
+    );
     assert_eq!(state.single_order_get_count.load(Ordering::Acquire), 0);
     assert_no_execution_event(&mut rx).await;
 }
@@ -10412,6 +10787,165 @@ async fn test_submit_order_list_normalizes_signed_limit_quantities() {
             dec!(23.45),
         );
     }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_list_signs_and_normalizes_collateral_limit_buys() {
+    let state = TestServerState::default();
+    *state.batch_order_response.lock().await = Some(json!([
+        {"success": true, "orderID": "0xcollateral-batch-1", "errorMsg": ""},
+        {"success": true, "orderID": "0xcollateral-batch-2", "errorMsg": ""}
+    ]));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_tick(&cache, instrument_id, "0.0025", 6);
+    let orders = [
+        make_limit_order_at_price_and_quantity(
+            "O-LIST-COLLATERAL-1",
+            instrument_id,
+            OrderSide::Buy,
+            false,
+            true,
+            false,
+            TimeInForce::Gtc,
+            Price::from("0.5025"),
+            Quantity::from("10.059"),
+        ),
+        make_limit_order_at_price_and_quantity(
+            "O-LIST-COLLATERAL-2",
+            instrument_id,
+            OrderSide::Buy,
+            false,
+            true,
+            false,
+            TimeInForce::Gtc,
+            Price::from("0.5025"),
+            Quantity::from("4.029"),
+        ),
+    ];
+
+    for order in &orders {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+    }
+
+    client
+        .submit_order_list(make_submit_order_list_cmd(instrument_id, &orders))
+        .unwrap();
+
+    for expected in ["Submitted", "Submitted"] {
+        let event = assert_order_event(recv_execution_event(&mut rx).await, expected);
+        cache.borrow_mut().update_order(&event).unwrap();
+    }
+
+    for expected_quantity in [dec!(20), dec!(8)] {
+        let event = assert_order_event(recv_execution_event(&mut rx).await, "Updated");
+        let OrderEventAny::Updated(updated) = &event else {
+            unreachable!()
+        };
+        assert_eq!(updated.quantity.as_decimal(), expected_quantity);
+        assert!(!updated.is_quote_quantity);
+        cache.borrow_mut().update_order(&event).unwrap();
+    }
+
+    for expected in ["Accepted", "Accepted"] {
+        let event = assert_order_event(recv_execution_event(&mut rx).await, expected);
+        cache.borrow_mut().update_order(&event).unwrap();
+    }
+
+    for (order, expected_quantity) in orders.iter().zip([dec!(20), dec!(8)]) {
+        let cached_order = cache
+            .borrow()
+            .order(&order.client_order_id())
+            .unwrap()
+            .clone();
+        assert_eq!(cached_order.quantity().as_decimal(), expected_quantity);
+        assert!(!cached_order.is_quote_quantity());
+    }
+
+    assert_eq!(*state.batch_order_post_count.lock().await, 1);
+    let body = state.last_body.lock().await.clone().unwrap();
+    let entries = body.as_array().unwrap();
+    assert_eq!(entries.len(), 2);
+    for (entry, (expected_maker, expected_taker)) in entries
+        .iter()
+        .zip([("10050000", "20000000"), ("4020000", "8000000")])
+    {
+        let signed_order = entry.get("order").unwrap();
+        assert_eq!(
+            signed_order.get("makerAmount").and_then(Value::as_str),
+            Some(expected_maker),
+        );
+        assert_eq!(
+            signed_order.get("takerAmount").and_then(Value::as_str),
+            Some(expected_taker),
+        );
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_list_denies_invalid_collateral_limit_orders_before_post() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let orders = [
+        make_limit_order_at_price_and_quantity(
+            "O-LIST-COLLATERAL-SELL",
+            instrument_id,
+            OrderSide::Sell,
+            false,
+            true,
+            false,
+            TimeInForce::Gtc,
+            Price::from("0.50"),
+            Quantity::from("10"),
+        ),
+        make_limit_order_at_price_and_quantity(
+            "O-LIST-COLLATERAL-BELOW-CENT",
+            instrument_id,
+            OrderSide::Buy,
+            false,
+            true,
+            false,
+            TimeInForce::Gtc,
+            Price::from("0.50"),
+            Quantity::from("0.009"),
+        ),
+    ];
+
+    for order in &orders {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+    }
+
+    client
+        .submit_order_list(make_submit_order_list_cmd(instrument_id, &orders))
+        .unwrap();
+
+    let denied = assert_order_event(rx.try_recv().unwrap(), "Denied");
+    assert_eq!(
+        order_event_reason(&denied),
+        "VALIDATION_FAILED: Limit SELL orders require quote_quantity=false (amount in shares)",
+    );
+    let denied = assert_order_event(rx.try_recv().unwrap(), "Denied");
+    assert_eq!(
+        order_event_reason(&denied),
+        "VALIDATION_FAILED: Polymarket limit order amount 0.009 pUSD truncates to zero at 2 decimal places",
+    );
+    assert_eq!(*state.order_post_count.lock().await, 0);
+    assert_eq!(*state.batch_order_post_count.lock().await, 0);
 }
 
 #[rstest]
@@ -11528,7 +12062,7 @@ async fn test_cancel_all_without_side_uses_selected_token_with_empty_order_cache
         .cancel_all_orders(make_cancel_all_cmd(
             StrategyId::from("S-001"),
             instrument_id,
-            OrderSide::NoOrderSide,
+            None,
         ))
         .unwrap();
 
@@ -11591,7 +12125,7 @@ async fn test_cancel_all_without_side_processes_cross_strategy_rejection() {
         .cancel_all_orders(make_cancel_all_cmd(
             StrategyId::from("S-001"),
             instrument_id,
-            OrderSide::NoOrderSide,
+            None,
         ))
         .unwrap();
 
@@ -11683,7 +12217,7 @@ async fn test_cancel_all_with_side_uses_cached_matching_orders(
         .cancel_all_orders(make_cancel_all_cmd(
             StrategyId::from("S-001"),
             instrument_id,
-            order_side,
+            Some(order_side),
         ))
         .unwrap();
 
@@ -11720,7 +12254,7 @@ async fn test_cancel_all_with_side_empty_local_cache_is_noop() {
         .cancel_all_orders(make_cancel_all_cmd(
             StrategyId::from("S-001"),
             instrument_id,
-            OrderSide::Sell,
+            Some(OrderSide::Sell),
         ))
         .unwrap();
 
@@ -11761,7 +12295,7 @@ async fn test_cancel_all_market_ambiguous_failure_retries_without_rejection() {
         .cancel_all_orders(make_cancel_all_cmd(
             StrategyId::from("S-001"),
             instrument_id,
-            OrderSide::NoOrderSide,
+            None,
         ))
         .unwrap();
 
@@ -11807,7 +12341,7 @@ async fn test_cancel_all_market_definitive_failure_emits_rejection() {
         .cancel_all_orders(make_cancel_all_cmd(
             StrategyId::from("S-001"),
             instrument_id,
-            OrderSide::NoOrderSide,
+            None,
         ))
         .unwrap();
 
@@ -11859,7 +12393,7 @@ async fn test_cancel_all_side_failure_rejects_only_cached_side_targets() {
         .cancel_all_orders(make_cancel_all_cmd(
             StrategyId::from("S-001"),
             instrument_id,
-            OrderSide::Buy,
+            Some(OrderSide::Buy),
         ))
         .unwrap();
 
@@ -11911,7 +12445,7 @@ async fn test_cancel_all_with_side_uses_cached_order_without_instrument() {
         .cancel_all_orders(make_cancel_all_cmd(
             StrategyId::from("S-001"),
             instrument_id,
-            OrderSide::Buy,
+            Some(OrderSide::Buy),
         ))
         .unwrap();
 
@@ -11946,7 +12480,7 @@ async fn test_cancel_all_missing_instrument_returns_error_without_request() {
         .cancel_all_orders(make_cancel_all_cmd(
             StrategyId::from("S-001"),
             instrument_id,
-            OrderSide::NoOrderSide,
+            None,
         ))
         .unwrap_err();
 
@@ -12015,7 +12549,7 @@ async fn test_group_cancel_orders_bounds_retries_and_result_processing(
     }
     let addr = start_mock_server(state.clone()).await;
     let mut config = create_test_exec_config_with_retries(addr, 1);
-    config.private_key = Some(private_key.to_string());
+    config.private_key = Some(private_key.into());
     let (mut client, mut rx, cache) = create_test_execution_client_from_config(config);
     client.start().unwrap();
 
@@ -12249,7 +12783,7 @@ async fn test_stop_does_not_abort_shutdown_cancel_response(#[case] mode: Shutdow
                 Some(*POLYMARKET_CLIENT_ID),
                 StrategyId::from("S-001"),
                 instrument_id,
-                OrderSide::NoOrderSide,
+                None,
                 UUID4::new(),
                 UnixNanos::default(),
                 None,
@@ -12344,10 +12878,10 @@ async fn test_disconnect_waits_for_shutdown_cancel_response() {
 
     let mut disconnect = Box::pin(client.disconnect());
     assert!(
-        tokio::time::timeout(Duration::from_millis(50), disconnect.as_mut())
+        tokio::time::timeout(Duration::from_millis(1_200), disconnect.as_mut())
             .await
             .is_err(),
-        "disconnect should wait for the in-flight cancel response"
+        "disconnect should preserve the in-flight cancel through its configured request timeout"
     );
 
     state.cancel_request_gate.release();
@@ -12535,7 +13069,7 @@ async fn test_group_cancel_around_batch_submit_ack_is_not_lost(
                 Some(*POLYMARKET_CLIENT_ID),
                 StrategyId::from("S-001"),
                 instrument_id,
-                OrderSide::Buy,
+                Some(OrderSide::Buy),
                 UUID4::new(),
                 UnixNanos::default(),
                 None,
@@ -12680,11 +13214,9 @@ async fn test_repeated_submit_cancel_shutdown_interleavings_leave_no_open_orders
         }));
 
         client.start().unwrap();
-        if index % 2 == 1 {
-            client.connect().await.unwrap();
+        client.connect().await.unwrap();
 
-            while rx.try_recv().is_ok() {}
-        }
+        while rx.try_recv().is_ok() {}
 
         let mut order = make_limit_order(
             &client_order_id,

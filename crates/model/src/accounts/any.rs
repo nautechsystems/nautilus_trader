@@ -34,44 +34,45 @@ use crate::{
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 
+/// Represents any account type, so accounts can be held in one collection.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[enum_dispatch(Account)]
 pub enum AccountAny {
+    /// A margin account holding leveraged positions.
     Margin(MarginAccount),
+    /// A cash account holding unleveraged positions.
     Cash(CashAccount),
+    /// A betting account holding backed and laid stakes.
     Betting(BettingAccount),
+    /// A blockchain wallet account holding native and token balances.
     Wallet(WalletAccount),
 }
 
 impl AccountAny {
+    /// Returns a copy without stored account state events.
+    #[must_use]
+    pub fn clone_without_events(&self) -> Self {
+        match self {
+            Self::Margin(margin) => Self::Margin(margin.clone_without_events()),
+            Self::Cash(cash) => Self::Cash(cash.clone_without_events()),
+            Self::Betting(betting) => Self::Betting(betting.clone_without_events()),
+            Self::Wallet(wallet) => Self::Wallet(wallet.clone_without_events()),
+        }
+    }
+
     #[must_use]
     pub fn id(&self) -> AccountId {
-        match self {
-            Self::Margin(margin) => margin.id,
-            Self::Cash(cash) => cash.id,
-            Self::Betting(betting) => betting.id,
-            Self::Wallet(wallet) => wallet.id,
-        }
+        Account::id(self)
     }
 
     #[must_use]
     pub fn last_event(&self) -> Option<AccountState> {
-        match self {
-            Self::Margin(margin) => margin.last_event(),
-            Self::Cash(cash) => cash.last_event(),
-            Self::Betting(betting) => betting.last_event(),
-            Self::Wallet(wallet) => wallet.last_event(),
-        }
+        Account::last_event(self)
     }
 
     #[must_use]
     pub fn events(&self) -> Vec<AccountState> {
-        match self {
-            Self::Margin(margin) => margin.events(),
-            Self::Cash(cash) => cash.events(),
-            Self::Betting(betting) => betting.events(),
-            Self::Wallet(wallet) => wallet.events(),
-        }
+        Account::events(self)
     }
 
     /// Applies an account state event to update the account.
@@ -81,19 +82,7 @@ impl AccountAny {
     /// Returns an error if the event belongs to a different account or the account state cannot be
     /// applied (e.g., negative balance when borrowing is not allowed for a cash account).
     pub fn apply(&mut self, event: AccountState) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            event.account_id == self.id(),
-            "Account event had a different account ID: expected {}, received {}",
-            self.id(),
-            event.account_id
-        );
-
-        match self {
-            Self::Margin(margin) => margin.apply(event),
-            Self::Cash(cash) => cash.apply(event),
-            Self::Betting(betting) => betting.apply(event),
-            Self::Wallet(wallet) => wallet.apply(event),
-        }
+        Account::apply(self, event)
     }
 
     /// Sets whether account state should be recalculated from order fills.
@@ -112,32 +101,17 @@ impl AccountAny {
 
     #[must_use]
     pub fn balances(&self) -> IndexMap<Currency, AccountBalance> {
-        match self {
-            Self::Margin(margin) => margin.balances(),
-            Self::Cash(cash) => cash.balances(),
-            Self::Betting(betting) => betting.balances(),
-            Self::Wallet(wallet) => wallet.balances(),
-        }
+        Account::balances(self)
     }
 
     #[must_use]
     pub fn balances_locked(&self) -> IndexMap<Currency, Money> {
-        match self {
-            Self::Margin(margin) => margin.balances_locked(),
-            Self::Cash(cash) => cash.balances_locked(),
-            Self::Betting(betting) => betting.balances_locked(),
-            Self::Wallet(wallet) => wallet.balances_locked(),
-        }
+        Account::balances_locked(self)
     }
 
     #[must_use]
     pub fn base_currency(&self) -> Option<Currency> {
-        match self {
-            Self::Margin(margin) => margin.base_currency(),
-            Self::Cash(cash) => cash.base_currency(),
-            Self::Betting(betting) => betting.base_currency(),
-            Self::Wallet(wallet) => wallet.base_currency(),
-        }
+        Account::base_currency(self)
     }
 
     /// # Errors
@@ -166,12 +140,7 @@ impl AccountAny {
         fill: &OrderFilled,
         position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>> {
-        match self {
-            Self::Margin(margin) => margin.calculate_pnls(instrument, fill, position),
-            Self::Cash(cash) => cash.calculate_pnls(instrument, fill, position),
-            Self::Betting(betting) => betting.calculate_pnls(instrument, fill, position),
-            Self::Wallet(wallet) => wallet.calculate_pnls(instrument, fill, position),
-        }
+        Account::calculate_pnls(self, instrument, fill, position)
     }
 
     /// # Errors
@@ -185,46 +154,19 @@ impl AccountAny {
         liquidity_side: LiquiditySide,
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
-        match self {
-            Self::Margin(margin) => margin.calculate_commission(
-                instrument,
-                last_qty,
-                last_px,
-                liquidity_side,
-                use_quote_for_inverse,
-            ),
-            Self::Cash(cash) => cash.calculate_commission(
-                instrument,
-                last_qty,
-                last_px,
-                liquidity_side,
-                use_quote_for_inverse,
-            ),
-            Self::Betting(betting) => betting.calculate_commission(
-                instrument,
-                last_qty,
-                last_px,
-                liquidity_side,
-                use_quote_for_inverse,
-            ),
-            Self::Wallet(wallet) => wallet.calculate_commission(
-                instrument,
-                last_qty,
-                last_px,
-                liquidity_side,
-                use_quote_for_inverse,
-            ),
-        }
+        Account::calculate_commission(
+            self,
+            instrument,
+            last_qty,
+            last_px,
+            liquidity_side,
+            use_quote_for_inverse,
+        )
     }
 
     #[must_use]
     pub fn balance(&self, currency: Option<Currency>) -> Option<&AccountBalance> {
-        match self {
-            Self::Margin(margin) => margin.balance(currency),
-            Self::Cash(cash) => cash.balance(currency),
-            Self::Betting(betting) => betting.balance(currency),
-            Self::Wallet(wallet) => wallet.balance(currency),
-        }
+        Account::balance(self, currency)
     }
 }
 
@@ -269,11 +211,16 @@ impl PartialEq for AccountAny {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal::Decimal;
 
     use crate::{
-        accounts::{Account, AccountAny},
+        accounts::{
+            Account, AccountAny,
+            margin_model::{MarginModel, MarginModelAny, StandardMarginModel},
+        },
         events::{AccountState, account::stubs::*},
-        identifiers::AccountId,
+        identifiers::{AccountId, InstrumentId},
+        types::Money,
     };
 
     #[rstest]
@@ -308,10 +255,112 @@ mod tests {
     }
 
     #[rstest]
+    #[case::cash(cash_account_state())]
+    #[case::margin(margin_account_state())]
+    #[case::betting(betting_account_state())]
+    #[case::wallet(wallet_account_state())]
+    fn test_apply_rejects_different_account_without_mutation(#[case] state: AccountState) {
+        let mut account = AccountAny::try_from_state(state.clone()).unwrap();
+        let balances_before = account.balances();
+        let mut foreign = state;
+        foreign.account_id = AccountId::from("OTHER-001");
+
+        let error = account.apply(foreign).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Account event had a different account ID: expected SIM-001, received OTHER-001"
+        );
+        assert_eq!(account.event_count(), 1);
+        assert_eq!(account.balances(), balances_before);
+    }
+
+    #[rstest]
     fn test_from_events_single_margin_event(margin_account_state: AccountState) {
         let result = AccountAny::from_events(&[margin_account_state]);
         assert!(result.is_ok());
         assert!(matches!(result.unwrap(), AccountAny::Margin(_)));
+    }
+
+    #[rstest]
+    #[case::cash(cash_account_state())]
+    #[case::margin(margin_account_state())]
+    #[case::betting(betting_account_state())]
+    #[case::wallet(wallet_account_state())]
+    fn test_clone_without_events_preserves_current_state(#[case] state: AccountState) {
+        let currency = state.balances[0].currency;
+        let instrument_id = InstrumentId::from("CLONE-TEST.SIM");
+        let locked = Money::from_decimal(Decimal::new(725, 2), currency).unwrap();
+        let commission = Money::from_decimal(Decimal::new(135, 2), currency).unwrap();
+        let mut account = AccountAny::try_from_state(state.clone()).unwrap();
+        account.apply(state).unwrap();
+
+        let base = match &mut account {
+            AccountAny::Margin(account) => &mut account.base,
+            AccountAny::Cash(account) => &mut account.base,
+            AccountAny::Betting(account) => &mut account.base,
+            AccountAny::Wallet(account) => &mut account.base,
+        };
+        base.calculate_account_state = true;
+        base.commissions.insert(currency, commission);
+
+        match &mut account {
+            AccountAny::Margin(account) => {
+                account.set_default_leverage(Decimal::new(7, 0));
+                account.set_leverage(instrument_id, Decimal::new(3, 0));
+                account.set_margin_model(MarginModelAny::Standard(StandardMarginModel).into());
+            }
+            AccountAny::Cash(account) => {
+                account.allow_borrowing = true;
+                account
+                    .balances_locked
+                    .insert((instrument_id, currency), locked);
+            }
+            AccountAny::Betting(account) => {
+                account
+                    .balances_locked
+                    .insert((instrument_id, currency), locked);
+            }
+            AccountAny::Wallet(account) => {
+                account
+                    .balances_locked
+                    .insert((instrument_id, currency), locked);
+            }
+        }
+
+        let cloned = account.clone_without_events();
+        let mut expected = account.clone();
+
+        match &mut expected {
+            AccountAny::Margin(account) => account.base.events.clear(),
+            AccountAny::Cash(account) => account.base.events.clear(),
+            AccountAny::Betting(account) => account.base.events.clear(),
+            AccountAny::Wallet(account) => account.base.events.clear(),
+        }
+
+        assert_eq!(account.event_count(), 2);
+        assert_eq!(cloned.event_count(), 0);
+        match (&account, &cloned) {
+            (AccountAny::Margin(source), AccountAny::Margin(cloned)) => {
+                assert_eq!(cloned.margin_model().name(), source.margin_model().name());
+                assert_eq!(cloned.margin_model().name(), "standard");
+            }
+            (AccountAny::Cash(source), AccountAny::Cash(cloned)) => {
+                assert_eq!(cloned.balances_locked, source.balances_locked);
+                assert!(cloned.allow_borrowing);
+            }
+            (AccountAny::Betting(source), AccountAny::Betting(cloned)) => {
+                assert_eq!(cloned.balances_locked, source.balances_locked);
+            }
+            (AccountAny::Wallet(source), AccountAny::Wallet(cloned)) => {
+                assert_eq!(cloned.balances_locked, source.balances_locked);
+            }
+            _ => panic!("cloned account variant changed"),
+        }
+        assert_eq!(
+            serde_json::to_value(&cloned).unwrap(),
+            serde_json::to_value(&expected).unwrap()
+        );
     }
 
     #[rstest]

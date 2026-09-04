@@ -15,12 +15,13 @@
 
 //! PyO3 registry system for generic trait object extraction.
 
-use std::{collections::HashMap, sync::Mutex};
+use std::collections::HashMap;
 
 use nautilus_common::factories::{
     ClientConfig, DataClientFactory, ExecutionClientFactory, SimulatedExecutionClientFactory,
 };
-use nautilus_core::{MUTEX_POISONED, python::to_pynotimplemented_err};
+use nautilus_core::python::to_pynotimplemented_err;
+use parking_lot::Mutex;
 use pyo3::prelude::*;
 
 /// Function type for extracting a `Py<PyAny>` factory to a boxed `DataClientFactory` trait object.
@@ -68,16 +69,12 @@ impl FactoryRegistry {
     /// # Errors
     ///
     /// Returns an error if a factory with the same name is already registered.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     pub fn register_factory_extractor(
         &self,
         name: String,
         extractor: FactoryExtractor,
     ) -> anyhow::Result<()> {
-        let mut extractors = self.factory_extractors.lock().expect(MUTEX_POISONED);
+        let mut extractors = self.factory_extractors.lock();
 
         if extractors.contains_key(&name) {
             anyhow::bail!("Factory extractor '{name}' is already registered");
@@ -91,16 +88,12 @@ impl FactoryRegistry {
     /// # Errors
     ///
     /// Returns an error if a config with the same type name is already registered.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     pub fn register_config_extractor(
         &self,
         type_name: String,
         extractor: ConfigExtractor,
     ) -> anyhow::Result<()> {
-        let mut extractors = self.config_extractors_by_type.lock().expect(MUTEX_POISONED);
+        let mut extractors = self.config_extractors_by_type.lock();
 
         if extractors.contains_key(&type_name) {
             anyhow::bail!("Config extractor '{type_name}' is already registered");
@@ -115,16 +108,12 @@ impl FactoryRegistry {
     /// # Errors
     ///
     /// Returns an error if a factory with the same name is already registered.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     pub fn register_exec_factory_extractor(
         &self,
         name: String,
         extractor: ExecutionFactoryExtractor,
     ) -> anyhow::Result<()> {
-        let mut extractors = self.exec_factory_extractors.lock().expect(MUTEX_POISONED);
+        let mut extractors = self.exec_factory_extractors.lock();
 
         if extractors.contains_key(&name) {
             anyhow::bail!("Execution factory extractor '{name}' is already registered");
@@ -138,19 +127,12 @@ impl FactoryRegistry {
     /// # Errors
     ///
     /// Returns an error if a factory with the same name is already registered.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     pub fn register_sim_exec_factory_extractor(
         &self,
         name: String,
         extractor: SimulatedExecutionFactoryExtractor,
     ) -> anyhow::Result<()> {
-        let mut extractors = self
-            .sim_exec_factory_extractors
-            .lock()
-            .expect(MUTEX_POISONED);
+        let mut extractors = self.sim_exec_factory_extractors.lock();
 
         if extractors.contains_key(&name) {
             anyhow::bail!("Simulated execution factory extractor '{name}' is already registered");
@@ -164,10 +146,6 @@ impl FactoryRegistry {
     /// # Errors
     ///
     /// Returns an error if no extractor is registered for the factory type or extraction fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     pub fn extract_factory(
         &self,
         py: Python<'_>,
@@ -179,7 +157,7 @@ impl FactoryRegistry {
             .call0(py)?
             .extract::<String>(py)?;
 
-        let extractors = self.factory_extractors.lock().expect(MUTEX_POISONED);
+        let extractors = self.factory_extractors.lock();
         if let Some(extractor) = extractors.get(&factory_name) {
             extractor(py, factory)
         } else {
@@ -194,10 +172,6 @@ impl FactoryRegistry {
     /// # Errors
     ///
     /// Returns an error if no extractor is registered for the factory type or extraction fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     pub fn extract_exec_factory(
         &self,
         py: Python<'_>,
@@ -208,7 +182,7 @@ impl FactoryRegistry {
             .call0(py)?
             .extract::<String>(py)?;
 
-        let extractors = self.exec_factory_extractors.lock().expect(MUTEX_POISONED);
+        let extractors = self.exec_factory_extractors.lock();
         if let Some(extractor) = extractors.get(&factory_name) {
             extractor(py, factory)
         } else {
@@ -223,10 +197,6 @@ impl FactoryRegistry {
     /// # Errors
     ///
     /// Returns an error if no extractor is registered for the factory type or extraction fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     pub fn extract_sim_exec_factory(
         &self,
         py: Python<'_>,
@@ -237,10 +207,7 @@ impl FactoryRegistry {
             .call0(py)?
             .extract::<String>(py)?;
 
-        let extractors = self
-            .sim_exec_factory_extractors
-            .lock()
-            .expect(MUTEX_POISONED);
+        let extractors = self.sim_exec_factory_extractors.lock();
 
         if let Some(extractor) = extractors.get(&factory_name) {
             extractor(py, factory)
@@ -256,10 +223,6 @@ impl FactoryRegistry {
     /// # Errors
     ///
     /// Returns an error if no extractor is registered for the config type or extraction fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal mutex is poisoned.
     pub fn extract_config(
         &self,
         py: Python<'_>,
@@ -271,7 +234,7 @@ impl FactoryRegistry {
             .getattr(py, "__name__")?
             .extract::<String>(py)?;
 
-        let extractors = self.config_extractors_by_type.lock().expect(MUTEX_POISONED);
+        let extractors = self.config_extractors_by_type.lock();
         if let Some(extractor) = extractors.get(&config_type_name) {
             extractor(py, config)
         } else {

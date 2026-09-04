@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-derive"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -75,6 +74,7 @@ dashmap = { workspace = true }
 futures-util = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
+parking_lot = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
@@ -134,7 +134,7 @@ doc = false
 test = false
 
 [[bin]]
-name = "fuzz_ws_decode"
+name = "fuzz-ws-decode"
 path = "fuzz/fuzz_targets/fuzz_ws_decode.rs"
 required-features = ["fuzz"]
 test = false
@@ -142,7 +142,7 @@ doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_decimal_decode"
+name = "fuzz-decimal-decode"
 path = "fuzz/fuzz_targets/fuzz_decimal_decode.rs"
 required-features = ["fuzz"]
 test = false
@@ -150,7 +150,7 @@ doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_trade_module_encode"
+name = "fuzz-trade-module-encode"
 path = "fuzz/fuzz_targets/fuzz_trade_module_encode.rs"
 required-features = ["fuzz"]
 test = false
@@ -158,7 +158,7 @@ doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_action_hash"
+name = "fuzz-action-hash"
 path = "fuzz/fuzz_targets/fuzz_action_hash.rs"
 required-features = ["fuzz"]
 test = false
@@ -166,7 +166,7 @@ doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_nonce_sequence"
+name = "fuzz-nonce-sequence"
 path = "fuzz/fuzz_targets/fuzz_nonce_sequence.rs"
 required-features = ["fuzz"]
 test = false

@@ -22,7 +22,7 @@ The visualization system requires the `visualization` extra. It installs Pandas 
 DataFrame handling, Plotly for interactive figures, and Kaleido for static image export:
 
 ```bash
-uv pip install "nautilus_trader[visualization]"
+uv pip install --pre "nautilus_trader[visualization]"
 ```
 
 :::
@@ -514,8 +514,10 @@ This approach is useful for:
 Custom charts work best when paired with statistics supplied through the same
 `stats_pnls`, `stats_returns`, and `stats_general` dictionaries used by the built-in
 tearsheet charts. For `BacktestEngine` input these values come from
-`engine.get_result()`; for offline analysis, pass compatible dictionaries directly to
-`create_tearsheet_from_stats()`:
+`engine.get_result()`, so a statistic registered with `Portfolio.register_statistic()` reaches the
+tearsheet without any extra wiring; see
+[Custom statistics](portfolio.md#custom-statistics). For offline analysis, pass compatible
+dictionaries directly to `create_tearsheet_from_stats()`:
 
 ```python
 stats_returns = {

@@ -20,8 +20,8 @@
 //! Run with: `cargo run --example dydx-exec-tester --package nautilus-dydx --features examples`
 //!
 //! Required credential environment variables:
-//! - `DYDX_PRIVATE_KEY` (or `DYDX_TESTNET_PRIVATE_KEY` for testnet).
-//! - `DYDX_WALLET_ADDRESS` (optional, derived from the private key if not set).
+//! - `DYDX_PRIVATE_KEY` (or `DYDX_TESTNET_PRIVATE_KEY` for testnet)
+//! - `DYDX_WALLET_ADDRESS` (optional, derived from the private key if not set)
 
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
@@ -38,6 +38,10 @@ use nautilus_model::{
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
+// WARNING: With `DRY_RUN = false`, this tester submits orders to the configured
+// environment and may use real funds. Set `DRY_RUN = true` to connect without
+// submitting orders or sending shutdown cancel/close commands.
+const DRY_RUN: bool = false;
 const DYDX_NETWORK: DydxNetwork = DydxNetwork::Mainnet;
 const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "DYDX-001";
@@ -98,7 +102,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from(STRATEGY_ID)),
-            external_order_claims: Some(vec![instrument_id]),
+            external_order_instrument_ids: Some(vec![instrument_id]),
             // dYdX uses u32 client order IDs internally, UUIDs are mapped
             use_hyphens_in_client_order_ids: false,
             ..Default::default()
@@ -106,6 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
+        .dry_run(DRY_RUN)
         .log_data(false)
         .use_post_only(true)
         .build()?;

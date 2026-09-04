@@ -305,14 +305,11 @@ impl From<AxOrderSide> for PositionSide {
     }
 }
 
-impl TryFrom<OrderSide> for AxOrderSide {
-    type Error = &'static str;
-
-    fn try_from(side: OrderSide) -> Result<Self, Self::Error> {
+impl From<OrderSide> for AxOrderSide {
+    fn from(side: OrderSide) -> Self {
         match side {
-            OrderSide::Buy => Ok(Self::Buy),
-            OrderSide::Sell => Ok(Self::Sell),
-            _ => Err("Invalid order side for AX"),
+            OrderSide::Buy => Self::Buy,
+            OrderSide::Sell => Self::Sell,
         }
     }
 }
@@ -320,7 +317,7 @@ impl TryFrom<OrderSide> for AxOrderSide {
 /// How a perpetual symbol's funding accrues over a trading day.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/marketdata/get-funding-slots>
+/// - <https://docs.architect.exchange/api-reference>
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AxFundingVariant {
@@ -333,7 +330,7 @@ pub enum AxFundingVariant {
 /// Status of one funding slot within a `GET /funding-slots` trading day.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/marketdata/get-funding-slots>
+/// - <https://docs.architect.exchange/api-reference>
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AxFundingSlotStatus {

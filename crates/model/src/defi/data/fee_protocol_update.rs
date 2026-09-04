@@ -48,6 +48,9 @@ pub struct PoolFeeProtocolUpdate {
     pub pool_identifier: PoolIdentifier,
     /// The blockchain block number where the protocol-fee change occurred.
     pub block: u64,
+    /// The hash of the block observed when this change was ingested.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_hash: Option<String>,
     /// The unique hash identifier of the blockchain transaction containing the protocol-fee change.
     pub transaction_hash: String,
     /// The index position of the transaction within the block.
@@ -88,6 +91,7 @@ impl PoolFeeProtocolUpdate {
             instrument_id,
             pool_identifier,
             block,
+            block_hash: None,
             transaction_hash,
             transaction_index,
             log_index,

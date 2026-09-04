@@ -306,7 +306,7 @@ async fn test_client_connection() {
     assert!(client.is_active());
     assert_eq!(*state.connection_count.lock().await, 1);
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -325,7 +325,7 @@ async fn test_client_disconnect() {
 
     assert!(client.is_active());
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
 
     tokio::time::sleep(Duration::from_millis(100)).await;
 }
@@ -509,7 +509,7 @@ async fn test_place_order_request_format() {
     assert!(params.get("apiKey").is_some());
     assert!(params.get("signature").is_some());
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -555,7 +555,7 @@ async fn test_place_order_accepted() {
         other => panic!("Expected OrderAccepted, was {other:?}"),
     }
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -604,7 +604,7 @@ async fn test_place_order_rejected() {
         other => panic!("Expected OrderRejected, was {other:?}"),
     }
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -652,7 +652,7 @@ async fn test_cancel_order_request_format() {
     );
     assert!(params.get("signature").is_some());
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -693,7 +693,7 @@ async fn test_cancel_order_accepted() {
         other => panic!("Expected OrderCanceled, was {other:?}"),
     }
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -738,7 +738,7 @@ async fn test_cancel_order_rejected() {
         other => panic!("Expected CancelRejected, was {other:?}"),
     }
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -797,7 +797,7 @@ async fn test_modify_order_request_format() {
     );
     assert!(params.get("signature").is_some());
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -841,7 +841,7 @@ async fn test_modify_order_accepted() {
         other => panic!("Expected OrderModified, was {other:?}"),
     }
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -889,7 +889,7 @@ async fn test_modify_order_rejected() {
         other => panic!("Expected ModifyRejected, was {other:?}"),
     }
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -928,7 +928,7 @@ async fn test_request_id_increments() {
     assert!(id1.starts_with("req-"));
     assert!(id2.starts_with("req-"));
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]

@@ -1,16 +1,18 @@
 # nautilus-lighter
 
 [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
-[![Documentation](https://img.shields.io/docsrs/nautilus-lighter)](https://docs.rs/nautilus-lighter/latest/nautilus-lighter/)
+[![Documentation](https://img.shields.io/docsrs/nautilus-lighter)](https://docs.rs/nautilus-lighter/latest/nautilus_lighter/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-lighter.svg)](https://crates.io/crates/nautilus-lighter)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
 [NautilusTrader](https://nautilustrader.io) adapter for the [Lighter](https://lighter.xyz) decentralized spot and perpetuals exchange.
 
-The `nautilus-lighter` crate implements the Lighter adapter for NautilusTrader, including
+The `nautilus-lighter` crate implements the Lighter protocol adapter for NautilusTrader, including
 typed HTTP and WebSocket clients, REST and stream models, venue parsing, data and execution
-client wiring, and an in-tree L2 signer for the official **Lighter API**.
+client wiring, and an in-tree L2 signer for the official **Lighter API**. It supports the Lighter
+and Robinhood Chain deployments with deployment-specific endpoints, chain IDs, settlement
+currencies, and Nautilus venue defaults.
 
 Lighter is a high-throughput central-limit-order-book decentralized crypto exchange
 for spot and perpetual futures, settling on Ethereum via a custom zero-knowledge rollup.
@@ -32,36 +34,48 @@ event-driven architecture, providing research-to-live semantic parity.
 
 This crate provides feature flags to control source code inclusion during compilation:
 
-- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+- `examples`: Enables the crate's example binaries.
 - `extension-module`: Builds as a Python extension module.
+- `fuzz`: Enables libFuzzer integration for fuzz targets.
+- `high-precision` (default): Enables
+  [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
+  to use 128-bit value types.
+- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
 Python bindings are intentionally narrow: configuration, enums, factory wiring, and the
-integrator revocation helper. Data and execution clients are consumed directly through the Rust
+integrator revocation operation. Data and execution clients are consumed directly through the Rust
 trait surface.
-
-[High-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) (128-bit value types) is enabled by default.
 
 ## Integrator attribution
 
-On mainnet, submitted create and modify order transactions carry the NautilusTrader integrator
-account index in Lighter's `L2TxAttributes`. This helps us gauge real usage of the integration and
-prioritize ongoing maintenance. Maker and taker integrator fees are set to zero, so attribution adds
-no trading cost. Testnet create and modify transactions leave `L2TxAttributes` empty.
+On Lighter Mainnet, submitted create and modify order transactions from Plus and Premium accounts
+carry the NautilusTrader integrator account index in Lighter's `L2TxAttributes`. This helps us gauge
+real usage of the integration and prioritize ongoing maintenance. Maker and taker integrator fees
+are set to zero, so attribution adds no trading cost. All other account tiers, sessions without an
+account snapshot, Lighter Testnet, and both Robinhood environments leave `L2TxAttributes` empty.
 
 Lighter requires an `ApproveIntegrator` approval before these attributes can be attached to orders.
-During startup, the mainnet execution client submits the required **zero-fee** approval for the
-configured L2 account. The testnet client does not submit an approval. See the
-[Lighter integration guide](https://nautilustrader.io/docs/nightly/integrations/lighter.html#integrator-attribution)
-for approval and revocation details.
+During startup, the Lighter Mainnet execution client submits the required **zero-fee** approval for
+a configured Plus or Premium L2 account. Other Lighter account tiers, sessions without an account
+snapshot, Lighter Testnet, and Robinhood clients do not submit an approval.
+
+Robinhood Mainnet uses separate account-level referral attribution. During startup, the
+execution client applies the `NAUTILUS` code to the account's public L1 address. Selecting the
+Robinhood Mainnet opts the account into this attribution. Application failures log a
+warning and do not block trading. Robinhood Testnet does not apply a referral.
+
+See the [Lighter integration guide](https://nautilustrader.io/docs/nightly/integrations/lighter/#integrator-attribution)
+for full attribution and revocation details.
 
 ### Maker-only API keys
 
-On mainnet, Lighter restricts maker-only API keys to the 0ms speed-bump lane (PostOnly orders,
-modifies on ALO orders, and cancels), so they cannot submit `ApproveIntegrator` themselves. The
-execution client detects maker-only keys at startup via `getMakerOnlyApiKeys` and skips the approval
-with a WARN log. Approval is account-scoped: a single `ApproveIntegrator` from any non-maker-only
-key on the same account permanently unlocks orders for every key on that account, including
-maker-only ones. Testnet does not query `getMakerOnlyApiKeys` for integrator approval.
+On Lighter Mainnet, Lighter restricts maker-only API keys to the 0ms speed-bump lane (PostOnly
+orders, modifies on ALO orders, and cancels), so they cannot submit `ApproveIntegrator` themselves.
+The execution client detects maker-only keys at startup via `getMakerOnlyApiKeys` and skips the
+approval with a WARN log. Approval is account-scoped: a single `ApproveIntegrator` from any
+non-maker-only key on the same account permanently unlocks orders for every key on that account,
+including maker-only ones. Lighter Testnet and both Robinhood environments do not query
+`getMakerOnlyApiKeys` for integrator approval.
 
 ## L2 transaction signer
 

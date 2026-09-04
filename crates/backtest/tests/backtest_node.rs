@@ -20,7 +20,7 @@
 //! Tests that arm shutdown-on-error use global logging state. Run with cargo-nextest for process
 //! isolation, or use --test-threads=1.
 
-use std::{fmt::Debug, str::FromStr};
+use std::{cell::RefCell, fmt::Debug, rc::Rc, str::FromStr};
 
 use nautilus_backtest::{
     config::{
@@ -378,6 +378,53 @@ impl DataActor for ShutdownOnTick {
     }
 }
 
+struct RecordingStrategy {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    timestamps: Rc<RefCell<Vec<UnixNanos>>>,
+}
+
+impl RecordingStrategy {
+    fn new(instrument_id: InstrumentId, timestamps: Rc<RefCell<Vec<UnixNanos>>>) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("RECORDING-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            timestamps,
+        }
+    }
+}
+
+nautilus_strategy!(RecordingStrategy);
+
+impl Debug for RecordingStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(RecordingStrategy)).finish()
+    }
+}
+
+impl DataActor for RecordingStrategy {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        self.subscribe_trades(self.instrument_id, None, None);
+        Ok(())
+    }
+
+    fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        self.timestamps.borrow_mut().push(quote.ts_init);
+        Ok(())
+    }
+
+    fn on_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
+        self.timestamps.borrow_mut().push(trade.ts_init);
+        Ok(())
+    }
+}
+
 struct LogErrorOnTick {
     core: StrategyCore,
     instrument_id: InstrumentId,
@@ -528,7 +575,7 @@ fn test_run_clears_data_after_suppressed_error(crypto_perpetual_ethusdt: CryptoP
     assert!(failed_results.is_empty());
 
     let engine = node.get_engine_mut(&config_id).unwrap();
-    engine.reset();
+    engine.reset().unwrap();
     engine.clear_strategies().unwrap();
 
     let results = node.run().unwrap();
@@ -1165,6 +1212,61 @@ fn test_multiple_data_configs_mixed_types(crypto_perpetual_ethusdt: CryptoPerpet
     // Should process both quotes and trades (10 + 10 = 20)
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].iterations, 20);
+}
+
+#[rstest]
+fn test_run_streaming_multiple_data_configs(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let base_ts = 1_000_000_000u64;
+    let (_temp_dir, catalog_path) =
+        create_catalog_with_quotes_and_trades(&instrument, 10, 10, base_ts);
+
+    let quote_data = BacktestDataConfig::builder()
+        .data_type(NautilusDataType::QuoteTick)
+        .catalog_path(catalog_path.clone())
+        .instrument_id(instrument.id())
+        .build()
+        .unwrap();
+    let trade_data = BacktestDataConfig::builder()
+        .data_type(NautilusDataType::TradeTick)
+        .catalog_path(catalog_path)
+        .instrument_id(instrument.id())
+        .build()
+        .unwrap();
+
+    // chunk_size=3 spans the 20 events over several chunks
+    let config = BacktestRunConfig::builder()
+        .venues(vec![binance_venue_config()])
+        .data(vec![quote_data, trade_data])
+        .chunk_size(3)
+        .build()
+        .unwrap();
+    let config_id = config.id().to_string();
+
+    let timestamps = Rc::new(RefCell::new(Vec::new()));
+    let mut node = BacktestNode::new(vec![config]).unwrap();
+    node.build().unwrap();
+    node.get_engine_mut(&config_id)
+        .unwrap()
+        .add_strategy(RecordingStrategy::new(
+            instrument.id(),
+            Rc::clone(&timestamps),
+        ))
+        .unwrap();
+
+    let results = node.run().unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].iterations, 20);
+
+    // Trades sit 500ms after each quote, so both configs must arrive interleaved
+    let expected: Vec<UnixNanos> = (0..10u64)
+        .flat_map(|i| {
+            let ts = base_ts + i * 1_000_000_000;
+            [UnixNanos::from(ts), UnixNanos::from(ts + 500_000_000)]
+        })
+        .collect();
+    assert_eq!(*timestamps.borrow(), expected);
 }
 
 #[rstest]

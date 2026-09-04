@@ -16,9 +16,11 @@
 //! HTTP response parsing utilities for the Derive execution client.
 
 use anyhow::Context;
+#[cfg(test)]
+use nautilus_core::string::secret::SecretString;
 use nautilus_core::{Params, UUID4, UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND};
 use nautilus_model::{
-    enums::{LiquiditySide, OrderType, PositionSideSpecified},
+    enums::{LiquiditySide, OrderType, PositionSide},
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
@@ -47,6 +49,7 @@ use crate::{
 /// `client_order_id` is sourced from the `label` field on the order when the
 /// label is non-empty; callers that need a specific client_order_id should
 /// override via `with_client_order_id` after this call.
+/// Trailing zero padding is removed without changing the value.
 ///
 /// # Errors
 ///
@@ -55,6 +58,16 @@ use crate::{
 pub fn parse_derive_order_to_report(
     order: &DeriveOrder,
     account_id: AccountId,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderStatusReport> {
+    parse_derive_order_to_report_with_precision(order, account_id, None, None, ts_init)
+}
+
+pub(crate) fn parse_derive_order_to_report_with_precision(
+    order: &DeriveOrder,
+    account_id: AccountId,
+    price_precision: Option<u8>,
+    size_precision: Option<u8>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     let instrument_id =
@@ -66,8 +79,8 @@ pub fn parse_derive_order_to_report(
     let time_in_force = derive_tif_to_nautilus(order.time_in_force);
     let order_status =
         derive_status_to_nautilus(order.order_status, order.filled_amount, order.amount);
-    let quantity = quantity_from_decimal(order.amount, "amount")?;
-    let filled_qty = quantity_from_decimal(order.filled_amount, "filled_amount")?;
+    let quantity = quantity_from_decimal(order.amount, size_precision, "amount")?;
+    let filled_qty = quantity_from_decimal(order.filled_amount, size_precision, "filled_amount")?;
 
     let ts_accepted = ms_to_nanos(order.creation_timestamp);
     let ts_last = ms_to_nanos(order.last_update_timestamp);
@@ -77,7 +90,7 @@ pub fn parse_derive_order_to_report(
         instrument_id,
         None,
         venue_order_id,
-        order_side,
+        order_side.into(),
         order_type,
         time_in_force,
         order_status,
@@ -96,14 +109,14 @@ pub fn parse_derive_order_to_report(
 
     if order.limit_price > Decimal::ZERO
         && order_type_has_limit_price(order_type)
-        && let Ok(price) = Price::from_decimal(order.limit_price.normalize())
+        && let Ok(price) = price_from_decimal(order.limit_price, price_precision, "limit_price")
     {
         report = report.with_price(price);
     }
 
     if let Some(trigger_price) = order.trigger_price
         && trigger_price > Decimal::ZERO
-        && let Ok(price) = Price::from_decimal(trigger_price.normalize())
+        && let Ok(price) = price_from_decimal(trigger_price, price_precision, "trigger_price")
     {
         report = report.with_trigger_price(price);
     }
@@ -178,6 +191,7 @@ fn limit_if_touched_prices_are_valid(
 /// Quote-currency commission is reported in the same currency as the
 /// instrument's settlement (USDC for perps and options). `client_order_id`
 /// is sourced from the trade `label` when populated.
+/// Trailing zero padding is removed without changing the value.
 ///
 /// # Errors
 ///
@@ -187,6 +201,24 @@ pub fn parse_derive_trade_to_fill_report(
     trade: &DeriveTrade,
     account_id: AccountId,
     fee_currency: Currency,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Option<FillReport>> {
+    parse_derive_trade_to_fill_report_with_precision(
+        trade,
+        account_id,
+        fee_currency,
+        None,
+        None,
+        ts_init,
+    )
+}
+
+pub(crate) fn parse_derive_trade_to_fill_report_with_precision(
+    trade: &DeriveTrade,
+    account_id: AccountId,
+    fee_currency: Currency,
+    price_precision: Option<u8>,
+    size_precision: Option<u8>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Option<FillReport>> {
     // The venue ships pending settlements with an empty trade_id and tx_hash;
@@ -201,8 +233,8 @@ pub fn parse_derive_trade_to_fill_report(
     let venue_order_id = VenueOrderId::new(trade.order_id.as_str());
     let trade_id = TradeId::new(trade.trade_id.as_str());
     let order_side = derive_order_side_to_nautilus(trade.direction);
-    let last_qty = quantity_from_decimal(trade.trade_amount, "trade_amount")?;
-    let last_px = price_from_decimal(trade.trade_price, "trade_price")?;
+    let last_qty = quantity_from_decimal(trade.trade_amount, size_precision, "trade_amount")?;
+    let last_px = price_from_decimal(trade.trade_price, price_precision, "trade_price")?;
     let commission = commission_from_decimal(trade.trade_fee, fee_currency)?;
     let liquidity_side = match trade.liquidity_role {
         DeriveLiquidityRole::Maker => LiquiditySide::Maker,
@@ -238,8 +270,7 @@ pub fn parse_derive_trade_to_fill_report(
 
 /// Builds a [`PositionStatusReport`] from a Derive position record.
 ///
-/// Returns `Ok(None)` when the position is flat (zero amount) and the caller
-/// asked for non-flat reports only.
+/// Trailing zero padding is removed without changing the value.
 ///
 /// # Errors
 ///
@@ -250,20 +281,29 @@ pub fn parse_derive_position_to_report(
     account_id: AccountId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<PositionStatusReport> {
+    parse_derive_position_to_report_with_precision(position, account_id, None, ts_init)
+}
+
+pub(crate) fn parse_derive_position_to_report_with_precision(
+    position: &DerivePosition,
+    account_id: AccountId,
+    size_precision: Option<u8>,
+    ts_init: UnixNanos,
+) -> anyhow::Result<PositionStatusReport> {
     let instrument_id = InstrumentId::new(
         Symbol::new(position.instrument_name.as_str()),
         *DERIVE_VENUE,
     );
     let signed_amount = position.amount;
     let side = if signed_amount > Decimal::ZERO {
-        PositionSideSpecified::Long
+        PositionSide::Long
     } else if signed_amount < Decimal::ZERO {
-        PositionSideSpecified::Short
+        PositionSide::Short
     } else {
-        PositionSideSpecified::Flat
+        PositionSide::Flat
     };
     let abs_amount = signed_amount.abs();
-    let quantity = quantity_from_decimal(abs_amount, "position.amount")?;
+    let quantity = quantity_from_decimal(abs_amount, size_precision, "position.amount")?;
 
     Ok(PositionStatusReport::new(
         account_id,
@@ -361,12 +401,24 @@ pub fn parse_derive_subaccount_to_balances(
     Ok((balances, margins, info))
 }
 
-fn price_from_decimal(value: Decimal, field: &str) -> anyhow::Result<Price> {
-    Price::from_decimal(value.normalize()).with_context(|| format!("invalid Derive {field}"))
+fn price_from_decimal(value: Decimal, precision: Option<u8>, field: &str) -> anyhow::Result<Price> {
+    match precision {
+        Some(precision) => Price::from_decimal_dp(value, precision),
+        None => Price::from_decimal(value.normalize()),
+    }
+    .with_context(|| format!("invalid Derive {field}"))
 }
 
-fn quantity_from_decimal(value: Decimal, field: &str) -> anyhow::Result<Quantity> {
-    Quantity::from_decimal(value.normalize()).with_context(|| format!("invalid Derive {field}"))
+fn quantity_from_decimal(
+    value: Decimal,
+    precision: Option<u8>,
+    field: &str,
+) -> anyhow::Result<Quantity> {
+    match precision {
+        Some(precision) => Quantity::from_decimal_dp(value, precision),
+        None => Quantity::from_decimal(value.normalize()),
+    }
+    .with_context(|| format!("invalid Derive {field}"))
 }
 
 fn commission_from_decimal(value: Decimal, currency: Currency) -> anyhow::Result<Money> {
@@ -423,7 +475,7 @@ mod tests {
             order_type: DeriveOrderType::Limit,
             quote_id: None,
             replaced_order_id: None,
-            signature: "0x00".to_string(),
+            signature: SecretString::from("0x00"),
             signature_expiry_sec: 1_700_000_999,
             signer: "0xsigner".into(),
             subaccount_id: 30769,
@@ -461,15 +513,8 @@ mod tests {
 
     #[rstest]
     fn test_order_side_round_trip() {
-        assert_eq!(
-            order_side_to_derive(OrderSide::Buy).unwrap(),
-            DeriveOrderSide::Buy,
-        );
-        assert_eq!(
-            order_side_to_derive(OrderSide::Sell).unwrap(),
-            DeriveOrderSide::Sell,
-        );
-        assert!(order_side_to_derive(OrderSide::NoOrderSide).is_err());
+        assert_eq!(order_side_to_derive(OrderSide::Buy), DeriveOrderSide::Buy,);
+        assert_eq!(order_side_to_derive(OrderSide::Sell), DeriveOrderSide::Sell,);
     }
 
     #[rstest]
@@ -563,7 +608,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_order_report_normalizes_trailing_decimal_zeros() {
+    fn test_parse_order_report_normalizes_without_instrument_precision() {
         let mut order = sample_order();
         order.amount = Decimal::from_str_exact("0.100000000000000000").unwrap();
         order.filled_amount = Decimal::from_str_exact("0.000000000000000000").unwrap();
@@ -577,6 +622,30 @@ mod tests {
         assert_eq!(report.quantity, Quantity::from("0.1"));
         assert_eq!(report.filled_qty, Quantity::from("0"));
         assert_eq!(report.price, Some(Price::from("0.1")));
+    }
+
+    #[rstest]
+    fn test_parse_order_report_uses_instrument_precision() {
+        let mut order = sample_order();
+        order.amount = Decimal::from_str_exact("25.000").unwrap();
+        order.filled_amount = Decimal::from_str_exact("5.000").unwrap();
+        order.limit_price = Decimal::from_str_exact("25.000").unwrap();
+
+        let report = parse_derive_order_to_report_with_precision(
+            &order,
+            AccountId::new("DERIVE-001"),
+            Some(2),
+            Some(2),
+            UnixNanos::from(1),
+        )
+        .unwrap();
+
+        assert_eq!(report.quantity, Quantity::from("25.00"));
+        assert_eq!(report.quantity.precision, 2);
+        assert_eq!(report.filled_qty, Quantity::from("5.00"));
+        assert_eq!(report.filled_qty.precision, 2);
+        assert_eq!(report.price, Some(Price::from("25.00")));
+        assert_eq!(report.price.unwrap().precision, 2);
     }
 
     #[rstest]
@@ -726,6 +795,29 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_trade_report_uses_instrument_precision() {
+        let mut trade = sample_trade();
+        trade.trade_amount = Decimal::from_str_exact("25.000").unwrap();
+        trade.trade_price = Decimal::from_str_exact("25.000").unwrap();
+
+        let report = parse_derive_trade_to_fill_report_with_precision(
+            &trade,
+            AccountId::new("DERIVE-001"),
+            Currency::USDC(),
+            Some(2),
+            Some(3),
+            UnixNanos::from(2),
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(report.last_px, Price::from("25.00"));
+        assert_eq!(report.last_px.precision, 2);
+        assert_eq!(report.last_qty, Quantity::from("25.000"));
+        assert_eq!(report.last_qty.precision, 3);
+    }
+
+    #[rstest]
     #[case(DeriveLiquidityRole::Taker, LiquiditySide::Taker)]
     #[case(DeriveLiquidityRole::Maker, LiquiditySide::Maker)]
     fn test_parse_trade_report_preserves_exact_decimal_commission(
@@ -821,21 +913,38 @@ mod tests {
         long_pos.amount = dec!(3);
         let report =
             parse_derive_position_to_report(&long_pos, account_id, UnixNanos::from(3)).unwrap();
-        assert_eq!(report.position_side, PositionSideSpecified::Long);
+        assert_eq!(report.position_side, PositionSide::Long);
         assert_eq!(report.quantity, Quantity::from("3"));
 
         let mut short_pos = sample_position();
         short_pos.amount = dec!(-2);
         let report =
             parse_derive_position_to_report(&short_pos, account_id, UnixNanos::from(3)).unwrap();
-        assert_eq!(report.position_side, PositionSideSpecified::Short);
+        assert_eq!(report.position_side, PositionSide::Short);
         assert_eq!(report.quantity, Quantity::from("2"));
 
         let mut flat_pos = sample_position();
         flat_pos.amount = dec!(0);
         let report =
             parse_derive_position_to_report(&flat_pos, account_id, UnixNanos::from(3)).unwrap();
-        assert_eq!(report.position_side, PositionSideSpecified::Flat);
+        assert_eq!(report.position_side, PositionSide::Flat);
+    }
+
+    #[rstest]
+    fn test_parse_position_report_uses_instrument_precision() {
+        let mut position = sample_position();
+        position.amount = Decimal::from_str_exact("25.000").unwrap();
+
+        let report = parse_derive_position_to_report_with_precision(
+            &position,
+            AccountId::new("DERIVE-001"),
+            Some(3),
+            UnixNanos::from(3),
+        )
+        .unwrap();
+
+        assert_eq!(report.quantity, Quantity::from("25.000"));
+        assert_eq!(report.quantity.precision, 3);
     }
 
     fn sample_position() -> DerivePosition {

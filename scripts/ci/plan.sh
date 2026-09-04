@@ -6,6 +6,9 @@ set -euo pipefail
 # Outputs (to $GITHUB_OUTPUT):
 #   run_tests       - true if any non-docs code changed
 #   run_rust_tests  - true if Rust code changed
+#   github_changed  - true if a workflow, composite action, or the pin checker
+#                     changed; gates the action pin check, which costs one
+#                     network round trip per pinned reference
 #
 # Required env vars:
 #   EVENT_NAME   - github.event_name (push or pull_request)
@@ -17,7 +20,9 @@ set -euo pipefail
 #   - Makefile                              tooling: CI invokes named targets
 #                                           explicitly, so a broken target
 #                                           fails its caller rather than
-#                                           silently skewing the build
+#                                           silently skewing the build.
+#                                           It still sets github_changed because
+#                                           it owns the pin-check recipe.
 #   - .github/workflows/<not build*>.yml    scheduled or independent workflows
 #                                           that build.yml never triggers
 #                                           (nightly-*, dst, performance, ...)
@@ -35,8 +40,11 @@ set -euo pipefail
 # declare as package metadata) cannot bypass the build that would catch it.
 
 run_all() {
-  echo "run_tests=true" >> "$GITHUB_OUTPUT"
-  echo "run_rust_tests=true" >> "$GITHUB_OUTPUT"
+  {
+    echo "run_tests=true"
+    echo "run_rust_tests=true"
+    echo "github_changed=true"
+  } >> "$GITHUB_OUTPUT"
   echo "$1"
   exit 0
 }
@@ -50,7 +58,7 @@ if [[ "$EVENT_NAME" == "push" ]]; then
   if [[ -z "${BEFORE_SHA:-}" ]] || ! git cat-file -e "${BEFORE_SHA}^{commit}" 2> /dev/null; then
     run_all "Push base SHA not found: running all jobs"
   fi
-  changed_files="$(git diff --name-only "$BEFORE_SHA" HEAD)"
+  changed_files="$(git diff --no-renames --name-only "$BEFORE_SHA" HEAD)"
 else
   # The PR event payload freezes base.sha at PR creation time, so intervening
   # commits on the base branch would otherwise appear as PR changes. Re-resolve
@@ -66,13 +74,22 @@ else
   if [[ -z "$merge_base" ]]; then
     run_all "Empty merge-base against origin/${BASE_REF}: running all jobs"
   fi
-  changed_files="$(git diff --name-only "$merge_base" HEAD)"
+  changed_files="$(git diff --no-renames --name-only "$merge_base" HEAD)"
 fi
 
 code_changed=0
 rust_changed=0
+github_changed=0
 while IFS= read -r file; do
   [[ -z "$file" ]] && continue
+  # Pinned action references live in every workflow and composite action,
+  # including the scheduled ones the out-of-scope rules below skip, so settle
+  # this before any of them can drop the file.
+  [[ "$file" =~ ^\.github/ ]] && github_changed=1
+  [[ "$file" == "scripts/ci/check-github-action-shas.sh" ]] && github_changed=1
+  # The Makefile recipe owns the checker invocation and the globs it scans, so it
+  # gates the pin check even though it is out of scope for the build jobs below.
+  [[ "$file" == "Makefile" ]] && github_changed=1
   # Out-of-scope paths (see header for rationale)
   [[ "$file" =~ ^docs/ ]] && continue
   [[ "$file" == "Makefile" ]] && continue
@@ -92,6 +109,8 @@ while IFS= read -r file; do
   [[ "$file" =~ ^crates/ ]] && rust_changed=1
   [[ "$file" =~ ^schema/ ]] && rust_changed=1
   [[ "$file" =~ ^\.github/ ]] && rust_changed=1
+  # Defines the feature set every Rust gate resolves, so it is a build input
+  [[ "$file" == "scripts/cargo-features.bash" ]] && rust_changed=1
 done <<< "$changed_files"
 
 if [[ $code_changed -eq 0 ]]; then
@@ -106,4 +125,10 @@ else
   echo "run_tests=true" >> "$GITHUB_OUTPUT"
   echo "run_rust_tests=false" >> "$GITHUB_OUTPUT"
   echo "Python-only changes: skipping Rust tests"
+fi
+
+if [[ $github_changed -eq 1 ]]; then
+  echo "github_changed=true" >> "$GITHUB_OUTPUT"
+else
+  echo "github_changed=false" >> "$GITHUB_OUTPUT"
 fi

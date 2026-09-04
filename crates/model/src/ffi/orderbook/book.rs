@@ -18,8 +18,12 @@ use std::ffi::c_char;
 use nautilus_core::ffi::{abort_on_panic, cvec::CVec, string::str_to_cstr};
 
 use crate::{
-    data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick},
-    enums::{BookType, OrderSide, OrderSideSpecified},
+    data::{OrderBookDeltas, QuoteTick, TradeTick},
+    enums::{BookType, OrderSide},
+    ffi::{
+        data::{delta::OrderBookDeltaFfi, depth::OrderBookDepth10Ffi, order::BookOrderFfi},
+        enums::OrderSideOptional,
+    },
     identifiers::InstrumentId,
     orderbook::{BookLevel, OrderBook, analysis::book_check_integrity, ladder::BookPrice},
     types::{ERROR_PRICE, Price, Quantity, price::PriceRaw},
@@ -86,36 +90,36 @@ pub extern "C" fn orderbook_update_count(book: &OrderBook) -> u64 {
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_add(
     book: &mut OrderBook,
-    order: BookOrder,
+    order: BookOrderFfi,
     flags: u8,
     sequence: u64,
     ts_event: u64,
 ) {
-    book.add(order, flags, sequence, ts_event.into());
+    book.add(order.into(), flags, sequence, ts_event.into());
 }
 
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_update(
     book: &mut OrderBook,
-    order: BookOrder,
+    order: BookOrderFfi,
     flags: u8,
     sequence: u64,
     ts_event: u64,
 ) {
-    book.update(order, flags, sequence, ts_event.into());
+    book.update(order.into(), flags, sequence, ts_event.into());
 }
 
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_delete(
     book: &mut OrderBook,
-    order: BookOrder,
+    order: BookOrderFfi,
     flags: u8,
     sequence: u64,
     ts_event: u64,
 ) {
-    book.delete(order, flags, sequence, ts_event.into());
+    book.delete(order.into(), flags, sequence, ts_event.into());
 }
 
 #[unsafe(no_mangle)]
@@ -134,8 +138,8 @@ pub extern "C" fn orderbook_clear_asks(book: &mut OrderBook, sequence: u64, ts_e
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_apply_delta(book: &mut OrderBook, delta: &OrderBookDelta) {
-    if let Err(e) = book.apply_delta_unchecked(delta) {
+pub extern "C" fn orderbook_apply_delta(book: &mut OrderBook, delta: &OrderBookDeltaFfi) {
+    if let Err(e) = book.apply_delta_unchecked(&(*delta).into()) {
         log::error!("Failed to apply order book delta: {e}");
     }
 }
@@ -176,8 +180,8 @@ pub extern "C" fn orderbook_to_snapshot_deltas(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_apply_depth(book: &mut OrderBook, depth: &OrderBookDepth10) {
-    if let Err(e) = book.apply_depth_unchecked(depth) {
+pub extern "C" fn orderbook_apply_depth(book: &mut OrderBook, depth: &OrderBookDepth10Ffi) {
+    if let Err(e) = book.apply_depth_unchecked(&(*depth).into()) {
         log::error!("Failed to apply order book depth: {e}");
     }
 }
@@ -210,7 +214,7 @@ pub extern "C" fn orderbook_bids_down_to(
     price_prec: u8,
 ) -> CVec {
     let price = Price::from_raw(price_raw, price_prec);
-    let bound = BookPrice::new(price, OrderSideSpecified::Buy);
+    let bound = BookPrice::new(price, OrderSide::Buy);
     book.bids
         .levels
         .range(..=bound)
@@ -227,7 +231,7 @@ pub extern "C" fn orderbook_asks_up_to(
     price_prec: u8,
 ) -> CVec {
     let price = Price::from_raw(price_raw, price_prec);
-    let bound = BookPrice::new(price, OrderSideSpecified::Sell);
+    let bound = BookPrice::new(price, OrderSide::Sell);
     book.asks
         .levels
         .range(..=bound)
@@ -316,46 +320,79 @@ pub extern "C" fn orderbook_midpoint(book: &mut OrderBook) -> f64 {
     })
 }
 
+/// # Panics
+///
+/// Panics if `order_side` is `NoOrderSide`.
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_get_avg_px_for_quantity(
     book: &mut OrderBook,
     qty: Quantity,
-    order_side: OrderSide,
+    order_side: OrderSideOptional,
 ) -> f64 {
-    book.get_avg_px_for_quantity(qty, order_side)
+    book.get_avg_px_for_quantity(
+        qty,
+        order_side
+            .as_option()
+            .expect("Order side must be Buy or Sell"),
+    )
 }
 
+/// # Panics
+///
+/// Panics if `order_side` is `NoOrderSide`.
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_get_worst_px_for_quantity(
     book: &mut OrderBook,
     qty: Quantity,
-    order_side: OrderSide,
+    order_side: OrderSideOptional,
 ) -> Price {
-    book.get_worst_px_for_quantity(qty, order_side)
-        .unwrap_or(ERROR_PRICE)
+    book.get_worst_px_for_quantity(
+        qty,
+        order_side
+            .as_option()
+            .expect("Order side must be Buy or Sell"),
+    )
+    .unwrap_or(ERROR_PRICE)
 }
 
+/// # Panics
+///
+/// Panics if `order_side` is `NoOrderSide`.
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_get_quantity_for_price(
     book: &mut OrderBook,
     price: Price,
-    order_side: OrderSide,
+    order_side: OrderSideOptional,
 ) -> f64 {
-    book.get_quantity_for_price(price, order_side)
+    book.get_quantity_for_price(
+        price,
+        order_side
+            .as_option()
+            .expect("Order side must be Buy or Sell"),
+    )
 }
 
+/// # Panics
+///
+/// Panics if `order_side` is `NoOrderSide`.
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_get_quantity_at_level(
     book: &OrderBook,
     price: Price,
-    order_side: OrderSide,
+    order_side: OrderSideOptional,
     size_precision: u8,
 ) -> Quantity {
-    book.get_quantity_at_level(price, order_side, size_precision)
+    book.get_quantity_at_level(
+        price,
+        order_side
+            .as_option()
+            .expect("Order side must be Buy or Sell"),
+        size_precision,
+    )
 }
 
 /// Updates the order book with a quote tick.
@@ -378,22 +415,34 @@ pub extern "C" fn orderbook_update_trade_tick(book: &mut OrderBook, trade: &Trad
     book.update_trade_tick(trade).unwrap();
 }
 
+/// # Panics
+///
+/// Panics if `order.side` is `NoOrderSide`.
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
-pub extern "C" fn orderbook_simulate_fills(book: &OrderBook, order: BookOrder) -> CVec {
-    book.simulate_fills(&order).into()
+pub extern "C" fn orderbook_simulate_fills(book: &OrderBook, order: BookOrderFfi) -> CVec {
+    book.simulate_fills(&order.into()).into()
 }
 
+/// # Panics
+///
+/// Panics if `order_side` is `NoOrderSide`.
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_get_all_crossed_levels(
     book: &OrderBook,
-    order_side: OrderSide,
+    order_side: OrderSideOptional,
     price: Price,
     size_precision: u8,
 ) -> CVec {
-    book.get_all_crossed_levels(order_side, price, size_precision)
-        .into()
+    book.get_all_crossed_levels(
+        order_side
+            .as_option()
+            .expect("Order side must be Buy or Sell"),
+        price,
+        size_precision,
+    )
+    .into()
 }
 
 #[unsafe(no_mangle)]

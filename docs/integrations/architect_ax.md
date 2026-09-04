@@ -2,7 +2,7 @@
 
 [AX Exchange](https://architect.exchange) is a centralized and regulated derivatives exchange for
 traditional underlying asset classes. Operated by Architect Bermuda Ltd. and licensed by the
-[Bermuda Monetary Authority (BMA)](https://www.bma.bm/), AX lists perpetual contracts in production
+[Bermuda Monetary Authority (BMA)](https://www.bma.bm), AX lists perpetual contracts in production
 and also exposes dated futures in its sandbox catalog.
 
 This integration supports live market data ingest and order execution with AX Exchange.
@@ -17,8 +17,8 @@ The AX Exchange adapter includes multiple components, which can be used together
 depending on the use case.
 
 - `AxHttpClient`: Low-level HTTP API connectivity.
-- `AxMdWebSocketClient`: Market data WebSocket connectivity.
-- `AxOrdersWebSocketClient`: Orders WebSocket connectivity.
+- `AxMdWebSocketClient` and `AxOrdersWebSocketClient`: Low-level WebSocket connectivity for Rust
+  callers.
 - `AxDataClient`: A market data feed manager.
 - `AxExecutionClient`: An account management and trade execution gateway.
 - `AxDataClientFactory`: Factory for AX data clients.

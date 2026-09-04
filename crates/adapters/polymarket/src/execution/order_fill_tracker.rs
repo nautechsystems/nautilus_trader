@@ -15,12 +15,9 @@
 
 //! Per-order fill tracking with terminal quantity normalization for the Polymarket adapter.
 
-use std::sync::Mutex;
-
 use ahash::AHashMap;
 use indexmap::IndexMap;
 use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
-use nautilus_core::MUTEX_POISONED;
 #[cfg(test)]
 use nautilus_model::identifiers::InstrumentId;
 use nautilus_model::{
@@ -30,6 +27,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport},
     types::Quantity,
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
@@ -99,32 +97,17 @@ impl OrderFillTrackerMap {
     ) {
         let mut state = new_order_state(submitted_qty, order_side);
         state.cumulative_filled = filled_qty;
-        self.inner
-            .lock()
-            .expect(MUTEX_POISONED)
-            .orders
-            .insert(venue_order_id, state);
+        self.inner.lock().orders.insert(venue_order_id, state);
     }
 
     /// Returns true if the order has been registered (accepted).
     pub(crate) fn contains(&self, venue_order_id: &VenueOrderId) -> bool {
-        self.inner
-            .lock()
-            .expect(MUTEX_POISONED)
-            .orders
-            .get(venue_order_id)
-            .is_some()
+        self.inner.lock().orders.get(venue_order_id).is_some()
     }
 
     /// Returns true if the order has received any fills or been removed (settled).
     pub(crate) fn has_fills_or_settled(&self, venue_order_id: &VenueOrderId) -> bool {
-        match self
-            .inner
-            .lock()
-            .expect(MUTEX_POISONED)
-            .orders
-            .get(venue_order_id)
-        {
+        match self.inner.lock().orders.get(venue_order_id) {
             Some(s) => !s.cumulative_filled.is_zero(),
             None => true, // Removed = already settled
         }
@@ -134,7 +117,6 @@ impl OrderFillTrackerMap {
     pub(crate) fn get_cumulative_filled(&self, venue_order_id: &VenueOrderId) -> Option<Quantity> {
         self.inner
             .lock()
-            .expect(MUTEX_POISONED)
             .orders
             .get(venue_order_id)
             .map(|s| s.cumulative_filled)
@@ -144,7 +126,6 @@ impl OrderFillTrackerMap {
     pub(crate) fn is_fully_filled(&self, venue_order_id: &VenueOrderId) -> bool {
         self.inner
             .lock()
-            .expect(MUTEX_POISONED)
             .orders
             .get(venue_order_id)
             .is_some_and(|s| s.cumulative_filled >= s.submitted_qty)
@@ -161,7 +142,7 @@ impl OrderFillTrackerMap {
         report: FillReport,
         correction: FillCorrectionMetadata,
     ) -> Option<FillReport> {
-        let mut guard = self.inner.lock().expect(MUTEX_POISONED);
+        let mut guard = self.inner.lock();
         if guard.orders.get(&venue_order_id).is_some() {
             record_fill_in(&mut guard.orders, &venue_order_id, report.last_qty);
             Some(report)
@@ -188,7 +169,7 @@ impl OrderFillTrackerMap {
         venue_order_id: VenueOrderId,
         report: OrderStatusReport,
     ) -> Option<OrderStatusReport> {
-        let mut guard = self.inner.lock().expect(MUTEX_POISONED);
+        let mut guard = self.inner.lock();
         if guard.orders.get(&venue_order_id).is_some() {
             Some(report)
         } else {
@@ -209,7 +190,7 @@ impl OrderFillTrackerMap {
         submitted_qty: Quantity,
         order_side: OrderSide,
     ) -> Vec<BufferedFill> {
-        let mut guard = self.inner.lock().expect(MUTEX_POISONED);
+        let mut guard = self.inner.lock();
         guard
             .orders
             .insert(venue_order_id, new_order_state(submitted_qty, order_side));
@@ -227,7 +208,7 @@ impl OrderFillTrackerMap {
         submitted_qty: Quantity,
         order_side: OrderSide,
     ) -> Option<Vec<BufferedFill>> {
-        let mut guard = self.inner.lock().expect(MUTEX_POISONED);
+        let mut guard = self.inner.lock();
         if !guard.pending_fills.contains_key(&venue_order_id) {
             return None;
         }
@@ -247,7 +228,7 @@ impl OrderFillTrackerMap {
         venue_order_id: VenueOrderId,
         client_order_id: Option<ClientOrderId>,
     ) -> Vec<BufferedFill> {
-        let mut guard = self.inner.lock().expect(MUTEX_POISONED);
+        let mut guard = self.inner.lock();
         take_and_prepare_fills(&mut guard, venue_order_id, client_order_id)
     }
 
@@ -258,7 +239,6 @@ impl OrderFillTrackerMap {
     ) -> Vec<OrderStatusReport> {
         self.inner
             .lock()
-            .expect(MUTEX_POISONED)
             .pending_reports
             .remove(venue_order_id)
             .unwrap_or_default()
@@ -284,7 +264,7 @@ impl OrderFillTrackerMap {
             return true;
         };
 
-        let mut guard = self.inner.lock().expect(MUTEX_POISONED);
+        let mut guard = self.inner.lock();
         if guard.voided_trades.contains(&correction.correction_key) {
             reverse_fill_in(&mut guard.orders, &fill.venue_order_id, fill.last_qty);
             return false;
@@ -309,7 +289,7 @@ impl OrderFillTrackerMap {
     /// Marks a trade failed and returns buffered fills that were already emitted.
     pub(crate) fn void_buffered_trade(&self, correction_key: &str) -> Vec<OrderFilled> {
         let key = correction_key.to_string();
-        let mut guard = self.inner.lock().expect(MUTEX_POISONED);
+        let mut guard = self.inner.lock();
         guard.confirmed_trades.remove(&key);
         guard.voided_trades.add(key.clone());
         let fills = guard
@@ -326,7 +306,6 @@ impl OrderFillTrackerMap {
     pub(crate) fn mark_trade_confirmed(&self, correction_key: &str) {
         self.inner
             .lock()
-            .expect(MUTEX_POISONED)
             .confirmed_trades
             .add(correction_key.to_string());
     }
@@ -335,17 +314,12 @@ impl OrderFillTrackerMap {
     pub(crate) fn is_trade_confirmed(&self, correction_key: &str) -> bool {
         self.inner
             .lock()
-            .expect(MUTEX_POISONED)
             .confirmed_trades
             .contains(&correction_key.to_string())
     }
 
     pub(crate) fn reverse_fill(&self, venue_order_id: &VenueOrderId, quantity: Quantity) {
-        reverse_fill_in(
-            &mut self.inner.lock().expect(MUTEX_POISONED).orders,
-            venue_order_id,
-            quantity,
-        );
+        reverse_fill_in(&mut self.inner.lock().orders, venue_order_id, quantity);
     }
 
     /// Snap each report's `last_qty` against the registered submitted quantity
@@ -355,7 +329,7 @@ impl OrderFillTrackerMap {
     /// Commission is intentionally not recomputed: it tracks the venue charge
     /// from the on-chain fill, which is independent of our local snap.
     pub(crate) fn snap_fill_reports(&self, reports: &mut [FillReport]) {
-        let guard = self.inner.lock().expect(MUTEX_POISONED);
+        let guard = self.inner.lock();
 
         for report in reports {
             report.last_qty =
@@ -380,7 +354,7 @@ impl OrderFillTrackerMap {
         venue_order_id: &VenueOrderId,
         fill_qty: Quantity,
     ) -> Quantity {
-        let guard = self.inner.lock().expect(MUTEX_POISONED);
+        let guard = self.inner.lock();
         snap_fill_qty_in(&guard.orders, venue_order_id, fill_qty)
     }
 
@@ -403,7 +377,7 @@ impl OrderFillTrackerMap {
     /// trade events would close the order on the first crossing fill; this is not Polymarket's
     /// observed behaviour and would need a final-fill signal to handle.
     pub(crate) fn buy_overfill_bump(&self, venue_order_id: &VenueOrderId) -> Option<Quantity> {
-        let mut guard = self.inner.lock().expect(MUTEX_POISONED);
+        let mut guard = self.inner.lock();
         buy_overfill_bump_in(&mut guard.orders, venue_order_id)
     }
 
@@ -416,7 +390,7 @@ impl OrderFillTrackerMap {
         &self,
         venue_order_id: &VenueOrderId,
     ) -> Option<Quantity> {
-        let mut guard = self.inner.lock().expect(MUTEX_POISONED);
+        let mut guard = self.inner.lock();
         let s = guard.orders.get(venue_order_id)?;
         if s.cumulative_filled >= s.submitted_qty {
             return None;
@@ -455,7 +429,7 @@ impl OrderFillTrackerMap {
         &self,
         venue_order_id: &VenueOrderId,
     ) -> Option<Quantity> {
-        let mut guard = self.inner.lock().expect(MUTEX_POISONED);
+        let mut guard = self.inner.lock();
         let state = guard.orders.get(venue_order_id)?;
         if state.cumulative_filled.is_zero() || state.cumulative_filled >= state.submitted_qty {
             return None;
@@ -540,7 +514,6 @@ impl OrderFillTrackerMap {
     ) {
         self.inner
             .lock()
-            .expect(MUTEX_POISONED)
             .orders
             .insert(venue_order_id, new_order_state(submitted_qty, order_side));
     }
@@ -549,7 +522,6 @@ impl OrderFillTrackerMap {
     pub(crate) fn submitted_qty(&self, venue_order_id: &VenueOrderId) -> Option<Quantity> {
         self.inner
             .lock()
-            .expect(MUTEX_POISONED)
             .orders
             .get(venue_order_id)
             .map(|s| s.submitted_qty)
@@ -557,17 +529,13 @@ impl OrderFillTrackerMap {
 
     /// Records a fill against a registered order, for tests that drive fill accumulation directly.
     pub(crate) fn record_fill(&self, venue_order_id: &VenueOrderId, qty: Quantity) {
-        record_fill_in(
-            &mut self.inner.lock().expect(MUTEX_POISONED).orders,
-            venue_order_id,
-            qty,
-        );
+        record_fill_in(&mut self.inner.lock().orders, venue_order_id, qty);
     }
 
     /// Buffers a fill as if it arrived on the WS channel before the order was registered.
     pub(crate) fn buffer_fill_for_test(&self, venue_order_id: VenueOrderId, report: FillReport) {
         push_buffered(
-            &mut self.inner.lock().expect(MUTEX_POISONED).pending_fills,
+            &mut self.inner.lock().pending_fills,
             venue_order_id,
             BufferedFill {
                 report,
@@ -583,7 +551,7 @@ impl OrderFillTrackerMap {
         report: OrderStatusReport,
     ) {
         push_buffered(
-            &mut self.inner.lock().expect(MUTEX_POISONED).pending_reports,
+            &mut self.inner.lock().pending_reports,
             venue_order_id,
             report,
         );
@@ -591,18 +559,13 @@ impl OrderFillTrackerMap {
 
     /// Returns true if a fill is currently buffered for the order.
     pub(crate) fn has_pending_fill(&self, venue_order_id: &VenueOrderId) -> bool {
-        self.inner
-            .lock()
-            .expect(MUTEX_POISONED)
-            .pending_fills
-            .contains_key(venue_order_id)
+        self.inner.lock().pending_fills.contains_key(venue_order_id)
     }
 
     /// Returns the fills currently buffered for the order.
     pub(crate) fn pending_fills_for(&self, venue_order_id: &VenueOrderId) -> Vec<FillReport> {
         self.inner
             .lock()
-            .expect(MUTEX_POISONED)
             .pending_fills
             .get(venue_order_id)
             .map(|fills| fills.iter().map(|fill| fill.report.clone()).collect())
@@ -613,7 +576,6 @@ impl OrderFillTrackerMap {
     pub(crate) fn has_pending_report(&self, venue_order_id: &VenueOrderId) -> bool {
         self.inner
             .lock()
-            .expect(MUTEX_POISONED)
             .pending_reports
             .contains_key(venue_order_id)
     }
@@ -901,7 +863,7 @@ mod tests {
         assert_eq!(result, fill_qty);
     }
 
-    // Verifies the batch helper used by REST callers (`generate_fill_reports`,
+    // Verifies `snap_fill_reports`, used by REST callers (`generate_fill_reports`,
     // `generate_mass_status`) snaps each report's `last_qty` and leaves
     // unregistered reports alone. Commission is intentionally untouched.
     #[rstest]

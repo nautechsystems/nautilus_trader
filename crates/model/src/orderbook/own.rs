@@ -31,7 +31,7 @@ use rust_decimal::Decimal;
 
 use super::{BookViewError, OwnBookError, display::pprint_own_book};
 use crate::{
-    enums::{OrderSideSpecified, OrderStatus, OrderType, TimeInForce},
+    enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
     identifiers::{ClientOrderId, InstrumentId, TraderId, VenueOrderId},
     orderbook::BookPrice,
     orders::{Order, OrderAny},
@@ -59,8 +59,8 @@ pub struct OwnBookOrder {
     pub client_order_id: ClientOrderId,
     /// The venue order ID (if assigned by the venue).
     pub venue_order_id: Option<VenueOrderId>,
-    /// The specified order side (BUY or SELL).
-    pub side: OrderSideSpecified,
+    /// The order side (BUY or SELL).
+    pub side: OrderSide,
     /// The order price.
     pub price: Price,
     /// The remaining order size (leaves quantity).
@@ -89,7 +89,7 @@ impl OwnBookOrder {
         trader_id: TraderId,
         client_order_id: ClientOrderId,
         venue_order_id: Option<VenueOrderId>,
-        side: OrderSideSpecified,
+        side: OrderSide,
         price: Price,
         size: Quantity,
         order_type: OrderType,
@@ -133,8 +133,8 @@ impl OwnBookOrder {
     #[must_use]
     pub fn signed_size(&self) -> f64 {
         match self.side {
-            OrderSideSpecified::Buy => self.size.as_f64(),
-            OrderSideSpecified::Sell => -(self.size.as_f64()),
+            OrderSide::Buy => self.size.as_f64(),
+            OrderSide::Sell => -(self.size.as_f64()),
         }
     }
 }
@@ -255,8 +255,8 @@ impl OwnOrderBook {
             instrument_id,
             ts_last: UnixNanos::default(),
             update_count: 0,
-            bids: OwnBookLadder::new(OrderSideSpecified::Buy),
-            asks: OwnBookLadder::new(OrderSideSpecified::Sell),
+            bids: OwnBookLadder::new(OrderSide::Buy),
+            asks: OwnBookLadder::new(OrderSide::Sell),
         }
     }
 
@@ -277,8 +277,8 @@ impl OwnOrderBook {
     pub fn add(&mut self, order: OwnBookOrder) {
         self.increment(&order);
         match order.side {
-            OrderSideSpecified::Buy => self.bids.add(order),
-            OrderSideSpecified::Sell => self.asks.add(order),
+            OrderSide::Buy => self.bids.add(order),
+            OrderSide::Sell => self.asks.add(order),
         }
     }
 
@@ -289,8 +289,8 @@ impl OwnOrderBook {
     /// Returns an error if the order is not found.
     pub fn update(&mut self, order: OwnBookOrder) -> Result<(), OwnBookError> {
         let result = match order.side {
-            OrderSideSpecified::Buy => self.bids.update(order),
-            OrderSideSpecified::Sell => self.asks.update(order),
+            OrderSide::Buy => self.bids.update(order),
+            OrderSide::Sell => self.asks.update(order),
         };
 
         if result.is_ok() {
@@ -307,8 +307,8 @@ impl OwnOrderBook {
     /// Returns an error if the order is not found.
     pub fn delete(&mut self, order: OwnBookOrder) -> Result<(), OwnBookError> {
         let result = match order.side {
-            OrderSideSpecified::Buy => self.bids.delete(order),
-            OrderSideSpecified::Sell => self.asks.delete(order),
+            OrderSide::Buy => self.bids.delete(order),
+            OrderSide::Sell => self.asks.delete(order),
         };
 
         if result.is_ok() {
@@ -489,13 +489,13 @@ impl OwnOrderBook {
 
         for level in opposite.asks() {
             for order in level.iter() {
-                combined.add(transform_opposite_order(*order, OrderSideSpecified::Buy));
+                combined.add(transform_opposite_order(*order, OrderSide::Buy));
             }
         }
 
         for level in opposite.bids() {
             for order in level.iter() {
-                combined.add(transform_opposite_order(*order, OrderSideSpecified::Sell));
+                combined.add(transform_opposite_order(*order, OrderSide::Sell));
             }
         }
 
@@ -551,7 +551,7 @@ fn log_audit_error(client_order_id: &ClientOrderId) {
     );
 }
 
-fn transform_opposite_order(order: OwnBookOrder, side: OrderSideSpecified) -> OwnBookOrder {
+fn transform_opposite_order(order: OwnBookOrder, side: OrderSide) -> OwnBookOrder {
     let parity_price = Price::from_decimal(Decimal::ONE - order.price.as_decimal())
         .expect("Invalid parity transformed price for OwnOrderBook::combined_with_opposite");
 
@@ -682,15 +682,13 @@ fn sum_order_sizes<'a, I>(orders: I) -> Decimal
 where
     I: Iterator<Item = &'a OwnBookOrder>,
 {
-    orders.fold(Decimal::ZERO, |total, order| {
-        total + order.size.as_decimal()
-    })
+    orders.map(|order| order.size.as_decimal()).sum()
 }
 
 /// Represents a ladder of price levels for one side of an order book.
 #[derive(Clone)]
 pub(crate) struct OwnBookLadder {
-    pub side: OrderSideSpecified,
+    pub side: OrderSide,
     pub levels: BTreeMap<BookPrice, OwnBookLevel>,
     pub cache: IndexMap<ClientOrderId, BookPrice>,
 }
@@ -698,7 +696,7 @@ pub(crate) struct OwnBookLadder {
 impl OwnBookLadder {
     /// Creates a new [`OwnBookLadder`] instance.
     #[must_use]
-    pub(crate) fn new(side: OrderSideSpecified) -> Self {
+    pub(crate) fn new(side: OrderSide) -> Self {
         Self {
             side,
             levels: BTreeMap::new(),
@@ -837,10 +835,7 @@ impl OwnBookLadder {
     #[must_use]
     #[allow(dead_code)]
     pub(crate) fn top(&self) -> Option<&OwnBookLevel> {
-        match self.levels.iter().next() {
-            Some((_, l)) => Option::Some(l),
-            None => Option::None,
-        }
+        self.levels.values().next()
     }
 }
 
@@ -923,21 +918,24 @@ impl OwnBookLevel {
     /// Returns the total size of all orders at this price level as a float.
     #[must_use]
     pub fn size(&self) -> f64 {
-        self.orders.iter().map(|(_, o)| o.size.as_f64()).sum()
+        self.orders.values().map(|order| order.size.as_f64()).sum()
     }
 
     /// Returns the total size of all orders at this price level as a decimal.
     #[must_use]
     pub fn size_decimal(&self) -> Decimal {
-        self.orders.iter().map(|(_, o)| o.size.as_decimal()).sum()
+        self.orders
+            .values()
+            .map(|order| order.size.as_decimal())
+            .sum()
     }
 
     /// Returns the total exposure (price * size) of all orders at this price level as a float.
     #[must_use]
     pub fn exposure(&self) -> f64 {
         self.orders
-            .iter()
-            .map(|(_, o)| o.price.as_f64() * o.size.as_f64())
+            .values()
+            .map(|order| order.price.as_f64() * order.size.as_f64())
             .sum()
     }
 
@@ -1005,7 +1003,5 @@ impl Ord for OwnBookLevel {
 
 #[must_use]
 pub fn should_handle_own_book_order(order: &OrderAny) -> bool {
-    order.has_price()
-        && order.time_in_force() != TimeInForce::Ioc
-        && order.time_in_force() != TimeInForce::Fok
+    order.has_price() && !matches!(order.time_in_force(), TimeInForce::Ioc | TimeInForce::Fok)
 }

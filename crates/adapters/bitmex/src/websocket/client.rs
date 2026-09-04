@@ -13,7 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides the WebSocket client integration for the [BitMEX](https://bitmex.com) WebSocket API.
+//! Provides the WebSocket client integration for the
+//! [BitMEX](https://www.bitmex.com) WebSocket API.
 //!
 //! This module defines and implements a [`BitmexWebSocketClient`] for
 //! connecting to BitMEX WebSocket streams. It handles authentication (when credentials
@@ -35,6 +36,7 @@ use nautilus_common::live::get_runtime;
 use nautilus_core::{
     consts::NAUTILUS_USER_AGENT,
     env::{get_env_var, get_or_env_var_opt},
+    string::secret::SecretString,
 };
 use nautilus_live::SocketControl;
 use nautilus_model::{
@@ -52,6 +54,7 @@ use nautilus_network::{
 };
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
+use zeroize::Zeroizing;
 
 use super::{
     enums::{BitmexWsAuthAction, BitmexWsAuthChannel, BitmexWsOperation, BitmexWsTopic},
@@ -66,14 +69,15 @@ use crate::common::{
     enums::BitmexEnvironment,
 };
 
-/// Provides a WebSocket client for connecting to the [BitMEX](https://bitmex.com) real-time API.
+/// Provides a WebSocket client for connecting to the
+/// [BitMEX](https://www.bitmex.com) real-time API.
 ///
 /// Key runtime patterns:
 /// - Authentication handshakes are managed by the internal auth tracker, ensuring resubscriptions
 ///   occur only after BitMEX acknowledges `authKey` messages.
 /// - The subscription state maintains pending and confirmed topics so reconnection replay is
 ///   deterministic and per-topic errors are surfaced.
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct BitmexWebSocketClient {
     url: String,
     credential: Option<Credential>,
@@ -90,7 +94,7 @@ pub struct BitmexWebSocketClient {
     tracked_subscriptions: Arc<DashMap<String, ()>>,
     instruments: Arc<DashMap<Ustr, InstrumentAny>>,
     transport_backend: TransportBackend,
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
     socket_control: Option<SocketControl>,
 }
 
@@ -141,7 +145,7 @@ impl BitmexWebSocketClient {
             tracked_subscriptions: Arc::new(DashMap::new()),
             instruments: Arc::new(DashMap::new()),
             transport_backend,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             socket_control: None,
         })
     }
@@ -288,7 +292,6 @@ impl BitmexWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the WebSocket connection fails or authentication fails (if credentials provided).
-    ///
     pub async fn connect(&mut self) -> Result<(), BitmexWsError> {
         let (client, raw_rx) = self.connect_inner().await?;
 
@@ -393,12 +396,14 @@ impl BitmexWebSocketClient {
                             .as_second();
                             let signature = cred.sign("GET", "/realtime", expires, "");
 
-                            let auth_message = BitmexAuthentication {
+                            let auth_message = Zeroizing::new(BitmexAuthentication {
                                 op: BitmexWsAuthAction::AuthKeyExpires,
                                 args: (cred.api_key().to_string(), expires, signature),
-                            };
+                            });
 
-                            if let Ok(payload) = serde_json::to_string(&auth_message) {
+                            if let Ok(payload) =
+                                serde_json::to_string(&*auth_message).map(SecretString::from)
+                            {
                                 if let Err(e) = cmd_tx_for_reconnect
                                     .send(HandlerCommand::Authenticate { payload })
                                 {
@@ -531,7 +536,10 @@ impl BitmexWebSocketClient {
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         };
 
         let keyed_quotas = vec![];
@@ -568,16 +576,19 @@ impl BitmexWebSocketClient {
         let expires = (jiff::Timestamp::now() + jiff::SignedDuration::from_secs(30)).as_second();
         let signature = credential.sign("GET", "/realtime", expires, "");
 
-        let auth_message = BitmexAuthentication {
+        let auth_message = Zeroizing::new(BitmexAuthentication {
             op: BitmexWsAuthAction::AuthKeyExpires,
             args: (credential.api_key().to_string(), expires, signature),
-        };
+        });
 
-        let auth_json = serde_json::to_string(&auth_message).map_err(|e| {
-            let msg = format!("Failed to serialize auth message: {e}");
-            self.auth_tracker.fail(msg.clone());
-            BitmexWsError::AuthenticationError(msg)
-        })?;
+        let auth_json = serde_json::to_string(&*auth_message)
+            .map(SecretString::from)
+            .map_err(|e| {
+                let msg = format!("Failed to serialize auth message: {e}");
+                self.auth_tracker.fail(msg.clone());
+                BitmexWsError::AuthenticationError(msg)
+            })?;
+        drop(auth_message);
 
         // Send Authenticate command to handler
         self.cmd_tx
@@ -1248,6 +1259,27 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_debug_redacts_credentials_and_proxy() {
+        let client = BitmexWebSocketClient::new(
+            Some("ws://test.com".to_string()),
+            Some("websocket-key-sentinel".to_string()),
+            Some("websocket-secret-sentinel".to_string()),
+            Some(AccountId::new("BITMEX-TEST")),
+            5,
+            None,
+            TransportBackend::default(),
+            Some("http://websocket-user:websocket-password@localhost".to_string()),
+        )
+        .unwrap();
+
+        let debug = format!("{client:?}");
+
+        assert!(!debug.contains("websocket-key-sentinel"));
+        assert!(!debug.contains("websocket-secret-sentinel"));
+        assert!(!debug.contains("websocket-password"));
+    }
 
     #[rstest]
     fn test_reconnect_topics_restoration_logic() {

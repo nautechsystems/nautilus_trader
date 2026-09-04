@@ -150,7 +150,7 @@ impl CanonicalScenario {
                     "blake3:405c9f219087dbff0f0641cfdc5fc41c84296981f4158bc9ea0978a1c81aee2c"
                         .to_string(),
                 result_digest:
-                    "blake3:af914f615d2c5442f15ea99d86a4b988c5596a39e552db60e13d626d5bcd378f"
+                    "blake3:7dd768c892f560c967c2aae291c6b9315d619bafab1b43b6a9f80cfad81e6914"
                         .to_string(),
             },
             Self::ScheduledMarketOrders => CanonicalFingerprint {
@@ -166,8 +166,8 @@ impl CanonicalScenario {
                     "blake3:be57c858fd2d34e157342f64260c4d517abc2f7a5f67dce73d43858ea1b2bf1a"
                         .to_string(),
                 result_digest: expected_result_digest(
-                    "blake3:5c574fdf946a0677111ed815b37fecea97d9852a8892eda2f5e05ab17a7fec11",
-                    "blake3:192304de589c63bc98d6703ca453a07bfee58f74f389805874c82b37680754bd",
+                    "blake3:14fee63698f0b3afd4ed0fe0710733a2c677929efc975d82456c64d4e9e732c1",
+                    "blake3:c2cf16fff2bc490e553c6c2958e4e1d66a3d4d7ddbe413752bd542fcfd7d100e",
                 ),
             },
             Self::PassiveLimitOrders => CanonicalFingerprint {
@@ -183,7 +183,7 @@ impl CanonicalScenario {
                     "blake3:7702ff4aa9ca1d26061419e9185a5bcfed0418fb0f24725ee36fd7d4323d79f5"
                         .to_string(),
                 result_digest:
-                    "blake3:97d5f435edabf3d67562339a187121d9e9dfd23abac24a0f6290fb3afdefca2a"
+                    "blake3:4aaa0bdd015b1d4df4c1c850d3f1527f3d099ac717dd38500625c1d0ed24b403"
                         .to_string(),
             },
             Self::BarEmaCross => CanonicalFingerprint {
@@ -199,8 +199,8 @@ impl CanonicalScenario {
                     "blake3:ba1b5311a979bcfb6b58a4a9c478b4f00d0c577ce0c5c9cb3328f84ee921d9fc"
                         .to_string(),
                 result_digest: expected_result_digest(
-                    "blake3:1f3e9e7356dcac836c90381da74361b1521ff5426f50d2269b683fa34e869351",
-                    "blake3:f79d722cb7209cd1d6d62554e5f776b915c064595719775ad0c93b20b8ed5c69",
+                    "blake3:e62f1f8cb2f77dc5c118b02ae0d9481236d1fd69a7f26928482e2406d9556a1e",
+                    "blake3:d269453558b68dd3dae266c1ab44fa454fdb034678fc383eb4f2b3edb4156bc1",
                 ),
             },
         }
@@ -472,7 +472,6 @@ impl ScheduledOrders {
                 match side {
                     OrderSide::Buy => Price::from("30000.00"),
                     OrderSide::Sell => Price::from("70000.00"),
-                    _ => unreachable!(),
                 },
                 None,
                 None,

@@ -232,6 +232,8 @@ and prioritize ongoing maintenance.
 | Option greeks                  | ✓         | Derived from `option_pricing` on option tickers.                        |
 | Option chain                   | ✓         | Aggregated from quotes and greeks; `public/get_tickers` bootstraps ATM. |
 
+#### Instrument loading
+
 `request_instrument` calls `public/get_instrument` for the requested `InstrumentId` and
 caches the returned definition before emitting the response. The cached instrument carries
 the precision and increment fields used by later quote, trade, book, and bar parsing.
@@ -239,6 +241,8 @@ the precision and increment fields used by later quote, trade, book, and bar par
 Instrument loading treats venue error `12001` as an empty result for the affected product type,
 so a currency without a perp, option, or spot listing does not block its other products. Invalid
 instrument rows are logged and skipped while valid rows continue to load.
+
+#### Historical data
 
 Historical requests use `public/get_trade_history`, `public/get_tradingview_chart_data`, and
 `public/get_funding_rate_history`. The bar `end` bound still selects buckets by their start time at
@@ -253,6 +257,8 @@ as the taker's side.
 Bars require `EXTERNAL` aggregation and `PriceType::Last`, since Derive candles are trade-based.
 The venue's candle periods map to 1, 5, 15, and 30 minute, 1, 4, and 8 hour, 1 day, and 1 week
 steps; any other bar specification is rejected before the request goes out.
+
+#### Order book feeds
 
 Derive exposes book deltas and depth10 snapshots through the same
 `orderbook.{instrument}.{group}.{depth}` channel family. `subscribe_book_deltas` publishes
@@ -345,6 +351,8 @@ cents); a too-tight offset produces spurious `11051` rejections.
 
 #### Bulk cancellation
 
+##### Selection and routing
+
 Derive supports both multi-order cancellation methods exposed by `Strategy`.
 
 | Strategy method          | Supported | Parameters                                                            | Notes                                      |
@@ -356,18 +364,27 @@ The Derive execution client applies these methods as follows:
 
 - `cancel_orders` cancels each requested regular or trigger order individually.
 - `cancel_all_orders` with `strategy_only=True` expands cached matches into individual cancels.
-- `cancel_all_orders` with `strategy_only=False` and a Buy or Sell filter lists regular and trigger
-  orders, filters by instrument and side, and cancels each match. It never widens to both sides.
-- `cancel_all_orders` with `strategy_only=False` and no side filter cancels matching triggers
-  individually, then sends `private/cancel_by_instrument` for regular orders. It never sends
-  `private/cancel_all`.
+- `cancel_all_orders` with `strategy_only=False` and a Buy or Sell filter selects open regular and
+  trigger orders from the cache for the configured execution client, account, exact instrument,
+  and side, then cancels each match. It never widens to both sides.
+- `cancel_all_orders` with `strategy_only=False` and no side filter selects matching open triggers
+  from the same execution client, account, and instrument scope and cancels them individually, then sends
+  `private/cancel_by_instrument` for regular orders. It never sends `private/cancel_all`.
+
+`cancel_all_orders` treats the cache as authoritative and does not query venue order state before
+cancellation. Eligibility follows the cache-selection rules above.
+
+##### Failure handling
+
+If an eligible cached order lacks a venue order ID, the command fails closed, logs a warning, sends
+no cancellation request, and emits no order event.
 
 `private/cancel_by_instrument` cancels regular open orders only. A successful request with
 `cancelled_orders == 0` is an expected no-op and logs at debug level.
 
-A failed trigger query or trigger cancellation logs a warning but does not suppress the regular
-instrument cancellation. A failed bulk request has no per-order outcome to emit; private channel
-updates and later reconciliation remain responsible for observed order state.
+A failed trigger cancellation logs a warning but does not suppress the regular instrument
+cancellation. A failed bulk request has no per-order outcome to emit; private channel updates and
+later reconciliation remain responsible for observed order state.
 
 #### Execution instructions
 
@@ -453,6 +470,8 @@ unplaced order hanging in `Submitted` forever because no WebSocket frame will ar
 
 ## Rate limiting
 
+### Window model
+
 Derive refills every request allowance discretely at fixed five-second window boundaries, not
 one request at a time (source: [venue rate limits](https://docs.derive.xyz/reference/rate-limits)).
 The adapter mirrors this with a fixed-window limiter: each request class may spend its full
@@ -464,6 +483,8 @@ observed from the client, so a wait is at most one full window and the long-run 
 stays at the venue allowance. A burst can still straddle a venue window boundary, in which case
 the venue answers with `-32000 Rate limit exceeded`, which the adapter surfaces as a definitive
 rejection (see [order rejection semantics](#order-rejection-semantics)).
+
+### Request buckets
 
 Each window allowance is the documented requests-per-second rate times the five-second window,
 so the configured `max_matching_requests_per_second` and
@@ -491,6 +512,8 @@ per-instrument allowance. Trigger order create and cancel methods are paced as m
 though the venue does not list them explicitly; `private/cancel_trigger_order` carries no instrument
 and draws on the account-wide bucket only.
 This conservative classification stays within Derive's documented rate contract.
+
+### Signing and venue responses
 
 Pacing waits happen before the request is signed, so a delay never consumes the validity of the
 REST `X-LYRA*` authentication headers or of the nonces and EIP-712 signatures on the WebSocket

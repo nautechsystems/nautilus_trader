@@ -261,6 +261,6 @@ enum ComponentState {
 
 enum TradingState {
     active @0;
-    halted @1;
-    reducing @2;
+    reducing @1;
+    halted @2;
 }

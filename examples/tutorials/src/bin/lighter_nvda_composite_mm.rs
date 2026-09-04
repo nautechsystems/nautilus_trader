@@ -20,21 +20,17 @@
 //! - Lighter `NVDA-PERP.LIGHTER` data and execution as the target instrument.
 //! - The native Rust `CompositeMarketMaker` strategy.
 //!
-//! The default path connects the data and execution clients without adding the
-//! order-submitting strategy. Set `DRY_RUN` to `false` to allow live post-only
-//! order submission.
-//!
 //! Run with:
 //! `cargo run --bin lighter-nvda-composite-mm --package nautilus-tutorials --features examples`
 //!
 //! Required credential environment variables:
-//! - `DATABENTO_API_KEY`.
+//! - `DATABENTO_API_KEY`
 //! - `LIGHTER_TESTNET_ACCOUNT_INDEX`, `LIGHTER_TESTNET_API_KEY_INDEX`, and
 //!   `LIGHTER_TESTNET_API_SECRET` when the `LIGHTER_ENVIRONMENT` source constant
-//!   is `LighterEnvironment::Testnet`.
+//!   is `LighterEnvironment::Testnet`
 //! - `LIGHTER_ACCOUNT_INDEX`, `LIGHTER_API_KEY_INDEX`, and `LIGHTER_API_SECRET`
 //!   when the `LIGHTER_ENVIRONMENT` source constant is
-//!   `LighterEnvironment::Mainnet`.
+//!   `LighterEnvironment::Mainnet`
 
 use std::{error::Error, io, path::PathBuf, str::FromStr};
 
@@ -55,9 +51,10 @@ use nautilus_trading::examples::strategies::composite_market_maker::{
     CompositeMarketMaker, CompositeMarketMakerConfig,
 };
 
-// DRY_RUN connects the node and clients without adding the order-submitting
-// CompositeMarketMaker strategy.
-const DRY_RUN: bool = true;
+// WARNING: With `DRY_RUN = false`, this strategy submits orders to the configured
+// environment and may use real funds. Set `DRY_RUN = true` to connect without
+// starting the order-submitting strategy.
+const DRY_RUN: bool = false;
 const LIGHTER_ENVIRONMENT: LighterEnvironment = LighterEnvironment::Testnet;
 
 const TRADER_ID: &str = "TESTER-001";

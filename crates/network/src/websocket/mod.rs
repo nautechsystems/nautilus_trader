@@ -64,8 +64,8 @@
 //!
 //! The backend-neutral [`Message`](crate::transport::Message) and
 //! [`TransportError`](crate::transport::TransportError) types keep lifecycle code independent of
-//! the concrete library. [`tokio-tungstenite`](https://github.com/snapview/tokio-tungstenite) is
-//! always available. [`sockudo-ws`](https://github.com/sockudo/sockudo-ws) is enabled and selected
+//! the concrete library. [`tokio-tungstenite`](https://crates.io/crates/tokio-tungstenite) is
+//! always available. [`sockudo-ws`](https://crates.io/crates/sockudo-ws) is enabled and selected
 //! by default through the `transport-sockudo` feature. Both accept custom upgrade headers. Proxy
 //! connections use Tungstenite; selecting Sockudo with a proxy falls back to that backend.
 
@@ -82,7 +82,7 @@ pub use auth::AuthTracker;
 pub use client::{
     ReconnectHeaders, WebSocketClient, WebSocketClientInner, WebSocketReconnectHandle,
 };
-pub use config::{TransportBackend, WebSocketConfig};
+pub use config::{InitialConnectRetryPolicy, TransportBackend, WebSocketConfig};
 pub use consts::{AUTHENTICATION_TIMEOUT_SECS, TEXT_PING, TEXT_PONG};
 pub use subscription::{SubscriptionSnapshot, SubscriptionState, split_topic};
 pub use types::{

@@ -1529,7 +1529,7 @@ mod tests {
         data::{Bar, BarType, stubs::stub_depth10},
         enums::{
             AccountType, BookType, LiquiditySide, OrderSide, OrderStatus, OrderType,
-            PositionAdjustmentType, PositionSide, PositionSideSpecified, TimeInForce,
+            PositionAdjustmentType, PositionSide, TimeInForce,
         },
         events::{
             PositionAdjusted, PositionChanged, PositionClosed, PositionOpened,
@@ -1619,7 +1619,7 @@ mod tests {
             instrument_id(),
             Some(client_order_id()),
             venue_order_id(),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Market,
             TimeInForce::Gtc,
             OrderStatus::Filled,
@@ -1902,7 +1902,7 @@ mod tests {
             Some(ClientId::from("BINANCE")),
             strategy_id(),
             instrument_id(),
-            OrderSide::Buy,
+            Some(OrderSide::Buy),
             UUID4::new(),
             UnixNanos::from(7),
             None,
@@ -2266,7 +2266,7 @@ mod tests {
     }
 
     // Walks every OrderEventAny variant. Builds each variant from `Default::default()`
-    // (gated by the `stubs` feature on `nautilus-model`) with the test client_order_id
+    // (gated by the `test-support` feature on `nautilus-model`) with the test client_order_id
     // patched in, so the assertion can verify the index value alongside the tag.
     #[rstest]
     #[case::initialized(ev_initialized(), PAYLOAD_TYPE_ORDER_INITIALIZED, false)]
@@ -2506,7 +2506,7 @@ mod tests {
         PositionStatusReport::new(
             AccountId::from("BINANCE-001"),
             instrument_id(),
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from("1"),
             UnixNanos::from(50),
             UnixNanos::from(51),
@@ -3859,7 +3859,7 @@ mod tests {
     ) {
         // The TradingCommand envelope dispatch must route every variant to the matching
         // per-type extractor and forward both correlation_id and causation_id intact.
-        // A swap of args inside any extract_*_headers helper or a misrouted wrapper arm
+        // A swap of args inside any extract_*_headers function or a misrouted wrapper arm
         // is caught by exercising each variant with distinct populated values.
         let (envelope, corr, caus) = builder();
         let registry = default_registry();

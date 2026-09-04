@@ -21,15 +21,16 @@
 //! cargo run --bin lighter-flatten -p nautilus-lighter
 //! ```
 //!
-//! Environment variables: `LIGHTER_API_KEY_INDEX`, `LIGHTER_API_SECRET`,
-//! `LIGHTER_ACCOUNT_INDEX` (or the testnet variants). Mainnet only for now;
-//! flip to testnet by setting `LIGHTER_ENVIRONMENT=testnet`.
+//! Set `LIGHTER_DEPLOYMENT` to `lighter` or `robinhood` and `LIGHTER_ENVIRONMENT`
+//! to `mainnet` or `testnet`. Omitted selectors default to Lighter Mainnet. The
+//! matching deployment and environment credential namespace supplies the account
+//! index, API key index, and API secret.
 //!
 //! Best-effort: per-market fan-out across every registered market is bounded
 //! by Lighter's 60 req/min REST quota, so the run takes around three minutes
 //! when many markets are scanned.
 
-use std::{sync::Arc, time::Duration};
+use std::{fmt::Display, str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::Context;
 use nautilus_common::logging::{init_logging, logger::LoggerConfig};
@@ -37,10 +38,13 @@ use nautilus_core::UUID4;
 use nautilus_lighter::{
     common::{
         credential::Credential,
-        enums::{LighterEnvironment, LighterOrderType, LighterTimeInForce, LighterTxType},
+        enums::{
+            LighterDeployment, LighterEnvironment, LighterOrderType, LighterTimeInForce,
+            LighterTxType,
+        },
         symbol::MarketRegistry,
-        urls::lighter_chain_id,
     },
+    config::LighterExecutionClientConfig,
     http::{
         client::{LighterHttpClient, LighterRawHttpClient},
         query::{LighterAccountActiveOrdersQuery, LighterOrderBookDetailsQuery},
@@ -56,7 +60,7 @@ use nautilus_lighter::{
     websocket::{LighterWebSocketClient, LighterWsChannel, NautilusWsMessage},
 };
 use nautilus_model::{
-    enums::PositionSideSpecified,
+    enums::PositionSide,
     identifiers::{AccountId, InstrumentId, TraderId},
     instruments::Instrument,
     reports::PositionStatusReport,
@@ -79,25 +83,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Default::default(),
     )?;
 
-    let environment = match std::env::var("LIGHTER_ENVIRONMENT").as_deref() {
-        Ok("testnet" | "Testnet") => LighterEnvironment::Testnet,
-        _ => LighterEnvironment::Mainnet,
-    };
-    log::info!("Environment: {environment:?}");
+    let deployment: LighterDeployment = read_selection("LIGHTER_DEPLOYMENT")?;
+    let environment: LighterEnvironment = read_selection("LIGHTER_ENVIRONMENT")?;
 
-    let credential = Credential::resolve(None, None, None, environment)?
-        .ok_or_else(|| anyhow::anyhow!("no Lighter credentials in env"))?;
+    let target = LighterExecutionClientConfig {
+        deployment,
+        environment,
+        ..Default::default()
+    };
+
+    let venue = target.resolved_venue();
+    let chain_id = target.chain_id();
+
+    log::info!("Deployment: {deployment:?}, environment: {environment:?}, venue: {venue}");
+
+    let credential = Credential::resolve_for_deployment(None, None, None, deployment, environment)?
+        .ok_or_else(|| anyhow::anyhow!("no {deployment:?} credentials in env"))?;
+
     log::info!(
         "Account: account_index={}, api_key_index={}",
         credential.account_index(),
         credential.api_key_index(),
     );
 
-    let registry = Arc::new(MarketRegistry::new());
-    let raw_http = LighterRawHttpClient::new(environment, None, 30, None)?;
+    let registry = Arc::new(MarketRegistry::new_with_venue_and_settlement_currency(
+        venue,
+        target.settlement_currency(),
+    ));
+
+    let raw_http = LighterRawHttpClient::new(environment, Some(target.http_url()), 30, None)?;
     let http = LighterHttpClient::from_raw_with_registry(raw_http, Arc::clone(&registry));
+
     let mut ws = LighterWebSocketClient::new(
-        None,
+        Some(target.ws_url()),
         environment,
         Arc::clone(&registry),
         TransportBackend::Tungstenite,
@@ -133,7 +151,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     ws.connect().await?;
     ws.set_execution_context(
-        AccountId::new("LIGHTER-FLATTEN-001"),
+        AccountId::new(format!("{venue}-FLATTEN-001")),
         credential.account_index(),
     )
     .await?;
@@ -166,7 +184,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &ws,
                         &credential,
                         &nonce_mgr,
-                        environment,
+                        chain_id,
                         market_id,
                         order.order_index,
                     )
@@ -226,7 +244,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 continue;
             }
         };
-        let is_ask = matches!(pos.position_side, PositionSideSpecified::Long);
+        let is_ask = matches!(pos.position_side, PositionSide::Long);
 
         let price_decimals = instrument.price_precision();
         let crossing_price =
@@ -251,7 +269,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             &ws,
             &credential,
             &nonce_mgr,
-            environment,
+            chain_id,
             market_id,
             base_amount,
             is_ask,
@@ -290,6 +308,35 @@ async fn fetch_crossing_price(
     int_str.parse::<u32>().ok()
 }
 
+fn read_selection<T>(name: &str) -> anyhow::Result<T>
+where
+    T: Default + FromStr,
+    T::Err: Display,
+{
+    match std::env::var(name) {
+        Ok(value) => parse_selection(name, Some(&value)),
+        Err(std::env::VarError::NotPresent) => parse_selection(name, None),
+        Err(std::env::VarError::NotUnicode(_)) => {
+            Err(anyhow::anyhow!("{name} must contain valid Unicode"))
+        }
+    }
+}
+
+fn parse_selection<T>(name: &str, value: Option<&str>) -> anyhow::Result<T>
+where
+    T: Default + FromStr,
+    T::Err: Display,
+{
+    value.map_or_else(
+        || Ok(T::default()),
+        |value| {
+            value
+                .parse()
+                .map_err(|e| anyhow::anyhow!("invalid {name}={value:?}: {e}"))
+        },
+    )
+}
+
 fn base_ticks(qty: Decimal, decimals: u8) -> Option<i64> {
     let scaled = qty * Decimal::from(10_i64.pow(u32::from(decimals)));
     if !scaled.fract().is_zero() {
@@ -303,23 +350,20 @@ async fn cancel_one_order(
     ws: &LighterWebSocketClient,
     credential: &Credential,
     nonce_mgr: &NonceManager,
-    environment: LighterEnvironment,
+    chain_id: u32,
     market_index: i16,
     order_index: i64,
 ) -> anyhow::Result<()> {
     let context = build_context(credential, nonce_mgr)?;
+
     let tx = CancelOrderTxInfo {
         context,
         market_index,
         index: order_index,
         skip_nonce: 0,
     };
-    let signed = sign_tx(
-        &tx,
-        lighter_chain_id(environment),
-        &credential.private_key()?,
-        fresh_k(),
-    );
+
+    let signed = sign_tx(&tx, chain_id, &credential.private_key()?, fresh_k());
     let tx_info = serde_json::value::RawValue::from_string(TxInfoJson::cancel_order(&tx, &signed))?;
     ws.send_tx(LighterTxType::CancelOrder as u8, tx_info)
         .await?;
@@ -331,13 +375,14 @@ async fn close_one_position(
     ws: &LighterWebSocketClient,
     credential: &Credential,
     nonce_mgr: &NonceManager,
-    environment: LighterEnvironment,
+    chain_id: u32,
     market_index: i16,
     base_amount: i64,
     is_ask: bool,
     crossing_price: u32,
 ) -> anyhow::Result<()> {
     let context = build_context(credential, nonce_mgr)?;
+
     let order = OrderInfo {
         market_index,
         client_order_index: fresh_client_order_index(),
@@ -350,17 +395,14 @@ async fn close_one_position(
         trigger_price: 0,
         order_expiry: 0,
     };
+
     let tx = CreateOrderTxInfo {
         context,
         order,
         attributes: L2TxAttributes::default(),
     };
-    let signed = sign_tx(
-        &tx,
-        lighter_chain_id(environment),
-        &credential.private_key()?,
-        fresh_k(),
-    );
+
+    let signed = sign_tx(&tx, chain_id, &credential.private_key()?, fresh_k());
     let tx_info = serde_json::value::RawValue::from_string(TxInfoJson::create_order(&tx, &signed))?;
     ws.send_tx(LighterTxType::CreateOrder as u8, tx_info)
         .await?;
@@ -478,6 +520,43 @@ mod tests {
     use super::*;
 
     #[rstest]
+    #[case::default(None, LighterDeployment::Lighter)]
+    #[case::lighter(Some("lighter"), LighterDeployment::Lighter)]
+    #[case::robinhood(Some("Robinhood"), LighterDeployment::Robinhood)]
+    fn parse_deployment_selection(
+        #[case] value: Option<&str>,
+        #[case] expected: LighterDeployment,
+    ) {
+        let result: LighterDeployment = parse_selection("LIGHTER_DEPLOYMENT", value).unwrap();
+
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::default(None, LighterEnvironment::Mainnet)]
+    #[case::mainnet(Some("mainnet"), LighterEnvironment::Mainnet)]
+    #[case::testnet(Some("Testnet"), LighterEnvironment::Testnet)]
+    fn parse_environment_selection(
+        #[case] value: Option<&str>,
+        #[case] expected: LighterEnvironment,
+    ) {
+        let result: LighterEnvironment = parse_selection("LIGHTER_ENVIRONMENT", value).unwrap();
+
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn parse_selection_rejects_unknown_value() {
+        let err = parse_selection::<LighterDeployment>("LIGHTER_DEPLOYMENT", Some("unknown"))
+            .unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "invalid LIGHTER_DEPLOYMENT=\"unknown\": Matching variant not found",
+        );
+    }
+
+    #[rstest]
     #[case::complete_snapshot_replaces_latest(
         vec![("ETH-PERP.LIGHTER", "1.0"), ("BTC-PERP.LIGHTER", "2.0")],
         vec![("DOGE-PERP.LIGHTER", "3.0")],
@@ -588,7 +667,7 @@ mod tests {
         PositionStatusReport::new(
             AccountId::new("LIGHTER-TEST-001"),
             InstrumentId::from(instrument_id),
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from(quantity),
             UnixNanos::default(),
             UnixNanos::default(),

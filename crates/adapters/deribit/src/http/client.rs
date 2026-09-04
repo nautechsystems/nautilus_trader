@@ -1773,7 +1773,6 @@ impl DeribitHttpClient {
         let end_ms = end.map_or(now_ms, |ns| nanos_to_millis(ns.as_u64()) as i64);
         let mut reports = Vec::new();
 
-        // Helper closure to parse trade and add to reports
         let mut parse_and_add = |trade: &DeribitUserTradeMsg| {
             let symbol = trade.instrument_name;
             if let Some(instrument) = self.get_instrument(&symbol) {

@@ -11,7 +11,7 @@ alongside a `metadata.json` file. These files are always available without netwo
 
 **Large data** (> 1 MB) is hosted as Parquet in the R2 test-data bucket.
 A SHA-256 checksum is recorded in `test_data/large/checksums.json`.
-The `ensure_test_data_exists()` helper downloads the file on first use and verifies integrity.
+The `ensure_test_data_exists()` function downloads the file on first use and verifies integrity.
 
 **User-fetched data** is used when a vendor license, entitlement model, or access control does not
 allow NautilusTrader to redistribute the data through the public repo or the public R2 bucket.
@@ -125,7 +125,7 @@ For datasets that NautilusTrader cannot redistribute:
 
 1. Commit a manifest and `metadata.json`, but do not commit the real vendor data or derived
    Parquet output.
-2. Provide a local fetch command or helper that uses the user's own vendor credentials,
+2. Provide a local fetch command or script that uses the user's own vendor credentials,
    entitlements, or purchased historical files.
 3. Convert the vendor data locally into Nautilus Parquet.
 4. Store the resulting files in a local cache path that is ignored by git.
@@ -156,7 +156,7 @@ sharing. Treat this as a separate operational path, not as part of the public te
 4. For large data: upload Parquet to R2, add checksum to `test_data/large/checksums.json`.
 5. For user-fetched data: commit the manifest and fetch instructions only. Keep the source and
    derived data out of the repo and out of the public R2 bucket.
-6. Add path helper functions to `crates/testkit/src/common.rs` when shared testkit access is needed.
+6. Add shared test-data path functions to `crates/testkit/src/common.rs` when needed.
 7. Write tests that consume the dataset.
 
 For user-fetched data, prefer this layout:

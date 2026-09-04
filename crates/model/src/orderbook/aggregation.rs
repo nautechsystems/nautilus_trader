@@ -65,11 +65,11 @@ fn price_based_order_id(order: &BookOrder) -> u64 {
 
 pub(crate) fn pre_process_order(book_type: BookType, mut order: BookOrder, flags: u8) -> BookOrder {
     match book_type {
-        BookType::L1_MBP => order.order_id = order.side as u64,
+        BookType::L1_MBP => order.order_id = order.side.map_or(0, |side| side as u64),
         BookType::L2_MBP => order.order_id = price_based_order_id(&order),
         BookType::L3_MBO => {
             if RecordFlag::F_TOB.matches(flags) {
-                order.order_id = order.side as u64;
+                order.order_id = order.side.map_or(0, |side| side as u64);
             } else if RecordFlag::F_MBP.matches(flags) || order.order_id == 0 {
                 // An ID of zero carries no identity (for example, MBP-style data),
                 // so key by price hash to keep every level addressable.
@@ -82,10 +82,7 @@ pub(crate) fn pre_process_order(book_type: BookType, mut order: BookOrder, flags
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{LazyLock, Mutex};
-
     use ahash::AHashSet;
-    use nautilus_core::MUTEX_POISONED;
     use rstest::rstest;
 
     use super::*;
@@ -106,12 +103,6 @@ mod tests {
             id1_a, id2,
             "Different prices should produce different order_ids"
         );
-
-        // Verify determinism across multiple calls
-        for _ in 0..100 {
-            assert_eq!(price_to_order_id(price1), id1_a);
-            assert_eq!(price_to_order_id(price2), id2);
-        }
     }
 
     #[rstest]
@@ -296,30 +287,31 @@ mod tests {
     }
 
     #[rstest]
-    #[case::max(i128::MAX)]
-    #[case::max_minus_1(i128::MAX - 1)]
-    #[case::min(i128::MIN)]
-    #[case::min_plus_1(i128::MIN + 1)]
-    #[case::u64_max(i128::from(u64::MAX))]
-    #[case::u64_max_minus_1(i128::from(u64::MAX) - 1)]
-    #[case::u64_max_plus_1(i128::from(u64::MAX) + 1)]
-    #[case::neg_u64_max(-i128::from(u64::MAX))]
-    #[case::neg_u64_max_minus_1(-i128::from(u64::MAX) - 1)]
-    #[case::neg_u64_max_plus_1(-i128::from(u64::MAX) + 1)]
-    #[case::zero(0_i128)]
-    #[case::one(1_i128)]
-    #[case::neg_one(-1_i128)]
-    fn test_price_to_order_id_extreme_values_no_collision(#[case] price: i128) {
-        // Each test case runs independently and checks that its price
-        // produces a unique order_id by storing in a static set
-        static SEEN: LazyLock<Mutex<AHashSet<u64>>> = LazyLock::new(|| Mutex::new(AHashSet::new()));
+    fn test_price_to_order_id_extreme_values_no_collision() {
+        let prices = [
+            i128::MAX,
+            i128::MAX - 1,
+            i128::MIN,
+            i128::MIN + 1,
+            i128::from(u64::MAX),
+            i128::from(u64::MAX) - 1,
+            i128::from(u64::MAX) + 1,
+            -i128::from(u64::MAX),
+            -i128::from(u64::MAX) - 1,
+            -i128::from(u64::MAX) + 1,
+            0,
+            1,
+            -1,
+        ];
+        let mut seen = AHashSet::new();
 
-        let id = price_to_order_id(price);
-        let mut seen = SEEN.lock().expect(MUTEX_POISONED);
-        assert!(
-            seen.insert(id),
-            "Collision detected for extreme value: {price} (order_id: {id})"
-        );
+        for price in prices {
+            let id = price_to_order_id(price);
+            assert!(
+                seen.insert(id),
+                "Collision detected for extreme value: {price} (order_id: {id})"
+            );
+        }
     }
 
     #[rstest]
@@ -344,59 +336,29 @@ mod tests {
 
     #[rstest]
     fn test_price_to_order_id_comprehensive_collision_check() {
-        const TOTAL_TESTS: usize = 500_000;
+        let mut prices = AHashSet::new();
 
-        // Comprehensive test combining all edge cases
-        let mut seen = AHashSet::new();
-        let mut collision_count = 0;
-
-        // Test 1: Dense range around zero
         for i in -100_000..100_000 {
-            let id = price_to_order_id(i128::from(i));
-            if !seen.insert(id) {
-                collision_count += 1;
-            }
+            prices.insert(i128::from(i));
         }
 
-        // Test 2: Powers and near-powers of 2
         for power in 0..64 {
             for offset in -10..=10 {
-                let price = (1_i128 << power) + offset;
-                let id = price_to_order_id(price);
-                if !seen.insert(id) {
-                    collision_count += 1;
-                }
+                prices.insert((1_i128 << power) + offset);
             }
         }
 
-        // Test 3: Realistic price levels
         for base in [100, 1000, 10000, 100_000, 1_000_000, 10_000_000] {
             for i in 0..1000 {
-                let price = base * 1_000_000_000_i128 + i;
-                let id = price_to_order_id(price);
-                if !seen.insert(id) {
-                    collision_count += 1;
-                }
+                prices.insert(base * 1_000_000_000_i128 + i);
             }
         }
 
-        // Calculate collision rate
-        let collision_rate = f64::from(collision_count) / TOTAL_TESTS as f64;
+        let mut seen = AHashSet::with_capacity(prices.len());
 
-        // For a good 128→64 bit hash, collision rate should be negligible in realistic scenarios
-        // This test uses pathological patterns (500k consecutive integers, powers of 2, etc.)
-        // AHash provides truly random collision distribution with ~0.0007% rate for such dense patterns
-        // Real orderbooks are sparse (~1000 levels) with collision probability < 10^-15
-        assert!(
-            collision_rate < 0.001,
-            "High collision rate: {collision_rate:.6}% ({collision_count}/{TOTAL_TESTS})"
-        );
-
-        println!(
-            "✓ Tested {} unique prices, {} collisions ({:.6}%)",
-            TOTAL_TESTS,
-            collision_count,
-            collision_rate * 100.0
-        );
+        for price in prices {
+            let id = price_to_order_id(price);
+            assert!(seen.insert(id), "Collision detected for price {price}");
+        }
     }
 }

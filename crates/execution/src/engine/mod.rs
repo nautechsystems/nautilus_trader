@@ -68,8 +68,7 @@ use nautilus_core::{
 use nautilus_model::{
     accounts::Account,
     enums::{
-        AccountType, ContingencyType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
-        TimeInForce, TrailingOffsetType, TriggerType,
+        AccountType, ContingencyType, OmsType, OrderStatus, OrderType, PositionSide, TimeInForce,
     },
     events::{
         OrderAccepted, OrderDenied, OrderDeniedReason, OrderEvent, OrderEventAny, OrderFillVoided,
@@ -118,7 +117,6 @@ pub struct ExecutionEngine {
     default_client_id: Option<ClientId>,
     routing_map: HashMap<Venue, ClientId>,
     oms_overrides: HashMap<StrategyId, OmsType>,
-    external_order_claims: HashMap<InstrumentId, StrategyId>,
     external_clients: HashSet<ClientId>,
     pos_id_generator: PositionIdGenerator,
     config: ExecutionEngineConfig,
@@ -152,7 +150,6 @@ impl ExecutionEngine {
             default_client_id: None,
             routing_map: HashMap::new(),
             oms_overrides: HashMap::new(),
-            external_order_claims: HashMap::new(),
             external_clients: config
                 .as_ref()
                 .and_then(|c| c.external_clients.clone())
@@ -331,7 +328,11 @@ impl ExecutionEngine {
     #[must_use]
     /// Returns the set of instruments that have external order claims.
     pub fn get_external_order_claims_instruments(&self) -> HashSet<InstrumentId> {
-        self.external_order_claims.keys().copied().collect()
+        self.cache
+            .borrow()
+            .external_order_claim_instrument_ids(None)
+            .into_iter()
+            .collect()
     }
 
     #[must_use]
@@ -343,19 +344,7 @@ impl ExecutionEngine {
     #[must_use]
     /// Returns any external order claim for the given instrument ID.
     pub fn get_external_order_claim(&self, instrument_id: &InstrumentId) -> Option<StrategyId> {
-        self.external_order_claims.get(instrument_id).copied()
-    }
-
-    /// Returns the instruments with external order claims owned by `strategy_id`.
-    #[must_use]
-    pub fn get_external_order_claims_for_strategy(
-        &self,
-        strategy_id: StrategyId,
-    ) -> HashSet<InstrumentId> {
-        self.external_order_claims
-            .iter()
-            .filter_map(|(instrument_id, owner)| (*owner == strategy_id).then_some(*instrument_id))
-            .collect()
+        self.cache.borrow().external_order_claim(instrument_id)
     }
 
     /// Registers a new execution client.
@@ -598,20 +587,10 @@ impl ExecutionEngine {
         strategy_id: StrategyId,
         instrument_ids: &HashSet<InstrumentId>,
     ) -> anyhow::Result<()> {
-        // Validate all instruments first
-        for instrument_id in instrument_ids {
-            if let Some(existing) = self.external_order_claims.get(instrument_id) {
-                anyhow::bail!(
-                    "External order claim for {instrument_id} already exists for {existing}"
-                );
-            }
-        }
-
-        // If validation passed, insert all claims
-        for instrument_id in instrument_ids {
-            self.external_order_claims
-                .insert(*instrument_id, strategy_id);
-        }
+        let instrument_ids: Vec<_> = instrument_ids.iter().copied().collect();
+        self.cache
+            .borrow_mut()
+            .register_external_order_claims(strategy_id, &instrument_ids)?;
 
         if !instrument_ids.is_empty() {
             log::info!("Registered external order claims for {strategy_id}: {instrument_ids:?}");
@@ -620,39 +599,16 @@ impl ExecutionEngine {
         Ok(())
     }
 
-    /// Commits external order claims for `strategy_id` without validation.
-    ///
-    /// The caller must have preflighted every instrument against
-    /// [`Self::get_external_order_claim`]: an existing claim is overwritten
-    /// without error. Coordinated live-node callers should use
-    /// `LiveNode::register_external_order_claims`, which preflights both the
-    /// execution engine and the reconciliation manager before committing;
-    /// ordinary callers should use
-    /// [`Self::register_external_order_claims`] instead.
-    pub fn commit_external_order_claims(
-        &mut self,
-        strategy_id: StrategyId,
-        instrument_ids: &HashSet<InstrumentId>,
-    ) {
-        self.external_order_claims.extend(
-            instrument_ids
-                .iter()
-                .map(|instrument_id| (*instrument_id, strategy_id)),
-        );
-
-        if !instrument_ids.is_empty() {
-            log::info!("Registered external order claims for {strategy_id}: {instrument_ids:?}");
-        }
-    }
-
     /// Deregisters all external order claims owned by `strategy_id`.
     ///
-    /// Coordinated live-node callers should use
-    /// `LiveNode::deregister_external_order_claims` so the execution engine and
-    /// reconciliation manager remain consistent.
+    /// # Panics
+    ///
+    /// Panics if the shared cache is already borrowed.
     pub fn deregister_external_order_claims(&mut self, strategy_id: StrategyId) {
-        self.external_order_claims
-            .retain(|_, owner| *owner != strategy_id);
+        self.cache
+            .borrow_mut()
+            .set_external_order_claims(strategy_id, &[])
+            .expect("clearing external order claims cannot fail");
     }
 
     /// # Errors
@@ -1195,13 +1151,22 @@ impl ExecutionEngine {
 
         let trader_id = get_message_bus().borrow().trader_id;
         let ts_now = self.clock.borrow().timestamp_ns();
+        let Some(order_side) = report.order_side else {
+            log::error!(
+                "Skipping external order {} ({}) for {}: order side is not specified",
+                client_order_id,
+                report.venue_order_id,
+                report.instrument_id,
+            );
+            return None;
+        };
 
         let initialized = match OrderInitialized::new_checked(
             trader_id,
             strategy_id,
             report.instrument_id,
             client_order_id,
-            report.order_side,
+            order_side,
             report.order_type,
             report.quantity,
             report.time_in_force,
@@ -1218,12 +1183,12 @@ impl ExecutionEngine {
             report.trigger_type,
             report.limit_offset,
             report.trailing_offset,
-            Some(report.trailing_offset_type),
+            report.trailing_offset_type,
             report.expire_time,
             report.display_qty,
             None, // emulation_trigger
             None, // trigger_instrument_id
-            Some(report.contingency_type),
+            report.contingency_type,
             report.order_list_id,
             report.linked_order_ids.clone(),
             report.parent_order_id,
@@ -1315,12 +1280,12 @@ impl ExecutionEngine {
             None, // trigger_type
             None, // limit_offset
             None, // trailing_offset
-            Some(TrailingOffsetType::NoTrailingOffset),
+            None,
             None, // expire_time
             None, // display_qty
             None, // emulation_trigger
             None, // trigger_instrument_id
-            Some(ContingencyType::NoContingency),
+            None,
             None, // order_list_id
             None, // linked_order_ids
             None, // parent_order_id
@@ -1343,9 +1308,9 @@ impl ExecutionEngine {
     }
 
     fn resolve_external_strategy(&self, instrument_id: &InstrumentId) -> StrategyId {
-        self.external_order_claims
-            .get(instrument_id)
-            .copied()
+        self.cache
+            .borrow()
+            .external_order_claim(instrument_id)
             .unwrap_or_else(StrategyId::external)
     }
 
@@ -1916,7 +1881,6 @@ impl ExecutionEngine {
         self.event_count = 0;
         self.report_count = 0;
         self.filtered_unclaimed_external_order_count = 0;
-
         log::info!("Reset");
     }
 
@@ -1942,6 +1906,23 @@ impl ExecutionEngine {
 
         if self.config.debug {
             log::debug!("{RECV}{CMD} {command:?}");
+        }
+
+        match self.validate_submission(&command) {
+            SubmissionValidationResult::Valid => {}
+            SubmissionValidationResult::StaleOrder {
+                client_order_id,
+                status,
+            } => {
+                log::warn!(
+                    "Skipping stale submit command for {client_order_id} in status {status}"
+                );
+                return;
+            }
+            SubmissionValidationResult::Deny(reason) => {
+                self.deny_submission(&command, &reason);
+                return;
+            }
         }
 
         if let Some(cid) = command.client_id()
@@ -2010,6 +1991,111 @@ impl ExecutionEngine {
             TradingCommand::CancelAllOrders(cmd) => self.handle_cancel_all_orders(client, &cmd),
             TradingCommand::QueryOrder(cmd) => self.handle_query_order(client, cmd),
             TradingCommand::QueryAccount(cmd) => self.handle_query_account(client, cmd),
+        }
+    }
+
+    fn validate_submission(&self, command: &TradingCommand) -> SubmissionValidationResult {
+        match command {
+            TradingCommand::SubmitOrder(cmd) => {
+                let cache = self.cache.borrow();
+                let Some(order) = cache.order(&cmd.client_order_id) else {
+                    return SubmissionValidationResult::Valid;
+                };
+
+                if matches!(
+                    order.status(),
+                    OrderStatus::Initialized | OrderStatus::Released
+                ) {
+                    SubmissionValidationResult::Valid
+                } else {
+                    SubmissionValidationResult::StaleOrder {
+                        client_order_id: order.client_order_id(),
+                        status: order.status(),
+                    }
+                }
+            }
+            TradingCommand::SubmitOrderList(cmd) => {
+                let cache = self.cache.borrow();
+                let has_ineligible_order = cmd
+                    .order_list
+                    .client_order_ids
+                    .iter()
+                    .filter_map(|client_order_id| cache.order(client_order_id))
+                    .any(|order| {
+                        !matches!(
+                            order.status(),
+                            OrderStatus::Initialized | OrderStatus::Released
+                        )
+                    });
+
+                if !has_ineligible_order {
+                    return SubmissionValidationResult::Valid;
+                }
+
+                SubmissionValidationResult::Deny(OrderDeniedReason::OrderListDenied {
+                    order_list_id: cmd.order_list.id,
+                })
+            }
+            _ => SubmissionValidationResult::Valid,
+        }
+    }
+
+    fn deny_submission(&self, command: &TradingCommand, reason: &OrderDeniedReason) {
+        let TradingCommand::SubmitOrderList(cmd) = command else {
+            return;
+        };
+
+        let cache = self.cache.borrow();
+        let mut orders: Vec<OrderAny> = cmd
+            .order_list
+            .client_order_ids
+            .iter()
+            .filter_map(|client_order_id| cache.order_owned(client_order_id))
+            .collect();
+        drop(cache);
+
+        for client_order_id in &cmd.order_list.client_order_ids {
+            if orders
+                .iter()
+                .any(|order| order.client_order_id() == *client_order_id)
+            {
+                continue;
+            }
+
+            let Some(order_init) = cmd
+                .order_inits
+                .iter()
+                .find(|init| init.client_order_id == *client_order_id)
+            else {
+                continue;
+            };
+
+            if let Some(order) = self.add_order_from_init(order_init, cmd.position_id, cmd) {
+                orders.push(order);
+            }
+        }
+
+        let mut eligible_orders = orders
+            .iter()
+            .filter(|order| {
+                matches!(
+                    order.status(),
+                    OrderStatus::Initialized | OrderStatus::Released
+                )
+            })
+            .peekable();
+
+        if eligible_orders.peek().is_none() {
+            log::warn!(
+                "Skipping stale submit command for order list {}",
+                cmd.order_list.id
+            );
+            return;
+        }
+
+        let reason = reason.to_string();
+        for order in eligible_orders {
+            self.deny_order(order, &reason);
         }
     }
 
@@ -2441,10 +2527,9 @@ impl ExecutionEngine {
         let algorithm_commands = self.plan_cancel_all_orders(command, client_id, account_id);
         let venue_command = Self::create_cancel_all_child(command, client_id);
         let emulator_command = Self::create_cancel_all_child(command, client_id);
-        let side_str = match command.order_side {
-            OrderSide::NoOrderSide => " ".to_string(),
-            order_side => format!(" {order_side} "),
-        };
+        let side_str = command
+            .order_side
+            .map_or_else(|| " ".to_string(), |order_side| format!(" {order_side} "));
 
         log_info!("Cancel all{side_str}orders", color = LogColor::Blue);
 
@@ -2472,10 +2557,7 @@ impl ExecutionEngine {
         client_id: ClientId,
         account_id: AccountId,
     ) -> Vec<(ExecAlgorithmId, CancelOrder)> {
-        let order_side = match command.order_side {
-            OrderSide::NoOrderSide => None,
-            order_side => Some(order_side),
-        };
+        let order_side = command.order_side;
         let candidates: Vec<(OrderAny, bool)> = {
             let cache = self.cache.borrow();
             cache
@@ -2505,10 +2587,7 @@ impl ExecutionEngine {
                         return None;
                     }
 
-                    let is_emulated = order.is_emulated()
-                        || order
-                            .emulation_trigger()
-                            .is_some_and(|trigger| trigger != TriggerType::NoTrigger);
+                    let is_emulated = order.is_emulated() || order.emulation_trigger().is_some();
                     if !is_emulated && order.exec_algorithm_id().is_none() {
                         return None;
                     }
@@ -2542,10 +2621,7 @@ impl ExecutionEngine {
                 continue;
             }
 
-            let is_emulated = order.is_emulated()
-                || order
-                    .emulation_trigger()
-                    .is_some_and(|trigger| trigger != TriggerType::NoTrigger);
+            let is_emulated = order.is_emulated() || order.emulation_trigger().is_some();
             if is_emulated {
                 continue;
             }
@@ -3161,17 +3237,28 @@ impl ExecutionEngine {
             );
         }
 
-        if let Some(position_id) = cached_position_id {
-            if let Some(fill_position_id) = fill.position_id
-                && fill_position_id != position_id
-            {
-                log::warn!(
-                    "Incorrect position ID assigned to fill: \
-                     cached={position_id}, assigned={fill_position_id}; \
-                     re-assigning from cache",
+        if let Some(cached_position_id) = cached_position_id
+            && let Some(fill_position_id) = fill.position_id
+            && cached_position_id != fill_position_id
+        {
+            if oms_type == OmsType::Hedging {
+                log::error!(
+                    "Cannot apply hedging fill {} for {}: venue position ID {fill_position_id} conflicts with cached position ID {cached_position_id}",
+                    fill.trade_id,
+                    fill.client_order_id(),
                 );
+
+                return None;
             }
 
+            log::warn!(
+                "Incorrect position ID assigned to fill: \
+                 cached={cached_position_id}, assigned={fill_position_id}; \
+                 re-assigning from cache",
+            );
+        }
+
+        if let Some(position_id) = cached_position_id {
             if self.config.debug {
                 log::debug!("Assigned {position_id} to {}", fill.client_order_id());
             }
@@ -3183,9 +3270,10 @@ impl ExecutionEngine {
             return Some(position_id);
         }
 
-        let position_id = match oms_type {
-            OmsType::Hedging => self.determine_hedging_position_id(fill, order),
-            OmsType::Netting => self.determine_netting_position_id(fill),
+        let position_id = match (oms_type, fill.position_id) {
+            (OmsType::Hedging, Some(position_id)) => position_id,
+            (OmsType::Hedging, None) => self.determine_hedging_position_id(fill, order),
+            (OmsType::Netting, _) => self.determine_netting_position_id(fill),
             _ => self.determine_netting_position_id(fill),
         };
 
@@ -3276,14 +3364,6 @@ impl ExecutionEngine {
         fill: &OrderFilled,
         order: Option<&OrderAny>,
     ) -> PositionId {
-        // Check if position ID already exists
-        if let Some(position_id) = fill.position_id {
-            if self.config.debug {
-                log::debug!("Already had a position ID of: {position_id}");
-            }
-            return position_id;
-        }
-
         let cache = self.cache.borrow();
 
         let cached_order;
@@ -3670,7 +3750,10 @@ impl ExecutionEngine {
             let position_events = self.handle_position_update(&instrument, fill.clone(), oms_type);
             let position_id = fill.position_id.unwrap();
             (
-                self.cache.borrow().position_owned(&position_id),
+                self.cache
+                    .borrow()
+                    .position(&position_id)
+                    .map(|position| position.clone_without_events()),
                 position_events,
             )
         };
@@ -3979,6 +4062,13 @@ impl ExecutionEngine {
         fill: OrderFilled,
         oms_type: OmsType,
     ) -> Vec<PositionEvent> {
+        enum Action {
+            Open,
+            Reopen(Position),
+            Flip(Position),
+            Update,
+        }
+
         let position_id = if let Some(position_id) = fill.position_id {
             position_id
         } else {
@@ -3986,10 +4076,21 @@ impl ExecutionEngine {
             return Vec::new();
         };
 
-        let position_opt = self.cache.borrow().position_owned(&position_id);
+        let action = {
+            let cache = self.cache.borrow();
 
-        match position_opt {
-            None => {
+            match cache.position(&position_id) {
+                None => Action::Open,
+                Some(position) if position.is_closed() => Action::Reopen(position.clone()),
+                Some(position) if self.will_flip_position(&position, &fill) => {
+                    Action::Flip(position.clone())
+                }
+                Some(_) => Action::Update,
+            }
+        };
+
+        match action {
+            Action::Open => {
                 if self.reject_reduce_only_position_open(&fill, oms_type) {
                     return Vec::new();
                 }
@@ -3997,21 +4098,21 @@ impl ExecutionEngine {
                 self.open_position(instrument, None, fill, oms_type)
                     .unwrap_or_default()
             }
-            Some(pos) if pos.is_closed() => {
+            Action::Reopen(position) => {
                 if self.reject_reduce_only_position_open(&fill, oms_type) {
                     return Vec::new();
                 }
 
-                self.open_position(instrument, Some(&pos), fill, oms_type)
+                self.open_position(instrument, Some(&position), fill, oms_type)
                     .unwrap_or_default()
             }
-            Some(mut pos) => {
-                if self.will_flip_position(&pos, &fill) {
-                    self.flip_position(instrument, &mut pos, &fill, oms_type)
-                } else {
-                    self.update_position(&mut pos, &fill).into_iter().collect()
-                }
+            Action::Flip(mut position) => {
+                self.flip_position(instrument, &mut position, &fill, oms_type)
             }
+            Action::Update => self
+                .update_position_from_fill(position_id, &fill)
+                .into_iter()
+                .collect(),
         }
     }
 
@@ -4208,6 +4309,43 @@ impl ExecutionEngine {
         }
     }
 
+    fn update_position_from_fill(
+        &self,
+        position_id: PositionId,
+        fill: &OrderFilled,
+    ) -> Option<PositionEvent> {
+        let position = match self
+            .cache
+            .borrow_mut()
+            .update_position_from_fill(position_id, fill)
+        {
+            Ok(position) => position,
+            Err(e) => {
+                log::error!("Failed to update position: {e:?}");
+                return None;
+            }
+        };
+
+        if self.config.snapshot_positions {
+            let position = self
+                .cache
+                .borrow()
+                .position_owned(&position_id)
+                .expect("Updated position is no longer cached");
+            self.create_position_state_snapshot(&position, false);
+        }
+
+        let ts_init = self.clock.borrow().timestamp_ns();
+
+        if position.is_closed() {
+            let event = PositionClosed::create(&position, fill, UUID4::new(), ts_init);
+            Some(PositionEvent::PositionClosed(event))
+        } else {
+            let event = PositionChanged::create(&position, fill, UUID4::new(), ts_init);
+            Some(PositionEvent::PositionChanged(event))
+        }
+    }
+
     fn will_flip_position(&self, position: &Position, fill: &OrderFilled) -> bool {
         position.is_opposite_side(fill.order_side) && (fill.last_qty.raw > position.quantity.raw)
     }
@@ -4353,11 +4491,20 @@ impl ExecutionEngine {
     }
 }
 
+enum SubmissionValidationResult {
+    Valid,
+    StaleOrder {
+        client_order_id: ClientOrderId,
+        status: OrderStatus,
+    },
+    Deny(OrderDeniedReason),
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_common::clock::TestClock;
     use nautilus_model::{
-        enums::{LiquiditySide, OrderSide, OrderType, PositionSideSpecified},
+        enums::{LiquiditySide, OrderSide, OrderType, PositionSide},
         events::order::spec::OrderFilledSpec,
         identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
         instruments::{InstrumentAny, stubs::audusd_sim},
@@ -4396,7 +4543,7 @@ mod tests {
         let report = PositionStatusReport::new(
             account1_id,
             instrument.id(),
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from(1_000),
             UnixNanos::from(1_000_000),
             UnixNanos::from(1_000_000),
@@ -4447,7 +4594,7 @@ mod tests {
         let report = PositionStatusReport::new(
             account_id,
             instrument.id(),
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from(1_500),
             UnixNanos::from(1_000_000),
             UnixNanos::from(1_000_000),

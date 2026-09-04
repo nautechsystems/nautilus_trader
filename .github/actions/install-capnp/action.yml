@@ -30,7 +30,7 @@ runs:
       shell: bash
       run: echo "release=$(lsb_release -rs)" >> "$GITHUB_OUTPUT"
 
-    - name: Get capnp version from tools.toml
+    - name: Get Cap'n Proto version
       if: runner.os == 'Linux'
       id: capnp-version
       shell: bash

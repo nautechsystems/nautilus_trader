@@ -26,7 +26,9 @@
 //! [RFC 3986]: https://datatracker.ietf.org/doc/html/rfc3986
 //! [RFC 3986 Section 2.1]: https://datatracker.ietf.org/doc/html/rfc3986#section-2.1
 
-use std::{borrow::Cow, fmt::Display, string::FromUtf8Error};
+use std::{borrow::Cow, string::FromUtf8Error};
+
+use thiserror::Error;
 
 const UNRESERVED: [bool; 256] = {
     let mut table = [false; 256];
@@ -190,32 +192,11 @@ pub fn decode_bytes(input: &[u8]) -> Cow<'_, [u8]> {
 }
 
 /// Errors from URL percent-decoding.
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum DecodeError {
     /// Decoded bytes are not valid UTF-8.
-    InvalidUtf8(FromUtf8Error),
-}
-
-impl Display for DecodeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::InvalidUtf8(err) => write!(f, "invalid UTF-8 in decoded bytes: {err}"),
-        }
-    }
-}
-
-impl std::error::Error for DecodeError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::InvalidUtf8(err) => Some(err),
-        }
-    }
-}
-
-impl From<FromUtf8Error> for DecodeError {
-    fn from(err: FromUtf8Error) -> Self {
-        Self::InvalidUtf8(err)
-    }
+    #[error("invalid UTF-8 in decoded bytes: {0}")]
+    InvalidUtf8(#[from] FromUtf8Error),
 }
 
 #[cfg(test)]

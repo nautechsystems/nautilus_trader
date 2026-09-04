@@ -226,7 +226,7 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         py,
         HyperliquidExecutionClientConfig {
             account_id,
-            private_key: Some(SMOKE_PRIVATE_KEY.to_string()),
+            private_key: Some(SMOKE_PRIVATE_KEY.into()),
             environment: HyperliquidEnvironment::Testnet,
             ..HyperliquidExecutionClientConfig::default()
         },

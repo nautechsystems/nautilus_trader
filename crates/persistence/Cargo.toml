@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-persistence"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -59,7 +58,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
-nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-model = { workspace = true, features = ["test-support"] }
 nautilus-persistence-macros = { workspace = true }
 nautilus-serialization = { workspace = true, features = ["arrow"] }
 
@@ -73,6 +72,7 @@ indexmap = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
 object_store = { workspace = true }
+parking_lot = { workspace = true }
 parquet = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -102,14 +102,14 @@ path = "benches/persistence.rs"
 harness = false
 
 [[bin]]
-name = "to_json"
+name = "to-json"
 path = "bin/to_json.rs"
 required-features = ["python"]
 doc = false
 test = false
 
 [[bin]]
-name = "to_parquet"
+name = "to-parquet"
 path = "bin/to_parquet.rs"
 required-features = ["python"]
 doc = false

@@ -68,9 +68,9 @@ pub(super) mod template_id {
 #[expect(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum DataAny {
-    OrderBookDelta(OrderBookDelta),
-    OrderBookDeltas(OrderBookDeltas),
-    OrderBookDepth10(OrderBookDepth10),
+    BookDelta(OrderBookDelta),
+    BookDeltas(OrderBookDeltas),
+    BookDepth10(OrderBookDepth10),
     Quote(QuoteTick),
     Trade(TradeTick),
     Bar(Bar),

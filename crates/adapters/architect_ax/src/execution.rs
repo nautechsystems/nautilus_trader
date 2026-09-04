@@ -25,7 +25,7 @@ use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender, task::TaskHandles},
+    live::runner::get_exec_event_sender,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
@@ -34,10 +34,13 @@ use nautilus_common::{
 };
 use nautilus_core::{
     AtomicMap, Params, UUID4, UnixNanos,
+    string::secret::SecretString,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
-    ExecutionClientCore, ExecutionEventEmitter, SocketControl, execution::failure::CommandFailure,
+    ExecutionClientCore, ExecutionEventEmitter, SocketControl,
+    execution::{failure::CommandFailure, reports::retain_order_status_reports},
+    task::{TaskGroup, TaskGroupGuard},
 };
 use nautilus_model::{
     accounts::AccountAny,
@@ -54,12 +57,11 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
-use tokio::task::JoinHandle;
 use ustr::Ustr;
 
 use crate::{
     common::{
-        auth::spawn_auth_token_refresh,
+        auth::run_auth_token_refresh,
         consts::{
             AX_ACCOUNT_REGISTRATION_TIMEOUT_SECS, AX_AUTH_TOKEN_TTL_SECS, AX_POST_ONLY_REJECT,
             AX_VENUE,
@@ -90,9 +92,9 @@ pub struct AxExecutionClient {
     emitter: ExecutionEventEmitter,
     http_client: AxHttpClient,
     ws_orders: AxOrdersWebSocketClient,
-    ws_stream_handle: Option<JoinHandle<()>>,
-    auth_refresh_handle: Option<JoinHandle<()>>,
-    pending_tasks: TaskHandles,
+    session_tasks: TaskGroup,
+    pending_tasks: TaskGroup,
+    shutdown_errors: Vec<String>,
 }
 
 impl AxExecutionClient {
@@ -103,15 +105,26 @@ impl AxExecutionClient {
     /// Returns an error if the client fails to initialize.
     pub fn new(core: ExecutionClientCore, config: AxExecutionClientConfig) -> anyhow::Result<Self> {
         let http_client = AxHttpClient::with_credentials(
-            config.api_key.clone().unwrap_or_default(),
-            config.api_secret.clone().unwrap_or_default(),
+            config
+                .api_key
+                .clone()
+                .map(|value| value.into_inner())
+                .unwrap_or_default(),
+            config
+                .api_secret
+                .clone()
+                .map(|value| value.into_inner())
+                .unwrap_or_default(),
             Some(config.http_base_url()),
             Some(config.orders_base_url()),
             config.http_timeout_secs,
             config.max_retries,
             config.retry_delay_initial_ms,
             config.retry_delay_max_ms,
-            config.proxy_url.clone(),
+            config
+                .proxy_url
+                .as_ref()
+                .map(|url| url.expose_secret().to_owned()),
         )?;
 
         let clock = get_atomic_clock_realtime();
@@ -130,13 +143,19 @@ impl AxExecutionClient {
             trader_id,
             config.heartbeat_interval_secs,
             config.transport_backend,
-            config.proxy_url.clone(),
+            config
+                .proxy_url
+                .as_ref()
+                .map(|url| url.expose_secret().to_owned()),
         )
         .with_socket_control(SocketControl::new(
             core.client_id,
             Some(*AX_VENUE),
             "architect-ax-user-streams",
         ));
+
+        let session_tasks = TaskGroup::new();
+        let pending_tasks = TaskGroup::new();
 
         Ok(Self {
             core,
@@ -145,13 +164,13 @@ impl AxExecutionClient {
             emitter,
             http_client,
             ws_orders,
-            ws_stream_handle: None,
-            auth_refresh_handle: None,
-            pending_tasks: TaskHandles::default(),
+            session_tasks,
+            pending_tasks,
+            shutdown_errors: Vec::new(),
         })
     }
 
-    async fn authenticate(&self, credential: &Credential) -> anyhow::Result<String> {
+    async fn authenticate(&self, credential: &Credential) -> anyhow::Result<SecretString> {
         self.http_client
             .authenticate(
                 credential.api_key(),
@@ -229,8 +248,7 @@ impl AxExecutionClient {
             {
                 let preview_result: anyhow::Result<Price> = async {
                     let symbol = instrument_id.symbol.inner();
-                    let ax_side = AxOrderSide::try_from(order_side)
-                        .map_err(|e| anyhow::anyhow!("Invalid order side: {e}"))?;
+                    let ax_side = AxOrderSide::from(order_side);
                     let qty_contracts = quantity_to_contracts(quantity)?;
 
                     let instrument = http_client.get_instrument(&symbol).ok_or_else(|| {
@@ -370,18 +388,70 @@ impl AxExecutionClient {
     where
         F: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        let runtime = get_runtime();
-        let handle = runtime.spawn(async move {
+        let future = async move {
             if let Err(e) = fut.await {
                 log::warn!("{description} failed: {e}");
             }
-        });
+        };
 
-        self.pending_tasks.push(handle);
+        if let Err(e) = self.pending_tasks.spawn(future) {
+            log::warn!("Skipping AX {description} after shutdown began: {e}");
+        }
     }
 
     fn abort_pending_tasks(&self) {
-        self.pending_tasks.abort_all();
+        self.pending_tasks.begin_shutdown();
+    }
+
+    fn abort_session_tasks(&self) {
+        self.session_tasks.begin_shutdown();
+        self.ws_orders.begin_shutdown();
+    }
+
+    async fn await_pending_tasks(&self) -> anyhow::Result<()> {
+        self.pending_tasks.begin_shutdown();
+        self.pending_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to terminate AX execution tasks: {e}"))?;
+        Ok(())
+    }
+
+    async fn await_session_tasks(&self) -> anyhow::Result<()> {
+        self.session_tasks.begin_shutdown();
+        self.session_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to terminate AX execution session tasks: {e}"))?;
+        Ok(())
+    }
+
+    async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
+        self.abort_session_tasks();
+        self.abort_pending_tasks();
+        self.http_client.cancel_all_requests();
+
+        if let Err(e) = self.ws_orders.close().await {
+            self.shutdown_errors
+                .push(format!("AX orders WebSocket shutdown failed: {e}"));
+        }
+
+        let (session_result, pending_result) =
+            tokio::join!(self.await_session_tasks(), self.await_pending_tasks());
+        self.core.set_disconnected();
+
+        if let Err(e) = session_result {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if let Err(e) = pending_result {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if !self.shutdown_errors.is_empty() {
+            anyhow::bail!(std::mem::take(&mut self.shutdown_errors).join("; "));
+        }
+        Ok(())
     }
 
     /// Polls the cache until the account is registered or timeout is reached.
@@ -441,20 +511,39 @@ impl ExecutionClient for AxExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_connected() {
+        if self.core.is_connected() && self.pending_tasks.is_open() && self.session_tasks.is_open()
+        {
             return Ok(());
         }
+
+        if !self.pending_tasks.is_open() || !self.session_tasks.is_open() {
+            self.teardown_partial_connect().await?;
+            self.pending_tasks.start_generation().map_err(|e| {
+                anyhow::anyhow!("Failed to start AX execution task generation: {e}")
+            })?;
+            self.session_tasks.start_generation().map_err(|e| {
+                anyhow::anyhow!("Failed to start AX execution session generation: {e}")
+            })?;
+        }
+        let http_client = self.http_client.clone();
+        let ws_orders = self.ws_orders.clone();
+        let setup_guard =
+            TaskGroupGuard::new(&[&self.session_tasks, &self.pending_tasks], move || {
+                http_client.cancel_all_requests();
+                ws_orders.begin_shutdown();
+            });
 
         // Reset so requests work after a previous disconnect
         self.http_client.reset_cancellation_token();
 
-        if let Some(handle) = self.auth_refresh_handle.take() {
-            handle.abort();
-        }
-
-        let credential =
-            Credential::resolve(self.config.api_key.clone(), self.config.api_secret.clone())
-                .context("API credentials not configured")?;
+        let credential = Credential::resolve(
+            self.config.api_key.clone().map(|value| value.into_inner()),
+            self.config
+                .api_secret
+                .clone()
+                .map(|value| value.into_inner()),
+        )
+        .context("API credentials not configured")?;
         let token = self.authenticate(&credential).await?;
 
         // Instruments load after authenticating because their fee rates come from the
@@ -482,85 +571,93 @@ impl ExecutionClient for AxExecutionClient {
             self.core.set_instruments_initialized();
         }
 
-        self.ws_orders.connect(&token).await?;
+        self.ws_orders.connect(token.expose_secret()).await?;
         log::debug!("Connected to orders WebSocket");
 
-        let should_spawn = match &self.ws_stream_handle {
-            None => true,
-            Some(handle) => handle.is_finished(),
-        };
+        let stream = self.ws_orders.stream();
+        let emitter = self.emitter.clone();
+        let caches = self.ws_orders.caches().clone();
+        let account_id = self.core.account_id;
+        let instruments_cache = self.ws_orders.instruments_cache();
+        let clock = self.clock;
 
-        if should_spawn {
-            let stream = self.ws_orders.stream();
-            let emitter = self.emitter.clone();
-            let caches = self.ws_orders.caches().clone();
-            let account_id = self.core.account_id;
-            let instruments_cache = self.ws_orders.instruments_cache();
-            let clock = self.clock;
-
-            let handle = get_runtime().spawn(async move {
-                pin_mut!(stream);
-                while let Some(message) = stream.next().await {
-                    dispatch_ws_message(
-                        message,
-                        &emitter,
-                        &caches,
-                        account_id,
-                        &instruments_cache,
-                        clock,
-                    );
-                }
-            });
-            self.ws_stream_handle = Some(handle);
+        if let Err(e) = self.session_tasks.spawn(async move {
+            pin_mut!(stream);
+            while let Some(message) = stream.next().await {
+                dispatch_ws_message(
+                    message,
+                    &emitter,
+                    &caches,
+                    account_id,
+                    &instruments_cache,
+                    clock,
+                );
+            }
+        }) {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(anyhow::Error::new(e).context(format!(
+                    "AX execution startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e.into());
         }
 
-        let account_state = self
-            .http_client
-            .request_account_state(self.core.account_id)
-            .await
-            .context("failed to request AX account state")?;
+        let session_result = async {
+            let account_state = self
+                .http_client
+                .request_account_state(self.core.account_id)
+                .await
+                .context("failed to request AX account state")?;
 
-        if !account_state.balances.is_empty() {
-            log::debug!(
-                "Received account state with {} balance(s)",
-                account_state.balances.len()
-            );
+            if !account_state.balances.is_empty() {
+                log::debug!(
+                    "Received account state with {} balance(s)",
+                    account_state.balances.len()
+                );
+            }
+            self.emitter.send_account_state(account_state);
+
+            self.await_account_registered(AX_ACCOUNT_REGISTRATION_TIMEOUT_SECS)
+                .await?;
+
+            let ws_orders = self.ws_orders.clone();
+            self.session_tasks.spawn(run_auth_token_refresh(
+                self.http_client.clone(),
+                credential,
+                move |token| ws_orders.update_auth_token(token.expose_secret()),
+            ))?;
+            Ok::<(), anyhow::Error>(())
         }
-        self.emitter.send_account_state(account_state);
+        .await;
 
-        self.await_account_registered(AX_ACCOUNT_REGISTRATION_TIMEOUT_SECS)
-            .await?;
+        if let Err(e) = session_result {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "AX execution startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e);
+        }
 
         self.core.set_connected();
-        let ws_orders = self.ws_orders.clone();
-        self.auth_refresh_handle = Some(spawn_auth_token_refresh(
-            self.http_client.clone(),
-            credential,
-            move |token| ws_orders.update_auth_token(&token),
-        ));
+        setup_guard.disarm();
         log::info!("Connected: client_id={}", self.core.client_id);
         Ok(())
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_disconnected() {
-            return Ok(());
-        }
-
-        if let Some(handle) = self.auth_refresh_handle.take() {
-            handle.abort();
-            let _ = handle.await;
-        }
+        self.abort_session_tasks();
         self.abort_pending_tasks();
         self.http_client.cancel_all_requests();
 
-        self.ws_orders.close().await;
-
-        if let Some(handle) = self.ws_stream_handle.take() {
-            handle.abort();
-        }
+        let ws_result = self.ws_orders.close().await;
+        let (session_result, pending_result) =
+            tokio::join!(self.await_session_tasks(), self.await_pending_tasks());
 
         self.core.set_disconnected();
+        ws_result?;
+        session_result?;
+        pending_result?;
         log::info!("Disconnected: client_id={}", self.core.client_id);
         Ok(())
     }
@@ -588,11 +685,11 @@ impl ExecutionClient for AxExecutionClient {
             let cache = self.core.cache();
             match cache.order(&client_order_id) {
                 Some(order) => (
-                    order.order_side(),
+                    Some(order.order_side()),
                     order.order_type(),
                     order.time_in_force(),
                 ),
-                None => (OrderSide::NoOrderSide, OrderType::Limit, TimeInForce::Gtc),
+                None => (None, OrderType::Limit, TimeInForce::Gtc),
             }
         };
 
@@ -655,39 +752,21 @@ impl ExecutionClient for AxExecutionClient {
         self.core.set_stopped();
         self.core.set_disconnected();
 
-        if let Some(handle) = self.ws_stream_handle.take() {
-            handle.abort();
-        }
-
-        if let Some(handle) = self.auth_refresh_handle.take() {
-            handle.abort();
-        }
+        self.abort_session_tasks();
         self.abort_pending_tasks();
         log::info!("Stopped: client_id={}", self.core.client_id);
         Ok(())
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
-        if let Some(handle) = self.auth_refresh_handle.take() {
-            handle.abort();
-        }
-
-        if let Some(handle) = self.ws_stream_handle.take() {
-            handle.abort();
-        }
+        self.abort_session_tasks();
         self.abort_pending_tasks();
         self.core.set_disconnected();
         Ok(())
     }
 
     fn dispose(&mut self) -> anyhow::Result<()> {
-        if let Some(handle) = self.auth_refresh_handle.take() {
-            handle.abort();
-        }
-
-        if let Some(handle) = self.ws_stream_handle.take() {
-            handle.abort();
-        }
+        self.abort_session_tasks();
         self.abort_pending_tasks();
         self.core.set_disconnected();
         Ok(())
@@ -1012,17 +1091,7 @@ impl ExecutionClient for AxExecutionClient {
             reports.retain(|report| report.instrument_id == instrument_id);
         }
 
-        if cmd.open_only {
-            reports.retain(|r| r.order_status.is_open());
-        }
-
-        if let Some(start) = cmd.start {
-            reports.retain(|r| r.ts_last >= start);
-        }
-
-        if let Some(end) = cmd.end {
-            reports.retain(|r| r.ts_last <= end);
-        }
+        retain_order_status_reports(&mut reports, cmd);
 
         Ok(reports)
     }
@@ -1586,7 +1655,7 @@ pub(crate) fn create_order_filled(
     let last_qty = Quantity::new(execution.q as f64, metadata.size_precision);
     let last_px = Price::from_decimal_dp(execution.p, metadata.price_precision).ok()?;
 
-    let order_side: OrderSide = order.d.into();
+    let order_side = OrderSide::from(order.d);
 
     let liquidity_side = if execution.agg {
         LiquiditySide::Taker
@@ -1772,7 +1841,7 @@ fn create_order_status_report(
     let instrument = instruments_snap.get(&order.s)?;
     let venue_order_id = VenueOrderId::new(&order.oid);
     let instrument_id = instrument.id();
-    let order_side = order.d.into();
+    let order_side = OrderSide::from(order.d);
     let time_in_force = order.tif.into();
 
     let quantity = Quantity::new(order.q as f64, instrument.size_precision());
@@ -1795,7 +1864,7 @@ fn create_order_status_report(
         instrument_id,
         client_order_id,
         venue_order_id,
-        order_side,
+        order_side.into(),
         OrderType::Limit,
         time_in_force,
         order_status,
@@ -1900,8 +1969,6 @@ fn validate_order_for_ax_submit(order: &OrderAny) -> anyhow::Result<()> {
         order.display_qty().is_some(),
     )?;
 
-    AxOrderSide::try_from(order.order_side())
-        .map_err(|e| anyhow::anyhow!("Invalid order side: {e}"))?;
     quantity_to_contracts(order.quantity())?;
 
     Ok(())

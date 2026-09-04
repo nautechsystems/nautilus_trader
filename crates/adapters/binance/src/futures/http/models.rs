@@ -15,6 +15,8 @@
 
 //! Binance Futures HTTP response models.
 
+use std::fmt::Debug;
+
 use anyhow::Context;
 use nautilus_core::{
     UUID4, UnixNanos,
@@ -22,6 +24,7 @@ use nautilus_core::{
         deserialize_decimal_or_zero, deserialize_optional_decimal_from_str,
         serialize_decimal_as_str, serialize_optional_decimal_as_str,
     },
+    string::secret::SecretString,
 };
 use nautilus_model::{
     enums::{
@@ -37,6 +40,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ustr::Ustr;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
     common::{
@@ -1169,7 +1173,7 @@ impl BinanceFuturesOrder {
             instrument_id,
             Some(client_order_id),
             venue_order_id,
-            order_side,
+            order_side.into(),
             order_type,
             time_in_force,
             order_status,
@@ -1349,11 +1353,19 @@ pub struct BatchOrderError {
 }
 
 /// Listen key response from user data stream endpoints.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Zeroize, ZeroizeOnDrop)]
 #[serde(rename_all = "camelCase")]
 pub struct ListenKeyResponse {
     /// The listen key for WebSocket user data stream.
-    pub listen_key: String,
+    pub listen_key: SecretString,
+}
+
+impl ListenKeyResponse {
+    /// Consumes the response and returns the listen key.
+    #[must_use]
+    pub fn into_listen_key(mut self) -> SecretString {
+        std::mem::take(&mut self.listen_key)
+    }
 }
 
 /// Algo order response from Binance Futures Algo Service API.
@@ -1517,7 +1529,7 @@ impl BinanceFuturesAlgoOrder {
             instrument_id,
             Some(client_order_id),
             venue_order_id,
-            order_side,
+            order_side.into(),
             order_type,
             time_in_force,
             order_status,
@@ -1561,8 +1573,8 @@ impl BinanceFuturesAlgoOrder {
             report = report.with_activation_price(activation_price);
         }
 
-        if let Some(reduce_only) = self.reduce_only {
-            report = report.with_reduce_only(reduce_only);
+        if self.reduce_only == Some(true) || self.close_position == Some(true) {
+            report = report.with_reduce_only(true);
         }
 
         if let Some(expire_time) = parse_good_till_date(self.good_till_date)? {
@@ -1805,9 +1817,12 @@ mod tests {
     use nautilus_model::identifiers::ClientOrderId;
     use rstest::rstest;
     use rust_decimal_macros::dec;
+    use zeroize::Zeroize;
 
     use super::*;
     use crate::common::testing::load_fixture_string;
+
+    fn assert_zeroize_on_drop<T: ZeroizeOnDrop>() {}
 
     #[rstest]
     fn test_parse_account_info_v2() {
@@ -1929,7 +1944,7 @@ mod tests {
     // Regression for the #3867 bug class: wire values with more decimal places
     // than the currency precision (USDT=8) previously tripped the
     // `total == locked + free` invariant when Money::new rounded each side
-    // independently. The `from_total_and_free` helper must keep the invariant.
+    // independently. The `from_total_and_free` constructor must keep the invariant.
     #[rstest]
     fn test_account_info_to_account_state_precision_drift() {
         let json = r#"{
@@ -2128,11 +2143,23 @@ mod tests {
 
     #[rstest]
     fn test_parse_listen_key_response() {
+        assert_zeroize_on_drop::<ListenKeyResponse>();
+
         let json =
             r#"{"listenKey": "pqia91ma19a5s61cv6a81va65sdf19v8a65a1a5s61cv6a81va65sdf19v8a65a1"}"#;
-        let response: ListenKeyResponse =
+        let mut response: ListenKeyResponse =
             serde_json::from_str(json).expect("Failed to parse listen key");
-        assert!(!response.listen_key.is_empty());
+
+        let debug = format!("{response:?}");
+        assert_eq!(
+            response.listen_key.expose_secret(),
+            "pqia91ma19a5s61cv6a81va65sdf19v8a65a1a5s61cv6a81va65sdf19v8a65a1"
+        );
+        assert_eq!(debug, "ListenKeyResponse { listen_key: <redacted> }");
+        assert!(!debug.contains(response.listen_key.expose_secret()));
+
+        response.zeroize();
+        assert!(response.listen_key.expose_secret().is_empty());
     }
 
     #[rstest]
@@ -2533,7 +2560,10 @@ mod tests {
         assert_eq!(report.trigger_price, Some(Price::from("45000.00")));
         assert_eq!(report.trigger_type, Some(TriggerType::MarkPrice));
         assert_eq!(report.trailing_offset, Some(Decimal::from(25)));
-        assert_eq!(report.trailing_offset_type, TrailingOffsetType::BasisPoints);
+        assert_eq!(
+            report.trailing_offset_type,
+            Some(TrailingOffsetType::BasisPoints),
+        );
     }
 
     #[rstest]

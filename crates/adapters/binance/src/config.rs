@@ -15,9 +15,12 @@
 
 //! Binance adapter configuration structures.
 
-use std::{any::Any, collections::HashMap, str::FromStr};
+use std::{any::Any, collections::HashMap, fmt::Debug, str::FromStr};
 
 use nautilus_common::factories::ClientConfig;
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::{
     enums::OmsType,
     identifiers::{AccountId, InstrumentId},
@@ -185,9 +188,9 @@ pub struct BinanceDataClientConfig {
     /// `/market/ws` and `/public/ws` routes.
     pub base_url_ws: Option<String>,
     /// API key (Ed25519).
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     /// API secret (Ed25519 base64-encoded or PEM).
-    pub api_secret: Option<String>,
+    pub api_secret: Option<SecretString>,
     /// Spot market-data transport mode.
     ///
     /// - `Sbe` uses SBE streams and requires Ed25519 credentials.
@@ -207,7 +210,7 @@ pub struct BinanceDataClientConfig {
     #[builder(default = 3600)]
     pub instrument_status_poll_secs: u64,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// Receive window in milliseconds for signed HTTP requests.
     #[builder(default = 5_000)]
     pub recv_window_ms: u64,
@@ -327,12 +330,12 @@ pub struct BinanceExecutionClientConfig {
     /// to GTC and the strategy must enable `manage_gtd_expiry`.
     #[builder(default = true)]
     pub use_gtd: bool,
-    /// Whether to use Binance Futures hedging position IDs.
+    /// Whether to use canonical Binance Futures position IDs.
     ///
-    /// When true, fill reports include a `venue_position_id` derived from
-    /// the instrument and position side (e.g. `ETHUSDT-PERP.BINANCE-LONG`).
-    /// When false, `venue_position_id` is None, allowing virtual positions
-    /// with `OmsType::Hedging`.
+    /// When true, Futures hedge-mode order and fill reports include a `venue_position_id` derived
+    /// from the instrument and Binance position side (e.g. `ETHUSDT-PERP.BINANCE-LONG`). Hedge-mode
+    /// REST position reports use the same IDs. One-way `BOTH` reports remain unkeyed. When false,
+    /// `venue_position_id` is None, allowing virtual positions with `OmsType::Hedging`.
     #[builder(default = true)]
     pub use_position_ids: bool,
     /// Optional OMS type override for Binance Futures accounts.
@@ -348,7 +351,7 @@ pub struct BinanceExecutionClientConfig {
     #[builder(default = Decimal::new(4, 4))]
     pub default_taker_fee: Decimal,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// Receive window in milliseconds for signed HTTP requests.
     #[builder(default = 5_000)]
     pub recv_window_ms: u64,
@@ -356,9 +359,9 @@ pub struct BinanceExecutionClientConfig {
     #[builder(default)]
     pub us: bool,
     /// API key (uses an environment variable if not provided).
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     /// API secret (Ed25519 for Global or HMAC for Binance US).
-    pub api_secret: Option<String>,
+    pub api_secret: Option<SecretString>,
     /// Initial leverage per Binance symbol (e.g. BTCUSDT -> 20), applied during connect.
     pub futures_leverages: Option<HashMap<String, u32>>,
     /// Margin type per Binance symbol (e.g. BTCUSDT -> Cross), applied during connect.
@@ -464,6 +467,37 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_config_debug_redacts_credentials() {
+        let data = BinanceDataClientConfig {
+            api_key: Some("data-api-key".into()),
+            api_secret: Some("data-api-secret".into()),
+            proxy_url: Some("http://user:data-proxy@localhost".into()),
+            ..Default::default()
+        };
+        let execution = BinanceExecutionClientConfig {
+            api_key: Some("exec-api-key".into()),
+            api_secret: Some("exec-api-secret".into()),
+            proxy_url: Some("http://user:exec-proxy@localhost".into()),
+            ..Default::default()
+        };
+
+        let formatted = format!("{data:?} {execution:?}");
+
+        assert_eq!(formatted.matches(REDACTED).count(), 6);
+
+        for secret in [
+            "data-api-key",
+            "data-api-secret",
+            "data-proxy",
+            "exec-api-key",
+            "exec-api-secret",
+            "exec-proxy",
+        ] {
+            assert!(!formatted.contains(secret));
+        }
+    }
 
     #[rstest]
     fn test_data_config_toml_minimal() {

@@ -99,7 +99,9 @@ impl UUID4 {
     pub fn from_bytes(mut bytes: [u8; 16]) -> Self {
         bytes[6] = (bytes[6] & 0x0F) | 0x40;
         bytes[8] = (bytes[8] & 0x3F) | 0x80;
-        Self::from_validated_uuid(&Uuid::from_bytes(bytes))
+        Self {
+            value: format_uuid4_bytes(bytes),
+        }
     }
 
     /// Converts the [`UUID4`] to a C string reference.
@@ -170,11 +172,9 @@ impl UUID4 {
     }
 
     fn from_validated_uuid(uuid: &Uuid) -> Self {
-        let mut value = [0; UUID4_LEN];
-        let uuid_str = uuid.to_string();
-        value[..uuid_str.len()].copy_from_slice(uuid_str.as_bytes());
-        value[uuid_str.len()] = 0; // Add null terminator
-        Self { value }
+        Self {
+            value: format_uuid4_bytes(*uuid.as_bytes()),
+        }
     }
 }
 
@@ -252,7 +252,7 @@ impl Serialize for UUID4 {
     where
         S: Serializer,
     {
-        self.to_string().serialize(serializer)
+        serializer.serialize_str(self.as_str())
     }
 }
 
@@ -338,6 +338,23 @@ mod tests {
         assert_eq!(bytes[6] >> 4, 4);
         assert!(matches!(bytes[8] >> 6, 0b10));
         assert_eq!(uuid.as_bytes(), bytes);
+    }
+
+    #[cfg(all(feature = "simulation", madsim))]
+    #[rstest]
+    fn test_new_bytes_is_deterministic_in_virtual_time_runtime() {
+        let generate = |seed| {
+            let runtime =
+                madsim::runtime::Runtime::with_seed_and_config(seed, madsim::Config::default());
+            runtime.block_on(async { (0..4).map(|_| UUID4::new_bytes()).collect::<Vec<_>>() })
+        };
+
+        let first = generate(42);
+        let repeated = generate(42);
+        let different = generate(43);
+
+        assert_eq!(first, repeated);
+        assert_ne!(first, different);
     }
 
     #[rstest]

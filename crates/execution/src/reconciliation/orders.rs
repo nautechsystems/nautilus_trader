@@ -15,9 +15,8 @@
 
 //! Order and fill reconciliation.
 //!
-//! Event constructors, order state reconciliation, and fill reconciliation. Every
-//! helper turns a venue-sourced report into zero or more `OrderEventAny`s that are
-//! safe to apply to the local order model.
+//! Event construction, order state reconciliation, and fill reconciliation. Venue-sourced
+//! reports become zero or more `OrderEventAny`s that are safe to apply to the local order model.
 
 use nautilus_common::enums::LogColor;
 use nautilus_core::{UUID4, UnixNanos};
@@ -686,6 +685,7 @@ fn create_reconciliation_terminal_fill_void(
         return None;
     }
     let instrument = instrument?;
+    let order_side = order.order_side();
 
     let last_px = resolve_fill_price(order, report, instrument)
         .unwrap_or_else(|| Price::zero(instrument.price_precision()));
@@ -701,7 +701,7 @@ fn create_reconciliation_terminal_fill_void(
         TradeId::new(format!("VOID-{}", report.venue_order_id)),
         voided_qty,
         None,
-        order.order_side(),
+        order_side,
         order.order_type(),
         last_px,
         instrument.quote_currency(),
@@ -1044,6 +1044,16 @@ pub(super) fn create_inferred_fill(
     ts_now: UnixNanos,
     commission: Option<Money>,
 ) -> Option<OrderEventAny> {
+    let cached_order_side = order.order_side();
+    let order_side = report.order_side.unwrap_or(cached_order_side);
+    if order_side != cached_order_side {
+        log::warn!(
+            "Order side mismatch for {}: cached={:?}, venue={order_side:?}",
+            order.client_order_id(),
+            cached_order_side,
+        );
+    }
+
     let liquidity_side = match order.order_type() {
         OrderType::Market
         | OrderType::StopMarket
@@ -1069,7 +1079,7 @@ pub(super) fn create_inferred_fill(
         order.instrument_id(),
         order.client_order_id(),
         Some(report.venue_order_id),
-        report.order_side,
+        order_side,
         order.order_type(),
         report.filled_qty,
         report.filled_qty,
@@ -1094,7 +1104,7 @@ pub(super) fn create_inferred_fill(
         report.venue_order_id,
         account_id,
         trade_id,
-        report.order_side,
+        order_side,
         order.order_type(),
         report.filled_qty,
         last_px,
@@ -1119,6 +1129,8 @@ pub fn create_incremental_inferred_fill(
     ts_now: UnixNanos,
     commission: Option<Money>,
 ) -> Option<OrderEventAny> {
+    let order_side = order.order_side();
+
     let order_filled_qty = order.filled_qty();
     debug_assert!(
         report.filled_qty >= order_filled_qty,
@@ -1143,7 +1155,7 @@ pub fn create_incremental_inferred_fill(
         order.instrument_id(),
         order.client_order_id(),
         Some(venue_order_id),
-        order.order_side(),
+        order_side,
         order.order_type(),
         report.filled_qty,
         last_qty,
@@ -1168,7 +1180,7 @@ pub fn create_incremental_inferred_fill(
         venue_order_id,
         *account_id,
         trade_id,
-        order.order_side(),
+        order_side,
         order.order_type(),
         last_qty,
         last_px,
@@ -1178,7 +1190,7 @@ pub fn create_incremental_inferred_fill(
         report.ts_last,
         ts_now,
         true, // reconciliation
-        None, // venue_position_id
+        report.venue_position_id,
         commission,
         None,
     )))
@@ -1254,6 +1266,8 @@ pub fn create_inferred_fill_for_qty(
         return None;
     }
 
+    let order_side = order.order_side();
+
     let Some((last_px, liquidity_side)) =
         inferred_fill_price_and_liquidity(order, report, instrument)
     else {
@@ -1272,7 +1286,7 @@ pub fn create_inferred_fill_for_qty(
         order.instrument_id(),
         order.client_order_id(),
         Some(venue_order_id),
-        order.order_side(),
+        order_side,
         order.order_type(),
         report.filled_qty,
         fill_qty,
@@ -1297,7 +1311,7 @@ pub fn create_inferred_fill_for_qty(
         venue_order_id,
         *account_id,
         trade_id,
-        order.order_side(),
+        order_side,
         order.order_type(),
         fill_qty,
         last_px,
@@ -1307,7 +1321,7 @@ pub fn create_inferred_fill_for_qty(
         report.ts_last,
         ts_now,
         true, // reconciliation
-        None, // venue_position_id
+        report.venue_position_id,
         commission,
         None,
     )))

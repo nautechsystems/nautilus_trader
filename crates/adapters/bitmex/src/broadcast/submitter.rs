@@ -46,6 +46,7 @@ use std::{
 
 use futures_util::future;
 use nautilus_common::live::get_runtime;
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::{
     enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
     identifiers::{ClientOrderId, InstrumentId, OrderListId},
@@ -186,9 +187,9 @@ pub struct SubmitBroadcasterConfig {
     /// Number of HTTP clients in the pool.
     pub pool_size: usize,
     /// BitMEX API key (None will source from environment).
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     /// BitMEX API secret (None will source from environment).
-    pub api_secret: Option<String>,
+    pub api_secret: Option<SecretString>,
     /// Base URL for BitMEX HTTP API.
     pub base_url: Option<String>,
     /// BitMEX environment (mainnet or testnet).
@@ -218,7 +219,7 @@ pub struct SubmitBroadcasterConfig {
     /// Each transport instance uses the proxy at its index. If the list is shorter
     /// than pool_size, remaining transports will use no proxy. If longer, extra proxies
     /// are ignored.
-    pub proxy_urls: Vec<Option<String>>,
+    pub proxy_urls: Vec<Option<SecretString>>,
 }
 
 impl Default for SubmitBroadcasterConfig {
@@ -424,11 +425,15 @@ impl SubmitBroadcaster {
 
         for i in 0..config.pool_size {
             // Assign proxy from config list, or None if index exceeds list length
-            let proxy_url = config.proxy_urls.get(i).and_then(|p| p.clone());
+            let proxy_url = config
+                .proxy_urls
+                .get(i)
+                .and_then(|value| value.as_ref())
+                .map(|value| value.expose_secret().to_owned());
 
             let client = BitmexHttpClient::with_credentials(
-                config.api_key.clone(),
-                config.api_secret.clone(),
+                config.api_key.clone().map(SecretString::into_inner),
+                config.api_secret.clone().map(SecretString::into_inner),
                 base_url.clone(),
                 config.timeout_secs,
                 config.max_retries,
@@ -553,7 +558,7 @@ impl SubmitBroadcaster {
 
     /// Processes submit request results, handling success and failures.
     ///
-    /// This helper consolidates the common error handling loop used for submit broadcasts.
+    /// This method consolidates the error handling loop used for submit broadcasts.
     async fn process_submit_results<T>(
         &self,
         mut handles: Vec<JoinHandle<(String, anyhow::Result<T>)>>,
@@ -885,8 +890,25 @@ mod tests {
         reports::OrderStatusReport,
         types::{Price, Quantity},
     };
+    use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_config_debug_redacts_credentials() {
+        let config = SubmitBroadcasterConfig {
+            api_key: Some("submit-key-sentinel".into()),
+            api_secret: Some("submit-secret-sentinel".into()),
+            proxy_urls: vec![Some("http://submit-user:submit-password@localhost".into())],
+            ..Default::default()
+        };
+
+        let debug = format!("{config:?}");
+
+        assert!(!debug.contains("submit-key-sentinel"));
+        assert!(!debug.contains("submit-secret-sentinel"));
+        assert!(!debug.contains("submit-password"));
+    }
 
     /// Mock executor for testing.
     #[derive(Clone)]
@@ -950,7 +972,7 @@ mod tests {
             account_id: AccountId::from("BITMEX-001"),
             instrument_id: InstrumentId::from_str("XBTUSD.BITMEX").unwrap(),
             venue_order_id: VenueOrderId::from(venue_order_id),
-            order_side: OrderSide::Buy,
+            order_side: OrderSide::Buy.into(),
             order_type: OrderType::Limit,
             time_in_force: TimeInForce::Gtc,
             order_status: OrderStatus::Accepted,
@@ -966,7 +988,7 @@ mod tests {
             activation_price: None,
             trigger_price: None,
             trigger_type: None,
-            contingency_type: ContingencyType::NoContingency,
+            contingency_type: None,
             expire_time: None,
             order_list_id: None,
             venue_position_id: None,
@@ -975,7 +997,7 @@ mod tests {
             display_qty: None,
             limit_offset: None,
             trailing_offset: None,
-            trailing_offset_type: TrailingOffsetType::NoTrailingOffset,
+            trailing_offset_type: None,
             post_only: false,
             reduce_only: false,
             cancel_reason: None,
@@ -1460,8 +1482,8 @@ mod tests {
     async fn test_testnet_config_sets_base_url() {
         let config = SubmitBroadcasterConfig {
             pool_size: 1,
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
             environment: BitmexEnvironment::Testnet,
             base_url: None,
             ..Default::default()
@@ -1474,8 +1496,8 @@ mod tests {
     #[tokio::test]
     async fn test_constructor_honors_default_pool_size() {
         let config = SubmitBroadcasterConfig {
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
             base_url: Some("http://127.0.0.1:19999".to_string()),
             ..Default::default()
         };
@@ -1677,7 +1699,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_client_order_id_suffix_for_multiple_clients() {
-        use std::sync::{Arc, Mutex};
+        use std::sync::Arc;
+
+        use parking_lot::Mutex;
 
         #[derive(Clone)]
         struct CaptureExecutor {
@@ -1718,7 +1742,6 @@ mod tests {
                 // Capture the client_order_id
                 self.captured_ids
                     .lock()
-                    .unwrap()
                     .push(client_order_id.as_str().to_string());
                 let report = self.report.clone();
                 let barrier = Arc::clone(&self.barrier);
@@ -1795,14 +1818,16 @@ mod tests {
         assert!(result.is_ok());
 
         // All transports receive the same client_order_id (no suffixing)
-        let ids = captured_ids.lock().unwrap();
+        let ids = captured_ids.lock();
         assert_eq!(ids.len(), 3);
         assert!(ids.iter().all(|id| id == "O-123")); // All clients get the same ID
     }
 
     #[tokio::test]
     async fn test_client_order_id_suffix_with_partial_failure() {
-        use std::sync::{Arc, Mutex};
+        use std::sync::Arc;
+
+        use parking_lot::Mutex;
 
         #[derive(Clone)]
         struct CaptureAndFailExecutor {
@@ -1843,7 +1868,6 @@ mod tests {
                 // Capture the client_order_id
                 self.captured_ids
                     .lock()
-                    .unwrap()
                     .push(client_order_id.as_str().to_string());
                 let barrier = Arc::clone(&self.barrier);
                 let should_succeed = self.should_succeed;
@@ -1916,7 +1940,7 @@ mod tests {
         assert!(result.is_ok());
 
         // All transports receive the same client_order_id (no suffixing)
-        let ids = captured_ids.lock().unwrap();
+        let ids = captured_ids.lock();
         assert_eq!(ids.len(), 2);
         assert!(ids.iter().all(|id| id == "O-456")); // All clients get the same ID
     }
@@ -1925,19 +1949,34 @@ mod tests {
     async fn test_proxy_urls_populated_from_config() {
         let config = SubmitBroadcasterConfig {
             pool_size: 3,
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
             proxy_urls: vec![
-                Some("http://proxy1:8080".to_string()),
-                Some("http://proxy2:8080".to_string()),
-                Some("http://proxy3:8080".to_string()),
+                Some("http://proxy1:8080".into()),
+                Some("http://proxy2:8080".into()),
+                Some("http://proxy3:8080".into()),
             ],
             ..Default::default()
         };
 
         assert_eq!(config.proxy_urls.len(), 3);
-        assert_eq!(config.proxy_urls[0], Some("http://proxy1:8080".to_string()));
-        assert_eq!(config.proxy_urls[1], Some("http://proxy2:8080".to_string()));
-        assert_eq!(config.proxy_urls[2], Some("http://proxy3:8080".to_string()));
+        assert_eq!(
+            config.proxy_urls[0]
+                .as_ref()
+                .map(SecretString::expose_secret),
+            Some("http://proxy1:8080"),
+        );
+        assert_eq!(
+            config.proxy_urls[1]
+                .as_ref()
+                .map(SecretString::expose_secret),
+            Some("http://proxy2:8080"),
+        );
+        assert_eq!(
+            config.proxy_urls[2]
+                .as_ref()
+                .map(SecretString::expose_secret),
+            Some("http://proxy3:8080"),
+        );
     }
 }

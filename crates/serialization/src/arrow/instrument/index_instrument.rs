@@ -31,11 +31,8 @@ use nautilus_model::{
     instruments::index_instrument::IndexInstrument,
     types::{price::Price, quantity::Quantity},
 };
-#[allow(unused)]
-use rust_decimal::Decimal;
-#[allow(unused)]
-use serde_json::Value;
 
+use super::KEY_CLASS;
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
     KEY_PRICE_PRECISION, extract_column, extract_column_by_name_or_index,
@@ -59,7 +56,7 @@ impl ArrowSchemaProvider for IndexInstrument {
         ];
 
         let mut final_metadata = HashMap::new();
-        final_metadata.insert("class".to_string(), "IndexInstrument".to_string());
+        final_metadata.insert(KEY_CLASS.to_string(), "IndexInstrument".to_string());
 
         if let Some(meta) = metadata {
             final_metadata.extend(meta);
@@ -122,7 +119,7 @@ impl EncodeToRecordBatch for IndexInstrument {
         }
 
         let mut final_metadata = metadata.clone();
-        final_metadata.insert("class".to_string(), "IndexInstrument".to_string());
+        final_metadata.insert(KEY_CLASS.to_string(), "IndexInstrument".to_string());
 
         RecordBatch::try_new(
             Self::get_schema(Some(final_metadata)).into(),
@@ -153,12 +150,15 @@ impl EncodeToRecordBatch for IndexInstrument {
     }
 }
 
-/// Helper function to decode IndexInstrument from RecordBatch
-/// (Cannot implement DecodeFromRecordBatch trait due to `Into<Data>` bound)
+/// Decodes [`IndexInstrument`] instruments from a record batch.
+///
+/// Not a [`DecodeFromRecordBatch`] implementation because that trait requires `Into<Data>`.
 ///
 /// # Errors
 ///
-/// Returns an `EncodingError` if the RecordBatch cannot be decoded.
+/// Returns an `EncodingError` if the record batch cannot be decoded.
+///
+/// [`DecodeFromRecordBatch`]: crate::arrow::DecodeFromRecordBatch
 pub fn decode_index_instrument_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
     record_batch: &RecordBatch,
@@ -239,20 +239,20 @@ pub fn decode_index_instrument_batch(
 
         let tick_scheme = optional_ustr_value(tick_scheme_values, i);
 
-        let index_instrument = IndexInstrument::new_checked(
-            id,
-            raw_symbol,
-            currency,
-            price_prec,
-            size_prec,
-            price_increment,
-            size_increment,
-            tick_scheme,
-            info,
-            ts_event,
-            ts_init,
-        )
-        .map_err(|e| super::instrument_validation_error::<IndexInstrument>(i, e))?;
+        let index_instrument = IndexInstrument::builder()
+            .instrument_id(id)
+            .raw_symbol(raw_symbol)
+            .currency(currency)
+            .price_precision(price_prec)
+            .size_precision(size_prec)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .maybe_tick_scheme(tick_scheme)
+            .maybe_info(info)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .map_err(|e| super::instrument_validation_error::<IndexInstrument>(i, e))?;
 
         result.push(index_instrument);
     }

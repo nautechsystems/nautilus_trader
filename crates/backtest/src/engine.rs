@@ -52,7 +52,7 @@ use nautilus_data::client::DataClientAdapter;
 use nautilus_execution::models::fill::FillModelHandle;
 use nautilus_model::{
     accounts::{Account, AccountAny},
-    data::{Data, HasTsInit},
+    data::{Data, DataRef, HasTsInit},
     enums::{AccountType, AggregationSource, BookType},
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -71,7 +71,7 @@ use crate::{
     config::{BacktestEngineConfig, SimulatedVenueConfig},
     data_client::BacktestDataClient,
     data_iterator::BacktestDataIterator,
-    exchange::SimulatedExchange,
+    exchange::{SettlementScope, SimulatedExchange},
     execution_client::BacktestExecutionClient,
     result::{
         BacktestResult, CanonicalBacktestResult, CanonicalBacktestState, CanonicalDiagnostic,
@@ -341,7 +341,6 @@ impl BacktestEngine {
     /// Returns an error if:
     /// - The instrument's associated venue has not been added via `add_venue`.
     /// - Attempting to add a `CurrencyPair` instrument for a single-currency CASH account.
-    ///
     pub fn add_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
         let instrument_id = instrument.id();
         if let Some(exchange) = self.venues.get(&instrument.id().venue) {
@@ -656,9 +655,15 @@ impl BacktestEngine {
         if let Some(error) = &self.funding_error {
             anyhow::bail!("{error}");
         }
+        self.check_module_errors()?;
 
         if let Err(e) = self.run_impl(start, end, run_config_id, streaming) {
-            if self.funding_error.is_some() {
+            if self.funding_error.is_some()
+                || self
+                    .venues
+                    .values()
+                    .any(|exchange| exchange.borrow().has_module_error())
+            {
                 self.abort_run();
             }
             return Err(e);
@@ -668,8 +673,10 @@ impl BacktestEngine {
         // at any point during the run (including the trailing settle, module,
         // and flush callbacks that execute after the main data loop) so the
         // trader and engines actually stop.
+        // Streaming batches retain commands deferred by other instruments,
+        // and end() performs the unrestricted drain after all batches are loaded.
         if !streaming || self.force_stop || self.kernel.is_shutdown_requested() {
-            self.end_with_result()?;
+            self.end()?;
         }
 
         Ok(())
@@ -781,7 +788,7 @@ impl BacktestEngine {
             if d.ts_init() >= start_ns {
                 break;
             }
-            self.data_iterator.next_item();
+            self.data_iterator.advance();
         }
 
         // Initialize last_ns before first data point
@@ -807,7 +814,7 @@ impl BacktestEngine {
                 break;
             }
 
-            let Some(d) = self.data_iterator.peek() else {
+            let Some(data) = self.data_iterator.peek() else {
                 if streaming {
                     // In streaming mode, don't advance timers past the
                     // current batch. The next batch will provide more data
@@ -821,13 +828,11 @@ impl BacktestEngine {
                 continue;
             };
 
-            let ts_init = d.ts_init();
+            let ts_init = data.ts_init();
 
             if ts_init > end_ns {
                 break;
             }
-
-            let d = self.data_iterator.next_item().unwrap();
 
             if ts_init > self.last_ns {
                 self.advance_time_impl(ts_init, &clocks)?;
@@ -840,12 +845,25 @@ impl BacktestEngine {
                 break;
             }
 
-            self.route_data_to_exchange(&d);
-            self.kernel.data_engine.borrow_mut().process_data(d);
+            let settlement_scope = {
+                let Some(data) = self.data_iterator.peek() else {
+                    continue;
+                };
+                let settlement_scope = Self::settlement_scope(data);
+                Self::route_data_to_exchange(
+                    &self.venues,
+                    &mut self.has_book_processed,
+                    &self.kernel.clock,
+                    data,
+                )?;
+                self.kernel.data_engine.borrow_mut().process_data_ref(data);
+                settlement_scope
+            };
+            self.data_iterator.advance();
 
             // Drain deferred commands, then process exchange queues
             self.drain_command_queues();
-            self.settle_venues(ts_init);
+            self.settle_venues(ts_init, settlement_scope);
 
             let prev_last_ns = self.last_ns;
             // If timestamp changed (or exhausted), flush timers then run modules
@@ -855,15 +873,16 @@ impl BacktestEngine {
                 .is_none_or(|next| next.ts_init() > prev_last_ns)
             {
                 self.flush_accumulator_events(&clocks, prev_last_ns)?;
-                self.finalize_timestamp(&clocks, prev_last_ns)?;
+                self.finalize_timestamp(&clocks, prev_last_ns, settlement_scope)?;
             }
 
             self.iteration += 1;
         }
 
-        // Process remaining exchange messages
-        let ts_now = self.kernel.clock.borrow().timestamp_ns();
-        self.finalize_timestamp(&clocks, ts_now)?;
+        if !streaming || self.force_stop || self.kernel.is_shutdown_requested() {
+            let ts_now = self.kernel.clock.borrow().timestamp_ns();
+            self.finalize_timestamp(&clocks, ts_now, SettlementScope::All)?;
+        }
 
         // Cap at last_ns when streaming or after shutdown to avoid firing
         // timers past the current batch or the graceful stop
@@ -875,6 +894,26 @@ impl BacktestEngine {
         self.flush_accumulator_events(&clocks, flush_ts)?;
 
         Ok(())
+    }
+
+    fn settlement_scope(data: DataRef<'_>) -> SettlementScope {
+        match data {
+            DataRef::BookDelta(_)
+            | DataRef::BookDeltas(_)
+            | DataRef::BookDepth10(_)
+            | DataRef::Quote(_)
+            | DataRef::Trade(_)
+            | DataRef::Bar(_) => SettlementScope::Data(Some(data.instrument_id())),
+            DataRef::MarkPrice(_) | DataRef::IndexPrice(_) => SettlementScope::Data(None),
+            DataRef::FundingRate(_) => SettlementScope::Data(Some(data.instrument_id())),
+            DataRef::OptionGreeks(_) => SettlementScope::Data(None),
+            DataRef::InstrumentStatus(_) | DataRef::InstrumentClose(_) => {
+                SettlementScope::Data(Some(data.instrument_id()))
+            }
+            DataRef::Custom(_) => SettlementScope::Data(None),
+            #[cfg(feature = "defi")]
+            DataRef::Defi(_) => SettlementScope::Data(None),
+        }
     }
 
     fn abort_run(&mut self) {
@@ -889,19 +928,13 @@ impl BacktestEngine {
         logging_clock_set_realtime_mode();
     }
 
-    /// Manually end the backtest.
-    pub fn end(&mut self) {
-        if let Err(e) = self.end_with_result() {
-            log::error!("Error ending backtest: {e}");
-        }
-    }
-
-    /// Ends the backtest and reports lifecycle persistence failures.
+    /// Manually ends the backtest.
     ///
     /// # Errors
     ///
-    /// Returns an error if actor or strategy state cannot be saved.
-    pub(crate) fn end_with_result(&mut self) -> anyhow::Result<()> {
+    /// Returns an error if actor or strategy state cannot be saved or a simulation module cannot
+    /// produce its diagnostics.
+    pub fn end(&mut self) -> anyhow::Result<()> {
         if let Some(error) = &self.funding_error {
             anyhow::bail!("{error}");
         }
@@ -921,18 +954,27 @@ impl BacktestEngine {
             };
 
             if let Err(e) = self.flush_accumulator_events(&clocks, flush_ts) {
-                if self.funding_error.is_some() {
+                if self.funding_error.is_some()
+                    || self
+                        .venues
+                        .values()
+                        .any(|exchange| exchange.borrow().has_module_error())
+                {
                     self.abort_run();
                 }
                 return Err(e);
             }
         }
 
+        // Settle commands already due at the final data timestamp while strategies
+        // are still running, so callbacks and on_stop observe the final state.
+        let mut ts_now = self.kernel.clock.borrow().timestamp_ns();
+        self.settle_venues(ts_now, SettlementScope::All);
+
         self.kernel.stop_trader();
 
         // Settle residual on_stop commands before stopping engines. Venue modules are
         // not re-run; process_modules is once per timestamp.
-        let mut ts_now = self.kernel.clock.borrow().timestamp_ns();
 
         // Drain first so latency-deferred commands reach venue inflight queues
         self.drain_command_queues();
@@ -947,7 +989,7 @@ impl BacktestEngine {
             Self::set_all_clocks_time(&clocks, ts_now);
         }
 
-        self.settle_venues(ts_now);
+        self.settle_venues(ts_now, SettlementScope::All);
 
         for strategy_id in self.running_strategy_ids() {
             log::error!(
@@ -956,12 +998,18 @@ impl BacktestEngine {
         }
 
         let save_result = self.kernel.save_trader_state();
+        let diagnostics_result = self
+            .venues
+            .values()
+            .try_for_each(|exchange| exchange.borrow().log_diagnostics());
         self.kernel.portfolio.borrow_mut().finalize_equity_curve();
 
         // Stop engines
         self.kernel.data_engine.borrow_mut().stop();
         self.kernel.risk_engine.borrow_mut().stop();
         self.kernel.exec_engine.borrow_mut().stop();
+
+        let streaming_result = self.kernel.flush_streaming();
 
         self.run_finished = Some(UnixNanos::from(nanos_since_unix_epoch()));
         self.backtest_end = Some(self.kernel.clock.borrow().timestamp_ns());
@@ -970,7 +1018,9 @@ impl BacktestEngine {
         logging_clock_set_realtime_mode();
 
         self.log_post_run();
-        save_result
+        save_result?;
+        diagnostics_result?;
+        streaming_result
     }
 
     /// Returns registered strategies whose state resolves to `Running` after the end sequence.
@@ -999,11 +1049,19 @@ impl BacktestEngine {
     ///
     /// All stateful fields are reset to their initial value. Data and instruments
     /// persist across resets to enable repeated runs with different strategies.
-    pub fn reset(&mut self) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if ending the current run or resetting a simulation module fails.
+    pub fn reset(&mut self) -> anyhow::Result<()> {
         log::debug!("Resetting");
 
-        if self.kernel.trader.borrow().is_running() {
-            self.end();
+        let mut reset_error = None;
+
+        if self.kernel.trader.borrow().is_running()
+            && let Err(e) = self.end()
+        {
+            reset_error = Some(e);
         }
 
         // Stop and reset engines
@@ -1015,7 +1073,11 @@ impl BacktestEngine {
         // Reset exchanges before the exec engine wipes the cache so
         // exchange.reset() can see the prior run's account.
         for exchange in self.venues.values() {
-            exchange.borrow_mut().reset();
+            if let Err(e) = exchange.borrow_mut().reset()
+                && reset_error.is_none()
+            {
+                reset_error = Some(e);
+            }
         }
         self.kernel.exec_engine.borrow_mut().reset();
 
@@ -1054,6 +1116,11 @@ impl BacktestEngine {
         self.data_iterator.reset_all_cursors();
 
         log::info!("Reset");
+
+        if let Some(e) = reset_error {
+            return Err(e);
+        }
+        Ok(())
     }
 
     /// Sort the engine's internal data stream by timestamp.
@@ -1374,57 +1441,83 @@ impl BacktestEngine {
         summary
     }
 
-    fn route_data_to_exchange(&mut self, data: &Data) {
+    fn route_data_to_exchange(
+        venues: &IndexMap<Venue, Rc<RefCell<SimulatedExchange>>>,
+        has_book_processed: &mut AHashSet<InstrumentId>,
+        clock: &Rc<RefCell<dyn Clock>>,
+        data: DataRef<'_>,
+    ) -> anyhow::Result<()> {
         if matches!(
             data,
-            Data::MarkPrice(_) | Data::IndexPrice(_) | Data::OptionGreeks(_) | Data::Custom(_)
+            DataRef::MarkPrice(_)
+                | DataRef::IndexPrice(_)
+                | DataRef::OptionGreeks(_)
+                | DataRef::Custom(_)
         ) {
-            return;
+            return Ok(());
         }
         #[cfg(feature = "defi")]
-        if matches!(data, Data::Defi(_)) {
-            return;
+        if matches!(data, DataRef::Defi(_)) {
+            return Ok(());
         }
 
         let venue = data.instrument_id().venue;
-        if let Some(exchange) = self.venues.get(&venue) {
+        if let Some(exchange) = venues.get(&venue) {
             let mut exchange_ref = exchange.borrow_mut();
             let mut processed_book_data = false;
 
             match data {
-                Data::Delta(delta) => {
-                    exchange_ref.process_order_book_delta(*delta);
+                DataRef::BookDelta(delta) => {
+                    exchange_ref.process_order_book_delta(*delta)?;
                     processed_book_data = true;
                 }
-                Data::Deltas(deltas) => {
-                    exchange_ref.process_order_book_deltas(deltas);
+                DataRef::BookDeltas(deltas) => {
+                    exchange_ref.process_order_book_deltas(deltas)?;
                     processed_book_data = true;
                 }
-                Data::Depth10(depth) => {
-                    exchange_ref.process_order_book_depth10(depth);
+                DataRef::BookDepth10(depth) => {
+                    exchange_ref.process_order_book_depth10(depth)?;
                     processed_book_data = true;
                 }
-                Data::Quote(quote) => exchange_ref.process_quote_tick(quote),
-                Data::Trade(trade) => exchange_ref.process_trade_tick(trade),
-                Data::Bar(bar) => exchange_ref.process_bar(*bar),
-                Data::InstrumentStatus(status) => exchange_ref.process_instrument_status(*status),
-                Data::InstrumentClose(close) => exchange_ref.process_instrument_close(*close),
-                Data::FundingRate(funding) => {
+                DataRef::Quote(quote) => exchange_ref.process_quote_tick(quote)?,
+                DataRef::Trade(trade) => exchange_ref.process_trade_tick(trade)?,
+                DataRef::Bar(bar) => exchange_ref.process_bar(*bar)?,
+                DataRef::MarkPrice(_) | DataRef::IndexPrice(_) => {
+                    unreachable!("filtered before exchange routing")
+                }
+                DataRef::FundingRate(funding) => {
                     let settlement_ns =
-                        exchange_ref.process_funding_rate_deferred(*funding, data.ts_init());
-                    self.schedule_funding_settlement_if_required(venue, settlement_ns);
+                        exchange_ref.process_funding_rate_deferred(*funding, data.ts_init())?;
+                    Self::schedule_funding_settlement_if_required(clock, venue, settlement_ns);
                 }
-                _ => {}
+                DataRef::OptionGreeks(_) => unreachable!("filtered before exchange routing"),
+                DataRef::InstrumentStatus(status) => {
+                    exchange_ref.process_instrument_status(*status)?;
+                }
+                DataRef::InstrumentClose(close) => {
+                    exchange_ref.process_instrument_close(*close)?;
+                }
+                DataRef::Custom(_) => unreachable!("filtered before exchange routing"),
+                #[cfg(feature = "defi")]
+                DataRef::Defi(_) => unreachable!("filtered before exchange routing"),
             }
 
             drop(exchange_ref);
 
             if processed_book_data {
-                self.has_book_processed.insert(data.instrument_id());
+                has_book_processed.insert(data.instrument_id());
             }
         } else {
             log::warn!("No exchange found for venue {venue}, data not routed");
         }
+        Ok(())
+    }
+
+    fn check_module_errors(&self) -> anyhow::Result<()> {
+        for exchange in self.venues.values() {
+            exchange.borrow().check_module_error()?;
+        }
+        Ok(())
     }
 
     fn advance_time_impl(
@@ -1457,7 +1550,7 @@ impl BacktestEngine {
                 shutdown_at = Some(ts_event);
                 break;
             }
-            self.finalize_timestamp(clocks, ts_event)?;
+            self.finalize_timestamp(clocks, ts_event, SettlementScope::All)?;
 
             if self.kernel.is_shutdown_requested() {
                 self.accumulator.clear();
@@ -1511,7 +1604,7 @@ impl BacktestEngine {
                 self.accumulator.clear();
                 break;
             }
-            self.finalize_timestamp(clocks, ts_event)?;
+            self.finalize_timestamp(clocks, ts_event, SettlementScope::All)?;
 
             if self.kernel.is_shutdown_requested() {
                 self.accumulator.clear();
@@ -1592,9 +1685,10 @@ impl BacktestEngine {
         &mut self,
         clocks: &[Rc<RefCell<dyn Clock>>],
         ts_now: UnixNanos,
+        mut settlement_scope: SettlementScope,
     ) -> anyhow::Result<()> {
         loop {
-            self.settle_venues(ts_now);
+            self.settle_venues(ts_now, settlement_scope);
 
             if self.kernel.is_shutdown_requested() {
                 self.accumulator.clear();
@@ -1607,16 +1701,18 @@ impl BacktestEngine {
 
             if self.accumulator.peek_next_time() == Some(ts_now) {
                 self.run_timer_handlers_at(clocks, ts_now, ts_now);
+                settlement_scope = SettlementScope::All;
                 continue;
             }
 
             if !self.settle_funding_rates(ts_now)? {
                 break;
             }
+            settlement_scope = SettlementScope::All;
         }
 
-        self.run_venue_modules(ts_now);
-        self.run_venue_liquidations(ts_now);
+        self.run_venue_modules(ts_now, settlement_scope)?;
+        self.run_venue_liquidations(ts_now, settlement_scope);
         Ok(())
     }
 
@@ -1672,7 +1768,11 @@ impl BacktestEngine {
             .collect::<Vec<_>>();
 
         for (venue, boundary) in next_boundaries {
-            self.schedule_funding_settlement_if_required(venue, Some(boundary));
+            Self::schedule_funding_settlement_if_required(
+                &self.kernel.clock,
+                venue,
+                Some(boundary),
+            );
         }
 
         Ok(true)
@@ -1737,7 +1837,7 @@ impl BacktestEngine {
     }
 
     fn schedule_funding_settlement_if_required(
-        &self,
+        clock: &Rc<RefCell<dyn Clock>>,
         venue: Venue,
         settlement_ns: Option<UnixNanos>,
     ) {
@@ -1745,19 +1845,19 @@ impl BacktestEngine {
             return;
         };
 
-        if let Err(e) = self.set_funding_settlement_timer(venue, settlement_ns) {
+        if let Err(e) = Self::set_funding_settlement_timer(clock, venue, settlement_ns) {
             log::error!("Cannot schedule funding settlement for {venue}: {e}");
         }
     }
 
     fn set_funding_settlement_timer(
-        &self,
+        clock: &Rc<RefCell<dyn Clock>>,
         venue: Venue,
         settlement_ns: UnixNanos,
     ) -> anyhow::Result<()> {
         let timer_name = Self::funding_settlement_timer_name(venue);
         let callback: Rc<dyn Fn(TimeEvent)> = Rc::new(|_| {});
-        let mut clock = self.kernel.clock.borrow_mut();
+        let mut clock = clock.borrow_mut();
 
         clock.set_time_alert_ns(
             &timer_name,
@@ -1793,7 +1893,7 @@ impl BacktestEngine {
             .max()
     }
 
-    fn settle_venues(&self, ts_now: UnixNanos) {
+    fn settle_venues(&self, ts_now: UnixNanos, settlement_scope: SettlementScope) {
         // Advance venue clocks so modules and event generators see the
         // correct timestamp even when no commands are pending
         for exchange in self.venues.values() {
@@ -1813,7 +1913,10 @@ impl BacktestEngine {
             let active_venues: Vec<Venue> = self
                 .venues
                 .iter()
-                .filter(|(_, ex)| ex.borrow().has_pending_commands(ts_now))
+                .filter(|(_, ex)| {
+                    ex.borrow()
+                        .has_pending_commands_for_scope(ts_now, settlement_scope)
+                })
                 .map(|(id, _)| *id)
                 .collect();
 
@@ -1822,7 +1925,8 @@ impl BacktestEngine {
             }
 
             for venue_id in &active_venues {
-                self.venues[venue_id].borrow_mut().process(ts_now);
+                let mut exchange = self.venues[venue_id].borrow_mut();
+                exchange.process_for_scope(ts_now, settlement_scope);
             }
             self.drain_command_queues();
 
@@ -1838,37 +1942,58 @@ impl BacktestEngine {
         }
     }
 
-    fn run_venue_modules(&mut self, ts_now: UnixNanos) {
+    fn run_venue_modules(
+        &mut self,
+        ts_now: UnixNanos,
+        settlement_scope: SettlementScope,
+    ) -> anyhow::Result<()> {
         if self.last_module_ns == Some(ts_now) {
-            return;
+            return Ok(());
         }
         self.last_module_ns = Some(ts_now);
 
+        if self
+            .venues
+            .values()
+            .all(|exchange| !exchange.borrow().has_modules())
+        {
+            return Ok(());
+        }
+
         // Pre-settle handler-generated work so modules see final state
         self.drain_command_queues();
-        self.settle_venues(ts_now);
+        self.settle_venues(ts_now, settlement_scope);
 
         for exchange in self.venues.values() {
-            exchange.borrow_mut().process_modules(ts_now);
+            exchange.borrow_mut().process_modules(ts_now)?;
         }
 
         // Post-settle any commands emitted by modules
         self.drain_command_queues();
-        self.settle_venues(ts_now);
+        self.settle_venues(ts_now, settlement_scope);
+        Ok(())
     }
 
-    fn run_venue_liquidations(&mut self, ts_now: UnixNanos) {
+    fn run_venue_liquidations(&mut self, ts_now: UnixNanos, settlement_scope: SettlementScope) {
         if self.last_liquidation_ns == Some(ts_now) {
             return;
         }
         self.last_liquidation_ns = Some(ts_now);
+
+        if self
+            .venues
+            .values()
+            .all(|exchange| !exchange.borrow().liquidation_enabled())
+        {
+            return;
+        }
 
         for exchange in self.venues.values() {
             exchange.borrow_mut().process_liquidations(ts_now);
         }
 
         self.drain_command_queues();
-        self.settle_venues(ts_now);
+        self.settle_venues(ts_now, settlement_scope);
     }
 
     fn drain_exec_client_events(&self) {
@@ -2015,25 +2140,7 @@ impl BacktestEngine {
             return;
         }
 
-        let accounts = cache.accounts_all_owned();
-        let mut snapshots = Vec::new();
-        for position in &positions {
-            snapshots.extend(cache.position_snapshots(Some(&position.id), None));
-        }
-        let recorded = self.kernel.portfolio.borrow().recorded_realized_pnls();
-        let portfolio = self.kernel.portfolio.borrow();
-        let portfolio_snapshots = accounts
-            .iter()
-            .flat_map(|account| portfolio.snapshots(&account.id()))
-            .collect::<Vec<_>>();
-        let analyzer = PortfolioAnalyzer::from_accounts_with_snapshots(
-            &accounts,
-            &positions,
-            &snapshots,
-            &portfolio_snapshots,
-            recorded,
-        );
-        log_portfolio_performance(&analyzer);
+        log_portfolio_performance(&self.kernel.portfolio.borrow().analyzer());
     }
 
     fn total_positions_with_snapshots(cache: &Cache, cached_positions_count: usize) -> usize {
@@ -2161,7 +2268,7 @@ fn log_portfolio_performance(analyzer: &PortfolioAnalyzer) {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
+    use std::{cell::Cell, rc::Rc};
 
     use indexmap::IndexMap;
     use nautilus_common::{
@@ -2207,6 +2314,10 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
+    use crate::modules::{
+        AccountAdjustmentOutcome, ExchangeContext, SimulationModule, SimulationModuleHandle,
+        SimulationModuleResult,
+    };
 
     #[derive(Debug)]
     struct BacktestReplayKernelEventStore {
@@ -2274,6 +2385,37 @@ mod tests {
     impl DataActor for TestStrategy {}
 
     nautilus_strategy!(TestStrategy);
+
+    struct TestSimulationModule {
+        process_count: Rc<Cell<u32>>,
+    }
+
+    impl SimulationModule for TestSimulationModule {
+        fn pre_process(&self, _data: &Data) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn process(
+            &self,
+            _ts_now: UnixNanos,
+            _ctx: &ExchangeContext,
+        ) -> anyhow::Result<SimulationModuleResult> {
+            self.process_count.set(self.process_count.get() + 1);
+            Ok(SimulationModuleResult::NotReady)
+        }
+
+        fn acknowledge(&self, _outcomes: &[AccountAdjustmentOutcome]) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn log_diagnostics(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn reset(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
 
     fn create_engine() -> BacktestEngine {
         let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
@@ -2356,6 +2498,91 @@ mod tests {
 
     fn send_execution_command(command: TradingCommand) {
         msgbus::send_trading_command(MessagingSwitchboard::exec_engine_execute(), command);
+    }
+
+    #[rstest]
+    #[case(false, false, 0)]
+    #[case(false, true, 1)]
+    #[case(true, true, 1)]
+    fn test_run_venue_modules_settles_only_when_enabled(
+        #[case] first_enabled: bool,
+        #[case] second_enabled: bool,
+        #[case] expected_ns: u64,
+    ) {
+        let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+        let process_count = Rc::new(Cell::new(0));
+
+        for (venue, enabled) in [
+            (Venue::from("BINANCE"), first_enabled),
+            (Venue::from("SIM"), second_enabled),
+        ] {
+            let modules = enabled
+                .then(|| {
+                    SimulationModuleHandle::new(TestSimulationModule {
+                        process_count: Rc::clone(&process_count),
+                    })
+                })
+                .into_iter()
+                .collect();
+            let venue_config = SimulatedVenueConfig::builder()
+                .venue(venue)
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1_000_000 USDT")])
+                .modules(modules)
+                .build()
+                .unwrap();
+            engine.add_venue(venue_config).unwrap();
+        }
+
+        engine
+            .run_venue_modules(UnixNanos::from(1), SettlementScope::All)
+            .unwrap();
+
+        assert_eq!(
+            engine.kernel.clock.borrow().timestamp_ns(),
+            UnixNanos::from(expected_ns)
+        );
+        assert_eq!(
+            process_count.get(),
+            u32::from(first_enabled) + u32::from(second_enabled)
+        );
+    }
+
+    #[rstest]
+    #[case(false, false, 0)]
+    #[case(false, true, 1)]
+    #[case(true, true, 1)]
+    fn test_run_venue_liquidations_settles_only_when_enabled(
+        #[case] first_enabled: bool,
+        #[case] second_enabled: bool,
+        #[case] expected_ns: u64,
+    ) {
+        let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+
+        for (venue, enabled) in [
+            (Venue::from("BINANCE"), first_enabled),
+            (Venue::from("SIM"), second_enabled),
+        ] {
+            let venue_config = SimulatedVenueConfig::builder()
+                .venue(venue)
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1_000_000 USDT")])
+                .liquidation_enabled(enabled)
+                .build()
+                .unwrap();
+            engine.add_venue(venue_config).unwrap();
+        }
+
+        engine.run_venue_liquidations(UnixNanos::from(1), SettlementScope::All);
+
+        assert_eq!(
+            engine.kernel.clock.borrow().timestamp_ns(),
+            UnixNanos::from(expected_ns)
+        );
     }
 
     #[rstest]
@@ -3153,7 +3380,7 @@ mod tests {
         let instrument_id = instrument.id();
         engine.add_instrument(&instrument).unwrap();
 
-        engine.reset();
+        engine.reset().unwrap();
 
         assert!(
             engine
@@ -3190,7 +3417,7 @@ mod tests {
         drop(order_emulator);
         data_commands.clear();
 
-        engine.reset();
+        engine.reset().unwrap();
 
         let commands = data_commands.get_messages();
         let emulator = engine.kernel.order_emulator.get_emulator();
@@ -3223,7 +3450,13 @@ mod tests {
             None,
         );
 
-        engine.route_data_to_exchange(&Data::InstrumentStatus(status));
+        BacktestEngine::route_data_to_exchange(
+            &engine.venues,
+            &mut engine.has_book_processed,
+            &engine.kernel.clock,
+            DataRef::InstrumentStatus(&status),
+        )
+        .unwrap();
 
         let exchange = engine.venues.get(&instrument_id.venue).unwrap().borrow();
         let market_status = exchange

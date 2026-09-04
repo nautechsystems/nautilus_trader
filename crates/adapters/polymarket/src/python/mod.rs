@@ -29,7 +29,10 @@ pub mod loader;
 pub mod sort;
 
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
-use nautilus_core::python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err};
+use nautilus_core::{
+    python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err},
+    string::secret::SecretString,
+};
 use nautilus_execution::{models::fee::FeeModel, python::fee::PyFeeModel};
 use nautilus_model::{
     data::ensure_rust_extractor_registered,
@@ -48,7 +51,8 @@ use crate::{
         PolymarketInstrumentProviderConfig, PolymarketUpDownEventSlugConfig,
     },
     data_types::{
-        PolymarketRtdsCryptoPrice, PolymarketRtdsEquityPrice, register_polymarket_custom_data,
+        PolymarketRtdsCryptoPrice, PolymarketRtdsCryptoTwap, PolymarketRtdsEquityPrice,
+        register_polymarket_custom_data,
     },
     factories::{PolymarketDataClientFactory, PolymarketExecutionClientFactory},
     models::PolymarketFeeModel,
@@ -332,7 +336,8 @@ fn extract_data_config_from_pyobject(
         .transpose()?;
     let proxy_url = getattr_optional(obj, "proxy_url")?
         .map(|value| value.extract::<String>())
-        .transpose()?;
+        .transpose()?
+        .map(SecretString::from);
     let http_timeout_secs = getattr_optional(obj, "http_timeout_secs")?
         .map(|value| value.extract::<u64>())
         .transpose()?
@@ -513,6 +518,7 @@ pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PolymarketFeeModel>()?;
     m.add_class::<loader::PyPolymarketDataLoader>()?;
     m.add_class::<PolymarketRtdsCryptoPrice>()?;
+    m.add_class::<PolymarketRtdsCryptoTwap>()?;
     m.add_class::<PolymarketRtdsEquityPrice>()?;
     m.add_function(pyo3::wrap_pyfunction!(
         sort::py_polymarket_trade_sort_key,
@@ -522,6 +528,7 @@ pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     register_polymarket_custom_data();
     let _result = ensure_rust_extractor_registered::<PolymarketRtdsCryptoPrice>();
+    let _result = ensure_rust_extractor_registered::<PolymarketRtdsCryptoTwap>();
     let _result = ensure_rust_extractor_registered::<PolymarketRtdsEquityPrice>();
 
     let registry = get_global_pyo3_registry();
@@ -726,7 +733,10 @@ mod tests {
             assert_eq!(rust_config.ws_timeout_secs, 41);
             assert_eq!(rust_config.ws_max_subscriptions, 512);
             assert_eq!(
-                rust_config.proxy_url.as_deref(),
+                rust_config
+                    .proxy_url
+                    .as_ref()
+                    .map(|value| value.expose_secret()),
                 Some("http://proxy.example:18085")
             );
             assert!(!rust_config.resolve_poll_enabled);

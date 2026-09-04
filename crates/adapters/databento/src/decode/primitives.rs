@@ -37,11 +37,11 @@ pub const fn parse_optional_bool(c: c_char) -> Option<bool> {
 }
 
 #[must_use]
-pub const fn parse_order_side(c: c_char) -> OrderSide {
+pub const fn parse_order_side(c: c_char) -> Option<OrderSide> {
     match c as u8 as char {
-        'A' => OrderSide::Sell,
-        'B' => OrderSide::Buy,
-        _ => OrderSide::NoOrderSide,
+        'A' => Some(OrderSide::Sell),
+        'B' => Some(OrderSide::Buy),
+        _ => None,
     }
 }
 

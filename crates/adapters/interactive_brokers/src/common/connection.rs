@@ -49,9 +49,9 @@ pub struct ConnectionManager {
     /// Whether to retry indefinitely.
     retry_indefinitely: bool,
     /// Current backoff duration.
-    current_backoff: Arc<std::sync::Mutex<Duration>>,
+    current_backoff: Arc<parking_lot::Mutex<Duration>>,
     /// Last disconnection time.
-    last_disconnection: Arc<std::sync::Mutex<Option<tokio::time::Instant>>>,
+    last_disconnection: Arc<parking_lot::Mutex<Option<tokio::time::Instant>>>,
 }
 
 impl ConnectionManager {
@@ -72,8 +72,8 @@ impl ConnectionManager {
             attempt_count: Arc::new(AtomicU32::new(0)),
             max_attempts,
             retry_indefinitely: max_attempts == 0,
-            current_backoff: Arc::new(std::sync::Mutex::new(Duration::from_secs(1))),
-            last_disconnection: Arc::new(std::sync::Mutex::new(None)),
+            current_backoff: Arc::new(parking_lot::Mutex::new(Duration::from_secs(1))),
+            last_disconnection: Arc::new(parking_lot::Mutex::new(None)),
         }
     }
 
@@ -86,10 +86,6 @@ impl ConnectionManager {
     /// # Errors
     ///
     /// Returns an error if connection fails after max attempts.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the mutex is poisoned.
     pub async fn connect_with_retry(&self) -> anyhow::Result<Arc<Client>> {
         const MAX_BACKOFF: Duration = Duration::from_secs(60);
         let mut attempt = 0;
@@ -122,7 +118,7 @@ impl ConnectionManager {
 
                     self.is_connected.store(true, Ordering::Relaxed);
                     self.attempt_count.store(0, Ordering::Relaxed);
-                    *self.current_backoff.lock().unwrap() = Duration::from_secs(1);
+                    *self.current_backoff.lock() = Duration::from_secs(1);
 
                     return Ok(Arc::new(client));
                 }
@@ -144,7 +140,7 @@ impl ConnectionManager {
                     // Exponential backoff
                     tokio::time::sleep(backoff).await;
                     backoff = std::cmp::min(backoff * 2, MAX_BACKOFF);
-                    *self.current_backoff.lock().unwrap() = backoff;
+                    *self.current_backoff.lock() = backoff;
                 }
             }
         }
@@ -156,13 +152,9 @@ impl ConnectionManager {
     }
 
     /// Mark connection as disconnected.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the mutex is poisoned.
     pub fn mark_disconnected(&self) {
         self.is_connected.store(false, Ordering::Relaxed);
-        *self.last_disconnection.lock().unwrap() = Some(tokio::time::Instant::now());
+        *self.last_disconnection.lock() = Some(tokio::time::Instant::now());
     }
 
     /// Get current attempt count.
@@ -171,23 +163,14 @@ impl ConnectionManager {
     }
 
     /// Get current backoff duration.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the mutex is poisoned.
     pub fn current_backoff(&self) -> Duration {
-        *self.current_backoff.lock().unwrap()
+        *self.current_backoff.lock()
     }
 
     /// Get time since last disconnection.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the mutex is poisoned.
     pub fn time_since_disconnection(&self) -> Option<Duration> {
         self.last_disconnection
             .lock()
-            .unwrap()
             .map(|time: tokio::time::Instant| time.elapsed())
     }
 }
@@ -202,7 +185,7 @@ pub struct ConnectionWatchdog {
     /// Check interval.
     check_interval: Duration,
     /// Client reference (for health checks).
-    client: Arc<std::sync::Mutex<Option<Arc<Client>>>>,
+    client: Arc<parking_lot::Mutex<Option<Arc<Client>>>>,
     /// Callback to call when reconnection is needed.
     reconnect_callback: Arc<
         dyn Fn() -> tokio::task::JoinHandle<anyhow::Result<Arc<Client>>> + Send + Sync + 'static,
@@ -238,26 +221,18 @@ impl ConnectionWatchdog {
         Self {
             manager,
             check_interval,
-            client: Arc::new(std::sync::Mutex::new(None)),
+            client: Arc::new(parking_lot::Mutex::new(None)),
             reconnect_callback,
             is_running: Arc::new(AtomicBool::new(false)),
         }
     }
 
     /// Set the client reference for health checks.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the mutex is poisoned.
     pub fn set_client(&self, client: Arc<Client>) {
-        *self.client.lock().unwrap() = Some(client);
+        *self.client.lock() = Some(client);
     }
 
     /// Start the watchdog.
-    ///
-    /// # Panics
-    ///
-    /// Panics if a mutex is poisoned.
     pub fn start(&self) -> tokio::task::JoinHandle<()> {
         let manager = Arc::clone(&self.manager);
         let client = Arc::clone(&self.client);
@@ -285,7 +260,7 @@ impl ConnectionWatchdog {
                     match handle.await {
                         Ok(Ok(new_client)) => {
                             tracing::info!("Reconnection successful via watchdog");
-                            *client.lock().unwrap() = Some(new_client);
+                            *client.lock() = Some(new_client);
                             manager.is_connected.store(true, Ordering::Relaxed);
                         }
                         Ok(Err(e)) => {

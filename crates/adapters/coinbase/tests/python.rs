@@ -121,8 +121,8 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
     let config = Py::new(
         py,
         CoinbaseExecutionClientConfig {
-            api_key: Some("organizations/test-org/apiKeys/test-key".to_string()),
-            api_secret: Some("test-pem-placeholder".to_string()),
+            api_key: Some("organizations/test-org/apiKeys/test-key".into()),
+            api_secret: Some("test-pem-placeholder".into()),
             account_type: AccountType::Cash,
             ..CoinbaseExecutionClientConfig::default()
         },

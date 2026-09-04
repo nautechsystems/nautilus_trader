@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-event-store"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -45,6 +44,7 @@ blake3 = { workspace = true }
 bytes = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
+parking_lot = { workspace = true }
 redb = { workspace = true }
 rmp-serde = { workspace = true }
 serde = { workspace = true }
@@ -52,7 +52,7 @@ thiserror = { workspace = true }
 ustr = { workspace = true }
 
 [dev-dependencies]
-nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-model = { workspace = true, features = ["test-support"] }
 
 async-trait = { workspace = true }
 criterion = { workspace = true }

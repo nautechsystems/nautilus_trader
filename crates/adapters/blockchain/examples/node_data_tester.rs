@@ -20,9 +20,9 @@
 //! Run with: `cargo run --example blockchain-data-tester --package nautilus-blockchain --features hypersync`
 //!
 //! Required environment variables:
-//! - `ENVIO_API_TOKEN`.
-//! - `RPC_WSS_URL`.
-//! - `RPC_HTTP_URL`.
+//! - `ENVIO_API_TOKEN`
+//! - `RPC_WSS_URL`
+//! - `RPC_HTTP_URL`
 
 use std::{sync::Arc, time::Duration};
 
@@ -82,8 +82,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client_config = BlockchainDataClientConfig::builder()
         .chain(Arc::new(chain.clone()))
         .dex_ids(vec![DEX_TYPE])
-        .http_rpc_url(http_rpc_url)
-        .wss_rpc_url(wss_rpc_url)
+        .http_rpc_url(http_rpc_url.into())
+        .wss_rpc_url(wss_rpc_url.into())
         .use_hypersync_for_live_data(true)
         .pool_filters(dex_pool_filter)
         .postgres_cache_database_config(PostgresConnectOptions::default())

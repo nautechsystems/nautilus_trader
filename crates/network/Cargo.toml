@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-network"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -51,6 +50,7 @@ dashmap = { workspace = true }
 futures-util = { workspace = true }
 http = { workspace = true }
 log = { workspace = true }
+parking_lot = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 rustls = { workspace = true }

@@ -124,8 +124,12 @@ When `bar_capacity` is reached, the `Cache` automatically removes the oldest dat
 ### Database configuration
 
 Configure a database backing to recover successfully persisted, supported cache records after a
-restart. Restorable records include general data, currencies, instruments, accounts, orders, and
-positions. Startup does not restore bounded market-data histories or the running process.
+restart. Restorable records include general data, currencies, instruments, instrument closes,
+accounts, orders, and positions. Startup does not restore bounded market-data histories or the
+running process.
+
+Instrument closes persist whenever a backing database is configured. `save_market_data` does not
+gate them because they are recovery snapshots rather than bounded market-data history.
 
 `CacheConfig` controls cache behavior. Connection settings belong to the concrete backing config,
 such as `RedisCacheConfig` or `PostgresCacheConfig`.
@@ -514,12 +518,11 @@ Use these to drop a single entity. Each refuses to purge while the entity is sti
   Skips open orders.
 - `cache.purge_position(position_id)`: removes the position, its snapshots, and position-keyed
   index entries. Skips open positions.
-- `cache.purge_instrument(instrument_id)`: removes the instrument and every per-instrument
-  map (order book, quotes, trades, mark/index/funding prices, instrument status, greeks,
-  and bars referencing the instrument). Skips while any associated order is non-terminal
-  (anything that has not reached a closed state, including initialized, submitted,
-  accepted, emulated, released, and inflight orders) or any associated position is
-  non-closed.
+- `cache.purge_instrument(instrument_id)`: removes the instrument and its transient per-instrument
+  maps (order book, quotes, trades, mark/index/funding prices, instrument status and close, greeks,
+  and bars referencing the instrument). Skips while any associated order is non-terminal (anything
+  that has not reached a closed state, including initialized, submitted, accepted, emulated,
+  released, and inflight orders) or any associated position is non-closed.
 
 :::warning
 `purge_instrument` is intended for actors and strategies with their own lifecycle logic

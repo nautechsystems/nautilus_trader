@@ -23,15 +23,11 @@
 use std::{fmt::Debug, str};
 
 use anyhow::Context;
-use nautilus_core::{
-    env::get_or_env_var_opt,
-    hex,
-    string::secret::{REDACTED, mask_api_key},
-};
+use nautilus_core::{env::get_or_env_var_opt, hex, string::secret::REDACTED};
 use zeroize::ZeroizeOnDrop;
 
 use crate::{
-    common::enums::LighterEnvironment,
+    common::enums::{LighterDeployment, LighterEnvironment},
     signing::{curve::SCALAR_BYTES, schnorr::PrivateKey},
 };
 
@@ -41,6 +37,12 @@ const LIGHTER_ACCOUNT_INDEX_VAR: &str = "LIGHTER_ACCOUNT_INDEX";
 const LIGHTER_TESTNET_API_KEY_INDEX_VAR: &str = "LIGHTER_TESTNET_API_KEY_INDEX";
 const LIGHTER_TESTNET_API_SECRET_VAR: &str = "LIGHTER_TESTNET_API_SECRET";
 const LIGHTER_TESTNET_ACCOUNT_INDEX_VAR: &str = "LIGHTER_TESTNET_ACCOUNT_INDEX";
+const LIGHTER_ROBINHOOD_API_KEY_INDEX_VAR: &str = "LIGHTER_ROBINHOOD_API_KEY_INDEX";
+const LIGHTER_ROBINHOOD_API_SECRET_VAR: &str = "LIGHTER_ROBINHOOD_API_SECRET";
+const LIGHTER_ROBINHOOD_ACCOUNT_INDEX_VAR: &str = "LIGHTER_ROBINHOOD_ACCOUNT_INDEX";
+const LIGHTER_ROBINHOOD_TESTNET_API_KEY_INDEX_VAR: &str = "LIGHTER_ROBINHOOD_TESTNET_API_KEY_INDEX";
+const LIGHTER_ROBINHOOD_TESTNET_API_SECRET_VAR: &str = "LIGHTER_ROBINHOOD_TESTNET_API_SECRET";
+const LIGHTER_ROBINHOOD_TESTNET_ACCOUNT_INDEX_VAR: &str = "LIGHTER_ROBINHOOD_TESTNET_ACCOUNT_INDEX";
 
 /// Environment variable names for Lighter credentials.
 ///
@@ -52,16 +54,38 @@ const LIGHTER_TESTNET_ACCOUNT_INDEX_VAR: &str = "LIGHTER_TESTNET_ACCOUNT_INDEX";
 pub const fn credential_env_vars(
     environment: LighterEnvironment,
 ) -> (&'static str, &'static str, &'static str) {
-    match environment {
-        LighterEnvironment::Mainnet => (
+    credential_env_vars_for_deployment(LighterDeployment::Lighter, environment)
+}
+
+/// Environment variable names for credentials on a Lighter protocol deployment.
+///
+/// Returns `(api_key_index_var, api_secret_var, account_index_var)`. The
+/// deployment and environment select an independent credential namespace.
+#[must_use]
+pub const fn credential_env_vars_for_deployment(
+    deployment: LighterDeployment,
+    environment: LighterEnvironment,
+) -> (&'static str, &'static str, &'static str) {
+    match (deployment, environment) {
+        (LighterDeployment::Lighter, LighterEnvironment::Mainnet) => (
             LIGHTER_API_KEY_INDEX_VAR,
             LIGHTER_API_SECRET_VAR,
             LIGHTER_ACCOUNT_INDEX_VAR,
         ),
-        LighterEnvironment::Testnet => (
+        (LighterDeployment::Lighter, LighterEnvironment::Testnet) => (
             LIGHTER_TESTNET_API_KEY_INDEX_VAR,
             LIGHTER_TESTNET_API_SECRET_VAR,
             LIGHTER_TESTNET_ACCOUNT_INDEX_VAR,
+        ),
+        (LighterDeployment::Robinhood, LighterEnvironment::Mainnet) => (
+            LIGHTER_ROBINHOOD_API_KEY_INDEX_VAR,
+            LIGHTER_ROBINHOOD_API_SECRET_VAR,
+            LIGHTER_ROBINHOOD_ACCOUNT_INDEX_VAR,
+        ),
+        (LighterDeployment::Robinhood, LighterEnvironment::Testnet) => (
+            LIGHTER_ROBINHOOD_TESTNET_API_KEY_INDEX_VAR,
+            LIGHTER_ROBINHOOD_TESTNET_API_SECRET_VAR,
+            LIGHTER_ROBINHOOD_TESTNET_ACCOUNT_INDEX_VAR,
         ),
     }
 }
@@ -133,7 +157,34 @@ impl Credential {
         api_key_index: Option<u8>,
         environment: LighterEnvironment,
     ) -> anyhow::Result<Option<Self>> {
-        let (api_key_var, api_secret_var, account_index_var) = credential_env_vars(environment);
+        Self::resolve_for_deployment(
+            private_key,
+            account_index,
+            api_key_index,
+            LighterDeployment::Lighter,
+            environment,
+        )
+    }
+
+    /// Resolves credentials for a deployment from provided config values or environment variables.
+    ///
+    /// Config values take precedence, but a blank or whitespace-only `private_key` falls back to
+    /// the deployment-specific environment variable selected by
+    /// [`credential_env_vars_for_deployment`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any resolved numeric field cannot be parsed, if the account index
+    /// exceeds the signed range, or if the API private key is not valid 40-byte hex.
+    pub fn resolve_for_deployment(
+        private_key: Option<String>,
+        account_index: Option<u64>,
+        api_key_index: Option<u8>,
+        deployment: LighterDeployment,
+        environment: LighterEnvironment,
+    ) -> anyhow::Result<Option<Self>> {
+        let (api_key_var, api_secret_var, account_index_var) =
+            credential_env_vars_for_deployment(deployment, environment);
 
         let api_key_index = resolve_api_key_index(api_key_index, api_key_var)?;
         let account_index = resolve_account_index(account_index, account_index_var)?;
@@ -179,7 +230,7 @@ impl Credential {
     }
 }
 
-/// Replaces any `auth=<token>` substring with a masked token for logs.
+/// Replaces any `auth=<token>` substring with the common redaction marker for logs.
 #[must_use]
 pub(crate) fn scrub_auth(text: &str) -> String {
     let needle = "auth=";
@@ -196,8 +247,9 @@ pub(crate) fn scrub_auth(text: &str) -> String {
             let end = text[abs_start..]
                 .find(|c: char| c == '&' || c.is_whitespace())
                 .map_or(text.len(), |p| abs_start + p);
-            let token = &text[abs_start..end];
-            out.push_str(&mask_api_key(token));
+            if abs_start < end {
+                out.push_str(REDACTED);
+            }
             idx = end;
         } else {
             out.push_str(&text[idx..]);
@@ -313,6 +365,54 @@ mod tests {
     }
 
     #[rstest]
+    #[case::lighter_mainnet(
+        LighterDeployment::Lighter,
+        LighterEnvironment::Mainnet,
+        (
+            "LIGHTER_API_KEY_INDEX",
+            "LIGHTER_API_SECRET",
+            "LIGHTER_ACCOUNT_INDEX"
+        )
+    )]
+    #[case::lighter_testnet(
+        LighterDeployment::Lighter,
+        LighterEnvironment::Testnet,
+        (
+            "LIGHTER_TESTNET_API_KEY_INDEX",
+            "LIGHTER_TESTNET_API_SECRET",
+            "LIGHTER_TESTNET_ACCOUNT_INDEX"
+        )
+    )]
+    #[case::robinhood_mainnet(
+        LighterDeployment::Robinhood,
+        LighterEnvironment::Mainnet,
+        (
+            "LIGHTER_ROBINHOOD_API_KEY_INDEX",
+            "LIGHTER_ROBINHOOD_API_SECRET",
+            "LIGHTER_ROBINHOOD_ACCOUNT_INDEX"
+        )
+    )]
+    #[case::robinhood_testnet(
+        LighterDeployment::Robinhood,
+        LighterEnvironment::Testnet,
+        (
+            "LIGHTER_ROBINHOOD_TESTNET_API_KEY_INDEX",
+            "LIGHTER_ROBINHOOD_TESTNET_API_SECRET",
+            "LIGHTER_ROBINHOOD_TESTNET_ACCOUNT_INDEX"
+        )
+    )]
+    fn test_credential_env_vars_for_deployment(
+        #[case] deployment: LighterDeployment,
+        #[case] environment: LighterEnvironment,
+        #[case] expected: (&'static str, &'static str, &'static str),
+    ) {
+        assert_eq!(
+            credential_env_vars_for_deployment(deployment, environment),
+            expected,
+        );
+    }
+
+    #[rstest]
     fn test_resolve_with_config_values() {
         let credential = Credential::resolve(
             Some(PRIVATE_KEY_HEX.to_string()),
@@ -398,18 +498,18 @@ mod tests {
 
     #[rstest]
     #[case::no_auth("no auth here", "no auth here")]
-    #[case::short_token("auth=abc", "auth=***")]
-    #[case::long_token("auth=abcdefghijklmnop", "auth=abcd...mnop")]
-    #[case::url_with_ampersand("url?auth=abcdefghijklmnop&other=x", "url?auth=abcd...mnop&other=x")]
+    #[case::short_token("auth=abc", "auth=<redacted>")]
+    #[case::long_token("auth=abcdefghijklmnop", "auth=<redacted>")]
+    #[case::url_with_ampersand("url?auth=abcdefghijklmnop&other=x", "url?auth=<redacted>&other=x")]
     #[case::empty_token_value("url?auth=&other=x", "url?auth=&other=x")]
     #[case::multiple_auth(
         "first auth=token1 mid auth=token2 end",
-        "first auth=****** mid auth=****** end"
+        "first auth=<redacted> mid auth=<redacted> end"
     )]
-    #[case::trailing_whitespace("auth=tok end", "auth=*** end")]
+    #[case::trailing_whitespace("auth=tok end", "auth=<redacted> end")]
     #[case::newline_boundary(
         "first auth=token1\nsecond auth=token2",
-        "first auth=******\nsecond auth=******"
+        "first auth=<redacted>\nsecond auth=<redacted>"
     )]
     fn scrub_auth_redacts_token(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(scrub_auth(input), expected);

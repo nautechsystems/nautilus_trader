@@ -46,8 +46,8 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
+//! - `extension-module`: Builds as a Python extension module.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-//! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]

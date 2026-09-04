@@ -28,8 +28,8 @@
 //! Run with: `cargo run --example deribit-option-chain-tester --package nautilus-deribit --features examples`
 //!
 //! Credentials are read from the environment when set:
-//! - `DERIBIT_API_KEY`.
-//! - `DERIBIT_API_SECRET`.
+//! - `DERIBIT_API_KEY`
+//! - `DERIBIT_API_SECRET`
 
 use std::fmt::Debug;
 

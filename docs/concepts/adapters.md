@@ -223,6 +223,22 @@ the engine can recover authoritative order state without applying historical pos
 economics that the available evidence cannot support. See
 [Bounded history safety](reconciliation.md#bounded-history-safety).
 
+### Reduce-only execution contract
+
+An execution client must never silently discard `reduce_only=true`. It must either send a
+documented venue instruction that enforces the same intent or reject the order before transport.
+The venue can still reject an encoded instruction when the product does not support it, the order
+would not reduce an open position, or another venue rule makes the combination invalid.
+
+An equivalent enforcing instruction can replace the literal venue flag. For example, a Binance
+Futures close-all conditional order retains `reduce_only=true` in the Nautilus order, but the
+adapter sends `closePosition=true` without Binance's incompatible `reduceOnly` field. See
+[Binance Futures close-position orders](../integrations/binance.md#close-position).
+
+Backtest and sandbox matching engines enforce reduce-only when `use_reduce_only` is enabled and
+reject reduce-only orders when it is disabled. Custom execution clients and external routes follow
+the same send-or-reject contract.
+
 Order commands and venue results are asynchronous. `OrderSubmitted` means that the adapter has
 started the submission path, not that the venue has accepted the order. A transport failure can
 leave the outcome unknown, so adapters use stream updates, queries, or reconciliation rather than

@@ -20,23 +20,27 @@
 //! single long-lived driver task consumes trigger signals from a channel and
 //! serializes concurrent triggers through an internal lock.
 
-use std::{
-    sync::{Arc, Mutex, RwLock},
-    time::Duration,
-};
+use std::{sync::Arc, time::Duration};
 
 use anyhow::Context;
 use dashmap::DashMap;
-use nautilus_core::MUTEX_POISONED;
-use nautilus_live::SocketControlFactory;
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
+use nautilus_live::{
+    SocketControlFactory,
+    task::{TaskJoinOutcome, TaskSlot, finish_task},
+};
 use nautilus_model::identifiers::InstrumentId;
 use nautilus_network::websocket::TransportBackend;
-use tokio::{sync::Mutex as TokioMutex, task::JoinHandle};
+use parking_lot::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 
 use super::{
     client::BinanceFuturesWebSocketClient,
-    dispatch::{DispatchCtx, spawn_user_stream_dispatch},
+    dispatch::{
+        DispatchCtx, make_venue_position_id, run_user_stream_dispatch, with_venue_position_id,
+    },
     messages::BinanceFuturesWsStreamsMessage,
 };
 use crate::{
@@ -60,11 +64,11 @@ const RECOVERY_RETRY_MAX_MS: u64 = 30_000;
 pub(crate) struct WsBuildParams {
     pub product_type: BinanceProductType,
     pub environment: BinanceEnvironment,
-    pub api_key: String,
-    pub api_secret: String,
+    pub api_key: SecretString,
+    pub api_secret: SecretString,
     pub private_base_url: String,
     pub transport_backend: TransportBackend,
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     pub socket_factory: SocketControlFactory,
 }
 
@@ -73,10 +77,11 @@ pub(crate) struct WsBuildParams {
 /// the execution client.
 pub(crate) struct RecoveryCtx {
     pub http_client: BinanceFuturesHttpClient,
-    pub listen_key: Arc<RwLock<Option<String>>>,
-    pub ws_client: Arc<TokioMutex<Option<BinanceFuturesWebSocketClient>>>,
-    pub ws_task: Arc<Mutex<Option<JoinHandle<()>>>>,
-    pub recovery_lock: Arc<TokioMutex<()>>,
+    pub listen_key: Arc<RwLock<Option<SecretString>>>,
+    pub recovery_listen_key: Arc<RwLock<Option<SecretString>>>,
+    pub ws_client: Arc<Mutex<Option<BinanceFuturesWebSocketClient>>>,
+    pub ws_task: Arc<tokio::sync::Mutex<TaskSlot<()>>>,
+    pub recovery_lock: Arc<tokio::sync::Mutex<()>>,
     pub ws_build_params: WsBuildParams,
     pub dispatch_ctx: Arc<DispatchCtx>,
     pub recovery_tx: tokio::sync::mpsc::UnboundedSender<()>,
@@ -94,14 +99,19 @@ pub(crate) async fn build_and_connect_user_stream(
     let mut ws_client = BinanceFuturesWebSocketClient::new(
         params.product_type,
         params.environment,
-        Some(params.api_key.clone()),
-        Some(params.api_secret.clone()),
+        Some(params.api_key.expose_secret().to_owned()),
+        Some(params.api_secret.expose_secret().to_owned()),
         Some(private_url),
         Some(BINANCE_WS_HEARTBEAT_SECS),
         params.transport_backend,
     )
     .context("failed to construct Binance Futures private WebSocket client")?
-    .with_proxy(params.proxy_url.clone())
+    .with_proxy(
+        params
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned()),
+    )
     .with_socket_control(
         params.socket_factory.clone(),
         "binance-futures-user-streams",
@@ -197,6 +207,8 @@ where
 
     log::warn!("Rotating Binance Futures listen key after expiry or keepalive failure");
 
+    close_recovery_listen_key(ctx).await?;
+
     // Create the new listenKey and emit the REST snapshot first, using only
     // the HTTP client. The old stream is still live during this window, so
     // its events continue to flow through the old dispatcher. If the
@@ -208,49 +220,75 @@ where
         .create_listen_key()
         .await
         .context("failed to create listen key during recovery")?;
-    let new_listen_key = response.listen_key;
+    let new_listen_key = response.into_listen_key();
+    *ctx.recovery_listen_key.write() = Some(new_listen_key.clone());
 
     emit_open_order_reports(ctx).await?;
 
-    // Snapshot succeeded; commit the rotation. Build and connect the new
-    // stream, swap it in, close the old one, drain its queued events, then
-    // spawn the new dispatcher.
-    let new_ws = build_and_connect_user_stream(&ctx.ws_build_params, &new_listen_key).await?;
+    let new_ws =
+        build_and_connect_user_stream(&ctx.ws_build_params, new_listen_key.expose_secret()).await?;
     let new_stream = new_ws.stream();
 
-    let old_ws = {
-        let mut guard = ctx.ws_client.lock().await;
-        guard.replace(new_ws)
+    let old_ws = ctx.ws_client.lock().take();
+    if let Some(mut old_ws) = old_ws {
+        old_ws
+            .close()
+            .await
+            .context("failed to close old user data WebSocket")?;
+    }
+
+    // Drain queued events from the old stream while the replacement buffers new events.
+    let mut task_slot = ctx.ws_task.lock().await;
+    if let Some(outcome) = finish_task(
+        &mut task_slot,
+        Duration::from_secs(2),
+        Duration::from_secs(2),
+    )
+    .await
+    {
+        match outcome {
+            TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
+            TaskJoinOutcome::Failed(error) => {
+                anyhow::bail!("old user stream dispatch task failed: {error}");
+            }
+            TaskJoinOutcome::Incomplete => {
+                anyhow::bail!("old user stream dispatch task did not stop after abort");
+            }
+        }
+    }
+
+    let mut new_task = TaskSlot::new();
+    new_task
+        .spawn(run_user_stream_dispatch(
+            new_stream,
+            ctx.dispatch_ctx.clone(),
+            ctx.recovery_tx.clone(),
+            dispatch_fn,
+        ))
+        .map_err(|e| anyhow::anyhow!("failed to start recovered user stream dispatch task: {e}"))?;
+
+    *ctx.ws_client.lock() = Some(new_ws);
+    *task_slot = new_task;
+    *ctx.listen_key.write() = Some(new_listen_key);
+    *ctx.recovery_listen_key.write() = None;
+
+    Ok(())
+}
+
+async fn close_recovery_listen_key(ctx: &RecoveryCtx) -> anyhow::Result<()> {
+    let key = ctx.recovery_listen_key.read().clone();
+    let Some(key) = key else {
+        return Ok(());
     };
 
-    {
-        let mut key_guard = ctx.listen_key.write().expect(MUTEX_POISONED);
-        *key_guard = Some(new_listen_key);
+    ctx.http_client
+        .close_listen_key(key.expose_secret())
+        .await
+        .context("failed to close uncommitted recovery listen key")?;
+    let mut pending = ctx.recovery_listen_key.write();
+    if pending.as_ref().map(SecretString::expose_secret) == Some(key.expose_secret()) {
+        *pending = None;
     }
-
-    if let Some(mut old) = old_ws
-        && let Err(e) = old.close().await
-    {
-        log::warn!("Failed to close old user data WebSocket cleanly: {e}");
-    }
-
-    // Await the old dispatch task so events already queued on the old
-    // stream (fills, cancels) drain through the dispatcher before the new
-    // dispatcher starts. Scope the std MutexGuard so it does not span the
-    // await.
-    let old_task = ctx.ws_task.lock().expect(MUTEX_POISONED).take();
-    if let Some(task) = old_task {
-        let _ = task.await;
-    }
-
-    let new_task = spawn_user_stream_dispatch(
-        new_stream,
-        ctx.dispatch_ctx.clone(),
-        ctx.recovery_tx.clone(),
-        dispatch_fn,
-    );
-    *ctx.ws_task.lock().expect(MUTEX_POISONED) = Some(new_task);
-
     Ok(())
 }
 
@@ -295,6 +333,11 @@ async fn emit_open_order_reports(ctx: &RecoveryCtx) -> anyhow::Result<()> {
                             )
                         },
                     )?;
+                let venue_position_id = make_venue_position_id(
+                    ctx.dispatch_ctx.use_position_ids,
+                    instrument_id,
+                    order.position_side,
+                )?;
 
                 match order.to_order_status_report(
                     ctx.dispatch_ctx.account_id,
@@ -305,7 +348,12 @@ async fn emit_open_order_reports(ctx: &RecoveryCtx) -> anyhow::Result<()> {
                     ts_init,
                 ) {
                     Ok(report) => {
-                        ctx.dispatch_ctx.emitter.send_order_status_report(report);
+                        ctx.dispatch_ctx
+                            .emitter
+                            .send_order_status_report(with_venue_position_id(
+                                report,
+                                venue_position_id,
+                            ));
                         emitted += 1;
                     }
                     Err(e) => {
@@ -337,6 +385,11 @@ async fn emit_open_order_reports(ctx: &RecoveryCtx) -> anyhow::Result<()> {
                             )
                         },
                     )?;
+                let venue_position_id = make_venue_position_id(
+                    ctx.dispatch_ctx.use_position_ids,
+                    instrument_id,
+                    algo_order.position_side,
+                )?;
 
                 match algo_order.to_order_status_report(
                     ctx.dispatch_ctx.account_id,
@@ -346,7 +399,12 @@ async fn emit_open_order_reports(ctx: &RecoveryCtx) -> anyhow::Result<()> {
                     ts_init,
                 ) {
                     Ok(report) => {
-                        ctx.dispatch_ctx.emitter.send_order_status_report(report);
+                        ctx.dispatch_ctx
+                            .emitter
+                            .send_order_status_report(with_venue_position_id(
+                                report,
+                                venue_position_id,
+                            ));
                         emitted += 1;
                     }
                     Err(e) => {
@@ -404,17 +462,21 @@ mod tests {
         response::{IntoResponse, Response},
         routing::get,
     };
-    use nautilus_common::{cache::fifo::FifoCache, messages::ExecutionEvent};
+    use nautilus_common::{
+        cache::fifo::FifoCache,
+        messages::{ExecutionEvent, ExecutionReport},
+    };
     use nautilus_core::{AtomicSet, time::get_atomic_clock_realtime};
     use nautilus_live::ExecutionEventEmitter;
     use nautilus_model::{
         enums::AccountType,
-        identifiers::{AccountId, ClientOrderId, InstrumentId, TraderId},
+        identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TraderId},
         types::Currency,
     };
     use rstest::rstest;
     use rust_decimal::Decimal;
     use serde_json::json;
+    use tokio::task::JoinHandle;
     use ustr::Ustr;
 
     use super::*;
@@ -429,6 +491,36 @@ mod tests {
             models::{BinanceFuturesCoinSymbol, BinanceFuturesUsdSymbol},
         },
     };
+
+    #[rstest]
+    fn test_ws_build_params_protects_credentials() {
+        let params = WsBuildParams {
+            product_type: BinanceProductType::UsdM,
+            environment: BinanceEnvironment::Live,
+            api_key: SecretString::from("test-api-key"),
+            api_secret: SecretString::from("test-api-secret"),
+            private_base_url: "wss://fstream.binance.com".to_string(),
+            transport_backend: TransportBackend::default(),
+            proxy_url: Some(SecretString::from("http://user:password@proxy:8080")),
+            socket_factory: SocketControlFactory::new(*BINANCE_CLIENT_ID, Some(*BINANCE_VENUE)),
+        };
+
+        assert_eq!(format!("{:?}", params.api_key), REDACTED);
+        assert_eq!(format!("{:?}", params.api_secret), REDACTED);
+        assert_eq!(
+            format!("{:?}", params.proxy_url),
+            format!("Some({REDACTED})")
+        );
+        assert_eq!(params.private_base_url, "wss://fstream.binance.com");
+    }
+
+    #[rstest]
+    fn test_listen_key_redacts_debug() {
+        let key = SecretString::from("listen-key-secret".to_string());
+
+        assert_eq!(key.expose_secret(), "listen-key-secret");
+        assert_eq!(format!("{key:?}"), REDACTED);
+    }
 
     #[derive(Clone, Copy)]
     enum RecoveryServerMode {
@@ -458,7 +550,8 @@ mod tests {
                     "status": "NEW",
                     "timeInForce": "GTC",
                     "type": "LIMIT",
-                    "side": "BUY"
+                    "side": "BUY",
+                    "positionSide": "LONG"
                 }]),
                 RecoveryServerMode::MissingAlgo => json!([]),
                 RecoveryServerMode::FailedQueries => unreachable!(),
@@ -472,7 +565,11 @@ mod tests {
                     "algoType": "CONDITIONAL",
                     "orderType": "STOP_MARKET",
                     "symbol": "ALGOUSDT",
-                    "side": "SELL"
+                    "side": "SELL",
+                    "positionSide": "SHORT",
+                    "quantity": "1",
+                    "algoStatus": "NEW",
+                    "triggerPrice": "1"
                 }]),
                 RecoveryServerMode::FailedQueries => unreachable!(),
             }
@@ -545,14 +642,15 @@ mod tests {
         let context = RecoveryCtx {
             http_client,
             listen_key: Arc::new(RwLock::new(None)),
-            ws_client: Arc::new(TokioMutex::new(None)),
-            ws_task: Arc::new(Mutex::new(None)),
-            recovery_lock: Arc::new(TokioMutex::new(())),
+            recovery_listen_key: Arc::new(RwLock::new(None)),
+            ws_client: Arc::new(Mutex::new(None)),
+            ws_task: Arc::new(tokio::sync::Mutex::new(TaskSlot::new())),
+            recovery_lock: Arc::new(tokio::sync::Mutex::new(())),
             ws_build_params: WsBuildParams {
                 product_type: BinanceProductType::UsdM,
                 environment: BinanceEnvironment::Live,
-                api_key: "test-api-key".to_string(),
-                api_secret: "test-api-secret".to_string(),
+                api_key: SecretString::from("test-api-key"),
+                api_secret: SecretString::from("test-api-secret"),
                 private_base_url: "ws://127.0.0.1:1".to_string(),
                 transport_backend: TransportBackend::default(),
                 proxy_url: None,
@@ -649,6 +747,43 @@ mod tests {
         assert_eq!(error.to_string(), expected_error);
         assert_eq!(error.root_cause().to_string(), expected_root_cause);
         assert!(event.is_err());
+    }
+
+    #[rstest]
+    #[case(
+        RecoveryServerMode::MissingRegular,
+        "NEWUSDT",
+        "NEWUSDT-PERP.BINANCE-LONG"
+    )]
+    #[case(
+        RecoveryServerMode::MissingAlgo,
+        "ALGOUSDT",
+        "ALGOUSDT-PERP.BINANCE-SHORT"
+    )]
+    #[tokio::test]
+    async fn test_recovery_reconcile_includes_position_id(
+        #[case] mode: RecoveryServerMode,
+        #[case] symbol: &str,
+        #[case] expected_position_id: &str,
+    ) {
+        let (base_url, server_task) = start_recovery_server(mode).await;
+        let (context, mut event_rx) = recovery_context(base_url);
+        context
+            .http_client
+            .instruments_cache()
+            .insert(Ustr::from(symbol), usdm_instrument(symbol, 3));
+
+        emit_open_order_reports(&context).await.unwrap();
+        let event = event_rx.try_recv().unwrap();
+        server_task.abort();
+
+        let ExecutionEvent::Report(ExecutionReport::Order(report)) = event else {
+            panic!("Expected recovery order status report, was {event:?}");
+        };
+        assert_eq!(
+            report.venue_position_id,
+            Some(PositionId::from(expected_position_id)),
+        );
     }
 
     #[rstest]

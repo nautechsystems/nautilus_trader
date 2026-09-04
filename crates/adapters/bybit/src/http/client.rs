@@ -38,7 +38,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{Bar, BarType, FundingRateUpdate, OrderBookDeltas, TradeTick},
-    enums::{MarketStatusAction, OrderSide, OrderType, PositionSideSpecified, TimeInForce},
+    enums::{MarketStatusAction, OrderSide, OrderType, PositionSide, TimeInForce},
     events::account::state::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
@@ -93,8 +93,8 @@ use crate::common::{
     credential::{Credential, credential_env_vars},
     enums::{
         BybitAccountType, BybitBboSideType, BybitContractType, BybitEnvironment, BybitMarginMode,
-        BybitOpenOnly, BybitOrderFilter, BybitOrderSide, BybitOrderType, BybitPositionIdx,
-        BybitPositionMode, BybitProductType, BybitRepayStatus, BybitTpSlMode,
+        BybitOpenOnly, BybitOrderFilter, BybitOrderSide, BybitOrderSmpType, BybitOrderType,
+        BybitPositionIdx, BybitPositionMode, BybitProductType, BybitRepayStatus, BybitTpSlMode,
     },
     models::{BybitCursorListResponse, BybitErrorCheck, BybitResponseCheck},
     parse::{
@@ -107,9 +107,10 @@ use crate::common::{
     },
     rate_limit::{
         BYBIT_RATE_LIMIT_HEADER, BYBIT_RATE_LIMIT_RESET_HEADER, BYBIT_RATE_LIMIT_STATUS_HEADER,
-        BybitRateLimiter, batch_endpoint_limit, batch_send_limit, batch_weight,
+        BybitRateLimiter, batch_call_limit, batch_endpoint_limit, batch_send_limit, batch_weight,
         category_from_payload,
     },
+    retry::should_retry_http,
     symbol::BybitSymbol,
     urls::bybit_http_base_url,
 };
@@ -162,7 +163,7 @@ pub struct BybitRawHttpClient {
     proxy_url: Option<String>,
     session_generation: Arc<AtomicU64>,
     retry_manager: RetryManager<BybitHttpError>,
-    cancellation_token: Arc<std::sync::Mutex<CancellationToken>>,
+    cancellation_token: Arc<parking_lot::Mutex<CancellationToken>>,
 }
 
 impl Default for BybitRawHttpClient {
@@ -184,32 +185,20 @@ impl Debug for BybitRawHttpClient {
 
 impl BybitRawHttpClient {
     /// Cancels all pending HTTP requests.
-    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn cancel_all_requests(&self) {
-        self.cancellation_token
-            .lock()
-            .expect("cancellation token lock poisoned")
-            .cancel();
+        self.cancellation_token.lock().cancel();
     }
 
     /// Replaces the cancelled token with a fresh one so subsequent
     /// requests are not immediately short-circuited.
-    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn reset_cancellation_token(&self) {
-        let mut guard = self
-            .cancellation_token
-            .lock()
-            .expect("cancellation token lock poisoned");
+        let mut guard = self.cancellation_token.lock();
         *guard = CancellationToken::new();
     }
 
     /// Returns a clone of the current cancellation token.
-    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn cancellation_token(&self) -> CancellationToken {
-        self.cancellation_token
-            .lock()
-            .expect("cancellation token lock poisoned")
-            .clone()
+        self.cancellation_token.lock().clone()
     }
 
     /// Creates a new [`BybitRawHttpClient`] using the default Bybit HTTP URL.
@@ -254,7 +243,7 @@ impl BybitRawHttpClient {
             proxy_url,
             session_generation: Arc::new(AtomicU64::new(session_generation)),
             retry_manager,
-            cancellation_token: Arc::new(std::sync::Mutex::new(CancellationToken::new())),
+            cancellation_token: Arc::new(parking_lot::Mutex::new(CancellationToken::new())),
         })
     }
 
@@ -305,7 +294,7 @@ impl BybitRawHttpClient {
             proxy_url,
             session_generation: Arc::new(AtomicU64::new(session_generation)),
             retry_manager,
-            cancellation_token: Arc::new(std::sync::Mutex::new(CancellationToken::new())),
+            cancellation_token: Arc::new(parking_lot::Mutex::new(CancellationToken::new())),
         })
     }
 
@@ -608,15 +597,6 @@ impl BybitRawHttpClient {
             }
         };
 
-        let should_retry = |error: &BybitHttpError| -> bool {
-            match error {
-                BybitHttpError::NetworkError(_) => true,
-                BybitHttpError::UnexpectedStatus { status, .. } => *status == 429 || *status >= 500,
-                BybitHttpError::BybitError { error_code, .. } => *error_code == 10006,
-                _ => false,
-            }
-        };
-
         let create_error = |error: RetryError| -> BybitHttpError {
             match error {
                 RetryError::Canceled => {
@@ -632,7 +612,7 @@ impl BybitRawHttpClient {
             .execute_with_retry_with_cancel(
                 endpoint.as_str(),
                 operation,
-                should_retry,
+                should_retry_http,
                 create_error,
                 &token,
             )
@@ -2438,7 +2418,7 @@ impl BybitHttpClient {
     async fn generate_spot_position_reports_from_wallet(
         &self,
         account_id: AccountId,
-        instrument_id: Option<InstrumentId>,
+        instrument_id: InstrumentId,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
         let params = BybitWalletBalanceParams {
             account_type: BybitAccountType::Unified,
@@ -2461,92 +2441,40 @@ impl BybitHttpClient {
 
         let mut reports = Vec::new();
 
-        if let Some(instrument_id) = instrument_id {
-            if let Some(instrument) = self
-                .instruments_cache
-                .get_cloned(&instrument_id.symbol.inner())
-            {
-                let base_currency = instrument
-                    .base_currency()
-                    .expect("SPOT instrument should have base currency");
-                let coin = base_currency.code;
-                let wallet_balance = wallet_by_coin.get(&coin).copied().unwrap_or(Decimal::ZERO);
+        if let Some(instrument) = self
+            .instruments_cache
+            .get_cloned(&instrument_id.symbol.inner())
+        {
+            let base_currency = instrument
+                .base_currency()
+                .expect("SPOT instrument should have base currency");
+            let coin = base_currency.code;
+            let wallet_balance = wallet_by_coin.get(&coin).copied().unwrap_or(Decimal::ZERO);
 
-                let side = if wallet_balance > Decimal::ZERO {
-                    PositionSideSpecified::Long
-                } else if wallet_balance < Decimal::ZERO {
-                    PositionSideSpecified::Short
-                } else {
-                    PositionSideSpecified::Flat
-                };
+            let side = if wallet_balance > Decimal::ZERO {
+                PositionSide::Long
+            } else if wallet_balance < Decimal::ZERO {
+                PositionSide::Short
+            } else {
+                PositionSide::Flat
+            };
 
-                let abs_balance = wallet_balance.abs();
-                let quantity = Quantity::from_decimal_dp(abs_balance, instrument.size_precision())?;
+            let abs_balance = wallet_balance.abs();
+            let quantity = Quantity::from_decimal_dp(abs_balance, instrument.size_precision())?;
 
-                let report = PositionStatusReport::new(
-                    account_id,
-                    instrument_id,
-                    side,
-                    quantity,
-                    ts_init,
-                    ts_init,
-                    None,
-                    None,
-                    None,
-                );
+            let report = PositionStatusReport::new(
+                account_id,
+                instrument_id,
+                side,
+                quantity,
+                ts_init,
+                ts_init,
+                None,
+                None,
+                None,
+            );
 
-                reports.push(report);
-            }
-        } else {
-            // Generate reports for all SPOT instruments with non-zero balance
-            let instruments_guard = self.instruments_cache.load();
-            for (symbol, instrument) in instruments_guard.iter() {
-                // Only consider SPOT instruments
-                if !symbol.as_str().ends_with("-SPOT") {
-                    continue;
-                }
-
-                let base_currency = match instrument.base_currency() {
-                    Some(currency) => currency,
-                    None => continue,
-                };
-
-                let coin = base_currency.code;
-                let wallet_balance = wallet_by_coin.get(&coin).copied().unwrap_or(Decimal::ZERO);
-
-                if wallet_balance.is_zero() {
-                    continue;
-                }
-
-                let side = if wallet_balance > Decimal::ZERO {
-                    PositionSideSpecified::Long
-                } else if wallet_balance < Decimal::ZERO {
-                    PositionSideSpecified::Short
-                } else {
-                    PositionSideSpecified::Flat
-                };
-
-                let abs_balance = wallet_balance.abs();
-                let quantity = Quantity::from_decimal_dp(abs_balance, instrument.size_precision())?;
-
-                if quantity.is_zero() {
-                    continue;
-                }
-
-                let report = PositionStatusReport::new(
-                    account_id,
-                    instrument.id(),
-                    side,
-                    quantity,
-                    ts_init,
-                    ts_init,
-                    None,
-                    None,
-                    None,
-                );
-
-                reports.push(report);
-            }
+            reports.push(report);
         }
 
         Ok(reports)
@@ -2582,6 +2510,7 @@ impl BybitHttpClient {
         position_idx: Option<BybitPositionIdx>,
         bbo_side_type: Option<BybitBboSideType>,
         bbo_level: Option<String>,
+        smp_type: Option<BybitOrderSmpType>,
         native_tp_sl: Option<&BybitNativeTpSlParams>,
     ) -> anyhow::Result<OrderStatusReport> {
         let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
@@ -2590,7 +2519,6 @@ impl BybitHttpClient {
         let bybit_side = match order_side {
             OrderSide::Buy => BybitOrderSide::Buy,
             OrderSide::Sell => BybitOrderSide::Sell,
-            _ => anyhow::bail!("Invalid order side: {order_side:?}"),
         };
 
         // For stop/conditional orders, Bybit uses Market/Limit with trigger parameters
@@ -2639,6 +2567,7 @@ impl BybitHttpClient {
 
         order_entry.bbo_side_type(bbo_side_type);
         order_entry.bbo_level(bbo_level);
+        order_entry.smp_type(smp_type);
 
         if let Some(tp_sl) = native_tp_sl {
             if let Some(ref tp) = tp_sl.take_profit {
@@ -2836,10 +2765,10 @@ impl BybitHttpClient {
             return Ok(Vec::new());
         }
 
-        let endpoint_limit = batch_endpoint_limit(product_type);
-        if instrument_ids.len() > endpoint_limit {
+        let call_limit = batch_call_limit(product_type);
+        if instrument_ids.len() > call_limit {
             anyhow::bail!(
-                "Batch cancel limit is {endpoint_limit} orders for {}",
+                "Batch cancel limit is {call_limit} orders for {}",
                 product_type.as_str()
             );
         }
@@ -2868,7 +2797,8 @@ impl BybitHttpClient {
             cancel_entries.push(cancel_entry.build().build_anyhow()?);
         }
 
-        for chunk in cancel_entries.chunks(batch_send_limit(product_type)) {
+        let chunk_limit = batch_endpoint_limit(product_type).min(batch_send_limit(product_type));
+        for chunk in cancel_entries.chunks(chunk_limit) {
             let mut params = BybitBatchCancelOrderParamsBuilder::default();
             params.category(product_type);
             params.request(chunk.to_vec());
@@ -4744,7 +4674,8 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function returns an error if the request fails.
+    /// This function returns an error if the request fails, or if SPOT position reports are enabled
+    /// and no instrument is specified, because wallet balances carry no pair identity.
     ///
     /// # References
     ///
@@ -4758,6 +4689,11 @@ impl BybitHttpClient {
         // Handle SPOT position reports via wallet balances if flag is enabled
         if product_type == BybitProductType::Spot {
             if self.use_spot_position_reports.load(Ordering::Relaxed) {
+                let Some(instrument_id) = instrument_id else {
+                    anyhow::bail!(
+                        "SPOT wallet balances carry no pair identity and cannot be attributed for a bulk position report request"
+                    );
+                };
                 return self
                     .generate_spot_position_reports_from_wallet(account_id, instrument_id)
                     .await;

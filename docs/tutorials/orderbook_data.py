@@ -8,10 +8,12 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from collections.abc import Iterable
 from collections.abc import Iterator
 from decimal import Decimal
 from os import PathLike
+from pathlib import Path
 from zipfile import ZipFile, is_zipfile
 
 import pandas as pd
@@ -26,6 +28,28 @@ from nautilus_trader.model import (
     Quantity,
     RecordFlag,
 )
+from nautilus_trader.testkit.providers import TEST_DATA_DIR, TestDataProvider
+
+
+def sample_data_path(name: str) -> Path:
+    """
+    Return a local path for the bundled sample file at the given relative `name`.
+
+    Reads from the `test_data/` directory in a source checkout, and downloads to a
+    temporary directory otherwise, so the loaders that only accept a file path work from
+    an installed wheel.
+
+    """
+    local = TEST_DATA_DIR / name
+    if local.is_file():
+        return local
+
+    cached = Path(tempfile.gettempdir()) / "nautilus_sample_data" / name
+    if not cached.is_file():
+        cached.parent.mkdir(parents=True, exist_ok=True)
+        cached.write_bytes(TestDataProvider().read(name))
+
+    return cached
 
 
 def deltas_from_frame(

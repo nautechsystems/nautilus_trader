@@ -77,7 +77,6 @@ impl OrderAny {
     /// - The initialization event violates an order invariant
     ///   (e.g. missing required price/trigger fields, invalid quantity, invalid TIF/expire combo).
     /// - Any subsequent event has an invalid state transition when applied to the order.
-    ///
     pub fn from_events(events: Vec<OrderEventAny>) -> Result<Self, OrderReplayError> {
         let Some(init_event) = events.first() else {
             return Err(OrderReplayError::EmptyInput);
@@ -946,7 +945,7 @@ mod tests {
             .quantity(Quantity::from(10))
             .trigger_price(Price::new(100.0, 2))
             .trailing_offset(Decimal::new(5, 1)) // 0.5
-            .trailing_offset_type(TrailingOffsetType::NoTrailingOffset)
+            .trailing_offset_type(TrailingOffsetType::Price)
             .build();
 
         // Convert to StopOrderAny
@@ -962,7 +961,7 @@ mod tests {
         assert_eq!(order_any.trailing_offset(), Some(dec!(0.5)));
         assert_eq!(
             order_any.trailing_offset_type(),
-            Some(TrailingOffsetType::NoTrailingOffset)
+            Some(TrailingOffsetType::Price)
         );
     }
 
@@ -976,7 +975,7 @@ mod tests {
             .trigger_price(Price::new(100.0, 2))
             .limit_offset(Decimal::new(10, 1)) // 1.0
             .trailing_offset(Decimal::new(5, 1)) // 0.5
-            .trailing_offset_type(TrailingOffsetType::NoTrailingOffset)
+            .trailing_offset_type(TrailingOffsetType::Price)
             .build();
 
         // Convert to LimitOrderAny

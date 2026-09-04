@@ -148,12 +148,19 @@ adapter when it starts:
 ```python
 from nautilus_trader.common import Environment
 from nautilus_trader.infrastructure import RedisCacheConfig
+from nautilus_trader.config import LiveExecutionEngineConfig
 from nautilus_trader.live import LiveNode
 from nautilus_trader.model import TraderId
 
 node = (
     LiveNode.builder("LiveNode", TraderId("TRADER-001"), Environment.LIVE)
     .with_cache_database_factory(RedisCacheConfig(host="localhost", port=6379))
+    .with_exec_engine_config(
+        LiveExecutionEngineConfig(
+            snapshot_orders=True,
+            snapshot_positions=True,
+        ),
+    )
     .with_load_state(True)
     .with_save_state(True)
     .build()
@@ -169,6 +176,14 @@ Pass `PostgresCacheConfig` instead to back the cache with Postgres. Any other ob
 `NotImplementedError` from `with_cache_database_factory`, and a failed database connection fails
 `run()`. Database-backed nodes must use `run()` because `run_async()` rejects cache database
 backings that would block the host event loop.
+
+With `snapshot_orders=True`, the execution engine persists an order snapshot during submission
+processing and after each state change. Order snapshots require a Redis or Postgres cache backing.
+
+With `snapshot_positions=True`, the execution engine publishes a snapshot when a position opens,
+changes, or closes. Set `snapshot_positions_interval_secs` independently to add periodic snapshots
+of every open position. Redis and Postgres cache backings persist both paths. Without backing, the
+snapshots remain available on the in-process message bus but are not persisted.
 
 `with_load_state` and `with_save_state` control actor and strategy state persistence, which requires
 a Redis backing. The Postgres adapter backs cache state only: with registered actors or strategies,
@@ -374,12 +389,14 @@ and caveats, see [Runtime checks](../concepts/reconciliation.md#runtime-checks).
 
 ### Additional options
 
-| Setting                            | Default | Description                                                                                                              |
-| ---------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `allow_overfills`                  | False   | Allow fills exceeding order quantity (logs warning). Useful when reconciliation races fills.                             |
-| `generate_missing_orders`          | True    | Generate LIMIT orders during reconciliation to align position discrepancies (strategy `EXTERNAL`, tag `RECONCILIATION`). |
-| `snapshot_positions_interval_secs` | None    | Interval (seconds) between position snapshots.                                                                           |
-| `debug`                            | False   | Enable debug logging for execution.                                                                                      |
+| Setting                            | Default | Description                                                                                                        |
+| ---------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------ |
+| `allow_overfills`                  | False   | Allow fills exceeding order quantity (logs warning). Useful when reconciliation races fills.                       |
+| `generate_missing_orders`          | True    | Generate reconciliation orders from unmatched fill and position reports.                                           |
+| `snapshot_orders`                  | False   | Persist order snapshots during submission processing and after each state change when cache backing is configured. |
+| `snapshot_positions`               | False   | Publish position snapshots on open, change, and close, and persist them when cache backing is configured.          |
+| `snapshot_positions_interval_secs` | None    | Interval (seconds) between position snapshots.                                                                     |
+| `debug`                            | False   | Enable debug logging for execution.                                                                                |
 
 ### Memory management
 
@@ -413,13 +430,20 @@ For a complete parameter list see the `StrategyConfig`
 
 ### Order management
 
-| Setting                     | Default | Description                                                                               |
-| --------------------------- | ------- | ----------------------------------------------------------------------------------------- |
-| `oms_type`                  | None    | [OMS type](../concepts/execution#oms-configuration) for position ID and order processing. |
-| `use_uuid_client_order_ids` | False   | Use UUID4 values for client order IDs.                                                    |
-| `external_order_claims`     | None    | Instrument IDs whose external orders and reconciliation activity this strategy claims.    |
-| `manage_contingent_orders`  | False   | Automatically manage OTO, OCO, and OUO contingent orders.                                 |
-| `manage_gtd_expiry`         | False   | Manage GTD expirations for orders.                                                        |
+| Setting                         | Default | Description                                                                                  |
+| ------------------------------- | ------- | -------------------------------------------------------------------------------------------- |
+| `oms_type`                      | None    | [OMS type](../concepts/execution.md#oms-configuration) for position ID and order processing. |
+| `use_uuid_client_order_ids`     | False   | Use UUID4 values for client order IDs.                                                       |
+| `external_order_instrument_ids` | None    | Serializable intent to claim external orders and reconciliation activity by instrument.      |
+| `manage_contingent_orders`      | False   | Manage open, non-active-local OTO, OCO, and OUO relationships.                               |
+| `manage_gtd_expiry`             | False   | Manage GTD expirations for orders.                                                           |
+
+See [Claiming external orders](../concepts/strategies.md#claiming-external-orders) for active claim
+lifecycle and runtime updates.
+
+The `OrderEmulator` retains active-local contingent orders. See
+[Advanced orders](../concepts/orders/advanced.md#strategy-managed-contingencies) for ownership and
+venue-support boundaries.
 
 Read these runtime settings through `strategy.config`; the strategy itself does not duplicate
 them as direct properties.

@@ -24,7 +24,7 @@ use std::{
     },
 };
 
-use nautilus_core::{MUTEX_POISONED, string::urlencoding};
+use nautilus_core::string::{secret::SecretString, urlencoding};
 use nautilus_network::{
     http::{HttpClient, Method},
     ratelimiter::quota::Quota,
@@ -32,6 +32,7 @@ use nautilus_network::{
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
+use zeroize::Zeroizing;
 
 use super::{
     error::BetfairHttpError,
@@ -96,10 +97,10 @@ impl JsonRpcError {
 pub struct BetfairHttpClient {
     client: HttpClient,
     credential: BetfairCredential,
-    session_token: Arc<tokio::sync::RwLock<Option<String>>>,
+    session_token: Arc<tokio::sync::RwLock<Option<SecretString>>>,
     retry_manager: RetryManager<BetfairHttpError>,
     order_retry_manager: RetryManager<BetfairHttpError>,
-    cancellation_token: std::sync::Mutex<CancellationToken>,
+    cancellation_token: parking_lot::Mutex<CancellationToken>,
     connect_lock: tokio::sync::Mutex<()>,
     request_id: AtomicU64,
     url_identity_login: String,
@@ -154,7 +155,7 @@ impl BetfairHttpClient {
             session_token: Arc::new(tokio::sync::RwLock::new(None)),
             retry_manager: RetryManager::new(retry_config),
             order_retry_manager: RetryManager::new(order_retry_config),
-            cancellation_token: std::sync::Mutex::new(CancellationToken::new()),
+            cancellation_token: parking_lot::Mutex::new(CancellationToken::new()),
             connect_lock: tokio::sync::Mutex::new(()),
             request_id: AtomicU64::new(1),
             url_identity_login: BETFAIR_IDENTITY_LOGIN_URL.to_string(),
@@ -192,26 +193,22 @@ impl BetfairHttpClient {
     ///
     /// `disconnect()` cancels and replaces the token, so callers should fetch
     /// a fresh clone for each operation rather than holding one long-term.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal cancellation-token mutex is poisoned.
     pub fn cancellation_token(&self) -> CancellationToken {
-        self.cancellation_token
-            .lock()
-            .expect(MUTEX_POISONED)
-            .clone()
+        self.cancellation_token.lock().clone()
     }
 
     /// Returns the current session token, if authenticated.
-    pub async fn session_token(&self) -> Option<String> {
+    pub async fn session_token(&self) -> Option<SecretString> {
         self.session_token.read().await.clone()
     }
 
     /// Runs a synchronous token publication while session mutation is serialized.
-    pub(crate) async fn with_session_token<T>(&self, publish: impl FnOnce(&str) -> T) -> Option<T> {
+    pub(crate) async fn with_session_token<T>(
+        &self,
+        publish: impl FnOnce(&SecretString) -> T,
+    ) -> Option<T> {
         let _guard = self.connect_lock.lock().await;
-        self.session_token.read().await.as_deref().map(publish)
+        self.session_token.read().await.as_ref().map(publish)
     }
 
     /// Returns whether the client has an active session.
@@ -263,7 +260,7 @@ impl BetfairHttpClient {
     /// # Errors
     ///
     /// Returns an error if re-authentication fails.
-    pub(crate) async fn reconnect_with_token(&self) -> Result<String, BetfairHttpError> {
+    pub(crate) async fn reconnect_with_token(&self) -> Result<SecretString, BetfairHttpError> {
         let _guard = self.connect_lock.lock().await;
         log::info!("Betfair reconnecting...");
         *self.session_token.write().await = None;
@@ -272,40 +269,40 @@ impl BetfairHttpClient {
         Ok(token)
     }
 
-    async fn login(&self) -> Result<String, BetfairHttpError> {
-        let form_body = format!(
+    async fn login(&self) -> Result<SecretString, BetfairHttpError> {
+        let password = Zeroizing::new(urlencoding::encode(self.credential.password()).into_owned());
+        let form_body = SecretString::from(format!(
             "username={}&password={}",
             urlencoding::encode(self.credential.username()),
-            urlencoding::encode(self.credential.password()),
-        );
+            password.as_str(),
+        ));
 
         let resp_bytes = self
-            .send_identity(&self.url_identity_login, form_body.into_bytes())
+            .send_identity(&self.url_identity_login, form_body)
             .await?;
 
-        let resp: LoginResponse = serde_json::from_slice(&resp_bytes)?;
+        let mut resp: LoginResponse = serde_json::from_slice(&resp_bytes)?;
 
         if resp.status == LoginStatus::Success {
             log::debug!("Betfair login successful");
-            Ok(resp.token)
+            Ok(std::mem::take(&mut resp.token))
         } else {
             Err(BetfairHttpError::LoginFailed {
-                status: resp.error.unwrap_or_else(|| format!("{:?}", resp.status)),
+                status: resp
+                    .error
+                    .take()
+                    .unwrap_or_else(|| format!("{:?}", resp.status)),
             })
         }
     }
 
     /// Clears the session token, cancels any in-flight retries, and primes a
     /// fresh cancellation token for the next session.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal cancellation-token mutex is poisoned.
     pub async fn disconnect(&self) {
         log::info!("Betfair disconnecting...");
         let _guard = self.connect_lock.lock().await;
         {
-            let mut guard = self.cancellation_token.lock().expect(MUTEX_POISONED);
+            let mut guard = self.cancellation_token.lock();
             guard.cancel();
             *guard = CancellationToken::new();
         }
@@ -326,18 +323,24 @@ impl BetfairHttpClient {
     /// # Errors
     ///
     /// Returns an error if the keep-alive request fails.
-    pub(crate) async fn keep_alive_with_token(&self) -> Result<String, BetfairHttpError> {
+    pub(crate) async fn keep_alive_with_token(&self) -> Result<SecretString, BetfairHttpError> {
         let _guard = self.connect_lock.lock().await;
-        let resp_bytes = self.send_identity(&self.url_keep_alive, Vec::new()).await?;
+        let resp_bytes = self
+            .send_identity(&self.url_keep_alive, SecretString::default())
+            .await?;
 
-        let resp: LoginResponse = serde_json::from_slice(&resp_bytes)?;
+        let mut resp: LoginResponse = serde_json::from_slice(&resp_bytes)?;
 
         if resp.status == LoginStatus::Success {
-            *self.session_token.write().await = Some(resp.token.clone());
-            Ok(resp.token)
+            let token = std::mem::take(&mut resp.token);
+            *self.session_token.write().await = Some(token.clone());
+            Ok(token)
         } else {
             Err(BetfairHttpError::LoginFailed {
-                status: resp.error.unwrap_or_else(|| format!("{:?}", resp.status)),
+                status: resp
+                    .error
+                    .take()
+                    .unwrap_or_else(|| format!("{:?}", resp.status)),
             })
         }
     }
@@ -472,7 +475,8 @@ impl BetfairHttpClient {
             .session_token
             .read()
             .await
-            .clone()
+            .as_ref()
+            .map(|token| token.expose_secret().to_owned())
             .ok_or(BetfairHttpError::MissingCredentials)?;
 
         let mut headers = HashMap::new();
@@ -486,7 +490,11 @@ impl BetfairHttpClient {
         Ok(headers)
     }
 
-    async fn send_identity(&self, url: &str, body: Vec<u8>) -> Result<Vec<u8>, BetfairHttpError> {
+    async fn send_identity(
+        &self,
+        url: &str,
+        body: SecretString,
+    ) -> Result<Vec<u8>, BetfairHttpError> {
         let mut headers = HashMap::new();
         headers.insert("Accept".to_string(), "application/json".to_string());
         headers.insert(
@@ -500,17 +508,20 @@ impl BetfairHttpClient {
 
         // Add session token if we have one (for keep-alive)
         if let Some(token) = self.session_token.read().await.as_ref() {
-            headers.insert(HEADER_X_AUTHENTICATION.to_string(), token.clone());
+            headers.insert(
+                HEADER_X_AUTHENTICATION.to_string(),
+                token.expose_secret().to_owned(),
+            );
         }
 
         let resp = self
             .client
-            .request(
+            .request_with_secret_body(
                 Method::POST,
                 url.to_string(),
                 None,
                 Some(headers),
-                Some(body),
+                body,
                 None,
                 Some(vec![BETFAIR_RATE_LIMIT_DEFAULT.to_string()]),
             )
@@ -580,11 +591,7 @@ impl BetfairHttpClient {
         // Snapshot the current token; `disconnect()` may swap it for a fresh
         // one mid-flight, but the in-flight retry loop should observe the
         // pre-disconnect token so a cancel actually unblocks it.
-        let token = self
-            .cancellation_token
-            .lock()
-            .expect(MUTEX_POISONED)
-            .clone();
+        let token = self.cancellation_token.lock().clone();
 
         let retry_manager = if is_order {
             &self.order_retry_manager
@@ -733,8 +740,9 @@ fn map_retry_error(
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Mutex, time::Duration};
+    use std::time::Duration;
 
+    use parking_lot::Mutex;
     use proptest::prelude::*;
     use rstest::rstest;
 
@@ -785,6 +793,32 @@ mod tests {
                 .to_string()
                 .contains("request_rate_per_second")
         );
+    }
+
+    #[rstest]
+    fn test_debug_redacts_session_token() {
+        let client = BetfairHttpClient::new(
+            BetfairCredential::new(
+                "username".to_string(),
+                "betfair-password-sentinel".to_string(),
+                "application-key".to_string(),
+            ),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        *client.session_token.try_write().unwrap() =
+            Some(SecretString::from("betfair-session-token-sentinel"));
+
+        let debug = format!("{client:?}");
+
+        assert!(debug.contains("session_token"));
+        assert!(!debug.contains("betfair-session-token-sentinel"));
+        assert!(!debug.contains("betfair-password-sentinel"));
     }
 
     #[rstest]
@@ -969,10 +1003,7 @@ mod tests {
                 move || {
                     let attempt_times = Arc::clone(&attempt_times_for_operation);
                     async move {
-                        attempt_times
-                            .lock()
-                            .expect(MUTEX_POISONED)
-                            .push(started_at.elapsed());
+                        attempt_times.lock().push(started_at.elapsed());
                         Err::<(), _>(BetfairHttpError::UnexpectedStatus {
                             status: 502,
                             body: "Bad Gateway".to_string(),
@@ -986,7 +1017,7 @@ mod tests {
 
         assert!(matches!(result, Err(BetfairHttpError::NetworkError(_))));
         assert_eq!(started_at.elapsed(), Duration::from_secs(45));
-        let attempt_times = attempt_times.lock().expect(MUTEX_POISONED);
+        let attempt_times = attempt_times.lock();
         assert!(attempt_times.len() > 1);
         assert_eq!(attempt_times[0], Duration::ZERO);
         assert!(

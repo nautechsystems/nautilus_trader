@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-infrastructure"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -49,7 +48,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
 nautilus-cryptography = { workspace = true }
-nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-model = { workspace = true, features = ["test-support"] }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
@@ -80,7 +79,13 @@ nautilus-live = { workspace = true, features = ["node"] }
 nautilus-persistence = { workspace = true }
 nautilus-serialization = { workspace = true }
 
+criterion = { workspace = true }
 rstest = { workspace = true }
 serde = { workspace = true }
 strum = { workspace = true }
 toml = { workspace = true }
+
+[[bench]]
+name = "redis_msgbus"
+harness = false
+required-features = ["redis"]

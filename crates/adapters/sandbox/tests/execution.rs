@@ -3295,14 +3295,14 @@ fn test_initialized_ioc_market_order_cancels_remainder_through_live_runner(
 }
 
 #[rstest]
-#[case(None, OrderSide::NoOrderSide)]
-#[case(Some("SANDBOX-A"), OrderSide::Buy)]
-#[case(Some("SANDBOX-B"), OrderSide::Sell)]
+#[case(None, None)]
+#[case(Some("SANDBOX-A"), Some(OrderSide::Buy))]
+#[case(Some("SANDBOX-B"), Some(OrderSide::Sell))]
 fn test_cancel_all_orders_routes_by_client_account_and_side(
     trader_id: TraderId,
     instrument: InstrumentAny,
     #[case] selected_client: Option<&str>,
-    #[case] selected_side: OrderSide,
+    #[case] selected_side: Option<OrderSide>,
 ) {
     struct SeededOrder {
         client_order_id: ClientOrderId,
@@ -3420,7 +3420,6 @@ fn test_cancel_all_orders_routes_by_client_account_and_side(
         let price = match side {
             OrderSide::Buy => Price::from("900.00"),
             OrderSide::Sell => Price::from("1100.00"),
-            _ => unreachable!(),
         };
         let order = OrderTestBuilder::new(OrderType::Limit)
             .trader_id(trader_id)
@@ -3539,7 +3538,7 @@ fn test_cancel_all_orders_routes_by_client_account_and_side(
             order.client_id == routed_client
                 && order.account_id == routed_account
                 && order.instrument_id == instrument_id
-                && (selected_side == OrderSide::NoOrderSide || order.side == selected_side)
+                && selected_side.is_none_or(|side| order.side == side)
         })
         .map(|order| order.client_order_id)
         .collect();

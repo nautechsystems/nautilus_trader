@@ -302,7 +302,7 @@ impl CoinbaseRawHttpClient {
 
         Ok(HashMap::from([(
             "Authorization".to_string(),
-            format!("Bearer {jwt}"),
+            format!("Bearer {}", jwt.expose_secret()),
         )]))
     }
 
@@ -541,7 +541,7 @@ impl CoinbaseRawHttpClient {
     ///
     /// # References
     ///
-    /// - <https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/perpetuals/get-fcm-balance-summary>
+    /// - <https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/futures/get-futures-balance-summary>
     pub async fn get_cfm_balance_summary(&self) -> Result<CfmBalanceSummaryResponse> {
         let json = self.get("/cfm/balance_summary").await?;
         serde_json::from_value(json).map_err(Error::Serde)
@@ -551,7 +551,7 @@ impl CoinbaseRawHttpClient {
     ///
     /// # References
     ///
-    /// - <https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/perpetuals/get-fcm-positions>
+    /// - <https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/futures/list-futures-positions>
     pub async fn get_cfm_positions(&self) -> Result<CfmPositionsResponse> {
         let json = self.get("/cfm/positions").await?;
         serde_json::from_value(json).map_err(Error::Serde)
@@ -561,7 +561,7 @@ impl CoinbaseRawHttpClient {
     ///
     /// # References
     ///
-    /// - <https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/perpetuals/get-fcm-position>
+    /// - <https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/futures/get-futures-position>
     pub async fn get_cfm_position(&self, product_id: &str) -> Result<CfmPositionResponse> {
         let json = self.get(&format!("/cfm/positions/{product_id}")).await?;
         serde_json::from_value(json).map_err(Error::Serde)
@@ -1376,7 +1376,7 @@ impl CoinbaseHttpClient {
         reduce_only: bool,
         retail_portfolio_id: Option<String>,
     ) -> anyhow::Result<CreateOrderResponse> {
-        let coinbase_side = map_order_side(side)?;
+        let coinbase_side = map_order_side(side);
         let order_config = build_order_configuration(
             order_type,
             side,
@@ -1399,7 +1399,6 @@ impl CoinbaseHttpClient {
             leverage: leverage.map(|d| d.normalize().to_string()),
             margin_type,
             retail_portfolio_id,
-            reduce_only,
         };
 
         self.inner
@@ -1568,15 +1567,10 @@ impl CoinbaseHttpClient {
 }
 
 /// Maps a Nautilus [`OrderSide`] to Coinbase's wire enum.
-///
-/// # Errors
-///
-/// Returns an error when the side is [`OrderSide::NoOrderSide`].
-pub fn map_order_side(side: OrderSide) -> anyhow::Result<CoinbaseOrderSide> {
+pub fn map_order_side(side: OrderSide) -> CoinbaseOrderSide {
     match side {
-        OrderSide::Buy => Ok(CoinbaseOrderSide::Buy),
-        OrderSide::Sell => Ok(CoinbaseOrderSide::Sell),
-        OrderSide::NoOrderSide => anyhow::bail!("NoOrderSide is not a valid Coinbase side"),
+        OrderSide::Buy => CoinbaseOrderSide::Buy,
+        OrderSide::Sell => CoinbaseOrderSide::Sell,
     }
 }
 
@@ -1609,9 +1603,10 @@ pub fn build_order_configuration(
     let price = price.map(|p| p.as_decimal());
     let trigger = trigger_price.map(|p| p.as_decimal());
 
-    if reduce_only && matches!(order_type, OrderType::Market) {
-        log::debug!("Coinbase MARKET orders do not accept reduce_only; ignoring flag");
-    }
+    anyhow::ensure!(
+        !reduce_only,
+        "Reduce-only orders are not supported by Coinbase Advanced Trade"
+    );
 
     match order_type {
         OrderType::Market => {
@@ -1694,9 +1689,6 @@ pub fn build_order_configuration(
             let direction = match side {
                 OrderSide::Buy => CoinbaseStopDirection::StopUp,
                 OrderSide::Sell => CoinbaseStopDirection::StopDown,
-                OrderSide::NoOrderSide => {
-                    anyhow::bail!("STOP_LIMIT requires a defined side")
-                }
             };
 
             match time_in_force {
@@ -1851,16 +1843,15 @@ mod tests {
     }
 
     #[rstest]
-    fn test_map_order_side_rejects_no_side() {
+    fn test_map_order_side() {
         assert!(matches!(
-            map_order_side(OrderSide::Buy).unwrap(),
+            map_order_side(OrderSide::Buy),
             CoinbaseOrderSide::Buy
         ));
         assert!(matches!(
-            map_order_side(OrderSide::Sell).unwrap(),
+            map_order_side(OrderSide::Sell),
             CoinbaseOrderSide::Sell
         ));
-        assert!(map_order_side(OrderSide::NoOrderSide).is_err());
     }
 
     #[rstest]

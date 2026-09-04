@@ -15,6 +15,7 @@
 
 //! Configuration structures for the OKX adapter.
 
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
@@ -43,11 +44,11 @@ use crate::common::{
 )]
 pub struct OKXDataClientConfig {
     /// Optional API key for authenticated endpoints.
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     /// Optional API secret for authenticated endpoints.
-    pub api_secret: Option<String>,
+    pub api_secret: Option<SecretString>,
     /// Optional API passphrase for authenticated endpoints.
-    pub api_passphrase: Option<String>,
+    pub api_passphrase: Option<SecretString>,
     /// Instrument types to load and subscribe to.
     #[builder(default = vec![OKXInstrumentType::Spot])]
     pub instrument_types: Vec<OKXInstrumentType>,
@@ -66,7 +67,7 @@ pub struct OKXDataClientConfig {
     /// Optional override for the business WebSocket URL.
     pub base_url_ws_business: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// The API environment (live or demo).
     #[builder(default)]
     pub environment: OKXEnvironment,
@@ -204,11 +205,11 @@ pub struct OKXExecutionClientConfig {
     #[builder(default = AccountId::from("OKX-001"))]
     pub account_id: AccountId,
     /// Optional API key for authenticated endpoints.
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     /// Optional API secret for authenticated endpoints.
-    pub api_secret: Option<String>,
+    pub api_secret: Option<SecretString>,
     /// Optional API passphrase for authenticated endpoints.
-    pub api_passphrase: Option<String>,
+    pub api_passphrase: Option<SecretString>,
     /// Instrument types the execution client should support.
     #[builder(default = vec![OKXInstrumentType::Spot])]
     pub instrument_types: Vec<OKXInstrumentType>,
@@ -224,7 +225,7 @@ pub struct OKXExecutionClientConfig {
     /// Optional override for the business WebSocket URL.
     pub base_url_ws_business: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
-    pub proxy_url: Option<String>,
+    pub proxy_url: Option<SecretString>,
     /// The API environment (live or demo).
     #[builder(default)]
     pub environment: OKXEnvironment,
@@ -331,9 +332,84 @@ impl OKXExecutionClientConfig {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::string::secret::REDACTED;
     use rstest::rstest;
 
     use super::*;
+
+    const DATA_API_KEY: &str = "okx-data-api-key-sentinel";
+    const DATA_API_SECRET: &str = "okx-data-api-secret-sentinel";
+    const DATA_API_PASSPHRASE: &str = "okx-data-api-passphrase-sentinel";
+    const EXEC_API_KEY: &str = "okx-exec-api-key-sentinel";
+    const EXEC_API_SECRET: &str = "okx-exec-api-secret-sentinel";
+    const EXEC_API_PASSPHRASE: &str = "okx-exec-api-passphrase-sentinel";
+
+    #[rstest]
+    fn test_data_config_debug_redacts_credentials() {
+        let config = OKXDataClientConfig {
+            api_key: Some(DATA_API_KEY.into()),
+            api_secret: Some(DATA_API_SECRET.into()),
+            api_passphrase: Some(DATA_API_PASSPHRASE.into()),
+            environment: OKXEnvironment::Demo,
+            http_timeout_secs: 71,
+            ..Default::default()
+        };
+
+        let debug_output = format!("{config:?}");
+        let redacted = format!("Some({REDACTED})");
+
+        assert!(!debug_output.contains(DATA_API_KEY));
+        assert!(!debug_output.contains(DATA_API_SECRET));
+        assert!(!debug_output.contains(DATA_API_PASSPHRASE));
+        assert!(debug_output.contains(&format!("api_key: {redacted}")));
+        assert!(debug_output.contains(&format!("api_secret: {redacted}")));
+        assert!(debug_output.contains(&format!("api_passphrase: {redacted}")));
+        assert!(debug_output.contains("environment: Demo"));
+        assert!(debug_output.contains("http_timeout_secs: 71"));
+    }
+
+    #[rstest]
+    fn test_exec_config_debug_redacts_credentials() {
+        let config = OKXExecutionClientConfig {
+            account_id: AccountId::from("OKX-042"),
+            api_key: Some(EXEC_API_KEY.into()),
+            api_secret: Some(EXEC_API_SECRET.into()),
+            api_passphrase: Some(EXEC_API_PASSPHRASE.into()),
+            max_retries: 13,
+            ..Default::default()
+        };
+
+        let debug_output = format!("{config:?}");
+        let redacted = format!("Some({REDACTED})");
+
+        assert!(!debug_output.contains(EXEC_API_KEY));
+        assert!(!debug_output.contains(EXEC_API_SECRET));
+        assert!(!debug_output.contains(EXEC_API_PASSPHRASE));
+        assert!(debug_output.contains(&format!("api_key: {redacted}")));
+        assert!(debug_output.contains(&format!("api_secret: {redacted}")));
+        assert!(debug_output.contains(&format!("api_passphrase: {redacted}")));
+        assert!(debug_output.contains("OKX-042"));
+        assert!(debug_output.contains("max_retries: 13"));
+    }
+
+    #[rstest]
+    fn test_config_debug_handles_unset_and_partial_credentials() {
+        let data_debug = format!("{:?}", OKXDataClientConfig::default());
+        let exec_debug = format!(
+            "{:?}",
+            OKXExecutionClientConfig {
+                api_secret: Some(String::new().into()),
+                ..Default::default()
+            }
+        );
+
+        assert!(data_debug.contains("api_key: None"));
+        assert!(data_debug.contains("api_secret: None"));
+        assert!(data_debug.contains("api_passphrase: None"));
+        assert!(exec_debug.contains("api_key: None"));
+        assert!(exec_debug.contains(&format!("api_secret: Some({REDACTED})")));
+        assert!(exec_debug.contains("api_passphrase: None"));
+    }
 
     #[rstest]
     fn test_data_config_toml_minimal() {

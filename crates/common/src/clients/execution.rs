@@ -74,6 +74,12 @@ pub trait ExecutionClient {
         self.venue() == venue
     }
 
+    /// Returns whether a bulk position status report request provides complete coverage for the
+    /// given instrument, so that an absent report is evidence the position is flat.
+    fn provides_bulk_position_coverage(&self, _instrument_id: InstrumentId) -> bool {
+        true
+    }
+
     /// Generates and publishes the account state event.
     ///
     /// Implementations may publish synchronously. Callers must release shared state borrows,
@@ -430,8 +436,7 @@ mod tests {
     use nautilus_core::UUID4;
     use nautilus_model::{
         enums::{
-            LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSideSpecified,
-            TimeInForce,
+            LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
         },
         identifiers::{PositionId, TradeId, TraderId, Venue},
         types::Currency,
@@ -602,7 +607,7 @@ mod tests {
             InstrumentId::from("AUD/USD.SIM"),
             None,
             VenueOrderId::from("ORDER-001"),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
@@ -638,7 +643,7 @@ mod tests {
         PositionStatusReport::new(
             AccountId::from("MASS-STATUS-001"),
             InstrumentId::from("AUD/USD.SIM"),
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from("5"),
             UnixNanos::from(6_000_000_000),
             UnixNanos::from(7_000_000_000),

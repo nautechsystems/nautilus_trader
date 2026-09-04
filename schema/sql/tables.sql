@@ -71,6 +71,16 @@ CREATE TABLE IF NOT EXISTS "instrument" (
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Instrument closes are stored independently of instrument metadata.
+CREATE TABLE IF NOT EXISTS "instrument_close" (
+    instrument_id TEXT PRIMARY KEY NOT NULL,
+    close_price TEXT NOT NULL,
+    close_type TEXT NOT NULL,
+    ts_event TEXT NOT NULL,
+    ts_init TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS "order" (
     id TEXT PRIMARY KEY NOT NULL,
     trader_id TEXT REFERENCES trader(id) ON DELETE CASCADE,
@@ -193,6 +203,13 @@ CREATE TABLE IF NOT EXISTS "order_event" (
     position_id TEXT,
     commission TEXT,
     tags TEXT[],
+    released_price TEXT,
+    protection_price TEXT,
+    due_post_only BOOLEAN DEFAULT FALSE,
+    correction_id TEXT,
+    is_reopened BOOLEAN DEFAULT FALSE,
+    info JSONB,
+    causation_id TEXT,
     ts_event TEXT NOT NULL,
     ts_init TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -200,6 +217,16 @@ CREATE TABLE IF NOT EXISTS "order_event" (
 );
 -- Bring databases created before trailing-stop activation-price persistence forward
 ALTER TABLE "order_event" ADD COLUMN IF NOT EXISTS activation_price TEXT;
+-- Bring databases created before per-event field persistence forward. Without these columns an
+-- order event round trip silently drops the field, so a restored order differs from the one that
+-- was persisted.
+ALTER TABLE "order_event" ADD COLUMN IF NOT EXISTS released_price TEXT;
+ALTER TABLE "order_event" ADD COLUMN IF NOT EXISTS protection_price TEXT;
+ALTER TABLE "order_event" ADD COLUMN IF NOT EXISTS due_post_only BOOLEAN DEFAULT FALSE;
+ALTER TABLE "order_event" ADD COLUMN IF NOT EXISTS correction_id TEXT;
+ALTER TABLE "order_event" ADD COLUMN IF NOT EXISTS is_reopened BOOLEAN DEFAULT FALSE;
+ALTER TABLE "order_event" ADD COLUMN IF NOT EXISTS info JSONB;
+ALTER TABLE "order_event" ADD COLUMN IF NOT EXISTS causation_id TEXT;
 
 CREATE TABLE IF NOT EXISTS "order_position_index" (
     client_order_id TEXT PRIMARY KEY NOT NULL,
@@ -227,11 +254,20 @@ CREATE TABLE IF NOT EXISTS "position_event" (
     liquidity_side TEXT NOT NULL,
     position_id TEXT NOT NULL,
     commission TEXT,
+    reconciliation BOOLEAN DEFAULT FALSE,
+    info JSONB,
+    causation_id TEXT,
     ts_event TEXT NOT NULL,
     ts_init TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+-- Bring databases created before fill field persistence forward. `position_event` stores
+-- `OrderFilled` and is decoded by the same row mapping as `order_event`, so both tables carry
+-- the same fill columns.
+ALTER TABLE "position_event" ADD COLUMN IF NOT EXISTS reconciliation BOOLEAN DEFAULT FALSE;
+ALTER TABLE "position_event" ADD COLUMN IF NOT EXISTS info JSONB;
+ALTER TABLE "position_event" ADD COLUMN IF NOT EXISTS causation_id TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_position_event_position_id
     ON position_event(position_id, event_sequence);
@@ -378,9 +414,11 @@ CREATE TABLE IF NOT EXISTS "block_default" PARTITION OF "block" DEFAULT;
 CREATE TABLE IF NOT EXISTS "pool_event_block" (
     chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
     number BIGINT NOT NULL,
+    hash TEXT,
     timestamp TEXT NOT NULL,
     PRIMARY KEY (chain_id, number)
 );
+ALTER TABLE "pool_event_block" ADD COLUMN IF NOT EXISTS hash TEXT;
 
 CREATE TABLE IF NOT EXISTS "token"(
     chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
@@ -737,7 +775,9 @@ CREATE TABLE IF NOT EXISTS "execution_transaction_hash" (
     intent_id BIGINT NOT NULL,
     chain_id INTEGER NOT NULL,
     transaction_hash TEXT NOT NULL,
+    payload_expected BOOLEAN NOT NULL DEFAULT TRUE,
     raw_transaction BYTEA,
+    sealed_transaction BYTEA,
     status TEXT NOT NULL CHECK (status IN (
         'signed', 'broadcast', 'included', 'finalized', 'reverted',
         'replaced', 'dropped', 'reorged'
@@ -752,11 +792,30 @@ CREATE TABLE IF NOT EXISTS "execution_transaction_hash" (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     FOREIGN KEY (intent_id, chain_id)
         REFERENCES execution_intent(id, chain_id) ON DELETE RESTRICT,
+    CONSTRAINT execution_transaction_raw_size_check
+        CHECK (raw_transaction IS NULL OR octet_length(raw_transaction) <= 131072),
+    CONSTRAINT execution_transaction_sealed_size_check
+        CHECK (sealed_transaction IS NULL OR octet_length(sealed_transaction) <= 131133),
     UNIQUE (chain_id, transaction_hash),
     UNIQUE (intent_id, transaction_hash)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS execution_transaction_hash_current_key
     ON "execution_transaction_hash" (intent_id) WHERE current;
+
+CREATE TABLE IF NOT EXISTS "execution_payload_state" (
+    component TEXT PRIMARY KEY CHECK (component = 'signed_transactions'),
+    deployment_id TEXT NOT NULL CHECK (deployment_id <> ''),
+    protocol_version SMALLINT NOT NULL CHECK (protocol_version = 1),
+    operation TEXT NOT NULL CHECK (operation IN ('migrate', 'ready', 'rewrap', 'rollback')),
+    active_key_id BYTEA NOT NULL CHECK (octet_length(active_key_id) = 32),
+    progress_id BIGINT NOT NULL DEFAULT 0 CHECK (progress_id >= 0),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS "execution_payload_key_state" (
+    key_id BYTEA PRIMARY KEY CHECK (octet_length(key_id) = 32),
+    seals BIGINT NOT NULL DEFAULT 0 CHECK (seals >= 0 AND seals < 4294967296)
+);
 
 CREATE TABLE IF NOT EXISTS "execution_transaction_transition" (
     id BIGSERIAL PRIMARY KEY,

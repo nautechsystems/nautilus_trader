@@ -468,7 +468,10 @@ impl Order for StopLimitOrder {
     }
 
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
-        let is_order_filled = matches!(event, OrderEventAny::Filled(_));
+        let updates_slippage = matches!(
+            event,
+            OrderEventAny::Filled(_) | OrderEventAny::FillVoided(_),
+        );
         let is_order_triggered = matches!(event, OrderEventAny::Triggered(_));
         let ts_event = if is_order_triggered {
             Some(event.ts_event())
@@ -487,7 +490,7 @@ impl Order for StopLimitOrder {
             self.ts_triggered = ts_event;
         }
 
-        if is_order_filled {
+        if updates_slippage {
             self.core.set_slippage(self.price);
         }
 
@@ -636,7 +639,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        enums::{OrderSide, TimeInForce, TriggerType},
+        enums::{OrderSide, PositionSide, TimeInForce, TriggerType},
         events::order::spec::OrderInitializedSpec,
         identifiers::InstrumentId,
         instruments::{CurrencyPair, stubs::*},

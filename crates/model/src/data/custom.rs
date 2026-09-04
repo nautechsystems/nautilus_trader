@@ -15,11 +15,11 @@
 
 #[cfg(feature = "python")]
 use std::collections::HashSet;
-#[cfg(feature = "python")]
-use std::sync::RwLock;
 use std::{any::Any, fmt::Debug, sync::Arc};
 
 use nautilus_core::UnixNanos;
+#[cfg(feature = "python")]
+use parking_lot::RwLock;
 #[cfg(feature = "python")]
 use pyo3::{IntoPyObjectExt, prelude::*, types::PyAny};
 use serde::{Serialize, Serializer};
@@ -35,23 +35,19 @@ fn intern_type_name_static(name: String) -> &'static str {
         std::sync::OnceLock::new();
     let set = INTERNER.get_or_init(|| RwLock::new(HashSet::new()));
 
-    if let Ok(guard) = set.read()
-        && guard.contains(name.as_str())
-    {
+    let guard = set.read();
+    if guard.contains(name.as_str()) {
         return guard.get(name.as_str()).copied().unwrap();
     }
+    drop(guard);
 
-    if let Ok(mut guard) = set.write() {
-        if let Some(&existing) = guard.get(name.as_str()) {
-            return existing;
-        }
-        let leaked: &'static str = Box::leak(name.into_boxed_str());
-        guard.insert(leaked);
-        leaked
-    } else {
-        log::warn!("intern_type_name_static: RwLock poisoned, interning skipped for type name");
-        Box::leak(name.into_boxed_str())
+    let mut guard = set.write();
+    if let Some(&existing) = guard.get(name.as_str()) {
+        return existing;
     }
+    let leaked: &'static str = Box::leak(name.into_boxed_str());
+    guard.insert(leaked);
+    leaked
 }
 
 /// Wraps a Python custom data object so it can participate in the Rust data

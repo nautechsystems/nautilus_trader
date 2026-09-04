@@ -76,7 +76,7 @@ pub(crate) async fn client_handshake_with_headers<S>(
     path: &str,
     protocol: Option<&str>,
     extra_headers: &[(String, String)],
-) -> Result<HandshakeResult, SockudoError>
+) -> Result<HandshakeResult, TransportError>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
@@ -85,26 +85,33 @@ where
     let key = handshake::generate_key();
     let request = build_request_with_headers(host, path, &key, protocol, None, extra_headers);
 
-    stream.write_all(&request).await?;
-    stream.flush().await?;
+    stream
+        .write_all(&request)
+        .await
+        .map_err(TransportError::from)?;
+    stream.flush().await.map_err(TransportError::from)?;
 
     let mut buf = BytesMut::with_capacity(4096);
 
     loop {
         if buf.len() > MAX_HTTP_HEADER_SIZE {
-            return Err(SockudoError::InvalidHttp("response too large"));
+            return Err(SockudoError::InvalidHttp("response too large").into());
         }
 
-        let n = stream.read_buf(&mut buf).await?;
+        let n = stream
+            .read_buf(&mut buf)
+            .await
+            .map_err(TransportError::from)?;
         if n == 0 {
-            return Err(SockudoError::ConnectionClosed);
+            return Err(TransportError::ConnectionClosed);
         }
 
         let parsed = match handshake::parse_response(&buf) {
             Ok(parsed) => parsed,
             Err(e) => {
                 log_handshake_response(&e, &buf);
-                return Err(e);
+                return Err(rejected_upgrade_status(&e, &buf)
+                    .map_or_else(|| TransportError::from(e), TransportError::UpgradeRejected));
             }
         };
 
@@ -112,13 +119,13 @@ where
             let accept = res.accept.ok_or_else(|| {
                 let e = SockudoError::HandshakeFailed("missing Sec-WebSocket-Accept");
                 log_handshake_response(&e, &buf);
-                e
+                TransportError::from(e)
             })?;
 
             if !handshake::validate_accept_key(&key, accept) {
                 let e = SockudoError::HandshakeFailed("invalid Sec-WebSocket-Accept");
                 log_handshake_response(&e, &buf);
-                return Err(e);
+                return Err(e.into());
             }
 
             let res_protocol = res.protocol.map(String::from);
@@ -137,6 +144,29 @@ where
             });
         }
     }
+}
+
+// Gated on the error variant rather than its message. `HandshakeFailed` means the response parsed
+// as HTTP but failed handshake validation, which is the only case where a rejection status is
+// recoverable; `InvalidHttp` stays permanent. Matching the diagnostic text would put an upstream
+// string into transport semantics, and recovering after any error would let a plausible status
+// line with malformed headers pass as a rejection.
+fn rejected_upgrade_status(err: &SockudoError, buf: &[u8]) -> Option<u16> {
+    if !matches!(err, SockudoError::HandshakeFailed(_)) {
+        return None;
+    }
+
+    let status_line_end = buf.windows(2).position(|window| window == b"\r\n")?;
+    let status_line = std::str::from_utf8(&buf[..status_line_end]).ok()?;
+    let mut parts = status_line.split_whitespace();
+    let version = parts.next()?;
+    let status = parts.next()?;
+    if !version.starts_with("HTTP/1.") || status.len() != 3 {
+        return None;
+    }
+
+    // A 101 that still failed validation is a protocol fault, not a rejection.
+    status.parse().ok().filter(|status| *status != 101)
 }
 
 fn log_handshake_response(err: &SockudoError, buf: &BytesMut) {
@@ -605,8 +635,26 @@ mod tests {
 
         assert!(matches!(
             err,
-            SockudoError::HandshakeFailed("missing Sec-WebSocket-Accept")
+            TransportError::Handshake(ref msg) if msg == "missing Sec-WebSocket-Accept"
         ));
+        server_task.await.unwrap();
+    }
+
+    #[tokio::test]
+    #[cfg(not(feature = "turmoil"))]
+    async fn client_handshake_with_headers_preserves_rejected_status() {
+        let (mut client, mut server) = duplex(4096);
+
+        let server_task = tokio::spawn(async move {
+            let _request = read_http_request(&mut server).await;
+            server.write_all(b"HTTP/1.1 429\r\n\r\n").await.unwrap();
+        });
+
+        let err = client_handshake_with_headers(&mut client, "example.com", "/ws", None, &[])
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, TransportError::UpgradeRejected(429)));
         server_task.await.unwrap();
     }
 

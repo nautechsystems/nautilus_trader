@@ -381,34 +381,23 @@ fn cache_test_instruments(client: &mut HyperliquidWebSocketClient) {
         let raw_symbol = Symbol::new(raw_symbol);
         let instrument_id = InstrumentId::from(format!("{symbol_str}.HYPERLIQUID"));
 
-        let instrument = InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            instrument_id,
-            raw_symbol,
-            Currency::USD(),
-            Currency::USD(),
-            Currency::USD(),
-            false,
-            2, // price_precision
-            3, // size_precision
-            Price::from("0.01"),
-            Quantity::from("0.001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            ts,
-            ts,
-        ));
+        let instrument = InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(raw_symbol)
+                .base_currency(Currency::USD())
+                .quote_currency(Currency::USD())
+                .settlement_currency(Currency::USD())
+                .is_inverse(false)
+                .price_precision(2)
+                .size_precision(3)
+                .price_increment(Price::from("0.01"))
+                .size_increment(Quantity::from("0.001"))
+                .ts_event(ts)
+                .ts_init(ts)
+                .build()
+                .unwrap(),
+        );
         test_instruments.push(instrument);
     }
 

@@ -74,9 +74,10 @@ impl PolymarketExecutionClient {
 
         let neg_risk = self.get_neg_risk(&order.instrument_id());
         let token_id = instrument.raw_symbol().to_string();
-        let tick_decimals = instrument.price_precision() as u32;
+        let tick_decimals = u32::from(instrument.min_price_increment_precision());
         let price = order.price().unwrap();
         let quantity = order.quantity();
+        let quote_quantity = order.is_quote_quantity();
         let tif = order.time_in_force();
         let post_only = order.is_post_only();
         let side = order.order_side();
@@ -86,11 +87,13 @@ impl PolymarketExecutionClient {
             side,
             price,
             quantity,
+            quote_quantity,
             time_in_force: tif,
             post_only,
             neg_risk,
             expire_time,
             tick_decimals,
+            size_precision: instrument.size_precision(),
         };
 
         let submitter = self.submitter.clone();
@@ -126,11 +129,10 @@ impl PolymarketExecutionClient {
             let expected_venue_order_id = submission.expected_venue_order_id;
             emit_signed_base_quantity_update(
                 &mut order,
-                false,
+                quote_quantity,
                 side,
                 quantity,
                 submission.expected_base_qty,
-                size_precision,
                 &emitter,
                 clock,
             );
@@ -230,6 +232,7 @@ impl PolymarketExecutionClient {
         let neg_risk = self.get_neg_risk(&order.instrument_id());
         let token_id = instrument.raw_symbol().to_string();
         let tick_size = instrument.price_increment();
+        let tick_decimals = u32::from(instrument.min_price_increment_precision());
         let side = order.order_side();
         let amount = order.quantity();
         let time_in_force = order.time_in_force();
@@ -294,6 +297,7 @@ impl PolymarketExecutionClient {
                     time_in_force,
                     neg_risk,
                     tick_size,
+                    tick_decimals,
                     fee_context,
                 })
                 .await
@@ -572,6 +576,7 @@ impl PolymarketExecutionClient {
                     side: order.order_side(),
                     price,
                     quantity: order.quantity(),
+                    quote_quantity: order.is_quote_quantity(),
                     time_in_force: order.time_in_force(),
                     post_only: order.is_post_only(),
                     neg_risk: Self::get_neg_risk_from_snapshot(
@@ -579,9 +584,9 @@ impl PolymarketExecutionClient {
                         &order.instrument_id(),
                     ),
                     expire_time: order.expire_time(),
-                    tick_decimals: instrument.price_precision() as u32,
+                    tick_decimals: u32::from(instrument.min_price_increment_precision()),
+                    size_precision: instrument.size_precision(),
                 },
-                size_precision: instrument.size_precision(),
                 price_precision: instrument.price_precision(),
                 order,
             });
@@ -604,7 +609,6 @@ impl PolymarketExecutionClient {
         let order_identities = self.order_identities.clone();
         let pending_submits = self.pending_submits.clone();
         let pending_cancels = self.pending_cancels.clone();
-        let pending_tasks = self.pending_tasks.clone();
         let account_id = self.core.account_id;
 
         self.spawn_task("submit_order_list", async move {
@@ -640,11 +644,10 @@ impl PolymarketExecutionClient {
                     Ok(submission) => {
                         emit_signed_base_quantity_update(
                             &mut batch_order.order,
-                            false,
+                            batch_order.request.quote_quantity,
                             batch_order.request.side,
                             batch_order.request.quantity,
                             submission.expected_base_qty,
-                            batch_order.size_precision,
                             &emitter,
                             clock,
                         );
@@ -714,7 +717,6 @@ impl PolymarketExecutionClient {
                                 &order_identities,
                                 &pending_submits,
                                 &pending_cancels,
-                                &pending_tasks,
                                 account_id,
                             )
                             .await;
@@ -737,7 +739,7 @@ impl PolymarketExecutionClient {
                                             &pending_submits,
                                             &pending_cancels,
                                             account_id,
-                                            batch_order.size_precision,
+                                            batch_order.request.size_precision,
                                             batch_order.price_precision,
                                         )
                                     {

@@ -2002,7 +2002,8 @@ ExecTesterConfig::builder()
 **Considerations:**
 
 - Leave limit orders open from a prior test session (do not cancel on stop).
-- Use `external_order_claims` to claim the instrument so the adapter reconciles orders for it.
+- Configure `external_order_instrument_ids` so strategy registration creates the active claim used
+  to assign reconciled orders.
 - Verify that the reconciled order count matches the venue-reported count.
 - Mass-status may include historical terminal orders. Unclaimed ones appear as EXTERNAL.
   Compare open-order counts against the venue open-order endpoint, not the full mass-status
@@ -2291,7 +2292,7 @@ construction; the Rust builder uses equivalent defaults.
 | `order_id_tag`                                  | `str?`                | `None`                 | All            |
 | `use_hyphens_in_client_order_ids`               | `bool`                | `True`                 | All            |
 | `use_uuid_client_order_ids`                     | `bool`                | `False`                | All            |
-| `external_order_claims`                         | `list[InstrumentId]?` | `None`                 | 9              |
+| `external_order_instrument_ids`                 | `list[InstrumentId]?` | `None`                 | 9              |
 | `instrument_id`                                 | `InstrumentId`        | `BTCUSDT-PERP.BINANCE` | All            |
 | `client_id`                                     | `ClientId?`           | `None`                 | All            |
 | `order_qty`                                     | `Quantity`            | `0.001`                | All            |

@@ -89,6 +89,12 @@ representation.
 Generated stubs are source-derived artifacts. Binding changes update the Rust source and regenerate
 the stubs; the checked-in `.pyi` files are not independent API definitions.
 
+:::warning[Side enum compatibility aliases]
+`OrderSide.NO_ORDER_SIDE` and `PositionSide.NO_POSITION_SIDE` remain available as compatibility
+aliases for `None`. They are not enum members and may be removed in a future version. Use `None`
+for optional side values.
+:::
+
 ## Ownership and lifecycle
 
 Rust ownership remains visible at node boundaries:

@@ -456,7 +456,10 @@ impl Order for LimitOrder {
     }
 
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
-        let is_order_filled = matches!(event, OrderEventAny::Filled(_));
+        let updates_slippage = matches!(
+            event,
+            OrderEventAny::Filled(_) | OrderEventAny::FillVoided(_),
+        );
 
         self.core.apply(event.clone())?;
 
@@ -464,7 +467,7 @@ impl Order for LimitOrder {
             self.update(event);
         }
 
-        if is_order_filled {
+        if updates_slippage {
             self.core.set_slippage(self.price);
         }
 

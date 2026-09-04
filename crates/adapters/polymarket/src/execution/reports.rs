@@ -18,7 +18,9 @@ use nautilus_common::messages::execution::{
     GenerateFillReports, GenerateOrderStatusReport, GenerateOrderStatusReports,
     GeneratePositionStatusReports, QueryAccount, QueryOrder,
 };
-use nautilus_core::{UnixNanos, collections::AtomicMap, time::AtomicTime};
+use nautilus_core::{
+    UnixNanos, collections::AtomicMap, string::secret::SecretString, time::AtomicTime,
+};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
@@ -86,7 +88,7 @@ impl PolymarketExecutionClient {
         FillContext {
             account_id: self.core.account_id,
             user_address,
-            api_key: self.secrets.credential.api_key().as_str(),
+            api_key: self.secrets.credential.api_key_str(),
             pusd: get_pusd_currency(),
             clock: self.clock,
         }
@@ -188,7 +190,7 @@ impl PolymarketExecutionClient {
                 .or_else(|| cached_order.as_ref().map(Order::instrument_id)),
             order_side: identity
                 .map(|value| value.order_side)
-                .or_else(|| cached_order.as_ref().map(Order::order_side)),
+                .or_else(|| cached_order.as_ref().map(|order| order.order_side())),
             cached_order,
         })
     }
@@ -217,7 +219,7 @@ impl PolymarketExecutionClient {
             .as_ref()
             .map_or(TimeInForce::Gtc, Order::time_in_force);
         let cached_price = cached.as_ref().and_then(Order::price);
-        let cached_side = cached.as_ref().map(Order::order_side);
+        let cached_side = cached.as_ref().map(|order| order.order_side());
         let expected_order_side = authority.order_side;
 
         let (mut order_fills, fill_discards) = build_fill_reports_from_trades(
@@ -248,7 +250,7 @@ impl PolymarketExecutionClient {
                 instrument_id,
                 resolved_client_order_id,
                 venue_order_id,
-                cached.order_side(),
+                cached.order_side().into(),
                 cached.order_type(),
                 cached.time_in_force(),
                 order_status,
@@ -284,7 +286,7 @@ impl PolymarketExecutionClient {
                 instrument_id,
                 resolved_client_order_id,
                 venue_order_id,
-                cached.order_side(),
+                cached.order_side().into(),
                 cached.order_type(),
                 cached.time_in_force(),
                 OrderStatus::Canceled,
@@ -336,7 +338,7 @@ impl PolymarketExecutionClient {
             instrument_id,
             resolved_client_order_id,
             venue_order_id,
-            order_side,
+            order_side.into(),
             cached_order_type,
             cached_tif,
             order_status,
@@ -418,7 +420,7 @@ impl PolymarketExecutionClient {
             .funder
             .clone()
             .unwrap_or_else(|| self.secrets.address.clone());
-        let api_key = self.secrets.credential.api_key().to_string();
+        let api_key = SecretString::from(self.secrets.credential.api_key_str().to_string());
         let load_ids = self.config.reconciliation_load_ids().map(Vec::from);
         let cached_filled = cached_order.filled_qty();
 
@@ -428,7 +430,7 @@ impl PolymarketExecutionClient {
                     let ctx = FillContext {
                         account_id,
                         user_address: &user_address,
-                        api_key: &api_key,
+                        api_key: api_key.expose_secret(),
                         pusd: get_pusd_currency(),
                         clock,
                     };
@@ -455,7 +457,7 @@ impl PolymarketExecutionClient {
                             &token_instruments,
                             GetTradesParams::default(),
                             FillReportScope::new(Some(instrument_id), Some(venue_order_id))
-                                .with_expected_order_side(Some(report.order_side)),
+                                .with_expected_order_side(report.order_side),
                             clock.get_time_ns(),
                             load_ids.as_deref(),
                         )
@@ -548,7 +550,7 @@ impl PolymarketExecutionClient {
                     &self.shared_token_instruments,
                     GetTradesParams::default(),
                     FillReportScope::new(Some(instrument_id), Some(venue_order_id))
-                        .with_expected_order_side(Some(report.order_side)),
+                        .with_expected_order_side(report.order_side),
                     self.clock.get_time_ns(),
                     self.config.reconciliation_load_ids(),
                 )

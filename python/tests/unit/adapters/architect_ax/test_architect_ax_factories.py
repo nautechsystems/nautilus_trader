@@ -181,7 +181,7 @@ def test_architect_ax_exec_tester_runs_live_orders(
     assert kwargs["strategy_id"] == StrategyId.from_str("EXEC_TESTER-001")
     assert kwargs["instrument_id"] == InstrumentId.from_str("XAG-PERP.AX")
     assert kwargs["client_id"] == ClientId.from_str(AX)
-    assert kwargs["external_order_claims"] == [InstrumentId.from_str("XAG-PERP.AX")]
+    assert kwargs["external_order_instrument_ids"] == [InstrumentId.from_str("XAG-PERP.AX")]
     assert kwargs["order_qty"] == Quantity.from_str("1")
     assert kwargs["subscribe_quotes"] is True
     assert kwargs["subscribe_trades"] is True

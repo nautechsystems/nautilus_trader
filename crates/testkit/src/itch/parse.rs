@@ -421,7 +421,7 @@ fn convert_price(price: itchy::Price4) -> Price {
 mod tests {
     use std::{fs, fs::File, path::PathBuf, sync::Arc};
 
-    use nautilus_model::data::OrderBookDelta;
+    use nautilus_model::{data::OrderBookDelta, enums::OrderSide};
     use nautilus_serialization::arrow::{ArrowSchemaProvider, EncodeToRecordBatch};
     use parquet::{arrow::ArrowWriter, file::properties::WriterProperties};
     use rstest::rstest;
@@ -475,7 +475,7 @@ mod tests {
 
         assert_eq!(deltas.len(), 1);
         assert_eq!(deltas[0].action, BookAction::Add);
-        assert_eq!(deltas[0].order.side, OrderSide::Buy);
+        assert_eq!(deltas[0].order.side, Some(OrderSide::Buy));
         assert_eq!(deltas[0].order.price.as_f64(), 150.25);
         assert_eq!(deltas[0].order.size.as_f64(), 100.0);
         assert_eq!(deltas[0].order.order_id, 42);
@@ -634,7 +634,7 @@ mod tests {
         assert_eq!(deltas[2].order.order_id, 43);
         assert_eq!(deltas[2].order.price.as_f64(), 151.0);
         assert_eq!(deltas[2].order.size.as_f64(), 150.0);
-        assert_eq!(deltas[2].order.side, OrderSide::Buy);
+        assert_eq!(deltas[2].order.side, Some(OrderSide::Buy));
     }
 
     #[rstest]
@@ -646,7 +646,7 @@ mod tests {
         let mut parser = setup_parser(0);
         let deltas = parser.parse_reader(&buf[..]).unwrap();
 
-        assert_eq!(deltas[2].order.side, OrderSide::Sell);
+        assert_eq!(deltas[2].order.side, Some(OrderSide::Sell));
     }
 
     #[rstest]

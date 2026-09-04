@@ -23,7 +23,7 @@
 use std::{
     collections::HashMap,
     num::NonZeroU32,
-    sync::{Arc, LazyLock, Mutex},
+    sync::{Arc, LazyLock},
     time::Duration,
 };
 
@@ -31,7 +31,7 @@ use ahash::AHashMap;
 use anyhow::Context;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
-    AtomicMap, MUTEX_POISONED, UUID4, UnixNanos,
+    AtomicMap, UUID4, UnixNanos,
     consts::NAUTILUS_USER_AGENT,
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
@@ -53,6 +53,7 @@ use nautilus_network::{
     http::{HttpClient, HttpClientError, HttpResponse, Method, USER_AGENT},
     ratelimiter::quota::Quota,
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use serde_json::Value;
 use ustr::Ustr;
@@ -168,6 +169,9 @@ const fn historical_status_priority(status: OrderStatus) -> u8 {
 // https://hyperliquid.xyz/docs/api#rate-limits
 pub static HYPERLIQUID_REST_QUOTA: LazyLock<Quota> =
     LazyLock::new(|| Quota::per_minute(NonZeroU32::new(1200).unwrap()));
+
+const HYPERLIQUID_RECENT_HISTORY_LIMIT: usize = 2_000;
+const VAULT_TOKEN_PREFIX: &str = "vntls:";
 
 /// Provides a raw HTTP client for low-level Hyperliquid REST API operations.
 ///
@@ -843,7 +847,6 @@ impl HyperliquidRawHttpClient {
     }
 
     /// Submit a single order to the Hyperliquid exchange.
-    ///
     pub async fn rest_limiter_snapshot(&self) -> RateLimitSnapshot {
         self.rest_limiter.snapshot().await
     }
@@ -965,57 +968,39 @@ impl HyperliquidHttpClient {
     }
 
     /// Returns the cached CLOID for a client order ID, or derives and caches it.
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "cloid cache mutex poisoning is not expected"
-    )]
     #[must_use]
     pub fn get_or_generate_client_order_id_cloid(&self, client_order_id: ClientOrderId) -> Cloid {
-        let mut cloids = self.client_order_id_cloids.lock().expect(MUTEX_POISONED);
+        let mut cloids = self.client_order_id_cloids.lock();
         *cloids
             .entry(client_order_id)
             .or_insert_with(|| Cloid::from_client_order_id(client_order_id))
     }
 
     /// Caches a CLOID for a client order ID if one is not already cached.
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "cloid cache mutex poisoning is not expected"
-    )]
     pub fn cache_client_order_id_cloid(&self, client_order_id: ClientOrderId, cloid: Cloid) {
         self.client_order_id_cloids
             .lock()
-            .expect(MUTEX_POISONED)
             .entry(client_order_id)
             .or_insert(cloid);
     }
 
     /// Returns the cached CLOID for a client order ID.
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "cloid cache mutex poisoning is not expected"
-    )]
     #[must_use]
     pub fn cached_client_order_id_cloid(&self, client_order_id: &ClientOrderId) -> Option<Cloid> {
         self.client_order_id_cloids
             .lock()
-            .expect(MUTEX_POISONED)
             .get(client_order_id)
             .copied()
     }
 
     /// Returns the cached CLOID for a client order ID when no other client
     /// order ID maps to the same CLOID.
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "cloid cache mutex poisoning is not expected"
-    )]
     #[must_use]
     pub(crate) fn unique_cached_client_order_id_cloid(
         &self,
         client_order_id: &ClientOrderId,
     ) -> Option<Cloid> {
-        let cloids = self.client_order_id_cloids.lock().expect(MUTEX_POISONED);
+        let cloids = self.client_order_id_cloids.lock();
         let cloid = cloids.get(client_order_id).copied()?;
         let mapping_count = cloids
             .values()
@@ -1026,15 +1011,8 @@ impl HyperliquidHttpClient {
     }
 
     /// Removes the cached CLOID for a client order ID.
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "cloid cache mutex poisoning is not expected"
-    )]
     pub fn remove_client_order_id_cloid(&self, client_order_id: &ClientOrderId) -> Option<Cloid> {
-        self.client_order_id_cloids
-            .lock()
-            .expect(MUTEX_POISONED)
-            .remove(client_order_id)
+        self.client_order_id_cloids.lock().remove(client_order_id)
     }
 
     /// Overrides the base info URL (for testing with mock servers).
@@ -1392,7 +1370,7 @@ impl HyperliquidHttpClient {
         }
 
         // Vault tokens aren't in standard API, create synthetic instruments
-        if coin.as_str().starts_with("vntls:") {
+        if coin.as_str().starts_with(VAULT_TOKEN_PREFIX) {
             log::debug!("Creating synthetic instrument for vault token: {coin}");
 
             let ts_event = self.clock.get_time_ns();
@@ -1423,32 +1401,21 @@ impl HyperliquidHttpClient {
             let price_increment = Price::from("0.00000001");
             let size_increment = Quantity::from("0.00000001");
 
-            let instrument = InstrumentAny::CurrencyPair(CurrencyPair::new(
-                instrument_id,
-                symbol,
-                base_currency,
-                quote_currency,
-                8, // price_precision
-                8, // size_precision
-                price_increment,
-                size_increment,
-                None, // multiplier
-                None, // lot_size
-                None, // max_quantity
-                None, // min_quantity
-                None, // max_notional
-                None, // min_notional
-                None, // max_price
-                None, // min_price
-                None, // margin_init
-                None, // margin_maint
-                None, // maker_fee
-                None, // taker_fee
-                None, // tick_scheme
-                None, // info
-                ts_event,
-                ts_event,
-            ));
+            let instrument = InstrumentAny::CurrencyPair(
+                CurrencyPair::builder()
+                    .instrument_id(instrument_id)
+                    .raw_symbol(symbol)
+                    .base_currency(base_currency)
+                    .quote_currency(quote_currency)
+                    .price_precision(8)
+                    .size_precision(8)
+                    .price_increment(price_increment)
+                    .size_increment(size_increment)
+                    .ts_event(ts_event)
+                    .ts_init(ts_event)
+                    .build()
+                    .unwrap(),
+            );
 
             self.cache_instrument(&instrument);
 
@@ -1741,7 +1708,7 @@ impl HyperliquidHttpClient {
         mapping
     }
 
-    /// Get perpetuals metadata (internal helper).
+    /// Gets perpetuals metadata for internal use.
     #[allow(dead_code)]
     pub(crate) async fn load_perp_meta(&self) -> Result<PerpMeta> {
         self.inner.load_perp_meta().await
@@ -1753,13 +1720,13 @@ impl HyperliquidHttpClient {
         self.inner.load_all_perp_metas().await
     }
 
-    /// Get spot metadata (internal helper).
+    /// Gets spot metadata for internal use.
     #[allow(dead_code)]
     pub(crate) async fn get_spot_meta(&self) -> Result<SpotMeta> {
         self.inner.get_spot_meta().await
     }
 
-    /// Get outcome metadata (internal helper).
+    /// Gets outcome metadata for internal use.
     pub(crate) async fn get_outcome_meta(&self) -> Result<OutcomeMeta> {
         self.inner.get_outcome_meta().await
     }
@@ -2241,13 +2208,24 @@ impl HyperliquidHttpClient {
         user: &str,
         instrument_id: Option<InstrumentId>,
     ) -> Result<Vec<OrderStatusReport>> {
+        let dexes = self.reconciliation_dexes(instrument_id);
+        self.request_order_status_reports_for_dexes(user, instrument_id, &dexes)
+            .await
+    }
+
+    pub(crate) async fn request_order_status_reports_for_dexes(
+        &self,
+        user: &str,
+        instrument_id: Option<InstrumentId>,
+        dexes: &[Option<Ustr>],
+    ) -> Result<Vec<OrderStatusReport>> {
         let account_id = self
             .account_id
             .ok_or_else(|| Error::bad_request("Account ID not set"))?;
         let mut reports = Vec::new();
         let ts_init = self.clock.get_time_ns();
 
-        for dex in self.reconciliation_dexes(instrument_id) {
+        for dex in dexes {
             let response = self
                 .info_frontend_open_orders_for_dex(user, dex.as_deref())
                 .await?;
@@ -2298,10 +2276,18 @@ impl HyperliquidHttpClient {
         user: &str,
         instrument_id: Option<InstrumentId>,
     ) -> Result<Vec<OrderStatusReport>> {
+        let entries = self.info_historical_orders(user).await?;
+        self.historical_order_status_reports_from_response(entries, instrument_id)
+    }
+
+    pub(crate) fn historical_order_status_reports_from_response(
+        &self,
+        entries: Vec<HyperliquidOrderStatusEntry>,
+        instrument_id: Option<InstrumentId>,
+    ) -> Result<Vec<OrderStatusReport>> {
         let account_id = self
             .account_id
             .ok_or_else(|| Error::bad_request("Account ID not set"))?;
-        let entries = self.info_historical_orders(user).await?;
         let mut reports = Vec::new();
         let ts_init = self.clock.get_time_ns();
 
@@ -2586,10 +2572,18 @@ impl HyperliquidHttpClient {
         user: &str,
         instrument_id: Option<InstrumentId>,
     ) -> Result<Vec<FillReport>> {
+        let fills_response = self.info_user_fills(user).await?;
+        self.fill_reports_from_response(fills_response, instrument_id)
+    }
+
+    pub(crate) fn fill_reports_from_response(
+        &self,
+        fills_response: HyperliquidFills,
+        instrument_id: Option<InstrumentId>,
+    ) -> Result<Vec<FillReport>> {
         let account_id = self
             .account_id
             .ok_or_else(|| Error::bad_request("Account ID not set"))?;
-        let fills_response = self.info_user_fills(user).await?;
 
         let mut reports = Vec::new();
         let ts_init = self.clock.get_time_ns();
@@ -2646,6 +2640,17 @@ impl HyperliquidHttpClient {
         user: &str,
         instrument_id: Option<InstrumentId>,
     ) -> Result<Vec<PositionStatusReport>> {
+        let dexes = self.reconciliation_dexes(instrument_id);
+        self.request_position_status_reports_for_dexes(user, instrument_id, &dexes)
+            .await
+    }
+
+    pub(crate) async fn request_position_status_reports_for_dexes(
+        &self,
+        user: &str,
+        instrument_id: Option<InstrumentId>,
+        dexes: &[Option<Ustr>],
+    ) -> Result<Vec<PositionStatusReport>> {
         let account_id = self
             .account_id
             .ok_or_else(|| Error::bad_request("Account ID not set"))?;
@@ -2670,7 +2675,7 @@ impl HyperliquidHttpClient {
             return Ok(reports);
         }
 
-        for dex in self.reconciliation_dexes(instrument_id) {
+        for dex in dexes {
             let state_response = self
                 .info_clearinghouse_state_for_dex(user, dex.as_deref())
                 .await?;
@@ -3268,7 +3273,7 @@ impl HyperliquidHttpClient {
             instrument_id,
             client_order_id,
             venue_order_id,
-            order_side,
+            order_side.into(),
             order_type,
             time_in_force,
             order_status,
@@ -3563,18 +3568,62 @@ impl HyperliquidHttpClient {
         }
 
         let cached = self.instruments.load();
-        let mut builder_dexs = cached
-            .keys()
-            .filter_map(|symbol| perp_dex_from_symbol(symbol.as_str()))
-            .collect::<Vec<_>>();
-        builder_dexs.sort_unstable_by(|a, b| a.as_str().cmp(b.as_str()));
-        builder_dexs.dedup();
-
-        let mut dexes = Vec::with_capacity(builder_dexs.len() + 1);
-        dexes.push(None);
-        dexes.extend(builder_dexs.into_iter().map(Some));
-        dexes
+        reconciliation_dexes_from_builders(
+            cached
+                .keys()
+                .filter_map(|symbol| perp_dex_from_symbol(symbol.as_str())),
+        )
     }
+
+    pub(crate) async fn reconciliation_dexes_from_activity(
+        &self,
+        historical_orders: &[HyperliquidOrderStatusEntry],
+        fills: &HyperliquidFills,
+    ) -> Result<Vec<Option<Ustr>>> {
+        if historical_orders.len() >= HYPERLIQUID_RECENT_HISTORY_LIMIT
+            || fills.len() >= HYPERLIQUID_RECENT_HISTORY_LIMIT
+        {
+            let builder_dexes = self
+                .inner
+                .load_perp_dexs()
+                .await?
+                .into_iter()
+                .flatten()
+                .filter(|dex| !dex.name.is_empty())
+                .map(|dex| Ustr::from(dex.name.as_str()));
+            return Ok(reconciliation_dexes_from_builders(builder_dexes));
+        }
+
+        let builder_dexes = historical_orders
+            .iter()
+            .map(|entry| entry.order.coin.as_str())
+            .chain(fills.iter().map(|fill| fill.coin.as_str()))
+            .filter_map(perp_dex_from_activity_coin);
+
+        Ok(reconciliation_dexes_from_builders(builder_dexes))
+    }
+}
+
+fn reconciliation_dexes_from_builders(
+    builder_dexes: impl IntoIterator<Item = Ustr>,
+) -> Vec<Option<Ustr>> {
+    let mut builder_dexes = builder_dexes.into_iter().collect::<Vec<_>>();
+    builder_dexes.sort_unstable_by(|a, b| a.as_str().cmp(b.as_str()));
+    builder_dexes.dedup();
+
+    let mut dexes = Vec::with_capacity(builder_dexes.len() + 1);
+    dexes.push(None);
+    dexes.extend(builder_dexes.into_iter().map(Some));
+    dexes
+}
+
+fn perp_dex_from_activity_coin(coin: &str) -> Option<Ustr> {
+    if coin.starts_with(VAULT_TOKEN_PREFIX) {
+        return None;
+    }
+
+    let (dex, _) = coin.split_once(':')?;
+    (!dex.is_empty()).then(|| Ustr::from(dex))
 }
 
 fn perp_dex_from_symbol(symbol: &str) -> Option<Ustr> {
@@ -3660,7 +3709,7 @@ mod tests {
         response::{IntoResponse, Json, Response},
         routing::post,
     };
-    use nautilus_core::{MUTEX_POISONED, time::get_atomic_clock_realtime};
+    use nautilus_core::time::get_atomic_clock_realtime;
     use nautilus_model::{
         currencies::CURRENCY_MAP,
         enums::{CurrencyType, OrderSide, OrderStatus, OrderType, TimeInForce},
@@ -3780,34 +3829,26 @@ mod tests {
         let usdc = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
         let clock = get_atomic_clock_realtime();
         let ts = clock.get_time_ns();
-        let perp = InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            InstrumentId::new(Symbol::new("ARB-USD-PERP"), *HYPERLIQUID_VENUE),
-            Symbol::new("ARB"),
-            base,
-            usd,
-            usdc,
-            false,
-            5,
-            2,
-            Price::from("0.00001"),
-            Quantity::from("0.01"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            ts,
-            ts,
-        ));
+        let perp = InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(InstrumentId::new(
+                    Symbol::new("ARB-USD-PERP"),
+                    *HYPERLIQUID_VENUE,
+                ))
+                .raw_symbol(Symbol::new("ARB"))
+                .base_currency(base)
+                .quote_currency(usd)
+                .settlement_currency(usdc)
+                .is_inverse(false)
+                .price_precision(5)
+                .size_precision(2)
+                .price_increment(Price::from("0.00001"))
+                .size_increment(Quantity::from("0.01"))
+                .ts_event(ts)
+                .ts_init(ts)
+                .build()
+                .unwrap(),
+        );
         client.cache_instrument(&perp);
 
         let response: HyperliquidExchangeResponse = serde_json::from_value(json!({
@@ -4116,7 +4157,7 @@ mod tests {
 
         // Register the custom currency
         {
-            let mut currency_map = CURRENCY_MAP.lock().expect(MUTEX_POISONED);
+            let mut currency_map = CURRENCY_MAP.lock();
             if !currency_map.contains_key(base_code) {
                 currency_map.insert(
                     base_code.to_string(),
@@ -4139,32 +4180,21 @@ mod tests {
         let clock = get_atomic_clock_realtime();
         let ts = clock.get_time_ns();
 
-        let instrument = InstrumentAny::CurrencyPair(CurrencyPair::new(
-            instrument_id,
-            raw_symbol,
-            base_currency,
-            quote_currency,
-            8,
-            8,
-            Price::from("0.00000001"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None, // maker_fee
-            None, // taker_fee
-            None, // tick_scheme
-            None, // info
-            ts,
-            ts,
-        ));
+        let instrument = InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(raw_symbol)
+                .base_currency(base_currency)
+                .quote_currency(quote_currency)
+                .price_precision(8)
+                .size_precision(8)
+                .price_increment(Price::from("0.00000001"))
+                .size_increment(Quantity::from("0.00000001"))
+                .ts_event(ts)
+                .ts_init(ts)
+                .build()
+                .unwrap(),
+        );
 
         // Cache the instrument
         client.cache_instrument(&instrument);
@@ -4241,34 +4271,23 @@ mod tests {
         let clock = get_atomic_clock_realtime();
         let ts = clock.get_time_ns();
 
-        let binary = InstrumentAny::BinaryOption(BinaryOption::new(
-            instrument_id,
-            raw_symbol,
-            AssetClass::Alternative,
-            usdh,
-            Default::default(),
-            Default::default(),
-            4,
-            2,
-            Price::from("0.0001"),
-            Quantity::from("0.01"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            ts,
-            ts,
-        ));
+        let binary = InstrumentAny::BinaryOption(
+            BinaryOption::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(raw_symbol)
+                .asset_class(AssetClass::Alternative)
+                .currency(usdh)
+                .activation_ns(Default::default())
+                .expiration_ns(Default::default())
+                .price_precision(4)
+                .size_precision(2)
+                .price_increment(Price::from("0.0001"))
+                .size_increment(Quantity::from("0.01"))
+                .ts_event(ts)
+                .ts_init(ts)
+                .build()
+                .unwrap(),
+        );
 
         client.cache_instrument(&binary);
 
@@ -4301,59 +4320,43 @@ mod tests {
         let clock = get_atomic_clock_realtime();
         let ts = clock.get_time_ns();
 
-        let canonical = InstrumentAny::CurrencyPair(CurrencyPair::new(
-            InstrumentId::new(Symbol::new("HYPE-USDC-SPOT"), *HYPERLIQUID_VENUE),
-            Symbol::new("@107"),
-            hype,
-            usdc,
-            5,
-            2,
-            Price::from("0.00001"),
-            Quantity::from("0.01"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            ts,
-            ts,
-        ));
+        let canonical = InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(InstrumentId::new(
+                    Symbol::new("HYPE-USDC-SPOT"),
+                    *HYPERLIQUID_VENUE,
+                ))
+                .raw_symbol(Symbol::new("@107"))
+                .base_currency(hype)
+                .quote_currency(usdc)
+                .price_precision(5)
+                .size_precision(2)
+                .price_increment(Price::from("0.00001"))
+                .size_increment(Quantity::from("0.01"))
+                .ts_event(ts)
+                .ts_init(ts)
+                .build()
+                .unwrap(),
+        );
 
-        let non_canonical = InstrumentAny::CurrencyPair(CurrencyPair::new(
-            InstrumentId::new(Symbol::new("HYPE-USDC-SPOT"), *HYPERLIQUID_VENUE),
-            Symbol::new("@999"),
-            hype,
-            usdc,
-            5,
-            2,
-            Price::from("0.00001"),
-            Quantity::from("0.01"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            ts,
-            ts,
-        ));
+        let non_canonical = InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(InstrumentId::new(
+                    Symbol::new("HYPE-USDC-SPOT"),
+                    *HYPERLIQUID_VENUE,
+                ))
+                .raw_symbol(Symbol::new("@999"))
+                .base_currency(hype)
+                .quote_currency(usdc)
+                .price_precision(5)
+                .size_precision(2)
+                .price_increment(Price::from("0.00001"))
+                .size_increment(Quantity::from("0.01"))
+                .ts_event(ts)
+                .ts_init(ts)
+                .build()
+                .unwrap(),
+        );
 
         client.cache_instrument(&canonical);
         client.cache_instrument(&non_canonical);
@@ -4390,37 +4393,26 @@ mod tests {
         let clock = get_atomic_clock_realtime();
         let ts = clock.get_time_ns();
 
-        let hip3 = InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            InstrumentId::new(
-                Symbol::new("dex:STREAMABCDxxxx-USD-PERP"),
-                *HYPERLIQUID_VENUE,
-            ),
-            Symbol::new("dex:STREAMABCD****"),
-            base_currency,
-            usd,
-            usdc,
-            false,
-            6,
-            3,
-            Price::from("0.000001"),
-            Quantity::from("0.001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            ts,
-            ts,
-        ));
+        let hip3 = InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(InstrumentId::new(
+                    Symbol::new("dex:STREAMABCDxxxx-USD-PERP"),
+                    *HYPERLIQUID_VENUE,
+                ))
+                .raw_symbol(Symbol::new("dex:STREAMABCD****"))
+                .base_currency(base_currency)
+                .quote_currency(usd)
+                .settlement_currency(usdc)
+                .is_inverse(false)
+                .price_precision(6)
+                .size_precision(3)
+                .price_increment(Price::from("0.000001"))
+                .size_increment(Quantity::from("0.001"))
+                .ts_event(ts)
+                .ts_init(ts)
+                .build()
+                .unwrap(),
+        );
 
         client.cache_instrument(&hip3);
 

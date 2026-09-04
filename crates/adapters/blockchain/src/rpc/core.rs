@@ -16,7 +16,10 @@
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use alloy::primitives::Address;
-use nautilus_core::{consts::NAUTILUS_USER_AGENT, string::secret::REDACTED};
+use nautilus_core::{
+    consts::NAUTILUS_USER_AGENT,
+    string::secret::{REDACTED, SecretString},
+};
 use nautilus_live::SocketControl;
 #[cfg(feature = "hypersync")]
 use nautilus_model::defi::DexType;
@@ -71,7 +74,7 @@ pub struct CoreBlockchainRpcClient {
     /// WebSocket transport backend (defaults to `Sockudo`).
     transport_backend: TransportBackend,
     /// Optional proxy URL for the WebSocket connection.
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
     socket_control: Option<SocketControl>,
 }
 
@@ -151,7 +154,7 @@ impl CoreBlockchainRpcClient {
             wss_consumer_rx: None,
             subscriptions: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             transport_backend: TransportBackend::default(),
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             socket_control: None,
         }
     }
@@ -201,7 +204,10 @@ impl CoreBlockchainRpcClient {
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         };
 
         let client = WebSocketClient::builder()
@@ -369,10 +375,7 @@ impl CoreBlockchainRpcClient {
 
     /// Waits for and returns the next available message from the WebSocket channel.
     pub async fn wait_on_rpc_channel(&mut self) -> Option<Message> {
-        match &mut self.wss_consumer_rx {
-            Some(rx) => rx.recv().await,
-            None => None,
-        }
+        self.wss_consumer_rx.as_mut()?.recv().await
     }
 
     /// Retrieves, parses, and returns the next blockchain RPC message as a structured `BlockchainRpcMessage` type.

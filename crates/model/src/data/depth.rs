@@ -38,7 +38,6 @@ pub const DEPTH10_LEN: usize = 10;
 ///
 /// Per-level [`BookOrder::order_id`] values are non-semantic for this aggregated MBP data.
 /// Parquet catalog decoding canonicalizes them to zero.
-#[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",

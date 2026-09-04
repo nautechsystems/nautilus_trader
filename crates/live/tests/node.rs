@@ -23,7 +23,7 @@ use std::{
     fmt::Debug,
     rc::Rc,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
@@ -74,6 +74,7 @@ use nautilus_trading::{
     nautilus_strategy,
     strategy::{Strategy, StrategyConfig, StrategyCore},
 };
+use parking_lot::Mutex;
 use rstest::rstest;
 
 #[derive(Debug)]
@@ -172,19 +173,19 @@ nautilus_strategy!(StopOnStartStrategy);
 #[derive(Debug)]
 struct ClaimingTestStrategy {
     core: StrategyCore,
-    external_order_claims: Vec<InstrumentId>,
+    external_order_instrument_ids: Vec<InstrumentId>,
 }
 
 impl ClaimingTestStrategy {
     fn new(strategy_id: StrategyId, instrument_id: InstrumentId) -> Self {
-        let external_order_claims = vec![instrument_id];
+        let external_order_instrument_ids = vec![instrument_id];
         Self {
             core: StrategyCore::new(StrategyConfig {
                 strategy_id: Some(strategy_id),
-                external_order_claims: Some(external_order_claims.clone()),
+                external_order_instrument_ids: Some(external_order_instrument_ids.clone()),
                 ..Default::default()
             }),
-            external_order_claims,
+            external_order_instrument_ids,
         }
     }
 }
@@ -192,8 +193,8 @@ impl ClaimingTestStrategy {
 impl DataActor for ClaimingTestStrategy {}
 
 nautilus_strategy!(ClaimingTestStrategy, {
-    fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
-        Some(self.external_order_claims.clone())
+    fn external_order_instrument_ids(&self) -> Option<Vec<InstrumentId>> {
+        Some(self.external_order_instrument_ids.clone())
     }
 });
 
@@ -511,7 +512,7 @@ mod serial_tests {
             _config: &dyn ClientConfig,
             _cache: CacheView,
         ) -> anyhow::Result<Box<dyn ExecutionClient>> {
-            *self.state.factory_trader_id.lock().unwrap() = Some(trader_id);
+            *self.state.factory_trader_id.lock() = Some(trader_id);
             Ok(Box::new(StartupMassStatusExecutionClient::new(
                 self.state.clone(),
                 self.behavior,
@@ -753,7 +754,7 @@ mod serial_tests {
             StartupMassStatusBehavior::Unavailable,
         );
 
-        assert_eq!(*state.factory_trader_id.lock().unwrap(), Some(trader_id));
+        assert_eq!(*state.factory_trader_id.lock(), Some(trader_id));
     }
 
     #[async_trait(?Send)]
@@ -838,12 +839,7 @@ mod serial_tests {
                 .store(true, Ordering::Relaxed);
 
             match self.behavior {
-                StartupMassStatusBehavior::Available => Ok(self
-                    .state
-                    .mass_status
-                    .lock()
-                    .expect("mass status lock poisoned")
-                    .clone()),
+                StartupMassStatusBehavior::Available => Ok(self.state.mass_status.lock().clone()),
                 StartupMassStatusBehavior::Unavailable => Ok(None),
                 StartupMassStatusBehavior::Error => Err(anyhow::anyhow!("mass status failed")),
                 StartupMassStatusBehavior::Pending => {
@@ -863,7 +859,6 @@ mod serial_tests {
             self.state
                 .registered_external_orders
                 .lock()
-                .expect("registered external orders lock poisoned")
                 .push(client_order_id);
         }
     }
@@ -1252,11 +1247,7 @@ mod serial_tests {
             self.state
                 .query_order_received
                 .store(true, Ordering::Relaxed);
-            self.state
-                .query_order_ids
-                .lock()
-                .unwrap()
-                .push(cmd.client_order_id);
+            self.state.query_order_ids.lock().push(cmd.client_order_id);
             Ok(())
         }
 
@@ -1313,7 +1304,7 @@ mod serial_tests {
                 .client_order_id
                 .expect("targeted report command must carry a client order ID");
             let request_count = {
-                let mut ids = self.state.targeted_order_report_ids.lock().unwrap();
+                let mut ids = self.state.targeted_order_report_ids.lock();
                 ids.push(client_order_id);
                 ids.len()
             };
@@ -1415,7 +1406,7 @@ mod serial_tests {
             crypto_perpetual_ethusdt().id(),
             Some(client_order_id),
             venue_order_id,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             order_status,
@@ -2364,10 +2355,7 @@ mod serial_tests {
             None,
         );
         mass_status.add_order_reports(vec![report]);
-        *source_state
-            .mass_status
-            .lock()
-            .expect("mass status lock poisoned") = Some(mass_status);
+        *source_state.mass_status.lock() = Some(mass_status);
 
         let venue_factory = StartupMassStatusExecutionClientFactory::new(
             venue_state.clone(),
@@ -2418,18 +2406,9 @@ mod serial_tests {
                 .copied(),
             Some(source_client_id)
         );
-        assert!(
-            venue_state
-                .registered_external_orders
-                .lock()
-                .expect("registered external orders lock poisoned")
-                .is_empty()
-        );
+        assert!(venue_state.registered_external_orders.lock().is_empty());
         assert_eq!(
-            *source_state
-                .registered_external_orders
-                .lock()
-                .expect("registered external orders lock poisoned"),
+            *source_state.registered_external_orders.lock(),
             vec![client_order_id]
         );
 
@@ -2467,7 +2446,7 @@ mod serial_tests {
             venue_order_id,
             OrderStatus::Accepted,
         )]);
-        *state.mass_status.lock().expect("mass status lock poisoned") = Some(mass_status);
+        *state.mass_status.lock() = Some(mass_status);
         let mut node = live_node_with_available_mass_status(
             "StartupMassStatusIdentityNode",
             state.clone(),
@@ -2505,13 +2484,7 @@ mod serial_tests {
                 .order(&client_order_id)
                 .is_none()
         );
-        assert!(
-            state
-                .registered_external_orders
-                .lock()
-                .expect("registered external orders lock poisoned")
-                .is_empty()
-        );
+        assert!(state.registered_external_orders.lock().is_empty());
         node.dispose();
     }
 
@@ -2541,7 +2514,7 @@ mod serial_tests {
             venue_order_id,
             OrderStatus::Canceled,
         )]);
-        *state.mass_status.lock().expect("mass status lock poisoned") = Some(mass_status);
+        *state.mass_status.lock() = Some(mass_status);
         let mut node = live_node_with_available_mass_status(
             "StartupMassStatusUntrustedOriginNode",
             state.clone(),
@@ -2560,13 +2533,7 @@ mod serial_tests {
             .await
             .expect("untrusted cached order origin should warn, not abort startup");
 
-        assert!(
-            state
-                .registered_external_orders
-                .lock()
-                .expect("registered external orders lock poisoned")
-                .is_empty()
-        );
+        assert!(state.registered_external_orders.lock().is_empty());
         {
             let cache = node.kernel().cache();
             let cache = cache.borrow();
@@ -2606,7 +2573,7 @@ mod serial_tests {
             venue_order_id,
             OrderStatus::Canceled,
         )]);
-        *state.mass_status.lock().expect("mass status lock poisoned") = Some(mass_status);
+        *state.mass_status.lock() = Some(mass_status);
         let mut node = live_node_with_available_mass_status(
             "StartupMassStatusDisappearingSourceNode",
             state.clone(),
@@ -2638,13 +2605,7 @@ mod serial_tests {
             "unexpected error: {error:#}"
         );
         assert_eq!(node.state(), NodeState::Stopped);
-        assert!(
-            state
-                .registered_external_orders
-                .lock()
-                .expect("registered external orders lock poisoned")
-                .is_empty()
-        );
+        assert!(state.registered_external_orders.lock().is_empty());
         assert_eq!(
             node.kernel()
                 .cache()
@@ -3754,17 +3715,17 @@ mod serial_tests {
 
         tokio::spawn(async move {
             wait_until_async(
-                || async { targeted_order_report_ids.lock().unwrap().len() >= 2 },
+                || async { targeted_order_report_ids.lock().len() >= 2 },
                 Duration::from_secs(1),
             )
             .await;
             query_order_received.store(false, Ordering::Relaxed);
-            query_order_ids.lock().unwrap().clear();
+            query_order_ids.lock().clear();
             wait_until_async(
                 || async {
                     query_order_received.load(Ordering::Relaxed)
                         && position_report_requested.load(Ordering::Relaxed)
-                        && targeted_order_report_ids.lock().unwrap().len() >= 5
+                        && targeted_order_report_ids.lock().len() >= 5
                 },
                 Duration::from_secs(2),
             )
@@ -3773,7 +3734,7 @@ mod serial_tests {
         });
 
         let result = tokio::time::timeout(Duration::from_secs(3), node.run()).await;
-        let observed_targeted_ids = state.targeted_order_report_ids.lock().unwrap().clone();
+        let observed_targeted_ids = state.targeted_order_report_ids.lock().clone();
 
         assert!(
             result.is_ok(),
@@ -3793,7 +3754,7 @@ mod serial_tests {
         assert!(result.unwrap().is_ok());
         assert!(state.query_order_received.load(Ordering::Relaxed));
         assert!(
-            state.query_order_ids.lock().unwrap().contains(&order_a),
+            state.query_order_ids.lock().contains(&order_a),
             "check_inflight_orders should query the planned order after its marker times out"
         );
         assert!(state.position_report_requested.load(Ordering::Relaxed));

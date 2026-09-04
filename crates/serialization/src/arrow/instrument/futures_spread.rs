@@ -32,47 +32,15 @@ use nautilus_model::{
     instruments::futures_spread::FuturesSpread,
     types::{price::Price, quantity::Quantity},
 };
-#[allow(unused)]
 use rust_decimal::Decimal;
-#[allow(unused)]
-use serde_json::Value;
 use ustr::Ustr;
 
+use super::KEY_CLASS;
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
     KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, extract_column, extract_column_by_name_or_index,
     extract_optional_string_column_by_name, optional_ustr_value,
 };
-
-// Helper function to convert AssetClass to string
-fn asset_class_to_string(ac: AssetClass) -> String {
-    match ac {
-        AssetClass::FX => "FX".to_string(),
-        AssetClass::Equity => "Equity".to_string(),
-        AssetClass::Commodity => "Commodity".to_string(),
-        AssetClass::Debt => "Debt".to_string(),
-        AssetClass::Index => "Index".to_string(),
-        AssetClass::Cryptocurrency => "Cryptocurrency".to_string(),
-        AssetClass::Alternative => "Alternative".to_string(),
-    }
-}
-
-// Helper function to parse AssetClass from string
-fn asset_class_from_str(s: &str) -> Result<AssetClass, EncodingError> {
-    match s {
-        "FX" => Ok(AssetClass::FX),
-        "Equity" => Ok(AssetClass::Equity),
-        "Commodity" => Ok(AssetClass::Commodity),
-        "Debt" => Ok(AssetClass::Debt),
-        "Index" => Ok(AssetClass::Index),
-        "Cryptocurrency" => Ok(AssetClass::Cryptocurrency),
-        "Alternative" => Ok(AssetClass::Alternative),
-        _ => Err(EncodingError::ParseError(
-            "asset_class",
-            format!("Unknown asset class: {s}"),
-        )),
-    }
-}
 
 impl ArrowSchemaProvider for FuturesSpread {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
@@ -107,7 +75,7 @@ impl ArrowSchemaProvider for FuturesSpread {
         ];
 
         let mut final_metadata = HashMap::new();
-        final_metadata.insert("class".to_string(), "FuturesSpread".to_string());
+        final_metadata.insert(KEY_CLASS.to_string(), "FuturesSpread".to_string());
 
         if let Some(meta) = metadata {
             final_metadata.extend(meta);
@@ -155,7 +123,7 @@ impl EncodeToRecordBatch for FuturesSpread {
             raw_symbol_builder.append_value(fs.raw_symbol);
             underlying_builder.append_value(fs.underlying);
             strategy_type_builder.append_value(fs.strategy_type);
-            asset_class_builder.append_value(asset_class_to_string(fs.asset_class));
+            asset_class_builder.append_value(fs.asset_class);
 
             if let Some(exchange) = fs.exchange {
                 exchange_builder.append_value(exchange);
@@ -229,7 +197,7 @@ impl EncodeToRecordBatch for FuturesSpread {
         }
 
         let mut final_metadata = metadata.clone();
-        final_metadata.insert("class".to_string(), "FuturesSpread".to_string());
+        final_metadata.insert(KEY_CLASS.to_string(), "FuturesSpread".to_string());
 
         RecordBatch::try_new(
             Self::get_schema(Some(final_metadata)).into(),
@@ -280,12 +248,15 @@ impl EncodeToRecordBatch for FuturesSpread {
     }
 }
 
-/// Helper function to decode FuturesSpread from RecordBatch
-/// (Cannot implement DecodeFromRecordBatch trait due to `Into<Data>` bound)
+/// Decodes [`FuturesSpread`] instruments from a record batch.
+///
+/// Not a [`DecodeFromRecordBatch`] implementation because that trait requires `Into<Data>`.
 ///
 /// # Errors
 ///
-/// Returns an `EncodingError` if the RecordBatch cannot be decoded.
+/// Returns an `EncodingError` if the record batch cannot be decoded.
+///
+/// [`DecodeFromRecordBatch`]: crate::arrow::DecodeFromRecordBatch
 pub fn decode_futures_spread_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
     record_batch: &RecordBatch,
@@ -359,7 +330,8 @@ pub fn decode_futures_spread_batch(
         let raw_symbol = Symbol::from(raw_symbol_values.value(i));
         let underlying = Ustr::from(underlying_values.value(i));
         let strategy_type = Ustr::from(strategy_type_values.value(i));
-        let asset_class = asset_class_from_str(asset_class_values.value(i))?;
+        let asset_class = AssetClass::from_str(asset_class_values.value(i))
+            .map_err(|e| EncodingError::ParseError("asset_class", format!("row {i}: {e}")))?;
 
         let exchange = if exchange_values.is_null(i) {
             None
@@ -494,34 +466,34 @@ pub fn decode_futures_spread_batch(
 
         let tick_scheme = optional_ustr_value(tick_scheme_values, i);
 
-        let futures_spread = FuturesSpread::new_checked(
-            id,
-            raw_symbol,
-            asset_class,
-            exchange,
-            underlying,
-            strategy_type,
-            activation_ns,
-            expiration_ns,
-            currency,
-            price_prec,
-            price_increment,
-            multiplier,
-            lot_size,
-            max_quantity,
-            min_quantity,
-            max_price,
-            min_price,
-            Some(margin_init),
-            Some(margin_maint),
-            Some(maker_fee),
-            Some(taker_fee),
-            tick_scheme,
-            info,
-            ts_event,
-            ts_init,
-        )
-        .map_err(|e| super::instrument_validation_error::<FuturesSpread>(i, e))?;
+        let futures_spread = FuturesSpread::builder()
+            .instrument_id(id)
+            .raw_symbol(raw_symbol)
+            .asset_class(asset_class)
+            .maybe_exchange(exchange)
+            .underlying(underlying)
+            .strategy_type(strategy_type)
+            .activation_ns(activation_ns)
+            .expiration_ns(expiration_ns)
+            .currency(currency)
+            .price_precision(price_prec)
+            .price_increment(price_increment)
+            .multiplier(multiplier)
+            .lot_size(lot_size)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_max_price(max_price)
+            .maybe_min_price(min_price)
+            .margin_init(margin_init)
+            .margin_maint(margin_maint)
+            .maker_fee(maker_fee)
+            .taker_fee(taker_fee)
+            .maybe_tick_scheme(tick_scheme)
+            .maybe_info(info)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .map_err(|e| super::instrument_validation_error::<FuturesSpread>(i, e))?;
 
         result.push(futures_spread);
     }

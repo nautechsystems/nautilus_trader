@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 //! [NautilusTrader](https://nautilustrader.io) adapter for
-//! [Derive](https://docs.derive.xyz).
+//! [Derive](https://www.derive.xyz).
 //!
 //! The `nautilus-derive` crate provides integration with the Derive self-custodial onchain
 //! options, perpetuals, and spot exchange. Authentication uses an EVM smart-contract wallet
@@ -36,10 +36,13 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `examples`: Enables the crate's example binaries.
 //! - `extension-module`: Builds as a Python extension module.
-//!
-//! [High-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) (128-bit value types) is enabled by default.
+//! - `fuzz`: Enables libFuzzer integration for fuzz targets.
+//! - `high-precision` (default): Enables
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
+//!   to use 128-bit value types.
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

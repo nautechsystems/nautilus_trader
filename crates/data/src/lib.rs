@@ -41,9 +41,13 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
-//! - `streaming`: Enables `persistence` dependency for catalog-based data streaming.
 //! - `defi`: Enables DeFi (Decentralized Finance) support.
+//! - `extension-module`: Enables Python extension-module support.
+//! - `high-precision`: Enables
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
+//!   to use 128-bit value types.
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `streaming`: Enables the `nautilus-persistence` dependency for catalog-based data streaming.
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]
@@ -72,7 +76,7 @@
 )]
 #![allow(
     clippy::unused_self,
-    reason = "engine helpers take &self for method-style organization"
+    reason = "engine operations take &self for method-style organization"
 )]
 #![allow(
     clippy::large_types_passed_by_value,
@@ -96,7 +100,7 @@
 )]
 #![allow(
     clippy::inline_always,
-    reason = "hot-path helpers in aggregation are intentionally always inlined"
+    reason = "hot-path aggregation functions are intentionally always inlined"
 )]
 #![allow(
     clippy::match_same_arms,

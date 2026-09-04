@@ -21,9 +21,9 @@
 //!
 //! Required credential environment variables (testnet variants used when
 //! `DERIVE_ENVIRONMENT` is `DeriveEnvironment::Testnet`):
-//! - `DERIVE_WALLET_ADDRESS` / `DERIVE_TESTNET_WALLET_ADDRESS`.
-//! - `DERIVE_SESSION_PRIVATE_KEY` / `DERIVE_TESTNET_SESSION_PRIVATE_KEY`.
-//! - `DERIVE_SUBACCOUNT_ID` / `DERIVE_TESTNET_SUBACCOUNT_ID`.
+//! - `DERIVE_WALLET_ADDRESS` / `DERIVE_TESTNET_WALLET_ADDRESS`
+//! - `DERIVE_SESSION_PRIVATE_KEY` / `DERIVE_TESTNET_SESSION_PRIVATE_KEY`
+//! - `DERIVE_SUBACCOUNT_ID` / `DERIVE_TESTNET_SUBACCOUNT_ID`
 
 use nautilus_common::enums::Environment;
 use nautilus_derive::{
@@ -41,6 +41,10 @@ use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 use rust_decimal::Decimal;
 
+// WARNING: With `DRY_RUN = false`, this tester submits orders to the configured
+// environment and may use real funds. Set `DRY_RUN = true` to connect without
+// submitting orders or sending shutdown cancel/close commands.
+const DRY_RUN: bool = false;
 const DERIVE_ENVIRONMENT: DeriveEnvironment = DeriveEnvironment::Mainnet;
 const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "DERIVE-001";
@@ -98,12 +102,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from(STRATEGY_ID)),
-            external_order_claims: Some(vec![instrument_id]),
+            external_order_instrument_ids: Some(vec![instrument_id]),
             ..Default::default()
         })
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
+        .dry_run(DRY_RUN)
         .log_data(false)
         .open_position_on_start_qty(order_qty.as_decimal())
         .open_position_on_first_quote(true)

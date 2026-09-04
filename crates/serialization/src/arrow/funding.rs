@@ -15,13 +15,12 @@
 
 use std::collections::HashMap;
 
-use arrow::{datatypes::Schema, error::ArrowError, record_batch::RecordBatch};
+use arrow::record_batch::RecordBatch;
 use nautilus_model::data::{Data, FundingRateUpdate};
 
 use super::{
-    ArrowSchemaProvider, DecodeDataFromRecordBatch, DecodeTypedFromRecordBatch,
-    EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
-    json::{JsonFieldSpec, decode_batch, encode_batch, metadata_for_type, schema_for_type},
+    DecodeDataFromRecordBatch, DecodeTypedFromRecordBatch, EncodingError,
+    json::{JsonFieldSpec, impl_json_arrow},
 };
 
 const FUNDING_RATE_UPDATE_FIELDS: &[JsonFieldSpec] = &[
@@ -33,48 +32,7 @@ const FUNDING_RATE_UPDATE_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::u64("ts_init", false),
 ];
 
-impl ArrowSchemaProvider for FundingRateUpdate {
-    fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
-        schema_for_type("FundingRateUpdate", metadata, FUNDING_RATE_UPDATE_FIELDS)
-    }
-}
-
-impl EncodeToRecordBatch for FundingRateUpdate {
-    fn encode_batch(
-        metadata: &HashMap<String, String>,
-        data: &[Self],
-    ) -> Result<RecordBatch, ArrowError> {
-        encode_batch(
-            "FundingRateUpdate",
-            metadata,
-            data,
-            FUNDING_RATE_UPDATE_FIELDS,
-        )
-    }
-
-    fn metadata(&self) -> HashMap<String, String> {
-        let mut metadata = metadata_for_type("FundingRateUpdate");
-        metadata.insert(
-            KEY_INSTRUMENT_ID.to_string(),
-            self.instrument_id.to_string(),
-        );
-        metadata
-    }
-}
-
-impl DecodeTypedFromRecordBatch for FundingRateUpdate {
-    fn decode_typed_batch(
-        metadata: &HashMap<String, String>,
-        record_batch: RecordBatch,
-    ) -> Result<Vec<Self>, EncodingError> {
-        decode_batch(
-            metadata,
-            &record_batch,
-            FUNDING_RATE_UPDATE_FIELDS,
-            Some("FundingRateUpdate"),
-        )
-    }
-}
+impl_json_arrow!(instrument FundingRateUpdate, "FundingRateUpdate", FUNDING_RATE_UPDATE_FIELDS);
 
 impl DecodeDataFromRecordBatch for FundingRateUpdate {
     fn decode_data_batch(
@@ -96,6 +54,7 @@ mod tests {
     use rust_decimal::Decimal;
 
     use super::*;
+    use crate::arrow::EncodeToRecordBatch;
 
     #[rstest]
     fn test_funding_rate_update_round_trip_preserves_decimal_precision() {

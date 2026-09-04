@@ -201,7 +201,7 @@ async fn test_replay_stream_receives_book_deltas() {
 
     assert!(!received.is_empty(), "Expected at least one book delta");
     assert!(
-        matches!(received[0], Data::Deltas(_)),
+        matches!(received[0], Data::BookDeltas(_)),
         "Expected Deltas variant"
     );
 }

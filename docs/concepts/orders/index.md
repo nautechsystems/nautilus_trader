@@ -46,9 +46,23 @@ target integration's capabilities before relying on an option.
   - `FILLED`
   - `VOIDED`
 
+These groups overlap, so open and closed are not opposites. `PENDING_UPDATE` and `PENDING_CANCEL`
+are both open and in-flight: the order is working at the venue while a modify or cancel request is
+outstanding. Four statuses are neither open nor closed: `INITIALIZED`, `EMULATED`, and `RELEASED`
+are active local, and `SUBMITTED` is in-flight until the venue acknowledges the order.
+
+:::warning[Open and closed are not complements]
+Test for a finished order with `is_closed`, never by negating `is_open`. An order at one of the four
+statuses above is not open, but it is not finished either. Every order is `SUBMITTED` immediately
+after submission, so code which treats "not open" as done abandons orders the venue is still
+processing. Use `is_inflight` for the awaiting-venue case.
+:::
+
 ### Order state flow
 
-The following diagram illustrates the order lifecycle and primary state transitions:
+The following diagram illustrates the order lifecycle and primary state transitions. Each status
+appears once, so `PENDING_UPDATE` and `PENDING_CANCEL` are drawn under In-Flight although they are
+also open:
 
 ```mermaid
 flowchart TB
@@ -181,7 +195,8 @@ The trigger type, also known as a
 [trigger method](https://www.interactivebrokers.com/en/software/tws/usersguidebook/configuretws/Modify%20the%20Stop%20Trigger%20Method.htm),
 specifies the market price used to trigger a conditional order.
 
-- `NO_TRIGGER`: Indicates that no trigger is specified; invalid for an order that requires one.
+An absent trigger type is represented by `None` and is invalid for an order that requires one.
+
 - `DEFAULT`: Uses the venue's default trigger type.
 - `LAST_PRICE`: Uses the last traded price.
 - `BID_ASK`: Uses the ask for BUY orders and the bid for SELL orders.
@@ -197,7 +212,8 @@ specifies the market price used to trigger a conditional order.
 The trailing offset type specifies how a trailing order calculates its trigger offset from the
 applicable market price.
 
-- `NO_TRAILING_OFFSET`: Indicates that no offset is specified; invalid for a trailing order.
+An absent trailing offset type is represented by `None` and is invalid for a trailing order.
+
 - `PRICE`: Uses a price difference.
 - `BASIS_POINTS`: Uses a percentage difference in basis points, where 100 basis points equals 1%.
 - `TICKS`: Uses a number of ticks.

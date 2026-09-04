@@ -23,6 +23,9 @@ use std::{
     },
 };
 
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
 use nautilus_network::{
     RECONNECTED,
     websocket::{SubscriptionState, WebSocketClient},
@@ -49,10 +52,10 @@ use crate::{
 pub enum SpotHandlerCommand {
     SetClient(WebSocketClient),
     Disconnect,
-    Subscribe { payload: String },
-    Unsubscribe { payload: String },
-    Ping { payload: String },
-    SendOrderRequest { req_id: u64, payload: String },
+    Subscribe { payload: SecretString },
+    Unsubscribe { payload: SecretString },
+    Ping { payload: SecretString },
+    SendOrderRequest { req_id: u64, payload: SecretString },
 }
 
 /// WebSocket message handler for Kraken Spot v2.
@@ -115,21 +118,21 @@ impl SpotFeedHandler {
                         SpotHandlerCommand::Subscribe { payload }
                         | SpotHandlerCommand::Unsubscribe { payload } => {
                             if let Some(client) = &self.inner
-                                && let Err(e) = client.send_text(payload, Some(KRAKEN_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice())).await
+                                && let Err(e) = client.send_text(payload.expose_secret().to_owned(), Some(KRAKEN_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice())).await
                             {
                                 log::error!("Failed to send text: {e}");
                             }
                         }
                         SpotHandlerCommand::Ping { payload } => {
                             if let Some(client) = &self.inner
-                                && let Err(e) = client.send_text(payload, None).await
+                                && let Err(e) = client.send_text(payload.expose_secret().to_owned(), None).await
                             {
                                 log::error!("Failed to send text: {e}");
                             }
                         }
                         SpotHandlerCommand::SendOrderRequest { req_id, payload } => {
                             if let Some(client) = &self.inner {
-                                if let Err(e) = client.send_text(payload, Some(KRAKEN_RATE_LIMIT_KEY_ORDER.as_slice())).await {
+                                if let Err(e) = client.send_text(payload.expose_secret().to_owned(), Some(KRAKEN_RATE_LIMIT_KEY_ORDER.as_slice())).await {
                                     log::error!(
                                         "Kraken WS send_order_request failed req_id={req_id}: {e}"
                                     );
@@ -699,16 +702,29 @@ mod tests {
     fn test_send_order_request_variant_construction() {
         let cmd = SpotHandlerCommand::SendOrderRequest {
             req_id: 7,
-            payload: r#"{"method":"add_order","req_id":7}"#.to_string(),
+            payload: SecretString::from(r#"{"method":"add_order","req_id":7}"#.to_string()),
         };
 
         match cmd {
             SpotHandlerCommand::SendOrderRequest { req_id, payload } => {
                 assert_eq!(req_id, 7);
-                assert!(payload.contains("add_order"));
+                assert!(payload.expose_secret().contains("add_order"));
             }
             _ => panic!("Expected SendOrderRequest, was a different variant"),
         }
+    }
+
+    #[rstest]
+    fn test_command_debug_redacts_payload() {
+        let cmd = SpotHandlerCommand::SendOrderRequest {
+            req_id: 7,
+            payload: SecretString::from("auth-token".to_string()),
+        };
+
+        let debug = format!("{cmd:?}");
+
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains("auth-token"));
     }
 
     #[rstest]
@@ -724,7 +740,7 @@ mod tests {
         cmd_tx
             .send(SpotHandlerCommand::SendOrderRequest {
                 req_id: 42,
-                payload: r#"{"method":"add_order","req_id":42}"#.to_string(),
+                payload: SecretString::from(r#"{"method":"add_order","req_id":42}"#.to_string()),
             })
             .unwrap();
 

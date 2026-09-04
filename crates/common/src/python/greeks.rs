@@ -255,7 +255,7 @@ impl PyGreeksCalculator {
                 venue,
                 instrument_id,
                 strategy_id,
-                Some(side.unwrap_or(PositionSide::NoPositionSide)),
+                side,
                 Some(flat_interest_rate),
                 flat_dividend_yield,
                 Some(spot_shock),

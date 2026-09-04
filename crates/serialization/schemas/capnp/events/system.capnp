@@ -5,7 +5,6 @@
 # between releases. Do not depend on wire compatibility across versions.
 
 using Identifiers = import "../common/identifiers.capnp";
-using Types = import "../common/types.capnp";
 using Enums = import "../common/enums.capnp";
 using Base = import "../common/base.capnp";
 

@@ -26,7 +26,10 @@ use nautilus_common::{
     clock::Clock,
     factories::OrderFactory,
 };
-use nautilus_core::correctness::{CorrectnessResult, CorrectnessResultExt, FAILED};
+use nautilus_core::{
+    UUID4,
+    correctness::{CorrectnessResult, CorrectnessResultExt, FAILED},
+};
 use nautilus_execution::order_manager::manager::OrderManager;
 use nautilus_model::identifiers::{
     ActorId, ClientOrderId, StrategyId, TraderId, UNASSIGNED_ORDER_ID_TAG, check_order_id_tag,
@@ -59,6 +62,7 @@ pub struct StrategyCore {
     pub(crate) order_factory: Option<Rc<RefCell<OrderFactory>>>,
     pub(crate) portfolio: Option<Rc<RefCell<Portfolio>>>,
     pub(crate) gtd_timers: AHashMap<ClientOrderId, Ustr>,
+    pub(crate) managed_time_event_last_id: Option<UUID4>,
     pub(crate) is_exiting: bool,
     pub(crate) pending_stop: bool,
     pub(crate) market_exit_attempts: u64,
@@ -183,6 +187,7 @@ impl StrategyCore {
             order_factory: None,
             portfolio: None,
             gtd_timers: AHashMap::new(),
+            managed_time_event_last_id: None,
             is_exiting: false,
             pending_stop: false,
             market_exit_attempts: 0,

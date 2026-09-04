@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-backtest"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -65,7 +64,7 @@ nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
 nautilus-data = { workspace = true }
 nautilus-execution = { workspace = true }
-nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-model = { workspace = true, features = ["test-support"] }
 nautilus-persistence = { workspace = true, optional = true }
 nautilus-portfolio = { workspace = true }
 nautilus-risk = { workspace = true }
@@ -80,6 +79,7 @@ bon = { workspace = true }
 indexmap = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
+parking_lot = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 ustr = { workspace = true }

@@ -27,7 +27,6 @@ from strategies.ema_cross import EMACrossConfig
 
 from nautilus_trader.core import UUID4
 from nautilus_trader.model import ClientOrderId
-from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import ExecAlgorithmId
 from nautilus_trader.model import MarketOrder
 from nautilus_trader.model import OrderSide
@@ -39,17 +38,9 @@ class EMACrossTWAPConfig(EMACrossConfig):
     Configuration for the EMA cross TWAP test strategy.
     """
 
-    def __new__(cls, *args: object, **kwargs: object) -> object:
-        """
-        Create a new instance.
-        """
-        kwargs.pop("exec_algorithm_id", None)
-        kwargs.pop("twap_horizon_secs", None)
-        kwargs.pop("twap_interval_secs", None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_id: str,
         bar_type: str,
         trade_size: str,
@@ -61,7 +52,7 @@ class EMACrossTWAPConfig(EMACrossConfig):
         **kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(
             instrument_id=instrument_id,
@@ -83,7 +74,7 @@ class EMACrossTWAP(EMACross):
 
     def __init__(self, config: EMACrossTWAPConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._exec_algorithm_id = ExecAlgorithmId(config.exec_algorithm_id)
@@ -107,7 +98,7 @@ class EMACrossTWAP(EMACross):
             time_in_force=TimeInForce.GTC,
             reduce_only=False,
             quote_quantity=False,
-            contingency_type=ContingencyType.NO_CONTINGENCY,
+            contingency_type=None,
             exec_algorithm_id=self._exec_algorithm_id,
             exec_algorithm_params=self._exec_algorithm_params,
             exec_spawn_id=client_order_id,

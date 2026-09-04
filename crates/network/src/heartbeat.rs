@@ -29,9 +29,8 @@ pub(crate) fn resolve_heartbeat_timeout(
     heartbeat_timeout_secs: Option<u64>,
     heartbeat_interval_secs: Option<u64>,
 ) -> Option<u64> {
-    heartbeat_timeout_secs.or_else(|| {
-        heartbeat_interval_secs.map(|secs| secs.saturating_mul(DEFAULT_HEARTBEAT_TIMEOUT_INTERVALS))
-    })
+    heartbeat_timeout_secs.or(heartbeat_interval_secs
+        .map(|secs| secs.saturating_mul(DEFAULT_HEARTBEAT_TIMEOUT_INTERVALS)))
 }
 
 #[cfg(test)]

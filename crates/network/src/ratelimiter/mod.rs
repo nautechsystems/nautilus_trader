@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A rate limiter implementation heavily inspired by [governor](https://github.com/antifuchs/governor).
+//! A rate limiter implementation heavily inspired by [governor](https://github.com/boinkor-net/governor).
 //!
-//! The governor does not support different quota for different key. It is an open [issue](https://github.com/antifuchs/governor/issues/193).
+//! The governor does not support different quota for different key. It is an open [issue](https://github.com/boinkor-net/governor/issues/193).
 pub mod clock;
 pub mod quota;
 
@@ -28,13 +28,14 @@ use std::{
     hash::Hash,
     num::NonZeroU64,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicU64, Ordering},
     },
     time::Duration,
 };
 
 use dashmap::DashMap;
+use parking_lot::Mutex;
 
 use self::{
     clock::{Clock, FakeRelativeClock, MonotonicClock},
@@ -182,8 +183,7 @@ where
     /// Keyed quotas override the base quota for specific keys.
     #[must_use]
     pub fn new_with_quota(base_quota: Option<Quota>, keyed_quotas: Vec<(K, Quota)>) -> Self {
-        let clock = MonotonicClock {};
-        Self::new_with_clock(base_quota, keyed_quotas, clock)
+        Self::new_with_clock(base_quota, keyed_quotas, MonotonicClock)
     }
 }
 
@@ -236,15 +236,8 @@ where
     C: Clock,
 {
     /// Adds or updates a quota for a specific key.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the rate limiter decision mutex is poisoned.
     pub fn add_quota_for_key(&self, key: K, value: Quota) {
-        let _guard = self
-            .decision_lock
-            .lock()
-            .expect("rate limiter decision lock poisoned");
+        let _guard = self.decision_lock.lock();
         self.gcra.insert(key, Gcra::new(value));
     }
 
@@ -253,15 +246,8 @@ where
     /// # Errors
     ///
     /// Returns `Err(NotUntil)` if the key is rate-limited, indicating when it will be allowed.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the rate limiter decision mutex is poisoned.
     pub fn check_key(&self, key: &K) -> Result<(), NotUntil<C::Instant>> {
-        let _guard = self
-            .decision_lock
-            .lock()
-            .expect("rate limiter decision lock poisoned");
+        let _guard = self.decision_lock.lock();
 
         match self.gcra.get(key) {
             Some(quota) => quota.test_and_update(self.start, key, &self.state, self.clock.now()),
@@ -272,10 +258,6 @@ where
     }
 
     /// Waits until the specified key is ready (not rate-limited).
-    ///
-    /// # Panics
-    ///
-    /// Panics if the rate limiter decision mutex is poisoned.
     pub async fn until_key_ready(&self, key: &K) {
         loop {
             match self.check_key(key) {
@@ -292,10 +274,6 @@ where
     /// Waits until all specified keys are ready (not rate-limited).
     ///
     /// If no keys are provided, this function returns immediately.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the rate limiter decision mutex is poisoned.
     pub async fn await_keys_ready(&self, keys: Option<&[K]>) {
         let Some(keys) = keys else {
             return;
@@ -303,10 +281,7 @@ where
 
         loop {
             let wait = {
-                let _guard = self
-                    .decision_lock
-                    .lock()
-                    .expect("rate limiter decision lock poisoned");
+                let _guard = self.decision_lock.lock();
 
                 match self.plan_keys(keys, self.clock.now()) {
                     Ok(planned) => {
@@ -391,12 +366,7 @@ where
             let wait = {
                 let _guards = ordered
                     .iter()
-                    .map(|limiter| {
-                        limiter
-                            .decision_lock
-                            .lock()
-                            .expect("rate limiter decision lock poisoned")
-                    })
+                    .map(|limiter| limiter.decision_lock.lock())
                     .collect::<Vec<_>>();
                 let mut plans = Vec::with_capacity(ordered.len());
                 let mut wait: Option<Duration> = None;
@@ -463,7 +433,7 @@ mod tests {
             gcra,
             clock,
             start,
-            decision_lock: std::sync::Mutex::new(()),
+            decision_lock: parking_lot::Mutex::new(()),
         }
     }
 
@@ -805,7 +775,7 @@ mod tests {
             gcra: DashMap::new(),
             clock,
             start,
-            decision_lock: std::sync::Mutex::new(()),
+            decision_lock: parking_lot::Mutex::new(()),
         };
 
         let accepted = AtomicU32::new(0);

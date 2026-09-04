@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Helper functions that convert common C types (primarily UTF-8 encoded `char *` pointers) into
+//! Converts common C types (primarily UTF-8 encoded `char *` pointers) into
 //! the Rust data structures used throughout NautilusTrader.
 //!
 //! The conversions are opinionated:
@@ -29,6 +29,7 @@ use std::{
     ffi::{CStr, CString, c_char},
 };
 
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 use ustr::Ustr;
 
@@ -97,18 +98,8 @@ pub fn string_vec_to_bytes(strings: &[String]) -> *const c_char {
 /// Panics if `ptr` is not null but contains invalid UTF-8 or JSON.
 #[must_use]
 pub unsafe fn optional_bytes_to_json(ptr: *const c_char) -> Option<HashMap<String, Value>> {
-    if ptr.is_null() {
-        None
-    } else {
-        // SAFETY: Caller guarantees ptr is valid per function contract
-        let c_str = unsafe { CStr::from_ptr(ptr) };
-        let bytes = c_str.to_bytes();
-
-        let json_string = std::str::from_utf8(bytes).expect("C string contains invalid UTF-8");
-        let result = serde_json::from_str(json_string).expect("C string contains invalid JSON");
-
-        Some(result)
-    }
+    // SAFETY: A non-null pointer is valid under the caller's contract
+    unsafe { optional_json_from_cstr(ptr) }
 }
 
 /// Convert a C bytes pointer into an owned `Option<HashMap<Ustr, Ustr>>`.
@@ -122,18 +113,8 @@ pub unsafe fn optional_bytes_to_json(ptr: *const c_char) -> Option<HashMap<Strin
 /// Panics if `ptr` is not null but contains invalid UTF-8 or JSON.
 #[must_use]
 pub unsafe fn optional_bytes_to_str_map(ptr: *const c_char) -> Option<HashMap<Ustr, Ustr>> {
-    if ptr.is_null() {
-        None
-    } else {
-        // SAFETY: Caller guarantees ptr is valid per function contract
-        let c_str = unsafe { CStr::from_ptr(ptr) };
-        let bytes = c_str.to_bytes();
-
-        let json_string = std::str::from_utf8(bytes).expect("C string contains invalid UTF-8");
-        let result = serde_json::from_str(json_string).expect("C string contains invalid JSON");
-
-        Some(result)
-    }
+    // SAFETY: A non-null pointer is valid under the caller's contract
+    unsafe { optional_json_from_cstr(ptr) }
 }
 
 /// Convert a C bytes pointer into an owned `Option<Vec<String>>`.
@@ -147,18 +128,26 @@ pub unsafe fn optional_bytes_to_str_map(ptr: *const c_char) -> Option<HashMap<Us
 /// Panics if `ptr` is not null but contains invalid UTF-8 or JSON.
 #[must_use]
 pub unsafe fn optional_bytes_to_str_vec(ptr: *const c_char) -> Option<Vec<String>> {
+    // SAFETY: A non-null pointer is valid under the caller's contract
+    unsafe { optional_json_from_cstr(ptr) }
+}
+
+/// # Safety
+///
+/// If `ptr` is non-null, it must reference a valid, null-terminated UTF-8 C string that remains
+/// unchanged for the duration of this call.
+unsafe fn optional_json_from_cstr<T>(ptr: *const c_char) -> Option<T>
+where
+    T: DeserializeOwned,
+{
     if ptr.is_null() {
-        None
-    } else {
-        // SAFETY: Caller guarantees ptr is valid per function contract
-        let c_str = unsafe { CStr::from_ptr(ptr) };
-        let bytes = c_str.to_bytes();
-
-        let json_string = std::str::from_utf8(bytes).expect("C string contains invalid UTF-8");
-        let result = serde_json::from_str(json_string).expect("C string contains invalid JSON");
-
-        Some(result)
+        return None;
     }
+
+    // SAFETY: A non-null pointer is valid under the caller's contract
+    let json = unsafe { cstr_as_str(ptr) };
+    let result = serde_json::from_str(json).expect("C string contains invalid JSON");
+    Some(result)
 }
 
 /// Return the decimal precision inferred from the given C string.
@@ -318,6 +307,31 @@ mod tests {
     }
 
     #[rstest]
+    fn test_optional_bytes_to_str_map_valid() {
+        let json_str = CString::new(r#"{"key1": "value1", "key2": "value2"}"#).unwrap();
+        let ptr = json_str.as_ptr().cast::<c_char>();
+        let result = unsafe { optional_bytes_to_str_map(ptr) };
+        let expected_map = HashMap::from([
+            (Ustr::from("key1"), Ustr::from("value1")),
+            (Ustr::from("key2"), Ustr::from("value2")),
+        ]);
+        assert_eq!(result, Some(expected_map));
+    }
+
+    #[rstest]
+    fn test_optional_bytes_to_str_vec_valid() {
+        let json_str = CString::new(r#"["value1", "value2", "value3"]"#).unwrap();
+        let ptr = json_str.as_ptr().cast::<c_char>();
+        let result = unsafe { optional_bytes_to_str_vec(ptr) };
+        let expected_vec = vec![
+            "value1".to_string(),
+            "value2".to_string(),
+            "value3".to_string(),
+        ];
+        assert_eq!(result, Some(expected_vec));
+    }
+
+    #[rstest]
     #[should_panic(expected = "C string contains invalid JSON")]
     fn test_optional_bytes_to_json_invalid() {
         let json_str = CString::new(r#"{"key1": "value1", "key2": }"#).unwrap();
@@ -337,5 +351,25 @@ mod tests {
     fn test_precision_from_cstr(#[case] input: &str, #[case] expected: u8) {
         let c_str = CString::new(input).unwrap();
         assert_eq!(unsafe { precision_from_cstr(c_str.as_ptr()) }, expected);
+    }
+
+    #[rstest]
+    #[case("1.010", 2)]
+    #[case("1.5e-2", 3)]
+    #[case("0.0001000", 4)]
+    fn test_min_increment_precision_from_cstr(#[case] input: &str, #[case] expected: u8) {
+        let c_str = CString::new(input).unwrap();
+        assert_eq!(
+            unsafe { min_increment_precision_from_cstr(c_str.as_ptr()) },
+            expected
+        );
+    }
+
+    #[rstest]
+    #[case(0, false)]
+    #[case(1, true)]
+    #[case(u8::MAX, true)]
+    fn test_u8_as_bool(#[case] input: u8, #[case] expected: bool) {
+        assert_eq!(u8_as_bool(input), expected);
     }
 }

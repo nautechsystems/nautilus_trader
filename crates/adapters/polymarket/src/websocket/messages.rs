@@ -15,7 +15,9 @@
 
 //! WebSocket message types for the Polymarket CLOB API.
 
-use nautilus_core::serialization::deserialize_empty_string_as_none;
+use nautilus_core::{
+    serialization::deserialize_empty_string_as_none, string::secret::SecretString,
+};
 use rust_decimal::Decimal;
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
@@ -26,6 +28,7 @@ use serde::{
 };
 use serde_json::value::RawValue;
 use ustr::Ustr;
+use zeroize::Zeroize;
 
 use crate::common::{
     enums::{
@@ -635,12 +638,12 @@ pub enum PolymarketWsMessage {
 }
 
 /// Auth payload embedded in user-channel subscribe messages.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Zeroize)]
 pub struct PolymarketWsAuth {
     #[serde(rename = "apiKey")]
-    pub api_key: String,
-    pub secret: String,
-    pub passphrase: String,
+    pub api_key: SecretString,
+    pub secret: SecretString,
+    pub passphrase: SecretString,
 }
 
 /// Initial market-channel subscribe request sent for a fresh WebSocket session.
@@ -684,10 +687,11 @@ pub struct MarketUnsubscribeRequest {
 /// User-channel subscribe request sent on connect.
 ///
 /// Wire format: `{"auth": {...}, "type": "user"}`
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Zeroize)]
 pub struct UserSubscribeRequest {
     pub auth: PolymarketWsAuth,
     #[serde(rename = "type")]
+    #[zeroize(skip)]
     pub msg_type: &'static str,
 }
 
@@ -705,9 +709,9 @@ mod tests {
     fn user_subscribe_request_matches_all_markets_wire_format() {
         let request = UserSubscribeRequest {
             auth: PolymarketWsAuth {
-                api_key: "fixture-key".to_string(),
-                secret: "fixture-secret".to_string(),
-                passphrase: "fixture-passphrase".to_string(),
+                api_key: SecretString::from("fixture-key"),
+                secret: SecretString::from("fixture-secret"),
+                passphrase: SecretString::from("fixture-passphrase"),
             },
             msg_type: "user",
         };

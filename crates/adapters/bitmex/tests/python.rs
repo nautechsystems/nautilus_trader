@@ -116,8 +116,8 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
     let config = Py::new(
         py,
         BitmexExecutionClientConfig {
-            api_key: Some(SMOKE_API_KEY.to_string()),
-            api_secret: Some(SMOKE_API_SECRET.to_string()),
+            api_key: Some(SMOKE_API_KEY.into()),
+            api_secret: Some(SMOKE_API_SECRET.into()),
             environment: BitmexEnvironment::Testnet,
             account_id: Some(account_id),
             ..BitmexExecutionClientConfig::default()

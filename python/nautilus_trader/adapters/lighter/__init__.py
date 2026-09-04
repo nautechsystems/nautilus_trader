@@ -23,12 +23,17 @@ from nautilus_trader._libnautilus.lighter import *  # noqa: F403 (undefined-loca
 __all__ = [
     "LIGHTER",
     "LIGHTER_CLIENT_ID",
+    "LIGHTER_ROBINHOOD",
+    "LIGHTER_ROBINHOOD_CLIENT_ID",
+    "LIGHTER_ROBINHOOD_VENUE",
     "LIGHTER_VENUE",
     "LighterDataClientConfig",
     "LighterDataClientFactory",
+    "LighterDeployment",
     "LighterEnvironment",
     "LighterExecutionClientConfig",
     "LighterExecutionClientFactory",
+    "revoke_lighter_integrator",
 ]
 
 fixup_module_names(globals(), __name__)

@@ -38,6 +38,9 @@ pub const POLYMARKET_NAUTILUS_BUILDER_CODE: &str =
 
 pub const PUSD: &str = "pUSD";
 
+/// Canonical decimal precision for Polymarket prices.
+pub const POLYMARKET_PRICE_PRECISION: u8 = 4;
+
 pub const MAX_PRICE: &str = "0.999";
 pub const MIN_PRICE: &str = "0.001";
 pub const USDC_DECIMALS: u32 = 6;

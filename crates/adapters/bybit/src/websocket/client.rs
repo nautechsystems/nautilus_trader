@@ -20,6 +20,7 @@
 use std::{
     collections::HashSet,
     fmt::Debug,
+    num::NonZeroU32,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
@@ -28,39 +29,44 @@ use std::{
 };
 
 use arc_swap::ArcSwap;
-use dashmap::DashMap;
+#[cfg(test)]
 use nautilus_common::live::get_runtime;
-use nautilus_core::{AtomicMap, AtomicSet, UUID4, consts::NAUTILUS_USER_AGENT};
-use nautilus_live::SocketControl;
+use nautilus_core::{
+    AtomicMap, AtomicSet, UUID4, consts::NAUTILUS_USER_AGENT, string::secret::SecretString,
+};
+use nautilus_live::{
+    SocketControl,
+    task::{SharedTaskSlot, TaskJoinOutcome},
+};
 use nautilus_model::{
     data::BarType,
     enums::{AggregationSource, OrderSide, OrderType, PriceType, TimeInForce, TriggerType},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    backoff::ExponentialBackoff,
     http::USER_AGENT,
     mode::ConnectionMode,
     ratelimiter::{RateLimiter, clock::MonotonicClock},
     websocket::{
-        AuthTracker, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
-        channel_message_handler,
+        AuthTracker, InitialConnectRetryPolicy, SubscriptionState, TransportBackend,
+        WebSocketClient, WebSocketConfig, channel_message_handler,
     },
 };
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
+use zeroize::Zeroizing;
 
 use crate::{
     common::{
         consts::{BYBIT_NAUTILUS_BROKER_ID, BYBIT_WS_TOPIC_DELIMITER},
         credential::Credential,
         enums::{
-            BybitBboSideType, BybitEnvironment, BybitOrderSide, BybitOrderType, BybitPositionIdx,
-            BybitProductType, BybitTimeInForce, BybitTpSlMode, BybitWsOrderRequestOp,
-            resolve_trigger_type,
+            BybitBboSideType, BybitEnvironment, BybitOrderSide, BybitOrderSmpType, BybitOrderType,
+            BybitPositionIdx, BybitProductType, BybitTimeInForce, BybitTpSlMode,
+            BybitWsOrderRequestOp, resolve_trigger_type,
         },
         parse::{
             bar_spec_to_bybit_interval, extract_base_coin, extract_raw_symbol, map_time_in_force,
@@ -74,14 +80,14 @@ use crate::{
         urls::{bybit_ws_private_url, bybit_ws_public_url, bybit_ws_trade_url},
     },
     websocket::{
-        dispatch::PendingOperation,
         enums::{BybitWsOperation, BybitWsPrivateChannel, BybitWsPublicChannel},
         error::{BybitWsError, BybitWsResult},
         handler::{BybitWsFeedHandler, BybitWsOrderCommand, HandlerCommand},
         messages::{
-            BybitAuthRequest, BybitSubscription, BybitWsAmendOrderParams, BybitWsBatchCancelItem,
-            BybitWsBatchCancelOrderArgs, BybitWsBatchPlaceItem, BybitWsBatchPlaceOrderArgs,
-            BybitWsCancelOrderParams, BybitWsMessage, BybitWsPlaceOrderParams,
+            BybitAuthRequest, BybitSubscription, BybitWsAmendOrderParams, BybitWsBatchAmendItem,
+            BybitWsBatchAmendOrderArgs, BybitWsBatchCancelItem, BybitWsBatchCancelOrderArgs,
+            BybitWsBatchPlaceItem, BybitWsBatchPlaceOrderArgs, BybitWsCancelOrderParams,
+            BybitWsMessage, BybitWsPlaceOrderParams,
         },
     },
 };
@@ -90,23 +96,7 @@ const WEBSOCKET_AUTH_WINDOW_MS: i64 = 5_000;
 const AUTH_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
 /// Legacy non-Spot batch endpoint maximum.
 pub const BATCH_PROCESSING_LIMIT: usize = 20;
-/// Tracks a pending Python execution request for OrderResponse correlation.
-#[derive(Debug, Clone)]
-pub struct PendingPyRequest {
-    pub client_order_id: ClientOrderId,
-    pub operation: PendingOperation,
-    pub trader_id: TraderId,
-    pub strategy_id: StrategyId,
-    pub instrument_id: InstrumentId,
-    pub venue_order_id: Option<VenueOrderId>,
-}
-
 /// Public/market data WebSocket client for Bybit.
-#[cfg_attr(feature = "python", pyo3::pyclass(from_py_object))]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bybit")
-)]
 pub struct BybitWebSocketClient {
     url: String,
     environment: BybitEnvironment,
@@ -120,7 +110,8 @@ pub struct BybitWebSocketClient {
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
     out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<BybitWsMessage>>>,
     signal: Arc<AtomicBool>,
-    task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
+    task_handle: Arc<SharedTaskSlot<()>>,
+    connect_lock: Arc<tokio::sync::Mutex<()>>,
     subscriptions: SubscriptionState,
     subscription_guard: Arc<tokio::sync::Mutex<()>>,
     rate_limiter: BybitRateLimiter,
@@ -132,11 +123,42 @@ pub struct BybitWebSocketClient {
     trade_subs: Arc<AtomicSet<InstrumentId>>,
     option_greeks_subs: Arc<AtomicSet<InstrumentId>>,
     bars_timestamp_on_close: Arc<AtomicBool>,
-    pending_py_requests: Arc<DashMap<String, Vec<PendingPyRequest>>>,
     transport_backend: TransportBackend,
-    cancellation_token: CancellationToken,
-    proxy_url: Option<String>,
+    cancellation_token: Arc<ArcSwap<CancellationToken>>,
+    proxy_url: Option<SecretString>,
     socket_control: Option<SocketControl>,
+}
+
+struct ConnectRollback {
+    signal: Arc<AtomicBool>,
+    cancellation_token: Arc<ArcSwap<CancellationToken>>,
+    task_handle: Arc<SharedTaskSlot<()>>,
+    armed: bool,
+}
+
+impl ConnectRollback {
+    fn new(client: &BybitWebSocketClient) -> Self {
+        Self {
+            signal: Arc::clone(&client.signal),
+            cancellation_token: Arc::clone(&client.cancellation_token),
+            task_handle: Arc::clone(&client.task_handle),
+            armed: true,
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for ConnectRollback {
+    fn drop(&mut self) {
+        if self.armed {
+            self.signal.store(true, Ordering::Release);
+            self.cancellation_token.load().cancel();
+            self.task_handle.abort();
+        }
+    }
 }
 
 impl Debug for BybitWebSocketClient {
@@ -167,7 +189,8 @@ impl Clone for BybitWebSocketClient {
             cmd_tx: Arc::clone(&self.cmd_tx),
             out_rx: None, // Each clone gets its own receiver
             signal: Arc::clone(&self.signal),
-            task_handle: None, // Each clone gets its own task handle
+            task_handle: Arc::clone(&self.task_handle),
+            connect_lock: Arc::clone(&self.connect_lock),
             subscriptions: self.subscriptions.clone(),
             subscription_guard: Arc::clone(&self.subscription_guard),
             rate_limiter: self.rate_limiter.clone(),
@@ -179,9 +202,8 @@ impl Clone for BybitWebSocketClient {
             trade_subs: Arc::clone(&self.trade_subs),
             option_greeks_subs: Arc::clone(&self.option_greeks_subs),
             bars_timestamp_on_close: Arc::clone(&self.bars_timestamp_on_close),
-            pending_py_requests: Arc::clone(&self.pending_py_requests),
             transport_backend: self.transport_backend,
-            cancellation_token: self.cancellation_token.clone(),
+            cancellation_token: Arc::clone(&self.cancellation_token),
             proxy_url: self.proxy_url.clone(),
             socket_control: self.socket_control.clone(),
         }
@@ -189,6 +211,16 @@ impl Clone for BybitWebSocketClient {
 }
 
 impl BybitWebSocketClient {
+    fn initial_connect_retry_policy() -> InitialConnectRetryPolicy {
+        InitialConnectRetryPolicy {
+            max_attempts: NonZeroU32::new(5).expect("initial connect attempts must be non-zero"),
+            delay_initial: Duration::from_millis(500),
+            delay_max: Duration::from_secs(5),
+            backoff_factor: 2.0,
+            jitter_ms: 250,
+        }
+    }
+
     /// Creates a new Bybit public WebSocket client.
     #[must_use]
     pub fn new_public(url: Option<String>, heartbeat: u64) -> Self {
@@ -244,7 +276,8 @@ impl BybitWebSocketClient {
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
             signal: Arc::new(AtomicBool::new(false)),
-            task_handle: None,
+            task_handle: Arc::new(SharedTaskSlot::new()),
+            connect_lock: Arc::new(tokio::sync::Mutex::new(())),
             subscriptions: SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER),
             subscription_guard: Arc::new(tokio::sync::Mutex::new(())),
             rate_limiter,
@@ -254,12 +287,11 @@ impl BybitWebSocketClient {
             trade_subs: Arc::new(AtomicSet::new()),
             option_greeks_subs: Arc::new(AtomicSet::new()),
             bars_timestamp_on_close: Arc::new(AtomicBool::new(true)),
-            pending_py_requests: Arc::new(DashMap::new()),
             account_id: None,
             mm_level: Arc::new(AtomicU8::new(0)),
             transport_backend,
-            cancellation_token: CancellationToken::new(),
-            proxy_url,
+            cancellation_token: Arc::new(ArcSwap::from_pointee(CancellationToken::new())),
+            proxy_url: proxy_url.map(SecretString::from),
             socket_control: None,
         }
     }
@@ -314,7 +346,8 @@ impl BybitWebSocketClient {
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
             signal: Arc::new(AtomicBool::new(false)),
-            task_handle: None,
+            task_handle: Arc::new(SharedTaskSlot::new()),
+            connect_lock: Arc::new(tokio::sync::Mutex::new(())),
             subscriptions: SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER),
             subscription_guard: Arc::new(tokio::sync::Mutex::new(())),
             rate_limiter,
@@ -324,12 +357,11 @@ impl BybitWebSocketClient {
             trade_subs: Arc::new(AtomicSet::new()),
             option_greeks_subs: Arc::new(AtomicSet::new()),
             bars_timestamp_on_close: Arc::new(AtomicBool::new(true)),
-            pending_py_requests: Arc::new(DashMap::new()),
             account_id: None,
             mm_level: Arc::new(AtomicU8::new(0)),
             transport_backend,
-            cancellation_token: CancellationToken::new(),
-            proxy_url,
+            cancellation_token: Arc::new(ArcSwap::from_pointee(CancellationToken::new())),
+            proxy_url: proxy_url.map(SecretString::from),
             socket_control: None,
         }
     }
@@ -377,7 +409,8 @@ impl BybitWebSocketClient {
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
             signal: Arc::new(AtomicBool::new(false)),
-            task_handle: None,
+            task_handle: Arc::new(SharedTaskSlot::new()),
+            connect_lock: Arc::new(tokio::sync::Mutex::new(())),
             subscriptions: SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER),
             subscription_guard: Arc::new(tokio::sync::Mutex::new(())),
             rate_limiter,
@@ -387,14 +420,18 @@ impl BybitWebSocketClient {
             trade_subs: Arc::new(AtomicSet::new()),
             option_greeks_subs: Arc::new(AtomicSet::new()),
             bars_timestamp_on_close: Arc::new(AtomicBool::new(true)),
-            pending_py_requests: Arc::new(DashMap::new()),
             account_id: None,
             mm_level: Arc::new(AtomicU8::new(0)),
             transport_backend,
-            cancellation_token: CancellationToken::new(),
-            proxy_url,
+            cancellation_token: Arc::new(ArcSwap::from_pointee(CancellationToken::new())),
+            proxy_url: proxy_url.map(SecretString::from),
             socket_control: None,
         }
+    }
+
+    pub(crate) fn begin_shutdown(&self) {
+        self.cancellation_token.load().cancel();
+        self.signal.store(true, Ordering::Release);
     }
 
     /// Establishes the WebSocket connection.
@@ -404,9 +441,19 @@ impl BybitWebSocketClient {
     /// Returns an error if the underlying WebSocket connection cannot be established,
     /// after retrying multiple times with exponential backoff.
     pub async fn connect(&mut self) -> BybitWsResult<()> {
-        const MAX_RETRIES: u32 = 5;
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _guard = connect_lock.lock().await;
+        self.connect_locked().await
+    }
 
+    async fn connect_locked(&mut self) -> BybitWsResult<()> {
+        if !self.task_handle.is_empty() {
+            self.close_locked().await?;
+        }
         self.signal.store(false, Ordering::Relaxed);
+        let cancellation_token = CancellationToken::new();
+        self.cancellation_token
+            .store(Arc::new(cancellation_token.clone()));
 
         let (raw_handler, raw_rx) = channel_message_handler();
 
@@ -433,77 +480,39 @@ impl BybitWebSocketClient {
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         };
 
-        // Retry initial connection with exponential backoff to handle transient DNS/network issues
-        let mut backoff = ExponentialBackoff::new(
-            Duration::from_millis(500),
-            Duration::from_millis(5000),
-            2.0,
-            250,
-            false,
-        )
-        .map_err(|e| BybitWsError::ClientError(e.to_string()))?;
-
-        #[allow(unused_assignments)]
-        let mut last_error = String::new();
-        let mut attempt = 0;
         let message_rate_limiter = Arc::new(RateLimiter::<Ustr, MonotonicClock>::new_with_quota(
             None,
             vec![],
         ));
-        let connection_rate_limiter =
-            websocket_connection_limiter(&self.url, self.proxy_url.as_deref());
+        let connection_rate_limiter = websocket_connection_limiter(
+            &self.url,
+            self.proxy_url.as_ref().map(SecretString::expose_secret),
+        );
         let connection_rate_keys: Arc<[Ustr]> = Arc::from([websocket_connection_key()]);
-        let client = loop {
-            attempt += 1;
-
-            match WebSocketClient::builder()
-                .config(config.clone())
-                .message_handler(raw_handler.clone())
-                .rate_limiter(Arc::clone(&message_rate_limiter))
-                .connection_rate_limiter(Arc::clone(&connection_rate_limiter))
-                .connection_rate_keys(Arc::clone(&connection_rate_keys))
-                .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
-                .connect()
-                .await
-            {
-                Ok(client) => {
-                    if attempt > 1 {
-                        log::info!("WebSocket connection established after {attempt} attempts");
-                    }
-                    break client;
-                }
-                Err(e) => {
-                    last_error = e.to_string();
-                    log::warn!(
-                        "WebSocket connection attempt failed: attempt={attempt}, max_retries={MAX_RETRIES}, url={}, error={last_error}",
-                        self.url
-                    );
-                }
-            }
-
-            if attempt >= MAX_RETRIES {
-                return Err(BybitWsError::Transport(format!(
-                    "Failed to connect to {} after {MAX_RETRIES} attempts: {}. \
+        let client = WebSocketClient::builder()
+            .config(config.clone())
+            .message_handler(raw_handler.clone())
+            .rate_limiter(Arc::clone(&message_rate_limiter))
+            .connection_rate_limiter(Arc::clone(&connection_rate_limiter))
+            .connection_rate_keys(Arc::clone(&connection_rate_keys))
+            .initial_connect_retry_policy(Self::initial_connect_retry_policy())
+            .cancellation_token(cancellation_token)
+            .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
+            .connect()
+            .await
+            .map_err(|e| {
+                BybitWsError::Transport(format!(
+                    "Failed to connect to {}: {e}. \
                     If this is a DNS error, check your network configuration and DNS settings.",
                     self.url,
-                    if last_error.is_empty() {
-                        "unknown error"
-                    } else {
-                        &last_error
-                    }
-                )));
-            }
-
-            let delay = backoff.next_duration();
-            log::debug!(
-                "Retrying in {delay:?} (attempt {}/{MAX_RETRIES})",
-                attempt + 1
-            );
-            tokio::time::sleep(delay).await;
-        };
+                ))
+            })?;
 
         self.connection_mode.store(client.connection_mode_atomic());
         let reconnect_handle = client.reconnect_handle();
@@ -519,10 +528,6 @@ impl BybitWebSocketClient {
 
         self.send_cmd(cmd).await?;
 
-        if let Some(control) = &self.socket_control {
-            control.register(move || reconnect_handle.request_reconnect());
-        }
-
         let signal = Arc::clone(&self.signal);
         let subscriptions = self.subscriptions.clone();
         let credential = self.credential.clone();
@@ -532,8 +537,9 @@ impl BybitWebSocketClient {
         let auth_tracker_for_handler = auth_tracker.clone();
         let rate_limiter = self.rate_limiter.clone();
         let recv_window_ms = Arc::clone(&self.recv_window_ms);
+        let mut rollback = ConnectRollback::new(self);
 
-        let stream_handle = get_runtime().spawn(async move {
+        if let Err(e) = self.task_handle.spawn(async move {
             let mut handler = BybitWsFeedHandler::new(
                 signal.clone(),
                 cmd_rx,
@@ -544,7 +550,7 @@ impl BybitWebSocketClient {
                 recv_window_ms,
             );
 
-            // Helper closure to resubscribe all tracked subscriptions after reconnection
+            // Resubscribe all tracked subscriptions after reconnection
             let resubscribe_all = || async {
                 let topics = subscriptions.all_topics();
 
@@ -604,16 +610,18 @@ impl BybitWebSocketClient {
                                     + WEBSOCKET_AUTH_WINDOW_MS;
                                 let signature = cred.sign_websocket_auth(expires);
 
-                                let auth_message = BybitAuthRequest {
+                                let auth_message = Zeroizing::new(BybitAuthRequest {
                                     op: BybitWsOperation::Auth,
                                     args: vec![
                                         Value::String(cred.api_key().to_string()),
                                         Value::Number(expires.into()),
                                         Value::String(signature),
                                     ],
-                                };
+                                });
 
-                                if let Ok(payload) = serde_json::to_string(&auth_message) {
+                                if let Ok(payload) =
+                                    serde_json::to_string(&*auth_message).map(SecretString::from)
+                                {
                                     let cmd = HandlerCommand::Authenticate { payload };
                                     if let Err(e) = cmd_tx_for_reconnect.send(cmd) {
                                         log::error!(
@@ -683,22 +691,48 @@ impl BybitWebSocketClient {
             }
 
             log::debug!("Handler task exiting");
-        });
-
-        self.task_handle = Some(Arc::new(stream_handle));
-
-        if requires_auth && let Err(e) = self.authenticate_if_required().await {
-            return Err(e);
+        }) {
+            let shutdown_result = self.close_locked().await;
+            return Err(BybitWsError::ClientError(match shutdown_result {
+                Ok(()) => format!("Failed to start WebSocket handler task: {e}"),
+                Err(shutdown_error) => format!(
+                    "Failed to start WebSocket handler task: {e}; startup rollback failed: \
+                     {shutdown_error}"
+                ),
+            }));
         }
 
+        if let Some(control) = &self.socket_control {
+            control.register(move || reconnect_handle.request_reconnect());
+        }
+
+        if requires_auth && let Err(e) = self.authenticate_if_required().await {
+            let result = match self.close_locked().await {
+                Ok(()) => Err(e),
+                Err(shutdown_error) => Err(BybitWsError::ClientError(format!(
+                    "{e}; startup rollback failed: {shutdown_error}"
+                ))),
+            };
+            rollback.disarm();
+            return result;
+        }
+
+        rollback.disarm();
         Ok(())
     }
 
     /// Disconnects the WebSocket client and stops the background task.
     pub async fn close(&mut self) -> BybitWsResult<()> {
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _guard = connect_lock.lock().await;
+        self.close_locked().await
+    }
+
+    async fn close_locked(&self) -> BybitWsResult<()> {
         log::debug!("Starting close process");
 
         self.signal.store(true, Ordering::Relaxed);
+        self.cancellation_token.load().cancel();
 
         let cmd = HandlerCommand::Disconnect;
         if let Err(e) = self.cmd_tx.read().await.send(cmd) {
@@ -707,30 +741,30 @@ impl BybitWebSocketClient {
             );
         }
 
-        if let Some(task_handle) = self.task_handle.take() {
-            match Arc::try_unwrap(task_handle) {
-                Ok(handle) => {
-                    log::debug!("Waiting for task handle to complete");
-                    match tokio::time::timeout(Duration::from_secs(2), handle).await {
-                        Ok(Ok(())) => log::debug!("Task handle completed successfully"),
-                        Ok(Err(e)) => log::error!("Task handle encountered an error: {e:?}"),
-                        Err(_) => {
-                            log::warn!(
-                                "Timeout waiting for task handle, task may still be running"
-                            );
-                        }
-                    }
-                }
-                Err(arc_handle) => {
-                    log::debug!(
-                        "Cannot take ownership of task handle - other references exist, aborting task"
-                    );
-                    arc_handle.abort();
-                }
-            }
-        } else {
+        let task_result = if self.task_handle.is_empty() {
             log::debug!("No task handle to await");
-        }
+            Ok(())
+        } else {
+            log::debug!("Waiting for task handle to complete");
+
+            if let Some(outcome) = self
+                .task_handle
+                .finish(Duration::from_secs(2), Duration::from_secs(2))
+                .await
+            {
+                match outcome {
+                    TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => Ok(()),
+                    TaskJoinOutcome::Failed(error) => Err(BybitWsError::ClientError(format!(
+                        "WebSocket handler task failed: {error}"
+                    ))),
+                    TaskJoinOutcome::Incomplete => Err(BybitWsError::ClientError(
+                        "WebSocket handler task did not stop after abort".to_string(),
+                    )),
+                }
+            } else {
+                Ok(())
+            }
+        };
 
         self.auth_tracker.invalidate();
 
@@ -740,7 +774,7 @@ impl BybitWebSocketClient {
 
         log::debug!("Closed");
 
-        Ok(())
+        task_result
     }
 
     /// Returns a value indicating whether the client is active.
@@ -1005,12 +1039,6 @@ impl BybitWebSocketClient {
     #[must_use]
     pub fn trade_subs(&self) -> &Arc<AtomicSet<InstrumentId>> {
         &self.trade_subs
-    }
-
-    /// Returns a reference to the pending Python requests map.
-    #[must_use]
-    pub fn pending_py_requests(&self) -> &Arc<DashMap<String, Vec<PendingPyRequest>>> {
-        &self.pending_py_requests
     }
 
     /// Returns a reference to the live instruments cache Arc.
@@ -1564,6 +1592,7 @@ impl BybitWebSocketClient {
                 sl_limit_price: order.sl_limit_price,
                 tp_limit_price: order.tp_limit_price,
                 order_iv: order.order_iv,
+                smp_type: order.smp_type,
                 mmp: order.mmp,
                 position_idx: order.position_idx,
                 bbo_side_type: order.bbo_side_type,
@@ -1623,24 +1652,50 @@ impl BybitWebSocketClient {
             ));
         }
 
-        let commands = orders
-            .chunks(chunk_limit)
-            .zip(req_ids)
-            .map(|(orders, req_id)| {
-                Ok(BybitWsOrderCommand {
-                    req_id,
-                    op: BybitWsOrderRequestOp::AmendBatch,
-                    category,
-                    weight: batch_weight(category, orders.len()),
-                    referer: None,
-                    args: orders
-                        .iter()
-                        .map(serde_json::to_value)
-                        .collect::<Result<Vec<_>, _>>()?,
-                })
-            })
-            .collect::<BybitWsResult<Vec<_>>>()?;
+        let mut commands = Vec::with_capacity(req_ids.len());
+        for (orders, req_id) in orders.chunks(chunk_limit).zip(req_ids) {
+            commands.push(Self::build_batch_amend_command(orders.to_vec(), req_id)?);
+        }
         self.send_cmd(HandlerCommand::SendOrders { commands }).await
+    }
+
+    fn build_batch_amend_command(
+        orders: Vec<BybitWsAmendOrderParams>,
+        req_id: String,
+    ) -> BybitWsResult<BybitWsOrderCommand> {
+        let category = orders[0].category;
+        let order_count = orders.len();
+
+        let request_items = orders
+            .into_iter()
+            .map(|order| BybitWsBatchAmendItem {
+                symbol: order.symbol,
+                order_id: order.order_id,
+                order_link_id: order.order_link_id,
+                qty: order.qty,
+                price: order.price,
+                trigger_price: order.trigger_price,
+                take_profit: order.take_profit,
+                stop_loss: order.stop_loss,
+                tp_trigger_by: order.tp_trigger_by,
+                sl_trigger_by: order.sl_trigger_by,
+                order_iv: order.order_iv,
+            })
+            .collect();
+
+        let args = BybitWsBatchAmendOrderArgs {
+            category,
+            request: request_items,
+        };
+
+        Ok(BybitWsOrderCommand {
+            req_id,
+            op: BybitWsOrderRequestOp::AmendBatch,
+            category,
+            weight: batch_weight(category, order_count),
+            referer: None,
+            args: vec![serde_json::to_value(args)?],
+        })
     }
 
     /// Batch cancels multiple orders via WebSocket, returning the request ID for correlation.
@@ -1748,6 +1803,7 @@ impl BybitWebSocketClient {
         position_idx: Option<BybitPositionIdx>,
         bbo_side_type: Option<BybitBboSideType>,
         bbo_level: Option<String>,
+        smp_type: Option<BybitOrderSmpType>,
     ) -> BybitWsResult<String> {
         let params = self.build_place_order_params(
             product_type,
@@ -1769,6 +1825,7 @@ impl BybitWebSocketClient {
             position_idx,
             bbo_side_type,
             bbo_level,
+            smp_type,
         )?;
 
         self.place_order(params).await
@@ -1845,6 +1902,7 @@ impl BybitWebSocketClient {
         position_idx: Option<BybitPositionIdx>,
         bbo_side_type: Option<BybitBboSideType>,
         bbo_level: Option<String>,
+        smp_type: Option<BybitOrderSmpType>,
     ) -> BybitWsResult<BybitWsPlaceOrderParams> {
         let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())
             .map_err(|e| BybitWsError::ClientError(e.to_string()))?;
@@ -1853,11 +1911,6 @@ impl BybitWebSocketClient {
         let bybit_side = match order_side {
             OrderSide::Buy => BybitOrderSide::Buy,
             OrderSide::Sell => BybitOrderSide::Sell,
-            _ => {
-                return Err(BybitWsError::ClientError(format!(
-                    "Invalid order side: {order_side:?}"
-                )));
-            }
         };
 
         let (bybit_order_type, is_stop_order) = match order_type {
@@ -1918,6 +1971,7 @@ impl BybitWebSocketClient {
                 sl_limit_price: None,
                 tp_limit_price: None,
                 order_iv: None,
+                smp_type,
                 mmp: None,
                 position_idx,
                 bbo_side_type,
@@ -1960,6 +2014,7 @@ impl BybitWebSocketClient {
                 sl_limit_price: None,
                 tp_limit_price: None,
                 order_iv: None,
+                smp_type,
                 mmp: None,
                 position_idx,
                 bbo_side_type,
@@ -2056,16 +2111,17 @@ impl BybitWebSocketClient {
         let expires = jiff::Timestamp::now().as_millisecond() + WEBSOCKET_AUTH_WINDOW_MS;
         let signature = credential.sign_websocket_auth(expires);
 
-        let auth_message = BybitAuthRequest {
+        let auth_message = Zeroizing::new(BybitAuthRequest {
             op: BybitWsOperation::Auth,
             args: vec![
                 Value::String(credential.api_key().to_string()),
                 Value::Number(expires.into()),
                 Value::String(signature),
             ],
-        };
+        });
 
-        let payload = serde_json::to_string(&auth_message)?;
+        let payload = SecretString::from(serde_json::to_string(&*auth_message)?);
+        drop(auth_message);
 
         // Begin auth attempt so succeed() will update state
         let _rx = self.auth_tracker.begin();
@@ -2088,6 +2144,16 @@ impl BybitWebSocketClient {
     }
 }
 
+impl Drop for BybitWebSocketClient {
+    fn drop(&mut self) {
+        if Arc::strong_count(&self.task_handle) == 1 && !self.task_handle.is_empty() {
+            self.cancellation_token.load().cancel();
+            self.signal.store(true, Ordering::Relaxed);
+            self.task_handle.abort();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -2097,6 +2163,24 @@ mod tests {
         common::{enums::BybitMarketUnit, testing::load_test_json},
         websocket::{messages::BybitWsFrame, parse_bybit_ws_frame},
     };
+
+    #[tokio::test]
+    async fn test_drop_clone_does_not_cancel_handler() {
+        let client = BybitWebSocketClient::new_public(Some("wss://test".to_string()), 30);
+        let cancellation_token = CancellationToken::new();
+        client
+            .cancellation_token
+            .store(Arc::new(cancellation_token.clone()));
+        client
+            .task_handle
+            .insert(get_runtime().spawn(std::future::pending()));
+        let clone = client.clone();
+
+        drop(clone);
+
+        assert!(!cancellation_token.is_cancelled());
+        assert!(!client.task_handle.is_empty());
+    }
 
     #[rstest]
     fn classify_orderbook_snapshot() {
@@ -2322,6 +2406,298 @@ mod tests {
         assert!(cmd_rx.try_recv().is_err());
     }
 
+    #[tokio::test]
+    async fn option_batch_chunks_preserve_request_correlation() {
+        let client = BybitWebSocketClient::new_trade(
+            BybitEnvironment::Testnet,
+            Some("test-key".to_string()),
+            Some("test-secret".to_string()),
+            None,
+            20,
+            TransportBackend::default(),
+            None,
+        );
+        client
+            .connection_mode
+            .load()
+            .store(ConnectionMode::Active.as_u8(), Ordering::Release);
+        client.auth_tracker.succeed();
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        *client.cmd_tx.write().await = cmd_tx;
+
+        let place_template = BybitWsPlaceOrderParams {
+            category: BybitProductType::Option,
+            symbol: Ustr::from("BTC-30JUN25-100000-C"),
+            side: BybitOrderSide::Buy,
+            order_type: BybitOrderType::Limit,
+            qty: "0.1".to_string(),
+            is_leverage: None,
+            market_unit: None,
+            price: Some("500".to_string()),
+            time_in_force: Some(BybitTimeInForce::Gtc),
+            order_link_id: None,
+            reduce_only: None,
+            close_on_trigger: None,
+            trigger_price: None,
+            trigger_by: None,
+            trigger_direction: None,
+            tpsl_mode: None,
+            take_profit: None,
+            stop_loss: None,
+            tp_trigger_by: None,
+            sl_trigger_by: None,
+            sl_trigger_price: None,
+            tp_trigger_price: None,
+            sl_order_type: None,
+            tp_order_type: None,
+            sl_limit_price: None,
+            tp_limit_price: None,
+            order_iv: Some("0.80".to_string()),
+            smp_type: None,
+            mmp: Some(true),
+            position_idx: None,
+            bbo_side_type: None,
+            bbo_level: None,
+        };
+        let place_order_link_ids = (0..6)
+            .map(|index| format!("option-place-{index}"))
+            .collect::<Vec<_>>();
+        let place_orders = place_order_link_ids
+            .iter()
+            .map(|order_link_id| BybitWsPlaceOrderParams {
+                order_link_id: Some(order_link_id.clone()),
+                ..place_template.clone()
+            })
+            .collect::<Vec<_>>();
+        let place_req_ids =
+            BybitWebSocketClient::batch_request_ids(BybitProductType::Option, place_orders.len());
+
+        client
+            .batch_place_orders_with_ids(place_orders, place_req_ids.clone())
+            .await
+            .unwrap();
+
+        let command = cmd_rx.recv().await.expect("expected place batch command");
+        let HandlerCommand::SendOrders { commands } = command else {
+            panic!("expected atomic place batch command, was {command:?}");
+        };
+        assert_option_batch_commands(
+            &commands,
+            &place_req_ids,
+            BybitWsOrderRequestOp::CreateBatch,
+            &place_order_link_ids,
+            batch_nested_items,
+        );
+
+        let amend_template = BybitWsAmendOrderParams {
+            category: BybitProductType::Option,
+            symbol: Ustr::from("BTC-30JUN25-100000-C"),
+            order_id: Some("venue-option-amend".to_string()),
+            order_link_id: None,
+            qty: Some("0.23".to_string()),
+            price: Some("510.5".to_string()),
+            trigger_price: Some("505.5".to_string()),
+            take_profit: Some("530.5".to_string()),
+            stop_loss: Some("490.5".to_string()),
+            tp_trigger_by: Some(crate::common::enums::BybitTriggerType::MarkPrice),
+            sl_trigger_by: Some(crate::common::enums::BybitTriggerType::IndexPrice),
+            order_iv: Some("0.91".to_string()),
+        };
+        let amend_order_link_ids = (0..6)
+            .map(|index| format!("option-amend-{index}"))
+            .collect::<Vec<_>>();
+        let amend_orders = amend_order_link_ids
+            .iter()
+            .map(|order_link_id| BybitWsAmendOrderParams {
+                order_link_id: Some(order_link_id.clone()),
+                ..amend_template.clone()
+            })
+            .collect::<Vec<_>>();
+        let amend_req_ids =
+            BybitWebSocketClient::batch_request_ids(BybitProductType::Option, amend_orders.len());
+
+        client
+            .batch_amend_orders_with_ids(amend_orders, amend_req_ids.clone())
+            .await
+            .unwrap();
+
+        let command = cmd_rx.recv().await.expect("expected amend batch command");
+        let HandlerCommand::SendOrders { commands } = command else {
+            panic!("expected atomic amend batch command, was {command:?}");
+        };
+        assert_option_batch_commands(
+            &commands,
+            &amend_req_ids,
+            BybitWsOrderRequestOp::AmendBatch,
+            &amend_order_link_ids,
+            batch_nested_items,
+        );
+        assert!(commands.iter().all(|command| command.args.len() == 1));
+        assert!(
+            commands
+                .iter()
+                .all(|command| command.args[0]["category"] == "option")
+        );
+        assert_eq!(
+            commands[0].args[0]["request"][0],
+            serde_json::json!({
+                "symbol": "BTC-30JUN25-100000-C",
+                "orderId": "venue-option-amend",
+                "orderLinkId": "option-amend-0",
+                "qty": "0.23",
+                "price": "510.5",
+                "triggerPrice": "505.5",
+                "takeProfit": "530.5",
+                "stopLoss": "490.5",
+                "tpTriggerBy": "MarkPrice",
+                "slTriggerBy": "IndexPrice",
+                "orderIv": "0.91",
+            })
+        );
+        assert!(
+            commands
+                .iter()
+                .flat_map(batch_nested_items)
+                .all(|order| order.get("category").is_none())
+        );
+
+        let cancel_order_link_ids = (0..6)
+            .map(|index| format!("option-cancel-{index}"))
+            .collect::<Vec<_>>();
+        let cancel_orders = cancel_order_link_ids
+            .iter()
+            .enumerate()
+            .map(|(index, order_link_id)| BybitWsCancelOrderParams {
+                category: BybitProductType::Option,
+                symbol: Ustr::from("BTC-30JUN25-100000-C"),
+                order_id: Some(format!("venue-option-{index}")),
+                order_link_id: Some(order_link_id.clone()),
+            })
+            .collect::<Vec<_>>();
+        let cancel_req_ids =
+            BybitWebSocketClient::batch_request_ids(BybitProductType::Option, cancel_orders.len());
+
+        client
+            .batch_cancel_orders_with_ids(cancel_orders, cancel_req_ids.clone())
+            .await
+            .unwrap();
+
+        let command = cmd_rx.recv().await.expect("expected cancel batch command");
+        let HandlerCommand::SendOrders { commands } = command else {
+            panic!("expected atomic cancel batch command, was {command:?}");
+        };
+        assert_option_batch_commands(
+            &commands,
+            &cancel_req_ids,
+            BybitWsOrderRequestOp::CancelBatch,
+            &cancel_order_link_ids,
+            batch_nested_items,
+        );
+        assert!(cmd_rx.try_recv().is_err());
+    }
+
+    fn assert_option_batch_commands(
+        commands: &[BybitWsOrderCommand],
+        req_ids: &[String],
+        op: BybitWsOrderRequestOp,
+        order_link_ids: &[String],
+        items: for<'a> fn(&'a BybitWsOrderCommand) -> &'a [Value],
+    ) {
+        assert_eq!(req_ids.len(), 2);
+        assert_ne!(req_ids[0], req_ids[1]);
+        assert_eq!(commands.len(), 2);
+        assert_eq!(
+            commands
+                .iter()
+                .map(|command| command.req_id.as_str())
+                .collect::<Vec<_>>(),
+            req_ids.iter().map(String::as_str).collect::<Vec<_>>()
+        );
+        assert!(commands.iter().all(|command| command.op == op));
+        assert_eq!(
+            commands
+                .iter()
+                .map(|command| items(command).len())
+                .collect::<Vec<_>>(),
+            vec![5, 1]
+        );
+        assert_eq!(
+            commands
+                .iter()
+                .flat_map(items)
+                .map(|order| order["orderLinkId"].as_str().unwrap().to_string())
+                .collect::<Vec<_>>(),
+            order_link_ids
+        );
+        assert!(commands.iter().all(|command| command.weight == 1));
+    }
+
+    fn batch_nested_items(command: &BybitWsOrderCommand) -> &[Value] {
+        command.args[0]["request"].as_array().unwrap()
+    }
+
+    #[rstest]
+    fn batch_place_command_carries_smp_type_per_order() {
+        let client = BybitWebSocketClient::new_trade(
+            BybitEnvironment::Testnet,
+            Some("test-key".to_string()),
+            Some("test-secret".to_string()),
+            None,
+            20,
+            TransportBackend::default(),
+            None,
+        );
+
+        let expectations = [
+            (Some(BybitOrderSmpType::CancelMaker), Some("CancelMaker")),
+            (Some(BybitOrderSmpType::CancelBoth), Some("CancelBoth")),
+            (None, None),
+        ];
+
+        let orders = expectations
+            .into_iter()
+            .enumerate()
+            .map(|(index, (smp_type, _))| {
+                client
+                    .build_place_order_params(
+                        BybitProductType::Linear,
+                        InstrumentId::from("ETHUSDT-LINEAR.BYBIT"),
+                        ClientOrderId::from(format!("smp-batch-{index}").as_str()),
+                        OrderSide::Buy,
+                        OrderType::Limit,
+                        Quantity::from("1.0"),
+                        false,
+                        Some(TimeInForce::Gtc),
+                        Some(Price::from("50000.0")),
+                        None,
+                        None,
+                        None,
+                        None,
+                        false,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        smp_type,
+                    )
+                    .expect("failed to build params")
+            })
+            .collect::<Vec<_>>();
+
+        let command = client
+            .build_batch_place_command(orders, "req-smp-batch".to_string())
+            .expect("failed to build batch command");
+
+        let items = batch_nested_items(&command);
+
+        assert_eq!(items.len(), expectations.len());
+
+        for (item, (_, expected)) in items.iter().zip(expectations) {
+            assert_eq!(item.get("smpType").and_then(Value::as_str), expected);
+        }
+    }
+
     #[rstest]
     fn test_race_duplicate_subscribe_messages_idempotent() {
         let subscriptions = SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER);
@@ -2392,6 +2768,7 @@ mod tests {
                 None,
                 None,
                 is_leverage,
+                None,
                 None,
                 None,
                 None,
@@ -2472,6 +2849,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
             )
             .expect("Failed to build params");
 
@@ -2511,6 +2889,7 @@ mod tests {
                 None,
                 Some(BybitBboSideType::Queue),
                 Some("2".to_string()),
+                None,
             )
             .expect("Failed to build params");
 

@@ -10,12 +10,14 @@ from nautilus_trader import model
 __all__ = [
     "BarDataWrangler",
     "DataBackendSession",
+    "DataCatalogConfig",
     "DataQueryResult",
     "NautilusDataType",
     "OrderBookDeltaDataWrangler",
     "OrderBookDepth10DataWrangler",
     "ParquetDataCatalog",
     "QuoteTickDataWrangler",
+    "StreamingConfig",
     "StreamingFeatherWriter",
     "TradeTickDataWrangler",
 ]
@@ -48,6 +50,24 @@ class DataBackendSession:
     def register_object_store_from_uri(
         self, uri: str, storage_options: typing.Mapping[str, str] | None = None
     ) -> None: ...
+
+@typing.final
+class DataCatalogConfig:
+    @property
+    def path(self) -> str: ...
+    @property
+    def fs_protocol(self) -> str | None: ...
+    @property
+    def name(self) -> str | None: ...
+    @property
+    def fs_rust_storage_option_keys(self) -> list[str] | None: ...
+    def __new__(
+        cls,
+        path: str,
+        fs_protocol: str | None = None,
+        fs_rust_storage_options: typing.Mapping[str, str] | None = None,
+        name: str | None = None,
+    ) -> DataCatalogConfig: ...
 
 @typing.final
 class DataQueryResult:
@@ -352,6 +372,36 @@ class QuoteTickDataWrangler:
     @property
     def size_precision(self) -> int: ...
     def process_record_batch_bytes(self, data: bytes) -> list[model.QuoteTick]: ...
+
+@typing.final
+class StreamingConfig:
+    @property
+    def catalog_path(self) -> str: ...
+    @property
+    def fs_protocol(self) -> str: ...
+    @property
+    def flush_interval_ms(self) -> int: ...
+    @property
+    def replace_existing(self) -> bool: ...
+    @property
+    def rotation_mode(self) -> str: ...
+    @property
+    def max_file_size(self) -> int | None: ...
+    @property
+    def rotation_interval_ns(self) -> int | None: ...
+    @property
+    def schedule_ns(self) -> int | None: ...
+    def __new__(
+        cls,
+        catalog_path: str,
+        fs_protocol: str | None = None,
+        flush_interval_ms: int | None = None,
+        replace_existing: bool = ...,
+        rotation_mode: str = ...,
+        max_file_size: int = ...,
+        rotation_interval_ns: int | None = None,
+        schedule_ns: int | None = None,
+    ) -> StreamingConfig: ...
 
 @typing.final
 class TradeTickDataWrangler:

@@ -135,7 +135,7 @@ def test_okx_exec_tester_registers_exec_tester_strategy(
 
         def __init__(self, **kwargs: object) -> None:
             """
-            Initialize the helper.
+            Initialize the instance.
             """
             captured["exec_tester_kwargs"] = kwargs
 

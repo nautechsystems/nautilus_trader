@@ -122,8 +122,8 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         py,
         KrakenExecutionClientConfig {
             account_id,
-            api_key: SMOKE_API_KEY.to_string(),
-            api_secret: SMOKE_API_SECRET.to_string(),
+            api_key: SMOKE_API_KEY.into(),
+            api_secret: SMOKE_API_SECRET.into(),
             product_type: KrakenProductType::Futures,
             environment: KrakenEnvironment::Demo,
             ..KrakenExecutionClientConfig::default()

@@ -179,9 +179,9 @@ impl DataActor for BookImbalanceActor {
         for delta in &deltas.deltas {
             let size = delta.order.size.as_f64();
             match delta.order.side {
-                OrderSide::Buy => bid_volume += size,
-                OrderSide::Sell => ask_volume += size,
-                _ => {}
+                Some(OrderSide::Buy) => bid_volume += size,
+                Some(OrderSide::Sell) => ask_volume += size,
+                None => {}
             }
         }
 

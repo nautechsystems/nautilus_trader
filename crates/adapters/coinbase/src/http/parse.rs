@@ -24,7 +24,7 @@ use nautilus_model::{
     data::{Bar, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, TradeTick},
     enums::{
         AccountType, AggressorSide, BookAction, LiquiditySide, OrderSide, OrderStatus, OrderType,
-        PositionSideSpecified, RecordFlag, TimeInForce, TriggerType,
+        PositionSide, RecordFlag, TimeInForce, TriggerType,
     },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
@@ -149,6 +149,10 @@ fn contract_size_multiplier(product: &Product) -> Option<Quantity> {
 }
 
 /// Parses a Coinbase spot product into a `CurrencyPair`.
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 pub fn parse_spot_instrument(
     product: &Product,
     ts_init: UnixNanos,
@@ -162,43 +166,37 @@ pub fn parse_spot_instrument(
     let price_precision = precision_from_increment(&product.price_increment);
     let size_precision = precision_from_increment(&product.base_increment);
 
-    let price_increment = Price::from(product.price_increment.as_str());
-    let size_increment = Quantity::from(product.base_increment.as_str());
+    let price_increment = parse_price(&product.price_increment, price_precision)?;
+    let size_increment = parse_quantity(&product.base_increment, size_precision)?;
 
     let min_quantity = parse_optional_quantity(&product.base_min_size);
     let max_quantity = parse_optional_quantity(&product.base_max_size);
 
-    let instrument = CurrencyPair::new(
-        instrument_id,
-        raw_symbol,
-        base_currency,
-        quote_currency,
-        price_precision,
-        size_precision,
-        price_increment,
-        size_increment,
-        None, // multiplier
-        None, // lot_size
-        max_quantity,
-        min_quantity,
-        None, // max_notional
-        None, // min_notional
-        None, // max_price
-        None, // min_price
-        None, // margin_init
-        None, // margin_maint
-        None, // maker_fee (loaded separately via transaction_summary)
-        None, // taker_fee
-        None, // tick_scheme
-        None, // info
-        ts_init,
-        ts_init,
-    );
+    let instrument = CurrencyPair::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .base_currency(base_currency)
+        .quote_currency(quote_currency)
+        .price_precision(price_precision)
+        .size_precision(size_precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .maybe_max_quantity(max_quantity)
+        .maybe_min_quantity(min_quantity)
+        // maker_fee (loaded separately via transaction_summary)
+        .ts_event(ts_init)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::CurrencyPair(instrument))
 }
 
 /// Parses a Coinbase perpetual futures product into a `CryptoPerpetual`.
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 pub fn parse_perpetual_instrument(
     product: &Product,
     ts_init: UnixNanos,
@@ -213,47 +211,41 @@ pub fn parse_perpetual_instrument(
     let price_precision = precision_from_increment(&product.price_increment);
     let size_precision = precision_from_increment(&product.base_increment);
 
-    let price_increment = Price::from(product.price_increment.as_str());
-    let size_increment = Quantity::from(product.base_increment.as_str());
+    let price_increment = parse_price(&product.price_increment, price_precision)?;
+    let size_increment = parse_quantity(&product.base_increment, size_precision)?;
 
     let min_quantity = parse_optional_quantity(&product.base_min_size);
     let max_quantity = parse_optional_quantity(&product.base_max_size);
 
     let multiplier = contract_size_multiplier(product);
 
-    let instrument = CryptoPerpetual::new(
-        instrument_id,
-        raw_symbol,
-        base_currency,
-        quote_currency,
-        settlement_currency,
-        false, // is_inverse
-        price_precision,
-        size_precision,
-        price_increment,
-        size_increment,
-        multiplier,
-        None, // lot_size
-        max_quantity,
-        min_quantity,
-        None, // max_notional
-        None, // min_notional
-        None, // max_price
-        None, // min_price
-        None, // margin_init
-        None, // margin_maint
-        None, // maker_fee
-        None, // taker_fee
-        None, // tick_scheme
-        None, // info
-        ts_init,
-        ts_init,
-    );
+    let instrument = CryptoPerpetual::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .base_currency(base_currency)
+        .quote_currency(quote_currency)
+        .settlement_currency(settlement_currency)
+        .is_inverse(false)
+        .price_precision(price_precision)
+        .size_precision(size_precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .maybe_multiplier(multiplier)
+        .maybe_max_quantity(max_quantity)
+        .maybe_min_quantity(min_quantity)
+        .ts_event(ts_init)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::CryptoPerpetual(instrument))
 }
 
 /// Parses a Coinbase dated future into a `CryptoFuture`.
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 pub fn parse_future_instrument(
     product: &Product,
     ts_init: UnixNanos,
@@ -268,8 +260,8 @@ pub fn parse_future_instrument(
     let price_precision = precision_from_increment(&product.price_increment);
     let size_precision = precision_from_increment(&product.base_increment);
 
-    let price_increment = Price::from(product.price_increment.as_str());
-    let size_increment = Quantity::from(product.base_increment.as_str());
+    let price_increment = parse_price(&product.price_increment, price_precision)?;
+    let size_increment = parse_quantity(&product.base_increment, size_precision)?;
 
     let min_quantity = parse_optional_quantity(&product.base_min_size);
     let max_quantity = parse_optional_quantity(&product.base_max_size);
@@ -292,36 +284,26 @@ pub fn parse_future_instrument(
 
     let multiplier = contract_size_multiplier(product);
 
-    let instrument = CryptoFuture::new(
-        instrument_id,
-        raw_symbol,
-        underlying,
-        quote_currency,
-        settlement_currency,
-        false, // is_inverse
-        ts_init,
-        expiration_ns,
-        price_precision,
-        size_precision,
-        price_increment,
-        size_increment,
-        multiplier,
-        None, // lot_size
-        max_quantity,
-        min_quantity,
-        None, // max_notional
-        None, // min_notional
-        None, // max_price
-        None, // min_price
-        None, // margin_init
-        None, // margin_maint
-        None, // maker_fee
-        None, // taker_fee
-        None, // tick_scheme
-        None, // info
-        ts_init,
-        ts_init,
-    );
+    let instrument = CryptoFuture::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .underlying(underlying)
+        .quote_currency(quote_currency)
+        .settlement_currency(settlement_currency)
+        .is_inverse(false)
+        .activation_ns(ts_init)
+        .expiration_ns(expiration_ns)
+        .price_precision(price_precision)
+        .size_precision(size_precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .maybe_multiplier(multiplier)
+        .maybe_max_quantity(max_quantity)
+        .maybe_min_quantity(min_quantity)
+        .ts_event(ts_init)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::CryptoFuture(instrument))
 }
@@ -498,12 +480,25 @@ fn parse_book_delta(
     )
 }
 
-/// Converts a Coinbase order side to the Nautilus [`OrderSide`].
-pub fn parse_order_side(side: &CoinbaseOrderSide) -> OrderSide {
+/// Converts a Coinbase order side to the Nautilus [`Option<OrderSide>`].
+pub fn parse_order_side_optional(side: &CoinbaseOrderSide) -> Option<OrderSide> {
     match side {
-        CoinbaseOrderSide::Buy => OrderSide::Buy,
-        CoinbaseOrderSide::Sell => OrderSide::Sell,
-        CoinbaseOrderSide::Unknown => OrderSide::NoOrderSide,
+        CoinbaseOrderSide::Buy => Some(OrderSide::Buy),
+        CoinbaseOrderSide::Sell => Some(OrderSide::Sell),
+        CoinbaseOrderSide::Unknown => None,
+    }
+}
+
+/// Converts a Coinbase order side to a Nautilus [`OrderSide`].
+///
+/// # Errors
+///
+/// Returns an error when Coinbase supplies an unknown side.
+pub fn parse_order_side(side: &CoinbaseOrderSide) -> anyhow::Result<OrderSide> {
+    match side {
+        CoinbaseOrderSide::Buy => Ok(OrderSide::Buy),
+        CoinbaseOrderSide::Sell => Ok(OrderSide::Sell),
+        CoinbaseOrderSide::Unknown => anyhow::bail!("Coinbase fill has unknown order side"),
     }
 }
 
@@ -591,7 +586,7 @@ pub fn parse_order_status_report(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let order_side = parse_order_side(&order.side);
+    let order_side = parse_order_side_optional(&order.side);
     let order_type = parse_order_type(order.order_type);
     let time_in_force = parse_time_in_force(order.time_in_force);
     let mut order_status = parse_order_status(order.status);
@@ -611,6 +606,7 @@ pub fn parse_order_status_report(
 
     // API has no separate ADL flag, so liquidation and ADL share this branch
     if order.order_type == CoinbaseOrderType::Liquidation || order.is_liquidation {
+        let order_side = order_side.as_ref().map_or("NO_ORDER_SIDE", AsRef::as_ref);
         log::warn!(
             "Forced-close (liquidation/ADL) order: {instrument_id} venue_order_id={venue_order_id} side={order_side} filled={filled_qty}",
         );
@@ -707,7 +703,7 @@ pub fn parse_fill_report(
 
     let venue_order_id = VenueOrderId::new(&fill.order_id);
     let trade_id = TradeId::new(&fill.trade_id);
-    let order_side = parse_order_side(&fill.side);
+    let order_side = parse_order_side(&fill.side)?;
     let last_px = parse_price(&fill.price, price_precision)?;
     let last_qty = parse_quantity(&fill.size, size_precision)?;
 
@@ -1030,9 +1026,9 @@ pub fn parse_cfm_position_status_report(
     let size_precision = instrument.size_precision();
 
     let position_side = match position.side {
-        CoinbaseFcmPositionSide::Long => PositionSideSpecified::Long,
-        CoinbaseFcmPositionSide::Short => PositionSideSpecified::Short,
-        CoinbaseFcmPositionSide::Unspecified => PositionSideSpecified::Flat,
+        CoinbaseFcmPositionSide::Long => PositionSide::Long,
+        CoinbaseFcmPositionSide::Short => PositionSide::Short,
+        CoinbaseFcmPositionSide::Unspecified => PositionSide::Flat,
     };
 
     let quantity = Quantity::from_decimal_dp(position.number_of_contracts, size_precision)
@@ -1060,7 +1056,7 @@ pub fn parse_cfm_position_status_report(
 // Coinbase history endpoints return a wider set of configuration shapes than
 // `OrderConfiguration` covers (bracket, TWAP, trigger variants). History
 // `Order.order_configuration` is kept as a raw `serde_json::Value`; these
-// helpers dig into the value by key so unknown shapes simply return `None`
+// accessors read the value by key so unknown shapes simply return `None`
 // instead of failing the whole batch.
 fn base_quantity_from_configuration(order: &Order, size_precision: u8) -> Option<Quantity> {
     let config = order.order_configuration.as_ref()?.as_object()?;
@@ -1196,6 +1192,7 @@ mod tests {
     #[case("5", 0)]
     #[case("0.1", 1)]
     #[case("0.001", 3)]
+    #[case("25.000", 0)]
     fn test_precision_from_increment(#[case] increment: &str, #[case] expected: u8) {
         assert_eq!(precision_from_increment(increment), expected);
     }
@@ -1275,6 +1272,61 @@ mod tests {
         assert_eq!(pair.size_increment(), Quantity::from("0.00000001"));
         assert_eq!(pair.min_quantity(), Some(Quantity::from("0.00000001")));
         assert_eq!(pair.max_quantity(), Some(Quantity::from("3400")));
+    }
+
+    #[rstest]
+    fn test_parse_spot_instrument_normalizes_padded_increments() {
+        let json = load_test_fixture("http_product.json");
+        let mut product: crate::http::models::Product = serde_json::from_str(&json).unwrap();
+        product.price_increment = "25.000".to_string();
+        product.base_increment = "1.2300".to_string();
+
+        let instrument = parse_spot_instrument(&product, UnixNanos::default()).unwrap();
+        let InstrumentAny::CurrencyPair(pair) = instrument else {
+            panic!("Expected CurrencyPair");
+        };
+
+        assert_eq!(pair.price_precision(), 0);
+        assert_eq!(pair.price_increment(), Price::from("25"));
+        assert_eq!(pair.price_increment().precision, 0);
+        assert_eq!(pair.size_precision(), 2);
+        assert_eq!(pair.size_increment(), Quantity::from("1.23"));
+        assert_eq!(pair.size_increment().precision, 2);
+    }
+
+    #[rstest]
+    fn test_parse_derivative_instruments_normalize_padded_increments() {
+        let json = load_test_fixture("http_products_future.json");
+        let response: crate::http::models::ProductsResponse = serde_json::from_str(&json).unwrap();
+        let mut perp_product = response
+            .products
+            .iter()
+            .find(|product| product.display_name.contains("PERP"))
+            .unwrap()
+            .clone();
+        let mut future_product = response
+            .products
+            .iter()
+            .find(|product| !product.display_name.contains("PERP"))
+            .unwrap()
+            .clone();
+
+        for product in [&mut perp_product, &mut future_product] {
+            product.price_increment = "25.000".to_string();
+            product.base_increment = "1.2300".to_string();
+        }
+
+        let perp = parse_perpetual_instrument(&perp_product, UnixNanos::default()).unwrap();
+        let future = parse_future_instrument(&future_product, UnixNanos::default()).unwrap();
+
+        for instrument in [&perp, &future] {
+            assert_eq!(instrument.price_precision(), 0);
+            assert_eq!(instrument.price_increment(), Price::from("25"));
+            assert_eq!(instrument.price_increment().precision, 0);
+            assert_eq!(instrument.size_precision(), 2);
+            assert_eq!(instrument.size_increment(), Quantity::from("1.23"));
+            assert_eq!(instrument.size_increment().precision, 2);
+        }
     }
 
     #[rstest]
@@ -1488,14 +1540,14 @@ mod tests {
 
         // Verify first bid side and price
         let first_bid = &deltas.deltas[1];
-        assert_eq!(first_bid.order.side, OrderSide::Buy);
+        assert_eq!(first_bid.order.side, OrderSide::Buy.into());
         assert_eq!(first_bid.action, BookAction::Add);
         assert!(first_bid.order.price.as_f64() > 0.0);
 
         // Verify first ask comes after bids
         let first_ask_idx = response.pricebook.bids.len() + 1;
         let first_ask = &deltas.deltas[first_ask_idx];
-        assert_eq!(first_ask.order.side, OrderSide::Sell);
+        assert_eq!(first_ask.order.side, OrderSide::Sell.into());
         assert_eq!(first_ask.action, BookAction::Add);
 
         // Last delta has F_LAST flag
@@ -1559,7 +1611,7 @@ mod tests {
             report.client_order_id.unwrap().as_str(),
             "11111-000000-000000"
         );
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, OrderSide::Buy.into());
         assert_eq!(report.order_type, OrderType::Limit);
         assert_eq!(report.time_in_force, TimeInForce::Gtc);
         // filled_size (0.001) == base_size (0.001), so status stays Accepted
@@ -1587,7 +1639,7 @@ mod tests {
 
         assert_eq!(report.order_status, OrderStatus::Filled);
         assert_eq!(report.order_type, OrderType::Market);
-        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_side, OrderSide::Sell.into());
         assert_eq!(report.time_in_force, TimeInForce::Ioc);
         // Market quote-size orders fall back to filled_qty for total quantity
         assert_eq!(report.filled_qty, Quantity::from("0.0325"));
@@ -1907,7 +1959,7 @@ mod tests {
         // Pin the fields the warn branch reads so a future refactor that drops
         // the `is_liquidation` arm cannot accept this fixture by accident.
         assert_eq!(report.order_status, OrderStatus::Filled);
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, OrderSide::Buy.into());
         assert_eq!(report.filled_qty, Quantity::from("0.001"));
         assert_eq!(report.instrument_id, instrument.id());
     }
@@ -2379,12 +2431,12 @@ mod tests {
     }
 
     #[rstest]
-    #[case(CoinbaseFcmPositionSide::Long, PositionSideSpecified::Long)]
-    #[case(CoinbaseFcmPositionSide::Short, PositionSideSpecified::Short)]
-    #[case(CoinbaseFcmPositionSide::Unspecified, PositionSideSpecified::Flat)]
+    #[case(CoinbaseFcmPositionSide::Long, PositionSide::Long)]
+    #[case(CoinbaseFcmPositionSide::Short, PositionSide::Short)]
+    #[case(CoinbaseFcmPositionSide::Unspecified, PositionSide::Flat)]
     fn test_parse_cfm_position_side_maps_all_variants(
         #[case] venue_side: CoinbaseFcmPositionSide,
-        #[case] expected: PositionSideSpecified,
+        #[case] expected: PositionSide,
     ) {
         let report = parse_cfm_position_status_report(
             &cfm_position(venue_side, "1", "49000.00"),

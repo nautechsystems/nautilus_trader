@@ -28,11 +28,17 @@ use crate::defi::{
     },
 };
 
+/// Sentinel used when a profiler checkpoint represents the complete state of a block.
+pub const BLOCK_SCOPED_SNAPSHOT_INDEX: u32 = i32::MAX as u32;
+
 /// Represents the precise position of an event within a blockchain.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct BlockPosition {
     /// The block number (height) in the blockchain where the event occurred.
     pub number: u64,
+    /// The hash of the block observed when this position was ingested.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_hash: Option<String>,
     /// The unique hash identifier of the transaction containing the event.
     pub transaction_hash: String,
     /// The index position of the transaction within the block (0-based).
@@ -47,10 +53,18 @@ impl BlockPosition {
     pub fn new(number: u64, transaction_hash: String, index: u32, log_index: u32) -> Self {
         Self {
             number,
+            block_hash: None,
             transaction_hash,
             transaction_index: index,
             log_index,
         }
+    }
+
+    /// Attaches the block hash observed with this position.
+    #[must_use]
+    pub fn with_block_hash(mut self, block_hash: Option<String>) -> Self {
+        self.block_hash = block_hash;
+        self
     }
 }
 
@@ -211,7 +225,7 @@ mod tests {
     use rstest::{fixture, rstest};
     use ustr::Ustr;
 
-    use super::Block;
+    use super::{Block, BlockPosition};
     use crate::defi::{Blockchain, chain::chains, rpc::RpcNodeWssResponse};
 
     fn utc_timestamp(year: i16, month: i8, day: i8, hour: i8, minute: i8, second: i8) -> Timestamp {
@@ -222,6 +236,28 @@ mod tests {
                     .at(hour, minute, second, 0),
             )
             .unwrap()
+    }
+
+    #[rstest]
+    fn test_block_position_deserializes_legacy_shape_without_block_hash() {
+        let position: BlockPosition = serde_json::from_value(serde_json::json!({
+            "number": 42,
+            "transaction_hash": "0xabc",
+            "transaction_index": 3,
+            "log_index": 7
+        }))
+        .unwrap();
+
+        assert_eq!(position, BlockPosition::new(42, "0xabc".to_string(), 3, 7));
+        assert_eq!(
+            serde_json::to_value(position).unwrap(),
+            serde_json::json!({
+                "number": 42,
+                "transaction_hash": "0xabc",
+                "transaction_index": 3,
+                "log_index": 7
+            })
+        );
     }
 
     #[fixture]
@@ -518,7 +554,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_block_builder_helpers() {
+    fn test_block_builder_optional_fields() {
         let block = Block::new(
             "0xabc".into(),
             "0xdef".into(),

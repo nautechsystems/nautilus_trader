@@ -35,6 +35,8 @@
 //! 5. Spawned orders are submitted through the `RiskEngine`.
 //! 6. The algorithm receives fill events and manages remaining quantity.
 
+use std::fmt::Display;
+
 pub mod config;
 pub mod core;
 pub mod twap;
@@ -81,6 +83,11 @@ use ustr::Ustr;
 /// - Order spawning (market, limit, market-to-limit)
 /// - Order lifecycle management (submit, modify, cancel)
 /// - Event filtering for algorithm-owned orders
+///
+/// When a spawned order fails before acceptance, quantity restoration updates
+/// only the cached primary order. A caller-held primary order value passed to a
+/// spawn method remains reduced and must be discarded or refreshed from the
+/// cache before reuse.
 ///
 /// # Implementation
 ///
@@ -436,8 +443,8 @@ pub trait ExecutionAlgorithm: DataActor {
     ///
     /// If `reduce_primary` is true, the primary order's quantity will be reduced
     /// by the spawned quantity. If the spawned order is subsequently denied or
-    /// rejected (before acceptance), the deducted quantity is automatically
-    /// restored to the primary order.
+    /// rejected (before acceptance), or refused before submission, the deducted
+    /// quantity is automatically restored to the cached primary order.
     fn spawn_market(
         &mut self,
         primary: &mut OrderAny,
@@ -493,10 +500,13 @@ pub trait ExecutionAlgorithm: DataActor {
     /// - The algorithm's `exec_algorithm_id`
     /// - `exec_spawn_id` set to the primary order's client order ID
     ///
+    /// `submit_order` refuses the returned order when `emulation_trigger` is
+    /// `Some`; use `None` for an order that the execution algorithm will submit.
+    ///
     /// If `reduce_primary` is true, the primary order's quantity will be reduced
     /// by the spawned quantity. If the spawned order is subsequently denied or
-    /// rejected (before acceptance), the deducted quantity is automatically
-    /// restored to the primary order.
+    /// rejected (before acceptance), or refused before submission, the deducted
+    /// quantity is automatically restored to the cached primary order.
     #[expect(clippy::too_many_arguments)]
     fn spawn_limit(
         &mut self,
@@ -566,8 +576,12 @@ pub trait ExecutionAlgorithm: DataActor {
     ///
     /// If `reduce_primary` is true, the primary order's quantity will be reduced
     /// by the spawned quantity. If the spawned order is subsequently denied or
-    /// rejected (before acceptance), the deducted quantity is automatically
-    /// restored to the primary order.
+    /// rejected (before acceptance), or refused before submission, the deducted
+    /// quantity is automatically restored to the cached primary order.
+    ///
+    /// `_emulation_trigger` is accepted for signature parity and is not applied:
+    /// a `MARKET_TO_LIMIT` order is always initialized with no emulation trigger
+    /// and cannot be emulated.
     #[expect(clippy::too_many_arguments)]
     fn spawn_market_to_limit(
         &mut self,
@@ -577,7 +591,7 @@ pub trait ExecutionAlgorithm: DataActor {
         expire_time: Option<UnixNanos>,
         reduce_only: bool,
         display_qty: Option<Quantity>,
-        emulation_trigger: Option<TriggerType>,
+        _emulation_trigger: Option<TriggerType>,
         tags: Option<Vec<Ustr>>,
         reduce_primary: bool,
     ) -> MarketToLimitOrder
@@ -596,7 +610,7 @@ pub trait ExecutionAlgorithm: DataActor {
                 .track_pending_spawn_reduction(client_order_id, quantity);
         }
 
-        let mut order = MarketToLimitOrder::new(
+        MarketToLimitOrder::new(
             primary.trader_id(),
             primary.strategy_id(),
             primary.instrument_id(),
@@ -619,13 +633,7 @@ pub trait ExecutionAlgorithm: DataActor {
             tags.or_else(|| primary.tags().map(<[Ustr]>::to_vec)),
             UUID4::new(),
             ts_init,
-        );
-
-        if emulation_trigger.is_some() {
-            order.set_emulation_trigger(emulation_trigger);
-        }
-
-        order
+        )
     }
 
     /// Reduces the primary order's quantity by the spawn quantity.
@@ -683,12 +691,15 @@ pub trait ExecutionAlgorithm: DataActor {
         publish_order_event(&event);
     }
 
-    /// Restores the primary order quantity after a spawned order is denied or rejected.
+    /// Restores the cached primary order quantity after a spawned order fails before acceptance.
     ///
     /// This is called when a spawned order fails before acceptance. The quantity
-    /// that was deducted from the primary order is restored (up to the spawned
-    /// order's `leaves_qty` to handle partial fills).
-    fn restore_primary_order_quantity(&mut self, order: &OrderAny)
+    /// that was deducted from the cached primary order is restored (up to the
+    /// spawned order's `leaves_qty` to handle partial fills).
+    ///
+    /// `refused_before_submission` selects whether the restoration log records a
+    /// refusal or a denial/rejection.
+    fn restore_primary_order_quantity(&mut self, order: &OrderAny, refused_before_submission: bool)
     where
         Self: ExecutionAlgorithmNative,
     {
@@ -765,8 +776,13 @@ pub trait ExecutionAlgorithm: DataActor {
 
         publish_order_event(&event);
 
+        let outcome = if refused_before_submission {
+            "refused before submission"
+        } else {
+            "denied/rejected"
+        };
         log::info!(
-            "Restored primary order {} quantity to {} after spawned order {} was denied/rejected",
+            "Restored primary order {} quantity to {} after spawned order {} was {outcome}",
             primary.client_order_id(),
             restored_qty,
             order.client_order_id()
@@ -775,9 +791,14 @@ pub trait ExecutionAlgorithm: DataActor {
 
     /// Submits an order to the execution engine via the risk engine.
     ///
+    /// Orders carrying a live emulation trigger are refused before submission.
+    /// For spawned orders with a pending primary reduction, refusal restores the
+    /// cached primary order quantity, consumes the pending reduction, and publishes
+    /// `OrderUpdated`.
+    ///
     /// # Errors
     ///
-    /// Returns an error if order submission fails.
+    /// Returns an error if the order carries a live emulation trigger or submission fails.
     fn submit_order(
         &mut self,
         order: OrderAny,
@@ -787,9 +808,16 @@ pub trait ExecutionAlgorithm: DataActor {
     where
         Self: ExecutionAlgorithmNative,
     {
-        let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
+        let trader_id =
+            registered_trader_id(ExecutionAlgorithmNative::exec_algorithm_core_mut(self))?;
 
-        let trader_id = registered_trader_id(core)?;
+        if order.emulation_trigger().is_some() {
+            let client_order_id = order.client_order_id();
+            self.restore_primary_order_quantity(&order, true);
+            return Err(EmulatedOrderSubmissionError { client_order_id }.into());
+        }
+
+        let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
         let ts_init = core.clock_mut().timestamp_ns();
 
         // For spawned orders, use the parent's strategy ID
@@ -944,9 +972,7 @@ pub trait ExecutionAlgorithm: DataActor {
             log::info!("{id} {SEND}{CMD} {command:?}");
         }
 
-        let has_emulation_trigger = order
-            .emulation_trigger()
-            .is_some_and(|t| t != TriggerType::NoTrigger);
+        let has_emulation_trigger = order.emulation_trigger().is_some();
 
         if order.is_emulated() || has_emulation_trigger {
             msgbus::send_trading_command(
@@ -1132,9 +1158,7 @@ pub trait ExecutionAlgorithm: DataActor {
             log::info!("{id} {SEND}{CMD} {command:?}");
         }
 
-        let has_emulation_trigger = order
-            .emulation_trigger()
-            .is_some_and(|t| t != TriggerType::NoTrigger);
+        let has_emulation_trigger = order.emulation_trigger().is_some();
 
         if order.is_emulated() || order.status() == OrderStatus::Released || has_emulation_trigger {
             msgbus::send_trading_command(
@@ -1262,14 +1286,14 @@ pub trait ExecutionAlgorithm: DataActor {
         match &event {
             OrderEventAny::Initialized(e) => self.on_order_initialized(e.clone()),
             OrderEventAny::Denied(e) => {
-                self.restore_primary_order_quantity(&order);
+                self.restore_primary_order_quantity(&order, false);
                 self.on_order_denied(*e);
             }
             OrderEventAny::Emulated(e) => self.on_order_emulated(*e),
             OrderEventAny::Released(e) => self.on_order_released(*e),
             OrderEventAny::Submitted(e) => self.on_order_submitted(*e),
             OrderEventAny::Rejected(e) => {
-                self.restore_primary_order_quantity(&order);
+                self.restore_primary_order_quantity(&order, false);
                 self.on_order_rejected(*e);
             }
             OrderEventAny::Accepted(e) => {
@@ -1477,6 +1501,23 @@ pub trait ExecutionAlgorithm: DataActor {
     #[allow(unused_variables)]
     fn on_position_event(&mut self, event: PositionEvent) {}
 }
+
+#[derive(Debug)]
+pub(crate) struct EmulatedOrderSubmissionError {
+    client_order_id: ClientOrderId,
+}
+
+impl Display for EmulatedOrderSubmissionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Execution algorithm cannot submit order {} with a live emulation trigger",
+            self.client_order_id
+        )
+    }
+}
+
+impl std::error::Error for EmulatedOrderSubmissionError {}
 
 fn publish_order_initialized(order: &OrderAny) {
     let event = OrderEventAny::Initialized(order.init_event().clone());
@@ -2525,6 +2566,134 @@ mod tests {
 
         msgbus::unsubscribe_order_events(format!("events.order.{strategy_id}").into(), &handler);
         assert!(events.borrow().is_empty());
+    }
+
+    #[rstest]
+    fn test_algorithm_submit_order_refuses_emulated_limit_spawn() {
+        let mut algo = create_test_algorithm();
+        register_algorithm(&mut algo);
+
+        let strategy_id = StrategyId::from("STRAT-ALGO-EMULATED-LIMIT");
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .strategy_id(strategy_id)
+            .instrument_id(InstrumentId::from("BTC/USDT.BINANCE"))
+            .client_order_id(ClientOrderId::from("O-ALGO-EMULATED-LIMIT"))
+            .quantity(Quantity::from("1.0"))
+            .build();
+        let mut primary = TestOrderStubs::make_accepted_order(&order);
+        {
+            let cache_rc = algo.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            cache.add_order(primary.clone(), None, None, false).unwrap();
+        }
+        let (event_handler, events) = subscribe_order_topic(strategy_id);
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+        let (emulator_handler, emulator_messages): (
+            _,
+            TypedIntoMessageSavingHandler<TradingCommand>,
+        ) = get_typed_into_message_saving_handler(Some(Ustr::from("OrderEmulator.execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::order_emulator_execute(),
+            emulator_handler,
+        );
+
+        let spawned = algo.spawn_limit(
+            &mut primary,
+            Quantity::from("0.4"),
+            Price::from("50000.0"),
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            None,
+            Some(TriggerType::BidAsk),
+            None,
+            true,
+        );
+        let spawned = OrderAny::Limit(spawned);
+        let client_order_id = spawned.client_order_id();
+        let result = algo.submit_order(spawned, None, None);
+
+        msgbus::unsubscribe_order_events(
+            format!("events.order.{strategy_id}").into(),
+            &event_handler,
+        );
+        let cache = algo.core.cache_ref();
+        let error = result.unwrap_err();
+        assert!(
+            error
+                .downcast_ref::<EmulatedOrderSubmissionError>()
+                .is_some()
+        );
+        let error = error.to_string();
+        assert!(error.contains("live emulation trigger"), "{error}");
+        assert!(error.contains(client_order_id.as_str()), "{error}");
+        assert!(risk_messages.get_messages().is_empty());
+        assert!(emulator_messages.get_messages().is_empty());
+        assert!(!cache.order_exists(&client_order_id));
+        assert!(!events.borrow().iter().any(|event| matches!(
+            event,
+            OrderEventAny::Initialized(initialized)
+                if initialized.client_order_id == client_order_id
+        )));
+        assert_eq!(
+            cache.order(&primary.client_order_id()).unwrap().quantity(),
+            Quantity::from("1.0"),
+        );
+        drop(cache);
+        assert!(
+            algo.core
+                .take_pending_spawn_reduction(&client_order_id)
+                .is_none()
+        );
+    }
+
+    #[rstest]
+    fn test_algorithm_submit_order_routes_unemulated_spawn_to_risk() {
+        let mut algo = create_test_algorithm();
+        register_algorithm(&mut algo);
+
+        let mut primary = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(InstrumentId::from("BTC/USDT.BINANCE"))
+            .client_order_id(ClientOrderId::from("O-ALGO-UNEMULATED"))
+            .quantity(Quantity::from("1.0"))
+            .build();
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+
+        let spawned = algo.spawn_limit(
+            &mut primary,
+            Quantity::from("0.4"),
+            Price::from("50000.0"),
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            None,
+            None,
+            None,
+            false,
+        );
+        let client_order_id = spawned.client_order_id;
+        algo.submit_order(OrderAny::Limit(spawned), None, None)
+            .unwrap();
+
+        let risk_messages = risk_messages.get_messages();
+        assert_eq!(risk_messages.len(), 1);
+        assert!(matches!(
+            risk_messages.first(),
+            Some(TradingCommand::SubmitOrder(command))
+                if command.client_order_id == client_order_id
+        ));
     }
 
     #[rstest]

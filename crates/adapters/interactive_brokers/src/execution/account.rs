@@ -31,8 +31,9 @@ use nautilus_common::{
     messages::{ExecutionEvent, ExecutionReport},
 };
 use nautilus_core::{Params, time::get_atomic_clock_realtime};
+use nautilus_live::task::TaskGroup;
 use nautilus_model::{
-    enums::PositionSideSpecified,
+    enums::PositionSide,
     identifiers::AccountId,
     instruments::Instrument,
     reports::PositionStatusReport,
@@ -227,7 +228,11 @@ fn merge_account_summary_balance(
 /// # Errors
 ///
 /// Returns an error if subscription fails.
-pub async fn subscribe_pnl(client: &Arc<Client>, account_id: AccountId) -> anyhow::Result<()> {
+pub async fn subscribe_pnl(
+    client: &Arc<Client>,
+    account_id: AccountId,
+    session_tasks: &TaskGroup,
+) -> anyhow::Result<()> {
     let account = IbAccountId(raw_ib_account_code(&account_id));
     let subscription = client
         .pnl(&account, None)
@@ -238,7 +243,7 @@ pub async fn subscribe_pnl(client: &Arc<Client>, account_id: AccountId) -> anyho
     tracing::debug!("Subscribed to PnL updates for account: {}", account_id);
 
     // Process PnL updates in background task
-    nautilus_common::live::get_runtime().spawn(async move {
+    let future = async move {
         while let Some(result) = subscription.next().await {
             match result {
                 Ok(pnl) => {
@@ -257,7 +262,10 @@ pub async fn subscribe_pnl(client: &Arc<Client>, account_id: AccountId) -> anyho
                 }
             }
         }
-    });
+    };
+    session_tasks
+        .spawn(future)
+        .context("Failed to register IB PnL task")?;
 
     Ok(())
 }
@@ -375,6 +383,7 @@ pub async fn subscribe_positions(
     account_id: AccountId,
     position_tracker: PositionTracker,
     instrument_provider: Arc<crate::providers::instruments::InteractiveBrokersInstrumentProvider>,
+    session_tasks: &TaskGroup,
 ) -> anyhow::Result<()> {
     let raw_account_id = raw_ib_account_code(&account_id);
     let subscription = client
@@ -390,7 +399,7 @@ pub async fn subscribe_positions(
     let client_for_instruments = Arc::clone(client);
 
     // Spawn background task to handle position updates
-    nautilus_common::live::get_runtime().spawn(async move {
+    let future = async move {
         while let Some(result) = subscription.next().await {
             match result {
                 Ok(ibapi::accounts::PositionUpdate::Position(position)) => {
@@ -423,11 +432,11 @@ pub async fn subscribe_positions(
                             Ok(Some(instrument)) => {
                                 let instrument_id = instrument.id();
                                 let position_side = if new_quantity.is_zero() {
-                                    PositionSideSpecified::Flat
+                                    PositionSide::Flat
                                 } else if new_quantity > Decimal::ZERO {
-                                    PositionSideSpecified::Long
+                                    PositionSide::Long
                                 } else {
-                                    PositionSideSpecified::Short
+                                    PositionSide::Short
                                 };
 
                                 let quantity = Quantity::new(
@@ -436,9 +445,9 @@ pub async fn subscribe_positions(
                                 );
 
                                 let avg_px_open = if position.average_cost > 0.0 {
-                                    let price_magnifier =
-                                        instrument_provider.get_price_magnifier(&instrument_id)
-                                            as f64;
+                                    let price_magnifier = instrument_provider
+                                        .get_price_magnifier(&instrument_id)
+                                        as f64;
                                     let multiplier = instrument.multiplier().as_f64();
                                     let converted_avg_cost =
                                         position.average_cost / (multiplier * price_magnifier);
@@ -507,7 +516,10 @@ pub async fn subscribe_positions(
                 }
             }
         }
-    });
+    };
+    session_tasks
+        .spawn(future)
+        .context("Failed to register IB position task")?;
 
     Ok(())
 }

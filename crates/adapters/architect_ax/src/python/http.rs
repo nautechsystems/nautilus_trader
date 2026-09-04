@@ -17,7 +17,9 @@
 
 use ahash::AHashMap;
 use jiff::Timestamp;
-use nautilus_core::{datetime::datetime_to_unix_nanos, python::to_pyvalue_err};
+use nautilus_core::{
+    datetime::datetime_to_unix_nanos, python::to_pyvalue_err, string::secret::SecretString,
+};
 use nautilus_model::{
     data::BarType,
     enums::{OrderSide, OrderType, TimeInForce},
@@ -191,6 +193,7 @@ impl AxHttpClient {
             client
                 .authenticate(&api_key, &api_secret, expiration_seconds)
                 .await
+                .map(SecretString::into_inner)
                 .map_err(to_pyvalue_err)
         })
     }
@@ -224,6 +227,7 @@ impl AxHttpClient {
             client
                 .authenticate_auto(expiration_seconds)
                 .await
+                .map(SecretString::into_inner)
                 .map_err(to_pyvalue_err)
         })
     }
@@ -477,7 +481,7 @@ impl AxHttpClient {
                     instrument_id,
                     client_order_id,
                     venue_order_id,
-                    order_side,
+                    Some(order_side),
                     order_type,
                     time_in_force,
                 )
@@ -620,7 +624,7 @@ impl AxHttpClient {
         side: OrderSide,
     ) -> PyResult<Bound<'py, PyAny>> {
         let symbol = instrument_id.symbol.inner();
-        let ax_side = AxOrderSide::try_from(side).map_err(to_pyvalue_err)?;
+        let ax_side = AxOrderSide::from(side);
         let qty_contracts = quantity_to_contracts(quantity).map_err(to_pyvalue_err)?;
 
         let client = self.clone();

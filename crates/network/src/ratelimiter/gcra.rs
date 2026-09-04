@@ -75,8 +75,7 @@ impl<P: clock::Reference> NotUntil<P> {
     /// `wait_time_from` returns a zero `Duration`.
     #[inline]
     pub fn wait_time_from(&self, from: P) -> Duration {
-        let earliest = self.earliest_possible();
-        earliest.duration_since(earliest.min(from)).into()
+        self.earliest_possible().duration_since(from).into()
     }
 
     /// Returns the rate limiting [`Quota`] used to reach the decision.

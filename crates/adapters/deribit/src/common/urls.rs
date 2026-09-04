@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! URL helpers for Deribit API endpoints.
+//! Environment-aware Deribit API endpoint URLs.
 
 use super::{
     consts::{DERIBIT_HTTP_URL, DERIBIT_TESTNET_HTTP_URL, DERIBIT_TESTNET_WS_URL, DERIBIT_WS_URL},

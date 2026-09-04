@@ -40,7 +40,7 @@ use nautilus_serialization::{
 use rust_decimal_macros::dec;
 use ustr::Ustr;
 
-macro_rules! capnp_helpers {
+macro_rules! capnp_codec {
     ($encode_fn:ident, $decode_fn:ident, $ty:ty, $builder_ty:path, $reader_ty:path) => {
         fn $encode_fn(value: &$ty) -> Vec<u8> {
             let mut message = Builder::new_default();
@@ -60,91 +60,91 @@ macro_rules! capnp_helpers {
     };
 }
 
-capnp_helpers!(
+capnp_codec!(
     encode_book_order_capnp,
     decode_book_order_capnp,
     BookOrder,
     market_capnp::book_order::Builder,
     market_capnp::book_order::Reader
 );
-capnp_helpers!(
+capnp_codec!(
     encode_order_book_delta_capnp,
     decode_order_book_delta_capnp,
     OrderBookDelta,
     market_capnp::order_book_delta::Builder,
     market_capnp::order_book_delta::Reader
 );
-capnp_helpers!(
+capnp_codec!(
     encode_order_book_deltas_capnp,
     decode_order_book_deltas_capnp,
     OrderBookDeltas,
     market_capnp::order_book_deltas::Builder,
     market_capnp::order_book_deltas::Reader
 );
-capnp_helpers!(
+capnp_codec!(
     encode_order_book_depth10_capnp,
     decode_order_book_depth10_capnp,
     OrderBookDepth10,
     market_capnp::order_book_depth10::Builder,
     market_capnp::order_book_depth10::Reader
 );
-capnp_helpers!(
+capnp_codec!(
     encode_quote_tick_capnp,
     decode_quote_tick_capnp,
     QuoteTick,
     market_capnp::quote_tick::Builder,
     market_capnp::quote_tick::Reader
 );
-capnp_helpers!(
+capnp_codec!(
     encode_trade_tick_capnp,
     decode_trade_tick_capnp,
     TradeTick,
     market_capnp::trade_tick::Builder,
     market_capnp::trade_tick::Reader
 );
-capnp_helpers!(
+capnp_codec!(
     encode_bar_type_capnp,
     decode_bar_type_capnp,
     BarType,
     market_capnp::bar_type::Builder,
     market_capnp::bar_type::Reader
 );
-capnp_helpers!(
+capnp_codec!(
     encode_bar_capnp,
     decode_bar_capnp,
     Bar,
     market_capnp::bar::Builder,
     market_capnp::bar::Reader
 );
-capnp_helpers!(
+capnp_codec!(
     encode_mark_price_update_capnp,
     decode_mark_price_update_capnp,
     MarkPriceUpdate,
     market_capnp::mark_price_update::Builder,
     market_capnp::mark_price_update::Reader
 );
-capnp_helpers!(
+capnp_codec!(
     encode_index_price_update_capnp,
     decode_index_price_update_capnp,
     IndexPriceUpdate,
     market_capnp::index_price_update::Builder,
     market_capnp::index_price_update::Reader
 );
-capnp_helpers!(
+capnp_codec!(
     encode_funding_rate_update_capnp,
     decode_funding_rate_update_capnp,
     FundingRateUpdate,
     market_capnp::funding_rate_update::Builder,
     market_capnp::funding_rate_update::Reader
 );
-capnp_helpers!(
+capnp_codec!(
     encode_instrument_status_capnp,
     decode_instrument_status_capnp,
     InstrumentStatus,
     market_capnp::instrument_status::Builder,
     market_capnp::instrument_status::Reader
 );
-capnp_helpers!(
+capnp_codec!(
     encode_instrument_close_capnp,
     decode_instrument_close_capnp,
     InstrumentClose,
@@ -324,7 +324,7 @@ fn sample_order_book_depth10() -> OrderBookDepth10 {
 
 #[allow(
     clippy::needless_pass_by_value,
-    reason = "benchmark helper owns one sample value and reuses it across sub-benchmarks"
+    reason = "benchmark function owns one sample value and reuses it across sub-benchmarks"
 )]
 fn bench_capnp_sbe_type<T>(
     c: &mut Criterion,

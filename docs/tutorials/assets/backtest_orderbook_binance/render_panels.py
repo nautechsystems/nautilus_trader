@@ -71,15 +71,9 @@ GRID = COLORS["grid"]
 
 
 class TopBookSamplerConfig(DataActorConfig):
-    _CUSTOM_FIELDS = ("instrument_id", "book_type", "sample_every_secs")
-
-    def __new__(cls, *args: object, **kwargs: object) -> object:
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_id: InstrumentId,
         book_type: str = "L2_MBP",
         sample_every_secs: int = 1,

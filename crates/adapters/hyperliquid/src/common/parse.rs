@@ -420,7 +420,6 @@ fn determine_tpsl_type(
                             HyperliquidExchangeTpSl::Tp
                         }
                     }
-                    _ => HyperliquidExchangeTpSl::Sl, // Default to SL for safety
                 }
             } else {
                 // No market price available, default to SL for safety
@@ -968,7 +967,7 @@ pub fn parse_account_balances_and_margins(
 /// Merges perp clearinghouse balances with spot balances into a unified set.
 ///
 /// The perp parser already reflects combined USDC when its cross-margin summary
-/// carries collateral or margin state, so this helper appends only non-USDC spot
+/// carries collateral or margin state, so this parser appends only non-USDC spot
 /// tokens in that case. If the perp state has no margin summary, or the summary
 /// is present but zeroed, spot USDC is used verbatim.
 ///

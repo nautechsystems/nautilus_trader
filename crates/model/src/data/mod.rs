@@ -13,9 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Data types for the trading domain model.
+//! Data types and shared representations for the trading domain model.
+//!
+//! [`Data`] provides an owned, heterogeneous representation of built-in data, while [`DataRef`]
+//! provides borrowed access to the same variants. [`DataBatch`] preserves concrete element types
+//! for homogeneous storage and exposes individual items through the borrowed representation.
 
 pub mod bar;
+pub mod batch;
 pub mod bet;
 pub mod black_scholes;
 pub mod close;
@@ -34,7 +39,7 @@ pub mod registry;
 pub mod status;
 pub mod trade;
 
-#[cfg(any(test, feature = "stubs"))]
+#[cfg(any(test, feature = "test-support"))]
 pub mod stubs;
 
 use std::{
@@ -55,6 +60,7 @@ use crate::defi::DefiData;
 // Re-exports
 #[rustfmt::skip]  // Keep these grouped
 pub use bar::{Bar, BarSpecification, BarType};
+pub use batch::{BatchView, DataBatch};
 pub use black_scholes::Greeks;
 pub use close::InstrumentClose;
 #[cfg(feature = "python")]
@@ -100,12 +106,12 @@ use crate::identifiers::{InstrumentId, Venue};
 /// A built-in Nautilus data type.
 ///
 /// Not recommended for storing large amounts of data, as the largest variant is significantly
-/// larger (10x) than the smallest.
+/// larger (~10x) than the smallest.
 #[derive(Debug)]
 pub enum Data {
-    Delta(OrderBookDelta),
-    Deltas(Box<OrderBookDeltas>),
-    Depth10(Box<OrderBookDepth10>), // This variant is significantly larger
+    BookDelta(OrderBookDelta),
+    BookDeltas(Box<OrderBookDeltas>),
+    BookDepth10(Box<OrderBookDepth10>), // This variant is significantly larger
     Quote(QuoteTick),
     Trade(TradeTick),
     Bar(Bar),
@@ -118,6 +124,48 @@ pub enum Data {
     Custom(CustomData),
     #[cfg(feature = "defi")]
     Defi(Box<DefiData>), // This variant is significantly larger
+}
+
+/// A borrowed view of a built-in Nautilus data type.
+#[derive(Clone, Copy, Debug)]
+pub enum DataRef<'a> {
+    BookDelta(&'a OrderBookDelta),
+    BookDeltas(&'a OrderBookDeltas),
+    BookDepth10(&'a OrderBookDepth10),
+    Quote(&'a QuoteTick),
+    Trade(&'a TradeTick),
+    Bar(&'a Bar),
+    MarkPrice(&'a MarkPriceUpdate),
+    IndexPrice(&'a IndexPriceUpdate),
+    FundingRate(&'a FundingRateUpdate),
+    OptionGreeks(&'a OptionGreeks),
+    InstrumentStatus(&'a InstrumentStatus),
+    InstrumentClose(&'a InstrumentClose),
+    Custom(&'a CustomData),
+    #[cfg(feature = "defi")]
+    Defi(&'a DefiData),
+}
+
+impl<'a> From<&'a Data> for DataRef<'a> {
+    fn from(value: &'a Data) -> Self {
+        match value {
+            Data::BookDelta(delta) => Self::BookDelta(delta),
+            Data::BookDeltas(deltas) => Self::BookDeltas(deltas),
+            Data::BookDepth10(depth) => Self::BookDepth10(depth),
+            Data::Quote(quote) => Self::Quote(quote),
+            Data::Trade(trade) => Self::Trade(trade),
+            Data::Bar(bar) => Self::Bar(bar),
+            Data::MarkPrice(mark_price) => Self::MarkPrice(mark_price),
+            Data::IndexPrice(index_price) => Self::IndexPrice(index_price),
+            Data::FundingRate(funding_rate) => Self::FundingRate(funding_rate),
+            Data::OptionGreeks(greeks) => Self::OptionGreeks(greeks),
+            Data::InstrumentStatus(status) => Self::InstrumentStatus(status),
+            Data::InstrumentClose(close) => Self::InstrumentClose(close),
+            Data::Custom(custom) => Self::Custom(custom),
+            #[cfg(feature = "defi")]
+            Data::Defi(defi) => Self::Defi(defi),
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for Data {
@@ -134,13 +182,13 @@ impl<'de> Deserialize<'de> for Data {
             .to_string();
 
         match type_name.as_str() {
-            "OrderBookDelta" => Ok(Self::Delta(
+            "OrderBookDelta" => Ok(Self::BookDelta(
                 serde_json::from_value(value).map_err(D::Error::custom)?,
             )),
-            "OrderBookDeltas" => Ok(Self::Deltas(
+            "OrderBookDeltas" => Ok(Self::BookDeltas(
                 serde_json::from_value(value).map_err(D::Error::custom)?,
             )),
-            "OrderBookDepth10" => Ok(Self::Depth10(
+            "OrderBookDepth10" => Ok(Self::BookDepth10(
                 serde_json::from_value(value).map_err(D::Error::custom)?,
             )),
             "QuoteTick" => Ok(Self::Quote(
@@ -186,9 +234,9 @@ impl<'de> Deserialize<'de> for Data {
 impl Clone for Data {
     fn clone(&self) -> Self {
         match self {
-            Self::Delta(x) => Self::Delta(*x),
-            Self::Deltas(x) => Self::Deltas(x.clone()),
-            Self::Depth10(x) => Self::Depth10(x.clone()),
+            Self::BookDelta(x) => Self::BookDelta(*x),
+            Self::BookDeltas(x) => Self::BookDeltas(x.clone()),
+            Self::BookDepth10(x) => Self::BookDepth10(x.clone()),
             Self::Quote(x) => Self::Quote(*x),
             Self::Trade(x) => Self::Trade(*x),
             Self::Bar(x) => Self::Bar(*x),
@@ -208,9 +256,9 @@ impl Clone for Data {
 impl PartialEq for Data {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Delta(a), Self::Delta(b)) => a == b,
-            (Self::Deltas(a), Self::Deltas(b)) => a == b,
-            (Self::Depth10(a), Self::Depth10(b)) => a == b,
+            (Self::BookDelta(a), Self::BookDelta(b)) => a == b,
+            (Self::BookDeltas(a), Self::BookDeltas(b)) => a == b,
+            (Self::BookDepth10(a), Self::BookDepth10(b)) => a == b,
             (Self::Quote(a), Self::Quote(b)) => a == b,
             (Self::Trade(a), Self::Trade(b)) => a == b,
             (Self::Bar(a), Self::Bar(b)) => a == b,
@@ -234,9 +282,9 @@ impl Serialize for Data {
         S: serde::Serializer,
     {
         match self {
-            Self::Delta(x) => x.serialize(serializer),
-            Self::Deltas(x) => x.serialize(serializer),
-            Self::Depth10(x) => x.serialize(serializer),
+            Self::BookDelta(x) => x.serialize(serializer),
+            Self::BookDeltas(x) => x.serialize(serializer),
+            Self::BookDepth10(x) => x.serialize(serializer),
             Self::Quote(x) => x.serialize(serializer),
             Self::Trade(x) => x.serialize(serializer),
             Self::Bar(x) => x.serialize(serializer),
@@ -275,7 +323,7 @@ impl TryFrom<Data> for OrderBookDepth10 {
 
     fn try_from(value: Data) -> Result<Self, Self::Error> {
         match value {
-            Data::Depth10(x) => Ok(*x),
+            Data::BookDepth10(x) => Ok(*x),
             _ => Err(()),
         }
     }
@@ -286,14 +334,14 @@ impl TryFrom<Data> for OrderBookDeltas {
 
     fn try_from(value: Data) -> Result<Self, Self::Error> {
         match value {
-            Data::Deltas(x) => Ok(*x),
+            Data::BookDeltas(x) => Ok(*x),
             _ => Err(()),
         }
     }
 }
 
 impl_try_from_data!(Quote, QuoteTick);
-impl_try_from_data!(Delta, OrderBookDelta);
+impl_try_from_data!(BookDelta, OrderBookDelta);
 impl_try_from_data!(Trade, TradeTick);
 impl_try_from_data!(Bar, Bar);
 impl_try_from_data!(MarkPrice, MarkPriceUpdate);
@@ -318,10 +366,24 @@ impl Data {
     /// Returns the instrument ID for the data.
     #[must_use]
     pub fn instrument_id(&self) -> InstrumentId {
+        DataRef::from(self).instrument_id()
+    }
+
+    /// Returns whether the data is a type of order book data.
+    #[must_use]
+    pub fn is_order_book_data(&self) -> bool {
+        DataRef::from(self).is_order_book_data()
+    }
+}
+
+impl DataRef<'_> {
+    /// Returns the instrument ID for the data.
+    #[must_use]
+    pub fn instrument_id(&self) -> InstrumentId {
         match self {
-            Self::Delta(delta) => delta.instrument_id,
-            Self::Deltas(deltas) => deltas.instrument_id,
-            Self::Depth10(depth) => depth.instrument_id,
+            Self::BookDelta(delta) => delta.instrument_id,
+            Self::BookDeltas(deltas) => deltas.instrument_id,
+            Self::BookDepth10(depth) => depth.instrument_id,
             Self::Quote(quote) => quote.instrument_id,
             Self::Trade(trade) => trade.instrument_id,
             Self::Bar(bar) => bar.bar_type.instrument_id(),
@@ -351,7 +413,10 @@ impl Data {
     /// Returns whether the data is a type of order book data.
     #[must_use]
     pub fn is_order_book_data(&self) -> bool {
-        matches!(self, Self::Delta(_) | Self::Deltas(_) | Self::Depth10(_))
+        matches!(
+            self,
+            Self::BookDelta(_) | Self::BookDeltas(_) | Self::BookDepth10(_)
+        )
     }
 }
 
@@ -409,10 +474,16 @@ impl_catalog_path_prefix!(InstrumentAny, "instruments");
 
 impl HasTsInit for Data {
     fn ts_init(&self) -> UnixNanos {
+        DataRef::from(self).ts_init()
+    }
+}
+
+impl HasTsInit for DataRef<'_> {
+    fn ts_init(&self) -> UnixNanos {
         match self {
-            Self::Delta(d) => d.ts_init,
-            Self::Deltas(d) => d.ts_init,
-            Self::Depth10(d) => d.ts_init,
+            Self::BookDelta(d) => d.ts_init,
+            Self::BookDeltas(d) => d.ts_init,
+            Self::BookDepth10(d) => d.ts_init,
             Self::Quote(q) => q.ts_init,
             Self::Trade(t) => t.ts_init,
             Self::Bar(b) => b.ts_init,
@@ -439,19 +510,19 @@ pub fn is_monotonically_increasing_by_init<T: HasTsInit>(data: &[T]) -> bool {
 
 impl From<OrderBookDelta> for Data {
     fn from(value: OrderBookDelta) -> Self {
-        Self::Delta(value)
+        Self::BookDelta(value)
     }
 }
 
 impl From<OrderBookDeltas> for Data {
     fn from(value: OrderBookDeltas) -> Self {
-        Self::Deltas(Box::new(value))
+        Self::BookDeltas(Box::new(value))
     }
 }
 
 impl From<OrderBookDepth10> for Data {
     fn from(value: OrderBookDepth10) -> Self {
-        Self::Depth10(Box::new(value))
+        Self::BookDepth10(Box::new(value))
     }
 }
 
@@ -993,6 +1064,18 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    #[cfg(feature = "defi")]
+    use crate::defi::{
+        data::block::BlockPosition,
+        pool_analysis::snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
+    };
+    use crate::{
+        data::stubs::{
+            stub_bar, stub_custom_data, stub_delta, stub_deltas, stub_depth10,
+            stub_instrument_close, stub_instrument_status, stub_trade_ethusdt_buy,
+        },
+        types::Price,
+    };
 
     fn params_from_json(value: serde_json::Value) -> Params {
         serde_json::from_value(value).expect("valid Params JSON")
@@ -1002,6 +1085,130 @@ mod tests {
         let mut hasher = DefaultHasher::new();
         data_type.hash(&mut hasher);
         hasher.finish()
+    }
+
+    #[rstest]
+    fn test_data_ref_maps_every_data_variant_without_copying_payloads() {
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let data = vec![
+            Data::BookDelta(stub_delta()),
+            Data::BookDeltas(Box::new(stub_deltas())),
+            Data::BookDepth10(Box::new(stub_depth10())),
+            Data::Quote(QuoteTick::default()),
+            Data::Trade(stub_trade_ethusdt_buy()),
+            Data::Bar(stub_bar()),
+            Data::MarkPrice(MarkPriceUpdate::new(
+                instrument_id,
+                Price::from("100.10"),
+                UnixNanos::from(7),
+                UnixNanos::from(8),
+            )),
+            Data::IndexPrice(IndexPriceUpdate::new(
+                instrument_id,
+                Price::from("100.20"),
+                UnixNanos::from(9),
+                UnixNanos::from(10),
+            )),
+            Data::FundingRate(FundingRateUpdate::new(
+                instrument_id,
+                "0.0001".parse().unwrap(),
+                Some(480),
+                Some(UnixNanos::from(12)),
+                UnixNanos::from(11),
+                UnixNanos::from(12),
+            )),
+            Data::OptionGreeks(OptionGreeks {
+                instrument_id,
+                ts_event: UnixNanos::from(13),
+                ts_init: UnixNanos::from(14),
+                ..OptionGreeks::default()
+            }),
+            Data::InstrumentStatus(stub_instrument_status()),
+            Data::InstrumentClose(stub_instrument_close()),
+            Data::Custom(stub_custom_data(
+                15,
+                42,
+                None,
+                Some("CUSTOM.SIM".to_string()),
+            )),
+        ];
+        assert_eq!(data.len(), 13, "every non-DeFi Data variant needs a case");
+
+        for data in &data {
+            let data_ref = DataRef::from(data);
+
+            assert_eq!(data_ref.instrument_id(), data.instrument_id());
+            assert_eq!(data_ref.ts_init(), data.ts_init());
+
+            match (data, data_ref) {
+                (Data::BookDelta(expected), DataRef::BookDelta(actual)) => {
+                    assert!(std::ptr::eq(expected, actual));
+                }
+                (Data::BookDeltas(expected), DataRef::BookDeltas(actual)) => {
+                    assert!(std::ptr::eq(expected.as_ref(), actual));
+                }
+                (Data::BookDepth10(expected), DataRef::BookDepth10(actual)) => {
+                    assert!(std::ptr::eq(expected.as_ref(), actual));
+                }
+                (Data::Quote(expected), DataRef::Quote(actual)) => {
+                    assert!(std::ptr::eq(expected, actual));
+                }
+                (Data::Trade(expected), DataRef::Trade(actual)) => {
+                    assert!(std::ptr::eq(expected, actual));
+                }
+                (Data::Bar(expected), DataRef::Bar(actual)) => {
+                    assert!(std::ptr::eq(expected, actual));
+                }
+                (Data::MarkPrice(expected), DataRef::MarkPrice(actual)) => {
+                    assert!(std::ptr::eq(expected, actual));
+                }
+                (Data::IndexPrice(expected), DataRef::IndexPrice(actual)) => {
+                    assert!(std::ptr::eq(expected, actual));
+                }
+                (Data::FundingRate(expected), DataRef::FundingRate(actual)) => {
+                    assert!(std::ptr::eq(expected, actual));
+                }
+                (Data::OptionGreeks(expected), DataRef::OptionGreeks(actual)) => {
+                    assert!(std::ptr::eq(expected, actual));
+                }
+                (Data::InstrumentStatus(expected), DataRef::InstrumentStatus(actual)) => {
+                    assert!(std::ptr::eq(expected, actual));
+                }
+                (Data::InstrumentClose(expected), DataRef::InstrumentClose(actual)) => {
+                    assert!(std::ptr::eq(expected, actual));
+                }
+                (Data::Custom(expected), DataRef::Custom(actual)) => {
+                    assert!(std::ptr::eq(expected, actual));
+                }
+                _ => panic!("DataRef variant did not match its Data source"),
+            }
+        }
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_data_ref_maps_defi_without_copying_payload() {
+        let instrument_id = InstrumentId::from("ETH/USDC.UNISWAPV3");
+        let snapshot = PoolSnapshot::new(
+            instrument_id,
+            PoolState::default(),
+            Vec::new(),
+            Vec::new(),
+            PoolAnalytics::default(),
+            BlockPosition::new(7, "0x123".to_string(), 2, 3),
+            UnixNanos::from(16),
+            UnixNanos::from(17),
+        );
+        let data = Data::Defi(Box::new(DefiData::PoolSnapshot(snapshot)));
+        let data_ref = DataRef::from(&data);
+
+        assert_eq!(data_ref.instrument_id(), data.instrument_id());
+        assert_eq!(data_ref.ts_init(), data.ts_init());
+
+        let (Data::Defi(expected), DataRef::Defi(actual)) = (&data, data_ref) else {
+            panic!("DataRef variant did not match its Data source");
+        };
+        assert!(std::ptr::eq(expected.as_ref(), actual));
     }
 
     #[rstest]

@@ -31,8 +31,8 @@
 //! Run with: `cargo run --example bybit-delta-neutral --package nautilus-bybit --features examples`
 //!
 //! Credentials are read from the environment when set:
-//! - `BYBIT_API_KEY`.
-//! - `BYBIT_API_SECRET`.
+//! - `BYBIT_API_KEY`
+//! - `BYBIT_API_SECRET`
 
 use nautilus_bybit::{
     common::{consts::BYBIT_CLIENT_ID, enums::BybitProductType},

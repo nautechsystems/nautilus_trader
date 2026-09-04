@@ -16,6 +16,9 @@
 //! Data structures modelling OKX WebSocket request and response payloads.
 
 use derive_builder::Builder;
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::{
     data::{Data, FundingRateUpdate, InstrumentStatus, OrderBookDeltas},
     events::{
@@ -28,6 +31,7 @@ use nautilus_model::{
 };
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
+use zeroize::Zeroize;
 
 use super::enums::{OKXWsChannel, OKXWsOperation};
 use crate::{
@@ -74,11 +78,6 @@ pub enum NautilusWsMessage {
 
 /// Represents an OKX WebSocket error.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "python", pyo3::pyclass(from_py_object))]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.okx")
-)]
 pub struct OKXWebSocketError {
     /// Error code from OKX (e.g., "50101").
     pub code: String,
@@ -187,20 +186,21 @@ pub struct OKXWsRequest<T> {
 }
 
 /// OKX WebSocket authentication message.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Zeroize)]
 pub struct OKXAuthentication {
+    #[zeroize(skip)]
     pub op: &'static str,
     pub args: Vec<OKXAuthenticationArg>,
 }
 
 /// OKX WebSocket authentication arguments.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Zeroize)]
 #[serde(rename_all = "camelCase")]
 pub struct OKXAuthenticationArg {
-    pub api_key: String,
-    pub passphrase: String,
+    pub api_key: SecretString,
+    pub passphrase: SecretString,
     pub timestamp: String,
-    pub sign: String,
+    pub sign: SecretString,
 }
 
 #[derive(Debug, Serialize)]
@@ -1139,6 +1139,9 @@ pub struct OKXAlgoOrderMsg {
     pub cl_ord_id: String,
     /// Order ID (empty until algo order is triggered).
     pub ord_id: String,
+    /// Triggered child order IDs.
+    #[serde(default)]
+    pub ord_id_list: Vec<String>,
     /// Instrument ID.
     pub inst_id: Ustr,
     /// Instrument type.
@@ -1209,6 +1212,9 @@ pub struct OKXAlgoOrderMsg {
     /// Trigger time (empty until triggered).
     #[serde(default)]
     pub trigger_time: String,
+    /// Failure code for rejected algo orders.
+    #[serde(default)]
+    pub fail_code: String,
     /// Tag.
     #[serde(default)]
     pub tag: String,
@@ -1521,6 +1527,31 @@ mod tests {
     use rust_decimal::Decimal;
 
     use super::*;
+
+    #[rstest]
+    fn authentication_preserves_wire_values_and_redacts_debug() {
+        let authentication = OKXAuthentication {
+            op: "login",
+            args: vec![OKXAuthenticationArg {
+                api_key: SecretString::from("api-key-value"),
+                passphrase: SecretString::from("passphrase-value"),
+                timestamp: "1700000000".to_string(),
+                sign: SecretString::from("signature-value"),
+            }],
+        };
+
+        let json = serde_json::to_value(&authentication).unwrap();
+        let formatted = format!("{authentication:?}");
+
+        assert_eq!(json["op"], "login");
+        assert_eq!(json["args"][0]["apiKey"], "api-key-value");
+        assert_eq!(json["args"][0]["passphrase"], "passphrase-value");
+        assert_eq!(json["args"][0]["sign"], "signature-value");
+        assert!(formatted.contains(REDACTED));
+        assert!(!formatted.contains("api-key-value"));
+        assert!(!formatted.contains("passphrase-value"));
+        assert!(!formatted.contains("signature-value"));
+    }
     use crate::common::testing::load_test_json;
 
     #[rstest]

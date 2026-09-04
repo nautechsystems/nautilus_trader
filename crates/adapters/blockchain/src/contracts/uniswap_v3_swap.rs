@@ -13,7 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use alloy::sol;
+use std::sync::Arc;
+
+use alloy::{
+    primitives::{Address, aliases::U24},
+    sol,
+    sol_types::SolCall,
+};
+
+use super::base::BaseContract;
+use crate::rpc::{error::BlockchainRpcClientError, http::BlockchainHttpRpcClient};
 
 // The original Uniswap V3 SwapRouter interface: `exactInputSingle` carries a `deadline`
 // parameter, unlike the later SwapRouter02 whose struct drops it.
@@ -32,6 +41,134 @@ sol! {
         }
 
         function exactInputSingle(ExactInputSingleParams memory params) external payable returns (uint256 amountOut);
+    }
+}
+
+sol! {
+    #[sol(rpc)]
+    contract UniswapV3RouterState {
+        function factory() external view returns (address);
+        function WETH9() external view returns (address);
+    }
+
+    #[sol(rpc)]
+    contract UniswapV3Factory {
+        function getPool(address tokenA, address tokenB, uint24 fee) external view returns (address pool);
+    }
+}
+
+/// Reads immutable deployment relationships used to authorize Uniswap V3 execution.
+#[derive(Debug)]
+pub struct UniswapV3Deployment {
+    base: BaseContract,
+}
+
+impl UniswapV3Deployment {
+    /// Creates a deployment reader with an optional per-request timeout.
+    #[must_use]
+    pub fn new(client: Arc<BlockchainHttpRpcClient>, rpc_timeout_secs: Option<u64>) -> Self {
+        Self {
+            base: BaseContract::new_with_multicall_limit_and_timeout(
+                client,
+                super::base::DEFAULT_MULTICALL_CALLS_PER_RPC_REQUEST,
+                rpc_timeout_secs,
+            ),
+        }
+    }
+
+    /// Reads the factory configured by the router.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC call fails or the result cannot be decoded as an address.
+    pub async fn router_factory(
+        &self,
+        router: &Address,
+    ) -> Result<Address, BlockchainRpcClientError> {
+        self.router_factory_with_block(router, None).await
+    }
+
+    async fn router_factory_with_block(
+        &self,
+        router: &Address,
+        block: Option<u64>,
+    ) -> Result<Address, BlockchainRpcClientError> {
+        let result = self
+            .base
+            .execute_call(
+                router,
+                &UniswapV3RouterState::factoryCall {}.abi_encode(),
+                block,
+            )
+            .await?;
+        UniswapV3RouterState::factoryCall::abi_decode_returns(&result)
+            .map_err(|e| BlockchainRpcClientError::AbiDecodingError(e.to_string()))
+    }
+
+    /// Reads the wrapped-native-token address configured by the router.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC call fails or the result cannot be decoded as an address.
+    pub async fn router_weth9(
+        &self,
+        router: &Address,
+    ) -> Result<Address, BlockchainRpcClientError> {
+        self.router_weth9_with_block(router, None).await
+    }
+
+    async fn router_weth9_with_block(
+        &self,
+        router: &Address,
+        block: Option<u64>,
+    ) -> Result<Address, BlockchainRpcClientError> {
+        let result = self
+            .base
+            .execute_call(
+                router,
+                &UniswapV3RouterState::WETH9Call {}.abi_encode(),
+                block,
+            )
+            .await?;
+        UniswapV3RouterState::WETH9Call::abi_decode_returns(&result)
+            .map_err(|e| BlockchainRpcClientError::AbiDecodingError(e.to_string()))
+    }
+
+    /// Resolves the canonical pool registered by a factory for a token pair and fee tier.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC call fails or the result cannot be decoded as an address.
+    pub async fn pool(
+        &self,
+        factory: &Address,
+        token_a: Address,
+        token_b: Address,
+        fee: U24,
+    ) -> Result<Address, BlockchainRpcClientError> {
+        self.pool_with_block(factory, token_a, token_b, fee, None)
+            .await
+    }
+
+    async fn pool_with_block(
+        &self,
+        factory: &Address,
+        token_a: Address,
+        token_b: Address,
+        fee: U24,
+        block: Option<u64>,
+    ) -> Result<Address, BlockchainRpcClientError> {
+        let call = UniswapV3Factory::getPoolCall {
+            tokenA: token_a,
+            tokenB: token_b,
+            fee,
+        };
+        let result = self
+            .base
+            .execute_call(factory, &call.abi_encode(), block)
+            .await?;
+        UniswapV3Factory::getPoolCall::abi_decode_returns(&result)
+            .map_err(|e| BlockchainRpcClientError::AbiDecodingError(e.to_string()))
     }
 }
 
@@ -97,5 +234,24 @@ mod tests {
             "0000000000000000000000000000000000000000000000000000000000000000",
         );
         assert_eq!(hex::encode(&calldata), expected);
+    }
+
+    #[rstest]
+    fn deployment_selectors_match_canonical_signatures() {
+        assert_eq!(
+            hex::encode(UniswapV3RouterState::factoryCall {}.abi_encode()),
+            "c45a0155"
+        );
+        assert_eq!(
+            hex::encode(UniswapV3RouterState::WETH9Call {}.abi_encode()),
+            "4aa4a4fc"
+        );
+        let calldata = UniswapV3Factory::getPoolCall {
+            tokenA: address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
+            tokenB: address!("af88d065e77c8cC2239327C5EDb3A432268e5831"),
+            fee: U24::try_from(500u32).unwrap(),
+        }
+        .abi_encode();
+        assert_eq!(hex::encode(&calldata[..4]), "1698ee82");
     }
 }

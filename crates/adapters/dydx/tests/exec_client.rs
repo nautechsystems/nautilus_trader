@@ -280,7 +280,7 @@ async fn test_parse_order_status_report_buy_limit() {
     assert_eq!(report.account_id, account_id);
     assert_eq!(report.instrument_id, instrument.id());
     assert_eq!(report.venue_order_id.as_str(), "order-123");
-    assert_eq!(report.order_side, OrderSide::Buy);
+    assert_eq!(report.order_side, Some(OrderSide::Buy));
     assert_eq!(report.order_type, OrderType::Limit);
     assert_eq!(report.time_in_force, TimeInForce::Gtc);
     assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
@@ -307,7 +307,7 @@ async fn test_parse_order_status_report_sell_filled() {
 
     let report = parse_order_status_report(&order, &instrument, account_id, ts_init).unwrap();
 
-    assert_eq!(report.order_side, OrderSide::Sell);
+    assert_eq!(report.order_side, Some(OrderSide::Sell));
     assert_eq!(report.time_in_force, TimeInForce::Ioc);
     assert_eq!(report.order_status, OrderStatus::Filled);
     assert_eq!(report.quantity.as_f64(), 0.2);

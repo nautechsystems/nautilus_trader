@@ -446,7 +446,7 @@ async fn test_raw_http_get_balances_returns_data() {
         None,
     )
     .unwrap();
-    client.set_session_token("test_session_token".to_string());
+    client.set_session_token("test_session_token".into());
 
     let response = client.get_balances().await.unwrap();
 
@@ -477,7 +477,7 @@ async fn test_raw_http_get_positions_returns_data() {
         None,
     )
     .unwrap();
-    client.set_session_token("test_session_token".to_string());
+    client.set_session_token("test_session_token".into());
 
     let response = client.get_positions().await.unwrap();
 
@@ -507,7 +507,7 @@ async fn test_raw_http_get_tickers_returns_data() {
         None,
     )
     .unwrap();
-    client.set_session_token("test_session_token".to_string());
+    client.set_session_token("test_session_token".into());
 
     let response = client.get_tickers().await.unwrap();
 
@@ -539,7 +539,7 @@ async fn test_raw_http_get_ticker_returns_data() {
         None,
     )
     .unwrap();
-    client.set_session_token("test_session_token".to_string());
+    client.set_session_token("test_session_token".into());
 
     let ticker = client.get_ticker(Ustr::from("BTC-PERP")).await.unwrap();
 
@@ -571,7 +571,7 @@ async fn test_domain_http_request_account_fees_reaches_instruments() {
     let base_url = format!("http://{addr}");
 
     let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
-    client.set_session_token("test_session_token".to_string());
+    client.set_session_token("test_session_token".into());
 
     let (maker_fee, taker_fee) = client.request_account_fees().await.unwrap();
     let instruments = client.request_instruments(None, None).await.unwrap();
@@ -599,7 +599,7 @@ async fn test_domain_http_partial_fee_arguments_keep_resolved_rate_for_the_other
     let base_url = format!("http://{addr}");
 
     let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
-    client.set_session_token("test_session_token".to_string());
+    client.set_session_token("test_session_token".into());
     client.request_account_fees().await.unwrap();
 
     let instruments = client
@@ -630,7 +630,7 @@ async fn test_domain_http_partial_fee_arguments_zero_the_other_side_when_unresol
     let base_url = format!("http://{addr}");
 
     let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
-    client.set_session_token("test_session_token".to_string());
+    client.set_session_token("test_session_token".into());
 
     let instruments = client
         .request_instruments(maker_arg, taker_arg)
@@ -653,7 +653,7 @@ async fn test_domain_http_resolved_fees_are_shared_across_clones() {
     let base_url = format!("http://{addr}");
 
     let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
-    client.set_session_token("test_session_token".to_string());
+    client.set_session_token("test_session_token".into());
     let cloned = client.clone();
 
     client.request_account_fees().await.unwrap();
@@ -750,7 +750,7 @@ async fn start_whoami_server(accounts: Value) -> AxHttpClient {
 
     let base_url = format!("http://{addr}");
     let client = AxHttpClient::new(Some(base_url), None, 60, 0, 1000, 10_000, None).unwrap();
-    client.set_session_token("test_session_token".to_string());
+    client.set_session_token("test_session_token".into());
     client
 }
 
@@ -793,7 +793,7 @@ async fn test_domain_http_request_book_snapshot_composes_event_timestamp() {
     let base_url = format!("http://{addr}");
 
     let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
-    client.set_session_token("test_session_token".to_string());
+    client.set_session_token("test_session_token".into());
 
     let symbol = Ustr::from("EURUSD-PERP");
     let instrument = client.request_instrument(symbol, None, None).await.unwrap();
@@ -831,7 +831,7 @@ async fn test_domain_http_request_book_snapshot_rejects_unrepresentable_price() 
     let base_url = format!("http://{addr}");
 
     let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
-    client.set_session_token("test_session_token".to_string());
+    client.set_session_token("test_session_token".into());
     let symbol = Ustr::from("EURUSD-PERP");
     let instrument = client
         .request_instrument(symbol, Some(Decimal::ZERO), Some(Decimal::ZERO))
@@ -932,7 +932,7 @@ async fn test_domain_http_request_funding_rates_reads_all_cursor_pages() {
     let addr = start_test_server().await;
     let base_url = format!("http://{addr}");
     let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
-    client.set_session_token("test_session_token".to_string());
+    client.set_session_token("test_session_token".into());
 
     let updates = client
         .request_funding_rates(InstrumentId::from("EURUSD-PERP.AX"), None, None)
@@ -949,7 +949,7 @@ async fn test_domain_http_request_funding_rates_rejects_repeated_cursor() {
     let addr = start_server(router).await;
     let base_url = format!("http://{addr}");
     let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
-    client.set_session_token("test_session_token".to_string());
+    client.set_session_token("test_session_token".into());
 
     let error = client
         .request_funding_rates(InstrumentId::from("EURUSD-PERP.AX"), None, None)
@@ -968,7 +968,7 @@ async fn test_domain_http_request_funding_slots_returns_schedule() {
     let addr = start_test_server().await;
     let base_url = format!("http://{addr}");
     let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
-    client.set_session_token("test_session_token".to_string());
+    client.set_session_token("test_session_token".into());
 
     let date = Date::new(2026, 7, 6).unwrap();
     let response = client
@@ -998,7 +998,7 @@ async fn test_domain_http_request_open_orders_rejects_empty_page_before_total() 
         None,
     )
     .unwrap();
-    client.set_session_token("test_session_token".to_string());
+    client.set_session_token("test_session_token".into());
 
     let error = client
         .request_order_status_reports(
@@ -1028,7 +1028,7 @@ async fn test_domain_http_report_fetches_and_caches_uncached_instrument(
     let base_url = format!("http://{addr}");
     let client =
         AxHttpClient::new(Some(base_url.clone()), Some(base_url), 60, 0, 1, 1, None).unwrap();
-    client.set_session_token("test_session_token".to_string());
+    client.set_session_token("test_session_token".into());
     client.request_account_fees().await.unwrap();
 
     let instrument_ids = request_report_instrument_ids(&client, family)
@@ -1066,7 +1066,7 @@ async fn test_domain_http_report_reuses_pre_cached_instrument() {
     let base_url = format!("http://{addr}");
     let client =
         AxHttpClient::new(Some(base_url.clone()), Some(base_url), 60, 0, 1, 1, None).unwrap();
-    client.set_session_token("test_session_token".to_string());
+    client.set_session_token("test_session_token".into());
     client.request_account_fees().await.unwrap();
     let instruments = client.request_instruments(None, None).await.unwrap();
     client.cache_instruments(&instruments);

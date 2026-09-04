@@ -42,6 +42,7 @@ logs/
 # Benchmarking and coverage
 .benchmarks*
 .coverage*
+*.profraw
 htmlcov/
 perf.data
 perf.data.old
@@ -83,6 +84,10 @@ build/
 dist/
 env/
 .tmp-pre-commit/
+.tmp-doc-links/
+.nautilus-engineering.syncing
+.nautilus-engineering.sync-lock
+.nautilus-engineering.tmp.*
 *.bak
 *.sh
 !**/fuzz/**/grind.sh
@@ -93,6 +98,7 @@ env/
 !scripts/check-outdated.sh
 !scripts/fuzz-adapter.sh
 !scripts/check-no-build-packages.sh
+!scripts/install-security-tools.sh
 !scripts/ci/check-crates-io-trusted-publishing.sh
 !scripts/ci/check-workspace-test-coverage.sh
 !scripts/ci/check-github-action-shas.sh

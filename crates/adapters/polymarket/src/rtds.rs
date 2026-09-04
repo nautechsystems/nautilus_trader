@@ -18,7 +18,7 @@
 use std::{
     str::FromStr,
     sync::{
-        Arc, Mutex as StdMutex,
+        Arc, Weak,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -26,9 +26,14 @@ use std::{
 
 use ahash::AHashMap;
 use anyhow::Context;
-use nautilus_common::{live::get_runtime, messages::DataEvent};
+#[cfg(test)]
+use nautilus_common::live::get_runtime;
+use nautilus_common::messages::DataEvent;
 use nautilus_core::{UnixNanos, time::AtomicTime};
-use nautilus_live::SocketControl;
+use nautilus_live::{
+    SocketControl,
+    task::{TaskJoinOutcome, TaskSlot, finish_task},
+};
 use nautilus_model::{
     data::{CustomData, Data as NautilusData, DataType, custom::CustomDataTrait},
     types::Price,
@@ -40,11 +45,16 @@ use nautilus_network::{
         proxy::ProxyUrl,
     },
 };
+use parking_lot::Mutex;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::data_types::{PolymarketRtdsCryptoPrice, PolymarketRtdsEquityPrice};
+use crate::{
+    common::parse::deserialize_crypto_twap_value,
+    data_types::{PolymarketRtdsCryptoPrice, PolymarketRtdsCryptoTwap, PolymarketRtdsEquityPrice},
+};
 
 const POLYMARKET_RTDS_HEARTBEAT_SECS: u64 = 5;
 // The venue answers each `PING` with a text `PONG`, which refreshes a data-silence
@@ -56,18 +66,81 @@ const POLYMARKET_RTDS_RECONNECT_DELAY_INITIAL_MS: u64 = 250;
 const POLYMARKET_RTDS_RECONNECT_DELAY_MAX_MS: u64 = 5_000;
 const POLYMARKET_RTDS_RECONNECT_JITTER_MS: u64 = 200;
 const POLYMARKET_RTDS_CRYPTO_PRICE_TYPE_NAME: &str = "PolymarketRtdsCryptoPrice";
+const POLYMARKET_RTDS_CRYPTO_TWAP_TYPE_NAME: &str = "PolymarketRtdsCryptoTwap";
 const POLYMARKET_RTDS_EQUITY_PRICE_TYPE_NAME: &str = "PolymarketRtdsEquityPrice";
 
 pub(crate) fn is_supported_rtds_data_type(data_type: &DataType) -> bool {
     matches!(
         data_type.type_name(),
-        POLYMARKET_RTDS_CRYPTO_PRICE_TYPE_NAME | POLYMARKET_RTDS_EQUITY_PRICE_TYPE_NAME
+        POLYMARKET_RTDS_CRYPTO_PRICE_TYPE_NAME
+            | POLYMARKET_RTDS_CRYPTO_TWAP_TYPE_NAME
+            | POLYMARKET_RTDS_EQUITY_PRICE_TYPE_NAME
     )
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct PolymarketRtdsFeed {
     inner: Arc<PolymarketRtdsFeedInner>,
+    _task_owner: Option<Arc<RtdsTaskSlots>>,
+    task_slots: Weak<RtdsTaskSlots>,
+}
+
+#[derive(Debug)]
+struct RtdsTaskSlots {
+    message: tokio::sync::Mutex<TaskSlot<()>>,
+    reconcile: tokio::sync::Mutex<TaskSlot<()>>,
+    shutdown_errors: Mutex<Vec<String>>,
+}
+
+struct RtdsWebSocketGuard<'a> {
+    owner: &'a Mutex<Option<Arc<WebSocketClient>>>,
+    ws: Option<Arc<WebSocketClient>>,
+}
+
+impl<'a> RtdsWebSocketGuard<'a> {
+    fn take(owner: &'a Mutex<Option<Arc<WebSocketClient>>>) -> Self {
+        let ws = owner.lock().take();
+        Self { owner, ws }
+    }
+
+    fn clear(&mut self) {
+        self.ws = None;
+    }
+}
+
+impl Drop for RtdsWebSocketGuard<'_> {
+    fn drop(&mut self) {
+        if self.ws.is_some() {
+            *self.owner.lock() = self.ws.take();
+        }
+    }
+}
+
+impl RtdsTaskSlots {
+    fn push_shutdown_error(&self, error: String) {
+        self.shutdown_errors.lock().push(error);
+    }
+
+    fn take_shutdown_result(&self) -> anyhow::Result<()> {
+        let mut errors = self.shutdown_errors.lock();
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            let errors = std::mem::take(&mut *errors);
+            anyhow::bail!(
+                "Polymarket RTDS task shutdown failed: {}",
+                errors.join("; ")
+            )
+        }
+    }
+}
+
+impl Drop for RtdsTaskSlots {
+    fn drop(&mut self) {
+        self.message.get_mut().abort();
+        self.reconcile.get_mut().abort();
+    }
 }
 
 #[derive(Debug)]
@@ -83,15 +156,20 @@ struct PolymarketRtdsFeedInner {
     last_emitted_timestamps_ms: dashmap::DashMap<String, u64>,
     // Tracks the last venue state we successfully pushed so incremental syncs
     // can send only the delta from desired state to live wire state.
-    live_subscriptions: StdMutex<AHashMap<String, RtdsWireSubscription>>,
-    ws_client: StdMutex<Option<Arc<WebSocketClient>>>,
-    message_task_handle: StdMutex<Option<tokio::task::JoinHandle<()>>>,
-    reconcile_task_handle: StdMutex<Option<tokio::task::JoinHandle<()>>>,
+    live_subscriptions: Mutex<AHashMap<String, RtdsWireSubscription>>,
+    ws_client: Mutex<Option<Arc<WebSocketClient>>>,
     wire_mutex: tokio::sync::Mutex<()>,
     reconcile_notify: tokio::sync::Notify,
     reconcile_pending: AtomicBool,
     reset_live_state_pending: AtomicBool,
     closing: AtomicBool,
+    shutdown_generation: Mutex<u64>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct TwapReplayFingerprint {
+    timestamp_ms: u64,
+    value: Decimal,
 }
 
 #[derive(Clone, Debug)]
@@ -99,6 +177,7 @@ struct TrackedSubscription {
     wire: RtdsWireSubscription,
     total_ref_count: usize,
     data_types: AHashMap<String, TrackedDataType>,
+    last_twap_fingerprint: Option<TwapReplayFingerprint>,
 }
 
 #[derive(Clone, Debug)]
@@ -125,6 +204,8 @@ pub(crate) struct RtdsWireSubscription {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RtdsTopic {
     CryptoPrices,
+    CryptoPricesTwapThirty,
+    CryptoPricesTwapSixty,
     EquityPrices,
 }
 
@@ -132,7 +213,45 @@ impl RtdsTopic {
     fn as_str(self) -> &'static str {
         match self {
             Self::CryptoPrices => "crypto_prices",
+            Self::CryptoPricesTwapThirty => "crypto_prices_twap_thirty",
+            Self::CryptoPricesTwapSixty => "crypto_prices_twap_sixty",
             Self::EquityPrices => "equity_prices",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RtdsCryptoTwapWindow {
+    ThirtySeconds,
+    SixtySeconds,
+}
+
+impl RtdsCryptoTwapWindow {
+    const fn seconds(self) -> u32 {
+        match self {
+            Self::ThirtySeconds => 30,
+            Self::SixtySeconds => 60,
+        }
+    }
+
+    const fn topic(self) -> RtdsTopic {
+        match self {
+            Self::ThirtySeconds => RtdsTopic::CryptoPricesTwapThirty,
+            Self::SixtySeconds => RtdsTopic::CryptoPricesTwapSixty,
+        }
+    }
+}
+
+impl TryFrom<u64> for RtdsCryptoTwapWindow {
+    type Error = anyhow::Error;
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        match value {
+            30 => Ok(Self::ThirtySeconds),
+            60 => Ok(Self::SixtySeconds),
+            other => anyhow::bail!(
+                "PolymarketRtdsCryptoTwap metadata['window_seconds'] must be 30 or 60, received {other}"
+            ),
         }
     }
 }
@@ -174,6 +293,20 @@ struct CryptoPayloadRaw {
     symbol: String,
     timestamp: u64,
     value: Number,
+}
+
+#[derive(Debug, Deserialize)]
+struct CryptoTwapPayloadRaw {
+    symbol: String,
+    timestamp: u64,
+    #[serde(rename = "value", deserialize_with = "deserialize_crypto_twap_value")]
+    #[allow(
+        dead_code,
+        reason = "display-only field validated for wire conformance, never published"
+    )]
+    display_value: Decimal,
+    full_accuracy_value: String,
+    window_s: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -284,6 +417,11 @@ impl PolymarketRtdsFeed {
         socket_sink: Option<SocketStateSink>,
         socket_control: Option<SocketControl>,
     ) -> Self {
+        let task_owner = Arc::new(RtdsTaskSlots {
+            message: tokio::sync::Mutex::new(TaskSlot::new()),
+            reconcile: tokio::sync::Mutex::new(TaskSlot::new()),
+            shutdown_errors: Mutex::new(Vec::new()),
+        });
         Self {
             inner: Arc::new(PolymarketRtdsFeedInner {
                 url,
@@ -295,17 +433,37 @@ impl PolymarketRtdsFeed {
                 socket_control,
                 subscriptions: dashmap::DashMap::new(),
                 last_emitted_timestamps_ms: dashmap::DashMap::new(),
-                live_subscriptions: StdMutex::new(AHashMap::new()),
-                ws_client: StdMutex::new(None),
-                message_task_handle: StdMutex::new(None),
-                reconcile_task_handle: StdMutex::new(None),
+                live_subscriptions: Mutex::new(AHashMap::new()),
+                ws_client: Mutex::new(None),
                 wire_mutex: tokio::sync::Mutex::new(()),
                 reconcile_notify: tokio::sync::Notify::new(),
                 reconcile_pending: AtomicBool::new(false),
                 reset_live_state_pending: AtomicBool::new(false),
                 closing: AtomicBool::new(false),
+                shutdown_generation: Mutex::new(0),
             }),
+            _task_owner: Some(Arc::clone(&task_owner)),
+            task_slots: Arc::downgrade(&task_owner),
         }
+    }
+
+    fn worker(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
+            _task_owner: None,
+            task_slots: self.task_slots.clone(),
+        }
+    }
+
+    fn task_slots(&self) -> Option<Arc<RtdsTaskSlots>> {
+        self.task_slots.upgrade()
+    }
+
+    pub(crate) async fn has_retained_tasks(&self) -> bool {
+        let Some(tasks) = self.task_slots() else {
+            return false;
+        };
+        !tasks.message.lock().await.is_none() || !tasks.reconcile.lock().await.is_none()
     }
 
     pub(crate) fn has_subscriptions(&self) -> bool {
@@ -327,6 +485,7 @@ impl PolymarketRtdsFeed {
                 wire: parsed.wire.clone(),
                 total_ref_count: 0,
                 data_types: AHashMap::new(),
+                last_twap_fingerprint: None,
             });
 
         let should_send_wire = entry.total_ref_count == 0;
@@ -347,37 +506,106 @@ impl PolymarketRtdsFeed {
 
     pub(crate) fn track_unsubscribe(&self, data_type: &DataType) -> anyhow::Result<bool> {
         let parsed = ParsedSubscription::from_data_type(data_type)?;
-        let mut entry = match self.inner.subscriptions.get_mut(&parsed.key) {
-            Some(entry) => entry,
-            None => return Ok(false),
+        let mut entry = match self.inner.subscriptions.entry(parsed.key.clone()) {
+            dashmap::mapref::entry::Entry::Occupied(entry) => entry,
+            dashmap::mapref::entry::Entry::Vacant(_) => return Ok(false),
         };
 
         let data_type_key = data_type.topic().to_string();
-        let Some(tracked) = entry.data_types.get_mut(&data_type_key) else {
-            return Ok(false);
-        };
+        {
+            let subscription = entry.get_mut();
+            let Some(tracked) = subscription.data_types.get_mut(&data_type_key) else {
+                return Ok(false);
+            };
 
-        if tracked.ref_count > 1 {
-            tracked.ref_count -= 1;
-        } else {
-            entry.data_types.remove(&data_type_key);
+            if tracked.ref_count > 1 {
+                tracked.ref_count -= 1;
+            } else {
+                subscription.data_types.remove(&data_type_key);
+            }
+
+            if subscription.total_ref_count > 1 {
+                subscription.total_ref_count -= 1;
+                return Ok(false);
+            }
         }
 
-        if entry.total_ref_count > 1 {
-            entry.total_ref_count -= 1;
-            return Ok(false);
-        }
-
-        drop(entry);
-        self.inner.subscriptions.remove(&parsed.key);
         self.inner.last_emitted_timestamps_ms.remove(&parsed.key);
+        entry.remove();
         Ok(true)
     }
 
     pub(crate) async fn connect(&self) -> anyhow::Result<()> {
-        self.inner.closing.store(false, Ordering::Release);
+        let generation = *self.inner.shutdown_generation.lock();
+
+        if self.inner.closing.load(Ordering::Acquire) {
+            self.finish_retained_tasks().await?;
+        }
+
+        {
+            let current_generation = self.inner.shutdown_generation.lock();
+            if *current_generation != generation {
+                anyhow::bail!("RTDS connect was canceled by shutdown");
+            }
+            self.inner.closing.store(false, Ordering::Release);
+        }
+
         self.ensure_reconcile_worker();
-        self.reconcile_once(false).await
+        self.reconcile_once(false).await?;
+
+        let current_generation = self.inner.shutdown_generation.lock();
+        if *current_generation != generation || self.inner.closing.load(Ordering::Acquire) {
+            anyhow::bail!("RTDS connect was canceled by shutdown");
+        }
+        Ok(())
+    }
+
+    async fn finish_retained_tasks(&self) -> anyhow::Result<()> {
+        let Some(tasks) = self.task_slots() else {
+            if let Some(ws) = self.current_ws() {
+                ws.notify_closed();
+                ws.disconnect().await;
+                self.clear_ws_if_current(&ws);
+            }
+            anyhow::bail!("RTDS task owner was dropped");
+        };
+
+        let mut message_slot = tasks.message.lock().await;
+        if let Some(outcome) =
+            finish_task(&mut message_slot, Duration::ZERO, Duration::from_secs(2)).await
+        {
+            match outcome {
+                TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
+                TaskJoinOutcome::Failed(error) => {
+                    tasks.push_shutdown_error(format!("RTDS message loop failed: {error}"));
+                }
+                TaskJoinOutcome::Incomplete => {
+                    tasks.push_shutdown_error(
+                        "RTDS message loop did not stop after abort".to_string(),
+                    );
+                }
+            }
+        }
+        drop(message_slot);
+
+        let mut reconcile_slot = tasks.reconcile.lock().await;
+        if let Some(outcome) =
+            finish_task(&mut reconcile_slot, Duration::ZERO, Duration::from_secs(2)).await
+        {
+            match outcome {
+                TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
+                TaskJoinOutcome::Failed(error) => {
+                    tasks.push_shutdown_error(format!("RTDS reconcile worker failed: {error}"));
+                }
+                TaskJoinOutcome::Incomplete => {
+                    tasks.push_shutdown_error(
+                        "RTDS reconcile worker did not stop after abort".to_string(),
+                    );
+                }
+            }
+        }
+
+        tasks.take_shutdown_result()
     }
 
     pub(crate) fn request_reconcile(&self, reason: ReconcileReason) {
@@ -400,9 +628,86 @@ impl PolymarketRtdsFeed {
         self.inner.reconcile_notify.notify_one();
     }
 
-    pub(crate) async fn disconnect(&self) {
+    pub(crate) async fn disconnect(&self) -> anyhow::Result<()> {
+        self.begin_shutdown();
         let _guard = self.inner.wire_mutex.lock().await;
 
+        self.inner.reconcile_pending.store(false, Ordering::Release);
+        self.inner
+            .reset_live_state_pending
+            .store(false, Ordering::Release);
+        self.inner.reconcile_notify.notify_waiters();
+
+        let Some(tasks) = self.task_slots() else {
+            anyhow::bail!("Polymarket RTDS task owner was dropped");
+        };
+        let mut ws = RtdsWebSocketGuard::take(&self.inner.ws_client);
+
+        if let Some(client) = ws.ws.as_ref() {
+            client.disconnect().await;
+        }
+
+        if let Some(control) = &self.inner.socket_control {
+            control.deregister();
+        }
+
+        self.inner.live_subscriptions.lock().clear();
+        drop(_guard);
+
+        let mut message_slot = tasks.message.lock().await;
+        if let Some(outcome) = finish_task(
+            &mut message_slot,
+            Duration::from_secs(2),
+            Duration::from_secs(2),
+        )
+        .await
+        {
+            match outcome {
+                TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
+                TaskJoinOutcome::Failed(error) => {
+                    tasks.push_shutdown_error(format!("RTDS message loop failed: {error}"));
+                }
+                TaskJoinOutcome::Incomplete => {
+                    tasks.push_shutdown_error(
+                        "RTDS message loop did not stop after abort".to_string(),
+                    );
+                }
+            }
+        }
+        let message_stopped = message_slot.is_none();
+        drop(message_slot);
+
+        let mut reconcile_slot = tasks.reconcile.lock().await;
+        if let Some(outcome) = finish_task(
+            &mut reconcile_slot,
+            Duration::from_secs(2),
+            Duration::from_secs(2),
+        )
+        .await
+        {
+            match outcome {
+                TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
+                TaskJoinOutcome::Failed(error) => {
+                    tasks.push_shutdown_error(format!("RTDS reconcile worker failed: {error}"));
+                }
+                TaskJoinOutcome::Incomplete => {
+                    tasks.push_shutdown_error(
+                        "RTDS reconcile worker did not stop after abort".to_string(),
+                    );
+                }
+            }
+        }
+
+        if message_stopped && reconcile_slot.is_none() {
+            ws.clear();
+        }
+
+        tasks.take_shutdown_result()
+    }
+
+    pub(crate) fn begin_shutdown(&self) {
+        let mut generation = self.inner.shutdown_generation.lock();
+        *generation = generation.wrapping_add(1);
         self.inner.closing.store(true, Ordering::Release);
         self.inner.reconcile_pending.store(false, Ordering::Release);
         self.inner
@@ -410,97 +715,8 @@ impl PolymarketRtdsFeed {
             .store(false, Ordering::Release);
         self.inner.reconcile_notify.notify_waiters();
 
-        let ws = self
-            .inner
-            .ws_client
-            .lock()
-            .expect("RTDS ws_client mutex poisoned")
-            .take();
-        let message_handle = self
-            .inner
-            .message_task_handle
-            .lock()
-            .expect("RTDS message_task_handle mutex poisoned")
-            .take();
-        let reconcile_handle = self
-            .inner
-            .reconcile_task_handle
-            .lock()
-            .expect("RTDS reconcile_task_handle mutex poisoned")
-            .take();
-
-        if let Some(ws) = ws {
-            ws.disconnect().await;
-        }
-
-        if let Some(control) = &self.inner.socket_control {
-            control.deregister();
-        }
-
-        self.inner
-            .live_subscriptions
-            .lock()
-            .expect("RTDS live_subscriptions mutex poisoned")
-            .clear();
-        drop(_guard);
-
-        if let Some(handle) = message_handle {
-            await_task_shutdown(handle, "RTDS message loop").await;
-        }
-
-        if let Some(handle) = reconcile_handle {
-            await_task_shutdown(handle, "RTDS reconcile worker").await;
-        }
-    }
-
-    pub(crate) fn abort(&self) {
-        self.inner.closing.store(true, Ordering::Release);
-        self.inner.reconcile_pending.store(false, Ordering::Release);
-        self.inner
-            .reset_live_state_pending
-            .store(false, Ordering::Release);
-
-        let ws = self
-            .inner
-            .ws_client
-            .lock()
-            .expect("RTDS ws_client mutex poisoned")
-            .take();
-
-        if let Some(ws) = ws {
-            get_runtime().spawn(async move {
-                ws.disconnect().await;
-            });
-        }
-
-        if let Some(control) = &self.inner.socket_control {
-            control.deregister();
-        }
-
-        self.inner
-            .live_subscriptions
-            .lock()
-            .expect("RTDS live_subscriptions mutex poisoned")
-            .clear();
-
-        if let Some(handle) = self
-            .inner
-            .message_task_handle
-            .lock()
-            .expect("RTDS message_task_handle mutex poisoned")
-            .take()
-        {
-            handle.abort();
-        }
-
-        if let Some(handle) = self
-            .inner
-            .reconcile_task_handle
-            .lock()
-            .expect("RTDS reconcile_task_handle mutex poisoned")
-            .take()
-        {
-            handle.abort();
+        if let Some(ws) = self.inner.ws_client.lock().as_ref() {
+            ws.notify_closed();
         }
     }
 
@@ -528,25 +744,12 @@ impl PolymarketRtdsFeed {
             .map_or(0, |entry| entry.data_types.len())
     }
 
-    #[cfg(test)]
-    fn handle_text_for_test(&self, text: &str) {
-        self.handle_text_message(text);
-    }
-
     fn current_ws(&self) -> Option<Arc<WebSocketClient>> {
-        self.inner
-            .ws_client
-            .lock()
-            .expect("RTDS ws_client mutex poisoned")
-            .clone()
+        self.inner.ws_client.lock().clone()
     }
 
     fn clear_ws_if_current(&self, ws: &Arc<WebSocketClient>) -> bool {
-        let mut guard = self
-            .inner
-            .ws_client
-            .lock()
-            .expect("RTDS ws_client mutex poisoned");
+        let mut guard = self.inner.ws_client.lock();
         let Some(current) = guard.as_ref() else {
             return false;
         };
@@ -560,24 +763,29 @@ impl PolymarketRtdsFeed {
     }
 
     fn ensure_reconcile_worker(&self) {
-        let mut guard = self
-            .inner
-            .reconcile_task_handle
-            .lock()
-            .expect("RTDS reconcile_task_handle mutex poisoned");
+        let _generation = self.inner.shutdown_generation.lock();
 
         if self.inner.closing.load(Ordering::Acquire) {
             return;
         }
 
-        if guard.as_ref().is_some_and(|handle| !handle.is_finished()) {
+        let Some(tasks) = self.task_slots() else {
+            return;
+        };
+        let Ok(mut slot) = tasks.reconcile.try_lock() else {
+            return;
+        };
+
+        if slot.is_some() {
             return;
         }
 
-        let feed = self.clone();
-        *guard = Some(get_runtime().spawn(async move {
+        let feed = self.worker();
+        if let Err(e) = slot.spawn(async move {
             feed.run_reconcile_loop().await;
-        }));
+        }) {
+            log::error!("Failed to start RTDS reconcile worker: {e}");
+        }
     }
 
     async fn run_reconcile_loop(&self) {
@@ -626,9 +834,14 @@ impl PolymarketRtdsFeed {
     }
 
     async fn ensure_connected_locked(&self) -> anyhow::Result<bool> {
-        if self.inner.closing.load(Ordering::Acquire) {
-            return Ok(false);
-        }
+        let generation = {
+            let generation = self.inner.shutdown_generation.lock();
+
+            if self.inner.closing.load(Ordering::Acquire) {
+                return Ok(false);
+            }
+            *generation
+        };
 
         if self.current_ws().is_some_and(|ws| !ws.is_disconnected()) {
             return Ok(false);
@@ -653,35 +866,118 @@ impl PolymarketRtdsFeed {
                 .context("failed to connect Polymarket RTDS WebSocket")?,
         );
 
-        if let Some(control) = &self.inner.socket_control {
-            let handle = ws.reconnect_handle();
-            control.register(move || handle.request_reconnect());
+        if !self.is_generation_open(generation) {
+            ws.notify_closed();
+            ws.disconnect().await;
+            anyhow::bail!("RTDS connection was canceled by shutdown");
         }
+
         log::debug!("Polymarket RTDS WebSocket connected: {}", self.inner.url);
+        *self.inner.ws_client.lock() = Some(Arc::clone(&ws));
 
-        let feed = self.clone();
-        let ws_for_task = Arc::clone(&ws);
-        let handle = get_runtime().spawn(async move {
-            feed.run_message_loop(ws_for_task, raw_rx).await;
-        });
-
-        *self
-            .inner
-            .ws_client
-            .lock()
-            .expect("RTDS ws_client mutex poisoned") = Some(Arc::clone(&ws));
-
-        if let Some(old_handle) = self
-            .inner
-            .message_task_handle
-            .lock()
-            .expect("RTDS message_task_handle mutex poisoned")
-            .replace(handle)
+        // Tokio cancellation is cooperative. Quiesce the previous loop before
+        // activating the replacement so an admitted old-loop tail cannot emit
+        // after newer data from the new connection.
+        let tasks = self
+            .task_slots()
+            .ok_or_else(|| anyhow::anyhow!("RTDS task owner was dropped"))?;
+        let mut message_slot = tasks.message.lock().await;
+        if !self.is_generation_open(generation) {
+            drop(message_slot);
+            ws.notify_closed();
+            ws.disconnect().await;
+            self.clear_ws_if_current(&ws);
+            anyhow::bail!("RTDS connection was canceled by shutdown");
+        }
+        message_slot.abort();
+        let previous_loop_error = if let Some(outcome) =
+            finish_task(&mut message_slot, Duration::ZERO, Duration::from_secs(2)).await
         {
-            old_handle.abort();
+            match outcome {
+                TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => None,
+                TaskJoinOutcome::Failed(error) => {
+                    Some(format!("previous RTDS message loop failed: {error}"))
+                }
+                TaskJoinOutcome::Incomplete => {
+                    Some("previous RTDS message loop did not stop after abort".to_string())
+                }
+            }
+        } else {
+            None
+        };
+
+        if let Some(error) = previous_loop_error {
+            drop(message_slot);
+            ws.notify_closed();
+            ws.disconnect().await;
+            self.clear_ws_if_current(&ws);
+            anyhow::bail!(error);
+        }
+
+        let spawn_result = {
+            let generation_guard = self.inner.shutdown_generation.lock();
+
+            if *generation_guard != generation || self.inner.closing.load(Ordering::Acquire) {
+                None
+            } else {
+                *self.inner.ws_client.lock() = Some(Arc::clone(&ws));
+
+                let feed = self.worker();
+                let ws_for_task = Arc::clone(&ws);
+                let spawn_result = message_slot.spawn(async move {
+                    feed.run_message_loop(ws_for_task, raw_rx).await;
+                });
+
+                if spawn_result.is_ok()
+                    && let Some(control) = &self.inner.socket_control
+                {
+                    let handle = ws.reconnect_handle();
+                    control.register(move || handle.request_reconnect());
+                }
+                Some(spawn_result)
+            }
+        };
+        let Some(spawn_result) = spawn_result else {
+            drop(message_slot);
+            ws.notify_closed();
+            ws.disconnect().await;
+            self.clear_ws_if_current(&ws);
+            anyhow::bail!("RTDS connection was canceled by shutdown");
+        };
+
+        if let Err(e) = spawn_result {
+            ws.disconnect().await;
+            self.clear_ws_if_current(&ws);
+            let shutdown_error = match finish_task(
+                &mut message_slot,
+                Duration::ZERO,
+                Duration::from_secs(2),
+            )
+            .await
+            {
+                Some(TaskJoinOutcome::Failed(error)) => {
+                    Some(format!("message loop task failed: {error}"))
+                }
+                Some(TaskJoinOutcome::Incomplete) => {
+                    Some("message loop task did not stop after abort".to_string())
+                }
+                None | Some(TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted) => None,
+            };
+            anyhow::bail!(match shutdown_error {
+                Some(shutdown_error) => format!(
+                    "Failed to start RTDS message loop: {e}; startup rollback failed: \
+                     {shutdown_error}"
+                ),
+                None => format!("Failed to start RTDS message loop: {e}"),
+            });
         }
 
         Ok(true)
+    }
+
+    fn is_generation_open(&self, generation: u64) -> bool {
+        let current_generation = self.inner.shutdown_generation.lock();
+        *current_generation == generation && !self.inner.closing.load(Ordering::Acquire)
     }
 
     fn websocket_config(&self) -> WebSocketConfig {
@@ -733,20 +1029,12 @@ impl PolymarketRtdsFeed {
         }
 
         if reset_live_state {
-            self.inner
-                .live_subscriptions
-                .lock()
-                .expect("RTDS live_subscriptions mutex poisoned")
-                .clear();
+            self.inner.live_subscriptions.lock().clear();
         }
 
         let desired = self.snapshot_wire_subscriptions();
         let (unsubscribe, subscribe) = {
-            let live = self
-                .inner
-                .live_subscriptions
-                .lock()
-                .expect("RTDS live_subscriptions mutex poisoned");
+            let live = self.inner.live_subscriptions.lock();
             let unsubscribe = live
                 .iter()
                 .filter(|(key, _)| !desired.contains_key(*key))
@@ -778,11 +1066,7 @@ impl PolymarketRtdsFeed {
         }
 
         {
-            let mut live = self
-                .inner
-                .live_subscriptions
-                .lock()
-                .expect("RTDS live_subscriptions mutex poisoned");
+            let mut live = self.inner.live_subscriptions.lock();
             live.retain(|key, _| desired.contains_key(key));
             for (key, wire) in desired {
                 live.insert(key, wire);
@@ -829,7 +1113,9 @@ impl PolymarketRtdsFeed {
                         continue;
                     }
 
-                    self.handle_text_message(text.as_str());
+                    if let Err(e) = self.handle_text_message(text.as_str()) {
+                        log::error!("Failed to handle subscribed Polymarket RTDS message: {e:#}");
+                    }
                 }
                 Some(Message::Binary(_)) => {
                     log::debug!("Ignoring binary RTDS message");
@@ -849,24 +1135,50 @@ impl PolymarketRtdsFeed {
         }
     }
 
-    fn handle_text_message(&self, text: &str) {
+    fn handle_text_message(&self, text: &str) -> anyhow::Result<()> {
         if text.trim().is_empty() {
-            return;
+            return Ok(());
         }
 
         let envelope: RtdsEnvelope = match serde_json::from_str(text) {
             Ok(envelope) => envelope,
             Err(e) => {
+                if self.malformed_frame_requires_visible_twap_failure(text) {
+                    return Err(anyhow::Error::new(e).context("invalid RTDS JSON frame"));
+                }
                 log::debug!("Ignoring non-RTDS JSON frame: {e}");
-                return;
+                return Ok(());
             }
         };
 
+        self.handle_envelope(envelope)
+    }
+
+    fn handle_envelope(&self, envelope: RtdsEnvelope) -> anyhow::Result<()> {
         match (envelope.topic.as_str(), envelope.msg_type.as_str()) {
-            ("crypto_prices", "subscribe") => self.handle_crypto_price_subscribe(envelope),
-            ("crypto_prices", "update") => self.handle_crypto_price_update(envelope),
-            ("equity_prices", "subscribe") => self.handle_equity_price_subscribe(envelope),
-            ("equity_prices", "update") => self.handle_equity_price_update(envelope),
+            ("crypto_prices", "subscribe") => {
+                self.handle_crypto_price_subscribe(envelope);
+            }
+            ("crypto_prices", "update") => {
+                self.handle_crypto_price_update(envelope);
+            }
+            ("crypto_prices_twap_thirty", "update") => {
+                self.handle_crypto_twap_update(envelope, RtdsCryptoTwapWindow::ThirtySeconds)?;
+            }
+            ("crypto_prices_twap_sixty", "update") => {
+                self.handle_crypto_twap_update(envelope, RtdsCryptoTwapWindow::SixtySeconds)?;
+            }
+            ("equity_prices", "subscribe") => {
+                self.handle_equity_price_subscribe(envelope);
+            }
+            ("equity_prices", "update") => {
+                self.handle_equity_price_update(envelope);
+            }
+            (topic @ ("crypto_prices_twap_thirty" | "crypto_prices_twap_sixty"), msg_type)
+                if self.has_topic_subscription(topic) =>
+            {
+                anyhow::bail!("unsupported subscribed RTDS message topic={topic} type={msg_type}");
+            }
             _ => {
                 log::debug!(
                     "Ignoring unsupported RTDS message topic={} type={}",
@@ -875,6 +1187,7 @@ impl PolymarketRtdsFeed {
                 );
             }
         }
+        Ok(())
     }
 
     fn handle_crypto_price_update(&self, envelope: RtdsEnvelope) {
@@ -969,6 +1282,52 @@ impl PolymarketRtdsFeed {
 
             self.emit_custom_payload(&custom_payload, data_types.clone());
         }
+    }
+
+    fn handle_crypto_twap_update(
+        &self,
+        envelope: RtdsEnvelope,
+        window: RtdsCryptoTwapWindow,
+    ) -> anyhow::Result<()> {
+        let topic = window.topic();
+        if !self.has_topic_subscription(topic.as_str()) {
+            return Ok(());
+        }
+
+        let payload: CryptoTwapPayloadRaw = serde_json::from_value(envelope.payload)
+            .map_err(|e| anyhow::anyhow!("invalid RTDS crypto TWAP payload: {e}"))?;
+        if payload.window_s != window.seconds() {
+            anyhow::bail!(
+                "RTDS TWAP topic {:?} requires window_s={}, received {}",
+                topic.as_str(),
+                window.seconds(),
+                payload.window_s,
+            );
+        }
+        let symbol_lower = payload.symbol.to_ascii_lowercase();
+        let value =
+            decimal_from_signed_e18("full_accuracy_value", payload.full_accuracy_value.as_str())?;
+        let ts_event = unix_nanos_from_millis("payload.timestamp", payload.timestamp)?;
+        unix_nanos_from_millis("envelope.timestamp", envelope.timestamp)?;
+        let Some(data_types) =
+            self.admit_twap_observation(topic, &symbol_lower, payload.timestamp, value)?
+        else {
+            return Ok(());
+        };
+
+        let ts_init = self.inner.clock.get_time_ns();
+        let custom_payload = Arc::new(PolymarketRtdsCryptoTwap::new(
+            symbol_lower,
+            window.seconds(),
+            value,
+            payload.timestamp,
+            envelope.timestamp,
+            ts_event,
+            ts_init,
+        ));
+
+        self.emit_custom_payload(&custom_payload, data_types);
+        Ok(())
     }
 
     fn handle_equity_price_update(&self, envelope: RtdsEnvelope) {
@@ -1116,6 +1475,32 @@ impl PolymarketRtdsFeed {
             .unwrap_or_default()
     }
 
+    fn has_topic_subscription(&self, topic: &str) -> bool {
+        self.inner
+            .subscriptions
+            .iter()
+            .any(|entry| entry.wire.topic == topic)
+    }
+
+    fn has_twap_topic_subscription(&self) -> bool {
+        self.has_topic_subscription(RtdsTopic::CryptoPricesTwapThirty.as_str())
+            || self.has_topic_subscription(RtdsTopic::CryptoPricesTwapSixty.as_str())
+    }
+
+    fn malformed_frame_requires_visible_twap_failure(&self, text: &str) -> bool {
+        match serde_json::from_str::<serde_json::Value>(text) {
+            Ok(value) => match value.get("topic").and_then(serde_json::Value::as_str) {
+                Some(topic) => {
+                    (topic == RtdsTopic::CryptoPricesTwapThirty.as_str()
+                        || topic == RtdsTopic::CryptoPricesTwapSixty.as_str())
+                        && self.has_topic_subscription(topic)
+                }
+                None => self.has_twap_topic_subscription(),
+            },
+            Err(_) => self.has_twap_topic_subscription(),
+        }
+    }
+
     fn should_emit_timestamp_ms(
         &self,
         topic: RtdsTopic,
@@ -1148,6 +1533,58 @@ impl PolymarketRtdsFeed {
             }
         }
     }
+
+    fn admit_twap_observation(
+        &self,
+        topic: RtdsTopic,
+        symbol_lower: &str,
+        timestamp_ms: u64,
+        value: Decimal,
+    ) -> anyhow::Result<Option<Vec<DataType>>> {
+        let key = tracked_key(topic.as_str(), symbol_lower);
+        let Some(mut subscription) = self.inner.subscriptions.get_mut(&key) else {
+            return Ok(None);
+        };
+        let data_types = subscription
+            .data_types
+            .values()
+            .map(|tracked| tracked.data_type.clone())
+            .collect::<Vec<_>>();
+
+        if data_types.is_empty() {
+            return Ok(None);
+        }
+
+        if let Some(previous) = subscription.last_twap_fingerprint {
+            if timestamp_ms < previous.timestamp_ms {
+                return Ok(None);
+            }
+
+            if timestamp_ms == previous.timestamp_ms {
+                if value == previous.value {
+                    return Ok(None);
+                }
+
+                anyhow::bail!(
+                    concat!(
+                        "conflicting RTDS TWAP observation topic={} symbol={} ",
+                        "timestamp_ms={} prior={} received={}",
+                    ),
+                    topic.as_str(),
+                    symbol_lower,
+                    previous.timestamp_ms,
+                    previous.value,
+                    value,
+                );
+            }
+        }
+
+        subscription.last_twap_fingerprint = Some(TwapReplayFingerprint {
+            timestamp_ms,
+            value,
+        });
+        Ok(Some(data_types))
+    }
 }
 
 impl ParsedSubscription {
@@ -1176,6 +1613,24 @@ impl ParsedSubscription {
                     filters: None,
                 },
             }),
+            POLYMARKET_RTDS_CRYPTO_TWAP_TYPE_NAME => {
+                let window_seconds = metadata
+                    .get("window_seconds")
+                    .and_then(serde_json::Value::as_u64)
+                    .context(format!(
+                        "{type_name} subscriptions require integer metadata['window_seconds']"
+                    ))?;
+                let window = RtdsCryptoTwapWindow::try_from(window_seconds)?;
+                let topic = window.topic();
+                Ok(Self {
+                    key: tracked_key(topic.as_str(), &symbol_lower),
+                    wire: RtdsWireSubscription {
+                        topic: topic.as_str(),
+                        msg_type: "update",
+                        filters: None,
+                    },
+                })
+            }
             POLYMARKET_RTDS_EQUITY_PRICE_TYPE_NAME => Ok(Self {
                 key: tracked_key(RtdsTopic::EquityPrices.as_str(), &symbol_lower),
                 wire: RtdsWireSubscription {
@@ -1193,6 +1648,26 @@ fn tracked_key(topic: &str, symbol_lower: &str) -> String {
     format!("{topic}:{symbol_lower}")
 }
 
+fn decimal_from_signed_e18(field: &str, value: &str) -> anyhow::Result<Decimal> {
+    let digits = value.strip_prefix('-').unwrap_or(value);
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        anyhow::bail!("invalid signed E18 integer for {field}: {value}");
+    }
+
+    let mantissa = value
+        .parse::<i128>()
+        .with_context(|| format!("signed E18 integer out of range for {field}: {value}"))?;
+    Decimal::try_from_i128_with_scale(mantissa, 18)
+        .with_context(|| format!("signed E18 value out of Decimal range for {field}: {value}"))
+}
+
+fn unix_nanos_from_millis(field: &str, value: u64) -> anyhow::Result<UnixNanos> {
+    let millis = i64::try_from(value)
+        .with_context(|| format!("millisecond timestamp out of range for {field}: {value}"))?;
+    UnixNanos::from_millis_checked(millis)
+        .with_context(|| format!("millisecond timestamp overflows UnixNanos for {field}: {value}"))
+}
+
 fn price_from_json_number(field: &str, number: &Number) -> anyhow::Result<Price> {
     let value = number.to_string();
     price_from_str(field, &value)
@@ -1202,22 +1677,6 @@ fn price_from_str(field: &str, value: &str) -> anyhow::Result<Price> {
     Price::from_str(value)
         .map_err(anyhow::Error::msg)
         .with_context(|| format!("invalid price for {field}: {value}"))
-}
-
-async fn await_task_shutdown(handle: tokio::task::JoinHandle<()>, description: &str) {
-    let abort_handle = handle.abort_handle();
-    tokio::select! {
-        result = handle => {
-            if let Err(e) = result
-                && !e.is_cancelled()
-            {
-                log::error!("{description} error: {e:?}");
-            }
-        }
-        () = tokio::time::sleep(Duration::from_secs(2)) => {
-            abort_handle.abort();
-        }
-    }
 }
 
 #[cfg(test)]
@@ -1246,12 +1705,13 @@ mod tests {
     use nautilus_core::{Params, time::get_atomic_clock_realtime};
     use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
     use rstest::rstest;
+    use rust_decimal_macros::dec;
     use serde_json::json;
 
     use super::*;
     use crate::common::consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE};
 
-    // Sanitized captured update; subscribe and equity fixtures are constructed protocol cases
+    // Existing RTDS spot update is a sanitized capture; other fixtures are protocol cases.
     const RTDS_CRYPTO_UPDATE_FIXTURE: &str =
         include_str!("../test_data/rtds_crypto_prices_update.json");
     const RTDS_CRYPTO_SUBSCRIBE_FIXTURE: &str =
@@ -1260,6 +1720,9 @@ mod tests {
         include_str!("../test_data/rtds_equity_prices_update.json");
     const RTDS_EQUITY_SUBSCRIBE_FIXTURE: &str =
         include_str!("../test_data/rtds_equity_prices_subscribe.json");
+    // Constructed from the official Polymarket SDK regression vector; see its source sidecar.
+    const RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE: &str =
+        include_str!("../test_data/rtds_crypto_twap_sixty_update.json");
 
     fn crypto_data_type(symbol: &str) -> DataType {
         let mut metadata = Params::new();
@@ -1271,6 +1734,19 @@ mod tests {
         let mut metadata = Params::new();
         metadata.insert("symbol".to_string(), json!(symbol));
         DataType::new(POLYMARKET_RTDS_EQUITY_PRICE_TYPE_NAME, Some(metadata), None)
+    }
+
+    fn crypto_twap_data_type(symbol: &str, window_seconds: u64) -> DataType {
+        let mut metadata = Params::new();
+        metadata.insert("symbol".to_string(), json!(symbol));
+        metadata.insert("window_seconds".to_string(), json!(window_seconds));
+        DataType::new(POLYMARKET_RTDS_CRYPTO_TWAP_TYPE_NAME, Some(metadata), None)
+    }
+
+    fn crypto_twap_data_type_without_window(symbol: &str) -> DataType {
+        let mut metadata = Params::new();
+        metadata.insert("symbol".to_string(), json!(symbol));
+        DataType::new(POLYMARKET_RTDS_CRYPTO_TWAP_TYPE_NAME, Some(metadata), None)
     }
 
     fn make_feed() -> (
@@ -1578,8 +2054,144 @@ mod tests {
         assert_eq!(change.endpoint, endpoint);
         assert_eq!(change.state, SocketState::Disconnected);
 
-        feed.disconnect().await;
+        feed.disconnect().await.expect("disconnect feed");
         assert!(registry.handle(*POLYMARKET_CLIENT_ID, endpoint).is_none());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_server_disconnect_preserves_twap_replay_fingerprint() {
+        let state = TestServerState::default();
+        let addr = start_rtds_server(state.clone()).await;
+        let (data_tx, mut data_rx) = tokio::sync::mpsc::unbounded_channel();
+        let states = Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let states_callback = Arc::clone(&states);
+        let state_sink = SocketStateSink::new(move |state| {
+            states_callback.lock().push(state);
+        });
+        let feed = PolymarketRtdsFeed::new_with_proxy_and_state_sink(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            get_atomic_clock_realtime(),
+            data_tx,
+            None,
+            Some(state_sink),
+        );
+        assert!(
+            feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+                .expect("track RTDS TWAP subscription")
+        );
+
+        feed.connect().await.expect("connect RTDS feed");
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move {
+                    state.received_payloads.lock().await.iter().any(|payload| {
+                        payload["subscriptions"]
+                            .as_array()
+                            .is_some_and(|subscriptions| {
+                                subscriptions.iter().any(|subscription| {
+                                    subscription["topic"].as_str()
+                                        == Some(RtdsTopic::CryptoPricesTwapSixty.as_str())
+                                })
+                            })
+                    })
+                }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+        state
+            .send_text_to_all(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE.to_string())
+            .await;
+        tokio::time::timeout(Duration::from_secs(5), data_rx.recv())
+            .await
+            .expect("initial TWAP observation timeout")
+            .expect("initial TWAP data channel closed");
+
+        state.clear_received_payloads().await;
+        state.close_all_connections().await;
+
+        wait_until_async(
+            || {
+                let states = Arc::clone(&states);
+                async move {
+                    states.lock().as_slice()
+                        == [
+                            nautilus_network::SocketState::Connected,
+                            nautilus_network::SocketState::Disconnected,
+                            nautilus_network::SocketState::Connected,
+                        ]
+                }
+            },
+            Duration::from_secs(10),
+        )
+        .await;
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move {
+                    state.received_payloads.lock().await.iter().any(|payload| {
+                        payload["subscriptions"]
+                            .as_array()
+                            .is_some_and(|subscriptions| {
+                                subscriptions.iter().any(|subscription| {
+                                    subscription["topic"].as_str()
+                                        == Some(RtdsTopic::CryptoPricesTwapSixty.as_str())
+                                })
+                            })
+                    })
+                }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let mut conflict: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        conflict["payload"]["full_accuracy_value"] = json!("65000123456789012345679");
+        let error = feed
+            .handle_text_message(&conflict.to_string())
+            .expect_err("equal-timestamp value conflict must be visible after reconnect");
+        assert!(error.to_string().contains("conflict"));
+
+        feed.handle_text_message(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+            .expect("the retained exact observation must remain a replay after conflict");
+        assert!(
+            tokio::time::timeout(Duration::from_millis(250), data_rx.recv())
+                .await
+                .is_err(),
+            "reconnect must not re-emit the last equal-timestamp TWAP observation"
+        );
+
+        let mut next: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        next["payload"]["timestamp"] = json!(
+            next["payload"]["timestamp"]
+                .as_u64()
+                .expect("fixture observation timestamp")
+                + 1
+        );
+        state.send_text_to_all(next.to_string()).await;
+        tokio::time::timeout(Duration::from_secs(5), data_rx.recv())
+            .await
+            .expect("post-reconnect TWAP observation timeout")
+            .expect("post-reconnect TWAP data channel closed");
+
+        assert_eq!(
+            states.lock().as_slice(),
+            [
+                nautilus_network::SocketState::Connected,
+                nautilus_network::SocketState::Disconnected,
+                nautilus_network::SocketState::Connected,
+            ]
+        );
+
+        feed.disconnect().await.expect("disconnect feed");
     }
 
     async fn connect_test_ws(url: String) -> Arc<WebSocketClient> {
@@ -1643,13 +2255,909 @@ mod tests {
     }
 
     #[rstest]
+    fn test_track_subscribe_maps_twap_window_to_exact_topic() {
+        let (feed, _rx) = make_feed();
+        let thirty = crypto_twap_data_type("BTC/USD", 30);
+        let sixty = crypto_twap_data_type("BTC/USD", 60);
+
+        assert!(is_supported_rtds_data_type(&thirty));
+        assert!(is_supported_rtds_data_type(&sixty));
+        assert!(feed.track_subscribe(thirty).expect("track 30-second TWAP"));
+        assert!(feed.track_subscribe(sixty).expect("track 60-second TWAP"));
+
+        assert_eq!(
+            feed.tracked_data_type_count("crypto_prices_twap_thirty:btc/usd"),
+            1
+        );
+        assert_eq!(
+            feed.tracked_data_type_count("crypto_prices_twap_sixty:btc/usd"),
+            1
+        );
+        let wire = feed.snapshot_wire_subscriptions();
+        assert_eq!(wire.len(), 2);
+        assert!(wire.contains_key("crypto_prices_twap_thirty"));
+        assert!(wire.contains_key("crypto_prices_twap_sixty"));
+    }
+
+    #[rstest]
+    #[case(45)]
+    #[case(0)]
+    fn test_track_subscribe_rejects_unsupported_twap_window(#[case] window_seconds: u64) {
+        let (feed, _rx) = make_feed();
+
+        let error = feed
+            .track_subscribe(crypto_twap_data_type("BTC/USD", window_seconds))
+            .expect_err("unsupported TWAP window must fail");
+
+        assert!(error.to_string().contains("30 or 60"));
+        assert_eq!(feed.tracked_subscription_count(), 0);
+    }
+
+    #[rstest]
+    fn test_track_subscribe_rejects_missing_twap_window() {
+        let (feed, _rx) = make_feed();
+
+        let error = feed
+            .track_subscribe(crypto_twap_data_type_without_window("BTC/USD"))
+            .expect_err("missing TWAP window must fail");
+
+        assert!(error.to_string().contains("window_seconds"));
+        assert_eq!(feed.tracked_subscription_count(), 0);
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_emits_exact_provider_value_and_three_clocks() {
+        let (feed, mut rx) = make_feed();
+        let data_type = crypto_twap_data_type("BTC/USD", 60);
+        feed.track_subscribe(data_type.clone())
+            .expect("track 60-second TWAP");
+
+        feed.handle_text_message(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+            .expect("valid TWAP update");
+
+        let event = rx.try_recv().expect("custom data event");
+        let DataEvent::Data(NautilusData::Custom(custom)) = event else {
+            panic!("expected custom data event");
+        };
+        let payload = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketRtdsCryptoTwap>()
+            .expect("PolymarketRtdsCryptoTwap");
+
+        assert_eq!(custom.data_type, data_type);
+        assert_eq!(payload.symbol, "btc/usd");
+        assert_eq!(payload.window_seconds, 60);
+        assert_eq!(payload.value, dec!(65000.123456789012345678));
+        assert_eq!(payload.observation_timestamp_ms, 1772752581815);
+        assert_eq!(payload.message_timestamp_ms, 1772752582004);
+        assert_eq!(payload.ts_event, UnixNanos::from_millis(1772752581815));
+        assert!(payload.ts_init > UnixNanos::default());
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_accepts_thirty_second_topic_only_for_thirty_window() {
+        let (feed, mut rx) = make_feed();
+        let data_type = crypto_twap_data_type("BTC/USD", 30);
+        feed.track_subscribe(data_type.clone())
+            .expect("track 30-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        update["topic"] = json!("crypto_prices_twap_thirty");
+        update["payload"]["window_s"] = json!(30);
+
+        feed.handle_text_message(&update.to_string())
+            .expect("valid 30-second TWAP update");
+
+        let DataEvent::Data(NautilusData::Custom(custom)) =
+            rx.try_recv().expect("custom data event")
+        else {
+            panic!("expected custom data event");
+        };
+        let payload = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketRtdsCryptoTwap>()
+            .expect("PolymarketRtdsCryptoTwap");
+        assert_eq!(custom.data_type, data_type);
+        assert_eq!(payload.window_seconds, 30);
+        assert_eq!(payload.value, dec!(65000.123456789012345678));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_uses_exact_field_not_display_value() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        update["payload"]["value"] = json!(1);
+
+        feed.handle_text_message(&update.to_string())
+            .expect("display value must not be authoritative");
+
+        let event = rx.try_recv().expect("custom data event");
+        let DataEvent::Data(NautilusData::Custom(custom)) = event else {
+            panic!("expected custom data event");
+        };
+        let payload = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketRtdsCryptoTwap>()
+            .expect("PolymarketRtdsCryptoTwap");
+        assert_eq!(payload.value, dec!(65000.123456789012345678));
+    }
+
+    #[rstest]
+    #[case("64997.81")]
+    #[case("6.499781e4")]
+    fn test_handle_crypto_twap_update_accepts_decimal_string_display_value(
+        #[case] display_value: &str,
+    ) {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        update["payload"]["value"] = json!(display_value);
+
+        feed.handle_text_message(&update.to_string())
+            .expect("decimal-string display value should satisfy the wire contract");
+
+        let DataEvent::Data(NautilusData::Custom(custom)) =
+            rx.try_recv().expect("custom data event")
+        else {
+            panic!("expected custom data event");
+        };
+        let payload = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketRtdsCryptoTwap>()
+            .expect("PolymarketRtdsCryptoTwap");
+        assert_eq!(payload.value, dec!(65000.123456789012345678));
+    }
+
+    #[rstest]
+    #[case::missing(None)]
+    #[case::null(Some(json!(null)))]
+    #[case::boolean(Some(json!(true)))]
+    #[case::object(Some(json!({"future": "format"})))]
+    #[case::array(Some(json!([1, 2])))]
+    #[case::nonnumeric(Some(json!("not-a-number")))]
+    #[case::empty_string(Some(json!("")))]
+    fn test_handle_crypto_twap_update_rejects_invalid_display_value(
+        #[case] display_value: Option<serde_json::Value>,
+    ) {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        let payload = update["payload"].as_object_mut().expect("payload object");
+
+        match display_value {
+            Some(value) => {
+                payload.insert("value".to_string(), value);
+            }
+            None => {
+                payload.remove("value");
+            }
+        }
+
+        let error = feed
+            .handle_text_message(&update.to_string())
+            .expect_err("invalid display value must fail visibly");
+        let message = error.to_string();
+
+        assert!(message.contains("`value`"), "{message}");
+        assert!(!message.contains("full_accuracy_value"), "{message}");
+        assert!(!message.contains("signed E18 integer"), "{message}");
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_validates_display_value_before_full_accuracy_value() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        update["payload"]["value"] = json!({"future": "format"});
+        update["payload"]["full_accuracy_value"] = json!("invalid");
+
+        let error = feed
+            .handle_text_message(&update.to_string())
+            .expect_err("display value must be validated before the exact value");
+        let message = error.to_string();
+
+        assert!(message.contains("`value`"), "{message}");
+        assert!(!message.contains("full_accuracy_value"), "{message}");
+        assert!(!message.contains("signed E18 integer"), "{message}");
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_preserves_adjacent_e18_values() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let first: serde_json::Value = serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+            .expect("parse TWAP fixture");
+        let mut second = first.clone();
+        second["payload"]["full_accuracy_value"] = json!("65000123456789012345679");
+        second["payload"]["timestamp"] = json!(
+            first["payload"]["timestamp"]
+                .as_u64()
+                .expect("fixture observation timestamp")
+                + 1
+        );
+
+        feed.handle_text_message(&first.to_string())
+            .expect("first exact TWAP update");
+        feed.handle_text_message(&second.to_string())
+            .expect("adjacent exact TWAP update");
+
+        let mut values = Vec::new();
+
+        for _ in 0..2 {
+            let DataEvent::Data(NautilusData::Custom(custom)) =
+                rx.try_recv().expect("custom data event")
+            else {
+                panic!("expected custom data event");
+            };
+            let payload = custom
+                .data
+                .as_any()
+                .downcast_ref::<PolymarketRtdsCryptoTwap>()
+                .expect("PolymarketRtdsCryptoTwap");
+            values.push(payload.value);
+        }
+
+        assert_eq!(values[0], dec!(65000.123456789012345678));
+        assert_eq!(values[1], dec!(65000.123456789012345679));
+        assert_ne!(values[0], values[1]);
+    }
+
+    #[rstest]
+    fn test_twap_replay_fingerprints_are_isolated_by_symbol() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("ALPHA/USD", 60))
+            .expect("track first 60-second TWAP");
+        feed.track_subscribe(crypto_twap_data_type("BETA/USD", 60))
+            .expect("track second 60-second TWAP");
+        let mut first: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        first["payload"]["symbol"] = json!("alpha/usd");
+        first["payload"]["full_accuracy_value"] = json!("1000000000000000000");
+        let first_timestamp = first["payload"]["timestamp"]
+            .as_u64()
+            .expect("fixture observation timestamp");
+        let mut second = first.clone();
+        second["payload"]["symbol"] = json!("beta/usd");
+        second["payload"]["timestamp"] = json!(first_timestamp - 1);
+        second["payload"]["full_accuracy_value"] = json!("2000000000000000000");
+
+        feed.handle_text_message(&first.to_string())
+            .expect("first TWAP update");
+        feed.handle_text_message(&second.to_string())
+            .expect("older second-symbol update must use an independent replay guard");
+
+        let mut observations = Vec::new();
+
+        for _ in 0..2 {
+            let DataEvent::Data(NautilusData::Custom(custom)) =
+                rx.try_recv().expect("custom data event")
+            else {
+                panic!("expected custom data event");
+            };
+            let payload = custom
+                .data
+                .as_any()
+                .downcast_ref::<PolymarketRtdsCryptoTwap>()
+                .expect("PolymarketRtdsCryptoTwap");
+            observations.push((payload.symbol.clone(), payload.observation_timestamp_ms));
+        }
+
+        assert_eq!(
+            observations,
+            vec![
+                ("alpha/usd".to_string(), first_timestamp),
+                ("beta/usd".to_string(), first_timestamp - 1),
+            ]
+        );
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_drops_equal_timestamp_redelivery() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+
+        feed.handle_text_message(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+            .expect("first exact TWAP update");
+        feed.handle_text_message(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+            .expect("equal-timestamp redelivery should be ignored");
+
+        let DataEvent::Data(NautilusData::Custom(_)) =
+            rx.try_recv().expect("first custom data event")
+        else {
+            panic!("expected custom data event");
+        };
+        assert!(
+            rx.try_recv().is_err(),
+            "an equal-timestamp TWAP redelivery must not emit twice"
+        );
+    }
+
+    #[rstest]
+    fn test_twap_conflict_does_not_advance_replay_guard() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let original: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        let mut older = original.clone();
+        older["payload"]["timestamp"] = json!(
+            original["payload"]["timestamp"]
+                .as_u64()
+                .expect("fixture observation timestamp")
+                - 1
+        );
+        older["payload"]["full_accuracy_value"] = json!("65000123456789012345677");
+        let mut conflict = original.clone();
+        conflict["payload"]["full_accuracy_value"] = json!("65000123456789012345679");
+
+        feed.handle_text_message(&original.to_string())
+            .expect("first exact TWAP update");
+        let DataEvent::Data(NautilusData::Custom(_)) =
+            rx.try_recv().expect("first custom data event")
+        else {
+            panic!("expected custom data event");
+        };
+        feed.handle_text_message(&older.to_string())
+            .expect("older TWAP update should be ignored");
+
+        let error = feed
+            .handle_text_message(&conflict.to_string())
+            .expect_err("equal-timestamp value conflict must be visible");
+        assert_eq!(
+            error.to_string(),
+            concat!(
+                "conflicting RTDS TWAP observation topic=crypto_prices_twap_sixty ",
+                "symbol=btc/usd timestamp_ms=1772752581815 ",
+                "prior=65000.123456789012345678 received=65000.123456789012345679",
+            ),
+        );
+        assert!(rx.try_recv().is_err());
+
+        feed.handle_text_message(&original.to_string())
+            .expect("the retained exact observation must remain a replay after conflict");
+        assert!(rx.try_recv().is_err());
+
+        let mut newer = conflict;
+        newer["payload"]["timestamp"] = json!(
+            original["payload"]["timestamp"]
+                .as_u64()
+                .expect("fixture observation timestamp")
+                + 1
+        );
+        feed.handle_text_message(&newer.to_string())
+            .expect("newer exact TWAP update");
+        let DataEvent::Data(NautilusData::Custom(custom)) =
+            rx.try_recv().expect("newer custom data event")
+        else {
+            panic!("expected custom data event");
+        };
+        let payload = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketRtdsCryptoTwap>()
+            .expect("PolymarketRtdsCryptoTwap");
+        assert_eq!(payload.value, dec!(65000.123456789012345679));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_twap_inflight_tail_cannot_poison_resubscribe_replay() {
+        let (feed, mut rx) = make_feed();
+        let data_type = crypto_twap_data_type("BTC/USD", 60);
+        let envelope: RtdsEnvelope = serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+            .expect("parse TWAP envelope");
+        let payload: CryptoTwapPayloadRaw =
+            serde_json::from_value(envelope.payload).expect("parse TWAP payload");
+        let observation_timestamp_ms = payload.timestamp;
+        let exact_value =
+            decimal_from_signed_e18("full_accuracy_value", &payload.full_accuracy_value)
+                .expect("parse exact TWAP value");
+        feed.track_subscribe(data_type.clone())
+            .expect("track 60-second TWAP");
+
+        let captured_data_types =
+            feed.matching_data_types(RtdsTopic::CryptoPricesTwapSixty, "btc/usd");
+        assert_eq!(captured_data_types.len(), 1);
+        assert_eq!(captured_data_types[0], data_type);
+
+        assert!(
+            feed.track_unsubscribe(&data_type)
+                .expect("unsubscribe final TWAP reference")
+        );
+        let _tail_admission = feed
+            .admit_twap_observation(
+                RtdsTopic::CryptoPricesTwapSixty,
+                "btc/usd",
+                observation_timestamp_ms,
+                exact_value,
+            )
+            .expect("complete captured handler admission tail");
+
+        assert!(
+            feed.track_subscribe(data_type.clone())
+                .expect("resubscribe 60-second TWAP")
+        );
+        feed.handle_text_message(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+            .expect("first replay after resubscribe");
+
+        let DataEvent::Data(NautilusData::Custom(custom)) = rx
+            .try_recv()
+            .expect("first replay must emit after resubscribe")
+        else {
+            panic!("expected custom data event");
+        };
+        let payload = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketRtdsCryptoTwap>()
+            .expect("PolymarketRtdsCryptoTwap");
+        assert_eq!(custom.data_type, data_type);
+        assert_eq!(payload.value, exact_value);
+        assert_eq!(payload.observation_timestamp_ms, observation_timestamp_ms);
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_quiesces_old_twap_tail_before_new_loop_delivery() {
+        let state = TestServerState::default();
+        let addr = start_rtds_server(state.clone()).await;
+        let (data_tx, mut data_rx) = tokio::sync::mpsc::unbounded_channel();
+        let feed = PolymarketRtdsFeed::new(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            get_atomic_clock_realtime(),
+            data_tx,
+        );
+        let data_type = crypto_twap_data_type("BTC/USD", 60);
+        feed.track_subscribe(data_type)
+            .expect("track 60-second TWAP");
+
+        let envelope: RtdsEnvelope = serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+            .expect("parse TWAP envelope");
+        let message_timestamp_ms = envelope.timestamp;
+        let payload: CryptoTwapPayloadRaw =
+            serde_json::from_value(envelope.payload).expect("parse TWAP payload");
+        let symbol_lower = payload.symbol.to_ascii_lowercase();
+        let observation_timestamp_ms = payload.timestamp;
+        let exact_value =
+            decimal_from_signed_e18("full_accuracy_value", &payload.full_accuracy_value)
+                .expect("parse exact TWAP value");
+        let ts_event = unix_nanos_from_millis("payload.timestamp", observation_timestamp_ms)
+            .expect("parse TWAP event timestamp");
+
+        let (admitted_tx, admitted_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let old_feed = feed.clone();
+        let old_symbol = symbol_lower.clone();
+
+        let old_handle = get_runtime().spawn(async move {
+            let data_types = old_feed
+                .admit_twap_observation(
+                    RtdsTopic::CryptoPricesTwapSixty,
+                    &old_symbol,
+                    observation_timestamp_ms,
+                    exact_value,
+                )
+                .expect("admit old-loop TWAP tail")
+                .expect("old-loop TWAP tail should be selected");
+            admitted_tx
+                .send(())
+                .expect("signal old-loop TWAP admission");
+            release_rx
+                .recv()
+                .expect("release old-loop TWAP emission tail");
+
+            let custom_payload = Arc::new(PolymarketRtdsCryptoTwap::new(
+                old_symbol,
+                RtdsCryptoTwapWindow::SixtySeconds.seconds(),
+                exact_value,
+                observation_timestamp_ms,
+                message_timestamp_ms,
+                ts_event,
+                old_feed.inner.clock.get_time_ns(),
+            ));
+            old_feed.emit_custom_payload(&custom_payload, data_types);
+        });
+        feed.task_slots()
+            .expect("RTDS task owner")
+            .message
+            .lock()
+            .await
+            .insert(old_handle);
+        admitted_rx
+            .await
+            .expect("old-loop TWAP admission signal dropped");
+
+        let connect_task = tokio::spawn({
+            let feed = feed.clone();
+            async move { feed.connect().await }
+        });
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { state.connection_count().await >= 1 }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let mut newer: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse newer TWAP frame");
+        newer["payload"]["timestamp"] = json!(observation_timestamp_ms + 1);
+        state.send_text_to_all(newer.to_string()).await;
+
+        let early_event = tokio::time::timeout(Duration::from_millis(250), data_rx.recv())
+            .await
+            .ok()
+            .flatten();
+        release_tx
+            .send(())
+            .expect("release old-loop TWAP emission tail");
+        connect_task
+            .await
+            .expect("join RTDS connect task")
+            .expect("connect RTDS feed");
+
+        let observation_timestamp = |event| {
+            let DataEvent::Data(NautilusData::Custom(custom)) = event else {
+                panic!("expected custom data event");
+            };
+            custom
+                .data
+                .as_any()
+                .downcast_ref::<PolymarketRtdsCryptoTwap>()
+                .expect("PolymarketRtdsCryptoTwap")
+                .observation_timestamp_ms
+        };
+        let mut timestamps = Vec::new();
+        if let Some(event) = early_event {
+            timestamps.push(observation_timestamp(event));
+        }
+
+        while timestamps.len() < 2 {
+            let event = tokio::time::timeout(Duration::from_secs(5), data_rx.recv())
+                .await
+                .expect("TWAP delivery timeout")
+                .expect("TWAP data channel closed");
+            timestamps.push(observation_timestamp(event));
+        }
+
+        assert_eq!(
+            timestamps,
+            [observation_timestamp_ms, observation_timestamp_ms + 1],
+            "a replacement message loop must not overtake an admitted old-loop TWAP tail",
+        );
+        assert!(data_rx.try_recv().is_err());
+        feed.disconnect().await.expect("disconnect feed");
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_preserves_negative_signed_e18_value() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        update["payload"]["full_accuracy_value"] = json!("-1234567890000000000");
+
+        feed.handle_text_message(&update.to_string())
+            .expect("valid negative signed E18 update");
+
+        let DataEvent::Data(NautilusData::Custom(custom)) =
+            rx.try_recv().expect("custom data event")
+        else {
+            panic!("expected custom data event");
+        };
+        let payload = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketRtdsCryptoTwap>()
+            .expect("PolymarketRtdsCryptoTwap");
+        assert_eq!(payload.value, dec!(-1.234567890000000000));
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_rejects_topic_window_mismatch_without_advancing_guard() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut mismatch: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        mismatch["payload"]["window_s"] = json!(30);
+
+        let error = feed
+            .handle_text_message(&mismatch.to_string())
+            .expect_err("topic/window mismatch must be visible");
+        assert!(error.to_string().contains("requires window_s=60"));
+        assert!(rx.try_recv().is_err());
+
+        feed.handle_text_message(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+            .expect("same-timestamp valid update must still emit");
+        assert!(rx.try_recv().is_ok());
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_rejects_missing_exact_value_without_fallback() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        update["payload"]
+            .as_object_mut()
+            .expect("payload object")
+            .remove("full_accuracy_value");
+
+        let error = feed
+            .handle_text_message(&update.to_string())
+            .expect_err("display value must not be a fallback");
+        assert!(error.to_string().contains("full_accuracy_value"));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_rejects_missing_window() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        update["payload"]
+            .as_object_mut()
+            .expect("payload object")
+            .remove("window_s");
+
+        let error = feed
+            .handle_text_message(&update.to_string())
+            .expect_err("missing window must fail visibly");
+        assert!(error.to_string().contains("window_s"));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_rejects_out_of_decimal_range_value() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        update["payload"]["full_accuracy_value"] = json!("79228162514264337593543950336");
+
+        let error = feed
+            .handle_text_message(&update.to_string())
+            .expect_err("out-of-range exact value must fail visibly");
+        assert!(error.to_string().contains("Decimal range"));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_validates_untracked_symbol_on_active_topic() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        update["payload"]["symbol"] = json!("eth/usd");
+        update["payload"]["full_accuracy_value"] = json!("not-an-integer");
+
+        let error = feed
+            .handle_text_message(&update.to_string())
+            .expect_err("malformed frame on active topic must fail visibly");
+        assert!(error.to_string().contains("signed E18 integer"));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[case("+64997810000000000000000")]
+    #[case("64997.81")]
+    #[case("")]
+    #[case("not-an-integer")]
+    fn test_handle_crypto_twap_update_rejects_non_integer_exact_value(#[case] value: &str) {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        update["payload"]["full_accuracy_value"] = json!(value);
+
+        let error = feed
+            .handle_text_message(&update.to_string())
+            .expect_err("non-integer exact value must fail");
+        assert!(error.to_string().contains("signed E18 integer"));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_rejects_timestamp_overflow_without_advancing_guard() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        update["payload"]["timestamp"] = json!(u64::MAX);
+
+        let error = feed
+            .handle_text_message(&update.to_string())
+            .expect_err("overflowing observation timestamp must fail visibly");
+        assert!(error.to_string().contains("payload.timestamp"));
+        feed.handle_text_message(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+            .expect("a later valid update must not be suppressed");
+
+        let DataEvent::Data(NautilusData::Custom(_)) =
+            rx.try_recv().expect("valid custom data event")
+        else {
+            panic!("expected custom data event");
+        };
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_rejects_publisher_timestamp_overflow_without_advancing_guard()
+    {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("ALPHA/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut valid: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        valid["payload"]["symbol"] = json!("alpha/usd");
+        valid["payload"]["full_accuracy_value"] = json!("1234567890123456789");
+        let mut invalid = valid.clone();
+        invalid["timestamp"] = json!(u64::MAX);
+
+        let error = feed
+            .handle_text_message(&invalid.to_string())
+            .expect_err("overflowing publisher timestamp must fail visibly");
+        assert!(error.to_string().contains("envelope.timestamp"));
+        assert!(rx.try_recv().is_err());
+
+        feed.handle_text_message(&valid.to_string())
+            .expect("a later valid update must not be suppressed");
+        let DataEvent::Data(NautilusData::Custom(_)) =
+            rx.try_recv().expect("valid custom data event")
+        else {
+            panic!("expected custom data event");
+        };
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_rejects_wrong_type_on_active_topic() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        update["type"] = json!("subscribe");
+
+        let error = feed
+            .handle_text_message(&update.to_string())
+            .expect_err("unexpected type on subscribed topic must be visible");
+        assert!(
+            error
+                .to_string()
+                .contains("unsupported subscribed RTDS message")
+        );
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_text_rejects_malformed_envelope_while_twap_topic_is_active() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let frame = json!({
+            "topic": "crypto_prices_twap_sixty",
+            "type": "update",
+            "timestamp": 1786179814147_u64
+        });
+
+        let error = feed
+            .handle_text_message(&frame.to_string())
+            .expect_err("malformed envelope on active TWAP topic must be visible");
+
+        assert!(error.to_string().contains("invalid RTDS JSON frame"));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_text_rejects_unclassifiable_json_while_twap_topic_is_active() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let frame = json!({
+            "type": "update",
+            "timestamp": 1786179814147_u64,
+            "payload": {}
+        });
+
+        let error = feed
+            .handle_text_message(&frame.to_string())
+            .expect_err("unclassifiable JSON must be visible while TWAP is active");
+
+        assert!(error.to_string().contains("invalid RTDS JSON frame"));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_text_ignores_malformed_unrelated_topic_while_twap_topic_is_active() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let frame = json!({
+            "topic": "unrelated_topic",
+            "type": "update",
+            "timestamp": 1786179814147_u64
+        });
+
+        feed.handle_text_message(&frame.to_string())
+            .expect("malformed unrelated topic remains ignorable");
+
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_text_ignores_unrelated_unsupported_topic() {
+        let (feed, mut rx) = make_feed();
+        let frame = json!({
+            "topic": "unrelated_topic",
+            "type": "update",
+            "timestamp": 1786179814147_u64,
+            "payload": {}
+        });
+
+        feed.handle_text_message(&frame.to_string())
+            .expect("unrelated unsupported topic remains ignorable");
+
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
     fn test_handle_crypto_price_update_emits_custom_data() {
         let (feed, mut rx) = make_feed();
         let data_type = crypto_data_type("btcusdt");
         feed.track_subscribe(data_type.clone())
             .expect("track subscribe");
 
-        feed.handle_text_for_test(RTDS_CRYPTO_UPDATE_FIXTURE);
+        feed.handle_text_message(RTDS_CRYPTO_UPDATE_FIXTURE)
+            .expect("valid crypto update");
 
         let event = rx.try_recv().expect("custom data event");
         let DataEvent::Data(NautilusData::Custom(custom)) = event else {
@@ -1684,7 +3192,8 @@ mod tests {
         update["payload"]["timestamp"] = json!(1780730270000_u64);
         update["timestamp"] = json!(1780730270142_u64);
 
-        feed.handle_text_for_test(&update.to_string());
+        feed.handle_text_message(&update.to_string())
+            .expect("valid crypto update");
 
         let event = rx.try_recv().expect("ETH custom data event");
         let DataEvent::Data(NautilusData::Custom(custom)) = event else {
@@ -1712,12 +3221,14 @@ mod tests {
 
         // Two distinct live updates sharing one millisecond timestamp must both emit;
         // only replayed snapshots collapse equal timestamps.
-        feed.handle_text_for_test(RTDS_CRYPTO_UPDATE_FIXTURE);
+        feed.handle_text_message(RTDS_CRYPTO_UPDATE_FIXTURE)
+            .expect("valid first crypto update");
 
         let mut second: serde_json::Value =
             serde_json::from_str(RTDS_CRYPTO_UPDATE_FIXTURE).expect("parse fixture");
         second["payload"]["value"] = json!(65000.12);
-        feed.handle_text_for_test(&second.to_string());
+        feed.handle_text_message(&second.to_string())
+            .expect("valid second crypto update");
 
         let first_event = rx.try_recv().expect("first custom data event");
         let second_event = rx.try_recv().expect("second custom data event");
@@ -1745,7 +3256,8 @@ mod tests {
         feed.track_subscribe(data_type.clone())
             .expect("track subscribe");
 
-        feed.handle_text_for_test(RTDS_CRYPTO_SUBSCRIBE_FIXTURE);
+        feed.handle_text_message(RTDS_CRYPTO_SUBSCRIBE_FIXTURE)
+            .expect("valid crypto snapshot");
 
         let first = rx.try_recv().expect("first custom data event");
         let second = rx.try_recv().expect("second custom data event");
@@ -1779,11 +3291,13 @@ mod tests {
         let data_type = crypto_data_type("BTCUSDT");
         feed.track_subscribe(data_type).expect("track subscribe");
 
-        feed.handle_text_for_test(RTDS_CRYPTO_SUBSCRIBE_FIXTURE);
+        feed.handle_text_message(RTDS_CRYPTO_SUBSCRIBE_FIXTURE)
+            .expect("valid initial crypto snapshot");
 
         while rx.try_recv().is_ok() {}
 
-        feed.handle_text_for_test(RTDS_CRYPTO_SUBSCRIBE_FIXTURE);
+        feed.handle_text_message(RTDS_CRYPTO_SUBSCRIBE_FIXTURE)
+            .expect("valid replayed crypto snapshot");
 
         assert!(rx.try_recv().is_err());
     }
@@ -1795,7 +3309,8 @@ mod tests {
         feed.track_subscribe(data_type.clone())
             .expect("track subscribe");
 
-        feed.handle_text_for_test(RTDS_EQUITY_UPDATE_FIXTURE);
+        feed.handle_text_message(RTDS_EQUITY_UPDATE_FIXTURE)
+            .expect("valid equity update");
 
         let event = rx.try_recv().expect("custom data event");
         let DataEvent::Data(NautilusData::Custom(custom)) = event else {
@@ -1827,7 +3342,8 @@ mod tests {
             .expect("payload object")
             .remove("full_accuracy_value");
 
-        feed.handle_text_for_test(&update.to_string());
+        feed.handle_text_message(&update.to_string())
+            .expect("valid equity update");
 
         let event = rx.try_recv().expect("custom data event");
         let DataEvent::Data(NautilusData::Custom(custom)) = event else {
@@ -1861,7 +3377,8 @@ mod tests {
         update["payload"]["received_at"] = json!(1711382401007_u64);
         update["timestamp"] = json!(1711382401020_u64);
 
-        feed.handle_text_for_test(&update.to_string());
+        feed.handle_text_message(&update.to_string())
+            .expect("valid equity update");
 
         let event = rx.try_recv().expect("MSFT custom data event");
         let DataEvent::Data(NautilusData::Custom(custom)) = event else {
@@ -1891,7 +3408,8 @@ mod tests {
         feed.track_subscribe(data_type.clone())
             .expect("track subscribe");
 
-        feed.handle_text_for_test(RTDS_EQUITY_SUBSCRIBE_FIXTURE);
+        feed.handle_text_message(RTDS_EQUITY_SUBSCRIBE_FIXTURE)
+            .expect("valid equity snapshot");
 
         let first = rx.try_recv().expect("first custom data event");
         let second = rx.try_recv().expect("second custom data event");
@@ -1928,11 +3446,13 @@ mod tests {
         let data_type = equity_data_type("AAPL");
         feed.track_subscribe(data_type).expect("track subscribe");
 
-        feed.handle_text_for_test(RTDS_EQUITY_SUBSCRIBE_FIXTURE);
+        feed.handle_text_message(RTDS_EQUITY_SUBSCRIBE_FIXTURE)
+            .expect("valid initial equity snapshot");
 
         while rx.try_recv().is_ok() {}
 
-        feed.handle_text_for_test(RTDS_EQUITY_SUBSCRIBE_FIXTURE);
+        feed.handle_text_message(RTDS_EQUITY_SUBSCRIBE_FIXTURE)
+            .expect("valid replayed equity snapshot");
 
         assert!(rx.try_recv().is_err());
     }
@@ -2304,6 +3824,10 @@ mod tests {
             .expect("track AAPL");
         feed.track_subscribe(equity_data_type("MSFT"))
             .expect("track MSFT");
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 30))
+            .expect("track 30-second TWAP");
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
 
         let ws = connect_test_ws(format!("ws://{addr}/rtds")).await;
         let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -2348,6 +3872,14 @@ mod tests {
                                 subscription["topic"].as_str()
                                     == Some(RtdsTopic::EquityPrices.as_str())
                                     && subscription["filters"].is_null()
+                            }) && subscriptions.iter().any(|subscription| {
+                                subscription["topic"].as_str()
+                                    == Some(RtdsTopic::CryptoPricesTwapThirty.as_str())
+                                    && subscription["filters"].is_null()
+                            }) && subscriptions.iter().any(|subscription| {
+                                subscription["topic"].as_str()
+                                    == Some(RtdsTopic::CryptoPricesTwapSixty.as_str())
+                                    && subscription["filters"].is_null()
                             })
                         })
             })
@@ -2356,7 +3888,7 @@ mod tests {
         let subscriptions = replay["subscriptions"]
             .as_array()
             .expect("subscriptions array");
-        assert_eq!(subscriptions.len(), 2);
+        assert_eq!(subscriptions.len(), 4);
     }
 
     #[rstest]
@@ -2376,11 +3908,7 @@ mod tests {
             .expect("track BTC");
 
         let ws = connect_test_ws(format!("ws://{addr}/rtds")).await;
-        *feed
-            .inner
-            .ws_client
-            .lock()
-            .expect("RTDS ws_client mutex poisoned") = Some(ws.clone());
+        *feed.inner.ws_client.lock() = Some(ws.clone());
 
         let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
 
@@ -2510,7 +4038,7 @@ mod tests {
             "both retained symbols should resume after server-side reconnect",
         );
 
-        feed.disconnect().await;
+        feed.disconnect().await.expect("disconnect feed");
     }
 
     #[rstest]
@@ -2592,7 +4120,7 @@ mod tests {
             "ETH should not be replayed after unsubscribe"
         );
 
-        feed.disconnect().await;
+        feed.disconnect().await.expect("disconnect feed");
     }
 
     #[rstest]
@@ -2638,7 +4166,7 @@ mod tests {
             tx,
         );
 
-        feed.disconnect().await;
+        feed.disconnect().await.expect("disconnect feed");
         feed.connect().await.expect("connect feed");
 
         assert!(
@@ -2662,7 +4190,7 @@ mod tests {
         let payloads = state.received_payloads.lock().await.clone();
         let subscribe = payloads.last().expect("subscribe payload");
         assert_eq!(subscribe["action"].as_str(), Some("subscribe"));
-        feed.disconnect().await;
+        feed.disconnect().await.expect("disconnect feed");
     }
 
     #[rstest]
@@ -2708,11 +4236,7 @@ mod tests {
             .expect("track BTC");
 
         let ws = connect_test_ws(format!("ws://{addr}/rtds")).await;
-        *feed
-            .inner
-            .ws_client
-            .lock()
-            .expect("RTDS ws_client mutex poisoned") = Some(ws.clone());
+        *feed.inner.ws_client.lock() = Some(ws.clone());
         feed.inner.closing.store(true, Ordering::Release);
 
         let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -2751,10 +4275,11 @@ mod tests {
             || {
                 let feed = feed.clone();
                 async move {
-                    feed.inner
-                        .reconcile_task_handle
+                    feed.task_slots()
+                        .expect("RTDS task owner")
+                        .reconcile
                         .lock()
-                        .expect("RTDS reconcile_task_handle mutex poisoned")
+                        .await
                         .as_ref()
                         .is_some_and(|handle| !handle.is_finished())
                 }
@@ -2763,16 +4288,76 @@ mod tests {
         )
         .await;
 
-        feed.disconnect().await;
+        feed.disconnect().await.expect("disconnect feed");
 
         assert!(
-            feed.inner
-                .reconcile_task_handle
+            feed.task_slots()
+                .expect("RTDS task owner")
+                .reconcile
                 .lock()
-                .expect("RTDS reconcile_task_handle mutex poisoned")
+                .await
                 .is_none(),
             "disconnect should clear the reconcile worker handle",
         );
+    }
+
+    #[tokio::test]
+    async fn test_last_feed_owner_drop_aborts_worker_tasks() {
+        struct NotifyOnDrop(Option<tokio::sync::oneshot::Sender<()>>);
+
+        impl Drop for NotifyOnDrop {
+            fn drop(&mut self) {
+                if let Some(tx) = self.0.take() {
+                    let _ = tx.send(());
+                }
+            }
+        }
+
+        let (feed, _rx) = make_feed();
+        let (message_tx, mut message_rx) = tokio::sync::oneshot::channel();
+        let (reconcile_tx, mut reconcile_rx) = tokio::sync::oneshot::channel();
+        feed.task_slots()
+            .expect("RTDS task owner")
+            .message
+            .lock()
+            .await
+            .insert(tokio::spawn(async move {
+                let _notify = NotifyOnDrop(Some(message_tx));
+                std::future::pending::<()>().await;
+            }));
+        feed.task_slots()
+            .expect("RTDS task owner")
+            .reconcile
+            .lock()
+            .await
+            .insert(tokio::spawn(async move {
+                let _notify = NotifyOnDrop(Some(reconcile_tx));
+                std::future::pending::<()>().await;
+            }));
+        tokio::task::yield_now().await;
+        let clone = feed.clone();
+
+        drop(feed);
+
+        assert!(matches!(
+            message_rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+        ));
+        assert!(matches!(
+            reconcile_rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+        ));
+
+        drop(clone);
+
+        tokio::time::timeout(Duration::from_secs(1), &mut message_rx)
+            .await
+            .expect("message task dropped")
+            .expect("message task drop signal");
+        tokio::time::timeout(Duration::from_secs(1), &mut reconcile_rx)
+            .await
+            .expect("reconcile task dropped")
+            .expect("reconcile task drop signal");
     }
 
     #[rstest]
@@ -2803,10 +4388,11 @@ mod tests {
             || {
                 let feed = feed.clone();
                 async move {
-                    feed.inner
-                        .reconcile_task_handle
+                    feed.task_slots()
+                        .expect("RTDS task owner")
+                        .reconcile
                         .lock()
-                        .expect("RTDS reconcile_task_handle mutex poisoned")
+                        .await
                         .as_ref()
                         .is_some_and(tokio::task::JoinHandle::is_finished)
                 }
@@ -2837,7 +4423,7 @@ mod tests {
         let disconnect_task = tokio::spawn({
             let feed = feed.clone();
             async move {
-                feed.disconnect().await;
+                feed.disconnect().await.expect("disconnect feed");
             }
         });
 

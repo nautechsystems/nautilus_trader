@@ -21,12 +21,12 @@ use crate::{
     events::mint::MintEvent,
     hypersync::{
         HypersyncLog,
-        helpers::{
+        log::{
             extract_address_from_topic, extract_block_number, extract_log_index,
             extract_transaction_hash, extract_transaction_index, validate_event_signature_hash,
         },
     },
-    rpc::helpers as rpc_helpers,
+    rpc::log as rpc_log,
 };
 
 const MINT_EVENT_SIGNATURE_HASH: &str =
@@ -123,19 +123,19 @@ pub fn parse_mint_event_hypersync(dex: SharedDex, log: &HypersyncLog) -> anyhow:
 ///
 /// Returns an error if the log parsing fails or if the event data is invalid.
 pub fn parse_mint_event_rpc(dex: SharedDex, log: &RpcLog) -> anyhow::Result<MintEvent> {
-    rpc_helpers::validate_event_signature(log, MINT_EVENT_SIGNATURE_HASH, "Mint")?;
+    rpc_log::validate_event_signature(log, MINT_EVENT_SIGNATURE_HASH, "Mint")?;
 
-    let owner = rpc_helpers::extract_address_from_topic(log, 1, "owner")?;
+    let owner = rpc_log::extract_address_from_topic(log, 1, "owner")?;
 
     // Extract int24 tickLower from topic2 (stored as a 32-byte padded value)
-    let tick_lower_bytes = rpc_helpers::extract_topic_bytes(log, 2)?;
+    let tick_lower_bytes = rpc_log::extract_topic_bytes(log, 2)?;
     let tick_lower = i32::from_be_bytes(tick_lower_bytes[28..32].try_into()?);
 
     // Extract int24 tickUpper from topic3 (stored as a 32-byte padded value)
-    let tick_upper_bytes = rpc_helpers::extract_topic_bytes(log, 3)?;
+    let tick_upper_bytes = rpc_log::extract_topic_bytes(log, 3)?;
     let tick_upper = i32::from_be_bytes(tick_upper_bytes[28..32].try_into()?);
 
-    let data_bytes = rpc_helpers::extract_data_bytes(log)?;
+    let data_bytes = rpc_log::extract_data_bytes(log)?;
 
     // Validate if data contains 4 parameters of 32 bytes each
     if data_bytes.len() < 4 * 32 {
@@ -148,15 +148,15 @@ pub fn parse_mint_event_rpc(dex: SharedDex, log: &RpcLog) -> anyhow::Result<Mint
         Err(e) => anyhow::bail!("Failed to decode mint event data: {e}"),
     };
 
-    let pool_address = rpc_helpers::extract_address(log)?;
+    let pool_address = rpc_log::extract_address(log)?;
     let pool_identifier = PoolIdentifier::Address(Ustr::from(&pool_address.to_string()));
     Ok(MintEvent::new(
         dex,
         pool_identifier,
-        rpc_helpers::extract_block_number(log)?,
-        rpc_helpers::extract_transaction_hash(log)?,
-        rpc_helpers::extract_transaction_index(log)?,
-        rpc_helpers::extract_log_index(log)?,
+        rpc_log::extract_block_number(log)?,
+        rpc_log::extract_transaction_hash(log)?,
+        rpc_log::extract_transaction_index(log)?,
+        rpc_log::extract_log_index(log)?,
         decoded.sender,
         owner,
         tick_lower,

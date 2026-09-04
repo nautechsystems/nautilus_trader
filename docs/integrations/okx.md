@@ -12,7 +12,7 @@ require external OKX client libraries.
 The OKX adapter includes multiple components, which can be used separately or together:
 
 - `OKXHttpClient`: Low-level HTTP API connectivity.
-- `OKXWebSocketClient`: Low-level WebSocket API connectivity.
+- `OKXWebSocketClient`: Low-level WebSocket API connectivity for Rust callers.
 - `OKXDataClient`: Market data feed manager.
 - `OKXExecutionClient`: Account management and trade execution gateway.
 - `OKXDataClientFactory`: Factory for OKX data clients.
@@ -448,10 +448,17 @@ Relevant OKX docs:
 
 ### Execution instructions
 
-| Instruction   | Linear perpetual swap | Notes                                                                             |
-| ------------- | --------------------- | --------------------------------------------------------------------------------- |
-| `post_only`   | ✓                     | Only for limit orders.                                                            |
-| `reduce_only` | ✓                     | Futures and swaps need `net` mode; margin needs `isolated` or `cross` trade mode. |
+| Instruction   | Linear perpetual swap | Notes                                                 |
+| ------------- | --------------------- | ----------------------------------------------------- |
+| `post_only`   | ✓                     | Only for limit orders.                                |
+| `reduce_only` | ✓                     | See the product and position-mode restrictions below. |
+
+The adapter sends OKX's literal `reduceOnly` field for margin orders in `isolated` or `cross`
+trade mode and for futures or swap orders in `net` position mode. In `long/short` position mode,
+OKX does not accept that field. The adapter uses the closing `side` and `posSide` combination as
+the enforcing venue instruction instead. It rejects reduce-only orders for cash, option, and event
+products, and rejects a long/short-mode combination that would increase the selected side. See
+OKX's [place order documentation](https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-place-order).
 
 ### Time in force
 
@@ -574,15 +581,22 @@ The low-level HTTP client models OKX attached TP/SL and OCO payloads, but
 Conditional orders (OKX algo orders) use a hybrid architecture:
 
 - **Submission**: HTTP REST API (`/api/v5/trade/order-algo`).
-- **Status updates**: WebSocket business endpoint (`/ws/v5/business`) on the
-  `orders-algo` channel.
-- **Cancellation**: HTTP REST API with algo order ID tracking.
+- **Status updates**: WebSocket business endpoint (`/ws/v5/business`). Stop and touched orders use
+  `orders-algo`; trailing stops use `algo-advance`.
+- **Cancellation**: HTTP REST API while the algo parent is active, then the regular order path
+  after a triggered child becomes authoritative.
+
+The `orders-algo` channel sends updates only, while `algo-advance` also sends a snapshot on
+subscription. The adapter keeps tracked order context across transport reconnects and deduplicates
+replayed advance-algo snapshots. REST reconciliation remains responsible for cold-start and
+missed-update recovery.
 
 This design ensures:
 
 - Immediate submission acknowledgment through HTTP.
 - Real-time status updates through WebSocket.
-- Proper order lifecycle management with algo order ID mapping.
+- Stable order identity while venue authority moves from the algo parent ID to the triggered child
+  order ID.
 
 #### Supported conditional order types
 
@@ -795,7 +809,8 @@ Greeks.
 
 ### Restrictions
 
-- `reduce_only` is not applicable to options and is automatically stripped.
+- Reduce-only option orders are rejected by the adapter because OKX does not support the
+  instruction for options.
 - Position side defaults to `Net`.
 
 ### Configuration

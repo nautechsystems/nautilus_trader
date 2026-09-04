@@ -19,13 +19,7 @@
 //! recovers crashed predecessors and a kernel that drops without explicit teardown
 //! still seals the run via [`Drop`].
 
-use std::{
-    cell::RefCell,
-    path::PathBuf,
-    rc::Rc,
-    sync::{Mutex, MutexGuard},
-    time::Duration,
-};
+use std::{cell::RefCell, path::PathBuf, rc::Rc, time::Duration};
 
 use ahash::AHashMap;
 use bytes::Bytes;
@@ -51,7 +45,7 @@ use nautilus_execution::engine::{
 use nautilus_model::{
     accounts::{AccountAny, CashAccount},
     data::{
-        Bar, CustomData, DataType, FundingRateUpdate, QuoteTick, TradeTick,
+        Bar, CustomData, DataType, FundingRateUpdate, InstrumentClose, QuoteTick, TradeTick,
         greeks::{GreeksData, YieldCurveData},
     },
     enums::{OmsType, OrderSide, OrderType},
@@ -71,6 +65,7 @@ use nautilus_model::{
     types::{Currency, Money, Quantity},
 };
 use nautilus_system::{KernelEventStore, NautilusKernelBuilder};
+use parking_lot::{Mutex, MutexGuard};
 use rstest::rstest;
 use tempfile::TempDir;
 use ustr::Ustr;
@@ -78,7 +73,7 @@ use ustr::Ustr;
 static KERNEL_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 fn lock_kernel_test() -> MutexGuard<'static, ()> {
-    KERNEL_TEST_LOCK.lock().expect("kernel test lock")
+    KERNEL_TEST_LOCK.lock()
 }
 
 fn event_store_factory(
@@ -1257,6 +1252,12 @@ impl CacheDatabaseAdapter for StubCacheDatabase {
         Ok(AHashMap::new())
     }
 
+    async fn load_instrument_closes(
+        &self,
+    ) -> anyhow::Result<AHashMap<InstrumentId, InstrumentClose>> {
+        Ok(AHashMap::new())
+    }
+
     async fn load_synthetics(&self) -> anyhow::Result<AHashMap<InstrumentId, SyntheticInstrument>> {
         Ok(AHashMap::new())
     }
@@ -1372,6 +1373,10 @@ impl CacheDatabaseAdapter for StubCacheDatabase {
     }
 
     fn add_instrument(&self, _instrument: &InstrumentAny) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_instrument_close(&self, _close: &InstrumentClose) -> anyhow::Result<()> {
         Ok(())
     }
 

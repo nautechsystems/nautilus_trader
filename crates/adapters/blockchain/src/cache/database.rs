@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::pin::Pin;
+use std::{collections::BTreeSet, fmt::Display, pin::Pin};
 
 use alloy::primitives::{Address, U256};
 use anyhow::Context;
@@ -24,7 +24,7 @@ use nautilus_model::{
         SharedDex, Token,
         data::{
             DexPoolData, PoolFeeCollect, PoolFeeProtocolCollect, PoolFeeProtocolUpdate, PoolFlash,
-            block::BlockPosition,
+            block::{BLOCK_SCOPED_SNAPSHOT_INDEX, BlockPosition},
         },
         pool_analysis::{
             position::PoolPosition,
@@ -36,7 +36,10 @@ use nautilus_model::{
     identifiers::InstrumentId,
 };
 use rust_decimal::Decimal;
-use sqlx::{AssertSqlSafe, PgPool, Row, postgres::PgConnectOptions};
+use sqlx::{
+    AssertSqlSafe, PgPool, Postgres, Row, Transaction,
+    postgres::{PgAdvisoryLock, PgAdvisoryLockKey, PgConnectOptions},
+};
 
 use crate::{
     cache::{
@@ -51,14 +54,242 @@ use crate::{
         types::{U128Pg, U256Pg},
     },
     events::initialize::InitializeEvent,
-    execution::transaction::{EXECUTION_SCHEMA_VERSION, TransactionStatus},
+    execution::{
+        sealing::{
+            PayloadKeySet, PayloadPolicy, authenticate_payload, authenticate_retained_payload,
+            envelope_key_id, payload_context, retained_payload_requires_policy,
+        },
+        transaction::{EXECUTION_SCHEMA_VERSION, TransactionStatus},
+    },
+    rpc::verification::VERIFICATION_SCHEMA_VERSION,
 };
+
+const EXECUTION_PAYLOAD_COMPONENT: &str = "evm_execution_payload";
+const EXECUTION_PAYLOAD_PROTOCOL_VERSION: i16 = 1;
+const EXECUTION_PAYLOAD_BATCH_SIZE: i64 = 100;
+const EXECUTION_PAYLOAD_MAX_SEALS: i64 = 4_294_967_296;
+
+pub(crate) struct ExecutionVerificationBootstrap<'a> {
+    pub chain_id: u32,
+    pub wallet_address: &'a str,
+    pub manifest_version: &'a str,
+    pub manifest_digest: &'a str,
+    pub checkpoint_number: u64,
+    pub checkpoint_hash: &'a str,
+    pub checkpoint_parent_hash: &'a str,
+    pub checkpoint_timestamp: u64,
+    pub checkpoint_base_fee_per_gas: Option<u128>,
+    pub finalized_headers: &'a [ExecutionVerifiedHeader],
+    pub next_canonical_nonce: u64,
+    pub observed_canonical_nonce: u64,
+    pub provider_ids: &'a [String],
+    pub operator_ids: &'a [String],
+    pub failure_domain_ids: &'a [String],
+    pub decisions: &'a [ExecutionVerificationDecision],
+    pub migration: Option<&'a ExecutionVerificationMigration>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ExecutionVerificationMigrationSnapshot {
+    pub intents: Vec<ExecutionIntentRow>,
+    pub hashes: Vec<ExecutionTransactionHashRow>,
+}
+
+pub(crate) struct ExecutionVerificationMigration {
+    pub snapshot: ExecutionVerificationMigrationSnapshot,
+    pub records: Vec<ExecutionVerificationMigrationRecord>,
+}
+
+pub(crate) struct ExecutionVerificationMigrationRecord {
+    pub intent_id: i64,
+    pub nonce: Option<u64>,
+    pub transaction_hash: Option<String>,
+    pub terminal_status: Option<TransactionStatus>,
+    pub block_number: Option<u64>,
+    pub block_hash: Option<String>,
+    pub receipt_success: Option<bool>,
+    pub gas_used: Option<u64>,
+    pub effective_gas_price: Option<String>,
+    pub recover_prepared: bool,
+    pub decisions: Vec<ExecutionVerificationDecision>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ExecutionVerifiedHeader {
+    pub number: u64,
+    pub hash: String,
+    pub parent_hash: String,
+    pub timestamp: u64,
+    pub base_fee_per_gas: Option<u128>,
+}
+
+pub(crate) struct ExecutionVerificationPosition {
+    pub next_canonical_nonce: u64,
+    pub revision: u64,
+    pub finalized_tip: ExecutionVerifiedHeader,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ExecutionVerificationDecision {
+    pub read_class: &'static str,
+    pub height_start: Option<u64>,
+    pub height_end: Option<u64>,
+    pub normalized_value_digest: String,
+}
+
+pub(crate) struct ExecutionNonceAssignment<'a> {
+    pub intent_id: i64,
+    pub chain_id: u32,
+    pub wallet_address: &'a str,
+    pub nonce: u64,
+    pub manifest_version: &'a str,
+    pub manifest_digest: &'a str,
+    pub provider_ids: &'a [String],
+    pub operator_ids: &'a [String],
+    pub failure_domain_ids: &'a [String],
+    pub decisions: &'a [ExecutionVerificationDecision],
+}
+
+pub(crate) struct ExecutionFinalityTransition<'a> {
+    pub intent_id: i64,
+    pub chain_id: u32,
+    pub wallet_address: &'a str,
+    pub nonce: u64,
+    pub transaction_hash: &'a str,
+    pub status: TransactionStatus,
+    pub block_number: u64,
+    pub block_hash: &'a str,
+    pub receipt_success: bool,
+    pub gas_used: u64,
+    pub effective_gas_price: &'a str,
+    pub manifest_version: &'a str,
+    pub manifest_digest: &'a str,
+    pub provider_ids: &'a [String],
+    pub operator_ids: &'a [String],
+    pub failure_domain_ids: &'a [String],
+    pub decisions: &'a [ExecutionVerificationDecision],
+    pub finalized_headers: &'a [ExecutionVerifiedHeader],
+}
+
+pub(crate) struct ExecutionVerificationBatch<'a> {
+    pub intent_id: i64,
+    pub chain_id: u32,
+    pub wallet_address: &'a str,
+    pub nonce: u64,
+    pub decision_class: &'a str,
+    pub manifest_version: &'a str,
+    pub manifest_digest: &'a str,
+    pub provider_ids: &'a [String],
+    pub operator_ids: &'a [String],
+    pub failure_domain_ids: &'a [String],
+    pub decisions: &'a [ExecutionVerificationDecision],
+}
+
+pub(crate) struct ExecutionReplacementScan<'a> {
+    pub intent_id: i64,
+    pub chain_id: u32,
+    pub wallet_address: &'a str,
+    pub nonce: u64,
+    pub finalized_cursor: Option<&'a ExecutionVerifiedHeader>,
+    pub matched_transaction_hash: Option<&'a str>,
+    pub manifest_version: &'a str,
+    pub manifest_digest: &'a str,
+    pub provider_ids: &'a [String],
+    pub operator_ids: &'a [String],
+    pub failure_domain_ids: &'a [String],
+    pub decisions: &'a [ExecutionVerificationDecision],
+}
+const EXECUTION_PAYLOAD_INFRASTRUCTURE_QUERY: &str = "
+    SELECT
+        EXISTS (
+            SELECT 1
+            FROM pg_catalog.pg_trigger AS t
+            JOIN pg_catalog.pg_class AS c ON c.oid = t.tgrelid
+            JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace
+            WHERE n.nspname = current_schema()
+              AND c.relname = 'execution_transaction_hash'
+              AND t.tgname = 'execution_transaction_payload_fence'
+              AND NOT t.tgisinternal
+        ),
+        EXISTS (
+            SELECT 1
+            FROM pg_catalog.pg_constraint AS con
+            JOIN pg_catalog.pg_class AS c ON c.oid = con.conrelid
+            JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace
+            WHERE n.nspname = current_schema()
+              AND c.relname = 'execution_transaction_hash'
+              AND con.conname = 'execution_transaction_payload_protected_check'
+              AND con.contype = 'c'
+        )
+";
+
+#[derive(Debug)]
+struct ExecutionPayloadState {
+    deployment_id: String,
+    protocol_version: i16,
+    operation: String,
+    active_key_id: Vec<u8>,
+}
+
+/// Transaction-held lease which prevents payload maintenance from starting during an action.
+pub(crate) struct ExecutionPayloadLease {
+    _transaction: Transaction<'static, Postgres>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ExecutionPayloadCheck {
+    pub protected: bool,
+    pub deployment_id: Option<String>,
+    pub plaintext_rows: u64,
+    pub original_rows: u64,
+    pub replacement_rows: u64,
+    pub authenticated_rows: u64,
+    pub key_ids: Vec<String>,
+    pub read_roles: Vec<String>,
+}
 
 /// Database interface for persisting and retrieving blockchain entities and domain objects.
 #[derive(Debug, Clone)]
 pub struct BlockchainCacheDatabase {
     /// PostgreSQL connection pool used for database operations.
     pool: PgPool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExecutionIntentReservationStage {
+    BeforeCommit,
+    Commit,
+}
+
+#[derive(Debug)]
+struct ExecutionIntentReservationError {
+    stage: ExecutionIntentReservationStage,
+    source: anyhow::Error,
+}
+
+impl Display for ExecutionIntentReservationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.stage {
+            ExecutionIntentReservationStage::BeforeCommit => {
+                f.write_str("Execution intent reservation failed before commit")
+            }
+            ExecutionIntentReservationStage::Commit => f.write_str(
+                "Execution intent reservation commit outcome is unknown; reconciliation is required",
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ExecutionIntentReservationError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.source.as_ref())
+    }
+}
+
+pub(crate) fn reservation_failure_proven_not_committed(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<ExecutionIntentReservationError>()
+        .is_some_and(|e| e.stage == ExecutionIntentReservationStage::BeforeCommit)
 }
 
 // Shared SELECT column list for `pool` row queries (load_pools, load_pool).
@@ -356,35 +587,58 @@ impl BlockchainCacheDatabase {
             return Ok(());
         }
 
+        let chain_id_db = i32::try_from(chain_id)
+            .with_context(|| format!("Chain ID {chain_id} exceeds PostgreSQL INTEGER"))?;
         let mut numbers: Vec<i64> = Vec::with_capacity(blocks.len());
+        let mut hashes: Vec<String> = Vec::with_capacity(blocks.len());
         let mut timestamps: Vec<String> = Vec::with_capacity(blocks.len());
 
         for block in blocks {
-            numbers.push(block.number as i64);
+            numbers.push(i64::try_from(block.number).with_context(|| {
+                format!(
+                    "Pool event block {} exceeds PostgreSQL BIGINT",
+                    block.number
+                )
+            })?);
+            hashes.push(block.hash.clone());
             timestamps.push(block.timestamp.to_string());
         }
 
         sqlx::query(
             "
             INSERT INTO pool_event_block (
-                chain_id, number, timestamp
+                chain_id, number, hash, timestamp
             )
             SELECT
                 $1, *
             FROM UNNEST(
-                $2::int8[], $3::text[]
+                $2::int8[], $3::text[], $4::text[]
             )
             ON CONFLICT (chain_id, number)
-            DO UPDATE SET timestamp = EXCLUDED.timestamp
+            DO UPDATE SET hash = EXCLUDED.hash, timestamp = EXCLUDED.timestamp
            ",
         )
-        .bind(chain_id as i32)
+        .bind(chain_id_db)
         .bind(&numbers[..])
+        .bind(&hashes[..])
         .bind(&timestamps[..])
         .execute(&self.pool)
         .await
         .map(|_| ())
         .map_err(|e| anyhow::anyhow!("Failed to batch insert into pool_event_block table: {e}"))
+    }
+
+    /// Adds block-hash storage to databases created before hash-bound profiler checkpoints.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the schema update fails.
+    pub async fn ensure_pool_event_block_hash_schema(&self) -> anyhow::Result<()> {
+        sqlx::query("ALTER TABLE pool_event_block ADD COLUMN IF NOT EXISTS hash TEXT")
+            .execute(&self.pool)
+            .await
+            .map(|_| ())
+            .map_err(|e| anyhow::anyhow!("Failed to add pool event block hash storage: {e}"))
     }
 
     /// Inserts blocks using PostgreSQL COPY BINARY for maximum performance.
@@ -1056,7 +1310,7 @@ impl BlockchainCacheDatabase {
                             token_row.address,
                             token_row.name,
                             token_row.symbol,
-                            token_row.decimals as u8,
+                            token_row.decimals,
                         )
                     })
                     .collect::<Vec<_>>()
@@ -2131,6 +2385,10 @@ impl BlockchainCacheDatabase {
             "
             SELECT
                 block, transaction_index, log_index, transaction_hash,
+                COALESCE(
+                    (SELECT hash FROM pool_event_block WHERE pool_event_block.chain_id = pool_snapshot.chain_id AND pool_event_block.number = pool_snapshot.block),
+                    (SELECT hash FROM block WHERE block.chain_id = pool_snapshot.chain_id AND block.number = pool_snapshot.block)
+                ) as block_hash,
                 current_tick, price_sqrt_ratio_x96::TEXT, liquidity::TEXT,
                 protocol_fees_token0::TEXT, protocol_fees_token1::TEXT, fee_protocol,
                 fee_protocol0_basis_points, fee_protocol1_basis_points,
@@ -2166,6 +2424,20 @@ impl BlockchainCacheDatabase {
             let transaction_index: i32 = row.get("transaction_index");
             let log_index: i32 = row.get("log_index");
             let transaction_hash: String = row.get("transaction_hash");
+            let observed_block_hash = row.try_get::<Option<String>, _>("block_hash")?;
+            let block =
+                u64::try_from(block).with_context(|| "Pool snapshot block number is negative")?;
+            let transaction_index = u32::try_from(transaction_index)
+                .with_context(|| "Pool snapshot transaction index is negative")?;
+            let log_index =
+                u32::try_from(log_index).with_context(|| "Pool snapshot log index is negative")?;
+            let block_hash = if transaction_index == BLOCK_SCOPED_SNAPSHOT_INDEX
+                && log_index == BLOCK_SCOPED_SNAPSHOT_INDEX
+            {
+                Some(transaction_hash.clone())
+            } else {
+                observed_block_hash
+            };
             let block_timestamp = row
                 .try_get::<Option<String>, _>("block_timestamp")?
                 .ok_or_else(|| {
@@ -2178,12 +2450,30 @@ impl BlockchainCacheDatabase {
             let timestamp = parse_cached_block_timestamp(&block_timestamp)
                 .map_err(|e| anyhow::anyhow!("Invalid block timestamp '{block_timestamp}': {e}"))?;
 
-            let block_position = BlockPosition::new(
-                block as u64,
-                transaction_hash,
-                transaction_index as u32,
-                log_index as u32,
-            );
+            let block_position =
+                BlockPosition::new(block, transaction_hash, transaction_index, log_index)
+                    .with_block_hash(block_hash);
+
+            let fee_protocol_value = row.get::<i16, _>("fee_protocol");
+            let fee_protocol = u8::try_from(fee_protocol_value).with_context(|| {
+                format!("Invalid pool snapshot fee protocol {fee_protocol_value}")
+            })?;
+            let fee_protocol0_basis_points = row
+                .get::<Option<i32>, _>("fee_protocol0_basis_points")
+                .map(|value| {
+                    u32::try_from(value).with_context(|| {
+                        format!("Invalid token0 fee protocol basis points {value}")
+                    })
+                })
+                .transpose()?;
+            let fee_protocol1_basis_points = row
+                .get::<Option<i32>, _>("fee_protocol1_basis_points")
+                .map(|value| {
+                    u32::try_from(value).with_context(|| {
+                        format!("Invalid token1 fee protocol basis points {value}")
+                    })
+                })
+                .transpose()?;
 
             let state = PoolState {
                 current_tick: row.get("current_tick"),
@@ -2191,13 +2481,9 @@ impl BlockchainCacheDatabase {
                 liquidity: row.get::<String, _>("liquidity").parse()?,
                 protocol_fees_token0: row.get::<String, _>("protocol_fees_token0").parse()?,
                 protocol_fees_token1: row.get::<String, _>("protocol_fees_token1").parse()?,
-                fee_protocol: row.get::<i16, _>("fee_protocol") as u8,
-                fee_protocol0_basis_points: row
-                    .get::<Option<i32>, _>("fee_protocol0_basis_points")
-                    .map(|value| value as u32),
-                fee_protocol1_basis_points: row
-                    .get::<Option<i32>, _>("fee_protocol1_basis_points")
-                    .map(|value| value as u32),
+                fee_protocol,
+                fee_protocol0_basis_points,
+                fee_protocol1_basis_points,
                 fee_growth_global_0: row.get::<String, _>("fee_growth_global_0").parse()?,
                 fee_growth_global_1: row.get::<String, _>("fee_growth_global_1").parse()?,
             };
@@ -2207,11 +2493,16 @@ impl BlockchainCacheDatabase {
                 total_amount1_deposited: row.get::<String, _>("total_amount1_deposited").parse()?,
                 total_amount0_collected: row.get::<String, _>("total_amount0_collected").parse()?,
                 total_amount1_collected: row.get::<String, _>("total_amount1_collected").parse()?,
-                total_swaps: row.get::<i32, _>("total_swaps") as u64,
-                total_mints: row.get::<i32, _>("total_mints") as u64,
-                total_burns: row.get::<i32, _>("total_burns") as u64,
-                total_fee_collects: row.get::<i32, _>("total_fee_collects") as u64,
-                total_flashes: row.get::<i32, _>("total_flashes") as u64,
+                total_swaps: u64::try_from(row.get::<i32, _>("total_swaps"))
+                    .with_context(|| "Pool snapshot total swaps is negative")?,
+                total_mints: u64::try_from(row.get::<i32, _>("total_mints"))
+                    .with_context(|| "Pool snapshot total mints is negative")?,
+                total_burns: u64::try_from(row.get::<i32, _>("total_burns"))
+                    .with_context(|| "Pool snapshot total burns is negative")?,
+                total_fee_collects: u64::try_from(row.get::<i32, _>("total_fee_collects"))
+                    .with_context(|| "Pool snapshot total fee collects is negative")?,
+                total_flashes: u64::try_from(row.get::<i32, _>("total_flashes"))
+                    .with_context(|| "Pool snapshot total flashes is negative")?,
                 liquidity_utilization_rate: row.get::<f64, _>("liquidity_utilization_rate"),
             };
 
@@ -2220,9 +2511,9 @@ impl BlockchainCacheDatabase {
                 .load_pool_positions_for_snapshot(
                     chain_id,
                     pool_identifier,
-                    block as u64,
-                    transaction_index as u32,
-                    log_index as u32,
+                    block,
+                    transaction_index,
+                    log_index,
                 )
                 .await?;
 
@@ -2230,9 +2521,9 @@ impl BlockchainCacheDatabase {
                 .load_pool_ticks_for_snapshot(
                     chain_id,
                     pool_identifier,
-                    block as u64,
-                    transaction_index as u32,
-                    log_index as u32,
+                    block,
+                    transaction_index,
+                    log_index,
                 )
                 .await?;
 
@@ -2466,7 +2757,8 @@ impl BlockchainCacheDatabase {
                     row.get::<String, _>("fee_growth_outside_0").parse()?,
                     row.get::<String, _>("fee_growth_outside_1").parse()?,
                     row.get("initialized"),
-                    row.get::<i64, _>("last_updated_block") as u64,
+                    u64::try_from(row.get::<i64, _>("last_updated_block"))
+                        .with_context(|| "Pool tick last updated block is negative")?,
                 );
                 Ok(tick)
             })
@@ -2496,6 +2788,12 @@ impl BlockchainCacheDatabase {
         to_block: Option<u64>,
     ) -> Pin<Box<dyn Stream<Item = Result<DexPoolData, anyhow::Error>> + Send + 'a>> {
         const QUERY_ALL: &str = "
+            SELECT events.*,
+                COALESCE(
+                    (SELECT hash FROM pool_event_block WHERE pool_event_block.chain_id = events.chain_id AND pool_event_block.number = events.block),
+                    (SELECT hash FROM block WHERE block.chain_id = events.chain_id AND block.number = events.block)
+                ) as block_hash
+            FROM (
             (SELECT
                 'swap' as event_type,
                 chain_id,
@@ -2711,9 +3009,16 @@ impl BlockchainCacheDatabase {
             FROM pool_flash_event
             WHERE chain_id = $1 AND pool_identifier = $2
             AND ($3::BIGINT IS NULL OR block <= $3))
-            ORDER BY block, transaction_index, log_index";
+            ) AS events
+            ORDER BY events.block, events.transaction_index, events.log_index";
 
         const QUERY_FROM_POSITION: &str = "
+            SELECT events.*,
+                COALESCE(
+                    (SELECT hash FROM pool_event_block WHERE pool_event_block.chain_id = events.chain_id AND pool_event_block.number = events.block),
+                    (SELECT hash FROM block WHERE block.chain_id = events.chain_id AND block.number = events.block)
+                ) as block_hash
+            FROM (
             (SELECT
                 'swap' as event_type,
                 chain_id,
@@ -2935,7 +3240,8 @@ impl BlockchainCacheDatabase {
             WHERE chain_id = $1 AND pool_identifier = $2
             AND (block > $3 OR (block = $3 AND transaction_index > $4) OR (block = $3 AND transaction_index = $4 AND log_index > $5))
             AND ($6::BIGINT IS NULL OR block <= $6))
-            ORDER BY block, transaction_index, log_index";
+            ) AS events
+            ORDER BY events.block, events.transaction_index, events.log_index";
 
         // Build query with appropriate bindings
         let query = if let Some(pos) = from_position {
@@ -3165,7 +3471,9 @@ impl BlockchainCacheDatabase {
                 intent_id BIGINT NOT NULL,
                 chain_id INTEGER NOT NULL,
                 transaction_hash TEXT NOT NULL,
+                payload_expected BOOLEAN NOT NULL DEFAULT TRUE,
                 raw_transaction BYTEA,
+                sealed_transaction BYTEA,
                 status TEXT NOT NULL,
                 block_number BIGINT,
                 block_hash TEXT,
@@ -3179,12 +3487,72 @@ impl BlockchainCacheDatabase {
                     REFERENCES execution_intent(id, chain_id) ON DELETE RESTRICT,
                 CHECK (block_number IS NULL OR block_number >= 0),
                 CHECK (gas_used IS NULL OR gas_used >= 0),
+                CONSTRAINT execution_transaction_raw_size_check
+                    CHECK (raw_transaction IS NULL OR octet_length(raw_transaction) <= 131072),
+                CONSTRAINT execution_transaction_sealed_size_check
+                    CHECK (sealed_transaction IS NULL OR octet_length(sealed_transaction) <= 131133),
                 CHECK (status IN (
                     'signed', 'broadcast', 'included', 'finalized', 'reverted',
                     'replaced', 'dropped', 'reorged'
                 )),
                 UNIQUE (chain_id, transaction_hash),
                 UNIQUE (intent_id, transaction_hash)
+            )
+            ",
+            "
+            ALTER TABLE execution_transaction_hash
+            ADD COLUMN IF NOT EXISTS payload_expected BOOLEAN
+            ",
+            "
+            UPDATE execution_transaction_hash
+            SET payload_expected = raw_transaction IS NOT NULL
+            WHERE payload_expected IS NULL
+            ",
+            "
+            ALTER TABLE execution_transaction_hash
+            ALTER COLUMN payload_expected SET DEFAULT TRUE
+            ",
+            "
+            ALTER TABLE execution_transaction_hash
+            ALTER COLUMN payload_expected SET NOT NULL
+            ",
+            "
+            ALTER TABLE execution_transaction_hash
+            ADD COLUMN IF NOT EXISTS sealed_transaction BYTEA
+            ",
+            "
+            ALTER TABLE execution_transaction_hash
+            DROP CONSTRAINT IF EXISTS execution_transaction_raw_size_check
+            ",
+            "
+            ALTER TABLE execution_transaction_hash
+            ADD CONSTRAINT execution_transaction_raw_size_check
+            CHECK (raw_transaction IS NULL OR octet_length(raw_transaction) <= 131072)
+            ",
+            "
+            ALTER TABLE execution_transaction_hash
+            DROP CONSTRAINT IF EXISTS execution_transaction_sealed_size_check
+            ",
+            "
+            ALTER TABLE execution_transaction_hash
+            ADD CONSTRAINT execution_transaction_sealed_size_check
+            CHECK (sealed_transaction IS NULL OR octet_length(sealed_transaction) <= 131133)
+            ",
+            "
+            CREATE TABLE IF NOT EXISTS execution_payload_state (
+                component TEXT PRIMARY KEY CHECK (component = 'signed_transactions'),
+                deployment_id TEXT NOT NULL CHECK (deployment_id <> ''),
+                protocol_version SMALLINT NOT NULL CHECK (protocol_version = 1),
+                operation TEXT NOT NULL CHECK (operation IN ('migrate', 'ready', 'rewrap', 'rollback')),
+                active_key_id BYTEA NOT NULL CHECK (octet_length(active_key_id) = 32),
+                progress_id BIGINT NOT NULL DEFAULT 0 CHECK (progress_id >= 0),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            ",
+            "
+            CREATE TABLE IF NOT EXISTS execution_payload_key_state (
+                key_id BYTEA PRIMARY KEY CHECK (octet_length(key_id) = 32),
+                seals BIGINT NOT NULL DEFAULT 0 CHECK (seals >= 0 AND seals < 4294967296)
             )
             ",
             "
@@ -3302,86 +3670,2176 @@ impl BlockchainCacheDatabase {
         Ok(())
     }
 
-    /// Reserves durable ownership of a signer slot and optional client order before signing.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the signer or client order is already owned, or persistence fails.
-    pub async fn reserve_execution_intent(
+    /// Loads the durable finalized-header and nonce position when verification is active.
+    pub(crate) async fn load_execution_verification_position(
         &self,
-        intent: &ExecutionIntentInsert,
-    ) -> anyhow::Result<ExecutionIntentRow> {
-        let chain_id = i32::try_from(intent.chain_id)
-            .with_context(|| format!("Chain ID {} exceeds PostgreSQL INTEGER", intent.chain_id))?;
-        let created_block = i64::try_from(intent.created_block).with_context(|| {
-            format!(
-                "Execution creation block {} exceeds PostgreSQL BIGINT",
-                intent.created_block
-            )
-        })?;
-        let mut transaction =
-            self.pool.begin().await.map_err(|e| {
-                anyhow::anyhow!("Failed to start execution intent reservation: {e}")
-            })?;
-        let row = sqlx::query_as::<_, ExecutionIntentRow>(
+        chain_id: u32,
+        wallet_address: &str,
+        manifest_version: &str,
+        manifest_digest: &str,
+    ) -> anyhow::Result<Option<ExecutionVerificationPosition>> {
+        let installed = sqlx::query_scalar::<_, i16>(
+            "SELECT version FROM execution_schema_version \
+             WHERE component = 'evm_execution_verification'",
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .context("failed to inspect execution verification schema")?;
+        let Some(installed) = installed else {
+            return Ok(None);
+        };
+        anyhow::ensure!(
+            installed <= VERIFICATION_SCHEMA_VERSION,
+            "Unsupported execution verification schema version {installed}"
+        );
+        let chain_id =
+            i32::try_from(chain_id).context("Verification chain ID exceeds PostgreSQL INTEGER")?;
+        let current = sqlx::query_as::<_, (String, String, i64, i64)>(
             "
-            INSERT INTO execution_intent (
-                schema_version, chain_id, wallet_address, purpose, status,
-                client_order_id, trader_id, strategy_id, account_id, instrument_id,
-                pool_address, transaction_to, transaction_input, transaction_value,
-                amount_in, created_block
-            )
-            VALUES ($1, $2, $3, $4, 'prepared', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-            RETURNING
+            SELECT manifest_version, manifest_digest, next_canonical_nonce, revision
+            FROM execution_verification_nonce
+            WHERE chain_id = $1 AND wallet_address = $2
+            ",
+        )
+        .bind(chain_id)
+        .bind(wallet_address)
+        .fetch_optional(&self.pool)
+        .await
+        .context("failed to load execution verification nonce position")?;
+        let Some((stored_version, stored_digest, nonce, revision)) = current else {
+            return Ok(None);
+        };
+        anyhow::ensure!(
+            stored_version == manifest_version && stored_digest == manifest_digest,
+            "Execution verification manifest identity changed"
+        );
+        let row = sqlx::query_as::<_, (i64, String, String, i64, Option<String>, String)>(
+            "
+            SELECT number, hash, parent_hash, timestamp, base_fee_per_gas, manifest_digest
+            FROM execution_verified_finalized_header
+            WHERE chain_id = $1 AND wallet_address = $2
+            ORDER BY number DESC
+            LIMIT 1
+            ",
+        )
+        .bind(chain_id)
+        .bind(wallet_address)
+        .fetch_optional(&self.pool)
+        .await
+        .context("failed to load verified finalized header tip")?
+        .ok_or_else(|| anyhow::anyhow!("Verified finalized header ledger is empty"))?;
+        let (number, hash, parent_hash, timestamp, base_fee, digest) = row;
+        anyhow::ensure!(
+            digest == manifest_digest,
+            "Finalized header manifest identity changed"
+        );
+        Ok(Some(ExecutionVerificationPosition {
+            next_canonical_nonce: u64::try_from(nonce).context("Canonical nonce is negative")?,
+            revision: u64::try_from(revision).context("Canonical nonce revision is negative")?,
+            finalized_tip: ExecutionVerifiedHeader {
+                number: u64::try_from(number).context("Finalized header number is negative")?,
+                hash,
+                parent_hash,
+                timestamp: u64::try_from(timestamp)
+                    .context("Finalized header timestamp is negative")?,
+                base_fee_per_gas: base_fee
+                    .map(|value| {
+                        value
+                            .parse::<u128>()
+                            .map_err(|_| anyhow::anyhow!("Finalized header base fee is invalid"))
+                    })
+                    .transpose()?,
+            },
+        }))
+    }
+
+    pub(crate) async fn load_execution_verified_header(
+        &self,
+        chain_id: u32,
+        wallet_address: &str,
+        number: u64,
+        manifest_digest: &str,
+    ) -> anyhow::Result<Option<ExecutionVerifiedHeader>> {
+        let chain_id =
+            i32::try_from(chain_id).context("Verification chain ID exceeds PostgreSQL INTEGER")?;
+        let number =
+            i64::try_from(number).context("Finalized header number exceeds PostgreSQL BIGINT")?;
+        let row = sqlx::query_as::<_, (String, String, i64, Option<String>, String)>(
+            "
+            SELECT hash, parent_hash, timestamp, base_fee_per_gas, manifest_digest
+            FROM execution_verified_finalized_header
+            WHERE chain_id = $1 AND wallet_address = $2 AND number = $3
+            ",
+        )
+        .bind(chain_id)
+        .bind(wallet_address)
+        .bind(number)
+        .fetch_optional(&self.pool)
+        .await
+        .context("failed to load verified finalized header")?;
+        let Some((hash, parent_hash, timestamp, base_fee, digest)) = row else {
+            return Ok(None);
+        };
+        anyhow::ensure!(
+            digest == manifest_digest,
+            "Finalized header manifest identity changed"
+        );
+        Ok(Some(ExecutionVerifiedHeader {
+            number: u64::try_from(number).context("Finalized header number is negative")?,
+            hash,
+            parent_hash,
+            timestamp: u64::try_from(timestamp)
+                .context("Finalized header timestamp is negative")?,
+            base_fee_per_gas: base_fee
+                .map(|value| {
+                    value
+                        .parse::<u128>()
+                        .map_err(|_| anyhow::anyhow!("Finalized header base fee is invalid"))
+                })
+                .transpose()?,
+        }))
+    }
+
+    /// Loads the retained execution state that a first verification bootstrap must classify.
+    pub(crate) async fn load_execution_verification_migration_snapshot(
+        &self,
+        chain_id: u32,
+        wallet_address: &str,
+    ) -> anyhow::Result<ExecutionVerificationMigrationSnapshot> {
+        let chain_id =
+            i32::try_from(chain_id).context("Verification chain ID exceeds PostgreSQL INTEGER")?;
+        let intents = sqlx::query_as::<_, ExecutionIntentRow>(
+            "
+            SELECT
                 id, schema_version, chain_id, wallet_address, nonce, purpose, status,
                 client_order_id, trader_id, strategy_id, account_id, instrument_id,
                 pool_address, transaction_to, transaction_input, transaction_value,
                 amount_in, created_block, acknowledgement_emitted, fill_emitted,
                 terminal_emitted, active
+            FROM execution_intent
+            WHERE chain_id = $1 AND wallet_address = $2
+            ORDER BY id
             ",
         )
-        .bind(EXECUTION_SCHEMA_VERSION)
         .bind(chain_id)
-        .bind(&intent.wallet_address)
-        .bind(&intent.purpose)
-        .bind(&intent.client_order_id)
-        .bind(&intent.trader_id)
-        .bind(&intent.strategy_id)
-        .bind(&intent.account_id)
-        .bind(&intent.instrument_id)
-        .bind(&intent.pool_address)
-        .bind(&intent.transaction_to)
-        .bind(&intent.transaction_input)
-        .bind(&intent.transaction_value)
-        .bind(&intent.amount_in)
-        .bind(created_block)
-        .fetch_one(&mut *transaction)
+        .bind(wallet_address)
+        .fetch_all(&self.pool)
         .await
-        .map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to reserve execution intent for signer {} on chain {}: {e}",
-                intent.wallet_address,
-                intent.chain_id
-            )
+        .context("failed to load retained execution intents for verification migration")?;
+        let hashes = sqlx::query_as::<_, ExecutionTransactionHashRow>(
+            "
+            SELECT
+                hash.id, hash.intent_id, hash.chain_id, hash.transaction_hash,
+                hash.payload_expected, hash.raw_transaction, hash.sealed_transaction,
+                hash.status, hash.block_number, hash.block_hash, hash.receipt_success,
+                hash.gas_used, hash.effective_gas_price, hash.current
+            FROM execution_transaction_hash AS hash
+            JOIN execution_intent AS intent ON intent.id = hash.intent_id
+            WHERE intent.chain_id = $1 AND intent.wallet_address = $2
+            ORDER BY hash.id
+            ",
+        )
+        .bind(chain_id)
+        .bind(wallet_address)
+        .fetch_all(&self.pool)
+        .await
+        .context("failed to load retained execution hashes for verification migration")?;
+        Ok(ExecutionVerificationMigrationSnapshot { intents, hashes })
+    }
+
+    /// Installs or validates the independent verification ledger for an execution signer.
+    ///
+    /// A database with retained execution intents but no verification ledger requires an archive-
+    /// verified migration which classifies every retained intent. An empty database initializes
+    /// its canonical nonce from a verified finalized-height transaction count and its header
+    /// ledger from the trusted checkpoint.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the schema, migration snapshot, historical reconstruction, or retained
+    /// evidence is inconsistent, or persistence fails.
+    pub(crate) async fn ensure_execution_verification_schema(
+        &self,
+        bootstrap: &ExecutionVerificationBootstrap<'_>,
+    ) -> anyhow::Result<()> {
+        let first_header = bootstrap
+            .finalized_headers
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("Verified finalized header ledger is empty"))?;
+        anyhow::ensure!(
+            bootstrap.finalized_headers.windows(2).all(|headers| {
+                headers[1].number == headers[0].number.saturating_add(1)
+                    && headers[1].parent_hash == headers[0].hash
+            }),
+            "Verified finalized headers are not one continuous parent-linked chain"
+        );
+        anyhow::ensure!(
+            bootstrap.provider_ids.len() == 3
+                && bootstrap.operator_ids.len() == 3
+                && bootstrap.failure_domain_ids.len() >= 3
+                && !bootstrap.decisions.is_empty(),
+            "Connect verification evidence is incomplete"
+        );
+        let chain_id = i32::try_from(bootstrap.chain_id)
+            .context("Verification chain ID exceeds PostgreSQL INTEGER")?;
+        let checkpoint_number = i64::try_from(bootstrap.checkpoint_number)
+            .context("Verification checkpoint exceeds PostgreSQL BIGINT")?;
+        let checkpoint_timestamp = i64::try_from(bootstrap.checkpoint_timestamp)
+            .context("Verification checkpoint timestamp exceeds PostgreSQL BIGINT")?;
+        let next_canonical_nonce = i64::try_from(bootstrap.next_canonical_nonce)
+            .context("Canonical nonce exceeds PostgreSQL BIGINT")?;
+        let observed_canonical_nonce = i64::try_from(bootstrap.observed_canonical_nonce)
+            .context("Observed canonical nonce exceeds PostgreSQL BIGINT")?;
+        let base_fee = bootstrap
+            .checkpoint_base_fee_per_gas
+            .map(|value| value.to_string());
+        let mut transaction = self.pool.begin().await.map_err(|e| {
+            anyhow::anyhow!("Failed to start execution verification migration: {e}")
         })?;
+
+        for statement in [
+            "
+            CREATE TABLE IF NOT EXISTS execution_verification_nonce (
+                chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE RESTRICT,
+                wallet_address TEXT NOT NULL,
+                manifest_version TEXT NOT NULL CHECK (manifest_version <> ''),
+                manifest_digest TEXT NOT NULL CHECK (manifest_digest <> ''),
+                next_canonical_nonce BIGINT NOT NULL CHECK (next_canonical_nonce >= 0),
+                revision BIGINT NOT NULL DEFAULT 0 CHECK (revision >= 0),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (chain_id, wallet_address)
+            )
+            ",
+            "
+            CREATE TABLE IF NOT EXISTS execution_verified_finalized_header (
+                chain_id INTEGER NOT NULL,
+                wallet_address TEXT NOT NULL,
+                number BIGINT NOT NULL CHECK (number >= 0),
+                hash TEXT NOT NULL CHECK (hash <> ''),
+                parent_hash TEXT NOT NULL CHECK (parent_hash <> ''),
+                timestamp BIGINT NOT NULL CHECK (timestamp >= 0),
+                base_fee_per_gas TEXT,
+                manifest_digest TEXT NOT NULL CHECK (manifest_digest <> ''),
+                observed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (chain_id, wallet_address, number),
+                UNIQUE (chain_id, wallet_address, hash),
+                FOREIGN KEY (chain_id, wallet_address)
+                    REFERENCES execution_verification_nonce(chain_id, wallet_address)
+                    ON DELETE RESTRICT
+            )
+            ",
+            "
+            CREATE TABLE IF NOT EXISTS execution_verification_decision (
+                id BIGSERIAL PRIMARY KEY,
+                intent_id BIGINT REFERENCES execution_intent(id) ON DELETE RESTRICT,
+                nonce BIGINT CHECK (nonce IS NULL OR nonce >= 0),
+                decision_class TEXT NOT NULL CHECK (decision_class <> ''),
+                read_class TEXT NOT NULL CHECK (read_class <> ''),
+                height_start BIGINT CHECK (height_start IS NULL OR height_start >= 0),
+                height_end BIGINT CHECK (height_end IS NULL OR height_end >= 0),
+                manifest_version TEXT NOT NULL CHECK (manifest_version <> ''),
+                manifest_digest TEXT NOT NULL CHECK (manifest_digest <> ''),
+                provider_ids TEXT[] NOT NULL,
+                operator_ids TEXT[] NOT NULL,
+                failure_domain_ids TEXT[] NOT NULL,
+                response_class TEXT NOT NULL CHECK (response_class <> ''),
+                normalized_value_digest TEXT,
+                safe_value JSONB,
+                nonce_revision BIGINT CHECK (nonce_revision IS NULL OR nonce_revision >= 0),
+                outcome TEXT NOT NULL CHECK (outcome IN (
+                    'verified', 'disagreement', 'unavailable', 'retryable', 'locally_invalid'
+                )),
+                transition_key TEXT,
+                observed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                CHECK (cardinality(provider_ids) = 3),
+                CHECK (cardinality(operator_ids) = 3),
+                CHECK (cardinality(failure_domain_ids) >= 3),
+                CHECK (safe_value IS NULL OR pg_column_size(safe_value) <= 16384),
+                UNIQUE (intent_id, transition_key)
+            )
+            ",
+            "
+            CREATE TABLE IF NOT EXISTS execution_replacement_scan (
+                intent_id BIGINT PRIMARY KEY REFERENCES execution_intent(id) ON DELETE RESTRICT,
+                chain_id INTEGER NOT NULL,
+                wallet_address TEXT NOT NULL,
+                nonce BIGINT NOT NULL CHECK (nonce >= 0),
+                finalized_cursor_number BIGINT NOT NULL CHECK (finalized_cursor_number >= 0),
+                finalized_cursor_hash TEXT NOT NULL CHECK (finalized_cursor_hash <> ''),
+                manifest_digest TEXT NOT NULL CHECK (manifest_digest <> ''),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE (chain_id, wallet_address, nonce)
+            )
+            ",
+        ] {
+            sqlx::query(statement)
+                .execute(&mut *transaction)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to install verification schema: {e}"))?;
+        }
+
+        sqlx::query(
+            "LOCK TABLE execution_intent, execution_transaction_hash, \
+             execution_verification_nonce, execution_verified_finalized_header, \
+             execution_verification_decision, execution_replacement_scan \
+             IN ACCESS EXCLUSIVE MODE",
+        )
+        .execute(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to lock execution verification state: {e}"))?;
+
+        let installed_version = sqlx::query_scalar::<_, i16>(
+            "SELECT version FROM execution_schema_version \
+             WHERE component = 'evm_execution_verification'",
+        )
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to read verification schema version: {e}"))?;
+        if let Some(installed_version) = installed_version {
+            anyhow::ensure!(
+                installed_version <= VERIFICATION_SCHEMA_VERSION,
+                "Execution verification schema version {installed_version} is newer than supported version {VERIFICATION_SCHEMA_VERSION}"
+            );
+        }
+
+        let current = sqlx::query_as::<_, (String, String, i64, i64)>(
+            "
+            SELECT manifest_version, manifest_digest, next_canonical_nonce, revision
+            FROM execution_verification_nonce
+            WHERE chain_id = $1 AND wallet_address = $2
+            FOR UPDATE
+            ",
+        )
+        .bind(chain_id)
+        .bind(bootstrap.wallet_address)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to read canonical nonce ledger: {e}"))?;
+        let initialized = current.is_some();
+
+        let revision = if let Some((manifest_version, manifest_digest, stored_nonce, revision)) =
+            current
+        {
+            anyhow::ensure!(
+                bootstrap.migration.is_none(),
+                "Verification migration was supplied for an initialized signer"
+            );
+            anyhow::ensure!(
+                manifest_version == bootstrap.manifest_version
+                    && manifest_digest == bootstrap.manifest_digest,
+                "Execution verification manifest identity changed"
+            );
+            anyhow::ensure!(
+                stored_nonce == next_canonical_nonce,
+                "Canonical nonce ledger changed during verification bootstrap"
+            );
+
+            if observed_canonical_nonce != stored_nonce {
+                let expected_observed_nonce = stored_nonce
+                    .checked_add(1)
+                    .ok_or_else(|| anyhow::anyhow!("Canonical nonce overflow"))?;
+                anyhow::ensure!(
+                    observed_canonical_nonce == expected_observed_nonce,
+                    "Verified finalized transaction count is outside the owned recovery range"
+                );
+                let recovery = sqlx::query_as::<_, (Option<i64>, String, i64)>(
+                    "
+                    SELECT
+                        intent.nonce,
+                        intent.status,
+                        COUNT(hash.id) FILTER (
+                            WHERE hash.current
+                              AND hash.payload_expected
+                              AND ((hash.raw_transaction IS NOT NULL)::INTEGER
+                                   + (hash.sealed_transaction IS NOT NULL)::INTEGER) = 1
+                              AND hash.status IN (
+                                  'broadcast', 'included', 'replaced', 'dropped', 'reorged'
+                              )
+                        )
+                    FROM execution_intent AS intent
+                    LEFT JOIN execution_transaction_hash AS hash
+                        ON hash.intent_id = intent.id
+                    WHERE intent.chain_id = $1
+                      AND intent.wallet_address = $2
+                      AND intent.active
+                    GROUP BY intent.id, intent.nonce, intent.status
+                    ",
+                )
+                .bind(chain_id)
+                .bind(bootstrap.wallet_address)
+                .fetch_optional(&mut *transaction)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to validate nonce recovery ownership: {e}"))?;
+                let Some((intent_nonce, intent_status, payload_count)) = recovery else {
+                    anyhow::bail!(
+                        "Verified finalized transaction count advanced without an active owned intent"
+                    );
+                };
+                anyhow::ensure!(
+                    intent_nonce == Some(stored_nonce)
+                        && matches!(
+                            intent_status.as_str(),
+                            "broadcast" | "included" | "replaced" | "dropped" | "reorged"
+                        )
+                        && payload_count == 1,
+                    "Verified finalized transaction count advanced without one recoverable retained payload at the durable nonce"
+                );
+            }
+            revision
+        } else {
+            anyhow::ensure!(
+                next_canonical_nonce == observed_canonical_nonce,
+                "Initial canonical nonce conflicts with the verified finalized transaction count"
+            );
+            let locked_intents = sqlx::query_as::<_, ExecutionIntentRow>(
+                "
+                SELECT
+                    id, schema_version, chain_id, wallet_address, nonce, purpose, status,
+                    client_order_id, trader_id, strategy_id, account_id, instrument_id,
+                    pool_address, transaction_to, transaction_input, transaction_value,
+                    amount_in, created_block, acknowledgement_emitted, fill_emitted,
+                    terminal_emitted, active
+                FROM execution_intent
+                WHERE chain_id = $1 AND wallet_address = $2
+                ORDER BY id
+                ",
+            )
+            .bind(chain_id)
+            .bind(bootstrap.wallet_address)
+            .fetch_all(&mut *transaction)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to lock retained execution intents: {e}"))?;
+            let locked_hashes = sqlx::query_as::<_, ExecutionTransactionHashRow>(
+                "
+                SELECT
+                    hash.id, hash.intent_id, hash.chain_id, hash.transaction_hash,
+                    hash.payload_expected, hash.raw_transaction, hash.sealed_transaction,
+                    hash.status, hash.block_number, hash.block_hash, hash.receipt_success,
+                    hash.gas_used, hash.effective_gas_price, hash.current
+                FROM execution_transaction_hash AS hash
+                JOIN execution_intent AS intent ON intent.id = hash.intent_id
+                WHERE intent.chain_id = $1 AND intent.wallet_address = $2
+                ORDER BY hash.id
+                ",
+            )
+            .bind(chain_id)
+            .bind(bootstrap.wallet_address)
+            .fetch_all(&mut *transaction)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to lock retained execution hashes: {e}"))?;
+            if locked_intents.is_empty() {
+                anyhow::ensure!(
+                    bootstrap.migration.is_none(),
+                    "Verification migration was supplied for empty execution history"
+                );
+            } else {
+                let migration = bootstrap.migration.ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Retained execution history requires archive verification before migration"
+                    )
+                })?;
+                anyhow::ensure!(
+                    migration.snapshot.intents == locked_intents
+                        && migration.snapshot.hashes == locked_hashes,
+                    "Retained execution history changed during verification migration"
+                );
+                let intent_ids = locked_intents
+                    .iter()
+                    .map(|intent| intent.id)
+                    .collect::<BTreeSet<_>>();
+                let record_ids = migration
+                    .records
+                    .iter()
+                    .map(|record| record.intent_id)
+                    .collect::<BTreeSet<_>>();
+                anyhow::ensure!(
+                    intent_ids == record_ids && record_ids.len() == migration.records.len(),
+                    "Verification migration does not classify every retained intent exactly once"
+                );
+            }
+            sqlx::query(
+                "
+                INSERT INTO execution_verification_nonce (
+                    chain_id, wallet_address, manifest_version, manifest_digest,
+                    next_canonical_nonce
+                )
+                VALUES ($1, $2, $3, $4, $5)
+                ",
+            )
+            .bind(chain_id)
+            .bind(bootstrap.wallet_address)
+            .bind(bootstrap.manifest_version)
+            .bind(bootstrap.manifest_digest)
+            .bind(next_canonical_nonce)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to initialize canonical nonce ledger: {e}"))?;
+
+            if let Some(migration) = bootstrap.migration {
+                for record in &migration.records {
+                    anyhow::ensure!(
+                        !record.decisions.is_empty(),
+                        "Verification migration evidence is empty for intent {}",
+                        record.intent_id
+                    );
+
+                    if record.recover_prepared {
+                        anyhow::ensure!(
+                            record.terminal_status.is_none()
+                                && record.transaction_hash.is_none()
+                                && record.nonce.is_none(),
+                            "Prepared recovery migration record is inconsistent"
+                        );
+                        let result = sqlx::query(
+                            "
+                            UPDATE execution_intent
+                            SET status = 'recoverable', active = FALSE, updated_at = NOW()
+                            WHERE id = $1 AND active AND status = 'prepared' AND nonce IS NULL
+                              AND NOT EXISTS (
+                                  SELECT 1 FROM execution_transaction_hash WHERE intent_id = $1
+                              )
+                            ",
+                        )
+                        .bind(record.intent_id)
+                        .execute(&mut *transaction)
+                        .await
+                        .map_err(|e| {
+                            anyhow::anyhow!("Failed to recover migrated prepared intent: {e}")
+                        })?;
+                        anyhow::ensure!(
+                            result.rows_affected() == 1,
+                            "Prepared intent {} changed during verification migration",
+                            record.intent_id
+                        );
+                    }
+
+                    if let Some(status) = record.terminal_status {
+                        anyhow::ensure!(
+                            matches!(
+                                status,
+                                TransactionStatus::Finalized | TransactionStatus::Reverted
+                            ),
+                            "Migration terminal status is not finalized or reverted"
+                        );
+                        let transaction_hash =
+                            record.transaction_hash.as_deref().ok_or_else(|| {
+                                anyhow::anyhow!("Terminal migration record has no transaction hash")
+                            })?;
+                        let block_number = i64::try_from(record.block_number.ok_or_else(|| {
+                            anyhow::anyhow!("Terminal migration record has no block number")
+                        })?)
+                        .context("Migration block exceeds PostgreSQL BIGINT")?;
+                        let block_hash = record.block_hash.as_deref().ok_or_else(|| {
+                            anyhow::anyhow!("Terminal migration record has no block hash")
+                        })?;
+                        let gas_used = i64::try_from(record.gas_used.ok_or_else(|| {
+                            anyhow::anyhow!("Terminal migration record has no gas usage")
+                        })?)
+                        .context("Migration gas usage exceeds PostgreSQL BIGINT")?;
+                        let receipt_success = record.receipt_success.ok_or_else(|| {
+                            anyhow::anyhow!("Terminal migration record has no receipt status")
+                        })?;
+                        anyhow::ensure!(
+                            receipt_success == (status == TransactionStatus::Finalized),
+                            "Migration receipt status conflicts with terminal status"
+                        );
+                        let current_status = sqlx::query_scalar::<_, String>(
+                            "SELECT status FROM execution_intent WHERE id = $1 FOR UPDATE",
+                        )
+                        .bind(record.intent_id)
+                        .fetch_one(&mut *transaction)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Failed to lock migrated intent: {e}"))?;
+                        let hash_result = sqlx::query(
+                            "
+                            UPDATE execution_transaction_hash
+                            SET status = $3, block_number = $4, block_hash = $5,
+                                receipt_success = $6, gas_used = $7,
+                                effective_gas_price = $8, updated_at = NOW()
+                            WHERE intent_id = $1 AND transaction_hash = $2 AND current
+                              AND payload_expected
+                            ",
+                        )
+                        .bind(record.intent_id)
+                        .bind(transaction_hash)
+                        .bind(status.as_str())
+                        .bind(block_number)
+                        .bind(block_hash)
+                        .bind(receipt_success)
+                        .bind(gas_used)
+                        .bind(record.effective_gas_price.as_deref())
+                        .execute(&mut *transaction)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Failed to reconstruct migrated hash: {e}"))?;
+                        anyhow::ensure!(
+                            hash_result.rows_affected() == 1,
+                            "Migrated terminal transaction hash was not found"
+                        );
+                        sqlx::query(
+                            "UPDATE execution_intent SET status = $2, updated_at = NOW() WHERE id = $1",
+                        )
+                        .bind(record.intent_id)
+                        .bind(status.as_str())
+                        .execute(&mut *transaction)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Failed to reconstruct migrated intent: {e}"))?;
+                        if current_status != status.as_str() {
+                            sqlx::query(
+                                "
+                                INSERT INTO execution_transaction_transition (
+                                    intent_id, transaction_hash_id, transition_key,
+                                    from_status, to_status, block_number, block_hash
+                                )
+                                SELECT $1, id, $3, $4, $5, $6, $7
+                                FROM execution_transaction_hash
+                                WHERE intent_id = $1 AND transaction_hash = $2
+                                ",
+                            )
+                            .bind(record.intent_id)
+                            .bind(transaction_hash)
+                            .bind(format!("migration:{}:{transaction_hash}", status.as_str()))
+                            .bind(current_status)
+                            .bind(status.as_str())
+                            .bind(block_number)
+                            .bind(block_hash)
+                            .execute(&mut *transaction)
+                            .await
+                            .map_err(|e| {
+                                anyhow::anyhow!(
+                                    "Failed to record migrated terminal transition: {e}"
+                                )
+                            })?;
+                        }
+                    }
+
+                    let nonce = record
+                        .nonce
+                        .map(i64::try_from)
+                        .transpose()
+                        .context("Migration nonce exceeds PostgreSQL BIGINT")?;
+
+                    for (index, decision) in record.decisions.iter().enumerate() {
+                        let height_start = decision
+                            .height_start
+                            .map(i64::try_from)
+                            .transpose()
+                            .context("Migration evidence height exceeds PostgreSQL BIGINT")?;
+                        let height_end = decision
+                            .height_end
+                            .map(i64::try_from)
+                            .transpose()
+                            .context("Migration evidence height exceeds PostgreSQL BIGINT")?;
+                        sqlx::query(
+                            "
+                            INSERT INTO execution_verification_decision (
+                                intent_id, nonce, decision_class, read_class,
+                                height_start, height_end, manifest_version, manifest_digest,
+                                provider_ids, operator_ids, failure_domain_ids,
+                                response_class, normalized_value_digest, nonce_revision,
+                                outcome, transition_key
+                            )
+                            VALUES (
+                                $1, $2, 'migration', $3, $4, $5, $6, $7, $8, $9, $10,
+                                'all_valid', $11, 0, 'verified', $12
+                            )
+                            ",
+                        )
+                        .bind(record.intent_id)
+                        .bind(nonce)
+                        .bind(decision.read_class)
+                        .bind(height_start)
+                        .bind(height_end)
+                        .bind(bootstrap.manifest_version)
+                        .bind(bootstrap.manifest_digest)
+                        .bind(bootstrap.provider_ids)
+                        .bind(bootstrap.operator_ids)
+                        .bind(bootstrap.failure_domain_ids)
+                        .bind(&decision.normalized_value_digest)
+                        .bind(format!("migration:{}:{index}", record.intent_id))
+                        .execute(&mut *transaction)
+                        .await
+                        .map_err(|e| {
+                            anyhow::anyhow!("Failed to persist migration evidence: {e}")
+                        })?;
+                    }
+                }
+            }
+            0
+        };
 
         sqlx::query(
             "
-            INSERT INTO execution_transaction_transition (
-                intent_id, transition_key, to_status, block_number
-            ) VALUES ($1, 'prepared', 'prepared', $2)
+            INSERT INTO execution_verified_finalized_header (
+                chain_id, wallet_address, number, hash, parent_hash, timestamp,
+                base_fee_per_gas, manifest_digest
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (chain_id, wallet_address, number) DO NOTHING
             ",
         )
-        .bind(row.id)
-        .bind(created_block)
+        .bind(chain_id)
+        .bind(bootstrap.wallet_address)
+        .bind(checkpoint_number)
+        .bind(bootstrap.checkpoint_hash)
+        .bind(bootstrap.checkpoint_parent_hash)
+        .bind(checkpoint_timestamp)
+        .bind(base_fee)
+        .bind(bootstrap.manifest_digest)
         .execute(&mut *transaction)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to record prepared execution intent: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("Failed to initialize finalized header ledger: {e}"))?;
+        let stored_checkpoint = sqlx::query_as::<_, (String, String, i64, Option<String>)>(
+            "
+            SELECT hash, parent_hash, timestamp, base_fee_per_gas
+            FROM execution_verified_finalized_header
+            WHERE chain_id = $1 AND wallet_address = $2 AND number = $3
+            ",
+        )
+        .bind(chain_id)
+        .bind(bootstrap.wallet_address)
+        .bind(checkpoint_number)
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to validate finalized checkpoint ledger: {e}"))?;
+        anyhow::ensure!(
+            stored_checkpoint
+                == (
+                    bootstrap.checkpoint_hash.to_string(),
+                    bootstrap.checkpoint_parent_hash.to_string(),
+                    checkpoint_timestamp,
+                    bootstrap
+                        .checkpoint_base_fee_per_gas
+                        .map(|value| value.to_string()),
+                ),
+            "Finalized checkpoint ledger conflicts with the trusted chain anchor"
+        );
+
+        if initialized {
+            let stored_tip =
+                sqlx::query_as::<_, (i64, String, String, i64, Option<String>, String)>(
+                    "
+                SELECT number, hash, parent_hash, timestamp, base_fee_per_gas, manifest_digest
+                FROM execution_verified_finalized_header
+                WHERE chain_id = $1 AND wallet_address = $2
+                ORDER BY number DESC
+                LIMIT 1
+                ",
+                )
+                .bind(chain_id)
+                .bind(bootstrap.wallet_address)
+                .fetch_one(&mut *transaction)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to lock finalized header tip: {e}"))?;
+            anyhow::ensure!(
+                stored_tip
+                    == (
+                        i64::try_from(first_header.number)
+                            .context("Verified finalized height exceeds PostgreSQL BIGINT")?,
+                        first_header.hash.clone(),
+                        first_header.parent_hash.clone(),
+                        i64::try_from(first_header.timestamp)
+                            .context("Verified finalized timestamp exceeds PostgreSQL BIGINT")?,
+                        first_header.base_fee_per_gas.map(|value| value.to_string()),
+                        bootstrap.manifest_digest.to_string(),
+                    ),
+                "Verified finalized header extension does not start at the durable tip"
+            );
+        } else {
+            anyhow::ensure!(
+                first_header.number == bootstrap.checkpoint_number
+                    && first_header.hash == bootstrap.checkpoint_hash
+                    && first_header.parent_hash == bootstrap.checkpoint_parent_hash
+                    && first_header.timestamp == bootstrap.checkpoint_timestamp
+                    && first_header.base_fee_per_gas == bootstrap.checkpoint_base_fee_per_gas,
+                "Verified finalized headers do not start at the trusted checkpoint"
+            );
+        }
+
+        for header in bootstrap.finalized_headers.iter().skip(1) {
+            let number = i64::try_from(header.number)
+                .context("Verified finalized height exceeds PostgreSQL BIGINT")?;
+            let timestamp = i64::try_from(header.timestamp)
+                .context("Verified finalized timestamp exceeds PostgreSQL BIGINT")?;
+            let base_fee = header.base_fee_per_gas.map(|value| value.to_string());
+            sqlx::query(
+                "
+                INSERT INTO execution_verified_finalized_header (
+                    chain_id, wallet_address, number, hash, parent_hash, timestamp,
+                    base_fee_per_gas, manifest_digest
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                ON CONFLICT (chain_id, wallet_address, number) DO NOTHING
+                ",
+            )
+            .bind(chain_id)
+            .bind(bootstrap.wallet_address)
+            .bind(number)
+            .bind(&header.hash)
+            .bind(&header.parent_hash)
+            .bind(timestamp)
+            .bind(&base_fee)
+            .bind(bootstrap.manifest_digest)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to extend finalized header ledger: {e}"))?;
+            let stored = sqlx::query_as::<_, (String, String, i64, Option<String>, String)>(
+                "
+                SELECT hash, parent_hash, timestamp, base_fee_per_gas, manifest_digest
+                FROM execution_verified_finalized_header
+                WHERE chain_id = $1 AND wallet_address = $2 AND number = $3
+                ",
+            )
+            .bind(chain_id)
+            .bind(bootstrap.wallet_address)
+            .bind(number)
+            .fetch_one(&mut *transaction)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to validate finalized header ledger: {e}"))?;
+            anyhow::ensure!(
+                stored
+                    == (
+                        header.hash.clone(),
+                        header.parent_hash.clone(),
+                        timestamp,
+                        base_fee,
+                        bootstrap.manifest_digest.to_string(),
+                    ),
+                "Finalized header ledger conflicts at height {}",
+                header.number
+            );
+        }
+
+        let finalized_height = bootstrap
+            .finalized_headers
+            .last()
+            .expect("verified finalized headers are nonempty")
+            .number;
+
+        for (index, decision) in bootstrap.decisions.iter().enumerate() {
+            let height_start = decision
+                .height_start
+                .map(i64::try_from)
+                .transpose()
+                .context("Connect verification height exceeds PostgreSQL BIGINT")?;
+            let height_end = decision
+                .height_end
+                .map(i64::try_from)
+                .transpose()
+                .context("Connect verification height exceeds PostgreSQL BIGINT")?;
+            let transition_key = format!("connect:{finalized_height}:{revision}:{index}");
+            sqlx::query(
+                "
+                INSERT INTO execution_verification_decision (
+                    intent_id, nonce, decision_class, read_class, height_start, height_end,
+                    manifest_version, manifest_digest, provider_ids, operator_ids,
+                    failure_domain_ids, response_class, normalized_value_digest,
+                    nonce_revision, outcome, transition_key
+                )
+                VALUES (
+                    NULL, NULL, 'connect', $1, $2, $3, $4, $5, $6, $7, $8,
+                    'all_valid', $9, $10, 'verified', $11
+                )
+                ",
+            )
+            .bind(decision.read_class)
+            .bind(height_start)
+            .bind(height_end)
+            .bind(bootstrap.manifest_version)
+            .bind(bootstrap.manifest_digest)
+            .bind(bootstrap.provider_ids)
+            .bind(bootstrap.operator_ids)
+            .bind(bootstrap.failure_domain_ids)
+            .bind(&decision.normalized_value_digest)
+            .bind(revision)
+            .bind(transition_key)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to persist connect verification: {e}"))?;
+        }
+
+        for statement in [
+            "
+            CREATE OR REPLACE FUNCTION execution_verification_append_only()
+            RETURNS TRIGGER AS $$
+            BEGIN
+                RAISE EXCEPTION 'Execution verification evidence is append-only';
+            END;
+            $$ LANGUAGE plpgsql
+            ",
+            "DROP TRIGGER IF EXISTS execution_verification_decision_append_only \
+             ON execution_verification_decision",
+            "
+            CREATE TRIGGER execution_verification_decision_append_only
+            BEFORE UPDATE OR DELETE ON execution_verification_decision
+            FOR EACH STATEMENT EXECUTE FUNCTION execution_verification_append_only()
+            ",
+            "DROP TRIGGER IF EXISTS execution_finalized_header_append_only \
+             ON execution_verified_finalized_header",
+            "
+            CREATE TRIGGER execution_finalized_header_append_only
+            BEFORE UPDATE OR DELETE ON execution_verified_finalized_header
+            FOR EACH STATEMENT EXECUTE FUNCTION execution_verification_append_only()
+            ",
+        ] {
+            sqlx::query(statement)
+                .execute(&mut *transaction)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to activate verification schema: {e}"))?;
+        }
+        sqlx::query(
+            "
+            INSERT INTO execution_schema_version (component, version)
+            VALUES ('evm_execution_verification', $1)
+            ON CONFLICT (component) DO UPDATE SET version = EXCLUDED.version
+            WHERE execution_schema_version.version <= EXCLUDED.version
+            ",
+        )
+        .bind(VERIFICATION_SCHEMA_VERSION)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to activate verification schema: {e}"))?;
 
         transaction
             .commit()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to commit execution intent reservation: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("Failed to commit verification migration: {e}"))?;
+        Ok(())
+    }
+
+    /// Activates or resumes protected signed-transaction storage for this database.
+    pub(crate) async fn ensure_execution_payload_storage(
+        &self,
+        keys: &PayloadKeySet,
+    ) -> anyhow::Result<()> {
+        let marker = self.execution_payload_marker().await?;
+        match marker {
+            None => self.activate_execution_payload_storage(keys).await?,
+            Some(version) => anyhow::ensure!(
+                version == EXECUTION_PAYLOAD_PROTOCOL_VERSION,
+                "Execution payload protection version {version} is newer than supported version {EXECUTION_PAYLOAD_PROTOCOL_VERSION}"
+            ),
+        }
+
+        loop {
+            let state = self.execution_payload_state().await?.ok_or_else(|| {
+                anyhow::anyhow!("Execution payload marker exists without durable state")
+            })?;
+            validate_execution_payload_state(&state, keys)?;
+            match state.operation.as_str() {
+                "migrate" => {
+                    if self
+                        .migrate_execution_payload_batch(keys, EXECUTION_PAYLOAD_BATCH_SIZE)
+                        .await?
+                    {
+                        break;
+                    }
+                }
+                "ready" => break,
+                operation => anyhow::bail!(
+                    "Execution payload storage is in {operation} maintenance; complete or roll back that operation before connecting"
+                ),
+            }
+        }
+
+        self.validate_execution_payload_ready(keys).await
+    }
+
+    /// Requires ready protected storage and authenticates every persisted signed payload.
+    pub(crate) async fn require_execution_payload_storage(
+        &self,
+        keys: &PayloadKeySet,
+        policy: PayloadPolicy,
+        batch_size: i64,
+    ) -> anyhow::Result<ExecutionPayloadLease> {
+        self.require_execution_payload_storage_ready(keys).await?;
+        let (check, transaction) = self
+            .inspect_execution_payload_storage(Some(keys), Some(policy), batch_size)
+            .await?;
+        anyhow::ensure!(
+            check.protected,
+            "Postgres execution requires protected payload storage"
+        );
+        Ok(ExecutionPayloadLease {
+            _transaction: transaction,
+        })
+    }
+
+    /// Requires protected storage to be ready before execution schema initialization.
+    pub(crate) async fn require_execution_payload_storage_ready(
+        &self,
+        keys: &PayloadKeySet,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.execution_payload_marker().await?.is_some(),
+            "Postgres execution requires protected payload storage"
+        );
+        self.validate_execution_payload_ready(keys).await
+    }
+
+    /// Acquires a shared state lease for signing, payload access, acknowledgment, or broadcast.
+    pub(crate) async fn acquire_execution_payload_lease(
+        &self,
+        keys: &PayloadKeySet,
+    ) -> anyhow::Result<ExecutionPayloadLease> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to start execution payload action lease")?;
+        let marker = sqlx::query_scalar::<_, i16>(
+            "SELECT version FROM execution_schema_version WHERE component = $1",
+        )
+        .bind(EXECUTION_PAYLOAD_COMPONENT)
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("failed to read execution payload marker")?;
+
+        let version = marker.ok_or_else(|| {
+            anyhow::anyhow!("Postgres execution requires protected payload storage")
+        })?;
+        anyhow::ensure!(
+            version == EXECUTION_PAYLOAD_PROTOCOL_VERSION,
+            "Unsupported execution payload protection version {version}"
+        );
+        let row = sqlx::query(
+            "SELECT deployment_id, protocol_version, operation, active_key_id \
+             FROM execution_payload_state WHERE component = 'signed_transactions' \
+             FOR SHARE",
+        )
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("failed to lock execution payload state")?
+        .ok_or_else(|| anyhow::anyhow!("Execution payload marker exists without state"))?;
+        let state = execution_payload_state_from_row(&row)?;
+        validate_execution_payload_state(&state, keys)?;
+        anyhow::ensure!(
+            state.operation == "ready",
+            "Execution payload storage is in {} maintenance",
+            state.operation
+        );
+
+        Ok(ExecutionPayloadLease {
+            _transaction: transaction,
+        })
+    }
+
+    /// Reserves one nonce use under the active payload key.
+    pub(crate) async fn reserve_execution_payload_seal(
+        &self,
+        keys: &PayloadKeySet,
+    ) -> anyhow::Result<()> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to start payload seal reservation")?;
+        let row = sqlx::query(
+            "SELECT deployment_id, protocol_version, operation, active_key_id \
+             FROM execution_payload_state WHERE component = 'signed_transactions' FOR SHARE",
+        )
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("failed to lock execution payload state")?
+        .ok_or_else(|| anyhow::anyhow!("Execution payload protection is not active"))?;
+        let state = execution_payload_state_from_row(&row)?;
+        validate_execution_payload_state(&state, keys)?;
+        anyhow::ensure!(
+            state.operation == "ready",
+            "Execution payload storage is in {} maintenance",
+            state.operation
+        );
+        reserve_execution_payload_seal(&mut transaction, keys.active_key_id()).await?;
+        transaction
+            .commit()
+            .await
+            .context("failed to commit payload seal reservation")?;
+        Ok(())
+    }
+
+    async fn execution_payload_marker(&self) -> anyhow::Result<Option<i16>> {
+        sqlx::query_scalar::<_, i16>(
+            "SELECT version FROM execution_schema_version WHERE component = $1",
+        )
+        .bind(EXECUTION_PAYLOAD_COMPONENT)
+        .fetch_optional(&self.pool)
+        .await
+        .context("failed to read execution payload marker")
+    }
+
+    async fn execution_payload_state(&self) -> anyhow::Result<Option<ExecutionPayloadState>> {
+        let row = sqlx::query(
+            "SELECT deployment_id, protocol_version, operation, active_key_id \
+             FROM execution_payload_state WHERE component = 'signed_transactions'",
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .context("failed to read execution payload state")?;
+        row.as_ref()
+            .map(execution_payload_state_from_row)
+            .transpose()
+    }
+
+    async fn activate_execution_payload_storage(&self, keys: &PayloadKeySet) -> anyhow::Result<()> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to start execution payload activation")?;
+        lock_execution_payload_operation(&mut transaction).await?;
+        sqlx::query("LOCK TABLE execution_transaction_hash IN ACCESS EXCLUSIVE MODE")
+            .execute(&mut *transaction)
+            .await
+            .context("failed to fence execution payload writers")?;
+        let marker = sqlx::query_scalar::<_, i16>(
+            "SELECT version FROM execution_schema_version WHERE component = $1",
+        )
+        .bind(EXECUTION_PAYLOAD_COMPONENT)
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("failed to recheck execution payload marker")?;
+        if marker.is_some() {
+            transaction
+                .rollback()
+                .await
+                .context("failed to release concurrent payload activation")?;
+            return Ok(());
+        }
+        let sealed_rows = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM execution_transaction_hash WHERE sealed_transaction IS NOT NULL",
+        )
+        .fetch_one(&mut *transaction)
+        .await
+        .context("failed to inspect pre-activation envelopes")?;
+        anyhow::ensure!(
+            sealed_rows == 0,
+            "Unprotected execution payload storage contains {sealed_rows} sealed row(s)"
+        );
+
+        for statement in [
+            "
+            CREATE OR REPLACE FUNCTION execution_transaction_payload_fence()
+            RETURNS TRIGGER AS $$
+            DECLARE payload_operation TEXT;
+            BEGIN
+                IF NEW.raw_transaction IS NOT NULL
+                   AND (TG_OP = 'INSERT'
+                        OR OLD.raw_transaction IS NULL
+                        OR NEW.raw_transaction IS DISTINCT FROM OLD.raw_transaction) THEN
+                    SELECT operation INTO payload_operation
+                    FROM execution_payload_state
+                    WHERE component = 'signed_transactions';
+                    IF NOT (
+                        TG_OP = 'UPDATE'
+                        AND payload_operation = 'rollback'
+                        AND OLD.payload_expected
+                        AND OLD.raw_transaction IS NULL
+                        AND NEW.raw_transaction IS NOT NULL
+                        AND OLD.sealed_transaction IS NOT NULL
+                        AND NEW.sealed_transaction = OLD.sealed_transaction
+                    ) THEN
+                        RAISE EXCEPTION 'Plaintext signed transaction writes are disabled';
+                    END IF;
+                END IF;
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+            ",
+            "DROP TRIGGER IF EXISTS execution_transaction_payload_fence ON execution_transaction_hash",
+            "
+            CREATE TRIGGER execution_transaction_payload_fence
+            BEFORE INSERT OR UPDATE ON execution_transaction_hash
+            FOR EACH ROW EXECUTE FUNCTION execution_transaction_payload_fence()
+            ",
+        ] {
+            sqlx::query(statement)
+                .execute(&mut *transaction)
+                .await
+                .context("failed to install execution payload write fence")?;
+        }
+        sqlx::query("INSERT INTO execution_schema_version (component, version) VALUES ($1, $2)")
+            .bind(EXECUTION_PAYLOAD_COMPONENT)
+            .bind(EXECUTION_PAYLOAD_PROTOCOL_VERSION)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to record execution payload marker")?;
+        sqlx::query(
+            "INSERT INTO execution_payload_state (component, deployment_id, protocol_version, operation, active_key_id) \
+             VALUES ('signed_transactions', $1, $2, 'migrate', $3)",
+        )
+        .bind(keys.deployment_id())
+        .bind(EXECUTION_PAYLOAD_PROTOCOL_VERSION)
+        .bind(keys.active_key_id().as_slice())
+        .execute(&mut *transaction)
+        .await
+        .context("failed to record execution payload migration state")?;
+        sqlx::query(
+            "INSERT INTO execution_payload_key_state (key_id, seals) VALUES ($1, 0) \
+             ON CONFLICT (key_id) DO NOTHING",
+        )
+        .bind(keys.active_key_id().as_slice())
+        .execute(&mut *transaction)
+        .await
+        .context("failed to initialize execution payload key state")?;
+        transaction
+            .commit()
+            .await
+            .context("failed to commit execution payload activation")?;
+        Ok(())
+    }
+
+    async fn migrate_execution_payload_batch(
+        &self,
+        keys: &PayloadKeySet,
+        batch_size: i64,
+    ) -> anyhow::Result<bool> {
+        anyhow::ensure!(
+            batch_size > 0,
+            "Execution payload batch size must be positive"
+        );
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to start execution payload migration batch")?;
+        lock_execution_payload_operation(&mut transaction).await?;
+        let state_row = sqlx::query(
+            "SELECT deployment_id, protocol_version, operation, active_key_id \
+             FROM execution_payload_state WHERE component = 'signed_transactions' FOR UPDATE",
+        )
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("failed to lock execution payload migration state")?
+        .ok_or_else(|| anyhow::anyhow!("Execution payload migration state is missing"))?;
+        let state = execution_payload_state_from_row(&state_row)?;
+        validate_execution_payload_state(&state, keys)?;
+        anyhow::ensure!(
+            state.operation == "migrate",
+            "Execution payload storage is {}, not migrating",
+            state.operation
+        );
+
+        let rows = sqlx::query_as::<_, ExecutionTransactionHashRow>(
+            "
+            SELECT
+                id, intent_id, chain_id, transaction_hash, payload_expected,
+                raw_transaction, sealed_transaction, status, block_number, block_hash,
+                receipt_success, gas_used, effective_gas_price, current
+            FROM execution_transaction_hash
+            WHERE payload_expected AND raw_transaction IS NOT NULL
+            ORDER BY id
+            LIMIT $1
+            FOR UPDATE
+            ",
+        )
+        .bind(batch_size)
+        .fetch_all(&mut *transaction)
+        .await
+        .context("failed to load legacy signed transaction batch")?;
+
+        if rows.is_empty() {
+            self.complete_execution_payload_migration(&mut transaction, keys)
+                .await?;
+            transaction
+                .commit()
+                .await
+                .context("failed to commit execution payload migration completion")?;
+            return Ok(true);
+        }
+
+        for hash in rows {
+            anyhow::ensure!(
+                hash.sealed_transaction.is_none(),
+                "Execution transaction {} contains both plaintext and sealed payloads",
+                hash.id
+            );
+            let raw_transaction = hash
+                .raw_transaction
+                .as_deref()
+                .expect("migration query requires plaintext");
+            let intent = load_execution_intent(&mut transaction, hash.intent_id).await?;
+            let context = authenticate_retained_payload(
+                raw_transaction,
+                &intent,
+                &hash,
+                keys.deployment_id(),
+            )
+            .with_context(|| format!("failed to authenticate execution payload {}", hash.id))?;
+            reserve_execution_payload_seal(&mut transaction, keys.active_key_id()).await?;
+            let envelope = keys.seal(raw_transaction, &context)?;
+            let unsealed = keys.unseal(&envelope, &context)?;
+            authenticate_retained_payload(&unsealed, &intent, &hash, keys.deployment_id())?;
+            anyhow::ensure!(
+                unsealed == raw_transaction,
+                "Execution payload {} changed during seal round trip",
+                hash.id
+            );
+            let result = sqlx::query(
+                "UPDATE execution_transaction_hash \
+                 SET sealed_transaction = $2, raw_transaction = NULL, updated_at = NOW() \
+                 WHERE id = $1 AND raw_transaction = $3 AND sealed_transaction IS NULL",
+            )
+            .bind(hash.id)
+            .bind(&envelope)
+            .bind(raw_transaction)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to promote execution payload")?;
+            anyhow::ensure!(
+                result.rows_affected() == 1,
+                "Execution payload {} changed during migration",
+                hash.id
+            );
+            sqlx::query(
+                "UPDATE execution_payload_state SET progress_id = $1, updated_at = NOW() \
+                 WHERE component = 'signed_transactions'",
+            )
+            .bind(hash.id)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to record execution payload migration progress")?;
+        }
+
+        transaction
+            .commit()
+            .await
+            .context("failed to commit execution payload migration batch")?;
+        Ok(false)
+    }
+
+    async fn complete_execution_payload_migration(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        keys: &PayloadKeySet,
+    ) -> anyhow::Result<()> {
+        sqlx::query("LOCK TABLE execution_transaction_hash IN SHARE ROW EXCLUSIVE MODE")
+            .execute(&mut **transaction)
+            .await
+            .context("failed to lock execution payload migration completion")?;
+        let invalid = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM execution_transaction_hash \
+             WHERE (payload_expected AND (raw_transaction IS NOT NULL OR sealed_transaction IS NULL)) \
+                OR (NOT payload_expected AND (raw_transaction IS NOT NULL OR sealed_transaction IS NOT NULL))",
+        )
+        .fetch_one(&mut **transaction)
+        .await
+        .context("failed to verify migrated execution payload representations")?;
+        anyhow::ensure!(
+            invalid == 0,
+            "Execution payload migration found {invalid} invalid representation(s)"
+        );
+        validate_execution_payload_key_inventory(transaction, keys).await?;
+
+        for statement in [
+            "ALTER TABLE execution_transaction_hash \
+             DROP CONSTRAINT IF EXISTS execution_transaction_payload_protected_check",
+            "ALTER TABLE execution_transaction_hash \
+             ADD CONSTRAINT execution_transaction_payload_protected_check CHECK ( \
+                 (payload_expected AND raw_transaction IS NULL AND sealed_transaction IS NOT NULL) \
+                 OR (NOT payload_expected AND raw_transaction IS NULL AND sealed_transaction IS NULL) \
+             )",
+        ] {
+            sqlx::query(statement)
+                .execute(&mut **transaction)
+                .await
+                .context("failed to install protected execution payload constraint")?;
+        }
+        sqlx::query(
+            "UPDATE execution_payload_state SET operation = 'ready', updated_at = NOW() \
+             WHERE component = 'signed_transactions' AND operation = 'migrate'",
+        )
+        .execute(&mut **transaction)
+        .await
+        .context("failed to mark execution payload storage ready")?;
+        Ok(())
+    }
+
+    async fn validate_execution_payload_ready(&self, keys: &PayloadKeySet) -> anyhow::Result<()> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to start execution payload validation")?;
+        let state_row = sqlx::query(
+            "SELECT deployment_id, protocol_version, operation, active_key_id \
+             FROM execution_payload_state WHERE component = 'signed_transactions' FOR SHARE",
+        )
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("failed to lock execution payload state")?
+        .ok_or_else(|| anyhow::anyhow!("Execution payload state is missing"))?;
+        let state = execution_payload_state_from_row(&state_row)?;
+        validate_execution_payload_state(&state, keys)?;
+        anyhow::ensure!(
+            state.operation == "ready",
+            "Execution payload storage is not ready"
+        );
+        let (payload_fence, payload_constraint) =
+            sqlx::query_as::<_, (bool, bool)>(EXECUTION_PAYLOAD_INFRASTRUCTURE_QUERY)
+                .fetch_one(&mut *transaction)
+                .await
+                .context("failed to inspect execution payload protection infrastructure")?;
+        anyhow::ensure!(
+            payload_fence && payload_constraint,
+            "Execution payload storage is marked ready without its write fence or constraint"
+        );
+        validate_execution_payload_key_inventory(&mut transaction, keys).await?;
+        transaction
+            .commit()
+            .await
+            .context("failed to complete execution payload validation")?;
+        Ok(())
+    }
+
+    pub(crate) async fn check_execution_payload_storage(
+        &self,
+        keys: Option<&PayloadKeySet>,
+        policy: Option<PayloadPolicy>,
+        batch_size: i64,
+    ) -> anyhow::Result<ExecutionPayloadCheck> {
+        let (check, transaction) = self
+            .inspect_execution_payload_storage(keys, policy, batch_size)
+            .await?;
+        transaction
+            .commit()
+            .await
+            .context("failed to complete execution payload check")?;
+        Ok(check)
+    }
+
+    async fn inspect_execution_payload_storage(
+        &self,
+        keys: Option<&PayloadKeySet>,
+        policy: Option<PayloadPolicy>,
+        batch_size: i64,
+    ) -> anyhow::Result<(ExecutionPayloadCheck, Transaction<'static, Postgres>)> {
+        anyhow::ensure!(
+            batch_size > 0,
+            "Execution payload check batch size must be positive"
+        );
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to start execution payload check")?;
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+            .execute(&mut *transaction)
+            .await
+            .context("failed to stabilize execution payload snapshot")?;
+        sqlx::query("LOCK TABLE execution_transaction_hash IN SHARE MODE")
+            .execute(&mut *transaction)
+            .await
+            .context("failed to stabilize execution payload check")?;
+        let marker = sqlx::query_scalar::<_, i16>(
+            "SELECT version FROM execution_schema_version WHERE component = $1",
+        )
+        .bind(EXECUTION_PAYLOAD_COMPONENT)
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("failed to read execution payload marker")?;
+        let deployment_id = match (marker, keys) {
+            (None, _) => {
+                let state = sqlx::query_scalar::<_, bool>(
+                    "SELECT EXISTS (SELECT 1 FROM execution_payload_state) \
+                     OR EXISTS (SELECT 1 FROM execution_transaction_hash \
+                                WHERE sealed_transaction IS NOT NULL)",
+                )
+                .fetch_one(&mut *transaction)
+                .await
+                .context("failed to check legacy payload state")?;
+                anyhow::ensure!(!state, "Legacy payload storage contains protected state");
+                None
+            }
+            (Some(version), Some(keys)) => {
+                anyhow::ensure!(
+                    version == EXECUTION_PAYLOAD_PROTOCOL_VERSION,
+                    "Unsupported execution payload protection version {version}"
+                );
+                let state_row = sqlx::query(
+                    "SELECT deployment_id, protocol_version, operation, active_key_id \
+                     FROM execution_payload_state WHERE component = 'signed_transactions' FOR SHARE",
+                )
+                .fetch_optional(&mut *transaction)
+                .await
+                .context("failed to lock execution payload state")?
+                .ok_or_else(|| anyhow::anyhow!("Execution payload state is missing"))?;
+                let state = execution_payload_state_from_row(&state_row)?;
+                validate_execution_payload_state(&state, keys)?;
+                anyhow::ensure!(
+                    state.operation == "ready",
+                    "Execution payload storage is not ready"
+                );
+                Some(state.deployment_id)
+            }
+            (Some(_), None) => anyhow::bail!(
+                "Execution payload protection is active, but no payload key is configured"
+            ),
+        };
+
+        let mut cursor = 0_i64;
+        let mut plaintext_rows = 0_u64;
+        let mut original_rows = 0_u64;
+        let mut replacement_rows = 0_u64;
+        let mut authenticated_rows = 0_u64;
+        let mut key_ids = BTreeSet::new();
+
+        loop {
+            let rows = sqlx::query_as::<_, ExecutionTransactionHashRow>(
+                "
+                SELECT
+                    id, intent_id, chain_id, transaction_hash, payload_expected,
+                    raw_transaction, sealed_transaction, status, block_number, block_hash,
+                    receipt_success, gas_used, effective_gas_price, current
+                FROM execution_transaction_hash
+                WHERE id > $1
+                ORDER BY id
+                LIMIT $2
+                ",
+            )
+            .bind(cursor)
+            .bind(batch_size)
+            .fetch_all(&mut *transaction)
+            .await
+            .context("failed to load execution payload check batch")?;
+
+            if rows.is_empty() {
+                break;
+            }
+
+            for hash in &rows {
+                cursor = hash.id;
+                plaintext_rows += u64::from(hash.raw_transaction.is_some());
+                if !hash.payload_expected {
+                    replacement_rows += 1;
+                    anyhow::ensure!(
+                        hash.raw_transaction.is_none() && hash.sealed_transaction.is_none(),
+                        "Replacement execution transaction {} retains signed bytes",
+                        hash.id
+                    );
+                    continue;
+                }
+                original_rows += 1;
+                let intent = load_execution_intent(&mut transaction, hash.intent_id).await?;
+                let raw_transaction = if let (Some(keys), Some(deployment_id)) =
+                    (keys, deployment_id.as_deref())
+                {
+                    anyhow::ensure!(
+                        hash.raw_transaction.is_none(),
+                        "Protected execution transaction {} contains plaintext",
+                        hash.id
+                    );
+                    let envelope = hash.sealed_transaction.as_deref().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Protected execution transaction {} has no envelope",
+                            hash.id
+                        )
+                    })?;
+                    let key_id = envelope_key_id(envelope)?;
+                    anyhow::ensure!(
+                        keys.contains_key(&key_id),
+                        "Execution transaction {} requires an unavailable payload key",
+                        hash.id
+                    );
+                    key_ids.insert(alloy::hex::encode(key_id));
+                    let context = payload_context(&intent, hash, deployment_id)?;
+                    keys.unseal(envelope, &context)?
+                } else {
+                    anyhow::ensure!(
+                        hash.sealed_transaction.is_none(),
+                        "Legacy execution transaction {} contains an envelope",
+                        hash.id
+                    );
+                    hash.raw_transaction.clone().ok_or_else(|| {
+                        anyhow::anyhow!("Legacy execution transaction {} has no plaintext", hash.id)
+                    })?
+                };
+                authenticate_retained_payload(
+                    &raw_transaction,
+                    &intent,
+                    hash,
+                    deployment_id.as_deref().unwrap_or(""),
+                )?;
+
+                if let Some(policy) = policy
+                    && retained_payload_requires_policy(&intent, hash, policy)?
+                {
+                    authenticate_payload(
+                        &raw_transaction,
+                        &intent,
+                        hash,
+                        policy,
+                        deployment_id.as_deref().unwrap_or(""),
+                    )
+                    .with_context(|| {
+                        format!(
+                            "execution intent {} transaction {} violates current execution policy",
+                            intent.id, hash.transaction_hash
+                        )
+                    })?;
+                }
+                authenticated_rows += 1;
+            }
+        }
+        let read_roles = sqlx::query_scalar::<_, String>(
+            "SELECT DISTINCT role_name FROM ( \
+                 SELECT tableowner AS role_name FROM pg_tables \
+                 WHERE schemaname = current_schema() AND tablename = 'execution_transaction_hash' \
+                 UNION \
+                 SELECT grantee AS role_name FROM information_schema.role_table_grants \
+                 WHERE table_schema = current_schema() \
+                   AND table_name = 'execution_transaction_hash' \
+                   AND privilege_type = 'SELECT' \
+             ) AS roles ORDER BY role_name",
+        )
+        .fetch_all(&mut *transaction)
+        .await
+        .context("failed to inspect execution payload read roles")?;
+        Ok((
+            ExecutionPayloadCheck {
+                protected: deployment_id.is_some(),
+                deployment_id,
+                plaintext_rows,
+                original_rows,
+                replacement_rows,
+                authenticated_rows,
+                key_ids: key_ids.into_iter().collect(),
+                read_roles,
+            },
+            transaction,
+        ))
+    }
+
+    pub(crate) async fn rewrap_execution_payload_storage(
+        &self,
+        keys: &PayloadKeySet,
+        batch_size: i64,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            batch_size > 0,
+            "Execution payload rewrap batch size must be positive"
+        );
+        self.begin_execution_payload_rewrap(keys).await?;
+
+        loop {
+            if self
+                .rewrap_execution_payload_batch(keys, batch_size)
+                .await?
+            {
+                return Ok(());
+            }
+        }
+    }
+
+    async fn begin_execution_payload_rewrap(&self, keys: &PayloadKeySet) -> anyhow::Result<()> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to start execution payload rewrap")?;
+        lock_execution_payload_operation(&mut transaction).await?;
+        let state_row = sqlx::query(
+            "SELECT deployment_id, protocol_version, operation, active_key_id \
+             FROM execution_payload_state WHERE component = 'signed_transactions' FOR UPDATE",
+        )
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("failed to lock execution payload state for rewrap")?
+        .ok_or_else(|| anyhow::anyhow!("Execution payload protection is not active"))?;
+        let state = execution_payload_state_from_row(&state_row)?;
+        anyhow::ensure!(
+            state.protocol_version == EXECUTION_PAYLOAD_PROTOCOL_VERSION
+                && state.deployment_id == keys.deployment_id(),
+            "Execution payload rewrap context does not match this database"
+        );
+
+        match state.operation.as_str() {
+            "ready" => {
+                let current_id: [u8; 32] = state
+                    .active_key_id
+                    .as_slice()
+                    .try_into()
+                    .context("database active payload key ID is invalid")?;
+                anyhow::ensure!(
+                    keys.contains_key(&current_id),
+                    "Current database payload key is not configured for rewrap"
+                );
+                validate_execution_payload_key_inventory(&mut transaction, keys).await?;
+                if current_id == *keys.active_key_id() {
+                    transaction
+                        .commit()
+                        .await
+                        .context("failed to complete no-op execution payload rewrap")?;
+                    return Ok(());
+                }
+                sqlx::query(
+                    "UPDATE execution_payload_state \
+                     SET operation = 'rewrap', active_key_id = $1, progress_id = 0, updated_at = NOW() \
+                     WHERE component = 'signed_transactions'",
+                )
+                .bind(keys.active_key_id().as_slice())
+                .execute(&mut *transaction)
+                .await
+                .context("failed to record execution payload rewrap target")?;
+            }
+            "rewrap" => validate_execution_payload_state(&state, keys)?,
+            operation => anyhow::bail!(
+                "Execution payload storage is in {operation} maintenance, not ready for rewrap"
+            ),
+        }
+        sqlx::query(
+            "INSERT INTO execution_payload_key_state (key_id, seals) VALUES ($1, 0) \
+             ON CONFLICT (key_id) DO NOTHING",
+        )
+        .bind(keys.active_key_id().as_slice())
+        .execute(&mut *transaction)
+        .await
+        .context("failed to initialize rewrap target key state")?;
+        transaction
+            .commit()
+            .await
+            .context("failed to commit execution payload rewrap state")?;
+        Ok(())
+    }
+
+    async fn rewrap_execution_payload_batch(
+        &self,
+        keys: &PayloadKeySet,
+        batch_size: i64,
+    ) -> anyhow::Result<bool> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to start execution payload rewrap batch")?;
+        lock_execution_payload_operation(&mut transaction).await?;
+        let state_row = sqlx::query(
+            "SELECT deployment_id, protocol_version, operation, active_key_id \
+             FROM execution_payload_state WHERE component = 'signed_transactions' FOR UPDATE",
+        )
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("failed to lock execution payload rewrap state")?
+        .ok_or_else(|| anyhow::anyhow!("Execution payload rewrap state is missing"))?;
+        let state = execution_payload_state_from_row(&state_row)?;
+        validate_execution_payload_state(&state, keys)?;
+        if state.operation == "ready" {
+            transaction
+                .commit()
+                .await
+                .context("failed to complete execution payload rewrap")?;
+            return Ok(true);
+        }
+        anyhow::ensure!(
+            state.operation == "rewrap",
+            "Execution payload storage is not rewrapping"
+        );
+        let rows = sqlx::query_as::<_, ExecutionTransactionHashRow>(
+            "
+            SELECT
+                id, intent_id, chain_id, transaction_hash, payload_expected,
+                raw_transaction, sealed_transaction, status, block_number, block_hash,
+                receipt_success, gas_used, effective_gas_price, current
+            FROM execution_transaction_hash
+            WHERE payload_expected
+              AND substring(sealed_transaction FROM 2 FOR 32) <> $1
+            ORDER BY id
+            LIMIT $2
+            FOR UPDATE
+            ",
+        )
+        .bind(keys.active_key_id().as_slice())
+        .bind(batch_size)
+        .fetch_all(&mut *transaction)
+        .await
+        .context("failed to load execution payload rewrap batch")?;
+
+        if rows.is_empty() {
+            sqlx::query("LOCK TABLE execution_transaction_hash IN SHARE ROW EXCLUSIVE MODE")
+                .execute(&mut *transaction)
+                .await
+                .context("failed to lock execution payload rewrap completion")?;
+            let remaining = sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM execution_transaction_hash \
+                 WHERE payload_expected \
+                   AND (raw_transaction IS NOT NULL OR sealed_transaction IS NULL \
+                        OR substring(sealed_transaction FROM 2 FOR 32) <> $1)",
+            )
+            .bind(keys.active_key_id().as_slice())
+            .fetch_one(&mut *transaction)
+            .await
+            .context("failed to verify execution payload rewrap completion")?;
+            anyhow::ensure!(
+                remaining == 0,
+                "Execution payload rewrap left {remaining} row(s)"
+            );
+            sqlx::query(
+                "UPDATE execution_payload_state SET operation = 'ready', updated_at = NOW() \
+                 WHERE component = 'signed_transactions' AND operation = 'rewrap'",
+            )
+            .execute(&mut *transaction)
+            .await
+            .context("failed to mark execution payload rewrap complete")?;
+            transaction
+                .commit()
+                .await
+                .context("failed to commit execution payload rewrap completion")?;
+            return Ok(true);
+        }
+
+        for hash in rows {
+            let envelope = hash.sealed_transaction.as_deref().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Execution payload {} has no envelope during rewrap",
+                    hash.id
+                )
+            })?;
+            anyhow::ensure!(
+                hash.raw_transaction.is_none(),
+                "Execution payload {} contains plaintext during rewrap",
+                hash.id
+            );
+            let intent = load_execution_intent(&mut transaction, hash.intent_id).await?;
+            let context = payload_context(&intent, &hash, keys.deployment_id())?;
+            let raw_transaction = keys.unseal(envelope, &context)?;
+            authenticate_retained_payload(&raw_transaction, &intent, &hash, keys.deployment_id())?;
+            reserve_execution_payload_seal(&mut transaction, keys.active_key_id()).await?;
+            let rewrapped = keys.seal(&raw_transaction, &context)?;
+            let verified = keys.unseal(&rewrapped, &context)?;
+            authenticate_retained_payload(&verified, &intent, &hash, keys.deployment_id())?;
+            anyhow::ensure!(
+                verified == raw_transaction,
+                "Execution payload {} changed during rewrap",
+                hash.id
+            );
+            let result = sqlx::query(
+                "UPDATE execution_transaction_hash SET sealed_transaction = $2, updated_at = NOW() \
+                 WHERE id = $1 AND sealed_transaction = $3 AND raw_transaction IS NULL",
+            )
+            .bind(hash.id)
+            .bind(&rewrapped)
+            .bind(envelope)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to persist rewrapped execution payload")?;
+            anyhow::ensure!(
+                result.rows_affected() == 1,
+                "Execution payload {} changed during rewrap",
+                hash.id
+            );
+            sqlx::query(
+                "UPDATE execution_payload_state SET progress_id = $1, updated_at = NOW() \
+                 WHERE component = 'signed_transactions'",
+            )
+            .bind(hash.id)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to record execution payload rewrap progress")?;
+        }
+        transaction
+            .commit()
+            .await
+            .context("failed to commit execution payload rewrap batch")?;
+        Ok(false)
+    }
+
+    pub(crate) async fn rollback_execution_payload_storage(
+        &self,
+        keys: &PayloadKeySet,
+        batch_size: i64,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            batch_size > 0,
+            "Execution payload rollback batch size must be positive"
+        );
+        self.begin_execution_payload_rollback(keys).await?;
+
+        loop {
+            if self
+                .rollback_execution_payload_batch(keys, batch_size)
+                .await?
+            {
+                return Ok(());
+            }
+        }
+    }
+
+    async fn begin_execution_payload_rollback(&self, keys: &PayloadKeySet) -> anyhow::Result<()> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to start execution payload rollback")?;
+        lock_execution_payload_operation(&mut transaction).await?;
+        let state_row = sqlx::query(
+            "SELECT deployment_id, protocol_version, operation, active_key_id \
+             FROM execution_payload_state WHERE component = 'signed_transactions' FOR UPDATE",
+        )
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("failed to lock execution payload state for rollback")?
+        .ok_or_else(|| anyhow::anyhow!("Execution payload protection is not active"))?;
+        let state = execution_payload_state_from_row(&state_row)?;
+        validate_execution_payload_state(&state, keys)?;
+        match state.operation.as_str() {
+            "ready" => {
+                sqlx::query(
+                    "ALTER TABLE execution_transaction_hash \
+                     DROP CONSTRAINT IF EXISTS execution_transaction_payload_protected_check",
+                )
+                .execute(&mut *transaction)
+                .await
+                .context("failed to open execution payload rollback representation")?;
+                sqlx::query(
+                    "UPDATE execution_payload_state \
+                     SET operation = 'rollback', progress_id = 0, updated_at = NOW() \
+                     WHERE component = 'signed_transactions'",
+                )
+                .execute(&mut *transaction)
+                .await
+                .context("failed to record execution payload rollback state")?;
+            }
+            "rollback" => {}
+            operation => anyhow::bail!(
+                "Execution payload storage is in {operation} maintenance, not ready for rollback"
+            ),
+        }
+        transaction
+            .commit()
+            .await
+            .context("failed to commit execution payload rollback state")?;
+        Ok(())
+    }
+
+    async fn rollback_execution_payload_batch(
+        &self,
+        keys: &PayloadKeySet,
+        batch_size: i64,
+    ) -> anyhow::Result<bool> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to start execution payload rollback batch")?;
+        lock_execution_payload_operation(&mut transaction).await?;
+        let state_row = sqlx::query(
+            "SELECT deployment_id, protocol_version, operation, active_key_id \
+             FROM execution_payload_state WHERE component = 'signed_transactions' FOR UPDATE",
+        )
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("failed to lock execution payload rollback state")?
+        .ok_or_else(|| anyhow::anyhow!("Execution payload rollback state is missing"))?;
+        let state = execution_payload_state_from_row(&state_row)?;
+        validate_execution_payload_state(&state, keys)?;
+        anyhow::ensure!(
+            state.operation == "rollback",
+            "Execution payload storage is not rolling back"
+        );
+        let rows = sqlx::query_as::<_, ExecutionTransactionHashRow>(
+            "
+            SELECT
+                id, intent_id, chain_id, transaction_hash, payload_expected,
+                raw_transaction, sealed_transaction, status, block_number, block_hash,
+                receipt_success, gas_used, effective_gas_price, current
+            FROM execution_transaction_hash
+            WHERE payload_expected AND sealed_transaction IS NOT NULL
+            ORDER BY id
+            LIMIT $1
+            FOR UPDATE
+            ",
+        )
+        .bind(batch_size)
+        .fetch_all(&mut *transaction)
+        .await
+        .context("failed to load execution payload rollback batch")?;
+
+        if rows.is_empty() {
+            sqlx::query("LOCK TABLE execution_transaction_hash IN SHARE ROW EXCLUSIVE MODE")
+                .execute(&mut *transaction)
+                .await
+                .context("failed to lock execution payload rollback completion")?;
+            let invalid = sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM execution_transaction_hash \
+                 WHERE (payload_expected AND (raw_transaction IS NULL OR sealed_transaction IS NOT NULL)) \
+                    OR (NOT payload_expected AND (raw_transaction IS NOT NULL OR sealed_transaction IS NOT NULL))",
+            )
+            .fetch_one(&mut *transaction)
+            .await
+            .context("failed to verify execution payload rollback completion")?;
+            anyhow::ensure!(
+                invalid == 0,
+                "Execution payload rollback left {invalid} invalid row(s)"
+            );
+
+            for statement in [
+                "DROP TRIGGER IF EXISTS execution_transaction_payload_fence ON execution_transaction_hash",
+                "DELETE FROM execution_payload_state WHERE component = 'signed_transactions'",
+                "DELETE FROM execution_schema_version WHERE component = 'evm_execution_payload'",
+            ] {
+                sqlx::query(statement)
+                    .execute(&mut *transaction)
+                    .await
+                    .context("failed to complete execution payload rollback")?;
+            }
+            transaction
+                .commit()
+                .await
+                .context("failed to commit execution payload rollback completion")?;
+            return Ok(true);
+        }
+
+        for hash in rows {
+            anyhow::ensure!(
+                hash.raw_transaction.is_none(),
+                "Execution payload {} contains both representations during rollback",
+                hash.id
+            );
+            let envelope = hash
+                .sealed_transaction
+                .as_deref()
+                .expect("rollback query requires envelope");
+            let intent = load_execution_intent(&mut transaction, hash.intent_id).await?;
+            let context = payload_context(&intent, &hash, keys.deployment_id())?;
+            let raw_transaction = keys.unseal(envelope, &context)?;
+            authenticate_retained_payload(&raw_transaction, &intent, &hash, keys.deployment_id())?;
+            let result = sqlx::query(
+                "UPDATE execution_transaction_hash SET raw_transaction = $2, updated_at = NOW() \
+                 WHERE id = $1 AND raw_transaction IS NULL AND sealed_transaction = $3",
+            )
+            .bind(hash.id)
+            .bind(&raw_transaction)
+            .bind(envelope)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to recreate plaintext execution payload")?;
+            anyhow::ensure!(
+                result.rows_affected() == 1,
+                "Execution payload {} changed during rollback",
+                hash.id
+            );
+            authenticate_retained_payload(&raw_transaction, &intent, &hash, keys.deployment_id())?;
+            let result = sqlx::query(
+                "UPDATE execution_transaction_hash SET sealed_transaction = NULL, updated_at = NOW() \
+                 WHERE id = $1 AND raw_transaction = $2 AND sealed_transaction = $3",
+            )
+            .bind(hash.id)
+            .bind(&raw_transaction)
+            .bind(envelope)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to clear rolled-back execution payload envelope")?;
+            anyhow::ensure!(
+                result.rows_affected() == 1,
+                "Execution payload {} changed while clearing rollback envelope",
+                hash.id
+            );
+            sqlx::query(
+                "UPDATE execution_payload_state SET progress_id = $1, updated_at = NOW() \
+                 WHERE component = 'signed_transactions'",
+            )
+            .bind(hash.id)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to record execution payload rollback progress")?;
+        }
+        transaction
+            .commit()
+            .await
+            .context("failed to commit execution payload rollback batch")?;
+        Ok(false)
+    }
+
+    /// Reserves durable ownership of a signer slot and optional client order before signing.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stage-classified error if the signer or client order is already owned, or
+    /// persistence fails. A commit-stage error does not prove the transaction rolled back.
+    pub async fn reserve_execution_intent(
+        &self,
+        intent: &ExecutionIntentInsert,
+    ) -> anyhow::Result<ExecutionIntentRow> {
+        let (transaction, row) = async {
+            let chain_id = i32::try_from(intent.chain_id).with_context(|| {
+                format!("Chain ID {} exceeds PostgreSQL INTEGER", intent.chain_id)
+            })?;
+            let created_block = i64::try_from(intent.created_block).with_context(|| {
+                format!(
+                    "Execution creation block {} exceeds PostgreSQL BIGINT",
+                    intent.created_block
+                )
+            })?;
+            let mut transaction = self
+                .pool
+                .begin()
+                .await
+                .context("failed to start execution intent reservation")?;
+            Self::lock_execution_signer(&mut transaction, intent.chain_id, &intent.wallet_address)
+                .await?;
+            let row = sqlx::query_as::<_, ExecutionIntentRow>(
+                "
+                INSERT INTO execution_intent (
+                    schema_version, chain_id, wallet_address, purpose, status,
+                    client_order_id, trader_id, strategy_id, account_id, instrument_id,
+                    pool_address, transaction_to, transaction_input, transaction_value,
+                    amount_in, created_block
+                )
+                VALUES ($1, $2, $3, $4, 'prepared', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                RETURNING
+                    id, schema_version, chain_id, wallet_address, nonce, purpose, status,
+                    client_order_id, trader_id, strategy_id, account_id, instrument_id,
+                    pool_address, transaction_to, transaction_input, transaction_value,
+                    amount_in, created_block, acknowledgement_emitted, fill_emitted,
+                    terminal_emitted, active
+                ",
+            )
+            .bind(EXECUTION_SCHEMA_VERSION)
+            .bind(chain_id)
+            .bind(&intent.wallet_address)
+            .bind(&intent.purpose)
+            .bind(&intent.client_order_id)
+            .bind(&intent.trader_id)
+            .bind(&intent.strategy_id)
+            .bind(&intent.account_id)
+            .bind(&intent.instrument_id)
+            .bind(&intent.pool_address)
+            .bind(&intent.transaction_to)
+            .bind(&intent.transaction_input)
+            .bind(&intent.transaction_value)
+            .bind(&intent.amount_in)
+            .bind(created_block)
+            .fetch_one(&mut *transaction)
+            .await
+            .context("failed to insert execution intent reservation")?;
+
+            sqlx::query(
+                "
+                INSERT INTO execution_transaction_transition (
+                    intent_id, transition_key, to_status, block_number
+                ) VALUES ($1, 'prepared', 'prepared', $2)
+                ",
+            )
+            .bind(row.id)
+            .bind(created_block)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to record prepared execution intent")?;
+
+            Ok::<_, anyhow::Error>((transaction, row))
+        }
+        .await
+        .map_err(|source| {
+            anyhow::Error::new(ExecutionIntentReservationError {
+                stage: ExecutionIntentReservationStage::BeforeCommit,
+                source,
+            })
+        })?;
+        transaction.commit().await.map_err(|e| {
+            anyhow::Error::new(ExecutionIntentReservationError {
+                stage: ExecutionIntentReservationStage::Commit,
+                source: anyhow::Error::new(e)
+                    .context("failed to commit execution intent reservation"),
+            })
+        })?;
         Ok(row)
     }
 
@@ -3421,6 +5879,629 @@ impl BlockchainCacheDatabase {
         Ok(())
     }
 
+    /// Assigns the canonical nonce and its authorizing verification evidence atomically.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the durable nonce ledger, intent ownership, manifest identity, or
+    /// evidence is inconsistent, or if persistence fails.
+    pub(crate) async fn assign_execution_intent_nonce_verified(
+        &self,
+        assignment: &ExecutionNonceAssignment<'_>,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !assignment.decisions.is_empty(),
+            "Verified nonce assignment requires decision evidence"
+        );
+        anyhow::ensure!(
+            assignment.provider_ids.len() == 3 && assignment.operator_ids.len() == 3,
+            "Verified nonce assignment requires exactly three provider and operator IDs"
+        );
+        anyhow::ensure!(
+            assignment.failure_domain_ids.len() >= 3,
+            "Verified nonce assignment requires the configured failure domains"
+        );
+        let chain_id = i32::try_from(assignment.chain_id)
+            .context("Verification chain ID exceeds PostgreSQL INTEGER")?;
+        let nonce =
+            i64::try_from(assignment.nonce).context("Execution nonce exceeds PostgreSQL BIGINT")?;
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to start verified nonce assignment: {e}"))?;
+        let (manifest_version, manifest_digest, next_nonce, revision) =
+            sqlx::query_as::<_, (String, String, i64, i64)>(
+                "
+                SELECT manifest_version, manifest_digest, next_canonical_nonce, revision
+                FROM execution_verification_nonce
+                WHERE chain_id = $1 AND wallet_address = $2
+                FOR UPDATE
+                ",
+            )
+            .bind(chain_id)
+            .bind(assignment.wallet_address)
+            .fetch_optional(&mut *transaction)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to lock canonical nonce ledger: {e}"))?
+            .ok_or_else(|| anyhow::anyhow!("Canonical nonce ledger is not initialized"))?;
+        anyhow::ensure!(
+            manifest_version == assignment.manifest_version
+                && manifest_digest == assignment.manifest_digest,
+            "Verified nonce assignment manifest identity changed"
+        );
+        anyhow::ensure!(
+            next_nonce == nonce,
+            "Execution nonce {} does not match canonical nonce {next_nonce}",
+            assignment.nonce
+        );
+
+        let (intent_chain_id, intent_wallet, intent_nonce, intent_status, intent_active) =
+            sqlx::query_as::<_, (i32, String, Option<i64>, String, bool)>(
+                "
+            SELECT chain_id, wallet_address, nonce, status, active
+            FROM execution_intent
+            WHERE id = $1
+            FOR UPDATE
+            ",
+            )
+            .bind(assignment.intent_id)
+            .fetch_optional(&mut *transaction)
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to lock execution intent for nonce assignment: {e}")
+            })?
+            .ok_or_else(|| {
+                anyhow::anyhow!("Execution intent {} was not found", assignment.intent_id)
+            })?;
+        anyhow::ensure!(
+            intent_chain_id == chain_id
+                && intent_wallet == assignment.wallet_address
+                && intent_status == "prepared"
+                && intent_active
+                && intent_nonce.is_none_or(|assigned| assigned == nonce),
+            "Execution intent {} cannot own canonical nonce {}",
+            assignment.intent_id,
+            assignment.nonce
+        );
+
+        for (index, decision) in assignment.decisions.iter().enumerate() {
+            let height_start = decision
+                .height_start
+                .map(i64::try_from)
+                .transpose()
+                .context("Verification height exceeds PostgreSQL BIGINT")?;
+            let height_end = decision
+                .height_end
+                .map(i64::try_from)
+                .transpose()
+                .context("Verification height exceeds PostgreSQL BIGINT")?;
+            let transition_key = format!(
+                "pre_sign:{}:{}:{index}",
+                assignment.intent_id, decision.read_class
+            );
+            sqlx::query(
+                "
+                INSERT INTO execution_verification_decision (
+                    intent_id, nonce, decision_class, read_class, height_start, height_end,
+                    manifest_version, manifest_digest, provider_ids, operator_ids,
+                    failure_domain_ids, response_class, normalized_value_digest,
+                    nonce_revision, outcome, transition_key
+                )
+                VALUES (
+                    $1, $2, 'pre_sign', $3, $4, $5, $6, $7, $8, $9, $10,
+                    'all_valid', $11, $12, 'verified', $13
+                )
+                ",
+            )
+            .bind(assignment.intent_id)
+            .bind(nonce)
+            .bind(decision.read_class)
+            .bind(height_start)
+            .bind(height_end)
+            .bind(assignment.manifest_version)
+            .bind(assignment.manifest_digest)
+            .bind(assignment.provider_ids)
+            .bind(assignment.operator_ids)
+            .bind(assignment.failure_domain_ids)
+            .bind(&decision.normalized_value_digest)
+            .bind(revision)
+            .bind(transition_key)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to persist pre-sign verification: {e}"))?;
+        }
+
+        let result = sqlx::query(
+            "
+            UPDATE execution_intent
+            SET nonce = $2, updated_at = NOW()
+            WHERE id = $1
+              AND status = 'prepared'
+              AND active
+              AND (nonce IS NULL OR nonce = $2)
+            ",
+        )
+        .bind(assignment.intent_id)
+        .bind(nonce)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to assign verified execution nonce: {e}"))?;
+        anyhow::ensure!(
+            result.rows_affected() == 1,
+            "Execution intent {} is not prepared for canonical nonce {}",
+            assignment.intent_id,
+            assignment.nonce
+        );
+        transaction
+            .commit()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to commit verified nonce assignment: {e}"))?;
+        Ok(())
+    }
+
+    /// Appends one verified decision batch before an action on an existing active intent.
+    pub(crate) async fn record_execution_verification_batch(
+        &self,
+        batch: &ExecutionVerificationBatch<'_>,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !batch.decision_class.trim().is_empty() && !batch.decisions.is_empty(),
+            "Verified action requires a decision class and evidence"
+        );
+        anyhow::ensure!(
+            batch.provider_ids.len() == 3
+                && batch.operator_ids.len() == 3
+                && batch.failure_domain_ids.len() >= 3,
+            "Verified action requires the configured provider identities"
+        );
+        let chain_id = i32::try_from(batch.chain_id)
+            .context("Verification chain ID exceeds PostgreSQL INTEGER")?;
+        let nonce =
+            i64::try_from(batch.nonce).context("Execution nonce exceeds PostgreSQL BIGINT")?;
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to start verified action evidence: {e}"))?;
+        let (manifest_version, manifest_digest, revision) =
+            sqlx::query_as::<_, (String, String, i64)>(
+                "
+                SELECT manifest_version, manifest_digest, revision
+                FROM execution_verification_nonce
+                WHERE chain_id = $1 AND wallet_address = $2
+                FOR SHARE
+                ",
+            )
+            .bind(chain_id)
+            .bind(batch.wallet_address)
+            .fetch_optional(&mut *transaction)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to read verified action nonce ledger: {e}"))?
+            .ok_or_else(|| anyhow::anyhow!("Canonical nonce ledger is not initialized"))?;
+        anyhow::ensure!(
+            manifest_version == batch.manifest_version && manifest_digest == batch.manifest_digest,
+            "Verified action manifest identity changed"
+        );
+        let intent_nonce = sqlx::query_scalar::<_, Option<i64>>(
+            "
+            SELECT nonce
+            FROM execution_intent
+            WHERE id = $1 AND chain_id = $2 AND wallet_address = $3 AND active
+            FOR UPDATE
+            ",
+        )
+        .bind(batch.intent_id)
+        .bind(chain_id)
+        .bind(batch.wallet_address)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to lock intent for verified action: {e}"))?
+        .ok_or_else(|| anyhow::anyhow!("Active verified-action intent was not found"))?;
+        anyhow::ensure!(
+            intent_nonce == Some(nonce),
+            "Verified action nonce does not match the active intent"
+        );
+        let attempt = sqlx::query_scalar::<_, i64>(
+            "
+            SELECT COUNT(*)
+            FROM execution_verification_decision
+            WHERE intent_id = $1 AND decision_class = $2
+            ",
+        )
+        .bind(batch.intent_id)
+        .bind(batch.decision_class)
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to number verified action evidence: {e}"))?;
+
+        for (index, decision) in batch.decisions.iter().enumerate() {
+            let height_start = decision
+                .height_start
+                .map(i64::try_from)
+                .transpose()
+                .context("Verification height exceeds PostgreSQL BIGINT")?;
+            let height_end = decision
+                .height_end
+                .map(i64::try_from)
+                .transpose()
+                .context("Verification height exceeds PostgreSQL BIGINT")?;
+            let transition_key = format!(
+                "{}:{}:{attempt}:{}:{index}",
+                batch.decision_class, batch.intent_id, decision.read_class
+            );
+            sqlx::query(
+                "
+                INSERT INTO execution_verification_decision (
+                    intent_id, nonce, decision_class, read_class, height_start, height_end,
+                    manifest_version, manifest_digest, provider_ids, operator_ids,
+                    failure_domain_ids, response_class, normalized_value_digest,
+                    nonce_revision, outcome, transition_key
+                )
+                VALUES (
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                    'all_valid', $12, $13, 'verified', $14
+                )
+                ",
+            )
+            .bind(batch.intent_id)
+            .bind(nonce)
+            .bind(batch.decision_class)
+            .bind(decision.read_class)
+            .bind(height_start)
+            .bind(height_end)
+            .bind(batch.manifest_version)
+            .bind(batch.manifest_digest)
+            .bind(batch.provider_ids)
+            .bind(batch.operator_ids)
+            .bind(batch.failure_domain_ids)
+            .bind(&decision.normalized_value_digest)
+            .bind(revision)
+            .bind(transition_key)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to persist verified action evidence: {e}"))?;
+        }
+        transaction
+            .commit()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to commit verified action evidence: {e}"))?;
+        Ok(())
+    }
+
+    pub(crate) async fn load_execution_replacement_cursor(
+        &self,
+        intent_id: i64,
+        chain_id: u32,
+        wallet_address: &str,
+        nonce: u64,
+        manifest_digest: &str,
+    ) -> anyhow::Result<Option<ExecutionVerifiedHeader>> {
+        let chain_id = i32::try_from(chain_id)
+            .context("Replacement scan chain ID exceeds PostgreSQL INTEGER")?;
+        let nonce =
+            i64::try_from(nonce).context("Replacement scan nonce exceeds PostgreSQL BIGINT")?;
+        let row = sqlx::query_as::<_, (i64, String, String, i64, Option<String>, String)>(
+            "
+            SELECT
+                h.number, h.hash, h.parent_hash, h.timestamp, h.base_fee_per_gas,
+                s.manifest_digest
+            FROM execution_replacement_scan AS s
+            JOIN execution_verified_finalized_header AS h
+              ON h.chain_id = s.chain_id
+             AND h.wallet_address = s.wallet_address
+             AND h.number = s.finalized_cursor_number
+             AND h.hash = s.finalized_cursor_hash
+            WHERE s.intent_id = $1
+              AND s.chain_id = $2
+              AND s.wallet_address = $3
+              AND s.nonce = $4
+            ",
+        )
+        .bind(intent_id)
+        .bind(chain_id)
+        .bind(wallet_address)
+        .bind(nonce)
+        .fetch_optional(&self.pool)
+        .await
+        .context("failed to load replacement scan cursor")?;
+        row.map(
+            |(number, hash, parent_hash, timestamp, base_fee, stored_digest)| {
+                anyhow::ensure!(
+                    stored_digest == manifest_digest,
+                    "Replacement scan manifest identity changed"
+                );
+                Ok(ExecutionVerifiedHeader {
+                    number: u64::try_from(number)
+                        .context("Replacement scan cursor number is negative")?,
+                    hash,
+                    parent_hash,
+                    timestamp: u64::try_from(timestamp)
+                        .context("Replacement scan cursor timestamp is negative")?,
+                    base_fee_per_gas: base_fee
+                        .map(|value| {
+                            value.parse::<u128>().map_err(|_| {
+                                anyhow::anyhow!("Replacement scan cursor base fee is invalid")
+                            })
+                        })
+                        .transpose()?,
+                })
+            },
+        )
+        .transpose()
+    }
+
+    pub(crate) async fn record_execution_replacement_scan(
+        &self,
+        scan: &ExecutionReplacementScan<'_>,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !scan.decisions.is_empty()
+                && scan.provider_ids.len() == 3
+                && scan.operator_ids.len() == 3
+                && scan.failure_domain_ids.len() >= 3,
+            "Replacement scan verification evidence is incomplete"
+        );
+        let chain_id = i32::try_from(scan.chain_id)
+            .context("Replacement scan chain ID exceeds PostgreSQL INTEGER")?;
+        let nonce = i64::try_from(scan.nonce)
+            .context("Replacement scan nonce exceeds PostgreSQL BIGINT")?;
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to start verified replacement scan transition")?;
+        let (stored_version, stored_digest, stored_nonce, revision) =
+            sqlx::query_as::<_, (String, String, i64, i64)>(
+                "
+                SELECT manifest_version, manifest_digest, next_canonical_nonce, revision
+                FROM execution_verification_nonce
+                WHERE chain_id = $1 AND wallet_address = $2
+                FOR SHARE
+                ",
+            )
+            .bind(chain_id)
+            .bind(scan.wallet_address)
+            .fetch_optional(&mut *transaction)
+            .await
+            .context("failed to read replacement scan nonce ledger")?
+            .ok_or_else(|| anyhow::anyhow!("Canonical nonce ledger is not initialized"))?;
+        anyhow::ensure!(
+            stored_version == scan.manifest_version
+                && stored_digest == scan.manifest_digest
+                && stored_nonce == nonce,
+            "Replacement scan conflicts with the canonical nonce or manifest ledger"
+        );
+        let current_status = sqlx::query_scalar::<_, String>(
+            "
+            SELECT status
+            FROM execution_intent
+            WHERE id = $1 AND chain_id = $2 AND wallet_address = $3
+              AND nonce = $4 AND active
+            FOR UPDATE
+            ",
+        )
+        .bind(scan.intent_id)
+        .bind(chain_id)
+        .bind(scan.wallet_address)
+        .bind(nonce)
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("failed to lock the replacement scan intent")?
+        .ok_or_else(|| anyhow::anyhow!("Active replacement scan intent was not found"))?;
+
+        if let Some(cursor) = scan.finalized_cursor {
+            let number = i64::try_from(cursor.number)
+                .context("Replacement scan cursor exceeds PostgreSQL BIGINT")?;
+            let durable_hash = sqlx::query_scalar::<_, String>(
+                "
+                SELECT hash
+                FROM execution_verified_finalized_header
+                WHERE chain_id = $1 AND wallet_address = $2 AND number = $3
+                ",
+            )
+            .bind(chain_id)
+            .bind(scan.wallet_address)
+            .bind(number)
+            .fetch_optional(&mut *transaction)
+            .await
+            .context("failed to validate replacement cursor against finalized headers")?
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Replacement scan cursor {} is not durably finalized",
+                    cursor.number
+                )
+            })?;
+            anyhow::ensure!(
+                durable_hash == cursor.hash,
+                "Replacement scan cursor conflicts with the finalized header ledger"
+            );
+            let existing = sqlx::query_as::<_, (i64, String)>(
+                "
+                SELECT finalized_cursor_number, finalized_cursor_hash
+                FROM execution_replacement_scan
+                WHERE intent_id = $1
+                FOR UPDATE
+                ",
+            )
+            .bind(scan.intent_id)
+            .fetch_optional(&mut *transaction)
+            .await
+            .context("failed to lock replacement scan progress")?;
+
+            if let Some((stored_number, stored_hash)) = existing {
+                anyhow::ensure!(
+                    number > stored_number
+                        || (number == stored_number && cursor.hash == stored_hash),
+                    "Replacement scan cursor regressed or changed"
+                );
+            }
+            sqlx::query(
+                "
+                INSERT INTO execution_replacement_scan (
+                    intent_id, chain_id, wallet_address, nonce,
+                    finalized_cursor_number, finalized_cursor_hash, manifest_digest
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT (intent_id) DO UPDATE SET
+                    finalized_cursor_number = EXCLUDED.finalized_cursor_number,
+                    finalized_cursor_hash = EXCLUDED.finalized_cursor_hash,
+                    updated_at = NOW()
+                ",
+            )
+            .bind(scan.intent_id)
+            .bind(chain_id)
+            .bind(scan.wallet_address)
+            .bind(nonce)
+            .bind(number)
+            .bind(&cursor.hash)
+            .bind(scan.manifest_digest)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to persist replacement scan cursor")?;
+        }
+
+        let attempt = sqlx::query_scalar::<_, i64>(
+            "
+            SELECT COUNT(*)
+            FROM execution_verification_decision
+            WHERE intent_id = $1 AND decision_class = 'replacement_scan'
+            ",
+        )
+        .bind(scan.intent_id)
+        .fetch_one(&mut *transaction)
+        .await
+        .context("failed to number replacement scan evidence")?;
+        for (index, decision) in scan.decisions.iter().enumerate() {
+            let height_start = decision
+                .height_start
+                .map(i64::try_from)
+                .transpose()
+                .context("Replacement scan height exceeds PostgreSQL BIGINT")?;
+            let height_end = decision
+                .height_end
+                .map(i64::try_from)
+                .transpose()
+                .context("Replacement scan height exceeds PostgreSQL BIGINT")?;
+            let transition_key = format!(
+                "replacement_scan:{}:{attempt}:{}:{index}",
+                scan.intent_id, decision.read_class
+            );
+            sqlx::query(
+                "
+                INSERT INTO execution_verification_decision (
+                    intent_id, nonce, decision_class, read_class, height_start, height_end,
+                    manifest_version, manifest_digest, provider_ids, operator_ids,
+                    failure_domain_ids, response_class, normalized_value_digest,
+                    nonce_revision, outcome, transition_key
+                ) VALUES (
+                    $1, $2, 'replacement_scan', $3, $4, $5, $6, $7, $8, $9, $10,
+                    'all_valid', $11, $12, 'verified', $13
+                )
+                ",
+            )
+            .bind(scan.intent_id)
+            .bind(nonce)
+            .bind(decision.read_class)
+            .bind(height_start)
+            .bind(height_end)
+            .bind(scan.manifest_version)
+            .bind(scan.manifest_digest)
+            .bind(scan.provider_ids)
+            .bind(scan.operator_ids)
+            .bind(scan.failure_domain_ids)
+            .bind(&decision.normalized_value_digest)
+            .bind(revision)
+            .bind(transition_key)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to persist replacement scan evidence")?;
+        }
+
+        if let Some(transaction_hash) = scan.matched_transaction_hash {
+            anyhow::ensure!(
+                execution_transition_allowed(&current_status, TransactionStatus::Replaced),
+                "Intent cannot attach a verified replacement from status {current_status}"
+            );
+            let (hash_id, payload_expected, already_current) =
+                sqlx::query_as::<_, (i64, bool, bool)>(
+                    "
+                    SELECT id, payload_expected, current
+                    FROM execution_transaction_hash
+                    WHERE intent_id = $1 AND chain_id = $2 AND transaction_hash = $3
+                    FOR UPDATE
+                    ",
+                )
+                .bind(scan.intent_id)
+                .bind(chain_id)
+                .bind(transaction_hash)
+                .fetch_optional(&mut *transaction)
+                .await
+                .context("failed to lock authenticated replacement payload")?
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Replacement transaction {transaction_hash} has no retained payload"
+                    )
+                })?;
+            anyhow::ensure!(
+                payload_expected,
+                "Replacement transaction {transaction_hash} is not authenticated"
+            );
+
+            if !already_current {
+                sqlx::query(
+                    "
+                    UPDATE execution_transaction_hash
+                    SET current = FALSE, status = 'replaced', updated_at = NOW()
+                    WHERE intent_id = $1 AND current
+                    ",
+                )
+                .bind(scan.intent_id)
+                .execute(&mut *transaction)
+                .await
+                .context("failed to retire the prior transaction hash")?;
+                sqlx::query(
+                    "
+                    UPDATE execution_transaction_hash
+                    SET current = TRUE, status = 'replaced', updated_at = NOW()
+                    WHERE id = $1
+                    ",
+                )
+                .bind(hash_id)
+                .execute(&mut *transaction)
+                .await
+                .context("failed to attach the authenticated replacement hash")?;
+                sqlx::query(
+                    "UPDATE execution_intent SET status = 'replaced', updated_at = NOW() WHERE id = $1",
+                )
+                .bind(scan.intent_id)
+                .execute(&mut *transaction)
+                .await
+                .context("failed to mark the execution intent replaced")?;
+                sqlx::query(
+                    "
+                    INSERT INTO execution_transaction_transition (
+                        intent_id, transaction_hash_id, transition_key, from_status, to_status
+                    ) VALUES ($1, $2, $3, $4, 'replaced')
+                    ON CONFLICT (intent_id, transition_key) DO NOTHING
+                    ",
+                )
+                .bind(scan.intent_id)
+                .bind(hash_id)
+                .bind(format!("replacement_verified:{transaction_hash}"))
+                .bind(current_status)
+                .execute(&mut *transaction)
+                .await
+                .context("failed to record the verified replacement transition")?;
+            }
+        }
+
+        transaction
+            .commit()
+            .await
+            .context("failed to commit verified replacement scan")?;
+        Ok(())
+    }
+
     /// Releases an intent when no broadcast attempt can have occurred.
     ///
     /// # Errors
@@ -3439,14 +6520,14 @@ impl BlockchainCacheDatabase {
         .map_err(|e| anyhow::anyhow!("Failed to lock recoverable execution intent: {e}"))?
         .ok_or_else(|| anyhow::anyhow!("Execution intent {intent_id} was not found"))?;
         anyhow::ensure!(
-            matches!(current_status.as_str(), "prepared" | "signed"),
-            "Execution intent {intent_id} is {current_status}, not recoverable before broadcast"
+            current_status == "prepared",
+            "Execution intent {intent_id} is {current_status}, not recoverable before signing"
         );
         let result = sqlx::query(
             "
             UPDATE execution_intent
             SET status = 'recoverable', active = FALSE, updated_at = NOW()
-            WHERE id = $1 AND status IN ('prepared', 'signed')
+            WHERE id = $1 AND status = 'prepared'
             ",
         )
         .bind(intent_id)
@@ -3490,12 +6571,84 @@ impl BlockchainCacheDatabase {
         transaction_hash: &str,
         raw_transaction: &[u8],
     ) -> anyhow::Result<ExecutionTransactionHashRow> {
+        self.add_execution_transaction_payload(
+            intent_id,
+            chain_id,
+            transaction_hash,
+            Some(raw_transaction),
+            None,
+        )
+        .await
+    }
+
+    pub(crate) async fn add_execution_transaction_envelope(
+        &self,
+        intent_id: i64,
+        chain_id: u32,
+        transaction_hash: &str,
+        sealed_transaction: &[u8],
+    ) -> anyhow::Result<ExecutionTransactionHashRow> {
+        self.add_execution_transaction_payload(
+            intent_id,
+            chain_id,
+            transaction_hash,
+            None,
+            Some(sealed_transaction),
+        )
+        .await
+    }
+
+    async fn add_execution_transaction_payload(
+        &self,
+        intent_id: i64,
+        chain_id: u32,
+        transaction_hash: &str,
+        raw_transaction: Option<&[u8]>,
+        sealed_transaction: Option<&[u8]>,
+    ) -> anyhow::Result<ExecutionTransactionHashRow> {
+        anyhow::ensure!(
+            raw_transaction.is_some() != sealed_transaction.is_some(),
+            "A signed transaction requires exactly one payload representation"
+        );
         let chain_id_db = i32::try_from(chain_id)
             .with_context(|| format!("Chain ID {chain_id} exceeds PostgreSQL INTEGER"))?;
         let mut transaction =
             self.pool.begin().await.map_err(|e| {
                 anyhow::anyhow!("Failed to start signed transaction persistence: {e}")
             })?;
+
+        if let Some(envelope) = sealed_transaction {
+            let state_row = sqlx::query(
+                "SELECT deployment_id, protocol_version, operation, active_key_id \
+                 FROM execution_payload_state WHERE component = 'signed_transactions' FOR SHARE",
+            )
+            .fetch_optional(&mut *transaction)
+            .await
+            .context("failed to lock execution payload state for protected persistence")?
+            .ok_or_else(|| anyhow::anyhow!("Execution payload protection is not active"))?;
+            let state = execution_payload_state_from_row(&state_row)?;
+            anyhow::ensure!(
+                state.protocol_version == EXECUTION_PAYLOAD_PROTOCOL_VERSION
+                    && state.operation == "ready",
+                "Execution payload storage is not ready for protected persistence"
+            );
+            anyhow::ensure!(
+                envelope_key_id(envelope)?.as_slice() == state.active_key_id.as_slice(),
+                "Signed transaction envelope does not use the database active key"
+            );
+        } else {
+            let marker = sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS (SELECT 1 FROM execution_schema_version WHERE component = $1)",
+            )
+            .bind(EXECUTION_PAYLOAD_COMPONENT)
+            .fetch_one(&mut *transaction)
+            .await
+            .context("failed to inspect execution payload marker")?;
+            anyhow::ensure!(
+                !marker,
+                "Plaintext signed transaction persistence is disabled after payload activation"
+            );
+        }
         let current_status = sqlx::query_scalar::<_, String>(
             "SELECT status FROM execution_intent WHERE id = $1 FOR UPDATE",
         )
@@ -3513,17 +6666,31 @@ impl BlockchainCacheDatabase {
         let row = sqlx::query_as::<_, ExecutionTransactionHashRow>(
             "
             INSERT INTO execution_transaction_hash (
-                intent_id, chain_id, transaction_hash, raw_transaction, status
+                intent_id, chain_id, transaction_hash, payload_expected,
+                raw_transaction, sealed_transaction, status
             )
-            SELECT id, chain_id, $3, $4, 'signed'
+            SELECT id, chain_id, $3, TRUE, $4, $5, 'signed'
             FROM execution_intent
             WHERE id = $1 AND chain_id = $2 AND nonce IS NOT NULL
             ON CONFLICT (chain_id, transaction_hash) DO UPDATE
             SET transaction_hash = EXCLUDED.transaction_hash
             WHERE execution_transaction_hash.intent_id = EXCLUDED.intent_id
-              AND execution_transaction_hash.raw_transaction = EXCLUDED.raw_transaction
+              AND execution_transaction_hash.payload_expected
+              AND (
+                  (
+                      EXCLUDED.raw_transaction IS NOT NULL
+                      AND execution_transaction_hash.raw_transaction = EXCLUDED.raw_transaction
+                      AND execution_transaction_hash.sealed_transaction IS NULL
+                  )
+                  OR (
+                      EXCLUDED.sealed_transaction IS NOT NULL
+                      AND execution_transaction_hash.raw_transaction IS NULL
+                      AND execution_transaction_hash.sealed_transaction IS NOT NULL
+                  )
+              )
             RETURNING
-                id, intent_id, chain_id, transaction_hash, raw_transaction, status,
+                id, intent_id, chain_id, transaction_hash, payload_expected,
+                raw_transaction, sealed_transaction, status,
                 block_number, block_hash, receipt_success, gas_used,
                 effective_gas_price, current
             ",
@@ -3532,6 +6699,7 @@ impl BlockchainCacheDatabase {
         .bind(chain_id_db)
         .bind(transaction_hash)
         .bind(raw_transaction)
+        .bind(sealed_transaction)
         .fetch_optional(&mut *transaction)
         .await
         .map_err(|e| {
@@ -3714,7 +6882,349 @@ impl BlockchainCacheDatabase {
         Ok(())
     }
 
-    /// Loads the active intent owned by a signer, if one exists.
+    /// Records verified final consumption and advances the canonical nonce in one transaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the receipt transition, nonce ledger, manifest identity, or evidence
+    /// is inconsistent, or if persistence fails.
+    pub(crate) async fn record_execution_finality_verified(
+        &self,
+        finality: &ExecutionFinalityTransition<'_>,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            matches!(
+                finality.status,
+                TransactionStatus::Finalized | TransactionStatus::Reverted
+            ),
+            "Verified finality requires a finalized or reverted status"
+        );
+        anyhow::ensure!(
+            !finality.decisions.is_empty(),
+            "Verified finality requires decision evidence"
+        );
+        anyhow::ensure!(
+            !finality.finalized_headers.is_empty()
+                && finality.finalized_headers.windows(2).all(|headers| {
+                    headers[1].number == headers[0].number.saturating_add(1)
+                        && headers[1].parent_hash == headers[0].hash
+                })
+                && finality
+                    .finalized_headers
+                    .last()
+                    .is_some_and(|header| header.number >= finality.block_number),
+            "Verified finality headers must form a continuous chain through the inclusion height"
+        );
+        let chain_id = i32::try_from(finality.chain_id)
+            .context("Verification chain ID exceeds PostgreSQL INTEGER")?;
+        let nonce =
+            i64::try_from(finality.nonce).context("Execution nonce exceeds PostgreSQL BIGINT")?;
+        let next_nonce = nonce
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("Canonical nonce overflow"))?;
+        let block_number = i64::try_from(finality.block_number)
+            .context("Finality block exceeds PostgreSQL BIGINT")?;
+        let gas_used = i64::try_from(finality.gas_used)
+            .context("Finality gas used exceeds PostgreSQL BIGINT")?;
+        let mut transaction =
+            self.pool.begin().await.map_err(|e| {
+                anyhow::anyhow!("Failed to start verified finality transition: {e}")
+            })?;
+        let (manifest_version, manifest_digest, stored_nonce, revision) =
+            sqlx::query_as::<_, (String, String, i64, i64)>(
+                "
+                SELECT manifest_version, manifest_digest, next_canonical_nonce, revision
+                FROM execution_verification_nonce
+                WHERE chain_id = $1 AND wallet_address = $2
+                FOR UPDATE
+                ",
+            )
+            .bind(chain_id)
+            .bind(finality.wallet_address)
+            .fetch_optional(&mut *transaction)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to lock finality nonce ledger: {e}"))?
+            .ok_or_else(|| anyhow::anyhow!("Canonical nonce ledger is not initialized"))?;
+        anyhow::ensure!(
+            manifest_version == finality.manifest_version
+                && manifest_digest == finality.manifest_digest,
+            "Verified finality manifest identity changed"
+        );
+        anyhow::ensure!(
+            stored_nonce == nonce,
+            "Finalized nonce {} does not match canonical nonce {stored_nonce}",
+            finality.nonce
+        );
+        let stored_tip = sqlx::query_as::<_, (i64, String, String, i64, Option<String>, String)>(
+            "
+            SELECT number, hash, parent_hash, timestamp, base_fee_per_gas, manifest_digest
+            FROM execution_verified_finalized_header
+            WHERE chain_id = $1 AND wallet_address = $2
+            ORDER BY number DESC
+            LIMIT 1
+            ",
+        )
+        .bind(chain_id)
+        .bind(finality.wallet_address)
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to lock finalized header tip: {e}"))?;
+        let first_header = &finality.finalized_headers[0];
+        anyhow::ensure!(
+            stored_tip
+                == (
+                    i64::try_from(first_header.number)
+                        .context("Verified finalized height exceeds PostgreSQL BIGINT")?,
+                    first_header.hash.clone(),
+                    first_header.parent_hash.clone(),
+                    i64::try_from(first_header.timestamp)
+                        .context("Verified finalized timestamp exceeds PostgreSQL BIGINT")?,
+                    first_header.base_fee_per_gas.map(|value| value.to_string()),
+                    finality.manifest_digest.to_string(),
+                ),
+            "Verified finality extension does not start at the durable tip"
+        );
+
+        for header in finality.finalized_headers.iter().skip(1) {
+            let number = i64::try_from(header.number)
+                .context("Verified finalized height exceeds PostgreSQL BIGINT")?;
+            let timestamp = i64::try_from(header.timestamp)
+                .context("Verified finalized timestamp exceeds PostgreSQL BIGINT")?;
+            let base_fee = header.base_fee_per_gas.map(|value| value.to_string());
+            sqlx::query(
+                "
+                INSERT INTO execution_verified_finalized_header (
+                    chain_id, wallet_address, number, hash, parent_hash, timestamp,
+                    base_fee_per_gas, manifest_digest
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                ON CONFLICT (chain_id, wallet_address, number) DO NOTHING
+                ",
+            )
+            .bind(chain_id)
+            .bind(finality.wallet_address)
+            .bind(number)
+            .bind(&header.hash)
+            .bind(&header.parent_hash)
+            .bind(timestamp)
+            .bind(&base_fee)
+            .bind(finality.manifest_digest)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to extend finalized header ledger: {e}"))?;
+            let stored = sqlx::query_as::<_, (String, String, i64, Option<String>, String)>(
+                "
+                SELECT hash, parent_hash, timestamp, base_fee_per_gas, manifest_digest
+                FROM execution_verified_finalized_header
+                WHERE chain_id = $1 AND wallet_address = $2 AND number = $3
+                ",
+            )
+            .bind(chain_id)
+            .bind(finality.wallet_address)
+            .bind(number)
+            .fetch_one(&mut *transaction)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to validate finalized header ledger: {e}"))?;
+            anyhow::ensure!(
+                stored
+                    == (
+                        header.hash.clone(),
+                        header.parent_hash.clone(),
+                        timestamp,
+                        base_fee,
+                        finality.manifest_digest.to_string(),
+                    ),
+                "Finalized header ledger conflicts at height {}",
+                header.number
+            );
+        }
+
+        let (current_status, intent_nonce, fill_emitted, terminal_emitted) =
+            sqlx::query_as::<_, (String, Option<i64>, bool, bool)>(
+                "
+                SELECT status, nonce, fill_emitted, terminal_emitted
+                FROM execution_intent
+                WHERE id = $1 AND chain_id = $2 AND wallet_address = $3 AND active
+                FOR UPDATE
+                ",
+            )
+            .bind(finality.intent_id)
+            .bind(chain_id)
+            .bind(finality.wallet_address)
+            .fetch_optional(&mut *transaction)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to lock intent for verified finality: {e}"))?
+            .ok_or_else(|| anyhow::anyhow!("Active finality intent was not found"))?;
+        anyhow::ensure!(
+            intent_nonce == Some(nonce)
+                && execution_transition_allowed(&current_status, finality.status),
+            "Intent cannot make the verified finality transition"
+        );
+
+        for (index, decision) in finality.decisions.iter().enumerate() {
+            let height_start = decision
+                .height_start
+                .map(i64::try_from)
+                .transpose()
+                .context("Verification height exceeds PostgreSQL BIGINT")?;
+            let height_end = decision
+                .height_end
+                .map(i64::try_from)
+                .transpose()
+                .context("Verification height exceeds PostgreSQL BIGINT")?;
+            let transition_key = format!(
+                "finality:{}:{}:{index}",
+                finality.intent_id, decision.read_class
+            );
+            sqlx::query(
+                "
+                INSERT INTO execution_verification_decision (
+                    intent_id, nonce, decision_class, read_class, height_start, height_end,
+                    manifest_version, manifest_digest, provider_ids, operator_ids,
+                    failure_domain_ids, response_class, normalized_value_digest,
+                    nonce_revision, outcome, transition_key
+                )
+                VALUES (
+                    $1, $2, 'finality', $3, $4, $5, $6, $7, $8, $9, $10,
+                    'all_valid', $11, $12, 'verified', $13
+                )
+                ",
+            )
+            .bind(finality.intent_id)
+            .bind(nonce)
+            .bind(decision.read_class)
+            .bind(height_start)
+            .bind(height_end)
+            .bind(finality.manifest_version)
+            .bind(finality.manifest_digest)
+            .bind(finality.provider_ids)
+            .bind(finality.operator_ids)
+            .bind(finality.failure_domain_ids)
+            .bind(&decision.normalized_value_digest)
+            .bind(revision)
+            .bind(transition_key)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to persist finality verification: {e}"))?;
+        }
+
+        let hash_result = sqlx::query(
+            "
+            UPDATE execution_transaction_hash
+            SET status = $3, block_number = $4, block_hash = $5,
+                receipt_success = $6, gas_used = $7, effective_gas_price = $8,
+                updated_at = NOW()
+            WHERE intent_id = $1 AND transaction_hash = $2
+            ",
+        )
+        .bind(finality.intent_id)
+        .bind(finality.transaction_hash)
+        .bind(finality.status.as_str())
+        .bind(block_number)
+        .bind(finality.block_hash)
+        .bind(finality.receipt_success)
+        .bind(gas_used)
+        .bind(finality.effective_gas_price)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to record verified finality receipt: {e}"))?;
+        anyhow::ensure!(
+            hash_result.rows_affected() == 1,
+            "Finality transaction hash was not found"
+        );
+
+        let active = !fill_emitted && !terminal_emitted;
+        sqlx::query(
+            "UPDATE execution_intent SET status = $2, active = $3, updated_at = NOW() WHERE id = $1",
+        )
+        .bind(finality.intent_id)
+        .bind(finality.status.as_str())
+        .bind(active)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to record verified finality intent: {e}"))?;
+
+        let transition_key = format!(
+            "{}:{}:{}:{}",
+            finality.status.as_str(),
+            finality.transaction_hash,
+            finality.block_number,
+            finality.block_hash
+        );
+        sqlx::query(
+            "
+            INSERT INTO execution_transaction_transition (
+                intent_id, transaction_hash_id, transition_key, from_status, to_status,
+                block_number, block_hash
+            )
+            SELECT $1, id, $3, $4, $5, $6, $7
+            FROM execution_transaction_hash
+            WHERE intent_id = $1 AND transaction_hash = $2
+            ",
+        )
+        .bind(finality.intent_id)
+        .bind(finality.transaction_hash)
+        .bind(transition_key)
+        .bind(current_status)
+        .bind(finality.status.as_str())
+        .bind(block_number)
+        .bind(finality.block_hash)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to record verified finality transition: {e}"))?;
+
+        let nonce_result = sqlx::query(
+            "
+            UPDATE execution_verification_nonce
+            SET next_canonical_nonce = $3, revision = revision + 1, updated_at = NOW()
+            WHERE chain_id = $1 AND wallet_address = $2
+              AND next_canonical_nonce = $4 AND revision = $5
+            ",
+        )
+        .bind(chain_id)
+        .bind(finality.wallet_address)
+        .bind(next_nonce)
+        .bind(nonce)
+        .bind(revision)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to advance canonical nonce ledger: {e}"))?;
+        anyhow::ensure!(
+            nonce_result.rows_affected() == 1,
+            "Canonical nonce ledger changed during finality transition"
+        );
+        transaction
+            .commit()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to commit verified finality transition: {e}"))?;
+        Ok(())
+    }
+
+    /// Loads one durable execution intent by ID.
+    pub(crate) async fn get_execution_intent(
+        &self,
+        intent_id: i64,
+    ) -> anyhow::Result<ExecutionIntentRow> {
+        sqlx::query_as::<_, ExecutionIntentRow>(
+            "
+            SELECT
+                id, schema_version, chain_id, wallet_address, nonce, purpose, status,
+                client_order_id, trader_id, strategy_id, account_id, instrument_id,
+                pool_address, transaction_to, transaction_input, transaction_value,
+                amount_in, created_block, acknowledgement_emitted, fill_emitted,
+                terminal_emitted, active
+            FROM execution_intent
+            WHERE id = $1
+            ",
+        )
+        .bind(intent_id)
+        .fetch_optional(&self.pool)
+        .await
+        .context("failed to load execution intent")?
+        .ok_or_else(|| anyhow::anyhow!("Execution intent {intent_id} was not found"))
+    }
+
+    /// Loads the active intent owned by a signer after any concurrent reservation completes.
     ///
     /// # Errors
     ///
@@ -3726,7 +7236,13 @@ impl BlockchainCacheDatabase {
     ) -> anyhow::Result<Option<ExecutionIntentRow>> {
         let chain_id_db = i32::try_from(chain_id)
             .with_context(|| format!("Chain ID {chain_id} exceeds PostgreSQL INTEGER"))?;
-        sqlx::query_as::<_, ExecutionIntentRow>(
+        let mut transaction = self
+            .pool
+            .begin_with("BEGIN ISOLATION LEVEL READ COMMITTED")
+            .await
+            .context("failed to start active execution intent reconciliation")?;
+        Self::lock_execution_signer(&mut transaction, chain_id, wallet_address).await?;
+        let intent = sqlx::query_as::<_, ExecutionIntentRow>(
             "
             SELECT
                 id, schema_version, chain_id, wallet_address, nonce, purpose, status,
@@ -3740,9 +7256,69 @@ impl BlockchainCacheDatabase {
         )
         .bind(chain_id_db)
         .bind(wallet_address)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *transaction)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to load active execution intent: {e}"))
+        .context("failed to load active execution intent")?;
+        transaction
+            .commit()
+            .await
+            .context("failed to complete active execution intent reconciliation")?;
+        Ok(intent)
+    }
+
+    async fn lock_execution_signer(
+        transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        chain_id: u32,
+        wallet_address: &str,
+    ) -> anyhow::Result<()> {
+        let lock = PgAdvisoryLock::new(format!(
+            "nautilus:blockchain:execution:{chain_id}:{}",
+            wallet_address.to_ascii_lowercase()
+        ));
+        let PgAdvisoryLockKey::BigInt(lock_key) = lock.key() else {
+            unreachable!("string advisory locks use the 64-bit key space");
+        };
+
+        // Transaction-scoped release makes row presence or absence authoritative to the next
+        // holder after an ambiguous reservation commit.
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(*lock_key)
+            .execute(&mut **transaction)
+            .await
+            .context("failed to acquire execution signer reservation fence")?;
+        Ok(())
+    }
+
+    /// Reports whether a released legacy intent still retains a broadcastable signature.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub async fn has_recoverable_signed_execution(
+        &self,
+        chain_id: u32,
+        wallet_address: &str,
+    ) -> anyhow::Result<bool> {
+        let chain_id_db = i32::try_from(chain_id)
+            .with_context(|| format!("Chain ID {chain_id} exceeds PostgreSQL INTEGER"))?;
+        sqlx::query_scalar::<_, bool>(
+            "
+            SELECT EXISTS (
+                SELECT 1
+                FROM execution_intent AS intent
+                JOIN execution_transaction_hash AS hash ON hash.intent_id = intent.id
+                WHERE intent.chain_id = $1
+                  AND intent.wallet_address = $2
+                  AND intent.status = 'recoverable'
+                  AND (hash.raw_transaction IS NOT NULL OR hash.sealed_transaction IS NOT NULL)
+            )
+            ",
+        )
+        .bind(chain_id_db)
+        .bind(wallet_address)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to inspect recoverable signed executions: {e}"))
     }
 
     /// Loads all transaction hashes for an intent in insertion order.
@@ -3757,7 +7333,8 @@ impl BlockchainCacheDatabase {
         sqlx::query_as::<_, ExecutionTransactionHashRow>(
             "
             SELECT
-                id, intent_id, chain_id, transaction_hash, raw_transaction, status,
+                id, intent_id, chain_id, transaction_hash, payload_expected,
+                raw_transaction, sealed_transaction, status,
                 block_number, block_hash, receipt_success, gas_used,
                 effective_gas_price, current
             FROM execution_transaction_hash
@@ -3769,104 +7346,6 @@ impl BlockchainCacheDatabase {
         .fetch_all(&self.pool)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to load execution transaction hashes: {e}"))
-    }
-
-    /// Attaches a canonical replacement which consumed the intent's signer nonce.
-    ///
-    /// The replacement bytes are unknown because standard JSON-RPC block responses expose
-    /// decoded transaction fields, not the original signed envelope.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the intent is not active, the hash conflicts, or persistence fails.
-    pub async fn add_execution_replacement_hash(
-        &self,
-        intent_id: i64,
-        chain_id: u32,
-        transaction_hash: &str,
-    ) -> anyhow::Result<ExecutionTransactionHashRow> {
-        let chain_id_db = i32::try_from(chain_id)
-            .with_context(|| format!("Chain ID {chain_id} exceeds PostgreSQL INTEGER"))?;
-        let mut transaction = self.pool.begin().await.map_err(|e| {
-            anyhow::anyhow!("Failed to start replacement transaction persistence: {e}")
-        })?;
-        let current_status = sqlx::query_scalar::<_, String>(
-            "SELECT status FROM execution_intent WHERE id = $1 AND active FOR UPDATE",
-        )
-        .bind(intent_id)
-        .fetch_optional(&mut *transaction)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to lock active execution intent {intent_id}: {e}"))?
-        .ok_or_else(|| anyhow::anyhow!("Active execution intent {intent_id} was not found"))?;
-        anyhow::ensure!(
-            execution_transition_allowed(&current_status, TransactionStatus::Replaced),
-            "Invalid execution transition for intent {intent_id}: {current_status} -> replaced"
-        );
-
-        sqlx::query(
-            "
-            UPDATE execution_transaction_hash
-            SET current = FALSE, status = 'replaced', updated_at = NOW()
-            WHERE intent_id = $1 AND current
-            ",
-        )
-        .bind(intent_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to retire replaced execution hash: {e}"))?;
-
-        let row = sqlx::query_as::<_, ExecutionTransactionHashRow>(
-            "
-            INSERT INTO execution_transaction_hash (
-                intent_id, chain_id, transaction_hash, status, current
-            ) VALUES ($1, $2, $3, 'replaced', TRUE)
-            ON CONFLICT (chain_id, transaction_hash) DO UPDATE
-            SET current = TRUE, updated_at = NOW()
-            WHERE execution_transaction_hash.intent_id = EXCLUDED.intent_id
-            RETURNING
-                id, intent_id, chain_id, transaction_hash, raw_transaction, status,
-                block_number, block_hash, receipt_success, gas_used,
-                effective_gas_price, current
-            ",
-        )
-        .bind(intent_id)
-        .bind(chain_id_db)
-        .bind(transaction_hash)
-        .fetch_optional(&mut *transaction)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to persist replacement hash {transaction_hash}: {e}"))?
-        .ok_or_else(|| {
-            anyhow::anyhow!("Replacement hash {transaction_hash} conflicts with another intent")
-        })?;
-
-        sqlx::query(
-            "UPDATE execution_intent SET status = 'replaced', updated_at = NOW() WHERE id = $1",
-        )
-        .bind(intent_id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to mark execution intent replaced: {e}"))?;
-        sqlx::query(
-            "
-            INSERT INTO execution_transaction_transition (
-                intent_id, transaction_hash_id, transition_key, from_status, to_status
-            ) VALUES ($1, $2, $3, $4, 'replaced')
-            ON CONFLICT (intent_id, transition_key) DO NOTHING
-            ",
-        )
-        .bind(intent_id)
-        .bind(row.id)
-        .bind(format!("replaced:{transaction_hash}"))
-        .bind(current_status)
-        .execute(&mut *transaction)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to record replacement transition: {e}"))?;
-
-        transaction
-            .commit()
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to commit replacement transaction: {e}"))?;
-        Ok(row)
     }
 
     /// Marks one order event as emitted after dispatch.
@@ -3987,6 +7466,128 @@ impl BlockchainCacheDatabase {
     }
 }
 
+fn execution_payload_state_from_row(
+    row: &sqlx::postgres::PgRow,
+) -> anyhow::Result<ExecutionPayloadState> {
+    Ok(ExecutionPayloadState {
+        deployment_id: row.try_get("deployment_id")?,
+        protocol_version: row.try_get("protocol_version")?,
+        operation: row.try_get("operation")?,
+        active_key_id: row.try_get("active_key_id")?,
+    })
+}
+
+fn validate_execution_payload_state(
+    state: &ExecutionPayloadState,
+    keys: &PayloadKeySet,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        state.protocol_version == EXECUTION_PAYLOAD_PROTOCOL_VERSION,
+        "Execution payload protocol version {} is not supported",
+        state.protocol_version
+    );
+    anyhow::ensure!(
+        state.deployment_id == keys.deployment_id(),
+        "Execution payload deployment ID does not match this database"
+    );
+    anyhow::ensure!(
+        state.active_key_id.as_slice() == keys.active_key_id(),
+        "Configured active payload key does not match the database active key"
+    );
+    Ok(())
+}
+
+async fn lock_execution_payload_operation(
+    transaction: &mut Transaction<'_, Postgres>,
+) -> anyhow::Result<()> {
+    let lock = PgAdvisoryLock::new("nautilus:blockchain:execution-payload");
+    let PgAdvisoryLockKey::BigInt(lock_key) = lock.key() else {
+        unreachable!("string advisory locks use the 64-bit key space");
+    };
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(*lock_key)
+        .execute(&mut **transaction)
+        .await
+        .context("failed to acquire execution payload operation fence")?;
+    Ok(())
+}
+
+async fn reserve_execution_payload_seal(
+    transaction: &mut Transaction<'_, Postgres>,
+    key_id: &[u8; 32],
+) -> anyhow::Result<()> {
+    let seals = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO execution_payload_key_state (key_id, seals) VALUES ($1, 1) \
+         ON CONFLICT (key_id) DO UPDATE SET seals = execution_payload_key_state.seals + 1 \
+         WHERE execution_payload_key_state.seals < $2 \
+         RETURNING seals",
+    )
+    .bind(key_id.as_slice())
+    .bind(EXECUTION_PAYLOAD_MAX_SEALS - 1)
+    .fetch_optional(&mut **transaction)
+    .await
+    .context("failed to reserve execution payload nonce use")?;
+    anyhow::ensure!(
+        seals.is_some(),
+        "Execution payload key reached its seal limit; rotate the active key before continuing"
+    );
+    Ok(())
+}
+
+async fn validate_execution_payload_key_inventory(
+    transaction: &mut Transaction<'_, Postgres>,
+    keys: &PayloadKeySet,
+) -> anyhow::Result<()> {
+    let envelopes = sqlx::query_scalar::<_, Vec<u8>>(
+        "SELECT DISTINCT substring(sealed_transaction FROM 1 FOR 33) \
+         FROM execution_transaction_hash \
+         WHERE sealed_transaction IS NOT NULL",
+    )
+    .fetch_all(&mut **transaction)
+    .await
+    .context("failed to inspect execution payload key inventory")?;
+
+    for header in envelopes {
+        anyhow::ensure!(
+            header.len() == 33,
+            "Stored execution payload has a truncated envelope header"
+        );
+        let mut envelope = header;
+        envelope.extend_from_slice(&[0; 12 + 16]);
+        let key_id = envelope_key_id(&envelope)?;
+        anyhow::ensure!(
+            keys.contains_key(&key_id),
+            "Stored execution payload requires unavailable key {}",
+            alloy::hex::encode(key_id)
+        );
+    }
+    Ok(())
+}
+
+async fn load_execution_intent(
+    transaction: &mut Transaction<'_, Postgres>,
+    intent_id: i64,
+) -> anyhow::Result<ExecutionIntentRow> {
+    sqlx::query_as::<_, ExecutionIntentRow>(
+        "
+        SELECT
+            id, schema_version, chain_id, wallet_address, nonce, purpose, status,
+            client_order_id, trader_id, strategy_id, account_id, instrument_id,
+            pool_address, transaction_to, transaction_input, transaction_value,
+            amount_in, created_block, acknowledgement_emitted, fill_emitted,
+            terminal_emitted, active
+        FROM execution_intent
+        WHERE id = $1
+        FOR SHARE
+        ",
+    )
+    .bind(intent_id)
+    .fetch_optional(&mut **transaction)
+    .await
+    .context("failed to load execution intent for payload authentication")?
+    .ok_or_else(|| anyhow::anyhow!("Execution intent {intent_id} was not found"))
+}
+
 fn execution_transition_allowed(current: &str, next: TransactionStatus) -> bool {
     if current == next.as_str() {
         return true;
@@ -4001,6 +7602,8 @@ fn execution_transition_allowed(current: &str, next: TransactionStatus) -> bool 
             next,
             TransactionStatus::Broadcast
                 | TransactionStatus::Included
+                | TransactionStatus::Finalized
+                | TransactionStatus::Reverted
                 | TransactionStatus::Replaced
                 | TransactionStatus::Dropped
                 | TransactionStatus::Reorged
@@ -4028,10 +7631,131 @@ fn execution_transition_allowed(current: &str, next: TransactionStatus) -> bool 
 }
 
 #[cfg(test)]
-mod tests {
-    use sqlx::postgres::PgConnectOptions;
+pub(crate) mod tests {
+    use std::time::Duration;
 
-    use super::BlockchainCacheDatabase;
+    use anyhow::Context;
+    use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+
+    use super::{BlockchainCacheDatabase, ExecutionVerifiedHeader};
+    use crate::rpc::verification::VERIFICATION_SCHEMA_VERSION;
+
+    pub(crate) struct ExecutionVerificationResume {
+        pub next_canonical_nonce: u64,
+        pub revision: u64,
+        pub finalized_headers: Vec<ExecutionVerifiedHeader>,
+    }
+
+    pub(crate) async fn connect_test_database(
+        pg_options: PgConnectOptions,
+    ) -> anyhow::Result<BlockchainCacheDatabase> {
+        let pool = PgPoolOptions::new()
+            .max_connections(32)
+            .min_connections(1)
+            .acquire_timeout(Duration::from_secs(3))
+            .connect_with(pg_options)
+            .await?;
+        Ok(BlockchainCacheDatabase { pool })
+    }
+
+    impl BlockchainCacheDatabase {
+        /// Loads the complete durable finalized-header ledger for tests
+        pub(crate) async fn load_execution_verification_resume(
+            &self,
+            chain_id: u32,
+            wallet_address: &str,
+            manifest_version: &str,
+            manifest_digest: &str,
+        ) -> anyhow::Result<Option<ExecutionVerificationResume>> {
+            let installed = sqlx::query_scalar::<_, i16>(
+                "SELECT version FROM execution_schema_version \
+                 WHERE component = 'evm_execution_verification'",
+            )
+            .fetch_optional(&self.pool)
+            .await
+            .context("failed to inspect execution verification schema")?;
+            let Some(installed) = installed else {
+                return Ok(None);
+            };
+            anyhow::ensure!(
+                installed <= VERIFICATION_SCHEMA_VERSION,
+                "Unsupported execution verification schema version {installed}"
+            );
+            let chain_id = i32::try_from(chain_id)
+                .context("Verification chain ID exceeds PostgreSQL INTEGER")?;
+            let current = sqlx::query_as::<_, (String, String, i64, i64)>(
+                "
+                SELECT manifest_version, manifest_digest, next_canonical_nonce, revision
+                FROM execution_verification_nonce
+                WHERE chain_id = $1 AND wallet_address = $2
+                ",
+            )
+            .bind(chain_id)
+            .bind(wallet_address)
+            .fetch_optional(&self.pool)
+            .await
+            .context("failed to load execution verification nonce position")?;
+            let Some((stored_version, stored_digest, nonce, revision)) = current else {
+                return Ok(None);
+            };
+            anyhow::ensure!(
+                stored_version == manifest_version && stored_digest == manifest_digest,
+                "Execution verification manifest identity changed"
+            );
+            let rows = sqlx::query_as::<_, (i64, String, String, i64, Option<String>, String)>(
+                "
+                SELECT number, hash, parent_hash, timestamp, base_fee_per_gas, manifest_digest
+                FROM execution_verified_finalized_header
+                WHERE chain_id = $1 AND wallet_address = $2
+                ORDER BY number
+                ",
+            )
+            .bind(chain_id)
+            .bind(wallet_address)
+            .fetch_all(&self.pool)
+            .await
+            .context("failed to load verified finalized header ledger")?;
+            let finalized_headers = rows
+                .into_iter()
+                .map(|(number, hash, parent_hash, timestamp, base_fee, digest)| {
+                    anyhow::ensure!(
+                        digest == manifest_digest,
+                        "Finalized header manifest identity changed"
+                    );
+                    Ok(ExecutionVerifiedHeader {
+                        number: u64::try_from(number)
+                            .context("Finalized header number is negative")?,
+                        hash,
+                        parent_hash,
+                        timestamp: u64::try_from(timestamp)
+                            .context("Finalized header timestamp is negative")?,
+                        base_fee_per_gas: base_fee
+                            .map(|value| {
+                                value.parse::<u128>().map_err(|_| {
+                                    anyhow::anyhow!("Finalized header base fee is invalid")
+                                })
+                            })
+                            .transpose()?,
+                    })
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            anyhow::ensure!(
+                !finalized_headers.is_empty()
+                    && finalized_headers.windows(2).all(|headers| {
+                        headers[1].number == headers[0].number.saturating_add(1)
+                            && headers[1].parent_hash == headers[0].hash
+                    }),
+                "Verified finalized header ledger is not continuous"
+            );
+            Ok(Some(ExecutionVerificationResume {
+                next_canonical_nonce: u64::try_from(nonce)
+                    .context("Canonical nonce is negative")?,
+                revision: u64::try_from(revision)
+                    .context("Canonical nonce revision is negative")?,
+                finalized_headers,
+            }))
+        }
+    }
 
     #[tokio::test]
     async fn connect_returns_err_for_unreachable_database() {

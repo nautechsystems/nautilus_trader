@@ -35,6 +35,14 @@ pub enum TransportError {
     #[error("handshake failed: {0}")]
     Handshake(String),
 
+    /// Server rejected the WebSocket HTTP upgrade.
+    #[error("WebSocket upgrade rejected with status {0}")]
+    UpgradeRejected(u16),
+
+    /// Proxy rejected the HTTP CONNECT request.
+    #[error("proxy CONNECT rejected with status {0}")]
+    ProxyConnectRejected(u16),
+
     /// URL was invalid or unsupported.
     #[error("invalid URL: {0}")]
     InvalidUrl(String),
@@ -159,6 +167,8 @@ mod tests {
             TransportError::InvalidUtf8,
             TransportError::Tls("bad".into()),
             TransportError::Handshake("bad".into()),
+            TransportError::UpgradeRejected(429),
+            TransportError::ProxyConnectRejected(503),
         ] {
             assert!(err.is_fatal(), "expected fatal: {err:?}");
             assert!(!err.is_closed(), "expected not closed: {err:?}");

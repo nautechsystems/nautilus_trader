@@ -247,7 +247,7 @@ pub fn parse_order_status_to_report(
         instrument_id,
         client_order_id,
         venue_order_id,
-        order_side,
+        order_side.into(),
         order_type,
         time_in_force,
         nautilus_status,
@@ -826,7 +826,7 @@ mod tests {
         None,
         None,
         None,
-        TrailingOffsetType::NoTrailingOffset
+        None
     )]
     #[case(
         "LMT",
@@ -839,7 +839,7 @@ mod tests {
         None,
         None,
         None,
-        TrailingOffsetType::NoTrailingOffset
+        None
     )]
     #[case(
         "IBALGO",
@@ -852,7 +852,7 @@ mod tests {
         None,
         None,
         None,
-        TrailingOffsetType::NoTrailingOffset
+        None
     )]
     #[case(
         "IBALGO",
@@ -865,7 +865,7 @@ mod tests {
         None,
         None,
         None,
-        TrailingOffsetType::NoTrailingOffset
+        None
     )]
     #[case(
         "MIT",
@@ -878,7 +878,7 @@ mod tests {
         Some(Price::new(180.0, 0)),
         None,
         None,
-        TrailingOffsetType::NoTrailingOffset
+        None
     )]
     #[case(
         "LIT",
@@ -891,7 +891,7 @@ mod tests {
         Some(Price::new(180.0, 0)),
         None,
         None,
-        TrailingOffsetType::NoTrailingOffset
+        None
     )]
     #[case(
         "STP",
@@ -904,7 +904,7 @@ mod tests {
         Some(Price::new(180.0, 0)),
         None,
         None,
-        TrailingOffsetType::NoTrailingOffset
+        None
     )]
     #[case(
         "STP LMT",
@@ -917,7 +917,7 @@ mod tests {
         Some(Price::new(180.0, 0)),
         None,
         None,
-        TrailingOffsetType::NoTrailingOffset
+        None
     )]
     #[case(
         "TRAIL LIMIT",
@@ -930,7 +930,7 @@ mod tests {
         Some(Price::new(185.0, 0)),
         Some(Decimal::from_str("0.25").unwrap()),
         Some(Decimal::from_str("2.5").unwrap()),
-        TrailingOffsetType::Price,
+        Some(TrailingOffsetType::Price),
     )]
     fn test_parse_order_status_to_report_maps_pricing_fields_by_order_type(
         #[case] ib_order_type: &str,
@@ -943,7 +943,7 @@ mod tests {
         #[case] expected_trigger_price: Option<Price>,
         #[case] expected_limit_offset: Option<Decimal>,
         #[case] expected_trailing_offset: Option<Decimal>,
-        #[case] expected_trailing_offset_type: TrailingOffsetType,
+        #[case] expected_trailing_offset_type: Option<TrailingOffsetType>,
     ) {
         let instrument_provider = create_test_instrument_provider();
         let instrument_id = create_test_instrument_id();
@@ -1039,7 +1039,10 @@ mod tests {
             report.trailing_offset,
             Some(Decimal::from_str("250").unwrap())
         );
-        assert_eq!(report.trailing_offset_type, TrailingOffsetType::BasisPoints);
+        assert_eq!(
+            report.trailing_offset_type,
+            Some(TrailingOffsetType::BasisPoints),
+        );
         assert_eq!(report.limit_offset, None);
     }
 

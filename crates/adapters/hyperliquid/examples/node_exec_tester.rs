@@ -20,7 +20,7 @@
 //! Run with: `cargo run --example hyperliquid-exec-tester --package nautilus-hyperliquid --features examples`
 //!
 //! Required credential environment variables:
-//! - `HYPERLIQUID_PK` (or `HYPERLIQUID_TESTNET_PK` for testnet).
+//! - `HYPERLIQUID_PK` (or `HYPERLIQUID_TESTNET_PK` for testnet)
 
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
@@ -37,6 +37,10 @@ use nautilus_model::{
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
+// WARNING: With `DRY_RUN = false`, this tester submits orders to the configured
+// environment and may use real funds. Set `DRY_RUN = true` to connect without
+// submitting orders or sending shutdown cancel/close commands.
+const DRY_RUN: bool = false;
 const HYPERLIQUID_ENVIRONMENT: HyperliquidEnvironment = HyperliquidEnvironment::Mainnet;
 const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "HYPERLIQUID-001";
@@ -96,12 +100,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from(STRATEGY_ID)),
-            external_order_claims: Some(vec![instrument_id]),
+            external_order_instrument_ids: Some(vec![instrument_id]),
             ..Default::default()
         })
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
+        .dry_run(DRY_RUN)
         .log_data(false)
         .open_position_on_start_qty(order_qty.as_decimal())
         .tob_offset_ticks(1)

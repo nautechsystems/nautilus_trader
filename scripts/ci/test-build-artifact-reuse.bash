@@ -127,7 +127,7 @@ if grep -Eq '^build ' "$CARGO_LOG"; then
   fail "DST smoke tests used a redundant Cargo build"
 fi
 grep -Fq \
-  'nextest run --config target."cfg(all())".rustflags=["--cfg","madsim"] -p nautilus-common -p nautilus-core -p nautilus-network -p nautilus-execution -p nautilus-live --lib --tests --features simulation' \
+  'nextest run --config target."cfg(all())".rustflags=["--cfg","madsim"] -p nautilus-common -p nautilus-core -p nautilus-event-store -p nautilus-network -p nautilus-execution -p nautilus-live --lib --tests --features simulation' \
   "$CARGO_LOG" || fail "Standard-precision DST tests did not compile the full package scope together"
 grep -Fq \
   'nextest run --config target."cfg(all())".rustflags=["--cfg","madsim"] -p nautilus-common -p nautilus-execution --lib --tests --features simulation,high-precision' \
@@ -163,22 +163,129 @@ run_changed_script() {
     bash "$REPO_ROOT/scripts/$script" > "$RUST_CHECK_LOG"
 }
 
+# Both hooks and the Makefile gates read one feature definition, so assert against
+# it rather than a copy that can drift out from under them.
+BASE_FEATURES=$(bash "$REPO_ROOT/scripts/cargo-features.bash")
+
 run_changed_script clippy-changed.sh ""
 grep -Fq \
-  "clippy --workspace --lib --bins --tests --features arrow,ffi,python,high-precision,streaming,defi --profile nextest -- -D warnings" \
-  "$CARGO_LOG" || fail "Clippy features do not match make check-code"
+  "clippy --workspace --lib --bins --tests --features $BASE_FEATURES --profile nextest -- -D warnings" \
+  "$CARGO_LOG" || fail "Clippy features do not match the shared feature set"
 
 run_changed_script doc-changed.sh ""
 grep -Fq \
-  "doc --workspace --no-deps --quiet --features ffi,python,high-precision,defi --profile nextest" \
+  "doc --workspace --no-deps --quiet --features $BASE_FEATURES --profile nextest" \
   "$CARGO_LOG" || fail "Cargo doc clean-checkout fallback did not cover the workspace"
+
+# The shared feature definition changes every crate's feature graph, so a change
+# to it alone must force a full workspace run rather than be filtered out.
+run_changed_script clippy-changed.sh "scripts/cargo-features.bash"
+grep -Fq \
+  "clippy --workspace --lib --bins --tests --features $BASE_FEATURES --profile nextest -- -D warnings" \
+  "$CARGO_LOG" || fail "Shared feature change did not force a full workspace Clippy run"
+
+run_changed_script doc-changed.sh "scripts/cargo-features.bash"
+grep -Fq \
+  "doc --workspace --no-deps --quiet --features $BASE_FEATURES --profile nextest" \
+  "$CARGO_LOG" || fail "Shared feature change did not force a full workspace doc run"
+
+# The harness mock git discards pathspecs and pins CHANGED_BASE_SHA empty, so it
+# cannot reach the "$base"..HEAD pathspec that decides the CI path. Drive that
+# branch against a real repository with only cargo mocked.
+CARGO_ONLY_BIN="$CASE_ROOT/cargo-only-bin"
+mkdir -p "$CARGO_ONLY_BIN"
+cp "$MOCK_BIN/cargo" "$CARGO_ONLY_BIN/cargo"
+
+real_git_repo() {
+  local repo="$CASE_ROOT/$1"
+
+  mkdir -p "$repo/scripts" "$repo/crates/core/src"
+  git -c init.defaultBranch=develop init -q "$repo"
+  git -C "$repo" config user.email "script-tests@example.com"
+  git -C "$repo" config user.name "Script Tests"
+  git -C "$repo" config commit.gpgsign false
+  cp "$REPO_ROOT/scripts/cargo-features.bash" "$repo/scripts/"
+  cp "$REPO_ROOT/scripts/clippy-changed.sh" "$REPO_ROOT/scripts/doc-changed.sh" "$repo/scripts/"
+  printf '%s\n' 'pub fn run() {}' > "$repo/crates/core/src/lib.rs"
+  git -C "$repo" add -A
+  git -C "$repo" commit -qm "Base state"
+  printf '%s' "$repo"
+}
+
+run_against_real_git() {
+  local repo="$1"
+  local script="$2"
+  local base="$3"
+
+  : > "$CARGO_LOG"
+  (
+    cd "$repo" &&
+      PATH="$CARGO_ONLY_BIN:$PATH" \
+        CARGO_CI_PROFILE=nextest \
+        CARGO_LOG="$CARGO_LOG" \
+        CHANGED_BASE_SHA="$base" \
+        bash "scripts/$script"
+  ) > "$RUST_CHECK_LOG" 2>&1 || true
+}
+
+feature_repo=$(real_git_repo "feature-only")
+feature_base=$(git -C "$feature_repo" rev-parse HEAD)
+printf '%s\n' '# widen the shared set' >> "$feature_repo/scripts/cargo-features.bash"
+git -C "$feature_repo" commit -aqm "Change the shared feature set"
+for script in clippy-changed.sh doc-changed.sh; do
+  run_against_real_git "$feature_repo" "$script" "$feature_base"
+  grep -Fq -- "--workspace" "$CARGO_LOG" ||
+    fail "Feature-only change did not reach a full workspace run through CHANGED_BASE_SHA: $script"
+done
+
+# A feature change alongside one crate must still widen to the workspace rather
+# than scope to that crate.
+mixed_repo=$(real_git_repo "feature-and-crate")
+mixed_base=$(git -C "$mixed_repo" rev-parse HEAD)
+printf '%s\n' '# widen the shared set' >> "$mixed_repo/scripts/cargo-features.bash"
+printf '%s\n' 'pub fn added() {}' >> "$mixed_repo/crates/core/src/lib.rs"
+git -C "$mixed_repo" commit -aqm "Change the feature set and one crate"
+for script in clippy-changed.sh doc-changed.sh; do
+  run_against_real_git "$mixed_repo" "$script" "$mixed_base"
+  grep -Fq -- "--workspace" "$CARGO_LOG" ||
+    fail "Feature change with a crate change did not widen to the workspace: $script"
+done
+
+# A command substitution inside a here-string does not trip errexit, so a missing
+# or empty feature definition must be rejected explicitly rather than reaching
+# cargo as an empty feature list.
+missing_repo=$(real_git_repo "missing-feature-script")
+missing_base=$(git -C "$missing_repo" rev-parse HEAD)
+printf '%s\n' 'pub fn added() {}' >> "$missing_repo/crates/core/src/lib.rs"
+git -C "$missing_repo" commit -aqm "Touch a crate"
+rm "$missing_repo/scripts/cargo-features.bash"
+for script in clippy-changed.sh doc-changed.sh; do
+  run_against_real_git "$missing_repo" "$script" "$missing_base"
+  [[ ! -s "$CARGO_LOG" ]] || fail "Missing feature definition still invoked cargo: $script"
+done
+
+empty_repo=$(real_git_repo "empty-feature-script")
+empty_base=$(git -C "$empty_repo" rev-parse HEAD)
+printf '%s\n' 'pub fn added() {}' >> "$empty_repo/crates/core/src/lib.rs"
+git -C "$empty_repo" commit -aqm "Touch a crate"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$empty_repo/scripts/cargo-features.bash"
+for script in clippy-changed.sh doc-changed.sh; do
+  run_against_real_git "$empty_repo" "$script" "$empty_base"
+  [[ ! -s "$CARGO_LOG" ]] || fail "Empty feature definition still invoked cargo: $script"
+done
 
 grep -Fq '            crates/network/.*\.rs|' "$REPO_ROOT/.pre-commit-config.yaml" ||
   fail "Non-Linux network Clippy hook does not select Rust source"
 grep -Fq '            crates/network/Cargo\.toml|' "$REPO_ROOT/.pre-commit-config.yaml" ||
   fail "Non-Linux network Clippy hook is not limited to Rust build inputs"
 
-for config in .config/nextest.toml .cargo/audit.toml deny.toml tools.toml crates/model/cbindgen.toml; do
+for config in \
+  .config/nextest.toml \
+  .cargo/audit.toml \
+  .nautilus-engineering/tools.toml \
+  deny.toml \
+  tools.toml \
+  crates/model/cbindgen.toml; do
   run_changed_script clippy-changed.sh "$config"
   [[ ! -s "$CARGO_LOG" ]] || fail "Non-build TOML triggered Clippy: $config"
   grep -Fq "No Rust build inputs detected; skipping clippy" "$RUST_CHECK_LOG" ||

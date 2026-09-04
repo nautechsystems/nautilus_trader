@@ -39,8 +39,7 @@ use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::BarType,
     enums::{
-        LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce,
-        TriggerType,
+        LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce, TriggerType,
     },
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
@@ -1599,14 +1598,6 @@ async fn test_http_cancel_all_orders_routes_spread_request() {
 }
 
 #[rstest]
-#[case::invalid_side(
-    InstrumentId::from("ETH-USD-SWAP_ETH-USD-231229.OKX"),
-    OrderSide::NoOrderSide,
-    OrderType::Limit,
-    Some(TimeInForce::Gtc),
-    Some(Price::from("1.25")),
-    "Invalid order side"
-)]
 #[case::market_order(
     InstrumentId::from("ETH-USD-SWAP_ETH-USD-231229.OKX"),
     OrderSide::Buy,
@@ -4960,7 +4951,7 @@ async fn test_http_request_position_status_reports_preserves_long_short_legs() {
     assert_eq!(reports.len(), 2);
     assert_eq!(reports[0].account_id, account_id);
     assert_eq!(reports[0].instrument_id, instrument_id);
-    assert_eq!(reports[0].position_side, PositionSideSpecified::Long);
+    assert_eq!(reports[0].position_side, PositionSide::Long);
     assert_eq!(reports[0].quantity, Quantity::from("5.00"));
     assert_eq!(
         reports[0].signed_decimal_qty,
@@ -4981,7 +4972,7 @@ async fn test_http_request_position_status_reports_preserves_long_short_legs() {
 
     assert_eq!(reports[1].account_id, account_id);
     assert_eq!(reports[1].instrument_id, instrument_id);
-    assert_eq!(reports[1].position_side, PositionSideSpecified::Short);
+    assert_eq!(reports[1].position_side, PositionSide::Short);
     assert_eq!(reports[1].quantity, Quantity::from("2.00"));
     assert_eq!(
         reports[1].signed_decimal_qty,
@@ -5063,8 +5054,16 @@ async fn test_http_get_fills_returns_data() {
 
 #[rstest]
 #[tokio::test]
-async fn test_http_network_error_invalid_port() {
-    let base_url = "http://127.0.0.1:1".to_string();
+async fn test_http_network_error_connection_closed() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind test listener");
+    let addr = listener.local_addr().expect("test listener address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept test connection");
+        drop(stream);
+    });
+    let base_url = format!("http://{addr}");
 
     let client = OKXRawHttpClient::new(
         Some(base_url),
@@ -5083,6 +5082,8 @@ async fn test_http_network_error_invalid_port() {
         .unwrap();
 
     let result = client.get_instruments(params).await;
+
+    server.await.expect("test server task");
 
     assert!(result.is_err());
     match result {

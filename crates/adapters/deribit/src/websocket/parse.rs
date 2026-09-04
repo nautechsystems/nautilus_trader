@@ -27,8 +27,8 @@ use nautilus_model::{
     },
     enums::{
         AggregationSource, AggressorSide, BarAggregation, BookAction, GreeksConvention,
-        LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified, PriceType,
-        RecordFlag, TimeInForce,
+        LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, PriceType, RecordFlag,
+        TimeInForce,
     },
     events::{OrderAccepted, OrderCanceled, OrderExpired, OrderUpdated},
     identifiers::{
@@ -769,7 +769,7 @@ pub fn parse_user_order_msg(
         instrument_id,
         None, // order_list_id
         venue_order_id,
-        order_side,
+        order_side.into(),
         order_type,
         time_in_force,
         order_status,
@@ -958,9 +958,9 @@ pub fn parse_position_status_report(
         .unwrap_or_else(|_| Quantity::zero(size_precision));
 
     let position_side = match position.direction.as_str() {
-        "buy" => PositionSideSpecified::Long,
-        "sell" => PositionSideSpecified::Short,
-        _ => PositionSideSpecified::Flat,
+        "buy" => PositionSide::Long,
+        "sell" => PositionSide::Short,
+        _ => PositionSide::Flat,
     };
 
     // Use average_price directly as it's already a Decimal
@@ -1307,7 +1307,7 @@ mod tests {
         http::models::{DeribitInstrument, DeribitJsonRpcResponse},
     };
 
-    /// Helper function to create a test instrument (BTC-PERPETUAL).
+    /// Creates a BTC-PERPETUAL test instrument.
     fn test_perpetual_instrument() -> InstrumentAny {
         let json = load_test_json("http_get_instruments.json");
         let response: DeribitJsonRpcResponse<Vec<DeribitInstrument>> =
@@ -1538,14 +1538,14 @@ mod tests {
         // Check first bid
         let first_bid = &deltas.deltas[1];
         assert_eq!(first_bid.action, BookAction::Add);
-        assert_eq!(first_bid.order.side, OrderSide::Buy);
+        assert_eq!(first_bid.order.side, OrderSide::Buy.into());
         assert_eq!(first_bid.order.price, instrument.make_price(42500.0));
         assert_eq!(first_bid.order.size, instrument.make_qty(1000.0, None));
 
         // Check first ask
         let first_ask = &deltas.deltas[6];
         assert_eq!(first_ask.action, BookAction::Add);
-        assert_eq!(first_ask.order.side, OrderSide::Sell);
+        assert_eq!(first_ask.order.side, OrderSide::Sell.into());
         assert_eq!(first_ask.order.price, instrument.make_price(42501.0));
         assert_eq!(first_ask.order.size, instrument.make_qty(800.0, None));
 
@@ -1574,28 +1574,28 @@ mod tests {
         // Check first bid - "change" action
         let bid_change = &deltas.deltas[0];
         assert_eq!(bid_change.action, BookAction::Update);
-        assert_eq!(bid_change.order.side, OrderSide::Buy);
+        assert_eq!(bid_change.order.side, OrderSide::Buy.into());
         assert_eq!(bid_change.order.price, instrument.make_price(42500.0));
         assert_eq!(bid_change.order.size, instrument.make_qty(950.0, None));
 
         // Check second bid - "new" action
         let bid_new = &deltas.deltas[1];
         assert_eq!(bid_new.action, BookAction::Add);
-        assert_eq!(bid_new.order.side, OrderSide::Buy);
+        assert_eq!(bid_new.order.side, OrderSide::Buy.into());
         assert_eq!(bid_new.order.price, instrument.make_price(42498.5));
         assert_eq!(bid_new.order.size, instrument.make_qty(300.0, None));
 
         // Check first ask - "delete" action
         let ask_delete = &deltas.deltas[2];
         assert_eq!(ask_delete.action, BookAction::Delete);
-        assert_eq!(ask_delete.order.side, OrderSide::Sell);
+        assert_eq!(ask_delete.order.side, OrderSide::Sell.into());
         assert_eq!(ask_delete.order.price, instrument.make_price(42501.0));
         assert_eq!(ask_delete.order.size, instrument.make_qty(0.0, None));
 
         // Check second ask - "change" action
         let ask_change = &deltas.deltas[3];
         assert_eq!(ask_change.action, BookAction::Update);
-        assert_eq!(ask_change.order.side, OrderSide::Sell);
+        assert_eq!(ask_change.order.side, OrderSide::Sell.into());
         assert_eq!(ask_change.order.price, instrument.make_price(42501.5));
         assert_eq!(ask_change.order.size, instrument.make_qty(700.0, None));
 
@@ -1704,14 +1704,14 @@ mod tests {
         // Verify first bid was parsed correctly from ["new", 42500.0, 1000.0]
         let first_bid = &deltas.deltas[1];
         assert_eq!(first_bid.action, BookAction::Add);
-        assert_eq!(first_bid.order.side, OrderSide::Buy);
+        assert_eq!(first_bid.order.side, OrderSide::Buy.into());
         assert_eq!(first_bid.order.price, instrument.make_price(42500.0));
         assert_eq!(first_bid.order.size, instrument.make_qty(1000.0, None));
 
         // Verify first ask was parsed correctly from ["new", 42501.0, 800.0]
         let first_ask = &deltas.deltas[6];
         assert_eq!(first_ask.action, BookAction::Add);
-        assert_eq!(first_ask.order.side, OrderSide::Sell);
+        assert_eq!(first_ask.order.side, OrderSide::Sell.into());
         assert_eq!(first_ask.order.price, instrument.make_price(42501.0));
         assert_eq!(first_ask.order.size, instrument.make_qty(800.0, None));
     }
@@ -1763,27 +1763,27 @@ mod tests {
         // Verify first bid "change" action was parsed correctly from ["change", 42500.0, 950.0]
         let bid_change = &deltas.deltas[0];
         assert_eq!(bid_change.action, BookAction::Update);
-        assert_eq!(bid_change.order.side, OrderSide::Buy);
+        assert_eq!(bid_change.order.side, OrderSide::Buy.into());
         assert_eq!(bid_change.order.price, instrument.make_price(42500.0));
         assert_eq!(bid_change.order.size, instrument.make_qty(950.0, None));
 
         // Verify second bid "new" action was parsed correctly from ["new", 42498.5, 300.0]
         let bid_new = &deltas.deltas[1];
         assert_eq!(bid_new.action, BookAction::Add);
-        assert_eq!(bid_new.order.side, OrderSide::Buy);
+        assert_eq!(bid_new.order.side, OrderSide::Buy.into());
         assert_eq!(bid_new.order.price, instrument.make_price(42498.5));
         assert_eq!(bid_new.order.size, instrument.make_qty(300.0, None));
 
         // Verify first ask "delete" action was parsed correctly from ["delete", 42501.0, 0.0]
         let ask_delete = &deltas.deltas[2];
         assert_eq!(ask_delete.action, BookAction::Delete);
-        assert_eq!(ask_delete.order.side, OrderSide::Sell);
+        assert_eq!(ask_delete.order.side, OrderSide::Sell.into());
         assert_eq!(ask_delete.order.price, instrument.make_price(42501.0));
 
         // Verify second ask "change" action was parsed correctly from ["change", 42501.5, 700.0]
         let ask_change = &deltas.deltas[3];
         assert_eq!(ask_change.action, BookAction::Update);
-        assert_eq!(ask_change.order.side, OrderSide::Sell);
+        assert_eq!(ask_change.order.side, OrderSide::Sell.into());
         assert_eq!(ask_change.order.price, instrument.make_price(42501.5));
         assert_eq!(ask_change.order.size, instrument.make_qty(700.0, None));
     }
@@ -1829,14 +1829,14 @@ mod tests {
         // Verify first bid was parsed correctly from [89532.5, 254900.0]
         let first_bid = &deltas.deltas[1];
         assert_eq!(first_bid.action, BookAction::Add);
-        assert_eq!(first_bid.order.side, OrderSide::Buy);
+        assert_eq!(first_bid.order.side, OrderSide::Buy.into());
         assert_eq!(first_bid.order.price, instrument.make_price(89532.5));
         assert_eq!(first_bid.order.size, instrument.make_qty(254900.0, None));
 
         // Verify first ask was parsed correctly from [89533.0, 91570.0]
         let first_ask = &deltas.deltas[11];
         assert_eq!(first_ask.action, BookAction::Add);
-        assert_eq!(first_ask.order.side, OrderSide::Sell);
+        assert_eq!(first_ask.order.side, OrderSide::Sell.into());
         assert_eq!(first_ask.order.price, instrument.make_price(89533.0));
         assert_eq!(first_ask.order.size, instrument.make_qty(91570.0, None));
 
@@ -2268,7 +2268,7 @@ mod tests {
             report.client_order_id.unwrap().to_string(),
             "O-19700101-000000-001-001-1"
         );
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, OrderSide::Buy.into());
         assert_eq!(report.order_type, OrderType::Limit);
         assert_eq!(report.time_in_force, TimeInForce::Gtc);
         assert_eq!(report.order_status, OrderStatus::Accepted);

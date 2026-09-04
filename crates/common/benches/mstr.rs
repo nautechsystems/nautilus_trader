@@ -16,7 +16,7 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use nautilus_common::msgbus::{MStr, Pattern, Topic};
+use nautilus_common::msgbus::{Endpoint, MStr, Pattern, Topic};
 use ustr::Ustr;
 
 const TOPIC_STR: &str = "data.quotes.BINANCE.ETHUSDT";
@@ -38,6 +38,13 @@ fn bench_mstr_from_str(c: &mut Criterion) {
         });
     });
 
+    group.bench_function("Endpoint", |b| {
+        b.iter(|| {
+            let endpoint: MStr<Endpoint> = black_box(TOPIC_STR).into();
+            black_box(endpoint)
+        });
+    });
+
     group.finish();
 }
 
@@ -50,6 +57,13 @@ fn bench_mstr_from_ustr(c: &mut Criterion) {
         b.iter(|| {
             let topic: MStr<Topic> = black_box(ustr).into();
             black_box(topic)
+        });
+    });
+
+    group.bench_function("Endpoint", |b| {
+        b.iter(|| {
+            let endpoint: MStr<Endpoint> = black_box(ustr).into();
+            black_box(endpoint)
         });
     });
 

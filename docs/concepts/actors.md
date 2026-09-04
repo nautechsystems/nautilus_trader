@@ -14,7 +14,10 @@ adds order-management capabilities.
 
 ## Basic Python example
 
-Actors support configuration through a pattern similar to strategies.
+Actors support configuration through a pattern similar to strategies. Declare custom fields as
+keyword-only arguments and accept `**_kwargs` so the base fields (`actor_id` and the log settings)
+pass through to `DataActorConfig.__new__`, which reads them from the same call. A positional
+argument would be matched against `actor_id` instead, raising a `TypeError`.
 
 ```python
 from nautilus_trader.common import DataActor
@@ -24,7 +27,8 @@ from nautilus_trader.model import BarType
 
 
 class MyActorConfig(DataActorConfig):
-    def __init__(self, bar_type: BarType, **_kwargs) -> None:
+    def __init__(self, *, bar_type: BarType, **_kwargs) -> None:
+        super().__init__()
         self.bar_type = bar_type
 
 
@@ -418,7 +422,8 @@ from nautilus_trader.model import BarType
 
 
 class MyActorConfig(DataActorConfig):
-    def __init__(self, bar_type: BarType, **_kwargs) -> None:
+    def __init__(self, *, bar_type: BarType, **_kwargs) -> None:
+        super().__init__()
         self.bar_type = bar_type
 
 

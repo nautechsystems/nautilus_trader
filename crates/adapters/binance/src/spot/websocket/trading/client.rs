@@ -27,15 +27,15 @@ use std::{
     fmt::Debug,
     num::NonZeroU32,
     sync::{
-        Arc, LazyLock, Mutex,
+        Arc, LazyLock,
         atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
+    time::Duration,
 };
 
 use arc_swap::ArcSwap;
-use nautilus_common::live::get_runtime;
-use nautilus_core::string::secret::REDACTED;
-use nautilus_live::SocketControl;
+use nautilus_core::string::secret::{REDACTED, SecretString};
+use nautilus_live::{SocketControl, task::TaskGroup};
 use nautilus_network::{
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
@@ -44,6 +44,7 @@ use nautilus_network::{
         channel_message_handler,
     },
 };
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -88,7 +89,7 @@ pub fn binance_ws_order_quota() -> Quota {
 /// complementing the HTTP client with lower-latency order submission.
 #[derive(Clone)]
 pub struct BinanceSpotWsTradingClient {
-    url: String,
+    url: SecretString,
     credential: Arc<SigningCredential>,
     heartbeat: Option<u64>,
     signal: Arc<AtomicBool>,
@@ -97,11 +98,12 @@ pub struct BinanceSpotWsTradingClient {
     cmd_tx:
         Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<BinanceSpotWsTradingCommand>>>,
     out_rx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<BinanceSpotWsTradingMessage>>>>,
-    task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
+    handler_tasks: Arc<TaskGroup>,
+    connect_lock: Arc<tokio::sync::Mutex<()>>,
     request_id_counter: Arc<AtomicU64>,
-    cancellation_token: CancellationToken,
+    cancellation_token: Arc<Mutex<CancellationToken>>,
     transport_backend: TransportBackend,
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
     recv_window_ms: Option<u64>,
     socket_control: Option<SocketControl>,
 }
@@ -109,7 +111,7 @@ pub struct BinanceSpotWsTradingClient {
 impl Debug for BinanceSpotWsTradingClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(BinanceSpotWsTradingClient))
-            .field("url", &self.url)
+            .field("url", &REDACTED)
             .field("credential", &REDACTED)
             .field("heartbeat", &self.heartbeat)
             .finish_non_exhaustive()
@@ -126,7 +128,8 @@ impl BinanceSpotWsTradingClient {
         heartbeat: Option<u64>,
         transport_backend: TransportBackend,
     ) -> Self {
-        let url = url.unwrap_or_else(|| BINANCE_SPOT_SBE_WS_API_URL.to_string());
+        let url =
+            SecretString::from(url.unwrap_or_else(|| BINANCE_SPOT_SBE_WS_API_URL.to_string()));
         let credential = Arc::new(SigningCredential::new(api_key, api_secret));
 
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -142,9 +145,10 @@ impl BinanceSpotWsTradingClient {
             user_data_tracker: AuthTracker::new(),
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: Arc::new(Mutex::new(None)),
-            task_handle: None,
+            handler_tasks: Arc::new(TaskGroup::new()),
+            connect_lock: Arc::new(tokio::sync::Mutex::new(())),
             request_id_counter: Arc::new(AtomicU64::new(1)),
-            cancellation_token: CancellationToken::new(),
+            cancellation_token: Arc::new(Mutex::new(CancellationToken::new())),
             transport_backend,
             proxy_url: None,
             recv_window_ms: None,
@@ -155,7 +159,7 @@ impl BinanceSpotWsTradingClient {
     /// Configures the proxy used by the WebSocket connection.
     #[must_use]
     pub fn with_proxy(mut self, proxy_url: Option<String>) -> Self {
-        self.proxy_url = proxy_url;
+        self.proxy_url = proxy_url.map(SecretString::from);
         self
     }
 
@@ -254,12 +258,26 @@ impl BinanceSpotWsTradingClient {
     /// # Errors
     ///
     /// Returns an error if connection fails.
-    // Mutex poisoning is not documented individually
-    #[expect(clippy::missing_panics_doc)]
     pub async fn connect(&mut self) -> BinanceWsApiResult<()> {
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _connect_guard = connect_lock.lock().await;
+
+        if !self.handler_tasks.is_open() || !self.handler_tasks.is_empty() {
+            self.disconnect_handler().await?;
+            self.handler_tasks.start_generation().map_err(|e| {
+                BinanceWsApiError::ClientError(format!(
+                    "failed to start WebSocket handler task generation: {e}"
+                ))
+            })?;
+        }
+        let handler_spawner = self.handler_tasks.spawner().map_err(|e| {
+            BinanceWsApiError::ClientError(format!(
+                "failed to acquire WebSocket handler task spawner: {e}"
+            ))
+        })?;
         self.signal.store(false, Ordering::Relaxed);
         self.user_data_tracker.invalidate();
-        self.cancellation_token = CancellationToken::new();
+        *self.cancellation_token.lock() = CancellationToken::new();
 
         let (raw_handler, raw_rx) = channel_message_handler();
         let ping_handler: PingHandler = Arc::new(move |_| {});
@@ -270,7 +288,7 @@ impl BinanceSpotWsTradingClient {
         )];
 
         let config = WebSocketConfig {
-            url: self.url.clone(),
+            url: self.url.expose_secret().to_owned(),
             headers,
             heartbeat_interval_secs: self.heartbeat,
             heartbeat_payload: None,
@@ -283,7 +301,10 @@ impl BinanceSpotWsTradingClient {
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         };
 
         // Configure rate limits for order operations
@@ -311,7 +332,7 @@ impl BinanceSpotWsTradingClient {
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel();
 
         {
-            let mut rx_guard = self.out_rx.lock().expect("Mutex poisoned");
+            let mut rx_guard = self.out_rx.lock();
             *rx_guard = Some(out_rx);
         }
 
@@ -335,9 +356,9 @@ impl BinanceSpotWsTradingClient {
             control.register(move || reconnect_handle.request_reconnect());
         }
 
-        let cancellation_token = self.cancellation_token.clone();
+        let cancellation_token = self.cancellation_token.lock().clone();
 
-        let handle = get_runtime().spawn(async move {
+        let handler_task = async move {
             tokio::select! {
                 () = cancellation_token.cancelled() => {
                     log::debug!("Handler task cancelled");
@@ -346,15 +367,41 @@ impl BinanceSpotWsTradingClient {
                     log::debug!("Handler run completed");
                 }
             }
-        });
+        };
 
-        self.task_handle = Some(Arc::new(handle));
+        if let Err(e) = handler_spawner.spawn(handler_task) {
+            if let Some(control) = &self.socket_control {
+                control.deregister();
+            }
+            self.out_rx.lock().take();
+            return Err(BinanceWsApiError::HandlerUnavailable(format!(
+                "failed to register handler task: {e}"
+            )));
+        }
 
         Ok(())
     }
 
     /// Disconnects from the WebSocket API server.
-    pub async fn disconnect(&mut self) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the handler task fails or does not stop after abort.
+    pub async fn disconnect(&mut self) -> BinanceWsApiResult<()> {
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _connect_guard = connect_lock.lock().await;
+
+        self.disconnect_handler().await
+    }
+
+    pub(crate) fn begin_shutdown(&self) {
+        self.handler_tasks.begin_shutdown();
+        self.signal.store(true, Ordering::Relaxed);
+        self.cancellation_token.lock().cancel();
+    }
+
+    async fn disconnect_handler(&self) -> BinanceWsApiResult<()> {
+        self.handler_tasks.begin_shutdown();
         self.signal.store(true, Ordering::Relaxed);
 
         if let Err(e) = self
@@ -366,17 +413,20 @@ impl BinanceSpotWsTradingClient {
             log::debug!("Failed to send disconnect command: {e}");
         }
 
-        self.cancellation_token.cancel();
+        self.cancellation_token.lock().cancel();
 
-        if let Some(handle) = self.task_handle.take()
-            && let Ok(handle) = Arc::try_unwrap(handle)
-        {
-            let _result = handle.await;
-        }
+        let result = self
+            .handler_tasks
+            .finish_shutdown(Duration::from_secs(2), Duration::from_secs(2))
+            .await
+            .map_err(|e| {
+                BinanceWsApiError::ClientError(format!("handler task shutdown failed: {e}"))
+            });
 
         if let Some(control) = &self.socket_control {
             control.deregister();
         }
+        result
     }
 
     /// Places a new order via WebSocket API.
@@ -476,21 +526,17 @@ impl BinanceSpotWsTradingClient {
     /// Receives the next message from the handler.
     ///
     /// Returns `None` if the receiver is closed or not initialized.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the internal output receiver mutex is poisoned.
     pub async fn recv(&self) -> Option<BinanceSpotWsTradingMessage> {
         // Take the receiver out of the mutex to avoid holding it across await
         let rx_opt = {
-            let mut rx_guard = self.out_rx.lock().expect("Mutex poisoned");
+            let mut rx_guard = self.out_rx.lock();
             rx_guard.take()
         };
 
         if let Some(mut rx) = rx_opt {
             let result = rx.recv().await;
 
-            let mut rx_guard = self.out_rx.lock().expect("Mutex poisoned");
+            let mut rx_guard = self.out_rx.lock();
             *rx_guard = Some(rx);
             result
         } else {
@@ -546,9 +592,27 @@ mod tests {
         .with_recv_window(Some(45_000));
 
         assert_eq!(
-            client.proxy_url.as_deref(),
+            client.proxy_url.as_ref().map(SecretString::expose_secret),
             Some("http://proxy.example:8080")
         );
         assert_eq!(client.recv_window_ms, Some(45_000));
+    }
+
+    #[rstest]
+    fn test_url_is_redacted() {
+        let url = "wss://stream.example/ws/private-listen-key";
+        let client = BinanceSpotWsTradingClient::new(
+            Some(url.to_string()),
+            "api-key".to_string(),
+            "hmac-secret".to_string(),
+            None,
+            TransportBackend::default(),
+        );
+
+        let debug = format!("{client:?}");
+
+        assert_eq!(client.url.expose_secret(), url);
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains("private-listen-key"));
     }
 }

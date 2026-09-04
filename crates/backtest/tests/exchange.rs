@@ -17,20 +17,22 @@ use std::{
     cell::{Cell, RefCell},
     rc::Rc,
     str::FromStr,
-    sync::Mutex,
 };
 
 use ahash::AHashMap;
-use jiff::civil::Date;
+use jiff::{
+    civil::{Date, Time, Weekday},
+    tz::TimeZone,
+};
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use nautilus_backtest::{
     config::SimulatedVenueConfig,
     exchange::SimulatedExchange,
     execution_client::BacktestExecutionClient,
     modules::{
-        AccountAdjustmentError, AccountAdjustmentOutcome, ExchangeContext,
-        FXRolloverInterestModule, SimulationModule, SimulationModuleResult,
-        fx_rollover::InterestRateRecord,
+        AccountAdjustmentError, AccountAdjustmentOutcome, CfdSwapModule, CfdSwapRate,
+        ExchangeContext, FXRolloverInterestModule, SimulationModule, SimulationModuleAny,
+        SimulationModuleHandle, SimulationModuleResult, fx_rollover::InterestRateRecord,
     },
 };
 use nautilus_common::{
@@ -72,7 +74,7 @@ use nautilus_model::{
     },
     instruments::{
         CryptoOption, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny, OptionContract,
-        stubs::{audusd_sim, crypto_perpetual_ethusdt, gbpusd_sim, xbtusd_bitmex},
+        stubs::{audusd_sim, cfd_gold, crypto_perpetual_ethusdt, gbpusd_sim, xbtusd_bitmex},
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
@@ -82,6 +84,7 @@ use nautilus_model::{
     },
 };
 use nautilus_testkit::cache::TestCacheDatabaseControl;
+use parking_lot::Mutex;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -458,15 +461,18 @@ fn test_readded_instrument_does_not_collide_generated_fill_ids(
         .unwrap();
 
     let fill_timestamp = UnixNanos::from(2);
-    exchange.borrow_mut().process_quote_tick(&QuoteTick::new(
-        first_instrument.id(),
-        Price::from("1000.00"),
-        Price::from("1001.00"),
-        Quantity::from("10.000"),
-        Quantity::from("10.000"),
-        UnixNanos::from(1),
-        UnixNanos::from(1),
-    ));
+    exchange
+        .borrow_mut()
+        .process_quote_tick(&QuoteTick::new(
+            first_instrument.id(),
+            Price::from("1000.00"),
+            Price::from("1001.00"),
+            Quantity::from("10.000"),
+            Quantity::from("10.000"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        ))
+        .unwrap();
     let pre_readd_order = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(first_instrument.id())
         .client_order_id(ClientOrderId::from("O-READD-PRE"))
@@ -482,15 +488,18 @@ fn test_readded_instrument_does_not_collide_generated_fill_ids(
         .unwrap();
 
     for instrument in [&first_instrument, &second_instrument] {
-        exchange.borrow_mut().process_quote_tick(&QuoteTick::new(
-            instrument.id(),
-            Price::from("1000.00"),
-            Price::from("1001.00"),
-            Quantity::from("10.000"),
-            Quantity::from("10.000"),
-            UnixNanos::from(1),
-            UnixNanos::from(1),
-        ));
+        exchange
+            .borrow_mut()
+            .process_quote_tick(&QuoteTick::new(
+                instrument.id(),
+                Price::from("1000.00"),
+                Price::from("1001.00"),
+                Quantity::from("10.000"),
+                Quantity::from("10.000"),
+                UnixNanos::from(1),
+                UnixNanos::from(1),
+            ))
+            .unwrap();
     }
 
     let first_order = OrderTestBuilder::new(OrderType::Limit)
@@ -562,7 +571,10 @@ fn test_same_timestamp_fills_follow_matching_engine_registration_order(
                 UnixNanos::from(1),
                 UnixNanos::from(1),
             );
-            exchange.borrow_mut().process_quote_tick(&initial_quote);
+            exchange
+                .borrow_mut()
+                .process_quote_tick(&initial_quote)
+                .unwrap();
 
             let client_order_id = ClientOrderId::from(format!("O-{rebuild}-{index}").as_str());
             let order = OrderTestBuilder::new(OrderType::Limit)
@@ -585,7 +597,10 @@ fn test_same_timestamp_fills_follow_matching_engine_registration_order(
                 None,
                 None,
             );
-            exchange.borrow_mut().process_instrument_status(closed);
+            exchange
+                .borrow_mut()
+                .process_instrument_status(closed)
+                .unwrap();
 
             let crossing_quote = QuoteTick::new(
                 instrument.id(),
@@ -596,7 +611,10 @@ fn test_same_timestamp_fills_follow_matching_engine_registration_order(
                 UnixNanos::from(100),
                 UnixNanos::from(100),
             );
-            exchange.borrow_mut().process_quote_tick(&crossing_quote);
+            exchange
+                .borrow_mut()
+                .process_quote_tick(&crossing_quote)
+                .unwrap();
 
             let reopened = InstrumentStatus::new(
                 instrument.id(),
@@ -609,7 +627,10 @@ fn test_same_timestamp_fills_follow_matching_engine_registration_order(
                 None,
                 None,
             );
-            exchange.borrow_mut().process_instrument_status(reopened);
+            exchange
+                .borrow_mut()
+                .process_instrument_status(reopened)
+                .unwrap();
         }
 
         saving_handler.clear();
@@ -652,7 +673,10 @@ fn test_exchange_process_quote_tick(crypto_perpetual_ethusdt: CryptoPerpetual) {
         UnixNanos::default(),
         UnixNanos::default(),
     );
-    exchange.borrow_mut().process_quote_tick(&quote_tick);
+    exchange
+        .borrow_mut()
+        .process_quote_tick(&quote_tick)
+        .unwrap();
 
     let best_bid_price = exchange
         .borrow()
@@ -726,7 +750,10 @@ fn test_exchange_process_trade_tick(crypto_perpetual_ethusdt: CryptoPerpetual) {
         UnixNanos::default(),
         UnixNanos::default(),
     );
-    exchange.borrow_mut().process_trade_tick(&trade_tick);
+    exchange
+        .borrow_mut()
+        .process_trade_tick(&trade_tick)
+        .unwrap();
 
     let best_bid_price = exchange
         .borrow()
@@ -783,7 +810,7 @@ fn test_option_limit_order_crossing_bbo_fills_as_taker(
         .unwrap();
 
     let quote = matching_option_quote(&instrument, "100.00", "101.00", UnixNanos::from(1));
-    exchange.borrow_mut().process_quote_tick(&quote);
+    exchange.borrow_mut().process_quote_tick(&quote).unwrap();
     let order = matching_option_limit_order(
         instrument.id(),
         ClientOrderId::from("O-OPT-TAKER"),
@@ -854,8 +881,14 @@ fn test_submit_order_list_routes_mixed_instrument_legs_to_own_matching_engine(
         UnixNanos::from(1),
         UnixNanos::from(1),
     );
-    exchange.borrow_mut().process_quote_tick(&eth_quote);
-    exchange.borrow_mut().process_quote_tick(&btc_quote);
+    exchange
+        .borrow_mut()
+        .process_quote_tick(&eth_quote)
+        .unwrap();
+    exchange
+        .borrow_mut()
+        .process_quote_tick(&btc_quote)
+        .unwrap();
 
     let eth_order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(eth_instrument.id())
@@ -981,8 +1014,14 @@ fn test_open_order_accessors_filter_by_instrument_id(crypto_perpetual_ethusdt: C
         UnixNanos::from(1),
         UnixNanos::from(1),
     );
-    exchange.borrow_mut().process_quote_tick(&eth_quote);
-    exchange.borrow_mut().process_quote_tick(&btc_quote);
+    exchange
+        .borrow_mut()
+        .process_quote_tick(&eth_quote)
+        .unwrap();
+    exchange
+        .borrow_mut()
+        .process_quote_tick(&btc_quote)
+        .unwrap();
 
     // Both prices are away from their market, so each order rests rather than fills.
     let eth_bid = OrderTestBuilder::new(OrderType::Limit)
@@ -1094,7 +1133,7 @@ fn test_option_resting_limit_order_fills_as_maker_when_bbo_trades_through(
         .unwrap();
 
     let quote = matching_option_quote(&instrument, "100.00", "101.00", UnixNanos::from(1));
-    exchange.borrow_mut().process_quote_tick(&quote);
+    exchange.borrow_mut().process_quote_tick(&quote).unwrap();
     let order = matching_option_limit_order(
         instrument.id(),
         ClientOrderId::from("O-OPT-MAKER"),
@@ -1121,7 +1160,8 @@ fn test_option_resting_limit_order_fills_as_maker_when_bbo_trades_through(
     let trade_through_quote = matching_option_trade_through_quote(&instrument, side);
     exchange
         .borrow_mut()
-        .process_quote_tick(&trade_through_quote);
+        .process_quote_tick(&trade_through_quote)
+        .unwrap();
 
     let messages = saving_handler.get_messages();
     let fill = matching_option_fill(&messages, order.client_order_id());
@@ -1213,34 +1253,27 @@ fn matching_option_contract(kind: OptionKind) -> InstrumentAny {
         OptionKind::Call => "AAPL240315C00150000",
         OptionKind::Put => "AAPL240315P00150000",
     };
-    InstrumentAny::OptionContract(OptionContract::new(
-        InstrumentId::from(format!("{symbol}.{venue}").as_str()),
-        Symbol::from(symbol),
-        AssetClass::Equity,
-        Some(Ustr::from(venue.as_str())),
-        Ustr::from("AAPL"),
-        kind,
-        Price::from("150.00"),
-        Currency::USD(),
-        UnixNanos::default(),
-        UnixNanos::from(2_000_000_000_000_000_000u64),
-        2,
-        Price::from("0.01"),
-        Quantity::from(100),
-        Quantity::from(1),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ))
+    InstrumentAny::OptionContract(
+        OptionContract::builder()
+            .instrument_id(InstrumentId::from(format!("{symbol}.{venue}").as_str()))
+            .raw_symbol(Symbol::from(symbol))
+            .asset_class(AssetClass::Equity)
+            .exchange(Ustr::from(venue.as_str()))
+            .underlying(Ustr::from("AAPL"))
+            .option_kind(kind)
+            .strike_price(Price::from("150.00"))
+            .currency(Currency::USD())
+            .activation_ns(UnixNanos::default())
+            .expiration_ns(UnixNanos::from(2_000_000_000_000_000_000u64))
+            .price_precision(2)
+            .price_increment(Price::from("0.01"))
+            .multiplier(Quantity::from(100))
+            .lot_size(Quantity::from(1))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    )
 }
 
 fn matching_crypto_option(kind: OptionKind) -> InstrumentAny {
@@ -1249,38 +1282,30 @@ fn matching_crypto_option(kind: OptionKind) -> InstrumentAny {
         OptionKind::Call => "BTC-28JUN24-50000-C",
         OptionKind::Put => "BTC-28JUN24-50000-P",
     };
-    InstrumentAny::CryptoOption(CryptoOption::new(
-        InstrumentId::from(format!("{symbol}.{venue}").as_str()),
-        Symbol::from(symbol),
-        Currency::from("BTC"),
-        Currency::from("USD"),
-        Currency::from("BTC"),
-        false,
-        kind,
-        Price::from("50000.00"),
-        UnixNanos::default(),
-        UnixNanos::from(2_000_000_000_000_000_000u64),
-        2,
-        1,
-        Price::from("0.01"),
-        Quantity::from("0.1"),
-        Some(Quantity::from(1)),
-        Some(Quantity::from(1)),
-        None,
-        Some(Quantity::from("0.1")),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ))
+    InstrumentAny::CryptoOption(
+        CryptoOption::builder()
+            .instrument_id(InstrumentId::from(format!("{symbol}.{venue}").as_str()))
+            .raw_symbol(Symbol::from(symbol))
+            .underlying(Currency::from("BTC"))
+            .quote_currency(Currency::from("USD"))
+            .settlement_currency(Currency::from("BTC"))
+            .is_inverse(false)
+            .option_kind(kind)
+            .strike_price(Price::from("50000.00"))
+            .activation_ns(UnixNanos::default())
+            .expiration_ns(UnixNanos::from(2_000_000_000_000_000_000u64))
+            .price_precision(2)
+            .size_precision(1)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.1"))
+            .multiplier(Quantity::from(1))
+            .lot_size(Quantity::from(1))
+            .min_quantity(Quantity::from("0.1"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    )
 }
 
 fn matching_option_quote(
@@ -1306,7 +1331,6 @@ fn matching_option_trade_through_quote(instrument: &InstrumentAny, side: OrderSi
         OrderSide::Sell => {
             matching_option_quote(instrument, "102.00", "103.00", UnixNanos::from(3))
         }
-        _ => panic!("Expected buy or sell option order side"),
     }
 }
 
@@ -1342,7 +1366,7 @@ fn test_exchange_process_bar_last_bar_spec(crypto_perpetual_ethusdt: CryptoPerpe
         UnixNanos::default(),
         UnixNanos::default(),
     );
-    exchange.borrow_mut().process_bar(bar);
+    exchange.borrow_mut().process_bar(bar).unwrap();
 
     // this will be processed as ticks so both bid and ask will be the same as close of the bar
     let best_bid_price = exchange
@@ -1392,8 +1416,8 @@ fn test_exchange_process_bar_bid_ask_bar_spec(crypto_perpetual_ethusdt: CryptoPe
     );
 
     // process them
-    exchange.borrow_mut().process_bar(bar_bid);
-    exchange.borrow_mut().process_bar(bar_ask);
+    exchange.borrow_mut().process_bar(bar_bid).unwrap();
+    exchange.borrow_mut().process_bar(bar_ask).unwrap();
 
     // current bid and ask prices will be the corresponding close of the ask and bid bar
     let best_bid_price = exchange
@@ -1450,8 +1474,14 @@ fn test_exchange_process_orderbook_delta(crypto_perpetual_ethusdt: CryptoPerpetu
     );
 
     // process both deltas
-    exchange.borrow_mut().process_order_book_delta(delta_buy);
-    exchange.borrow_mut().process_order_book_delta(delta_sell);
+    exchange
+        .borrow_mut()
+        .process_order_book_delta(delta_buy)
+        .unwrap();
+    exchange
+        .borrow_mut()
+        .process_order_book_delta(delta_sell)
+        .unwrap();
 
     let book = exchange
         .borrow()
@@ -1521,7 +1551,8 @@ fn test_exchange_process_orderbook_deltas(crypto_perpetual_ethusdt: CryptoPerpet
     // process both deltas
     exchange
         .borrow_mut()
-        .process_order_book_deltas(&orderbook_deltas);
+        .process_order_book_deltas(&orderbook_deltas)
+        .unwrap();
 
     let book = exchange
         .borrow()
@@ -1570,7 +1601,8 @@ fn test_exchange_process_instrument_status(crypto_perpetual_ethusdt: CryptoPerpe
 
     exchange
         .borrow_mut()
-        .process_instrument_status(instrument_status);
+        .process_instrument_status(instrument_status)
+        .unwrap();
 
     let market_status = exchange
         .borrow()
@@ -1761,15 +1793,16 @@ fn test_process_funding_rate_settles_open_position(crypto_perpetual_ethusdt: Cry
             UnixNanos::from(2),
             UnixNanos::from(2),
         ));
-    assert_eq!(scheduled_first, Some(settlement_ns));
-    assert_eq!(scheduled, Some(settlement_ns));
+    assert_eq!(scheduled_first.unwrap(), Some(settlement_ns));
+    assert_eq!(scheduled.unwrap(), Some(settlement_ns));
     assert!(account_saver.get_messages().is_empty());
     assert!(position_saver.get_messages().is_empty());
     assert!(settlement_saver.get_messages().is_empty());
 
     exchange
         .borrow_mut()
-        .process_funding_settlement(crypto_perpetual_ethusdt.id, settlement_ns);
+        .process_funding_settlement(crypto_perpetual_ethusdt.id, settlement_ns)
+        .unwrap();
 
     let position = cache.borrow().position_owned(&position_id).unwrap();
     let account_states = account_saver.get_messages();
@@ -1864,12 +1897,14 @@ fn test_process_funding_rate_restores_position_when_database_update_fails(
             Some(settlement_ns),
             UnixNanos::from(2),
             UnixNanos::from(2),
-        ));
+        ))
+        .unwrap();
     database_control.set_fail_update_position(true);
 
     exchange
         .borrow_mut()
-        .process_funding_settlement(crypto_perpetual_ethusdt.id, settlement_ns);
+        .process_funding_settlement(crypto_perpetual_ethusdt.id, settlement_ns)
+        .unwrap();
 
     let cached_position = cache.borrow().position_owned(&position_id).unwrap();
     assert_eq!(cached_position.adjustments, adjustments_before);
@@ -1880,7 +1915,8 @@ fn test_process_funding_rate_restores_position_when_database_update_fails(
     database_control.set_fail_update_position(false);
     exchange
         .borrow_mut()
-        .process_funding_settlement(crypto_perpetual_ethusdt.id, settlement_ns);
+        .process_funding_settlement(crypto_perpetual_ethusdt.id, settlement_ns)
+        .unwrap();
     assert_eq!(settlement_saver.get_messages().len(), 1);
 }
 
@@ -1918,8 +1954,8 @@ fn test_process_funding_rate_returns_instrument_boundary() {
             UnixNanos::from(2),
         ));
 
-    assert_eq!(first_scheduled, Some(first_boundary));
-    assert_eq!(second_scheduled, Some(second_boundary));
+    assert_eq!(first_scheduled.unwrap(), Some(first_boundary));
+    assert_eq!(second_scheduled.unwrap(), Some(second_boundary));
 }
 
 #[rstest]
@@ -1984,11 +2020,13 @@ fn test_process_funding_rate_invalid_notional_emits_nothing_and_can_retry() {
             Some(settlement_ns),
             UnixNanos::from(2),
             UnixNanos::from(2),
-        ));
+        ))
+        .unwrap();
 
     exchange
         .borrow_mut()
-        .process_funding_settlement(inverse.id, settlement_ns);
+        .process_funding_settlement(inverse.id, settlement_ns)
+        .unwrap();
     assert!(settlement_saver.get_messages().is_empty());
     assert!(
         cache
@@ -2010,7 +2048,8 @@ fn test_process_funding_rate_invalid_notional_emits_nothing_and_can_retry() {
         .unwrap();
     exchange
         .borrow_mut()
-        .process_funding_settlement(inverse.id, settlement_ns);
+        .process_funding_settlement(inverse.id, settlement_ns)
+        .unwrap();
 
     assert_eq!(settlement_saver.get_messages().len(), 1);
     assert_eq!(
@@ -2081,7 +2120,8 @@ fn test_process_funding_rate_uses_midpoint_and_credits_short_position(
             0,
             UnixNanos::from(2),
             UnixNanos::from(2),
-        ));
+        ))
+        .unwrap();
     exchange
         .borrow_mut()
         .process_order_book_delta(OrderBookDelta::new(
@@ -2097,7 +2137,8 @@ fn test_process_funding_rate_uses_midpoint_and_credits_short_position(
             1,
             UnixNanos::from(2),
             UnixNanos::from(2),
-        ));
+        ))
+        .unwrap();
 
     let settlement_ns = UnixNanos::from(3);
     let scheduled = exchange
@@ -2112,7 +2153,8 @@ fn test_process_funding_rate_uses_midpoint_and_credits_short_position(
         ));
     exchange
         .borrow_mut()
-        .process_funding_settlement(crypto_perpetual_ethusdt.id, settlement_ns);
+        .process_funding_settlement(crypto_perpetual_ethusdt.id, settlement_ns)
+        .unwrap();
 
     let position = cache.borrow().position_owned(&position_id).unwrap();
     let account_states = account_saver.get_messages();
@@ -2120,7 +2162,7 @@ fn test_process_funding_rate_uses_midpoint_and_credits_short_position(
         panic!("expected one AccountState");
     };
 
-    assert_eq!(scheduled, Some(settlement_ns));
+    assert_eq!(scheduled.unwrap(), Some(settlement_ns));
     assert_eq!(position.realized_pnl, Some(Money::from("1 USDT")));
     assert_eq!(account_state.balances[0].total, Money::from("1001 USDT"));
 }
@@ -2177,9 +2219,10 @@ fn test_process_funding_rate_without_open_positions_emits_no_settlement(
         ));
     exchange
         .borrow_mut()
-        .process_funding_settlement(crypto_perpetual_ethusdt.id, settlement_ns);
+        .process_funding_settlement(crypto_perpetual_ethusdt.id, settlement_ns)
+        .unwrap();
 
-    assert_eq!(scheduled, Some(settlement_ns));
+    assert_eq!(scheduled.unwrap(), Some(settlement_ns));
     assert!(account_saver.get_messages().is_empty());
     assert!(position_saver.get_messages().is_empty());
     assert!(settlement_saver.get_messages().is_empty());
@@ -2250,7 +2293,8 @@ fn test_process_funding_rate_does_not_double_settle_boundary_update(
     exchange.borrow().set_clock_time(settlement_ns);
     exchange
         .borrow_mut()
-        .process_funding_settlement(crypto_perpetual_ethusdt.id, settlement_ns);
+        .process_funding_settlement(crypto_perpetual_ethusdt.id, settlement_ns)
+        .unwrap();
     let immediate = exchange
         .borrow_mut()
         .process_funding_rate(FundingRateUpdate::new(
@@ -2265,8 +2309,8 @@ fn test_process_funding_rate_does_not_double_settle_boundary_update(
     let position = cache.borrow().position_owned(&position_id).unwrap();
     let account_states = account_saver.get_messages();
 
-    assert_eq!(scheduled, Some(settlement_ns));
-    assert_eq!(immediate, None);
+    assert_eq!(scheduled.unwrap(), Some(settlement_ns));
+    assert_eq!(immediate.unwrap(), None);
     assert_eq!(account_states.len(), 1);
     assert_eq!(position.realized_pnl, Some(Money::from("-1 USDT")));
     assert_eq!(account_states[0].balances[0].total, Money::from("999 USDT"));
@@ -2333,7 +2377,8 @@ fn test_process_funding_rate_settles_only_on_interval_boundary(
             None,
             off_boundary_ns,
             off_boundary_ns,
-        ));
+        ))
+        .unwrap();
     assert!(account_saver.get_messages().is_empty());
 
     let boundary_ns = UnixNanos::from(120_000_000_000);
@@ -2347,7 +2392,8 @@ fn test_process_funding_rate_settles_only_on_interval_boundary(
             None,
             boundary_ns,
             boundary_ns,
-        ));
+        ))
+        .unwrap();
 
     let position = cache.borrow().position_owned(&position_id).unwrap();
     let account_states = account_saver.get_messages();
@@ -3331,7 +3377,7 @@ fn test_process_iterates_matching_engines_after_commands(
         UnixNanos::from(1),
         UnixNanos::from(1),
     );
-    exchange.borrow_mut().process_quote_tick(&quote);
+    exchange.borrow_mut().process_quote_tick(&quote).unwrap();
 
     // Create a passive buy limit below the ask (should NOT fill)
     let order = OrderTestBuilder::new(OrderType::Limit)
@@ -3403,11 +3449,11 @@ struct CapturingLogger {
 
 impl CapturingLogger {
     fn clear(&self) {
-        self.messages.lock().unwrap().clear();
+        self.messages.lock().clear();
     }
 
     fn messages(&self) -> Vec<(Level, String)> {
-        self.messages.lock().unwrap().clone()
+        self.messages.lock().clone()
     }
 }
 
@@ -3420,7 +3466,6 @@ impl Log for CapturingLogger {
         if self.enabled(record.metadata()) {
             self.messages
                 .lock()
-                .unwrap()
                 .push((record.level(), record.args().to_string()));
         }
     }
@@ -3440,24 +3485,94 @@ struct AdjustmentSimulationModule {
     sequence: Rc<RefCell<Vec<String>>>,
 }
 
-impl SimulationModule for AdjustmentSimulationModule {
-    fn pre_process(&self, _data: &Data) {}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FailingModuleHook {
+    PreProcess,
+    Process,
+    Acknowledge,
+    LogDiagnostics,
+    Reset,
+}
 
-    fn process(&self, _ts_now: UnixNanos, _ctx: &ExchangeContext) -> SimulationModuleResult {
+#[derive(Debug)]
+struct FailingSimulationModule {
+    hook: FailingModuleHook,
+}
+
+impl SimulationModule for FailingSimulationModule {
+    fn pre_process(&self, _data: &Data) -> anyhow::Result<()> {
+        if self.hook == FailingModuleHook::PreProcess {
+            anyhow::bail!("module boom");
+        }
+        Ok(())
+    }
+
+    fn process(
+        &self,
+        _ts_now: UnixNanos,
+        _ctx: &ExchangeContext,
+    ) -> anyhow::Result<SimulationModuleResult> {
+        if self.hook == FailingModuleHook::Process {
+            anyhow::bail!("module boom");
+        }
+        Ok(if self.hook == FailingModuleHook::Acknowledge {
+            SimulationModuleResult::Completed(Vec::new())
+        } else {
+            SimulationModuleResult::NotReady
+        })
+    }
+
+    fn acknowledge(&self, _outcomes: &[AccountAdjustmentOutcome]) -> anyhow::Result<()> {
+        if self.hook == FailingModuleHook::Acknowledge {
+            anyhow::bail!("module boom");
+        }
+        Ok(())
+    }
+
+    fn log_diagnostics(&self) -> anyhow::Result<()> {
+        if self.hook == FailingModuleHook::LogDiagnostics {
+            anyhow::bail!("module boom");
+        }
+        Ok(())
+    }
+
+    fn reset(&self) -> anyhow::Result<()> {
+        if self.hook == FailingModuleHook::Reset {
+            anyhow::bail!("module boom");
+        }
+        Ok(())
+    }
+}
+
+impl SimulationModule for AdjustmentSimulationModule {
+    fn pre_process(&self, _data: &Data) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn process(
+        &self,
+        _ts_now: UnixNanos,
+        _ctx: &ExchangeContext,
+    ) -> anyhow::Result<SimulationModuleResult> {
         self.sequence
             .borrow_mut()
             .push(format!("process-{}", self.label));
 
-        SimulationModuleResult::Completed(self.adjustments.clone())
+        Ok(SimulationModuleResult::Completed(self.adjustments.clone()))
     }
 
-    fn acknowledge(&self, outcomes: &[AccountAdjustmentOutcome]) {
+    fn acknowledge(&self, outcomes: &[AccountAdjustmentOutcome]) -> anyhow::Result<()> {
         self.outcomes.borrow_mut().extend_from_slice(outcomes);
+        Ok(())
     }
 
-    fn log_diagnostics(&self) {}
+    fn log_diagnostics(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
 
-    fn reset(&self) {}
+    fn reset(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 
 impl MockSimulationModule {
@@ -3467,27 +3582,36 @@ impl MockSimulationModule {
 }
 
 impl SimulationModule for MockSimulationModule {
-    fn pre_process(&self, _data: &Data) {
+    fn pre_process(&self, _data: &Data) -> anyhow::Result<()> {
         self.counts
             .pre_process
             .set(self.counts.pre_process.get() + 1);
+        Ok(())
     }
 
-    fn process(&self, _ts_now: UnixNanos, _ctx: &ExchangeContext) -> SimulationModuleResult {
+    fn process(
+        &self,
+        _ts_now: UnixNanos,
+        _ctx: &ExchangeContext,
+    ) -> anyhow::Result<SimulationModuleResult> {
         self.counts.process.set(self.counts.process.get() + 1);
-        SimulationModuleResult::Completed(Vec::new())
+        Ok(SimulationModuleResult::Completed(Vec::new()))
     }
 
-    fn acknowledge(&self, _outcomes: &[AccountAdjustmentOutcome]) {}
+    fn acknowledge(&self, _outcomes: &[AccountAdjustmentOutcome]) -> anyhow::Result<()> {
+        Ok(())
+    }
 
-    fn log_diagnostics(&self) {
+    fn log_diagnostics(&self) -> anyhow::Result<()> {
         self.counts
             .log_diagnostics
             .set(self.counts.log_diagnostics.get() + 1);
+        Ok(())
     }
 
-    fn reset(&self) {
+    fn reset(&self) -> anyhow::Result<()> {
         self.counts.reset.set(self.counts.reset.get() + 1);
+        Ok(())
     }
 }
 
@@ -3495,12 +3619,17 @@ fn get_exchange_with_module(
     venue: Venue,
     counts: MockModuleCounts,
 ) -> Rc<RefCell<SimulatedExchange>> {
-    get_exchange_with_modules(venue, vec![Box::new(MockSimulationModule::new(counts))])
+    get_exchange_with_modules(
+        venue,
+        vec![SimulationModuleHandle::new(MockSimulationModule::new(
+            counts,
+        ))],
+    )
 }
 
 fn get_exchange_with_modules(
     venue: Venue,
-    modules: Vec<Box<dyn SimulationModule>>,
+    modules: Vec<SimulationModuleHandle>,
 ) -> Rc<RefCell<SimulatedExchange>> {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let clock = Rc::new(RefCell::new(TestClock::new()));
@@ -3557,10 +3686,72 @@ fn test_module_pre_process_called_on_quote(crypto_perpetual_ethusdt: CryptoPerpe
         UnixNanos::default(),
         UnixNanos::default(),
     );
-    exchange.borrow_mut().process_quote_tick(&quote);
+    exchange.borrow_mut().process_quote_tick(&quote).unwrap();
 
     assert_eq!(counts.pre_process.get(), 1);
     assert_eq!(counts.process.get(), 0);
+}
+
+#[rstest]
+#[case(FailingModuleHook::PreProcess, "pre_process")]
+#[case(FailingModuleHook::Process, "process")]
+#[case(FailingModuleHook::Acknowledge, "acknowledge")]
+#[case(FailingModuleHook::LogDiagnostics, "log_diagnostics")]
+#[case(FailingModuleHook::Reset, "reset")]
+fn test_module_hook_failures_propagate_with_context(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] hook: FailingModuleHook,
+    #[case] method: &str,
+) {
+    let exchange = get_exchange_with_modules(
+        Venue::new("BINANCE"),
+        vec![SimulationModuleHandle::new(FailingSimulationModule {
+            hook,
+        })],
+    );
+    exchange
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CryptoPerpetual(
+            crypto_perpetual_ethusdt.clone(),
+        ))
+        .unwrap();
+    let quote = QuoteTick::new(
+        crypto_perpetual_ethusdt.id,
+        Price::from("1000.00"),
+        Price::from("1001.00"),
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+
+    let result = match hook {
+        FailingModuleHook::PreProcess => exchange.borrow_mut().process_quote_tick(&quote),
+        FailingModuleHook::Process | FailingModuleHook::Acknowledge => {
+            exchange.borrow_mut().process_modules(UnixNanos::default())
+        }
+        FailingModuleHook::LogDiagnostics => exchange.borrow().log_diagnostics(),
+        FailingModuleHook::Reset => exchange.borrow_mut().reset(),
+    };
+
+    let method_error = format!("Simulation module 0 {method} failed: module boom");
+    let expected = if hook == FailingModuleHook::Reset {
+        format!("Simulation module failure requires exchange reset: {method_error}")
+    } else {
+        method_error.clone()
+    };
+    assert_eq!(result.unwrap_err().to_string(), expected);
+
+    if hook != FailingModuleHook::LogDiagnostics {
+        assert_eq!(
+            exchange
+                .borrow_mut()
+                .process_modules(UnixNanos::default())
+                .unwrap_err()
+                .to_string(),
+            format!("Simulation module failure requires exchange reset: {method_error}")
+        );
+    }
 }
 
 #[rstest]
@@ -3581,7 +3772,10 @@ fn test_module_pre_process_called_on_instrument_status(crypto_perpetual_ethusdt:
         None,
         None,
     );
-    exchange.borrow_mut().process_instrument_status(status);
+    exchange
+        .borrow_mut()
+        .process_instrument_status(status)
+        .unwrap();
 
     assert_eq!(counts.pre_process.get(), 1);
     assert_eq!(counts.process.get(), 0);
@@ -3607,7 +3801,10 @@ fn test_module_process_called_by_process_modules(crypto_perpetual_ethusdt: Crypt
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
     exchange.borrow_mut().add_instrument(instrument).unwrap();
 
-    exchange.borrow_mut().process_modules(UnixNanos::from(100));
+    exchange
+        .borrow_mut()
+        .process_modules(UnixNanos::from(100))
+        .unwrap();
 
     assert_eq!(counts.process.get(), 1);
 }
@@ -3621,7 +3818,7 @@ fn test_process_modules_skips_when_account_adjustments_are_unavailable(
 ) {
     let outcomes = Rc::new(RefCell::new(Vec::new()));
     let sequence = Rc::new(RefCell::new(Vec::new()));
-    let modules: Vec<Box<dyn SimulationModule>> = vec![Box::new(AdjustmentSimulationModule {
+    let modules = vec![SimulationModuleHandle::new(AdjustmentSimulationModule {
         label: "guarded",
         adjustments: vec![Money::from("1 USD")],
         outcomes: outcomes.clone(),
@@ -3663,7 +3860,10 @@ fn test_process_modules_skips_when_account_adjustments_are_unavailable(
     let (handler, account_saver) = get_typed_message_saving_handler::<AccountState>(None);
     msgbus::register_account_state_endpoint("Portfolio.update_account".into(), handler);
 
-    exchange.borrow_mut().process_modules(UnixNanos::from(100));
+    exchange
+        .borrow_mut()
+        .process_modules(UnixNanos::from(100))
+        .unwrap();
 
     assert!(
         sequence.borrow().is_empty(),
@@ -3681,14 +3881,14 @@ fn test_process_modules_forwards_real_outcomes_after_shared_snapshot() {
     let first_outcomes = Rc::new(RefCell::new(Vec::new()));
     let second_outcomes = Rc::new(RefCell::new(Vec::new()));
     let sequence = Rc::new(RefCell::new(Vec::new()));
-    let modules: Vec<Box<dyn SimulationModule>> = vec![
-        Box::new(AdjustmentSimulationModule {
+    let modules = vec![
+        SimulationModuleHandle::new(AdjustmentSimulationModule {
             label: "first",
             adjustments: vec![Money::from("1 USD"), Money::from("1 AUD")],
             outcomes: first_outcomes.clone(),
             sequence: sequence.clone(),
         }),
-        Box::new(AdjustmentSimulationModule {
+        SimulationModuleHandle::new(AdjustmentSimulationModule {
             label: "second",
             adjustments: Vec::new(),
             outcomes: second_outcomes.clone(),
@@ -3715,7 +3915,10 @@ fn test_process_modules_forwards_real_outcomes_after_shared_snapshot() {
         }),
     );
 
-    exchange.borrow_mut().process_modules(UnixNanos::from(100));
+    exchange
+        .borrow_mut()
+        .process_modules(UnixNanos::from(100))
+        .unwrap();
 
     assert_eq!(
         *first_outcomes.borrow(),
@@ -3824,10 +4027,12 @@ fn process_rollover(
         cache: &cache,
     };
 
-    match module.process(ts_now, &ctx) {
+    match module.process(ts_now, &ctx).unwrap() {
         SimulationModuleResult::NotReady => Vec::new(),
         SimulationModuleResult::Completed(adjustments) => {
-            module.acknowledge(&vec![AccountAdjustmentOutcome::Applied; adjustments.len()]);
+            module
+                .acknowledge(&vec![AccountAdjustmentOutcome::Applied; adjustments.len()])
+                .unwrap();
             adjustments
         }
     }
@@ -3850,7 +4055,262 @@ fn add_fx_quote(
         UnixNanos::from(2),
     );
     cache.borrow_mut().add_quote(quote).unwrap();
-    exchange.borrow_mut().process_quote_tick(&quote);
+    exchange.borrow_mut().process_quote_tick(&quote).unwrap();
+}
+
+fn cfd_rollover_timestamp(year: i16, month: i8, day: i8) -> UnixNanos {
+    let timestamp = Date::new(year, month, day)
+        .unwrap()
+        .to_datetime(Time::constant(17, 1, 0, 0))
+        .to_zoned(TimeZone::UTC)
+        .unwrap()
+        .timestamp()
+        .as_nanosecond();
+    UnixNanos::from(u64::try_from(timestamp).unwrap())
+}
+
+fn add_cfd_position(cache: &mut Cache, instrument: &InstrumentAny, side: OrderSide) {
+    cache.add_instrument(instrument.clone()).unwrap();
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(side)
+        .quantity(Quantity::from("2"))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        instrument,
+        Some(TradeId::from("T-CFD-SWAP")),
+        Some(PositionId::from("P-CFD-SWAP")),
+        Some(Price::from("2000.00")),
+        Some(Quantity::from("2")),
+        None,
+        Some(Money::from("0 USD")),
+        Some(UnixNanos::from(1)),
+        Some(AccountId::from("SIM-001")),
+    );
+    let position = Position::new(instrument, fill.into());
+    cache.add_position(&position, OmsType::Netting).unwrap();
+}
+
+#[rstest]
+#[case(OrderSide::Buy, 16, "999.60 USD")]
+#[case(OrderSide::Sell, 16, "1000.80 USD")]
+#[case(OrderSide::Buy, 17, "998.80 USD")]
+#[case(OrderSide::Sell, 17, "1002.40 USD")]
+fn test_cfd_swap_exact_long_short_and_triple_roll_balances(
+    #[case] side: OrderSide,
+    #[case] day: i8,
+    #[case] expected_balance: &str,
+) {
+    let instrument = InstrumentAny::Cfd(cfd_gold());
+    let module = CfdSwapModule::new(
+        vec![CfdSwapRate::new(
+            instrument.id(),
+            Decimal::from_str("-0.0001").unwrap(),
+            Decimal::from_str("0.0002").unwrap(),
+        )],
+        Time::constant(17, 0, 0, 0),
+        Weekday::Friday,
+    );
+    let modules = vec![SimulationModuleHandle::from(SimulationModuleAny::CfdSwap(
+        module,
+    ))];
+    let exchange = get_exchange_with_modules(Venue::new("SIM"), modules);
+    let cache = exchange.borrow().cache().clone();
+    pre_populate_margin_account(&mut cache.borrow_mut(), "SIM-001");
+    add_cfd_position(&mut cache.borrow_mut(), &instrument, side);
+    exchange
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("1999.00"),
+        Price::from("2001.00"),
+        Quantity::from("10"),
+        Quantity::from("10"),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    exchange.borrow_mut().process_quote_tick(&quote).unwrap();
+
+    let (handler, saver) = get_typed_message_saving_handler::<AccountState>(None);
+    msgbus::register_account_state_endpoint("Portfolio.update_account".into(), handler);
+    exchange
+        .borrow_mut()
+        .process_modules(cfd_rollover_timestamp(2020, 1, day))
+        .unwrap();
+
+    let states = saver.get_messages();
+    let [state] = states.as_slice() else {
+        panic!("expected one CFD swap account state for {side}");
+    };
+    assert_eq!(state.balances[0].total, Money::from(expected_balance));
+    assert_eq!(state.balances[0].free, Money::from(expected_balance));
+    assert_eq!(state.balances[0].locked, Money::from("0 USD"));
+}
+
+#[rstest]
+fn test_cfd_swap_price_and_acknowledgement_retry_and_reset_isolation() {
+    let _guard = CAPTURING_LOGGER_TEST_LOCK.lock();
+    let _ = log::set_logger(&CAPTURING_LOGGER);
+    log::set_max_level(LevelFilter::Warn);
+    CAPTURING_LOGGER.clear();
+
+    let instrument = InstrumentAny::Cfd(cfd_gold());
+    let instrument_id = instrument.id();
+    let module = SimulationModuleHandle::new(CfdSwapModule::new(
+        vec![CfdSwapRate::new(
+            instrument_id,
+            Decimal::from_str("-0.0001").unwrap(),
+            Decimal::from_str("0.0002").unwrap(),
+        )],
+        Time::constant(17, 0, 0, 0),
+        Weekday::Friday,
+    ));
+    let exchange = get_exchange(
+        Venue::new("SIM"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        None,
+    );
+    let cache = exchange.borrow().cache().clone();
+    add_cfd_position(&mut cache.borrow_mut(), &instrument, OrderSide::Buy);
+    exchange
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let instruments = AHashMap::from_iter([(instrument_id, instrument)]);
+    let ts_now = cfd_rollover_timestamp(2020, 1, 16);
+
+    let process = || {
+        let exchange = exchange.borrow();
+        let cache = cache.borrow();
+        module
+            .process(
+                ts_now,
+                &ExchangeContext {
+                    venue: Venue::new("SIM"),
+                    base_currency: None,
+                    instruments: &instruments,
+                    matching_engines: exchange.get_matching_engines(),
+                    cache: &cache,
+                },
+            )
+            .unwrap()
+    };
+
+    assert_eq!(process(), SimulationModuleResult::NotReady);
+    assert_eq!(process(), SimulationModuleResult::NotReady);
+    let messages = CAPTURING_LOGGER.messages();
+    assert_eq!(
+        messages
+            .iter()
+            .filter(|(level, message)| {
+                *level == Level::Warn
+                    && message
+                        .contains("Cannot calculate CFD swap for GOLD-CFD.SIM: no settlement price")
+            })
+            .count(),
+        1,
+        "captured messages: {messages:?}"
+    );
+    exchange
+        .borrow_mut()
+        .process_quote_tick(&QuoteTick::new(
+            instrument_id,
+            Price::from("1999.00"),
+            Price::from("2001.00"),
+            Quantity::from("10"),
+            Quantity::from("10"),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ))
+        .unwrap();
+
+    let expected = SimulationModuleResult::Completed(vec![Money::from("-0.40 USD")]);
+    assert_eq!(process(), expected);
+    module
+        .acknowledge(&[AccountAdjustmentOutcome::Failed(
+            AccountAdjustmentError::TotalOverflow(Currency::USD()),
+        )])
+        .unwrap();
+    assert_eq!(process(), expected);
+    module
+        .acknowledge(&[AccountAdjustmentOutcome::Applied])
+        .unwrap();
+    assert_eq!(process(), SimulationModuleResult::NotReady);
+
+    module.reset().unwrap();
+    assert_eq!(process(), expected);
+}
+
+#[rstest]
+fn test_cfd_swap_converts_to_single_currency_account_base(gbpusd_sim: CurrencyPair) {
+    let cfd = InstrumentAny::Cfd(cfd_gold());
+    let cfd_id = cfd.id();
+    let xrate_instrument = InstrumentAny::CurrencyPair(gbpusd_sim);
+    let mut raw_cache = Cache::default();
+    add_cfd_position(&mut raw_cache, &cfd, OrderSide::Buy);
+    raw_cache.add_instrument(xrate_instrument.clone()).unwrap();
+    let cache = Rc::new(RefCell::new(raw_cache));
+    let exchange = get_exchange(
+        Venue::new("SIM"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        Some(cache.clone()),
+    );
+    exchange.borrow_mut().add_instrument(cfd.clone()).unwrap();
+    exchange
+        .borrow_mut()
+        .add_instrument(xrate_instrument.clone())
+        .unwrap();
+    exchange
+        .borrow_mut()
+        .process_quote_tick(&QuoteTick::new(
+            cfd_id,
+            Price::from("1999.00"),
+            Price::from("2001.00"),
+            Quantity::from("10"),
+            Quantity::from("10"),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ))
+        .unwrap();
+    add_fx_quote(
+        &exchange,
+        &cache,
+        xrate_instrument.id(),
+        "2.00000",
+        "2.00000",
+    );
+    let instruments =
+        AHashMap::from_iter([(cfd_id, cfd), (xrate_instrument.id(), xrate_instrument)]);
+    let module = CfdSwapModule::new(
+        vec![CfdSwapRate::new(
+            cfd_id,
+            Decimal::from_str("-0.0001").unwrap(),
+            Decimal::from_str("0.0002").unwrap(),
+        )],
+        Time::constant(17, 0, 0, 0),
+        Weekday::Friday,
+    );
+    let exchange = exchange.borrow();
+    let cache = cache.borrow();
+    let ctx = ExchangeContext {
+        venue: Venue::new("SIM"),
+        base_currency: Some(Currency::GBP()),
+        instruments: &instruments,
+        matching_engines: exchange.get_matching_engines(),
+        cache: &cache,
+    };
+
+    assert_eq!(
+        module
+            .process(cfd_rollover_timestamp(2020, 1, 16), &ctx)
+            .unwrap(),
+        SimulationModuleResult::Completed(vec![Money::from("-0.20 GBP")])
+    );
 }
 
 #[rstest]
@@ -4018,7 +4478,7 @@ fn test_fx_rollover_friday_to_monday_gap_books_monday_once(audusd_sim: CurrencyP
 fn test_missing_xrate_retries_emit_one_module_warning_and_no_cache_errors(
     audusd_sim: CurrencyPair,
 ) {
-    let _guard = CAPTURING_LOGGER_TEST_LOCK.lock().unwrap();
+    let _guard = CAPTURING_LOGGER_TEST_LOCK.lock();
     let _ = log::set_logger(&CAPTURING_LOGGER);
     log::set_max_level(LevelFilter::Warn);
     CAPTURING_LOGGER.clear();
@@ -4052,7 +4512,7 @@ fn test_missing_xrate_retries_emit_one_module_warning_and_no_cache_errors(
         UnixNanos::from(2),
         UnixNanos::from(2),
     );
-    exchange.borrow_mut().process_quote_tick(&quote);
+    exchange.borrow_mut().process_quote_tick(&quote).unwrap();
     let instruments = AHashMap::from([(instrument.id(), instrument)]);
     let module = FXRolloverInterestModule::new(rollover_records()).unwrap();
     let ts_now = rollover_timestamp(2020, 1, 15);
@@ -4068,7 +4528,7 @@ fn test_missing_xrate_retries_emit_one_module_warning_and_no_cache_errors(
             cache: &cache,
         };
         assert_eq!(
-            module.process(ts_now, &ctx),
+            module.process(ts_now, &ctx).unwrap(),
             SimulationModuleResult::NotReady
         );
     }
@@ -4099,7 +4559,7 @@ fn test_missing_rates_skip_instrument_and_do_not_stall_later_days(
     audusd_sim: CurrencyPair,
     gbpusd_sim: CurrencyPair,
 ) {
-    let _guard = CAPTURING_LOGGER_TEST_LOCK.lock().unwrap();
+    let _guard = CAPTURING_LOGGER_TEST_LOCK.lock();
     let _ = log::set_logger(&CAPTURING_LOGGER);
     log::set_max_level(LevelFilter::Warn);
     CAPTURING_LOGGER.clear();
@@ -4167,12 +4627,16 @@ fn test_missing_rates_skip_instrument_and_do_not_stall_later_days(
         cache: &cache_ref,
     };
     assert_eq!(
-        module.process(rollover_timestamp(2020, 1, 16), &ctx),
+        module
+            .process(rollover_timestamp(2020, 1, 16), &ctx)
+            .unwrap(),
         SimulationModuleResult::Completed(Vec::new())
     );
-    module.acknowledge(&[]);
+    module.acknowledge(&[]).unwrap();
     assert_eq!(
-        module.process(rollover_timestamp(2020, 1, 17), &ctx),
+        module
+            .process(rollover_timestamp(2020, 1, 17), &ctx)
+            .unwrap(),
         SimulationModuleResult::Completed(Vec::new())
     );
 
@@ -4195,7 +4659,7 @@ fn test_unrepresentable_money_warns_once_without_error_across_recalculation(
     audusd_sim: CurrencyPair,
     gbpusd_sim: CurrencyPair,
 ) {
-    let _guard = CAPTURING_LOGGER_TEST_LOCK.lock().unwrap();
+    let _guard = CAPTURING_LOGGER_TEST_LOCK.lock();
     let _ = log::set_logger(&CAPTURING_LOGGER);
     log::set_max_level(LevelFilter::Warn);
     CAPTURING_LOGGER.clear();
@@ -4422,7 +4886,7 @@ fn test_module_reset_called_on_reset(crypto_perpetual_ethusdt: CryptoPerpetual) 
         .add_account(AccountAny::Margin(margin_account))
         .unwrap();
 
-    exchange.borrow_mut().reset();
+    exchange.borrow_mut().reset().unwrap();
 
     assert_eq!(counts.reset.get(), 1);
 }
@@ -4434,7 +4898,7 @@ fn test_module_log_diagnostics(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
     exchange.borrow_mut().add_instrument(instrument).unwrap();
 
-    exchange.borrow().log_diagnostics();
+    exchange.borrow().log_diagnostics().unwrap();
 
     assert_eq!(counts.log_diagnostics.get(), 1);
 }
@@ -4456,10 +4920,13 @@ fn test_module_pre_process_and_process_call_order(crypto_perpetual_ethusdt: Cryp
         UnixNanos::default(),
         UnixNanos::default(),
     );
-    exchange.borrow_mut().process_quote_tick(&quote);
-    exchange.borrow_mut().process_quote_tick(&quote);
+    exchange.borrow_mut().process_quote_tick(&quote).unwrap();
+    exchange.borrow_mut().process_quote_tick(&quote).unwrap();
     exchange.borrow_mut().process(UnixNanos::from(100));
-    exchange.borrow_mut().process_modules(UnixNanos::from(100));
+    exchange
+        .borrow_mut()
+        .process_modules(UnixNanos::from(100))
+        .unwrap();
 
     assert_eq!(counts.pre_process.get(), 2);
     assert_eq!(counts.process.get(), 1);

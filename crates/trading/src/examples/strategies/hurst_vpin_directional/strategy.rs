@@ -278,7 +278,9 @@ impl HurstVpinDirectional {
         self.exit_cooldown = true;
 
         for (position_id, quantity, side) in positions {
-            let closing_side = OrderCore::closing_side(side);
+            let Some(closing_side) = OrderCore::closing_side(side) else {
+                continue;
+            };
             let close_order = self.order().market(
                 instrument_id,
                 closing_side,

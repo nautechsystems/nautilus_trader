@@ -152,7 +152,7 @@ skip = [
   { crate = "rand_chacha" },
   { crate = "rand_core" },
 
-  # Proc-macro helpers - transitive via derive macros in various crates
+  # Proc-macro support crates - transitive via derive macros in various crates
   { crate = "darling" },
   { crate = "darling_core" },
   { crate = "darling_macro" },

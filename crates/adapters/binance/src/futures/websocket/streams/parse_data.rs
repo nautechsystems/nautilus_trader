@@ -685,7 +685,7 @@ mod tests {
         assert_eq!(deltas.ts_event, UnixNanos::from(123_456_788_000_000u64));
         assert_eq!(deltas.ts_init, ts_init);
         assert_eq!(deltas.deltas[0].action, BookAction::Update);
-        assert_eq!(deltas.deltas[0].order.side, OrderSide::Buy);
+        assert_eq!(deltas.deltas[0].order.side, OrderSide::Buy.into());
         assert_eq!(
             deltas.deltas[0].order.price,
             Price::new(0.0024, PRICE_PRECISION)
@@ -695,7 +695,7 @@ mod tests {
             Quantity::new(10.0, SIZE_PRECISION)
         );
         assert_eq!(deltas.deltas[1].action, BookAction::Update);
-        assert_eq!(deltas.deltas[1].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[1].order.side, OrderSide::Sell.into());
         assert_eq!(
             deltas.deltas[1].order.price,
             Price::new(0.0026, PRICE_PRECISION)

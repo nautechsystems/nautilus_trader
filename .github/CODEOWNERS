@@ -25,6 +25,7 @@
 /rust-toolchain.toml             @nautechsystems/core
 /deny.toml                       @nautechsystems/core
 /.cargo/deny-fuzz.toml           @nautechsystems/core
+/security-audit.toml             @nautechsystems/core
 
 # =============================================================================
 # Python Build & Dependencies - SUPPLY CHAIN RISK
@@ -42,6 +43,8 @@
 # Code Quality & Formatting Configuration
 # =============================================================================
 /.pre-commit-config.yaml         @nautechsystems/core
+/.nautilus-engineering.lock      @nautechsystems/core
+/.nautilus-engineering/          @nautechsystems/core
 /.pre-commit-hooks/              @nautechsystems/core
 /rustfmt.toml                    @nautechsystems/core
 /clippy.toml                     @nautechsystems/core

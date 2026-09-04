@@ -17,7 +17,7 @@
 
 use jiff::tz::Offset;
 use nautilus_common::messages::execution::{CancelOrder, ModifyOrder, SubmitOrder};
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::{nanos::UnixNanos, string::secret::SecretString};
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce, TriggerType},
     orders::{Order, any::OrderAny},
@@ -46,7 +46,7 @@ use crate::{
 pub fn build_add_order_params(
     cmd: &SubmitOrder,
     order: &OrderAny,
-    token: String,
+    token: SecretString,
     leverage: Option<u16>,
 ) -> anyhow::Result<KrakenWsAddOrderParams> {
     let order_type = order.order_type();
@@ -56,7 +56,6 @@ pub fn build_add_order_params(
     let side = match order_side {
         OrderSide::Buy => KrakenOrderSide::Buy,
         OrderSide::Sell => KrakenOrderSide::Sell,
-        _ => anyhow::bail!("Invalid order side: {order_side:?}"),
     };
 
     if matches!(
@@ -166,7 +165,10 @@ pub(crate) fn format_expire_time(ts: UnixNanos) -> String {
 ///
 /// Prefers `venue_order_id` (as `order_id`) over `client_order_id` (as `cl_ord_id`);
 /// `cmd.client_order_id` is always set so a fallback is always available.
-pub fn build_amend_order_params(cmd: &ModifyOrder, token: String) -> KrakenWsAmendOrderParams {
+pub fn build_amend_order_params(
+    cmd: &ModifyOrder,
+    token: SecretString,
+) -> KrakenWsAmendOrderParams {
     let order_id = cmd.venue_order_id.as_ref().map(|id| id.to_string());
     let cl_ord_id = if order_id.is_none() {
         Some(truncate_cl_ord_id(&cmd.client_order_id))
@@ -189,7 +191,10 @@ pub fn build_amend_order_params(cmd: &ModifyOrder, token: String) -> KrakenWsAme
 /// Prefers `venue_order_id` (as `order_id`) over `client_order_id` (as `cl_ord_id`),
 /// mirroring the REST cancel path which prefers the venue identifier since Kraken
 /// always knows it.
-pub fn build_cancel_order_params(cmd: &CancelOrder, token: String) -> KrakenWsCancelOrderParams {
+pub fn build_cancel_order_params(
+    cmd: &CancelOrder,
+    token: SecretString,
+) -> KrakenWsCancelOrderParams {
     if let Some(ref venue_id) = cmd.venue_order_id {
         KrakenWsCancelOrderParams {
             token,
@@ -333,7 +338,7 @@ mod tests {
             causation_id: None,
         };
 
-        let err = build_add_order_params(&cmd, &order, "TKN".to_string(), None)
+        let err = build_add_order_params(&cmd, &order, SecretString::from("TKN"), None)
             .expect_err("TrailingStopMarket must bail to REST");
         let msg = format!("{err}");
         assert!(
@@ -398,7 +403,7 @@ mod tests {
             causation_id: None,
         };
 
-        let err = build_add_order_params(&cmd, &order, "TKN".to_string(), None)
+        let err = build_add_order_params(&cmd, &order, SecretString::from("TKN"), None)
             .expect_err("Iceberg orders must bail to REST");
         let msg = format!("{err}");
         assert!(
@@ -463,7 +468,7 @@ mod tests {
             causation_id: None,
         };
 
-        let err = build_add_order_params(&cmd, &order, "TKN".to_string(), None)
+        let err = build_add_order_params(&cmd, &order, SecretString::from("TKN"), None)
             .expect_err("MarkPrice trigger must bail to REST");
         let msg = format!("{err}");
         assert!(
@@ -486,7 +491,7 @@ mod tests {
     #[rstest]
     fn test_build_cancel_order_params_with_venue_id() {
         let cmd = make_cancel_order("O-20260505-001", Some("OABCDE-12345-FGHIJ"));
-        let params = build_cancel_order_params(&cmd, "TOKEN".to_string());
+        let params = build_cancel_order_params(&cmd, SecretString::from("TOKEN"));
 
         let ids = params.order_id.as_ref().unwrap();
         assert_eq!(ids, &["OABCDE-12345-FGHIJ"]);
@@ -496,7 +501,7 @@ mod tests {
     #[rstest]
     fn test_build_cancel_order_params_falls_back_to_client_id() {
         let cmd = make_cancel_order("O-20260505-001", None);
-        let params = build_cancel_order_params(&cmd, "TOKEN".to_string());
+        let params = build_cancel_order_params(&cmd, SecretString::from("TOKEN"));
 
         assert!(params.order_id.is_none());
         let cl_ord_ids = params.cl_ord_id.as_ref().unwrap();
@@ -506,7 +511,7 @@ mod tests {
     #[rstest]
     fn test_build_cancel_order_params_long_client_id_is_truncated() {
         let cmd = make_cancel_order("O202602270023210040011", None);
-        let params = build_cancel_order_params(&cmd, "TOKEN".to_string());
+        let params = build_cancel_order_params(&cmd, SecretString::from("TOKEN"));
 
         assert!(params.order_id.is_none());
         let cl_ord_ids = params.cl_ord_id.as_ref().unwrap();
@@ -540,7 +545,7 @@ mod tests {
             causation_id: None,
         };
 
-        let params = build_amend_order_params(&cmd, "TOKEN".to_string());
+        let params = build_amend_order_params(&cmd, SecretString::from("TOKEN"));
 
         assert_eq!(params.order_id.as_deref(), Some("OABCDE-12345-FGHIJ"));
         assert!(params.cl_ord_id.is_none());
@@ -570,7 +575,7 @@ mod tests {
             causation_id: None,
         };
 
-        let params = build_amend_order_params(&cmd, "TOKEN".to_string());
+        let params = build_amend_order_params(&cmd, SecretString::from("TOKEN"));
 
         assert!(params.order_id.is_none());
         assert_eq!(params.cl_ord_id.as_deref(), Some("O-001"));

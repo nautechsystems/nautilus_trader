@@ -37,7 +37,7 @@ use futures_util::StreamExt;
 use nautilus_bybit::{
     common::enums::{
         BybitBboSideType, BybitEnvironment, BybitOrderSide, BybitOrderType, BybitProductType,
-        BybitTimeInForce,
+        BybitTimeInForce, BybitTriggerType,
     },
     websocket::{
         client::BybitWebSocketClient,
@@ -533,32 +533,19 @@ fn load_test_data(filename: &str) -> serde_json::Value {
 }
 
 fn make_linear_pair(raw_symbol: &str, base: &str, quote: &str) -> CurrencyPair {
-    CurrencyPair::new(
-        format!("{raw_symbol}-LINEAR.BYBIT").into(),
-        raw_symbol.into(),
-        Currency::from(base),
-        Currency::from(quote),
-        2,
-        5,
-        Price::from("0.01"),
-        Quantity::from("0.00001"),
-        None,     // multiplier
-        None,     // lot_size
-        None,     // max_quantity
-        None,     // min_quantity
-        None,     // max_notional
-        None,     // min_notional
-        None,     // max_price
-        None,     // min_price
-        None,     // margin_init
-        None,     // margin_maint
-        None,     // maker_fee
-        None,     // taker_fee
-        None,     // tick_scheme
-        None,     // info
-        0.into(), // ts_event
-        0.into(), // ts_init
-    )
+    CurrencyPair::builder()
+        .instrument_id(format!("{raw_symbol}-LINEAR.BYBIT").into())
+        .raw_symbol(raw_symbol.into())
+        .base_currency(Currency::from(base))
+        .quote_currency(Currency::from(quote))
+        .price_precision(2)
+        .size_precision(5)
+        .price_increment(Price::from("0.01"))
+        .size_increment(Quantity::from("0.00001"))
+        .ts_event(0.into())
+        .ts_init(0.into())
+        .build()
+        .unwrap()
 }
 
 fn create_test_router(state: TestServerState) -> Router {
@@ -1967,7 +1954,7 @@ mod conditional_order_tests {
         assert!(params.reduce_only.unwrap());
     }
 
-    // Helper function to create conditional order params using actual client logic
+    // Create conditional order params through the client logic
     fn create_conditional_order_params_with_side(
         order_type: OrderType,
         side: BybitOrderSide,
@@ -2003,6 +1990,7 @@ mod conditional_order_tests {
                 None,  // position_idx
                 None,  // bbo_side_type
                 None,  // bbo_level
+                None,  // smp_type
             )
             .unwrap()
     }
@@ -2060,6 +2048,7 @@ mod conditional_order_tests {
                 sl_limit_price: None,
                 tp_limit_price: None,
                 order_iv: None,
+                smp_type: None,
                 mmp: None,
                 position_idx: None,
                 bbo_side_type: None,
@@ -2094,6 +2083,7 @@ mod conditional_order_tests {
                 sl_limit_price: None,
                 tp_limit_price: None,
                 order_iv: None,
+                smp_type: None,
                 mmp: None,
                 position_idx: None,
                 bbo_side_type: None,
@@ -2380,6 +2370,7 @@ async fn test_batch_place_orders_with_cache_keys() {
         sl_limit_price: None,
         tp_limit_price: None,
         order_iv: None,
+        smp_type: None,
         mmp: None,
         position_idx: None,
         bbo_side_type: None,
@@ -2926,6 +2917,7 @@ async fn test_batch_place_order_with_order_iv_and_mmp() {
         sl_limit_price: None,
         tp_limit_price: None,
         order_iv: Some("0.80".to_string()),
+        smp_type: None,
         mmp: Some(true),
         position_idx: None,
         bbo_side_type: None,
@@ -3008,6 +3000,7 @@ async fn test_batch_place_order_with_bbo_serializes_bbo_and_omits_price() {
         sl_limit_price: None,
         tp_limit_price: None,
         order_iv: None,
+        smp_type: None,
         mmp: None,
         position_idx: None,
         bbo_side_type: Some(BybitBboSideType::Counterparty),
@@ -3089,6 +3082,7 @@ async fn test_batch_place_order_omits_order_iv_when_none() {
         sl_limit_price: None,
         tp_limit_price: None,
         order_iv: None,
+        smp_type: None,
         mmp: None,
         position_idx: None,
         bbo_side_type: None,
@@ -3137,16 +3131,16 @@ async fn test_batch_amend_order_with_order_iv() {
     let orders = vec![BybitWsAmendOrderParams {
         category: BybitProductType::Option,
         symbol: Ustr::from("BTC-30JUN25-100000-C"),
-        order_id: None,
+        order_id: Some("venue-option-amend".to_string()),
         order_link_id: Some("option-test-1".to_string()),
-        qty: None,
-        price: None,
-        trigger_price: None,
-        take_profit: None,
-        stop_loss: None,
-        tp_trigger_by: None,
-        sl_trigger_by: None,
-        order_iv: Some("0.90".to_string()),
+        qty: Some("0.23".to_string()),
+        price: Some("510.5".to_string()),
+        trigger_price: Some("505.5".to_string()),
+        take_profit: Some("530.5".to_string()),
+        stop_loss: Some("490.5".to_string()),
+        tp_trigger_by: Some(BybitTriggerType::MarkPrice),
+        sl_trigger_by: Some(BybitTriggerType::IndexPrice),
+        order_iv: Some("0.91".to_string()),
     }];
 
     let result = client.batch_amend_orders(orders).await;
@@ -3159,10 +3153,25 @@ async fn test_batch_amend_order_with_order_iv() {
 
     let msg = &messages[0];
     let args = msg.get("args").unwrap().as_array().unwrap();
-    let order = &args[0];
-
-    assert_eq!(order["orderIv"], "0.90");
-    assert_eq!(order["orderLinkId"], "option-test-1");
+    assert_eq!(args.len(), 1);
+    assert_eq!(args[0]["category"], "option");
+    assert_eq!(
+        args[0]["request"][0],
+        json!({
+            "symbol": "BTC-30JUN25-100000-C",
+            "orderId": "venue-option-amend",
+            "orderLinkId": "option-test-1",
+            "qty": "0.23",
+            "price": "510.5",
+            "triggerPrice": "505.5",
+            "takeProfit": "530.5",
+            "stopLoss": "490.5",
+            "tpTriggerBy": "MarkPrice",
+            "slTriggerBy": "IndexPrice",
+            "orderIv": "0.91",
+        })
+    );
+    assert!(args[0]["request"][0].get("category").is_none());
 
     client.close().await.unwrap();
 }

@@ -1782,6 +1782,11 @@ CONFIG_READBACK_REPLACEMENTS = {
         "BacktestDataConfig",
         "catalog_fs_rust_storage_options",
     ): "catalog_fs_rust_storage_option_keys",
+    (
+        "nautilus_trader.persistence",
+        "DataCatalogConfig",
+        "fs_rust_storage_options",
+    ): "fs_rust_storage_option_keys",
 }
 
 WRITABLE_CONFIG_PROPERTIES = {
@@ -1819,11 +1824,7 @@ NON_CONTRACT_DTO_CLASSES = frozenset(
         ("nautilus_trader.adapters.bybit", "BybitServerTime"),
         ("nautilus_trader.adapters.bybit", "BybitTickerData"),
         ("nautilus_trader.adapters.bybit", "BybitTickersParams"),
-        ("nautilus_trader.adapters.bybit", "BybitWsAmendOrderParams"),
-        ("nautilus_trader.adapters.bybit", "BybitWsCancelOrderParams"),
-        ("nautilus_trader.adapters.bybit", "BybitWsPlaceOrderParams"),
         ("nautilus_trader.adapters.databento", "DatabentoSubscriptionAck"),
-        ("nautilus_trader.adapters.okx", "OKXWebSocketError"),
     },
 )
 
@@ -1844,10 +1845,13 @@ ADAPTER_CONFIG_SECRET_FIELDS = {
     "api_secret",
     "api_passphrase",
     "app_key",
+    "http_rpc_url",
     "password",
     "passphrase",
     "private_key",
     "session_key",
+    "tardis_ws_url",
+    "wss_rpc_url",
 }
 ADAPTER_CONFIG_READBACK_REPLACEMENTS = {
     "proxy_url": "has_proxy_url",
@@ -2649,9 +2653,11 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path: Path) -> N
     """
     from nautilus_trader.adapters.architect_ax import AxDataClientConfig
     from nautilus_trader.adapters.betfair import BetfairDataClientConfig
+    from nautilus_trader.adapters.betfair import BetfairExecutionClientConfig
     from nautilus_trader.adapters.bitmex import BitmexExecutionClientConfig
     from nautilus_trader.adapters.bybit import BybitDataClientConfig
     from nautilus_trader.adapters.databento import DatabentoDataClientConfig
+    from nautilus_trader.adapters.interactive_brokers import DockerizedIBGatewayConfig
     from nautilus_trader.model import AccountId
 
     ax_config = AxDataClientConfig(
@@ -2667,6 +2673,7 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path: Path) -> N
         event_type_ids=[7, 9],
         stream_heartbeat_secs=43,
     )
+    betfair_exec_config = BetfairExecutionClientConfig(username="exec-readback-user")
     bitmex_config = BitmexExecutionClientConfig(
         account_id=AccountId("BITMEX-001"),
         submitter_proxy_urls=["http://submitter.example.test"],
@@ -2681,11 +2688,13 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path: Path) -> N
         bars_timestamp_on_close=False,
         venue_dataset_map={"XNAS": "XNAS.ITCH"},
     )
+    ib_gateway_config = DockerizedIBGatewayConfig(username="ib-readback-user")
 
     assert ax_config.base_url_http == "https://ax.example.test"
     assert ax_config.http_timeout_secs == 17
     assert ax_config.has_proxy_url is True
     assert betfair_config.username == "readback-user"
+    assert betfair_exec_config.username == "exec-readback-user"
     assert betfair_config.event_type_ids == ["7", "9"]
     assert betfair_config.stream_heartbeat_secs == 43
     assert betfair_config.has_proxy_url is True
@@ -2698,6 +2707,7 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path: Path) -> N
     assert databento_config.bars_timestamp_on_close is False
     assert databento_config.venue_dataset_map == {"XNAS": "XNAS.ITCH"}
     assert bitmex_config.account_id == AccountId("BITMEX-001")
+    assert ib_gateway_config.username == "ib-readback-user"
 
 
 def test_adapter_config_runtime_setter_policy(tmp_path: Path) -> None:
@@ -2740,13 +2750,34 @@ def test_adapter_config_secret_values_are_not_exposed(tmp_path: Path) -> None:
     """
     Test adapter config secret values are not exposed.
     """
+    from nautilus_trader.adapters.blockchain import BlockchainProviderIdentity
     from nautilus_trader.model import AccountId
+    from nautilus_trader.model import Blockchain
+    from nautilus_trader.model import Chain
+    from nautilus_trader.model import DexType
     from nautilus_trader.model import TraderId
 
+    provider_identity = BlockchainProviderIdentity(
+        provider_id="provider",
+        operator_id="operator",
+        failure_domain_ids=["failure-domain"],
+    )
     required_values = {
         "account_id": AccountId("VENUE-001"),
+        "base_fee_buffer_bps": 100,
+        "chain": Chain(Blockchain.ARBITRUM, 42161),
+        "client_id": AccountId("BLOCKCHAIN-001"),
+        "dex_ids": [DexType.UNISWAP_V3],
+        "gas_buffer_bps": 100,
+        "gas_limit": 1_000_000,
+        "identity": provider_identity,
+        "max_fee_per_gas_wei": 100_000_000_000,
         "publishers_filepath": tmp_path / "publishers.json",
+        "router_addresses": ["0x1111111111111111111111111111111111111111"],
+        "signer_private_key_env": "SIGNER_PRIVATE_KEY",
         "trader_id": TraderId("TRADER-001"),
+        "wallet_address": "0x2222222222222222222222222222222222222222",
+        "weth_address": "0x3333333333333333333333333333333333333333",
     }
     failures = []
 
@@ -2801,16 +2832,21 @@ def test_adapter_config_sensitive_readback_values_are_not_represented() -> None:
     """
     Test adapter config sensitive readback values are not represented.
     """
+    from nautilus_trader.adapters.betfair import BetfairDataClientConfig
+    from nautilus_trader.adapters.betfair import BetfairExecutionClientConfig
     from nautilus_trader.adapters.bitmex import BitmexExecutionClientConfig
     from nautilus_trader.adapters.blockchain import BlockchainDataClientConfig
     from nautilus_trader.adapters.derive import DeriveDataClientConfig
     from nautilus_trader.adapters.dydx import DydxDataClientConfig
+    from nautilus_trader.adapters.interactive_brokers import DockerizedIBGatewayConfig
     from nautilus_trader.infrastructure import PostgresConnectOptions
     from nautilus_trader.model import Chain
     from nautilus_trader.model import DexType
 
     sentinel = "raw-sensitive-value"
     configs = [
+        BetfairDataClientConfig(username=sentinel),
+        BetfairExecutionClientConfig(username=sentinel),
         BitmexExecutionClientConfig(
             submitter_proxy_urls=[f"http://{sentinel}@submitter.example.test"],
             canceller_proxy_urls=[f"http://{sentinel}@canceller.example.test"],
@@ -2830,6 +2866,7 @@ def test_adapter_config_sensitive_readback_values_are_not_represented() -> None:
         ),
         DeriveDataClientConfig(proxy_url=f"http://{sentinel}@proxy.example.test"),
         DydxDataClientConfig(proxy_url=f"http://{sentinel}@proxy.example.test"),
+        DockerizedIBGatewayConfig(username=sentinel),
     ]
 
     assert all(sentinel not in repr(config) for config in configs)

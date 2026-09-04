@@ -67,14 +67,15 @@ use nautilus_model::defi::{Pool, PoolProfiler};
 use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{
-        Bar, BarType, FundingRateUpdate, GreeksData, IndexPriceUpdate, InstrumentStatus,
-        MarkPriceUpdate, QuoteTick, TradeTick, YieldCurveData, option_chain::OptionGreeks,
+        Bar, BarType, FundingRateUpdate, GreeksData, IndexPriceUpdate, InstrumentClose,
+        InstrumentStatus, MarkPriceUpdate, QuoteTick, TradeTick, YieldCurveData,
+        option_chain::OptionGreeks,
     },
     enums::{
         AggregationSource, ContingencyType, InstrumentClass, OmsType, OrderSide, PositionSide,
-        PriceType, TriggerType,
+        PriceType,
     },
-    events::{AccountState, OrderEventAny},
+    events::{AccountState, OrderEventAny, OrderFilled},
     identifiers::{
         AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId,
         PositionId, StrategyId, Venue, VenueOrderId,
@@ -1542,6 +1543,16 @@ impl<'a> CacheApi<'a> {
         self.cache().instrument_status(instrument_id).copied()
     }
 
+    /// Returns the cached close for the `instrument_id` (if found).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn instrument_close(&self, instrument_id: &InstrumentId) -> Option<InstrumentClose> {
+        self.cache().instrument_close(instrument_id).copied()
+    }
+
     /// Returns the latest bar for the `bar_type` (if found).
     ///
     /// # Panics
@@ -1712,6 +1723,16 @@ impl<'a> CacheApi<'a> {
     #[must_use]
     pub fn has_instrument_statuses(&self, instrument_id: &InstrumentId) -> bool {
         self.cache().has_instrument_statuses(instrument_id)
+    }
+
+    /// Returns whether the cache contains a close for the `instrument_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn has_instrument_close(&self, instrument_id: &InstrumentId) -> bool {
+        self.cache().has_instrument_close(instrument_id)
     }
 
     /// Returns whether the cache contains bars for the `bar_type`.
@@ -2170,6 +2191,7 @@ pub struct Cache {
     general: AHashMap<String, Bytes>,
     currencies: AHashMap<Ustr, Currency>,
     instruments: AHashMap<InstrumentId, InstrumentAny>,
+    instrument_closes: AHashMap<InstrumentId, InstrumentClose>,
     synthetics: AHashMap<InstrumentId, SyntheticInstrument>,
     books: AHashMap<InstrumentId, OrderBook>,
     own_books: AHashMap<InstrumentId, OwnOrderBook>,
@@ -2184,6 +2206,7 @@ pub struct Cache {
     greeks: AHashMap<InstrumentId, GreeksData>,
     option_greeks: AHashMap<InstrumentId, OptionGreeks>,
     yield_curves: AHashMap<String, YieldCurveData>,
+    external_order_claims: AHashMap<InstrumentId, StrategyId>,
     accounts: AHashMap<AccountId, SharedCell<AccountAny>>,
     orders: AHashMap<ClientOrderId, SharedCell<OrderAny>>,
     order_lists: AHashMap<OrderListId, OrderList>,
@@ -2212,10 +2235,12 @@ impl Debug for Cache {
             .field("index_prices", &self.index_prices)
             .field("funding_rates", &self.funding_rates)
             .field("instrument_statuses", &self.instrument_statuses)
+            .field("instrument_closes", &self.instrument_closes)
             .field("bars", &self.bars)
             .field("greeks", &self.greeks)
             .field("option_greeks", &self.option_greeks)
             .field("yield_curves", &self.yield_curves)
+            .field("external_order_claims", &self.external_order_claims)
             .field("accounts", &self.accounts)
             .field("orders", &self.orders)
             .field("order_lists", &self.order_lists)
@@ -2256,6 +2281,7 @@ impl Cache {
             general: AHashMap::new(),
             currencies: AHashMap::new(),
             instruments: AHashMap::new(),
+            instrument_closes: AHashMap::new(),
             synthetics: AHashMap::new(),
             books: AHashMap::new(),
             own_books: AHashMap::new(),
@@ -2270,6 +2296,7 @@ impl Cache {
             greeks: AHashMap::new(),
             option_greeks: AHashMap::new(),
             yield_curves: AHashMap::new(),
+            external_order_claims: AHashMap::new(),
             accounts: AHashMap::new(),
             orders: AHashMap::new(),
             order_lists: AHashMap::new(),
@@ -2285,6 +2312,111 @@ impl Cache {
     #[must_use]
     pub fn memory_address(&self) -> String {
         format!("{:?}", std::ptr::from_ref(self))
+    }
+
+    /// Returns the strategy claiming external orders for `instrument_id`.
+    #[must_use]
+    pub fn external_order_claim(&self, instrument_id: &InstrumentId) -> Option<StrategyId> {
+        self.external_order_claims.get(instrument_id).copied()
+    }
+
+    /// Returns instrument IDs with an external order claim.
+    ///
+    /// Passing `Some(strategy_id)` filters the result to claims owned by that strategy. Passing
+    /// `None` returns every claimed instrument ID.
+    #[must_use]
+    pub fn external_order_claim_instrument_ids(
+        &self,
+        strategy_id: Option<StrategyId>,
+    ) -> AHashSet<InstrumentId> {
+        self.external_order_claims
+            .iter()
+            .filter_map(|(instrument_id, owner)| {
+                strategy_id
+                    .is_none_or(|strategy_id| *owner == strategy_id)
+                    .then_some(*instrument_id)
+            })
+            .collect()
+    }
+
+    /// Replaces the external order claims owned by `strategy_id`.
+    ///
+    /// External orders, fills, and materialized reconciliation activity for matching instrument
+    /// IDs are assigned to the strategy. Existing claims owned by other strategies are preserved.
+    ///
+    /// The operation is atomic: either every requested instrument is claimed or the cache is
+    /// unchanged. Passing an empty slice clears all claims owned by the strategy.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an instrument is repeated or claimed by another strategy.
+    pub fn set_external_order_claims(
+        &mut self,
+        strategy_id: StrategyId,
+        instrument_ids: &[InstrumentId],
+    ) -> anyhow::Result<()> {
+        let mut requested = AHashSet::with_capacity(instrument_ids.len());
+
+        for instrument_id in instrument_ids {
+            if !requested.insert(*instrument_id) {
+                anyhow::bail!(
+                    "External order claim for {instrument_id} appears more than once for {strategy_id}"
+                );
+            }
+
+            if let Some(existing) = self.external_order_claims.get(instrument_id)
+                && *existing != strategy_id
+            {
+                anyhow::bail!(
+                    "External order claim for {instrument_id} already exists for {existing}"
+                );
+            }
+        }
+
+        self.external_order_claims
+            .retain(|_, owner| *owner != strategy_id);
+        self.external_order_claims.extend(
+            requested
+                .into_iter()
+                .map(|instrument_id| (instrument_id, strategy_id)),
+        );
+
+        Ok(())
+    }
+
+    /// Adds external order claims for `strategy_id` without replacing its existing claims.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an instrument is repeated or already has a claim.
+    pub fn register_external_order_claims(
+        &mut self,
+        strategy_id: StrategyId,
+        instrument_ids: &[InstrumentId],
+    ) -> anyhow::Result<()> {
+        let mut requested = AHashSet::with_capacity(instrument_ids.len());
+
+        for instrument_id in instrument_ids {
+            if !requested.insert(*instrument_id) {
+                anyhow::bail!(
+                    "External order claim for {instrument_id} appears more than once for {strategy_id}"
+                );
+            }
+
+            if let Some(existing) = self.external_order_claims.get(instrument_id) {
+                anyhow::bail!(
+                    "External order claim for {instrument_id} already exists for {existing}"
+                );
+            }
+        }
+
+        self.external_order_claims.extend(
+            requested
+                .into_iter()
+                .map(|instrument_id| (instrument_id, strategy_id)),
+        );
+
+        Ok(())
     }
 
     /// Sets the cache database adapter for persistence.
@@ -2316,11 +2448,14 @@ impl Cache {
         Ok(())
     }
 
-    /// Loads all core caches (currencies, instruments, accounts, orders, positions) from the database.
+    /// Loads all core caches from the database.
+    ///
+    /// The loaded instrument closes replace all closes already held in memory. This includes values
+    /// added directly before the persistent cache is loaded.
     ///
     /// # Errors
     ///
-    /// Returns an error if loading all cache data fails.
+    /// Returns an error if loading cache data fails.
     pub async fn cache_all(&mut self) -> anyhow::Result<()> {
         let cache_map = match &self.database {
             Some(db) => db.load_all().await?,
@@ -2329,6 +2464,7 @@ impl Cache {
 
         self.currencies = cache_map.currencies;
         self.instruments = cache_map.instruments;
+        self.instrument_closes = cache_map.instrument_closes;
         self.synthetics = cache_map.synthetics;
         self.accounts = cache_map
             .accounts
@@ -2560,7 +2696,7 @@ impl Cache {
             // 4: Build index.order_strategy -> {ClientOrderId, StrategyId}
             self.index
                 .order_strategy
-                .insert(*client_order_id, order.strategy_id());
+                .insert(*client_order_id, strategy_id);
 
             // 5: Build index.instrument_orders -> {InstrumentId, {ClientOrderId}}
             self.index
@@ -2592,9 +2728,10 @@ impl Cache {
                     .entry(exec_algorithm_id)
                     .or_default()
                     .insert(*client_order_id);
+                self.index.exec_algorithms.insert(exec_algorithm_id);
             }
 
-            // 8: Build index.exec_spawn_orders -> {ClientOrderId, {ClientOrderId}}
+            // 9: Build index.exec_spawn_orders -> {ClientOrderId, {ClientOrderId}}
             if let Some(exec_spawn_id) = order.exec_spawn_id() {
                 self.index
                     .exec_spawn_orders
@@ -2603,44 +2740,36 @@ impl Cache {
                     .insert(*client_order_id);
             }
 
-            // 9: Build index.orders -> {ClientOrderId}
+            // 10: Build index.orders -> {ClientOrderId}
             self.index.orders.insert(*client_order_id);
 
-            // 10: Build index.orders_active_local -> {ClientOrderId}
+            // 11: Build index.orders_active_local -> {ClientOrderId}
             if order.is_active_local() {
                 self.index.orders_active_local.insert(*client_order_id);
             }
 
-            // 11: Build index.orders_open -> {ClientOrderId}
+            // 12: Build index.orders_open -> {ClientOrderId}
             if order.is_open() {
                 self.index.orders_open.insert(*client_order_id);
             }
 
-            // 12: Build index.orders_closed -> {ClientOrderId}
+            // 13: Build index.orders_closed -> {ClientOrderId}
             if order.is_closed() {
                 self.index.orders_closed.insert(*client_order_id);
             }
 
-            // 13: Build index.orders_emulated -> {ClientOrderId}
-            if let Some(emulation_trigger) = order.emulation_trigger()
-                && emulation_trigger != TriggerType::NoTrigger
-                && !order.is_closed()
-            {
+            // 14: Build index.orders_emulated -> {ClientOrderId}
+            if order.emulation_trigger().is_some() && !order.is_closed() {
                 self.index.orders_emulated.insert(*client_order_id);
             }
 
-            // 14: Build index.orders_inflight -> {ClientOrderId}
+            // 15: Build index.orders_inflight -> {ClientOrderId}
             if order.is_inflight() {
                 self.index.orders_inflight.insert(*client_order_id);
             }
 
-            // 15: Build index.strategies -> {StrategyId}
+            // 16: Build index.strategies -> {StrategyId}
             self.index.strategies.insert(strategy_id);
-
-            // 16: Build index.strategies -> {ExecAlgorithmId}
-            if let Some(exec_algorithm_id) = order.exec_algorithm_id() {
-                self.index.exec_algorithms.insert(exec_algorithm_id);
-            }
         }
 
         // Index positions
@@ -2660,7 +2789,7 @@ impl Cache {
             // 2: Build index.position_strategy -> {PositionId, StrategyId}
             self.index
                 .position_strategy
-                .insert(*position_id, position.strategy_id);
+                .insert(*position_id, strategy_id);
 
             // 3: Build index.position_orders -> {PositionId, {ClientOrderId}}
             let position_orders = self.index.position_orders.entry(*position_id).or_default();
@@ -2853,20 +2982,19 @@ impl Cache {
 
         // Use exit price for mark-to-market: longs exit at bid, shorts exit at ask
         let last = match position.side {
-            PositionSide::Flat | PositionSide::NoPositionSide => {
+            PositionSide::Flat => {
                 return Some(Money::zero(position.settlement_currency));
             }
             PositionSide::Long => quote.bid_price,
             PositionSide::Short => quote.ask_price,
         };
 
-        match position.try_unrealized_pnl(last) {
-            Ok(pnl) => Some(pnl),
-            Err(e) => {
+        position
+            .try_unrealized_pnl(last)
+            .inspect_err(|e| {
                 log::error!("Cannot calculate unrealized PnL for {}: {e}", position.id);
-                None
-            }
-        }
+            })
+            .ok()
     }
 
     /// Checks integrity of data within the cache.
@@ -3744,8 +3872,8 @@ impl Cache {
     ///
     /// All cache-owned data keyed by the instrument is removed: the instrument record,
     /// any synthetic with the same id, order book and own-order-book state, quote/trade
-    /// histories, mark/index/funding price histories, instrument status, bars for any
-    /// `BarType` referencing the instrument, and the `instrument_orders` /
+    /// histories, mark/index/funding price histories, instrument status and close, bars
+    /// for any `BarType` referencing the instrument, and the `instrument_orders` /
     /// `instrument_positions` index entries.
     ///
     /// For safety, an instrument is prevented from being purged while any associated
@@ -3816,6 +3944,7 @@ impl Cache {
         self.index_prices.remove(&instrument_id);
         self.funding_rates.remove(&instrument_id);
         self.instrument_statuses.remove(&instrument_id);
+        self.instrument_closes.remove(&instrument_id);
         self.greeks.remove(&instrument_id);
         self.option_greeks.remove(&instrument_id);
 
@@ -3893,7 +4022,8 @@ impl Cache {
     ///
     /// All stateful fields are reset to their initial value. Instruments,
     /// currencies, and synthetics are retained when `drop_instruments_on_reset`
-    /// is `false` so that repeated backtest runs can reuse the same dataset.
+    /// is `false` so that repeated backtest runs can reuse the same dataset. External order claims
+    /// are retained so registered strategy routing remains configured across resets.
     pub fn reset(&mut self) {
         log::debug!("Resetting cache");
 
@@ -3907,6 +4037,7 @@ impl Cache {
         self.index_prices.clear();
         self.funding_rates.clear();
         self.instrument_statuses.clear();
+        self.instrument_closes.clear();
         self.bars.clear();
         self.accounts.clear();
         self.orders.clear();
@@ -4125,6 +4256,26 @@ impl Cache {
             .entry(status.instrument_id)
             .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity));
         statuses_deque.push_front(status);
+        Ok(())
+    }
+
+    /// Adds an instrument close to the cache.
+    ///
+    /// A close already cached for the same instrument is overwritten. With a backing database, the
+    /// replacement is queued for persistence before the in-memory value is updated. A later
+    /// database error is logged by the adapter and does not roll back the cached value.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the close cannot be queued for persistence.
+    pub fn add_instrument_close(&mut self, close: InstrumentClose) -> anyhow::Result<()> {
+        log::debug!("Adding `InstrumentClose` for {}", close.instrument_id);
+
+        if let Some(database) = &self.database {
+            database.add_instrument_close(&close)?;
+        }
+
+        self.instrument_closes.insert(close.instrument_id, close);
         Ok(())
     }
 
@@ -4621,20 +4772,13 @@ impl Cache {
         }
 
         // Update emulation index
-        if let Some(emulation_trigger) = order.emulation_trigger()
-            && emulation_trigger != TriggerType::NoTrigger
-        {
+        if order.emulation_trigger().is_some() {
             self.index.orders_emulated.insert(client_order_id);
         }
 
         // Index position ID if provided
         if let Some(position_id) = position_id {
-            self.index_position_id_in_memory(
-                &position_id,
-                &order.instrument_id().venue,
-                &client_order_id,
-                &strategy_id,
-            );
+            self.index_position_id_in_memory(&position_id, &venue, &client_order_id, &strategy_id);
         }
 
         // Index client ID if provided
@@ -4955,10 +5099,6 @@ impl Cache {
             );
         }
 
-        let venue = position.instrument_id.venue;
-        let venue_positions = self.index.venue_positions.entry(venue).or_default();
-        venue_positions.insert(position.id);
-
         // Index: InstrumentId -> AHashSet
         let instrument_id = position.instrument_id;
         let instrument_positions = self
@@ -5227,10 +5367,7 @@ impl Cache {
         }
 
         // Update emulation index
-        if let Some(emulation_trigger) = order.emulation_trigger()
-            && emulation_trigger != TriggerType::NoTrigger
-            && !order.is_closed()
-        {
+        if order.emulation_trigger().is_some() && !order.is_closed() {
             self.index.orders_emulated.insert(client_order_id);
         } else {
             self.index.orders_emulated.remove(&client_order_id);
@@ -5285,15 +5422,7 @@ impl Cache {
             anyhow::bail!("Cannot update position {}: not found in cache", position.id);
         };
 
-        // Update open/closed state
-
-        if position.is_open() {
-            self.index.positions_open.insert(position.id);
-            self.index.positions_closed.remove(&position.id);
-        } else {
-            self.index.positions_closed.insert(position.id);
-            self.index.positions_open.remove(&position.id);
-        }
+        self.refresh_position_indexes(position);
 
         *position_cell.borrow_mut() = position.clone();
 
@@ -5306,6 +5435,49 @@ impl Cache {
         }
 
         Ok(())
+    }
+
+    /// Updates a cached position by applying an order fill in place.
+    ///
+    /// Returns a transient copy of the updated state without stored history. The canonical cached
+    /// position retains its complete history.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the position is not already held in the cache, or if updating the
+    /// position in the database fails.
+    pub fn update_position_from_fill(
+        &mut self,
+        position_id: PositionId,
+        fill: &OrderFilled,
+    ) -> anyhow::Result<Position> {
+        let Some(position_cell) = self.positions.get(&position_id).cloned() else {
+            anyhow::bail!("Cannot update position {position_id}: not found in cache");
+        };
+
+        let position = {
+            let mut position = position_cell.borrow_mut();
+            position.apply(fill);
+            position.clone_without_events()
+        };
+
+        self.refresh_position_indexes(&position);
+
+        if let Some(database) = &mut self.database {
+            database.update_position(&position_cell.borrow())?;
+        }
+
+        Ok(position)
+    }
+
+    fn refresh_position_indexes(&mut self, position: &Position) {
+        if position.is_open() {
+            self.index.positions_open.insert(position.id);
+            self.index.positions_closed.remove(&position.id);
+        } else {
+            self.index.positions_closed.insert(position.id);
+            self.index.positions_open.remove(&position.id);
+        }
     }
 
     /// Gets the OMS type for the `position_id`.
@@ -5566,20 +5738,17 @@ impl Cache {
         account_id: Option<&AccountId>,
         side: Option<OrderSide>,
     ) -> usize {
-        let side = side.unwrap_or(OrderSide::NoOrderSide);
-
         match self.collect_order_filter_sources(venue, instrument_id, strategy_id, account_id) {
             FilterSources::Empty => 0,
-            FilterSources::Unfiltered => {
-                if side == OrderSide::NoOrderSide {
-                    bucket.len()
-                } else {
+            FilterSources::Unfiltered => side.map_or_else(
+                || bucket.len(),
+                |side| {
                     bucket
                         .iter()
                         .filter(|id| self.order_side_matches(id, side))
                         .count()
-                }
-            }
+                },
+            ),
             FilterSources::Sets(mut sources) => {
                 sources.push(bucket);
                 sources.sort_unstable_by_key(|s| s.len());
@@ -5589,9 +5758,7 @@ impl Cache {
                 driver
                     .iter()
                     .filter(|id| rest.iter().all(|s| s.contains(id)))
-                    .filter(|id| {
-                        side == OrderSide::NoOrderSide || self.order_side_matches(id, side)
-                    })
+                    .filter(|id| side.is_none_or(|side| self.order_side_matches(id, side)))
                     .count()
             }
         }
@@ -5606,20 +5773,17 @@ impl Cache {
         account_id: Option<&AccountId>,
         side: Option<PositionSide>,
     ) -> usize {
-        let side = side.unwrap_or(PositionSide::NoPositionSide);
-
         match self.collect_position_filter_sources(venue, instrument_id, strategy_id, account_id) {
             FilterSources::Empty => 0,
-            FilterSources::Unfiltered => {
-                if side == PositionSide::NoPositionSide {
-                    bucket.len()
-                } else {
+            FilterSources::Unfiltered => side.map_or_else(
+                || bucket.len(),
+                |side| {
                     bucket
                         .iter()
                         .filter(|id| self.position_side_matches(id, side))
                         .count()
-                }
-            }
+                },
+            ),
             FilterSources::Sets(mut sources) => {
                 sources.push(bucket);
                 sources.sort_unstable_by_key(|s| s.len());
@@ -5629,9 +5793,7 @@ impl Cache {
                 driver
                     .iter()
                     .filter(|id| rest.iter().all(|s| s.contains(id)))
-                    .filter(|id| {
-                        side == PositionSide::NoPositionSide || self.position_side_matches(id, side)
-                    })
+                    .filter(|id| side.is_none_or(|side| self.position_side_matches(id, side)))
                     .count()
             }
         }
@@ -5651,17 +5813,12 @@ impl Cache {
         account_id: Option<&AccountId>,
         side: Option<OrderSide>,
     ) -> bool {
-        let side = side.unwrap_or(OrderSide::NoOrderSide);
-
         match self.collect_order_filter_sources(venue, instrument_id, strategy_id, account_id) {
             FilterSources::Empty => false,
-            FilterSources::Unfiltered => {
-                if side == OrderSide::NoOrderSide {
-                    !bucket.is_empty()
-                } else {
-                    bucket.iter().any(|id| self.order_side_matches(id, side))
-                }
-            }
+            FilterSources::Unfiltered => side.map_or_else(
+                || !bucket.is_empty(),
+                |side| bucket.iter().any(|id| self.order_side_matches(id, side)),
+            ),
             FilterSources::Sets(mut sources) => {
                 sources.push(bucket);
                 sources.sort_unstable_by_key(|s| s.len());
@@ -5671,7 +5828,7 @@ impl Cache {
                 driver
                     .iter()
                     .filter(|id| rest.iter().all(|s| s.contains(id)))
-                    .any(|id| side == OrderSide::NoOrderSide || self.order_side_matches(id, side))
+                    .any(|id| side.is_none_or(|side| self.order_side_matches(id, side)))
             }
         }
     }
@@ -5685,17 +5842,12 @@ impl Cache {
         account_id: Option<&AccountId>,
         side: Option<PositionSide>,
     ) -> bool {
-        let side = side.unwrap_or(PositionSide::NoPositionSide);
-
         match self.collect_position_filter_sources(venue, instrument_id, strategy_id, account_id) {
             FilterSources::Empty => false,
-            FilterSources::Unfiltered => {
-                if side == PositionSide::NoPositionSide {
-                    !bucket.is_empty()
-                } else {
-                    bucket.iter().any(|id| self.position_side_matches(id, side))
-                }
-            }
+            FilterSources::Unfiltered => side.map_or_else(
+                || !bucket.is_empty(),
+                |side| bucket.iter().any(|id| self.position_side_matches(id, side)),
+            ),
             FilterSources::Sets(mut sources) => {
                 sources.push(bucket);
                 sources.sort_unstable_by_key(|s| s.len());
@@ -5705,9 +5857,7 @@ impl Cache {
                 driver
                     .iter()
                     .filter(|id| rest.iter().all(|s| s.contains(id)))
-                    .any(|id| {
-                        side == PositionSide::NoPositionSide || self.position_side_matches(id, side)
-                    })
+                    .any(|id| side.is_none_or(|side| self.position_side_matches(id, side)))
             }
         }
     }
@@ -5734,7 +5884,6 @@ impl Cache {
         client_order_ids: &AHashSet<ClientOrderId>,
         side: Option<OrderSide>,
     ) -> Vec<OrderRef<'_>> {
-        let side = side.unwrap_or(OrderSide::NoOrderSide);
         let mut orders = Vec::new();
 
         for client_order_id in client_order_ids {
@@ -5744,7 +5893,7 @@ impl Cache {
                 .unwrap_or_else(|| panic!("Order {client_order_id} not found"));
             let order = OrderRef::new(order_cell.borrow());
 
-            if side == OrderSide::NoOrderSide || side == order.order_side() {
+            if side.is_none_or(|side| side == order.order_side()) {
                 orders.push(order);
             }
         }
@@ -5769,7 +5918,6 @@ impl Cache {
         position_ids: &AHashSet<PositionId>,
         side: Option<PositionSide>,
     ) -> Vec<PositionRef<'_>> {
-        let side = side.unwrap_or(PositionSide::NoPositionSide);
         let mut positions = Vec::new();
 
         for position_id in position_ids {
@@ -5779,7 +5927,7 @@ impl Cache {
                 .unwrap_or_else(|| panic!("Position {position_id} not found"));
             let position = PositionRef::new(position_cell.borrow());
 
-            if side == PositionSide::NoPositionSide || side == position.side {
+            if side.is_none_or(|side| side == position.side) {
                 positions.push(position);
             }
         }
@@ -7015,22 +7163,7 @@ impl Cache {
         exec_spawn_id: &ClientOrderId,
         active_only: bool,
     ) -> Option<Quantity> {
-        let exec_spawn_orders = self.orders_for_exec_spawn(exec_spawn_id);
-
-        let mut total_quantity: Option<Quantity> = None;
-
-        for spawn_order in exec_spawn_orders {
-            if active_only && spawn_order.is_closed() {
-                continue;
-            }
-
-            match total_quantity.as_mut() {
-                Some(total) => *total = *total + spawn_order.quantity(),
-                None => total_quantity = Some(spawn_order.quantity()),
-            }
-        }
-
-        total_quantity
+        self.exec_spawn_total(exec_spawn_id, active_only, Order::quantity)
     }
 
     /// Returns the total filled quantity for all orders with the `exec_spawn_id`.
@@ -7040,22 +7173,7 @@ impl Cache {
         exec_spawn_id: &ClientOrderId,
         active_only: bool,
     ) -> Option<Quantity> {
-        let exec_spawn_orders = self.orders_for_exec_spawn(exec_spawn_id);
-
-        let mut total_quantity: Option<Quantity> = None;
-
-        for spawn_order in exec_spawn_orders {
-            if active_only && spawn_order.is_closed() {
-                continue;
-            }
-
-            match total_quantity.as_mut() {
-                Some(total) => *total = *total + spawn_order.filled_qty(),
-                None => total_quantity = Some(spawn_order.filled_qty()),
-            }
-        }
-
-        total_quantity
+        self.exec_spawn_total(exec_spawn_id, active_only, Order::filled_qty)
     }
 
     /// Returns the total leaves quantity for all orders with the `exec_spawn_id`.
@@ -7065,22 +7183,20 @@ impl Cache {
         exec_spawn_id: &ClientOrderId,
         active_only: bool,
     ) -> Option<Quantity> {
-        let exec_spawn_orders = self.orders_for_exec_spawn(exec_spawn_id);
+        self.exec_spawn_total(exec_spawn_id, active_only, Order::leaves_qty)
+    }
 
-        let mut total_quantity: Option<Quantity> = None;
-
-        for spawn_order in exec_spawn_orders {
-            if active_only && spawn_order.is_closed() {
-                continue;
-            }
-
-            match total_quantity.as_mut() {
-                Some(total) => *total = *total + spawn_order.leaves_qty(),
-                None => total_quantity = Some(spawn_order.leaves_qty()),
-            }
-        }
-
-        total_quantity
+    fn exec_spawn_total(
+        &self,
+        exec_spawn_id: &ClientOrderId,
+        active_only: bool,
+        quantity: impl Fn(&OrderAny) -> Quantity,
+    ) -> Option<Quantity> {
+        self.orders_for_exec_spawn(exec_spawn_id)
+            .into_iter()
+            .filter(|order| !active_only || !order.is_closed())
+            .map(|order| quantity(&order))
+            .reduce(|total, quantity| total + quantity)
     }
 
     // -- POSITION QUERIES ------------------------------------------------------------------------
@@ -7666,6 +7782,18 @@ impl Cache {
             .and_then(|statuses| statuses.front())
     }
 
+    /// Returns the close cached for `instrument_id`, if present.
+    #[must_use]
+    pub fn instrument_close(&self, instrument_id: &InstrumentId) -> Option<&InstrumentClose> {
+        self.instrument_closes.get(instrument_id)
+    }
+
+    /// Returns references to all instrument IDs with a cached close.
+    #[must_use]
+    pub fn instrument_close_ids(&self) -> Vec<&InstrumentId> {
+        self.instrument_closes.keys().collect()
+    }
+
     /// Gets a reference to the latest bar for the `bar_type`.
     #[must_use]
     pub fn bar(&self, bar_type: &BarType) -> Option<&Bar> {
@@ -7782,6 +7910,12 @@ impl Cache {
     #[must_use]
     pub fn has_instrument_statuses(&self, instrument_id: &InstrumentId) -> bool {
         self.instrument_status_count(instrument_id) > 0
+    }
+
+    /// Returns whether the cache contains a close for the `instrument_id`.
+    #[must_use]
+    pub fn has_instrument_close(&self, instrument_id: &InstrumentId) -> bool {
+        self.instrument_closes.contains_key(instrument_id)
     }
 
     /// Returns whether the cache contains bars for the `bar_type`.

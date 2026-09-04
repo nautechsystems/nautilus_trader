@@ -290,11 +290,7 @@ mod tests {
         submit_counter: Arc<AtomicU64>,
     ) -> (DataMarkerCapture, SharedMemoryMarkerState) {
         let (wrapper, shared) = SharedMemoryMarker::new();
-        shared
-            .lock()
-            .expect("shared marker")
-            .open_run(manifest())
-            .expect("open marker run");
+        shared.lock().open_run(manifest()).expect("open marker run");
 
         let writer = MarkerWriter::spawn(
             Box::new(wrapper),
@@ -314,27 +310,15 @@ mod tests {
     }
 
     fn snapshots(shared: &SharedMemoryMarkerState) -> Vec<DataCursorSnapshot> {
-        shared
-            .lock()
-            .expect("shared marker")
-            .scan_snapshots()
-            .expect("scan snapshots")
+        shared.lock().scan_snapshots().expect("scan snapshots")
     }
 
     fn hifi(shared: &SharedMemoryMarkerState) -> Vec<HiFiMarker> {
-        shared
-            .lock()
-            .expect("shared marker")
-            .scan_hifi()
-            .expect("scan hifi")
+        shared.lock().scan_hifi().expect("scan hifi")
     }
 
     fn dict(shared: &SharedMemoryMarkerState) -> Vec<StreamDictEntry> {
-        shared
-            .lock()
-            .expect("shared marker")
-            .scan_dict()
-            .expect("scan dict")
+        shared.lock().scan_dict().expect("scan dict")
     }
 
     #[rstest]

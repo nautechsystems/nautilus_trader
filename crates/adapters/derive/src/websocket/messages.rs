@@ -19,14 +19,21 @@
 //! [`crate::http::models::JsonRpcResponse`] envelope; this module covers only
 //! the params payloads and the inbound notification frame.
 
-use std::{collections::HashMap, fmt::Display, str::FromStr};
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display},
+    str::FromStr,
+};
 
-use nautilus_core::serialization::deserialize_decimal;
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::{serialization::deserialize_decimal, string::secret::SecretString};
 use nautilus_model::identifiers::InstrumentId;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, value::RawValue};
 use ustr::Ustr;
+use zeroize::Zeroize;
 
 use crate::{
     common::{
@@ -50,14 +57,14 @@ pub(crate) const DEFAULT_TICKER_INTERVAL: &str = "1000";
 /// The wallet/timestamp/signature triple comes from
 /// [`crate::signing::auth::build_ws_login`]; the venue verifies the signature
 /// recovers `wallet` over the millisecond timestamp string.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Zeroize)]
 pub struct WsLoginParams {
     /// Derive Chain smart-contract wallet address (`0x`-prefixed hex).
     pub wallet: String,
     /// Millisecond UNIX timestamp string (matches the bytes that were signed).
     pub timestamp: String,
     /// 0x-prefixed signature hex over `timestamp` under EIP-191.
-    pub signature: String,
+    pub signature: SecretString,
 }
 
 /// Params payload for `subscribe`.
@@ -1078,7 +1085,7 @@ mod tests {
             WsRequestParams::from(WsLoginParams {
                 wallet: "0xWALLET".to_string(),
                 timestamp: "1700000000000".to_string(),
-                signature: "0xSIG".to_string(),
+                signature: SecretString::from("0xSIG"),
             }),
         );
         let subscribe = JsonRpcRequest::new(
@@ -1169,12 +1176,16 @@ mod tests {
         let params = WsLoginParams {
             wallet: "0xWALLET".to_string(),
             timestamp: "1700000000000".to_string(),
-            signature: "0xDEAD".to_string(),
+            signature: SecretString::from("0xDEAD"),
         };
+        let debug = format!("{params:?}");
         let wire = serde_json::to_value(&params).unwrap();
+
         assert_eq!(wire["wallet"], "0xWALLET");
         assert_eq!(wire["timestamp"], "1700000000000");
         assert_eq!(wire["signature"], "0xDEAD");
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains("0xDEAD"));
         let back: WsLoginParams = serde_json::from_value(wire).unwrap();
         assert_eq!(back, params);
     }

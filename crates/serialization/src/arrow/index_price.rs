@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use arrow::{
     array::{FixedSizeBinaryArray, FixedSizeBinaryBuilder, UInt64Array},
@@ -21,13 +21,11 @@ use arrow::{
     error::ArrowError,
     record_batch::RecordBatch,
 };
-use nautilus_model::{
-    data::prices::IndexPriceUpdate, identifiers::InstrumentId, types::fixed::PRECISION_BYTES,
-};
+use nautilus_model::{data::prices::IndexPriceUpdate, types::fixed::PRECISION_BYTES};
 
 use super::{
     DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION, decode_price,
-    extract_column, validate_precision_bytes,
+    extract_column, parse_price_metadata, validate_precision_bytes,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -44,22 +42,6 @@ impl ArrowSchemaProvider for IndexPriceUpdate {
             None => Schema::new(fields),
         }
     }
-}
-
-fn parse_metadata(metadata: &HashMap<String, String>) -> Result<(InstrumentId, u8), EncodingError> {
-    let instrument_id_str = metadata
-        .get(KEY_INSTRUMENT_ID)
-        .ok_or_else(|| EncodingError::MissingMetadata(KEY_INSTRUMENT_ID))?;
-    let instrument_id = InstrumentId::from_str(instrument_id_str)
-        .map_err(|e| EncodingError::ParseError(KEY_INSTRUMENT_ID, e.to_string()))?;
-
-    let price_precision = metadata
-        .get(KEY_PRICE_PRECISION)
-        .ok_or_else(|| EncodingError::MissingMetadata(KEY_PRICE_PRECISION))?
-        .parse::<u8>()
-        .map_err(|e| EncodingError::ParseError(KEY_PRICE_PRECISION, e.to_string()))?;
-
-    Ok((instrument_id, price_precision))
 }
 
 impl EncodeToRecordBatch for IndexPriceUpdate {
@@ -108,7 +90,7 @@ impl DecodeFromRecordBatch for IndexPriceUpdate {
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Result<Vec<Self>, EncodingError> {
-        let (instrument_id, price_precision) = parse_metadata(metadata)?;
+        let (instrument_id, price_precision) = parse_price_metadata(metadata)?;
         let cols = record_batch.columns();
 
         let value_values = extract_column::<FixedSizeBinaryArray>(
@@ -153,7 +135,10 @@ mod tests {
     use std::sync::Arc;
 
     use arrow::{array::Array, record_batch::RecordBatch};
-    use nautilus_model::types::{Price, fixed::FIXED_SCALAR, price::PriceRaw};
+    use nautilus_model::{
+        identifiers::InstrumentId,
+        types::{Price, fixed::FIXED_SCALAR, price::PriceRaw},
+    };
     use rstest::rstest;
     use rust_decimal_macros::dec;
 

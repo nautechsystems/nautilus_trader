@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-polymarket"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -78,6 +77,7 @@ futures-util = { workspace = true }
 indexmap = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
+parking_lot = { workspace = true }
 rand = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }

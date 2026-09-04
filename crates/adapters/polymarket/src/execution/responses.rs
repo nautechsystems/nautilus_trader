@@ -15,7 +15,7 @@
 
 use std::{sync::Arc, time::Duration};
 
-use nautilus_common::live::{get_runtime, task::TaskHandles};
+use futures_util::future::join_all;
 use nautilus_core::{UUID4, time::AtomicTime};
 use nautilus_live::{ExecutionEventEmitter, execution::failure::CommandFailure};
 use nautilus_model::{
@@ -36,7 +36,7 @@ use super::{
     reconciliation::{cap_order_report_filled_qty, validate_client_bound_order_quantity},
     reports::get_pusd_currency,
     submitter::{
-        OrderSubmitter, SubmitResponseOutcome, is_fok_unfilled, submit_response_outcome,
+        OrderSubmitter, SubmitResponseOutcome, immediate_rejection_reason, submit_response_outcome,
         submit_response_unknown_reason, submit_response_venue_order_id,
     },
     types::{BatchLimitOrderContext, classify_http_command_failure},
@@ -59,7 +59,6 @@ pub(super) async fn handle_batch_order_responses(
     order_identities: &Arc<OrderIdentityRegistry>,
     pending_submits: &PendingSubmitTracker,
     pending_cancels: &PendingCancelTracker,
-    pending_tasks: &Arc<TaskHandles>,
     account_id: AccountId,
 ) {
     let response_len = responses.len();
@@ -78,10 +77,9 @@ pub(super) async fn handle_batch_order_responses(
         .zip(responses)
         .zip(&expected_venue_order_ids)
     {
-        let (deferred_cancel, fok_order_id) = if submit_response_outcome(
-            &response,
-            batch_order.order.time_in_force() == TimeInForce::Fok,
-        ) == SubmitResponseOutcome::Unknown
+        let time_in_force = batch_order.order.time_in_force();
+        let (deferred_cancel, fok_order_id) = if submit_response_outcome(&response, time_in_force)
+            == SubmitResponseOutcome::Unknown
         {
             (
                 handle_unknown_submit_result(
@@ -96,13 +94,13 @@ pub(super) async fn handle_batch_order_responses(
                     pending_submits,
                     pending_cancels,
                     account_id,
-                    batch_order.size_precision,
+                    batch_order.request.size_precision,
                     batch_order.price_precision,
                 ),
                 None,
             )
         } else {
-            let fok_order_id = fok_check_order_id(&response, batch_order.order.time_in_force());
+            let fok_order_id = fok_check_order_id(&response, time_in_force);
             let deferred_cancel = handle_order_response(
                 Ok(response),
                 &batch_order.order,
@@ -112,7 +110,7 @@ pub(super) async fn handle_batch_order_responses(
                 order_identities,
                 pending_cancels,
                 account_id,
-                batch_order.size_precision,
+                batch_order.request.size_precision,
                 batch_order.price_precision,
             );
 
@@ -141,7 +139,7 @@ pub(super) async fn handle_batch_order_responses(
             pending_submits,
             pending_cancels,
             account_id,
-            batch_order.size_precision,
+            batch_order.request.size_precision,
             batch_order.price_precision,
         );
 
@@ -150,45 +148,47 @@ pub(super) async fn handle_batch_order_responses(
         }
     }
 
-    for (batch_order, deferred_cancel, fok_order_id) in follow_ups {
-        let submitter = submitter.clone();
-        let emitter = emitter.clone();
-        let fill_tracker = fill_tracker.clone();
-        let order_identities = order_identities.clone();
-        let pending_cancels = pending_cancels.clone();
+    let follow_ups = follow_ups
+        .into_iter()
+        .map(|(batch_order, deferred_cancel, fok_order_id)| {
+            let submitter = submitter.clone();
+            let emitter = emitter.clone();
+            let fill_tracker = fill_tracker.clone();
+            let order_identities = order_identities.clone();
+            let pending_cancels = pending_cancels.clone();
 
-        let handle = get_runtime().spawn(async move {
-            if let Some((order_id_str, venue_order_id)) = deferred_cancel {
-                execute_deferred_cancel(
-                    &submitter,
-                    &batch_order.order,
-                    &order_id_str,
-                    venue_order_id,
-                    &emitter,
-                    &pending_cancels,
-                    clock,
-                )
-                .await;
-            }
+            async move {
+                if let Some((order_id_str, venue_order_id)) = deferred_cancel {
+                    execute_deferred_cancel(
+                        &submitter,
+                        &batch_order.order,
+                        &order_id_str,
+                        venue_order_id,
+                        &emitter,
+                        &pending_cancels,
+                        clock,
+                    )
+                    .await;
+                }
 
-            if let Some(order_id) = fok_order_id {
-                check_fok_status(
-                    &submitter,
-                    &order_id,
-                    &batch_order.order,
-                    &fill_tracker,
-                    &order_identities,
-                    &emitter,
-                    account_id,
-                    batch_order.size_precision,
-                    batch_order.price_precision,
-                    clock,
-                )
-                .await;
+                if let Some(order_id) = fok_order_id {
+                    check_fok_status(
+                        &submitter,
+                        &order_id,
+                        &batch_order.order,
+                        &fill_tracker,
+                        &order_identities,
+                        &emitter,
+                        account_id,
+                        batch_order.request.size_precision,
+                        batch_order.price_precision,
+                        clock,
+                    )
+                    .await;
+                }
             }
         });
-        pending_tasks.push(handle);
-    }
+    join_all(follow_ups).await;
 }
 
 pub(super) fn reject_submit_order(
@@ -224,36 +224,25 @@ pub(super) fn emit_market_order_submitted(
         return;
     }
 
-    emit_signed_base_quantity_update(
-        order,
-        is_quote_qty,
-        side,
-        amount,
-        expected_base_qty,
-        size_precision,
-        emitter,
-        clock,
-    );
+    let Ok(base_qty) = Quantity::from_decimal_dp(expected_base_qty, size_precision) else {
+        return;
+    };
+
+    emit_signed_base_quantity_update(order, is_quote_qty, side, amount, base_qty, emitter, clock);
 }
 
-#[expect(clippy::too_many_arguments)]
 pub(super) fn emit_signed_base_quantity_update(
     order: &mut OrderAny,
     is_quote_qty: bool,
     side: OrderSide,
     amount: Quantity,
-    expected_base_qty: Decimal,
-    size_precision: u8,
+    base_qty: Quantity,
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
 ) {
-    if expected_base_qty.is_zero() {
+    if base_qty.is_zero() {
         return;
     }
-
-    let Ok(base_qty) = Quantity::from_decimal_dp(expected_base_qty, size_precision) else {
-        return;
-    };
 
     if base_qty == order.quantity() && !order.is_quote_quantity() {
         return;
@@ -318,7 +307,7 @@ pub(super) async fn handle_single_order_response(
                 order_identities,
                 pending_cancels,
                 account_id,
-                batch_order.size_precision,
+                batch_order.request.size_precision,
                 batch_order.price_precision,
             ) {
                 execute_deferred_cancel(
@@ -342,7 +331,7 @@ pub(super) async fn handle_single_order_response(
                     order_identities,
                     emitter,
                     account_id,
-                    batch_order.size_precision,
+                    batch_order.request.size_precision,
                     batch_order.price_precision,
                     clock,
                 )
@@ -363,7 +352,7 @@ pub(super) async fn handle_single_order_response(
                     pending_submits,
                     pending_cancels,
                     account_id,
-                    batch_order.size_precision,
+                    batch_order.request.size_precision,
                     batch_order.price_precision,
                 ) {
                     execute_deferred_cancel(
@@ -563,7 +552,7 @@ pub(super) fn handle_order_response(
 ) -> Option<(String, VenueOrderId)> {
     match result {
         Ok(response) => {
-            if let Some(reason) = fok_rejection_reason(&response, order.time_in_force()) {
+            if let Some(reason) = immediate_rejection_reason(&response, order.time_in_force()) {
                 reject_submit_order(order, reason, emitter, clock, pending_cancels);
                 return None;
             }
@@ -700,20 +689,9 @@ pub(super) fn fok_check_order_id(
             response.success
                 && time_in_force == TimeInForce::Fok
                 && decision.poll_fok
-                && fok_rejection_reason(response, time_in_force).is_none()
+                && immediate_rejection_reason(response, time_in_force).is_none()
         })
         .map(|venue_order_id| venue_order_id.to_string())
-}
-
-fn fok_rejection_reason(response: &OrderResponse, time_in_force: TimeInForce) -> Option<&str> {
-    if !response.success || response.status.is_some() || time_in_force != TimeInForce::Fok {
-        return None;
-    }
-
-    response
-        .error_msg
-        .as_deref()
-        .filter(|reason| is_fok_unfilled(reason))
 }
 
 pub(crate) fn is_post_only_crossing(reason: &str) -> bool {
@@ -1054,7 +1032,7 @@ fn handle_fok_rest_status(
                 ctx.order.instrument_id(),
                 Some(ctx.order.client_order_id()),
                 venue_order_id,
-                ctx.order.order_side(),
+                ctx.order.order_side().into(),
                 OrderType::Limit,
                 TimeInForce::Fok,
                 order_status,
@@ -1083,7 +1061,7 @@ mod tests {
     use nautilus_common::messages::ExecutionEvent;
     use nautilus_core::{UnixNanos, collections::AtomicMap};
     use nautilus_model::{
-        enums::{AccountType, LiquiditySide},
+        enums::{AccountType, LiquiditySide, OrderSide},
         identifiers::{ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, TraderId},
         instruments::{Instrument, InstrumentAny},
         orders::{LimitOrder, MarketOrder, Order, stubs::TestOrderEventStubs},
@@ -1339,7 +1317,10 @@ mod tests {
         handle_fok_rest_status(&venue_order, venue_order_id, &ctx);
 
         assert!(receiver.try_recv().is_err());
-        assert!(order_identities.get(&venue_order_id).is_none());
+        assert!(
+            order_identities.mark_accepted(venue_order_id),
+            "handler must not have marked the order accepted"
+        );
     }
 
     #[rstest]
@@ -1929,15 +1910,14 @@ mod tests {
         let pending_cancels = PendingCancelTracker::default();
         let order_identities = OrderIdentityRegistry::default();
 
-        fill_tracker.buffer_fill_for_test(
+        let mut fill = test_fill_report(
+            instrument_id,
             venue_order_id,
-            test_fill_report(
-                instrument_id,
-                venue_order_id,
-                Quantity::new(18.181, 3),
-                fill_ts,
-            ),
+            Quantity::new(18.181, 3),
+            fill_ts,
         );
+        fill.order_side = OrderSide::Sell;
+        fill_tracker.buffer_fill_for_test(venue_order_id, fill);
 
         emit_market_order_submitted(
             &mut order,
@@ -2004,6 +1984,7 @@ mod tests {
             ExecutionEvent::Order(OrderEventAny::Filled(event)) => {
                 assert_eq!(event.client_order_id, order.client_order_id());
                 assert_eq!(event.venue_order_id, venue_order_id);
+                assert_eq!(event.order_side, OrderSide::Buy);
                 assert_eq!(event.last_qty, Quantity::new(18.180, 3));
             }
             other => panic!("expected filled event, was {other:?}"),
@@ -2144,7 +2125,7 @@ mod tests {
             instrument_id,
             None,
             venue_order_id,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             status,
@@ -2206,7 +2187,7 @@ mod tests {
             instrument.id(),
             None,
             venue_order_id,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Rejected,
@@ -2271,7 +2252,7 @@ mod tests {
             instrument_id,
             None,
             venue_order_id,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Market,
             TimeInForce::Ioc,
             OrderStatus::Canceled,
@@ -2350,7 +2331,7 @@ mod tests {
             instrument_id,
             None,
             venue_order_id,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Filled,

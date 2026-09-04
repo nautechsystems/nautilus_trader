@@ -21,7 +21,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -90,6 +90,7 @@ struct TestServerState {
     subscription_events: Arc<tokio::sync::Mutex<Vec<SubscriptionEvent>>>,
     fail_next_subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
     auth_response_delay_ms: Arc<tokio::sync::Mutex<Option<u64>>>,
+    auth_delay_count: Arc<AtomicUsize>,
     suppress_login_ack: Arc<AtomicBool>,
     suppress_control_pong: Arc<AtomicBool>,
     control_ping_count: Arc<tokio::sync::Mutex<usize>>,
@@ -343,6 +344,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                 if let Ok(payload) = serde_json::from_str::<Value>(&text) {
                     if payload.get("op") == Some(&json!("login")) {
                         if let Some(delay_ms) = *state.auth_response_delay_ms.lock().await {
+                            state.auth_delay_count.fetch_add(1, Ordering::Relaxed);
                             tokio::time::sleep(Duration::from_millis(delay_ms)).await;
                         }
 
@@ -601,7 +603,6 @@ async fn start_ws_server(state: Arc<TestServerState>) -> SocketAddr {
             .expect("websocket server failed");
     });
 
-    tokio::time::sleep(Duration::from_millis(50)).await;
     addr
 }
 
@@ -877,7 +878,7 @@ async fn test_submit_margin_cross_order_preserves_reduce_only_on_wire() {
 }
 
 #[tokio::test]
-async fn test_submit_cash_spot_order_omits_reduce_only_on_wire() {
+async fn test_submit_cash_spot_order_rejects_reduce_only() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
@@ -891,7 +892,7 @@ async fn test_submit_cash_spot_order_omits_reduce_only_on_wire() {
         .await
         .expect("client inactive");
 
-    client
+    let error = client
         .submit_order(
             TraderId::from("TRADER-001"),
             StrategyId::from("STRATEGY-001"),
@@ -919,26 +920,13 @@ async fn test_submit_cash_spot_order_omits_reduce_only_on_wire() {
             None,
         )
         .await
-        .expect("submit spot order failed");
+        .unwrap_err();
 
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move { !state.order_messages.lock().await.is_empty() }
-        },
-        Duration::from_secs(1),
-    )
-    .await;
-
-    let messages = state.order_messages().await;
-    let arg = &messages[0]["args"][0];
-
-    assert_eq!(messages[0]["op"], "order");
-    assert_eq!(arg["tdMode"], "cash");
-    assert!(
-        arg.get("reduceOnly").is_none(),
-        "cash spot orders must not carry reduceOnly"
+    assert_eq!(
+        error.to_string(),
+        "Client error: OKX cash orders do not support reduce-only instructions"
     );
+    assert!(state.order_messages().await.is_empty());
 
     client.close().await.expect("close failed");
 }
@@ -1006,6 +994,60 @@ async fn test_submit_swap_hedge_mode_order_omits_reduce_only_on_wire() {
         arg.get("reduceOnly").is_none(),
         "hedge-mode orders apply reduce-only via posSide and must not carry reduceOnly"
     );
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_submit_swap_hedge_mode_rejects_non_closing_reduce_only_order() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url).await;
+    client.cache_instruments(&load_swap_instruments());
+    client.cache_inst_id_code(Ustr::from("BTC-USD-SWAP"), 10_458);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    let error = client
+        .submit_order(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRATEGY-001"),
+            InstrumentId::from("BTC-USD-SWAP.OKX"),
+            OKXTradeMode::Cross,
+            ClientOrderId::from("Oswaphedgeinvalidreduceonly1"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("1"),
+            Some(TimeInForce::Gtc),
+            Some(Price::from("65000.1")),
+            None,
+            Some(false),
+            Some(true),
+            None,
+            Some(PositionSide::Long),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "Client error: OKX BUY orders on the LONG side do not enforce reduce-only"
+    );
+    assert!(state.order_messages().await.is_empty());
 
     client.close().await.expect("close failed");
 }
@@ -1108,7 +1150,7 @@ async fn test_batch_submit_orders_scope_reduce_only_on_wire() {
                 Some(Price::from("65000.1")),
                 None,
                 Some(false),
-                Some(true),
+                Some(false),
                 None,
                 None,
                 None,
@@ -1723,6 +1765,8 @@ async fn test_trades_subscription_flow() {
 
     let login_count = *state.login_count.lock().await;
     assert_eq!(login_count, 1);
+
+    client.close().await.expect("close failed");
 }
 
 #[tokio::test]
@@ -1760,6 +1804,8 @@ async fn test_reauth_and_resubscribe_after_disconnect() {
         Duration::from_secs(2),
     )
     .await;
+
+    client.close().await.expect("close failed");
 }
 
 #[tokio::test]
@@ -1962,6 +2008,8 @@ async fn test_reconnection_retries_failed_subscriptions() {
             .iter()
             .any(|(key, _, ok)| key.starts_with("trades") && *ok)
     );
+
+    client.close().await.expect("close failed");
 }
 
 #[tokio::test]
@@ -2313,6 +2361,8 @@ async fn test_sends_pong_for_text_ping() {
         Duration::from_secs(1),
     )
     .await;
+
+    client.close().await.expect("close failed");
 }
 
 #[tokio::test]
@@ -2348,6 +2398,8 @@ async fn test_sends_pong_for_control_ping() {
         Duration::from_secs(1),
     )
     .await;
+
+    client.close().await.expect("close failed");
 }
 
 #[tokio::test]
@@ -2407,6 +2459,8 @@ async fn test_unsubscribe_orders_sends_request() {
         Duration::from_secs(1),
     )
     .await;
+
+    client.close().await.expect("close failed");
 }
 
 #[tokio::test]
@@ -2446,6 +2500,8 @@ async fn test_subscribe_liquidation_warning_sends_request() {
         Duration::from_secs(1),
     )
     .await;
+
+    client.close().await.expect("close failed");
 }
 
 #[tokio::test]
@@ -2487,6 +2543,8 @@ async fn test_subscribe_to_orderbook() {
         Duration::from_secs(1),
     )
     .await;
+
+    client.close().await.expect("close failed");
 }
 
 #[tokio::test]
@@ -2536,6 +2594,8 @@ async fn test_multiple_symbols_subscription() {
         Duration::from_secs(1),
     )
     .await;
+
+    client.close().await.expect("close failed");
 }
 
 #[tokio::test]
@@ -2632,15 +2692,19 @@ async fn test_unsubscribed_private_channel_not_resubscribed_after_disconnect() {
     )
     .await;
 
-    let subscriptions = state.subscriptions.lock().await;
-    let orders_count = subscriptions
-        .iter()
-        .filter(|value| value_matches_channel(value, "orders"))
-        .count();
-    let trades_count = subscriptions
-        .iter()
-        .filter(|value| value_matches_channel(value, "trades"))
-        .count();
+    let (orders_count, trades_count) = {
+        let subscriptions = state.subscriptions.lock().await;
+        (
+            subscriptions
+                .iter()
+                .filter(|value| value_matches_channel(value, "orders"))
+                .count(),
+            subscriptions
+                .iter()
+                .filter(|value| value_matches_channel(value, "trades"))
+                .count(),
+        )
+    };
 
     assert_eq!(
         orders_count, 1,
@@ -2650,6 +2714,8 @@ async fn test_unsubscribed_private_channel_not_resubscribed_after_disconnect() {
         trades_count >= 2,
         "expected trades channel to be restored on reconnect"
     );
+
+    client.close().await.expect("close failed");
 }
 
 #[tokio::test]
@@ -3046,10 +3112,13 @@ async fn test_reconnection_race_condition() {
         .await
         .expect("trigger disconnect failed");
 
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    wait_until_async(
+        || async { state.auth_delay_count.load(Ordering::Relaxed) >= 1 },
+        Duration::from_secs(2),
+    )
+    .await;
 
     state.drop_next_connection.store(true, Ordering::Relaxed);
-    tokio::time::sleep(Duration::from_millis(100)).await;
 
     {
         let mut delay = state.auth_response_delay_ms.lock().await;
@@ -3121,12 +3190,6 @@ async fn test_subscribe_after_stream_call() {
     client.wait_until_active(5.0).await.expect("wait failed");
 
     let _stream = client.stream();
-
-    tokio::spawn(async move {
-        tokio::pin!(_stream);
-    });
-
-    tokio::time::sleep(Duration::from_millis(100)).await;
 
     let result = client
         .subscribe_book(InstrumentId::from("BTC-USD.OKX"))
@@ -3377,20 +3440,6 @@ async fn test_index_price_refcount_shares_venue_subscription() {
         .await
         .expect("second subscribe must succeed");
 
-    tokio::time::sleep(Duration::from_millis(50)).await;
-
-    let index_subs = state
-        .subscriptions
-        .lock()
-        .await
-        .iter()
-        .filter(|v| value_matches_channel(v, "index-tickers"))
-        .count();
-    assert_eq!(
-        index_subs, 1,
-        "two subscribers on the same base pair must produce only one venue subscribe",
-    );
-
     // Subscribe a different base pair to confirm refcount is per-pair.
     client
         .subscribe_index_prices(alt)
@@ -3415,6 +3464,18 @@ async fn test_index_price_refcount_shares_venue_subscription() {
     )
     .await;
 
+    let index_subs = state
+        .subscriptions
+        .lock()
+        .await
+        .iter()
+        .filter(|v| value_matches_channel(v, "index-tickers"))
+        .count();
+    assert_eq!(
+        index_subs, 2,
+        "two subscribers on one base pair and one on another must produce two venue subscribes",
+    );
+
     // First unsubscribe on BTC-USDT: one subscriber remains, no venue
     // unsubscribe yet.
     client
@@ -3422,7 +3483,24 @@ async fn test_index_price_refcount_shares_venue_subscription() {
         .await
         .expect("first unsubscribe must succeed");
 
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    client
+        .unsubscribe_index_prices(alt)
+        .await
+        .expect("unsubscribe alt base pair failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state.unsubscriptions.lock().await.iter().any(|v| {
+                    value_matches_channel(v, "index-tickers")
+                        && v.get("instId").and_then(|s| s.as_str()) == Some("ETH-USDT")
+                })
+            }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
 
     let btc_unsub = state
         .unsubscriptions

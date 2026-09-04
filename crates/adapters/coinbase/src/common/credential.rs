@@ -20,9 +20,12 @@ use aws_lc_rs::{
     signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair},
 };
 use base64::prelude::*;
-use nautilus_core::env::resolve_env_var_pair;
+use nautilus_core::{
+    env::resolve_env_var_pair,
+    string::secret::{REDACTED, SecretString},
+};
 use serde_json::json;
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::{
     common::consts::{JWT_EXPIRY_SECS, JWT_ISSUER},
@@ -99,17 +102,17 @@ impl CoinbaseCredential {
     ///
     /// The `uri` format is `"{METHOD} {host}{path}"`, e.g.
     /// `"GET api.coinbase.com/api/v3/brokerage/accounts"`.
-    pub fn build_rest_jwt(&self, uri: &str) -> Result<String> {
+    pub fn build_rest_jwt(&self, uri: &str) -> Result<SecretString> {
         self.build_jwt(Some(uri))
     }
 
     /// Generates a JWT for WebSocket authentication (no URI claim).
-    pub fn build_ws_jwt(&self) -> Result<String> {
+    pub fn build_ws_jwt(&self) -> Result<SecretString> {
         self.build_jwt(None)
     }
 
     /// Generates an ES256 JWT signed with the PEM EC private key.
-    fn build_jwt(&self, uri: Option<&str>) -> Result<String> {
+    fn build_jwt(&self, uri: Option<&str>) -> Result<SecretString> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| Error::auth(format!("Failed to get system time: {e}")))?
@@ -146,7 +149,7 @@ impl CoinbaseCredential {
 
         // Env vars and .env files often store PEM keys with literal `\n`
         // instead of real newlines. Normalize before parsing.
-        let pem_str = self.api_secret.trim().replace("\\n", "\n");
+        let pem_str = Zeroizing::new(self.api_secret.trim().replace("\\n", "\n"));
 
         let pem_obj = pem::parse(&pem_str)
             .map_err(|e| Error::auth(format!("Failed to parse PEM key: {e}")))?;
@@ -166,29 +169,22 @@ impl CoinbaseCredential {
 
         let sig_b64 = base64url_encode(sig.as_ref());
 
-        Ok(format!("{signing_input}.{sig_b64}"))
+        Ok(SecretString::from(format!("{signing_input}.{sig_b64}")))
     }
 }
 
 impl Debug for CoinbaseCredential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(CoinbaseCredential))
-            .field(
-                "api_key",
-                &format!("{}...", &self.api_key[..8.min(self.api_key.len())]),
-            )
-            .field("api_secret", &"***redacted***")
+            .field("api_key", &REDACTED)
+            .field("api_secret", &REDACTED)
             .finish()
     }
 }
 
 impl Display for CoinbaseCredential {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "CoinbaseCredential({}...)",
-            &self.api_key[..8.min(self.api_key.len())]
-        )
+        write!(f, "CoinbaseCredential({REDACTED})")
     }
 }
 
@@ -224,15 +220,17 @@ mod tests {
     fn test_credential_debug_redacts_secret() {
         let cred = CoinbaseCredential::new(TEST_API_KEY.to_string(), "my_secret_pem".to_string());
         let debug = format!("{cred:?}");
-        assert!(debug.contains("redacted"));
+        assert_eq!(debug.matches(REDACTED).count(), 2);
+        assert!(!debug.contains(TEST_API_KEY));
         assert!(!debug.contains("my_secret_pem"));
     }
 
     #[rstest]
-    fn test_credential_display_truncates_key() {
+    fn test_credential_display_redacts_key() {
         let cred = CoinbaseCredential::new(TEST_API_KEY.to_string(), "my_secret_pem".to_string());
         let display = format!("{cred}");
-        assert!(display.contains("organiza..."));
+        assert_eq!(display, "CoinbaseCredential(<redacted>)");
+        assert!(!display.contains(TEST_API_KEY));
         assert!(!display.contains("my_secret_pem"));
     }
 
@@ -244,7 +242,7 @@ mod tests {
         assert!(jwt.is_ok());
 
         let token = jwt.unwrap();
-        let parts: Vec<&str> = token.split('.').collect();
+        let parts: Vec<&str> = token.expose_secret().split('.').collect();
         assert_eq!(parts.len(), 3, "JWT must have 3 parts");
 
         // Decode and verify header
@@ -273,7 +271,7 @@ mod tests {
         assert!(jwt.is_ok());
 
         let token = jwt.unwrap();
-        let parts: Vec<&str> = token.split('.').collect();
+        let parts: Vec<&str> = token.expose_secret().split('.').collect();
         let payload_bytes = BASE64_URL_SAFE_NO_PAD.decode(parts[1]).unwrap();
         let payload: serde_json::Value = serde_json::from_slice(&payload_bytes).unwrap();
         assert!(payload.get("uri").is_none());

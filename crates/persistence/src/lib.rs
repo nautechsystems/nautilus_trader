@@ -34,9 +34,12 @@
 //! or as part of a Rust only build.
 //!
 //! - `cloud`: Enables cloud storage backends (S3, Azure, GCP, HTTP) via `object_store`.
-//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs) (auto-enables `cloud`).
-//! - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
-//! - `extension-module`: Builds the crate as a Python extension module.
+//! - `defi`: Enables DeFi (Decentralized Finance) support.
+//! - `extension-module`: Builds as a Python extension module.
+//! - `high-precision`: Enables
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
+//!   to use 128-bit value types.
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs) and auto-enables `cloud`.
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]
@@ -53,7 +56,6 @@
 #![allow(clippy::clone_on_copy)]
 
 pub mod backend;
-#[cfg(feature = "python")]
 pub mod config;
 pub mod parquet;
 pub mod test_data;

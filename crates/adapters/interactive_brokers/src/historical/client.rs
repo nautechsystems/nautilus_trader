@@ -674,11 +674,11 @@ impl HistoricalInteractiveBrokersClient {
 
                         // Filter out ticks outside the requested range if needed
                         all_ticks.retain(|t| match t {
-                            Data::Trade(t) => {
-                                t.ts_event >= start_date_time_ns && t.ts_event <= end_date_time_ns
-                            }
                             Data::Quote(q) => {
                                 q.ts_event >= start_date_time_ns && q.ts_event <= end_date_time_ns
+                            }
+                            Data::Trade(t) => {
+                                t.ts_event >= start_date_time_ns && t.ts_event <= end_date_time_ns
                             }
                             _ => true,
                         });
@@ -784,11 +784,11 @@ impl HistoricalInteractiveBrokersClient {
 
                         // Filter out ticks outside the requested range if needed
                         all_ticks.retain(|t| match t {
-                            Data::Trade(t) => {
-                                t.ts_event >= start_date_time_ns && t.ts_event <= end_date_time_ns
-                            }
                             Data::Quote(q) => {
                                 q.ts_event >= start_date_time_ns && q.ts_event <= end_date_time_ns
+                            }
+                            Data::Trade(t) => {
+                                t.ts_event >= start_date_time_ns && t.ts_event <= end_date_time_ns
                             }
                             _ => true,
                         });
@@ -799,8 +799,8 @@ impl HistoricalInteractiveBrokersClient {
             if let Some(limit) = limit {
                 let mut contract_ticks = all_ticks.split_off(contract_start_len);
                 contract_ticks.sort_by_key(|tick| match tick {
-                    Data::Trade(t) => t.ts_event,
                     Data::Quote(q) => q.ts_event,
+                    Data::Trade(t) => t.ts_event,
                     _ => UnixNanos::default(),
                 });
 
@@ -813,8 +813,8 @@ impl HistoricalInteractiveBrokersClient {
 
         // Sort by timestamp
         all_ticks.sort_by_key(|tick| match tick {
-            Data::Trade(t) => t.ts_event,
             Data::Quote(q) => q.ts_event,
+            Data::Trade(t) => t.ts_event,
             _ => UnixNanos::default(),
         });
 

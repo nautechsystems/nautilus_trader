@@ -28,7 +28,6 @@ from nautilus_trader.common import DataActorConfig
 from nautilus_trader.common import ImportableActorConfig
 from nautilus_trader.core import UUID4
 from nautilus_trader.model import ClientOrderId
-from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import MarketOrder
 from nautilus_trader.model import OrderSide
@@ -124,7 +123,7 @@ class TestStrategyConfig(StrategyConfig):
 
     def __init__(self, _strategy_id: str | None = None, **_kwargs: object) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
 
@@ -156,7 +155,7 @@ class ControllerRegistrationProbeConfig(DataActorConfig):
         log_commands: bool = True,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         self.actor_id = actor_id
         self.log_events = log_events
@@ -181,7 +180,7 @@ class ControllerRegistrationProbe(Controller):
 
     def __init__(self, config: object) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         type(self).constructed += 1
@@ -501,7 +500,7 @@ def _market_order(
         time_in_force=TimeInForce.GTC,
         reduce_only=False,
         quote_quantity=False,
-        contingency_type=ContingencyType.NO_CONTINGENCY,
+        contingency_type=None,
     )
 
 

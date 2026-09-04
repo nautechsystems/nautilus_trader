@@ -826,7 +826,7 @@ async fn test_data_client_subscribes_dispatches_and_unsubscribes_exact_channels(
     wait_for_subscribe(&ws_state, "orderbook.ETH-PERP.1.20").await;
 
     match recv_data(&mut rx).await {
-        Data::Deltas(deltas) => {
+        Data::BookDeltas(deltas) => {
             assert_eq!(deltas.instrument_id, instrument_id);
             assert_eq!(deltas.deltas.len(), 3);
             assert_eq!(deltas.deltas[1].order.price, Price::from("3500.00"));
@@ -893,7 +893,7 @@ async fn test_subscribe_book_depth10_emits_depth10_snapshot() {
     wait_for_subscribe(&ws_state, "orderbook.ETH-PERP.1.10").await;
 
     match recv_data(&mut rx).await {
-        Data::Depth10(depth) => {
+        Data::BookDepth10(depth) => {
             assert_eq!(depth.instrument_id, instrument_id);
             assert_eq!(depth.bids[0].price, Price::from("3500.00"));
             assert_eq!(depth.bids[0].size, Quantity::from("1.000"));

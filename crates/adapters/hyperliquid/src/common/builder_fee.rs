@@ -500,8 +500,14 @@ mod tests {
         let direct = signer.sign_hash_sync(&signing_hash).unwrap();
         let recovered = direct.recover_address_from_prehash(&signing_hash).unwrap();
 
-        assert_eq!(signature.r, format!("0x{:064x}", direct.r()));
-        assert_eq!(signature.s, format!("0x{:064x}", direct.s()));
+        assert_eq!(
+            signature.r.expose_secret(),
+            format!("0x{:064x}", direct.r())
+        );
+        assert_eq!(
+            signature.s.expose_secret(),
+            format!("0x{:064x}", direct.s())
+        );
         assert_eq!(signature.v, if direct.v() { 28 } else { 27 });
         assert_eq!(format!("{recovered:#x}"), TEST_ADDRESS);
     }

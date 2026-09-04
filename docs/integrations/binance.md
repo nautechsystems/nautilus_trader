@@ -183,10 +183,16 @@ the venue rather than locally.
 
 ### Execution instructions
 
-| Instruction   | Spot | USDT Futures | Coin Futures | Notes                                 |
-| ------------- | ---- | ------------ | ------------ | ------------------------------------- |
-| `post_only`   | ✓    | ✓            | ✓            | See restrictions below.               |
-| `reduce_only` | -    | ✓            | ✓            | Futures only; disabled in Hedge Mode. |
+| Instruction   | Spot | USDT Futures | Coin Futures | Notes                                                     |
+| ------------- | ---- | ------------ | ------------ | --------------------------------------------------------- |
+| `post_only`   | ✓    | ✓            | ✓            | See restrictions below.                                   |
+| `reduce_only` | -    | ✓            | ✓            | Futures only; translated to `positionSide` in Hedge Mode. |
+
+In One-way Mode, the adapter sends Binance's `reduceOnly` field. Binance does not accept that
+field in Hedge Mode, so the adapter instead selects the closing `positionSide`. This keeps the
+order on the identified leg and prevents it from opening the opposite leg. See Binance's
+[New Order API](https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api/New-Order)
+for the wire restrictions.
 
 #### Post-only restrictions
 
@@ -301,6 +307,13 @@ could duplicate an order or amendment.
 | Leverage control | -    | ✓            | ✓            | Dynamic leverage adjustment per symbol. |
 | Margin mode      | -    | ✓            | ✓            | Cross vs Isolated margin per symbol.    |
 
+Binance Futures logs out-of-scope position symbols at debug and drops them before parsing. For the
+remaining rows, position report generation warns when an amount cannot be parsed. After flat
+positions are removed, unresolved instruments and other conversion failures also warn. If any
+position fails, `generate_position_status_reports` returns an error with the failure count instead
+of an incomplete report set. See
+[instrument availability](../concepts/reconciliation.md#instrument-availability).
+
 ### Risk events
 
 | Feature              | Spot | USDT Futures | Coin Futures | Notes                              |
@@ -336,29 +349,9 @@ Upstream references:
 The execution engine creates external orders from runtime status reports when
 the order is not already in cache. This covers first-seen exchange-generated
 orders (the typical case for a live liquidation or ADL event). The engine
-assigns the order to any strategy that has claimed the instrument via
-`external_order_claims`, or to the `EXTERNAL` strategy by default.
-
-#### Commission estimation
-
-When Binance omits the commission fields (`N`/`n`) from the fill event, the
-adapter estimates commission as `default_taker_fee * qty * price` using
-the quote currency. This applies to USD-M linear contracts only. COIN-M
-inverse contracts use zero commission as a fallback because the linear
-formula does not account for contract size. Configure `default_taker_fee` on
-`BinanceExecutionClientConfig` to match your fee tier (default: 0.0004 / 0.04%).
-
-#### Hedge-mode position IDs
-
-When `use_position_ids` is enabled (default), exchange-generated fill reports
-include a `venue_position_id` derived from the instrument and position side
-(e.g. `ETHUSDT-PERP.BINANCE-LONG`). Keep this enabled for Binance dual-side
-positions. Set `use_position_ids` to false only for virtual positions with
-`OmsType.HEDGING`, where the engine manages position identity.
-
-For Futures accounts in dual-side position mode, set `oms_type=OmsType.HEDGING`. The adapter
-defaults to `OmsType.NETTING` for one-way position mode. Leave `use_position_ids` enabled to track
-Binance's separate long and short sides.
+assigns the order through the instrument's active external order claim,
+configured initially with `external_order_instrument_ids`, or to the `EXTERNAL`
+strategy by default.
 
 :::note
 The status report and fill report are emitted bundled as a single
@@ -369,6 +362,15 @@ the bundled fills is closed with an inferred fill from the status report's
 `avg_px`.
 :::
 
+#### Commission estimation
+
+When Binance omits the commission fields (`N`/`n`) from the fill event, the
+adapter estimates commission as `default_taker_fee * qty * price` using
+the quote currency. This applies to USD-M linear contracts only. COIN-M
+inverse contracts use zero commission as a fallback because the linear
+formula does not account for contract size. Configure `default_taker_fee` on
+`BinanceExecutionClientConfig` to match your fee tier (default: 0.0004 / 0.04%).
+
 ### Order querying
 
 | Feature              | Spot | USDT Futures | Coin Futures | Notes                          |
@@ -377,6 +379,23 @@ the bundled fills is closed with an inferred fill from the status report's
 | Query order history  | ✓    | ✓            | ✓            | Historical order data.         |
 | Order status updates | ✓    | ✓            | ✓            | Real-time order state changes. |
 | Trade history        | ✓    | ✓            | ✓            | Execution and fill reports.    |
+
+#### Futures trade-history retention
+
+Binance retains USD-M and COIN-M account trades for the past three months. Because Binance does not
+define whether this means calendar months or a fixed duration, the adapter treats the most recent
+88 days as its complete Futures fill-history window.
+
+`generate_fill_reports` rejects an explicit start before that window. The boundary uses the
+command's `ts_init`, capped so it can trail the current client time by no more than 12 hours. An end
+time also requires a start time.
+
+For mass status, an unset `reconciliation_lookback_mins` or a value longer than the complete window
+applies that window. The returned `ExecutionMassStatus` sets `lookback_start` to the applied boundary
+and `reports_complete` to `false`; see the
+[mass-status history contract](../concepts/reconciliation.md#mass-status-history-contract). Binance
+Spot is unaffected. See the Binance
+[Futures change log](https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/change-log).
 
 ### Contingent orders
 
@@ -393,10 +412,10 @@ Customize individual orders by supplying a `params` dictionary when calling
 `Strategy.submit_order` (Python) or setting `Params` on a `SubmitOrder`
 command (Rust). The Binance execution clients recognize:
 
-| Parameter        | Type   | Products          | Purpose                                          | Restrictions                                                                     |
-| ---------------- | ------ | ----------------- | ------------------------------------------------ | -------------------------------------------------------------------------------- |
-| `price_match`    | `str`  | USDT/COIN Futures | Delegate price selection to Binance.             | `LIMIT` only; not with `post_only`.                                              |
-| `close_position` | `bool` | USDT/COIN Futures | Close the whole position when the trigger fires. | `StopMarket` and `MarketIfTouched` only; not with `reduce_only`, not in batches. |
+| Parameter        | Type   | Products          | Purpose                                          | Restrictions                                                                              |
+| ---------------- | ------ | ----------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| `price_match`    | `str`  | USDT/COIN Futures | Delegate price selection to Binance.             | `LIMIT` only; not with `post_only`.                                                       |
+| `close_position` | `bool` | USDT/COIN Futures | Close the whole position when the trigger fires. | `StopMarket` and `MarketIfTouched` only; requires `reduce_only=true`; not in order lists. |
 
 See [Price match](#price-match) and [Close position](#close-position) for the full behavior.
 
@@ -466,13 +485,17 @@ the new price.
 
 Binance Futures conditional orders support `closePosition`, which closes the entire position
 when the trigger fires. Binance resolves the quantity server-side from the current position
-size at trigger time.
+size at trigger time. See the official
+[USD-M Algo Service API](https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api/New-Algo-Order)
+and [COIN-M Algo Service API](https://developers.binance.com/docs/derivatives/coin-margined-futures/trade/rest-api/New-Algo-Order).
 
 Unlike `reduce_only`, `closePosition` adapts to position size changes, and Binance
 auto-cancels the order when the position is closed by other means.
 
-Pass `close_position` via the `params` dictionary on `StopMarket` or `MarketIfTouched` orders.
-Cannot be combined with `reduce_only`, and it is rejected for batch order submission.
+Set `reduce_only=true` on the Nautilus `StopMarket` or `MarketIfTouched` order, then pass
+`close_position=true` in its `params`. The reduce-only flag records the order's closing intent and
+is required for the order to pass while the trading state is `REDUCING`. The adapter translates
+this combination into Binance's close-all instruction and rejects `close_position` in order lists.
 
 Allow Binance whole-position exits in the risk engine configuration:
 
@@ -503,7 +526,11 @@ strategy.submit_order(
 ```
 
 :::info
-Nautilus omits `quantity` and `reduceOnly` from the API request when `close_position` is set.
+The Nautilus order must set `reduce_only=true`, but Binance does not permit its `reduceOnly` field
+with `closePosition=true`. The adapter therefore sends `closePosition=true` while omitting
+`quantity` and `reduceOnly` from the Binance request. In Hedge Mode, it also sends the closing
+`positionSide`.
+
 For an allowlisted venue, the risk engine still validates quantity precision and positivity,
 the trigger price, the order shape and side, and the linked open position. It does not apply
 minimum or maximum quantity and notional bounds to the placeholder quantity.
@@ -511,8 +538,8 @@ minimum or maximum quantity and notional bounds to the placeholder quantity.
 
 :::warning
 Only add a venue when its configured execution client enforces whole-position closing semantics.
-An unsupported client may ignore `close_position` and submit the placeholder as an ordinary
-quantity-bearing order.
+An execution client that does not interpret `close_position` may submit only the placeholder
+quantity through its standard reduce-only path instead of closing the whole position.
 :::
 
 ### Trailing stops
@@ -1054,7 +1081,7 @@ For the latest rate limits, query `/api/v3/exchangeInfo` (Spot) or `/fapi/v1/exc
 | `us`                               | `False`   | Route a live Spot execution client to Binance US.                       |
 | `api_key` / `api_secret`           | `None`    | Global uses Ed25519 WebSocket auth; Binance US uses HMAC HTTP signing.  |
 | `use_gtd`                          | `True`    | Use native USD-M GTD; see [GTD policy](#gtd-policy).                    |
-| `use_position_ids`                 | `True`    | Expose Futures hedge-side position IDs.                                 |
+| `use_position_ids`                 | `True`    | Expose Futures IDs on order, fill, and hedge REST reports.              |
 | `oms_type`                         | `None`    | `None` selects Futures netting; use `Hedging` for dual-side mode.       |
 | `default_taker_fee`                | `0.0004`  | Fallback for exchange-generated Futures fills.                          |
 | `futures_leverages`                | `None`    | Initial leverage by Futures symbol.                                     |
@@ -1405,6 +1432,17 @@ instrument_provider = BinanceInstrumentProviderConfig(
 Binance Futures Hedge mode allows holding both long and short positions on the
 same instrument simultaneously.
 
+When `use_position_ids` is enabled (default), Futures order and fill reports include a
+`venue_position_id` derived from the instrument and Binance position side. Hedge-mode REST position
+reports use the same IDs, such as `ETHUSDT-PERP.BINANCE-LONG`. This identity is preserved through
+REST history, user stream updates, stream recovery, exchange-generated fills, and tracked
+`TRADE_LITE` fills.
+
+One-way `BOTH` positions, orders, and fills remain unkeyed and use netting reconciliation. Set
+`use_position_ids` to false only for virtual positions with `OmsType.HEDGING`, where the engine
+manages position identity. With `use_position_ids=True`, the adapter rejects a submitted custom
+position ID that differs from the canonical Binance hedge-leg ID before sending the order.
+
 To use hedge mode, configure it on Binance, set
 `oms_type=OmsType.HEDGING` on `BinanceExecutionClientConfig`, and keep `use_position_ids=True` to track
 both venue position sides:
@@ -1422,6 +1460,14 @@ config = BinanceExecutionClientConfig(
     use_position_ids=True,
 )
 ```
+
+This configuration is required for startup reconciliation to retain the `LONG` and `SHORT` legs
+separately.
+
+If the cache contains an open Binance hedge position under a different locally generated ID, the
+adapter rejects that position row and reports both the cached and expected IDs. Reconcile the cached
+state before retrying startup. The adapter does not alias the old ID or create a duplicate venue
+position.
 
 ### COIN-M / USD-M architecture
 

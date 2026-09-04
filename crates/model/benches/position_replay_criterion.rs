@@ -180,32 +180,21 @@ fn position_with_fills(count: usize) -> (Position, OrderFilled) {
 }
 
 fn instrument() -> InstrumentAny {
-    InstrumentAny::CurrencyPair(CurrencyPair::new(
-        InstrumentId::from("AUD/USD.SIM"),
-        Symbol::from("AUD/USD"),
-        Currency::AUD(),
-        Currency::USD(),
-        5,
-        0,
-        Price::from("0.00001"),
-        Quantity::from(1),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ))
+    InstrumentAny::CurrencyPair(
+        CurrencyPair::builder()
+            .instrument_id(InstrumentId::from("AUD/USD.SIM"))
+            .raw_symbol(Symbol::from("AUD/USD"))
+            .base_currency(Currency::AUD())
+            .quote_currency(Currency::USD())
+            .price_precision(5)
+            .size_precision(0)
+            .price_increment(Price::from("0.00001"))
+            .size_increment(Quantity::from(1))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    )
 }
 
 fn fill(index: usize, side: OrderSide, quantity: Quantity) -> OrderFilled {

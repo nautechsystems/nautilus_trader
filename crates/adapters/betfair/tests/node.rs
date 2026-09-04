@@ -316,7 +316,6 @@ fn reject_place_orders(mock_state: &MockState) {
     mock_state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_PLACE_ORDERS.to_string(), value["result"].clone());
 }
 
@@ -325,7 +324,6 @@ fn cancel_orders_seen(mock_state: &MockState) -> bool {
     mock_state
         .betting_methods
         .lock()
-        .unwrap()
         .iter()
         .any(|method| method == METHOD_CANCEL_ORDERS)
 }

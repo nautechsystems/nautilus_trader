@@ -46,8 +46,13 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
+//! - `extension-module`: Builds as a Python extension module.
+//! - `high-precision`: Enables
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
+//!   to use 128-bit value types.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-//! - `extension-module`: Builds the crate as a Python extension module.
+//! - `simulation`: Enables deterministic simulation testing with
+//!   [MadSim](https://crates.io/crates/madsim).
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]
@@ -76,7 +81,7 @@
 )]
 #![allow(
     clippy::unused_self,
-    reason = "engine and matching helpers take &self for method-style organization"
+    reason = "engine and matching operations take &self for method-style organization"
 )]
 #![allow(
     clippy::large_types_passed_by_value,
@@ -100,7 +105,7 @@
 )]
 #![allow(
     clippy::inline_always,
-    reason = "hot-path helpers in matching engine are intentionally always inlined"
+    reason = "hot-path matching engine functions are intentionally always inlined"
 )]
 #![allow(
     clippy::match_same_arms,

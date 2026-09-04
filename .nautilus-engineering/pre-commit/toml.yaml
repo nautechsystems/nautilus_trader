@@ -1,0 +1,9 @@
+- repo: local
+  hooks:
+    - id: taplo-format
+      name: taplo-format
+      entry: taplo format
+      language: rust
+      types: [toml]
+      additional_dependencies:
+        - cli:taplo-cli:0.10.0

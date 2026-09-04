@@ -47,6 +47,10 @@ from nautilus_trader.model import TraderId
 from nautilus_trader.testkit import ExecTesterConfig
 
 
+# WARNING: With DRY_RUN = False, this tester submits orders to the configured
+# environment and may use real funds. Set DRY_RUN = True to connect without
+# submitting orders or sending shutdown cancel/close commands.
+DRY_RUN = False
 POLYMARKET = "POLYMARKET"
 TRADER_ID = TraderId.from_str("TESTER-001")
 ACCOUNT_ID = "POLYMARKET-001"
@@ -107,7 +111,7 @@ def main() -> None:
             strategy_id=STRATEGY_ID,
             instrument_id=INSTRUMENT_ID,
             client_id=ClientId.from_str(POLYMARKET),
-            external_order_claims=[INSTRUMENT_ID],
+            external_order_instrument_ids=[INSTRUMENT_ID],
             use_uuid_client_order_ids=True,
             order_qty=Quantity.from_str(ORDER_QTY),
             subscribe_quotes=True,
@@ -127,7 +131,7 @@ def main() -> None:
             close_positions_qty_precision=2,
             close_positions_time_in_force=TimeInForce.IOC,
             reduce_only_on_stop=False,
-            dry_run=False,  # Set True to log intended order flow without submitting orders
+            dry_run=DRY_RUN,
             log_data=False,
         ),
     )

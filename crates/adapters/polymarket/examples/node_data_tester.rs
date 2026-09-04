@@ -24,9 +24,9 @@
 //! Run with: `cargo run --example polymarket-data-tester --package nautilus-polymarket --features examples`
 //!
 //! Credentials are read from the environment when set:
-//! - `POLYMARKET_API_KEY`.
-//! - `POLYMARKET_API_SECRET`.
-//! - `POLYMARKET_PASSPHRASE`.
+//! - `POLYMARKET_API_KEY`
+//! - `POLYMARKET_API_SECRET`
+//! - `POLYMARKET_PASSPHRASE`
 
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};

@@ -24,6 +24,7 @@ use std::{
     time::Duration,
 };
 
+use nautilus_core::string::secret::REDACTED;
 use nautilus_hyperliquid::{
     common::enums::HyperliquidEnvironment,
     config::{HyperliquidDataClientConfig, HyperliquidExecutionClientConfig},
@@ -393,20 +394,20 @@ async fn live_testnet_public_reconnect() {
 async fn live_config_debug_redacts_and_optional_private_paths() {
     let data = HyperliquidDataClientConfig {
         private_key: Some(
-            "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
         ),
         ..HyperliquidDataClientConfig::default()
     };
     let exec = HyperliquidExecutionClientConfig {
         private_key: Some(
-            "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
         ),
         ..HyperliquidExecutionClientConfig::default()
     };
     let data_debug = format!("{data:?}");
     let exec_debug = format!("{exec:?}");
-    assert!(data_debug.contains("[REDACTED]"));
-    assert!(exec_debug.contains("[REDACTED]"));
+    assert!(data_debug.contains(REDACTED));
+    assert!(exec_debug.contains(REDACTED));
     assert!(!data_debug.contains("0123456789abcdef"));
     assert!(!exec_debug.contains("0123456789abcdef"));
 

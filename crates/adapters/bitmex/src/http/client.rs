@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides the HTTP client integration for the [BitMEX](https://bitmex.com) REST API.
+//! Provides the HTTP client integration for the [BitMEX](https://www.bitmex.com) REST API.
 //!
 //! This module defines and implements a [`BitmexHttpClient`] for
 //! sending requests to various BitMEX endpoints. It handles request signing
@@ -26,7 +26,7 @@ use std::{
     collections::HashMap,
     num::NonZeroU32,
     sync::{
-        Arc, LazyLock, RwLock,
+        Arc, LazyLock,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -60,6 +60,7 @@ use nautilus_network::{
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
+use parking_lot::RwLock;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
@@ -131,7 +132,8 @@ pub struct BitmexResponse<T> {
     pub data: Vec<T>,
 }
 
-/// Provides a lower-level HTTP client for connecting to the [BitMEX](https://bitmex.com) REST API.
+/// Provides a lower-level HTTP client for connecting to the
+/// [BitMEX](https://www.bitmex.com) REST API.
 ///
 /// This client wraps the underlying [`HttpClient`] to handle functionality
 /// specific to BitMEX, such as request signing (for authenticated endpoints),
@@ -325,39 +327,18 @@ impl BitmexRawHttpClient {
     }
 
     /// Cancel all pending HTTP requests.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the cancellation token lock is poisoned.
     pub fn cancel_all_requests(&self) {
-        self.cancellation_token
-            .read()
-            .expect("cancellation token lock poisoned")
-            .cancel();
+        self.cancellation_token.read().cancel();
     }
 
     /// Replace the cancellation token so new requests can proceed.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the cancellation token lock is poisoned.
     pub fn reset_cancellation_token(&self) {
-        *self
-            .cancellation_token
-            .write()
-            .expect("cancellation token lock poisoned") = CancellationToken::new();
+        *self.cancellation_token.write() = CancellationToken::new();
     }
 
     /// Get a clone of the cancellation token for this client.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the cancellation token lock is poisoned.
     pub fn cancellation_token(&self) -> CancellationToken {
-        self.cancellation_token
-            .read()
-            .expect("cancellation token lock poisoned")
-            .clone()
+        self.cancellation_token.read().clone()
     }
 
     fn sign_request(
@@ -585,7 +566,7 @@ impl BitmexRawHttpClient {
     /// Get the instrument definition for the specified symbol.
     ///
     /// BitMEX responds to `/instrument?symbol=...` with an array, even when
-    /// a single symbol is requested. This helper returns the first element of
+    /// a single symbol is requested. This method returns the first element of
     /// that array and yields `Ok(None)` when the venue returns an empty list
     /// (e.g. unknown symbol).
     ///
@@ -878,7 +859,7 @@ impl BitmexRawHttpClient {
     }
 }
 
-/// Provides a HTTP client for connecting to the [BitMEX](https://bitmex.com) REST API.
+/// Provides a HTTP client for connecting to the [BitMEX](https://www.bitmex.com) REST API.
 ///
 /// This is the high-level client that wraps the inner client and provides
 /// Nautilus-specific functionality for trading operations.
@@ -1134,18 +1115,15 @@ impl BitmexHttpClient {
     }
 
     /// Check if the order has a contingency type that requires linking.
-    fn is_contingent_order(contingency_type: ContingencyType) -> bool {
-        matches!(
-            contingency_type,
-            ContingencyType::Oco | ContingencyType::Oto | ContingencyType::Ouo
-        )
+    fn is_contingent_order(contingency_type: Option<ContingencyType>) -> bool {
+        contingency_type.is_some()
     }
 
     /// Check if the order is a parent in contingency relationships.
-    fn is_parent_contingency(contingency_type: ContingencyType) -> bool {
+    fn is_parent_contingency(contingency_type: Option<ContingencyType>) -> bool {
         matches!(
             contingency_type,
-            ContingencyType::Oco | ContingencyType::Oto
+            Some(ContingencyType::Oco | ContingencyType::Oto)
         )
     }
 
@@ -1292,13 +1270,13 @@ impl BitmexHttpClient {
                 report.parent_order_id = None;
             }
 
-            if report.contingency_type == ContingencyType::Oto {
+            if report.contingency_type == Some(ContingencyType::Oto) {
                 log::debug!(
                     "BitMEX OTO order has no linked venue peers; reconciling as standalone: client_order_id={:?}, order_list_id={:?}",
                     report.client_order_id,
                     report.order_list_id,
                 );
-                report.contingency_type = ContingencyType::NoContingency;
+                report.contingency_type = None;
                 report.parent_order_id = None;
             } else if Self::is_contingent_order(report.contingency_type) {
                 log::warn!(
@@ -1307,7 +1285,7 @@ impl BitmexHttpClient {
                     report.order_list_id,
                     report.contingency_type,
                 );
-                report.contingency_type = ContingencyType::NoContingency;
+                report.contingency_type = None;
                 report.parent_order_id = None;
             }
 
@@ -1691,10 +1669,7 @@ impl BitmexHttpClient {
         params.symbol(instrument_id.symbol.as_str());
         params.cl_ord_id(client_order_id.as_str());
 
-        if order_side == OrderSide::NoOrderSide {
-            anyhow::bail!("Order side must be Buy or Sell");
-        }
-        let side = BitmexSide::from(order_side.as_specified());
+        let side = BitmexSide::from(order_side);
         params.side(side);
 
         let ord_type = BitmexOrderType::try_from_order_type(order_type)?;
@@ -1741,7 +1716,6 @@ impl BitmexHttpClient {
             let signed_offset = match order_side {
                 OrderSide::Sell => -offset.abs(),
                 OrderSide::Buy => offset.abs(),
-                _ => offset,
             };
             params.peg_offset_value(signed_offset);
         }
@@ -1942,14 +1916,10 @@ impl BitmexHttpClient {
         params.symbol(instrument_id.symbol.as_str());
 
         if let Some(side) = order_side {
-            if side == OrderSide::NoOrderSide {
-                log::debug!("Ignoring NoOrderSide filter for cancel_all_orders on {instrument_id}",);
-            } else {
-                let side = BitmexSide::from(side.as_specified());
-                params.filter(serde_json::json!({
-                    "side": side
-                }));
-            }
+            let side = BitmexSide::from(side);
+            params.filter(serde_json::json!({
+                "side": side
+            }));
         }
 
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
@@ -2941,7 +2911,7 @@ mod tests {
     fn build_report(
         client_order_id: &str,
         venue_order_id: &str,
-        contingency_type: ContingencyType,
+        contingency_type: Option<ContingencyType>,
         order_list_id: Option<&str>,
     ) -> OrderStatusReport {
         let mut report = OrderStatusReport::new(
@@ -2949,7 +2919,7 @@ mod tests {
             InstrumentId::from("XBTUSD.BITMEX"),
             Some(ClientOrderId::from(client_order_id)),
             VenueOrderId::from(venue_order_id),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
@@ -2965,7 +2935,8 @@ mod tests {
             report = report.with_order_list_id(OrderListId::from(id));
         }
 
-        report.with_contingency_type(contingency_type)
+        report.contingency_type = contingency_type;
+        report
     }
 
     #[rstest]
@@ -3153,9 +3124,9 @@ mod tests {
         let take = format!("{base}-3");
 
         let mut reports = vec![
-            build_report(&entry, "V-1", ContingencyType::Oto, Some("OL-1")),
-            build_report(&stop, "V-2", ContingencyType::Ouo, Some("OL-1")),
-            build_report(&take, "V-3", ContingencyType::Ouo, Some("OL-1")),
+            build_report(&entry, "V-1", Some(ContingencyType::Oto), Some("OL-1")),
+            build_report(&stop, "V-2", Some(ContingencyType::Ouo), Some("OL-1")),
+            build_report(&take, "V-3", Some(ContingencyType::Ouo), Some("OL-1")),
         ];
 
         BitmexHttpClient::populate_linked_order_ids(&mut reports);
@@ -3191,9 +3162,9 @@ mod tests {
         let take = format!("{base}-3");
 
         let mut reports = vec![
-            build_report(&entry, "V-1", ContingencyType::Oto, None),
-            build_report(&stop, "V-2", ContingencyType::Ouo, None),
-            build_report(&take, "V-3", ContingencyType::Ouo, None),
+            build_report(&entry, "V-1", Some(ContingencyType::Oto), None),
+            build_report(&stop, "V-2", Some(ContingencyType::Ouo), None),
+            build_report(&take, "V-3", Some(ContingencyType::Ouo), None),
         ];
 
         BitmexHttpClient::populate_linked_order_ids(&mut reports);
@@ -3228,8 +3199,8 @@ mod tests {
         let passive = format!("{base}-2");
 
         let mut reports = vec![
-            build_report(&entry, "V-1", ContingencyType::NoContingency, None),
-            build_report(&passive, "V-2", ContingencyType::Ouo, None),
+            build_report(&entry, "V-1", None, None),
+            build_report(&passive, "V-2", Some(ContingencyType::Ouo), None),
         ];
 
         BitmexHttpClient::populate_linked_order_ids(&mut reports);
@@ -3239,7 +3210,7 @@ mod tests {
 
         // A contingent order with no other contingent peers should have contingency reset
         assert!(reports[1].linked_order_ids.is_none());
-        assert_eq!(reports[1].contingency_type, ContingencyType::NoContingency);
+        assert_eq!(reports[1].contingency_type, None);
     }
 
     #[rstest]
@@ -3247,14 +3218,14 @@ mod tests {
         let mut reports = vec![build_report(
             "O-20250922-002222-001-000-1",
             "V-1",
-            ContingencyType::Oto,
+            Some(ContingencyType::Oto),
             Some("OL-1"),
         )];
 
         BitmexHttpClient::populate_linked_order_ids(&mut reports);
 
         assert!(reports[0].linked_order_ids.is_none());
-        assert_eq!(reports[0].contingency_type, ContingencyType::NoContingency);
+        assert_eq!(reports[0].contingency_type, None);
         assert_eq!(reports[0].parent_order_id, None);
     }
 }

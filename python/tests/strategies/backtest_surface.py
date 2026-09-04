@@ -29,7 +29,6 @@ from nautilus_trader.model import Bar
 from nautilus_trader.model import BarType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import ClientOrderId
-from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import ExecAlgorithmId
 from nautilus_trader.model import FundingRateUpdate
 from nautilus_trader.model import IndexPriceUpdate
@@ -57,25 +56,16 @@ class SignalHarvestConfig(StrategyConfig):
     Collect signal harvest config tests.
     """
 
-    _CUSTOM_FIELDS = ("instrument_id", "bar_type", "trade_size")
-
-    def __new__(cls, *args: object, **kwargs: object) -> object:
-        """
-        Create a new instance.
-        """
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_id: str,
         bar_type: str,
         trade_size: str,
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -90,7 +80,7 @@ class SignalHarvest(Strategy):
 
     def __init__(self, config: SignalHarvestConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
@@ -264,7 +254,7 @@ class SignalHarvest(Strategy):
                 time_in_force=TimeInForce.GTC,
                 reduce_only=False,
                 quote_quantity=False,
-                contingency_type=ContingencyType.NO_CONTINGENCY,
+                contingency_type=None,
             ),
         )
 
@@ -294,19 +284,9 @@ class BookChurnConfig(StrategyConfig):
     Collect book churn config tests.
     """
 
-    _CUSTOM_FIELDS = ("instrument_id", "trade_size")
-
-    def __new__(cls, *args: object, **kwargs: object) -> object:
+    def __init__(self, *, instrument_id: str, trade_size: str, **_kwargs: object) -> None:
         """
-        Create a new instance.
-        """
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
-    def __init__(self, instrument_id: str, trade_size: str, **_kwargs: object) -> None:
-        """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -320,7 +300,7 @@ class BookChurn(Strategy):
 
     def __init__(self, config: BookChurnConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
@@ -398,7 +378,7 @@ class BookChurn(Strategy):
                 time_in_force=TimeInForce.GTC,
                 reduce_only=False,
                 quote_quantity=False,
-                contingency_type=ContingencyType.NO_CONTINGENCY,
+                contingency_type=None,
             ),
         )
 
@@ -428,25 +408,16 @@ class RoutedOrderProbeConfig(StrategyConfig):
     Collect routed order probe config tests.
     """
 
-    _CUSTOM_FIELDS = ("instrument_id", "trade_size", "exec_algorithm_id")
-
-    def __new__(cls, *args: object, **kwargs: object) -> object:
-        """
-        Create a new instance.
-        """
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_id: str,
         trade_size: str,
         exec_algorithm_id: str,
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -461,7 +432,7 @@ class RoutedOrderProbe(Strategy):
 
     def __init__(self, config: RoutedOrderProbeConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
@@ -495,7 +466,7 @@ class RoutedOrderProbe(Strategy):
                     time_in_force=TimeInForce.GTC,
                     reduce_only=False,
                     quote_quantity=False,
-                    contingency_type=ContingencyType.NO_CONTINGENCY,
+                    contingency_type=None,
                     exec_algorithm_id=self._exec_algorithm_id,
                     exec_spawn_id=client_order_id,
                 ),
@@ -513,18 +484,9 @@ class RoutedOrderExecutionAlgorithmConfig(DataActorConfig):
     Collect routed order execution algorithm config tests.
     """
 
-    _CUSTOM_FIELDS = ("exec_algorithm_id", "signal_name")
-
-    def __new__(cls, *args: object, **kwargs: object) -> object:
-        """
-        Create a new instance.
-        """
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         exec_algorithm_id: str,
         signal_name: str = "routed-order",
         actor_id: object = None,
@@ -533,7 +495,7 @@ class RoutedOrderExecutionAlgorithmConfig(DataActorConfig):
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         self.actor_id = actor_id
         self.exec_algorithm_id = exec_algorithm_id
@@ -553,7 +515,7 @@ class RoutedOrderDataActorExecutionAlgorithm(DataActor):
 
     def __init__(self, config: RoutedOrderExecutionAlgorithmConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._signal_name = config.signal_name
@@ -601,7 +563,7 @@ class RoutedOrderExecutionAlgorithm(ExecutionAlgorithm):
 
     def __init__(self, config: RoutedOrderExecutionAlgorithmConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._signal_name = config.signal_name
@@ -667,7 +629,7 @@ class DoubleSpawnExecutionAlgorithm(ExecutionAlgorithm):
 
     def __init__(self, config: RoutedOrderExecutionAlgorithmConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
 
@@ -708,7 +670,7 @@ class OversizedSpawnExecutionAlgorithm(ExecutionAlgorithm):
 
     def __init__(self, config: RoutedOrderExecutionAlgorithmConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
 
@@ -742,18 +704,9 @@ class MarketDataAuditActorConfig(DataActorConfig):
     Collect market data audit actor config tests.
     """
 
-    _CUSTOM_FIELDS = ("instrument_id",)
-
-    def __new__(cls, *args: object, **kwargs: object) -> object:
-        """
-        Create a new instance.
-        """
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_id: str,
         actor_id: object = None,
         log_events: bool = True,
@@ -761,7 +714,7 @@ class MarketDataAuditActorConfig(DataActorConfig):
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         self.actor_id = actor_id
         self.log_events = log_events
@@ -783,7 +736,7 @@ class MarketDataAuditActor(DataActor):
 
     def __init__(self, config: MarketDataAuditActorConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
@@ -841,24 +794,71 @@ class MarketDataAuditActor(DataActor):
         type(self).reset_observations()
 
 
+class QuoteCountActorConfig(DataActorConfig):
+    """
+    Configure quote count actor tests.
+    """
+
+    def __init__(self, *, instrument_id: str, **_kwargs: object) -> None:
+        """
+        Initialize the config.
+        """
+        super().__init__()
+        self.instrument_id = instrument_id
+
+
+class QuoteCountActor(DataActor):
+    """
+    Count quotes received through actor registration tests.
+    """
+
+    quote_count: ClassVar[int] = 0
+    last_bid: ClassVar[object] = None
+
+    def __init__(self, config: QuoteCountActorConfig) -> None:
+        """
+        Initialize the actor.
+        """
+        super().__init__(config)
+        self._instrument_id = InstrumentId.from_str(config.instrument_id)
+
+    @classmethod
+    def reset_observations(cls) -> None:
+        """
+        Reset observations.
+        """
+        cls.quote_count = 0
+        cls.last_bid = None
+
+    def on_start(self) -> None:
+        """
+        Subscribe to quotes.
+        """
+        type(self).reset_observations()
+        self.subscribe_quotes(self._instrument_id)
+
+    def on_quote(self, quote: QuoteTick) -> None:
+        """
+        Record a quote.
+        """
+        type(self).quote_count += 1
+        type(self).last_bid = quote.bid_price
+
+    def on_reset(self) -> None:
+        """
+        Reset observations.
+        """
+        type(self).reset_observations()
+
+
 class StreamingWhipsawConfig(StrategyConfig):
     """
     Collect streaming whipsaw config tests.
     """
 
-    _CUSTOM_FIELDS = ("instrument_id", "trade_size")
-
-    def __new__(cls, *args: object, **kwargs: object) -> object:
+    def __init__(self, *, instrument_id: str, trade_size: str, **_kwargs: object) -> None:
         """
-        Create a new instance.
-        """
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
-    def __init__(self, instrument_id: str, trade_size: str, **_kwargs: object) -> None:
-        """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -872,7 +872,7 @@ class StreamingWhipsaw(Strategy):
 
     def __init__(self, config: StreamingWhipsawConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
@@ -924,6 +924,6 @@ class StreamingWhipsaw(Strategy):
                 time_in_force=TimeInForce.GTC,
                 reduce_only=False,
                 quote_quantity=False,
-                contingency_type=ContingencyType.NO_CONTINGENCY,
+                contingency_type=None,
             ),
         )

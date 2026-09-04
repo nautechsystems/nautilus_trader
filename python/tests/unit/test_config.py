@@ -30,6 +30,7 @@ CONFIG_MODULE_NAMES = (
     "data",
     "execution",
     "live",
+    "persistence",
     "portfolio",
     "risk",
     "trading",

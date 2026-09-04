@@ -144,6 +144,38 @@ fn test_config_creation(config: ExecTesterConfig) {
 }
 
 #[rstest]
+fn test_external_order_instrument_ids_reflect_runtime_update(mut config: ExecTesterConfig) {
+    let strategy_id = StrategyId::from("EXEC_TESTER-001");
+    let initial_instrument_id = InstrumentId::from("AUD/USD.SIM");
+    let updated_instrument_id = InstrumentId::from("EUR/USD.SIM");
+    config.base.external_order_instrument_ids = Some(vec![initial_instrument_id]);
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache.clone());
+    cache
+        .borrow_mut()
+        .register_external_order_claims(strategy_id, &[initial_instrument_id])
+        .unwrap();
+
+    tester
+        .set_external_order_instrument_ids(vec![updated_instrument_id])
+        .unwrap();
+
+    assert_eq!(
+        tester.external_order_instrument_ids(),
+        Some(vec![updated_instrument_id])
+    );
+    assert_eq!(
+        cache.borrow().external_order_claim(&initial_instrument_id),
+        None
+    );
+    assert_eq!(
+        cache.borrow().external_order_claim(&updated_instrument_id),
+        Some(strategy_id)
+    );
+}
+
+#[rstest]
 fn test_config_default() {
     let config = ExecTesterConfig::default();
 
@@ -382,6 +414,42 @@ fn test_open_position_on_start_submits_market_order_after_first_quote(
     assert_eq!(init.order_side, OrderSide::Buy);
     assert_eq!(init.quantity, expected_qty);
     assert_eq!(init.time_in_force, TimeInForce::Ioc);
+}
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn test_open_position_on_start_dry_run_does_not_submit_market_order(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+    #[case] open_position_on_first_quote: bool,
+) {
+    config.instrument_id = instrument.id();
+    config.dry_run = true;
+    config.open_position_on_start_qty = Some(Decimal::ONE);
+    config.open_position_on_first_quote = open_position_on_first_quote;
+    config.enable_limit_buys = false;
+    config.enable_limit_sells = false;
+    config.subscribe_quotes = true;
+    let instrument_id = instrument.id();
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+    let risk_saver = capture_risk_commands();
+
+    tester.on_instrument(&instrument).unwrap();
+    if open_position_on_first_quote {
+        assert_eq!(tester.pending_open_position_qty, Some(Decimal::ONE));
+        tester.on_quote(&quote_for(instrument_id)).unwrap();
+    }
+
+    let order_count = tester
+        .cache()
+        .client_order_ids(None, Some(&instrument_id), None, None)
+        .len();
+    assert!(tester.pending_open_position_qty.is_none());
+    assert!(submit_orders(&risk_saver).is_empty());
+    assert_eq!(order_count, 0);
 }
 
 #[rstest]
@@ -2284,7 +2352,6 @@ fn test_trigger_limit_order_modify_completes_once_after_acceptance(
     let expected_price = match side {
         OrderSide::Buy => original_price - increment,
         OrderSide::Sell => original_price + increment,
-        OrderSide::NoOrderSide => unreachable!(),
     };
     assert_eq!(
         limit_order_maintenance_state(&tester, side),
@@ -2401,7 +2468,6 @@ fn test_trigger_limit_order_cancel_replace_waits_for_cancel_and_completes_once(
     let expected_price = match side {
         OrderSide::Buy => original_price - increment,
         OrderSide::Sell => original_price + increment,
-        OrderSide::NoOrderSide => unreachable!(),
     };
     let exec_saver = capture_exec_commands();
     let risk_saver = capture_risk_commands();
@@ -2776,7 +2842,6 @@ fn tracked_limit_order(tester: &ExecTester, side: OrderSide) -> &OrderAny {
     match side {
         OrderSide::Buy => tester.buy_order.as_ref().expect("buy order should exist"),
         OrderSide::Sell => tester.sell_order.as_ref().expect("sell order should exist"),
-        OrderSide::NoOrderSide => panic!("Unsupported order side {side:?}"),
     }
 }
 
@@ -2790,7 +2855,6 @@ fn tracked_stop_order(tester: &ExecTester, side: OrderSide) -> &OrderAny {
             .sell_stop_order
             .as_ref()
             .expect("sell stop order should exist"),
-        OrderSide::NoOrderSide => panic!("Unsupported order side {side:?}"),
     }
 }
 
@@ -2801,7 +2865,6 @@ fn limit_order_maintenance_state(
     match side {
         OrderSide::Buy => tester.buy_limit_maintenance_state,
         OrderSide::Sell => tester.sell_limit_maintenance_state,
-        OrderSide::NoOrderSide => panic!("Unsupported order side {side:?}"),
     }
 }
 
@@ -2809,7 +2872,6 @@ fn stop_cancel_replace_attempted(tester: &ExecTester, side: OrderSide) -> bool {
     match side {
         OrderSide::Buy => tester.buy_stop_cancel_replace_attempted,
         OrderSide::Sell => tester.sell_stop_cancel_replace_attempted,
-        OrderSide::NoOrderSide => panic!("Unsupported order side {side:?}"),
     }
 }
 
@@ -3178,8 +3240,7 @@ fn apply_pending_cancel_in_cache(cache: &Rc<RefCell<Cache>>, cid: ClientOrderId)
 }
 
 // Bracket sweep must not hijack a `batch_submit_limit_pair` OrderList, otherwise
-// the configured batch mode is starved. Guards `is_in_contingency_group` against
-// the `NoContingency` false-positive.
+// the configured batch mode is starved.
 #[rstest]
 fn test_batch_submit_limit_pair_flows_through_batch_cancel(
     mut config: ExecTesterConfig,

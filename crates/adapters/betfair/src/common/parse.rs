@@ -71,7 +71,6 @@ pub fn make_instrument_id(market_id: &str, selection_id: u64, handicap: Decimal)
 /// # Errors
 ///
 /// Returns an error if the string is not a valid RFC 3339 datetime.
-///
 pub fn parse_betfair_timestamp(s: &str) -> anyhow::Result<UnixNanos> {
     let dt = s
         .parse::<Timestamp>()
@@ -242,51 +241,45 @@ pub fn parse_market_catalogue(
         let instrument_id = make_instrument_id(market_id, runner.selection_id, handicap);
         let raw_symbol = make_symbol(market_id, runner.selection_id, handicap);
 
-        let instrument = BettingInstrument::new_checked(
-            instrument_id,
-            raw_symbol,
-            event_type_id,
-            event_type_name,
-            competition_id,
-            competition_name,
-            event_id,
-            event_name,
-            event_country_code,
-            event_open_date,
-            betting_type,
-            Ustr::from(market_id.as_str()),
-            market_name,
-            market_type,
-            market_start_time,
-            runner.selection_id,
-            Ustr::from(&runner.runner_name),
-            handicap.to_f64().unwrap_or(0.0),
-            currency,
-            BETFAIR_PRICE_PRECISION,
-            BETFAIR_QUANTITY_PRECISION,
-            price_increment,
-            size_increment,
-            None,               // max_quantity
-            None,               // min_quantity
-            None,               // max_notional
-            min_notional,       // min_notional
-            None,               // max_price
-            None,               // min_price
-            Some(Decimal::ONE), // margin_init (pre-funded)
-            Some(Decimal::ONE), // margin_maint
-            Some(fee_rate),     // maker_fee
-            Some(fee_rate),     // taker_fee
-            None,               // tick_scheme
-            None,               // info
-            ts_init,            // ts_event
-            ts_init,            // ts_init
-        )
-        .with_context(|| {
-            format!(
-                "failed to create BettingInstrument for {market_id}/{}/{}",
-                runner.selection_id, runner.runner_name
-            )
-        })?;
+        let instrument = BettingInstrument::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(raw_symbol)
+            .event_type_id(event_type_id)
+            .event_type_name(event_type_name)
+            .competition_id(competition_id)
+            .competition_name(competition_name)
+            .event_id(event_id)
+            .event_name(event_name)
+            .event_country_code(event_country_code)
+            .event_open_date(event_open_date)
+            .betting_type(betting_type)
+            .market_id(Ustr::from(market_id.as_str()))
+            .market_name(market_name)
+            .market_type(market_type)
+            .market_start_time(market_start_time)
+            .selection_id(runner.selection_id)
+            .selection_name(Ustr::from(&runner.runner_name))
+            .selection_handicap(handicap.to_f64().unwrap_or(0.0))
+            .currency(currency)
+            .price_precision(BETFAIR_PRICE_PRECISION)
+            .size_precision(BETFAIR_QUANTITY_PRECISION)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .maybe_min_notional(min_notional)
+            // margin_init (pre-funded)
+            .margin_init(Decimal::ONE)
+            .margin_maint(Decimal::ONE)
+            .maker_fee(fee_rate)
+            .taker_fee(fee_rate)
+            .ts_event(ts_init)
+            .ts_init(ts_init)
+            .build()
+            .with_context(|| {
+                format!(
+                    "failed to create BettingInstrument for {market_id}/{}/{}",
+                    runner.selection_id, runner.runner_name
+                )
+            })?;
 
         instruments.push(InstrumentAny::Betting(instrument));
     }
@@ -377,51 +370,44 @@ pub fn parse_market_definition(
         let raw_symbol = make_symbol(market_id, runner.id, handicap);
         let runner_name = Ustr::from(runner.name.as_deref().unwrap_or(""));
 
-        let instrument = BettingInstrument::new_checked(
-            instrument_id,
-            raw_symbol,
-            event_type_id,
-            event_type_name,
-            competition_id,
-            competition_name,
-            event_id,
-            event_name,
-            event_country_code,
-            event_open_date,
-            betting_type,
-            market_id_ustr,
-            market_name,
-            market_type,
-            market_start_time,
-            runner.id,
-            runner_name,
-            handicap.to_f64().unwrap_or(0.0),
-            currency,
-            BETFAIR_PRICE_PRECISION,
-            BETFAIR_QUANTITY_PRECISION,
-            price_increment,
-            size_increment,
-            None,               // max_quantity
-            None,               // min_quantity
-            None,               // max_notional
-            min_notional,       // min_notional
-            None,               // max_price
-            None,               // min_price
-            Some(Decimal::ONE), // margin_init
-            Some(Decimal::ONE), // margin_maint
-            Some(fee_rate),     // maker_fee
-            Some(fee_rate),     // taker_fee
-            None,               // tick_scheme
-            None,               // info
-            ts_event,           // ts_event
-            ts_init,            // ts_init
-        )
-        .with_context(|| {
-            format!(
-                "failed to create BettingInstrument for {market_id}/{}",
-                runner.id
-            )
-        })?;
+        let instrument = BettingInstrument::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(raw_symbol)
+            .event_type_id(event_type_id)
+            .event_type_name(event_type_name)
+            .competition_id(competition_id)
+            .competition_name(competition_name)
+            .event_id(event_id)
+            .event_name(event_name)
+            .event_country_code(event_country_code)
+            .event_open_date(event_open_date)
+            .betting_type(betting_type)
+            .market_id(market_id_ustr)
+            .market_name(market_name)
+            .market_type(market_type)
+            .market_start_time(market_start_time)
+            .selection_id(runner.id)
+            .selection_name(runner_name)
+            .selection_handicap(handicap.to_f64().unwrap_or(0.0))
+            .currency(currency)
+            .price_precision(BETFAIR_PRICE_PRECISION)
+            .size_precision(BETFAIR_QUANTITY_PRECISION)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .maybe_min_notional(min_notional)
+            .margin_init(Decimal::ONE)
+            .margin_maint(Decimal::ONE)
+            .maker_fee(fee_rate)
+            .taker_fee(fee_rate)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .with_context(|| {
+                format!(
+                    "failed to create BettingInstrument for {market_id}/{}",
+                    runner.id
+                )
+            })?;
 
         instruments.push(InstrumentAny::Betting(instrument));
     }

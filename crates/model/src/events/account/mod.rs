@@ -15,5 +15,5 @@
 
 pub mod state;
 
-#[cfg(any(test, feature = "stubs"))]
+#[cfg(any(test, feature = "test-support"))]
 pub mod stubs;

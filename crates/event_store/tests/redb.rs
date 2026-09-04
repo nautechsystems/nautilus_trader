@@ -944,7 +944,7 @@ fn scan_seq_returns_gap_for_missing_in_watermark_row() {
 
 #[rstest]
 fn list_runs_breaks_start_time_ties_by_run_id() {
-    // Every `manifest` helper run shares start_ts_init = 0, so the listing must
+    // Every `RunManifest` returned by `manifest` has start_ts_init = 0, so the listing must
     // fall back to the run id rather than `read_dir` order.
     let tmp = TempDir::new().expect("tempdir");
 

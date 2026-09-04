@@ -13,15 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
-use arrow::{datatypes::Schema, error::ArrowError, record_batch::RecordBatch};
 use nautilus_model::events::AccountState;
 
-use super::{
-    ArrowSchemaProvider, DecodeTypedFromRecordBatch, EncodeToRecordBatch, EncodingError,
-    json::{JsonFieldSpec, decode_batch, encode_batch, metadata_for_type, schema_for_type},
-};
+use super::json::{JsonFieldSpec, impl_json_arrow};
 
 const ACCOUNT_STATE_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("account_id", false),
@@ -36,38 +30,7 @@ const ACCOUNT_STATE_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8_json("info", true),
 ];
 
-impl ArrowSchemaProvider for AccountState {
-    fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
-        schema_for_type("AccountState", metadata, ACCOUNT_STATE_FIELDS)
-    }
-}
-
-impl EncodeToRecordBatch for AccountState {
-    fn encode_batch(
-        metadata: &HashMap<String, String>,
-        data: &[Self],
-    ) -> Result<RecordBatch, ArrowError> {
-        encode_batch("AccountState", metadata, data, ACCOUNT_STATE_FIELDS)
-    }
-
-    fn metadata(&self) -> HashMap<String, String> {
-        metadata_for_type("AccountState")
-    }
-}
-
-impl DecodeTypedFromRecordBatch for AccountState {
-    fn decode_typed_batch(
-        metadata: &HashMap<String, String>,
-        record_batch: RecordBatch,
-    ) -> Result<Vec<Self>, EncodingError> {
-        let fields = if record_batch.schema().index_of("info").is_ok() {
-            ACCOUNT_STATE_FIELDS
-        } else {
-            &ACCOUNT_STATE_FIELDS[..ACCOUNT_STATE_FIELDS.len() - 1]
-        };
-        decode_batch(metadata, &record_batch, fields, Some("AccountState"))
-    }
-}
+impl_json_arrow!(typed AccountState, "AccountState", ACCOUNT_STATE_FIELDS, &["info"]);
 
 #[cfg(test)]
 mod tests {
@@ -77,6 +40,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::arrow::{DecodeTypedFromRecordBatch, EncodeToRecordBatch, json::encode_batch};
 
     #[rstest]
     fn test_account_state_round_trip(cash_account_state: AccountState) {

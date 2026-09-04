@@ -2911,33 +2911,21 @@ mod tests {
         instrument_id: InstrumentId,
         info: Option<Params>,
     ) -> InstrumentAny {
-        CurrencyPair::new(
-            instrument_id,
-            Symbol::from("EUR/USD"),
-            Currency::from("EUR"),
-            Currency::from("USD"),
-            4,
-            0,
-            Price::from("0.0001"),
-            Quantity::from(1),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            info,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        )
-        .into()
+        CurrencyPair::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::from("EUR/USD"))
+            .base_currency(Currency::from("EUR"))
+            .quote_currency(Currency::from("USD"))
+            .price_precision(4)
+            .size_precision(0)
+            .price_increment(Price::from("0.0001"))
+            .size_increment(Quantity::from(1))
+            .maybe_info(info)
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap()
+            .into()
     }
 
     fn create_contract_info(contract: &Contract, price_magnifier: Option<i32>) -> Params {

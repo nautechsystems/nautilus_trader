@@ -194,46 +194,20 @@ mod tests {
     }
 
     #[rstest]
-    fn test_new_checked_with_empty_issuer_returns_error() {
-        assert!(AccountId::new_checked("-123456").is_err());
-    }
-
-    #[rstest]
-    fn test_new_checked_with_empty_account_returns_error() {
-        assert!(AccountId::new_checked("IB-").is_err());
-    }
-
-    #[rstest]
-    fn test_new_checked_with_empty_issuer_returns_typed_error_with_stable_display() {
-        let error = AccountId::new_checked("-123456").unwrap_err();
-
-        match error {
-            CorrectnessError::PredicateViolation { ref message } => {
-                assert_eq!(message, "`value` issuer part (before '-') cannot be empty");
-            }
-            other => panic!("Expected typed predicate violation, was: {other:?}"),
-        }
+    #[case("-123456", "`value` issuer part (before '-') cannot be empty")]
+    #[case("IB-", "`value` account part (after '-') cannot be empty")]
+    fn test_new_checked_with_empty_component_returns_typed_error(
+        #[case] value: &str,
+        #[case] expected: &str,
+    ) {
+        let error = AccountId::new_checked(value).unwrap_err();
 
         assert_eq!(
-            error.to_string(),
-            "`value` issuer part (before '-') cannot be empty"
-        );
-    }
-
-    #[rstest]
-    fn test_new_checked_with_empty_account_returns_typed_error_with_stable_display() {
-        let error = AccountId::new_checked("IB-").unwrap_err();
-
-        match error {
-            CorrectnessError::PredicateViolation { ref message } => {
-                assert_eq!(message, "`value` account part (after '-') cannot be empty");
+            error,
+            CorrectnessError::PredicateViolation {
+                message: expected.to_string(),
             }
-            other => panic!("Expected typed predicate violation, was: {other:?}"),
-        }
-
-        assert_eq!(
-            error.to_string(),
-            "`value` account part (after '-') cannot be empty"
         );
+        assert_eq!(error.to_string(), expected);
     }
 }

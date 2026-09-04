@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-core"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -53,6 +52,7 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
+zeroize = { workspace = true }
 
 madsim = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
@@ -63,6 +63,7 @@ strum = { workspace = true, optional = true }
 criterion = { workspace = true }
 dashmap = { workspace = true }
 iai = { workspace = true }
+parking_lot = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
@@ -118,6 +119,11 @@ harness = false
 [[bench]]
 name = "hash_map"
 path = "benches/hash_map.rs"
+harness = false
+
+[[bench]]
+name = "collections"
+path = "benches/collections.rs"
 harness = false
 
 [[bench]]

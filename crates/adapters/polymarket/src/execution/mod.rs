@@ -31,13 +31,12 @@ mod orders;
 mod reports;
 mod responses;
 
-use std::sync::{Arc, Mutex, atomic::AtomicBool};
+use std::sync::{Arc, atomic::AtomicBool};
 
 use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
     clients::ExecutionClient,
-    live::task::TaskHandles,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
@@ -50,7 +49,7 @@ use nautilus_core::{
     collections::AtomicMap,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControl};
+use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControl, task::TaskGroup};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, LiquiditySide, OmsType},
@@ -63,10 +62,9 @@ use nautilus_model::{
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
 use nautilus_network::retry::RetryConfig;
+use parking_lot::Mutex;
 pub(crate) use responses::is_post_only_crossing;
 use rust_decimal::Decimal;
-use tokio::task::JoinHandle;
-use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 pub(crate) use self::reports::get_pusd_currency;
@@ -99,10 +97,10 @@ pub struct PolymarketExecutionClient {
     submitter: OrderSubmitter,
     ws_client: PolymarketWebSocketClient,
     secrets: Secrets,
-    pending_tasks: Arc<TaskHandles>,
+    session_tasks: TaskGroup,
+    pending_tasks: TaskGroup,
+    shutdown_errors: Vec<String>,
     stopping: Arc<AtomicBool>,
-    ws_stream_handle: Option<JoinHandle<()>>,
-    heartbeat_task: Option<HeartbeatTask>,
     heartbeat_healthy: Arc<AtomicBool>,
     order_event_handler: Option<TypedHandler<OrderEventAny>>,
     position_event_handler: Option<TypedHandler<PositionEvent>>,
@@ -127,7 +125,7 @@ impl PolymarketExecutionClient {
     ) -> anyhow::Result<Self> {
         let proxy_url = config.validated_proxy_url()?;
         let secrets = Secrets::resolve(
-            config.private_key.as_deref(),
+            config.private_key.clone(),
             config.api_key.clone(),
             config.api_secret.clone(),
             config.passphrase.clone(),
@@ -203,6 +201,9 @@ impl PolymarketExecutionClient {
             Some(pusd),
         );
 
+        let session_tasks = TaskGroup::new();
+        let pending_tasks = TaskGroup::new();
+
         Ok(Self {
             core,
             clock,
@@ -213,10 +214,10 @@ impl PolymarketExecutionClient {
             submitter,
             ws_client,
             secrets,
-            pending_tasks: Arc::new(TaskHandles::default()),
+            session_tasks,
+            pending_tasks,
+            shutdown_errors: Vec::new(),
             stopping: Arc::new(AtomicBool::new(false)),
-            ws_stream_handle: None,
-            heartbeat_task: None,
             heartbeat_healthy: Arc::new(AtomicBool::new(true)),
             order_event_handler: None,
             position_event_handler: None,
@@ -229,12 +230,6 @@ impl PolymarketExecutionClient {
             ws_dispatch_state: Arc::new(Mutex::new(WsDispatchState::default())),
         })
     }
-}
-
-#[derive(Debug)]
-struct HeartbeatTask {
-    cancellation: CancellationToken,
-    handle: JoinHandle<()>,
 }
 
 fn resolve_maker_address(

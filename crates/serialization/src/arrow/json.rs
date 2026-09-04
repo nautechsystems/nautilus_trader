@@ -13,7 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    borrow::Cow,
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use arrow::{
     array::{
@@ -27,7 +31,9 @@ use arrow::{
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Map, Number, Value};
 
-use super::{EncodingError, StringColumnRef, extract_column, extract_column_string};
+use super::{
+    EncodingError, KEY_INSTRUMENT_ID, StringColumnRef, extract_column, extract_column_string,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum JsonFieldEncoding {
@@ -42,6 +48,7 @@ pub enum JsonFieldEncoding {
     UInt64,
     Float64,
     Boolean,
+    BooleanDefaultTrue,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -106,6 +113,15 @@ impl JsonFieldSpec {
         }
     }
 
+    #[must_use]
+    pub const fn boolean_default_true(name: &'static str) -> Self {
+        Self {
+            name,
+            encoding: JsonFieldEncoding::BooleanDefaultTrue,
+            nullable: true,
+        }
+    }
+
     fn field(self) -> Field {
         let data_type = match self.encoding {
             JsonFieldEncoding::Utf8
@@ -113,16 +129,29 @@ impl JsonFieldSpec {
             | JsonFieldEncoding::DecimalStr => DataType::Utf8,
             JsonFieldEncoding::UInt64 => DataType::UInt64,
             JsonFieldEncoding::Float64 => DataType::Float64,
-            JsonFieldEncoding::Boolean => DataType::Boolean,
+            JsonFieldEncoding::Boolean | JsonFieldEncoding::BooleanDefaultTrue => DataType::Boolean,
         };
 
         Field::new(self.name, data_type, self.nullable)
     }
 }
 
+const KEY_TYPE: &str = "type";
+
 #[must_use]
 pub fn metadata_for_type(type_name: &'static str) -> HashMap<String, String> {
-    HashMap::from([("type".to_string(), type_name.to_string())])
+    HashMap::from([(KEY_TYPE.to_string(), type_name.to_string())])
+}
+
+/// Builds schema metadata for `type_name` scoped to a single instrument.
+#[must_use]
+pub fn instrument_metadata(
+    type_name: &'static str,
+    instrument_id: &str,
+) -> HashMap<String, String> {
+    let mut metadata = metadata_for_type(type_name);
+    metadata.insert(KEY_INSTRUMENT_ID.to_string(), instrument_id.to_string());
+    metadata
 }
 
 #[must_use]
@@ -132,7 +161,7 @@ pub fn schema_for_type(
     fields: &[JsonFieldSpec],
 ) -> Schema {
     let mut merged = metadata.unwrap_or_default();
-    merged.insert("type".to_string(), type_name.to_string());
+    merged.insert(KEY_TYPE.to_string(), type_name.to_string());
 
     Schema::new_with_metadata(
         fields
@@ -156,6 +185,12 @@ pub fn encode_batch<T: Serialize>(
     data: &[T],
     fields: &[JsonFieldSpec],
 ) -> Result<RecordBatch, ArrowError> {
+    if let Some(name) = duplicate_field_name(fields) {
+        return Err(invalid_argument(format!(
+            "Duplicate field specification `{name}`"
+        )));
+    }
+
     let rows = serialize_rows(data)?;
     let arrays: Result<Vec<ArrayRef>, ArrowError> = fields
         .iter()
@@ -181,27 +216,38 @@ pub fn decode_batch<T: DeserializeOwned>(
     fields: &[JsonFieldSpec],
     fallback_type_name: Option<&'static str>,
 ) -> Result<Vec<T>, EncodingError> {
+    if let Some(name) = duplicate_field_name(fields) {
+        return Err(EncodingError::ParseError(
+            name,
+            "duplicate field specification".to_string(),
+        ));
+    }
+
+    let schema = record_batch.schema();
     let columns: Result<Vec<_>, EncodingError> = fields
         .iter()
         .enumerate()
-        .map(|(index, field)| decode_column_ref(record_batch.columns(), *field, index))
+        .map(|(expected_index, field)| {
+            let column_index = column_index(&schema, field.name, expected_index)?;
+            decode_column_ref(record_batch.columns(), *field, column_index)
+        })
         .collect();
     let columns = columns?;
 
     let mut decoded = Vec::with_capacity(record_batch.num_rows());
     let type_name = metadata
-        .get("type")
+        .get(KEY_TYPE)
         .cloned()
         .or_else(|| fallback_type_name.map(str::to_string));
 
     for row in 0..record_batch.num_rows() {
         let mut value = Map::new();
         if let Some(type_name) = &type_name {
-            value.insert("type".to_string(), Value::String(type_name.clone()));
+            value.insert(KEY_TYPE.to_string(), Value::String(type_name.clone()));
         }
 
         for column in &columns {
-            value.insert(column.name().to_string(), column.to_json(row)?);
+            value.insert(column.name.to_string(), column.to_json(row)?);
         }
 
         let json = serde_json::to_vec(&Value::Object(value))
@@ -214,6 +260,85 @@ pub fn decode_batch<T: DeserializeOwned>(
     }
 
     Ok(decoded)
+}
+
+/// Returns the field specifications to decode `record_batch` with.
+///
+/// Names in `compatible_missing` are columns added after the schema first shipped. They are
+/// dropped from the specification when the batch predates all of them, and required when the
+/// batch carries any of them, so a partially written schema is rejected rather than decoded
+/// from shifted columns.
+///
+/// # Errors
+///
+/// Returns [`EncodingError::MissingColumn`] if only some of `compatible_missing` are present.
+pub fn fields_for_schema<'a>(
+    record_batch: &RecordBatch,
+    fields: &'a [JsonFieldSpec],
+    compatible_missing: &[&'static str],
+) -> Result<Cow<'a, [JsonFieldSpec]>, EncodingError> {
+    if compatible_missing.is_empty() {
+        return Ok(Cow::Borrowed(fields));
+    }
+
+    let schema = record_batch.schema();
+    let mut present = 0;
+    let mut missing = None;
+
+    for (index, field) in fields.iter().enumerate() {
+        if !compatible_missing.contains(&field.name) {
+            continue;
+        }
+
+        if schema.index_of(field.name).is_ok() {
+            present += 1;
+        } else if missing.is_none() {
+            missing = Some((field.name, index));
+        }
+    }
+
+    match missing {
+        None => Ok(Cow::Borrowed(fields)),
+        Some((name, index)) if present > 0 => Err(EncodingError::MissingColumn(name, index)),
+        Some(_) => Ok(Cow::Owned(
+            fields
+                .iter()
+                .copied()
+                .filter(|field| !compatible_missing.contains(&field.name))
+                .collect(),
+        )),
+    }
+}
+
+fn duplicate_field_name(fields: &[JsonFieldSpec]) -> Option<&'static str> {
+    let mut names = HashSet::with_capacity(fields.len());
+    fields
+        .iter()
+        .find_map(|field| (!names.insert(field.name)).then_some(field.name))
+}
+
+fn column_index(
+    schema: &Schema,
+    name: &'static str,
+    expected_index: usize,
+) -> Result<usize, EncodingError> {
+    let mut matches = schema
+        .fields()
+        .iter()
+        .enumerate()
+        .filter(|(_, field)| field.name() == name);
+    let Some((index, _)) = matches.next() else {
+        return Err(EncodingError::MissingColumn(name, expected_index));
+    };
+
+    if matches.next().is_some() {
+        return Err(EncodingError::ParseError(
+            name,
+            "duplicate column name".to_string(),
+        ));
+    }
+
+    Ok(index)
 }
 
 fn serialize_rows<T: Serialize>(data: &[T]) -> Result<Vec<Map<String, Value>>, ArrowError> {
@@ -237,7 +362,9 @@ fn encode_column(
         JsonFieldEncoding::Utf8Json => encode_utf8_json_column(field, rows),
         JsonFieldEncoding::UInt64 => encode_u64_column(field, rows),
         JsonFieldEncoding::Float64 => encode_f64_column(field, rows),
-        JsonFieldEncoding::Boolean => encode_bool_column(field, rows),
+        JsonFieldEncoding::Boolean | JsonFieldEncoding::BooleanDefaultTrue => {
+            encode_bool_column(field, rows)
+        }
     }
 }
 
@@ -388,72 +515,53 @@ fn parse_bool(value: &Value) -> Result<bool, ArrowError> {
     }
 }
 
-enum ColumnRef<'a> {
-    Utf8 {
-        name: &'static str,
-        values: StringColumnRef<'a>,
-    },
-    Utf8Json {
-        name: &'static str,
-        values: StringColumnRef<'a>,
-    },
-    DecimalStr {
-        name: &'static str,
-        values: DecimalColumnRef<'a>,
-    },
-    UInt64 {
-        name: &'static str,
-        values: &'a UInt64Array,
-    },
-    Float64 {
-        name: &'static str,
-        values: &'a Float64Array,
-    },
+struct ColumnRef<'a> {
+    name: &'static str,
+    values: ColumnValues<'a>,
+}
+
+enum ColumnValues<'a> {
+    Utf8(StringColumnRef<'a>),
+    Utf8Json(StringColumnRef<'a>),
+    DecimalStr(DecimalColumnRef<'a>),
+    UInt64(&'a UInt64Array),
+    Float64(&'a Float64Array),
     Boolean {
-        name: &'static str,
         values: &'a BooleanArray,
+        default: Option<bool>,
     },
 }
 
 impl ColumnRef<'_> {
-    fn name(&self) -> &'static str {
-        match self {
-            Self::Utf8 { name, .. }
-            | Self::Utf8Json { name, .. }
-            | Self::DecimalStr { name, .. }
-            | Self::UInt64 { name, .. }
-            | Self::Float64 { name, .. }
-            | Self::Boolean { name, .. } => name,
-        }
-    }
-
     fn to_json(&self, row: usize) -> Result<Value, EncodingError> {
-        match self {
-            Self::Utf8 { values, .. } => Ok(string_to_json(values, row)),
-            Self::Utf8Json { values, .. } => {
+        match &self.values {
+            ColumnValues::Utf8(values) => Ok(string_to_json(values, row)),
+            ColumnValues::Utf8Json(values) => {
                 if values_is_null(values, row) {
                     Ok(Value::Null)
                 } else {
                     serde_json::from_str(values.value(row)).map_err(|e| {
-                        EncodingError::ParseError(self.name(), format!("row {row}: {e}"))
+                        EncodingError::ParseError(self.name, format!("row {row}: {e}"))
                     })
                 }
             }
-            Self::DecimalStr { values, .. } => match values {
-                DecimalColumnRef::Str(values) => Ok(string_to_json(values, row)),
-                DecimalColumnRef::Float64(values) => f64_to_json(self.name(), values, row),
-            },
-            Self::UInt64 { values, .. } => {
+            ColumnValues::DecimalStr(DecimalColumnRef::Str(values)) => {
+                Ok(string_to_json(values, row))
+            }
+            ColumnValues::DecimalStr(DecimalColumnRef::Float64(values)) => {
+                f64_to_json(self.name, values, row)
+            }
+            ColumnValues::UInt64(values) => {
                 if values.is_null(row) {
                     Ok(Value::Null)
                 } else {
                     Ok(Value::Number(Number::from(values.value(row))))
                 }
             }
-            Self::Float64 { values, .. } => f64_to_json(self.name(), values, row),
-            Self::Boolean { values, .. } => {
+            ColumnValues::Float64(values) => f64_to_json(self.name, values, row),
+            ColumnValues::Boolean { values, default } => {
                 if values.is_null(row) {
-                    Ok(Value::Null)
+                    Ok(default.map_or(Value::Null, Value::Bool))
                 } else {
                     Ok(Value::Bool(values.value(row)))
                 }
@@ -467,32 +575,36 @@ fn decode_column_ref(
     field: JsonFieldSpec,
     index: usize,
 ) -> Result<ColumnRef<'_>, EncodingError> {
-    match field.encoding {
-        JsonFieldEncoding::Utf8 => Ok(ColumnRef::Utf8 {
-            name: field.name,
-            values: extract_column_string(columns, field.name, index)?,
-        }),
-        JsonFieldEncoding::Utf8Json => Ok(ColumnRef::Utf8Json {
-            name: field.name,
-            values: extract_column_string(columns, field.name, index)?,
-        }),
-        JsonFieldEncoding::DecimalStr => Ok(ColumnRef::DecimalStr {
-            name: field.name,
-            values: extract_column_decimal(columns, field.name, index)?,
-        }),
-        JsonFieldEncoding::UInt64 => Ok(ColumnRef::UInt64 {
-            name: field.name,
-            values: extract_column::<UInt64Array>(columns, field.name, index, DataType::UInt64)?,
-        }),
-        JsonFieldEncoding::Float64 => Ok(ColumnRef::Float64 {
-            name: field.name,
-            values: extract_column::<Float64Array>(columns, field.name, index, DataType::Float64)?,
-        }),
-        JsonFieldEncoding::Boolean => Ok(ColumnRef::Boolean {
-            name: field.name,
-            values: extract_column::<BooleanArray>(columns, field.name, index, DataType::Boolean)?,
-        }),
-    }
+    let name = field.name;
+    let values = match field.encoding {
+        JsonFieldEncoding::Utf8 => ColumnValues::Utf8(extract_column_string(columns, name, index)?),
+        JsonFieldEncoding::Utf8Json => {
+            ColumnValues::Utf8Json(extract_column_string(columns, name, index)?)
+        }
+        JsonFieldEncoding::DecimalStr => {
+            ColumnValues::DecimalStr(extract_column_decimal(columns, name, index)?)
+        }
+        JsonFieldEncoding::UInt64 => ColumnValues::UInt64(extract_column::<UInt64Array>(
+            columns,
+            name,
+            index,
+            DataType::UInt64,
+        )?),
+        JsonFieldEncoding::Float64 => ColumnValues::Float64(extract_column::<Float64Array>(
+            columns,
+            name,
+            index,
+            DataType::Float64,
+        )?),
+        JsonFieldEncoding::Boolean | JsonFieldEncoding::BooleanDefaultTrue => {
+            ColumnValues::Boolean {
+                values: extract_column::<BooleanArray>(columns, name, index, DataType::Boolean)?,
+                default: (field.encoding == JsonFieldEncoding::BooleanDefaultTrue).then_some(true),
+            }
+        }
+    };
+
+    Ok(ColumnRef { name, values })
 }
 
 // Reference to a decimal column, either the current `Utf8`/`Utf8View` form or the `Float64`
@@ -547,4 +659,242 @@ fn values_is_null(values: &StringColumnRef<'_>, row: usize) -> bool {
 
 fn invalid_argument(message: String) -> ArrowError {
     ArrowError::InvalidArgumentError(message)
+}
+
+/// Implements the Arrow schema, encode, and decode traits for a type serialized through
+/// [`JsonFieldSpec`] columns.
+///
+/// The leading keyword selects how [`EncodeToRecordBatch::metadata`] is built: `instrument`
+/// scopes the batch to `self.instrument_id`, `typed` carries only the type name. The optional
+/// trailing argument lists columns added after the schema first shipped; see
+/// [`fields_for_schema`].
+///
+/// [`EncodeToRecordBatch::metadata`]: crate::arrow::EncodeToRecordBatch::metadata
+macro_rules! impl_json_arrow {
+    (instrument $type:ty, $type_name:expr, $fields:expr) => {
+        impl_json_arrow!(instrument $type, $type_name, $fields, &[]);
+    };
+
+    (instrument $type:ty, $type_name:expr, $fields:expr, $compatible_missing:expr) => {
+        impl_json_arrow!(@schema $type, $type_name, $fields, $compatible_missing);
+
+        impl $crate::arrow::EncodeToRecordBatch for $type {
+            fn encode_batch(
+                metadata: &std::collections::HashMap<String, String>,
+                data: &[Self],
+            ) -> Result<arrow::record_batch::RecordBatch, arrow::error::ArrowError> {
+                $crate::arrow::json::encode_batch($type_name, metadata, data, $fields)
+            }
+
+            fn metadata(&self) -> std::collections::HashMap<String, String> {
+                $crate::arrow::json::instrument_metadata(
+                    $type_name,
+                    &self.instrument_id.to_string(),
+                )
+            }
+        }
+    };
+
+    (typed $type:ty, $type_name:expr, $fields:expr) => {
+        impl_json_arrow!(typed $type, $type_name, $fields, &[]);
+    };
+
+    (typed $type:ty, $type_name:expr, $fields:expr, $compatible_missing:expr) => {
+        impl_json_arrow!(@schema $type, $type_name, $fields, $compatible_missing);
+
+        impl $crate::arrow::EncodeToRecordBatch for $type {
+            fn encode_batch(
+                metadata: &std::collections::HashMap<String, String>,
+                data: &[Self],
+            ) -> Result<arrow::record_batch::RecordBatch, arrow::error::ArrowError> {
+                $crate::arrow::json::encode_batch($type_name, metadata, data, $fields)
+            }
+
+            fn metadata(&self) -> std::collections::HashMap<String, String> {
+                $crate::arrow::json::metadata_for_type($type_name)
+            }
+        }
+    };
+
+    (@schema $type:ty, $type_name:expr, $fields:expr, $compatible_missing:expr) => {
+        impl $crate::arrow::ArrowSchemaProvider for $type {
+            fn get_schema(
+                metadata: Option<std::collections::HashMap<String, String>>,
+            ) -> arrow::datatypes::Schema {
+                $crate::arrow::json::schema_for_type($type_name, metadata, $fields)
+            }
+        }
+
+        impl $crate::arrow::DecodeTypedFromRecordBatch for $type {
+            fn decode_typed_batch(
+                metadata: &std::collections::HashMap<String, String>,
+                record_batch: arrow::record_batch::RecordBatch,
+            ) -> Result<Vec<Self>, $crate::arrow::EncodingError> {
+                let fields = $crate::arrow::json::fields_for_schema(
+                    &record_batch,
+                    $fields,
+                    $compatible_missing,
+                )?;
+                $crate::arrow::json::decode_batch(
+                    metadata,
+                    &record_batch,
+                    &fields,
+                    Some($type_name),
+                )
+            }
+        }
+    };
+}
+
+pub(crate) use impl_json_arrow;
+
+#[cfg(test)]
+mod tests {
+    use arrow::array::StringViewArray;
+    use rstest::rstest;
+    use serde_json::json;
+
+    use super::*;
+
+    #[rstest]
+    fn test_encode_batch_rejects_missing_required_field() {
+        let fields = [JsonFieldSpec::utf8("required", false)];
+
+        let error = encode_batch("TestRecord", &HashMap::new(), &[json!({})], &fields)
+            .expect_err("required field must be present");
+
+        let ArrowError::InvalidArgumentError(message) = error else {
+            panic!("unexpected error variant: {error:?}");
+        };
+        assert_eq!(message, "Missing required field `required`");
+    }
+
+    #[rstest]
+    fn test_encode_batch_rejects_duplicate_field_specifications() {
+        let fields = [
+            JsonFieldSpec::utf8("label", false),
+            JsonFieldSpec::utf8("label", false),
+        ];
+
+        let error = encode_batch(
+            "TestRecord",
+            &HashMap::new(),
+            &[json!({"label": "value"})],
+            &fields,
+        )
+        .expect_err("duplicate field specification must be rejected");
+
+        let ArrowError::InvalidArgumentError(message) = error else {
+            panic!("unexpected error variant: {error:?}");
+        };
+        assert_eq!(message, "Duplicate field specification `label`");
+    }
+
+    #[rstest]
+    fn test_decode_batch_rejects_invalid_json_from_utf8_view() {
+        let fields = [JsonFieldSpec::utf8_json("payload", false)];
+        let schema = Schema::new(vec![Field::new("payload", DataType::Utf8View, false)]);
+        let batch = RecordBatch::try_new(
+            Arc::new(schema),
+            vec![Arc::new(StringViewArray::from(vec!["[1,"]))],
+        )
+        .unwrap();
+
+        let error = decode_batch::<Value>(&HashMap::new(), &batch, &fields, None)
+            .expect_err("malformed JSON must be rejected");
+
+        let EncodingError::ParseError(field, message) = error else {
+            panic!("unexpected error variant: {error:?}");
+        };
+        assert_eq!(field, "payload");
+        assert!(message.starts_with("row 0:"));
+    }
+
+    #[rstest]
+    fn test_decode_batch_matches_columns_by_name() {
+        let fields = [
+            JsonFieldSpec::utf8("label", false),
+            JsonFieldSpec::u64("value", false),
+        ];
+        let schema = Schema::new(vec![
+            Field::new("value", DataType::UInt64, false),
+            Field::new("label", DataType::Utf8, false),
+        ]);
+        let batch = RecordBatch::try_new(
+            Arc::new(schema),
+            vec![
+                Arc::new(UInt64Array::from(vec![42])),
+                Arc::new(arrow::array::StringArray::from(vec!["answer"])),
+            ],
+        )
+        .unwrap();
+
+        let decoded = decode_batch::<Value>(&HashMap::new(), &batch, &fields, None).unwrap();
+
+        assert_eq!(decoded, vec![json!({"label": "answer", "value": 42})]);
+    }
+
+    #[rstest]
+    fn test_decode_batch_uses_true_default_for_null_boolean() {
+        let fields = [JsonFieldSpec::boolean_default_true("enabled")];
+        let schema = Schema::new(vec![Field::new("enabled", DataType::Boolean, true)]);
+        let batch = RecordBatch::try_new(
+            Arc::new(schema),
+            vec![Arc::new(BooleanArray::from(vec![None]))],
+        )
+        .unwrap();
+
+        let decoded = decode_batch::<Value>(&HashMap::new(), &batch, &fields, None).unwrap();
+
+        assert_eq!(decoded, vec![json!({"enabled": true})]);
+    }
+
+    #[rstest]
+    fn test_decode_batch_rejects_duplicate_column_names() {
+        let fields = [JsonFieldSpec::utf8("label", false)];
+        let schema = Schema::new(vec![
+            Field::new("label", DataType::Utf8, false),
+            Field::new("label", DataType::Utf8, false),
+        ]);
+        let batch = RecordBatch::try_new(
+            Arc::new(schema),
+            vec![
+                Arc::new(arrow::array::StringArray::from(vec!["first"])),
+                Arc::new(arrow::array::StringArray::from(vec!["second"])),
+            ],
+        )
+        .unwrap();
+
+        let error = decode_batch::<Value>(&HashMap::new(), &batch, &fields, None)
+            .expect_err("duplicate column must be rejected");
+
+        let EncodingError::ParseError(field, message) = error else {
+            panic!("unexpected error variant: {error:?}");
+        };
+        assert_eq!(field, "label");
+        assert_eq!(message, "duplicate column name");
+    }
+
+    #[rstest]
+    fn test_decode_batch_rejects_duplicate_field_specifications() {
+        let fields = [
+            JsonFieldSpec::utf8("label", false),
+            JsonFieldSpec::utf8("label", false),
+        ];
+        let schema = Schema::new(vec![Field::new("label", DataType::Utf8, false)]);
+        let batch = RecordBatch::try_new(
+            Arc::new(schema),
+            vec![Arc::new(arrow::array::StringArray::from(vec!["value"]))],
+        )
+        .unwrap();
+
+        let error = decode_batch::<Value>(&HashMap::new(), &batch, &fields, None)
+            .expect_err("duplicate field specification must be rejected");
+
+        let EncodingError::ParseError(field, message) = error else {
+            panic!("unexpected error variant: {error:?}");
+        };
+        assert_eq!(field, "label");
+        assert_eq!(message, "duplicate field specification");
+    }
 }

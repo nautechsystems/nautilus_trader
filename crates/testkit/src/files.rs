@@ -20,7 +20,7 @@ use std::{
     fs::{File, OpenOptions, remove_file},
     io::{BufReader, BufWriter, Read, copy},
     path::{Path, PathBuf},
-    sync::{Mutex, OnceLock},
+    sync::OnceLock,
     thread::sleep,
     time::{Duration, Instant},
 };
@@ -28,17 +28,15 @@ use std::{
 use aws_lc_rs::digest::{self, Context};
 use nautilus_core::hex;
 use nautilus_network::retry::RetryConfig;
+use parking_lot::Mutex;
 use rand::{RngExt, rng};
 use reqwest::blocking::Client;
 use serde_json::Value;
 
 static LARGE_CHECKSUMS_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
-fn lock_large_checksums() -> anyhow::Result<std::sync::MutexGuard<'static, ()>> {
-    LARGE_CHECKSUMS_LOCK
-        .get_or_init(|| Mutex::new(()))
-        .lock()
-        .map_err(|e| anyhow::anyhow!("Failed to lock checksums file access: {e}"))
+fn lock_large_checksums() -> parking_lot::MutexGuard<'static, ()> {
+    LARGE_CHECKSUMS_LOCK.get_or_init(|| Mutex::new(())).lock()
 }
 
 #[derive(Debug)]
@@ -198,7 +196,7 @@ pub fn ensure_file_exists_or_download_http_with_config(
         println!("File already exists (local/cached): {}", filepath.display());
 
         if let Some(checksums_file) = checksums {
-            let _guard = lock_large_checksums()?;
+            let _guard = lock_large_checksums();
 
             if verify_sha256_checksum(filepath, checksums_file)? {
                 println!("Checksum verified");
@@ -231,7 +229,7 @@ pub fn ensure_file_exists_or_download_http_with_config(
 
     // Verify checksum after download, retry once on mismatch (corrupt download)
     if let Some(checksums_file) = checksums {
-        let guard = lock_large_checksums()?;
+        let guard = lock_large_checksums();
 
         if !verify_sha256_checksum(filepath, checksums_file)? {
             let actual = calculate_sha256(filepath)?;
@@ -241,7 +239,7 @@ pub fn ensure_file_exists_or_download_http_with_config(
 
             download_file(filepath, url, timeout_secs, retry_config)?;
 
-            let _guard = lock_large_checksums()?;
+            let _guard = lock_large_checksums();
 
             if !verify_sha256_checksum(filepath, checksums_file)? {
                 let actual = calculate_sha256(filepath)?;

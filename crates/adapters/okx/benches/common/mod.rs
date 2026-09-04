@@ -20,7 +20,7 @@
 //! describe the same wire shapes used to verify parser correctness.
 //!
 //! Each criterion bench is a separate compilation unit that pulls in this
-//! module, but uses only a subset of the helpers and fixtures. Without the
+//! module, but uses only a subset of the benchmark routines and fixtures. Without the
 //! module-level `allow`, the unused subset in any given bench triggers
 //! per-crate dead-code warnings.
 
@@ -88,32 +88,21 @@ fn spot_instrument(
     let instrument_id = InstrumentId::new(raw_symbol, *OKX_VENUE);
     let price_increment = Price::new(10f64.powi(-(price_precision as i32)), price_precision);
     let size_increment = Quantity::new(10f64.powi(-(size_precision as i32)), size_precision);
-    InstrumentAny::CurrencyPair(CurrencyPair::new(
-        instrument_id,
-        raw_symbol,
-        Currency::from(base),
-        Currency::from(quote),
-        price_precision,
-        size_precision,
-        price_increment,
-        size_increment,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ))
+    InstrumentAny::CurrencyPair(
+        CurrencyPair::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(raw_symbol)
+            .base_currency(Currency::from(base))
+            .quote_currency(Currency::from(quote))
+            .price_precision(price_precision)
+            .size_precision(size_precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    )
 }
 
 fn perp_instrument(
@@ -127,34 +116,23 @@ fn perp_instrument(
     let instrument_id = InstrumentId::new(raw_symbol, *OKX_VENUE);
     let price_increment = Price::new(10f64.powi(-(price_precision as i32)), price_precision);
     let size_increment = Quantity::new(10f64.powi(-(size_precision as i32)), size_precision);
-    InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-        instrument_id,
-        raw_symbol,
-        Currency::from(base),
-        Currency::from(quote),
-        Currency::from(quote),
-        false,
-        price_precision,
-        size_precision,
-        price_increment,
-        size_increment,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ))
+    InstrumentAny::CryptoPerpetual(
+        CryptoPerpetual::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(raw_symbol)
+            .base_currency(Currency::from(base))
+            .quote_currency(Currency::from(quote))
+            .settlement_currency(Currency::from(quote))
+            .is_inverse(false)
+            .price_precision(price_precision)
+            .size_precision(size_precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    )
 }
 
 /// Cache keyed by `instId` (`Ustr`) - the lookup shape every OKX parse function uses.

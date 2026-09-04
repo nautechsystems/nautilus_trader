@@ -93,7 +93,7 @@ use std::collections::BTreeMap;
 
 use ahash::AHashMap;
 use nautilus_model::{
-    enums::{OrderSideSpecified, OrderType, TriggerType},
+    enums::{OrderSide, OrderType, TriggerType},
     identifiers::{ClientOrderId, InstrumentId},
     orders::{Order, OrderError, PassiveOrderAny, StopOrderAny},
     types::Price,
@@ -128,9 +128,9 @@ pub enum MatchAction {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RestingOrder {
     pub client_order_id: ClientOrderId,
-    pub order_side: OrderSideSpecified,
+    pub order_side: OrderSide,
     pub order_type: OrderType,
-    pub trigger_type: TriggerType,
+    pub trigger_type: Option<TriggerType>,
     pub trigger_price: Option<Price>,
     pub limit_price: Option<Price>,
     pub is_activated: bool,
@@ -147,7 +147,7 @@ impl RestingOrder {
     #[must_use]
     pub const fn new(
         client_order_id: ClientOrderId,
-        order_side: OrderSideSpecified,
+        order_side: OrderSide,
         order_type: OrderType,
         trigger_price: Option<Price>,
         limit_price: Option<Price>,
@@ -157,7 +157,10 @@ impl RestingOrder {
             client_order_id,
             order_side,
             order_type,
-            TriggerType::Default,
+            match trigger_price {
+                Some(_) => Some(TriggerType::Default),
+                None => None,
+            },
             trigger_price,
             limit_price,
             is_activated,
@@ -167,9 +170,9 @@ impl RestingOrder {
     #[must_use]
     pub(crate) const fn new_with_trigger_type(
         client_order_id: ClientOrderId,
-        order_side: OrderSideSpecified,
+        order_side: OrderSide,
         order_type: OrderType,
-        trigger_type: TriggerType,
+        trigger_type: Option<TriggerType>,
         trigger_price: Option<Price>,
         limit_price: Option<Price>,
         is_activated: bool,
@@ -203,9 +206,9 @@ impl From<&PassiveOrderAny> for RestingOrder {
         match order {
             PassiveOrderAny::Limit(limit) => Self {
                 client_order_id: limit.client_order_id(),
-                order_side: limit.order_side_specified(),
+                order_side: limit.order_side(),
                 order_type: limit.order_type(),
-                trigger_type: TriggerType::NoTrigger,
+                trigger_type: None,
                 trigger_price: None,
                 limit_price: Some(limit.limit_px()),
                 is_activated: true,
@@ -226,9 +229,9 @@ impl From<&PassiveOrderAny> for RestingOrder {
                 };
                 Self {
                     client_order_id: stop.client_order_id(),
-                    order_side: stop.order_side_specified(),
+                    order_side: stop.order_side(),
                     order_type: stop.order_type(),
-                    trigger_type: stop.trigger_type().unwrap_or(TriggerType::Default),
+                    trigger_type: Some(stop.trigger_type().unwrap_or(TriggerType::Default)),
                     trigger_price: stop.stop_px(),
                     limit_price,
                     is_activated,
@@ -259,7 +262,7 @@ pub struct OrderMatchingCore {
     ask_stops: BTreeMap<Price, OrderBucket>,
     pending_bid: SmallVec<[RestingOrder; 2]>,
     pending_ask: SmallVec<[RestingOrder; 2]>,
-    order_index: AHashMap<ClientOrderId, (OrderSideSpecified, Option<(BookKind, Price)>)>,
+    order_index: AHashMap<ClientOrderId, (OrderSide, Option<(BookKind, Price)>)>,
 }
 
 impl OrderMatchingCore {
@@ -356,20 +359,20 @@ impl OrderMatchingCore {
     }
 
     /// Returns the per-side book for the given `(side, kind)`.
-    fn book_for(&self, side: OrderSideSpecified, kind: BookKind) -> &BTreeMap<Price, OrderBucket> {
+    fn book_for(&self, side: OrderSide, kind: BookKind) -> &BTreeMap<Price, OrderBucket> {
         match (side, kind) {
-            (OrderSideSpecified::Buy, BookKind::Limit) => &self.bid_limits,
-            (OrderSideSpecified::Buy, BookKind::Stop) => &self.bid_stops,
-            (OrderSideSpecified::Sell, BookKind::Limit) => &self.ask_limits,
-            (OrderSideSpecified::Sell, BookKind::Stop) => &self.ask_stops,
+            (OrderSide::Buy, BookKind::Limit) => &self.bid_limits,
+            (OrderSide::Buy, BookKind::Stop) => &self.bid_stops,
+            (OrderSide::Sell, BookKind::Limit) => &self.ask_limits,
+            (OrderSide::Sell, BookKind::Stop) => &self.ask_stops,
         }
     }
 
     /// Returns the per-side pending bucket.
-    fn pending_for(&self, side: OrderSideSpecified) -> &[RestingOrder] {
+    fn pending_for(&self, side: OrderSide) -> &[RestingOrder] {
         match side {
-            OrderSideSpecified::Buy => &self.pending_bid,
-            OrderSideSpecified::Sell => &self.pending_ask,
+            OrderSide::Buy => &self.pending_bid,
+            OrderSide::Sell => &self.pending_ask,
         }
     }
 
@@ -464,16 +467,16 @@ impl OrderMatchingCore {
 
         if let Some((kind, price)) = location {
             let book = match (side, kind) {
-                (OrderSideSpecified::Buy, BookKind::Limit) => &mut self.bid_limits,
-                (OrderSideSpecified::Buy, BookKind::Stop) => &mut self.bid_stops,
-                (OrderSideSpecified::Sell, BookKind::Limit) => &mut self.ask_limits,
-                (OrderSideSpecified::Sell, BookKind::Stop) => &mut self.ask_stops,
+                (OrderSide::Buy, BookKind::Limit) => &mut self.bid_limits,
+                (OrderSide::Buy, BookKind::Stop) => &mut self.bid_stops,
+                (OrderSide::Sell, BookKind::Limit) => &mut self.ask_limits,
+                (OrderSide::Sell, BookKind::Stop) => &mut self.ask_stops,
             };
             book.entry(price).or_default().push(order);
         } else {
             match side {
-                OrderSideSpecified::Buy => self.pending_bid.push(order),
-                OrderSideSpecified::Sell => self.pending_ask.push(order),
+                OrderSide::Buy => self.pending_bid.push(order),
+                OrderSide::Sell => self.pending_ask.push(order),
             }
         }
         self.order_index.insert(client_order_id, (side, location));
@@ -496,10 +499,10 @@ impl OrderMatchingCore {
 
         if let Some((kind, price)) = location {
             let book = match (side, kind) {
-                (OrderSideSpecified::Buy, BookKind::Limit) => &mut self.bid_limits,
-                (OrderSideSpecified::Buy, BookKind::Stop) => &mut self.bid_stops,
-                (OrderSideSpecified::Sell, BookKind::Limit) => &mut self.ask_limits,
-                (OrderSideSpecified::Sell, BookKind::Stop) => &mut self.ask_stops,
+                (OrderSide::Buy, BookKind::Limit) => &mut self.bid_limits,
+                (OrderSide::Buy, BookKind::Stop) => &mut self.bid_stops,
+                (OrderSide::Sell, BookKind::Limit) => &mut self.ask_limits,
+                (OrderSide::Sell, BookKind::Stop) => &mut self.ask_stops,
             };
             let bucket = book
                 .get_mut(&price)
@@ -514,8 +517,8 @@ impl OrderMatchingCore {
             }
         } else {
             let pending = match side {
-                OrderSideSpecified::Buy => &mut self.pending_bid,
-                OrderSideSpecified::Sell => &mut self.pending_ask,
+                OrderSide::Buy => &mut self.pending_bid,
+                OrderSide::Sell => &mut self.pending_ask,
             };
             let pos = pending
                 .iter()
@@ -590,12 +593,12 @@ impl OrderMatchingCore {
                 .is_touch_triggered_with_trigger_type(
                     order.order_side,
                     trigger_price,
-                    order.trigger_type,
+                    order.trigger_type.unwrap_or(TriggerType::Default),
                 ),
             _ => self.is_stop_matched_with_trigger_type(
                 order.order_side,
                 trigger_price,
-                order.trigger_type,
+                order.trigger_type.unwrap_or(TriggerType::Default),
             ),
         };
 
@@ -609,63 +612,63 @@ impl OrderMatchingCore {
     /// Returns whether a limit order at `price` would cross the opposite side
     /// (BUY: `ask <= price`, SELL: `bid >= price`).
     #[must_use]
-    pub fn is_limit_matched(&self, side: OrderSideSpecified, price: Price) -> bool {
+    pub fn is_limit_matched(&self, side: OrderSide, price: Price) -> bool {
         match side {
-            OrderSideSpecified::Buy => self.ask.is_some_and(|a| a <= price),
-            OrderSideSpecified::Sell => self.bid.is_some_and(|b| b >= price),
+            OrderSide::Buy => self.ask.is_some_and(|a| a <= price),
+            OrderSide::Sell => self.bid.is_some_and(|b| b >= price),
         }
     }
 
     /// Returns whether a stop trigger at `price` has been reached
     /// (BUY: `ask >= price`, SELL: `bid <= price`).
     #[must_use]
-    pub fn is_stop_matched(&self, side: OrderSideSpecified, price: Price) -> bool {
+    pub fn is_stop_matched(&self, side: OrderSide, price: Price) -> bool {
         self.is_stop_matched_with_trigger_type(side, price, TriggerType::BidAsk)
     }
 
     #[must_use]
     pub(crate) fn is_stop_matched_with_trigger_type(
         &self,
-        side: OrderSideSpecified,
+        side: OrderSide,
         price: Price,
         trigger_type: TriggerType,
     ) -> bool {
         self.market_price_for_trigger(side, trigger_type)
             .is_some_and(|market_price| match side {
-                OrderSideSpecified::Buy => market_price >= price,
-                OrderSideSpecified::Sell => market_price <= price,
+                OrderSide::Buy => market_price >= price,
+                OrderSide::Sell => market_price <= price,
             })
     }
 
     /// Returns whether a touch trigger at `trigger_price` has been reached
     /// (BUY: `ask <= trigger_price`, SELL: `bid >= trigger_price`).
     #[must_use]
-    pub fn is_touch_triggered(&self, side: OrderSideSpecified, trigger_price: Price) -> bool {
+    pub fn is_touch_triggered(&self, side: OrderSide, trigger_price: Price) -> bool {
         self.is_touch_triggered_with_trigger_type(side, trigger_price, TriggerType::BidAsk)
     }
 
     #[must_use]
     pub(crate) fn is_touch_triggered_with_trigger_type(
         &self,
-        side: OrderSideSpecified,
+        side: OrderSide,
         trigger_price: Price,
         trigger_type: TriggerType,
     ) -> bool {
         self.market_price_for_trigger(side, trigger_type)
             .is_some_and(|market_price| match side {
-                OrderSideSpecified::Buy => market_price <= trigger_price,
-                OrderSideSpecified::Sell => market_price >= trigger_price,
+                OrderSide::Buy => market_price <= trigger_price,
+                OrderSide::Sell => market_price >= trigger_price,
             })
     }
 
     fn market_price_for_trigger(
         &self,
-        side: OrderSideSpecified,
+        side: OrderSide,
         trigger_type: TriggerType,
     ) -> Option<Price> {
         let quote_price = match side {
-            OrderSideSpecified::Buy => self.ask,
-            OrderSideSpecified::Sell => self.bid,
+            OrderSide::Buy => self.ask,
+            OrderSide::Sell => self.bid,
         };
 
         match trigger_type {
@@ -686,7 +689,7 @@ impl OrderMatchingCore {
     /// `fill_limit_inside_spread` is set, also checks at-or-inside spread
     /// (BUY >= bid, SELL <= ask), requiring both sides initialized.
     #[must_use]
-    pub fn is_limit_fillable(&self, side: OrderSideSpecified, price: Price) -> bool {
+    pub fn is_limit_fillable(&self, side: OrderSide, price: Price) -> bool {
         if self.is_limit_matched(side, price) {
             return true;
         }
@@ -698,8 +701,8 @@ impl OrderMatchingCore {
         // Require both quotes present since fill simulation needs best bid and ask
         if let (Some(bid), Some(ask)) = (self.bid, self.ask) {
             match side {
-                OrderSideSpecified::Buy => price >= bid,
-                OrderSideSpecified::Sell => price <= ask,
+                OrderSide::Buy => price >= bid,
+                OrderSide::Sell => price <= ask,
             }
         } else {
             false
@@ -903,8 +906,7 @@ mod tests {
             .quantity(Quantity::from("100"))
             .build();
 
-        let result =
-            matching_core.is_limit_matched(order.order_side_specified(), order.price().unwrap());
+        let result = matching_core.is_limit_matched(order.order_side(), order.price().unwrap());
         assert_eq!(result, expected);
     }
 
@@ -972,8 +974,8 @@ mod tests {
             .quantity(Quantity::from("100"))
             .build();
 
-        let result = matching_core
-            .is_stop_matched(order.order_side_specified(), order.trigger_price().unwrap());
+        let result =
+            matching_core.is_stop_matched(order.order_side(), order.trigger_price().unwrap());
         assert_eq!(result, expected);
     }
 
@@ -999,7 +1001,7 @@ mod tests {
         matching_core.last = last;
 
         let result = matching_core.is_stop_matched_with_trigger_type(
-            OrderSideSpecified::Buy,
+            OrderSide::Buy,
             Price::from("100.00"),
             trigger_type,
         );
@@ -1153,7 +1155,7 @@ mod tests {
         // Manually create an unactivated stop (simulates trailing stop)
         let match_info = RestingOrder::new(
             ClientOrderId::from("O-001"),
-            OrderSideSpecified::Buy,
+            OrderSide::Buy,
             OrderType::TrailingStopMarket,
             Some(Price::from("105.00")),
             None,
@@ -1175,7 +1177,7 @@ mod tests {
         let client_order_id = ClientOrderId::from("O-001");
         let match_info = RestingOrder::new(
             client_order_id,
-            OrderSideSpecified::Buy,
+            OrderSide::Buy,
             OrderType::TrailingStopMarket,
             Some(Price::from("105.00")),
             None,
@@ -1236,10 +1238,10 @@ mod tests {
         core.set_bid_raw(Price::from("100.00"));
         core.set_ask_raw(Price::from("101.00"));
 
-        assert!(core.is_limit_fillable(OrderSideSpecified::Buy, Price::from("101.00")));
-        assert!(!core.is_limit_fillable(OrderSideSpecified::Buy, Price::from("100.00")));
-        assert!(core.is_limit_fillable(OrderSideSpecified::Sell, Price::from("100.00")));
-        assert!(!core.is_limit_fillable(OrderSideSpecified::Sell, Price::from("101.00")));
+        assert!(core.is_limit_fillable(OrderSide::Buy, Price::from("101.00")));
+        assert!(!core.is_limit_fillable(OrderSide::Buy, Price::from("100.00")));
+        assert!(core.is_limit_fillable(OrderSide::Sell, Price::from("100.00")));
+        assert!(!core.is_limit_fillable(OrderSide::Sell, Price::from("101.00")));
     }
 
     #[rstest]
@@ -1250,9 +1252,9 @@ mod tests {
         core.set_ask_raw(Price::from("101.00"));
         core.set_fill_limit_inside_spread(true);
 
-        assert!(core.is_limit_fillable(OrderSideSpecified::Buy, Price::from("100.00")));
-        assert!(core.is_limit_fillable(OrderSideSpecified::Buy, Price::from("100.50")));
-        assert!(!core.is_limit_fillable(OrderSideSpecified::Buy, Price::from("99.00")));
+        assert!(core.is_limit_fillable(OrderSide::Buy, Price::from("100.00")));
+        assert!(core.is_limit_fillable(OrderSide::Buy, Price::from("100.50")));
+        assert!(!core.is_limit_fillable(OrderSide::Buy, Price::from("99.00")));
     }
 
     #[rstest]
@@ -1263,9 +1265,9 @@ mod tests {
         core.set_ask_raw(Price::from("101.00"));
         core.set_fill_limit_inside_spread(true);
 
-        assert!(core.is_limit_fillable(OrderSideSpecified::Sell, Price::from("101.00")));
-        assert!(core.is_limit_fillable(OrderSideSpecified::Sell, Price::from("100.50")));
-        assert!(!core.is_limit_fillable(OrderSideSpecified::Sell, Price::from("102.00")));
+        assert!(core.is_limit_fillable(OrderSide::Sell, Price::from("101.00")));
+        assert!(core.is_limit_fillable(OrderSide::Sell, Price::from("100.50")));
+        assert!(!core.is_limit_fillable(OrderSide::Sell, Price::from("102.00")));
     }
 
     #[rstest]
@@ -1275,12 +1277,12 @@ mod tests {
         core.set_fill_limit_inside_spread(true);
 
         core.set_bid_raw(Price::from("100.00"));
-        assert!(!core.is_limit_fillable(OrderSideSpecified::Buy, Price::from("100.00")));
+        assert!(!core.is_limit_fillable(OrderSide::Buy, Price::from("100.00")));
 
         let mut core2 = create_matching_core(instrument_id, Price::from("0.01"));
         core2.set_fill_limit_inside_spread(true);
         core2.set_ask_raw(Price::from("101.00"));
-        assert!(!core2.is_limit_fillable(OrderSideSpecified::Sell, Price::from("101.00")));
+        assert!(!core2.is_limit_fillable(OrderSide::Sell, Price::from("101.00")));
 
         // Ask cleared after both were set
         let mut core3 = create_matching_core(instrument_id, Price::from("0.01"));
@@ -1288,7 +1290,7 @@ mod tests {
         core3.set_bid_raw(Price::from("100.00"));
         core3.set_ask_raw(Price::from("101.00"));
         core3.ask = None;
-        assert!(!core3.is_limit_fillable(OrderSideSpecified::Buy, Price::from("100.00")));
+        assert!(!core3.is_limit_fillable(OrderSide::Buy, Price::from("100.00")));
     }
 
     #[rstest]
@@ -1370,7 +1372,7 @@ mod tests {
         matching_core.bid = bid;
         matching_core.ask = ask;
 
-        let result = matching_core.is_touch_triggered(order_side.as_specified(), trigger_price);
+        let result = matching_core.is_touch_triggered(order_side, trigger_price);
         assert_eq!(result, expected);
     }
 
@@ -1447,7 +1449,7 @@ mod tests {
 
         let info = RestingOrder::new(
             ClientOrderId::from("O-NEITHER"),
-            OrderSideSpecified::Buy,
+            OrderSide::Buy,
             OrderType::MarketToLimit,
             None,
             None,
@@ -1493,7 +1495,7 @@ mod tests {
 
         assert_eq!(info.trigger_price, Some(Price::from("100.00")));
         assert_eq!(info.limit_price, Some(Price::from("99.00")));
-        assert_eq!(info.trigger_type, TriggerType::LastPrice);
+        assert_eq!(info.trigger_type, Some(TriggerType::LastPrice));
         assert!(info.is_activated);
     }
 
@@ -1836,7 +1838,7 @@ mod tests {
         // A pending (no key) order.
         let pending = RestingOrder::new(
             ClientOrderId::from("O-PENDING"),
-            OrderSideSpecified::Buy,
+            OrderSide::Buy,
             OrderType::MarketToLimit,
             None,
             None,

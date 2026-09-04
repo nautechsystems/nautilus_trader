@@ -61,7 +61,7 @@ class OrderExample:
         auto_stop_seconds: int = 20,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         self.node_id = node_id
         self.strategy_path = strategy_path

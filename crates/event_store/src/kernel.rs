@@ -30,7 +30,7 @@ use std::{
     path::{Path, PathBuf},
     rc::Rc,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     thread,
@@ -55,6 +55,7 @@ use nautilus_system::{
     KernelEventStore as KernelEventStoreTrait, RegisteredComponents,
     event_store::{DataMarkerClass, DataMarkerConfig, EventStoreConfig, RetentionMode},
 };
+use parking_lot::Mutex;
 use ustr::Ustr;
 
 use crate::{
@@ -258,14 +259,11 @@ impl HaltSignal {
         let halted = Arc::clone(&self.halted);
         let reason = Arc::clone(&self.reason);
         Arc::new(move |r| {
-            // The mutex gates first-reason-wins; the flag flips after the reason is
-            // stored. On the (panic-only) poisoned path the reason is lost but the
-            // halt itself must still be observable.
-            if let Ok(mut slot) = reason.lock()
-                && slot.is_none()
-            {
+            let mut slot = reason.lock();
+            if slot.is_none() {
                 *slot = Some(r);
             }
+            drop(slot);
             halted.store(true, Ordering::Release);
         })
     }
@@ -282,7 +280,7 @@ impl HaltSignal {
     /// subsequent submits surface as fail-stopped.
     #[must_use]
     pub fn reason(&self) -> Option<HaltReason> {
-        self.reason.lock().ok().and_then(|guard| guard.clone())
+        self.reason.lock().clone()
     }
 }
 
@@ -1529,11 +1527,11 @@ mod tests {
 
     impl EventStore for SharedMemoryBackend {
         fn open_run(&mut self, manifest: RunManifest) -> Result<(), EventStoreError> {
-            self.0.lock().expect("memory backend").open_run(manifest)
+            self.0.lock().open_run(manifest)
         }
 
         fn append_batch(&mut self, entries: &[AppendEntry]) -> Result<u64, EventStoreError> {
-            self.0.lock().expect("memory backend").append_batch(entries)
+            self.0.lock().append_batch(entries)
         }
 
         fn scan_range(
@@ -1542,51 +1540,42 @@ mod tests {
             to: u64,
             direction: ScanDirection,
         ) -> Result<Vec<EventStoreEntry>, EventStoreError> {
-            self.0
-                .lock()
-                .expect("memory backend")
-                .scan_range(from, to, direction)
+            self.0.lock().scan_range(from, to, direction)
         }
 
         fn scan_seq(&self, seq: u64) -> Result<Option<EventStoreEntry>, EventStoreError> {
-            self.0.lock().expect("memory backend").scan_seq(seq)
+            self.0.lock().scan_seq(seq)
         }
 
         fn lookup(&self, kind: IndexKind, key: &str) -> Result<Option<u64>, EventStoreError> {
-            self.0.lock().expect("memory backend").lookup(kind, key)
+            self.0.lock().lookup(kind, key)
         }
 
         fn iter_index_keys(&self, kind: IndexKind) -> Result<Vec<(String, u64)>, EventStoreError> {
-            self.0.lock().expect("memory backend").iter_index_keys(kind)
+            self.0.lock().iter_index_keys(kind)
         }
 
         fn record_snapshot_anchor(
             &mut self,
             anchor: SnapshotAnchor,
         ) -> Result<(), EventStoreError> {
-            self.0
-                .lock()
-                .expect("memory backend")
-                .record_snapshot_anchor(anchor)
+            self.0.lock().record_snapshot_anchor(anchor)
         }
 
         fn latest_snapshot_anchor(&self) -> Result<Option<SnapshotAnchor>, EventStoreError> {
-            self.0
-                .lock()
-                .expect("memory backend")
-                .latest_snapshot_anchor()
+            self.0.lock().latest_snapshot_anchor()
         }
 
         fn seal(&mut self, status: RunStatus) -> Result<(), EventStoreError> {
-            self.0.lock().expect("memory backend").seal(status)
+            self.0.lock().seal(status)
         }
 
         fn manifest(&self) -> Result<RunManifest, EventStoreError> {
-            self.0.lock().expect("memory backend").manifest()
+            self.0.lock().manifest()
         }
 
         fn high_watermark(&self) -> Result<u64, EventStoreError> {
-            self.0.lock().expect("memory backend").high_watermark()
+            self.0.lock().high_watermark()
         }
     }
 
@@ -1773,10 +1762,7 @@ mod tests {
         let options = EventStoreLifecycleOptions::new()
             .with_encoder_registry(test_registry())
             .with_backend_opener(move |_, manifest| {
-                opener_memory
-                    .lock()
-                    .expect("memory backend")
-                    .open_run(manifest.clone())?;
+                opener_memory.lock().open_run(manifest.clone())?;
                 Ok(Box::new(SharedMemoryBackend(Arc::clone(&opener_memory))))
             });
 
@@ -1799,7 +1785,7 @@ mod tests {
         msgbus::publish_any(topic, &TestAuditMessage { value: 7 });
         store.seal(UnixNanos::from(1_000));
 
-        let backend = memory.lock().expect("memory backend");
+        let backend = memory.lock();
         let manifest = backend.manifest().expect("manifest");
         let captured = backend
             .scan_seq(2)
@@ -1944,10 +1930,7 @@ mod tests {
         let options = EventStoreLifecycleOptions::new()
             .with_encoder_registry(test_registry())
             .with_backend_opener(move |_, manifest| {
-                opener_memory
-                    .lock()
-                    .expect("memory backend")
-                    .open_run(manifest.clone())?;
+                opener_memory.lock().open_run(manifest.clone())?;
                 Ok(Box::new(SharedMemoryBackend(Arc::clone(&opener_memory))))
             });
 
@@ -1979,7 +1962,7 @@ mod tests {
         get_atomic_clock_static().set_time(UnixNanos::from(40_000));
         store.seal(UnixNanos::from(40_000));
 
-        let backend = memory.lock().expect("memory backend");
+        let backend = memory.lock();
         let manifest = backend.manifest().expect("manifest");
         assert_eq!(manifest.seed, Some(seed));
         assert_eq!(manifest.status, RunStatus::Ended);
@@ -2592,6 +2575,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(madsim))]
     #[rstest]
     fn submit_run_started_returns_timeout_when_writer_stalls() {
         // A backend whose append_batch never returns simulates a stuck writer. The
@@ -2632,6 +2616,7 @@ mod tests {
         stub.release();
     }
 
+    #[cfg(not(madsim))]
     #[rstest]
     fn submit_run_started_returns_halted_when_writer_halts_during_wait() {
         // A halt signal fired before the writer can commit must surface
@@ -2701,37 +2686,41 @@ mod tests {
     /// Stub backend whose `append_batch` blocks until `release()` is called. Used to
     /// hold the writer's high-watermark at zero so the boot path's wait loop can
     /// exercise its timeout and halt branches deterministically.
+    #[cfg(not(madsim))]
     #[derive(Debug, Default, Clone)]
     struct StallBackend {
         inner: Arc<Mutex<StallInner>>,
-        gate: Arc<(Mutex<bool>, std::sync::Condvar)>,
+        gate: Arc<(Mutex<bool>, parking_lot::Condvar)>,
     }
 
+    #[cfg(not(madsim))]
     #[derive(Debug, Default)]
     struct StallInner {
         manifest: Option<RunManifest>,
     }
 
+    #[cfg(not(madsim))]
     impl StallBackend {
         fn release(&self) {
             let (lock, cvar) = &*self.gate;
-            *lock.lock().expect("gate") = true;
+            *lock.lock() = true;
             cvar.notify_all();
         }
     }
 
+    #[cfg(not(madsim))]
     impl crate::EventStore for StallBackend {
         fn open_run(&mut self, manifest: RunManifest) -> Result<(), EventStoreError> {
-            self.inner.lock().expect("inner").manifest = Some(manifest);
+            self.inner.lock().manifest = Some(manifest);
             Ok(())
         }
 
         fn append_batch(&mut self, _: &[crate::AppendEntry]) -> Result<u64, EventStoreError> {
             let (lock, cvar) = &*self.gate;
-            let mut released = lock.lock().expect("gate");
+            let mut released = lock.lock();
 
             while !*released {
-                released = cvar.wait(released).expect("gate wait");
+                cvar.wait(&mut released);
             }
             Ok(0)
         }
@@ -2767,7 +2756,6 @@ mod tests {
         fn manifest(&self) -> Result<RunManifest, EventStoreError> {
             self.inner
                 .lock()
-                .expect("inner")
                 .manifest
                 .clone()
                 .ok_or_else(|| EventStoreError::Backend("no manifest".to_string()))
@@ -2972,10 +2960,7 @@ mod tests {
         let options = EventStoreLifecycleOptions::new()
             .with_encoder_registry(test_registry())
             .with_backend_opener(move |_, manifest| {
-                opener_memory
-                    .lock()
-                    .expect("memory backend")
-                    .open_run(manifest.clone())?;
+                opener_memory.lock().open_run(manifest.clone())?;
                 Ok(Box::new(SharedMemoryBackend(Arc::clone(&opener_memory))))
             });
 
@@ -3009,7 +2994,7 @@ mod tests {
             .close(UnixNanos::from(6_000))
             .expect("close session");
 
-        let backend = memory.lock().expect("memory backend");
+        let backend = memory.lock();
         let captured = backend
             .scan_seq(2)
             .expect("scan")
@@ -3036,10 +3021,7 @@ mod tests {
         });
         let options =
             EventStoreLifecycleOptions::new().with_marker_registry_factory(move |classes| {
-                seen_for_factory
-                    .lock()
-                    .expect("seen classes")
-                    .push(classes.to_vec());
+                seen_for_factory.lock().push(classes.to_vec());
                 DataMarkerExtractorRegistry::default_registry(classes)
             });
 
@@ -3055,7 +3037,7 @@ mod tests {
             .expect("open run");
         store.seal(UnixNanos::from(1_000));
 
-        let seen = seen_classes.lock().expect("seen classes");
+        let seen = seen_classes.lock();
         assert_eq!(seen.as_slice(), &[vec![DataClass::Trade, DataClass::Quote]]);
     }
 

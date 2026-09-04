@@ -123,7 +123,7 @@ def test_derive_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatch) ->
 
         def __init__(self, **kwargs: object) -> None:
             """
-            Initialize the helper.
+            Initialize the instance.
             """
             captured["exec_tester_kwargs"] = kwargs
 

@@ -29,9 +29,9 @@ use nautilus_bybit::{
     common::{
         consts::BYBIT_VENUE,
         enums::{
-            BybitAccountType, BybitBboSideType, BybitEnvironment, BybitMarginMode, BybitOrderType,
-            BybitPositionIdx, BybitProductType, BybitRepayStatus, BybitTpSlMode, BybitTriggerType,
-            BybitUnifiedMarginStatus,
+            BybitAccountType, BybitBboSideType, BybitEnvironment, BybitMarginMode,
+            BybitOrderSmpType, BybitOrderType, BybitPositionIdx, BybitProductType,
+            BybitRepayStatus, BybitTpSlMode, BybitTriggerType, BybitUnifiedMarginStatus,
         },
         urls::bybit_http_base_url,
     },
@@ -46,7 +46,7 @@ use nautilus_bybit::{
 use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
 use nautilus_model::{
     data::BarType,
-    enums::{OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce, TriggerType},
+    enums::{OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce, TriggerType},
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol},
     instruments::{CurrencyPair, InstrumentAny},
     types::{Currency, Price, Quantity},
@@ -92,21 +92,25 @@ struct CapturedOrder {
 #[derive(Clone)]
 struct TestServerState {
     request_count: Arc<tokio::sync::Mutex<usize>>,
+    wallet_balance_requests: Arc<tokio::sync::Mutex<usize>>,
     // (endpoint, settle_coin)
     settle_coin_queries: SettleCoinQueries,
     realtime_requests: Arc<tokio::sync::Mutex<usize>>,
     history_requests: Arc<tokio::sync::Mutex<usize>>,
     order_submissions: Arc<tokio::sync::Mutex<Vec<CapturedOrder>>>,
+    batch_cancel_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
 }
 
 impl Default for TestServerState {
     fn default() -> Self {
         Self {
             request_count: Arc::new(tokio::sync::Mutex::new(0)),
+            wallet_balance_requests: Arc::new(tokio::sync::Mutex::new(0)),
             settle_coin_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             realtime_requests: Arc::new(tokio::sync::Mutex::new(0)),
             history_requests: Arc::new(tokio::sync::Mutex::new(0)),
             order_submissions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            batch_cancel_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
         }
     }
 }
@@ -474,7 +478,10 @@ async fn handle_post_order_with_capture(
 }
 
 #[allow(dead_code)]
-async fn handle_get_wallet_balance(headers: axum::http::HeaderMap) -> Response {
+async fn handle_get_wallet_balance(
+    State(state): State<TestServerState>,
+    headers: axum::http::HeaderMap,
+) -> Response {
     // Check for authentication headers
     if !headers.contains_key("X-BAPI-API-KEY")
         || !headers.contains_key("X-BAPI-SIGN")
@@ -493,6 +500,7 @@ async fn handle_get_wallet_balance(headers: axum::http::HeaderMap) -> Response {
             .into_response();
     }
 
+    *state.wallet_balance_requests.lock().await += 1;
     let wallet = load_test_data("http_get_wallet_balance.json");
     Json(wallet).into_response()
 }
@@ -602,6 +610,26 @@ async fn handle_cancel_order(headers: axum::http::HeaderMap, body: axum::body::B
         "result": {
             "orderId": "test-canceled-order-id",
             "orderLinkId": cancel_req.get("orderLinkId").and_then(|v| v.as_str()).unwrap_or("")
+        },
+        "retExtInfo": {},
+        "time": 1704470400123i64
+    }))
+    .into_response()
+}
+
+#[allow(dead_code)]
+async fn handle_batch_cancel_orders(
+    State(state): State<TestServerState>,
+    Json(request): Json<Value>,
+) -> impl IntoResponse {
+    state.batch_cancel_requests.lock().await.push(request);
+
+    Json(json!({
+        "retCode": 0,
+        "retMsg": "OK",
+        "result": {
+            "orderId": null,
+            "orderLinkId": null
         },
         "retExtInfo": {},
         "time": 1704470400123i64
@@ -998,6 +1026,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/v5/order/realtime", get(handle_get_orders))
         .route("/v5/order/create", post(handle_post_order))
         .route("/v5/order/cancel", post(handle_cancel_order))
+        .route("/v5/order/cancel-batch", post(handle_batch_cancel_orders))
         .route("/v5/account/wallet-balance", get(handle_get_wallet_balance))
         .route("/v5/account/info", get(handle_get_account_info))
         .route("/v5/position/list", get(handle_get_positions))
@@ -1772,6 +1801,91 @@ async fn test_get_account_info_with_credentials() {
     assert!(!response.result.is_master_trader);
     assert!(!response.result.spot_hedging_status);
 }
+
+#[rstest]
+#[tokio::test]
+async fn test_batch_cancel_options_chunks_by_venue_limit() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        5_000,
+        None,
+    )
+    .unwrap();
+    let instrument_ids = (0..6)
+        .map(|index| {
+            InstrumentId::new(
+                Symbol::from(format!("BTC-30JUN25-10000{index}-C-OPTION")),
+                *BYBIT_VENUE,
+            )
+        })
+        .collect::<Vec<_>>();
+    let client_order_ids = (0..6)
+        .map(|index| Some(ClientOrderId::from(format!("option-cancel-{index}"))))
+        .collect::<Vec<_>>();
+
+    let reports = client
+        .batch_cancel_orders(
+            AccountId::from("BYBIT-UNIFIED"),
+            BybitProductType::Option,
+            instrument_ids,
+            client_order_ids,
+            vec![None; 6],
+        )
+        .await
+        .unwrap();
+
+    let requests = state.batch_cancel_requests.lock().await;
+    assert!(reports.is_empty());
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0]["category"], "option");
+    assert_eq!(requests[1]["category"], "option");
+    assert_eq!(requests[0]["request"].as_array().unwrap().len(), 5);
+    assert_eq!(requests[1]["request"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        requests
+            .iter()
+            .flat_map(|request| request["request"].as_array().unwrap())
+            .map(|order| order["orderLinkId"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>(),
+        (0..6)
+            .map(|index| format!("option-cancel-{index}"))
+            .collect::<Vec<_>>()
+    );
+    drop(requests);
+
+    let error = client
+        .batch_cancel_orders(
+            AccountId::from("BYBIT-UNIFIED"),
+            BybitProductType::Option,
+            (0..21)
+                .map(|index| {
+                    InstrumentId::new(
+                        Symbol::from(format!("BTC-30JUN25-20000{index}-C-OPTION")),
+                        *BYBIT_VENUE,
+                    )
+                })
+                .collect(),
+            (0..21)
+                .map(|index| Some(ClientOrderId::from(format!("option-overflow-{index}"))))
+                .collect(),
+            vec![None; 21],
+        )
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "Batch cancel limit is 20 orders for option"
+    );
+    assert_eq!(state.batch_cancel_requests.lock().await.len(), 2);
+}
 // Create router with separate handlers for reconciliation testing
 #[allow(dead_code)]
 fn create_reconciliation_test_router(state: TestServerState) -> Router {
@@ -2028,7 +2142,7 @@ async fn test_request_order_status_reports_linear_queries_all_settle_coins() {
     assert_eq!(
         realtime_queries.len(),
         8,
-        "Should query realtime endpoint for each settle coin, order filter and openOnly pass"
+        "Should query realtime endpoint for each settle coin, order filter, and openOnly pass"
     );
     assert!(
         realtime_queries.contains(&&Some("USDT".to_string())),
@@ -2689,37 +2803,28 @@ async fn test_spot_position_report_short_from_borrowed_balance() {
 
     let eth = Currency::from("ETH");
     let usdt = Currency::from("USDT");
-    let ethusdt = CurrencyPair::new(
-        "ETHUSDT-SPOT.BYBIT".into(),
-        "ETHUSDT".into(),
-        eth,
-        usdt,
-        2,
-        5,
-        Price::from("0.01"),
-        Quantity::from("0.00001"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        0.into(),
-        0.into(),
-    );
+    let ethusdt = CurrencyPair::builder()
+        .instrument_id("ETHUSDT-SPOT.BYBIT".into())
+        .raw_symbol("ETHUSDT".into())
+        .base_currency(eth)
+        .quote_currency(usdt)
+        .price_precision(2)
+        .size_precision(5)
+        .price_increment(Price::from("0.01"))
+        .size_increment(Quantity::from("0.00001"))
+        .ts_event(0.into())
+        .ts_init(0.into())
+        .build()
+        .unwrap();
     client.cache_instrument(InstrumentAny::CurrencyPair(ethusdt));
 
     let account_id = AccountId::new("BYBIT-UNIFIED");
     let reports = client
-        .request_position_status_reports(account_id, BybitProductType::Spot, None)
+        .request_position_status_reports(
+            account_id,
+            BybitProductType::Spot,
+            Some(InstrumentId::from("ETHUSDT-SPOT.BYBIT")),
+        )
         .await
         .unwrap();
 
@@ -2728,8 +2833,61 @@ async fn test_spot_position_report_short_from_borrowed_balance() {
         .find(|r| r.instrument_id.symbol.as_str() == "ETHUSDT-SPOT")
         .expect("ETH SPOT position report not found");
 
-    assert_eq!(eth_report.position_side, PositionSideSpecified::Short);
+    assert_eq!(eth_report.position_side, PositionSide::Short);
     assert_eq!(eth_report.quantity, Quantity::new(0.06142, 5));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_unscoped_spot_position_reports_fail_without_wallet_request() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        5_000,
+        None,
+    )
+    .unwrap();
+
+    client.set_use_spot_position_reports(true);
+
+    let eth = Currency::from("ETH");
+
+    for (symbol, quote) in [("ETHUSDT", "USDT"), ("ETHUSDC", "USDC")] {
+        let instrument = CurrencyPair::builder()
+            .instrument_id(format!("{symbol}-SPOT.BYBIT").into())
+            .raw_symbol(symbol.into())
+            .base_currency(eth)
+            .quote_currency(Currency::from(quote))
+            .price_precision(2)
+            .size_precision(5)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00001"))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap();
+        client.cache_instrument(InstrumentAny::CurrencyPair(instrument));
+    }
+
+    let error = client
+        .request_position_status_reports(
+            AccountId::new("BYBIT-UNIFIED"),
+            BybitProductType::Spot,
+            None,
+        )
+        .await
+        .expect_err("unscoped SPOT reports cannot be attributed to a pair");
+
+    assert!(error.to_string().contains("pair identity"));
+    assert_eq!(*state.wallet_balance_requests.lock().await, 0);
 }
 
 #[rstest]
@@ -3245,6 +3403,7 @@ async fn test_submit_order_stop_market_with_trigger_price() {
             None,  // position_idx
             None,  // bbo_side_type
             None,  // bbo_level
+            None,  // smp_type
             None,  // native_tp_sl
         )
         .await;
@@ -3333,6 +3492,7 @@ async fn test_submit_order_stop_limit_with_trigger_price_and_limit_price() {
             None,  // position_idx
             None,  // bbo_side_type
             None,  // bbo_level
+            None,  // smp_type
             None,  // native_tp_sl
         )
         .await;
@@ -3423,6 +3583,7 @@ async fn test_submit_order_market_if_touched_trigger_direction() {
             None,
             None,
             None,
+            None,
         )
         .await;
 
@@ -3495,6 +3656,7 @@ async fn test_submit_order_post_only() {
             None,
             None,
             None,
+            None,
         )
         .await;
 
@@ -3560,6 +3722,7 @@ async fn test_submit_order_with_bbo_sends_bbo_and_omits_price() {
             Some(BybitBboSideType::Queue),
             Some("3".to_string()),
             None,
+            None,
         )
         .await;
 
@@ -3573,6 +3736,76 @@ async fn test_submit_order_with_bbo_sends_bbo_and_omits_price() {
     assert_eq!(order.price, None);
     assert_eq!(order.bbo_side_type.as_deref(), Some("Queue"));
     assert_eq!(order.bbo_level.as_deref(), Some("3"));
+}
+
+#[rstest]
+#[case(Some(BybitOrderSmpType::None), Some("None"))]
+#[case(Some(BybitOrderSmpType::CancelMaker), Some("CancelMaker"))]
+#[case(Some(BybitOrderSmpType::CancelTaker), Some("CancelTaker"))]
+#[case(Some(BybitOrderSmpType::CancelBoth), Some("CancelBoth"))]
+#[case(None, None)]
+#[tokio::test]
+async fn test_submit_order_serializes_smp_type(
+    #[case] smp_type: Option<BybitOrderSmpType>,
+    #[case] expected: Option<&str>,
+) {
+    let (addr, state) = start_order_capture_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        5_000,
+        None,
+    )
+    .unwrap();
+
+    let instruments = client
+        .request_instruments(BybitProductType::Linear, None, None)
+        .await
+        .unwrap();
+
+    for instrument in instruments {
+        client.cache_instrument(instrument);
+    }
+
+    let result = client
+        .submit_order(
+            AccountId::from("BYBIT-UNIFIED"),
+            BybitProductType::Linear,
+            InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), *BYBIT_VENUE),
+            ClientOrderId::from("smp-test-1"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("0.001"),
+            Some(TimeInForce::Gtc),
+            Some(Price::from("50000.00")),
+            None,
+            None,
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            smp_type,
+            None,
+        )
+        .await;
+
+    assert!(result.is_ok(), "Order submission should succeed");
+
+    let orders = state.order_submissions.lock().await;
+    assert_eq!(orders.len(), 1);
+
+    let body = &orders[0].raw_body;
+
+    assert_eq!(body.get("smpType").and_then(|v| v.as_str()), expected);
 }
 
 #[rstest]
@@ -3635,6 +3868,7 @@ async fn test_submit_order_with_native_tp_sl_serializes_fields() {
             false,
             false,
             false,
+            None,
             None,
             None,
             None,
@@ -3734,6 +3968,7 @@ async fn test_submit_order_with_explicit_partial_tpsl_mode_is_preserved() {
             None,
             None,
             None,
+            None,
             Some(&native_tp_sl),
         )
         .await;
@@ -3803,6 +4038,7 @@ async fn test_submit_order_spot_market_base_quantity() {
             None,  // position_idx
             None,  // bbo_side_type
             None,  // bbo_level
+            None,  // smp_type
             None,  // native_tp_sl
         )
         .await;
@@ -3879,6 +4115,7 @@ async fn test_submit_order_spot_market_quote_quantity() {
             None,  // position_idx
             None,  // bbo_side_type
             None,  // bbo_level
+            None,  // smp_type
             None,  // native_tp_sl
         )
         .await;
@@ -3955,6 +4192,7 @@ async fn test_submit_order_linear_does_not_send_market_unit() {
             None,  // position_idx
             None,  // bbo_side_type
             None,  // bbo_level
+            None,  // smp_type
             None,  // native_tp_sl
         )
         .await;
@@ -4028,6 +4266,7 @@ async fn test_submit_order_limit_if_touched_trigger_direction() {
             false,
             false,
             false,
+            None,
             None,
             None,
             None,
@@ -4113,6 +4352,7 @@ async fn test_submit_order_serializes_position_idx(
             false,
             false,
             position_idx,
+            None,
             None,
             None,
             None,
@@ -4340,7 +4580,7 @@ async fn test_request_order_status_reports_tp_sl_orders() {
         .find(|r| r.venue_order_id.as_str() == "tp-order-001")
         .unwrap();
     assert_eq!(tp_report.order_type, OrderType::MarketIfTouched);
-    assert_eq!(tp_report.order_side, OrderSide::Sell);
+    assert_eq!(tp_report.order_side, Some(OrderSide::Sell));
     assert_eq!(tp_report.trigger_price, Some(Price::from("55000.00")));
     assert_eq!(tp_report.trigger_type, Some(TriggerType::LastPrice));
     assert!(tp_report.reduce_only);
@@ -4351,7 +4591,7 @@ async fn test_request_order_status_reports_tp_sl_orders() {
         .find(|r| r.venue_order_id.as_str() == "sl-order-001")
         .unwrap();
     assert_eq!(sl_report.order_type, OrderType::StopLimit);
-    assert_eq!(sl_report.order_side, OrderSide::Sell);
+    assert_eq!(sl_report.order_side, Some(OrderSide::Sell));
     assert_eq!(sl_report.trigger_price, Some(Price::from("48000.00")));
     assert_eq!(sl_report.price, Some(Price::from("47500.00")));
     assert_eq!(sl_report.trigger_type, Some(TriggerType::LastPrice));
@@ -4364,7 +4604,8 @@ async fn test_request_order_status_reports_tp_sl_orders() {
 // These tests verify the client-layer wiring of the user-management endpoints:
 //   - the request hits the expected route,
 //   - authentication headers are attached,
-//   - query strings and request bodies carry the expected fields,
+//   - query strings carry the expected fields,
+//   - request bodies carry the expected fields,
 //   - responses decode into the typed DTOs.
 // Deserialization details are covered by the unit tests in
 // `src/http/models.rs` and are not duplicated here.

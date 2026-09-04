@@ -15,6 +15,7 @@
 
 //! Python bindings for Hyperliquid configuration.
 
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
@@ -73,10 +74,10 @@ impl HyperliquidDataClientConfig {
     ) -> Self {
         let defaults = Self::default();
         Self {
-            private_key,
+            private_key: private_key.map(SecretString::from),
             base_url_ws,
             base_url_http,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             environment: environment.unwrap_or(defaults.environment),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             ws_timeout_secs: ws_timeout_secs.unwrap_or(defaults.ws_timeout_secs),
@@ -157,13 +158,13 @@ impl HyperliquidExecutionClientConfig {
         let defaults = Self::default();
         Self {
             account_id: account_id.unwrap_or(defaults.account_id),
-            private_key,
+            private_key: private_key.map(SecretString::from),
             vault_address,
             account_address,
             base_url_ws,
             base_url_http,
             base_url_exchange,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             environment: environment.unwrap_or(defaults.environment),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             max_retries: max_retries.unwrap_or(defaults.max_retries),

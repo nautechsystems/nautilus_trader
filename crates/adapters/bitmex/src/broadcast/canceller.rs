@@ -43,6 +43,7 @@ use std::{
 
 use futures_util::future;
 use nautilus_common::live::get_runtime;
+use nautilus_core::string::secret::SecretString;
 use nautilus_model::{
     enums::OrderSide,
     identifiers::{ClientOrderId, InstrumentId, VenueOrderId},
@@ -163,9 +164,9 @@ pub struct CancelBroadcasterConfig {
     /// Number of HTTP clients in the pool.
     pub pool_size: usize,
     /// BitMEX API key (None will source from environment).
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     /// BitMEX API secret (None will source from environment).
-    pub api_secret: Option<String>,
+    pub api_secret: Option<SecretString>,
     /// Base URL for BitMEX HTTP API.
     pub base_url: Option<String>,
     /// BitMEX environment (mainnet or testnet).
@@ -197,7 +198,7 @@ pub struct CancelBroadcasterConfig {
     /// Each transport instance uses the proxy at its index. If the list is shorter
     /// than pool_size, remaining transports will use no proxy. If longer, extra proxies
     /// are ignored.
-    pub proxy_urls: Vec<Option<String>>,
+    pub proxy_urls: Vec<Option<SecretString>>,
 }
 
 impl Default for CancelBroadcasterConfig {
@@ -376,11 +377,15 @@ impl CancelBroadcaster {
 
         for i in 0..config.pool_size {
             // Assign proxy from config list, or None if index exceeds list length
-            let proxy_url = config.proxy_urls.get(i).and_then(|p| p.clone());
+            let proxy_url = config
+                .proxy_urls
+                .get(i)
+                .and_then(|value| value.as_ref())
+                .map(|value| value.expose_secret().to_owned());
 
             let client = BitmexHttpClient::with_credentials(
-                config.api_key.clone(),
-                config.api_secret.clone(),
+                config.api_key.clone().map(SecretString::into_inner),
+                config.api_secret.clone().map(SecretString::into_inner),
                 base_url.clone(),
                 config.timeout_secs,
                 config.max_retries,
@@ -515,7 +520,7 @@ impl CancelBroadcaster {
 
     /// Processes cancel request results, handling success, idempotent success, and failures.
     ///
-    /// This helper consolidates the common error handling loop used across all broadcast methods.
+    /// This method consolidates the error handling loop used across all broadcast methods.
     async fn process_cancel_results<T>(
         &self,
         mut handles: Vec<JoinHandle<(String, anyhow::Result<T>)>>,
@@ -860,15 +865,30 @@ mod tests {
 
     use nautilus_core::UUID4;
     use nautilus_model::{
-        enums::{
-            ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TrailingOffsetType,
-        },
+        enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
         identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
         reports::OrderStatusReport,
         types::{Price, Quantity},
     };
+    use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_config_debug_redacts_credentials() {
+        let config = CancelBroadcasterConfig {
+            api_key: Some("cancel-key-sentinel".into()),
+            api_secret: Some("cancel-secret-sentinel".into()),
+            proxy_urls: vec![Some("http://cancel-user:cancel-password@localhost".into())],
+            ..Default::default()
+        };
+
+        let debug = format!("{config:?}");
+
+        assert!(!debug.contains("cancel-key-sentinel"));
+        assert!(!debug.contains("cancel-secret-sentinel"));
+        assert!(!debug.contains("cancel-password"));
+    }
 
     /// Mock executor for testing.
     #[derive(Clone)]
@@ -953,7 +973,7 @@ mod tests {
             account_id: AccountId::from("BITMEX-001"),
             instrument_id: InstrumentId::from_str("XBTUSD.BITMEX").unwrap(),
             venue_order_id: VenueOrderId::from(venue_order_id),
-            order_side: OrderSide::Buy,
+            order_side: OrderSide::Buy.into(),
             order_type: OrderType::Limit,
             time_in_force: TimeInForce::Gtc,
             order_status: OrderStatus::Canceled,
@@ -969,7 +989,7 @@ mod tests {
             activation_price: None,
             trigger_price: None,
             trigger_type: None,
-            contingency_type: ContingencyType::NoContingency,
+            contingency_type: None,
             expire_time: None,
             order_list_id: None,
             venue_position_id: None,
@@ -978,7 +998,7 @@ mod tests {
             display_qty: None,
             limit_offset: None,
             trailing_offset: None,
-            trailing_offset_type: TrailingOffsetType::NoTrailingOffset,
+            trailing_offset_type: None,
             post_only: false,
             reduce_only: false,
             cancel_reason: None,
@@ -1301,8 +1321,8 @@ mod tests {
     async fn test_testnet_config_sets_base_url() {
         let config = CancelBroadcasterConfig {
             pool_size: 1,
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
             base_url: None,
             environment: BitmexEnvironment::Testnet,
             timeout_secs: 5,
@@ -1326,8 +1346,8 @@ mod tests {
     #[tokio::test]
     async fn test_constructor_honors_default_pool_size() {
         let config = CancelBroadcasterConfig {
-            api_key: Some("test_key".to_string()),
-            api_secret: Some("test_secret".to_string()),
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
             base_url: Some("http://127.0.0.1:19999".to_string()),
             ..Default::default()
         };

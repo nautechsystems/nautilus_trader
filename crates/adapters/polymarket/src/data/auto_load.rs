@@ -13,10 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::time::Duration;
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 use ahash::{AHashMap, AHashSet};
-use nautilus_common::{live::get_runtime, messages::DataEvent};
+use nautilus_common::messages::DataEvent;
 use nautilus_model::{
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
@@ -44,6 +50,33 @@ enum AutoLoadOutcome {
     Unknown,
 }
 
+struct AutoLoadScheduledGuard {
+    scheduled: Arc<AtomicBool>,
+    armed: bool,
+}
+
+impl AutoLoadScheduledGuard {
+    fn new(scheduled: Arc<AtomicBool>) -> Self {
+        Self {
+            scheduled,
+            armed: true,
+        }
+    }
+
+    fn release(&mut self) {
+        if self.armed {
+            self.scheduled.store(false, Ordering::Release);
+            self.armed = false;
+        }
+    }
+}
+
+impl Drop for AutoLoadScheduledGuard {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
 impl PolymarketDataClient {
     pub(super) fn queue_pending_load(&self, instrument_id: InstrumentId) {
         if extract_condition_id(&instrument_id).is_ok_and(|condition_id| {
@@ -53,10 +86,7 @@ impl PolymarketDataClient {
         }
 
         {
-            let mut pending = self
-                .pending_auto_loads
-                .lock()
-                .expect("pending_auto_loads mutex poisoned");
+            let mut pending = self.pending_auto_loads.lock();
             pending.insert(instrument_id);
         }
 
@@ -71,10 +101,7 @@ impl PolymarketDataClient {
             return;
         }
 
-        let mut pending = self
-            .pending_auto_loads
-            .lock()
-            .expect("pending_auto_loads mutex poisoned");
+        let mut pending = self.pending_auto_loads.lock();
         pending.remove(&instrument_id);
     }
 
@@ -92,12 +119,7 @@ impl PolymarketDataClient {
     fn ensure_auto_load_task(&self) {
         if self
             .auto_load_scheduled
-            .compare_exchange(
-                false,
-                true,
-                std::sync::atomic::Ordering::AcqRel,
-                std::sync::atomic::Ordering::Acquire,
-            )
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
             return;
@@ -113,6 +135,7 @@ impl PolymarketDataClient {
         let http = self.provider.http_client().clone();
         let filters = self.provider.filters();
         let instruments = self.instruments.clone();
+        let instrument_update_state = self.instrument_update_state.clone();
         let token_meta = self.token_meta.clone();
         let active_quote_subs = self.active_quote_subs.clone();
         let active_delta_subs = self.active_delta_subs.clone();
@@ -126,26 +149,26 @@ impl PolymarketDataClient {
         let last_quotes = self.last_quotes.clone();
         let resolve_poll_watchlist = self.resolve_poll_watchlist.clone();
         let pending_snapshot_after_tick_change = self.pending_snapshot_after_tick_change.clone();
+        let scheduled_guard = AutoLoadScheduledGuard::new(scheduled);
 
-        get_runtime().spawn(async move {
+        let future = async move {
+            let mut scheduled_guard = scheduled_guard;
+
             // Coalesce concurrent misses into one Gamma call.
             tokio::select! {
                 () = tokio::time::sleep(Duration::from_millis(debounce_ms)) => {}
-                () = cancellation.cancelled() => {
-                    scheduled.store(false, std::sync::atomic::Ordering::Release);
-                    return;
-                }
+                () = cancellation.cancelled() => return,
             }
 
             // Drain pending and release `scheduled` so new misses spawn a fresh
             // task in parallel rather than piggybacking on this batch's budget.
             let mut batch: AHashSet<InstrumentId> = {
-                let mut guard = pending.lock().expect("pending_auto_loads mutex poisoned");
+                let mut guard = pending.lock();
                 let snapshot = guard.iter().copied().collect();
                 guard.clear();
                 snapshot
             };
-            scheduled.store(false, std::sync::atomic::Ordering::Release);
+            scheduled_guard.release();
 
             if batch.is_empty() {
                 return;
@@ -245,10 +268,8 @@ impl PolymarketDataClient {
 
                             for (condition_id, instruments) in open_by_condition {
                                 if !explicitly_closed.contains(&condition_id) {
-                                    outcomes.insert(
-                                        condition_id,
-                                        AutoLoadOutcome::Open(instruments),
-                                    );
+                                    outcomes
+                                        .insert(condition_id, AutoLoadOutcome::Open(instruments));
                                 }
                             }
 
@@ -322,6 +343,7 @@ impl PolymarketDataClient {
                                 let instrument_id = instrument.id();
                                 apply_live_instrument(
                                     &closed_condition_ids,
+                                    &instrument_update_state,
                                     &instruments,
                                     &token_meta,
                                     instrument,
@@ -499,6 +521,10 @@ impl PolymarketDataClient {
 
                 batch = next_batch;
             }
-        });
+        };
+
+        if let Err(e) = self.tasks.spawn(future) {
+            log::debug!("Skipping Polymarket data task after shutdown began: {e}");
+        }
     }
 }

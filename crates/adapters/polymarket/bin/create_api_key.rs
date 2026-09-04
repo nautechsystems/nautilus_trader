@@ -25,6 +25,7 @@
 //! POLYMARKET_PK=0x... cargo run -p nautilus-polymarket --bin polymarket-create-api-key
 //! ```
 
+use nautilus_core::string::secret::SecretString;
 use nautilus_polymarket::{
     common::credential::EvmPrivateKey, http::auth::create_or_derive_api_key,
 };
@@ -32,16 +33,17 @@ use nautilus_polymarket::{
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
-    let pk_str =
-        std::env::var("POLYMARKET_PK").expect("POLYMARKET_PK environment variable must be set");
-    let private_key = EvmPrivateKey::new(&pk_str)?;
+    let private_key = SecretString::from(
+        std::env::var("POLYMARKET_PK").expect("POLYMARKET_PK environment variable must be set"),
+    );
+    let private_key = EvmPrivateKey::new(private_key.expose_secret())?;
 
     println!("Creating or deriving API credentials...");
     let creds = create_or_derive_api_key(&private_key, 0, None).await?;
 
-    println!("API Key:    {}", creds.api_key);
-    println!("Secret:     {}", creds.secret);
-    println!("Passphrase: {}", creds.passphrase);
+    println!("API Key:    {}", creds.api_key.expose_secret());
+    println!("Secret:     {}", creds.secret.expose_secret());
+    println!("Passphrase: {}", creds.passphrase.expose_secret());
 
     Ok(())
 }

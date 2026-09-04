@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-lighter"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -83,6 +82,7 @@ derive_builder = { workspace = true }
 futures-util = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
+parking_lot = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
@@ -178,7 +178,7 @@ doc = false
 test = false
 
 [[bin]]
-name = "fuzz_verify"
+name = "fuzz-verify"
 path = "fuzz/fuzz_targets/fuzz_verify.rs"
 required-features = ["fuzz"]
 test = false
@@ -186,7 +186,7 @@ doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_point_decode"
+name = "fuzz-point-decode"
 path = "fuzz/fuzz_targets/fuzz_point_decode.rs"
 required-features = ["fuzz"]
 test = false
@@ -194,7 +194,7 @@ doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_signature_codec"
+name = "fuzz-signature-codec"
 path = "fuzz/fuzz_targets/fuzz_signature_codec.rs"
 required-features = ["fuzz"]
 test = false
@@ -202,7 +202,7 @@ doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_hash_no_pad"
+name = "fuzz-hash-no-pad"
 path = "fuzz/fuzz_targets/fuzz_hash_no_pad.rs"
 required-features = ["fuzz"]
 test = false
@@ -210,7 +210,7 @@ doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_auth_message"
+name = "fuzz-auth-message"
 path = "fuzz/fuzz_targets/fuzz_auth_message.rs"
 required-features = ["fuzz"]
 test = false
@@ -218,7 +218,7 @@ doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_compute_tx_hash"
+name = "fuzz-compute-tx-hash"
 path = "fuzz/fuzz_targets/fuzz_compute_tx_hash.rs"
 required-features = ["fuzz"]
 test = false
@@ -226,7 +226,7 @@ doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_scalar_mul_ct_diff"
+name = "fuzz-scalar-mul-ct-diff"
 path = "fuzz/fuzz_targets/fuzz_scalar_mul_ct_diff.rs"
 required-features = ["fuzz"]
 test = false

@@ -18,9 +18,12 @@
 //! Implements the [`DataClient`] trait, providing market data subscriptions and
 //! historical data requests through the Coinbase Advanced Trade API.
 
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
 };
 
 use ahash::AHashSet;
@@ -28,7 +31,7 @@ use anyhow::Context;
 use nautilus_common::{
     cache::InstrumentLookupError,
     clients::DataClient,
-    live::{runner::get_data_event_sender, runtime::get_runtime},
+    live::runner::get_data_event_sender,
     messages::{
         DataEvent,
         data::{
@@ -44,19 +47,22 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, MUTEX_POISONED,
+    AtomicMap,
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::SocketControl;
+use nautilus_live::{
+    SocketControl,
+    task::{TaskGroup, TaskGroupGuard},
+};
 use nautilus_model::{
     data::Data,
-    enums::{BarAggregation, BookType, OrderSide},
+    enums::{BarAggregation, BookType},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
 };
-use tokio::task::JoinHandle;
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -93,7 +99,9 @@ pub struct CoinbaseDataClient {
     provider: CoinbaseInstrumentProvider,
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
-    tasks: Vec<JoinHandle<()>>,
+    session_tasks: TaskGroup,
+    command_tasks: TaskGroup,
+    shutdown_errors: Vec<String>,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     deriv_polls: DerivPollManager,
@@ -112,23 +120,30 @@ impl CoinbaseDataClient {
         let data_sender = get_data_event_sender();
 
         let retry_config = data_client_retry_config();
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
 
         let http_client = match CoinbaseCredential::resolve(
-            config.api_key.as_deref(),
-            config.api_secret.as_deref(),
+            config.api_key.as_ref().map(|value| value.expose_secret()),
+            config
+                .api_secret
+                .as_ref()
+                .map(|value| value.expose_secret()),
         ) {
             Some(credential) => CoinbaseHttpClient::with_credentials(
                 credential,
                 config.environment,
                 config.http_timeout_secs,
-                config.proxy_url.clone(),
+                proxy_url.clone(),
                 Some(retry_config),
             )
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
             None => CoinbaseHttpClient::new(
                 config.environment,
                 config.http_timeout_secs,
-                config.proxy_url.clone(),
+                proxy_url.clone(),
                 Some(retry_config),
             )
             .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
@@ -139,16 +154,12 @@ impl CoinbaseDataClient {
         }
 
         let ws_url = config.ws_url();
-        let ws_client = CoinbaseWebSocketClient::new(
-            &ws_url,
-            config.transport_backend,
-            config.proxy_url.clone(),
-        )
-        .with_socket_control(SocketControl::new(
-            client_id,
-            Some(*COINBASE_VENUE),
-            "coinbase-data-streams",
-        ));
+        let ws_client = CoinbaseWebSocketClient::new(&ws_url, config.transport_backend, proxy_url)
+            .with_socket_control(SocketControl::new(
+                client_id,
+                Some(*COINBASE_VENUE),
+                "coinbase-data-streams",
+            ));
         let provider = CoinbaseInstrumentProvider::new(http_client.clone());
 
         let deriv_polls = DerivPollManager::new(
@@ -158,6 +169,9 @@ impl CoinbaseDataClient {
             config.derivatives_poll_interval_secs,
         );
 
+        let session_tasks = TaskGroup::new();
+        let command_tasks = TaskGroup::new();
+
         Ok(Self {
             client_id,
             config,
@@ -165,8 +179,10 @@ impl CoinbaseDataClient {
             ws_client,
             provider,
             is_connected: AtomicBool::new(false),
-            cancellation_token: CancellationToken::new(),
-            tasks: Vec::new(),
+            cancellation_token: session_tasks.cancellation_token(),
+            session_tasks,
+            command_tasks,
+            shutdown_errors: Vec::new(),
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
             deriv_polls,
@@ -177,6 +193,41 @@ impl CoinbaseDataClient {
 
     fn venue(&self) -> Venue {
         *COINBASE_VENUE
+    }
+
+    fn spawn_command<F>(&self, future: F)
+    where
+        F: std::future::Future<Output = ()> + Send + 'static,
+    {
+        if let Err(e) = self.command_tasks.spawn(future) {
+            log::warn!("Skipping Coinbase data command after shutdown began: {e}");
+        }
+    }
+
+    async fn finish_tasks(&self) -> anyhow::Result<()> {
+        let (session_result, command_result) = tokio::join!(
+            self.session_tasks
+                .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2)),
+            self.command_tasks
+                .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2)),
+        );
+        session_result.context("failed to finish Coinbase data session tasks")?;
+        command_result.context("failed to finish Coinbase data command tasks")?;
+        Ok(())
+    }
+
+    async fn prepare_task_groups(&mut self) -> anyhow::Result<()> {
+        if !self.session_tasks.is_open() || !self.command_tasks.is_open() {
+            self.teardown_partial_connect().await?;
+            self.session_tasks
+                .start_generation()
+                .context("failed to start Coinbase data session task generation")?;
+            self.command_tasks
+                .start_generation()
+                .context("failed to start Coinbase data command task generation")?;
+            self.cancellation_token = self.session_tasks.cancellation_token();
+        }
+        self.deriv_polls.prepare().await
     }
 
     async fn bootstrap_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
@@ -206,16 +257,19 @@ impl CoinbaseDataClient {
             .await
             .context("failed to connect to Coinbase WebSocket")?;
 
-        let mut out_rx = self
-            .ws_client
-            .take_out_rx()
-            .ok_or_else(|| anyhow::anyhow!("WebSocket output receiver not available"))?;
+        let Some(mut out_rx) = self.ws_client.take_out_rx() else {
+            self.ws_client
+                .disconnect()
+                .await
+                .context("failed to roll back Coinbase WebSocket without output receiver")?;
+            anyhow::bail!("WebSocket output receiver not available");
+        };
 
         let data_sender = self.data_sender.clone();
         let cancellation_token = self.cancellation_token.clone();
         let status_subs = Arc::clone(&self.instrument_status_subs);
 
-        let task = get_runtime().spawn(async move {
+        let future = async move {
             log::debug!("Coinbase WebSocket consumption loop started");
 
             loop {
@@ -237,10 +291,48 @@ impl CoinbaseDataClient {
             }
 
             log::debug!("Coinbase WebSocket consumption loop finished");
-        });
+        };
 
-        self.tasks.push(task);
-        log::debug!("WebSocket consumption task spawned");
+        if let Err(e) = self.session_tasks.spawn(future) {
+            if let Err(shutdown_error) = self.ws_client.disconnect().await {
+                return Err(anyhow::Error::new(e).context(format!(
+                    "failed to register Coinbase WebSocket consumption task; startup rollback \
+                     failed: {shutdown_error}"
+                )));
+            }
+            return Err(anyhow::Error::new(e)
+                .context("failed to register Coinbase WebSocket consumption task"));
+        }
+        log::debug!("WebSocket consumption task registered");
+        Ok(())
+    }
+
+    async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
+        self.cancellation_token.cancel();
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
+        self.deriv_polls.shutdown();
+        self.ws_client.begin_shutdown();
+
+        let (tasks_result, polls_result) =
+            tokio::join!(self.finish_tasks(), self.deriv_polls.finish_shutdown());
+
+        if let Err(e) = tasks_result {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if let Err(e) = polls_result {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if let Err(e) = self.ws_client.disconnect().await {
+            self.shutdown_errors.push(e.to_string());
+        }
+        self.is_connected.store(false, Ordering::Relaxed);
+
+        if !self.shutdown_errors.is_empty() {
+            anyhow::bail!(std::mem::take(&mut self.shutdown_errors).join("; "));
+        }
         Ok(())
     }
 
@@ -280,7 +372,7 @@ fn dispatch_ws_message(
             }
         }
         NautilusWsMessage::Deltas(deltas) => {
-            if let Err(e) = data_sender.send(DataEvent::Data(Data::Deltas(Box::new(deltas)))) {
+            if let Err(e) = data_sender.send(DataEvent::Data(Data::BookDeltas(Box::new(deltas)))) {
                 log::error!("Failed to send order book deltas: {e}");
             }
         }
@@ -292,10 +384,7 @@ fn dispatch_ws_message(
         NautilusWsMessage::InstrumentStatus(status) => {
             // Coinbase publishes status for every product on a single feed,
             // so filter to currently-subscribed instruments before emitting.
-            let subscribed = status_subs
-                .lock()
-                .expect(MUTEX_POISONED)
-                .contains(&status.instrument_id);
+            let subscribed = status_subs.lock().contains(&status.instrument_id);
             if subscribed && let Err(e) = data_sender.send(DataEvent::InstrumentStatus(*status)) {
                 log::error!("Failed to send instrument status: {e}");
             }
@@ -338,23 +427,22 @@ impl DataClient for CoinbaseDataClient {
 
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping Coinbase data client {}", self.client_id);
-        self.cancellation_token.cancel();
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
         self.deriv_polls.shutdown();
+        self.ws_client.begin_shutdown();
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
         log::debug!("Resetting Coinbase data client {}", self.client_id);
-        self.cancellation_token.cancel();
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
         self.deriv_polls.shutdown();
+        self.ws_client.begin_shutdown();
         self.is_connected.store(false, Ordering::Relaxed);
-        self.cancellation_token = CancellationToken::new();
-        self.tasks.clear();
-        self.instrument_status_subs
-            .lock()
-            .expect(MUTEX_POISONED)
-            .clear();
+        self.instrument_status_subs.lock().clear();
         Ok(())
     }
 
@@ -372,60 +460,67 @@ impl DataClient for CoinbaseDataClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.is_connected() {
+        if self.is_connected() && self.session_tasks.is_open() && self.command_tasks.is_open() {
             return Ok(());
         }
 
-        self.cancellation_token = CancellationToken::new();
+        self.prepare_task_groups().await?;
+        let cancellation_token = self.cancellation_token.clone();
+        let ws_client = self.ws_client.clone();
+        let setup_guard =
+            TaskGroupGuard::new(&[&self.session_tasks, &self.command_tasks], move || {
+                cancellation_token.cancel();
+                ws_client.begin_shutdown();
+            });
 
-        let instruments = self
-            .bootstrap_instruments()
-            .await
-            .context("failed to bootstrap instruments")?;
+        let connect_result = async {
+            let instruments = self
+                .bootstrap_instruments()
+                .await
+                .context("failed to bootstrap instruments")?;
 
-        for instrument in instruments {
-            if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
-                log::warn!("Failed to send instrument: {e}");
+            for instrument in instruments {
+                if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
+                    log::warn!("Failed to send instrument: {e}");
+                }
             }
+
+            self.spawn_ws()
+                .await
+                .context("failed to spawn WebSocket client")?;
+
+            // Re-spawn polling tasks for any derivatives subscriptions that
+            // survived a previous disconnect. The data engine's client adapter
+            // remembers the subscription set and suppresses duplicate subscribe
+            // commands, so without this resume step index-price and
+            // funding-rate streams would stay dark after a reconnect.
+            self.deriv_polls.resume();
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+
+        if let Err(e) = connect_result {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Coinbase data startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e);
         }
 
-        self.spawn_ws()
-            .await
-            .context("failed to spawn WebSocket client")?;
-
-        // Re-spawn polling tasks for any derivatives subscriptions that
-        // survived a previous disconnect. The data engine's client adapter
-        // remembers the subscription set and suppresses duplicate subscribe
-        // commands, so without this resume step index-price and
-        // funding-rate streams would stay dark after a reconnect.
-        self.deriv_polls.resume();
-
         self.is_connected.store(true, Ordering::Relaxed);
+        setup_guard.disarm();
         log::info!("Connected: client_id={}", self.client_id);
 
         Ok(())
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if !self.is_connected() {
-            return Ok(());
-        }
-
-        self.cancellation_token.cancel();
-        self.deriv_polls.shutdown();
-
-        for task in self.tasks.drain(..) {
-            if let Err(e) = task.await {
-                log::error!("Error waiting for task to complete: {e}");
-            }
-        }
-
-        self.ws_client.disconnect().await;
+        let shutdown_result = self.teardown_partial_connect().await;
         self.instruments.store(ahash::AHashMap::new());
-        self.is_connected.store(false, Ordering::Relaxed);
         log::info!("Disconnected: client_id={}", self.client_id);
 
-        Ok(())
+        shutdown_result
     }
 
     fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
@@ -457,7 +552,7 @@ impl DataClient for CoinbaseDataClient {
             ws.register_subscription_alias(wire_id, subscribed_id);
         }
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             if let Err(e) = ws.subscribe(CoinbaseWsChannel::Level2, &[wire_id]).await {
                 log::error!("Failed to subscribe to book deltas: {e:?}");
             }
@@ -474,7 +569,7 @@ impl DataClient for CoinbaseDataClient {
             ws.register_subscription_alias(wire_id, subscribed_id);
         }
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             if let Err(e) = ws.subscribe(CoinbaseWsChannel::Ticker, &[wire_id]).await {
                 log::error!("Failed to subscribe to quotes: {e:?}");
             }
@@ -491,7 +586,7 @@ impl DataClient for CoinbaseDataClient {
             ws.register_subscription_alias(wire_id, subscribed_id);
         }
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             if let Err(e) = ws
                 .subscribe(CoinbaseWsChannel::MarketTrades, &[wire_id])
                 .await
@@ -544,7 +639,7 @@ impl DataClient for CoinbaseDataClient {
         // Coinbase publishes a single product-wide status feed. Only subscribe
         // to the WS channel once; subsequent calls just record the instrument.
         let was_empty = {
-            let mut subs = self.instrument_status_subs.lock().expect(MUTEX_POISONED);
+            let mut subs = self.instrument_status_subs.lock();
             let was_empty = subs.is_empty();
             subs.insert(cmd.instrument_id);
             was_empty
@@ -552,7 +647,7 @@ impl DataClient for CoinbaseDataClient {
 
         if was_empty {
             let ws = self.ws_client.clone();
-            get_runtime().spawn(async move {
+            self.spawn_command(async move {
                 if let Err(e) = ws.subscribe(CoinbaseWsChannel::Status, &[]).await {
                     log::error!("Failed to subscribe to status channel: {e:?}");
                 }
@@ -582,7 +677,7 @@ impl DataClient for CoinbaseDataClient {
 
         let mut ws = self.ws_client.clone();
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             ws.add_bar_type(key, bar_type).await;
 
             if let Err(e) = ws.subscribe(CoinbaseWsChannel::Candles, &[wire_id]).await {
@@ -623,7 +718,7 @@ impl DataClient for CoinbaseDataClient {
         let subscribed_id = Self::product_id(unsubscription.instrument_id);
         let wire_id = self.resolve_wire_product_id(subscribed_id);
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             if let Err(e) = ws.unsubscribe(CoinbaseWsChannel::Level2, &[wire_id]).await {
                 log::error!("Failed to unsubscribe from book deltas: {e:?}");
             }
@@ -642,7 +737,7 @@ impl DataClient for CoinbaseDataClient {
         let subscribed_id = Self::product_id(unsubscription.instrument_id);
         let wire_id = self.resolve_wire_product_id(subscribed_id);
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             if let Err(e) = ws.unsubscribe(CoinbaseWsChannel::Ticker, &[wire_id]).await {
                 log::error!("Failed to unsubscribe from quotes: {e:?}");
             }
@@ -661,7 +756,7 @@ impl DataClient for CoinbaseDataClient {
         let subscribed_id = Self::product_id(unsubscription.instrument_id);
         let wire_id = self.resolve_wire_product_id(subscribed_id);
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             if let Err(e) = ws
                 .unsubscribe(CoinbaseWsChannel::MarketTrades, &[wire_id])
                 .await
@@ -697,14 +792,14 @@ impl DataClient for CoinbaseDataClient {
         );
 
         let now_empty = {
-            let mut subs = self.instrument_status_subs.lock().expect(MUTEX_POISONED);
+            let mut subs = self.instrument_status_subs.lock();
             subs.remove(&cmd.instrument_id);
             subs.is_empty()
         };
 
         if now_empty {
             let ws = self.ws_client.clone();
-            get_runtime().spawn(async move {
+            self.spawn_command(async move {
                 if let Err(e) = ws.unsubscribe(CoinbaseWsChannel::Status, &[]).await {
                     log::error!("Failed to unsubscribe from status channel: {e:?}");
                 }
@@ -719,7 +814,7 @@ impl DataClient for CoinbaseDataClient {
         let wire_id = self.resolve_wire_product_id(subscribed_id);
         let ws = self.ws_client.clone();
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             if let Err(e) = ws.unsubscribe(CoinbaseWsChannel::Candles, &[wire_id]).await {
                 log::error!("Failed to unsubscribe from bars: {e:?}");
             }
@@ -743,7 +838,7 @@ impl DataClient for CoinbaseDataClient {
         let params = request.params;
         let clock = self.clock;
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match provider.load_all().await {
                 Ok(instruments) => {
                     instruments_cache.rcu(|m| {
@@ -796,7 +891,7 @@ impl DataClient for CoinbaseDataClient {
         let params = request.params;
         let clock = self.clock;
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match provider.load(&product_id).await {
                 Ok(instrument) => {
                     instruments_cache.rcu(|m| {
@@ -847,7 +942,7 @@ impl DataClient for CoinbaseDataClient {
         let params = request.params;
         let clock = self.clock;
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match http.get_product_book(&product_id, depth).await {
                 Ok(json) => {
                     let pricebook_value = json.get("pricebook").cloned().unwrap_or(json);
@@ -873,7 +968,7 @@ impl DataClient for CoinbaseDataClient {
                             let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
 
                             for delta in &deltas.deltas {
-                                if delta.order.side != OrderSide::NoOrderSide {
+                                if delta.order.side.is_some() {
                                     book.add(
                                         delta.order,
                                         delta.flags,
@@ -935,7 +1030,7 @@ impl DataClient for CoinbaseDataClient {
         let params = request.params;
         let clock = self.clock;
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match http.get_market_trades(&product_id, limit).await {
                 Ok(json) => {
                     let ticker: TickerResponse = match serde_json::from_value(json) {
@@ -1015,7 +1110,7 @@ impl DataClient for CoinbaseDataClient {
         let params = request.params;
         let clock = self.clock;
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             let now = jiff::Timestamp::now();
             let end_secs = end.unwrap_or(now).as_second().to_string();
             let start_secs = if let Some(s) = start {
@@ -1228,17 +1323,16 @@ mod tests {
             client
                 .instrument_status_subs
                 .lock()
-                .unwrap()
                 .contains(&instrument_id)
         );
 
         // Duplicate subscribe keeps the set at size 1.
         client.subscribe_instrument_status(cmd).unwrap();
-        assert_eq!(client.instrument_status_subs.lock().unwrap().len(), 1);
+        assert_eq!(client.instrument_status_subs.lock().len(), 1);
 
         // Reset clears the set so a subsequent connect starts clean.
         client.reset().unwrap();
-        assert!(client.instrument_status_subs.lock().unwrap().is_empty());
+        assert!(client.instrument_status_subs.lock().is_empty());
     }
 
     // Unsubscribing the last instrument empties the set; intermediate
@@ -1273,7 +1367,7 @@ mod tests {
                 ))
                 .unwrap();
         }
-        assert_eq!(client.instrument_status_subs.lock().unwrap().len(), 2);
+        assert_eq!(client.instrument_status_subs.lock().len(), 2);
 
         let unsub = |id| {
             UnsubscribeInstrumentStatus::new(
@@ -1290,7 +1384,7 @@ mod tests {
         // Intermediate unsubscribe: `a` leaves, `b` retained.
         client.unsubscribe_instrument_status(&unsub(a)).unwrap();
         {
-            let subs = client.instrument_status_subs.lock().unwrap();
+            let subs = client.instrument_status_subs.lock();
             assert!(!subs.contains(&a), "a removed");
             assert!(subs.contains(&b), "b retained");
             assert_eq!(subs.len(), 1);
@@ -1300,7 +1394,7 @@ mod tests {
         // re-arms the channel-level WS subscription.
         client.unsubscribe_instrument_status(&unsub(b)).unwrap();
         assert!(
-            client.instrument_status_subs.lock().unwrap().is_empty(),
+            client.instrument_status_subs.lock().is_empty(),
             "last unsubscribe must empty the set",
         );
     }

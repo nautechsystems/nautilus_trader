@@ -1,0 +1,5 @@
+exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
+deribit,BTC-PERPETUAL,1000,2000,false,bid,100.0,1.0
+deribit,BTC-PERPETUAL,1000,2000,false,ask,101.0,2.0
+deribit,BTC-PERPETUAL,1000,2010,false,bid,99.0,3.0
+deribit,BTC-PERPETUAL,1010,2010,false,ask,102.0,4.0

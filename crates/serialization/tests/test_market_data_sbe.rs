@@ -789,13 +789,13 @@ fn assert_data_any_roundtrip_matches_capnp_parity(value: DataAny) {
         (DataAny::InstrumentClose(expected), DataAny::InstrumentClose(actual)) => {
             assert_eq!(expected, actual);
         }
-        (DataAny::OrderBookDelta(expected), DataAny::OrderBookDelta(actual)) => {
+        (DataAny::BookDelta(expected), DataAny::BookDelta(actual)) => {
             assert_order_book_delta_fields(&expected, &actual);
         }
-        (DataAny::OrderBookDeltas(expected), DataAny::OrderBookDeltas(actual)) => {
+        (DataAny::BookDeltas(expected), DataAny::BookDeltas(actual)) => {
             assert_order_book_deltas_fields(&expected, &actual);
         }
-        (DataAny::OrderBookDepth10(expected), DataAny::OrderBookDepth10(actual)) => {
+        (DataAny::BookDepth10(expected), DataAny::BookDepth10(actual)) => {
             assert_order_book_depth10_matches_capnp_parity(&expected, &actual);
         }
         (expected, actual) => {

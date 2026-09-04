@@ -20,15 +20,17 @@ Running this script connects to the configured Lighter environment immediately a
 subscribes to the full data matrix for one instrument: book deltas, quotes, trades,
 bars, mark price, index price, and funding rates, plus historical requests. No orders
 are placed. Settings are the module-level constants below; the default environment is
-the Lighter testnet.
+the Lighter Testnet.
 
 """
 
 from __future__ import annotations
 
 from nautilus_trader.adapters.lighter import LIGHTER
+from nautilus_trader.adapters.lighter import LIGHTER_ROBINHOOD
 from nautilus_trader.adapters.lighter import LighterDataClientConfig
 from nautilus_trader.adapters.lighter import LighterDataClientFactory
+from nautilus_trader.adapters.lighter import LighterDeployment
 from nautilus_trader.adapters.lighter import LighterEnvironment
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
@@ -40,8 +42,10 @@ from nautilus_trader.testkit import DataTesterConfig
 
 
 LIGHTER_ENVIRONMENT = LighterEnvironment.TESTNET
+LIGHTER_DEPLOYMENT = LighterDeployment.LIGHTER
+VENUE = LIGHTER if LIGHTER_DEPLOYMENT == LighterDeployment.LIGHTER else LIGHTER_ROBINHOOD
 TRADER_ID = TraderId.from_str("TESTER-001")
-INSTRUMENT_ID = InstrumentId.from_str(f"BTC-PERP.{LIGHTER}")
+INSTRUMENT_ID = InstrumentId.from_str(f"BTC-PERP.{VENUE}")
 BAR_TYPE = BarType.from_str(f"{INSTRUMENT_ID}-1-MINUTE-LAST-EXTERNAL")
 
 
@@ -52,16 +56,19 @@ def main() -> None:
     node = (
         LiveNode.builder("LIGHTER-DATA-TESTER-001", TRADER_ID, Environment.LIVE)
         .add_data_client(
-            None,
+            VENUE,
             LighterDataClientFactory(),
-            LighterDataClientConfig(environment=LIGHTER_ENVIRONMENT),
+            LighterDataClientConfig(
+                environment=LIGHTER_ENVIRONMENT,
+                deployment=LIGHTER_DEPLOYMENT,
+            ),
         )
         .build()
     )
     node.add_builtin_actor(
         "DataTester",
         DataTesterConfig(
-            client_id=ClientId.from_str(LIGHTER),
+            client_id=ClientId.from_str(VENUE),
             instrument_ids=[INSTRUMENT_ID],
             bar_types=[BAR_TYPE],
             subscribe_book_deltas=True,

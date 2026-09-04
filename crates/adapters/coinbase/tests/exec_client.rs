@@ -24,7 +24,7 @@ use std::{
     collections::{HashMap, HashSet, VecDeque},
     net::SocketAddr,
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::Duration,
 };
 
@@ -58,7 +58,7 @@ use nautilus_common::{
         ExecutionEvent,
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GeneratePositionStatusReports,
-            GeneratePositionStatusReportsBuilder, ModifyOrder,
+            GeneratePositionStatusReportsBuilder, ModifyOrder, SubmitOrder, SubmitOrderList,
         },
     },
     testing::wait_until_async,
@@ -66,15 +66,18 @@ use nautilus_common::{
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
-    enums::{AccountType, OmsType, OrderSide, OrderType, PositionSideSpecified, TimeInForce},
+    enums::{AccountType, OmsType, OrderSide, OrderType, PositionSide, TimeInForce},
     events::OrderEventAny,
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId,
+        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId,
+        VenueOrderId,
     },
     instruments::InstrumentAny,
+    orders::{Order, OrderList, builder::OrderTestBuilder},
     types::{Price, Quantity},
 };
 use nautilus_network::retry::RetryConfig;
+use parking_lot::Mutex;
 use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
@@ -130,7 +133,6 @@ impl TestState {
     fn enqueue(&self, path: &str, response: Value) {
         self.inner
             .lock()
-            .unwrap()
             .queues
             .entry(path.to_string())
             .or_default()
@@ -138,7 +140,7 @@ impl TestState {
     }
 
     fn next_response(&self, path: &str, raw_query: String) -> Value {
-        let mut state = self.inner.lock().unwrap();
+        let mut state = self.inner.lock();
         state.requests.push(RequestRecord {
             path: path.to_string(),
             raw_query,
@@ -152,7 +154,7 @@ impl TestState {
     }
 
     fn next_response_with_body(&self, path: &str, body: Value) -> Value {
-        let mut state = self.inner.lock().unwrap();
+        let mut state = self.inner.lock();
         state.requests.push(RequestRecord {
             path: path.to_string(),
             raw_query: String::new(),
@@ -166,23 +168,19 @@ impl TestState {
     }
 
     fn requests(&self) -> Vec<RequestRecord> {
-        self.inner.lock().unwrap().requests.clone()
+        self.inner.lock().requests.clone()
     }
 
     fn mark_failing(&self, path: &str) {
-        self.inner
-            .lock()
-            .unwrap()
-            .fail_paths
-            .insert(path.to_string());
+        self.inner.lock().fail_paths.insert(path.to_string());
     }
 
     fn is_failing(&self, path: &str) -> bool {
-        self.inner.lock().unwrap().fail_paths.contains(path)
+        self.inner.lock().fail_paths.contains(path)
     }
 
     fn record_failure(&self, path: &str, raw_query: String, body: Option<Value>) {
-        self.inner.lock().unwrap().requests.push(RequestRecord {
+        self.inner.lock().requests.push(RequestRecord {
             path: path.to_string(),
             raw_query,
             body,
@@ -192,7 +190,6 @@ impl TestState {
     fn requests_for(&self, path: &str) -> Vec<RequestRecord> {
         self.inner
             .lock()
-            .unwrap()
             .requests
             .iter()
             .filter(|r| r.path == path)
@@ -246,7 +243,6 @@ async fn handle_products(State(state): State<TestState>) -> axum::response::Resp
     let inner = state.inner.clone();
     let have_queue = inner
         .lock()
-        .unwrap()
         .queues
         .get("/market/products")
         .is_some_and(|q| !q.is_empty());
@@ -1516,7 +1512,7 @@ async fn test_http_request_cfm_account_state_produces_margin_account() {
 #[rstest]
 #[tokio::test]
 async fn test_http_request_position_status_reports_for_cfm() {
-    use nautilus_model::enums::PositionSideSpecified;
+    use nautilus_model::enums::PositionSide;
 
     let state = TestState::default();
     let addr = start_mock_server(state.clone()).await;
@@ -1529,7 +1525,7 @@ async fn test_http_request_position_status_reports_for_cfm() {
 
     assert_eq!(reports.len(), 1);
     let report = &reports[0];
-    assert_eq!(report.position_side, PositionSideSpecified::Long);
+    assert_eq!(report.position_side, PositionSide::Long);
     assert_eq!(report.quantity, Quantity::from("2"));
     assert_eq!(report.avg_px_open, Some(dec!(49000.00)));
     assert_eq!(report.instrument_id.symbol.as_str(), "BIP-20DEC30-CDE");
@@ -1544,7 +1540,7 @@ async fn test_http_request_position_status_reports_for_cfm() {
 #[rstest]
 #[tokio::test]
 async fn test_http_request_position_status_report_single_product() {
-    use nautilus_model::enums::PositionSideSpecified;
+    use nautilus_model::enums::PositionSide;
 
     let state = TestState::default();
     let addr = start_mock_server(state.clone()).await;
@@ -1557,7 +1553,7 @@ async fn test_http_request_position_status_report_single_product() {
         .expect("position report should build")
         .expect("fixture provides a non-flat position");
 
-    assert_eq!(report.position_side, PositionSideSpecified::Short);
+    assert_eq!(report.position_side, PositionSide::Short);
     assert_eq!(report.quantity, Quantity::from("3"));
     assert_eq!(report.avg_px_open, Some(dec!(51000.00)));
 
@@ -1567,7 +1563,7 @@ async fn test_http_request_position_status_report_single_product() {
 
 #[rstest]
 #[tokio::test]
-async fn test_http_submit_order_threads_leverage_margin_type_reduce_only() {
+async fn test_http_submit_order_rejects_reduce_only_before_transport() {
     use nautilus_coinbase::common::enums::CoinbaseMarginType;
 
     let state = TestState::default();
@@ -1579,7 +1575,7 @@ async fn test_http_submit_order_threads_leverage_margin_type_reduce_only() {
     let addr = start_mock_server(state.clone()).await;
     let client = create_http_client(addr);
 
-    let _ = client
+    let error = client
         .submit_order(
             ClientOrderId::new("client-500"),
             btc_usd_instrument_id(),
@@ -1598,14 +1594,13 @@ async fn test_http_submit_order_threads_leverage_margin_type_reduce_only() {
             None,
         )
         .await
-        .expect("submit should succeed");
+        .unwrap_err();
 
-    let requests = state.requests_for("/orders");
-    assert_eq!(requests.len(), 1);
-    let body = requests[0].body.as_ref().expect("POST body captured");
-    assert_eq!(body["leverage"], "5");
-    assert_eq!(body["margin_type"], "CROSS");
-    assert_eq!(body["reduce_only"], true);
+    assert_eq!(
+        error.to_string(),
+        "Reduce-only orders are not supported by Coinbase Advanced Trade"
+    );
+    assert!(state.requests_for("/orders").is_empty());
 }
 
 // reduce_only must not leak into the wire payload when the order is not
@@ -1671,6 +1666,18 @@ fn make_exec_client_with_events(
     CoinbaseExecutionClient,
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
 ) {
+    let (client, rx, _) = make_exec_client_with_events_and_cache(addr, account_type);
+    (client, rx)
+}
+
+fn make_exec_client_with_events_and_cache(
+    addr: std::net::SocketAddr,
+    account_type: AccountType,
+) -> (
+    CoinbaseExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    std::rc::Rc<std::cell::RefCell<Cache>>,
+) {
     // The emitter inside the exec client publishes on the global runner
     // sender; install a fresh channel so tests can either observe events or
     // drop the receiver when they only call report-generation methods.
@@ -1686,12 +1693,12 @@ fn make_exec_client_with_events(
         AccountId::from("COINBASE-001"),
         account_type,
         None,
-        cache,
+        cache.clone(),
     );
 
     let config = CoinbaseExecutionClientConfig {
-        api_key: Some(test_api_key()),
-        api_secret: Some(test_pem_key()),
+        api_key: Some(test_api_key().into()),
+        api_secret: Some(test_pem_key().into()),
         base_url_rest: Some(format!("http://{addr}")),
         account_type,
         ..CoinbaseExecutionClientConfig::default()
@@ -1700,6 +1707,7 @@ fn make_exec_client_with_events(
     (
         CoinbaseExecutionClient::new(core, config).expect("exec client construction"),
         rx,
+        cache,
     )
 }
 
@@ -1764,6 +1772,168 @@ async fn assert_no_order_event_matching<F>(
 
 #[rstest]
 #[tokio::test]
+async fn test_exec_submit_order_denies_reduce_only() {
+    let state = TestState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) =
+        make_exec_client_with_events_and_cache(addr, AccountType::Cash);
+    client.start().unwrap();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-REDUCE-ONLY"))
+        .instrument_id(btc_usd_instrument_id())
+        .client_order_id(ClientOrderId::from("O-REDUCE-ONLY"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("0.1"))
+        .price(Price::from("50000.00"))
+        .reduce_only(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(*COINBASE_CLIENT_ID), false)
+        .unwrap();
+
+    client
+        .submit_order(SubmitOrder::from_order(
+            &order,
+            TraderId::from("TRADER-001"),
+            Some(*COINBASE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        ))
+        .unwrap();
+
+    let event = rx.try_recv().expect("missing OrderDenied");
+    let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+        panic!("Expected OrderDenied, was {event:?}");
+    };
+    assert_eq!(denied.client_order_id, order.client_order_id());
+    assert_eq!(denied.reason.as_str(), "UNSUPPORTED_REDUCE_ONLY");
+    assert!(rx.try_recv().is_err());
+    assert!(state.requests_for("/orders").is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_submit_order_denies_instrument_missing_from_client_cache() {
+    let state = TestState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) =
+        make_exec_client_with_events_and_cache(addr, AccountType::Cash);
+    client.start().unwrap();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-MISSING-INSTRUMENT"))
+        .instrument_id(btc_usd_instrument_id())
+        .client_order_id(ClientOrderId::from("O-MISSING-INSTRUMENT"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("0.2"))
+        .price(Price::from("49000.00"))
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(*COINBASE_CLIENT_ID), false)
+        .unwrap();
+
+    client
+        .submit_order(SubmitOrder::from_order(
+            &order,
+            TraderId::from("TRADER-001"),
+            Some(*COINBASE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        ))
+        .unwrap();
+
+    let event = rx.try_recv().expect("missing OrderDenied");
+    let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+        panic!("Expected OrderDenied, was {event:?}");
+    };
+    assert_eq!(denied.client_order_id, order.client_order_id());
+    assert_eq!(
+        denied.reason.as_str(),
+        "INSTRUMENT_NOT_FOUND: BTC-USD.COINBASE"
+    );
+    assert!(rx.try_recv().is_err());
+    assert!(state.requests_for("/orders").is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_submit_order_list_denies_all_orders() {
+    let state = TestState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) =
+        make_exec_client_with_events_and_cache(addr, AccountType::Cash);
+    client.start().unwrap();
+    let first = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-ORDER-LIST"))
+        .instrument_id(btc_usd_instrument_id())
+        .client_order_id(ClientOrderId::from("O-LIST-1"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("0.1"))
+        .price(Price::from("50000.00"))
+        .reduce_only(true)
+        .build();
+    let second = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-ORDER-LIST"))
+        .instrument_id(btc_usd_instrument_id())
+        .client_order_id(ClientOrderId::from("O-LIST-2"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("0.2"))
+        .price(Price::from("49000.00"))
+        .build();
+
+    for order in [&first, &second] {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(*COINBASE_CLIENT_ID), false)
+            .unwrap();
+    }
+    let order_list = OrderList::new(
+        OrderListId::from("OL-COINBASE-1"),
+        first.instrument_id(),
+        first.strategy_id(),
+        vec![first.client_order_id(), second.client_order_id()],
+        UnixNanos::default(),
+    );
+    let cmd = SubmitOrderList::new(
+        TraderId::from("TRADER-001"),
+        Some(*COINBASE_CLIENT_ID),
+        first.strategy_id(),
+        order_list,
+        vec![first.init_event().clone(), second.init_event().clone()],
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    client.submit_order_list(cmd).unwrap();
+
+    for client_order_id in [first.client_order_id(), second.client_order_id()] {
+        let event = rx.try_recv().expect("missing OrderDenied");
+        let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+            panic!("Expected OrderDenied, was {event:?}");
+        };
+        assert_eq!(denied.client_order_id, client_order_id);
+        assert_eq!(
+            denied.reason.as_str(),
+            "UNSUPPORTED_ORDER_LIST: order lists are not supported by Coinbase Advanced Trade"
+        );
+    }
+    assert!(rx.try_recv().is_err());
+    assert!(state.requests_for("/orders").is_empty());
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_exec_client_position_reports_margin_list_hits_cfm_positions() {
     let state = TestState::default();
     let addr = start_mock_server(state.clone()).await;
@@ -1775,7 +1945,7 @@ async fn test_exec_client_position_reports_margin_list_hits_cfm_positions() {
         .expect("position reports");
 
     assert_eq!(reports.len(), 1);
-    assert_eq!(reports[0].position_side, PositionSideSpecified::Long);
+    assert_eq!(reports[0].position_side, PositionSide::Long);
     assert_eq!(reports[0].instrument_id.symbol.as_str(), "BIP-20DEC30-CDE");
 
     // Exec client must route to the list endpoint, not the single-product one.
@@ -1801,7 +1971,7 @@ async fn test_exec_client_position_reports_margin_single_hits_scoped_endpoint() 
         .expect("position reports");
 
     assert_eq!(reports.len(), 1);
-    assert_eq!(reports[0].position_side, PositionSideSpecified::Short);
+    assert_eq!(reports[0].position_side, PositionSide::Short);
     assert_eq!(reports[0].instrument_id, instrument_id);
 
     // Exec client must target the single-product endpoint; the list
@@ -2211,7 +2381,7 @@ async fn test_exec_cancel_all_http_failure_does_not_emit_cancel_rejected() {
         Some(*COINBASE_CLIENT_ID),
         StrategyId::from("S-CANCEL-ALL"),
         btc_usd_instrument_id(),
-        OrderSide::NoOrderSide,
+        None,
         UUID4::new(),
         UnixNanos::default(),
         None,

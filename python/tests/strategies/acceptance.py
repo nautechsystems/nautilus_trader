@@ -33,7 +33,6 @@ from nautilus_trader.model import Bar
 from nautilus_trader.model import BarType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import ClientOrderId
-from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import LimitOrder
 from nautilus_trader.model import MarketOrder
@@ -71,7 +70,7 @@ def _market_order(
         time_in_force=TimeInForce.GTC,
         reduce_only=False,
         quote_quantity=False,
-        contingency_type=ContingencyType.NO_CONTINGENCY,
+        contingency_type=None,
     )
 
 
@@ -135,18 +134,9 @@ class BarEntryExitConfig(StrategyConfig):
     Collect bar entry exit config tests.
     """
 
-    _CUSTOM_FIELDS = ("instrument_id", "bar_type", "trade_size", "entry_bar", "exit_bar")
-
-    def __new__(cls, *args: object, **kwargs: object) -> object:
-        """
-        Create a new instance.
-        """
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_id: str,
         bar_type: str,
         trade_size: str,
@@ -155,7 +145,7 @@ class BarEntryExitConfig(StrategyConfig):
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -172,7 +162,7 @@ class BarEntryExit(Strategy):
 
     def __init__(self, config: BarEntryExitConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         from nautilus_trader.model import BarType
@@ -215,24 +205,15 @@ class TickScheduledConfig(StrategyConfig):
     Submit a market order at each (tick_index, side, quantity) entry in `actions`.
     """
 
-    _CUSTOM_FIELDS = ("instrument_id", "actions")
-
-    def __new__(cls, *args: object, **kwargs: object) -> object:
-        """
-        Create a new instance.
-        """
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_id: str,
         actions: list,
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -246,7 +227,7 @@ class TickScheduled(Strategy):
 
     def __init__(self, config: TickScheduledConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
@@ -285,24 +266,15 @@ class OrderBookImbalanceConfig(StrategyConfig):
     Collect order book imbalance config tests.
     """
 
-    _CUSTOM_FIELDS = ("instrument_id", "trade_size")
-
-    def __new__(cls, *args: object, **kwargs: object) -> object:
-        """
-        Create a new instance.
-        """
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_id: str,
         trade_size: str,
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -319,7 +291,7 @@ class OrderBookImbalance(Strategy):
 
     def __init__(self, config: OrderBookImbalanceConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
@@ -405,23 +377,14 @@ class MultiInstrumentTickScheduledConfig(StrategyConfig):
     Submit market orders from an instrument keyed action schedule.
     """
 
-    _CUSTOM_FIELDS = ("instrument_actions",)
-
-    def __new__(cls, *args: object, **kwargs: object) -> object:
-        """
-        Create a new instance.
-        """
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_actions: dict,
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_actions = instrument_actions
@@ -434,7 +397,7 @@ class MultiInstrumentTickScheduled(Strategy):
 
     def __init__(self, config: MultiInstrumentTickScheduledConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._actions: dict[InstrumentId, dict[int, list[tuple[OrderSide, Quantity]]]] = {}
@@ -479,29 +442,9 @@ class EMACrossStopEntryConfig(StrategyConfig):
     Collect emacross stop entry config tests.
     """
 
-    _CUSTOM_FIELDS = (
-        "instrument_id",
-        "bar_type",
-        "trade_size",
-        "fast_ema_period",
-        "slow_ema_period",
-        "atr_period",
-        "trailing_atr_multiple",
-        "trailing_offset_type",
-        "trigger_type",
-        "emulation_trigger",
-    )
-
-    def __new__(cls, *args: object, **kwargs: object) -> object:
-        """
-        Create a new instance.
-        """
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_id: str,
         bar_type: str,
         trade_size: str,
@@ -515,7 +458,7 @@ class EMACrossStopEntryConfig(StrategyConfig):
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -535,30 +478,9 @@ class EMACrossTrailingStopConfig(StrategyConfig):
     Collect emacross trailing stop config tests.
     """
 
-    _CUSTOM_FIELDS = (
-        "instrument_id",
-        "bar_type",
-        "trade_size",
-        "fast_ema_period",
-        "slow_ema_period",
-        "atr_period",
-        "trailing_atr_multiple",
-        "trailing_offset_type",
-        "trigger_type",
-        "emulation_trigger",
-        "activate_at_market",
-    )
-
-    def __new__(cls, *args: object, **kwargs: object) -> object:
-        """
-        Create a new instance.
-        """
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_id: str,
         bar_type: str,
         trade_size: str,
@@ -573,7 +495,7 @@ class EMACrossTrailingStopConfig(StrategyConfig):
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -592,7 +514,7 @@ class EMACrossTrailingStopConfig(StrategyConfig):
 class _EMACrossTrailingWorkflow(Strategy):
     def __init__(self, config: object) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
@@ -823,25 +745,16 @@ class CascadingStopConfig(StrategyConfig):
     Collect cascading stop config tests.
     """
 
-    _CUSTOM_FIELDS = ("instrument_id", "trade_size", "stop_price")
-
-    def __new__(cls, *args: object, **kwargs: object) -> object:
-        """
-        Create a new instance.
-        """
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_id: str,
         trade_size: str,
         stop_price: str,
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -856,7 +769,7 @@ class CascadingStop(Strategy):
 
     def __init__(self, config: CascadingStopConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
@@ -908,18 +821,9 @@ class MultiCascadeConfig(StrategyConfig):
     Collect multi cascade config tests.
     """
 
-    _CUSTOM_FIELDS = ("instrument_id", "trade_size", "stop_price", "limit_price")
-
-    def __new__(cls, *args: object, **kwargs: object) -> object:
-        """
-        Create a new instance.
-        """
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_id: str,
         trade_size: str,
         stop_price: str,
@@ -927,7 +831,7 @@ class MultiCascadeConfig(StrategyConfig):
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -943,7 +847,7 @@ class MultiCascade(Strategy):
 
     def __init__(self, config: MultiCascadeConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
@@ -1018,25 +922,16 @@ class DualTimerConfig(StrategyConfig):
     Collect dual timer config tests.
     """
 
-    _CUSTOM_FIELDS = ("instrument_id", "trade_size", "alert_iso")
-
-    def __new__(cls, *args: object, **kwargs: object) -> object:
-        """
-        Create a new instance.
-        """
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_id: str,
         trade_size: str,
         alert_iso: str,
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -1051,7 +946,7 @@ class DualTimer(Strategy):
 
     def __init__(self, config: DualTimerConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
@@ -1099,24 +994,9 @@ class MACDStrategyConfig(StrategyConfig):
     Collect macdstrategy config tests.
     """
 
-    _CUSTOM_FIELDS = (
-        "instrument_id",
-        "trade_size",
-        "fast_period",
-        "slow_period",
-        "entry_threshold",
-    )
-
-    def __new__(cls, *args: object, **kwargs: object) -> object:
-        """
-        Create a new instance.
-        """
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_id: str,
         trade_size: str,
         fast_period: int = 12,
@@ -1125,7 +1005,7 @@ class MACDStrategyConfig(StrategyConfig):
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
         self.instrument_id = instrument_id
@@ -1147,7 +1027,7 @@ class MACDTradeTickStrategy(Strategy):
 
     def __init__(self, config: MACDStrategyConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)

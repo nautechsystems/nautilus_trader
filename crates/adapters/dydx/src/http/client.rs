@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Provides an ergonomic wrapper around the **dYdX v4 Indexer REST API**:
-//! <https://docs.dydx.xyz/api_integration-indexer/indexer_api>.
+//! <https://docs.dydx.xyz/indexer-client/http>.
 //!
 //! This module exports two complementary HTTP clients following the standardized
 //! two-layer architecture pattern established in OKX, Bybit, and BitMEX adapters:
@@ -46,15 +46,15 @@
 //!
 //! | Endpoint          | Reference                                                                 |
 //! |-------------------|---------------------------------------------------------------------------|
-//! | Market data       | <https://docs.dydx.xyz/api_integration-indexer/indexer_api#markets>  |
-//! | Account data      | <https://docs.dydx.xyz/api_integration-indexer/indexer_api#accounts> |
-//! | Utility endpoints | <https://docs.dydx.xyz/api_integration-indexer/indexer_api#utility>  |
+//! | Market data       | <https://docs.dydx.xyz/indexer-client/http/markets>  |
+//! | Account data      | <https://docs.dydx.xyz/indexer-client/http/accounts> |
+//! | Utility endpoints | <https://docs.dydx.xyz/indexer-client/http>  |
 
 use std::{
     collections::HashMap,
     fmt::Debug,
     num::NonZeroU32,
-    sync::{Arc, LazyLock, Mutex},
+    sync::{Arc, LazyLock},
 };
 
 use ahash::AHashMap;
@@ -85,6 +85,7 @@ use nautilus_network::{
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
     retry::{RetryConfig, RetryError, RetryManager},
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
@@ -156,7 +157,6 @@ fn rate_limit_keys() -> Vec<Ustr> {
 fn rest_rate_limiter(base_url: &str) -> DydxRestRateLimiter {
     DYDX_REST_RATE_LIMITERS
         .lock()
-        .expect("dYdX REST rate limiter registry mutex poisoned")
         .entry(base_url.to_string())
         .or_insert_with(|| Arc::new(RateLimiter::new_with_quota(Some(*DYDX_REST_QUOTA), vec![])))
         .clone()
@@ -172,7 +172,7 @@ pub struct DydxResponse<T> {
     pub data: T,
 }
 
-/// Provides a raw HTTP client for interacting with the [dYdX v4](https://dydx.exchange) Indexer REST API.
+/// Provides a raw HTTP client for interacting with the [dYdX v4](https://dydx.trade) Indexer REST API.
 ///
 /// This client wraps the underlying [`HttpClient`] to handle functionality
 /// specific to dYdX Indexer API, such as rate-limiting, forming request URLs,
@@ -690,7 +690,7 @@ impl DydxRawHttpClient {
     }
 }
 
-/// Provides a higher-level HTTP client for the [dYdX v4](https://dydx.exchange) Indexer REST API.
+/// Provides a higher-level HTTP client for the [dYdX v4](https://dydx.trade) Indexer REST API.
 ///
 /// This client wraps the underlying `DydxRawHttpClient` to handle conversions
 /// into the Nautilus domain model, following the two-layer pattern established

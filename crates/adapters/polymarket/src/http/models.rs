@@ -15,6 +15,9 @@
 
 //! HTTP REST model types for the Polymarket CLOB API.
 
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -41,7 +44,7 @@ use crate::common::{
 /// `expiration` is part of the wire body but NOT part of the EIP-712 signed
 /// struct in V2 (the protocol enforces it server-side). `"0"` means no
 /// expiration. All other fields appear inside the signed struct.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PolymarketOrder {
     pub salt: u64,
@@ -70,7 +73,7 @@ pub struct PolymarketOrder {
     pub metadata: String,
     /// Builder code (`bytes32`). Zero bytes when unset.
     pub builder: String,
-    pub signature: String,
+    pub signature: SecretString,
 }
 
 /// An active order returned by REST GET /orders.
@@ -638,6 +641,7 @@ mod tests {
     #[rstest]
     fn test_signed_order_camel_case_fields() {
         let order: PolymarketOrder = load("http_signed_order.json");
+        let debug = format!("{order:?}");
 
         assert_eq!(order.salt, 123456789);
         assert_eq!(order.maker, "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266");
@@ -655,6 +659,8 @@ mod tests {
         );
         assert_eq!(order.side, PolymarketOrderSide::Buy);
         assert_eq!(order.signature_type, SignatureType::Eoa);
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains(order.signature.expose_secret()));
     }
 
     #[rstest]

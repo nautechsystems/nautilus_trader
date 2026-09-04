@@ -14,9 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
+    fmt::Debug,
     str::FromStr,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, AtomicU8, Ordering},
     },
     time::Duration,
@@ -26,12 +27,16 @@ use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
-use nautilus_common::{
-    cache::{InstrumentLookupError, fifo::FifoCacheMap},
-    live::get_runtime,
+use nautilus_common::cache::{InstrumentLookupError, fifo::FifoCacheMap};
+#[cfg(test)]
+use nautilus_common::live::get_runtime;
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::{AtomicMap, string::secret::SecretString};
+use nautilus_live::{
+    SocketControl,
+    task::{SharedTaskSlot, TaskJoinOutcome},
 };
-use nautilus_core::{AtomicMap, MUTEX_POISONED};
-use nautilus_live::SocketControl;
 use nautilus_model::{
     data::BarType,
     enums::{OrderSide, OrderType, TimeInForce},
@@ -49,6 +54,7 @@ use nautilus_network::{
         channel_message_handler,
     },
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
@@ -113,14 +119,6 @@ pub(super) enum AssetContextDataType {
 /// Orchestrates WebSocket connection and subscriptions using a command-based architecture,
 /// where the inner FeedHandler owns the WebSocketClient and handles all I/O.
 #[derive(Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.adapters.hyperliquid", from_py_object)
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.hyperliquid")
-)]
 pub struct HyperliquidWebSocketClient {
     url: String,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
@@ -142,10 +140,11 @@ pub struct HyperliquidWebSocketClient {
     post_ids: Arc<PostIds>,
     post_limiter: Arc<WeightedLimiter>,
     post_timeout: Duration,
-    task_handle: Option<tokio::task::JoinHandle<()>>,
+    task_handle: Arc<SharedTaskSlot<()>>,
+    connect_lock: Arc<tokio::sync::Mutex<()>>,
     account_id: Option<AccountId>,
     transport_backend: TransportBackend,
-    proxy_url: Option<String>,
+    proxy_url: Option<SecretString>,
     socket_sink: Option<SocketStateSink>,
     socket_control: Option<SocketControl>,
 }
@@ -173,7 +172,8 @@ impl Clone for HyperliquidWebSocketClient {
             post_ids: Arc::clone(&self.post_ids),
             post_limiter: Arc::clone(&self.post_limiter),
             post_timeout: self.post_timeout,
-            task_handle: None,
+            task_handle: Arc::clone(&self.task_handle),
+            connect_lock: Arc::clone(&self.connect_lock),
             account_id: self.account_id,
             transport_backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
@@ -227,10 +227,11 @@ impl HyperliquidWebSocketClient {
                 Arc::new(tokio::sync::RwLock::new(tx))
             },
             out_rx: None,
-            task_handle: None,
+            task_handle: Arc::new(SharedTaskSlot::new()),
+            connect_lock: Arc::new(tokio::sync::Mutex::new(())),
             account_id,
             transport_backend,
-            proxy_url,
+            proxy_url: proxy_url.map(SecretString::from),
             socket_sink: None,
             socket_control: None,
         }
@@ -252,9 +253,19 @@ impl HyperliquidWebSocketClient {
 
     /// Establishes WebSocket connection and spawns the message handler.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _guard = connect_lock.lock().await;
+        self.connect_locked().await
+    }
+
+    async fn connect_locked(&mut self) -> anyhow::Result<()> {
         if self.is_active() {
             log::warn!("WebSocket already connected");
             return Ok(());
+        }
+
+        if !self.task_handle.is_empty() {
+            self.disconnect_locked().await?;
         }
 
         // A fresh socket has no venue-side subscriptions; stale book stream
@@ -276,7 +287,10 @@ impl HyperliquidWebSocketClient {
             heartbeat_timeout_secs: None,
             idle_timeout_ms: None,
             backend: self.transport_backend,
-            proxy_url: self.proxy_url.clone(),
+            proxy_url: self
+                .proxy_url
+                .as_ref()
+                .map(|value| value.expose_secret().to_owned()),
         };
         let client = WebSocketClient::builder()
             .config(cfg)
@@ -350,7 +364,7 @@ impl HyperliquidWebSocketClient {
         let cloid_cache = Arc::clone(&self.cloid_cache);
         let post_router = Arc::clone(&self.post_router);
 
-        let stream_handle = get_runtime().spawn(async move {
+        if let Err(e) = self.task_handle.spawn(async move {
             let mut handler = FeedHandler::new(
                 signal,
                 cmd_rx,
@@ -442,39 +456,19 @@ impl HyperliquidWebSocketClient {
                 }
             }
             log::debug!("Handler task completed");
-        });
-        self.task_handle = Some(stream_handle);
+        }) {
+            self.out_rx = None;
+            anyhow::bail!("Failed to start Hyperliquid WebSocket handler task: {e}");
+        }
         Ok(())
-    }
-
-    /// Takes the handler task handle from this client so that another
-    /// instance (e.g., the non-clone original) can await it on disconnect.
-    pub fn take_task_handle(&mut self) -> Option<tokio::task::JoinHandle<()>> {
-        self.task_handle.take()
-    }
-
-    pub fn set_task_handle(&mut self, handle: tokio::task::JoinHandle<()>) {
-        self.task_handle = Some(handle);
     }
 
     pub fn set_post_timeout(&mut self, timeout: Duration) {
         self.post_timeout = timeout;
     }
 
-    /// Force-close fallback for the sync `stop()` path.
-    /// Prefer `disconnect()` for graceful shutdown.
-    pub(crate) fn abort(&mut self) {
+    pub(crate) fn begin_shutdown(&self) {
         self.signal.store(true, Ordering::Relaxed);
-        self.connection_mode
-            .store(Arc::new(AtomicU8::new(ConnectionMode::Closed as u8)));
-
-        if let Some(control) = &self.socket_control {
-            control.deregister();
-        }
-
-        if let Some(handle) = self.task_handle.take() {
-            handle.abort();
-        }
     }
 
     /// Replaces state owned by a terminated WebSocket generation.
@@ -505,6 +499,12 @@ impl HyperliquidWebSocketClient {
 
     /// Disconnects the WebSocket connection.
     pub async fn disconnect(&mut self) -> anyhow::Result<()> {
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _guard = connect_lock.lock().await;
+        self.disconnect_locked().await
+    }
+
+    async fn disconnect_locked(&self) -> anyhow::Result<()> {
         log::debug!("Disconnecting Hyperliquid WebSocket");
 
         if let Some(control) = &self.socket_control {
@@ -518,26 +518,26 @@ impl HyperliquidWebSocketClient {
             );
         }
 
-        if let Some(handle) = self.task_handle.take() {
+        if self.task_handle.is_empty() {
+            log::debug!("No task handle to await");
+        } else {
             log::debug!("Waiting for task handle to complete");
-            let abort_handle = handle.abort_handle();
-            tokio::select! {
-                result = handle => {
-                    match result {
-                        Ok(()) => log::debug!("Task handle completed successfully"),
-                        Err(e) if e.is_cancelled() => {
-                            log::debug!("Task was cancelled");
-                        }
-                        Err(e) => log::error!("Task handle encountered an error: {e:?}"),
+
+            if let Some(outcome) = self
+                .task_handle
+                .finish(Duration::from_secs(2), Duration::from_secs(2))
+                .await
+            {
+                match outcome {
+                    TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
+                    TaskJoinOutcome::Failed(error) => {
+                        anyhow::bail!("Hyperliquid WebSocket handler failed: {error}");
+                    }
+                    TaskJoinOutcome::Incomplete => {
+                        anyhow::bail!("Hyperliquid WebSocket handler did not stop after abort");
                     }
                 }
-                () = tokio::time::sleep(tokio::time::Duration::from_secs(2)) => {
-                    log::warn!("Timeout waiting for task handle, aborting task");
-                    abort_handle.abort();
-                }
             }
-        } else {
-            log::debug!("No task handle to await");
         }
         log::debug!("Disconnected");
         Ok(())
@@ -1163,34 +1163,17 @@ impl HyperliquidWebSocketClient {
     ///
     /// This writes directly to a shared cache that the handler reads from, avoiding any
     /// race conditions between caching and WebSocket message processing.
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "cloid cache mutex poisoning is not expected"
-    )]
     pub fn cache_cloid_mapping(&self, cloid: Ustr, client_order_id: ClientOrderId) {
         log::debug!("Caching cloid mapping: {cloid} -> {client_order_id}");
-        self.cloid_cache
-            .lock()
-            .expect(MUTEX_POISONED)
-            .insert(cloid, client_order_id);
+        self.cloid_cache.lock().insert(cloid, client_order_id);
     }
 
     /// Removes a cloid mapping from the cache.
     ///
     /// Called on terminal order state. The cache is FIFO-bounded so missed
     /// removals self-evict (see GH-3972 cancel-replace drain).
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "cloid cache mutex poisoning is not expected"
-    )]
     pub fn remove_cloid_mapping(&self, cloid: &Ustr) {
-        if self
-            .cloid_cache
-            .lock()
-            .expect(MUTEX_POISONED)
-            .remove(cloid)
-            .is_some()
-        {
+        if self.cloid_cache.lock().remove(cloid).is_some() {
             log::debug!("Removed cloid mapping: {cloid}");
         }
     }
@@ -1198,12 +1181,8 @@ impl HyperliquidWebSocketClient {
     /// Clears all cloid mappings from the cache.
     ///
     /// Useful for cleanup during reconnection or shutdown.
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "cloid cache mutex poisoning is not expected"
-    )]
     pub fn clear_cloid_cache(&self) {
-        let mut cache = self.cloid_cache.lock().expect(MUTEX_POISONED);
+        let mut cache = self.cloid_cache.lock();
         let count = cache.len();
         cache.clear();
 
@@ -1214,28 +1193,16 @@ impl HyperliquidWebSocketClient {
 
     /// Returns the number of cloid mappings in the cache.
     #[must_use]
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "cloid cache mutex poisoning is not expected"
-    )]
     pub fn cloid_cache_len(&self) -> usize {
-        self.cloid_cache.lock().expect(MUTEX_POISONED).len()
+        self.cloid_cache.lock().len()
     }
 
     /// Looks up a client_order_id by its venue CLOID.
     ///
     /// Returns `Some(ClientOrderId)` if the mapping exists, `None` otherwise.
     #[must_use]
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "cloid cache mutex poisoning is not expected"
-    )]
     pub fn get_cloid_mapping(&self, cloid: &Ustr) -> Option<ClientOrderId> {
-        self.cloid_cache
-            .lock()
-            .expect(MUTEX_POISONED)
-            .get(cloid)
-            .copied()
+        self.cloid_cache.lock().get(cloid).copied()
     }
 
     /// Gets an instrument from the cache by ID.
@@ -1493,7 +1460,7 @@ impl HyperliquidWebSocketClient {
 
         // Keep registry mutations and their handler commands ordered across
         // concurrent generic/custom subscriptions for the same coin.
-        let _trade_stream_guard = self.trade_stream_lock.lock().expect(MUTEX_POISONED);
+        let _trade_stream_guard = self.trade_stream_lock.lock();
         let registration = self.trade_streams.register(coin, stream_use);
         cmd_tx
             .send(HandlerCommand::UpdateTradeSubs {
@@ -1898,7 +1865,7 @@ impl HyperliquidWebSocketClient {
         let cmd_tx = self.cmd_tx.read().await;
         // Keep registry mutations and their handler commands ordered across
         // concurrent generic/custom unsubscriptions for the same coin.
-        let _trade_stream_guard = self.trade_stream_lock.lock().expect(MUTEX_POISONED);
+        let _trade_stream_guard = self.trade_stream_lock.lock();
         let release = self.trade_streams.release(&coin, stream_use);
         cmd_tx
             .send(HandlerCommand::UpdateTradeSubs {
@@ -2104,6 +2071,19 @@ impl HyperliquidWebSocketClient {
             rx.recv().await
         } else {
             None
+        }
+    }
+}
+
+impl Drop for HyperliquidWebSocketClient {
+    fn drop(&mut self) {
+        if Arc::strong_count(&self.task_handle) == 1 && !self.task_handle.is_empty() {
+            self.signal.store(true, Ordering::Relaxed);
+            self.task_handle.abort();
+
+            if let Some(control) = &self.socket_control {
+                control.deregister();
+            }
         }
     }
 }
@@ -2372,6 +2352,43 @@ mod tests {
         common::{consts::INFLIGHT_MAX, enums::HyperliquidBarInterval},
         websocket::handler::subscription_to_key,
     };
+
+    #[rstest]
+    fn test_debug_redacts_proxy_url() {
+        let proxy_url = "http://user:password@proxy.example:8080";
+        let client = HyperliquidWebSocketClient::new(
+            Some("wss://test".to_string()),
+            HyperliquidEnvironment::Testnet,
+            None,
+            TransportBackend::default(),
+            Some(proxy_url.to_string()),
+        );
+
+        let debug = format!("{client:?}");
+
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains(proxy_url));
+    }
+
+    #[tokio::test]
+    async fn test_drop_clone_does_not_stop_handler() {
+        let client = HyperliquidWebSocketClient::new(
+            Some("wss://test".to_string()),
+            HyperliquidEnvironment::Testnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+        client
+            .task_handle
+            .insert(get_runtime().spawn(std::future::pending()));
+        let clone = client.clone();
+
+        drop(clone);
+
+        assert!(!client.signal.load(Ordering::Acquire));
+        assert!(!client.task_handle.is_empty());
+    }
 
     /// Generates a unique topic key for a subscription request.
     fn subscription_topic(sub: &SubscriptionRequest) -> String {

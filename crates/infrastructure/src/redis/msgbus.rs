@@ -61,7 +61,10 @@ use serde::{Deserialize, Serialize};
 use streams::StreamReadOptions;
 use ustr::Ustr;
 
-use super::{REDIS_MINID, REDIS_XTRIM, await_handle};
+use super::{
+    REDIS_MINID, REDIS_XTRIM, await_handle,
+    stream_fields::{PAYLOAD_KIND_FIELD, PAYLOAD_KIND_TYPED, bus_message_fields},
+};
 use crate::redis::{RedisConnectionConfig, create_redis_connection, get_stream_key};
 
 const MSGBUS_PUBLISH: &str = "msgbus-publish";
@@ -557,12 +560,7 @@ async fn drain_buffer(
 
     for msg in buffer.drain(..) {
         let encoding = msg.encoding.to_string();
-        let items: Vec<(&str, &[u8])> = vec![
-            ("topic", msg.topic.as_ref()),
-            ("type", msg.payload_type.as_str().as_bytes()),
-            ("payload", msg.payload.as_ref()),
-            ("encoding", encoding.as_bytes()),
-        ];
+        let items = bus_message_fields(&msg, &encoding);
         let stream_key = if stream_per_topic {
             format!("{stream_key}:{}", msg.topic)
         } else {
@@ -574,10 +572,10 @@ async fn drain_buffer(
                 &stream_key,
                 streams::StreamMaxlen::Approx(maxlen),
                 "*",
-                &items,
+                items.as_slice(),
             );
         } else {
-            pipe.xadd(&stream_key, "*", &items);
+            pipe.xadd(&stream_key, "*", items.as_slice());
         }
 
         if autotrim_duration.is_none() {
@@ -816,7 +814,8 @@ fn decode_bus_message(stream_msg: &redis::Value) -> anyhow::Result<BusMessage> {
     }
 
     let mut topic: Option<String> = None;
-    let mut payload_type = BusPayloadType::Custom(Ustr::default());
+    let mut type_name: Option<String> = None;
+    let mut typed_payload = false;
     let mut encoding = SerializationEncoding::default();
     let mut payload: Option<Bytes> = None;
 
@@ -839,9 +838,22 @@ fn decode_bus_message(stream_msg: &redis::Value) -> anyhow::Result<BusMessage> {
                 let redis::Value::BulkString(bytes) = &pair[1] else {
                     anyhow::bail!("Invalid type format: {stream_msg:?}");
                 };
-                let type_name = std::str::from_utf8(bytes)
-                    .map_err(|e| anyhow::anyhow!("Error parsing type: {e}"))?;
-                payload_type = BusPayloadType::from_name(type_name);
+                type_name = Some(
+                    String::from_utf8(bytes.clone())
+                        .map_err(|e| anyhow::anyhow!("Error parsing type: {e}"))?,
+                );
+            }
+            key if key == PAYLOAD_KIND_FIELD.as_bytes() => {
+                let redis::Value::BulkString(bytes) = &pair[1] else {
+                    anyhow::bail!("Invalid payload kind format: {stream_msg:?}");
+                };
+                let value = std::str::from_utf8(bytes)
+                    .map_err(|e| anyhow::anyhow!("Error parsing payload kind: {e}"))?;
+                anyhow::ensure!(
+                    value == PAYLOAD_KIND_TYPED,
+                    "Unknown payload kind '{value}'"
+                );
+                typed_payload = true;
             }
             b"encoding" => {
                 let redis::Value::BulkString(bytes) = &pair[1] else {
@@ -868,6 +880,15 @@ fn decode_bus_message(stream_msg: &redis::Value) -> anyhow::Result<BusMessage> {
     };
     let Some(payload) = payload else {
         anyhow::bail!("Stream message missing payload: {stream_msg:?}");
+    };
+    let payload_type = match type_name {
+        Some(type_name) if typed_payload => BusPayloadType::from_typed_name(&type_name)
+            .ok_or_else(|| anyhow::anyhow!("Unknown typed payload '{type_name}'"))?,
+        Some(type_name) => BusPayloadType::from_name(&type_name),
+        None if typed_payload => {
+            anyhow::bail!("Typed stream message missing type: {stream_msg:?}")
+        }
+        None => BusPayloadType::Custom(Ustr::default()),
     };
 
     Ok(BusMessage::with_str_topic(
@@ -1000,6 +1021,59 @@ mod tests {
     }
 
     #[rstest]
+    fn test_bus_message_fields_distinguish_custom_and_typed_names() {
+        let custom = BusMessage::with_str_topic(
+            "external.test",
+            BusPayloadType::Custom(Ustr::from("TradingCommand")),
+            Bytes::from_static(b"custom"),
+            SerializationEncoding::Json,
+        );
+        let typed = BusMessage::with_str_topic(
+            "external.test",
+            BusPayloadType::TradingCommand,
+            Bytes::from_static(b"typed"),
+            SerializationEncoding::Json,
+        );
+
+        let custom_fields = bus_message_fields(&custom, "json");
+        let typed_fields = bus_message_fields(&typed, "json");
+        let custom_fields = custom_fields.as_slice();
+        let typed_fields = typed_fields.as_slice();
+
+        assert_eq!(custom_fields.len(), 4);
+        assert_eq!(typed_fields.len(), 5);
+        assert_eq!(
+            custom_fields
+                .iter()
+                .find(|(key, _)| *key == "type")
+                .expect("custom fields must include type")
+                .1,
+            b"TradingCommand"
+        );
+        assert_eq!(
+            typed_fields
+                .iter()
+                .find(|(key, _)| *key == "type")
+                .expect("typed fields must include type")
+                .1,
+            b"TradingCommand"
+        );
+        assert!(
+            custom_fields
+                .iter()
+                .all(|(key, _)| *key != PAYLOAD_KIND_FIELD)
+        );
+        assert_eq!(
+            typed_fields
+                .iter()
+                .find(|(key, _)| *key == PAYLOAD_KIND_FIELD)
+                .expect("typed fields must include payload kind")
+                .1,
+            PAYLOAD_KIND_TYPED.as_bytes()
+        );
+    }
+
+    #[rstest]
     fn test_decode_bus_message_valid() {
         let stream_msg = Value::Array(vec![
             Value::BulkString(b"topic".to_vec()),
@@ -1064,12 +1138,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_decode_bus_message_unknown_type_is_custom() {
+    fn test_decode_bus_message_typed_name_without_kind_is_custom() {
         let stream_msg = Value::Array(vec![
             Value::BulkString(b"topic".to_vec()),
             Value::BulkString(b"topic1".to_vec()),
             Value::BulkString(b"type".to_vec()),
-            Value::BulkString(b"UnknownPayload".to_vec()),
+            Value::BulkString(b"TradingCommand".to_vec()),
             Value::BulkString(b"payload".to_vec()),
             Value::BulkString(b"data1".to_vec()),
         ]);
@@ -1079,9 +1153,91 @@ mod tests {
         let msg = result.unwrap();
         assert_eq!(
             msg.payload_type,
-            BusPayloadType::Custom(Ustr::from("UnknownPayload"))
+            BusPayloadType::Custom(Ustr::from("TradingCommand"))
         );
         assert_eq!(msg.encoding, SerializationEncoding::Json);
+    }
+
+    #[rstest]
+    fn test_decode_bus_message_typed_kind_resolves_fixed_type() {
+        let stream_msg = Value::Array(vec![
+            Value::BulkString(b"topic".to_vec()),
+            Value::BulkString(b"external.test".to_vec()),
+            Value::BulkString(b"type".to_vec()),
+            Value::BulkString(b"TradingCommand".to_vec()),
+            Value::BulkString(PAYLOAD_KIND_FIELD.as_bytes().to_vec()),
+            Value::BulkString(PAYLOAD_KIND_TYPED.as_bytes().to_vec()),
+            Value::BulkString(b"payload".to_vec()),
+            Value::BulkString(b"data1".to_vec()),
+        ]);
+
+        let msg = decode_bus_message(&stream_msg).expect("typed message must decode");
+
+        assert_eq!(msg.topic, "external.test");
+        assert_eq!(msg.payload_type, BusPayloadType::TradingCommand);
+        assert_eq!(msg.encoding, SerializationEncoding::Json);
+        assert_eq!(msg.payload, Bytes::from_static(b"data1"));
+    }
+
+    #[rstest]
+    fn test_decode_bus_message_rejects_invalid_typed_metadata() {
+        let unknown_kind = stream_message_with_typed_metadata(
+            Some("TradingCommand"),
+            Value::BulkString(b"unknown".to_vec()),
+        );
+        let missing_type = stream_message_with_typed_metadata(
+            None,
+            Value::BulkString(PAYLOAD_KIND_TYPED.as_bytes().to_vec()),
+        );
+        let unknown_type = stream_message_with_typed_metadata(
+            Some("UnknownPayload"),
+            Value::BulkString(PAYLOAD_KIND_TYPED.as_bytes().to_vec()),
+        );
+        let invalid_kind =
+            stream_message_with_typed_metadata(Some("TradingCommand"), Value::Int(42));
+        let cases = [
+            (&unknown_kind, "Unknown payload kind 'unknown'".to_string()),
+            (
+                &missing_type,
+                format!("Typed stream message missing type: {missing_type:?}"),
+            ),
+            (
+                &unknown_type,
+                "Unknown typed payload 'UnknownPayload'".to_string(),
+            ),
+            (
+                &invalid_kind,
+                format!("Invalid payload kind format: {invalid_kind:?}"),
+            ),
+        ];
+
+        for (stream_msg, expected) in cases {
+            let error =
+                decode_bus_message(stream_msg).expect_err("invalid typed metadata must not decode");
+
+            assert_eq!(error.to_string(), expected);
+        }
+    }
+
+    fn stream_message_with_typed_metadata(type_name: Option<&str>, payload_kind: Value) -> Value {
+        let mut fields = vec![
+            Value::BulkString(b"topic".to_vec()),
+            Value::BulkString(b"external.test".to_vec()),
+        ];
+
+        if let Some(type_name) = type_name {
+            fields.extend([
+                Value::BulkString(b"type".to_vec()),
+                Value::BulkString(type_name.as_bytes().to_vec()),
+            ]);
+        }
+        fields.extend([
+            Value::BulkString(PAYLOAD_KIND_FIELD.as_bytes().to_vec()),
+            payload_kind,
+            Value::BulkString(b"payload".to_vec()),
+            Value::BulkString(b"data1".to_vec()),
+        ]);
+        Value::Array(fields)
     }
 
     #[rstest]
@@ -1687,8 +1843,13 @@ mod serial_tests {
     }
 
     #[rstest]
+    #[case::market_data(BusPayloadType::QuoteTick)]
+    #[case::typed(BusPayloadType::TradingCommand)]
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_publish_messages(#[future] redis_connection: ConnectionManager) {
+    async fn test_publish_messages(
+        #[future] redis_connection: ConnectionManager,
+        #[case] payload_type: BusPayloadType,
+    ) {
         let mut con = redis_connection.await;
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<BusMessage>();
 
@@ -1717,7 +1878,7 @@ mod serial_tests {
         // Send a test message
         let msg = BusMessage::with_str_topic(
             "test_topic",
-            BusPayloadType::QuoteTick,
+            payload_type,
             Bytes::from("test_payload"),
             SerializationEncoding::Json,
         );
@@ -1745,7 +1906,7 @@ mod serial_tests {
         let stream_msg_array = &stream_msgs[0].values().next().unwrap();
         let decoded_message = decode_bus_message(stream_msg_array).unwrap();
         assert_eq!(decoded_message.topic, "test_topic");
-        assert_eq!(decoded_message.payload_type, BusPayloadType::QuoteTick);
+        assert_eq!(decoded_message.payload_type, payload_type);
         assert_eq!(decoded_message.encoding, SerializationEncoding::Json);
         assert_eq!(decoded_message.payload, Bytes::from("test_payload"));
 

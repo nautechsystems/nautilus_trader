@@ -14,10 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 //! [NautilusTrader](https://nautilustrader.io) adapter for the
-//! [Bybit](https://www.bybit.com/) cryptocurrency exchange.
+//! [Bybit](https://www.bybit.com) cryptocurrency exchange.
 //!
-//! The `nautilus-bybit` crate provides client bindings (HTTP & WebSocket), data
-//! models, and helper utilities that wrap the official **Bybit v5 API**.
+//! The `nautilus-bybit` crate provides client bindings (HTTP & WebSocket) and data
+//! models for the official **Bybit v5 API**.
 //!
 //! The official Bybit API reference can be found at <https://bybit-exchange.github.io/docs/v5/intro>.
 //! All public links inside this crate reference the English version of the documentation.
@@ -35,14 +35,12 @@
 //! This crate provides feature flags to control source code inclusion during compilation,
 //! depending on the intended use case (Rust-only builds vs. Python bindings through PyO3).
 //!
-//! - `python`: Enables Python bindings via [PyO3](https://pyo3.rs).
-//! - `extension-module`: Builds as a Python extension module (used together with `python`).
-//!
-//! [High-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) (128-bit value types) is enabled by default.
-//!
-//! # Documentation
-//!
-//! See <https://docs.rs/nautilus-bybit> for the latest API documentation.
+//! - `examples`: Enables the crate's example binaries.
+//! - `extension-module`: Builds as a Python extension module.
+//! - `high-precision` (default): Enables
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
+//!   to use 128-bit value types.
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

@@ -42,7 +42,7 @@ use std::{
     rc::Rc,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicI64, AtomicU8, AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -78,7 +78,7 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_lighter::{
     common::{
         consts::{LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX, LIGHTER_VENUE},
-        enums::LighterEnvironment,
+        enums::{LighterDeployment, LighterEnvironment},
     },
     config::LighterExecutionClientConfig,
     execution::LighterExecutionClient,
@@ -87,13 +87,13 @@ use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnec
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{
-        AccountType, OmsType, OrderSide, OrderStatus, OrderType, PositionSideSpecified,
-        TimeInForce, TriggerType,
+        AccountType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+        TriggerType,
     },
     events::{AccountState, OrderAccepted, OrderEventAny, OrderPendingCancel, OrderPendingUpdate},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId,
-        TraderId, VenueOrderId,
+        TraderId, Venue, VenueOrderId,
     },
     instruments::{CryptoPerpetual, CurrencyPair, InstrumentAny},
     orders::{Order, OrderAny, OrderList, OrderTestBuilder},
@@ -176,9 +176,14 @@ struct TestServerState {
     unsubscribes: Arc<tokio::sync::Mutex<Vec<Value>>>,
     send_txs: Arc<tokio::sync::Mutex<Vec<Value>>>,
     rest_send_txs: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    account_type: Arc<AtomicU8>,
     maker_only_calls: Arc<AtomicUsize>,
     maker_only_api_key_indexes: Arc<tokio::sync::Mutex<Vec<i64>>>,
     maker_only_authorizations: Arc<tokio::sync::Mutex<Vec<String>>>,
+    referral_use_calls: Arc<AtomicUsize>,
+    referral_use_authorizations: Arc<tokio::sync::Mutex<Vec<String>>>,
+    referral_use_requests: Arc<tokio::sync::Mutex<Vec<std::collections::HashMap<String, String>>>>,
+    next_referral_use_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     active_orders_calls: Arc<AtomicUsize>,
     tx_calls: Arc<AtomicUsize>,
     inactive_orders_calls: Arc<AtomicUsize>,
@@ -215,9 +220,14 @@ impl Default for TestServerState {
             unsubscribes: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             send_txs: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             rest_send_txs: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            account_type: Arc::new(AtomicU8::new(0)),
             maker_only_calls: Arc::new(AtomicUsize::new(0)),
             maker_only_api_key_indexes: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             maker_only_authorizations: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            referral_use_calls: Arc::new(AtomicUsize::new(0)),
+            referral_use_authorizations: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            referral_use_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            next_referral_use_response: Arc::new(tokio::sync::Mutex::new(None)),
             active_orders_calls: Arc::new(AtomicUsize::new(0)),
             tx_calls: Arc::new(AtomicUsize::new(0)),
             inactive_orders_calls: Arc::new(AtomicUsize::new(0)),
@@ -260,6 +270,10 @@ impl TestServerState {
         self.maker_only_authorizations.lock().await.clone()
     }
 
+    async fn referral_use_requests(&self) -> Vec<std::collections::HashMap<String, String>> {
+        self.referral_use_requests.lock().await.clone()
+    }
+
     fn push_frame(&self, frame: &Value) {
         let _ = self.inbox_tx.send(frame.to_string());
     }
@@ -269,9 +283,11 @@ async fn order_book_details() -> Response {
     (StatusCode::OK, load_text("http_order_book_details.json")).into_response()
 }
 
-async fn account() -> Response {
-    // Standard-tier account fixture; exercises tier detection on connect.
-    (StatusCode::OK, load_text("http_account.json")).into_response()
+async fn account(State(state): State<Arc<TestServerState>>) -> Response {
+    let mut response = load_json("http_account.json");
+    response["accounts"][0]["account_type"] =
+        Value::from(state.account_type.load(Ordering::Relaxed));
+    (StatusCode::OK, response.to_string()).into_response()
 }
 
 async fn next_nonce() -> Response {
@@ -322,6 +338,54 @@ async fn maker_only_api_keys(
     (
         StatusCode::OK,
         json!({"code":200,"api_key_indexes":api_key_indexes}).to_string(),
+    )
+        .into_response()
+}
+
+async fn referral_use(
+    State(state): State<Arc<TestServerState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    state.referral_use_calls.fetch_add(1, Ordering::Relaxed);
+    let authorization = headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    let content_type = headers
+        .get("content-type")
+        .and_then(|value| value.to_str().ok());
+    let fields = url::form_urlencoded::parse(&body)
+        .into_owned()
+        .collect::<std::collections::HashMap<String, String>>();
+
+    if authorization.is_empty()
+        || content_type != Some("application/x-www-form-urlencoded")
+        || fields.get("l1_address").map(String::as_str)
+            != Some("0x0000000000000000000000000000000000000000")
+        || fields.get("referral_code").map(String::as_str) != Some("NAUTILUS")
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            json!({"code":400,"message":"unexpected referral use request"}).to_string(),
+        )
+            .into_response();
+    }
+
+    state
+        .referral_use_authorizations
+        .lock()
+        .await
+        .push(authorization);
+    state.referral_use_requests.lock().await.push(fields);
+
+    if let Some(response) = state.next_referral_use_response.lock().await.take() {
+        return (StatusCode::OK, response.to_string()).into_response();
+    }
+    (
+        StatusCode::OK,
+        json!({"code":200,"message":null}).to_string(),
     )
         .into_response()
 }
@@ -636,6 +700,7 @@ fn build_router(state: Arc<TestServerState>) -> Router {
         .route("/api/v1/account", get(account))
         .route("/api/v1/nextNonce", get(next_nonce))
         .route("/api/v1/getMakerOnlyApiKeys", get(maker_only_api_keys))
+        .route("/api/v1/referral/use", post(referral_use))
         .route("/api/v1/accountActiveOrders", get(account_active_orders))
         .route(
             "/api/v1/accountInactiveOrders",
@@ -760,11 +825,13 @@ fn build_config(addr: SocketAddr) -> LighterExecutionClientConfig {
         account_id: account_id(),
         account_index: Some(TEST_ACCOUNT_INDEX),
         api_key_index: Some(TEST_API_KEY_INDEX),
-        private_key: Some(PRIVATE_KEY_HEX.to_string()),
+        private_key: Some(PRIVATE_KEY_HEX.into()),
         base_url_http: Some(format!("http://{addr}")),
         base_url_ws: Some(format!("ws://{addr}/stream")),
         proxy_url: None,
         environment: LighterEnvironment::Testnet,
+        deployment: Default::default(),
+        venue: None,
         http_timeout_secs: 5,
         ws_timeout_secs: 5,
         market_order_slippage_bps: 50,
@@ -784,63 +851,44 @@ fn build_config_no_credentials(addr: SocketAddr) -> LighterExecutionClientConfig
 }
 
 fn test_perp_instrument() -> InstrumentAny {
-    InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-        eth_perp_id(),
-        Symbol::new(ETH_PERP_SYMBOL),
-        Currency::from("ETH"),
-        Currency::from("USDC"),
-        Currency::from("USDC"),
-        false,
-        2,
-        4,
-        Price::from("0.01"),
-        Quantity::from("0.0001"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(Money::from("10.000000 USDC")),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ))
+    InstrumentAny::CryptoPerpetual(
+        CryptoPerpetual::builder()
+            .instrument_id(eth_perp_id())
+            .raw_symbol(Symbol::new(ETH_PERP_SYMBOL))
+            .base_currency(Currency::from("ETH"))
+            .quote_currency(Currency::from("USDC"))
+            .settlement_currency(Currency::from("USDC"))
+            .is_inverse(false)
+            .price_precision(2)
+            .size_precision(4)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.0001"))
+            .min_notional(Money::from("10.000000 USDC"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    )
 }
 
 fn test_spot_instrument() -> InstrumentAny {
-    InstrumentAny::CurrencyPair(CurrencyPair::new(
-        eth_spot_id(),
-        Symbol::new("ETH/USDC"),
-        Currency::from("ETH"),
-        Currency::from("USDC"),
-        4,
-        2,
-        Price::from("0.0001"),
-        Quantity::from("0.01"),
-        None,
-        None,
-        None,
-        Some(Quantity::from("0.01")),
-        None,
-        Some(Money::from("1.0000 USDC")),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ))
+    InstrumentAny::CurrencyPair(
+        CurrencyPair::builder()
+            .instrument_id(eth_spot_id())
+            .raw_symbol(Symbol::new("ETH/USDC"))
+            .base_currency(Currency::from("ETH"))
+            .quote_currency(Currency::from("USDC"))
+            .price_precision(4)
+            .size_precision(2)
+            .price_increment(Price::from("0.0001"))
+            .size_increment(Quantity::from("0.01"))
+            .min_quantity(Quantity::from("0.01"))
+            .min_notional(Money::from("1.0000 USDC"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    )
 }
 
 fn build_cache_with_account_and_instrument() -> Rc<RefCell<Cache>> {
@@ -899,6 +947,20 @@ fn build_client_mainnet(
     build_client_with(config)
 }
 
+fn build_client_robinhood_mainnet(
+    addr: SocketAddr,
+) -> (
+    LighterExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    let mut config = build_config(addr);
+    config.environment = LighterEnvironment::Mainnet;
+    config.deployment = LighterDeployment::Robinhood;
+    config.venue = Some(*LIGHTER_VENUE);
+    build_client_with(config)
+}
+
 fn build_client_with(
     config: LighterExecutionClientConfig,
 ) -> (
@@ -923,12 +985,13 @@ fn build_client_with_cache(
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
     replace_exec_event_sender(sender);
 
+    let venue = config.resolved_venue();
     let core = ExecutionClientCore::new(
         trader_id(),
         client_id(),
-        *LIGHTER_VENUE,
+        venue,
         OmsType::Netting,
-        account_id(),
+        config.account_id,
         AccountType::Margin,
         None,
         cache.clone(),
@@ -999,6 +1062,17 @@ async fn await_subscribe_count(state: &TestServerState, target: usize) {
         || {
             let state = state.clone();
             async move { state.subscribes.lock().await.len() >= target }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+}
+
+async fn await_connection_count(state: &TestServerState, target: usize) {
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { *state.connection_count.lock().await == target }
         },
         Duration::from_secs(5),
     )
@@ -1414,6 +1488,159 @@ async fn test_connect_disconnect_lifecycle() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
+async fn stop_disconnects_tasks_and_allows_reconnect() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, _cache) = build_client(addr);
+
+    client.start().expect("start");
+    client.connect().await.expect("connect");
+    await_connection_count(&state, 1).await;
+
+    client.stop().expect("stop");
+    client.stop().expect("repeated stop");
+    await_connection_count(&state, 0).await;
+
+    client.start().expect("restart");
+    client.connect().await.expect("reconnect");
+    await_connection_count(&state, 1).await;
+
+    client.disconnect().await.expect("disconnect");
+    client.disconnect().await.expect("repeated disconnect");
+    await_connection_count(&state, 0).await;
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn reset_disconnects_tasks_and_allows_reconnect() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, _cache) = build_client(addr);
+
+    client.start().expect("start");
+    client.connect().await.expect("connect");
+    await_connection_count(&state, 1).await;
+
+    client.reset().expect("reset");
+    client.reset().expect("repeated reset");
+    await_connection_count(&state, 0).await;
+
+    client.connect().await.expect("reconnect");
+    await_connection_count(&state, 1).await;
+
+    client.disconnect().await.expect("disconnect");
+    await_connection_count(&state, 0).await;
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn dispose_disconnects_tasks() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, _cache) = build_client(addr);
+
+    client.start().expect("start");
+    client.connect().await.expect("connect");
+    await_connection_count(&state, 1).await;
+
+    client.dispose().expect("dispose");
+    client.dispose().expect("repeated dispose");
+    await_connection_count(&state, 0).await;
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn connect_timeout_disconnects_tasks_and_allows_retry() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, _cache) = build_client(addr);
+    state
+        .auto_emit_account_subscribed_frames
+        .store(false, Ordering::Relaxed);
+
+    let error = client
+        .connect()
+        .await
+        .expect_err("connect without account frames should time out");
+
+    assert!(error.to_string().contains("Lighter account streams"));
+    assert!(!client.is_connected());
+    await_connection_count(&state, 0).await;
+
+    state
+        .auto_emit_account_subscribed_frames
+        .store(true, Ordering::Relaxed);
+    client.connect().await.expect("retry connect");
+    await_connection_count(&state, 1).await;
+
+    client.disconnect().await.expect("disconnect");
+    await_connection_count(&state, 0).await;
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn connect_reports_configured_venue_on_socket_state() {
+    let (addr, state) = start_server().await;
+    let venue = Venue::new("LIGHTER_CUSTOM");
+    let account_id = AccountId::new("LIGHTER_CUSTOM-001");
+    let mut config = build_config(addr);
+    config.venue = Some(venue);
+    config.account_id = account_id;
+    let (system_sender, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_sender);
+    let (mut client, _rx, _cache) = build_client_with(config);
+
+    client.connect().await.expect("connect");
+
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .expect("timed out waiting for a socket state change")
+        .expect("system event channel closed");
+    let SystemEvent::SocketState(change) = event;
+    let endpoint = Ustr::from("lighter-user-streams");
+
+    assert_eq!(client.client_id(), client_id());
+    assert_eq!(client.account_id(), account_id);
+    assert_eq!(client.venue(), venue);
+    assert_eq!(change.client_id, client_id());
+    assert_eq!(change.venue, Some(venue));
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Connected);
+
+    client.disconnect().await.expect("disconnect");
+    wait_until_async(
+        || {
+            let state = Arc::clone(&state);
+            async move { *state.connection_count.lock().await == 0 }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn generate_mass_status_uses_configured_venue() {
+    let (addr, _state) = start_server().await;
+    let venue = Venue::new("LIGHTER_CUSTOM");
+    let account_id = AccountId::new("LIGHTER_CUSTOM-001");
+    let mut config = build_config(addr);
+    config.venue = Some(venue);
+    config.account_id = account_id;
+    let (mut client, _rx, _cache) = build_client_with(config);
+
+    client.connect().await.expect("connect");
+    let mass_status = client
+        .generate_mass_status(None)
+        .await
+        .expect("mass status")
+        .expect("mass status should be available");
+
+    assert_eq!(mass_status.client_id, client_id());
+    assert_eq!(mass_status.account_id, account_id);
+    assert_eq!(mass_status.venue, venue);
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
 async fn connect_reports_socket_state_on_the_user_streams_endpoint() {
     let (addr, _state) = start_server().await;
     let (system_sender, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1457,8 +1684,9 @@ async fn connect_reports_socket_state_on_the_user_streams_endpoint() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn connect_submits_l2_only_integrator_auto_approval() {
+async fn connect_premium_account_submits_l2_only_integrator_auto_approval() {
     let (addr, state) = start_server().await;
+    state.account_type.store(1, Ordering::Relaxed);
     let (mut client, _rx, _cache) = build_client_mainnet(addr);
 
     client.connect().await.expect("connect");
@@ -1492,15 +1720,96 @@ async fn connect_submits_l2_only_integrator_auto_approval() {
             .contains(&approval_expiry),
         "ApprovalExpiry must use the maximum five-year TTL",
     );
+    assert_eq!(state.referral_use_calls.load(Ordering::Relaxed), 0);
 
     client.disconnect().await.expect("disconnect");
 }
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn connect_omits_integrator_approval_on_testnet() {
+async fn connect_standard_account_skips_integrator_auto_approval() {
     let (addr, state) = start_server().await;
-    let (mut client, _rx, _cache) = build_client(addr);
+    let (mut client, _rx, _cache) = build_client_mainnet(addr);
+
+    client.connect().await.expect("connect");
+
+    assert_eq!(state.maker_only_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(state.rest_send_txs().await, Vec::<Value>::new());
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn connect_applies_robinhood_referral_on_each_process_start() {
+    let (addr, state) = start_server().await;
+    let (mut first_client, _rx, _cache) = build_client_robinhood_mainnet(addr);
+    let expected_request = std::collections::HashMap::from([
+        (
+            "l1_address".to_string(),
+            "0x0000000000000000000000000000000000000000".to_string(),
+        ),
+        ("referral_code".to_string(), "NAUTILUS".to_string()),
+    ]);
+
+    first_client.connect().await.expect("first connect");
+
+    assert_eq!(state.referral_use_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(state.referral_use_authorizations.lock().await.len(), 1);
+    assert_eq!(
+        state.referral_use_requests().await,
+        vec![expected_request.clone()],
+    );
+    assert_eq!(state.maker_only_calls.load(Ordering::Relaxed), 0);
+    assert!(state.rest_send_txs().await.is_empty());
+
+    first_client.disconnect().await.expect("first disconnect");
+    drop(first_client);
+
+    let (mut second_client, _rx, _cache) = build_client_robinhood_mainnet(addr);
+    second_client.connect().await.expect("second connect");
+
+    assert_eq!(state.referral_use_calls.load(Ordering::Relaxed), 2);
+    assert_eq!(state.referral_use_authorizations.lock().await.len(), 2);
+    assert_eq!(
+        state.referral_use_requests().await,
+        vec![expected_request.clone(), expected_request],
+    );
+    assert_eq!(state.maker_only_calls.load(Ordering::Relaxed), 0);
+    assert!(state.rest_send_txs().await.is_empty());
+
+    second_client.disconnect().await.expect("second disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn connect_continues_when_robinhood_referral_fails() {
+    let (addr, state) = start_server().await;
+    *state.next_referral_use_response.lock().await = Some(json!({
+        "code": 20001,
+        "message": "referral unavailable",
+    }));
+
+    let (mut client, _rx, _cache) = build_client_robinhood_mainnet(addr);
+
+    client.connect().await.expect("connect");
+
+    assert_eq!(state.referral_use_calls.load(Ordering::Relaxed), 1);
+    assert!(client.is_connected());
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[case::lighter(LighterDeployment::Lighter)]
+#[case::robinhood(LighterDeployment::Robinhood)]
+#[tokio::test(flavor = "multi_thread")]
+async fn connect_omits_attribution_on_testnet(#[case] deployment: LighterDeployment) {
+    let (addr, state) = start_server().await;
+    let mut config = build_config(addr);
+    config.deployment = deployment;
+    config.venue = Some(*LIGHTER_VENUE);
+    let (mut client, _rx, _cache) = build_client_with(config);
 
     client.connect().await.expect("connect");
 
@@ -1510,6 +1819,7 @@ async fn connect_omits_integrator_approval_on_testnet() {
         Vec::<String>::new()
     );
     assert_eq!(state.rest_send_txs().await, Vec::<Value>::new());
+    assert_eq!(state.referral_use_calls.load(Ordering::Relaxed), 0);
 
     client.disconnect().await.expect("disconnect");
 }
@@ -1518,6 +1828,7 @@ async fn connect_omits_integrator_approval_on_testnet() {
 #[tokio::test(flavor = "multi_thread")]
 async fn connect_skips_integrator_auto_approval_for_maker_only_api_key() {
     let (addr, state) = start_server().await;
+    state.account_type.store(1, Ordering::Relaxed);
     state
         .maker_only_api_key_indexes
         .lock()
@@ -1538,6 +1849,7 @@ async fn connect_skips_integrator_auto_approval_for_maker_only_api_key() {
 #[tokio::test(flavor = "multi_thread")]
 async fn connect_bails_when_integrator_auto_approval_reports_unapproved() {
     let (addr, state) = start_server().await;
+    state.account_type.store(1, Ordering::Relaxed);
     *state.next_rest_send_tx_response.lock().await = Some(json!({
         "code": 21149,
         "message": "integrator is not approved",
@@ -1779,17 +2091,21 @@ mod serial_tests {
 }
 
 #[rstest]
-#[case::testnet(LighterEnvironment::Testnet, Value::Null)]
-#[case::mainnet(
+#[case::testnet(LighterEnvironment::Testnet, 0, Value::Null)]
+#[case::mainnet_standard(LighterEnvironment::Mainnet, 0, Value::Null)]
+#[case::mainnet_premium(
     LighterEnvironment::Mainnet,
+    1,
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_submit_limit_order_emits_submitted_and_signs_sendtx(
     #[case] environment: LighterEnvironment,
+    #[case] account_type: u8,
     #[case] expected_attributes: Value,
 ) {
     let (addr, state) = start_server().await;
+    state.account_type.store(account_type, Ordering::Relaxed);
     let mut config = build_config(addr);
     config.environment = environment;
     let (mut client, mut rx, cache) = build_client_with(config);
@@ -2883,17 +3199,21 @@ async fn test_cancel_order_venue_rejection_emits_cancel_rejected_for_pending_can
 }
 
 #[rstest]
-#[case::testnet(LighterEnvironment::Testnet, Value::Null)]
-#[case::mainnet(
+#[case::testnet(LighterEnvironment::Testnet, 0, Value::Null)]
+#[case::mainnet_standard(LighterEnvironment::Mainnet, 0, Value::Null)]
+#[case::mainnet_premium(
     LighterEnvironment::Mainnet,
+    1,
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_modify_order_signs_modify_sendtx(
     #[case] environment: LighterEnvironment,
+    #[case] account_type: u8,
     #[case] expected_attributes: Value,
 ) {
     let (addr, state) = start_server().await;
+    state.account_type.store(account_type, Ordering::Relaxed);
     let mut config = build_config(addr);
     config.environment = environment;
     let (mut client, _rx, cache) = build_client_with(config);
@@ -3024,7 +3344,7 @@ async fn test_modify_order_venue_rejection_emits_modify_rejected() {
 /// `cancel_all_orders` consults both pieces of state: the cache for the
 /// open-orders iteration, the dispatch state for `lookup_venue_order_id`.
 /// Tests that exercise the full open-iteration path go through this
-/// helper so the two stay in sync.
+/// `seed_open_order` so the two stay in sync.
 async fn seed_open_order(
     client: &LighterExecutionClient,
     cache: &Rc<RefCell<Cache>>,
@@ -3196,7 +3516,7 @@ async fn test_cancel_all_orders_iterates_open_orders_and_dispatches_cancel_per_o
         Some(client_id()),
         strategy_id(),
         eth_perp_id(),
-        OrderSide::NoOrderSide,
+        None,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -3262,7 +3582,7 @@ async fn test_cancel_all_orders_venue_rejection_suppresses_cancel_rejected_for_o
         Some(client_id()),
         strategy_id(),
         eth_perp_id(),
-        OrderSide::NoOrderSide,
+        None,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -3800,7 +4120,7 @@ async fn test_generate_mass_status_restores_filled_orders_from_trade_market() {
     assert_eq!(state.trades_calls.load(Ordering::Relaxed), 1);
     assert_eq!(order_report.client_order_id, Some(client_order_id));
     assert_eq!(order_report.venue_order_id, venue_order_id);
-    assert_eq!(order_report.order_side, OrderSide::Buy);
+    assert_eq!(order_report.order_side, Some(OrderSide::Buy));
     assert_eq!(order_report.order_type, OrderType::Limit);
     assert_eq!(order_report.order_status, OrderStatus::Filled);
     assert_eq!(order_report.quantity, Quantity::from("0.1336"));
@@ -3920,12 +4240,12 @@ async fn test_generate_bounded_mass_status_reports_snapshot_contract(
             .get(&venue_order_id)
             .expect("closing order report");
         assert_eq!(order_report.order_status, OrderStatus::Filled);
-        assert_eq!(order_report.order_side, OrderSide::Sell);
+        assert_eq!(order_report.order_side, Some(OrderSide::Sell));
         assert!(order_report.reduce_only);
     }
     assert_eq!(fill_report.trade_id, trade_id);
     assert_eq!(fill_report.order_side, OrderSide::Sell);
-    assert_eq!(position_report.position_side, PositionSideSpecified::Flat);
+    assert_eq!(position_report.position_side, PositionSide::Flat);
     assert_eq!(position_report.quantity, Quantity::zero(4));
     assert_eq!(position_report.signed_decimal_qty, Decimal::ZERO);
     assert_eq!(position_report.venue_position_id, None);
@@ -4688,7 +5008,7 @@ async fn test_generate_reports_fixed_lifecycle_cutoff(
         .find(|report| report.venue_order_id == VenueOrderId::from(CLOSE_ORDER_ID))
     {
         assert_eq!(close_report.order_status, OrderStatus::Filled);
-        assert_eq!(close_report.order_side, OrderSide::Sell);
+        assert_eq!(close_report.order_side, Some(OrderSide::Sell));
         assert!(close_report.reduce_only);
     }
 
@@ -5469,12 +5789,12 @@ async fn test_order_status_reports_stop_repeated_active_market_seed_cursor() {
 }
 
 #[rstest]
-#[case::long(1, PositionSideSpecified::Long)]
-#[case::short(-1, PositionSideSpecified::Short)]
+#[case::long(1, PositionSide::Long)]
+#[case::short(-1, PositionSide::Short)]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_account_all_positions_empty_update_retains_cached_position(
     #[case] sign: i8,
-    #[case] expected_side: PositionSideSpecified,
+    #[case] expected_side: PositionSide,
 ) {
     let (addr, state) = start_server().await;
     let (mut client, mut rx, _cache) = build_client(addr);
@@ -5512,7 +5832,7 @@ async fn test_account_all_positions_empty_update_retains_cached_position(
             e,
             ExecutionEvent::Report(ExecutionReport::Position(report))
                 if report.instrument_id == eth_perp_id()
-                    && report.position_side == PositionSideSpecified::Flat
+                    && report.position_side == PositionSide::Flat
                     && report.quantity.is_zero()
         ) || matches!(e, ExecutionEvent::Order(OrderEventAny::Filled(_)))
     })
@@ -5612,7 +5932,7 @@ async fn test_account_all_positions_flat_snapshot_clears_cache_and_emits_flat_re
             e,
             ExecutionEvent::Report(ExecutionReport::Position(report))
                 if report.instrument_id == eth_perp_id()
-                    && report.position_side == PositionSideSpecified::Flat
+                    && report.position_side == PositionSide::Flat
                     && report.quantity.is_zero()
         )
     })
@@ -5624,7 +5944,7 @@ async fn test_account_all_positions_flat_snapshot_clears_cache_and_emits_flat_re
     };
     assert_eq!(flat_report.account_id, account_id());
     assert_eq!(flat_report.instrument_id, eth_perp_id());
-    assert_eq!(flat_report.position_side, PositionSideSpecified::Flat);
+    assert_eq!(flat_report.position_side, PositionSide::Flat);
     assert_eq!(flat_report.quantity, Quantity::zero(0));
     assert!(flat_report.signed_decimal_qty.is_zero());
     assert_eq!(flat_report.ts_last, flat_report.ts_init);
@@ -5637,7 +5957,7 @@ async fn test_account_all_positions_flat_snapshot_clears_cache_and_emits_flat_re
             e,
             ExecutionEvent::Report(ExecutionReport::Position(report))
                 if report.instrument_id == eth_perp_id()
-                    && report.position_side == PositionSideSpecified::Flat
+                    && report.position_side == PositionSide::Flat
                     && report.quantity.is_zero()
         )
     })
@@ -5697,7 +6017,7 @@ async fn test_account_all_positions_invalid_known_market_does_not_flatten_cached
             e,
             ExecutionEvent::Report(ExecutionReport::Position(report))
                 if report.instrument_id == eth_perp_id()
-                    && report.position_side == PositionSideSpecified::Flat
+                    && report.position_side == PositionSide::Flat
                     && report.quantity.is_zero()
         )
     })
@@ -5848,7 +6168,7 @@ async fn test_bounded_mass_status_rejects_stale_position_coverage_after_reconnec
     assert_eq!(order_reports.len(), 1);
     assert_eq!(order_report.order_status, OrderStatus::Accepted);
     assert_eq!(position_reports.len(), 1);
-    assert_eq!(position_report.position_side, PositionSideSpecified::Long);
+    assert_eq!(position_report.position_side, PositionSide::Long);
     assert_eq!(position_report.quantity, Quantity::from("1.5000"));
 
     client.disconnect().await.expect("disconnect");
@@ -5932,7 +6252,7 @@ async fn test_account_all_positions_empty_snapshot_after_reconnect_flattens_prio
             e,
             ExecutionEvent::Report(ExecutionReport::Position(report))
                 if report.instrument_id == eth_perp_id()
-                    && report.position_side == PositionSideSpecified::Flat
+                    && report.position_side == PositionSide::Flat
                     && report.quantity.is_zero()
         )
     })
@@ -5943,7 +6263,7 @@ async fn test_account_all_positions_empty_snapshot_after_reconnect_flattens_prio
         unreachable!("predicate only accepts position reports");
     };
     assert_eq!(flat_report.instrument_id, eth_perp_id());
-    assert_eq!(flat_report.position_side, PositionSideSpecified::Flat);
+    assert_eq!(flat_report.position_side, PositionSide::Flat);
     assert!(flat_report.quantity.is_zero());
 
     let positions = client

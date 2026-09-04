@@ -27,7 +27,6 @@ from nautilus_trader.core import UUID4
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import ClientOrderId
-from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import Currency
 from nautilus_trader.model import LiquiditySide
 from nautilus_trader.model import MarketOrder
@@ -107,7 +106,7 @@ def _make_filled_order(
         ts_init=0,
         reduce_only=False,
         quote_quantity=False,
-        contingency_type=ContingencyType.NO_CONTINGENCY,
+        contingency_type=None,
     )
     submitted = OrderSubmitted(
         trader_id=TRADER_ID,
@@ -220,7 +219,7 @@ def test_generate_order_fills_report_excludes_unfilled() -> None:
         ts_init=0,
         reduce_only=False,
         quote_quantity=False,
-        contingency_type=ContingencyType.NO_CONTINGENCY,
+        contingency_type=None,
     )
 
     report = ReportProvider.generate_order_fills_report([filled, unfilled])

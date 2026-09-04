@@ -74,38 +74,32 @@ fn make_btc_option(strike: &str, kind: OptionKind) -> InstrumentAny {
     };
     let symbol_str = format!("BTC-20240101-{strike}-{kind_char}.DERIBIT");
     let raw_symbol_str = symbol_str.split('.').next().unwrap();
-    InstrumentAny::CryptoOption(CryptoOption::new(
-        InstrumentId::from(symbol_str.as_str()),
-        Symbol::from(raw_symbol_str),
-        Currency::from("BTC"),
-        Currency::USD(),
-        Currency::from("BTC"),
-        false,
-        kind,
-        Price::from(strike),
-        UnixNanos::from(1_671_696_000_000_000_000u64),
-        UnixNanos::from(EXPIRATION_NS),
-        3,
-        1,
-        Price::from("0.001"),
-        Quantity::from("0.1"),
-        Some(Quantity::from(1)),
-        Some(Quantity::from(1)),
-        Some(Quantity::from("9000.0")),
-        Some(Quantity::from("0.1")),
-        None,
-        Some(Money::new(10.00, Currency::USD())),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        0.into(),
-        0.into(),
-    ))
+    InstrumentAny::CryptoOption(
+        CryptoOption::builder()
+            .instrument_id(InstrumentId::from(symbol_str.as_str()))
+            .raw_symbol(Symbol::from(raw_symbol_str))
+            .underlying(Currency::from("BTC"))
+            .quote_currency(Currency::USD())
+            .settlement_currency(Currency::from("BTC"))
+            .is_inverse(false)
+            .option_kind(kind)
+            .strike_price(Price::from(strike))
+            .activation_ns(UnixNanos::from(1_671_696_000_000_000_000u64))
+            .expiration_ns(UnixNanos::from(EXPIRATION_NS))
+            .price_precision(3)
+            .size_precision(1)
+            .price_increment(Price::from("0.001"))
+            .size_increment(Quantity::from("0.1"))
+            .multiplier(Quantity::from(1))
+            .lot_size(Quantity::from(1))
+            .max_quantity(Quantity::from("9000.0"))
+            .min_quantity(Quantity::from("0.1"))
+            .min_notional(Money::new(10.00, Currency::USD()))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap(),
+    )
 }
 
 fn deribit_venue_config() -> BacktestVenueConfig {

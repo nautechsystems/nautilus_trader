@@ -20,11 +20,12 @@
 //! external / untracked orders). Exchange-generated fills (liquidation, ADL,
 //! settlement) are routed through the reports path regardless of tracking.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
+use anyhow::Context;
 use futures_util::{Stream, StreamExt, pin_mut};
-use nautilus_common::{cache::fifo::FifoCache, live::get_runtime};
-use nautilus_core::{AtomicSet, MUTEX_POISONED, UUID4, UnixNanos, time::AtomicTime};
+use nautilus_common::cache::fifo::FifoCache;
+use nautilus_core::{AtomicSet, UUID4, UnixNanos, time::AtomicTime};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::LiquiditySide,
@@ -35,8 +36,8 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport},
     types::{Currency, Money, Price, Quantity},
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
-use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use super::{
@@ -88,15 +89,12 @@ pub(crate) struct DispatchCtx {
     pub cancellation_token: CancellationToken,
 }
 
-/// Spawns the user data stream dispatch task. The task consumes `stream` and
-/// routes each message through `dispatch_fn`.
-pub(crate) fn spawn_user_stream_dispatch<S, F>(
+pub(crate) async fn run_user_stream_dispatch<S, F>(
     stream: S,
     ctx: Arc<DispatchCtx>,
     recovery_tx: tokio::sync::mpsc::UnboundedSender<()>,
     dispatch_fn: F,
-) -> JoinHandle<()>
-where
+) where
     S: Stream<Item = BinanceFuturesWsStreamsMessage> + Send + 'static,
     F: Fn(BinanceFuturesWsStreamsMessage, &DispatchCtx, &tokio::sync::mpsc::UnboundedSender<()>)
         + Send
@@ -105,31 +103,29 @@ where
 {
     let cancel = ctx.cancellation_token.clone();
 
-    get_runtime().spawn(async move {
-        pin_mut!(stream);
+    pin_mut!(stream);
 
-        loop {
-            tokio::select! {
-                msg = stream.next() => {
-                    // Break on stream end so the task exits once the WebSocket
-                    // client has drained its out_rx queue. The recovery path
-                    // relies on this to flush events queued on the old stream
-                    // before the new dispatcher takes over.
-                    match msg {
-                        Some(message) => dispatch_fn(message, ctx.as_ref(), &recovery_tx),
-                        None => {
-                            log::debug!("WS dispatch stream ended");
-                            break;
-                        }
+    loop {
+        tokio::select! {
+            msg = stream.next() => {
+                // Break on stream end so the task exits once the WebSocket
+                // client has drained its out_rx queue. The recovery path
+                // relies on this to flush events queued on the old stream
+                // before the new dispatcher takes over.
+                match msg {
+                    Some(message) => dispatch_fn(message, ctx.as_ref(), &recovery_tx),
+                    None => {
+                        log::debug!("WS dispatch stream ended");
+                        break;
                     }
                 }
-                () = cancel.cancelled() => {
-                    log::debug!("WS dispatch task cancelled");
-                    break;
-                }
+            }
+            () = cancel.cancelled() => {
+                log::debug!("WS dispatch task cancelled");
+                break;
             }
         }
-    })
+    }
 }
 
 /// Adapter between [`DispatchCtx`] and the free-function [`dispatch_ws_message`].
@@ -219,6 +215,7 @@ pub(crate) fn dispatch_ws_message(
                 dispatch_state,
                 triggered_algo_ids,
                 algo_client_ids,
+                use_position_ids,
             );
         }
         BinanceFuturesWsStreamsMessage::AccountUpdate(update) => {
@@ -322,6 +319,14 @@ pub(crate) fn dispatch_order_update(
             return;
         }
     };
+    let venue_position_id =
+        match make_venue_position_id(use_position_ids, instrument_id, Some(order.position_side)) {
+            Ok(venue_position_id) => venue_position_id,
+            Err(e) => {
+                log::warn!("Skipping Futures order update with invalid position side: {e}");
+                return;
+            }
+        };
 
     // Exchange-generated orders (liquidation/ADL/settlement) are routed through
     // reconciliation reports regardless of tracked/untracked state, because
@@ -335,9 +340,6 @@ pub(crate) fn dispatch_order_update(
         } else {
             None
         };
-
-        let venue_position_id =
-            make_venue_position_id(use_position_ids, instrument_id, order.position_side);
 
         dispatch_exchange_generated_fill(
             msg,
@@ -417,7 +419,7 @@ pub(crate) fn dispatch_order_update(
             }
             BinanceExecutionType::Trade => {
                 let dedup_key = (order.symbol, order.trade_id);
-                let mut guard = seen_trade_ids.lock().expect(MUTEX_POISONED);
+                let mut guard = seen_trade_ids.lock();
                 let is_duplicate = guard.contains(&dedup_key);
                 guard.add(dedup_key);
                 drop(guard);
@@ -493,7 +495,7 @@ pub(crate) fn dispatch_order_update(
                                 ts_event,
                                 ts_init,
                                 false,
-                                None,
+                                venue_position_id,
                                 commission,
                                 None,
                             );
@@ -634,13 +636,10 @@ pub(crate) fn dispatch_order_update(
         }
     } else {
         // Untracked: fall back to reports for reconciliation.
-        // venue_position_id is intentionally None here: the engine assigns
-        // position IDs during event processing, and setting one from the
-        // adapter could split a partially filled order across two positions.
         match order.execution_type {
             BinanceExecutionType::Trade => {
                 let dedup_key = (order.symbol, order.trade_id);
-                let mut guard = seen_trade_ids.lock().expect(MUTEX_POISONED);
+                let mut guard = seen_trade_ids.lock();
                 let is_duplicate = guard.contains(&dedup_key);
                 guard.add(dedup_key);
                 drop(guard);
@@ -663,7 +662,7 @@ pub(crate) fn dispatch_order_update(
                     None,
                     None,
                     bnfcr_currency,
-                    None,
+                    venue_position_id,
                     ts_init,
                 ) {
                     Ok(fill) => Some(fill),
@@ -682,7 +681,7 @@ pub(crate) fn dispatch_order_update(
                     treat_expired_as_canceled,
                     ts_init,
                 ) {
-                    Ok(status) => Some(status),
+                    Ok(status) => Some(with_venue_position_id(status, venue_position_id)),
                     Err(e) => {
                         log::error!("Failed to parse order status report: {e}");
                         None
@@ -704,7 +703,10 @@ pub(crate) fn dispatch_order_update(
                     treat_expired_as_canceled,
                     ts_init,
                 ) {
-                    Ok(status) => emitter.send_order_status_report(status),
+                    Ok(status) => emitter.send_order_status_report(with_venue_position_id(
+                        status,
+                        venue_position_id,
+                    )),
                     Err(e) => log::error!("Failed to parse order status report: {e}"),
                 }
             }
@@ -1070,7 +1072,7 @@ pub(crate) fn dispatch_trade_lite(
         ts_event,
         ts_init,
         false,
-        None,
+        identity.venue_position_id,
         None,
         None,
     );
@@ -1098,25 +1100,40 @@ fn parse_trade_lite_fill_event_fields(
     Ok((last_qty, last_px))
 }
 
+pub(crate) fn with_venue_position_id(
+    report: OrderStatusReport,
+    venue_position_id: Option<PositionId>,
+) -> OrderStatusReport {
+    match venue_position_id {
+        Some(position_id) => report.with_venue_position_id(position_id),
+        None => report,
+    }
+}
+
 /// Derives a venue position ID from the instrument and Binance position side.
 ///
-/// Returns `None` when `use_position_ids` is false.
+/// Returns `None` when `use_position_ids` is false or the venue uses one-way mode.
+///
+/// # Errors
+///
+/// Returns an error when position IDs are enabled but the position side is missing or unknown.
 pub(crate) fn make_venue_position_id(
     use_position_ids: bool,
     instrument_id: InstrumentId,
-    position_side: BinancePositionSide,
-) -> Option<PositionId> {
+    position_side: Option<BinancePositionSide>,
+) -> anyhow::Result<Option<PositionId>> {
     if !use_position_ids {
-        return None;
+        return Ok(None);
     }
 
+    let position_side = position_side.context("missing position_side")?;
     let side = match position_side {
         BinancePositionSide::Long => "LONG",
         BinancePositionSide::Short => "SHORT",
-        BinancePositionSide::Both => "BOTH",
-        _ => "UNKNOWN",
+        BinancePositionSide::Both => return Ok(None),
+        BinancePositionSide::Unknown => anyhow::bail!("unknown position_side"),
     };
-    Some(PositionId::new(format!("{instrument_id}-{side}")))
+    Ok(Some(PositionId::new(format!("{instrument_id}-{side}"))))
 }
 
 /// Dispatches exchange-generated order fills (liquidation, ADL, settlement).
@@ -1171,7 +1188,7 @@ pub(crate) fn dispatch_exchange_generated_fill(
     };
 
     let dedup_key = (order.symbol, order.trade_id);
-    let mut guard = seen_trade_ids.lock().expect(MUTEX_POISONED);
+    let mut guard = seen_trade_ids.lock();
     let is_duplicate = guard.contains(&dedup_key);
     guard.add(dedup_key);
     drop(guard);
@@ -1220,7 +1237,7 @@ pub(crate) fn dispatch_exchange_generated_fill(
         false, // Exchange-generated fills are not subject to expired-as-canceled
         ts_init,
     ) {
-        Ok(status) => Some(status),
+        Ok(status) => Some(with_venue_position_id(status, venue_position_id)),
         Err(e) => {
             log::error!("Failed to parse order status report: {e}");
             None
@@ -1269,6 +1286,7 @@ pub(crate) fn dispatch_algo_update(
     dispatch_state: &WsDispatchState,
     triggered_algo_ids: &Arc<AtomicSet<ClientOrderId>>,
     algo_client_ids: &Arc<AtomicSet<ClientOrderId>>,
+    use_position_ids: bool,
 ) {
     use crate::common::enums::BinanceAlgoStatus;
 
@@ -1296,6 +1314,23 @@ pub(crate) fn dispatch_algo_update(
         .order_identities
         .get(&client_order_id)
         .map(|r| r.clone());
+    let venue_position_id = if identity.is_none() {
+        match make_venue_position_id(
+            use_position_ids,
+            instrument_id,
+            Some(algo_data.position_side),
+        ) {
+            Ok(venue_position_id) => venue_position_id,
+            Err(e) => {
+                log::warn!(
+                    "Skipping untracked Futures algo update with invalid position side: {e}"
+                );
+                return;
+            }
+        }
+    } else {
+        None
+    };
 
     match algo_data.algo_status {
         BinanceAlgoStatus::New => {
@@ -1398,7 +1433,10 @@ pub(crate) fn dispatch_algo_update(
                     account_id,
                     ts_init,
                 ) {
-                    Ok(Some(report)) => emitter.send_order_status_report(report),
+                    Ok(Some(report)) => emitter.send_order_status_report(with_venue_position_id(
+                        report,
+                        venue_position_id,
+                    )),
                     Ok(None) => {}
                     Err(e) => log::error!("Failed to parse algo order status report: {e}"),
                 }
@@ -1428,7 +1466,10 @@ pub(crate) fn dispatch_algo_update(
                     account_id,
                     ts_init,
                 ) {
-                    Ok(Some(report)) => emitter.send_order_status_report(report),
+                    Ok(Some(report)) => emitter.send_order_status_report(with_venue_position_id(
+                        report,
+                        venue_position_id,
+                    )),
                     Ok(None) => {}
                     Err(e) => log::error!("Failed to parse algo order status report: {e}"),
                 }
@@ -1564,15 +1605,33 @@ mod tests {
     #[rstest]
     #[case::long(BinancePositionSide::Long, "ETHUSDT-PERP.BINANCE-LONG")]
     #[case::short(BinancePositionSide::Short, "ETHUSDT-PERP.BINANCE-SHORT")]
-    #[case::both(BinancePositionSide::Both, "ETHUSDT-PERP.BINANCE-BOTH")]
-    #[case::unknown(BinancePositionSide::Unknown, "ETHUSDT-PERP.BINANCE-UNKNOWN")]
     fn test_make_venue_position_id_enabled(
         #[case] side: BinancePositionSide,
         #[case] expected: &str,
     ) {
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
-        let result = make_venue_position_id(true, instrument_id, side);
+        let result = make_venue_position_id(true, instrument_id, Some(side)).unwrap();
         assert_eq!(result, Some(PositionId::from(expected)));
+    }
+
+    #[rstest]
+    fn test_make_venue_position_id_keeps_one_way_mode_unkeyed() {
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let result =
+            make_venue_position_id(true, instrument_id, Some(BinancePositionSide::Both)).unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[rstest]
+    #[case::missing(None, "missing position_side")]
+    #[case::unknown(Some(BinancePositionSide::Unknown), "unknown position_side")]
+    fn test_make_venue_position_id_rejects_invalid_side(
+        #[case] side: Option<BinancePositionSide>,
+        #[case] expected: &str,
+    ) {
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let error = make_venue_position_id(true, instrument_id, side).unwrap_err();
+        assert_eq!(error.to_string(), expected);
     }
 
     fn make_status_report() -> OrderStatusReport {
@@ -1582,7 +1641,7 @@ mod tests {
             InstrumentId::from("BTCUSDT-PERP.BINANCE"),
             Some(ClientOrderId::from("O-PARSER-001")),
             VenueOrderId::from("V-PARSER-001"),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Market,
             TimeInForce::Ioc,
             OrderStatus::Filled,
@@ -1678,9 +1737,10 @@ mod tests {
     #[case::long(BinancePositionSide::Long)]
     #[case::short(BinancePositionSide::Short)]
     #[case::both(BinancePositionSide::Both)]
+    #[case::unknown(BinancePositionSide::Unknown)]
     fn test_make_venue_position_id_disabled(#[case] side: BinancePositionSide) {
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
-        let result = make_venue_position_id(false, instrument_id, side);
+        let result = make_venue_position_id(false, instrument_id, Some(side)).unwrap();
         assert_eq!(result, None);
     }
 
@@ -1864,12 +1924,46 @@ mod tests {
             &dispatch_state,
             &triggered_algo_ids,
             &algo_client_ids,
+            false,
         );
 
         assert!(collect_events(&mut rx).is_empty());
         assert!(triggered_algo_ids.is_empty());
         assert!(algo_client_ids.is_empty());
         assert!(dispatch_state.order_identities.is_empty());
+    }
+
+    #[rstest]
+    fn test_dispatch_algo_update_untracked_canceled_keeps_one_way_mode_unkeyed() {
+        let clock = get_atomic_clock_realtime();
+        let msg: BinanceFuturesAlgoUpdateMsg = load_user_data_fixture("algo_update_canceled.json");
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let http_client = create_test_http_client(clock);
+        let dispatch_state = WsDispatchState::default();
+        let triggered_algo_ids = Arc::new(AtomicSet::new());
+        let algo_client_ids = Arc::new(AtomicSet::new());
+
+        dispatch_algo_update(
+            &msg,
+            &emitter,
+            &http_client,
+            AccountId::from("BINANCE-001"),
+            BinanceProductType::UsdM,
+            clock,
+            &dispatch_state,
+            &triggered_algo_ids,
+            &algo_client_ids,
+            true,
+        );
+
+        let events = collect_events(&mut rx);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            ExecutionEvent::Report(ExecutionReport::Order(report)) => {
+                assert_eq!(report.venue_position_id, None);
+            }
+            other => panic!("Expected OrderStatusReport, was {other:?}"),
+        }
     }
 
     #[rstest]
@@ -1908,6 +2002,7 @@ mod tests {
             &dispatch_state,
             &triggered_algo_ids,
             &algo_client_ids,
+            false,
         );
 
         let events = collect_events(&mut rx);
@@ -1976,6 +2071,7 @@ mod tests {
             &dispatch_state,
             &triggered_algo_ids,
             &algo_client_ids,
+            false,
         );
         algo_msg.algo_order.algo_status = BinanceAlgoStatus::Triggered;
         algo_msg.algo_order.actual_order_id = Some(actual_order_id.to_string());
@@ -2007,6 +2103,7 @@ mod tests {
                 &dispatch_state,
                 &triggered_algo_ids,
                 &algo_client_ids,
+                false,
             );
         };
         let updated_ts_event = if matching_event_first {
@@ -2119,19 +2216,19 @@ mod tests {
         // Exchange-generated fills emit a single bundled OrderWithFills report.
         // The duplicate trade_id is suppressed by the seen_trade_ids dedup.
         assert_eq!(events.len(), 1);
-        assert_eq!(
-            events
-                .iter()
-                .filter(|event| matches!(
-                    event,
-                    ExecutionEvent::Report(ExecutionReport::OrderWithFills(status, fills))
-                        if status.order_status == OrderStatus::Filled
-                            && fills.len() == 1
-                            && fills[0].trade_id == TradeId::new("12345999")
-                ))
-                .count(),
-            1
-        );
+        let ExecutionEvent::Report(ExecutionReport::OrderWithFills(status, fills)) = &events[0]
+        else {
+            panic!(
+                "Expected bundled exchange-generated fill, was {:?}",
+                events[0]
+            );
+        };
+        let expected_position_id = Some(PositionId::from("BTCUSDT-PERP.BINANCE-LONG"));
+        assert_eq!(status.order_status, OrderStatus::Filled);
+        assert_eq!(status.venue_position_id, expected_position_id);
+        assert_eq!(fills.len(), 1);
+        assert_eq!(fills[0].trade_id, TradeId::new("12345999"));
+        assert_eq!(fills[0].venue_position_id, expected_position_id);
     }
 
     #[rstest]
@@ -2215,6 +2312,7 @@ mod tests {
                 order_type: OrderType::Limit,
                 price: None,
                 quantity: Quantity::from("1"),
+                venue_position_id: None,
             },
         );
         dispatch_state
@@ -2328,6 +2426,7 @@ mod tests {
                 order_type: OrderType::Limit,
                 price,
                 quantity,
+                venue_position_id: None,
             },
         );
         dispatch_state
@@ -2512,7 +2611,7 @@ mod tests {
             BinanceProductType::UsdM,
             clock,
             &dispatch_state,
-            false,
+            true,
             Decimal::new(4, 4),
             Currency::USDT(),
             false,
@@ -2533,10 +2632,14 @@ mod tests {
             }
             other => panic!("Expected OrderUpdated for reduce-only qty delta, was {other:?}"),
         }
-        assert!(matches!(
-            events[2],
-            ExecutionEvent::Order(OrderEventAny::Filled(_))
-        ));
+
+        match &events[2] {
+            ExecutionEvent::Order(OrderEventAny::Filled(fill)) => assert_eq!(
+                fill.position_id,
+                Some(PositionId::from("BTCUSDT-PERP.BINANCE-LONG")),
+            ),
+            other => panic!("Expected OrderFilled, was {other:?}"),
+        }
     }
 
     #[rstest]
@@ -3083,6 +3186,11 @@ mod tests {
             ClientOrderId::from("TEST"),
             InstrumentId::from("BTCUSDT-PERP.BINANCE"),
         );
+        dispatch_state
+            .order_identities
+            .get_mut(&ClientOrderId::from("TEST"))
+            .unwrap()
+            .venue_position_id = Some(PositionId::from("BTCUSDT-PERP.BINANCE-LONG"));
         dispatch_trade_lite(
             &msg,
             &emitter,
@@ -3110,6 +3218,10 @@ mod tests {
         assert_eq!(fill.last_px, Price::new(7100.50, 8));
         assert_eq!(fill.liquidity_side, LiquiditySide::Maker);
         assert_eq!(fill.currency, Currency::USDT());
+        assert_eq!(
+            fill.position_id,
+            Some(PositionId::from("BTCUSDT-PERP.BINANCE-LONG")),
+        );
         assert!(fill.commission.is_none());
     }
 
@@ -3225,6 +3337,7 @@ mod tests {
             &dispatch_state,
             &triggered_algo_ids,
             &algo_client_ids,
+            false,
         );
         dispatch_trade_lite(
             &trade_msg,
@@ -3446,20 +3559,23 @@ mod tests {
         );
 
         let events = collect_events(&mut rx);
-        let bundled = events
+        let bundled: Vec<_> = events
             .iter()
-            .filter(|event| {
-                matches!(
-                    event,
-                    ExecutionEvent::Report(ExecutionReport::OrderWithFills(_, fills))
-                        if fills.len() == 1
-                )
+            .filter_map(|event| {
+                if let ExecutionEvent::Report(ExecutionReport::OrderWithFills(status, fills)) =
+                    event
+                {
+                    Some((status, fills))
+                } else {
+                    None
+                }
             })
-            .count();
-        assert_eq!(
-            bundled, 1,
-            "untracked Trade should emit a single bundled OrderWithFills regardless of use_trade_lite"
-        );
+            .collect();
+        assert_eq!(bundled.len(), 1);
+        assert_eq!(bundled[0].1.len(), 1);
+        let expected_position_id = Some(PositionId::from("BTCUSDT-PERP.BINANCE-LONG"));
+        assert_eq!(bundled[0].0.venue_position_id, expected_position_id);
+        assert_eq!(bundled[0].1[0].venue_position_id, expected_position_id);
     }
 
     #[rstest]

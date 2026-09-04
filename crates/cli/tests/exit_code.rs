@@ -58,3 +58,31 @@ fn analyze_pools_exits_non_zero_on_pool_failure() {
         output.status
     );
 }
+
+// A missing RPC URL is an operational error, so sync-dex must exit through main instead of
+// panicking inside the command.
+#[rstest]
+fn sync_dex_exits_non_zero_without_panicking() {
+    let output = Command::new(env!("CARGO_BIN_EXE_nautilus"))
+        .args([
+            "blockchain",
+            "sync-dex",
+            "--chain",
+            "ethereum",
+            "--dex",
+            "UniswapV3",
+        ])
+        .current_dir(std::env::temp_dir())
+        .env_remove("INFURA_API_KEY")
+        .env_remove("RPC_HTTP_URL")
+        .output()
+        .expect("failed to spawn nautilus binary");
+    let output_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(!output_text.contains("panicked at"));
+}

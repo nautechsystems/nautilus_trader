@@ -328,34 +328,23 @@ mod tests {
 
     fn create_test_instrument(symbol: &str) -> InstrumentAny {
         let instrument_id = InstrumentId::new(Symbol::new(symbol), *DYDX_VENUE);
-        InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            instrument_id,
-            instrument_id.symbol,
-            Currency::BTC(),
-            Currency::USD(),
-            Currency::USD(),
-            false,
-            1,                       // price_precision
-            3,                       // size_precision
-            Price::new(0.1, 1),      // price_increment
-            Quantity::new(0.001, 3), // size_increment
-            None,                    // multiplier
-            None,                    // lot_size
-            None,                    // max_quantity
-            None,                    // min_quantity
-            None,                    // max_notional
-            None,                    // min_notional
-            None,                    // max_price
-            None,                    // min_price
-            None,                    // margin_init
-            None,                    // margin_maint
-            None,                    // maker_fee
-            None,                    // taker_fee
-            None,                    // tick_scheme
-            None,                    // info: Option<Params>
-            UnixNanos::default(),    // ts_event
-            UnixNanos::default(),    // ts_init
-        ))
+        InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(instrument_id.symbol)
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USD())
+                .settlement_currency(Currency::USD())
+                .is_inverse(false)
+                .price_precision(1)
+                .size_precision(3)
+                .price_increment(Price::new(0.1, 1))
+                .size_increment(Quantity::new(0.001, 3))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
     }
 
     fn create_test_market(ticker: &str, clob_pair_id: u32) -> PerpetualMarket {

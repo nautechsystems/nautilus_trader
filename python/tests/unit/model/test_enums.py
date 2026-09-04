@@ -20,7 +20,9 @@ import pytest
 
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import AggressorSide
+from nautilus_trader.model import BarIntervalType
 from nautilus_trader.model import BookType
+from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import InstrumentClass
 from nautilus_trader.model import MarketStatus
 from nautilus_trader.model import OmsType
@@ -28,7 +30,10 @@ from nautilus_trader.model import OrderSide
 from nautilus_trader.model import OrderType
 from nautilus_trader.model import OtoTriggerMode
 from nautilus_trader.model import PoolLiquidityUpdateType
+from nautilus_trader.model import PositionSide
 from nautilus_trader.model import TradingState
+from nautilus_trader.model import TrailingOffsetType
+from nautilus_trader.model import TriggerType
 
 
 def test_model_enum_variants_are_iterable() -> None:
@@ -38,6 +43,125 @@ def test_model_enum_variants_are_iterable() -> None:
     variants = list(AccountType.variants())
     assert AccountType.CASH in variants
     assert AccountType.MARGIN in variants
+
+
+@pytest.mark.parametrize(
+    ("enum_type", "expected"),
+    [
+        (OrderSide, [OrderSide.BUY, OrderSide.SELL]),
+        (PositionSide, [PositionSide.FLAT, PositionSide.LONG, PositionSide.SHORT]),
+    ],
+)
+def test_side_enums_expose_only_domain_states(enum_type: object, expected: object) -> None:
+    """
+    Test side enums expose only valid domain states.
+    """
+    assert list(enum_type.variants()) == expected
+
+
+def test_side_enums_retain_none_compatibility_aliases() -> None:
+    """
+    Test side enums retain transitional aliases for optional values.
+    """
+    assert OrderSide.NO_ORDER_SIDE is None
+    assert PositionSide.NO_POSITION_SIDE is None
+
+
+@pytest.mark.parametrize(
+    ("enum_type", "token"),
+    [
+        (OrderSide, "NO_ORDER_SIDE"),
+        (PositionSide, "NO_POSITION_SIDE"),
+    ],
+)
+def test_side_enums_accept_legacy_none_tokens(enum_type: object, token: str) -> None:
+    """
+    Test side enums retain transitional parsing for optional values.
+    """
+    assert enum_type(token) is None
+    assert enum_type.from_str(token) is None
+
+
+@pytest.mark.parametrize(
+    ("enum_type", "token", "expected"),
+    [
+        (OrderSide, "BUY", OrderSide.BUY),
+        (OrderSide, "SELL", OrderSide.SELL),
+        (PositionSide, "FLAT", PositionSide.FLAT),
+        (PositionSide, "LONG", PositionSide.LONG),
+        (PositionSide, "SHORT", PositionSide.SHORT),
+    ],
+)
+def test_side_enums_accept_domain_tokens(
+    enum_type: object,
+    token: str,
+    expected: object,
+) -> None:
+    """
+    Test side enums retain normal parsing for valid domain states.
+    """
+    assert enum_type(token) == expected
+    assert enum_type.from_str(token) == expected
+
+
+@pytest.mark.parametrize(
+    ("enum_type", "expected"),
+    [
+        (ContingencyType, [ContingencyType.OCO, ContingencyType.OTO, ContingencyType.OUO]),
+        (
+            TrailingOffsetType,
+            [
+                TrailingOffsetType.PRICE,
+                TrailingOffsetType.BASIS_POINTS,
+                TrailingOffsetType.TICKS,
+                TrailingOffsetType.PRICE_TIER,
+            ],
+        ),
+        (
+            TriggerType,
+            [
+                TriggerType.DEFAULT,
+                TriggerType.LAST_PRICE,
+                TriggerType.MARK_PRICE,
+                TriggerType.INDEX_PRICE,
+                TriggerType.BID_ASK,
+                TriggerType.DOUBLE_LAST,
+                TriggerType.DOUBLE_BID_ASK,
+                TriggerType.LAST_OR_BID_ASK,
+                TriggerType.MID_POINT,
+            ],
+        ),
+    ],
+)
+def test_optional_domain_enums_expose_only_domain_states(
+    enum_type: object,
+    expected: object,
+) -> None:
+    """
+    Test optional domain enums expose only valid domain states.
+    """
+    assert list(enum_type.variants()) == expected
+
+
+@pytest.mark.parametrize(
+    ("enum_type", "alias", "token"),
+    [
+        (ContingencyType, "NO_CONTINGENCY", "NO_CONTINGENCY"),
+        (TrailingOffsetType, "NO_TRAILING_OFFSET", "NO_TRAILING_OFFSET"),
+        (TriggerType, "NO_TRIGGER", "NO_TRIGGER"),
+    ],
+)
+def test_optional_domain_enums_retain_none_compatibility(
+    enum_type: object,
+    alias: str,
+    token: str,
+) -> None:
+    """
+    Test optional domain enums retain transitional aliases and parsing.
+    """
+    assert getattr(enum_type, alias) is None
+    assert enum_type(token) is None
+    assert enum_type.from_str(token) is None
 
 
 @pytest.mark.parametrize(
@@ -57,6 +181,31 @@ def test_model_enums_from_str(enum_type: object, member: object, name: object) -
     assert enum_type.from_str(name) == member
     assert member.name == name
     assert isinstance(hash(member), int)
+
+
+def test_bar_interval_type_exposes_standard_enum_surface() -> None:
+    """
+    Test bar interval type exposes the standard model enum surface.
+    """
+    assert list(BarIntervalType.variants()) == [
+        BarIntervalType.LEFT_OPEN,
+        BarIntervalType.RIGHT_OPEN,
+    ]
+    assert BarIntervalType.from_str("LEFT_OPEN") == BarIntervalType.LEFT_OPEN
+    assert BarIntervalType("RIGHT_OPEN") == BarIntervalType.RIGHT_OPEN
+    assert BarIntervalType.LEFT_OPEN.name == "LEFT_OPEN"
+    assert str(BarIntervalType.LEFT_OPEN) == "LEFT_OPEN"
+    assert BarIntervalType.LEFT_OPEN.value == 1
+    assert BarIntervalType.RIGHT_OPEN.value == 2
+
+
+def test_trading_state_values_progress_by_restriction() -> None:
+    """
+    Test trading state values progress by restriction.
+    """
+    assert TradingState.ACTIVE.value == 1
+    assert TradingState.REDUCING.value == 2
+    assert TradingState.HALTED.value == 3
 
 
 def test_pool_liquidity_update_type_from_str() -> None:

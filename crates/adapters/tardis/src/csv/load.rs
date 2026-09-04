@@ -179,7 +179,7 @@ pub fn load_deltas<P: AsRef<Path>>(
 
     let mut current_price_precision = price_precision.unwrap_or(0);
     let mut current_size_precision = size_precision.unwrap_or(0);
-    let mut last_ts_event = UnixNanos::default();
+    let mut last_ts_init: Option<UnixNanos> = None;
     let mut last_is_snapshot = false;
 
     let mut reader = create_csv_reader(filepath)?;
@@ -202,20 +202,20 @@ pub fn load_deltas<P: AsRef<Path>>(
 
         // Insert CLEAR on snapshot boundary to reset order book state.
         // Some venues emit every book event as a full snapshot, so a new
-        // snapshot timestamp must also reset the previous snapshot state.
+        // snapshot message must also reset the previous snapshot state.
         let starts_new_snapshot =
-            data.is_snapshot && (!last_is_snapshot || last_ts_event != ts_event);
+            data.is_snapshot && (!last_is_snapshot || last_ts_init != Some(ts_init));
 
         if starts_new_snapshot {
             let clear_instrument_id =
                 instrument_id.unwrap_or_else(|| parse_instrument_id(&data.exchange, data.symbol));
 
-            if last_ts_event != ts_event
+            if last_ts_init != Some(ts_init)
                 && let Some(last_delta) = deltas.last_mut()
             {
                 last_delta.flags = RecordFlag::F_LAST as u8;
             }
-            last_ts_event = ts_event;
+            last_ts_init = Some(ts_init);
 
             let clear_delta = OrderBookDelta::clear(clear_instrument_id, 0, ts_event, ts_init);
             deltas.push(clear_delta);
@@ -241,14 +241,14 @@ pub fn load_deltas<P: AsRef<Path>>(
             }
         };
 
-        let ts_event = delta.ts_event;
-        if last_ts_event != ts_event
+        let ts_init = delta.ts_init;
+        if last_ts_init != Some(ts_init)
             && let Some(last_delta) = deltas.last_mut()
         {
             last_delta.flags = RecordFlag::F_LAST as u8;
         }
 
-        last_ts_event = ts_event;
+        last_ts_init = Some(ts_init);
 
         deltas.push(delta);
     }
@@ -878,7 +878,7 @@ mod tests {
 
     use nautilus_core::paths::get_test_data_path as get_test_data_root;
     use nautilus_model::{
-        enums::{AggressorSide, BookAction},
+        enums::{AggressorSide, BookAction, OrderSide},
         identifiers::{InstrumentId, TradeId},
         types::Price,
     };
@@ -990,7 +990,7 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
             InstrumentId::from("BTC-PERPETUAL.DERIBIT")
         );
         assert_eq!(deltas[1].action, BookAction::Add);
-        assert_eq!(deltas[1].order.side, OrderSide::Sell);
+        assert_eq!(deltas[1].order.side, OrderSide::Sell.into());
         assert_eq!(deltas[1].order.price, Price::from("6421.5"));
         assert_eq!(deltas[1].order.size, Quantity::from("18640"));
         assert_eq!(deltas[1].flags, 0);
@@ -1019,12 +1019,12 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         assert_eq!(depths[0].bids.len(), 10);
         assert_eq!(depths[0].bids[0].price, Price::from("11657.07"));
         assert_eq!(depths[0].bids[0].size, Quantity::from("10.896"));
-        assert_eq!(depths[0].bids[0].side, OrderSide::Buy);
+        assert_eq!(depths[0].bids[0].side, OrderSide::Buy.into());
         assert_eq!(depths[0].bids[0].order_id, 0);
         assert_eq!(depths[0].asks.len(), 10);
         assert_eq!(depths[0].asks[0].price, Price::from("11657.08"));
         assert_eq!(depths[0].asks[0].size, Quantity::from("1.714"));
-        assert_eq!(depths[0].asks[0].side, OrderSide::Sell);
+        assert_eq!(depths[0].asks[0].side, OrderSide::Sell.into());
         assert_eq!(depths[0].asks[0].order_id, 0);
         assert_eq!(depths[0].bid_counts[0], 1);
         assert_eq!(depths[0].ask_counts[0], 1);
@@ -1063,12 +1063,12 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         assert_eq!(depths[0].bids.len(), 10);
         assert_eq!(depths[0].bids[0].price, Price::from("11657.07"));
         assert_eq!(depths[0].bids[0].size, Quantity::from("10.896"));
-        assert_eq!(depths[0].bids[0].side, OrderSide::Buy);
+        assert_eq!(depths[0].bids[0].side, OrderSide::Buy.into());
         assert_eq!(depths[0].bids[0].order_id, 0);
         assert_eq!(depths[0].asks.len(), 10);
         assert_eq!(depths[0].asks[0].price, Price::from("11657.08"));
         assert_eq!(depths[0].asks[0].size, Quantity::from("1.714"));
-        assert_eq!(depths[0].asks[0].side, OrderSide::Sell);
+        assert_eq!(depths[0].asks[0].side, OrderSide::Sell.into());
         assert_eq!(depths[0].asks[0].order_id, 0);
         assert_eq!(depths[0].bid_counts[0], 1);
         assert_eq!(depths[0].ask_counts[0], 1);
@@ -1314,6 +1314,51 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
     }
 
     #[rstest]
+    fn test_load_deltas_groups_messages_by_local_timestamp() {
+        let filepath = get_test_data_path("csv/deltas_message_boundaries.csv");
+        let deltas = load_deltas(filepath, Some(1), Some(1), None, None).unwrap();
+
+        assert_eq!(deltas.len(), 4);
+        assert_eq!(
+            deltas.iter().map(|delta| delta.flags).collect::<Vec<_>>(),
+            vec![0, RecordFlag::F_LAST as u8, 0, RecordFlag::F_LAST as u8]
+        );
+        assert_eq!(
+            deltas
+                .iter()
+                .map(|delta| delta.ts_event)
+                .collect::<Vec<_>>(),
+            vec![
+                UnixNanos::from(1_000_000),
+                UnixNanos::from(1_000_000),
+                UnixNanos::from(1_000_000),
+                UnixNanos::from(1_010_000),
+            ]
+        );
+        assert_eq!(
+            deltas.iter().map(|delta| delta.ts_init).collect::<Vec<_>>(),
+            vec![
+                UnixNanos::from(2_000_000),
+                UnixNanos::from(2_000_000),
+                UnixNanos::from(2_010_000),
+                UnixNanos::from(2_010_000),
+            ]
+        );
+        assert_eq!(deltas[0].order.side, Some(OrderSide::Buy));
+        assert_eq!(deltas[0].order.price, Price::from("100.0"));
+        assert_eq!(deltas[0].order.size, Quantity::from("1.0"));
+        assert_eq!(deltas[1].order.side, Some(OrderSide::Sell));
+        assert_eq!(deltas[1].order.price, Price::from("101.0"));
+        assert_eq!(deltas[1].order.size, Quantity::from("2.0"));
+        assert_eq!(deltas[2].order.side, Some(OrderSide::Buy));
+        assert_eq!(deltas[2].order.price, Price::from("99.0"));
+        assert_eq!(deltas[2].order.size, Quantity::from("3.0"));
+        assert_eq!(deltas[3].order.side, Some(OrderSide::Sell));
+        assert_eq!(deltas[3].order.price, Price::from("102.0"));
+        assert_eq!(deltas[3].order.size, Quantity::from("4.0"));
+    }
+
+    #[rstest]
     fn test_load_funding_rates_okex_xperp() {
         let filepath = get_test_data_path("csv/okex_futures_xperp_derivative_ticker.csv");
         let funding_rates = load_funding_rates(filepath, None, None).unwrap();
@@ -1441,57 +1486,57 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
         // Check all bid levels (first 5 from data, rest empty)
         assert_eq!(first.bids[0].price, Price::from("11657.07"));
         assert_eq!(first.bids[0].size, Quantity::from("10.896"));
-        assert_eq!(first.bids[0].side, OrderSide::Buy);
+        assert_eq!(first.bids[0].side, OrderSide::Buy.into());
 
         assert_eq!(first.bids[1].price, Price::from("11656.97"));
         assert_eq!(first.bids[1].size, Quantity::from("0.2"));
-        assert_eq!(first.bids[1].side, OrderSide::Buy);
+        assert_eq!(first.bids[1].side, OrderSide::Buy.into());
 
         assert_eq!(first.bids[2].price, Price::from("11655.78"));
         assert_eq!(first.bids[2].size, Quantity::from("0.2"));
-        assert_eq!(first.bids[2].side, OrderSide::Buy);
+        assert_eq!(first.bids[2].side, OrderSide::Buy.into());
 
         assert_eq!(first.bids[3].price, Price::from("11655.77"));
         assert_eq!(first.bids[3].size, Quantity::from("0.98"));
-        assert_eq!(first.bids[3].side, OrderSide::Buy);
+        assert_eq!(first.bids[3].side, OrderSide::Buy.into());
 
         assert_eq!(first.bids[4].price, Price::from("11655.68"));
         assert_eq!(first.bids[4].size, Quantity::from("0.111"));
-        assert_eq!(first.bids[4].side, OrderSide::Buy);
+        assert_eq!(first.bids[4].side, OrderSide::Buy.into());
 
         // Empty levels
         for i in 5..10 {
             assert_eq!(first.bids[i].price.raw, 0);
             assert_eq!(first.bids[i].size.raw, 0);
-            assert_eq!(first.bids[i].side, OrderSide::NoOrderSide);
+            assert_eq!(first.bids[i].side, None);
         }
 
         // Check all ask levels (first 5 from data, rest empty)
         assert_eq!(first.asks[0].price, Price::from("11657.08"));
         assert_eq!(first.asks[0].size, Quantity::from("1.714"));
-        assert_eq!(first.asks[0].side, OrderSide::Sell);
+        assert_eq!(first.asks[0].side, OrderSide::Sell.into());
 
         assert_eq!(first.asks[1].price, Price::from("11657.54"));
         assert_eq!(first.asks[1].size, Quantity::from("5.4"));
-        assert_eq!(first.asks[1].side, OrderSide::Sell);
+        assert_eq!(first.asks[1].side, OrderSide::Sell.into());
 
         assert_eq!(first.asks[2].price, Price::from("11657.56"));
         assert_eq!(first.asks[2].size, Quantity::from("0.238"));
-        assert_eq!(first.asks[2].side, OrderSide::Sell);
+        assert_eq!(first.asks[2].side, OrderSide::Sell.into());
 
         assert_eq!(first.asks[3].price, Price::from("11657.61"));
         assert_eq!(first.asks[3].size, Quantity::from("0.077"));
-        assert_eq!(first.asks[3].side, OrderSide::Sell);
+        assert_eq!(first.asks[3].side, OrderSide::Sell.into());
 
         assert_eq!(first.asks[4].price, Price::from("11657.92"));
         assert_eq!(first.asks[4].size, Quantity::from("0.918"));
-        assert_eq!(first.asks[4].side, OrderSide::Sell);
+        assert_eq!(first.asks[4].side, OrderSide::Sell.into());
 
         // Empty levels
         for i in 5..10 {
             assert_eq!(first.asks[i].price.raw, 0);
             assert_eq!(first.asks[i].size.raw, 0);
-            assert_eq!(first.asks[i].side, OrderSide::NoOrderSide);
+            assert_eq!(first.asks[i].side, None);
         }
 
         // Logical checks: bid prices should decrease
@@ -1570,7 +1615,7 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
         for (i, (price, size)) in expected_bids.iter().enumerate() {
             assert_eq!(first.bids[i].price, Price::from(*price));
             assert_eq!(first.bids[i].size, Quantity::from(*size));
-            assert_eq!(first.bids[i].side, OrderSide::Buy);
+            assert_eq!(first.bids[i].side, OrderSide::Buy.into());
         }
 
         // Check all 10 ask levels from snapshot25
@@ -1590,7 +1635,7 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
         for (i, (price, size)) in expected_asks.iter().enumerate() {
             assert_eq!(first.asks[i].price, Price::from(*price));
             assert_eq!(first.asks[i].size, Quantity::from(*size));
-            assert_eq!(first.asks[i].side, OrderSide::Sell);
+            assert_eq!(first.asks[i].side, OrderSide::Sell.into());
         }
 
         // Logical checks: bid prices should strictly decrease
@@ -1744,9 +1789,9 @@ binance-futures,BTCUSDT,1640995200000000,1640995200100000,true,ask,50001.0,2.0";
     fn test_load_deltas_with_consecutive_snapshots_inserts_clear() {
         let csv_data = "exchange,symbol,timestamp,local_timestamp,is_snapshot,side,price,amount
 hyperliquid,BTC,1640995200000000,1640995200100000,true,bid,50000.0,1.0
-hyperliquid,BTC,1640995200000000,1640995200100000,true,ask,50001.0,2.0
+hyperliquid,BTC,1640995200000001,1640995200100000,true,ask,50001.0,2.0
 hyperliquid,BTC,1640995201000000,1640995201100000,true,bid,49990.0,3.0
-hyperliquid,BTC,1640995201000000,1640995201100000,true,ask,49991.0,4.0";
+hyperliquid,BTC,1640995201000001,1640995201100000,true,ask,49991.0,4.0";
 
         let temp_file = std::env::temp_dir().join("test_load_deltas_consecutive_snapshots.csv");
         std::fs::write(&temp_file, csv_data).unwrap();
@@ -1765,6 +1810,50 @@ hyperliquid,BTC,1640995201000000,1640995201100000,true,ask,49991.0,4.0";
             RecordFlag::F_LAST as u8
         );
         assert_eq!(deltas[3].flags & RecordFlag::F_LAST as u8, 0);
+        assert_eq!(
+            deltas
+                .iter()
+                .map(|delta| (delta.action, delta.flags, delta.ts_event, delta.ts_init))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    BookAction::Clear,
+                    RecordFlag::F_SNAPSHOT as u8,
+                    UnixNanos::from(1_640_995_200_000_000_000),
+                    UnixNanos::from(1_640_995_200_100_000_000),
+                ),
+                (
+                    BookAction::Add,
+                    0,
+                    UnixNanos::from(1_640_995_200_000_000_000),
+                    UnixNanos::from(1_640_995_200_100_000_000),
+                ),
+                (
+                    BookAction::Add,
+                    RecordFlag::F_LAST as u8,
+                    UnixNanos::from(1_640_995_200_000_001_000),
+                    UnixNanos::from(1_640_995_200_100_000_000),
+                ),
+                (
+                    BookAction::Clear,
+                    RecordFlag::F_SNAPSHOT as u8,
+                    UnixNanos::from(1_640_995_201_000_000_000),
+                    UnixNanos::from(1_640_995_201_100_000_000),
+                ),
+                (
+                    BookAction::Add,
+                    0,
+                    UnixNanos::from(1_640_995_201_000_000_000),
+                    UnixNanos::from(1_640_995_201_100_000_000),
+                ),
+                (
+                    BookAction::Add,
+                    RecordFlag::F_LAST as u8,
+                    UnixNanos::from(1_640_995_201_000_001_000),
+                    UnixNanos::from(1_640_995_201_100_000_000),
+                ),
+            ]
+        );
 
         std::fs::remove_file(&temp_file).ok();
     }

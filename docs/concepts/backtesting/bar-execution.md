@@ -94,10 +94,17 @@ engine.add_venue(
 Bar N's OHLC sequence runs before `on_bar(N)`. Without a latency model, an order submitted from
 `on_bar` settles immediately against the book left at bar N's close.
 
-A latency model delays the order's effective arrival. With bar-only data and no intervening timer
-events, an order that arrives at the next data timestamp settles after the next bar's OHLC sweep,
-so it sees that bar's close. Quote ticks, trade ticks, or timer-driven settlement can drain the
-command earlier against the book state at that time.
+A latency model delays the order's effective arrival. Once the command reaches its arrival
+timestamp, the engine can release it from the venue's latency queue in two ways:
+
+- Exchange-routed market data for the order's instrument. With bar-only data and no intervening
+  timer events, the first bar at or after the arrival timestamp completes its OHLC sweep before the
+  order settles, so the order sees that bar's close. Quote or trade ticks can release it earlier
+  against the book state they establish.
+- An unrestricted settlement point, such as a timer, funding-rate settlement, or shutdown drain.
+  These points release all commands due at that time.
+
+Market data for another instrument does not release the delayed command against stale book state.
 
 ```python
 from nautilus_trader.execution import StaticLatencyModel

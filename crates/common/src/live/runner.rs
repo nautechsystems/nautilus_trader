@@ -219,60 +219,38 @@ thread_local! {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Barrier};
+
     use rstest::rstest;
 
     use super::*;
 
     #[rstest]
     fn test_replace_data_event_sender_overwrites_previous() {
-        std::thread::spawn(|| {
-            let (tx1, _rx1) = tokio::sync::mpsc::unbounded_channel();
-            let (tx2, _rx2) = tokio::sync::mpsc::unbounded_channel();
-            replace_data_event_sender(tx1);
-            replace_data_event_sender(tx2);
-            let _sender = get_data_event_sender();
-        })
-        .join()
-        .unwrap();
+        assert_sender_replaced(replace_data_event_sender, get_data_event_sender);
     }
 
     #[rstest]
     fn test_replace_exec_event_sender_overwrites_previous() {
-        std::thread::spawn(|| {
-            let (tx1, _rx1) = tokio::sync::mpsc::unbounded_channel();
-            let (tx2, _rx2) = tokio::sync::mpsc::unbounded_channel();
-            replace_exec_event_sender(tx1);
-            replace_exec_event_sender(tx2);
-            let _sender = get_exec_event_sender();
-        })
-        .join()
-        .unwrap();
+        assert_sender_replaced(replace_exec_event_sender, get_exec_event_sender);
     }
 
     #[rstest]
     fn test_replace_system_event_sender_overwrites_previous() {
-        std::thread::spawn(|| {
-            let (tx1, _rx1) = tokio::sync::mpsc::unbounded_channel();
-            let (tx2, _rx2) = tokio::sync::mpsc::unbounded_channel();
-            replace_system_event_sender(tx1);
-            replace_system_event_sender(tx2);
-            let _sender = get_system_event_sender();
-        })
-        .join()
-        .unwrap();
+        assert_sender_replaced(replace_system_event_sender, get_system_event_sender);
     }
 
     #[rstest]
     fn test_replace_system_command_sender_overwrites_previous() {
-        std::thread::spawn(|| {
-            let (tx1, _rx1) = tokio::sync::mpsc::unbounded_channel();
-            let (tx2, _rx2) = tokio::sync::mpsc::unbounded_channel();
-            replace_system_command_sender(tx1);
-            replace_system_command_sender(tx2);
-            let _sender = get_system_command_sender();
-        })
-        .join()
-        .unwrap();
+        assert_sender_replaced(replace_system_command_sender, get_system_command_sender);
+    }
+
+    #[rstest]
+    fn test_event_senders_are_thread_local() {
+        assert_sender_thread_local(replace_data_event_sender, get_data_event_sender);
+        assert_sender_thread_local(replace_exec_event_sender, get_exec_event_sender);
+        assert_sender_thread_local(replace_system_event_sender, get_system_event_sender);
+        assert_sender_thread_local(replace_system_command_sender, get_system_command_sender);
     }
 
     #[rstest]
@@ -345,5 +323,56 @@ mod tests {
             .join()
             .unwrap();
         assert!(result.is_none());
+    }
+
+    fn assert_sender_replaced<T: Send + 'static>(
+        replace: fn(tokio::sync::mpsc::UnboundedSender<T>),
+        get: fn() -> tokio::sync::mpsc::UnboundedSender<T>,
+    ) {
+        std::thread::spawn(move || {
+            let (tx1, _rx1) = tokio::sync::mpsc::unbounded_channel();
+            let (tx2, _rx2) = tokio::sync::mpsc::unbounded_channel();
+
+            replace(tx1.clone());
+            replace(tx2.clone());
+            let sender = get();
+
+            assert!(!sender.same_channel(&tx1));
+            assert!(sender.same_channel(&tx2));
+        })
+        .join()
+        .expect("sender replacement test thread should join");
+    }
+
+    fn assert_sender_thread_local<T: Send + 'static>(
+        replace: fn(tokio::sync::mpsc::UnboundedSender<T>),
+        get: fn() -> tokio::sync::mpsc::UnboundedSender<T>,
+    ) {
+        let barrier = Arc::new(Barrier::new(2));
+        let (tx1, _rx1) = tokio::sync::mpsc::unbounded_channel();
+        let (tx2, _rx2) = tokio::sync::mpsc::unbounded_channel();
+        let expected1 = tx1.clone();
+        let expected2 = tx2.clone();
+
+        let barrier1 = Arc::clone(&barrier);
+
+        let thread1 = std::thread::spawn(move || {
+            replace(tx1);
+            barrier1.wait();
+            assert!(get().same_channel(&expected1));
+        });
+
+        let thread2 = std::thread::spawn(move || {
+            replace(tx2);
+            barrier.wait();
+            assert!(get().same_channel(&expected2));
+        });
+
+        thread1
+            .join()
+            .expect("first sender isolation test thread should join");
+        thread2
+            .join()
+            .expect("second sender isolation test thread should join");
     }
 }

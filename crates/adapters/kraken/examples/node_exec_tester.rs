@@ -20,12 +20,12 @@
 //! Run with: `cargo run -p nautilus-kraken --example kraken-exec-tester --features examples`
 //!
 //! Required credential environment variables (Spot):
-//! - `KRAKEN_SPOT_API_KEY`.
-//! - `KRAKEN_SPOT_API_SECRET`.
+//! - `KRAKEN_SPOT_API_KEY`
+//! - `KRAKEN_SPOT_API_SECRET`
 //!
 //! Required credential environment variables (Futures):
-//! - `KRAKEN_FUTURES_API_KEY`.
-//! - `KRAKEN_FUTURES_API_SECRET`.
+//! - `KRAKEN_FUTURES_API_KEY`
+//! - `KRAKEN_FUTURES_API_SECRET`
 
 use nautilus_common::enums::Environment;
 use nautilus_kraken::{
@@ -41,9 +41,10 @@ use nautilus_model::{
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
-// *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
-// *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
-
+// WARNING: With `DRY_RUN = false`, this tester submits orders to the configured
+// environment and may use real funds. Set `DRY_RUN = true` to connect without
+// submitting orders or sending shutdown cancel/close commands.
+const DRY_RUN: bool = false;
 const PRODUCT_TYPE: KrakenProductType = KrakenProductType::Futures;
 const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "KRAKEN-001";
@@ -88,16 +89,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (api_key, api_secret) = credential.into_parts();
 
     let data_config = KrakenDataClientConfig {
-        api_key: Some(api_key.clone()),
-        api_secret: Some(api_secret.clone()),
+        api_key: Some(api_key.clone().into()),
+        api_secret: Some(api_secret.clone().into()),
         product_type,
         ..Default::default()
     };
 
     let exec_config = KrakenExecutionClientConfig {
         account_id,
-        api_key,
-        api_secret,
+        api_key: api_key.into(),
+        api_secret: api_secret.into(),
         product_type,
         ..Default::default()
     };
@@ -121,7 +122,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from(STRATEGY_ID)),
-            external_order_claims: Some(vec![instrument_id]),
+            external_order_instrument_ids: Some(vec![instrument_id]),
             // Kraken truncates non-UUID client order IDs to 18 chars,
             // which can cause collisions across sessions at the same time of day.
             use_uuid_client_order_ids: true,
@@ -130,6 +131,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
+        .dry_run(DRY_RUN)
         .use_post_only(true)
         .open_position_on_start_qty(order_qty.as_decimal())
         // .tob_offset_ticks(0)

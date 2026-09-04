@@ -406,7 +406,7 @@ impl Price {
     ///
     /// # Panics
     ///
-    /// Panics if precision is beyond `MAX_FLOAT_PRECISION` (16).
+    /// With the `defi` feature, panics if precision exceeds `MAX_FLOAT_PRECISION` (16).
     #[must_use]
     pub fn as_f64(&self) -> f64 {
         #[cfg(feature = "defi")]
@@ -420,17 +420,8 @@ impl Price {
 
     #[cfg(not(feature = "high-precision"))]
     /// Returns the value of this instance as an `f64`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if precision is beyond `MAX_FLOAT_PRECISION` (16).
     #[must_use]
     pub fn as_f64(&self) -> f64 {
-        #[cfg(feature = "defi")]
-        if self.precision > MAX_FLOAT_PRECISION {
-            panic!("Invalid f64 conversion beyond `MAX_FLOAT_PRECISION` (16)");
-        }
-
         fixed_i64_to_f64(self.raw)
     }
 
@@ -1025,6 +1016,28 @@ mod tests {
     }
 
     #[rstest]
+    #[case::below_minimum(PRICE_RAW_MIN - 1)]
+    #[case::above_maximum(PRICE_RAW_MAX + 1)]
+    fn test_from_raw_checked_rejects_out_of_range_value(#[case] raw: PriceRaw) {
+        let error = Price::from_raw_checked(raw, 0).unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::PredicateViolation {
+                message: format!(
+                    "raw value {raw} outside valid range [{PRICE_RAW_MIN}, {PRICE_RAW_MAX}]"
+                ),
+            }
+        );
+    }
+
+    #[rstest]
+    #[should_panic(expected = "outside valid range")]
+    fn test_from_raw_out_of_range_panics() {
+        let _ = Price::from_raw(PRICE_RAW_MAX + 1, 0);
+    }
+
+    #[rstest]
     fn test_from_raw() {
         let raw = 100 * FIXED_SCALAR as PriceRaw;
         let price = Price::from_raw(raw, 2);
@@ -1316,6 +1329,15 @@ mod tests {
         assert_eq!(p1 + p2, Price::from("15.75"));
         assert_eq!(p1 - p2, Price::from("5.25"));
         assert_eq!(-p1, Price::from("-10.5"));
+    }
+
+    #[rstest]
+    #[case::error(PRICE_ERROR)]
+    #[case::undefined(PRICE_UNDEF)]
+    fn test_neg_preserves_sentinel(#[case] raw: PriceRaw) {
+        let price = Price::from_raw(raw, 0);
+
+        assert_eq!(-price, price);
     }
 
     #[rstest]

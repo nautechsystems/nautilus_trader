@@ -16,7 +16,6 @@
 use std::{
     any::Any,
     cell::RefCell,
-    fmt::Debug,
     rc::Rc,
     sync::{
         Arc,
@@ -33,23 +32,14 @@ use crate::msgbus::{
     typed_handler::shareable_handler,
 };
 
-/// Minimal message payload received by [`StubMessageHandler`].
+/// Minimal message payload for message bus tests.
 #[derive(Debug, Clone)]
 pub struct StubMessage;
 
-/// Stub handler which logs messages it receives.
-#[derive(Clone)]
+/// No-op handler for message bus tests.
+#[derive(Debug, Clone)]
 pub struct StubMessageHandler {
     id: Ustr,
-    callback: Arc<dyn Fn(StubMessage) + Send>,
-}
-
-impl Debug for StubMessageHandler {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(StubMessageHandler))
-            .field("id", &self.id)
-            .finish()
-    }
 }
 
 impl Handler<dyn Any> for StubMessageHandler {
@@ -57,23 +47,13 @@ impl Handler<dyn Any> for StubMessageHandler {
         self.id
     }
 
-    fn handle(&self, message: &dyn Any) {
-        if let Some(msg) = message.downcast_ref::<StubMessage>() {
-            (self.callback)(msg.clone());
-        }
-    }
+    fn handle(&self, _message: &dyn Any) {}
 }
 
 #[must_use]
-#[allow(unused_must_use)]
 pub fn get_stub_shareable_handler(id: Option<Ustr>) -> ShareableMessageHandler {
     let unique_id = id.unwrap_or_else(|| Ustr::from(UUID4::new().as_str()));
-    shareable_handler(Rc::new(StubMessageHandler {
-        id: unique_id,
-        callback: Arc::new(|m: StubMessage| {
-            format!("{m:?}");
-        }),
-    }))
+    shareable_handler(Rc::new(StubMessageHandler { id: unique_id }))
 }
 
 /// Handler that tracks whether it has been called.

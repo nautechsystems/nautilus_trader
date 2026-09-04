@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Read version from tools.toml (single source of truth)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CAPNP_VERSION="$(bash "$SCRIPT_DIR/tool-version.sh" capnp)"
 CURL_RETRIES="${CURL_RETRIES:-5}"
@@ -14,7 +13,6 @@ if ! [[ "$INSTALL_ATTEMPTS" =~ ^[0-9]+$ ]] || [ "$INSTALL_ATTEMPTS" -lt 1 ]; the
   exit 1
 fi
 
-# Helper to parse capnp version consistently
 get_capnp_version() {
   capnp --version 2> /dev/null | awk '{print $NF}' || echo ""
 }

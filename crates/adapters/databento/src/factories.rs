@@ -23,7 +23,12 @@ use nautilus_common::{
     clock::Clock,
     factories::{ClientConfig, DataClientFactory},
 };
-use nautilus_core::time::{AtomicTime, get_atomic_clock_realtime};
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::{
+    string::secret::SecretString,
+    time::{AtomicTime, get_atomic_clock_realtime},
+};
 use nautilus_model::identifiers::ClientId;
 
 use crate::{
@@ -161,7 +166,7 @@ impl DatabentoHistoricalClientFactory {
 /// Builder for [`DatabentoDataClientConfig`].
 #[derive(Debug, Default)]
 pub struct DatabentoDataClientConfigBuilder {
-    api_key: Option<String>,
+    api_key: Option<SecretString>,
     dataset: Option<String>,
     publishers_filepath: Option<PathBuf>,
     use_exchange_as_venue: bool,
@@ -178,7 +183,7 @@ impl DatabentoDataClientConfigBuilder {
     /// Sets the API key.
     #[must_use]
     pub fn api_key(mut self, api_key: String) -> Self {
-        self.api_key = Some(api_key);
+        self.api_key = Some(SecretString::from(api_key));
         self
     }
 
@@ -224,7 +229,7 @@ impl DatabentoDataClientConfigBuilder {
             .ok_or_else(|| anyhow::anyhow!("Publishers filepath is required"))?;
 
         Ok(DatabentoDataClientConfig::new(
-            api_key,
+            api_key.into_inner(),
             publishers_filepath,
             self.use_exchange_as_venue,
             self.bars_timestamp_on_close,
@@ -241,13 +246,18 @@ mod tests {
 
     #[rstest]
     fn test_config_builder() {
-        let config = DatabentoDataClientConfigBuilder::new()
+        let builder = DatabentoDataClientConfigBuilder::new()
             .api_key("test_key".to_string())
             .dataset("GLBX.MDP3".to_string())
             .publishers_filepath(PathBuf::from("test_publishers.json"))
             .use_exchange_as_venue(true)
-            .bars_timestamp_on_close(false)
-            .build();
+            .bars_timestamp_on_close(false);
+
+        let debug = format!("{builder:?}");
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains("test_key"));
+
+        let config = builder.build();
 
         assert!(config.is_ok());
         let config = config.unwrap();

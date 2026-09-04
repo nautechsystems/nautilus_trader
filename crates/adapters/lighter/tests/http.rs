@@ -33,7 +33,7 @@ use axum::{
     routing::{get, post},
 };
 use jiff::Timestamp;
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, string::secret::SecretString};
 use nautilus_lighter::{
     common::enums::{
         LighterCandleResolution, LighterEnvironment, LighterFundingResolution, LighterMarketStatus,
@@ -370,6 +370,25 @@ async fn raw_client_get_maker_only_api_keys_maps_auth_query_field_to_authorizati
 
     assert_eq!(response.code, 200);
     assert_eq!(response.api_key_indexes, vec![5]);
+}
+
+#[tokio::test]
+async fn raw_client_use_referral_posts_urlencoded_form_with_authorization_header() {
+    let base_url =
+        spawn_server(Router::new().route("/api/v1/referral/use", post(handle_referral_use))).await;
+    let client = raw_client(base_url);
+
+    let response = client
+        .use_referral(
+            "0x0000000000000000000000000000000000000000",
+            "NAUTILUS",
+            "auth-token",
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.code, 200);
+    assert_eq!(response.message, None);
 }
 
 #[tokio::test]
@@ -824,12 +843,12 @@ async fn domain_client_registers_markets_and_parses_recent_trades() {
     assert_eq!(deltas.deltas[0].action, BookAction::Clear);
     assert_eq!(deltas.deltas[0].sequence, 0);
     assert_eq!(deltas.deltas[1].action, BookAction::Add);
-    assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
+    assert_eq!(deltas.deltas[1].order.side, Some(OrderSide::Buy));
     assert_eq!(deltas.deltas[1].order.price, Price::from("2361.17"));
     assert_eq!(deltas.deltas[1].order.size, Quantity::from("3.4125"));
     assert_eq!(deltas.deltas[1].sequence, 1);
     assert_eq!(deltas.deltas[2].action, BookAction::Add);
-    assert_eq!(deltas.deltas[2].order.side, OrderSide::Sell);
+    assert_eq!(deltas.deltas[2].order.side, Some(OrderSide::Sell));
     assert_eq!(deltas.deltas[2].order.price, Price::from("2361.32"));
     assert_eq!(deltas.deltas[2].order.size, Quantity::from("0.0317"));
     assert_eq!(deltas.deltas[2].sequence, 2);
@@ -858,10 +877,10 @@ async fn domain_client_request_trades_fills_market_id_and_parses_ticks() {
     let ticks = client
         .request_trades(
             &instrument,
-            LighterTradesQuery {
-                limit: 50,
-                ..Default::default()
-            },
+            LighterTradesQueryBuilder::default()
+                .limit(50)
+                .build()
+                .unwrap(),
         )
         .await
         .unwrap();
@@ -1380,6 +1399,10 @@ async fn domain_client_get_account_detail_queries_by_index_and_parses_first_acco
     assert_eq!(detail.account_index, 123_456);
     assert_eq!(detail.account_type, 0);
     assert_eq!(detail.status, 1);
+    assert_eq!(
+        detail.l1_address,
+        "0x0000000000000000000000000000000000000000"
+    );
 }
 
 #[tokio::test]
@@ -1514,6 +1537,34 @@ async fn handle_maker_only_api_keys(
     }
 
     (StatusCode::OK, r#"{"code":200,"api_key_indexes":[5]}"#).into_response()
+}
+
+async fn handle_referral_use(headers: HeaderMap, body: Bytes) -> Response {
+    let authorization = headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok());
+    let content_type = headers
+        .get("content-type")
+        .and_then(|value| value.to_str().ok());
+    let fields = url::form_urlencoded::parse(&body)
+        .into_owned()
+        .collect::<HashMap<String, String>>();
+
+    if authorization != Some("auth-token")
+        || content_type != Some("application/x-www-form-urlencoded")
+        || fields.len() != 2
+        || fields.get("l1_address").map(String::as_str)
+            != Some("0x0000000000000000000000000000000000000000")
+        || fields.get("referral_code").map(String::as_str) != Some("NAUTILUS")
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            r#"{"code":400,"message":"unexpected referral use request"}"#,
+        )
+            .into_response();
+    }
+
+    (StatusCode::OK, r#"{"code":200,"message":null}"#).into_response()
 }
 
 async fn handle_send_tx(headers: HeaderMap, body: Bytes) -> Response {
@@ -1891,7 +1942,13 @@ async fn handle_paginated_candles(
 }
 
 async fn handle_trades(Query(query): Query<LighterTradesQuery>) -> Response {
-    assert_eq!(query.authorization.as_deref(), Some("bearer-token"));
+    assert_eq!(
+        query
+            .authorization
+            .as_ref()
+            .map(SecretString::expose_secret),
+        Some("bearer-token")
+    );
     assert_eq!(query.market_id, Some(0));
     assert_eq!(query.account_index, Some(712_440));
     assert_eq!(query.order_index, Some(281_476_929_510_110));
@@ -1915,7 +1972,10 @@ async fn handle_trades_with_page_size_limit(Query(query): Query<LighterTradesQue
 async fn handle_account_active_orders(
     Query(query): Query<LighterAccountActiveOrdersQuery>,
 ) -> Response {
-    assert_eq!(query.auth.as_deref(), Some("auth-token"));
+    assert_eq!(
+        query.auth.as_ref().map(SecretString::expose_secret),
+        Some("auth-token")
+    );
     assert_eq!(query.account_index, 712_440);
     assert_eq!(query.market_id, 0);
     (StatusCode::OK, HTTP_ORDERS).into_response()
@@ -1924,7 +1984,13 @@ async fn handle_account_active_orders(
 async fn handle_account_inactive_orders(
     Query(query): Query<LighterAccountInactiveOrdersQuery>,
 ) -> Response {
-    assert_eq!(query.authorization.as_deref(), Some("bearer-token"));
+    assert_eq!(
+        query
+            .authorization
+            .as_ref()
+            .map(SecretString::expose_secret),
+        Some("bearer-token")
+    );
     assert_eq!(query.account_index, 712_440);
     assert_eq!(query.market_id, Some(0));
     assert_eq!(query.ask_filter, Some(1));
@@ -2135,32 +2201,21 @@ async fn spawn_server(router: Router) -> String {
 fn create_test_instrument() -> InstrumentAny {
     let instrument_id = InstrumentId::new(Symbol::new("ETH-PERP"), Venue::new("LIGHTER"));
 
-    InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-        instrument_id,
-        Symbol::new("ETH-PERP"),
-        Currency::from("ETH"),
-        Currency::from("USDC"),
-        Currency::from("USDC"),
-        false,
-        2,
-        4,
-        Price::from("0.01"),
-        Quantity::from("0.0001"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ))
+    InstrumentAny::CryptoPerpetual(
+        CryptoPerpetual::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::new("ETH-PERP"))
+            .base_currency(Currency::from("ETH"))
+            .quote_currency(Currency::from("USDC"))
+            .settlement_currency(Currency::from("USDC"))
+            .is_inverse(false)
+            .price_precision(2)
+            .size_precision(4)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.0001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    )
 }

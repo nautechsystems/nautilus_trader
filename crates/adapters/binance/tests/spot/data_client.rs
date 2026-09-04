@@ -20,7 +20,7 @@ use std::{
     net::SocketAddr,
     num::NonZeroUsize,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
@@ -77,6 +77,7 @@ use nautilus_model::{
     identifiers::InstrumentId,
 };
 use nautilus_network::{RECONNECTED, http::HttpClient};
+use parking_lot::Mutex;
 use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::json;
@@ -608,7 +609,7 @@ async fn handle_ws_connection(mut socket: WebSocket, config: DataTestServerConfi
                         .collect::<Vec<_>>();
 
                     if !streams.is_empty() {
-                        config.subscriptions.lock().unwrap().push(streams.clone());
+                        config.subscriptions.lock().push(streams.clone());
                     }
 
                     for stream in streams {
@@ -707,7 +708,7 @@ async fn handle_ws_connection(mut socket: WebSocket, config: DataTestServerConfi
                     .unwrap_or_default();
 
                 if !streams.is_empty() {
-                    config.unsubscriptions.lock().unwrap().push(streams);
+                    config.unsubscriptions.lock().push(streams);
                 }
             }
         }
@@ -740,7 +741,7 @@ async fn handle_agg_trades(
         .get("startTime")
         .and_then(|value| value.parse().ok())
         .unwrap_or(1_700_000_000_123);
-    config.agg_trade_queries.lock().unwrap().push(query);
+    config.agg_trade_queries.lock().push(query);
     sbe_response(build_agg_trades_response(time_ms)).into_response()
 }
 
@@ -763,7 +764,7 @@ async fn handle_klines(
         Some("1s") => 999_000,
         _ => 59_999_000,
     };
-    config.kline_queries.lock().unwrap().push(query);
+    config.kline_queries.lock().push(query);
     sbe_response(build_klines_response(close_time_us, span_us)).into_response()
 }
 
@@ -842,10 +843,8 @@ fn create_test_data_client_with_mode(
     let config = BinanceDataClientConfig {
         base_url_http: Some(base_url_http),
         base_url_ws: Some(base_url_ws),
-        api_key: Some("test-api-key".to_string()),
-        api_secret: Some(
-            "MC4CAQAwBQYDK2VwBCIEIJ1hsZ3v/VpguoRK9JLsLMREScVpezJpGXA7rAMcrn9g".to_string(),
-        ),
+        api_key: Some("test-api-key".into()),
+        api_secret: Some("MC4CAQAwBQYDK2VwBCIEIJ1hsZ3v/VpguoRK9JLsLMREScVpezJpGXA7rAMcrn9g".into()),
         spot_market_data_mode,
         ..Default::default()
     };
@@ -874,7 +873,6 @@ async fn recv_data(
 fn recorded_streams_include(records: &Arc<Mutex<Vec<Vec<String>>>>, stream: &str) -> bool {
     records
         .lock()
-        .unwrap()
         .iter()
         .any(|streams| streams.iter().any(|recorded| recorded == stream))
 }
@@ -1271,7 +1269,7 @@ async fn test_request_bounded_aggregate_trades_routes_spot_bounds() {
     let DataEvent::Response(DataResponse::Trades(response)) = event else {
         panic!("expected trades response");
     };
-    let query = state.agg_trade_queries.lock().unwrap()[0].clone();
+    let query = state.agg_trade_queries.lock()[0].clone();
     assert_eq!(query.get("symbol").map(String::as_str), Some("BTCUSDT"));
     assert_eq!(
         query.get("startTime").map(String::as_str),
@@ -1334,7 +1332,7 @@ async fn test_request_historical_one_second_binance_bars_preserves_fields() {
         .as_ref()
         .downcast_ref::<Vec<BinanceBar>>()
         .expect("expected BinanceBar vector");
-    let query = state.kline_queries.lock().unwrap()[0].clone();
+    let query = state.kline_queries.lock()[0].clone();
     assert_eq!(query.get("symbol").map(String::as_str), Some("BTCUSDT"));
     assert_eq!(query.get("interval").map(String::as_str), Some("1s"));
     assert_eq!(
@@ -1380,7 +1378,7 @@ async fn test_request_historical_one_second_binance_bars_preserves_fields() {
     let DataEvent::Response(DataResponse::Bars(response)) = event else {
         panic!("expected core bars response");
     };
-    let queries = state.kline_queries.lock().unwrap();
+    let queries = state.kline_queries.lock();
     assert_eq!(queries.len(), 2);
     assert_eq!(queries[1].get("interval").map(String::as_str), Some("1s"));
     assert_eq!(queries[1].get("limit").map(String::as_str), Some("123"));
@@ -1499,7 +1497,7 @@ async fn test_subscribe_l1_mbp_uses_sbe_best_bid_ask() {
     let data = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected SBE L1 deltas");
-    let Data::Deltas(deltas) = data else {
+    let Data::BookDeltas(deltas) = data else {
         panic!("expected SBE L1 deltas");
     };
     assert_eq!(*deltas, expected_l1_deltas(quote, 12345));
@@ -1557,7 +1555,7 @@ async fn test_subscribe_l1_mbp_uses_json_top_of_book_and_rejects_invalid_depth()
     let data = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected JSON L1 deltas");
-    let Data::Deltas(deltas) = data else {
+    let Data::BookDeltas(deltas) = data else {
         panic!("expected JSON L1 deltas");
     };
     assert_eq!(*deltas, expected_l1_deltas(quote, 12345));
@@ -1640,14 +1638,14 @@ async fn test_subscribe_book_deltas_with_partial_depth_stream() {
     let data = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected partial depth snapshot data");
-    let Data::Deltas(deltas) = data else {
+    let Data::BookDeltas(deltas) = data else {
         panic!("expected order book deltas");
     };
 
     assert_eq!(deltas.sequence, 99_999);
     assert_eq!(deltas.deltas[0].action, BookAction::Clear);
     assert_eq!(deltas.deltas[1].action, BookAction::Add);
-    assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
+    assert_eq!(deltas.deltas[1].order.side, Some(OrderSide::Buy));
     assert_eq!(deltas.deltas[1].order.price.as_decimal(), dec!(42000.00));
     assert_eq!(deltas.deltas[1].order.size.as_decimal(), dec!(1.00000));
     assert_eq!(
@@ -1755,14 +1753,14 @@ async fn test_subscribe_book_deltas_full_depth_replays_buffered_diff_after_snaps
     let snapshot = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected REST depth snapshot data");
-    let Data::Deltas(snapshot) = snapshot else {
+    let Data::BookDeltas(snapshot) = snapshot else {
         panic!("expected order book deltas");
     };
 
     let replayed = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected replayed depth diff data");
-    let Data::Deltas(replayed) = replayed else {
+    let Data::BookDeltas(replayed) = replayed else {
         panic!("expected order book deltas");
     };
 
@@ -1770,7 +1768,7 @@ async fn test_subscribe_book_deltas_full_depth_replays_buffered_diff_after_snaps
     assert_eq!(snapshot.ts_event, replayed.ts_event);
     assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
     assert_eq!(snapshot.deltas[1].action, BookAction::Add);
-    assert_eq!(snapshot.deltas[1].order.side, OrderSide::Buy);
+    assert_eq!(snapshot.deltas[1].order.side, Some(OrderSide::Buy));
     assert_eq!(snapshot.deltas[1].order.price.as_decimal(), dec!(42000.00));
     assert_eq!(snapshot.deltas[1].order.size.as_decimal(), dec!(1.00000));
     assert_eq!(
@@ -1780,7 +1778,7 @@ async fn test_subscribe_book_deltas_full_depth_replays_buffered_diff_after_snaps
 
     assert_eq!(replayed.sequence, 101);
     assert_eq!(replayed.deltas[0].action, BookAction::Update);
-    assert_eq!(replayed.deltas[0].order.side, OrderSide::Buy);
+    assert_eq!(replayed.deltas[0].order.side, Some(OrderSide::Buy));
     assert_eq!(replayed.deltas[0].order.price.as_decimal(), dec!(41999.00));
     assert_eq!(replayed.deltas[0].order.size.as_decimal(), dec!(1.25000));
     assert_eq!(replayed.deltas[0].flags, RecordFlag::F_LAST as u8);
@@ -1837,14 +1835,14 @@ async fn test_subscribe_book_deltas_json_full_depth_replays_buffered_diff_after_
     let snapshot = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected REST depth snapshot data");
-    let Data::Deltas(snapshot) = snapshot else {
+    let Data::BookDeltas(snapshot) = snapshot else {
         panic!("expected order book deltas");
     };
 
     let replayed = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected replayed JSON depth diff data");
-    let Data::Deltas(replayed) = replayed else {
+    let Data::BookDeltas(replayed) = replayed else {
         panic!("expected order book deltas");
     };
 
@@ -1855,7 +1853,7 @@ async fn test_subscribe_book_deltas_json_full_depth_replays_buffered_diff_after_
     assert_eq!(snapshot.deltas[1].order.size.as_decimal(), dec!(1.00000));
     assert_eq!(replayed.sequence, 101);
     assert_eq!(replayed.deltas[0].action, BookAction::Update);
-    assert_eq!(replayed.deltas[0].order.side, OrderSide::Buy);
+    assert_eq!(replayed.deltas[0].order.side, Some(OrderSide::Buy));
     assert_eq!(replayed.deltas[0].order.price.as_decimal(), dec!(41999.00));
     assert_eq!(replayed.deltas[0].order.size.as_decimal(), dec!(1.25000));
     assert_eq!(replayed.deltas[0].flags, RecordFlag::F_LAST as u8);
@@ -1915,28 +1913,28 @@ async fn test_subscribe_book_deltas_json_full_depth_rebuilds_after_reconnect() {
     let first_snapshot = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected initial REST depth snapshot data");
-    let Data::Deltas(first_snapshot) = first_snapshot else {
+    let Data::BookDeltas(first_snapshot) = first_snapshot else {
         panic!("expected order book deltas");
     };
 
     let first_replayed = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected initial replayed JSON depth diff data");
-    let Data::Deltas(first_replayed) = first_replayed else {
+    let Data::BookDeltas(first_replayed) = first_replayed else {
         panic!("expected order book deltas");
     };
 
     let second_snapshot = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected reconnect REST depth snapshot data");
-    let Data::Deltas(second_snapshot) = second_snapshot else {
+    let Data::BookDeltas(second_snapshot) = second_snapshot else {
         panic!("expected order book deltas");
     };
 
     let second_replayed = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected reconnect replayed JSON depth diff data");
-    let Data::Deltas(second_replayed) = second_replayed else {
+    let Data::BookDeltas(second_replayed) = second_replayed else {
         panic!("expected order book deltas");
     };
 
@@ -2011,14 +2009,14 @@ async fn test_subscribe_book_deltas_full_depth_waits_for_first_diff_before_snaps
     let snapshot = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected REST depth snapshot data after first diff");
-    let Data::Deltas(snapshot) = snapshot else {
+    let Data::BookDeltas(snapshot) = snapshot else {
         panic!("expected order book deltas");
     };
 
     let replayed = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected replayed depth diff data after first diff");
-    let Data::Deltas(replayed) = replayed else {
+    let Data::BookDeltas(replayed) = replayed else {
         panic!("expected order book deltas");
     };
 
@@ -2085,14 +2083,14 @@ async fn test_subscribe_book_deltas_full_depth_keeps_buffered_diffs_across_overl
     let snapshot = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected REST depth snapshot data after overlap retry");
-    let Data::Deltas(snapshot) = snapshot else {
+    let Data::BookDeltas(snapshot) = snapshot else {
         panic!("expected order book deltas");
     };
 
     let replayed = recv_data(&mut rx, Duration::from_secs(5))
         .await
         .expect("expected retained replayed depth diff data");
-    let Data::Deltas(replayed) = replayed else {
+    let Data::BookDeltas(replayed) = replayed else {
         panic!("expected order book deltas");
     };
 

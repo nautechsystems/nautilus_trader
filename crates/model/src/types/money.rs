@@ -388,7 +388,7 @@ impl Money {
     ///
     /// # Panics
     ///
-    /// Panics if precision is beyond `MAX_FLOAT_PRECISION` (16).
+    /// With the `defi` feature, panics if precision exceeds `MAX_FLOAT_PRECISION` (16).
     #[must_use]
     pub fn as_f64(&self) -> f64 {
         #[cfg(feature = "defi")]
@@ -402,17 +402,8 @@ impl Money {
 
     #[cfg(not(feature = "high-precision"))]
     /// Returns the value of this instance as an `f64`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if precision is beyond `MAX_FLOAT_PRECISION` (16).
     #[must_use]
     pub fn as_f64(&self) -> f64 {
-        #[cfg(feature = "defi")]
-        if self.currency.precision > MAX_FLOAT_PRECISION {
-            panic!("Invalid f64 conversion beyond `MAX_FLOAT_PRECISION` (16)");
-        }
-
         fixed_i64_to_f64(self.raw)
     }
 
@@ -960,6 +951,25 @@ mod tests {
                 .contains("`precision` exceeded maximum `FIXED_PRECISION`"),
             "unexpected message: {error}"
         );
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_new_checked_rejects_float_for_wei_currency() {
+        use crate::enums::CurrencyType;
+
+        let currency = Currency::new("TST18", 18, 0, "Test token", CurrencyType::Crypto);
+        let error = Money::new_checked(1.0, currency).unwrap_err();
+        let message = "`currency.precision` exceeded maximum float precision (16), use \
+                       `Money::from_wei()` for wei values instead";
+
+        assert_eq!(
+            error,
+            CorrectnessError::PredicateViolation {
+                message: message.to_string(),
+            }
+        );
+        assert_eq!(error.to_string(), message);
     }
 
     #[rstest]

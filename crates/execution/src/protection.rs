@@ -15,7 +15,7 @@
 
 // TODO: We'll use anyhow for now, but would be best to implement some specific Error(s)
 use nautilus_model::{
-    enums::{OrderSideSpecified, OrderType},
+    enums::{OrderSide, OrderType},
     orders::{Order, OrderAny},
     types::{Price, price::PriceRaw},
 };
@@ -45,13 +45,13 @@ pub fn protection_price_calculate(
 
     let offset_raw = PriceRaw::from(protection_points) * price_increment.raw;
 
-    let order_side = order.order_side_specified();
+    let order_side = order.order_side();
     let protection_raw = match order_side {
-        OrderSideSpecified::Buy => {
+        OrderSide::Buy => {
             let opposite = ask.ok_or_else(|| anyhow::anyhow!("Ask required"))?;
             opposite.raw + offset_raw
         }
-        OrderSideSpecified::Sell => {
+        OrderSide::Sell => {
             let opposite = bid.ok_or_else(|| anyhow::anyhow!("Bid required"))?;
             opposite.raw - offset_raw
         }
@@ -111,7 +111,6 @@ mod tests {
         let (bid, ask) = match side {
             OrderSide::Buy => (Some(Price::new(99.5, 2)), None),
             OrderSide::Sell => (None, Some(Price::new(100.5, 2))),
-            OrderSide::NoOrderSide => panic!("Side is required"),
         };
 
         let result = protection_price_calculate(price_increment, &order, 25, bid, ask);

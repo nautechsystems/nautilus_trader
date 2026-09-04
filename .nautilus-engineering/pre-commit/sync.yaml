@@ -1,0 +1,14 @@
+- repo: local
+  hooks:
+    - id: check-nautilus-engineering-sync
+      name: check Nautilus engineering sync
+      entry: bash scripts/check-nautilus-engineering-sync.bash --staged
+      language: system
+      pass_filenames: false
+      always_run: true
+    - id: check-nautilus-engineering-pre-commit
+      name: check Nautilus engineering pre-commit section
+      entry: python3 scripts/manage-nautilus-engineering-pre-commit.py check --staged
+      language: system
+      pass_filenames: false
+      always_run: true

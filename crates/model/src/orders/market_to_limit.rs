@@ -120,7 +120,7 @@ impl MarketToLimitOrder {
             None,
             expire_time,
             display_qty,
-            Some(TriggerType::NoTrigger),
+            None,
             None,
             contingency_type,
             order_list_id,
@@ -442,7 +442,10 @@ impl Order for MarketToLimitOrder {
     }
 
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
-        let is_order_filled = matches!(event, OrderEventAny::Filled(_));
+        let updates_slippage = matches!(
+            event,
+            OrderEventAny::Filled(_) | OrderEventAny::FillVoided(_),
+        );
 
         self.core.apply(event.clone())?;
 
@@ -450,7 +453,7 @@ impl Order for MarketToLimitOrder {
             self.update(event);
         }
 
-        if is_order_filled && let Some(price) = self.price {
+        if updates_slippage && let Some(price) = self.price {
             self.core.set_slippage(price);
         }
 

@@ -20,7 +20,7 @@ use std::{
     fmt::Debug,
     num::NonZeroU32,
     sync::{
-        Arc, RwLock,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -50,6 +50,7 @@ use nautilus_network::{
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
+use parking_lot::RwLock;
 use rust_decimal::Decimal;
 use serde::de::DeserializeOwned;
 use tokio_util::sync::CancellationToken;
@@ -248,26 +249,17 @@ impl KrakenFuturesRawHttpClient {
 
     /// Cancels all pending HTTP requests.
     pub fn cancel_all_requests(&self) {
-        self.cancellation_token
-            .read()
-            .expect("cancellation token lock poisoned")
-            .cancel();
+        self.cancellation_token.read().cancel();
     }
 
     /// Replaces the canceled token so requests can proceed after reconnect.
     pub fn reset_cancellation_token(&self) {
-        *self
-            .cancellation_token
-            .write()
-            .expect("cancellation token lock poisoned") = CancellationToken::new();
+        *self.cancellation_token.write() = CancellationToken::new();
     }
 
     /// Returns a clone of the current cancellation token.
     pub fn cancellation_token(&self) -> CancellationToken {
-        self.cancellation_token
-            .read()
-            .expect("cancellation token lock poisoned")
-            .clone()
+        self.cancellation_token.read().clone()
     }
 
     fn default_headers() -> HashMap<String, String> {
@@ -1978,9 +1970,7 @@ impl KrakenFuturesHttpClient {
             _ => anyhow::bail!("Unsupported order type: {order_type:?}"),
         };
 
-        let kraken_side: KrakenOrderSide = order_side
-            .try_into()
-            .map_err(|e| anyhow::anyhow!("Invalid order side: {e}"))?;
+        let kraken_side = KrakenOrderSide::from(order_side);
 
         let mut builder = KrakenFuturesSendOrderParamsBuilder::default();
         builder
@@ -3219,34 +3209,23 @@ mod tests {
     fn cache_test_futures_instrument(client: &KrakenFuturesHttpClient) -> InstrumentId {
         let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
 
-        client.cache_instrument(InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            instrument_id,
-            Symbol::new("PF_XBTUSD"),
-            Currency::BTC(),
-            Currency::USD(),
-            Currency::USD(),
-            false,
-            0,
-            4,
-            Price::from("1"),
-            Quantity::from("0.0001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            0.into(),
-            0.into(),
-        )));
+        client.cache_instrument(InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new("PF_XBTUSD"))
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USD())
+                .settlement_currency(Currency::USD())
+                .is_inverse(false)
+                .price_precision(0)
+                .size_precision(4)
+                .price_increment(Price::from("1"))
+                .size_increment(Quantity::from("0.0001"))
+                .ts_event(0.into())
+                .ts_init(0.into())
+                .build()
+                .unwrap(),
+        ));
 
         instrument_id
     }

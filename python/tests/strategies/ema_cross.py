@@ -25,7 +25,6 @@ from nautilus_trader.core import UUID4
 from nautilus_trader.model import Bar
 from nautilus_trader.model import BarType
 from nautilus_trader.model import ClientOrderId
-from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import MarketOrder
 from nautilus_trader.model import OrderSide
@@ -45,25 +44,18 @@ class EMACrossConfig(StrategyConfig):
         """
         Create a new instance.
         """
-        # `StrategyConfig` is a pyo3 @final type whose `__new__` validates
-        # `strategy_id` as a `StrategyId`. For tests that need to register
-        # multiple instances of the same strategy class, we accept a string
-        # `strategy_id` in the subclass `__new__`, strip just that override
-        # before delegating (so it doesn't fail base-type validation), and
-        # forward every remaining base `StrategyConfig` kwarg
-        # (`order_id_tag`, `log_events`, `oms_type`, etc.) so they're applied
-        # by the pyo3 base. The override is exposed via a property below.
-        kwargs.pop("instrument_id", None)
-        kwargs.pop("bar_type", None)
-        kwargs.pop("trade_size", None)
-        kwargs.pop("fast_ema_period", None)
-        kwargs.pop("slow_ema_period", None)
+        # The pyo3 base validates `strategy_id` as a `StrategyId`. Tests that
+        # register several instances of one strategy class need a string
+        # instead, so capture that override here and keep it out of the base
+        # call; a property below exposes it. Every remaining base keyword is
+        # forwarded, and the base ignores the subclass fields.
         instance = super().__new__(cls, *args, **kwargs)
         instance._strategy_id_override = strategy_id
         return instance
 
     def __init__(
         self,
+        *,
         instrument_id: str,
         bar_type: str,
         trade_size: str,
@@ -73,7 +65,7 @@ class EMACrossConfig(StrategyConfig):
         **_kwargs: object,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         # The pyo3 base initialises its state in `__new__`, so `__init__`
         # falls through to `object.__init__` which only accepts `self`.
@@ -106,7 +98,7 @@ class EMACross(Strategy):
 
     def __init__(self, config: EMACrossConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._instrument_id = InstrumentId.from_str(config.instrument_id)
@@ -202,7 +194,7 @@ class EMACross(Strategy):
             time_in_force=TimeInForce.GTC,
             reduce_only=False,
             quote_quantity=False,
-            contingency_type=ContingencyType.NO_CONTINGENCY,
+            contingency_type=None,
         )
         self.submit_order(order)
 

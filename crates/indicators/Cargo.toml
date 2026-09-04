@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-indicators"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -41,7 +40,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 nautilus-core = { workspace = true }
-nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-model = { workspace = true, features = ["test-support"] }
 
 anyhow = { workspace = true }
 arraydeque = { workspace = true }

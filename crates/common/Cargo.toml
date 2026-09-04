@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-common"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -71,12 +70,11 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-core = { workspace = true }
 nautilus-indicators = { workspace = true, optional = true }
-nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-model = { workspace = true, features = ["test-support"] }
 nautilus-serialization = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
-async-stream = { workspace = true }
 async-trait = { workspace = true }
 bon = { workspace = true }
 bytes = { workspace = true }
@@ -85,6 +83,7 @@ futures = { workspace = true }
 indexmap = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
+parking_lot = { workspace = true }
 regex = { workspace = true }
 rmp-serde = { workspace = true }
 rust_decimal = { workspace = true }

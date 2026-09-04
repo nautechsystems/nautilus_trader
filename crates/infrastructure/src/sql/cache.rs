@@ -29,7 +29,7 @@ use nautilus_common::{
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
-    data::{Bar, CustomData, DataType, FundingRateUpdate, QuoteTick, TradeTick},
+    data::{Bar, CustomData, DataType, FundingRateUpdate, InstrumentClose, QuoteTick, TradeTick},
     events::{
         AccountState, OrderEventAny, OrderFilled, OrderInitialized, OrderSnapshot,
         position::snapshot::PositionSnapshot,
@@ -56,6 +56,7 @@ use crate::sql::{
 
 // Task and connection names
 const CACHE_PROCESS: &str = "cache-process";
+const SCHEMA_MIGRATION_COMMAND: &str = "run `nautilus database init` to migrate";
 
 /// Configuration for a Postgres-backed cache database.
 ///
@@ -193,6 +194,7 @@ pub enum DatabaseQuery {
     Add(String, Vec<u8>),
     AddCurrency(Currency),
     AddInstrument(InstrumentAny),
+    AddInstrumentClose(InstrumentClose),
     AddOrder(OrderInitialized, Option<ClientId>),
     AddOrderSnapshot(OrderSnapshot),
     AddPosition(PositionId, OrderFilled),
@@ -292,12 +294,34 @@ impl PostgresCacheDatabase {
     }
 }
 
-// Fails fast when the connected database predates the exact-average columns.
+// Fails fast when the connected database predates required cache schema.
 //
-// Both directions of the mismatch are otherwise silent: `numeric -> double precision` is an
-// implicit cast so writes truncate, and the row readers use `.ok().flatten()` so reads degrade
-// to `None`. A column absent altogether is left to the query that first touches it.
+// An absent instrument-close table otherwise fails only when first queried. Both directions of the
+// exact-average type mismatch are silent: `numeric -> double precision` is an implicit cast so
+// writes truncate, and the row readers use `.ok().flatten()` so reads degrade to `None`. Absent
+// order event columns are silent in both directions too: every insert names them so writes fail
+// and drop the event, while every decoder reads them so `load_orders` yields an empty cache.
 async fn check_schema_migrated(pool: &PgPool) -> Result<(), sqlx::Error> {
+    let has_instrument_close: bool = sqlx::query_scalar(
+        "SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = current_schema()
+              AND table_name = 'instrument_close'
+        )",
+    )
+    .fetch_one(pool)
+    .await?;
+
+    if !has_instrument_close {
+        return Err(sqlx::Error::Configuration(
+            format!(
+                "Postgres schema is out of date, missing `instrument_close` table: {SCHEMA_MIGRATION_COMMAND}"
+            )
+            .into(),
+        ));
+    }
+
     let stale: Vec<String> = sqlx::query_scalar(
         "SELECT table_name || '.' || column_name || ' (' || data_type || ')'
         FROM information_schema.columns
@@ -309,14 +333,50 @@ async fn check_schema_migrated(pool: &PgPool) -> Result<(), sqlx::Error> {
     .fetch_all(pool)
     .await?;
 
-    if stale.is_empty() {
+    if !stale.is_empty() {
+        return Err(sqlx::Error::Configuration(
+            format!(
+                "Postgres schema is out of date, {} should be `numeric`: {SCHEMA_MIGRATION_COMMAND}",
+                stale.join(", "),
+            )
+            .into(),
+        ));
+    }
+
+    let missing: Vec<String> = sqlx::query_scalar(
+        "SELECT required.table_name || '.' || required.column_name
+        FROM (VALUES
+            ('order_event', 'released_price'),
+            ('order_event', 'protection_price'),
+            ('order_event', 'due_post_only'),
+            ('order_event', 'correction_id'),
+            ('order_event', 'is_reopened'),
+            ('order_event', 'info'),
+            ('order_event', 'causation_id'),
+            ('position_event', 'reconciliation'),
+            ('position_event', 'info'),
+            ('position_event', 'causation_id')
+        ) AS required(table_name, column_name)
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = required.table_name
+              AND column_name = required.column_name
+        )
+        ORDER BY 1",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    if missing.is_empty() {
         return Ok(());
     }
 
     Err(sqlx::Error::Configuration(
         format!(
-            "Postgres schema is out of date, {} should be `numeric`: run `nautilus database init` to migrate",
-            stale.join(", ")
+            "Postgres schema is out of date, missing order event columns {}: {SCHEMA_MIGRATION_COMMAND}",
+            missing.join(", "),
         )
         .into(),
     ))
@@ -384,19 +444,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         let pool = self.pool.clone();
         let (tx, rx) = std::sync::mpsc::channel();
 
-        log::debug!("Closing connection pool");
-
-        tokio::task::block_in_place(|| {
-            get_runtime().block_on(async {
-                pool.close().await;
-
-                if let Err(e) = tx.send(()) {
-                    log::error!("Error closing pool: {e:?}");
-                }
-            });
-        });
-
-        // Cancel message handling task
+        // The close command follows all pending writes on the FIFO channel and drains the buffer
         if let Err(e) = self.tx.send(DatabaseQuery::Close) {
             log::warn!("Error sending close: {e:?}");
         }
@@ -407,6 +455,18 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
             if let Err(e) = get_runtime().block_on(&mut self.handle) {
                 log::error!("Error awaiting task 'cache-write': {e:?}");
             }
+        });
+
+        log::debug!("Closing connection pool");
+
+        tokio::task::block_in_place(|| {
+            get_runtime().block_on(async {
+                pool.close().await;
+
+                if let Err(e) = tx.send(()) {
+                    log::error!("Error closing pool: {e:?}");
+                }
+            });
         });
 
         log::debug!("Closed");
@@ -434,9 +494,14 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     async fn load_all(&self) -> anyhow::Result<CacheMap> {
-        let (currencies, instruments, synthetics, accounts, orders, positions) = try_join!(
-            self.load_currencies(),
+        let currencies = self.load_currencies().await?;
+        for currency in currencies.values() {
+            Currency::register(*currency, false)?;
+        }
+
+        let (instruments, instrument_closes, synthetics, accounts, orders, positions) = try_join!(
             self.load_instruments(),
+            self.load_instrument_closes(),
             self.load_synthetics(),
             self.load_accounts(),
             self.load_orders(),
@@ -452,6 +517,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(CacheMap {
             currencies,
             instruments,
+            instrument_closes,
             synthetics,
             accounts,
             orders,
@@ -543,6 +609,16 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
             }
         });
         Ok(rx.recv()?)
+    }
+
+    async fn load_instrument_closes(
+        &self,
+    ) -> anyhow::Result<AHashMap<InstrumentId, InstrumentClose>> {
+        Ok(DatabaseQueries::load_instrument_closes(&self.pool)
+            .await?
+            .into_iter()
+            .map(|close| (close.instrument_id, close))
+            .collect())
     }
 
     async fn load_synthetics(&self) -> anyhow::Result<AHashMap<InstrumentId, SyntheticInstrument>> {
@@ -846,6 +922,16 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query add_instrument to database message handler: {e}")
         })
+    }
+
+    fn add_instrument_close(&self, close: &InstrumentClose) -> anyhow::Result<()> {
+        self.tx
+            .send(DatabaseQuery::AddInstrumentClose(*close))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to send query add_instrument_close to database message handler: {e}"
+                )
+            })
     }
 
     fn add_synthetic(&self, _synthetic: &SyntheticInstrument) -> anyhow::Result<()> {
@@ -1201,17 +1287,24 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         })
     }
 
-    fn snapshot_order_state(&self, _order: &OrderAny) -> anyhow::Result<()> {
-        todo!()
+    fn snapshot_order_state(&self, order: &OrderAny) -> anyhow::Result<()> {
+        let snapshot = OrderSnapshot::from(order.clone());
+        self.add_order_snapshot(&snapshot)
     }
 
     fn snapshot_position_state(
         &self,
-        _position: &Position,
-        _ts_snapshot: UnixNanos,
-        _unrealized_pnl: Option<Money>,
+        position: &Position,
+        ts_snapshot: UnixNanos,
+        unrealized_pnl: Option<Money>,
     ) -> anyhow::Result<()> {
-        todo!()
+        let mut snapshot = if position.fill_voids.is_empty() {
+            PositionSnapshot::from(position, unrealized_pnl)
+        } else {
+            PositionSnapshot::from_replay_state(position, unrealized_pnl)
+        };
+        snapshot.ts_init = ts_snapshot;
+        self.add_position_snapshot(&snapshot)
     }
 
     fn heartbeat(&self, _timestamp: UnixNanos) -> anyhow::Result<()> {
@@ -1329,6 +1422,9 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
                         .await
                 }
             },
+            DatabaseQuery::AddInstrumentClose(close) => {
+                DatabaseQueries::add_instrument_close(pool, &close).await
+            }
             DatabaseQuery::AddOrder(event, client_id) => {
                 DatabaseQueries::add_order(pool, event, client_id).await
             }

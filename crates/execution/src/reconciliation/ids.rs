@@ -15,7 +15,7 @@
 
 //! Deterministic ID generation for reconciliation.
 //!
-//! These helpers hash the logical fill/order fields so that replayed reconciliation
+//! Hashes the logical fill/order fields so that replayed reconciliation
 //! events (e.g. after a process restart) produce the same `TradeId` and
 //! `VenueOrderId` as the original run. That stability is what lets the engine's
 //! duplicate-fill sanitizer dedupe replays instead of treating them as new events.
@@ -204,6 +204,5 @@ fn order_side_tag(side: OrderSide) -> &'static str {
     match side {
         OrderSide::Buy => "BUY",
         OrderSide::Sell => "SELL",
-        _ => "UNSPECIFIED",
     }
 }

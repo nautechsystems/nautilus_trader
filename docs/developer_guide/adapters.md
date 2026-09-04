@@ -105,20 +105,20 @@ locally, and [blockchain](../../crates/adapters/blockchain/src/execution/client.
 on-chain behind the `defi` feature. Deterministic simulation eligibility also sits outside the
 baseline, as an optional capability proven per adapter rather than a requirement.
 
-| Target                     | Shared piece                                                                     | Contract                                                                      |
-| -------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Command outcome evidence   | [`CommandFailure`](../../crates/live/src/execution/failure.rs)                   | [Naming the evidence classes](#naming-the-evidence-classes)                   |
-| Order identity and context | [`OrderIdentity` and `OrderContext`](../../crates/live/src/execution/context.rs) | [Tracked and external updates](#tracked-and-external-execution-updates)       |
-| Replay deduplication       | [`FifoCache` and `FifoCacheMap`](../../crates/common/src/cache/fifo.rs)          | [Event ordering and deduplication](#event-ordering-and-deduplication)         |
-| Order denial reasons       | [`OrderDeniedReason`](../../crates/model/src/events/order/denied_reason.rs)      | [Diagnostics and reasons](#separate-diagnostics-from-strategy-facing-reasons) |
-| Task lifecycle             | [`TaskHandles`](../../crates/common/src/live/task.rs)                            | [Task management](#task-management)                                           |
-| Ingestion precision        | [Domain numeric types](rust.md#domain-numeric-types)                             | [Venue payload modeling](#modeling-venue-payloads)                            |
-| HTTP transport             | [`HttpClient`](../../crates/network/src/http/client.rs)                          | [Request flow](#request-flow)                                                 |
-| Authentication state       | [`AuthTracker`](../../crates/network/src/websocket/auth.rs)                      | [Authentication](#authentication)                                             |
-| Subscription identity      | [`SubscriptionState`](../../crates/network/src/websocket/subscription.rs)        | [Subscription management](#subscription-management)                           |
-| Reconnect requests         | [`request_reconnect`](../../crates/network/src/websocket/client.rs)              | [Reconnection and shutdown](#reconnection-and-shutdown)                       |
-| Retry machinery            | [`RetryManager`](../../crates/network/src/retry.rs)                              | [Error handling and retry logic](#error-handling-and-retry-logic)             |
-| Inferred fill commission   | [`ExecutionClient`](../../crates/common/src/clients/execution.rs)                | [Commission failure handling](#commission-failure-handling)                   |
+| Target                     | Shared piece                                                                                           | Contract                                                                      |
+| -------------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| Command outcome evidence   | [`CommandFailure`](../../crates/live/src/execution/failure.rs)                                         | [Naming the evidence classes](#naming-the-evidence-classes)                   |
+| Order identity and context | [`OrderIdentity` and `OrderContext`](../../crates/live/src/execution/context.rs)                       | [Tracked and external updates](#tracked-and-external-execution-updates)       |
+| Replay deduplication       | [`FifoCache` and `FifoCacheMap`](../../crates/common/src/cache/fifo.rs)                                | [Event ordering and deduplication](#event-ordering-and-deduplication)         |
+| Order denial reasons       | [`OrderDeniedReason`](../../crates/model/src/events/order/denied_reason.rs)                            | [Diagnostics and reasons](#separate-diagnostics-from-strategy-facing-reasons) |
+| Task lifecycle             | [`TaskGroup`](../../crates/live/src/task.rs) and [`TaskHandles`](../../crates/common/src/live/task.rs) | [Task management](#task-management)                                           |
+| Ingestion precision        | [Domain numeric types](rust.md#domain-numeric-types)                                                   | [Venue payload modeling](#modeling-venue-payloads)                            |
+| HTTP transport             | [`HttpClient`](../../crates/network/src/http/client.rs)                                                | [Request flow](#request-flow)                                                 |
+| Authentication state       | [`AuthTracker`](../../crates/network/src/websocket/auth.rs)                                            | [Authentication](#authentication)                                             |
+| Subscription identity      | [`SubscriptionState`](../../crates/network/src/websocket/subscription.rs)                              | [Subscription management](#subscription-management)                           |
+| Reconnect requests         | [`request_reconnect`](../../crates/network/src/websocket/client.rs)                                    | [Reconnection and shutdown](#reconnection-and-shutdown)                       |
+| Retry machinery            | [`RetryManager`](../../crates/network/src/retry.rs)                                                    | [Error handling and retry logic](#error-handling-and-retry-logic)             |
+| Inferred fill commission   | [`ExecutionClient`](../../crates/common/src/clients/execution.rs)                                      | [Commission failure handling](#commission-failure-handling)                   |
 
 Where a venue transmits a discrete value as an IEEE-754 field rather than a decimal string or JSON
 number, contain that at the parsing boundary as a documented exception instead of letting `f64`
@@ -385,7 +385,9 @@ Adapter configs then add only venue semantics:
 - Use an enum for a closed set such as environment, product family, account mode, or endpoint.
 - Use `Option<T>` only when absence has a distinct meaning, including runtime credential fallback.
 - Keep data and execution config separate when their capabilities or credentials differ.
-- Implement a redacted `Debug` for any config that can hold secrets.
+- Store fields that must not appear in `Debug` as `SecretString`. Derive `Debug` when every sensitive
+  field uses a redacting type; write a custom implementation only when a field cannot use one or the
+  type requires more restrictive output.
 - Keep Python config projection thin. It converts types and delegates to the Rust config.
 
 Centralize default HTTP and WebSocket endpoint resolution so one environment selection cannot mix
@@ -400,23 +402,130 @@ commonly under `common/credential.rs`. Keep configs as data transfer objects: re
 when constructing the credential, factory, or client, not in Python wrappers or individual request
 methods.
 
+#### Classify sensitive values
+
+Classify a value before choosing its type and diagnostic output. Apply the more restrictive rule
+when a venue gives one value more than one role.
+
+| Value class                  | Examples                                                                                                      | Diagnostic output                                                                       |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Secret material              | Passwords, private keys, API secrets, passphrases, bearer and session tokens, refresh tokens, and signatures. | Always show `<redacted>`.                                                               |
+| Credential identity          | API keys, client IDs, usernames, and account identifiers used during authentication.                          | Redact by default. Use a masked API key only when operational correlation requires it.  |
+| Secret-bearing location      | Proxy URLs, RPC URLs, request paths, and query parameters that can contain credentials.                       | Redact the complete location from logs and errors.                                      |
+| Deliberately public identity | Wallet addresses, vault addresses, and public account names that the venue exposes publicly.                  | Show only when the type and adapter contract deliberately classify the value as public. |
+
+Do not infer that an API key, username, or URL is safe to print because it is not sufficient to
+authenticate by itself. Configs often cross logging, exception, and Python representation
+boundaries where partial credential identity remains sensitive.
+
+#### Use the common secret types
+
+Use `nautilus_core::string::secret` and `zeroize` instead of defining adapter-local redaction or
+zeroization conventions.
+
+| Mechanism                     | Use                                                                                                                                   |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `SecretString`                | Own a string that must zeroize on drop and render as `<redacted>` with `Debug`.                                                       |
+| `REDACTED`                    | Replace an unconditional secret field in a custom `Debug` or `Display` implementation.                                                |
+| `redact_option`               | Preserve `Some` versus `None` while redacting an optional field in a custom `Debug`.                                                  |
+| `mask_api_key`                | Correlate an API key only through an explicit masked-identity method. Do not use it for secret material.                              |
+| `Zeroizing<T>`                | Bound the lifetime of an owned plaintext `String`, byte buffer, decoded key, canonical payload, or serialized authentication message. |
+| `Zeroize` and `ZeroizeOnDrop` | Clear secret-bearing fields in structs that cannot use `SecretString`, including byte arrays and signing types.                       |
+| `zeroize_json_value`          | Clear owned strings in a mutable JSON value after serializing secret-bearing fields.                                                  |
+
+#### Use `SecretString` safely
+
+- Treat serialization as plaintext. `SecretString` uses the underlying string for wire-format
+  compatibility, so never serialize a config, credential, or authentication model for diagnostics.
+- Do not use ordinary `SecretString` equality to verify attacker-controlled secrets; it is not
+  constant-time.
+- Borrow plaintext through `expose_secret()` only at the signing, encoding, or transport boundary
+  that needs it.
+- Consume with `into_inner()` only to transfer ownership. If the receiving API requires `String`,
+  create that final copy at the call boundary and do not retain it in adapter code.
+- Take `&SecretString` when a function only reads the value. Take it by value when the function
+  retains or consumes it.
+- Put secret-bearing fields in the authenticated wire model instead of creating a second model only
+  to change `Debug`. Derive `Serialize` and derive `Debug` when every sensitive field redacts.
+- Write a custom `Debug` for credentials backed by byte arrays, signing keys, or other types that
+  cannot store their secret fields as `SecretString`.
+- Avoid `Display` for secret-bearing types unless a caller requires it. Any implementation must
+  redact secret material.
+
+#### Resolve and share credentials
+
 - Define environment variable names once and select them from typed environment and product values.
+- Document the established environment variable names in the adapter's integration guide.
 - Resolve all fields as one credential set. Public clients may remain unauthenticated, but an
   authenticated client rejects an incomplete or invalid set before sending a request.
-- Store secret fields in owned memory and zeroize them on drop. Redact secrets and private keys from
-  `Debug`. If logs need credential identity, log only a masked API key.
+- Convert config and environment strings into zeroizing owners at the credential boundary. Do not
+  retain a non-zeroizing plaintext copy in adapter state after conversion.
 - Share credential storage across transports only when they use the same key material. Keep HTTP,
   WebSocket, and transaction signing methods separate when their canonical payloads differ.
-- Test explicit values, environment fallback, missing fields, redacted output, and deterministic
-  signature vectors.
 
-Use the repository's established environment variable names for each venue and environment.
-Document the exact names in the adapter's integration guide, where users need them.
+#### Project credentials into Python
 
-Never include credentials, signatures, or secret material in errors, INFO logs, or DEBUG logs.
-Do not add adapter-level logs of raw authenticated requests or WebSocket payloads. Shared transport
-TRACE logs can contain raw outbound payloads, so treat TRACE output as sensitive and redact it
-before sharing.
+- Convert credential strings accepted by a Python constructor to `SecretString` at the Rust
+  boundary.
+- Apply the Rust `Debug` and `Display` redaction rules to Python `__repr__` and `__str__`.
+- Expose only a presence check for secret material and secret-bearing locations.
+- Return credential identity, such as a username, only when an existing public API or another
+  explicit caller needs it. Document the choice and keep the value out of diagnostics.
+- Never expose passwords, private keys, API secrets, passphrases, tokens, or signatures through
+  plaintext getters.
+
+#### Bound plaintext lifetime
+
+- Zeroize each owned plaintext allocation after its final use, including normalized and decoded keys,
+  secret-bearing signing payloads, serialized authentication messages, encoded form values, and
+  mutable request models.
+- Prefer borrowed slices and existing zeroizing owners over intermediate `String` and `Vec<u8>`
+  copies.
+- Limit the guarantee to allocations the adapter owns. Serialization libraries, transports, TLS,
+  and the operating system may make copies the adapter cannot reach.
+- Keep plaintext lifetimes short; do not promise process-wide or transport-wide erasure.
+
+#### Redact diagnostics and transport errors
+
+- Never include credentials, signatures, secret material, or secret-bearing URLs in errors or logs
+  at any level.
+- Log request metadata such as the method, field count, and byte lengths instead of credentials or
+  authentication payloads. Shared transports log metadata rather than payload contents.
+- Treat TRACE as developer-facing diagnostic output. Raw inbound payloads are allowed when their
+  schema cannot contain credential material.
+- Treat raw private-stream TRACE output as sensitive because it can disclose orders, balances,
+  positions, and account identity. Redact it before sharing.
+- Prefer metadata or a sanitized, bounded excerpt when either can diagnose the protocol.
+- Clear mutable source models after serialization when they own another plaintext copy.
+- Never log a raw authentication request or response, or any frame whose schema can contain secret
+  material.
+
+| Surface                      | Required handling                                                                                                | Zeroization boundary                                                   |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| HTTP secret body             | Use `HttpClient::request_with_secret_body`.                                                                      | The client retains the zeroizing owner; lower layers may copy it.      |
+| HTTP path or `HashMap` query | Use `HttpClient::request_with_url_redacted`.                                                                     | The URL is removed from logs and transport errors.                     |
+| HTTP typed query             | Use `HttpClient::request_with_params_url_redacted`.                                                              | The URL is removed from logs and transport errors.                     |
+| HTTP headers and proxy       | Create credential-bearing strings at the client boundary, avoid clones, and do not retain them in adapter state. | The shared client or transport may retain copies.                      |
+| WebSocket authentication     | Keep fields and serialized frames in `SecretString`; create the final `String` immediately before `send_text`.   | The shared client has no secret-owner-preserving send method.          |
+| Unsupported combination      | Extend the common client instead of implementing adapter-local URL or error scrubbing.                           | The common API must define the resulting ownership and redaction rule. |
+
+#### Verify credential handling
+
+Test the secret-handling contract as well as successful authentication:
+
+- Cover explicit values, environment fallback, incomplete credentials, and invalid credentials.
+- Assert that config, credential, request, response, and client `Debug` output omits the exact input
+  secrets. Test `Display` separately for every secret-bearing type that implements it.
+- Assert that Python `__repr__` and `__str__` omit credential identity and secret material. Test
+  presence checks and every deliberately exposed identity getter.
+- Assert that serialization and transport preserve the exact wire value where the venue requires
+  plaintext.
+- Force transport failures for credential-bearing URLs and assert that both `Display` and `Debug`
+  error output omit the URL, path secret, and query secret.
+- Use compile-time trait assertions for `Zeroize` or `ZeroizeOnDrop`, and test explicit clearing for
+  mutable request and response models.
+- Keep deterministic signature vectors so redaction and zeroization changes cannot alter signing
+  bytes, field order, or encoding.
 
 ### Symbols and instrument identity
 
@@ -462,9 +571,25 @@ Model the wire format, not an imagined stable subset:
   protocol version change.
 - Keep raw models separate from Nautilus domain objects. Convert at one auditable boundary.
 - Deserialize prices, quantities, money, fees, and other discrete values as `Decimal`. Construct
-  domain values with `Price::from_decimal_dp`, `Quantity::from_decimal_dp`, `Money::from_decimal`,
-  or `Money::zero`; never route wire values through `f64`. See
-  [domain numeric types](rust.md#domain-numeric-types).
+  domain values with `Price::from_decimal`, `Price::from_decimal_dp`, `Quantity::from_decimal`,
+  `Quantity::from_decimal_dp`, `Money::from_decimal`, or `Money::zero`; never route wire values
+  through `f64`. See [domain numeric types](rust.md#domain-numeric-types).
+- Choose domain precision from the field contract, not incidental payload formatting:
+
+| Field contract                                     | `"25.000"` result       | Conversion                                                          |
+| -------------------------------------------------- | ----------------------- | ------------------------------------------------------------------- |
+| Venue-declared scale is meaningful                 | `25.000` at precision 3 | Use `Price::from_decimal` or `Quantity::from_decimal`.              |
+| Documented trailing zeros are non-semantic padding | `25` at precision 0     | Call `Decimal::normalize`, then use the scale-inferred constructor. |
+| Instrument or currency precision governs the value | `25.00` at precision 2  | Use `Price::from_decimal_dp` or `Quantity::from_decimal_dp`.        |
+
+Use instrument or currency precision for event and report values when available. A venue may send
+the same value as `"25"`, `"25.0"`, or `"25.000"`, so do not infer precision per payload unless
+the adapter defines and tests an explicit compatibility fallback. The declared-precision
+constructors apply banker's rounding when a value has excess non-zero digits; validate round-trip
+equality when the field contract requires exact representation. During reconciliation, follow
+[instrument resolution](#instrument-resolution-during-reconciliation) when precision metadata is
+missing.
+
 - Pass required parsing context explicitly, including instrument precision, currencies, account
   identity, and `ts_init`. Keep live client state outside parsers.
 - Treat missing, null, and empty values according to the venue schema. Do not collapse them into one
@@ -673,6 +798,10 @@ reports for reconciliation. They must support these boundaries consistently:
 - Release shared clock, cache, or account borrows before publishing account state because
   subscribers may access the same state synchronously.
 
+Keep deterministic adapter-specific checks in one `validate_order` function that returns
+`OrderDeniedReason`. Call it before emitting `OrderSubmitted` from single-order and order-list
+submission paths.
+
 Do not infer support from a venue API alone. Implement and test the Nautilus command and event
 semantics, then advertise the capability.
 
@@ -703,7 +832,12 @@ fails startup.
 The bulk methods take a filter command carrying `instrument_id`, `start`, and `end`, plus
 `open_only` for order reports and `venue_order_id` for fill reports. Apply every filter the venue
 endpoint supports and complete the rest locally. `open_only` separates the currently open orders a
-periodic check needs from the history a mass status needs. Log report counts at the command's
+periodic check needs from the history a mass status needs. Retain a report for `open_only` when its
+status is open **or** in-flight, not open alone: a venue holding an order it has not yet
+acknowledged reports it as `SUBMITTED`, which is in-flight rather than open. Apply `start` and `end`
+only to closed reports, since an order working at the venue is authoritative however long it has
+rested without an update. Test a report for a terminal status with `is_closed()`, never
+`!is_open()`, which classifies `SUBMITTED` as terminal. Log report counts at the command's
 `log_receipt_level` so periodic checks stay at debug while mass status logs at info.
 
 When a periodic check request fails, the engine marks that client failed for the cycle and stops
@@ -902,6 +1036,32 @@ Missing tracked metadata, a parse failure, or an unresolved venue binding does n
 update is external. A tracked status with no corresponding Nautilus lifecycle event is a tracked
 no-op or deferred update unless the adapter documents and tests a report exception.
 
+##### Triggered parent and child orders
+
+Some venues replace a tracked parent venue order with a child after a trigger. Treat both venue IDs
+as one order context:
+
+- Keep the client identity stable.
+- Bind the child atomically with the trigger transition. The child ID becomes authoritative for
+  later events and commands.
+- If the child arrives during the binding race, use venue linkage to complete the tracked transition
+  or defer the update. Do not route it as external.
+- Once the child is authoritative, suppress stale parent acceptance and any superseded parent update
+  that would regress child authority.
+
+##### Incomplete and late updates
+
+Keep these cases distinct from normal tracked events:
+
+- An aggregate parent status without the trade identity or other fields required for a typed event
+  remains a tracked no-op or deferred update. The authoritative child produces the live event, while
+  report-based recovery remains in the reconciliation path.
+- A fill with a new trade identity that arrives after the tracked lifecycle reached a terminal state
+  remains a `FillReport`. The active order context is no longer available for a typed event, so
+  reconciliation applies the late venue evidence.
+
+Suppress terminal status replays and fills whose trade identity was already processed.
+
 #### Event ordering and deduplication
 
 A venue can report the same transition through an order response, private stream, query, and
@@ -930,6 +1090,14 @@ Emit any required preceding lifecycle event only when the adapter has complete o
 the venue evidence proves that state. Record the synthesized transition so a later acknowledgement
 does not duplicate it. Untracked orders continue through reports rather than synthesized strategy
 events.
+
+When parent and child updates can arrive on different streams:
+
+- Serialize the venue order ID binding with the lifecycle events that publish it.
+- Emit any required `OrderAccepted`, `OrderUpdated`, and `OrderTriggered` events before routing a
+  child fill or cancellation.
+- Route commands from the same authoritative binding. Do not infer it from an engine cache that may
+  still be processing those events.
 
 When a venue implements modify as cancel-replace, update the venue order ID mapping before routing
 the replacement leg. Distinguish a stale cancel for the old leg from cancellation of the active
@@ -1392,8 +1560,9 @@ Parsing may remain in the handler when it depends on handler-owned protocol stat
 external execution ownership remains a client decision.
 
 When reporting malformed frames, log the parse error separately from a sanitized, bounded payload
-excerpt. Never log a raw authenticated frame. Log a peer close code and reason at the transport
-layer that receives it; the adapter should not duplicate the shared transport log.
+excerpt. Never log a raw authentication frame or a frame whose schema can contain secret material.
+Log a peer close code and reason at the transport layer that receives it; the adapter should not
+duplicate the shared transport log.
 
 Dispatch module layout, intermediate enum names, context registries, venue bindings, and state
 containers remain adapter-specific. Prefer the smallest design that makes protocol ownership and
@@ -1438,12 +1607,34 @@ recovery.
 
 ## Task management
 
-### Spawning async tasks (`spawn_task`)
+Classify every production task by its owner before choosing its storage and shutdown path.
+
+| Ownership           | Use                                                                                         | Required behavior                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Session-scoped      | Stream consumers, keepalives, health polls, refresh loops, and reconnect drivers.           | One session group owns the task from successful admission through disconnect or failed startup.    |
+| Command-scoped      | Work spawned by synchronous data requests or execution commands.                            | A separate command group owns the task without tying its outcome to the transport session.         |
+| Explicitly singular | One transport loop or disconnect operation whose identity is part of the owning state.      | Store one named handle and apply the same bounded join, forced abort, and failure reporting rules. |
+| Handler-local       | Retry futures, send workers, and child work created and joined inside one handler.          | The handler drains the work before it exits and exposes failure to its owner.                      |
+| Protocol exception  | Typed fan-out results, keyed timeouts, or work whose local join preserves protocol meaning. | Keep the exception local, state why a shared group would lose meaning, and test its shutdown path. |
+
+Use separate session and command groups even when both groups have the same timeout policy. A
+disconnect ends the session, while an accepted command can still need reconciliation or an
+explicit ambiguous outcome. Do not let transport shutdown silently reclassify that command result.
+
+[`TaskHandles`](../../crates/common/src/live/task.rs) stores unit task handles without setting
+spawn, cancellation, generation, or join policy. Use it inside a component that defines those
+rules. [`TaskGroup`](../../crates/live/src/task.rs) supplies the shared live-client policy for
+unit-output session and command tasks. The module's `finish_task` function applies the same bounded
+policy to an explicitly singular handle without erasing a typed result. For another explicit ownership
+pattern, spawn through `nautilus_common::live::get_runtime().spawn()` as described in
+[Async code](rust.md#async-code), then retain or locally await the returned handle.
+
+### Spawn through a task group
 
 Synchronous client trait methods must not block an active Tokio runtime. Clone owned inputs, spawn
-the asynchronous operation, and return the local validation result. Use
-`nautilus_common::live::get_runtime().spawn()` for adapter production tasks so native Rust and
-Python bindings use the configured runtime.
+the asynchronous operation, and return the local validation result. Register client-owned work
+through its `TaskGroup`. The group stores the handle before opening the task's start gate, so a
+concurrent shutdown either owns the task or rejects its admission.
 
 The [Tokio usage hook](../../.pre-commit-hooks/check_tokio_usage.sh) rejects `tokio::spawn` in
 adapter production code and requires fully qualified Tokio spawn, time, and sync paths.
@@ -1455,27 +1646,56 @@ fn spawn_request<F>(&self, description: &'static str, future: F)
 where
     F: Future<Output = anyhow::Result<()>> + Send + 'static,
 {
-    let handle = get_runtime().spawn(async move {
+    let future = async move {
         if let Err(e) = future.await {
             log::warn!("{description} failed: {e:?}");
         }
-    });
-    self.tasks.push(handle);
+    };
+
+    if let Err(e) = self.command_tasks.spawn(future) {
+        log::warn!("Skipping {description} after shutdown began: {e}");
+    }
 }
 ```
 
 Validate the command and clone every input before constructing the future. Do not capture a
 `RefCell` borrow, cache guard, clock borrow, or reference to the command in work that outlives the
-trait call.
+trait call. When a long-lived task creates children, capture a `TaskSpawner` from the owning group.
+A spawner from an older generation cannot register work in the replacement generation.
 
-Use [`TaskHandles`](../../crates/common/src/live/task.rs) for client-owned tasks when a collection
-is needed. `push` prunes completed handles, `abort_all` drains and aborts them, and `take_all`
-transfers them to a client-specific join policy. Give each task:
+Give each task:
 
 - One owner responsible for joining or aborting it.
 - A stable description for failure logs.
 - A cancellation path.
 - Owned inputs that do not retain `RefCell` or engine borrows.
+
+Keep typed task results local to the component that awaits them. Do not erase a `JoinHandle<T>` to
+fit a unit-output group when `T` carries order, transport, or startup evidence.
+
+### Shut down and reopen task generations
+
+Task shutdown has separate synchronous and asynchronous phases:
+
+1. `stop`, `reset`, and `dispose` call `begin_shutdown`. This closes admission and cancels the
+   current generation without blocking the runtime.
+   Use `abort` instead only when the existing synchronous contract requires immediate task
+   cancellation.
+1. `disconnect`, or the next asynchronous `connect`, closes the generation's transports in their
+   required protocol order and calls `finish_shutdown` with bounded graceful and forced intervals.
+1. `finish_shutdown` repeatedly drains tasks registered by an allowed race, reports unexpected
+   cancellations and join failures, aborts unfinished work after the graceful interval, and awaits
+   the forced abort within its second bound.
+1. `start_generation` reopens the group only after the prior generation drains. A timeout retains
+   the remaining handles and keeps admission closed.
+
+When `connect` fails after creating a transport or admitting a task, apply the same sequence before
+returning the startup error. Close every transport created by that attempt, drain both session and
+command work that cannot survive the failure, and include teardown failures in the returned or
+logged evidence.
+
+Make repeated `begin_shutdown` and `finish_shutdown` calls safe. A synchronous lifecycle method may
+begin teardown more than once before an asynchronous boundary finishes it.
 
 ### Never use `block_on` in trait methods
 
@@ -1495,9 +1715,11 @@ method. Redesign an ambiguous boundary as async.
 ### Graceful shutdown with `CancellationToken`
 
 Use `CancellationToken` when several tasks share a lifecycle. Select cancellation alongside
-streams, timers, or response channels. Cancel before joining tasks, and replace the token during
-`reset`. Also replace a canceled token before a reconnect or any other path starts new work. A
-reused canceled token causes every new task to exit immediately.
+streams, timers, or response channels. For grouped tasks, obtain child tokens from the generation
+group or spawner and let `begin_shutdown` cancel their parent. Obtain the replacement token only
+after `finish_shutdown` drains every handle and `start_generation` reopens the group. Reusing a
+canceled token makes replacement tasks exit immediately, while replacing it before the drain lets
+old work cross the reconnect boundary.
 
 ## Testing
 
@@ -1538,10 +1760,12 @@ When HTTP and WebSocket tests share fixture loaders or model builders, place tes
 when no test code is shared.
 
 Client tests should drive public methods through mock HTTP or WebSocket servers. Assert emitted
-events, requests, connection state, subscription state, retry count, and shutdown behavior. Wait
-on observable state with [`wait_until_async`](../../crates/common/src/testing.rs) when possible. A
-short sleep is valid when the time window itself is under test or no protocol signal exists, but
-it should not mask a missing synchronization point.
+events, requests, connection state, subscription state, retry count, and shutdown behavior. Prefer
+a notification owned by the test or mock when the operation exposes one. Subscribe before reading
+the authoritative state, then recheck it after every notification so a transition between the read
+and the await cannot be missed. When no suitable signal exists, use
+[`wait_until_async`](../../crates/common/src/testing.rs). A short sleep is valid when the time window
+itself is under test, but it should not mask a missing synchronization point.
 
 Shared repository test policy uses `#[rstest]` for Rust test functions, permits
 `#[tokio::test]` for async tests, and rejects arrange/act/assert comments. The

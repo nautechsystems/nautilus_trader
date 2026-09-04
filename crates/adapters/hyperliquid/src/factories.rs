@@ -235,7 +235,7 @@ mod tests {
     #[rstest]
     fn test_hyperliquid_exec_client_config_implements_client_config() {
         let config = HyperliquidExecutionClientConfig::builder()
-            .private_key("test_private_key".to_string())
+            .private_key("test_private_key".into())
             .build();
 
         let boxed_config: Box<dyn ClientConfig> = Box::new(config);
@@ -250,7 +250,7 @@ mod tests {
     fn test_hyperliquid_data_client_factory_rejects_wrong_config_type() {
         let factory = HyperliquidDataClientFactory::new();
         let wrong_config = HyperliquidExecutionClientConfig::builder()
-            .private_key("test_private_key".to_string())
+            .private_key("test_private_key".into())
             .build();
 
         let cache = Rc::new(RefCell::new(Cache::default()));

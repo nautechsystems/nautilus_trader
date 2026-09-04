@@ -117,11 +117,7 @@ impl Visitor<'_> for DecimalVisitor {
 
     // Float handling - direct conversion
     fn visit_f64<E: Error>(self, v: f64) -> Result<Self::Value, E> {
-        if v.is_nan() {
-            return Err(E::invalid_value(Unexpected::Float(v), &self));
-        }
-
-        if v.is_infinite() {
+        if !v.is_finite() {
             return Err(E::invalid_value(Unexpected::Float(v), &self));
         }
         Decimal::try_from(v).map_err(E::custom)
@@ -727,7 +723,7 @@ pub fn parse_optional_decimal(s: &Option<String>) -> anyhow::Result<Option<Decim
 /// Many exchange APIs represent null string fields as an empty string (`""`).
 /// When such a payload is mapped onto `Option<String>` the default behavior
 /// would yield `Some("")`, which is semantically different from the intended
-/// absence of a value. This helper ensures that empty strings are normalized
+/// absence of a value. This deserializer normalizes empty strings
 /// to `None` during deserialization.
 ///
 /// # Errors
@@ -812,10 +808,12 @@ where
 
 #[cfg(test)]
 mod tests {
+    use ahash::AHashSet;
     use rstest::*;
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
     use serde::{Deserialize, Serialize};
+    use serde_json::json;
     use ustr::Ustr;
 
     use super::{
@@ -828,8 +826,14 @@ mod tests {
         msgpack::{FromMsgPack, ToMsgPack},
         parse_decimal, parse_optional_decimal, serialize_decimal, serialize_decimal_as_str,
         serialize_optional_decimal, serialize_optional_decimal_as_str,
-        serialize_vec_decimal_as_str,
+        serialize_vec_decimal_as_str, sorted_hashset,
     };
+
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct SortedSetPayload {
+        #[serde(with = "sorted_hashset")]
+        values: AHashSet<i32>,
+    }
 
     #[derive(Serialize, Deserialize, PartialEq, Debug)]
     struct SerializableTestStruct {
@@ -839,6 +843,20 @@ mod tests {
     }
 
     impl Serializable for SerializableTestStruct {}
+
+    #[rstest]
+    fn test_sorted_hashset_serialization_is_deterministic() {
+        let payload = SortedSetPayload {
+            values: [29, 3, 17, 5, 23, 11].into_iter().collect(),
+        };
+
+        let encoded = serde_json::to_string(&payload).unwrap();
+        let expected = serde_json::to_string(&json!({ "values": [3, 5, 11, 17, 23, 29] })).unwrap();
+        let restored: SortedSetPayload = serde_json::from_str(&encoded).unwrap();
+
+        assert_eq!(encoded, expected);
+        assert_eq!(restored, payload);
+    }
 
     #[rstest]
     fn test_serializable_json_roundtrip() {

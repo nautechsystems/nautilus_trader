@@ -18,12 +18,12 @@
 //! Run with: `cargo run -p nautilus-betfair --example betfair-exec-tester --features examples`
 //!
 //! Required environment variables:
-//! - `BETFAIR_USERNAME`: Your Betfair username.
-//! - `BETFAIR_PASSWORD`: Your Betfair password.
-//! - `BETFAIR_APP_KEY`: Your Betfair application key.
-//! - `BETFAIR_MARKET_ID`: An active Betfair market ID.
+//! - `BETFAIR_USERNAME`: Your Betfair username
+//! - `BETFAIR_PASSWORD`: Your Betfair password
+//! - `BETFAIR_APP_KEY`: Your Betfair application key
+//! - `BETFAIR_MARKET_ID`: An active Betfair market ID
 //! - `BETFAIR_INSTRUMENT_ID` (optional): A runner in that market. When omitted, the example
-//!   selects the active runner with the most matched volume.
+//!   selects the active runner with the most matched volume
 //!
 //! Market IDs can be found from `https://www.betfair.com.au/exchange/plus/`
 
@@ -49,6 +49,10 @@ use nautilus_trading::strategy::StrategyConfig;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+// WARNING: With `DRY_RUN = false`, this tester submits orders to the configured
+// environment and may use real funds. Set `DRY_RUN = true` to connect without
+// submitting orders or sending shutdown cancel/close commands.
+const DRY_RUN: bool = false;
 const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "BETFAIR-001";
 const NODE_NAME: &str = "BETFAIR-EXEC-TESTER-001";
@@ -107,7 +111,7 @@ async fn main() -> anyhow::Result<()> {
     let exec_factory = BetfairExecutionClientFactory::new();
     let exec_engine_config = LiveExecutionEngineConfig {
         open_check_interval_secs: Some(10.0),
-        position_check_interval_secs: Some(30.0),
+        position_check_interval_secs: None,
         ..Default::default()
     };
 
@@ -127,12 +131,13 @@ async fn main() -> anyhow::Result<()> {
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from(STRATEGY_ID)),
-            external_order_claims: Some(vec![instrument_id]),
+            external_order_instrument_ids: Some(vec![instrument_id]),
             ..Default::default()
         })
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
+        .dry_run(DRY_RUN)
         .subscribe_quotes(false)
         .subscribe_trades(false)
         .enable_limit_buys(false)

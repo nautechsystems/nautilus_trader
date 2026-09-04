@@ -20,7 +20,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    enums::PositionSideSpecified,
+    enums::PositionSide,
     identifiers::{AccountId, InstrumentId, PositionId},
     types::Quantity,
 };
@@ -42,7 +42,7 @@ pub struct PositionStatusReport {
     /// The instrument ID associated with the event.
     pub instrument_id: InstrumentId,
     /// The position side.
-    pub position_side: PositionSideSpecified,
+    pub position_side: PositionSide,
     /// The current open quantity.
     pub quantity: Quantity,
     /// The current signed quantity as a decimal (positive for position side `LONG`, negative for `SHORT`).
@@ -66,7 +66,7 @@ impl PositionStatusReport {
     pub fn new(
         account_id: AccountId,
         instrument_id: InstrumentId,
-        position_side: PositionSideSpecified,
+        position_side: PositionSide,
         quantity: Quantity,
         ts_last: UnixNanos,
         ts_init: UnixNanos,
@@ -76,9 +76,9 @@ impl PositionStatusReport {
     ) -> Self {
         // Calculate signed decimal quantity based on position side
         let signed_decimal_qty = match position_side {
-            PositionSideSpecified::Long => quantity.as_decimal(),
-            PositionSideSpecified::Short => -quantity.as_decimal(),
-            PositionSideSpecified::Flat => Decimal::ZERO,
+            PositionSide::Long => quantity.as_decimal(),
+            PositionSide::Short => -quantity.as_decimal(),
+            PositionSide::Flat => Decimal::ZERO,
         };
 
         Self {
@@ -104,19 +104,19 @@ impl PositionStatusReport {
     /// Checks if this is a flat position (quantity is zero).
     #[must_use]
     pub fn is_flat(&self) -> bool {
-        self.position_side == PositionSideSpecified::Flat
+        self.position_side == PositionSide::Flat
     }
 
     /// Checks if this is a long position.
     #[must_use]
     pub fn is_long(&self) -> bool {
-        self.position_side == PositionSideSpecified::Long
+        self.position_side == PositionSide::Long
     }
 
     /// Checks if this is a short position.
     #[must_use]
     pub fn is_short(&self) -> bool {
-        self.position_side == PositionSideSpecified::Short
+        self.position_side == PositionSide::Short
     }
 }
 
@@ -156,7 +156,7 @@ mod tests {
         PositionStatusReport::new(
             AccountId::from("SIM-001"),
             InstrumentId::from("AUDUSD.SIM"),
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from("100"),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
@@ -170,7 +170,7 @@ mod tests {
         PositionStatusReport::new(
             AccountId::from("SIM-001"),
             InstrumentId::from("AUDUSD.SIM"),
-            PositionSideSpecified::Short,
+            PositionSide::Short,
             Quantity::from("50"),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
@@ -184,7 +184,7 @@ mod tests {
         PositionStatusReport::new(
             AccountId::from("SIM-001"),
             InstrumentId::from("AUDUSD.SIM"),
-            PositionSideSpecified::Flat,
+            PositionSide::Flat,
             Quantity::from("0"),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
@@ -200,7 +200,7 @@ mod tests {
 
         assert_eq!(report.account_id, AccountId::from("SIM-001"));
         assert_eq!(report.instrument_id, InstrumentId::from("AUDUSD.SIM"));
-        assert_eq!(report.position_side, PositionSideSpecified::Long);
+        assert_eq!(report.position_side, PositionSide::Long);
         assert_eq!(report.quantity, Quantity::from("100"));
         assert_eq!(report.signed_decimal_qty, dec!(100));
         assert_eq!(report.venue_position_id, Some(PositionId::from("P-001")));
@@ -212,7 +212,7 @@ mod tests {
     fn test_position_status_report_new_short() {
         let report = test_position_status_report_short();
 
-        assert_eq!(report.position_side, PositionSideSpecified::Short);
+        assert_eq!(report.position_side, PositionSide::Short);
         assert_eq!(report.quantity, Quantity::from("50"));
         assert_eq!(report.signed_decimal_qty, dec!(-50));
         assert_eq!(report.venue_position_id, None);
@@ -222,7 +222,7 @@ mod tests {
     fn test_position_status_report_new_flat() {
         let report = test_position_status_report_flat();
 
-        assert_eq!(report.position_side, PositionSideSpecified::Flat);
+        assert_eq!(report.position_side, PositionSide::Flat);
         assert_eq!(report.quantity, Quantity::from("0"));
         assert_eq!(report.signed_decimal_qty, Decimal::ZERO);
     }
@@ -232,7 +232,7 @@ mod tests {
         let report = PositionStatusReport::new(
             AccountId::from("SIM-001"),
             InstrumentId::from("AUDUSD.SIM"),
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from("100"),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
@@ -266,7 +266,7 @@ mod tests {
         let no_position_report = PositionStatusReport::new(
             AccountId::from("SIM-001"),
             InstrumentId::from("AUDUSD.SIM"),
-            PositionSideSpecified::Flat,
+            PositionSide::Flat,
             Quantity::from("0"),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
@@ -341,7 +341,7 @@ mod tests {
         let long_100 = PositionStatusReport::new(
             AccountId::from("SIM-001"),
             InstrumentId::from("AUDUSD.SIM"),
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from("100.5"),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
@@ -353,7 +353,7 @@ mod tests {
         let short_200 = PositionStatusReport::new(
             AccountId::from("SIM-001"),
             InstrumentId::from("AUDUSD.SIM"),
-            PositionSideSpecified::Short,
+            PositionSide::Short,
             Quantity::from("200.75"),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
@@ -372,7 +372,7 @@ mod tests {
         let short_report = PositionStatusReport::new(
             AccountId::from("SIM-001"),
             InstrumentId::from("AUDUSD.SIM"),
-            PositionSideSpecified::Short,
+            PositionSide::Short,
             Quantity::from("100"), // Same quantity but different side
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
@@ -393,7 +393,7 @@ mod tests {
         let report = PositionStatusReport::new(
             AccountId::from("SIM-001"),
             InstrumentId::from("AUDUSD.SIM"),
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from("100"),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
@@ -414,7 +414,7 @@ mod tests {
         let report = PositionStatusReport::new(
             AccountId::from("SIM-001"),
             InstrumentId::from("AUDUSD.SIM"),
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from("100"),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
@@ -431,7 +431,7 @@ mod tests {
         let long_with_price = PositionStatusReport::new(
             AccountId::from("SIM-001"),
             InstrumentId::from("AUDUSD.SIM"),
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from("100"),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
@@ -443,7 +443,7 @@ mod tests {
         let short_with_price = PositionStatusReport::new(
             AccountId::from("SIM-001"),
             InstrumentId::from("AUDUSD.SIM"),
-            PositionSideSpecified::Short,
+            PositionSide::Short,
             Quantity::from("100"),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
@@ -467,7 +467,7 @@ mod tests {
         let report = PositionStatusReport::new(
             AccountId::from("SIM-001"),
             InstrumentId::from("AUDUSD.SIM"),
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from("100"),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),

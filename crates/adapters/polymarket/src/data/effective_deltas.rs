@@ -37,9 +37,10 @@ pub(super) fn apply_snapshot_and_diff(
     }
 
     if book.book_type != BookType::L2_MBP
-        || snapshot.deltas.iter().any(|delta| {
-            delta.action != BookAction::Clear && delta.order.side == OrderSide::NoOrderSide
-        })
+        || snapshot
+            .deltas
+            .iter()
+            .any(|delta| delta.action != BookAction::Clear && delta.order.side.is_none())
     {
         return apply_snapshot_and_diff_fallback(book, snapshot);
     }

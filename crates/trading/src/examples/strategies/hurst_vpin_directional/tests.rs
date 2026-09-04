@@ -34,34 +34,25 @@ use rust_decimal_macros::dec;
 use super::{HurstVpinDirectional, HurstVpinDirectionalConfig};
 
 fn pf_xbtusd() -> CryptoPerpetual {
-    CryptoPerpetual::new(
-        InstrumentId::from("PF_XBTUSD.KRAKEN"),
-        Symbol::from("PF_XBTUSD"),
-        Currency::BTC(),
-        Currency::USD(),
-        Currency::USD(),
-        false,
-        1,
-        4,
-        Price::from("0.5"),
-        Quantity::from("0.0001"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(dec!(0.02)),
-        Some(dec!(0.01)),
-        Some(dec!(0.0002)),
-        Some(dec!(0.0005)),
-        None,
-        None,
-        0.into(),
-        0.into(),
-    )
+    CryptoPerpetual::builder()
+        .instrument_id(InstrumentId::from("PF_XBTUSD.KRAKEN"))
+        .raw_symbol(Symbol::from("PF_XBTUSD"))
+        .base_currency(Currency::BTC())
+        .quote_currency(Currency::USD())
+        .settlement_currency(Currency::USD())
+        .is_inverse(false)
+        .price_precision(1)
+        .size_precision(4)
+        .price_increment(Price::from("0.5"))
+        .size_increment(Quantity::from("0.0001"))
+        .margin_init(dec!(0.02))
+        .margin_maint(dec!(0.01))
+        .maker_fee(dec!(0.0002))
+        .taker_fee(dec!(0.0005))
+        .ts_event(0.into())
+        .ts_init(0.into())
+        .build()
+        .unwrap()
 }
 
 fn bar_type(instrument_id: InstrumentId) -> BarType {

@@ -72,12 +72,14 @@ pub struct OrderSnapshot {
     /// The order trigger price (STOP).
     pub trigger_price: Option<Price>,
     /// The trigger type for the order.
+    #[serde(default, with = "crate::enums::serde_option_trigger_type")]
     pub trigger_type: Option<TriggerType>,
     /// The trailing offset for the orders limit price.
     pub limit_offset: Option<Decimal>,
     /// The trailing offset for the orders trigger price (STOP).
     pub trailing_offset: Option<Decimal>,
     /// The trailing offset type.
+    #[serde(default, with = "crate::enums::serde_option_trailing_offset_type")]
     pub trailing_offset_type: Option<TrailingOffsetType>,
     /// The order time in force.
     pub time_in_force: TimeInForce,
@@ -104,10 +106,12 @@ pub struct OrderSnapshot {
     /// The quantity of the `LIMIT` order to display on the public book (iceberg).
     pub display_qty: Option<Quantity>,
     /// The order emulation trigger type.
+    #[serde(default, with = "crate::enums::serde_option_trigger_type")]
     pub emulation_trigger: Option<TriggerType>,
     /// The order emulation trigger instrument ID (will be `instrument_id` if `None`).
     pub trigger_instrument_id: Option<InstrumentId>,
     /// The orders contingency type.
+    #[serde(default, with = "crate::enums::serde_option_contingency_type")]
     pub contingency_type: Option<ContingencyType>,
     /// The order list ID associated with the order.
     pub order_list_id: Option<OrderListId>,

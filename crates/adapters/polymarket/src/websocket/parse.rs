@@ -704,9 +704,9 @@ mod tests {
         assert_eq!(deltas.deltas.len(), 7);
         assert_eq!(deltas.deltas[0].action, BookAction::Clear);
         assert_eq!(deltas.deltas[1].action, BookAction::Add);
-        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
+        assert_eq!(deltas.deltas[1].order.side, Some(OrderSide::Buy));
         assert_eq!(deltas.deltas[4].action, BookAction::Add);
-        assert_eq!(deltas.deltas[4].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[4].order.side, Some(OrderSide::Sell));
 
         // Every snapshot delta carries F_SNAPSHOT
         for delta in &deltas.deltas {
@@ -1214,8 +1214,9 @@ mod tests {
         #[case] best_ask: &str,
     ) {
         let instrument = test_instrument_with_tick("0.01");
-        assert_eq!(instrument.price_precision(), 2);
+        assert_eq!(instrument.price_precision(), 4);
         assert_eq!(instrument.price_increment(), Price::from("0.01"));
+        assert_eq!(instrument.price_increment().precision, 4);
 
         let result = parse_quote_from_best_bid_ask(
             &best_bid_ask(best_bid, best_ask),

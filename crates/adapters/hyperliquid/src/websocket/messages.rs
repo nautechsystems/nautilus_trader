@@ -15,9 +15,14 @@
 
 use ahash::AHashMap;
 use derive_builder::Builder;
-use nautilus_core::serialization::{
-    deserialize_decimal, deserialize_decimal_from_str, deserialize_optional_decimal_from_str,
-    serialize_decimal_as_str,
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::{
+    serialization::{
+        deserialize_decimal, deserialize_decimal_from_str, deserialize_optional_decimal_from_str,
+        serialize_decimal_as_str,
+    },
+    string::secret::SecretString,
 };
 use nautilus_model::{
     data::{
@@ -153,9 +158,9 @@ pub struct ActionPayload {
 /// Signature data.
 #[derive(Debug, Clone, Serialize)]
 pub struct SignatureData {
-    pub r: String,
-    pub s: String,
-    pub v: String,
+    pub r: SecretString,
+    pub s: SecretString,
+    pub v: SecretString,
 }
 
 /// Action request types.
@@ -923,6 +928,25 @@ mod tests {
     use serde_json;
 
     use super::*;
+
+    #[rstest]
+    fn test_signature_data_serialization_and_debug_redaction() {
+        let signature = SignatureData {
+            r: SecretString::from("0xsignature-r"),
+            s: SecretString::from("0xsignature-s"),
+            v: SecretString::from("0x1b"),
+        };
+        let wire = serde_json::to_value(&signature).unwrap();
+        let debug = format!("{signature:?}");
+
+        assert_eq!(wire["r"], "0xsignature-r");
+        assert_eq!(wire["s"], "0xsignature-s");
+        assert_eq!(wire["v"], "0x1b");
+        assert_eq!(debug.matches(REDACTED).count(), 3);
+        assert!(!debug.contains("0xsignature-r"));
+        assert!(!debug.contains("0xsignature-s"));
+        assert!(!debug.contains("0x1b"));
+    }
 
     #[rstest]
     fn test_subscription_request_serialization() {

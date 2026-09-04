@@ -66,15 +66,12 @@
 
 use std::{
     collections::VecDeque,
-    sync::{
-        Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 use dashmap::{DashMap, DashSet};
 use nautilus_common::cache::fifo::FifoCache;
-use nautilus_core::{MUTEX_POISONED, UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::{ExecutionEventEmitter, execution::context::OrderContext};
 use nautilus_model::{
     enums::{OrderStatus, OrderType},
@@ -86,6 +83,7 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport},
     types::{Price, Quantity},
 };
+use parking_lot::Mutex;
 use ustr::Ustr;
 
 use crate::{
@@ -310,12 +308,8 @@ impl WsDispatchState {
     ///
     /// Returns `true` when the trade was already present (i.e. it is a
     /// duplicate), `false` otherwise.
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "dedup mutex poisoning is not expected"
-    )]
     pub fn check_and_insert_trade(&self, trade_id: TradeId) -> bool {
-        let mut set = self.emitted_trades.lock().expect(MUTEX_POISONED);
+        let mut set = self.emitted_trades.lock();
         !set.insert(trade_id)
     }
 
@@ -325,24 +319,16 @@ impl WsDispatchState {
     /// `orderUpdates` message. The normal CLOID mapping can be removed while a
     /// late unresolved order update still gets suppressed instead of forwarded
     /// as an external report.
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "terminal cloid mutex poisoning is not expected"
-    )]
     pub fn insert_terminal_cloid(&self, cloid: Ustr) {
-        let mut set = self.terminal_cloids.lock().expect(MUTEX_POISONED);
+        let mut set = self.terminal_cloids.lock();
         let _ = set.insert(cloid);
     }
 
     /// Returns whether a raw Hyperliquid CLOID reached a terminal state through
     /// the post response path.
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "terminal cloid mutex poisoning is not expected"
-    )]
     #[must_use]
     pub fn terminal_cloid_seen(&self, cloid: &Ustr) -> bool {
-        let set = self.terminal_cloids.lock().expect(MUTEX_POISONED);
+        let set = self.terminal_cloids.lock();
         set.contains(cloid)
     }
 

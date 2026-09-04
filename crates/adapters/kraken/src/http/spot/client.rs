@@ -20,7 +20,7 @@ use std::{
     fmt::Debug,
     num::NonZeroU32,
     sync::{
-        Arc, RwLock,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -38,7 +38,7 @@ use nautilus_model::{
     data::{Bar, BarType, BookOrder, TradeTick},
     enums::{
         AccountType, BookType, CurrencyType, MarketStatusAction, OrderSide, OrderType,
-        PositionSideSpecified, TimeInForce, TriggerType,
+        PositionSide, TimeInForce, TriggerType,
     },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
@@ -52,6 +52,7 @@ use nautilus_network::{
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
 };
+use parking_lot::RwLock;
 use rust_decimal::Decimal;
 use serde::de::DeserializeOwned;
 use tokio_util::sync::CancellationToken;
@@ -251,26 +252,17 @@ impl KrakenSpotRawHttpClient {
 
     /// Cancels all pending HTTP requests.
     pub fn cancel_all_requests(&self) {
-        self.cancellation_token
-            .read()
-            .expect("cancellation token lock poisoned")
-            .cancel();
+        self.cancellation_token.read().cancel();
     }
 
     /// Replaces the canceled token so requests can proceed after reconnect.
     pub fn reset_cancellation_token(&self) {
-        *self
-            .cancellation_token
-            .write()
-            .expect("cancellation token lock poisoned") = CancellationToken::new();
+        *self.cancellation_token.write() = CancellationToken::new();
     }
 
     /// Returns a clone of the current cancellation token.
     pub fn cancellation_token(&self) -> CancellationToken {
-        self.cancellation_token
-            .read()
-            .expect("cancellation token lock poisoned")
-            .clone()
+        self.cancellation_token.read().clone()
     }
 
     fn default_headers() -> HashMap<String, String> {
@@ -2221,11 +2213,11 @@ impl KrakenSpotHttpClient {
                 .ok_or_else(|| InstrumentLookupError::not_found(inst_id))?;
 
             let side = if signed_qty.is_sign_positive() && !signed_qty.is_zero() {
-                PositionSideSpecified::Long
+                PositionSide::Long
             } else if signed_qty.is_sign_negative() && !signed_qty.is_zero() {
-                PositionSideSpecified::Short
+                PositionSide::Short
             } else {
-                PositionSideSpecified::Flat
+                PositionSide::Flat
             };
             let quantity = Quantity::from_decimal_dp(signed_qty.abs(), instrument.size_precision())
                 .map_err(|e| {
@@ -2253,7 +2245,7 @@ impl KrakenSpotHttpClient {
                 reports.push(PositionStatusReport::new(
                     account_id,
                     target_id,
-                    PositionSideSpecified::Flat,
+                    PositionSide::Flat,
                     Quantity::zero(precision),
                     ts_init,
                     ts_init,
@@ -2308,9 +2300,9 @@ impl KrakenSpotHttpClient {
                 let wallet_balance = wallet_by_coin.get(&coin).copied().unwrap_or(Decimal::ZERO);
 
                 let side = if wallet_balance > Decimal::ZERO {
-                    PositionSideSpecified::Long
+                    PositionSide::Long
                 } else {
-                    PositionSideSpecified::Flat
+                    PositionSide::Flat
                 };
 
                 let abs_balance = wallet_balance.abs();
@@ -2352,7 +2344,7 @@ impl KrakenSpotHttpClient {
                     continue;
                 }
 
-                let side = PositionSideSpecified::Long;
+                let side = PositionSide::Long;
                 let quantity =
                     Quantity::from_decimal_dp(wallet_balance, instrument.size_precision())?;
 
@@ -2801,7 +2793,6 @@ impl KrakenSpotHttpClient {
         let kraken_side = match order_side {
             OrderSide::Buy => KrakenOrderSide::Buy,
             OrderSide::Sell => KrakenOrderSide::Sell,
-            _ => anyhow::bail!("Invalid order side: {order_side:?}"),
         };
 
         let kraken_order_type = match order_type {
@@ -3312,32 +3303,21 @@ mod tests {
     fn cache_test_spot_instrument(client: &KrakenSpotHttpClient) -> InstrumentId {
         let instrument_id = InstrumentId::from("XBT/USD.KRAKEN");
 
-        client.cache_instrument(InstrumentAny::CurrencyPair(CurrencyPair::new(
-            instrument_id,
-            Symbol::new("XBTUSD"),
-            Currency::BTC(),
-            Currency::USD(),
-            1,
-            8,
-            Price::from("0.1"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            0.into(),
-            0.into(),
-        )));
+        client.cache_instrument(InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new("XBTUSD"))
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USD())
+                .price_precision(1)
+                .size_precision(8)
+                .price_increment(Price::from("0.1"))
+                .size_increment(Quantity::from("0.00000001"))
+                .ts_event(0.into())
+                .ts_init(0.into())
+                .build()
+                .unwrap(),
+        ));
 
         instrument_id
     }

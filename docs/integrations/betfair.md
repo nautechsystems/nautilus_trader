@@ -146,6 +146,21 @@ at-the-open instruction.
 | Batch Modify | -         | Not supported.                           |
 | Batch Cancel | ✓         | Implemented through `BatchCancelOrders`. |
 
+### Cancel all orders
+
+Without an order side, `CancelAllOrders` sends one market-wide request and cancels orders for every
+selection in that market.
+
+With an order side, the command selects open cached orders for the exact instrument and side that
+belong to the current execution client and account, regardless of strategy. This includes
+reconciled external orders assigned to that client and excludes orders with no client assignment.
+The command uses the venue order IDs already held in cache and does not refresh order state first. If
+any otherwise eligible order lacks a cached venue order ID, the command sends no requests. Otherwise,
+it sends per-bet cancel instructions in batches of at most 60.
+
+`CancelAllOrders` does not create per-order cancel commands, so request and instruction failures
+emit no order events. OCM and mass-status reconciliation provide the final order state.
+
 ### Position management
 
 | Feature          | Supported | Notes                                          |

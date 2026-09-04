@@ -254,7 +254,7 @@ impl OrderTestBuilder {
 
     fn get_trailing_offset_type(&self) -> TrailingOffsetType {
         self.trailing_offset_type
-            .unwrap_or(TrailingOffsetType::NoTrailingOffset)
+            .expect("Trailing offset type not set")
     }
 
     // ----------- TimeInForce ----------
@@ -728,18 +728,15 @@ mod tests {
     use crate::orders::Order;
 
     #[rstest]
-    fn normalizes_an_absent_contingency_type() {
+    fn preserves_an_absent_contingency_type() {
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(InstrumentId::test_default())
             .quantity(Quantity::from(1))
             .price(Price::from("1"))
             .build();
 
-        assert_eq!(
-            order.contingency_type(),
-            Some(ContingencyType::NoContingency)
-        );
-        assert!(order.is_contingency());
+        assert_eq!(order.contingency_type(), None);
+        assert!(!order.is_contingency());
     }
 
     #[rstest]

@@ -42,7 +42,7 @@ use nautilus_bybit::{
 };
 use nautilus_core::UUID4;
 use nautilus_model::{
-    enums::{OrderSide, OrderType, PositionSideSpecified, TimeInForce},
+    enums::{OrderSide, OrderType, PositionSide, TimeInForce},
     identifiers::{AccountId, ClientOrderId},
     reports::position::PositionStatusReport,
 };
@@ -103,7 +103,7 @@ async fn main() -> anyhow::Result<()> {
             .await?;
         let open: Vec<&PositionStatusReport> = positions
             .iter()
-            .filter(|p| p.position_side != PositionSideSpecified::Flat && !p.quantity.is_zero())
+            .filter(|p| p.position_side != PositionSide::Flat && !p.quantity.is_zero())
             .collect();
 
         if open.is_empty() {
@@ -154,9 +154,9 @@ async fn close_position(
     }
 
     let close_side = match position.position_side {
-        PositionSideSpecified::Long => OrderSide::Sell,
-        PositionSideSpecified::Short => OrderSide::Buy,
-        PositionSideSpecified::Flat => return Ok(()),
+        PositionSide::Long => OrderSide::Sell,
+        PositionSide::Short => OrderSide::Buy,
+        PositionSide::Flat => return Ok(()),
     };
 
     let position_idx = position
@@ -191,6 +191,7 @@ async fn close_position(
             None,
             None,
             None,
+            None,
         )
         .await?;
 
@@ -201,7 +202,7 @@ async fn close_position(
     Ok(())
 }
 
-fn infer_position_idx(venue_pid: &str, side: PositionSideSpecified) -> Option<BybitPositionIdx> {
+fn infer_position_idx(venue_pid: &str, side: PositionSide) -> Option<BybitPositionIdx> {
     // Hedge-mode venue position IDs are "<SYMBOL>-LONG" / "<SYMBOL>-SHORT"
     // and one-way mode reports None.
     if venue_pid.ends_with("-LONG") {
@@ -210,9 +211,9 @@ fn infer_position_idx(venue_pid: &str, side: PositionSideSpecified) -> Option<By
         Some(BybitPositionIdx::SellHedge)
     } else {
         match side {
-            PositionSideSpecified::Long => Some(BybitPositionIdx::OneWay),
-            PositionSideSpecified::Short => Some(BybitPositionIdx::OneWay),
-            PositionSideSpecified::Flat => None,
+            PositionSide::Long => Some(BybitPositionIdx::OneWay),
+            PositionSide::Short => Some(BybitPositionIdx::OneWay),
+            PositionSide::Flat => None,
         }
     }
 }
@@ -226,7 +227,7 @@ async fn verify_flat(client: &BybitHttpClient, account_id: AccountId) -> anyhow:
             .await?;
 
         for p in positions {
-            if p.position_side != PositionSideSpecified::Flat && !p.quantity.is_zero() {
+            if p.position_side != PositionSide::Flat && !p.quantity.is_zero() {
                 residual.push((product_type, p));
             }
         }

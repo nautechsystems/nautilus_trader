@@ -20,6 +20,7 @@ use std::{fmt::Debug, sync::Arc};
 use ahash::AHashMap;
 use nautilus_core::{
     AtomicMap, UnixNanos,
+    string::secret::SecretString,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
@@ -36,7 +37,7 @@ use crate::{
     common::consts::COINBASE_VENUE,
     websocket::{
         client::COINBASE_WS_SUBSCRIPTION_KEYS,
-        messages::{CoinbaseWsMessage, CoinbaseWsSubscription, WsEventType, WsOrderUpdate},
+        messages::{CoinbaseWsMessage, WsEventType, WsOrderUpdate},
         parse::{
             parse_ws_candle, parse_ws_l2_snapshot, parse_ws_l2_update, parse_ws_status_product,
             parse_ws_ticker, parse_ws_trade, parse_ws_user_event_to_order_status_report,
@@ -60,10 +61,18 @@ fn resolve_instrument_id_from_aliases(
 pub enum HandlerCommand {
     /// Provides the network-level WebSocket client.
     SetClient(WebSocketClient),
-    /// Subscribes to a channel for the given product IDs.
-    Subscribe(CoinbaseWsSubscription),
-    /// Unsubscribes from a channel.
-    Unsubscribe(CoinbaseWsSubscription),
+    /// Subscribes with a serialized payload that is zeroized on drop.
+    Subscribe {
+        channel: crate::common::enums::CoinbaseWsChannel,
+        product_ids: Vec<Ustr>,
+        payload: SecretString,
+    },
+    /// Unsubscribes with a serialized payload that is zeroized on drop.
+    Unsubscribe {
+        channel: crate::common::enums::CoinbaseWsChannel,
+        product_ids: Vec<Ustr>,
+        payload: SecretString,
+    },
     /// Disconnects the WebSocket.
     Disconnect,
     /// Caches instruments for precision lookups during parsing.
@@ -82,8 +91,8 @@ impl Debug for HandlerCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::SetClient(_) => f.write_str("SetClient"),
-            Self::Subscribe(s) => write!(f, "Subscribe({:?})", s.channel),
-            Self::Unsubscribe(s) => write!(f, "Unsubscribe({:?})", s.channel),
+            Self::Subscribe { channel, .. } => write!(f, "Subscribe({channel:?})"),
+            Self::Unsubscribe { channel, .. } => write!(f, "Unsubscribe({channel:?})"),
             Self::Disconnect => f.write_str("Disconnect"),
             Self::InitializeInstruments(v) => write!(f, "InitializeInstruments({})", v.len()),
             Self::UpdateInstrument(i) => write!(f, "UpdateInstrument({})", i.id()),
@@ -213,11 +222,9 @@ impl FeedHandler {
                         HandlerCommand::SetClient(client) => {
                             self.client = Some(client);
                         }
-                        HandlerCommand::Subscribe(sub) => {
-                            self.send_subscription(&sub).await;
-                        }
-                        HandlerCommand::Unsubscribe(sub) => {
-                            self.send_subscription(&sub).await;
+                        HandlerCommand::Subscribe { payload, .. }
+                        | HandlerCommand::Unsubscribe { payload, .. } => {
+                            self.send_subscription(&payload).await;
                         }
                         HandlerCommand::Disconnect => {
                             if let Some(client) = self.client.take() {
@@ -269,22 +276,20 @@ impl FeedHandler {
         }
     }
 
-    async fn send_subscription(&self, sub: &CoinbaseWsSubscription) {
+    async fn send_subscription(&self, payload: &SecretString) {
         let Some(client) = &self.client else {
             log::warn!("Cannot send subscription, no WebSocket client set");
             return;
         };
 
-        match serde_json::to_string(sub) {
-            Ok(json) => {
-                if let Err(e) = client
-                    .send_text(json, Some(COINBASE_WS_SUBSCRIPTION_KEYS.as_slice()))
-                    .await
-                {
-                    log::error!("Failed to send subscription: {e}");
-                }
-            }
-            Err(e) => log::error!("Failed to serialize subscription: {e}"),
+        if let Err(e) = client
+            .send_text(
+                payload.expose_secret().to_owned(),
+                Some(COINBASE_WS_SUBSCRIPTION_KEYS.as_slice()),
+            )
+            .await
+        {
+            log::error!("Failed to send subscription: {e}");
         }
     }
 
@@ -748,32 +753,22 @@ mod tests {
 
     fn btc_usd_instrument() -> InstrumentAny {
         let instrument_id = InstrumentId::new(Symbol::new("BTC-USD"), *COINBASE_VENUE);
-        InstrumentAny::CurrencyPair(CurrencyPair::new(
-            instrument_id,
-            Symbol::new("BTC-USD"),
-            Currency::get_or_create_crypto("BTC"),
-            Currency::get_or_create_crypto("USD"),
-            2,
-            8,
-            Price::from("0.01"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            Some(Quantity::from("0.00000001")),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        ))
+        InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new("BTC-USD"))
+                .base_currency(Currency::get_or_create_crypto("BTC"))
+                .quote_currency(Currency::get_or_create_crypto("USD"))
+                .price_precision(2)
+                .size_precision(8)
+                .price_increment(Price::from("0.01"))
+                .size_increment(Quantity::from("0.00000001"))
+                .min_quantity(Quantity::from("0.00000001"))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
     }
 
     #[rstest]
@@ -820,7 +815,7 @@ mod tests {
                     carrier.report.client_order_id.unwrap().as_str(),
                     "11111-000000-000001"
                 );
-                assert_eq!(carrier.report.order_side, OrderSide::Buy);
+                assert_eq!(carrier.report.order_side, OrderSide::Buy.into());
                 assert_eq!(carrier.report.order_status, OrderStatus::Accepted);
                 assert_eq!(carrier.report.filled_qty, Quantity::from("0.00000000"));
                 assert_eq!(carrier.report.quantity, Quantity::from("0.00100000"));

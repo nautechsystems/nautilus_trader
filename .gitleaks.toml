@@ -24,6 +24,9 @@ regexes = [
   # PoolCreated event fixture.
   "0x8dd7c686B11c115FfAbA245CBfc418B371087F68",
   "0xBE5381d826375492E55E05039a541eb2CB978e76",
+  # Public Arbitrum WETH and USDC contracts used in execution examples and tests.
+  "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+  "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
   # Public Pyth price-feed ID captured from the Polymarket public API.
   "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43",
 ]

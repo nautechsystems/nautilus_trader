@@ -1,16 +1,16 @@
 # nautilus-betfair
 
 [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
-[![Documentation](https://img.shields.io/docsrs/nautilus-betfair)](https://docs.rs/nautilus-betfair/latest/nautilus-betfair/)
+[![Documentation](https://img.shields.io/docsrs/nautilus-betfair)](https://docs.rs/nautilus-betfair/latest/nautilus_betfair/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-betfair.svg)](https://crates.io/crates/nautilus-betfair)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
-[NautilusTrader](https://nautilustrader.io) adapter for the [Betfair](https://www.betfair.com/) betting exchange.
+[NautilusTrader](https://nautilustrader.io) adapter for the [Betfair](https://www.betfair.com) betting exchange.
 
 The `nautilus-betfair` crate provides data and execution clients, streaming
 and REST API models, and full NautilusTrader integration for the
-[Betfair](https://www.betfair.com/) betting exchange.
+[Betfair](https://www.betfair.com) betting exchange.
 
 The official API reference can be found at <https://docs.developer.betfair.com/>.
 
@@ -26,7 +26,12 @@ event-driven architecture, providing research-to-live semantic parity.
 
 This crate provides feature flags to control source code inclusion during compilation:
 
-- `high-precision`: Enables [128-bit value types](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) from `nautilus-model`.
+- `examples`: Enables the crate's example binaries.
+- `extension-module`: Builds as a Python extension module.
+- `high-precision`: Enables
+  [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
+  to use 128-bit value types.
+- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
 ## Documentation
 

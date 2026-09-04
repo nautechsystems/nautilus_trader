@@ -25,7 +25,7 @@
 //! instrument, order size, and exec spec profile.
 //!
 //! Required environment variable:
-//! - `NAUTILUS_IB_ACCOUNT_ID` is your IB account, for example `U1234567`.
+//! - `NAUTILUS_IB_ACCOUNT_ID` is your IB account, for example `U1234567`
 
 use std::{collections::HashSet, env, time::Duration};
 
@@ -62,6 +62,10 @@ enum IbExecutionSpecProfile {
     UnsupportedFlags,
 }
 
+// WARNING: With `DRY_RUN = false`, this tester submits orders to the configured
+// environment and may use real funds. Set `DRY_RUN = true` to connect without
+// submitting orders or sending shutdown cancel/close commands.
+const DRY_RUN: bool = false;
 const TRADER_ID: &str = "IB-EXEC-TESTER-001";
 const NODE_NAME: &str = "IB-EXEC-TESTER-001";
 const STRATEGY_ID: &str = "IB-EXEC-TESTER-001";
@@ -184,12 +188,13 @@ fn exec_tester_config_for_profile(
     let builder = ExecTesterConfig::builder()
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from(STRATEGY_ID)),
-            external_order_claims: Some(vec![instrument_id]),
+            external_order_instrument_ids: Some(vec![instrument_id]),
             ..Default::default()
         })
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
+        .dry_run(DRY_RUN)
         .log_data(false);
 
     match profile {

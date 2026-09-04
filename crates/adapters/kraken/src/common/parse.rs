@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Conversion helpers that translate Kraken API schemas into Nautilus domain models.
+//! Converters that translate Kraken API schemas into Nautilus domain models.
 
 use std::str::FromStr;
 
@@ -22,8 +22,8 @@ use nautilus_core::{datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos, uuid
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{
-        AggressorSide, AssetClass, BarAggregation, ContingencyType, LiquiditySide, OrderStatus,
-        OrderType, PositionSideSpecified, TimeInForce, TrailingOffsetType, TriggerType,
+        AggressorSide, AssetClass, BarAggregation, LiquiditySide, OrderSide, OrderStatus,
+        OrderType, PositionSide, TimeInForce, TriggerType,
     },
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
     instruments::{
@@ -222,32 +222,22 @@ pub fn parse_spot_instrument(
         .first()
         .map(|(_, fee)| *fee / dec!(100));
 
-    let instrument = CurrencyPair::new(
-        instrument_id,
-        raw_symbol,
-        base_currency,
-        quote_currency,
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        None,
-        None,
-        None,
-        min_quantity,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        maker_fee,
-        taker_fee,
-        None,
-        None,
-        ts_event,
-        ts_init,
-    );
+    let instrument = CurrencyPair::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .base_currency(base_currency)
+        .quote_currency(quote_currency)
+        .price_precision(price_increment.precision)
+        .size_precision(size_increment.precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .maybe_min_quantity(min_quantity)
+        .maybe_maker_fee(maker_fee)
+        .maybe_taker_fee(taker_fee)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::CurrencyPair(instrument))
 }
@@ -301,34 +291,23 @@ pub fn parse_tokenized_instrument(
         .first()
         .map(|(_, fee)| *fee / dec!(100));
 
-    let instrument = TokenizedAsset::new(
-        instrument_id,
-        raw_symbol,
-        AssetClass::Equity,
-        base_currency,
-        quote_currency,
-        None, // isin
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        None,
-        None,
-        None,
-        min_quantity,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        maker_fee,
-        taker_fee,
-        None,
-        None,
-        ts_event,
-        ts_init,
-    );
+    let instrument = TokenizedAsset::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .asset_class(AssetClass::Equity)
+        .base_currency(base_currency)
+        .quote_currency(quote_currency)
+        .price_precision(price_increment.precision)
+        .size_precision(size_increment.precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .maybe_min_quantity(min_quantity)
+        .maybe_maker_fee(maker_fee)
+        .maybe_taker_fee(taker_fee)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::TokenizedAsset(instrument))
 }
@@ -408,34 +387,24 @@ pub fn parse_futures_instrument(
             (Some(level.initial_margin), Some(level.maintenance_margin))
         });
 
-    let instrument = CryptoPerpetual::new(
-        instrument_id,
-        raw_symbol,
-        base_currency,
-        quote_currency,
-        settlement_currency,
-        is_inverse,
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        multiplier,
-        None, // lot_size
-        None, // max_quantity
-        None, // min_quantity
-        None, // max_notional
-        None, // min_notional
-        None, // max_price
-        None, // min_price
-        margin_init,
-        margin_maint,
-        None, // maker_fee
-        None, // taker_fee
-        None, // tick_scheme
-        None, // info
-        ts_event,
-        ts_init,
-    );
+    let instrument = CryptoPerpetual::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .base_currency(base_currency)
+        .quote_currency(quote_currency)
+        .settlement_currency(settlement_currency)
+        .is_inverse(is_inverse)
+        .price_precision(price_increment.precision)
+        .size_precision(size_increment.precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .maybe_multiplier(multiplier)
+        .maybe_margin_init(margin_init)
+        .maybe_margin_maint(margin_maint)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::CryptoPerpetual(instrument))
 }
@@ -639,7 +608,7 @@ pub fn parse_order_status_report(
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(order_id);
 
-    let order_side = order.descr.order_side.into();
+    let order_side = OrderSide::from(order.descr.order_side).into();
     let order_type = order.descr.ordertype.into();
     let order_status = order.status.into();
 
@@ -726,7 +695,7 @@ pub fn parse_order_status_report(
         venue_position_id: None,
         linked_order_ids: None,
         parent_order_id: None,
-        contingency_type: ContingencyType::NoContingency,
+        contingency_type: None,
         expire_time,
         price,
         activation_price: None,
@@ -734,7 +703,7 @@ pub fn parse_order_status_report(
         trigger_type,
         limit_offset: None,
         trailing_offset: None,
-        trailing_offset_type: TrailingOffsetType::NoTrailingOffset,
+        trailing_offset_type: None,
         display_qty: None,
         avg_px: compute_avg_px(order),
         post_only: order.oflags.contains("post"),
@@ -847,7 +816,7 @@ pub fn parse_futures_order_status_report(
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(&order.order_id);
 
-    let order_side = order.side.into();
+    let order_side = OrderSide::from(order.side).into();
     let order_type: OrderType = order.order_type.into();
     let order_type = if order_type == OrderType::MarketIfTouched && order.limit_price.is_some() {
         OrderType::LimitIfTouched
@@ -899,7 +868,7 @@ pub fn parse_futures_order_status_report(
         venue_position_id: None,
         linked_order_ids: None,
         parent_order_id: None,
-        contingency_type: ContingencyType::NoContingency,
+        contingency_type: None,
         expire_time: None,
         price,
         activation_price: None,
@@ -907,7 +876,7 @@ pub fn parse_futures_order_status_report(
         trigger_type,
         limit_offset: None,
         trailing_offset: None,
-        trailing_offset_type: TrailingOffsetType::NoTrailingOffset,
+        trailing_offset_type: None,
         display_qty: None,
         avg_px: None,
         post_only: false,
@@ -932,7 +901,7 @@ pub fn parse_futures_order_event_status_report(
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(&event.order_id);
 
-    let order_side = event.side.into();
+    let order_side = OrderSide::from(event.side).into();
     let order_type: OrderType = event.order_type.into();
     let order_type = if order_type == OrderType::MarketIfTouched && event.limit_price.is_some() {
         OrderType::LimitIfTouched
@@ -980,7 +949,7 @@ pub fn parse_futures_order_event_status_report(
         venue_position_id: None,
         linked_order_ids: None,
         parent_order_id: None,
-        contingency_type: ContingencyType::NoContingency,
+        contingency_type: None,
         expire_time: None,
         price,
         activation_price: None,
@@ -988,7 +957,7 @@ pub fn parse_futures_order_event_status_report(
         trigger_type,
         limit_offset: None,
         trailing_offset: None,
-        trailing_offset_type: TrailingOffsetType::NoTrailingOffset,
+        trailing_offset_type: None,
         display_qty: None,
         avg_px: None,
         post_only: false,
@@ -1098,15 +1067,15 @@ pub fn parse_futures_position_status_report(
     let instrument_id = instrument.id();
 
     let position_side = match position.side {
-        KrakenPositionSide::Long => PositionSideSpecified::Long,
-        KrakenPositionSide::Short => PositionSideSpecified::Short,
+        KrakenPositionSide::Long => PositionSide::Long,
+        KrakenPositionSide::Short => PositionSide::Short,
     };
 
     let quantity = Quantity::from_decimal_dp(position.size, instrument.size_precision())?;
     let signed_decimal_qty = match position_side {
-        PositionSideSpecified::Long => position.size,
-        PositionSideSpecified::Short => -position.size,
-        PositionSideSpecified::Flat => dec!(0),
+        PositionSide::Long => position.size,
+        PositionSide::Short => -position.size,
+        PositionSide::Flat => dec!(0),
     };
 
     let avg_px_open = Some(position.price);
@@ -1435,32 +1404,21 @@ mod tests {
 
         // Create a mock instrument for testing
         let instrument_id = InstrumentId::new(Symbol::new("BTC/USD"), *KRAKEN_VENUE);
-        let instrument = InstrumentAny::CurrencyPair(CurrencyPair::new(
-            instrument_id,
-            Symbol::new("XBTUSDT"),
-            Currency::BTC(),
-            Currency::USDT(),
-            1, // price_precision
-            8, // size_precision
-            Price::from("0.1"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            TS,
-            TS,
-        ));
+        let instrument = InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new("XBTUSDT"))
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USDT())
+                .price_precision(1)
+                .size_precision(8)
+                .price_increment(Price::from("0.1"))
+                .size_increment(Quantity::from("0.00000001"))
+                .ts_event(TS)
+                .ts_init(TS)
+                .build()
+                .unwrap(),
+        );
 
         let trade_tick = parse_trade_tick_from_array(trade_array, &instrument, TS).unwrap();
 
@@ -1495,32 +1453,21 @@ mod tests {
 
         // Create a mock instrument
         let instrument_id = InstrumentId::new(Symbol::new("BTC/USD"), *KRAKEN_VENUE);
-        let instrument = InstrumentAny::CurrencyPair(CurrencyPair::new(
-            instrument_id,
-            Symbol::new("XBTUSDT"),
-            Currency::BTC(),
-            Currency::USDT(),
-            1, // price_precision
-            8, // size_precision
-            Price::from("0.1"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            TS,
-            TS,
-        ));
+        let instrument = InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new("XBTUSDT"))
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USDT())
+                .price_precision(1)
+                .size_precision(8)
+                .price_increment(Price::from("0.1"))
+                .size_increment(Quantity::from("0.00000001"))
+                .ts_event(TS)
+                .ts_init(TS)
+                .build()
+                .unwrap(),
+        );
 
         let bar_type = BarType::new(
             instrument_id,
@@ -1638,32 +1585,21 @@ mod tests {
 
         let account_id = AccountId::new("KRAKEN-001");
         let instrument_id = InstrumentId::new(Symbol::new("BTC/USDT"), *KRAKEN_VENUE);
-        let instrument = InstrumentAny::CurrencyPair(CurrencyPair::new(
-            instrument_id,
-            Symbol::new("XBTUSDT"),
-            Currency::BTC(),
-            Currency::USDT(),
-            2,
-            8,
-            Price::from("0.01"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            TS,
-            TS,
-        ));
+        let instrument = InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new("XBTUSDT"))
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USDT())
+                .price_precision(2)
+                .size_precision(8)
+                .price_increment(Price::from("0.01"))
+                .size_increment(Quantity::from("0.00000001"))
+                .ts_event(TS)
+                .ts_init(TS)
+                .build()
+                .unwrap(),
+        );
 
         let (order_id, order) = orders.iter().next().unwrap();
 
@@ -1679,34 +1615,23 @@ mod tests {
 
     fn create_mock_perp() -> InstrumentAny {
         let instrument_id = InstrumentId::new(Symbol::new("PI_XBTUSD"), *KRAKEN_VENUE);
-        InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            instrument_id,
-            Symbol::new("PI_XBTUSD"),
-            Currency::BTC(),
-            Currency::USD(),
-            Currency::USD(),
-            false,
-            1,
-            0,
-            Price::from("0.5"),
-            Quantity::from("1"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            TS,
-            TS,
-        ))
+        InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new("PI_XBTUSD"))
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USD())
+                .settlement_currency(Currency::USD())
+                .is_inverse(false)
+                .price_precision(1)
+                .size_precision(0)
+                .price_increment(Price::from("0.5"))
+                .size_increment(Quantity::from("1"))
+                .ts_event(TS)
+                .ts_init(TS)
+                .build()
+                .unwrap(),
+        )
     }
 
     #[rstest]
@@ -1804,7 +1729,7 @@ mod tests {
         assert_eq!(report.order_type, OrderType::LimitIfTouched);
         assert_eq!(report.trigger_price.unwrap().as_decimal(), dec!(36000));
         assert_eq!(report.price.unwrap().as_decimal(), dec!(35500));
-        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_side, OrderSide::Sell.into());
         assert!(!report.reduce_only);
     }
 
@@ -1873,7 +1798,7 @@ mod tests {
         assert_eq!(report.order_type, OrderType::LimitIfTouched);
         assert_eq!(report.trigger_price.unwrap().as_decimal(), dec!(40000));
         assert_eq!(report.price.unwrap().as_decimal(), dec!(39500));
-        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_side, OrderSide::Sell.into());
         assert_eq!(report.order_status, OrderStatus::Accepted);
         assert!(report.reduce_only);
     }
@@ -2014,32 +1939,21 @@ mod tests {
 
         let account_id = AccountId::new("KRAKEN-001");
         let instrument_id = InstrumentId::new(Symbol::new("BTC/USDT"), *KRAKEN_VENUE);
-        let instrument = InstrumentAny::CurrencyPair(CurrencyPair::new(
-            instrument_id,
-            Symbol::new("XBTUSDT"),
-            Currency::BTC(),
-            Currency::USDT(),
-            2,
-            8,
-            Price::from("0.01"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            TS,
-            TS,
-        ));
+        let instrument = InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new("XBTUSDT"))
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USDT())
+                .price_precision(2)
+                .size_precision(8)
+                .price_increment(Price::from("0.01"))
+                .size_increment(Quantity::from("0.00000001"))
+                .ts_event(TS)
+                .ts_init(TS)
+                .build()
+                .unwrap(),
+        );
 
         let (trade_id, trade) = trades.iter().next().unwrap();
 
@@ -2185,34 +2099,22 @@ mod tests {
 
         let account_id = AccountId::new("KRAKEN-001");
         let instrument_id = InstrumentId::new(Symbol::new("AAPLx/USD"), *KRAKEN_VENUE);
-        let instrument = InstrumentAny::TokenizedAsset(TokenizedAsset::new(
-            instrument_id,
-            Symbol::new("AAPLxUSD"),
-            AssetClass::Equity,
-            Currency::get_or_create_crypto("AAPLx"),
-            Currency::USD(),
-            None,
-            2,
-            8,
-            Price::from("0.01"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            TS,
-            TS,
-        ));
+        let instrument = InstrumentAny::TokenizedAsset(
+            TokenizedAsset::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new("AAPLxUSD"))
+                .asset_class(AssetClass::Equity)
+                .base_currency(Currency::get_or_create_crypto("AAPLx"))
+                .quote_currency(Currency::USD())
+                .price_precision(2)
+                .size_precision(8)
+                .price_increment(Price::from("0.01"))
+                .size_increment(Quantity::from("0.00000001"))
+                .ts_event(TS)
+                .ts_init(TS)
+                .build()
+                .unwrap(),
+        );
 
         let (trade_id, trade) = trades.iter().next().unwrap();
 

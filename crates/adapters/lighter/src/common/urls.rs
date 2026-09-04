@@ -16,32 +16,20 @@
 //! Base URL resolution for Lighter REST and WebSocket endpoints.
 
 use super::{
-    consts::{LIGHTER_MAINNET_CHAIN_ID, LIGHTER_TESTNET_CHAIN_ID},
-    enums::LighterEnvironment,
+    deployment,
+    enums::{LighterDeployment, LighterEnvironment},
 };
-
-const LIGHTER_MAINNET_HTTP_URL: &str = "https://mainnet.zklighter.elliot.ai";
-const LIGHTER_MAINNET_WS_URL: &str = "wss://mainnet.zklighter.elliot.ai/stream";
-
-const LIGHTER_TESTNET_HTTP_URL: &str = "https://testnet.zklighter.elliot.ai";
-const LIGHTER_TESTNET_WS_URL: &str = "wss://testnet.zklighter.elliot.ai/stream";
 
 /// Returns the REST base URL for the given environment.
 #[must_use]
 pub const fn lighter_http_base_url(environment: LighterEnvironment) -> &'static str {
-    match environment {
-        LighterEnvironment::Mainnet => LIGHTER_MAINNET_HTTP_URL,
-        LighterEnvironment::Testnet => LIGHTER_TESTNET_HTTP_URL,
-    }
+    deployment::http_base_url(LighterDeployment::Lighter, environment)
 }
 
 /// Returns the WebSocket URL for the given environment.
 #[must_use]
 pub const fn lighter_ws_url(environment: LighterEnvironment) -> &'static str {
-    match environment {
-        LighterEnvironment::Mainnet => LIGHTER_MAINNET_WS_URL,
-        LighterEnvironment::Testnet => LIGHTER_TESTNET_WS_URL,
-    }
+    deployment::ws_url(LighterDeployment::Lighter, environment)
 }
 
 /// Returns the L2 chain id for the given environment.
@@ -51,10 +39,7 @@ pub const fn lighter_ws_url(environment: LighterEnvironment) -> &'static str {
 /// signatures verify against a different message and are rejected.
 #[must_use]
 pub const fn lighter_chain_id(environment: LighterEnvironment) -> u32 {
-    match environment {
-        LighterEnvironment::Mainnet => LIGHTER_MAINNET_CHAIN_ID,
-        LighterEnvironment::Testnet => LIGHTER_TESTNET_CHAIN_ID,
-    }
+    deployment::chain_id(LighterDeployment::Lighter, environment)
 }
 
 #[cfg(test)]
@@ -67,11 +52,11 @@ mod tests {
     fn test_http_base_url() {
         assert_eq!(
             lighter_http_base_url(LighterEnvironment::Mainnet),
-            LIGHTER_MAINNET_HTTP_URL,
+            "https://mainnet.zklighter.elliot.ai",
         );
         assert_eq!(
             lighter_http_base_url(LighterEnvironment::Testnet),
-            LIGHTER_TESTNET_HTTP_URL,
+            "https://testnet.zklighter.elliot.ai",
         );
     }
 
@@ -79,11 +64,11 @@ mod tests {
     fn test_ws_url() {
         assert_eq!(
             lighter_ws_url(LighterEnvironment::Mainnet),
-            LIGHTER_MAINNET_WS_URL,
+            "wss://mainnet.zklighter.elliot.ai/stream",
         );
         assert_eq!(
             lighter_ws_url(LighterEnvironment::Testnet),
-            LIGHTER_TESTNET_WS_URL,
+            "wss://testnet.zklighter.elliot.ai/stream",
         );
     }
 

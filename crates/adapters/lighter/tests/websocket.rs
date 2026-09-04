@@ -25,8 +25,8 @@ use std::{
     net::SocketAddr,
     path::PathBuf,
     sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -37,7 +37,8 @@ use axum::{
         State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
-    response::Response,
+    http::StatusCode,
+    response::{IntoResponse, Response},
     routing::get,
 };
 use futures_util::{SinkExt, StreamExt};
@@ -61,7 +62,10 @@ use nautilus_model::{
     instruments::{CryptoPerpetual, CurrencyPair, InstrumentAny},
     types::{Currency, Price, Quantity},
 };
-use nautilus_network::{SocketState, SocketStateSink, websocket::TransportBackend};
+use nautilus_network::{
+    SocketState, SocketStateSink, transport::TransportError, websocket::TransportBackend,
+};
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 
@@ -88,34 +92,23 @@ fn perp_instrument(
     registry: &MarketRegistry,
 ) -> InstrumentAny {
     let instrument_id = registry.insert(market_index, venue_symbol, LighterProductType::Perp);
-    InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-        instrument_id,
-        Symbol::new(format!("{venue_symbol}-PERP")),
-        Currency::from(venue_symbol),
-        Currency::from("USDC"),
-        Currency::from("USDC"),
-        false,
-        2,
-        4,
-        Price::from("0.01"),
-        Quantity::from("0.0001"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ))
+    InstrumentAny::CryptoPerpetual(
+        CryptoPerpetual::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::new(format!("{venue_symbol}-PERP")))
+            .base_currency(Currency::from(venue_symbol))
+            .quote_currency(Currency::from("USDC"))
+            .settlement_currency(Currency::from("USDC"))
+            .is_inverse(false)
+            .price_precision(2)
+            .size_precision(4)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.0001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    )
 }
 
 fn spot_instrument(
@@ -124,37 +117,29 @@ fn spot_instrument(
     registry: &MarketRegistry,
 ) -> InstrumentAny {
     let instrument_id = registry.insert(market_index, venue_symbol, LighterProductType::Spot);
-    InstrumentAny::CurrencyPair(CurrencyPair::new(
-        instrument_id,
-        Symbol::new(format!("{venue_symbol}-SPOT")),
-        Currency::from(venue_symbol),
-        Currency::from("USDC"),
-        2,
-        4,
-        Price::from("0.01"),
-        Quantity::from("0.0001"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ))
+    InstrumentAny::CurrencyPair(
+        CurrencyPair::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::new(format!("{venue_symbol}-SPOT")))
+            .base_currency(Currency::from(venue_symbol))
+            .quote_currency(Currency::from("USDC"))
+            .price_precision(2)
+            .size_precision(4)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.0001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    )
 }
 
 #[derive(Clone, Default)]
 struct TestServerState {
     connection_count: Arc<tokio::sync::Mutex<usize>>,
+    upgrade_attempts: Arc<AtomicUsize>,
+    transient_upgrade_failures: Arc<AtomicUsize>,
+    reject_upgrade: Arc<AtomicBool>,
     subscribes: Arc<tokio::sync::Mutex<Vec<Value>>>,
     unsubscribes: Arc<tokio::sync::Mutex<Vec<Value>>>,
     send_txs: Arc<tokio::sync::Mutex<Vec<Value>>>,
@@ -199,6 +184,22 @@ async fn handle_ws_upgrade(
     ws: WebSocketUpgrade,
     State(state): State<Arc<TestServerState>>,
 ) -> Response {
+    state.upgrade_attempts.fetch_add(1, Ordering::SeqCst);
+
+    if state.reject_upgrade.load(Ordering::SeqCst) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    if state
+        .transient_upgrade_failures
+        .try_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+            remaining.checked_sub(1)
+        })
+        .is_ok()
+    {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 
@@ -403,6 +404,14 @@ async fn await_send_tx_count(state: &TestServerState, target: usize) {
     .await;
 }
 
+async fn await_upgrade_attempts(state: &TestServerState, target: usize) {
+    wait_until_async(
+        || async { state.upgrade_attempts.load(Ordering::SeqCst) >= target },
+        Duration::from_secs(2),
+    )
+    .await;
+}
+
 async fn await_subscription_count(client: &LighterWebSocketClient, target: usize) {
     wait_until_async(
         || async { client.subscription_count() >= target },
@@ -498,16 +507,139 @@ async fn test_websocket_connection_lifecycle() {
 }
 
 #[tokio::test]
+async fn test_initial_connect_retries_transient_upgrade_rejection() {
+    let state = Arc::new(TestServerState::default());
+    state.transient_upgrade_failures.store(1, Ordering::SeqCst);
+    let addr = start_ws_server(state.clone()).await;
+    let mut client = LighterWebSocketClient::new(
+        Some(format!("ws://{addr}/stream")),
+        LighterEnvironment::Testnet,
+        Arc::new(MarketRegistry::new()),
+        TransportBackend::default(),
+        5,
+        None,
+    );
+
+    client.connect().await.expect("connect after retry");
+
+    assert_eq!(state.upgrade_attempts.load(Ordering::SeqCst), 2);
+    assert!(client.is_active());
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[tokio::test]
+async fn test_initial_connect_does_not_retry_permanent_upgrade_rejection() {
+    let state = Arc::new(TestServerState::default());
+    state.reject_upgrade.store(true, Ordering::SeqCst);
+    let addr = start_ws_server(state.clone()).await;
+    let mut client = LighterWebSocketClient::new(
+        Some(format!("ws://{addr}/stream")),
+        LighterEnvironment::Testnet,
+        Arc::new(MarketRegistry::new()),
+        TransportBackend::default(),
+        5,
+        None,
+    );
+
+    let error = client
+        .connect()
+        .await
+        .expect_err("permanent rejection must fail");
+
+    assert_eq!(state.upgrade_attempts.load(Ordering::SeqCst), 1);
+    assert!(matches!(
+        error.downcast_ref::<TransportError>(),
+        Some(TransportError::UpgradeRejected(401)),
+    ));
+}
+
+#[tokio::test]
+async fn test_initial_connect_retries_share_configured_timeout_budget() {
+    let state = Arc::new(TestServerState::default());
+    state.transient_upgrade_failures.store(10, Ordering::SeqCst);
+    let addr = start_ws_server(state.clone()).await;
+    let mut client = LighterWebSocketClient::new(
+        Some(format!("ws://{addr}/stream")),
+        LighterEnvironment::Testnet,
+        Arc::new(MarketRegistry::new()),
+        TransportBackend::default(),
+        1,
+        None,
+    );
+
+    let error = tokio::time::timeout(Duration::from_secs(2), client.connect())
+        .await
+        .expect("initial connect exceeded configured timeout budget")
+        .expect_err("transient rejections must exhaust the timeout budget");
+
+    assert_eq!(
+        error.to_string(),
+        "Lighter WebSocket initial connection timeout after 1 seconds",
+    );
+    assert_eq!(state.upgrade_attempts.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn test_disconnect_cancels_initial_connect_and_allows_retry() {
+    let state = Arc::new(TestServerState::default());
+    state.transient_upgrade_failures.store(10, Ordering::SeqCst);
+    let addr = start_ws_server(state.clone()).await;
+    let client = LighterWebSocketClient::new(
+        Some(format!("ws://{addr}/stream")),
+        LighterEnvironment::Testnet,
+        Arc::new(MarketRegistry::new()),
+        TransportBackend::default(),
+        5,
+        None,
+    );
+    let mut connecting_client = client.clone();
+    let mut disconnecting_client = client;
+
+    let connect_task = tokio::spawn(async move {
+        let result = connecting_client.connect().await;
+        (connecting_client, result)
+    });
+    await_upgrade_attempts(&state, 1).await;
+
+    disconnecting_client
+        .disconnect()
+        .await
+        .expect("cancel initial connect");
+    let (mut reconnecting_client, result) =
+        tokio::time::timeout(Duration::from_secs(1), connect_task)
+            .await
+            .expect("initial connect cancellation timeout")
+            .expect("initial connect task");
+
+    let error = result.expect_err("initial connect must be cancelled");
+    let transport_error = error
+        .downcast_ref::<TransportError>()
+        .expect("transport cancellation error");
+    let TransportError::Io(io_error) = transport_error else {
+        panic!("expected I/O cancellation error, was {transport_error:?}");
+    };
+    assert_eq!(io_error.kind(), std::io::ErrorKind::Interrupted);
+
+    state.transient_upgrade_failures.store(0, Ordering::SeqCst);
+    reconnecting_client.connect().await.expect("reconnect");
+
+    assert!(reconnecting_client.is_active());
+
+    reconnecting_client.disconnect().await.expect("disconnect");
+}
+
+#[tokio::test]
 async fn test_state_sink_reports_connection_loss_and_recovery() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
 
     let observed = Arc::new(Mutex::new(Vec::new()));
     let recorded = Arc::clone(&observed);
-    let sink = SocketStateSink::new(move |state| recorded.lock().unwrap().push(state));
+    let sink = SocketStateSink::new(move |state| recorded.lock().push(state));
 
     let harness = ClientHarness::build_with_state_sink(addr, Some(sink)).await;
-    assert_eq!(*observed.lock().unwrap(), vec![SocketState::Connected]);
+    assert_eq!(*observed.lock(), vec![SocketState::Connected]);
 
     // The server acks this subscribe and then closes, so the client observes a
     // connection loss rather than a graceful disconnect.
@@ -524,14 +656,14 @@ async fn test_state_sink_reports_connection_loss_and_recovery() {
     wait_until_async(
         || {
             let observed = observed.clone();
-            async move { observed.lock().unwrap().len() >= 3 }
+            async move { observed.lock().len() >= 3 }
         },
         Duration::from_secs(5),
     )
     .await;
 
     assert_eq!(
-        *observed.lock().unwrap(),
+        *observed.lock(),
         vec![
             SocketState::Connected,
             SocketState::Disconnected,
@@ -1598,7 +1730,7 @@ async fn test_subscribe_account_includes_auth_field() {
     let token = "schnorr-signature-bytes".to_string();
     harness
         .client
-        .subscribe_account(LighterWsChannel::AccountAll(123_456), token.clone())
+        .subscribe_account(LighterWsChannel::AccountAll(123_456), token.clone().into())
         .await
         .expect("subscribe_account");
 
@@ -1812,7 +1944,7 @@ async fn test_reconnect_replays_authenticated_and_public_subscriptions() {
         .store(true, Ordering::Relaxed);
     harness
         .client
-        .subscribe_account(LighterWsChannel::AccountAll(789), token.clone())
+        .subscribe_account(LighterWsChannel::AccountAll(789), token.clone().into())
         .await
         .expect("subscribe_account");
 

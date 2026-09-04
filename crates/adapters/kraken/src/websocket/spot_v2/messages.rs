@@ -16,6 +16,9 @@
 //! Data models for Kraken WebSocket v2 API messages.
 
 use jiff::Timestamp;
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::SecretString;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, value::RawValue};
@@ -97,7 +100,7 @@ pub struct KrakenWsChannelParams {
     pub event_trigger: Option<String>,
     /// Authentication token (private channels).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub token: Option<String>,
+    pub token: Option<SecretString>,
     /// Whether to include a snapshot of open orders (executions channel).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub snap_orders: Option<bool>,
@@ -119,7 +122,7 @@ pub struct KrakenWsAddOrderParams {
     /// Trading pair symbol (e.g. `"BTC/USD"`).
     pub symbol: String,
     /// Authentication token.
-    pub token: String,
+    pub token: SecretString,
     /// Limit price (required for limit orders).
     #[serde(
         default,
@@ -159,7 +162,7 @@ pub struct KrakenWsAddOrderParams {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KrakenWsAmendOrderParams {
     /// Authentication token.
-    pub token: String,
+    pub token: SecretString,
     /// Kraken order ID to amend (preferred over `cl_ord_id`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_id: Option<String>,
@@ -193,7 +196,7 @@ pub struct KrakenWsAmendOrderParams {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KrakenWsCancelOrderParams {
     /// Authentication token.
-    pub token: String,
+    pub token: SecretString,
     /// One or more Kraken order IDs to cancel (preferred over `cl_ord_id`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_id: Option<Vec<String>>,
@@ -210,7 +213,7 @@ pub struct KrakenWsBatchAddParams {
     /// List of orders to submit.
     pub orders: Vec<KrakenWsBatchAddOrder>,
     /// Authentication token.
-    pub token: String,
+    pub token: SecretString,
 }
 
 /// A single order entry within a `batch_add` request.
@@ -621,6 +624,36 @@ mod tests {
 
     use super::*;
 
+    #[rstest]
+    fn test_private_request_debug_redacts_tokens() {
+        let channel = KrakenWsChannelParams {
+            channel: KrakenWsChannel::Executions,
+            symbol: None,
+            snapshot: None,
+            depth: None,
+            interval: None,
+            event_trigger: None,
+            token: Some(SecretString::from("channel-token-value")),
+            snap_orders: Some(true),
+            snap_trades: Some(true),
+        };
+        let cancel = KrakenWsCancelOrderParams {
+            token: SecretString::from("cancel-token-value"),
+            order_id: Some(vec!["ORDER-1".to_string()]),
+            cl_ord_id: None,
+        };
+
+        let channel_json = serde_json::to_value(&channel).unwrap();
+        let cancel_json = serde_json::to_value(&cancel).unwrap();
+        let formatted = format!("{channel:?} {cancel:?}");
+
+        assert_eq!(channel_json["token"], "channel-token-value");
+        assert_eq!(cancel_json["token"], "cancel-token-value");
+        assert_eq!(formatted.matches(REDACTED).count(), 2);
+        assert!(!formatted.contains("channel-token-value"));
+        assert!(!formatted.contains("cancel-token-value"));
+    }
+
     fn load_test_data(filename: &str) -> String {
         let path = format!("test_data/{filename}");
         std::fs::read_to_string(&path)
@@ -802,7 +835,7 @@ mod tests {
                 leverage: None,
                 trigger: None,
                 conditional: None,
-                token: "TESTTOKEN".to_string(),
+                token: SecretString::from("TESTTOKEN"),
             })),
             req_id: Some(42),
         };
@@ -823,7 +856,7 @@ mod tests {
             side: KrakenOrderSide::Buy,
             order_qty: dec!(0.1234567890123456789012345678),
             symbol: "BTC/USD".to_string(),
-            token: "TESTTOKEN".to_string(),
+            token: SecretString::from("TESTTOKEN"),
             limit_price: Some(dec!(123456789.123456789)),
             time_in_force: None,
             expire_time: None,
@@ -851,7 +884,7 @@ mod tests {
                 order_qty: Some(dec!(0.005)),
                 limit_price: None,
                 trigger_price: None,
-                token: "TESTTOKEN".to_string(),
+                token: SecretString::from("TESTTOKEN"),
             })),
             req_id: Some(43),
         };
@@ -872,7 +905,7 @@ mod tests {
             params: Some(KrakenWsParams::CancelOrder(KrakenWsCancelOrderParams {
                 order_id: Some(vec!["OABCDE-12345-FGHIJ".to_string()]),
                 cl_ord_id: None,
-                token: "TESTTOKEN".to_string(),
+                token: SecretString::from("TESTTOKEN"),
             })),
             req_id: Some(44),
         };
@@ -920,7 +953,7 @@ mod tests {
                         trigger: None,
                     },
                 ],
-                token: "TESTTOKEN".to_string(),
+                token: SecretString::from("TESTTOKEN"),
             })),
             req_id: Some(45),
         };
@@ -941,7 +974,7 @@ mod tests {
             side: KrakenOrderSide::Buy,
             order_qty: dec!(0.01),
             symbol: "BTC/USD".to_string(),
-            token: "TKN".to_string(),
+            token: SecretString::from("TKN"),
             limit_price: Some(dec!(30000.0)),
             time_in_force: Some(KrakenTimeInForce::GoodTilDate),
             expire_time: Some("2026-12-31T23:59:59+00:00".to_string()),
@@ -967,7 +1000,7 @@ mod tests {
             side: KrakenOrderSide::Buy,
             order_qty: dec!(0.01),
             symbol: "BTC/USD".to_string(),
-            token: "TKN".to_string(),
+            token: SecretString::from("TKN"),
             limit_price: Some(dec!(30000.0)),
             time_in_force: None,
             expire_time: None,

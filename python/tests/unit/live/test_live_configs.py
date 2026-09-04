@@ -268,6 +268,8 @@ def test_live_exec_engine_config_defaults() -> None:
     config = LiveExecutionEngineConfig()
 
     assert isinstance(config, LiveExecutionEngineConfig)
+    assert config.snapshot_orders is False
+    assert config.snapshot_positions is False
 
 
 def test_live_exec_engine_config_readback() -> None:
@@ -311,6 +313,8 @@ def test_live_exec_engine_config_readback() -> None:
         purge_account_events_lookback_mins=22,
         own_books_audit_interval_secs=23.5,
         debug=True,
+        snapshot_orders=True,
+        snapshot_positions=True,
     )
 
     assert config.load_cache is False
@@ -348,18 +352,14 @@ def test_live_exec_engine_config_readback() -> None:
     assert config.purge_account_events_lookback_mins == 22
     assert config.own_books_audit_interval_secs == 23.5
     assert config.debug is True
+    assert config.snapshot_orders is True
+    assert config.snapshot_positions is True
 
 
 def test_live_exec_engine_config_rejects_unsupported_args() -> None:
     """
     Test live exec engine config rejects unsupported args.
     """
-    with pytest.raises(TypeError, match="snapshot_orders"):
-        LiveExecutionEngineConfig(snapshot_orders=True)
-
-    with pytest.raises(TypeError, match="snapshot_positions"):
-        LiveExecutionEngineConfig(snapshot_positions=True)
-
     with pytest.raises(TypeError, match="purge_from_database"):
         LiveExecutionEngineConfig(purge_from_database=True)
 

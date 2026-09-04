@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! dYdX credential storage and wallet-based transaction signing helpers.
+//! dYdX credential resolution, storage, and wallet-based transaction signing.
 //!
 //! dYdX v4 uses Cosmos SDK-style wallet signing rather than API key authentication.
 //! Trading operations require signing transactions with a secp256k1 private key.
@@ -38,6 +38,7 @@ use cosmrs::{
     tx::SignDoc,
 };
 use nautilus_core::{env::get_or_env_var_opt, hex, string::secret::REDACTED};
+use zeroize::Zeroizing;
 
 use crate::common::{consts::DYDX_BECH32_PREFIX, enums::DydxNetwork};
 
@@ -91,8 +92,10 @@ impl DydxCredential {
         authenticator_ids: Vec<u64>,
     ) -> anyhow::Result<Self> {
         // Decode hex private key
-        let key_bytes = hex::decode(private_key_hex.trim_start_matches("0x"))
-            .context("Invalid hex private key")?;
+        let key_bytes = Zeroizing::new(
+            hex::decode(private_key_hex.trim_start_matches("0x"))
+                .context("Invalid hex private key")?,
+        );
 
         let signing_key = SigningKey::from_slice(&key_bytes)
             .map_err(|e| anyhow::anyhow!("Invalid secp256k1 private key: {e}"))?;

@@ -36,7 +36,7 @@ use axum::{
     },
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::get,
 };
 use futures_util::StreamExt;
 use nautilus_common::{
@@ -59,8 +59,8 @@ use nautilus_live::{
 };
 use nautilus_model::{
     enums::{
-        AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
-        PositionSideSpecified, TimeInForce, TriggerType,
+        AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce, TriggerType,
     },
     events::{
         OrderEventAny, OrderInitialized,
@@ -169,7 +169,7 @@ fn make_order_status_report(cid: &str, status: OrderStatus) -> OrderStatusReport
         InstrumentId::from("ETH-USDT-SWAP.OKX"),
         Some(ClientOrderId::new(cid)),
         VenueOrderId::new("v-1"),
-        OrderSide::Buy,
+        OrderSide::Buy.into(),
         OrderType::StopMarket,
         TimeInForce::Gtc,
         status,
@@ -183,37 +183,26 @@ fn make_order_status_report(cid: &str, status: OrderStatus) -> OrderStatusReport
 }
 
 fn make_spread_instrument() -> InstrumentAny {
-    let instrument = CryptoFuturesSpread::new(
-        InstrumentId::from("BCH-USDT_BCH-USDT-SWAP.OKX"),
-        Symbol::from("BCH-USDT_BCH-USDT-SWAP"),
-        Currency::get_or_create_crypto("BCH"),
-        Currency::USDT(),
-        Currency::USDT(),
-        false,
-        Ustr::from("linear"),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        1,
-        2,
-        Price::from("0.1"),
-        Quantity::from("0.01"),
-        None,
-        Some(Quantity::from("0.01")),
-        None,
-        Some(Quantity::from("0.01")),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    );
+    let instrument = CryptoFuturesSpread::builder()
+        .instrument_id(InstrumentId::from("BCH-USDT_BCH-USDT-SWAP.OKX"))
+        .raw_symbol(Symbol::from("BCH-USDT_BCH-USDT-SWAP"))
+        .underlying(Currency::get_or_create_crypto("BCH"))
+        .quote_currency(Currency::USDT())
+        .settlement_currency(Currency::USDT())
+        .is_inverse(false)
+        .strategy_type(Ustr::from("linear"))
+        .activation_ns(UnixNanos::default())
+        .expiration_ns(UnixNanos::default())
+        .price_precision(1)
+        .size_precision(2)
+        .price_increment(Price::from("0.1"))
+        .size_increment(Quantity::from("0.01"))
+        .lot_size(Quantity::from("0.01"))
+        .min_quantity(Quantity::from("0.01"))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
 
     InstrumentAny::CryptoFuturesSpread(instrument)
 }
@@ -629,104 +618,6 @@ async fn test_local_submit_validation_failure_emits_order_rejected() {
         }
         other => panic!("expected OrderRejected event, was {other:?}"),
     }
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_algo_submit_timeout_does_not_emit_order_rejected() {
-    let (addr, requests) = start_exec_submit_timeout_test_server().await;
-    let base_url = format!("http://{addr}");
-    let (mut client, mut rx, cache) = create_test_execution_client(&base_url);
-    client.on_instrument(crypto_perpetual_ethusdt().into());
-
-    client.start().unwrap();
-    let _ = drain_events(&mut rx);
-
-    let client_order_id = ClientOrderId::new("OALGOTIMEOUT1");
-    let order = build_test_stop_order(client_order_id);
-    cache
-        .borrow_mut()
-        .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
-        .unwrap();
-    let cmd = SubmitOrder::from_order(
-        &order,
-        TraderId::from("TESTER-001"),
-        Some(*OKX_CLIENT_ID),
-        None,
-        UUID4::new(),
-        UnixNanos::default(),
-    );
-
-    client.submit_order(cmd).unwrap();
-
-    wait_until_async(
-        || async { requests.load(Ordering::Relaxed) == 1 },
-        Duration::from_secs(5),
-    )
-    .await;
-    tokio::time::sleep(Duration::from_millis(300)).await;
-
-    let events = drain_events(&mut rx);
-    assert_eq!(
-        events
-            .iter()
-            .filter(|event| matches!(
-                event,
-                ExecutionEvent::Order(OrderEventAny::Submitted(submitted))
-                    if submitted.client_order_id == client_order_id
-            ))
-            .count(),
-        1,
-    );
-    assert!(
-        !contains_order_event(&events, |event| matches!(
-            event,
-            OrderEventAny::Rejected(rejected)
-                if rejected.client_order_id == client_order_id
-        )),
-        "ambiguous algo submit failure should not emit OrderRejected: {events:?}",
-    );
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_local_cancel_validation_failure_does_not_emit_order_cancel_rejected() {
-    let addr = start_exec_test_server().await;
-    let base_url = format!("http://{addr}");
-    let (mut client, mut rx, cache) = create_test_execution_client(&base_url);
-
-    client.start().unwrap();
-    let _ = drain_events(&mut rx);
-
-    let client_order_id = ClientOrderId::new("OLOCALCANCELINVALID1");
-    let order = cache_limit_order(&cache, client_order_id);
-    let cmd = CancelOrder {
-        trader_id: TraderId::from("TESTER-001"),
-        client_id: Some(*OKX_CLIENT_ID),
-        strategy_id: order.strategy_id(),
-        instrument_id: order.instrument_id(),
-        client_order_id,
-        venue_order_id: Some(VenueOrderId::new("v-1")),
-        command_id: UUID4::new(),
-        ts_init: UnixNanos::default(),
-        params: None,
-        correlation_id: None,
-        causation_id: None,
-    };
-
-    client.cancel_order(cmd).unwrap();
-
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let events = drain_events(&mut rx);
-    assert!(
-        !contains_order_event(&events, |event| matches!(
-            event,
-            OrderEventAny::CancelRejected(rejected)
-                if rejected.client_order_id == client_order_id
-        )),
-        "local cancel validation failure should not emit OrderCancelRejected: {events:?}"
-    );
 }
 
 #[rstest]
@@ -1896,7 +1787,7 @@ fn test_dispatch_positions_channel_emits_position_report() {
         ExecutionEvent::Report(CommonExecutionReport::Position(report)) => {
             assert_eq!(report.account_id, AccountId::from("OKX-001"));
             assert_eq!(report.instrument_id, instrument_id);
-            assert_eq!(report.position_side, PositionSideSpecified::Long);
+            assert_eq!(report.position_side, PositionSide::Long);
             assert_eq!(report.quantity, Quantity::from("0.500"));
             assert_eq!(
                 report.venue_position_id,
@@ -2041,7 +1932,7 @@ fn test_dispatch_tracked_post_only_cancel_from_fixture(
             assert_eq!(report.instrument_id, instrument_id);
             assert_eq!(report.client_order_id, Some(client_order_id));
             assert_eq!(report.venue_order_id, VenueOrderId::new(venue_order_id));
-            assert_eq!(report.order_side, OrderSide::Buy);
+            assert_eq!(report.order_side, Some(OrderSide::Buy));
             assert_eq!(report.order_type, OrderType::Limit);
             assert_eq!(report.time_in_force, TimeInForce::Gtc);
             assert_eq!(report.order_status, OrderStatus::Canceled);
@@ -3143,43 +3034,6 @@ async fn start_exec_test_server() -> SocketAddr {
     addr
 }
 
-async fn start_exec_submit_timeout_test_server() -> (SocketAddr, Arc<AtomicUsize>) {
-    let requests = Arc::new(AtomicUsize::new(0));
-    let route_requests = Arc::clone(&requests);
-    let router = create_exec_test_router().route(
-        "/api/v5/trade/order-algo",
-        post(move |_headers: HeaderMap| {
-            let requests = Arc::clone(&route_requests);
-            async move {
-                requests.fetch_add(1, Ordering::Relaxed);
-                Json(load_test_data("http_place_algo_order_timeout.json"))
-            }
-        }),
-    );
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-
-    tokio::spawn(async move {
-        axum::serve(listener, router.into_make_service())
-            .await
-            .unwrap();
-    });
-
-    let health_url = format!("http://{addr}/api/v5/account/balance");
-    let http_client = HttpClient::builder().build().unwrap();
-    wait_until_async(
-        || {
-            let url = health_url.clone();
-            let client = http_client.clone();
-            async move { client.get(url, None, None, Some(1), None).await.is_ok() }
-        },
-        Duration::from_secs(5),
-    )
-    .await;
-
-    (addr, requests)
-}
-
 async fn start_exec_report_test_server(state: Arc<ReportRouteState>) -> SocketAddr {
     let router = create_exec_report_test_router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -3419,9 +3273,9 @@ fn create_test_execution_client_configured(
         base_url_http: Some(base_url.to_string()),
         base_url_ws_private: Some("ws://127.0.0.1:19999/ws/v5/private".to_string()),
         base_url_ws_business: Some("ws://127.0.0.1:19999/ws/v5/business".to_string()),
-        api_key: Some("test_key".to_string()),
-        api_secret: Some("test_secret".to_string()),
-        api_passphrase: Some("test_passphrase".to_string()),
+        api_key: Some("test_key".into()),
+        api_secret: Some("test_secret".into()),
+        api_passphrase: Some("test_passphrase".into()),
         ..Default::default()
     };
     configure(&mut config);
@@ -3628,7 +3482,6 @@ async fn test_query_order_routes_cached_regular_pretrigger_algo_and_unknown_orde
     let unknown_report = recv_query_order_report(&mut rx, Some(unknown_client_order_id)).await;
     assert_eq!(unknown_report.order_type, OrderType::StopMarket);
 
-    tokio::time::sleep(Duration::from_millis(50)).await;
     let unexpected_reports: Vec<_> = drain_events(&mut rx)
         .into_iter()
         .filter(|event| {
@@ -4055,37 +3908,26 @@ async fn test_generate_fill_reports_includes_spreads_when_enabled() {
 }
 
 fn make_report_spread_instrument() -> InstrumentAny {
-    let instrument = CryptoFuturesSpread::new(
-        InstrumentId::from("ETH-USD-SWAP_ETH-USD-231229.OKX"),
-        Symbol::from("ETH-USD-SWAP_ETH-USD-231229"),
-        Currency::get_or_create_crypto("ETH"),
-        Currency::USD(),
-        Currency::USD(),
-        false,
-        Ustr::from("inverse"),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        2,
-        0,
-        Price::from("0.01"),
-        Quantity::from("1"),
-        None,
-        Some(Quantity::from("1")),
-        None,
-        Some(Quantity::from("1")),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    );
+    let instrument = CryptoFuturesSpread::builder()
+        .instrument_id(InstrumentId::from("ETH-USD-SWAP_ETH-USD-231229.OKX"))
+        .raw_symbol(Symbol::from("ETH-USD-SWAP_ETH-USD-231229"))
+        .underlying(Currency::get_or_create_crypto("ETH"))
+        .quote_currency(Currency::USD())
+        .settlement_currency(Currency::USD())
+        .is_inverse(false)
+        .strategy_type(Ustr::from("inverse"))
+        .activation_ns(UnixNanos::default())
+        .expiration_ns(UnixNanos::default())
+        .price_precision(2)
+        .size_precision(0)
+        .price_increment(Price::from("0.01"))
+        .size_increment(Quantity::from("1"))
+        .lot_size(Quantity::from("1"))
+        .min_quantity(Quantity::from("1"))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
 
     InstrumentAny::CryptoFuturesSpread(instrument)
 }
@@ -4346,6 +4188,96 @@ fn collect_order_denied_events(events: Vec<ExecutionEvent>) -> HashMap<ClientOrd
 
 #[rstest]
 #[tokio::test]
+async fn test_submit_spread_order_denies_reduce_only() {
+    let addr = start_exec_test_server().await;
+    let base_url = format!("http://{addr}");
+    let (mut client, mut rx, cache) = create_test_execution_client(&base_url);
+    client.start().unwrap();
+    let _ = drain_events(&mut rx);
+    let instrument_id = InstrumentId::from("BCH-USDT_BCH-USDT-SWAP.OKX");
+    let client_order_id = ClientOrderId::from("OREDUCESPREAD1");
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("STRATEGY-001"))
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("2000.00"))
+        .quantity(Quantity::from("1"))
+        .time_in_force(TimeInForce::Gtc)
+        .reduce_only(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+    let cmd = SubmitOrder::from_order(
+        &order,
+        TraderId::from("TESTER-001"),
+        Some(*OKX_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    client.submit_order(cmd).unwrap();
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1, "events: {events:?}");
+    let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = &events[0] else {
+        panic!("Expected OrderDenied, was {:?}", events[0]);
+    };
+    assert_eq!(denied.client_order_id, client_order_id);
+    assert_eq!(denied.reason.as_str(), "UNSUPPORTED_REDUCE_ONLY");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_cash_order_denies_reduce_only() {
+    let addr = start_exec_test_server().await;
+    let base_url = format!("http://{addr}");
+    let (mut client, mut rx, cache) = create_test_execution_client(&base_url);
+    client.start().unwrap();
+    let _ = drain_events(&mut rx);
+    let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+    let client_order_id = ClientOrderId::from("OREDUCECASH1");
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("STRATEGY-001"))
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("2000.00"))
+        .quantity(Quantity::from("1"))
+        .time_in_force(TimeInForce::Gtc)
+        .reduce_only(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+    let cmd = SubmitOrder::from_order(
+        &order,
+        TraderId::from("TESTER-001"),
+        Some(*OKX_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    client.submit_order(cmd).unwrap();
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1, "events: {events:?}");
+    let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = &events[0] else {
+        panic!("Expected OrderDenied, was {:?}", events[0]);
+    };
+    assert_eq!(denied.client_order_id, client_order_id);
+    assert_eq!(denied.reason.as_str(), "UNSUPPORTED_REDUCE_ONLY");
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_submit_order_denies_when_clord_id_exceeds_32_chars() {
     let addr = start_exec_test_server().await;
     let base_url = format!("http://{addr}");
@@ -4475,6 +4407,61 @@ async fn test_submit_order_list_denies_every_leg_when_any_clord_id_invalid() {
         reason_b.contains("ORDER_LIST_DENIED") && reason_b.contains("OL-001"),
         "sibling B reason was: {reason_b}"
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_list_errors_before_events_when_order_is_missing() {
+    let addr = start_exec_test_server().await;
+    let base_url = format!("http://{addr}");
+    let (mut client, mut rx, cache) = create_test_execution_client(&base_url);
+
+    client.start().unwrap();
+    let _ = drain_events(&mut rx);
+
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("STRATEGY-001");
+    let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+    let cached_id = ClientOrderId::from("OCACHED1");
+    let missing_id = ClientOrderId::from("OMISSING1");
+    let cached_order = build_test_limit_order(instrument_id, cached_id);
+    let missing_order = build_test_limit_order(instrument_id, missing_id);
+
+    cache
+        .borrow_mut()
+        .add_order(cached_order.clone(), None, Some(*OKX_CLIENT_ID), false)
+        .unwrap();
+
+    let order_list = OrderList::new(
+        OrderListId::new("OL-MISSING"),
+        instrument_id,
+        strategy_id,
+        vec![cached_id, missing_id],
+        UnixNanos::default(),
+    );
+    let cmd = SubmitOrderList::new(
+        trader_id,
+        Some(*OKX_CLIENT_ID),
+        strategy_id,
+        order_list,
+        vec![
+            OrderInitialized::from(&cached_order),
+            OrderInitialized::from(&missing_order),
+        ],
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    let error = client
+        .submit_order_list(cmd)
+        .expect_err("missing order should fail the list submission");
+
+    assert!(error.to_string().contains(missing_id.as_str()));
+    assert!(drain_events(&mut rx).is_empty());
 }
 
 #[rstest]
@@ -4843,7 +4830,7 @@ async fn test_generate_mass_status_recovers_historical_triggered_child_status() 
     assert_eq!(report.quantity, Quantity::from("1"));
     assert_eq!(report.filled_qty, Quantity::from("1"));
     assert_eq!(position_reports.len(), 1);
-    assert_eq!(position_report.position_side, PositionSideSpecified::Flat);
+    assert_eq!(position_report.position_side, PositionSide::Flat);
     assert_eq!(position_report.quantity, Quantity::from("0"));
 }
 

@@ -44,7 +44,10 @@ use axum::{
 use nautilus_bybit::{
     common::{
         consts::{BYBIT_CLIENT_ID, BYBIT_VENUE},
-        enums::{BybitEnvironment, BybitMarginMode, BybitPositionMode, BybitProductType},
+        enums::{
+            BybitEnvironment, BybitMarginMode, BybitOrderSmpType, BybitPositionMode,
+            BybitProductType,
+        },
     },
     config::BybitExecutionClientConfig,
     execution::BybitExecutionClient,
@@ -55,7 +58,10 @@ use nautilus_common::{
     live::runner::{replace_system_event_sender, set_exec_event_sender},
     messages::{
         ExecutionEvent, SystemEvent,
-        execution::{CancelOrder, ExecutionReport, ModifyOrder, SubmitOrder},
+        execution::{
+            CancelOrder, ExecutionReport, GenerateOrderStatusReports,
+            GeneratePositionStatusReports, ModifyOrder, SubmitOrder,
+        },
         system::SocketState,
     },
     testing::wait_until_async,
@@ -64,7 +70,9 @@ use nautilus_core::{UUID4, UnixNanos, params::Params};
 use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
-    enums::{AccountType, OmsType, OrderSide, TimeInForce, TrailingOffsetType, TriggerType},
+    enums::{
+        AccountType, OmsType, OrderSide, OrderStatus, TimeInForce, TrailingOffsetType, TriggerType,
+    },
     events::{AccountState, OrderDenied, OrderEventAny},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TraderId,
@@ -85,13 +93,17 @@ struct TestServerState {
     trade_ws_connections: Arc<AtomicUsize>,
     trade_order_ret_code: Arc<AtomicUsize>,
     trade_order_requests: Arc<AtomicUsize>,
+    trade_order_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
     trade_order_req_id_present: Arc<AtomicBool>,
     authenticated: Arc<AtomicBool>,
     subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
     disconnect_trigger: Arc<AtomicBool>,
+    reject_trade_websocket: Arc<AtomicBool>,
     empty_orders_realtime: Arc<AtomicBool>,
     rejected_orders_realtime: Arc<AtomicBool>,
     orders_realtime_requests: Arc<AtomicUsize>,
+    position_requests: Arc<AtomicUsize>,
+    wallet_balance_requests: Arc<AtomicUsize>,
     ping_count: Arc<AtomicUsize>,
     switch_mode_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
     set_leverage_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
@@ -106,13 +118,17 @@ impl Default for TestServerState {
             trade_ws_connections: Arc::new(AtomicUsize::new(0)),
             trade_order_ret_code: Arc::new(AtomicUsize::new(0)),
             trade_order_requests: Arc::new(AtomicUsize::new(0)),
+            trade_order_payloads: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             trade_order_req_id_present: Arc::new(AtomicBool::new(false)),
             authenticated: Arc::new(AtomicBool::new(false)),
             subscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             disconnect_trigger: Arc::new(AtomicBool::new(false)),
+            reject_trade_websocket: Arc::new(AtomicBool::new(false)),
             empty_orders_realtime: Arc::new(AtomicBool::new(false)),
             rejected_orders_realtime: Arc::new(AtomicBool::new(false)),
             orders_realtime_requests: Arc::new(AtomicUsize::new(0)),
+            position_requests: Arc::new(AtomicUsize::new(0)),
+            wallet_balance_requests: Arc::new(AtomicUsize::new(0)),
             ping_count: Arc::new(AtomicUsize::new(0)),
             switch_mode_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             set_leverage_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
@@ -175,7 +191,10 @@ async fn handle_get_fee_rate(headers: HeaderMap) -> impl IntoResponse {
     Json(fee_rate).into_response()
 }
 
-async fn handle_get_wallet_balance(headers: HeaderMap) -> impl IntoResponse {
+async fn handle_get_wallet_balance(
+    State(state): State<TestServerState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     if !has_auth_headers(&headers) {
         return (
             StatusCode::UNAUTHORIZED,
@@ -188,11 +207,17 @@ async fn handle_get_wallet_balance(headers: HeaderMap) -> impl IntoResponse {
         )
             .into_response();
     }
+    state
+        .wallet_balance_requests
+        .fetch_add(1, Ordering::Relaxed);
     let wallet = load_test_data("http_get_wallet_balance.json");
     Json(wallet).into_response()
 }
 
-async fn handle_get_positions(headers: HeaderMap) -> impl IntoResponse {
+async fn handle_get_positions(
+    State(state): State<TestServerState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     if !has_auth_headers(&headers) {
         return (
             StatusCode::UNAUTHORIZED,
@@ -205,8 +230,36 @@ async fn handle_get_positions(headers: HeaderMap) -> impl IntoResponse {
         )
             .into_response();
     }
+    state.position_requests.fetch_add(1, Ordering::Relaxed);
     let positions = load_test_data("http_get_positions.json");
     Json(positions).into_response()
+}
+
+async fn handle_get_empty_report_list(headers: HeaderMap) -> impl IntoResponse {
+    if !has_auth_headers(&headers) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "retCode": 10003,
+                "retMsg": "Invalid API key",
+                "result": {},
+                "time": 1704470400123i64
+            })),
+        )
+            .into_response();
+    }
+
+    Json(json!({
+        "retCode": 0,
+        "retMsg": "OK",
+        "result": {
+            "list": [],
+            "nextPageCursor": ""
+        },
+        "retExtInfo": {},
+        "time": 1704470400123i64
+    }))
+    .into_response()
 }
 
 async fn handle_get_orders_realtime(
@@ -444,6 +497,9 @@ async fn handle_trade_websocket(
     State(state): State<TestServerState>,
 ) -> Response {
     state.trade_ws_connections.fetch_add(1, Ordering::Relaxed);
+    if state.reject_trade_websocket.load(Ordering::Relaxed) {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
     ws.on_upgrade(|socket| handle_socket(socket, state))
 }
 
@@ -570,6 +626,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                     }
                     Some("order.create" | "order.amend" | "order.cancel") => {
                         state.trade_order_requests.fetch_add(1, Ordering::Relaxed);
+                        state.trade_order_payloads.lock().await.push(value.clone());
                         let req_id = value.get("reqId").and_then(|v| v.as_str());
                         state.trade_order_req_id_present.store(
                             req_id.is_some_and(|req_id| !req_id.is_empty()),
@@ -627,6 +684,8 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/v5/account/wallet-balance", get(handle_get_wallet_balance))
         .route("/v5/position/list", get(handle_get_positions))
         .route("/v5/order/realtime", get(handle_get_orders_realtime))
+        .route("/v5/order/history", get(handle_get_empty_report_list))
+        .route("/v5/execution/list", get(handle_get_empty_report_list))
         .route("/v5/order/create", post(handle_post_order))
         .route("/v5/order/cancel", post(handle_cancel_order))
         .route("/v5/position/switch-mode", post(handle_switch_mode))
@@ -665,8 +724,8 @@ async fn start_test_server()
 
 fn create_test_exec_config(addr: SocketAddr) -> BybitExecutionClientConfig {
     BybitExecutionClientConfig {
-        api_key: Some("test_api_key".to_string()),
-        api_secret: Some("test_api_secret".to_string()),
+        api_key: Some("test_api_key".into()),
+        api_secret: Some("test_api_secret".into()),
         product_types: vec![BybitProductType::Linear],
         environment: BybitEnvironment::Mainnet,
         base_url_http: Some(format!("http://{addr}")),
@@ -704,6 +763,16 @@ fn create_test_execution_client(
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     Rc<RefCell<Cache>>,
 ) {
+    create_test_execution_client_with_config(create_test_exec_config(addr))
+}
+
+fn create_test_execution_client_with_config(
+    config: BybitExecutionClientConfig,
+) -> (
+    BybitExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("BYBIT-001");
     let client_id = *BYBIT_CLIENT_ID;
@@ -721,8 +790,6 @@ fn create_test_execution_client(
         cache.clone(),
     );
 
-    let config = create_test_exec_config(addr);
-
     // Event channel must be set before creating client due to thread-local storage
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     set_exec_event_sender(tx);
@@ -730,6 +797,188 @@ fn create_test_execution_client(
     let client = BybitExecutionClient::new(core, config).unwrap();
 
     (client, rx, cache)
+}
+
+#[rstest]
+#[case(true, 1)]
+#[case(false, 0)]
+#[tokio::test]
+async fn test_exec_client_scoped_spot_position_reports_follow_config(
+    #[case] use_spot_position_reports: bool,
+    #[case] expected_reports: usize,
+) {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let mut config = create_test_exec_config(addr);
+    config.product_types = vec![BybitProductType::Spot];
+    config.use_spot_position_reports = use_spot_position_reports;
+    let (mut client, _rx, cache) = create_test_execution_client_with_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    client.connect().await.unwrap();
+
+    let reports = client
+        .generate_position_status_reports(&GeneratePositionStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(InstrumentId::from("ETHUSDT-SPOT.BYBIT")),
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), expected_reports);
+    if use_spot_position_reports {
+        assert_eq!(reports[0].instrument_id, "ETHUSDT-SPOT.BYBIT".into());
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_mixed_unscoped_position_reports_omit_spot() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let mut config = create_test_exec_config(addr);
+    config.product_types = vec![BybitProductType::Linear, BybitProductType::Spot];
+    config.use_spot_position_reports = true;
+    let (mut client, _rx, cache) = create_test_execution_client_with_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    client.connect().await.unwrap();
+
+    // Measure against a post-connect baseline, since connect issues requests of its own.
+    let positions_before = state.position_requests.load(Ordering::Relaxed);
+    let wallet_before = state.wallet_balance_requests.load(Ordering::Relaxed);
+
+    let reports = client
+        .generate_position_status_reports(&GeneratePositionStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .expect("derivative reports must succeed when SPOT coverage is unavailable");
+
+    assert!(
+        reports
+            .iter()
+            .any(|report| report.instrument_id == "BTCUSDT-LINEAR.BYBIT".into())
+    );
+    // An unscoped LINEAR query is one request per settle coin (USDT, USDC); SPOT adds none.
+    assert_eq!(
+        state.position_requests.load(Ordering::Relaxed) - positions_before,
+        2,
+        "the LINEAR product type should still be requested"
+    );
+    // SPOT is served from wallet balances, so this is what proves it was omitted.
+    assert_eq!(
+        state.wallet_balance_requests.load(Ordering::Relaxed) - wallet_before,
+        0,
+        "no SPOT wallet balance request should be issued for a bulk report"
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case(vec![], "BTCUSDT-LINEAR.BYBIT", true)]
+#[case(vec![], "BTCUSD-INVERSE.BYBIT", false)]
+#[case(vec![], "ETHUSDT-SPOT.BYBIT", false)]
+#[case(vec![], "BTCUSDT.BYBIT", false)]
+#[case(vec![BybitProductType::Spot], "BTCUSDT-LINEAR.BYBIT", false)]
+#[case(vec![BybitProductType::Spot], "BTCUSD-INVERSE.BYBIT", false)]
+#[case(vec![BybitProductType::Spot], "ETHUSDT-SPOT.BYBIT", false)]
+#[case(vec![BybitProductType::Spot], "BTCUSDT.BYBIT", false)]
+#[case(
+    vec![BybitProductType::Linear, BybitProductType::Spot],
+    "BTCUSDT-LINEAR.BYBIT",
+    true
+)]
+#[case(
+    vec![BybitProductType::Linear, BybitProductType::Spot],
+    "BTCUSD-INVERSE.BYBIT",
+    false
+)]
+#[case(
+    vec![BybitProductType::Linear, BybitProductType::Spot],
+    "ETHUSDT-SPOT.BYBIT",
+    false
+)]
+#[case(
+    vec![BybitProductType::Linear, BybitProductType::Spot],
+    "BTCUSDT.BYBIT",
+    false
+)]
+#[case(
+    vec![BybitProductType::Inverse, BybitProductType::Spot],
+    "BTCUSDT-LINEAR.BYBIT",
+    false
+)]
+#[case(
+    vec![BybitProductType::Inverse, BybitProductType::Spot],
+    "BTCUSD-INVERSE.BYBIT",
+    true
+)]
+#[case(
+    vec![BybitProductType::Inverse, BybitProductType::Spot],
+    "ETHUSDT-SPOT.BYBIT",
+    false
+)]
+#[case(
+    vec![BybitProductType::Inverse, BybitProductType::Spot],
+    "BTCUSDT.BYBIT",
+    false
+)]
+#[tokio::test]
+async fn test_exec_client_bulk_position_coverage_by_product_type(
+    #[case] product_types: Vec<BybitProductType>,
+    #[case] instrument_id: &str,
+    #[case] expected: bool,
+) {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let mut config = create_test_exec_config(addr);
+    config.product_types = product_types;
+    let (client, _rx, _cache) = create_test_execution_client_with_config(config);
+
+    // An identifier carrying no recognized product-type suffix must fail closed: absence of a
+    // report from a bulk request is not evidence the position is flat.
+    assert_eq!(
+        client.provides_bulk_position_coverage(InstrumentId::from(instrument_id)),
+        expected
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_mass_status_omits_spot_and_preserves_derivative_positions() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let mut config = create_test_exec_config(addr);
+    config.product_types = vec![BybitProductType::Linear, BybitProductType::Spot];
+    config.use_spot_position_reports = true;
+    let (mut client, _rx, cache) = create_test_execution_client_with_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    client.connect().await.unwrap();
+    state.wallet_balance_requests.store(0, Ordering::Relaxed);
+
+    let mass_status = client
+        .generate_mass_status(None)
+        .await
+        .expect("mass status must not fail when SPOT coverage is unavailable")
+        .expect("mass status must be populated");
+
+    assert!(
+        mass_status
+            .position_reports()
+            .contains_key(&InstrumentId::from("BTCUSDT-LINEAR.BYBIT"))
+    );
+    assert_eq!(state.wallet_balance_requests.load(Ordering::Relaxed), 0);
+
+    client.disconnect().await.unwrap();
 }
 
 fn create_test_demo_execution_client(
@@ -931,6 +1180,72 @@ async fn test_exec_client_connect_disconnect() {
 
 #[rstest]
 #[tokio::test]
+async fn test_generate_order_status_reports_open_only_retains_recent_closed() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    client.connect().await.unwrap();
+    state
+        .rejected_orders_realtime
+        .store(true, Ordering::Relaxed);
+
+    let command = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        Some(InstrumentId::from("ETHUSDT-LINEAR.BYBIT")),
+        None,
+        None,
+        None,
+        None,
+    );
+    let reports = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 2);
+    assert_eq!(reports[0].venue_order_id, "test-order-id-12345".into());
+    assert_eq!(reports[0].order_status, OrderStatus::Rejected);
+    assert_eq!(reports[1].venue_order_id, "open-order-2".into());
+    assert_eq!(reports[1].order_status, OrderStatus::Accepted);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_failed_startup_rolls_back_private_stream() {
+    let (addr, state) = start_test_server().await.unwrap();
+    state.reject_trade_websocket.store(true, Ordering::Relaxed);
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, _rx, cache) = registry.scope(|| create_test_execution_client(addr));
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+
+    let error = client.connect().await.unwrap_err();
+
+    wait_until_async(
+        || async { *state.ws_connection_count.lock().await == 0 },
+        Duration::from_secs(2),
+    )
+    .await;
+    assert!(
+        error.to_string().contains("WebSocket transport error"),
+        "unexpected startup error: {error:#}",
+    );
+    assert_eq!(state.private_ws_connections.load(Ordering::Relaxed), 1);
+    assert!(!client.is_connected());
+    assert!(
+        ["bybit-user-streams", "bybit-trading"]
+            .into_iter()
+            .all(|endpoint| registry
+                .handle(*BYBIT_CLIENT_ID, Ustr::from(endpoint))
+                .is_none())
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_exec_client_connect_applies_position_mode_for_derivative_symbols() {
     let (addr, state) = start_test_server().await.unwrap();
     let trader_id = TraderId::from("TESTER-001");
@@ -1092,8 +1407,8 @@ async fn test_exec_client_demo_mode_skips_trade_ws() {
     );
 
     let config = BybitExecutionClientConfig {
-        api_key: Some("test_api_key".to_string()),
-        api_secret: Some("test_api_secret".to_string()),
+        api_key: Some("test_api_key".into()),
+        api_secret: Some("test_api_secret".into()),
         product_types: vec![BybitProductType::Linear],
         environment: BybitEnvironment::Demo,
         base_url_http: Some(format!("http://{addr}")),
@@ -1193,6 +1508,122 @@ async fn test_exec_client_query_order() {
         other => panic!("Expected OrderStatusReport, was {other:?}"),
     }
 
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::derivatives_config_default(
+    "ETHUSDT-LINEAR",
+    Some(BybitOrderSmpType::CancelMaker),
+    None,
+    Some("CancelMaker")
+)]
+#[case::spot_param_overrides_config(
+    "BTCUSDT-SPOT",
+    Some(BybitOrderSmpType::CancelMaker),
+    Some("CancelBoth"),
+    Some("CancelBoth")
+)]
+#[case::spot_param_without_config("BTCUSDT-SPOT", None, Some("CancelTaker"), Some("CancelTaker"))]
+#[case::unset_omits_field("ETHUSDT-LINEAR", None, None, None)]
+#[tokio::test]
+async fn test_exec_client_submit_order_sends_configured_smp_type(
+    #[case] symbol: &str,
+    #[case] configured: Option<BybitOrderSmpType>,
+    #[case] param: Option<&str>,
+    #[case] expected: Option<&str>,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let mut config = create_test_exec_config(addr);
+    config.product_types = vec![BybitProductType::Linear, BybitProductType::Spot];
+    config.smp_type = configured;
+
+    let (mut client, mut rx, cache) = create_test_execution_client_with_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || async { state.subscriptions.lock().await.len() >= 4 },
+        Duration::from_secs(10),
+    )
+    .await;
+    drain_execution_events(&mut rx).await;
+
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("S-001");
+    let client_id = *BYBIT_CLIENT_ID;
+    let instrument_id = InstrumentId::new(Symbol::from(symbol), *BYBIT_VENUE);
+    let client_order_id = ClientOrderId::from("test-smp-submit");
+    let order = OrderAny::Market(MarketOrder::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        OrderSide::Buy,
+        Quantity::from("0.01"),
+        TimeInForce::Gtc,
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ));
+    let init = order.init_event().clone();
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(client_id), false)
+        .unwrap();
+
+    let params = param.map(|value| {
+        let mut params = Params::new();
+        params.insert("smp_type".to_string(), json!(value));
+        params
+    });
+
+    let command = SubmitOrder::new(
+        trader_id,
+        Some(client_id),
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        init,
+        None,
+        None,
+        params,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    client.submit_order(command).unwrap();
+
+    wait_until_async(
+        || async { state.trade_order_payloads.lock().await.len() == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let payloads = state.trade_order_payloads.lock().await;
+    assert_eq!(payloads.len(), 1);
+    assert_eq!(payloads[0]["op"].as_str(), Some("order.create"));
+
+    let order_args = &payloads[0]["args"][0];
+
+    assert_eq!(
+        order_args.get("orderLinkId").and_then(Value::as_str),
+        Some(client_order_id.as_str())
+    );
+    assert_eq!(order_args.get("smpType").and_then(Value::as_str), expected);
+
+    drop(payloads);
     client.disconnect().await.unwrap();
 }
 
@@ -1362,8 +1793,8 @@ async fn test_exec_client_submit_order_list_demo() {
     );
 
     let config = BybitExecutionClientConfig {
-        api_key: Some("test_api_key".to_string()),
-        api_secret: Some("test_api_secret".to_string()),
+        api_key: Some("test_api_key".into()),
+        api_secret: Some("test_api_secret".into()),
         product_types: vec![BybitProductType::Linear],
         environment: BybitEnvironment::Demo,
         base_url_http: Some(format!("http://{addr}")),
@@ -1979,8 +2410,8 @@ async fn test_exec_client_submit_order_list_denies_all_on_invalid_leg() {
     );
 
     let config = BybitExecutionClientConfig {
-        api_key: Some("test_api_key".to_string()),
-        api_secret: Some("test_api_secret".to_string()),
+        api_key: Some("test_api_key".into()),
+        api_secret: Some("test_api_secret".into()),
         product_types: vec![BybitProductType::Linear],
         environment: BybitEnvironment::Demo,
         base_url_http: Some(format!("http://{addr}")),

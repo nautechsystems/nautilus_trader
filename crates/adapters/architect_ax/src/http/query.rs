@@ -187,7 +187,7 @@ impl GetFundingRatesParams {
 /// Parameters for the GET /funding-slots endpoint.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/marketdata/get-funding-slots>
+/// - <https://docs.architect.exchange/api-reference>
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GetFundingSlotsParams {
     /// Instrument symbol.
@@ -328,7 +328,7 @@ impl GetTransactionsParams {
 /// Parameters for the GET /trades endpoint.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/market-data/get-trades>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-trades>
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GetTradesParams {
     /// Instrument symbol, e.g. "BTC-PERP".
@@ -349,7 +349,7 @@ impl GetTradesParams {
 /// Parameters for the GET /book endpoint.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/market-data/get-book>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-book>
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GetBookParams {
     /// Instrument symbol, e.g. "BTC-PERP".

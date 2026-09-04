@@ -37,7 +37,7 @@ use async_trait::async_trait;
 use nautilus_common::{
     cache::ORDER_NOT_FOUND,
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender, task::TaskHandles},
+    live::runner::get_exec_event_sender,
     messages::{
         ExecutionReport,
         execution::{
@@ -49,26 +49,30 @@ use nautilus_common::{
 };
 use nautilus_core::{
     AtomicMap, Params, UUID4, UnixNanos,
+    string::secret::SecretString,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControl};
+use nautilus_live::{
+    ExecutionClientCore, ExecutionEventEmitter, SocketControl,
+    execution::reports::retain_order_status_reports,
+    task::{TaskGroup, TaskGroupGuard},
+};
 use nautilus_model::{
     accounts::AccountAny,
     data::QuoteTick,
-    enums::{OmsType, OrderSide, OrderStatus, OrderType, PositionSideSpecified},
+    enums::{OmsType, OrderSide, OrderStatus, OrderType, PositionSide},
     events::{
         OrderAccepted, OrderCanceled, OrderEventAny, OrderExpired, OrderFilled, OrderRejected,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Symbol, Venue, VenueOrderId,
     },
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Price, Quantity},
 };
 use rust_decimal::Decimal;
-use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -91,8 +95,9 @@ use crate::{
         DeriveCredentials, DeriveHttpClient,
         models::{DeriveInstrument, DeriveOrder, DeriveReplaceOutcome, DeriveTrade},
         parse::{
-            parse_derive_order_to_report, parse_derive_position_to_report,
-            parse_derive_subaccount_to_balances, parse_derive_trade_to_fill_report,
+            parse_derive_order_to_report_with_precision,
+            parse_derive_position_to_report_with_precision, parse_derive_subaccount_to_balances,
+            parse_derive_trade_to_fill_report_with_precision,
         },
         query::{
             DeriveCancelByInstrumentParams, DeriveCancelByLabelParams, DeriveCancelParams,
@@ -138,8 +143,9 @@ pub struct DeriveExecutionClient {
     signing: SigningContext,
     is_connected: Arc<AtomicBool>,
     cancellation_token: CancellationToken,
-    pending_tasks: TaskHandles,
-    ws_stream_handle: Option<JoinHandle<()>>,
+    session_tasks: TaskGroup,
+    pending_tasks: TaskGroup,
+    shutdown_errors: Vec<String>,
     dispatch_state: Arc<WsDispatchState>,
 }
 
@@ -167,7 +173,7 @@ impl DeriveExecutionClient {
 
         let credential = DeriveCredential::resolve(
             config.wallet_address.clone(),
-            config.session_key.clone(),
+            config.session_key.clone().map(SecretString::into_inner),
             config.subaccount_id,
             config.environment,
         )?;
@@ -182,11 +188,15 @@ impl DeriveExecutionClient {
             config.retry_delay_initial_ms,
             config.retry_delay_max_ms,
         );
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
         let http_client = DeriveHttpClient::with_credentials(
             config.rest_url(),
             http_credentials,
             Some(config.http_timeout_secs),
-            config.proxy_url.clone(),
+            proxy_url.clone(),
             Some(retry_config),
         )
         .context("failed to create Derive HTTP client")?;
@@ -200,7 +210,7 @@ impl DeriveExecutionClient {
             Some(config.ws_url()),
             config.environment,
             config.transport_backend,
-            config.proxy_url.clone(),
+            proxy_url,
             ws_credentials,
             config.max_matching_requests_per_second,
             config.max_per_instrument_matching_requests_per_second,
@@ -229,6 +239,9 @@ impl DeriveExecutionClient {
             core.base_currency,
         );
 
+        let session_tasks = TaskGroup::new();
+        let pending_tasks = TaskGroup::new();
+
         Ok(Self {
             core,
             clock,
@@ -243,8 +256,9 @@ impl DeriveExecutionClient {
             signing,
             is_connected: Arc::new(AtomicBool::new(false)),
             cancellation_token: CancellationToken::new(),
-            pending_tasks: TaskHandles::default(),
-            ws_stream_handle: None,
+            session_tasks,
+            pending_tasks,
+            shutdown_errors: Vec::new(),
             dispatch_state: Arc::new(WsDispatchState::new()),
         })
     }
@@ -272,6 +286,16 @@ impl DeriveExecutionClient {
     /// re-querying the venue.
     pub fn cache_instrument(&self, instrument: DeriveInstrument) {
         let instrument_id = format_instrument_id(instrument.instrument_name);
+        if let (Ok(price_increment), Ok(size_increment)) = (
+            Price::from_decimal(instrument.tick_size),
+            Quantity::from_decimal(instrument.amount_step),
+        ) {
+            self.dispatch_state.register_instrument_precision(
+                instrument_id,
+                price_increment.precision,
+                size_increment.precision,
+            );
+        }
         self.instruments.insert(instrument_id, instrument);
     }
 
@@ -280,18 +304,44 @@ impl DeriveExecutionClient {
     where
         F: std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        let runtime = get_runtime();
-        let handle = runtime.spawn(async move {
+        let future = async move {
             if let Err(e) = fut.await {
                 log::warn!("{description} failed: {e:?}");
             }
-        });
+        };
 
-        self.pending_tasks.push(handle);
+        if let Err(e) = self.pending_tasks.spawn(future) {
+            log::warn!("Skipping Derive {description} after shutdown began: {e}");
+        }
     }
 
     fn abort_pending_tasks(&self) {
-        self.pending_tasks.abort_all();
+        self.pending_tasks.begin_shutdown();
+    }
+
+    fn abort_session_tasks(&self) {
+        self.session_tasks.begin_shutdown();
+        self.ws_client.begin_shutdown();
+    }
+
+    async fn await_pending_tasks(&self) -> anyhow::Result<()> {
+        self.pending_tasks.begin_shutdown();
+        self.pending_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to terminate Derive execution tasks: {e}"))?;
+        Ok(())
+    }
+
+    async fn await_session_tasks(&self) -> anyhow::Result<()> {
+        self.session_tasks.begin_shutdown();
+        self.session_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to terminate Derive execution session tasks: {e}")
+            })?;
+        Ok(())
     }
 
     async fn ensure_instruments_initialized(&self) -> anyhow::Result<()> {
@@ -359,20 +409,38 @@ impl DeriveExecutionClient {
     /// cancels the shared cancellation token, aborts the WS dispatch task,
     /// and closes the WS client. Used when initial account state cannot be
     /// loaded so that the next `connect()` call starts from a clean slate.
-    async fn teardown_partial_connect(&mut self) {
+    async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
         self.cancellation_token.cancel();
-
-        if let Some(handle) = self.ws_stream_handle.take() {
-            handle.abort();
-        }
+        self.abort_session_tasks();
+        self.abort_pending_tasks();
 
         if let Err(e) = self.ws_client.disconnect().await {
-            log::warn!("Error tearing down Derive WebSocket after connect failure: {e}");
+            self.shutdown_errors
+                .push(format!("Derive WebSocket shutdown failed: {e}"));
         }
-        self.abort_pending_tasks();
+        let (session_result, pending_result) =
+            tokio::join!(self.await_session_tasks(), self.await_pending_tasks());
+        self.core.set_disconnected();
+        self.is_connected.store(false, Ordering::Release);
+
+        if let Err(e) = session_result {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if let Err(e) = pending_result {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if !self.shutdown_errors.is_empty() {
+            anyhow::bail!(std::mem::take(&mut self.shutdown_errors).join("; "));
+        }
+        Ok(())
     }
 
-    fn start_ws_dispatch(&mut self, rx: tokio::sync::mpsc::UnboundedReceiver<DeriveWsMessage>) {
+    fn start_ws_dispatch(
+        &self,
+        rx: tokio::sync::mpsc::UnboundedReceiver<DeriveWsMessage>,
+    ) -> anyhow::Result<()> {
         let emitter = self.emitter.clone();
         let account_id = self.core.account_id;
         let clock = self.clock;
@@ -380,8 +448,12 @@ impl DeriveExecutionClient {
         let dispatch_state = self.dispatch_state.clone();
         let reconciliation = self.reconciliation_context();
         let is_connected = Arc::clone(&self.is_connected);
+        let session_spawner = self
+            .session_tasks
+            .spawner()
+            .map_err(|e| anyhow::anyhow!("Derive session task admission is closed: {e}"))?;
 
-        let handle = get_runtime().spawn(async move {
+        self.session_tasks.spawn(async move {
             let mut rx = rx;
 
             loop {
@@ -394,7 +466,7 @@ impl DeriveExecutionClient {
                                 let context = reconciliation.clone();
                                 let task_cancellation = cancellation.clone();
 
-                                get_runtime().spawn(async move {
+                                if let Err(e) = session_spawner.spawn(async move {
                                     tokio::select! {
                                         () = task_cancellation.cancelled() => {}
                                         result = context.recover_after_reconnect() => {
@@ -403,7 +475,9 @@ impl DeriveExecutionClient {
                                             }
                                         }
                                     }
-                                });
+                                }) {
+                                    log::warn!("Skipping Derive reconnect recovery after shutdown began: {e}");
+                                }
                             }
                             Some(DeriveWsMessage::SessionRecoveryFailed(reason)) => {
                                 is_connected.store(false, Ordering::Release);
@@ -415,7 +489,7 @@ impl DeriveExecutionClient {
                                 let context = reconciliation.clone();
                                 let task_cancellation = cancellation.clone();
 
-                                get_runtime().spawn(async move {
+                                if let Err(e) = session_spawner.spawn(async move {
                                     tokio::select! {
                                         () = task_cancellation.cancelled() => {}
                                         result = context.refresh_account_state() => {
@@ -424,7 +498,9 @@ impl DeriveExecutionClient {
                                             }
                                         }
                                     }
-                                });
+                                }) {
+                                    log::warn!("Skipping Derive account refresh after shutdown began: {e}");
+                                }
                             }
                             Some(message) => handle_ws_message(
                                 message,
@@ -438,8 +514,8 @@ impl DeriveExecutionClient {
                     }
                 }
             }
-        });
-        self.ws_stream_handle = Some(handle);
+        })?;
+        Ok(())
     }
 }
 
@@ -497,14 +573,11 @@ impl ExecutionClient for DeriveExecutionClient {
         log::info!("Stopping Derive execution client");
 
         self.cancellation_token.cancel();
-
-        if let Some(handle) = self.ws_stream_handle.take() {
-            handle.abort();
-        }
+        self.abort_session_tasks();
         self.abort_pending_tasks();
 
-        self.core.set_disconnected();
         self.core.set_stopped();
+        self.core.set_disconnected();
         self.is_connected.store(false, Ordering::Release);
 
         log::info!("Derive execution client stopped");
@@ -512,15 +585,36 @@ impl ExecutionClient for DeriveExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.is_connected() {
+        if self.is_connected()
+            && !self.cancellation_token.is_cancelled()
+            && self.session_tasks.is_open()
+            && self.pending_tasks.is_open()
+        {
             return Ok(());
         }
 
         log::info!("Connecting Derive execution client");
 
-        if self.cancellation_token.is_cancelled() {
+        if self.cancellation_token.is_cancelled()
+            || !self.session_tasks.is_open()
+            || !self.pending_tasks.is_open()
+        {
+            self.teardown_partial_connect().await?;
+            self.session_tasks
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start Derive session generation: {e}"))?;
+            self.pending_tasks
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start Derive task generation: {e}"))?;
             self.cancellation_token = CancellationToken::new();
         }
+        let cancellation_token = self.cancellation_token.clone();
+        let ws_shutdown = self.ws_client.shutdown_handle();
+        let setup_guard =
+            TaskGroupGuard::new(&[&self.session_tasks, &self.pending_tasks], move || {
+                cancellation_token.cancel();
+                ws_shutdown.begin_shutdown();
+            });
 
         self.ensure_instruments_initialized()
             .await
@@ -530,10 +624,15 @@ impl ExecutionClient for DeriveExecutionClient {
             .connect()
             .await
             .context("failed to connect Derive WebSocket")?;
-        let rx = self
-            .ws_client
-            .take_event_receiver()
-            .context("Derive execution WS event receiver not initialized")?;
+        let Some(rx) = self.ws_client.take_event_receiver() else {
+            let e = anyhow::anyhow!("Derive execution WS event receiver not initialized");
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Derive execution startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e);
+        };
 
         let subaccount_id = self.credential.subaccount_id();
         let channels = vec![
@@ -544,11 +643,22 @@ impl ExecutionClient for DeriveExecutionClient {
 
         if let Err(e) = self.ws_client.subscribe_channels(channels).await {
             log::warn!("Derive private WS subscriptions failed: {e}; tearing down");
-            self.teardown_partial_connect().await;
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(anyhow::Error::new(e).context(format!(
+                    "Derive execution startup teardown failed: {teardown_error}"
+                )));
+            }
             return Err(anyhow::Error::new(e).context("failed Derive private WS subscriptions"));
         }
 
-        self.start_ws_dispatch(rx);
+        if let Err(e) = self.start_ws_dispatch(rx) {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Derive execution startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e.context("failed to register Derive execution WebSocket dispatch task"));
+        }
 
         // Fail-fast if the initial account snapshot cannot load: without it,
         // `await_account_registered` would block the full timeout window and
@@ -556,7 +666,11 @@ impl ExecutionClient for DeriveExecutionClient {
         // already started so the caller does not leak the dispatch task.
         if let Err(e) = self.refresh_account_state().await {
             log::warn!("Initial Derive account state refresh failed: {e}; tearing down");
-            self.teardown_partial_connect().await;
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Derive execution startup teardown failed: {teardown_error}"
+                )));
+            }
             return Err(e.context("failed initial Derive account state refresh"));
         }
 
@@ -565,12 +679,17 @@ impl ExecutionClient for DeriveExecutionClient {
             .await
         {
             log::warn!("Derive account did not register in time: {e}; tearing down");
-            self.teardown_partial_connect().await;
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Derive execution startup teardown failed: {teardown_error}"
+                )));
+            }
             return Err(e.context("failed waiting for Derive account registration"));
         }
 
         self.core.set_connected();
         self.is_connected.store(true, Ordering::Release);
+        setup_guard.disarm();
         log::info!(
             "Connected Derive execution client ({:?})",
             self.config.environment
@@ -579,24 +698,8 @@ impl ExecutionClient for DeriveExecutionClient {
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if !self.is_connected() {
-            return Ok(());
-        }
-
         log::info!("Disconnecting Derive execution client");
-        self.cancellation_token.cancel();
-
-        if let Err(e) = self.ws_client.disconnect().await {
-            log::warn!("Error while disconnecting Derive execution WebSocket: {e}");
-        }
-
-        if let Some(handle) = self.ws_stream_handle.take() {
-            handle.abort();
-        }
-        self.abort_pending_tasks();
-
-        self.core.set_disconnected();
-        self.is_connected.store(false, Ordering::Release);
+        self.teardown_partial_connect().await?;
         log::info!("Derive execution client disconnected");
         Ok(())
     }
@@ -614,7 +717,12 @@ impl ExecutionClient for DeriveExecutionClient {
         Ok(())
     }
 
-    fn on_instrument(&mut self, _instrument: InstrumentAny) {
+    fn on_instrument(&mut self, instrument: InstrumentAny) {
+        self.dispatch_state.register_instrument_precision(
+            instrument.id(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+        );
         // The exec-side instrument cache holds `DeriveInstrument` records so
         // signing can pull `base_asset_address` / `base_asset_sub_id`; the
         // generic `InstrumentAny` shape published on the bus does not carry
@@ -737,8 +845,16 @@ impl ExecutionClient for DeriveExecutionClient {
             return Ok(None);
         }
 
+        let (price_precision, size_precision) =
+            report_precision(&self.dispatch_state, order.instrument_name.as_str());
         let ts_init = self.clock.get_time_ns();
-        let mut report = parse_derive_order_to_report(&order, self.core.account_id, ts_init)?;
+        let mut report = parse_derive_order_to_report_with_precision(
+            &order,
+            self.core.account_id,
+            price_precision,
+            size_precision,
+            ts_init,
+        )?;
         // Prefer the parsed label (the venue's source of truth); only stamp
         // the cmd's id when the venue order has no label at all.
         if report.client_order_id.is_none()
@@ -1435,110 +1551,75 @@ impl ExecutionClient for DeriveExecutionClient {
     }
 
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
-        let http_client = self.http_client.clone();
-        let ws_exec = self.ws_exec.clone();
-        let subaccount_id = self.credential.subaccount_id();
         let venue_symbol = format_venue_symbol(&cmd.instrument_id)?.to_string();
         let side_filter = cmd.order_side;
+        let cache = self.core.cache();
+        let orders = cache.orders_open_refs(
+            Some(&self.core.venue),
+            Some(&cmd.instrument_id),
+            None,
+            Some(&self.core.account_id),
+            side_filter,
+        );
+        let mut cancels = Vec::with_capacity(orders.len());
+
+        for order in orders {
+            let client_order_id = order.client_order_id();
+            if cache.client_id(&client_order_id) != Some(&self.core.client_id) {
+                continue;
+            }
+
+            let is_trigger = is_derive_trigger_order_type(order.order_type());
+            if side_filter.is_none() && !is_trigger {
+                continue;
+            }
+
+            let Some(venue_order_id) = order.venue_order_id() else {
+                log::warn!(
+                    "Cannot cancel all orders for {}: order {client_order_id} has no venue_order_id",
+                    cmd.instrument_id,
+                );
+                return Ok(());
+            };
+            cancels.push((venue_order_id, is_trigger));
+        }
+        drop(cache);
+
+        if side_filter.is_some() && cancels.is_empty() {
+            return Ok(());
+        }
+
+        let ws_exec = self.ws_exec.clone();
+        let subaccount_id = self.credential.subaccount_id();
 
         self.spawn_task("cancel_all_orders", async move {
-            // Preserve the requested side because Derive bulk cancellation has no side filter
-            if matches!(side_filter, OrderSide::Buy | OrderSide::Sell) {
-                let open_params = DeriveGetOpenOrdersParams::new(subaccount_id);
-                let mut orders = match http_client.get_open_orders(&open_params).await {
-                    Ok(v) => v,
-                    Err(e) => {
-                        log::warn!(
-                            "Derive cancel_all_orders: failed to list open orders for side filter {side_filter:?}: {e}",
-                        );
-                        return Ok(());
-                    }
-                }
-                .orders;
-
-                match http_client
-                    .get_trigger_orders(&DeriveGetTriggerOrdersParams::new(subaccount_id))
-                    .await
-                {
-                    Ok(result) => orders.extend(result.orders),
-                    Err(e) => {
-                        log::warn!(
-                            "Derive cancel_all_orders: failed to list trigger orders for side filter {side_filter:?}: {e}",
-                        );
-                    }
-                }
-
-                for order in orders {
-                    if order.instrument_name.as_str() != venue_symbol {
-                        continue;
-                    }
-                    let order_side = match order.direction {
-                        DeriveOrderSide::Buy => OrderSide::Buy,
-                        DeriveOrderSide::Sell => OrderSide::Sell,
-                    };
-
-                    if order_side != side_filter {
-                        continue;
-                    }
-
-                    let outcome = if order.trigger_type.is_some() {
-                        ws_exec
-                            .cancel_trigger_order(&DeriveCancelTriggerOrderParams::new(
-                                subaccount_id,
-                                order.order_id.as_str(),
-                            ))
-                            .await
-                            .map(|_| ())
-                    } else {
-                        ws_exec
-                            .cancel_order(&DeriveCancelParams::new(
-                                subaccount_id,
-                                venue_symbol.as_str(),
-                                order.order_id.as_str(),
-                            ))
-                            .await
-                    };
-
-                    if let Err(e) = outcome {
-                        log::warn!(
-                            "Derive cancel_all_orders: cancel for {} failed: {e}",
-                            order.order_id,
-                        );
-                    }
-                }
-            } else {
-                let trigger_orders = match http_client
-                    .get_trigger_orders(&DeriveGetTriggerOrdersParams::new(subaccount_id))
-                    .await
-                {
-                    Ok(result) => result.orders,
-                    Err(e) => {
-                        log::warn!(
-                            "Derive cancel_all_orders: failed to list trigger orders for {venue_symbol}: {e}",
-                        );
-                        Vec::new()
-                    }
-                };
-
-                for order in trigger_orders {
-                    if order.instrument_name.as_str() != venue_symbol {
-                        continue;
-                    }
-
-                    if let Err(e) = ws_exec
+            for (venue_order_id, is_trigger) in cancels {
+                let outcome = if is_trigger {
+                    ws_exec
                         .cancel_trigger_order(&DeriveCancelTriggerOrderParams::new(
                             subaccount_id,
-                            order.order_id.as_str(),
+                            venue_order_id.as_str(),
                         ))
                         .await
-                    {
-                        log::warn!(
-                            "Derive cancel_all_orders: trigger cancel for {} failed: {e}",
-                            order.order_id,
-                        );
-                    }
-                }
+                        .map(|_| ())
+                } else {
+                    ws_exec
+                        .cancel_order(&DeriveCancelParams::new(
+                            subaccount_id,
+                            venue_symbol.as_str(),
+                            venue_order_id.as_str(),
+                        ))
+                        .await
+                };
 
+                if let Err(e) = outcome {
+                    log::warn!(
+                        "Derive cancel_all_orders: cancel for {venue_order_id} failed: {e}",
+                    );
+                }
+            }
+
+            if side_filter.is_none() {
                 match ws_exec
                     .cancel_by_instrument(&DeriveCancelByInstrumentParams::new(
                         subaccount_id,
@@ -1888,6 +1969,7 @@ impl ExecutionClient for DeriveExecutionClient {
         let account_id = self.core.account_id;
         let emitter = self.emitter.clone();
         let clock = self.clock;
+        let dispatch_state = Arc::clone(&self.dispatch_state);
         let voi = venue_order_id.to_string();
 
         self.spawn_task("query_order", async move {
@@ -1923,8 +2005,16 @@ impl ExecutionClient for DeriveExecutionClient {
                 }
             };
 
+            let (price_precision, size_precision) =
+                report_precision(&dispatch_state, order.instrument_name.as_str());
             let ts_init = clock.get_time_ns();
-            let report = parse_derive_order_to_report(&order, account_id, ts_init)?;
+            let report = parse_derive_order_to_report_with_precision(
+                &order,
+                account_id,
+                price_precision,
+                size_precision,
+                ts_init,
+            )?;
             emitter.send_order_status_report(report);
             Ok(())
         });
@@ -2022,17 +2112,13 @@ impl DeriveReconciliationContext {
         };
 
         let ts_init = self.clock.get_time_ns();
-        let start_ms = cmd.start.map(|t| t.as_millis() as i64);
-        let end_ms = cmd.end.map(|t| t.as_millis() as i64);
-
         let orders: Vec<DeriveOrder> = orders
             .into_iter()
             .filter(|order| {
                 cmd.instrument_id.is_none_or(|instrument_id| {
                     InstrumentId::new(Symbol::new(order.instrument_name.as_str()), *DERIVE_VENUE)
                         == instrument_id
-                }) && start_ms.is_none_or(|start| order.last_update_timestamp >= start)
-                    && end_ms.is_none_or(|end| order.last_update_timestamp <= end)
+                })
             })
             .collect();
 
@@ -2045,7 +2131,15 @@ impl DeriveReconciliationContext {
         let mut reports = Vec::with_capacity(orders.len());
 
         for order in orders {
-            match parse_derive_order_to_report(&order, self.account_id, ts_init) {
+            let (price_precision, size_precision) =
+                report_precision(&self.dispatch_state, order.instrument_name.as_str());
+            match parse_derive_order_to_report_with_precision(
+                &order,
+                self.account_id,
+                price_precision,
+                size_precision,
+                ts_init,
+            ) {
                 Ok(mut report) => {
                     if report.client_order_id.is_some_and(|client_order_id| {
                         ambiguous_client_order_ids.contains(&client_order_id)
@@ -2057,6 +2151,8 @@ impl DeriveReconciliationContext {
                 Err(e) => log::warn!("Skipping order in status report: {e}"),
             }
         }
+
+        retain_order_status_reports(&mut reports, cmd);
         Ok(reports)
     }
 
@@ -2109,10 +2205,14 @@ impl DeriveReconciliationContext {
                 continue;
             }
 
-            match parse_derive_trade_to_fill_report(
+            let (price_precision, size_precision) =
+                report_precision(&self.dispatch_state, trade.instrument_name.as_str());
+            match parse_derive_trade_to_fill_report_with_precision(
                 &trade,
                 self.account_id,
                 Currency::USDC(),
+                price_precision,
+                size_precision,
                 ts_init,
             ) {
                 Ok(Some(report)) => {
@@ -2155,7 +2255,14 @@ impl DeriveReconciliationContext {
 
             instruments.insert(instrument_id);
 
-            match parse_derive_position_to_report(&position, self.account_id, ts_init) {
+            let (_, size_precision) =
+                report_precision(&self.dispatch_state, position.instrument_name.as_str());
+            match parse_derive_position_to_report_with_precision(
+                &position,
+                self.account_id,
+                size_precision,
+                ts_init,
+            ) {
                 Ok(report) => reports.push(report),
                 Err(e) => log::warn!("Skipping position in status report: {e}"),
             }
@@ -2365,7 +2472,7 @@ fn add_missing_flat_position_reports(
         flat_reports.push(PositionStatusReport::new(
             account_id,
             instrument_id,
-            PositionSideSpecified::Flat,
+            PositionSide::Flat,
             Quantity::from("0"),
             ts_init,
             ts_init,
@@ -2382,6 +2489,16 @@ fn add_missing_flat_position_reports(
         );
         mass_status.add_position_reports(flat_reports);
     }
+}
+
+fn report_precision(
+    dispatch_state: &WsDispatchState,
+    instrument_name: &str,
+) -> (Option<u8>, Option<u8>) {
+    let instrument_id = format_instrument_id(instrument_name);
+    dispatch_state
+        .instrument_precision(&instrument_id)
+        .map_or((None, None), |(price, size)| (Some(price), Some(size)))
 }
 
 fn handle_ws_message(
@@ -2444,7 +2561,15 @@ pub fn dispatch_orders_payload(
     let ts_init = clock.get_time_ns();
 
     for order in data.orders {
-        let report = match parse_derive_order_to_report(&order, account_id, ts_init) {
+        let (price_precision, size_precision) =
+            report_precision(dispatch_state, order.instrument_name.as_str());
+        let report = match parse_derive_order_to_report_with_precision(
+            &order,
+            account_id,
+            price_precision,
+            size_precision,
+            ts_init,
+        ) {
             Ok(report) => report,
             Err(e) => {
                 log::warn!("Failed to parse Derive order WS update: {e}");
@@ -2486,7 +2611,16 @@ pub fn dispatch_trades_payload(
     let ts_init = clock.get_time_ns();
 
     for trade in data.trades {
-        match parse_derive_trade_to_fill_report(&trade, account_id, fee_currency, ts_init) {
+        let (price_precision, size_precision) =
+            report_precision(dispatch_state, trade.instrument_name.as_str());
+        match parse_derive_trade_to_fill_report_with_precision(
+            &trade,
+            account_id,
+            fee_currency,
+            price_precision,
+            size_precision,
+            ts_init,
+        ) {
             Ok(Some(report)) => {
                 if dispatch_state.check_and_insert_trade(report.trade_id) {
                     log::debug!(
@@ -2822,8 +2956,6 @@ fn market_order_limit_price(
     let raw = match side {
         OrderSide::Buy => quote.ask_price.as_decimal() * (one + bps / scale),
         OrderSide::Sell => quote.bid_price.as_decimal() * (one - bps / scale),
-        // NoOrderSide is rejected upstream by `order_side_to_derive`.
-        OrderSide::NoOrderSide => return None,
     };
     let rounded = round_to_tick(raw, tick_size, side);
     if rounded <= Decimal::ZERO {
@@ -2844,7 +2976,6 @@ fn trigger_market_limit_price(
     let raw = match side {
         OrderSide::Buy => trigger_price * (one + bps / scale),
         OrderSide::Sell => trigger_price * (one - bps / scale),
-        OrderSide::NoOrderSide => return None,
     };
     let rounded = round_to_tick(raw, tick_size, side);
     if rounded <= Decimal::ZERO {
@@ -2976,7 +3107,6 @@ fn round_to_tick(value: Decimal, tick_size: Decimal, side: OrderSide) -> Decimal
     let ticks = match side {
         OrderSide::Buy => ratio.ceil(),
         OrderSide::Sell => ratio.floor(),
-        OrderSide::NoOrderSide => ratio.round(),
     };
     ticks * tick_size
 }
@@ -3002,7 +3132,10 @@ async fn cached_or_fetch_instrument(
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use nautilus_common::{cache::Cache, messages::ExecutionEvent};
+    use nautilus_common::{
+        cache::Cache,
+        messages::{ExecutionEvent, ExecutionReport},
+    };
     use nautilus_core::UnixNanos;
     use nautilus_live::ExecutionClientCore;
     use nautilus_model::{
@@ -3016,7 +3149,11 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
-    use crate::common::{consts::DERIVE, enums::DeriveEnvironment};
+    use crate::common::{
+        consts::DERIVE,
+        enums::{DeriveEnvironment, DeriveOrderStatus, DeriveOrderType},
+        parse::parse_derive_instrument_any,
+    };
 
     const TEST_WALLET: &str = "0x0000000000000000000000000000000000001234";
     const TEST_SESSION_KEY: &str =
@@ -3040,7 +3177,7 @@ mod tests {
     fn test_config() -> DeriveExecutionClientConfig {
         DeriveExecutionClientConfig {
             wallet_address: Some(TEST_WALLET.to_string()),
-            session_key: Some(TEST_SESSION_KEY.to_string()),
+            session_key: Some(TEST_SESSION_KEY.into()),
             subaccount_id: Some(TEST_SUBACCOUNT),
             environment: DeriveEnvironment::Testnet,
             domain_separator: Some(
@@ -3342,6 +3479,90 @@ mod tests {
     }
 
     #[rstest]
+    fn test_cache_instrument_registers_report_precision() {
+        let client = DeriveExecutionClient::new(test_core(), test_config()).unwrap();
+        let instrument = sample_derive_instrument();
+        let instrument_id = format_instrument_id(instrument.instrument_name.as_str());
+
+        client.cache_instrument(instrument);
+
+        assert_eq!(
+            client.dispatch_state.instrument_precision(&instrument_id),
+            Some((2, 3)),
+        );
+    }
+
+    #[rstest]
+    fn test_order_dispatch_uses_registered_instrument_precision() {
+        let clock = get_atomic_clock_realtime();
+        let client = test_client_with_instrument();
+
+        let mut order: DeriveOrder = serde_json::from_str(include_str!(
+            "../test_data/perps/http_order_eth_partially_filled.json"
+        ))
+        .unwrap();
+        order.amount = Decimal::from_str_exact("25.000").unwrap();
+        order.filled_amount = Decimal::from_str_exact("5.000").unwrap();
+        order.limit_price = Decimal::from_str_exact("25.000").unwrap();
+        order.order_status = DeriveOrderStatus::Open;
+        order.order_type = DeriveOrderType::Limit;
+
+        let (emitter, mut rx) = test_emitter(clock);
+        dispatch_orders_payload(
+            DeriveOrdersSubscriptionData {
+                orders: vec![order],
+            },
+            &emitter,
+            AccountId::from("DERIVE-001"),
+            clock,
+            &client.dispatch_state,
+        );
+
+        let event = rx.try_recv().unwrap();
+        let ExecutionEvent::Report(ExecutionReport::Order(report)) = event else {
+            panic!("Expected OrderStatusReport");
+        };
+        assert_eq!(report.price, Some(Price::from("25.00")));
+        assert_eq!(report.price.unwrap().precision, 2);
+        assert_eq!(report.quantity, Quantity::from("25.000"));
+        assert_eq!(report.quantity.precision, 3);
+        assert_eq!(report.filled_qty, Quantity::from("5.000"));
+        assert_eq!(report.filled_qty.precision, 3);
+    }
+
+    #[rstest]
+    fn test_trade_dispatch_uses_registered_instrument_precision() {
+        let clock = get_atomic_clock_realtime();
+        let client = test_client_with_instrument();
+        let mut trade: DeriveTrade = serde_json::from_str(include_str!(
+            "../test_data/perps/http_private_trade_eth.json"
+        ))
+        .unwrap();
+        trade.trade_amount = Decimal::from_str_exact("25.000").unwrap();
+        trade.trade_price = Decimal::from_str_exact("25.000").unwrap();
+
+        let (emitter, mut rx) = test_emitter(clock);
+        dispatch_trades_payload(
+            DeriveTradesSubscriptionData {
+                trades: vec![trade],
+            },
+            &emitter,
+            AccountId::from("DERIVE-001"),
+            clock,
+            &client.dispatch_state,
+        );
+
+        let event = rx.try_recv().unwrap();
+        let ExecutionEvent::Report(ExecutionReport::Fill(report)) = event else {
+            panic!("Expected FillReport");
+        };
+        assert_eq!(report.last_px, Price::from("25.00"));
+        assert_eq!(report.last_px.precision, 2);
+        assert_eq!(report.last_qty, Quantity::from("25.000"));
+        assert_eq!(report.last_qty.precision, 3);
+    }
+
+    #[rstest]
     fn test_emit_tracked_event_suppresses_in_flight_replace_cancel_leg() {
         // Derive's `private/replace` cancels the old order; the `.orders`
         // cancel-of-old leg can arrive before `modify_order` rebinds the order,
@@ -3367,7 +3588,7 @@ mod tests {
             instrument_id,
             Some(cid),
             stale_voi,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Canceled,
@@ -3478,5 +3699,19 @@ mod tests {
         );
         emitter.set_sender(tx);
         (emitter, rx)
+    }
+
+    fn sample_derive_instrument() -> DeriveInstrument {
+        serde_json::from_str(include_str!("../test_data/perps/instrument_eth.json")).unwrap()
+    }
+
+    fn test_client_with_instrument() -> DeriveExecutionClient {
+        let mut client = DeriveExecutionClient::new(test_core(), test_config()).unwrap();
+        let instrument =
+            parse_derive_instrument_any(&sample_derive_instrument(), UnixNanos::default())
+                .unwrap()
+                .unwrap();
+        client.on_instrument(instrument);
+        client
     }
 }

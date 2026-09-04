@@ -38,12 +38,12 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `streaming`: Enables `persistence` dependency for streaming configuration.
-//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs) (auto-enables `streaming`).
 //! - `defi`: Enables DeFi (Decentralized Finance) support.
+//! - `extension-module`: Builds as a Python extension module.
 //! - `live`: Enables live trading mode dependencies.
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs) and auto-enables `streaming`.
+//! - `streaming`: Enables the `nautilus-persistence` dependency for streaming configuration.
 //! - `tracing-bridge`: Enables the `tracing` subscriber bridge for log integration.
-//! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]

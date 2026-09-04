@@ -15,14 +15,13 @@
 
 //! Shared protocol state machine for the Kraken Spot `level3` channel.
 //!
-//! The Rust `KrakenSpotDataClient` and the pyo3 `KrakenSpotWebSocketClient`
-//! stream loop drive their per-symbol state through [`process_l3_message`],
-//! keeping the snapshot parsing, incremental update parsing, checksum
-//! validation, and resync logic in a single implementation. Each caller
+//! The Rust `KrakenSpotDataClient` stream loop drives per-symbol state through
+//! [`process_l3_message`], keeping snapshot parsing, incremental update parsing,
+//! checksum validation, and resync logic in a single implementation. The caller
 //! supplies an [`L3Sink`] that decides how to deliver the produced
 //! `OrderBookDeltas` to its downstream consumer.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use ahash::AHashMap;
 use nautilus_core::{AtomicMap, UnixNanos};
@@ -32,6 +31,7 @@ use nautilus_model::{
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
 };
+use parking_lot::Mutex;
 
 use super::{
     BookOrderIdHasher, KrakenL3WsMessage,
@@ -75,9 +75,7 @@ pub(crate) trait L3Sink {
 
 /// Returns the depth registered for `symbol`, defaulting to `1000`.
 pub(crate) fn subscription_depth(depths: &Arc<Mutex<AHashMap<String, u32>>>, symbol: &str) -> u32 {
-    depths
-        .lock()
-        .map_or(1000, |depths| depths.get(symbol).copied().unwrap_or(1000))
+    depths.lock().get(symbol).copied().unwrap_or(1000)
 }
 
 /// Emits a `Clear` delta (with `F_LAST`) after detecting a checksum mismatch.
@@ -318,32 +316,21 @@ mod tests {
     use crate::websocket::spot_v2::level_3::messages::{KrakenL3Snapshot, KrakenL3UpdateData};
 
     fn make_instrument() -> InstrumentAny {
-        InstrumentAny::CurrencyPair(CurrencyPair::new(
-            InstrumentId::from("BTC/USD.KRAKEN"),
-            Symbol::from("BTC/USD"),
-            Currency::BTC(),
-            Currency::USD(),
-            1,
-            8,
-            Price::from("0.1"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        ))
+        InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(InstrumentId::from("BTC/USD.KRAKEN"))
+                .raw_symbol(Symbol::from("BTC/USD"))
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USD())
+                .price_precision(1)
+                .size_precision(8)
+                .price_increment(Price::from("0.1"))
+                .size_increment(Quantity::from("0.00000001"))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
     }
 
     struct CollectingSink {
@@ -363,10 +350,7 @@ mod tests {
         instruments.insert(instrument.id(), instrument);
 
         let depths = Arc::new(Mutex::new(AHashMap::new()));
-        depths
-            .lock()
-            .expect("L3 depth map mutex poisoned")
-            .insert("BTC/USD".to_string(), 1000);
+        depths.lock().insert("BTC/USD".to_string(), 1000);
 
         let snapshot: KrakenL3Snapshot = serde_json::from_str(
             r#"{
@@ -427,10 +411,7 @@ mod tests {
         instruments.insert(instrument.id(), instrument);
 
         let depths = Arc::new(Mutex::new(AHashMap::new()));
-        depths
-            .lock()
-            .expect("L3 depth map mutex poisoned")
-            .insert("BTC/USD".to_string(), 1000);
+        depths.lock().insert("BTC/USD".to_string(), 1000);
 
         let update: KrakenL3UpdateData = serde_json::from_str(
             r#"{

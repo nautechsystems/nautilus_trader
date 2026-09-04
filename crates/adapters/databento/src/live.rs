@@ -43,7 +43,8 @@ use databento::{
 };
 use indexmap::IndexMap;
 use nautilus_core::{
-    AtomicMap, UnixNanos, consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime,
+    AtomicMap, UnixNanos, consts::NAUTILUS_USER_AGENT, string::secret::SecretString,
+    time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     data::{Data, InstrumentStatus, OrderBookDelta, OrderBookDeltas},
@@ -566,7 +567,7 @@ impl DatabentoFeedHandler {
         let timeout = Duration::from_secs(5); // Hardcoded timeout for now
 
         let gateway_addr = self.gateway_addr.clone();
-        let api_key = self.credential.api_key().to_owned();
+        let api_key = SecretString::from(self.credential.api_key().to_owned());
         let dataset = self.dataset.clone();
 
         let result = tokio::time::timeout(timeout, async move {
@@ -577,7 +578,7 @@ impl DatabentoFeedHandler {
                 base
             };
             base.user_agent_extension(NAUTILUS_USER_AGENT.into())
-                .key(api_key)?
+                .key(api_key.expose_secret().to_owned())?
                 .dataset(dataset)
                 .build()
                 .await
@@ -886,7 +887,7 @@ impl DatabentoFeedHandler {
                 };
 
                 if let Some(msg) = record.get::<dbn::MboMsg>() {
-                    if let Some(Data::Delta(delta)) = &data1 {
+                    if let Some(Data::BookDelta(delta)) = &data1 {
                         initialized_books.insert(delta.instrument_id);
 
                         log::trace!(
@@ -901,7 +902,7 @@ impl DatabentoFeedHandler {
                             &mut buffering_start,
                             &mut buffered_deltas,
                         ) {
-                            Some(deltas) => data1 = Some(Data::Deltas(Box::new(deltas))),
+                            Some(deltas) => data1 = Some(Data::BookDeltas(Box::new(deltas))),
                             None => continue,
                         }
                     } else {
@@ -926,7 +927,9 @@ impl DatabentoFeedHandler {
                             &mut buffering_start,
                             &mut buffered_deltas,
                         ) {
-                            self.send_msg(DatabentoMessage::Data(Data::Deltas(Box::new(deltas))));
+                            self.send_msg(DatabentoMessage::Data(Data::BookDeltas(Box::new(
+                                deltas,
+                            ))));
                         }
 
                         continue;

@@ -30,7 +30,7 @@ use nautilus_model::identifiers::InstrumentId;
 use nautilus_persistence_macros::custom_data;
 use rust_decimal::Decimal;
 
-/// Serde helpers for f64 fields that use NaN as a sentinel for absent values.
+/// Serde adapter for f64 fields that use NaN as a sentinel for absent values.
 /// Serializes NaN as JSON `null` and deserializes `null` back to NaN,
 /// avoiding `serde_json` errors on non-finite floats.
 mod nan_as_null {

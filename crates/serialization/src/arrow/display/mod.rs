@@ -51,7 +51,7 @@ use rust_decimal::prelude::ToPrimitive;
 /// `nautilus_model::defi::WEI_PRECISION` (18).
 const DISPLAY_MAX_PRECISION: u8 = 18;
 
-/// Builds a non-nullable `Utf8` field with the given name.
+/// Builds a `Utf8` field with the given name and nullability.
 pub(super) fn utf8_field(name: &str, nullable: bool) -> Field {
     Field::new(name, DataType::Utf8, nullable)
 }
@@ -104,8 +104,8 @@ pub(super) fn unix_nanos_to_i64(value: u64) -> i64 {
 /// and the `ERROR_PRICE` synthetic with `precision: 255`), so clear-style
 /// order book deltas and error sentinels render as missing cells instead of
 /// bogus numeric values. [`Price::as_f64`] panics when the `defi` feature is
-/// enabled and precision exceeds [`MAX_FLOAT_PRECISION`] (16), so this helper
-/// falls back to a [`rust_decimal::Decimal`] conversion in that range. The
+/// enabled and precision exceeds [`MAX_FLOAT_PRECISION`] (16), so the conversion
+/// falls back to [`rust_decimal::Decimal`] in that range. The
 /// decimal path returns [`f64::NAN`] if the value is outside `f64` range.
 pub(super) fn price_to_f64(price: &Price) -> f64 {
     if price.is_undefined() || price.raw == PRICE_ERROR || price.precision > DISPLAY_MAX_PRECISION {
@@ -140,7 +140,7 @@ pub(super) fn quantity_to_f64(quantity: &Quantity) -> f64 {
 /// [`Money::as_f64`] panics under `feature = "defi"` when the currency
 /// precision exceeds [`MAX_FLOAT_PRECISION`] (16); high-precision tokens
 /// (e.g. 18-decimal ERC-20s) would otherwise abort an entire display batch.
-/// This helper guards pathological precisions and falls back to the decimal
+/// This guards pathological precisions and falls back to the decimal
 /// path for 17-18 decimal currencies. Returns [`f64::NAN`] if the value is
 /// outside `f64` range.
 pub(super) fn money_to_f64(money: &Money) -> f64 {

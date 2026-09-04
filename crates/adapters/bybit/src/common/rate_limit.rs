@@ -18,7 +18,7 @@
 use std::{
     collections::VecDeque,
     sync::{
-        Arc, LazyLock, Mutex,
+        Arc, LazyLock,
         atomic::{AtomicU64, Ordering},
     },
     time::Duration,
@@ -27,6 +27,7 @@ use std::{
 use ahash::AHashMap;
 use aws_lc_rs::digest;
 use nautilus_network::ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota};
+use parking_lot::Mutex;
 use ustr::Ustr;
 
 use super::enums::BybitProductType;
@@ -48,7 +49,7 @@ pub(crate) const BYBIT_OPTION_SUBSCRIPTION_LIMIT: usize = 2_000;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct TransportScope {
     host: String,
-    proxy_url: Option<String>,
+    proxy_url_digest: Option<[u8; 32]>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -138,10 +139,7 @@ impl SlidingWindows {
         loop {
             let wait = {
                 let now = tokio::time::Instant::now();
-                let mut windows = self
-                    .windows
-                    .lock()
-                    .expect("Bybit rate-limit mutex poisoned");
+                let mut windows = self.windows.lock();
                 let mut wait = Duration::ZERO;
 
                 for reservation in reservations {
@@ -210,10 +208,7 @@ impl SlidingWindows {
         }
 
         let now = tokio::time::Instant::now();
-        let mut windows = self
-            .windows
-            .lock()
-            .expect("Bybit rate-limit mutex poisoned");
+        let mut windows = self.windows.lock();
         let window = windows
             .entry(key.clone())
             .or_insert_with(|| Window::new(configured_limit, period));
@@ -244,10 +239,7 @@ impl SlidingWindows {
 
     fn block(&self, key: &LimitKey, limit: u32, period: Duration, duration: Duration) {
         let now = tokio::time::Instant::now();
-        let mut windows = self
-            .windows
-            .lock()
-            .expect("Bybit rate-limit mutex poisoned");
+        let mut windows = self.windows.lock();
         let window = windows
             .entry(key.clone())
             .or_insert_with(|| Window::new(limit, period));
@@ -258,7 +250,6 @@ impl SlidingWindows {
     fn observed_limit(&self, key: &LimitKey) -> Option<u32> {
         self.windows
             .lock()
-            .expect("Bybit rate-limit mutex poisoned")
             .get(key)
             .and_then(|window| window.observed_limit)
     }
@@ -443,9 +434,7 @@ pub(crate) fn websocket_connection_limiter(
     proxy_url: Option<&str>,
 ) -> Arc<ConnectionLimiter> {
     let scope = transport_scope(url, proxy_url);
-    let mut registry = WS_CONNECTION_LIMITERS
-        .lock()
-        .expect("Bybit WebSocket connection limiter registry mutex poisoned");
+    let mut registry = WS_CONNECTION_LIMITERS.lock();
     if let Some(limiter) = registry.get(&scope) {
         return Arc::clone(limiter);
     }
@@ -465,10 +454,19 @@ pub(crate) fn websocket_connection_key() -> Ustr {
 }
 
 #[must_use]
+pub(crate) const fn batch_call_limit(category: BybitProductType) -> usize {
+    match category {
+        BybitProductType::Option => 20,
+        _ => batch_endpoint_limit(category),
+    }
+}
+
+#[must_use]
 pub(crate) const fn batch_endpoint_limit(category: BybitProductType) -> usize {
     match category {
         BybitProductType::Spot => 10,
-        BybitProductType::Linear | BybitProductType::Inverse | BybitProductType::Option => 20,
+        BybitProductType::Linear | BybitProductType::Inverse => 20,
+        BybitProductType::Option => 5,
     }
 }
 
@@ -477,7 +475,7 @@ pub(crate) const fn batch_send_limit(category: BybitProductType) -> usize {
     match category {
         BybitProductType::Spot => 10,
         BybitProductType::Linear | BybitProductType::Inverse => 10,
-        BybitProductType::Option => 20,
+        BybitProductType::Option => 5,
     }
 }
 
@@ -517,9 +515,7 @@ pub(crate) fn category_from_payload(payload: Option<&str>) -> Option<BybitProduc
 }
 
 fn shared_session_generation(scope: &TransportScope) -> Arc<AtomicU64> {
-    let mut registry = HTTP_SESSION_GENERATIONS
-        .lock()
-        .expect("Bybit HTTP session registry mutex poisoned");
+    let mut registry = HTTP_SESSION_GENERATIONS.lock();
     if let Some(generation) = registry.get(scope) {
         return Arc::clone(generation);
     }
@@ -532,20 +528,22 @@ fn shared_session_generation(scope: &TransportScope) -> Arc<AtomicU64> {
 fn transport_scope(url: &str, proxy_url: Option<&str>) -> TransportScope {
     TransportScope {
         host: host(url),
-        proxy_url: proxy_url.map(ToOwned::to_owned),
+        proxy_url_digest: proxy_url.map(sha256),
     }
 }
 
 fn account_scope(url: &str, api_key: &str) -> AccountScope {
-    let digest = digest::digest(&digest::SHA256, api_key.as_bytes());
-    let api_key_digest = digest
-        .as_ref()
-        .try_into()
-        .expect("SHA-256 digest must contain 32 bytes");
     AccountScope {
         environment: environment_scope(url),
-        api_key_digest,
+        api_key_digest: sha256(api_key),
     }
+}
+
+fn sha256(value: &str) -> [u8; 32] {
+    digest::digest(&digest::SHA256, value.as_bytes())
+        .as_ref()
+        .try_into()
+        .expect("SHA-256 digest must contain 32 bytes")
 }
 
 fn host(url: &str) -> String {
@@ -613,10 +611,29 @@ fn account_limit(endpoint: &str, category: Option<BybitProductType>) -> (String,
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
     fn test_key(name: &str) -> LimitKey {
         LimitKey::Test(name.to_string())
+    }
+
+    #[rstest]
+    fn transport_scope_does_not_retain_proxy_url() {
+        let proxy_url = "http://user:password@proxy.example:8080";
+        let scope = transport_scope("https://api.bybit.com", Some(proxy_url));
+        let matching = transport_scope("https://api.bybit.com", Some(proxy_url));
+        let different = transport_scope(
+            "https://api.bybit.com",
+            Some("http://other:password@proxy.example:8080"),
+        );
+
+        let debug = format!("{scope:?}");
+
+        assert!(!debug.contains(proxy_url));
+        assert_eq!(scope, matching);
+        assert_ne!(scope, different);
     }
 
     #[tokio::test(start_paused = true)]
@@ -789,16 +806,18 @@ mod tests {
     }
 
     #[rstest::rstest]
-    #[case(BybitProductType::Spot, 10, 10, 10)]
-    #[case(BybitProductType::Linear, 20, 10, 10)]
-    #[case(BybitProductType::Inverse, 20, 10, 10)]
-    #[case(BybitProductType::Option, 20, 20, 1)]
+    #[case(BybitProductType::Spot, 10, 10, 10, 10)]
+    #[case(BybitProductType::Linear, 20, 20, 10, 10)]
+    #[case(BybitProductType::Inverse, 20, 20, 10, 10)]
+    #[case(BybitProductType::Option, 20, 5, 5, 1)]
     fn batch_limits_match_product_rules(
         #[case] category: BybitProductType,
+        #[case] call_limit: usize,
         #[case] endpoint_limit: usize,
         #[case] send_limit: usize,
         #[case] weight: u32,
     ) {
+        assert_eq!(batch_call_limit(category), call_limit);
         assert_eq!(batch_endpoint_limit(category), endpoint_limit);
         assert_eq!(batch_send_limit(category), send_limit);
         assert_eq!(batch_weight(category, 10), weight);

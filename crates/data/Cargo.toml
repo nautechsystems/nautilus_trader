@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-data"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -54,7 +53,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
-nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-model = { workspace = true, features = ["test-support"] }
 nautilus-persistence = { workspace = true, optional = true }
 
 ahash = { workspace = true }
@@ -78,6 +77,7 @@ pyo3-stub-gen = { workspace = true, optional = true }
 nautilus-serialization = { workspace = true, features = ["arrow"] }
 
 criterion = { workspace = true }
+parking_lot = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "macros", "rt"] }

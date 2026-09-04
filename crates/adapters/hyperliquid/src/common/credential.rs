@@ -24,9 +24,10 @@ use std::{
 use nautilus_core::{
     env::{get_or_env_var, get_or_env_var_opt},
     hex,
+    string::secret::REDACTED,
 };
 use serde::Deserialize;
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::{
     common::enums::HyperliquidEnvironment,
@@ -55,7 +56,7 @@ pub struct EvmPrivateKey {
 impl EvmPrivateKey {
     /// Creates a new EVM private key from hex string.
     pub fn new(key: &str) -> Result<Self> {
-        let key = key.trim().to_string();
+        let key = Zeroizing::new(key.trim().to_string());
         let hex_key = key.strip_prefix("0x").unwrap_or(&key);
 
         // Validate hex format and length
@@ -70,8 +71,8 @@ impl EvmPrivateKey {
         }
 
         // Convert to lowercase for consistency
-        let normalized = hex_key.to_lowercase();
-        let formatted = format!("0x{normalized}");
+        let normalized = Zeroizing::new(hex_key.to_lowercase());
+        let formatted = format!("0x{}", normalized.as_str());
 
         // Parse to bytes for validation
         let raw_bytes = hex::decode(&normalized)
@@ -102,13 +103,13 @@ impl EvmPrivateKey {
 
 impl Debug for EvmPrivateKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("EvmPrivateKey(***redacted***)")
+        write!(f, "EvmPrivateKey({REDACTED})")
     }
 }
 
 impl Display for EvmPrivateKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("EvmPrivateKey(***redacted***)")
+        write!(f, "EvmPrivateKey({REDACTED})")
     }
 }
 
@@ -198,13 +199,17 @@ impl Secrets {
     ) -> Result<Self> {
         let (pk_env_var, vault_env_var) = credential_env_vars(environment);
 
-        let pk_str = get_or_env_var(
-            private_key
-                .filter(|s| !s.trim().is_empty())
-                .map(String::from),
-            pk_env_var,
-        )
-        .map_err(|_| Error::bad_request(format!("{pk_env_var} environment variable is not set")))?;
+        let pk_str = Zeroizing::new(
+            get_or_env_var(
+                private_key
+                    .filter(|s| !s.trim().is_empty())
+                    .map(String::from),
+                pk_env_var,
+            )
+            .map_err(|_| {
+                Error::bad_request(format!("{pk_env_var} environment variable is not set"))
+            })?,
+        );
 
         let vault_str = get_or_env_var_opt(
             vault_address
@@ -285,7 +290,7 @@ impl Secrets {
 
     /// Parse secrets from JSON string
     pub fn from_json(json: &str) -> Result<Self> {
-        #[derive(Deserialize)]
+        #[derive(Deserialize, ZeroizeOnDrop)]
         #[serde(rename_all = "camelCase")]
         struct RawSecrets {
             private_key: String,
@@ -300,8 +305,8 @@ impl Secrets {
 
         let private_key = EvmPrivateKey::new(&raw.private_key)?;
 
-        let vault_address = match raw.vault_address {
-            Some(addr) => Some(VaultAddress::parse(&addr)?),
+        let vault_address = match raw.vault_address.as_deref() {
+            Some(addr) => Some(VaultAddress::parse(addr)?),
             None => None,
         };
 
@@ -382,7 +387,7 @@ mod tests {
     fn test_evm_private_key_debug_redacts() {
         let key = EvmPrivateKey::new(TEST_PRIVATE_KEY).unwrap();
         let debug_str = format!("{key:?}");
-        assert_eq!(debug_str, "EvmPrivateKey(***redacted***)");
+        assert_eq!(debug_str, format!("EvmPrivateKey({REDACTED})"));
         assert!(!debug_str.contains("1234"));
     }
 

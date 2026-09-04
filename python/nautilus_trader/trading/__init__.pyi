@@ -473,6 +473,9 @@ class Strategy:
     def clock(self) -> common.Clock: ...
     @property
     def cache(self) -> common.Cache: ...
+    def set_external_order_instrument_ids(
+        self, instrument_ids: typing.Sequence[model.InstrumentId]
+    ) -> None: ...
     @property
     def portfolio(self) -> portfolio.Portfolio: ...
     @property
@@ -966,7 +969,7 @@ class StrategyConfig:
         strategy_id: model.StrategyId | None = None,
         order_id_tag: str | None = None,
         oms_type: model.OmsType | None = None,
-        external_order_claims: typing.Sequence[model.InstrumentId] | None = None,
+        external_order_instrument_ids: typing.Sequence[model.InstrumentId] | None = None,
         manage_contingent_orders: bool = False,
         manage_gtd_expiry: bool = False,
         manage_stop: bool = False,
@@ -988,7 +991,7 @@ class StrategyConfig:
     @property
     def oms_type(self) -> model.OmsType | None: ...
     @property
-    def external_order_claims(self) -> list[model.InstrumentId] | None: ...
+    def external_order_instrument_ids(self) -> list[model.InstrumentId] | None: ...
     @property
     def manage_contingent_orders(self) -> bool: ...
     @property

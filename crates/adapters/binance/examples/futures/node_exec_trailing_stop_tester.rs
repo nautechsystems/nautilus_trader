@@ -60,6 +60,10 @@ use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 use rust_decimal::Decimal;
 
+// WARNING: With `DRY_RUN = false`, this tester submits orders to the configured
+// environment and may use real funds. Set `DRY_RUN = true` to connect without
+// submitting orders or sending shutdown cancel/close commands.
+const DRY_RUN: bool = false;
 const BINANCE_ENVIRONMENT: BinanceEnvironment = BinanceEnvironment::Testnet;
 const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "BINANCE-FUTURES-001";
@@ -99,13 +103,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         false,
     )?;
 
-    http_client.cancel_all_algo_orders(instrument_id).await?;
+    if !DRY_RUN {
+        http_client.cancel_all_algo_orders(instrument_id).await?;
+    }
 
     let data_config = BinanceDataClientConfig {
         product_type,
         environment,
-        api_key: Some(api_key.clone()),
-        api_secret: Some(api_secret.clone()),
+        api_key: Some(api_key.clone().into()),
+        api_secret: Some(api_secret.clone().into()),
         ..Default::default()
     };
 
@@ -113,8 +119,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         account_id,
         product_type,
         environment,
-        api_key: Some(api_key),
-        api_secret: Some(api_secret),
+        api_key: Some(api_key.into()),
+        api_secret: Some(api_secret.into()),
         ..Default::default()
     };
 
@@ -138,12 +144,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from(STRATEGY_ID)),
-            external_order_claims: Some(vec![instrument_id]),
+            external_order_instrument_ids: Some(vec![instrument_id]),
             ..Default::default()
         })
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
+        .dry_run(DRY_RUN)
         .log_data(false)
         .enable_limit_buys(false)
         .enable_limit_sells(false)
@@ -158,22 +165,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     node.add_strategy(ExecTester::new(tester_config))?;
 
-    let handle = node.handle();
-    let validation_client = http_client.clone();
-    let validation_task = get_runtime().spawn(async move {
-        let result = validate_trailing_stop_order(&validation_client, &handle, instrument_id).await;
-        let cancel_result = validation_client
-            .cancel_all_algo_orders(instrument_id)
-            .await;
-        handle.stop();
+    let validation_task = if DRY_RUN {
+        None
+    } else {
+        let handle = node.handle();
+        let validation_client = http_client.clone();
 
-        result?;
-        cancel_result?;
-        Ok::<(), anyhow::Error>(())
-    });
+        Some(get_runtime().spawn(async move {
+            let result =
+                validate_trailing_stop_order(&validation_client, &handle, instrument_id).await;
+            let cancel_result = validation_client
+                .cancel_all_algo_orders(instrument_id)
+                .await;
+            handle.stop();
+
+            result?;
+            cancel_result?;
+            Ok::<(), anyhow::Error>(())
+        }))
+    };
 
     node.run().await?;
-    validation_task.await??;
+
+    if let Some(validation_task) = validation_task {
+        validation_task.await??;
+    }
 
     Ok(())
 }

@@ -181,7 +181,7 @@ impl LoggerConfig {
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl FileWriterConfig {
-    /// Creates a new `FileWriterConfig` instance.
+    /// Configures file log output.
     #[new]
     #[pyo3(signature = (directory=None, file_name=None, file_format=None, file_rotate=None))]
     #[must_use]
@@ -348,7 +348,7 @@ pub fn py_logger_log(level: LogLevel, color: LogColor, component: &str, message:
     logger::log(level, color, Ustr::from(component), message);
 }
 
-/// Logs the standard Nautilus system header.
+/// Logs the Nautilus startup header with system, identifier, and version details.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "log_header")]
@@ -356,7 +356,7 @@ pub fn py_log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, 
     headers::log_header(trader_id, machine_id, instance_id, Ustr::from(component));
 }
 
-/// Logs system information.
+/// Logs current memory and swap usage.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "log_sysinfo")]
@@ -421,8 +421,7 @@ pub fn py_init_tracing() -> PyResult<()> {
     crate::logging::bridge::init_tracing().map_err(to_pyvalue_err)
 }
 
-/// A thin wrapper around the global Rust logger which exposes ergonomic
-/// logging helpers for Python code.
+/// Python wrapper around the global Rust logger.
 ///
 /// It mirrors the familiar Python `logging` interface while forwarding
 /// all records through the Nautilus logging infrastructure so that log levels
@@ -529,7 +528,7 @@ impl PyLogger {
         log::logger().flush();
     }
 
-    /// Emit a log record at the given level (Python-facing helper).
+    /// Emits a log record at the given level for Python callers.
     #[pyo3(name = "_log")]
     #[pyo3(signature = (level, color=None, message=""))]
     fn py_log(&self, level: LogLevel, color: Option<LogColor>, message: &str) {

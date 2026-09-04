@@ -17,9 +17,10 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::time::get_atomic_clock_realtime;
+use nautilus_core::{string::secret::SecretString, time::get_atomic_clock_realtime};
 use nautilus_network::http::{HttpClient, Method};
 use serde::Deserialize;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
     common::{credential::EvmPrivateKey, urls::clob_http_url},
@@ -28,12 +29,12 @@ use crate::{
 };
 
 /// API credentials returned by the Polymarket CLOB auth endpoints.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Zeroize, ZeroizeOnDrop)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiCredentials {
-    pub api_key: String,
-    pub secret: String,
-    pub passphrase: String,
+    pub api_key: SecretString,
+    pub secret: SecretString,
+    pub passphrase: SecretString,
 }
 
 /// Creates new API credentials via `POST /auth/api-key` using L1 authentication.
@@ -141,4 +142,33 @@ fn l1_headers(
         ("POLY_TIMESTAMP".to_string(), timestamp.to_string()),
         ("POLY_NONCE".to_string(), nonce.to_string()),
     ])
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_api_credentials_zeroize_and_redact_debug() {
+        fn assert_zeroize_on_drop<T: ZeroizeOnDrop>() {}
+
+        let mut credentials = ApiCredentials {
+            api_key: SecretString::from("api-key-sentinel"),
+            secret: SecretString::from("secret-sentinel"),
+            passphrase: SecretString::from("passphrase-sentinel"),
+        };
+
+        let debug = format!("{credentials:?}");
+        credentials.zeroize();
+
+        assert_zeroize_on_drop::<ApiCredentials>();
+        assert!(!debug.contains("api-key-sentinel"));
+        assert!(!debug.contains("secret-sentinel"));
+        assert!(!debug.contains("passphrase-sentinel"));
+        assert_eq!(credentials.api_key.expose_secret(), "");
+        assert_eq!(credentials.secret.expose_secret(), "");
+        assert_eq!(credentials.passphrase.expose_secret(), "");
+    }
 }

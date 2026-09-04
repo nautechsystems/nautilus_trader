@@ -21,8 +21,8 @@
 //! Run with: `cargo run --example coinbase-exec-tester --package nautilus-coinbase --features examples`
 //!
 //! Required credential environment variables:
-//! - `COINBASE_API_KEY`: CDP API key name (`organizations/{org_id}/apiKeys/{key_id}`).
-//! - `COINBASE_API_SECRET`: PEM-encoded EC private key (ECDSA, not Ed25519).
+//! - `COINBASE_API_KEY`: CDP API key name (`organizations/{org_id}/apiKeys/{key_id}`)
+//! - `COINBASE_API_SECRET`: PEM-encoded EC private key (ECDSA, not Ed25519)
 //!
 //! The CDP key must have View + Trade permissions. See the integration guide
 //! for setup details.
@@ -45,6 +45,10 @@ use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 use ustr::Ustr;
 
+// WARNING: With `DRY_RUN = false`, this tester submits orders to the configured
+// environment and may use real funds. Set `DRY_RUN = true` to connect without
+// submitting orders or sending shutdown cancel/close commands.
+const DRY_RUN: bool = false;
 const COINBASE_ENVIRONMENT: CoinbaseEnvironment = CoinbaseEnvironment::Live;
 const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "COINBASE-001";
@@ -132,12 +136,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from(STRATEGY_ID)),
-            external_order_claims: Some(vec![instrument_id]),
+            external_order_instrument_ids: Some(vec![instrument_id]),
             ..Default::default()
         })
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
+        .dry_run(DRY_RUN)
         .tob_offset_ticks(500)
         .use_post_only(true)
         .enable_limit_buys(true)

@@ -18,7 +18,7 @@
 use std::{
     str::FromStr,
     sync::{
-        Arc, RwLock,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -29,7 +29,7 @@ use anyhow::Context;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::DataClient,
-    live::{runner::get_data_event_sender, runtime::get_runtime},
+    live::runner::get_data_event_sender,
     messages::{
         DataEvent,
         data::{
@@ -44,12 +44,15 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, MUTEX_POISONED, Params,
+    AtomicMap, Params,
     datetime::datetime_to_unix_nanos,
     nanos::UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::SocketControlFactory;
+use nautilus_live::{
+    SocketControlFactory,
+    task::{TaskGroup, TaskGroupGuard, TaskSpawner},
+};
 use nautilus_model::{
     data::{BookOrder, CustomData, Data, DataType, OrderBookDelta, OrderBookDeltas, QuoteTick},
     enums::{
@@ -60,7 +63,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
 };
-use tokio::task::JoinHandle;
+use parking_lot::RwLock;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -177,6 +180,13 @@ impl SpotWsClient {
             Self::JsonPublic(client) => client.close().await,
         }
     }
+
+    fn begin_shutdown(&self) {
+        match self {
+            Self::Sbe(client) => client.begin_shutdown(),
+            Self::JsonPublic(client) => client.begin_shutdown(),
+        }
+    }
 }
 
 fn looks_like_spot_sbe_ws_url(base_url: &str) -> bool {
@@ -222,7 +232,9 @@ pub struct BinanceSpotDataClient {
     spot_market_data_mode: BinanceSpotMarketDataMode,
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
-    tasks: Vec<JoinHandle<()>>,
+    session_tasks: TaskGroup,
+    command_tasks: TaskGroup,
+    shutdown_errors: Vec<String>,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     status_cache: Arc<AtomicMap<InstrumentId, MarketStatusAction>>,
@@ -249,35 +261,42 @@ impl BinanceSpotDataClient {
                 get_http_base_url_with_us(config.product_type, config.environment, true).to_string()
             })
         });
+        let api_key = config
+            .api_key
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+        let api_secret = config
+            .api_secret
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
+        let proxy_url = config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned());
 
         let http_client = BinanceSpotHttpClient::new_with_json_responses(
             config.environment,
             clock,
-            config.api_key.clone(),
-            config.api_secret.clone(),
+            api_key.clone(),
+            api_secret.clone(),
             base_url_http,
             Some(config.recv_window_ms),
             None, // timeout_secs
-            config.proxy_url.clone(),
+            proxy_url.clone(),
             config.us,
         )?;
 
         let creds = if spot_market_data_mode == BinanceSpotMarketDataMode::Sbe {
-            resolve_credentials(
-                config.api_key.clone(),
-                config.api_secret.clone(),
-                config.environment,
-                config.product_type,
-            )
-            .inspect_err(|e| {
-                log::warn!(
-                    "Failed to resolve Binance API credentials ({e}). \
+            resolve_credentials(api_key, api_secret, config.environment, config.product_type)
+                .inspect_err(|e| {
+                    log::warn!(
+                        "Failed to resolve Binance API credentials ({e}). \
                      Spot SBE WebSocket streams require an Ed25519 API key. \
                      Set the appropriate env vars for your environment, \
                      or provide api_key/api_secret in the data client config"
-                );
-            })
-            .ok()
+                    );
+                })
+                .ok()
         } else {
             None
         };
@@ -293,7 +312,7 @@ impl BinanceSpotDataClient {
                     Some(BINANCE_WS_HEARTBEAT_SECS),
                     config.transport_backend,
                 )?
-                .with_proxy(config.proxy_url.clone())
+                .with_proxy(proxy_url)
                 .with_socket_control(socket_factory, "binance-spot-sbe-data-streams"),
             ),
             BinanceSpotMarketDataMode::Json => SpotWsClient::JsonPublic(
@@ -306,13 +325,16 @@ impl BinanceSpotDataClient {
                     Some(BINANCE_WS_HEARTBEAT_SECS),
                     config.transport_backend,
                 )
-                .with_proxy(config.proxy_url.clone())
+                .with_proxy(proxy_url)
                 .with_socket_control(socket_factory, "binance-spot-json-data-streams"),
             ),
         };
         let data_sender = get_data_event_sender();
 
         log::debug!("Configured Spot market data mode: {spot_market_data_mode:?}");
+
+        let session_tasks = TaskGroup::new();
+        let command_tasks = TaskGroup::new();
 
         Ok(Self {
             clock,
@@ -322,8 +344,10 @@ impl BinanceSpotDataClient {
             ws_client,
             spot_market_data_mode,
             is_connected: AtomicBool::new(false),
-            cancellation_token: CancellationToken::new(),
-            tasks: Vec::new(),
+            cancellation_token: session_tasks.cancellation_token(),
+            session_tasks,
+            command_tasks,
+            shutdown_errors: Vec::new(),
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
             status_cache: Arc::new(AtomicMap::new()),
@@ -350,11 +374,85 @@ impl BinanceSpotDataClient {
     where
         F: std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        get_runtime().spawn(async move {
+        let future = async move {
             if let Err(e) = fut.await {
                 log::error!("{context}: {e:?}");
             }
-        });
+        };
+
+        if let Err(e) = self.command_tasks.spawn(future) {
+            log::warn!("Skipping Binance Spot {context} after shutdown began: {e}");
+        }
+    }
+
+    fn spawn_command<F>(&self, future: F)
+    where
+        F: std::future::Future<Output = ()> + Send + 'static,
+    {
+        if let Err(e) = self.command_tasks.spawn(future) {
+            log::warn!("Skipping Binance Spot data command after shutdown began: {e}");
+        }
+    }
+
+    async fn finish_tasks(&self) -> anyhow::Result<()> {
+        let (session_result, command_result) = tokio::join!(
+            self.session_tasks
+                .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2)),
+            self.command_tasks
+                .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2)),
+        );
+        let mut errors = Vec::new();
+        if let Err(e) = session_result {
+            errors.push(format!(
+                "failed to finish Binance Spot data session tasks: {e}"
+            ));
+        }
+
+        if let Err(e) = command_result {
+            errors.push(format!(
+                "failed to finish Binance Spot data command tasks: {e}"
+            ));
+        }
+
+        if !errors.is_empty() {
+            anyhow::bail!(errors.join("; "));
+        }
+        Ok(())
+    }
+
+    async fn prepare_task_groups(&mut self) -> anyhow::Result<()> {
+        if !self.session_tasks.is_open() || !self.command_tasks.is_open() {
+            self.teardown_partial_connect().await?;
+            self.session_tasks
+                .start_generation()
+                .context("failed to start Binance Spot data session task generation")?;
+            self.command_tasks
+                .start_generation()
+                .context("failed to start Binance Spot data command task generation")?;
+            self.cancellation_token = self.session_tasks.cancellation_token();
+        }
+        Ok(())
+    }
+
+    async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
+        self.ws_client.begin_shutdown();
+        if let Err(e) = self.ws_client.close().await {
+            self.shutdown_errors
+                .push(format!("WebSocket close failed: {e}"));
+        }
+
+        if let Err(e) = self.finish_tasks().await {
+            self.shutdown_errors.push(e.to_string());
+        }
+        self.is_connected.store(false, Ordering::Release);
+
+        if !self.shutdown_errors.is_empty() {
+            let errors = std::mem::take(&mut self.shutdown_errors);
+            anyhow::bail!("Binance Spot data teardown failed: {}", errors.join("; "));
+        }
+        Ok(())
     }
 
     #[expect(clippy::too_many_arguments)]
@@ -420,6 +518,7 @@ impl BinanceSpotDataClient {
         book_epoch: &Arc<RwLock<u64>>,
         http_client: &BinanceSpotHttpClient,
         clock: &'static AtomicTime,
+        command_spawner: &TaskSpawner,
     ) {
         let ts_init = clock.get_time_ns();
 
@@ -453,7 +552,7 @@ impl BinanceSpotDataClient {
                 if let Some(instrument) = cache.get(&symbol)
                     && let Some(deltas) = parse_depth_snapshot(event, instrument, ts_init)
                 {
-                    Self::send_data(data_sender, Data::Deltas(Box::new(deltas)));
+                    Self::send_data(data_sender, Data::BookDeltas(Box::new(deltas)));
                 }
             }
             BinanceSpotWsMessage::DepthDiff(ref event) => {
@@ -500,6 +599,7 @@ impl BinanceSpotDataClient {
                     book_epoch,
                     http_client,
                     clock,
+                    command_spawner,
                 );
             }
         }
@@ -517,6 +617,7 @@ impl BinanceSpotDataClient {
         book_epoch: &Arc<RwLock<u64>>,
         http_client: &BinanceSpotHttpClient,
         clock: &'static AtomicTime,
+        command_spawner: &TaskSpawner,
     ) {
         let ts_init = clock.get_time_ns();
 
@@ -552,7 +653,7 @@ impl BinanceSpotDataClient {
                 if let Some(instrument) = cache.get(&symbol)
                     && let Some(deltas) = parse_json_depth_snapshot(event, instrument, ts_init)
                 {
-                    Self::send_data(data_sender, Data::Deltas(Box::new(deltas)));
+                    Self::send_data(data_sender, Data::BookDeltas(Box::new(deltas)));
                 }
             }
             BinanceSpotPublicWsMessage::DepthDiff(ref event) => {
@@ -629,6 +730,7 @@ impl BinanceSpotDataClient {
                     book_epoch,
                     http_client,
                     clock,
+                    command_spawner,
                 );
             }
         }
@@ -643,7 +745,7 @@ impl BinanceSpotDataClient {
         Self::send_data(data_sender, Data::Quote(quote));
         if l1_book_subscriptions.contains_key(&quote.instrument_id) {
             let deltas = quote_to_l1_deltas(quote, sequence);
-            Self::send_data(data_sender, Data::Deltas(Box::new(deltas)));
+            Self::send_data(data_sender, Data::BookDeltas(Box::new(deltas)));
         }
     }
 
@@ -680,9 +782,13 @@ impl BinanceSpotDataClient {
             }
         }
 
-        Self::send_data(data_sender, Data::Deltas(Box::new(deltas)));
+        Self::send_data(data_sender, Data::BookDeltas(Box::new(deltas)));
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "book recovery requires the full subscription and command ownership context"
+    )]
     fn rebuild_full_depth_books(
         data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
         instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
@@ -691,9 +797,10 @@ impl BinanceSpotDataClient {
         book_epoch: &Arc<RwLock<u64>>,
         http_client: &BinanceSpotHttpClient,
         clock: &'static AtomicTime,
+        command_spawner: &TaskSpawner,
     ) {
         let epoch = {
-            let mut guard = book_epoch.write().expect(MUTEX_POISONED);
+            let mut guard = book_epoch.write();
             *guard = guard.wrapping_add(1);
             *guard
         };
@@ -720,7 +827,7 @@ impl BinanceSpotDataClient {
             let buffers = book_buffers.clone();
             let insts = instruments.clone();
 
-            get_runtime().spawn(async move {
+            if let Err(e) = command_spawner.spawn(async move {
                 Self::fetch_and_emit_snapshot(
                     http,
                     sender,
@@ -731,7 +838,9 @@ impl BinanceSpotDataClient {
                     clock,
                 )
                 .await;
-            });
+            }) {
+                log::warn!("Skipping Binance Spot snapshot rebuild after shutdown began: {e}");
+            }
         }
     }
 
@@ -1041,14 +1150,14 @@ impl BinanceSpotDataClient {
                 };
 
                 if let Err(e) =
-                    sender.send(DataEvent::Data(Data::Deltas(Box::new(snapshot_deltas))))
+                    sender.send(DataEvent::Data(Data::BookDeltas(Box::new(snapshot_deltas))))
                 {
                     log::error!("Failed to send snapshot: {e}");
                 }
 
                 for update in replay_ready {
                     if let Err(e) =
-                        sender.send(DataEvent::Data(Data::Deltas(Box::new(update.deltas))))
+                        sender.send(DataEvent::Data(Data::BookDeltas(Box::new(update.deltas))))
                     {
                         log::error!("Failed to send replayed deltas: {e}");
                     }
@@ -1107,7 +1216,7 @@ impl BinanceSpotDataClient {
                         replayed += 1;
 
                         if let Err(e) =
-                            sender.send(DataEvent::Data(Data::Deltas(Box::new(update.deltas))))
+                            sender.send(DataEvent::Data(Data::BookDeltas(Box::new(update.deltas))))
                         {
                             log::error!("Failed to send replayed deltas: {e}");
                         }
@@ -1454,7 +1563,9 @@ impl DataClient for BinanceSpotDataClient {
 
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping {id}", id = self.client_id);
-        self.cancellation_token.cancel();
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
+        self.ws_client.begin_shutdown();
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
@@ -1462,16 +1573,10 @@ impl DataClient for BinanceSpotDataClient {
     fn reset(&mut self) -> anyhow::Result<()> {
         log::debug!("Resetting {id}", id = self.client_id);
 
-        self.cancellation_token.cancel();
-
-        for task in self.tasks.drain(..) {
-            task.abort();
-        }
-
-        let mut ws = self.ws_client.clone();
-        get_runtime().spawn(async move {
-            let _ = ws.close().await;
-        });
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
+        self.ws_client.begin_shutdown();
+        self.is_connected.store(false, Ordering::Relaxed);
 
         self.book_subscriptions.store(AHashMap::new());
         self.l1_book_subscriptions.store(AHashMap::new());
@@ -1479,8 +1584,6 @@ impl DataClient for BinanceSpotDataClient {
         self.ticker_refs.store(AHashMap::new());
         self.book_buffers.store(AHashMap::new());
 
-        self.is_connected.store(false, Ordering::Relaxed);
-        self.cancellation_token = CancellationToken::new();
         Ok(())
     }
 
@@ -1490,7 +1593,7 @@ impl DataClient for BinanceSpotDataClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.is_connected() {
+        if self.is_connected() && self.session_tasks.is_open() && self.command_tasks.is_open() {
             return Ok(());
         }
 
@@ -1506,8 +1609,12 @@ impl DataClient for BinanceSpotDataClient {
             );
         }
 
-        // Reinitialize token in case of reconnection after disconnect
-        self.cancellation_token = CancellationToken::new();
+        self.prepare_task_groups().await?;
+        let ws_client = self.ws_client.clone();
+        let setup_guard =
+            TaskGroupGuard::new(&[&self.session_tasks, &self.command_tasks], move || {
+                ws_client.begin_shutdown();
+            });
 
         Self::refresh_instrument_catalogue(
             &self.http_client,
@@ -1522,223 +1629,242 @@ impl DataClient for BinanceSpotDataClient {
         )
         .await?;
 
-        match &mut self.ws_client {
-            SpotWsClient::Sbe(ws_client) => {
-                log::info!("Connecting to Binance Spot SBE WebSocket...");
-                ws_client.connect().await.map_err(|e| {
-                    log::error!("Binance Spot SBE WebSocket connection failed: {e:?}");
-                    anyhow::anyhow!("failed to connect Binance Spot SBE WebSocket: {e}")
-                })?;
-                log::info!("Binance Spot SBE WebSocket connected");
+        let session_result = async {
+            match &mut self.ws_client {
+                SpotWsClient::Sbe(ws_client) => {
+                    log::info!("Connecting to Binance Spot SBE WebSocket...");
+                    ws_client.connect().await.map_err(|e| {
+                        log::error!("Binance Spot SBE WebSocket connection failed: {e:?}");
+                        anyhow::anyhow!("failed to connect Binance Spot SBE WebSocket: {e}")
+                    })?;
+                    log::info!("Binance Spot SBE WebSocket connected");
 
-                let stream = ws_client.stream();
-                let sender = self.data_sender.clone();
-                let insts = self.instruments.clone();
-                let ws_insts = ws_client.instruments_cache();
-                let buffers = self.book_buffers.clone();
-                let book_subs = self.book_subscriptions.clone();
-                let l1_book_subs = self.l1_book_subscriptions.clone();
-                let book_epoch = self.book_epoch.clone();
-                let http = self.http_client.clone();
-                let clock = self.clock;
-                let cancel = self.cancellation_token.clone();
+                    let stream = ws_client.stream();
+                    let sender = self.data_sender.clone();
+                    let insts = self.instruments.clone();
+                    let ws_insts = ws_client.instruments_cache();
+                    let buffers = self.book_buffers.clone();
+                    let book_subs = self.book_subscriptions.clone();
+                    let l1_book_subs = self.l1_book_subscriptions.clone();
+                    let book_epoch = self.book_epoch.clone();
+                    let http = self.http_client.clone();
+                    let clock = self.clock;
+                    let cancel = self.cancellation_token.clone();
+                    let command_spawner = self
+                        .command_tasks
+                        .spawner()
+                        .context("Binance Spot command task admission is closed")?;
 
-                let handle = get_runtime().spawn(async move {
-                    pin_mut!(stream);
+                    let future = async move {
+                        pin_mut!(stream);
 
-                    loop {
-                        tokio::select! {
-                            Some(message) = stream.next() => {
-                                Self::handle_ws_message(
-                                    message,
-                                    &sender,
-                                    &insts,
-                                    &ws_insts,
-                                    &buffers,
-                                    &book_subs,
-                                    &l1_book_subs,
-                                    &book_epoch,
-                                    &http,
-                                    clock,
-                                );
-                            }
-                            () = cancel.cancelled() => {
-                                log::debug!("Spot SBE WebSocket stream task cancelled");
-                                break;
-                            }
-                        }
-                    }
-                });
-                self.tasks.push(handle);
-            }
-            SpotWsClient::JsonPublic(ws_client) => {
-                log::info!("Connecting to Binance Spot public JSON WebSocket...");
-                ws_client.connect().await.map_err(|e| {
-                    log::error!("Binance Spot public JSON WebSocket connection failed: {e:?}");
-                    anyhow::anyhow!("failed to connect Binance Spot public JSON WebSocket: {e}")
-                })?;
-                log::info!("Binance Spot public JSON WebSocket connected");
-
-                let stream = ws_client.stream();
-                let sender = self.data_sender.clone();
-                let insts = self.instruments.clone();
-                let ws_insts = ws_client.instruments_cache();
-                let buffers = self.book_buffers.clone();
-                let book_subs = self.book_subscriptions.clone();
-                let l1_book_subs = self.l1_book_subscriptions.clone();
-                let book_epoch = self.book_epoch.clone();
-                let http = self.http_client.clone();
-                let clock = self.clock;
-                let cancel = self.cancellation_token.clone();
-
-                let handle = get_runtime().spawn(async move {
-                    pin_mut!(stream);
-
-                    loop {
-                        tokio::select! {
-                            Some(message) = stream.next() => {
-                                Self::handle_public_json_ws_message(
-                                    message,
-                                    &sender,
-                                    &insts,
-                                    &ws_insts,
-                                    &buffers,
-                                    &book_subs,
-                                    &l1_book_subs,
-                                    &book_epoch,
-                                    &http,
-                                    clock,
-                                );
-                            }
-                            () = cancel.cancelled() => {
-                                log::debug!("Spot JSON WebSocket stream task cancelled");
-                                break;
-                            }
-                        }
-                    }
-                });
-                self.tasks.push(handle);
-            }
-        }
-
-        // Spawn instrument status polling task
-        let poll_secs = self.config.instrument_status_poll_secs;
-        if poll_secs > 0 {
-            let http = self.http_client.clone();
-            let poll_sender = self.data_sender.clone();
-            let poll_instruments = self.instruments.clone();
-            let poll_status_cache = self.status_cache.clone();
-            let poll_cancel = self.cancellation_token.clone();
-            let clock = self.clock;
-            let us = self.config.us;
-
-            let poll_handle = get_runtime().spawn(async move {
-                let mut interval =
-                    tokio::time::interval(tokio::time::Duration::from_secs(poll_secs));
-                interval.tick().await; // Skip first immediate tick
-
-                loop {
-                    tokio::select! {
-                        _ = interval.tick() => {
-                            match http.request_symbol_statuses(us).await {
-                                Ok(statuses) => {
-                                    let ts = clock.get_time_ns();
-                                    let inst_guard = poll_instruments.load();
-                                    let new_statuses = statuses
-                                        .into_iter()
-                                        .filter(|(instrument_id, _)| {
-                                            inst_guard.contains_key(instrument_id)
-                                        })
-                                        .collect();
-                                    drop(inst_guard);
-
-                                    let mut cache =
-                                        (**poll_status_cache.load()).clone();
-                                    diff_and_emit_statuses(
-                                        &new_statuses, &mut cache, &poll_sender, ts, ts,
+                        loop {
+                            tokio::select! {
+                                Some(message) = stream.next() => {
+                                    Self::handle_ws_message(
+                                        message,
+                                        &sender,
+                                        &insts,
+                                        &ws_insts,
+                                        &buffers,
+                                        &book_subs,
+                                        &l1_book_subs,
+                                        &book_epoch,
+                                        &http,
+                                        clock,
+                                        &command_spawner,
                                     );
-                                    poll_status_cache.store(cache);
                                 }
-                                Err(e) => {
-                                    log::warn!("Instrument status poll failed: {e}");
+                                () = cancel.cancelled() => {
+                                    log::debug!("Spot SBE WebSocket stream task cancelled");
+                                    break;
                                 }
                             }
                         }
-                        () = poll_cancel.cancelled() => {
-                            log::debug!("Instrument status polling task cancelled");
-                            break;
-                        }
-                    }
+                    };
+                    self.session_tasks
+                        .spawn(future)
+                        .context("failed to register Binance Spot SBE stream task")?;
                 }
-            });
-            self.tasks.push(poll_handle);
-            log::debug!("Instrument status polling started: interval={poll_secs}s");
-        }
+                SpotWsClient::JsonPublic(ws_client) => {
+                    log::info!("Connecting to Binance Spot public JSON WebSocket...");
+                    ws_client.connect().await.map_err(|e| {
+                        log::error!("Binance Spot public JSON WebSocket connection failed: {e:?}");
+                        anyhow::anyhow!("failed to connect Binance Spot public JSON WebSocket: {e}")
+                    })?;
+                    log::info!("Binance Spot public JSON WebSocket connected");
 
-        let refresh_secs = self.config.instrument_refresh_interval_secs;
-        if refresh_secs > 0 {
-            let http = self.http_client.clone();
-            let provider = self.config.instrument_provider.clone();
-            let us = self.config.us;
-            let instruments = self.instruments.clone();
-            let statuses = self.status_cache.clone();
-            let ws = self.ws_client.clone();
-            let sender = self.data_sender.clone();
-            let clock = self.clock;
-            let cancel = self.cancellation_token.clone();
+                    let stream = ws_client.stream();
+                    let sender = self.data_sender.clone();
+                    let insts = self.instruments.clone();
+                    let ws_insts = ws_client.instruments_cache();
+                    let buffers = self.book_buffers.clone();
+                    let book_subs = self.book_subscriptions.clone();
+                    let l1_book_subs = self.l1_book_subscriptions.clone();
+                    let book_epoch = self.book_epoch.clone();
+                    let http = self.http_client.clone();
+                    let clock = self.clock;
+                    let cancel = self.cancellation_token.clone();
+                    let command_spawner = self
+                        .command_tasks
+                        .spawner()
+                        .context("Binance Spot command task admission is closed")?;
 
-            let refresh_handle = get_runtime().spawn(async move {
-                let mut interval = tokio::time::interval(Duration::from_secs(refresh_secs));
-                interval.tick().await;
+                    let future = async move {
+                        pin_mut!(stream);
 
-                loop {
-                    tokio::select! {
-                        _ = interval.tick() => {
-                            if let Err(e) = Self::refresh_instrument_catalogue(
-                                &http,
-                                &provider,
-                                us,
-                                &instruments,
-                                &statuses,
-                                &ws,
-                                &sender,
-                                clock,
-                                true,
-                            ).await {
-                                log::warn!("Binance Spot instrument refresh failed: {e}");
+                        loop {
+                            tokio::select! {
+                                Some(message) = stream.next() => {
+                                    Self::handle_public_json_ws_message(
+                                        message,
+                                        &sender,
+                                        &insts,
+                                        &ws_insts,
+                                        &buffers,
+                                        &book_subs,
+                                        &l1_book_subs,
+                                        &book_epoch,
+                                        &http,
+                                        clock,
+                                        &command_spawner,
+                                    );
+                                }
+                                () = cancel.cancelled() => {
+                                    log::debug!("Spot JSON WebSocket stream task cancelled");
+                                    break;
+                                }
                             }
                         }
-                        () = cancel.cancelled() => {
-                            log::debug!("Binance Spot instrument refresh task cancelled");
-                            break;
+                    };
+                    self.session_tasks
+                        .spawn(future)
+                        .context("failed to register Binance Spot JSON stream task")?;
+                }
+            }
+
+            let poll_secs = self.config.instrument_status_poll_secs;
+            if poll_secs > 0 {
+                let http = self.http_client.clone();
+                let poll_sender = self.data_sender.clone();
+                let poll_instruments = self.instruments.clone();
+                let poll_status_cache = self.status_cache.clone();
+                let poll_cancel = self.cancellation_token.clone();
+                let clock = self.clock;
+                let us = self.config.us;
+
+                let future = async move {
+                    let mut interval =
+                        tokio::time::interval(tokio::time::Duration::from_secs(poll_secs));
+                    interval.tick().await; // Skip first immediate tick
+
+                    loop {
+                        tokio::select! {
+                            _ = interval.tick() => {
+                                match http.request_symbol_statuses(us).await {
+                                    Ok(statuses) => {
+                                        let ts = clock.get_time_ns();
+                                        let inst_guard = poll_instruments.load();
+                                        let new_statuses = statuses
+                                            .into_iter()
+                                            .filter(|(instrument_id, _)| {
+                                                inst_guard.contains_key(instrument_id)
+                                            })
+                                            .collect();
+                                        drop(inst_guard);
+
+                                        let mut cache =
+                                            (**poll_status_cache.load()).clone();
+                                        diff_and_emit_statuses(
+                                            &new_statuses, &mut cache, &poll_sender, ts, ts,
+                                        );
+                                        poll_status_cache.store(cache);
+                                    }
+                                    Err(e) => {
+                                        log::warn!("Instrument status poll failed: {e}");
+                                    }
+                                }
+                            }
+                            () = poll_cancel.cancelled() => {
+                                log::debug!("Instrument status polling task cancelled");
+                                break;
+                            }
                         }
                     }
-                }
-            });
-            self.tasks.push(refresh_handle);
-            log::debug!("Instrument refresh started: interval={refresh_secs}s");
+                };
+                self.session_tasks
+                    .spawn(future)
+                    .context("failed to register Binance Spot status polling task")?;
+                log::debug!("Instrument status polling started: interval={poll_secs}s");
+            }
+
+            let refresh_secs = self.config.instrument_refresh_interval_secs;
+            if refresh_secs > 0 {
+                let http = self.http_client.clone();
+                let provider = self.config.instrument_provider.clone();
+                let us = self.config.us;
+                let instruments = self.instruments.clone();
+                let statuses = self.status_cache.clone();
+                let ws = self.ws_client.clone();
+                let sender = self.data_sender.clone();
+                let clock = self.clock;
+                let cancel = self.cancellation_token.clone();
+
+                let future = async move {
+                    let mut interval = tokio::time::interval(Duration::from_secs(refresh_secs));
+                    interval.tick().await;
+
+                    loop {
+                        tokio::select! {
+                            _ = interval.tick() => {
+                                if let Err(e) = Self::refresh_instrument_catalogue(
+                                    &http,
+                                    &provider,
+                                    us,
+                                    &instruments,
+                                    &statuses,
+                                    &ws,
+                                    &sender,
+                                    clock,
+                                    true,
+                                ).await {
+                                    log::warn!("Binance Spot instrument refresh failed: {e}");
+                                }
+                            }
+                            () = cancel.cancelled() => {
+                                log::debug!("Binance Spot instrument refresh task cancelled");
+                                break;
+                            }
+                        }
+                    }
+                };
+                self.session_tasks
+                    .spawn(future)
+                    .context("failed to register Binance Spot instrument refresh task")?;
+                log::debug!("Instrument refresh started: interval={refresh_secs}s");
+            }
+
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+
+        if let Err(e) = session_result {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Binance Spot data startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e);
         }
 
+        setup_guard.disarm();
         self.is_connected.store(true, Ordering::Release);
         log::info!("Connected: client_id={}", self.client_id);
         Ok(())
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if self.is_disconnected() {
-            return Ok(());
-        }
-
-        self.cancellation_token.cancel();
-
-        let _ = self.ws_client.close().await;
-
-        let handles: Vec<_> = std::mem::take(&mut self.tasks);
-        for handle in handles {
-            if let Err(e) = handle.await {
-                log::error!("Error joining WebSocket task: {e}");
-            }
-        }
+        self.teardown_partial_connect().await?;
 
         self.book_subscriptions.store(AHashMap::new());
         self.l1_book_subscriptions.store(AHashMap::new());
@@ -1890,7 +2016,7 @@ impl DataClient for BinanceSpotDataClient {
 
                 // Bump epoch to invalidate any in-flight snapshot from a prior subscription
                 let epoch = {
-                    let mut guard = self.book_epoch.write().expect(MUTEX_POISONED);
+                    let mut guard = self.book_epoch.write();
                     *guard = guard.wrapping_add(1);
                     *guard
                 };
@@ -1917,7 +2043,7 @@ impl DataClient for BinanceSpotDataClient {
                 let instruments = self.instruments.clone();
                 let clock = self.clock;
 
-                get_runtime().spawn(async move {
+                self.spawn_command(async move {
                     Self::fetch_and_emit_snapshot(
                         http,
                         sender,
@@ -2150,7 +2276,7 @@ impl DataClient for BinanceSpotDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match http.request_instruments_with_config(&provider, us).await {
                 Ok(instruments) => {
                     for instrument in &instruments {
@@ -2195,7 +2321,7 @@ impl DataClient for BinanceSpotDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match http.request_instruments_with_config(&provider, us).await {
                 Ok(all_instruments) => {
                     for instrument in &all_instruments {
@@ -2267,7 +2393,7 @@ impl DataClient for BinanceSpotDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match http.request_binance_bars(bar_type, start, end, limit).await {
                 Ok(bars) => {
                     let response = DataResponse::Data(CustomDataResponse::new(
@@ -2310,7 +2436,7 @@ impl DataClient for BinanceSpotDataClient {
             "Binance Spot trade limit must not exceed 1000"
         );
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             let result = if start.is_some() || end.is_some() {
                 http.request_agg_trades(instrument_id, start, end, limit)
                     .await
@@ -2368,7 +2494,7 @@ impl DataClient for BinanceSpotDataClient {
             "Binance historical bars require time aggregation"
         );
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             let result = http.request_bars(bar_type, start, end, limit).await;
 
             match result.context("failed to request bars from Binance") {
@@ -2409,7 +2535,7 @@ impl DataClient for BinanceSpotDataClient {
         let params = request.params;
         let clock = self.clock;
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match http.request_book_snapshot(instrument_id, depth).await {
                 Ok(book) => {
                     let response = DataResponse::Book(BookResponse::new(
@@ -2499,13 +2625,11 @@ impl BinanceSpotDataClient {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        sync::{Arc, RwLock},
-        time::Duration,
-    };
+    use std::{sync::Arc, time::Duration};
 
     use nautilus_common::messages::DataEvent;
     use nautilus_core::{AtomicMap, nanos::UnixNanos, time::AtomicTime};
+    use nautilus_live::task::TaskGroup;
     use nautilus_model::{
         data::{BookOrder, Data, OrderBookDelta, OrderBookDeltas},
         enums::{BookAction, OrderSide, RecordFlag},
@@ -2513,6 +2637,7 @@ mod tests {
         instruments::{Instrument, InstrumentAny, stubs::currency_pair_btcusdt},
         types::{Price, Quantity},
     };
+    use parking_lot::RwLock;
     use rstest::rstest;
     use rust_decimal_macros::dec;
     use ustr::Ustr;
@@ -2569,6 +2694,8 @@ mod tests {
             ask_qty_mantissa: 30_000,
             symbol: Ustr::from("BTCUSDT"),
         });
+        let command_tasks = TaskGroup::new();
+        let command_spawner = command_tasks.spawner().unwrap();
 
         BinanceSpotDataClient::handle_ws_message(
             message,
@@ -2581,6 +2708,7 @@ mod tests {
             &book_epoch,
             &http_client,
             clock,
+            &command_spawner,
         );
 
         let DataEvent::Data(Data::Quote(quote)) = receiver.try_recv().unwrap() else {

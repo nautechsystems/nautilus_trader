@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-serialization"
-readme = "README.md"
 build = "build.rs"
 include = [
   "src/**/*",
@@ -64,7 +63,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 nautilus-core = { workspace = true }
-nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-model = { workspace = true, features = ["test-support"] }
 
 anyhow = { workspace = true }
 indexmap = { workspace = true }

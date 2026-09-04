@@ -18,6 +18,7 @@ Test position behavior.
 
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 
 import pytest
@@ -51,6 +52,7 @@ from nautilus_trader.model import VenueOrderId
 
 USD = Currency.from_str("USD")
 AUDUSD_SIM = TestInstrumentProvider.audusd_sim()
+GBPUSD_SIM = TestInstrumentProvider.gbpusd_sim()
 
 
 def _make_fill(
@@ -91,7 +93,7 @@ def _make_fill(
         ts_event=ts_event,
         ts_init=0,
         reconciliation=False,
-        position_id=PositionId(position_id),
+        position_id=None if position_id is None else PositionId(position_id),
         commission=Money.from_str(commission),
     )
 
@@ -112,6 +114,101 @@ def short_position() -> object:
     """
     fill = _make_fill(order_side=OrderSide.SELL)
     return Position(instrument=AUDUSD_SIM, fill=fill)
+
+
+def test_position_rejects_missing_position_id() -> None:
+    """
+    Test position construction rejects a fill without a position ID.
+    """
+    fill = _make_fill(position_id=None)
+
+    with pytest.raises(ValueError, match=re.escape("`fill.position_id` was None")) as exc_info:
+        Position(instrument=AUDUSD_SIM, fill=fill)
+
+    assert str(exc_info.value) == "`fill.position_id` was None"
+
+
+def test_position_rejects_instrument_mismatch() -> None:
+    """
+    Test position construction rejects an instrument mismatch.
+    """
+    fill = _make_fill()
+    expected_error = (
+        "'instrument.id()' value of GBP/USD.SIM was not equal to "
+        "'fill.instrument_id' value of AUD/USD.SIM"
+    )
+
+    with pytest.raises(ValueError, match=re.escape(expected_error)) as exc_info:
+        Position(instrument=GBPUSD_SIM, fill=fill)
+
+    assert str(exc_info.value) == expected_error
+
+
+def test_order_filled_rejects_unspecified_side_before_position_construction() -> None:
+    """
+    Test an unspecified side is rejected before position construction.
+    """
+    with pytest.raises(TypeError) as exc_info:
+        _make_fill(order_side=OrderSide.NO_ORDER_SIDE)
+
+    assert str(exc_info.value) == "'None' is not an instance of 'OrderSide'"
+
+
+@pytest.mark.parametrize(
+    ("instrument", "position_id", "expected_error"),
+    [
+        (
+            GBPUSD_SIM,
+            "P-123456",
+            "'self.instrument_id' value of AUD/USD.SIM was not equal to "
+            "'fill.instrument_id' value of GBP/USD.SIM",
+        ),
+        (AUDUSD_SIM, None, "`fill.position_id` was None"),
+        (
+            AUDUSD_SIM,
+            "P-654321",
+            "'self.id' value of P-123456 was not equal to 'fill.position_id' value of P-654321",
+        ),
+    ],
+    ids=["instrument-mismatch", "missing-position-id", "position-mismatch"],
+)
+def test_position_apply_rejects_invalid_fill_identity_without_mutation(
+    instrument: object,
+    position_id: object,
+    expected_error: str,
+) -> None:
+    """
+    Test invalid fill identity is rejected before position mutation.
+    """
+    position = Position(instrument=AUDUSD_SIM, fill=_make_fill())
+    fill = _make_fill(
+        instrument=instrument,
+        position_id=position_id,
+        trade_id="E-20210410-022422-001-001-2",
+    )
+    state_before = position.to_dict()
+
+    with pytest.raises(ValueError, match=re.escape(expected_error)) as exc_info:
+        position.apply(fill)
+
+    assert str(exc_info.value) == expected_error
+    assert position.to_dict() == state_before
+
+
+def test_position_apply_rejects_duplicate_trade_without_mutation() -> None:
+    """
+    Test an ordinary duplicate trade is rejected before position mutation.
+    """
+    fill = _make_fill()
+    position = Position(instrument=AUDUSD_SIM, fill=fill)
+    state_before = position.to_dict()
+    expected_error = "`fill.trade_id` already contained in `trade_ids`"
+
+    with pytest.raises(ValueError, match=re.escape(expected_error)) as exc_info:
+        position.apply(fill)
+
+    assert str(exc_info.value) == expected_error
+    assert position.to_dict() == state_before
 
 
 def test_position_long_properties(long_position: object) -> None:

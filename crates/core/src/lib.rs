@@ -23,7 +23,7 @@
 //! - UUID generation and management.
 //! - Mathematical functions and interpolation utilities.
 //! - Correctness validation functions.
-//! - Serialization traits and helpers.
+//! - Serialization traits and codecs.
 //! - Cross-platform environment utilities.
 //! - Abstractions over common collections.
 //!
@@ -42,9 +42,12 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
+//! - `extension-module`: Builds as a Python extension module.
+//! - `ffi`: Enables the C foreign function interface (FFI) from
+//!   [cbindgen](https://crates.io/crates/cbindgen).
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-//! - `extension-module`: Builds the crate as a Python extension module.
+//! - `simulation`: Enables deterministic simulation testing with
+//!   [MadSim](https://crates.io/crates/madsim).
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]
@@ -109,12 +112,3 @@ pub use crate::{
     time::AtomicTime,
     uuid::UUID4,
 };
-
-/// Message for when a mutex guard cannot be acquired due to poisoning.
-///
-/// Mutex guards should use `expect` rather than handle poison errors.
-/// A poisoned mutex indicates a thread panicked while holding the lock,
-/// meaning protected data may be in an inconsistent state. Propagating
-/// the panic is the idiomatic and safe approach, as continuing with
-/// potentially corrupted data would violate safety invariants.
-pub const MUTEX_POISONED: &str = "Mutex poisoned";

@@ -15,13 +15,13 @@
 
 //! [NautilusTrader](https://nautilustrader.io) adapter for the [Deribit](https://www.deribit.com) cryptocurrency exchange.
 //!
-//! The `nautilus-deribit` crate provides client bindings (HTTP & WebSocket), data
-//! models and helper utilities that wrap the official **Deribit API v2**.
+//! The `nautilus-deribit` crate provides client bindings (HTTP & WebSocket) and data
+//! models for the official **Deribit API v2**.
 //!
 //! Deribit uses JSON-RPC 2.0 over both HTTP and WebSocket transports (not REST).
 //! WebSocket is preferred for subscriptions and real-time data.
 //!
-//! The official Deribit API reference can be found at <https://docs.deribit.com/v2/>.
+//! The official Deribit API reference can be found at <https://docs.deribit.com/>.
 //!
 //! # NautilusTrader
 //!
@@ -38,10 +38,13 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `arrow`: Enables Apache Arrow data support.
+//! - `examples`: Enables the crate's example binaries.
 //! - `extension-module`: Builds as a Python extension module.
-//!
-//! [High-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) (128-bit value types) is enabled by default.
+//! - `high-precision` (default): Enables
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
+//!   to use 128-bit value types.
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

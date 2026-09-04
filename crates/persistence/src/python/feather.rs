@@ -23,7 +23,6 @@ use std::{
 
 use nautilus_common::{
     live::get_runtime,
-    msgbus::typed_handler::ShareableMessageHandler,
     python::{cache::PyCache, clock::PyClock},
 };
 use nautilus_core::{UnixNanos, datetime::get_timezone};
@@ -47,7 +46,9 @@ use object_store::ObjectStoreExt;
 use pyo3::{exceptions::PyIOError, prelude::*};
 
 use crate::{
-    backend::feather::{FeatherWriter, RotationConfig},
+    backend::feather::{
+        FeatherWriter, FeatherWriterSubscriptions, RotationConfig, default_per_instrument_types,
+    },
     parquet::{ObjectStoreLocationKind, create_object_store_location_from_path},
 };
 
@@ -63,7 +64,7 @@ use crate::{
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.persistence")]
 pub struct PyStreamingFeatherWriter {
     writer: Rc<RefCell<FeatherWriter>>,
-    handler: Option<ShareableMessageHandler>,
+    subscriptions: Option<FeatherWriterSubscriptions>,
 }
 
 #[pymethods]
@@ -200,17 +201,6 @@ impl PyStreamingFeatherWriter {
         // Convert include_types to HashSet
         let type_filter = include_types.map(|types| types.into_iter().collect::<HashSet<String>>());
 
-        let mut per_instrument_types = HashSet::new();
-        per_instrument_types.insert("bars".to_string());
-        per_instrument_types.insert("funding_rate_update".to_string());
-        per_instrument_types.insert("index_prices".to_string());
-        per_instrument_types.insert("mark_prices".to_string());
-        per_instrument_types.insert("order_book_deltas".to_string());
-        per_instrument_types.insert("order_book_depths".to_string());
-        per_instrument_types.insert("option_greeks".to_string());
-        per_instrument_types.insert("quotes".to_string());
-        per_instrument_types.insert("trades".to_string());
-
         // Extract Clock from Python wrapper
         // PyClock wraps Rc<RefCell<dyn Clock>>, we get the inner Rc
         let clock_rc = clock.clock_rc();
@@ -225,13 +215,13 @@ impl PyStreamingFeatherWriter {
             clock_rc,
             rotation_config,
             type_filter,
-            Some(per_instrument_types),
+            Some(default_per_instrument_types()),
             flush_interval_ms, // Auto-flush interval in milliseconds
         );
 
         Ok(Self {
             writer: Rc::new(RefCell::new(writer)),
-            handler: None,
+            subscriptions: None,
         })
     }
 
@@ -240,7 +230,7 @@ impl PyStreamingFeatherWriter {
     /// This matches the behavior of Python's `StreamingFeatherWriter` when subscribed
     /// via `trader.subscribe("*", writer.write)`.
     pub fn subscribe(&mut self) -> PyResult<()> {
-        if self.handler.is_some() {
+        if self.subscriptions.is_some() {
             // Already subscribed
             return Ok(());
         }
@@ -248,13 +238,13 @@ impl PyStreamingFeatherWriter {
         let handler = FeatherWriter::subscribe_to_message_bus(self.writer.clone())
             .map_err(|e| PyIOError::new_err(format!("Failed to subscribe to message bus: {e}")))?;
 
-        self.handler = Some(handler);
+        self.subscriptions = Some(handler);
         Ok(())
     }
 
     /// Unsubscribes from the message bus.
     pub fn unsubscribe(&mut self) -> PyResult<()> {
-        if let Some(handler) = self.handler.take() {
+        if let Some(handler) = self.subscriptions.take() {
             FeatherWriter::unsubscribe_from_message_bus(&handler);
         }
         Ok(())
@@ -265,7 +255,6 @@ impl PyStreamingFeatherWriter {
     /// # Parameters
     ///
     /// - `data`: The data object to write (must be a Nautilus data type from pyo3).
-    ///
     #[expect(
         clippy::needless_pass_by_value,
         clippy::too_many_lines,
@@ -315,7 +304,7 @@ impl PyStreamingFeatherWriter {
             let mut writer = self.writer.borrow_mut();
             let runtime = get_runtime();
             return runtime
-                .block_on(async { writer.write_data(Data::Delta(delta)).await })
+                .block_on(async { writer.write_data(Data::BookDelta(delta)).await })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write OrderBookDelta: {e}")));
         }
 
@@ -323,7 +312,7 @@ impl PyStreamingFeatherWriter {
             let mut writer = self.writer.borrow_mut();
             let runtime = get_runtime();
             return runtime
-                .block_on(async { writer.write_data(Data::Depth10(Box::new(depth))).await })
+                .block_on(async { writer.write_data(Data::BookDepth10(Box::new(depth))).await })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write OrderBookDepth10: {e}")));
         }
 

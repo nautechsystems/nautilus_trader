@@ -448,34 +448,24 @@ mod tests {
         expiration: UnixNanos,
     ) -> InstrumentAny {
         let raw_symbol = Symbol::new("test-token-id");
-        InstrumentAny::BinaryOption(BinaryOption::new(
-            InstrumentId::from("test-token-id.POLYMARKET"),
-            raw_symbol,
-            AssetClass::Alternative,
-            Currency::pUSD(),
-            UnixNanos::default(),
-            expiration,
-            3,
-            2,
-            Price::from("0.001"),
-            Quantity::from("0.01"),
-            outcome.map(Ustr::from),
-            None, // description
-            None, // max_quantity
-            None, // min_quantity
-            None, // max_notional
-            None, // min_notional
-            None, // max_price
-            None, // min_price
-            None, // margin_init
-            None, // margin_maint
-            None, // maker_fee
-            None, // taker_fee
-            None, // tick_scheme
-            None, // info
-            UnixNanos::default(),
-            UnixNanos::default(),
-        ))
+        InstrumentAny::BinaryOption(
+            BinaryOption::builder()
+                .instrument_id(InstrumentId::from("test-token-id.POLYMARKET"))
+                .raw_symbol(raw_symbol)
+                .asset_class(AssetClass::Alternative)
+                .currency(Currency::pUSD())
+                .activation_ns(UnixNanos::default())
+                .expiration_ns(expiration)
+                .price_precision(3)
+                .size_precision(2)
+                .price_increment(Price::from("0.001"))
+                .size_increment(Quantity::from("0.01"))
+                .maybe_outcome(outcome.map(Ustr::from))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
     }
 
     fn stub_binary_option(outcome: Option<&str>) -> InstrumentAny {
@@ -579,7 +569,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_predicate_filter_outcome_helper(
+    fn test_predicate_filter_outcome_constructor(
         yes_instrument: InstrumentAny,
         no_instrument: InstrumentAny,
         no_outcome_instrument: InstrumentAny,

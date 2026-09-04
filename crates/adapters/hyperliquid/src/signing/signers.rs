@@ -13,13 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::str::FromStr;
+use std::{fmt::Debug, str::FromStr};
 
 use alloy::{
     signers::{SignerSync, local::PrivateKeySigner},
     sol_types::{Eip712Domain, SolStruct, eip712_domain},
 };
 use alloy_primitives::{Address, B256, Keccak256};
+use nautilus_core::string::secret::REDACTED;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -65,11 +66,21 @@ pub struct SignatureBundle {
 }
 
 /// EIP-712 signer for Hyperliquid.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct HyperliquidEip712Signer {
     signer: PrivateKeySigner,
     address: String,
     domain: Eip712Domain,
+}
+
+impl Debug for HyperliquidEip712Signer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(HyperliquidEip712Signer))
+            .field("signer", &REDACTED)
+            .field("address", &self.address)
+            .field("domain", &self.domain)
+            .finish()
+    }
 }
 
 impl HyperliquidEip712Signer {
@@ -224,6 +235,7 @@ mod tests {
         )
         .unwrap();
         let signer = HyperliquidEip712Signer::new(&private_key).unwrap();
+        let debug = format!("{signer:?}");
 
         let request = SignRequest {
             action: Some(json!({
@@ -242,8 +254,10 @@ mod tests {
         let result = signer.sign(&request).unwrap();
         let sig_hex = result.signature.to_hex();
         // Verify signature format: 0x + 64 hex chars (r) + 64 hex chars (s) + 2 hex chars (v)
-        assert!(sig_hex.starts_with("0x"));
-        assert_eq!(sig_hex.len(), 132); // 0x + 130 hex chars
+        assert!(sig_hex.expose_secret().starts_with("0x"));
+        assert_eq!(sig_hex.expose_secret().len(), 132); // 0x + 130 hex chars
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains(private_key.as_hex()));
     }
 
     // L1 sign with neither field set must error, not panic on missing input
@@ -310,22 +324,22 @@ mod tests {
 
         let mainnet = signer.sign_l1_action(&request(false)).unwrap();
         assert_eq!(
-            python_quantity_hex(&mainnet.r),
+            python_quantity_hex(mainnet.r.expose_secret()),
             "0x53749d5b30552aeb2fca34b530185976545bb22d0b3ce6f62e31be961a59298"
         );
         assert_eq!(
-            mainnet.s,
+            mainnet.s.expose_secret(),
             "0x755c40ba9bf05223521753995abb2f73ab3229be8ec921f350cb447e384d8ed8"
         );
         assert_eq!(mainnet.v, 27);
 
         let testnet = signer.sign_l1_action(&request(true)).unwrap();
         assert_eq!(
-            testnet.r,
+            testnet.r.expose_secret(),
             "0x542af61ef1f429707e3c76c5293c80d01f74ef853e34b76efffcb57e574f9510"
         );
         assert_eq!(
-            testnet.s,
+            testnet.s.expose_secret(),
             "0x17b8b32f086e8cdede991f1e2c529f5dd5297cbe8128500e00cbaf766204a613"
         );
         assert_eq!(testnet.v, 28);
@@ -773,9 +787,9 @@ mod tests {
         // Sign and verify signature format
         let result = signer.sign(&request).unwrap();
         let sig_hex = result.signature.to_hex();
-        println!("Signature: {sig_hex}");
-        assert!(sig_hex.starts_with("0x"));
-        assert_eq!(sig_hex.len(), 132);
+        println!("Signature: {}", sig_hex.expose_secret());
+        assert!(sig_hex.expose_secret().starts_with("0x"));
+        assert_eq!(sig_hex.expose_secret().len(), 132);
     }
 
     #[rstest]

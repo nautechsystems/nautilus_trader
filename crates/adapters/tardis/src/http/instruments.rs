@@ -49,6 +49,11 @@ fn build_info_params(info: &TardisInstrumentInfo) -> Option<Params> {
     }
 }
 
+/// Creates a currency pair instrument definition.
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 #[expect(clippy::too_many_arguments)]
 #[must_use]
 pub fn create_currency_pair(
@@ -65,34 +70,36 @@ pub fn create_currency_pair(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> InstrumentAny {
-    InstrumentAny::CurrencyPair(CurrencyPair::new(
-        instrument_id,
-        raw_symbol,
-        get_currency(info.base_currency.to_uppercase().as_str()),
-        get_currency(info.quote_currency.to_uppercase().as_str()),
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        multiplier,
-        Some(size_increment),
-        None,
-        Some(Quantity::from(info.min_trade_amount.to_string())),
-        None,
-        None,
-        None,
-        None,
-        Some(margin_init),
-        Some(margin_maint),
-        Some(maker_fee),
-        Some(taker_fee),
-        None,
-        build_info_params(info),
-        ts_event,
-        ts_init,
-    ))
+    InstrumentAny::CurrencyPair(
+        CurrencyPair::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(raw_symbol)
+            .base_currency(get_currency(info.base_currency.to_uppercase().as_str()))
+            .quote_currency(get_currency(info.quote_currency.to_uppercase().as_str()))
+            .price_precision(price_increment.precision)
+            .size_precision(size_increment.precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .maybe_multiplier(multiplier)
+            .lot_size(size_increment)
+            .min_quantity(Quantity::from(info.min_trade_amount.to_string()))
+            .margin_init(margin_init)
+            .margin_maint(margin_maint)
+            .maker_fee(maker_fee)
+            .taker_fee(taker_fee)
+            .maybe_info(build_info_params(info))
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .unwrap(),
+    )
 }
 
+/// Creates a crypto perpetual instrument definition.
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 #[expect(clippy::too_many_arguments)]
 #[must_use]
 pub fn create_crypto_perpetual(
@@ -111,36 +118,40 @@ pub fn create_crypto_perpetual(
 ) -> InstrumentAny {
     let is_inverse = info.inverse.unwrap_or(false);
 
-    InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-        instrument_id,
-        raw_symbol,
-        get_currency(info.base_currency.to_uppercase().as_str()),
-        get_currency(info.quote_currency.to_uppercase().as_str()),
-        get_currency(parse_settlement_currency(info, is_inverse).as_str()),
-        is_inverse,
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        multiplier,
-        Some(size_increment),
-        None,
-        Some(Quantity::from(info.min_trade_amount.to_string())),
-        None,
-        None,
-        None,
-        None,
-        Some(margin_init),
-        Some(margin_maint),
-        Some(maker_fee),
-        Some(taker_fee),
-        None,
-        build_info_params(info),
-        ts_event,
-        ts_init,
-    ))
+    InstrumentAny::CryptoPerpetual(
+        CryptoPerpetual::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(raw_symbol)
+            .base_currency(get_currency(info.base_currency.to_uppercase().as_str()))
+            .quote_currency(get_currency(info.quote_currency.to_uppercase().as_str()))
+            .settlement_currency(get_currency(
+                parse_settlement_currency(info, is_inverse).as_str(),
+            ))
+            .is_inverse(is_inverse)
+            .price_precision(price_increment.precision)
+            .size_precision(size_increment.precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .maybe_multiplier(multiplier)
+            .lot_size(size_increment)
+            .min_quantity(Quantity::from(info.min_trade_amount.to_string()))
+            .margin_init(margin_init)
+            .margin_maint(margin_maint)
+            .maker_fee(maker_fee)
+            .taker_fee(taker_fee)
+            .maybe_info(build_info_params(info))
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .unwrap(),
+    )
 }
 
+/// Creates a crypto future instrument definition.
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 #[expect(clippy::too_many_arguments)]
 #[must_use]
 pub fn create_crypto_future(
@@ -161,36 +172,35 @@ pub fn create_crypto_future(
 ) -> InstrumentAny {
     let is_inverse = info.inverse.unwrap_or(false);
 
-    InstrumentAny::CryptoFuture(CryptoFuture::new(
-        instrument_id,
-        raw_symbol,
-        get_currency(info.base_currency.to_uppercase().as_str()),
-        get_currency(info.quote_currency.to_uppercase().as_str()),
-        get_currency(parse_settlement_currency(info, is_inverse).as_str()),
-        is_inverse,
-        activation,
-        expiration,
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        multiplier,
-        Some(size_increment),
-        None,
-        Some(Quantity::from(info.min_trade_amount.to_string())),
-        None,
-        None,
-        None,
-        None,
-        Some(margin_init),
-        Some(margin_maint),
-        Some(maker_fee),
-        Some(taker_fee),
-        None,
-        build_info_params(info),
-        ts_event,
-        ts_init,
-    ))
+    InstrumentAny::CryptoFuture(
+        CryptoFuture::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(raw_symbol)
+            .underlying(get_currency(info.base_currency.to_uppercase().as_str()))
+            .quote_currency(get_currency(info.quote_currency.to_uppercase().as_str()))
+            .settlement_currency(get_currency(
+                parse_settlement_currency(info, is_inverse).as_str(),
+            ))
+            .is_inverse(is_inverse)
+            .activation_ns(activation)
+            .expiration_ns(expiration)
+            .price_precision(price_increment.precision)
+            .size_precision(size_increment.precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .maybe_multiplier(multiplier)
+            .lot_size(size_increment)
+            .min_quantity(Quantity::from(info.min_trade_amount.to_string()))
+            .margin_init(margin_init)
+            .margin_maint(margin_maint)
+            .maker_fee(maker_fee)
+            .taker_fee(taker_fee)
+            .maybe_info(build_info_params(info))
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .unwrap(),
+    )
 }
 
 #[expect(clippy::too_many_arguments)]
@@ -199,6 +209,10 @@ pub fn create_crypto_future(
 /// # Errors
 ///
 /// Returns an error if the `option_type` or `strike_price` field of `InstrumentInfo` is `None`.
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 pub fn create_crypto_option(
     info: &TardisInstrumentInfo,
     instrument_id: InstrumentId,
@@ -231,38 +245,37 @@ pub fn create_crypto_option(
         )
     })?;
 
-    Ok(InstrumentAny::CryptoOption(CryptoOption::new(
-        instrument_id,
-        raw_symbol,
-        get_currency(info.base_currency.to_uppercase().as_str()),
-        get_currency(info.quote_currency.to_uppercase().as_str()),
-        get_currency(parse_settlement_currency(info, is_inverse).as_str()),
-        is_inverse,
-        parse_option_kind(option_type),
-        Price::new(strike_price, price_increment.precision),
-        activation,
-        expiration,
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        multiplier,
-        Some(size_increment),
-        None,
-        Some(Quantity::from(info.min_trade_amount.to_string())),
-        None,
-        None,
-        None,
-        None,
-        Some(margin_init),
-        Some(margin_maint),
-        Some(maker_fee),
-        Some(taker_fee),
-        None,
-        build_info_params(info),
-        ts_event,
-        ts_init,
-    )))
+    Ok(InstrumentAny::CryptoOption(
+        CryptoOption::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(raw_symbol)
+            .underlying(get_currency(info.base_currency.to_uppercase().as_str()))
+            .quote_currency(get_currency(info.quote_currency.to_uppercase().as_str()))
+            .settlement_currency(get_currency(
+                parse_settlement_currency(info, is_inverse).as_str(),
+            ))
+            .is_inverse(is_inverse)
+            .option_kind(parse_option_kind(option_type))
+            .strike_price(Price::new(strike_price, price_increment.precision))
+            .activation_ns(activation)
+            .expiration_ns(expiration)
+            .price_precision(price_increment.precision)
+            .size_precision(size_increment.precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .maybe_multiplier(multiplier)
+            .lot_size(size_increment)
+            .min_quantity(Quantity::from(info.min_trade_amount.to_string()))
+            .margin_init(margin_init)
+            .margin_maint(margin_maint)
+            .maker_fee(maker_fee)
+            .taker_fee(taker_fee)
+            .maybe_info(build_info_params(info))
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .unwrap(),
+    ))
 }
 
 /// Checks if an instrument is available and valid based on time constraints.
@@ -304,7 +317,6 @@ mod tests {
     use super::*;
     use crate::common::testing::load_test_json;
 
-    // Helper to create a basic instrument info for testing
     fn create_test_instrument(
         available_since: u64,
         available_to: Option<u64>,

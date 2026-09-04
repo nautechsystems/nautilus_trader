@@ -33,11 +33,12 @@
 use std::{
     num::NonZeroUsize,
     ops::Deref,
-    sync::{Arc, LazyLock, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    sync::{Arc, LazyLock},
 };
 
 use ahash::{AHashMap, AHashSet};
 use dashmap::DashMap;
+use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use ustr::Ustr;
 
 /// Marker for channel-level subscriptions (no specific symbol).
@@ -470,15 +471,11 @@ impl SubscriptionState {
     }
 
     fn lock_state_read(&self) -> RwLockReadGuard<'_, ()> {
-        self.state_lock
-            .read()
-            .expect("subscription state lock poisoned")
+        self.state_lock.read()
     }
 
     fn lock_state_write(&self) -> RwLockWriteGuard<'_, ()> {
-        self.state_lock
-            .write()
-            .expect("subscription state lock poisoned")
+        self.state_lock.write()
     }
 }
 

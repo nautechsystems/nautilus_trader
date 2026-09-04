@@ -54,9 +54,9 @@ pub mod submitted_batch;
 pub mod triggered;
 pub mod updated;
 
-#[cfg(any(test, feature = "stubs"))]
+#[cfg(any(test, feature = "test-support"))]
 pub mod spec;
-#[cfg(any(test, feature = "stubs"))]
+#[cfg(any(test, feature = "test-support"))]
 pub mod stubs;
 
 /// Represents a type of [`OrderEvent`].
@@ -132,4 +132,25 @@ pub trait OrderEvent: 'static + Send {
     fn commission(&self) -> Option<Money>;
     fn ts_event(&self) -> UnixNanos;
     fn ts_init(&self) -> UnixNanos;
+    fn causation_id(&self) -> Option<UUID4> {
+        None
+    }
+    fn released_price(&self) -> Option<Price> {
+        None
+    }
+    fn protection_price(&self) -> Option<Price> {
+        None
+    }
+    fn due_post_only(&self) -> bool {
+        false
+    }
+    fn correction_id(&self) -> Option<Ustr> {
+        None
+    }
+    fn is_reopened(&self) -> bool {
+        false
+    }
+    fn info(&self) -> Option<IndexMap<Ustr, Ustr>> {
+        None
+    }
 }

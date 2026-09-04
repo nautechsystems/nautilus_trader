@@ -20,15 +20,17 @@
 //! on reconnection.
 
 use std::{
+    fmt::Debug,
     sync::{
-        Arc, Mutex, MutexGuard, OnceLock, PoisonError,
+        Arc, OnceLock,
         atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
 
 use bytes::Bytes;
-use nautilus_common::live::get_runtime;
+use nautilus_core::string::secret::{REDACTED, SecretString};
+use nautilus_live::task::{SharedTaskSlot, TaskJoinOutcome};
 use nautilus_network::{
     SocketState, SocketStateSink,
     mode::ReconnectRequestOutcome,
@@ -37,8 +39,10 @@ use nautilus_network::{
         TcpMessageHandler, WriterCommand,
     },
 };
-use tokio::{sync::watch, task::JoinHandle}; // tokio-import-ok
+use parking_lot::{Mutex, MutexGuard};
+use tokio::sync::watch; // tokio-import-ok
 use tokio_tungstenite::tungstenite::stream::Mode;
+use zeroize::Zeroizing;
 
 use super::{
     config::{
@@ -46,9 +50,9 @@ use super::{
     },
     error::BetfairStreamError,
     messages::{
-        Authentication, CricketSubscription, MCM, MarketDataFilter, MarketSubscription, OCM,
-        OrderFilter, OrderSubscription, RaceSubscription, Status, StreamMarketFilter,
-        StreamMessage, stream_decode,
+        Authentication, CricketSubscription, MarketDataFilter, MarketSubscription, OrderFilter,
+        OrderSubscription, RaceSubscription, Status, StreamMarketFilter, StreamMessage,
+        stream_decode,
     },
 };
 use crate::common::{
@@ -209,7 +213,7 @@ impl ProtocolLifecycle {
         change_type: Option<ChangeType>,
         segment_type: Option<SegmentType>,
     ) {
-        let complete = segment_type.is_none() || segment_type == Some(SegmentType::SegEnd);
+        let complete = change_complete(segment_type);
         let initial = change_type == Some(ChangeType::SubImage)
             || (change_type == Some(ChangeType::ResubDelta)
                 && !requires_image.load(Ordering::Acquire));
@@ -288,7 +292,7 @@ pub struct BetfairStreamClient {
     dead_peer_enabled: Arc<AtomicBool>,
     dead_peer_timeout_ms: Arc<AtomicU64>,
     dead_peer_timeout_override: bool,
-    dead_peer_task: Option<JoinHandle<()>>,
+    dead_peer_task: SharedTaskSlot<()>,
     closed: AtomicBool,
 }
 
@@ -300,13 +304,13 @@ impl BetfairStreamClient {
     /// Returns an error if the connection fails or authentication cannot be sent.
     pub async fn connect(
         credential: &BetfairCredential,
-        session_token: String,
+        session_token: impl Into<SecretString>,
         handler: TcpMessageHandler,
         config: BetfairStreamConfig,
     ) -> Result<Self, BetfairStreamError> {
         Self::connect_inner(
             credential,
-            session_token,
+            session_token.into(),
             StreamHandler::Raw(handler),
             config,
             HeartbeatTimeoutSource::Server,
@@ -322,7 +326,7 @@ impl BetfairStreamClient {
     /// Returns an error if the connection fails or authentication cannot be sent.
     pub(crate) async fn connect_with_state_sink(
         credential: &BetfairCredential,
-        session_token: String,
+        session_token: SecretString,
         handler: StreamMessageHandler,
         config: BetfairStreamConfig,
         heartbeat_timeout_source: HeartbeatTimeoutSource,
@@ -341,7 +345,7 @@ impl BetfairStreamClient {
 
     async fn connect_inner(
         credential: &BetfairCredential,
-        session_token: String,
+        session_token: SecretString,
         handler: StreamHandler,
         config: BetfairStreamConfig,
         heartbeat_timeout_source: HeartbeatTimeoutSource,
@@ -350,17 +354,16 @@ impl BetfairStreamClient {
         config
             .validate()
             .map_err(|e| BetfairStreamError::ProtocolError(e.to_string()))?;
-        let auth = Authentication::with_id(
-            credential.app_key().to_string(),
+        let auth = Zeroizing::new(Authentication::with_id(
+            credential.app_key(),
             session_token,
             AUTH_REQUEST_ID,
-        );
-        let auth_bytes_vec = serde_json::to_vec(&auth)?;
-        let auth_bytes = Bytes::from(auth_bytes_vec.clone());
+        ));
+        let auth_bytes = Zeroizing::new(serde_json::to_vec(&*auth)?);
         let reconnect_auth = Arc::new(ReconnectAuthState::default());
         let (auth_tx, auth_rx) = watch::channel(StreamAuth {
             generation: 0,
-            bytes: auth_bytes,
+            bytes: auth_bytes.clone(),
         });
         let mode = if config.use_tls {
             Mode::Tls
@@ -408,7 +411,7 @@ impl BetfairStreamClient {
         let timeout_override = config.heartbeat_timeout_secs.is_some();
 
         let message_handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
-            *last_inbound_h.lock().expect("last inbound lock poisoned") = Instant::now();
+            *last_inbound_h.lock() = Instant::now();
             let Some(msg) = handler.decode(data) else {
                 return;
             };
@@ -493,8 +496,10 @@ impl BetfairStreamClient {
                         mcm.ct,
                         mcm.segment_type,
                     );
-                    update_market_stream_state(
-                        mcm,
+                    update_stream_state(
+                        &mcm.clk,
+                        &mcm.initial_clk,
+                        mcm.heartbeat_ms,
                         &market_clk_tx_h,
                         &market_initial_clk_tx_h,
                         timeout_override,
@@ -583,8 +588,10 @@ impl BetfairStreamClient {
                         ocm.ct,
                         ocm.segment_type,
                     );
-                    update_order_stream_state(
-                        ocm,
+                    update_stream_state(
+                        &ocm.clk,
+                        &ocm.initial_clk,
+                        ocm.heartbeat_ms,
                         &order_clk_tx_h,
                         &order_initial_clk_tx_h,
                         timeout_override,
@@ -661,7 +668,7 @@ impl BetfairStreamClient {
             let auth = auth_reconnect.borrow().clone();
             reconnect_auth_replay.record_replay(auth.generation);
 
-            replay.push(auth.bytes);
+            replay.push(Bytes::copy_from_slice(&auth.bytes));
 
             {
                 let _state = lock_stream_state(&market_state_replay);
@@ -705,9 +712,7 @@ impl BetfairStreamClient {
                 market_id_sink.load(Ordering::Acquire),
                 order_id_sink.load(Ordering::Acquire),
             );
-            *last_inbound_sink
-                .lock()
-                .expect("last inbound lock poisoned") = Instant::now();
+            *last_inbound_sink.lock() = Instant::now();
         };
         let state_sink = match state_sink {
             Some(sink) => sink.with_callback(lifecycle_callback),
@@ -746,33 +751,39 @@ impl BetfairStreamClient {
             .expect("Betfair stream writer must only be initialized once");
         reconnect_auth.set_handle(socket.reconnect_handle());
 
-        let dead_peer_task = if matches!(heartbeat_timeout_source, HeartbeatTimeoutSource::Server) {
+        socket
+            .send_bytes(auth_bytes.as_slice().to_vec())
+            .await
+            .map_err(|e| BetfairStreamError::ConnectionFailed(e.to_string()))?;
+
+        let dead_peer_task = SharedTaskSlot::new();
+
+        if matches!(heartbeat_timeout_source, HeartbeatTimeoutSource::Server) {
             let reconnect = socket.reconnect_handle();
             let enabled = Arc::clone(&dead_peer_enabled);
             let last = Arc::clone(&last_inbound);
             let timeout_ms = Arc::clone(&dead_peer_timeout_ms);
 
-            Some(get_runtime().spawn(async move {
-                loop {
-                    tokio::time::sleep(Duration::from_millis(100)).await;
+            dead_peer_task
+                .spawn(async move {
+                    loop {
+                        tokio::time::sleep(Duration::from_millis(100)).await;
 
-                    if !enabled.load(Ordering::Acquire) {
-                        continue;
+                        if !enabled.load(Ordering::Acquire) {
+                            continue;
+                        }
+                        let timeout = Duration::from_millis(timeout_ms.load(Ordering::Acquire));
+                        if last.lock().elapsed() >= timeout {
+                            let _ = reconnect.request_reconnect();
+                        }
                     }
-                    let timeout = Duration::from_millis(timeout_ms.load(Ordering::Acquire));
-                    if last.lock().expect("last inbound lock poisoned").elapsed() >= timeout {
-                        let _ = reconnect.request_reconnect();
-                    }
-                }
-            }))
-        } else {
-            None
-        };
-
-        socket
-            .send_bytes(auth_bytes_vec)
-            .await
-            .map_err(|e| BetfairStreamError::ConnectionFailed(e.to_string()))?;
+                })
+                .map_err(|e| {
+                    BetfairStreamError::ConnectionFailed(format!(
+                        "failed to start dead-peer monitor: {e}"
+                    ))
+                })?;
+        }
 
         Ok(Self {
             socket,
@@ -1005,21 +1016,11 @@ impl BetfairStreamClient {
 
     /// Pushes refreshed auth bytes so the next reconnection or subscription uses
     /// the current session token instead of the one from initial connect.
-    pub fn update_auth(&self, app_key: &str, session_token: String) {
-        let auth = Authentication::with_id(app_key.to_string(), session_token, AUTH_REQUEST_ID);
-        if let Ok(bytes) = serde_json::to_vec(&auth) {
-            let bytes = Bytes::from(bytes);
-            self.auth_tx.send_if_modified(|current| {
-                if current.bytes == bytes {
-                    return false;
-                }
-                *current = StreamAuth {
-                    generation: current.generation.wrapping_add(1),
-                    bytes,
-                };
-                true
-            });
-        }
+    pub fn update_auth(&self, app_key: &str, session_token: impl Into<SecretString>) {
+        update_auth_state(
+            &self.auth_tx,
+            &Authentication::with_id(app_key, session_token, AUTH_REQUEST_ID),
+        );
     }
 
     /// Requests replacement of the active stream transport.
@@ -1039,15 +1040,39 @@ impl BetfairStreamClient {
             .request(self.auth_tx.borrow().generation)
     }
 
-    /// Closes the stream connection.
-    pub async fn close(&self) {
+    pub(crate) fn begin_shutdown(&self) {
         self.closed.store(true, Ordering::SeqCst);
         self.dead_peer_enabled.store(false, Ordering::Release);
+        self.dead_peer_task.abort();
+        self.socket.begin_shutdown();
+    }
 
-        if let Some(task) = &self.dead_peer_task {
-            task.abort();
-        }
+    /// Closes the stream connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the dead-peer task fails or does not stop after abort.
+    pub async fn close(&self) -> Result<(), BetfairStreamError> {
+        self.begin_shutdown();
         self.socket.close().await;
+
+        if let Some(outcome) = self
+            .dead_peer_task
+            .finish(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+        {
+            match outcome {
+                TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => Ok(()),
+                TaskJoinOutcome::Failed(e) => Err(BetfairStreamError::Disconnected(format!(
+                    "dead-peer task failed: {e}"
+                ))),
+                TaskJoinOutcome::Incomplete => Err(BetfairStreamError::Timeout(
+                    "dead-peer task did not stop after abort".to_string(),
+                )),
+            }
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -1055,14 +1080,12 @@ impl Drop for BetfairStreamClient {
     fn drop(&mut self) {
         self.dead_peer_enabled.store(false, Ordering::Release);
 
-        if let Some(task) = &self.dead_peer_task {
-            task.abort();
-        }
+        self.dead_peer_task.abort();
     }
 }
 
 fn lock_stream_state(lock: &Mutex<()>) -> MutexGuard<'_, ()> {
-    lock.lock().unwrap_or_else(PoisonError::into_inner)
+    lock.lock()
 }
 
 /// Betfair race stream client for Total Performance Data (TPD).
@@ -1090,7 +1113,7 @@ impl BetfairRaceStreamClient {
     /// Returns an error if the connection fails or the initial send fails.
     pub async fn connect(
         credential: &BetfairCredential,
-        session_token: String,
+        session_token: impl Into<SecretString>,
         handler: TcpMessageHandler,
         config: BetfairStreamConfig,
         race_fatal_tx: tokio::sync::mpsc::UnboundedSender<()>,
@@ -1098,7 +1121,7 @@ impl BetfairRaceStreamClient {
         let subscription = AuxiliaryStreamSubscription::race(race_fatal_tx)?;
         Self::connect_with_subscription(
             credential,
-            session_token,
+            session_token.into(),
             StreamHandler::Raw(handler),
             config,
             subscription,
@@ -1109,7 +1132,7 @@ impl BetfairRaceStreamClient {
 
     pub(crate) async fn connect_decoded(
         credential: &BetfairCredential,
-        session_token: String,
+        session_token: SecretString,
         handler: StreamMessageHandler,
         config: BetfairStreamConfig,
         race_fatal_tx: tokio::sync::mpsc::UnboundedSender<()>,
@@ -1137,7 +1160,7 @@ impl BetfairRaceStreamClient {
     /// Returns an error if the connection fails or the initial send fails.
     pub async fn connect_cricket(
         credential: &BetfairCredential,
-        session_token: String,
+        session_token: impl Into<SecretString>,
         handler: TcpMessageHandler,
         config: BetfairStreamConfig,
         cricket_fatal_tx: tokio::sync::mpsc::UnboundedSender<()>,
@@ -1145,7 +1168,7 @@ impl BetfairRaceStreamClient {
         let subscription = AuxiliaryStreamSubscription::cricket(cricket_fatal_tx)?;
         Self::connect_with_subscription(
             credential,
-            session_token,
+            session_token.into(),
             StreamHandler::Raw(handler),
             config,
             subscription,
@@ -1156,7 +1179,7 @@ impl BetfairRaceStreamClient {
 
     pub(crate) async fn connect_cricket_decoded(
         credential: &BetfairCredential,
-        session_token: String,
+        session_token: SecretString,
         handler: StreamMessageHandler,
         config: BetfairStreamConfig,
         cricket_fatal_tx: tokio::sync::mpsc::UnboundedSender<()>,
@@ -1176,7 +1199,7 @@ impl BetfairRaceStreamClient {
 
     async fn connect_with_subscription(
         credential: &BetfairCredential,
-        session_token: String,
+        session_token: SecretString,
         handler: StreamHandler,
         config: BetfairStreamConfig,
         subscription: AuxiliaryStreamSubscription,
@@ -1189,13 +1212,12 @@ impl BetfairRaceStreamClient {
             fatal_tx,
         } = subscription;
 
-        let auth = Authentication::new(credential.app_key().to_string(), session_token);
-        let auth_bytes_vec = serde_json::to_vec(&auth)?;
-        let auth_bytes = Bytes::from(auth_bytes_vec.clone());
+        let auth = Zeroizing::new(Authentication::new(credential.app_key(), session_token));
+        let auth_bytes = Zeroizing::new(serde_json::to_vec(&*auth)?);
         let reconnect_auth = Arc::new(ReconnectAuthState::default());
         let (auth_tx, auth_rx) = watch::channel(StreamAuth {
             generation: 0,
-            bytes: auth_bytes,
+            bytes: auth_bytes.clone(),
         });
 
         let mode = if config.use_tls {
@@ -1251,11 +1273,13 @@ impl BetfairRaceStreamClient {
         let reconnect_replay: SocketReconnectReplay = Arc::new(move || {
             let auth = auth_reconnect.borrow().clone();
             reconnect_auth_replay.record_replay(auth.generation);
-            let mut combined = Vec::with_capacity(auth.bytes.len() + 2 + sub_reconnect.len());
+            let mut combined = Zeroizing::new(Vec::with_capacity(
+                auth.bytes.len() + 2 + sub_reconnect.len(),
+            ));
             combined.extend_from_slice(&auth.bytes);
             combined.extend_from_slice(b"\r\n");
             combined.extend_from_slice(&sub_reconnect);
-            vec![Bytes::from(combined)]
+            vec![Bytes::copy_from_slice(&combined)]
         });
 
         let url = format!("{}:{}", config.host, config.port);
@@ -1289,12 +1313,13 @@ impl BetfairRaceStreamClient {
             .map_err(|e| BetfairStreamError::ConnectionFailed(e.to_string()))?;
         reconnect_auth.set_handle(socket.reconnect_handle());
 
-        let mut combined = Vec::with_capacity(auth_bytes_vec.len() + 2 + sub_bytes.len());
-        combined.extend_from_slice(&auth_bytes_vec);
+        let mut combined =
+            Zeroizing::new(Vec::with_capacity(auth_bytes.len() + 2 + sub_bytes.len()));
+        combined.extend_from_slice(&auth_bytes);
         combined.extend_from_slice(b"\r\n");
         combined.extend_from_slice(&sub_bytes);
         socket
-            .send_bytes(combined)
+            .send_bytes(combined.as_slice().to_vec())
             .await
             .map_err(|e| BetfairStreamError::ConnectionFailed(e.to_string()))?;
 
@@ -1314,21 +1339,8 @@ impl BetfairRaceStreamClient {
 
     /// Pushes refreshed auth bytes so the next reconnection uses
     /// the current session token instead of the one from initial connect.
-    pub fn update_auth(&self, app_key: &str, session_token: String) {
-        let auth = Authentication::new(app_key.to_string(), session_token);
-        if let Ok(bytes) = serde_json::to_vec(&auth) {
-            let bytes = Bytes::from(bytes);
-            self.auth_tx.send_if_modified(|current| {
-                if current.bytes == bytes {
-                    return false;
-                }
-                *current = StreamAuth {
-                    generation: current.generation.wrapping_add(1),
-                    bytes,
-                };
-                true
-            });
-        }
+    pub fn update_auth(&self, app_key: &str, session_token: impl Into<SecretString>) {
+        update_auth_state(&self.auth_tx, &Authentication::new(app_key, session_token));
     }
 
     /// Requests replacement of the active stream transport.
@@ -1349,11 +1361,33 @@ impl BetfairRaceStreamClient {
             .request(self.auth_tx.borrow().generation)
     }
 
+    pub(crate) fn begin_shutdown(&self) {
+        self.closed.store(true, Ordering::SeqCst);
+        self.socket.begin_shutdown();
+    }
+
     /// Closes the race stream connection.
     pub async fn close(&self) {
-        self.closed.store(true, Ordering::SeqCst);
+        self.begin_shutdown();
         self.socket.close().await;
     }
+}
+
+fn update_auth_state(auth_tx: &watch::Sender<StreamAuth>, auth: &Authentication) {
+    let Ok(bytes) = serde_json::to_vec(auth) else {
+        return;
+    };
+    let bytes = Zeroizing::new(bytes);
+    auth_tx.send_if_modified(|current| {
+        if current.bytes == bytes {
+            return false;
+        }
+        *current = StreamAuth {
+            generation: current.generation.wrapping_add(1),
+            bytes,
+        };
+        true
+    });
 }
 
 enum StreamHandler {
@@ -1384,7 +1418,7 @@ impl StreamHandler {
 }
 
 const fn change_complete(segment_type: Option<SegmentType>) -> bool {
-    segment_type.is_none() || matches!(segment_type, Some(SegmentType::SegEnd))
+    matches!(segment_type, None | Some(SegmentType::SegEnd))
 }
 
 fn reissue_market_subscription(
@@ -1487,38 +1521,23 @@ fn reissue_order_subscription(
     }
 }
 
-fn update_market_stream_state(
-    message: &MCM,
+fn update_stream_state(
+    clk: &Option<String>,
+    initial_clk: &Option<String>,
+    heartbeat_ms: Option<u64>,
     clk_tx: &watch::Sender<Option<String>>,
     initial_clk_tx: &watch::Sender<Option<String>>,
     timeout_override: bool,
     dead_peer_timeout_ms: &AtomicU64,
 ) {
-    if message.clk.is_some() {
-        let _ = clk_tx.send(message.clk.clone());
+    if clk.is_some() {
+        let _ = clk_tx.send(clk.clone());
     }
 
-    if message.initial_clk.is_some() {
-        let _ = initial_clk_tx.send(message.initial_clk.clone());
+    if initial_clk.is_some() {
+        let _ = initial_clk_tx.send(initial_clk.clone());
     }
-    update_negotiated_heartbeat(message.heartbeat_ms, timeout_override, dead_peer_timeout_ms);
-}
-
-fn update_order_stream_state(
-    message: &OCM,
-    clk_tx: &watch::Sender<Option<String>>,
-    initial_clk_tx: &watch::Sender<Option<String>>,
-    timeout_override: bool,
-    dead_peer_timeout_ms: &AtomicU64,
-) {
-    if message.clk.is_some() {
-        let _ = clk_tx.send(message.clk.clone());
-    }
-
-    if message.initial_clk.is_some() {
-        let _ = initial_clk_tx.send(message.initial_clk.clone());
-    }
-    update_negotiated_heartbeat(message.heartbeat_ms, timeout_override, dead_peer_timeout_ms);
+    update_negotiated_heartbeat(heartbeat_ms, timeout_override, dead_peer_timeout_ms);
 }
 
 fn update_negotiated_heartbeat(
@@ -1596,10 +1615,19 @@ impl AuxiliaryStreamSubscription {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct StreamAuth {
     generation: u64,
-    bytes: Bytes,
+    bytes: Zeroizing<Vec<u8>>,
+}
+
+impl Debug for StreamAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(StreamAuth))
+            .field("generation", &self.generation)
+            .field("bytes", &REDACTED)
+            .finish()
+    }
 }
 
 #[derive(Debug, Default)]
@@ -1620,11 +1648,7 @@ impl ReconnectAuthState {
         let _ = self
             .pending_generation
             .try_update(Ordering::SeqCst, Ordering::SeqCst, |pending| {
-                if pending != 0 && pending <= generation {
-                    Some(0)
-                } else {
-                    None
-                }
+                (pending != 0 && pending <= generation).then_some(0)
             });
     }
 
@@ -1801,6 +1825,45 @@ mod tests {
         assert!(json.contains("\"op\":\"authentication\""));
         assert!(json.contains("\"appKey\":\"my-app-key\""));
         assert!(json.contains("\"session\":\"my-session\""));
+    }
+
+    #[rstest]
+    #[case::exchange(true)]
+    #[case::auxiliary(false)]
+    fn test_update_auth_state_changes_once_per_distinct_payload(#[case] with_id: bool) {
+        let make_auth = |session: &str| {
+            if with_id {
+                Authentication::with_id(
+                    "test-app-key".to_string(),
+                    session.to_string(),
+                    AUTH_REQUEST_ID,
+                )
+            } else {
+                Authentication::new("test-app-key".to_string(), session.to_string())
+            }
+        };
+        let initial = make_auth("initial");
+        let initial_bytes = serde_json::to_vec(&initial).unwrap();
+        let (auth_tx, auth_rx) = watch::channel(StreamAuth {
+            generation: 7,
+            bytes: Zeroizing::new(initial_bytes.clone()),
+        });
+
+        update_auth_state(&auth_tx, &initial);
+        let debug = format!("{:?}", auth_rx.borrow());
+        assert_eq!(auth_rx.borrow().generation, 7);
+        assert_eq!(auth_rx.borrow().bytes.as_slice(), initial_bytes);
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains("initial"));
+
+        let replacement = make_auth("replacement");
+        let replacement_bytes = serde_json::to_vec(&replacement).unwrap();
+        update_auth_state(&auth_tx, &replacement);
+        assert_eq!(auth_rx.borrow().generation, 8);
+        assert_eq!(auth_rx.borrow().bytes.as_slice(), replacement_bytes);
+
+        update_auth_state(&auth_tx, &replacement);
+        assert_eq!(auth_rx.borrow().generation, 8);
     }
 
     #[rstest]
@@ -2046,7 +2109,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        client.close().await;
+        client.close().await.expect("close stream");
     }
 
     #[rstest]
@@ -2073,8 +2136,9 @@ mod tests {
         #[case] cricket: bool,
         #[case] subscription_op: &'static str,
     ) {
-        use std::{sync::Mutex, time::Duration};
+        use std::time::Duration;
 
+        use parking_lot::Mutex;
         use tokio::io::{AsyncBufReadExt, BufReader};
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -2125,7 +2189,7 @@ mod tests {
         let states = Arc::new(Mutex::new(Vec::new()));
         let states_sink = Arc::clone(&states);
         let state_sink = SocketStateSink::new(move |state| {
-            states_sink.lock().unwrap().push(state);
+            states_sink.lock().push(state);
         });
         let credential = BetfairCredential::new(
             "testuser".to_string(),
@@ -2145,7 +2209,7 @@ mod tests {
         let client = if cricket {
             BetfairRaceStreamClient::connect_cricket_decoded(
                 &credential,
-                "test-session".to_string(),
+                "test-session".into(),
                 Arc::new(|_| {}),
                 config,
                 fatal_tx,
@@ -2156,7 +2220,7 @@ mod tests {
         } else {
             BetfairRaceStreamClient::connect_decoded(
                 &credential,
-                "test-session".to_string(),
+                "test-session".into(),
                 Arc::new(|_| {}),
                 config,
                 fatal_tx,
@@ -2176,7 +2240,7 @@ mod tests {
             .unwrap()
             .unwrap();
         tokio::time::timeout(Duration::from_secs(5), async {
-            while states.lock().unwrap().len() < 3 {
+            while states.lock().len() < 3 {
                 tokio::task::yield_now().await;
             }
         })
@@ -2185,7 +2249,7 @@ mod tests {
         client.close().await;
 
         assert_eq!(
-            *states.lock().unwrap(),
+            *states.lock(),
             vec![
                 SocketState::Connected,
                 SocketState::Disconnected,

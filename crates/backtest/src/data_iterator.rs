@@ -19,8 +19,9 @@ use std::collections::BinaryHeap;
 
 use ahash::AHashMap;
 use nautilus_core::UnixNanos;
-use nautilus_model::data::{Data, HasTsInit};
+use nautilus_model::data::{Data, DataRef, HasTsInit};
 
+use crate::data_batch::ReplayBatch;
 #[cfg(feature = "defi")]
 use crate::defi::replay::replay_position;
 
@@ -37,26 +38,39 @@ struct ReplayKey {
     phase: u8,
 }
 
-fn replay_key(data: &Data) -> ReplayKey {
+fn replay_key(data: DataRef<'_>) -> ReplayKey {
+    let ts = data.ts_init();
     match data {
+        DataRef::BookDelta(_)
+        | DataRef::BookDeltas(_)
+        | DataRef::BookDepth10(_)
+        | DataRef::Quote(_)
+        | DataRef::Trade(_)
+        | DataRef::Bar(_)
+        | DataRef::MarkPrice(_)
+        | DataRef::IndexPrice(_)
+        | DataRef::FundingRate(_)
+        | DataRef::OptionGreeks(_)
+        | DataRef::InstrumentStatus(_)
+        | DataRef::InstrumentClose(_)
+        | DataRef::Custom(_) => ReplayKey {
+            ts,
+            block_number: 0,
+            transaction_index: 0,
+            log_index: 0,
+            phase: 0,
+        },
         #[cfg(feature = "defi")]
-        Data::Defi(defi) => {
+        DataRef::Defi(defi) => {
             let (block_number, transaction_index, log_index, phase) = replay_position(defi);
             ReplayKey {
-                ts: defi.ts_init(),
+                ts,
                 block_number,
                 transaction_index,
                 log_index,
                 phase,
             }
         }
-        _ => ReplayKey {
-            ts: data.ts_init(),
-            block_number: 0,
-            transaction_index: 0,
-            log_index: 0,
-            phase: 0,
-        },
     }
 }
 
@@ -88,10 +102,10 @@ impl PartialOrd for HeapEntry {
 /// Multi-stream, time-ordered data iterator used by the backtest engine.
 #[derive(Debug, Default)]
 pub struct BacktestDataIterator {
-    streams: AHashMap<i32, Vec<Data>>, // key: priority, value: Vec<Data>
-    names: AHashMap<i32, String>,      // priority -> name
-    priorities: AHashMap<String, i32>, // name -> priority
-    indices: AHashMap<i32, usize>,     // cursor per stream
+    streams: AHashMap<i32, ReplayBatch>,
+    names: AHashMap<i32, String>,
+    priorities: AHashMap<String, i32>,
+    indices: AHashMap<i32, usize>,
     heap: BinaryHeap<HeapEntry>,
     single_priority: Option<i32>,
     next_priority_counter: i32, // monotonically increasing counter used to assign priorities
@@ -121,12 +135,12 @@ impl BacktestDataIterator {
             return;
         }
 
-        data.sort_by_key(replay_key);
+        data.sort_by_key(|item| replay_key(DataRef::from(item)));
 
-        self.add_stream(name, data, append_data);
+        self.add_stream(name, ReplayBatch::from_data(data), append_data);
     }
 
-    fn add_stream(&mut self, name: &str, data: Vec<Data>, append_data: bool) {
+    fn add_stream(&mut self, name: &str, data: ReplayBatch, append_data: bool) {
         let priority = if let Some(p) = self.priorities.get(name) {
             // Replace existing stream - remove previous traces then re-insert below.
             *p
@@ -184,7 +198,7 @@ impl BacktestDataIterator {
     }
 
     /// Returns the next backtest data element without advancing the stream cursor.
-    pub(crate) fn peek(&self) -> Option<&Data> {
+    pub(crate) fn peek(&self) -> Option<DataRef<'_>> {
         if let Some(p) = self.single_priority {
             let data = self.streams.get(&p)?;
             let idx = *self.indices.get(&p)?;
@@ -195,35 +209,63 @@ impl BacktestDataIterator {
         self.streams.get(&entry.priority)?.get(entry.index)
     }
 
-    /// Returns the next backtest data element across all streams in replay order.
-    pub(crate) fn next_item(&mut self) -> Option<Data> {
-        // Fast path for single stream
+    /// Advances past the current backtest data element, or does nothing if the iterator is
+    /// exhausted.
+    pub(crate) fn advance(&mut self) {
         if let Some(p) = self.single_priority {
-            let data = self.streams.get_mut(&p)?;
-            let idx = self.indices.get_mut(&p)?;
-            if *idx >= data.len() {
-                return None;
+            let Some(data) = self.streams.get(&p) else {
+                return;
+            };
+
+            let Some(idx) = self.indices.get_mut(&p) else {
+                return;
+            };
+
+            if *idx < data.len() {
+                *idx += 1;
             }
-            let element = data[*idx].clone();
-            *idx += 1;
-            return Some(element);
+
+            return;
         }
 
         // Multi-stream path using heap
-        let entry = self.heap.pop()?;
-        let stream_vec = self.streams.get(&entry.priority)?;
-        let element = stream_vec[entry.index].clone();
+        let Some(entry) = self.heap.pop() else {
+            return;
+        };
+
+        let Some(stream) = self.streams.get(&entry.priority) else {
+            return;
+        };
 
         // Advance cursor and push next entry
         let next_index = entry.index + 1;
         self.indices.insert(entry.priority, next_index);
-        if next_index < stream_vec.len() {
+
+        if next_index < stream.len() {
             self.heap.push(HeapEntry {
-                key: replay_key(&stream_vec[next_index]),
+                key: replay_key(
+                    stream
+                        .get(next_index)
+                        .expect("next index is within the data batch"),
+                ),
                 priority: entry.priority,
                 index: next_index,
             });
         }
+    }
+
+    /// Returns the next backtest data element across all streams in replay order.
+    pub(crate) fn next_item(&mut self) -> Option<Data> {
+        let element = if let Some(p) = self.single_priority {
+            let data = self.streams.get(&p)?;
+            let idx = *self.indices.get(&p)?;
+            data.get_owned(idx)?
+        } else {
+            let entry = self.heap.peek()?;
+            self.streams.get(&entry.priority)?.get_owned(entry.index)?
+        };
+
+        self.advance();
 
         Some(element)
     }
@@ -239,9 +281,9 @@ impl BacktestDataIterator {
     pub fn is_done(&self) -> bool {
         if let Some(p) = self.single_priority {
             if let Some(idx) = self.indices.get(&p)
-                && let Some(vec) = self.streams.get(&p)
+                && let Some(data) = self.streams.get(&p)
             {
-                return *idx >= vec.len();
+                return *idx >= data.len();
             }
             true
         } else {
@@ -259,11 +301,11 @@ impl BacktestDataIterator {
         }
         self.single_priority = None;
 
-        for (&priority, vec) in &self.streams {
+        for (&priority, data) in &self.streams {
             let idx = *self.indices.get(&priority).unwrap_or(&0);
-            if idx < vec.len() {
+            if idx < data.len() {
                 self.heap.push(HeapEntry {
-                    key: replay_key(&vec[idx]),
+                    key: replay_key(data.get(idx).expect("index is within the data batch")),
                     priority,
                     index: idx,
                 });
@@ -275,7 +317,7 @@ impl BacktestDataIterator {
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        data::QuoteTick,
+        data::{QuoteTick, stubs::stub_trade_ethusdt_buy},
         identifiers::InstrumentId,
         types::{Price, Quantity},
     };
@@ -303,6 +345,23 @@ mod tests {
             ts.into(),
             ts.into(),
         ))
+    }
+
+    fn trade(id: &str, ts: u64) -> Data {
+        let mut trade = stub_trade_ethusdt_buy();
+        trade.instrument_id = InstrumentId::from(id);
+        trade.ts_event = UnixNanos::from(ts);
+        trade.ts_init = UnixNanos::from(ts);
+        Data::Trade(trade)
+    }
+
+    fn collect_sequence(it: &mut BacktestDataIterator) -> Vec<(InstrumentId, UnixNanos)> {
+        let mut sequence = Vec::new();
+        while let Some(data) = it.peek() {
+            sequence.push((data.instrument_id(), data.ts_init()));
+            it.advance();
+        }
+        sequence
     }
 
     fn collect_ts(it: &mut BacktestDataIterator) -> Vec<u64> {
@@ -577,6 +636,26 @@ mod tests {
     }
 
     #[rstest]
+    fn test_set_index_uses_logical_mixed_stream_offset() {
+        let mut it = BacktestDataIterator::new();
+        it.add_data(
+            "mixed",
+            vec![quote("A.B", 10), trade("C.D", 10), quote("E.F", 20)],
+            true,
+        );
+
+        it.set_index("mixed", 1);
+
+        assert_eq!(
+            collect_sequence(&mut it),
+            vec![
+                (InstrumentId::from("C.D"), UnixNanos::from(10)),
+                (InstrumentId::from("E.F"), UnixNanos::from(20)),
+            ]
+        );
+    }
+
+    #[rstest]
     fn test_set_index_nonexistent_stream_is_noop() {
         let mut it = BacktestDataIterator::new();
         it.add_data("s", vec![quote("A.B", 1)], true);
@@ -622,6 +701,22 @@ mod tests {
     }
 
     #[rstest]
+    fn test_readding_data_reuses_equal_key_stream_priority() {
+        let mut it = BacktestDataIterator::new();
+        it.add_data("first", vec![quote("A.B", 10)], true);
+        it.add_data("second", vec![quote("C.D", 10)], true);
+        it.add_data("first", vec![quote("E.F", 10)], true);
+
+        assert_eq!(
+            collect_sequence(&mut it),
+            vec![
+                (InstrumentId::from("E.F"), UnixNanos::from(10)),
+                (InstrumentId::from("C.D"), UnixNanos::from(10)),
+            ]
+        );
+    }
+
+    #[rstest]
     fn test_add_empty_data_is_noop() {
         let mut it = BacktestDataIterator::new();
         it.add_data("empty", vec![], true);
@@ -644,6 +739,25 @@ mod tests {
         it.add_data("batch_1", vec![quote("A.B", 2), quote("A.B", 4)], true);
 
         assert_eq!(collect_ts(&mut it), vec![1, 2, 3, 4]);
+    }
+
+    #[rstest]
+    fn test_typed_and_compatibility_streams_preserve_equal_key_order() {
+        let mut single_batch = BacktestDataIterator::new();
+        single_batch.add_data(
+            "single",
+            vec![quote("A.B", 10), trade("C.D", 10), quote("E.F", 20)],
+            true,
+        );
+
+        let mut split_batches = BacktestDataIterator::new();
+        split_batches.add_data("first", vec![quote("A.B", 10)], true);
+        split_batches.add_data("second", vec![trade("C.D", 10), quote("E.F", 20)], true);
+
+        assert_eq!(
+            collect_sequence(&mut split_batches),
+            collect_sequence(&mut single_batch)
+        );
     }
 
     #[rstest]

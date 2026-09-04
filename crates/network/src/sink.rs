@@ -26,10 +26,12 @@
 use std::{
     fmt::Debug,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicU8, Ordering},
     },
 };
+
+use parking_lot::Mutex;
 
 use crate::mode::ConnectionMode;
 
@@ -97,10 +99,7 @@ impl SocketStateSink {
         next: ConnectionMode,
         state: SocketState,
     ) -> Result<(), ConnectionMode> {
-        let _guard = self
-            .transition_lock
-            .lock()
-            .expect("socket state sink transition lock poisoned");
+        let _guard = self.transition_lock.lock();
 
         if let Err(actual) = value.compare_exchange(
             current.as_u8(),
@@ -117,18 +116,12 @@ impl SocketStateSink {
     }
 
     pub(crate) fn publish_websocket(&self, state: SocketState) {
-        let _guard = self
-            .transition_lock
-            .lock()
-            .expect("socket state sink transition lock poisoned");
+        let _guard = self.transition_lock.lock();
         self.notify(state);
     }
 
     pub(crate) fn close_on_loss(&self, value: &AtomicU8) -> bool {
-        let _guard = self
-            .transition_lock
-            .lock()
-            .expect("socket state sink transition lock poisoned");
+        let _guard = self.transition_lock.lock();
         let current = ConnectionMode::from_atomic(value);
 
         if !matches!(current, ConnectionMode::Active | ConnectionMode::Reconnect)
@@ -179,10 +172,11 @@ pub enum SocketState {
 #[cfg(test)]
 mod tests {
     use std::sync::{
-        Barrier, Mutex,
+        Barrier,
         atomic::{AtomicU8, AtomicUsize, Ordering as AtomicOrdering},
     };
 
+    use parking_lot::Mutex;
     use rstest::rstest;
 
     use super::*;
@@ -193,7 +187,7 @@ mod tests {
         let states = Arc::new(Mutex::new(Vec::new()));
         let states_callback = Arc::clone(&states);
         let sink = SocketStateSink::new(move |state| {
-            states_callback.lock().unwrap().push(state);
+            states_callback.lock().push(state);
         });
         let mode = AtomicU8::new(ConnectionMode::Reconnect.as_u8());
 
@@ -215,7 +209,7 @@ mod tests {
         );
 
         assert_eq!(
-            *states.lock().unwrap(),
+            *states.lock(),
             vec![
                 SocketState::Connected,
                 SocketState::Disconnected,
@@ -229,12 +223,12 @@ mod tests {
         let calls = Arc::new(Mutex::new(Vec::new()));
         let forwarded_calls = Arc::clone(&calls);
         let sink = SocketStateSink::new(move |_| {
-            forwarded_calls.lock().unwrap().push("forwarded");
+            forwarded_calls.lock().push("forwarded");
         });
         let transition_lock = Arc::clone(&sink.transition_lock);
         let callback_calls = Arc::clone(&calls);
         let sink = sink.with_callback(move |_| {
-            callback_calls.lock().unwrap().push("callback");
+            callback_calls.lock().push("callback");
         });
         let mode = AtomicU8::new(ConnectionMode::Reconnect.as_u8());
 
@@ -243,7 +237,7 @@ mod tests {
             ReconnectOutcome::Reconnected
         );
         assert!(Arc::ptr_eq(&sink.transition_lock, &transition_lock));
-        assert_eq!(*calls.lock().unwrap(), vec!["callback", "forwarded"]);
+        assert_eq!(*calls.lock(), vec!["callback", "forwarded"]);
     }
 
     #[rstest]
@@ -251,7 +245,7 @@ mod tests {
         let states = Arc::new(Mutex::new(Vec::new()));
         let states_callback = Arc::clone(&states);
         let sink = SocketStateSink::new(move |state| {
-            states_callback.lock().unwrap().push(state);
+            states_callback.lock().push(state);
         });
         let mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
         let barrier = Arc::new(Barrier::new(8));
@@ -279,7 +273,7 @@ mod tests {
             ConnectionMode::from_atomic(&mode),
             ConnectionMode::Reconnect
         );
-        assert_eq!(*states.lock().unwrap(), vec![SocketState::Disconnected]);
+        assert_eq!(*states.lock(), vec![SocketState::Disconnected]);
     }
 
     #[rstest]
@@ -287,7 +281,7 @@ mod tests {
         let states = Arc::new(Mutex::new(Vec::new()));
         let states_callback = Arc::clone(&states);
         let sink = SocketStateSink::new(move |state| {
-            states_callback.lock().unwrap().push(state);
+            states_callback.lock().push(state);
         });
         let mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
         let barrier = Arc::new(Barrier::new(2));
@@ -315,7 +309,7 @@ mod tests {
 
         assert!(closed);
         assert_eq!(ConnectionMode::from_atomic(&mode), ConnectionMode::Closed);
-        assert_eq!(*states.lock().unwrap(), vec![SocketState::Disconnected]);
+        assert_eq!(*states.lock(), vec![SocketState::Disconnected]);
     }
 
     #[rstest]
@@ -330,7 +324,7 @@ mod tests {
                 0,
                 "test socket state callback panic"
             );
-            states_callback.lock().unwrap().push(state);
+            states_callback.lock().push(state);
         });
         let mode = AtomicU8::new(ConnectionMode::Reconnect.as_u8());
 
@@ -348,7 +342,7 @@ mod tests {
             ConnectionMode::from_atomic(&mode),
             ConnectionMode::Reconnect
         );
-        assert_eq!(*states.lock().unwrap(), vec![SocketState::Disconnected]);
+        assert_eq!(*states.lock(), vec![SocketState::Disconnected]);
     }
 
     #[rstest]
@@ -356,7 +350,7 @@ mod tests {
         let states = Arc::new(Mutex::new(Vec::new()));
         let states_callback = Arc::clone(&states);
         let sink = SocketStateSink::new(move |state| {
-            states_callback.lock().unwrap().push(state);
+            states_callback.lock().push(state);
         });
         let mode = AtomicU8::new(ConnectionMode::Active.as_u8());
 
@@ -366,7 +360,7 @@ mod tests {
             Some(&sink)
         ));
 
-        assert_eq!(*states.lock().unwrap(), Vec::new());
+        assert_eq!(*states.lock(), Vec::new());
     }
 
     #[rstest]
@@ -374,13 +368,13 @@ mod tests {
         let states = Arc::new(Mutex::new(Vec::new()));
         let states_callback = Arc::clone(&states);
         let sink = SocketStateSink::new(move |state| {
-            states_callback.lock().unwrap().push(state);
+            states_callback.lock().push(state);
         });
         let mode = AtomicU8::new(ConnectionMode::Reconnect.as_u8());
 
         assert!(ConnectionMode::close_websocket_on_loss(&mode, Some(&sink)));
 
         assert_eq!(ConnectionMode::from_atomic(&mode), ConnectionMode::Closed);
-        assert_eq!(*states.lock().unwrap(), Vec::new());
+        assert_eq!(*states.lock(), Vec::new());
     }
 }

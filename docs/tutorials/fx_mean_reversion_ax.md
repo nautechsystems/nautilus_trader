@@ -78,7 +78,8 @@ for AX EURUSD-PERP backtests.
 ## Prerequisites
 
 - Python 3.12+
-- [NautilusTrader](https://pypi.org/project/nautilus_trader/) installed.
+- [NautilusTrader](https://pypi.org/project/nautilus_trader/) 2.x installed
+  (`pip install -U --pre nautilus_trader`).
 - A free TrueFX account, used to download a monthly tick archive.
 
 ## Data preparation

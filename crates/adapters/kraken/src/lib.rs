@@ -13,10 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Kraken exchange adapter for NautilusTrader.
+//! [NautilusTrader](https://nautilustrader.io) adapter for the
+//! [Kraken](https://www.kraken.com) exchange.
 //!
-//! This adapter provides integration with the Kraken cryptocurrency exchange,
-//! supporting both Spot and Futures markets.
+//! This adapter supports both Spot and Futures markets.
 //!
 //! # Features
 //!
@@ -28,8 +28,8 @@
 //!
 //! # API Documentation
 //!
-//! - [Kraken REST API](https://docs.kraken.com/api/)
-//! - [Kraken WebSocket v2](https://docs.kraken.com/websockets-v2/)
+//! - [Kraken REST API](https://docs.kraken.com/api/docs/)
+//! - [Kraken WebSocket v2](https://docs.kraken.com/api/docs/websocket-v2/)
 //!
 //! # Feature Flags
 //!
@@ -38,10 +38,12 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `examples`: Enables the crate's example binaries.
 //! - `extension-module`: Builds as a Python extension module.
-//!
-//! [High-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) (128-bit value types) is enabled by default.
+//! - `high-precision` (default): Enables
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
+//!   to use 128-bit value types.
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
 // pyo3's `from_py_object` generates `.clone()` on `Copy` fields that clippy flags from the
 // macro expansion; an item-level `allow` cannot reach the expansion

@@ -78,15 +78,9 @@ MIN_TRIGGER_SIZE = 1.0
 
 
 class QuoteSamplerConfig(DataActorConfig):
-    _CUSTOM_FIELDS = ("instrument_id", "sample_every_secs")
-
-    def __new__(cls, *args: object, **kwargs: object) -> object:
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_id: InstrumentId,
         sample_every_secs: int = 1,
         **_kwargs: object,

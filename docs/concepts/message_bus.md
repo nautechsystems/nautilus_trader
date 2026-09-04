@@ -267,13 +267,16 @@ subscribers, then serialized into the existing `BusMessage` wire record:
 - `topic`: the exact message bus topic used by the internal publish call, for example
   `data.quotes.BINANCE.BTCUSDT` or `events.order.S-001`.
 - `type`: the canonical payload type name, for example `QuoteTick` or `OrderEventAny`.
+- `payload_kind`: present with the value `typed` for control, execution, and reconciliation
+  payloads whose fixed type names could also identify custom payloads.
 - `encoding`: the payload encoding selected from the message bus encoding policy.
 - `payload`: serialized bytes encoded with the selected encoding.
 
 An external producer that writes directly to a Redis stream must include `topic`, `type`, and
 `payload`. The `topic` must be a valid publish topic and cannot contain `*` or `?`. The `encoding`
 field is optional and defaults to JSON when omitted. The receiving node skips entries without
-`type` because it cannot select a payload decoder.
+`type` because it cannot select a payload decoder. Set `payload_kind` to `typed` for a fixed typed
+payload; without this discriminator, the receiving node treats the same type name as custom data.
 
 External egress receives that record as `publish(BusMessage)`. This outbound call must not block the
 node's bus thread. Bounded egress implementations drop on a full queue instead of applying
@@ -282,8 +285,14 @@ back-pressure to the trading loop. Closing the message bus closes the configured
 Inbound external streams are exposed through the separate Rust `MessageBusExternalIngress` trait.
 Ingress yields the same `BusMessage { topic, payload_type, encoding, payload }` shape.
 `republish_external_message` decodes supported inbound messages and republishes them internally
-without forwarding the message back out. The inbound payload type must first be registered for
-streaming on the receiving message bus; unregistered types are skipped without decoding.
+without forwarding the message back out. Normal internal republishing requires the inbound payload
+type to be registered for streaming and skips unregistered types without decoding.
+
+`LiveNode::add_stream_processor` in Rust and `LiveNode.add_stream_processor` in Python register
+callbacks for typed JSON or MessagePack payloads. Processors run in registration order before the
+internal streaming registration check, so they receive supported typed messages even when internal
+republishing is disabled. Python processors receive a mapping with an added `payload_type` field. A
+processor error stops later processors and skips internal republishing for that message.
 
 For custom data, egress writes and ingress expects an envelope in the Redis `payload` field, not the
 bare custom object. The canonical JSON envelope is:
@@ -337,6 +346,11 @@ events, and custom data. With the `defi` feature this also includes DeFi blocks,
 updates, fee collects, and flash events. Full order book snapshots, `GreeksData` records, option
 chain slices, and DeFi pool swaps are not forwarded because those types do not implement Serde
 serialization.
+
+When `external_streams` is non-empty, JSON or MessagePack egress also forwards subscription
+commands, trading commands, execution mass-status requests, order status reports, fill reports,
+position status reports, and execution mass-status reports. These payloads remain local when no
+external streams are configured.
 
 With SBE or Cap'n Proto, Rust-native external egress forwards the built-in market data payloads with
 schema codecs: quotes, trades, bars, book deltas, depth-10 snapshots, mark price updates, index
@@ -502,6 +516,7 @@ quotes, you may filter out certain types of messages from external publication.
 
 To enable this filtering mechanism, pass a list of payload type names to the `types_filter`
 parameter in the message bus configuration. Listed types are excluded from external publication.
+A name shared by a custom payload and a fixed typed payload excludes both.
 
 ```python
 from nautilus_trader.config import MessageBusConfig

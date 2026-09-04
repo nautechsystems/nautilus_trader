@@ -276,7 +276,8 @@ impl OrderMatchingEngine {
         let trade_id = TradeId::from(UUID4::new().to_string());
         let close_px = option_close_price
             .unwrap_or_else(|| self.option_settlement_price(underlying_price, true));
-        let close_side = OrderCore::closing_side(position.side);
+        let close_side = OrderCore::closing_side(position.side)
+            .expect("Settlement position must be Long or Short");
         let order = self.option_create_settlement_order(
             position,
             self.instrument.id(),
@@ -341,7 +342,8 @@ impl OrderMatchingEngine {
         let settlement_px = self.option_settlement_price(underlying_price, false);
         let option_close_px =
             option_close_price.unwrap_or_else(|| Price::zero(self.instrument.price_precision()));
-        let close_side = OrderCore::closing_side(position.side);
+        let close_side = OrderCore::closing_side(position.side)
+            .expect("Settlement position must be Long or Short");
         let underlying_order_side = match underlying_side {
             PositionSide::Long => OrderSide::Buy,
             _ => OrderSide::Sell,
@@ -413,7 +415,8 @@ impl OrderMatchingEngine {
         let trade_id = TradeId::from(UUID4::new().to_string());
         let close_px =
             option_close_price.unwrap_or_else(|| Price::zero(self.instrument.price_precision()));
-        let close_side = OrderCore::closing_side(position.side);
+        let close_side = OrderCore::closing_side(position.side)
+            .expect("Settlement position must be Long or Short");
         let order = self.option_create_settlement_order(
             position,
             self.instrument.id(),
@@ -483,7 +486,8 @@ impl OrderMatchingEngine {
         trade_id: TradeId,
         ts_now: UnixNanos,
     ) -> OrderFilled {
-        let close_side = OrderCore::closing_side(position.side);
+        let close_side = OrderCore::closing_side(position.side)
+            .expect("Settlement position must be Long or Short");
         OrderFilled::new(
             position.trader_id,
             position.strategy_id,
@@ -523,7 +527,10 @@ impl OrderMatchingEngine {
     ) -> OrderFilled {
         let order_side = match side {
             PositionSide::Long => OrderSide::Buy,
-            _ => OrderSide::Sell,
+            PositionSide::Short => OrderSide::Sell,
+            PositionSide::Flat => {
+                unreachable!("flat position cannot create an underlying settlement fill")
+            }
         };
         OrderFilled::new(
             position.trader_id,

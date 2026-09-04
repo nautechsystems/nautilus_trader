@@ -21,7 +21,10 @@
 //! on every WebSocket frame and outbound transaction.
 
 use dashmap::DashMap;
-use nautilus_model::identifiers::{InstrumentId, Symbol};
+use nautilus_model::{
+    identifiers::{InstrumentId, Symbol, Venue},
+    types::Currency,
+};
 use ustr::Ustr;
 
 use super::{consts::LIGHTER_VENUE, enums::LighterProductType};
@@ -38,11 +41,21 @@ pub const SPOT_SUFFIX: &str = "-SPOT";
 /// (`-PERP` or `-SPOT`) before being qualified by the Lighter venue.
 #[must_use]
 pub fn format_instrument_id(venue_symbol: &str, product_type: LighterProductType) -> InstrumentId {
+    format_instrument_id_with_venue(venue_symbol, product_type, *LIGHTER_VENUE)
+}
+
+/// Builds a Nautilus [`InstrumentId`] for a specific venue.
+#[must_use]
+pub fn format_instrument_id_with_venue(
+    venue_symbol: &str,
+    product_type: LighterProductType,
+    venue: Venue,
+) -> InstrumentId {
     let suffix = product_suffix(product_type);
     let trimmed = venue_symbol.trim();
     let upper = trimmed.to_ascii_uppercase();
     let symbol = format!("{upper}{suffix}");
-    InstrumentId::new(Symbol::from_str_unchecked(&symbol), *LIGHTER_VENUE)
+    InstrumentId::new(Symbol::from_str_unchecked(&symbol), venue)
 }
 
 /// Returns the venue-native symbol for an instrument id by stripping any
@@ -96,11 +109,22 @@ fn canonical_symbol_key(venue_symbol: &str) -> Ustr {
 /// as relists must be coordinated by the caller (e.g. quiesce consumers
 /// before reinserting) to avoid concurrent readers observing partial
 /// state.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct MarketRegistry {
+    venue: Venue,
+    settlement_currency: Currency,
     by_index: DashMap<i16, InstrumentId>,
     by_id: DashMap<InstrumentId, i16>,
     by_raw_symbol: DashMap<(Ustr, LighterProductType), InstrumentId>,
+}
+
+impl Default for MarketRegistry {
+    fn default() -> Self {
+        Self::new_with_venue_and_settlement_currency(
+            *LIGHTER_VENUE,
+            Currency::get_or_create_crypto("USDC"),
+        )
+    }
 }
 
 impl MarketRegistry {
@@ -108,6 +132,33 @@ impl MarketRegistry {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Returns a new empty registry for a venue and settlement currency.
+    #[must_use]
+    pub fn new_with_venue_and_settlement_currency(
+        venue: Venue,
+        settlement_currency: Currency,
+    ) -> Self {
+        Self {
+            venue,
+            settlement_currency,
+            by_index: DashMap::new(),
+            by_id: DashMap::new(),
+            by_raw_symbol: DashMap::new(),
+        }
+    }
+
+    /// Returns the venue assigned to registered instruments.
+    #[must_use]
+    pub const fn venue(&self) -> Venue {
+        self.venue
+    }
+
+    /// Returns the deployment settlement currency.
+    #[must_use]
+    pub const fn settlement_currency(&self) -> Currency {
+        self.settlement_currency
     }
 
     /// Registers a market and returns the resulting [`InstrumentId`].
@@ -122,7 +173,7 @@ impl MarketRegistry {
         venue_symbol: &str,
         product_type: LighterProductType,
     ) -> InstrumentId {
-        let instrument_id = format_instrument_id(venue_symbol, product_type);
+        let instrument_id = format_instrument_id_with_venue(venue_symbol, product_type, self.venue);
         let canonical = canonical_symbol_key(venue_symbol);
 
         // Evict any prior mapping that shared this market_index but pointed
@@ -284,6 +335,20 @@ mod tests {
         );
         assert_eq!(registry.len(), 1);
         assert!(!registry.is_empty());
+    }
+
+    #[rstest]
+    fn registry_scopes_instruments_to_configured_venue() {
+        let venue = Venue::from("LIGHTER_CUSTOM");
+        let settlement_currency = Currency::USDG();
+        let registry =
+            MarketRegistry::new_with_venue_and_settlement_currency(venue, settlement_currency);
+
+        let instrument_id = registry.insert(0, "ETH", LighterProductType::Perp);
+
+        assert_eq!(instrument_id.venue, venue);
+        assert_eq!(registry.venue(), venue);
+        assert_eq!(registry.settlement_currency(), settlement_currency);
     }
 
     #[rstest]

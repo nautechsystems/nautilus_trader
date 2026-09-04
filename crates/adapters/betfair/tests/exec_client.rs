@@ -24,7 +24,7 @@ use std::{
     rc::Rc,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -32,8 +32,8 @@ use std::{
 use nautilus_betfair::{
     common::{
         consts::{
-            BETFAIR_CLIENT_ID, BETFAIR_VENUE, METHOD_CANCEL_ORDERS, METHOD_LIST_CURRENT_ORDERS,
-            METHOD_PLACE_ORDERS, METHOD_REPLACE_ORDERS,
+            BETFAIR_CLIENT_ID, BETFAIR_VENUE, METHOD_CANCEL_ORDERS, METHOD_GET_ACCOUNT_FUNDS,
+            METHOD_LIST_CURRENT_ORDERS, METHOD_PLACE_ORDERS, METHOD_REPLACE_ORDERS,
         },
         parse::make_customer_order_ref,
     },
@@ -52,7 +52,9 @@ use nautilus_common::{
             cancel::{BatchCancelOrders, CancelAllOrders, CancelOrder},
             modify::ModifyOrder,
             query::QueryOrder,
-            report::{GenerateFillReportsBuilder, GenerateOrderStatusReportsBuilder},
+            report::{
+                GenerateFillReports, GenerateFillReportsBuilder, GenerateOrderStatusReportsBuilder,
+            },
             submit::{SubmitOrder, SubmitOrderList},
         },
         system::SocketState,
@@ -66,7 +68,8 @@ use nautilus_model::{
     enums::{AccountType, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{OrderAccepted, OrderDeniedReason, OrderEventAny, OrderUpdated},
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, VenueOrderId,
+        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId,
+        VenueOrderId,
     },
     orders::{Order, OrderAny, OrderList, builder::OrderTestBuilder},
     types::{Currency, Price, Quantity},
@@ -157,8 +160,48 @@ fn create_test_execution_client(
 
 async fn connect_execution_ready(client: &mut BetfairExecutionClient) {
     client.connect().await.unwrap();
-    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(2)).await;
+    wait_for_connection_state(client, true).await;
     assert!(client.is_connected());
+}
+
+async fn wait_for_connection_state(client: &BetfairExecutionClient, expected: bool) {
+    // `timeout_at` polls the inner future first, so reject a state observed after its deadline.
+    let deadline = tokio::time::Instant::now() + PHASE_TIMEOUT;
+    tokio::time::timeout_at(
+        deadline,
+        wait_until_async(
+            || async {
+                client.is_connected() == expected && tokio::time::Instant::now() <= deadline
+            },
+            PHASE_TIMEOUT,
+        ),
+    )
+    .await
+    .unwrap_or_else(|_| {
+        panic!(
+            "deadline elapsed waiting for connection state {expected}; state after deadline: {}",
+            client.is_connected()
+        )
+    });
+}
+
+async fn wait_for_reconciliation_state(client: &BetfairExecutionClient, expected: bool) {
+    tokio::time::timeout(
+        PHASE_TIMEOUT,
+        client.wait_for_reconciliation_state(expected),
+    )
+    .await
+    .unwrap_or_else(|_| {
+        panic!(
+            "deadline elapsed waiting for reconciliation state {expected}; state after deadline: {}",
+            client.is_reconciling()
+        )
+    });
+}
+
+#[tokio::test]
+async fn test_mock_state_notifier_contract() {
+    assert_mock_state_notifier_contract().await;
 }
 
 #[rstest]
@@ -172,6 +215,9 @@ async fn test_exec_client_creation() {
     assert_eq!(client.account_id(), AccountId::from("BETFAIR-001"));
     assert_eq!(client.venue(), *BETFAIR_VENUE);
     assert_eq!(client.oms_type(), OmsType::Netting);
+    assert!(
+        !client.provides_bulk_position_coverage(InstrumentId::from("1.234567-12345-0.0.BETFAIR"))
+    );
     assert!(!client.is_connected());
 }
 
@@ -181,8 +227,7 @@ async fn test_exec_client_connect_disconnect() {
     let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, _rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
-    let subscription_received = Arc::new(AtomicBool::new(false));
-    let subscription_received_server = Arc::clone(&subscription_received);
+    let (subscription_received_tx, subscription_received) = tokio::sync::watch::channel(false);
 
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
@@ -197,7 +242,7 @@ async fn test_exec_client_connect_disconnect() {
 
         let json: Value = serde_json::from_str(line.trim()).unwrap();
         assert_eq!(json["op"], "orderSubscription");
-        subscription_received_server.store(true, Ordering::Relaxed);
+        subscription_received_tx.send_replace(true);
         let id = json["id"].as_u64().unwrap();
         write_half
             .write_all(
@@ -216,17 +261,15 @@ async fn test_exec_client_connect_disconnect() {
 
     client.connect().await.unwrap();
 
-    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(2)).await;
+    wait_for_connection_state(&client, true).await;
 
     assert!(client.is_connected());
     assert!(state.login_count.load(std::sync::atomic::Ordering::Relaxed) > 0);
 
-    wait_until_async(
-        || {
-            let subscription_received = Arc::clone(&subscription_received);
-            async move { subscription_received.load(Ordering::Relaxed) }
-        },
-        Duration::from_secs(2),
+    wait_for_watch(
+        subscription_received,
+        "stream subscription receipt",
+        |received| *received,
     )
     .await;
 
@@ -235,6 +278,115 @@ async fn test_exec_client_connect_disconnect() {
 
     let _ = server_done_tx.send(());
     server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_failed_startup_rolls_back_session_before_retry() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    state.accounts_error_overrides.lock().insert(
+        METHOD_GET_ACCOUNT_FUNDS.to_string(),
+        load_json_fixture("rest/account_jsonrpc_error_invalid_input_live.json"),
+    );
+    let (mut client, _rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let first_result = client.connect().await;
+    assert!(first_result.is_err());
+
+    state.accounts_error_overrides.lock().clear();
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+        let message: Value = serde_json::from_str(line.trim()).unwrap();
+        let id = message["id"].as_u64().unwrap();
+        write_half
+            .write_all(
+                format!(
+                    "{{\"op\":\"status\",\"id\":{id},\"statusCode\":\"SUCCESS\",\"connectionClosed\":false}}\r\n\
+                     {{\"op\":\"ocm\",\"id\":{id},\"pt\":1000,\"ct\":\"SUB_IMAGE\",\"oc\":[]}}\r\n",
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+        let _ = server_done_rx.await;
+    });
+
+    client.connect().await.unwrap();
+    wait_for_connection_state(&client, true).await;
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+
+    assert_eq!(state.login_count.load(Ordering::Relaxed), 2);
+    assert!(!client.is_connected());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_canceled_startup_allows_immediate_retry() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let response_gate = MockResponseGate {
+        method: METHOD_GET_ACCOUNT_FUNDS.to_string(),
+        waiters: Arc::new(AtomicUsize::new(0)),
+        semaphore: Arc::new(tokio::sync::Semaphore::new(0)),
+    };
+    *state.accounts_response_gate.lock() = Some(response_gate.clone());
+    let (mut client, _rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+        let message: Value = serde_json::from_str(line.trim()).unwrap();
+        let id = message["id"].as_u64().unwrap();
+        write_half
+            .write_all(
+                format!(
+                    "{{\"op\":\"status\",\"id\":{id},\"statusCode\":\"SUCCESS\",\"connectionClosed\":false}}\r\n\
+                     {{\"op\":\"ocm\",\"id\":{id},\"pt\":1000,\"ct\":\"SUB_IMAGE\",\"oc\":[]}}\r\n",
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+        let _ = server_done_rx.await;
+    });
+
+    {
+        let connect = client.connect();
+        tokio::pin!(connect);
+        tokio::select! {
+            biased;
+            result = tokio::time::timeout(Duration::from_secs(2), async {
+                while response_gate.waiters.load(Ordering::Relaxed) == 0 {
+                    tokio::task::yield_now().await;
+                }
+            }) => result.expect("account request should reach the response gate"),
+            result = &mut connect => panic!("first connect completed before cancellation: {result:?}"),
+        }
+    }
+    *state.accounts_response_gate.lock() = None;
+    response_gate.semaphore.add_permits(1);
+
+    client.connect().await.unwrap();
+    wait_for_connection_state(&client, true).await;
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+
+    assert_eq!(state.login_count.load(Ordering::Relaxed), 2);
+    assert!(!client.is_connected());
 }
 
 #[rstest]
@@ -248,7 +400,7 @@ async fn test_exec_client_publishes_socket_state_and_registers_reconnect() {
     let (addr, state) = start_mock_http().await;
     let response: Value =
         serde_json::from_str(&load_fixture("rest/list_current_orders_empty.json")).unwrap();
-    state.betting_overrides.lock().unwrap().insert(
+    state.betting_overrides.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         response["result"].clone(),
     );
@@ -526,7 +678,6 @@ async fn test_cancel_order_bet_taken_or_lapsed_treated_as_success() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_CANCEL_ORDERS.to_string(), v["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -547,19 +698,9 @@ async fn test_cancel_order_bet_taken_or_lapsed_treated_as_success() {
     let cmd = make_cancel_order("1.179082386-235-0.BETFAIR", "O-001", "1");
     client.cancel_order(cmd).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move {
-                methods
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .any(|m| m == METHOD_CANCEL_ORDERS)
-            }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 1
+    })
     .await;
 
     let mut rejected_seen = false;
@@ -593,7 +734,6 @@ async fn test_cancel_order_instruction_failure_emits_rejected() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_CANCEL_ORDERS.to_string(), v["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -642,7 +782,6 @@ async fn test_cancel_order_definitive_result_failure_without_instructions_emits_
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_CANCEL_ORDERS.to_string(), v["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -663,19 +802,9 @@ async fn test_cancel_order_definitive_result_failure_without_instructions_emits_
     let cmd = make_cancel_order("1.179082386-235-0.BETFAIR", "O-003", "1");
     client.cancel_order(cmd).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move {
-                methods
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .any(|m| m == METHOD_CANCEL_ORDERS)
-            }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 1
+    })
     .await;
 
     let mut rejected_count = 0;
@@ -704,7 +833,6 @@ async fn test_cancel_order_ambiguous_5xx_emits_no_rejected() {
     state
         .betting_status_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_CANCEL_ORDERS.to_string(), 502);
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -725,19 +853,9 @@ async fn test_cancel_order_ambiguous_5xx_emits_no_rejected() {
     let cmd = make_cancel_order("1.179082386-235-0.BETFAIR", "O-003-5XX", "1");
     client.cancel_order(cmd).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move {
-                methods
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .any(|m| m == METHOD_CANCEL_ORDERS)
-            }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 1
+    })
     .await;
 
     tokio::time::sleep(Duration::from_secs(1)).await;
@@ -772,7 +890,6 @@ async fn test_cancel_order_timeout_status_emits_no_rejected() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_CANCEL_ORDERS.to_string(), v["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -793,19 +910,9 @@ async fn test_cancel_order_timeout_status_emits_no_rejected() {
     let cmd = make_cancel_order("1.179082386-235-0.BETFAIR", "O-003-TIMEOUT", "1");
     client.cancel_order(cmd).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move {
-                methods
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .any(|m| m == METHOD_CANCEL_ORDERS)
-            }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 1
+    })
     .await;
 
     let mut rejected_seen = false;
@@ -840,7 +947,6 @@ async fn test_cancel_order_success_no_rejected_event() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_CANCEL_ORDERS.to_string(), v["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -892,6 +998,25 @@ fn make_test_order(
         .build()
 }
 
+fn make_reduce_only_test_order(
+    instrument_id: &str,
+    client_order_id: &str,
+    price: &str,
+    quantity: &str,
+) -> OrderAny {
+    OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(InstrumentId::from(instrument_id))
+        .client_order_id(ClientOrderId::from(client_order_id))
+        .side(OrderSide::Sell)
+        .price(Price::from(price))
+        .quantity(Quantity::from(quantity))
+        .time_in_force(TimeInForce::Gtc)
+        .reduce_only(true)
+        .build()
+}
+
 fn make_accepted_test_order(
     instrument_id: &str,
     client_order_id: &str,
@@ -917,6 +1042,41 @@ fn make_accepted_test_order(
     order
 }
 
+fn make_accepted_test_order_for(
+    instrument_id: &str,
+    client_order_id: &str,
+    venue_order_id: &str,
+    strategy_id: &str,
+    account_id: &str,
+    side: OrderSide,
+) -> OrderAny {
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from(strategy_id))
+        .instrument_id(InstrumentId::from(instrument_id))
+        .client_order_id(ClientOrderId::from(client_order_id))
+        .side(side)
+        .price(Price::from("2.50"))
+        .quantity(Quantity::from("10"))
+        .time_in_force(TimeInForce::Gtc)
+        .build();
+    order
+        .apply(OrderEventAny::Accepted(OrderAccepted::new(
+            TraderId::from("TESTER-001"),
+            StrategyId::from(strategy_id),
+            InstrumentId::from(instrument_id),
+            ClientOrderId::from(client_order_id),
+            VenueOrderId::from(venue_order_id),
+            AccountId::from(account_id),
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+            false,
+        )))
+        .unwrap();
+    order
+}
+
 fn assert_valid_customer_ref(params: &Value) -> &str {
     let customer_ref = params["customerRef"]
         .as_str()
@@ -932,10 +1092,35 @@ fn assert_valid_customer_ref(params: &Value) -> &str {
 }
 
 fn add_order_to_cache(cache: &Rc<RefCell<Cache>>, order: OrderAny) {
+    add_order_to_cache_for_client(cache, order, Some(*BETFAIR_CLIENT_ID));
+}
+
+fn add_order_to_cache_for_client(
+    cache: &Rc<RefCell<Cache>>,
+    order: OrderAny,
+    client_id: Option<ClientId>,
+) {
     cache
         .borrow_mut()
-        .add_order(order, None, Some(*BETFAIR_CLIENT_ID), false)
+        .add_order(order, None, client_id, false)
         .unwrap();
+}
+
+fn make_cancel_all_orders_cmd(
+    instrument_id: &str,
+    order_side: Option<OrderSide>,
+) -> CancelAllOrders {
+    CancelAllOrders::new(
+        TraderId::from("TESTER-001"),
+        Some(*BETFAIR_CLIENT_ID),
+        StrategyId::from("S-001"),
+        InstrumentId::from(instrument_id),
+        order_side,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
 }
 
 fn make_submit_order_cmd(order: &OrderAny) -> SubmitOrder {
@@ -1118,7 +1303,6 @@ async fn test_submit_order_retry_reuses_customer_ref() {
     state
         .betting_status_one_shot_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_PLACE_ORDERS.to_string(), 502);
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -1144,28 +1328,14 @@ async fn test_submit_order_retry_reuses_customer_ref() {
     add_order_to_cache(&cache, order.clone());
     client.submit_order(make_submit_order_cmd(&order)).unwrap();
 
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move {
-                state
-                    .betting_methods
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .filter(|method| method.as_str() == METHOD_PLACE_ORDERS)
-                    .count()
-                    == 2
-            }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_PLACE_ORDERS request count == 2", |state| {
+        betting_method_count(state, METHOD_PLACE_ORDERS) == 2
+    })
     .await;
 
     let params: Vec<Value> = state
         .betting_request_params
         .lock()
-        .unwrap()
         .iter()
         .filter(|(method, _)| method == METHOD_PLACE_ORDERS)
         .map(|(_, params)| params.clone())
@@ -1202,9 +1372,8 @@ async fn test_submit_retry_preserves_earlier_ambiguity_before_no_session() {
     state
         .betting_status_one_shot_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_PLACE_ORDERS.to_string(), 502);
-    state.betting_error_overrides.lock().unwrap().insert(
+    state.betting_error_overrides.lock().insert(
         METHOD_PLACE_ORDERS.to_string(),
         betting_api_error("NO_SESSION"),
     );
@@ -1232,22 +1401,9 @@ async fn test_submit_retry_preserves_earlier_ambiguity_before_no_session() {
     add_order_to_cache(&cache, order.clone());
     client.submit_order(make_submit_order_cmd(&order)).unwrap();
 
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move {
-                state
-                    .betting_methods
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .filter(|method| method.as_str() == METHOD_PLACE_ORDERS)
-                    .count()
-                    == 2
-            }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_PLACE_ORDERS request count == 2", |state| {
+        betting_method_count(state, METHOD_PLACE_ORDERS) == 2
+    })
     .await;
 
     let mut submitted = 0;
@@ -1269,7 +1425,6 @@ async fn test_submit_retry_preserves_earlier_ambiguity_before_no_session() {
     let params: Vec<Value> = state
         .betting_request_params
         .lock()
-        .unwrap()
         .iter()
         .filter(|(method, _)| method == METHOD_PLACE_ORDERS)
         .map(|(_, params)| params.clone())
@@ -1291,7 +1446,6 @@ async fn test_concurrent_submit_retry_state_is_request_local() {
     state
         .betting_status_one_shot_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_PLACE_ORDERS.to_string(), 502);
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -1319,28 +1473,16 @@ async fn test_concurrent_submit_retry_state_is_request_local() {
         client.submit_order(make_submit_order_cmd(&order)).unwrap();
     }
 
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move {
-                state
-                    .betting_methods
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .filter(|method| method.as_str() == METHOD_PLACE_ORDERS)
-                    .count()
-                    == ORDER_COUNT + 1
-            }
-        },
-        Duration::from_secs(5),
+    wait_for_mock_state(
+        &state,
+        "METHOD_PLACE_ORDERS request count == ORDER_COUNT + 1",
+        |state| betting_method_count(state, METHOD_PLACE_ORDERS) == ORDER_COUNT + 1,
     )
     .await;
 
     let params: Vec<Value> = state
         .betting_request_params
         .lock()
-        .unwrap()
         .iter()
         .filter(|(method, _)| method == METHOD_PLACE_ORDERS)
         .map(|(_, params)| params.clone())
@@ -1395,7 +1537,6 @@ async fn test_submit_order_timeout_report_stays_submitted() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_PLACE_ORDERS.to_string(), response["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -1454,7 +1595,6 @@ async fn test_submit_order_error_emits_rejected() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_PLACE_ORDERS.to_string(), v["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -1653,7 +1793,7 @@ async fn test_cancel_all_orders_sends_request() {
         Some(*BETFAIR_CLIENT_ID),
         StrategyId::from("S-001"),
         InstrumentId::from("1.179082386-235-0.BETFAIR"),
-        OrderSide::NoOrderSide,
+        None,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -1661,25 +1801,14 @@ async fn test_cancel_all_orders_sends_request() {
     );
     client.cancel_all_orders(cmd).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move {
-                methods
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .any(|m| m == METHOD_CANCEL_ORDERS)
-            }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 1
+    })
     .await;
 
     let params = state
         .betting_request_params
         .lock()
-        .unwrap()
         .iter()
         .find(|(method, _)| method == METHOD_CANCEL_ORDERS)
         .cloned()
@@ -1687,12 +1816,7 @@ async fn test_cancel_all_orders_sends_request() {
         .1;
     assert_valid_customer_ref(&params);
     assert!(params.get("instructions").is_none());
-
-    let event = rx.try_recv();
-    assert!(
-        event.is_err(),
-        "Cancel all should not emit rejected events on success, found: {event:?}"
-    );
+    // Cancel-all is fire-and-forget, so this test covers dispatch and payload only.
 
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());
@@ -1723,7 +1847,7 @@ async fn test_cancel_all_orders_invalid_instrument_emits_no_rejected_locally() {
         Some(*BETFAIR_CLIENT_ID),
         StrategyId::from("S-001"),
         InstrumentId::from("INVALID.BETFAIR"),
-        OrderSide::NoOrderSide,
+        None,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -1760,7 +1884,6 @@ async fn test_cancel_all_orders_ambiguous_5xx_emits_no_rejected() {
     state
         .betting_status_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_CANCEL_ORDERS.to_string(), 502);
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -1783,7 +1906,7 @@ async fn test_cancel_all_orders_ambiguous_5xx_emits_no_rejected() {
         Some(*BETFAIR_CLIENT_ID),
         StrategyId::from("S-001"),
         InstrumentId::from("1.179082386-235-0.BETFAIR"),
-        OrderSide::NoOrderSide,
+        None,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -1791,19 +1914,9 @@ async fn test_cancel_all_orders_ambiguous_5xx_emits_no_rejected() {
     );
     client.cancel_all_orders(cmd).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move {
-                methods
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .any(|m| m == METHOD_CANCEL_ORDERS)
-            }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 1
+    })
     .await;
 
     tokio::time::sleep(Duration::from_secs(1)).await;
@@ -1823,6 +1936,453 @@ async fn test_cancel_all_orders_ambiguous_5xx_emits_no_rejected() {
         !rejected_seen,
         "ambiguous cancel-all 5xx must not emit CancelRejected",
     );
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[case(OrderSide::Buy, ["101", "102"])]
+#[case(OrderSide::Sell, ["201", "202"])]
+#[tokio::test]
+async fn test_cancel_all_orders_filters_side_instrument_and_owner(
+    #[case] order_side: OrderSide,
+    #[case] expected_bet_ids: [&str; 2],
+) {
+    let (addr, state) = start_mock_http().await;
+    let fixture = load_fixture("rest/betting_cancel_orders_batch_partial_failure.json");
+    let response: Value = serde_json::from_str(&fixture).unwrap();
+    state
+        .betting_overrides
+        .lock()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), response["result"].clone());
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = "1.179082386-235-0.BETFAIR";
+    let other_instrument_id = "1.179082386-999-0.BETFAIR";
+    let other_client_id = ClientId::from("BETFAIR-OTHER");
+    let orders = [
+        (
+            instrument_id,
+            "O-BUY-LOCAL",
+            "101",
+            "S-001",
+            "BETFAIR-001",
+            OrderSide::Buy,
+            Some(*BETFAIR_CLIENT_ID),
+        ),
+        (
+            instrument_id,
+            "O-BUY-EXTERNAL",
+            "102",
+            "EXTERNAL",
+            "BETFAIR-001",
+            OrderSide::Buy,
+            Some(*BETFAIR_CLIENT_ID),
+        ),
+        (
+            instrument_id,
+            "O-SELL-LOCAL",
+            "201",
+            "S-002",
+            "BETFAIR-001",
+            OrderSide::Sell,
+            Some(*BETFAIR_CLIENT_ID),
+        ),
+        (
+            instrument_id,
+            "O-SELL-EXTERNAL",
+            "202",
+            "EXTERNAL",
+            "BETFAIR-001",
+            OrderSide::Sell,
+            Some(*BETFAIR_CLIENT_ID),
+        ),
+        (
+            other_instrument_id,
+            "O-BUY-OTHER-INSTRUMENT",
+            "103",
+            "S-001",
+            "BETFAIR-001",
+            OrderSide::Buy,
+            Some(*BETFAIR_CLIENT_ID),
+        ),
+        (
+            other_instrument_id,
+            "O-SELL-OTHER-INSTRUMENT",
+            "203",
+            "S-001",
+            "BETFAIR-001",
+            OrderSide::Sell,
+            Some(*BETFAIR_CLIENT_ID),
+        ),
+        (
+            instrument_id,
+            "O-BUY-OTHER-ACCOUNT",
+            "104",
+            "S-001",
+            "BETFAIR-OTHER",
+            OrderSide::Buy,
+            Some(*BETFAIR_CLIENT_ID),
+        ),
+        (
+            instrument_id,
+            "O-SELL-OTHER-ACCOUNT",
+            "204",
+            "S-001",
+            "BETFAIR-OTHER",
+            OrderSide::Sell,
+            Some(*BETFAIR_CLIENT_ID),
+        ),
+        (
+            instrument_id,
+            "O-BUY-OTHER-CLIENT",
+            "105",
+            "S-001",
+            "BETFAIR-001",
+            OrderSide::Buy,
+            Some(other_client_id),
+        ),
+        (
+            instrument_id,
+            "O-SELL-OTHER-CLIENT",
+            "205",
+            "S-001",
+            "BETFAIR-001",
+            OrderSide::Sell,
+            Some(other_client_id),
+        ),
+        (
+            instrument_id,
+            "O-BUY-NO-CLIENT",
+            "106",
+            "S-001",
+            "BETFAIR-001",
+            OrderSide::Buy,
+            None,
+        ),
+        (
+            instrument_id,
+            "O-SELL-NO-CLIENT",
+            "206",
+            "S-001",
+            "BETFAIR-001",
+            OrderSide::Sell,
+            None,
+        ),
+    ];
+
+    for (instrument, client_order_id, venue_order_id, strategy, account, side, source) in orders {
+        let order = make_accepted_test_order_for(
+            instrument,
+            client_order_id,
+            venue_order_id,
+            strategy,
+            account,
+            side,
+        );
+        add_order_to_cache_for_client(&cache, order, source);
+    }
+    cache.borrow_mut().build_index();
+
+    client
+        .cancel_all_orders(make_cancel_all_orders_cmd(instrument_id, Some(order_side)))
+        .unwrap();
+
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count == 1", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) == 1
+    })
+    .await;
+
+    let params = state
+        .betting_request_params
+        .lock()
+        .iter()
+        .find(|(method, _)| method == METHOD_CANCEL_ORDERS)
+        .unwrap()
+        .1
+        .clone();
+    let mut bet_ids = params["instructions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|instruction| instruction["betId"].as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    bet_ids.sort();
+    let mut expected_bet_ids = expected_bet_ids.map(str::to_string).to_vec();
+    expected_bet_ids.sort();
+
+    assert_eq!(params["marketId"], "1.179082386");
+    assert_eq!(bet_ids, expected_bet_ids);
+    assert_valid_customer_ref(&params);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(rx.try_recv().is_err());
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_all_orders_side_with_no_matches_sends_no_request() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = "1.179082386-235-0.BETFAIR";
+    let order = make_accepted_test_order_for(
+        instrument_id,
+        "O-SELL-ONLY",
+        "201",
+        "S-001",
+        "BETFAIR-001",
+        OrderSide::Sell,
+    );
+    add_order_to_cache(&cache, order);
+    cache.borrow_mut().build_index();
+
+    client
+        .cancel_all_orders(make_cancel_all_orders_cmd(
+            instrument_id,
+            Some(OrderSide::Buy),
+        ))
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    assert_eq!(betting_method_count(&state, METHOD_CANCEL_ORDERS), 0);
+    assert!(rx.try_recv().is_err());
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_all_orders_side_splits_more_than_sixty_instructions() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = "1.179082386-235-0.BETFAIR";
+    let mut expected_bet_ids = HashSet::new();
+
+    for index in 0..61 {
+        let client_order_id = format!("O-BUY-{index:03}");
+        let venue_order_id = format!("{}", 1_000 + index);
+        expected_bet_ids.insert(venue_order_id.clone());
+        let order = make_accepted_test_order_for(
+            instrument_id,
+            &client_order_id,
+            &venue_order_id,
+            "S-001",
+            "BETFAIR-001",
+            OrderSide::Buy,
+        );
+        add_order_to_cache(&cache, order);
+    }
+    cache.borrow_mut().build_index();
+
+    client
+        .cancel_all_orders(make_cancel_all_orders_cmd(
+            instrument_id,
+            Some(OrderSide::Buy),
+        ))
+        .unwrap();
+
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count == 2", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) == 2
+    })
+    .await;
+
+    let params = state
+        .betting_request_params
+        .lock()
+        .iter()
+        .filter(|(method, _)| method == METHOD_CANCEL_ORDERS)
+        .map(|(_, params)| params.clone())
+        .collect::<Vec<_>>();
+    let instruction_counts = params
+        .iter()
+        .map(|params| params["instructions"].as_array().unwrap().len())
+        .collect::<Vec<_>>();
+    let actual_bet_ids = params
+        .iter()
+        .flat_map(|params| params["instructions"].as_array().unwrap())
+        .map(|instruction| instruction["betId"].as_str().unwrap().to_string())
+        .collect::<HashSet<_>>();
+    let customer_refs = params
+        .iter()
+        .map(assert_valid_customer_ref)
+        .collect::<HashSet<_>>();
+
+    assert_eq!(instruction_counts, vec![60, 1]);
+    assert_eq!(actual_bet_ids, expected_bet_ids);
+    assert_eq!(customer_refs.len(), 2);
+    assert!(rx.try_recv().is_err());
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_all_orders_side_missing_venue_id_fails_closed() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = "1.179082386-235-0.BETFAIR";
+    let valid = make_accepted_test_order_for(
+        instrument_id,
+        "O-BUY-VALID",
+        "101",
+        "S-001",
+        "BETFAIR-001",
+        OrderSide::Buy,
+    );
+    let mut missing = make_accepted_test_order_for(
+        instrument_id,
+        "O-BUY-NO-VENUE-ID",
+        "102",
+        "S-002",
+        "BETFAIR-001",
+        OrderSide::Buy,
+    );
+
+    match &mut missing {
+        OrderAny::Limit(order) => order.venue_order_id = None,
+        _ => unreachable!(),
+    }
+    add_order_to_cache(&cache, valid);
+    add_order_to_cache(&cache, missing);
+    cache.borrow_mut().build_index();
+
+    client
+        .cancel_all_orders(make_cancel_all_orders_cmd(
+            instrument_id,
+            Some(OrderSide::Buy),
+        ))
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    assert_eq!(betting_method_count(&state, METHOD_CANCEL_ORDERS), 0);
+    assert!(rx.try_recv().is_err());
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_all_orders_side_ambiguous_outcome_emits_no_order_event() {
+    let (addr, state) = start_mock_http().await;
+    state
+        .betting_status_overrides
+        .lock()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), 502);
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = "1.179082386-235-0.BETFAIR";
+    let order = make_accepted_test_order_for(
+        instrument_id,
+        "O-BUY-AMBIGUOUS",
+        "101",
+        "S-001",
+        "BETFAIR-001",
+        OrderSide::Buy,
+    );
+    add_order_to_cache(&cache, order);
+    cache.borrow_mut().build_index();
+
+    client
+        .cancel_all_orders(make_cancel_all_orders_cmd(
+            instrument_id,
+            Some(OrderSide::Buy),
+        ))
+        .unwrap();
+
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count == 2", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) == 2
+    })
+    .await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let params = state
+        .betting_request_params
+        .lock()
+        .iter()
+        .filter(|(method, _)| method == METHOD_CANCEL_ORDERS)
+        .map(|(_, params)| params.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(params.len(), 2, "one 502 must cause exactly one retry");
+    assert_eq!(params[0], params[1], "retry must reuse the request body");
+    assert_eq!(
+        assert_valid_customer_ref(&params[0]),
+        assert_valid_customer_ref(&params[1]),
+    );
+    assert!(rx.try_recv().is_err());
 
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());
@@ -2154,10 +2714,119 @@ async fn test_submit_order_registers_customer_order_ref() {
     let has_place_orders = state
         .betting_methods
         .lock()
-        .unwrap()
         .iter()
         .any(|m| m == METHOD_PLACE_ORDERS);
     assert!(has_place_orders, "Expected placeOrders call");
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_denies_reduce_only_before_submission() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    let instrument_id = "1.181005744-86362-0.BETFAIR";
+    let client_order_id = ClientOrderId::from("O-REDUCE-ONLY");
+    let order = make_reduce_only_test_order(instrument_id, client_order_id.as_str(), "2.58", "10");
+    add_order_to_cache(&cache, order.clone());
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    client.submit_order(make_submit_order_cmd(&order)).unwrap();
+
+    let events = drain_events(&mut rx, Duration::from_millis(300)).await;
+    let denials = events
+        .iter()
+        .filter_map(|event| match event {
+            ExecutionEvent::Order(OrderEventAny::Denied(denied)) => {
+                Some((denied.client_order_id, denied.reason.as_str()))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(denials, vec![(client_order_id, "UNSUPPORTED_REDUCE_ONLY")],);
+    assert!(
+        !events.iter().any(|event| matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Submitted(_) | OrderEventAny::Accepted(_))
+        )),
+        "reduce-only order advanced before denial: {events:?}",
+    );
+    assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 0);
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_list_denies_all_orders_when_reduce_only_is_present() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    let instrument_id = "1.181005744-86362-0.BETFAIR";
+    let reduce_only =
+        make_reduce_only_test_order(instrument_id, "O-LIST-REDUCE-ONLY", "2.58", "10");
+    let valid = make_test_order(instrument_id, "O-LIST-VALID", "3.00", "5");
+    for order in [&reduce_only, &valid] {
+        add_order_to_cache(&cache, order.clone());
+    }
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let (cmd, _) = make_submit_order_list_cmd(instrument_id, &[reduce_only.clone(), valid.clone()]);
+    client.submit_order_list(cmd).unwrap();
+
+    let events = drain_events(&mut rx, Duration::from_millis(300)).await;
+    let denials = events
+        .iter()
+        .filter_map(|event| match event {
+            ExecutionEvent::Order(OrderEventAny::Denied(denied)) => {
+                Some((denied.client_order_id, denied.reason.as_str()))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        denials,
+        vec![
+            (reduce_only.client_order_id(), "UNSUPPORTED_REDUCE_ONLY",),
+            (valid.client_order_id(), "UNSUPPORTED_REDUCE_ONLY"),
+        ],
+    );
+    assert!(
+        !events.iter().any(|event| matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Submitted(_) | OrderEventAny::Accepted(_))
+        )),
+        "invalid order list advanced before denial: {events:?}",
+    );
+    assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 0);
 
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());
@@ -2289,7 +2958,6 @@ async fn test_submit_order_list_denies_only_customer_order_ref_collision() {
     let params = state
         .betting_request_params
         .lock()
-        .unwrap()
         .iter()
         .find(|(method, _)| method == METHOD_PLACE_ORDERS)
         .cloned()
@@ -2377,7 +3045,6 @@ async fn test_generate_order_status_reports() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), v["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -2429,7 +3096,6 @@ async fn test_generate_fill_reports() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), v["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -2479,6 +3145,86 @@ async fn test_generate_fill_reports() {
 }
 
 #[rstest]
+#[case::start_only(
+    Some(1_000_000_000_000_000_000),
+    None,
+    Some("2001-09-09T01:46:40+00:00"),
+    None
+)]
+#[case::end_only(
+    None,
+    Some(1_500_000_000_000_000_000),
+    None,
+    Some("2017-07-14T02:40:00+00:00")
+)]
+#[case::both(
+    Some(1_000_000_000_000_000_000),
+    Some(1_500_000_000_000_000_000),
+    Some("2001-09-09T01:46:40+00:00"),
+    Some("2017-07-14T02:40:00+00:00")
+)]
+#[tokio::test]
+async fn test_generate_fill_reports_preserves_partial_date_range(
+    #[case] start_ns: Option<u64>,
+    #[case] end_ns: Option<u64>,
+    #[case] expected_from: Option<&str>,
+    #[case] expected_to: Option<&str>,
+) {
+    let (addr, state) = start_mock_http().await;
+    let empty = load_json_fixture("rest/list_current_orders_empty.json");
+    state.betting_overrides.lock().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        empty["result"].clone(),
+    );
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, _rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    connect_execution_ready(&mut client).await;
+
+    let cmd = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+        start_ns.map(UnixNanos::from),
+        end_ns.map(UnixNanos::from),
+        None,
+        None,
+    );
+    let reports = client.generate_fill_reports(cmd).await.unwrap();
+    let params = state
+        .betting_request_params
+        .lock()
+        .iter()
+        .filter(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
+        .map(|(_, params)| params.clone())
+        .collect::<Vec<_>>();
+
+    assert!(reports.is_empty());
+    assert_eq!(params.len(), 1);
+    assert_eq!(
+        params[0]["dateRange"].get("from").and_then(Value::as_str),
+        expected_from
+    );
+    assert_eq!(
+        params[0]["dateRange"].get("to").and_then(Value::as_str),
+        expected_to
+    );
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_generate_reports_batches_market_ids_and_resets_pagination() {
     let (addr, state) = start_mock_http().await;
@@ -2496,7 +3242,7 @@ async fn test_generate_reports_batches_market_ids_and_resets_pagination() {
             "moreAvailable": more_available,
         })
     };
-    state.betting_response_sequences.lock().unwrap().insert(
+    state.betting_response_sequences.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         VecDeque::from([
             current_orders_page(vec![executable_orders[1].clone()], true),
@@ -2547,7 +3293,6 @@ async fn test_generate_reports_batches_market_ids_and_resets_pagination() {
     let params = state
         .betting_request_params
         .lock()
-        .unwrap()
         .iter()
         .filter(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
         .map(|(_, params)| params.clone())
@@ -2612,7 +3357,6 @@ async fn test_query_order_emits_order_status_report() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), v["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -2697,7 +3441,6 @@ async fn test_query_order_resolves_terminal_replacement_once() {
     state
         .betting_status_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_REPLACE_ORDERS.to_string(), 502);
     client
         .modify_order(make_price_modify_order_cmd(
@@ -2723,7 +3466,7 @@ async fn test_query_order_resolves_terminal_replacement_once() {
     new_leg["selectionId"] = Value::from(235);
     new_leg["priceSize"]["price"] = Value::from(3.0);
     new_leg["customerOrderRef"] = Value::from(client_order_id);
-    state.betting_overrides.lock().unwrap().insert(
+    state.betting_overrides.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         serde_json::json!({
             "currentOrders": [new_leg],
@@ -2815,7 +3558,6 @@ async fn test_query_order_no_match_emits_nothing() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), v["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -2912,7 +3654,6 @@ async fn test_submit_order_list_success_emits_accepted_for_each_leg() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_PLACE_ORDERS.to_string(), v["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -2992,7 +3733,6 @@ async fn test_submit_order_list_success_emits_accepted_for_each_leg() {
     let params = state
         .betting_request_params
         .lock()
-        .unwrap()
         .iter()
         .find(|(method, _)| method == METHOD_PLACE_ORDERS)
         .cloned()
@@ -3018,7 +3758,6 @@ async fn test_submit_order_list_partial_failure_emits_mixed_events() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_PLACE_ORDERS.to_string(), v["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -3142,7 +3881,6 @@ async fn test_batch_cancel_orders_success_no_rejected_events() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_CANCEL_ORDERS.to_string(), v["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -3169,25 +3907,14 @@ async fn test_batch_cancel_orders_success_no_rejected_events() {
     );
     client.batch_cancel_orders(cmd).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move {
-                methods
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .any(|m| m == METHOD_CANCEL_ORDERS)
-            }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 1
+    })
     .await;
 
     let params = state
         .betting_request_params
         .lock()
-        .unwrap()
         .iter()
         .find(|(method, _)| method == METHOD_CANCEL_ORDERS)
         .cloned()
@@ -3208,6 +3935,82 @@ async fn test_batch_cancel_orders_success_no_rejected_events() {
     server.await.unwrap();
 }
 
+#[rstest]
+#[tokio::test]
+async fn test_batch_cancel_orders_splits_more_than_sixty_instructions() {
+    let (addr, state) = start_mock_http().await;
+
+    let fixture = load_fixture("rest/betting_cancel_orders_batch_success.json");
+    let response: Value = serde_json::from_str(&fixture).unwrap();
+    state
+        .betting_overrides
+        .lock()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), response["result"].clone());
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let cancels = (0..61)
+        .map(|index| {
+            (
+                ClientOrderId::from(format!("O-BC-{index:03}")),
+                Some(VenueOrderId::from(format!("{}", 1_000 + index))),
+            )
+        })
+        .collect();
+    let cmd = make_batch_cancel_cmd("1.179082386-235-0.BETFAIR", cancels);
+    client.batch_cancel_orders(cmd).unwrap();
+
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count == 2", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) == 2
+    })
+    .await;
+
+    let params = state
+        .betting_request_params
+        .lock()
+        .iter()
+        .filter(|(method, _)| method == METHOD_CANCEL_ORDERS)
+        .map(|(_, params)| params.clone())
+        .collect::<Vec<_>>();
+    let instruction_counts = params
+        .iter()
+        .map(|params| params["instructions"].as_array().unwrap().len())
+        .collect::<Vec<_>>();
+    let actual_bet_ids = params
+        .iter()
+        .flat_map(|params| params["instructions"].as_array().unwrap())
+        .map(|instruction| instruction["betId"].as_str().unwrap().to_string())
+        .collect::<HashSet<_>>();
+    let expected_bet_ids = (1_000..1_061)
+        .map(|bet_id| bet_id.to_string())
+        .collect::<HashSet<_>>();
+    let customer_refs = params
+        .iter()
+        .map(assert_valid_customer_ref)
+        .collect::<HashSet<_>>();
+
+    assert_eq!(instruction_counts, vec![60, 1]);
+    assert_eq!(actual_bet_ids, expected_bet_ids);
+    assert_eq!(customer_refs.len(), 2);
+    assert!(rx.try_recv().is_err());
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
 /// A mixed per-item batch result must emit CancelRejected for the explicit
 /// failing leg only, leaving the successful leg alone.
 #[rstest]
@@ -3220,7 +4023,6 @@ async fn test_batch_cancel_orders_partial_failure_emits_rejected_for_failing_leg
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_CANCEL_ORDERS.to_string(), v["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -3288,7 +4090,6 @@ async fn test_batch_cancel_missing_instruction_report_stays_ambiguous() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_CANCEL_ORDERS.to_string(), response["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -3348,7 +4149,6 @@ async fn test_batch_cancel_orders_definitive_failure_rejects_each_instruction_on
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_CANCEL_ORDERS.to_string(), v["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -3381,19 +4181,9 @@ async fn test_batch_cancel_orders_definitive_failure_rejects_each_instruction_on
     );
     client.batch_cancel_orders(cmd).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move {
-                methods
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .any(|m| m == METHOD_CANCEL_ORDERS)
-            }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 1
+    })
     .await;
 
     let mut rejected_ids: Vec<ClientOrderId> = Vec::new();
@@ -3424,7 +4214,6 @@ async fn test_batch_cancel_orders_ambiguous_5xx_emits_no_rejections() {
     state
         .betting_status_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_CANCEL_ORDERS.to_string(), 502);
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -3457,19 +4246,9 @@ async fn test_batch_cancel_orders_ambiguous_5xx_emits_no_rejections() {
     );
     client.batch_cancel_orders(cmd).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move {
-                methods
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .any(|m| m == METHOD_CANCEL_ORDERS)
-            }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 1
+    })
     .await;
 
     tokio::time::sleep(Duration::from_secs(1)).await;
@@ -3553,7 +4332,6 @@ async fn test_modify_order_quantity_reduction_does_not_reject() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_CANCEL_ORDERS.to_string(), cancel["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -3591,25 +4369,14 @@ async fn test_modify_order_quantity_reduction_does_not_reject() {
     );
     client.modify_order(cmd).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move {
-                methods
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .any(|m| m == METHOD_CANCEL_ORDERS)
-            }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 1
+    })
     .await;
 
     let params = state
         .betting_request_params
         .lock()
-        .unwrap()
         .iter()
         .find(|(method, _)| method == METHOD_CANCEL_ORDERS)
         .cloned()
@@ -4261,25 +5028,14 @@ async fn test_submit_order_with_handicap_includes_handicap_in_instruction() {
 
     client.submit_order(make_submit_order_cmd(&order)).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move {
-                methods
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .any(|m| m == METHOD_PLACE_ORDERS)
-            }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_PLACE_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_PLACE_ORDERS) >= 1
+    })
     .await;
 
     let params = state
         .betting_request_params
         .lock()
-        .unwrap()
         .iter()
         .find(|(m, _)| m == METHOD_PLACE_ORDERS)
         .cloned()
@@ -4338,25 +5094,16 @@ async fn test_modify_price_dispatches_replace_orders_with_new_price() {
     );
     client.modify_order(cmd).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move {
-                methods
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .any(|m| m == "SportsAPING/v1.0/replaceOrders")
-            }
-        },
-        Duration::from_secs(5),
+    wait_for_mock_state(
+        &state,
+        "METHOD_REPLACE_ORDERS request count >= 1",
+        |state| betting_method_count(state, METHOD_REPLACE_ORDERS) >= 1,
     )
     .await;
 
     let params = state
         .betting_request_params
         .lock()
-        .unwrap()
         .iter()
         .find(|(m, _)| m == "SportsAPING/v1.0/replaceOrders")
         .cloned()
@@ -4385,7 +5132,7 @@ async fn test_modify_price_dispatches_replace_orders_with_new_price() {
     assert_eq!(updated.quantity, Quantity::from("10"));
     assert!(!updated.reconciliation);
 
-    let methods = state.betting_methods.lock().unwrap().clone();
+    let methods = state.betting_methods.lock().clone();
     assert!(
         !methods.iter().any(|m| m == METHOD_PLACE_ORDERS),
         "price modify must not place a new order, only replace; saw: {methods:?}"
@@ -4402,7 +5149,7 @@ async fn test_modify_price_cancelled_not_placed_emits_canceled_once() {
     let (addr, state) = start_mock_http().await;
     let fixture = load_fixture("rest/betting_replace_orders_cancelled_not_placed_live.json");
     let response: Value = serde_json::from_str(&fixture).unwrap();
-    state.betting_overrides.lock().unwrap().insert(
+    state.betting_overrides.lock().insert(
         METHOD_REPLACE_ORDERS.to_string(),
         response["result"].clone(),
     );
@@ -4498,7 +5245,6 @@ async fn test_startup_restored_modify_price_ambiguous_5xx_resolves_from_http_rec
     state
         .betting_status_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_REPLACE_ORDERS.to_string(), 502);
 
     client
@@ -4510,12 +5256,10 @@ async fn test_startup_restored_modify_price_ambiguous_5xx_resolves_from_http_rec
         ))
         .unwrap();
 
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move { betting_method_count(&state, METHOD_REPLACE_ORDERS) >= 2 }
-        },
-        Duration::from_secs(5),
+    wait_for_mock_state(
+        &state,
+        "METHOD_REPLACE_ORDERS request count >= 2",
+        |state| betting_method_count(state, METHOD_REPLACE_ORDERS) >= 2,
     )
     .await;
 
@@ -4533,7 +5277,6 @@ async fn test_startup_restored_modify_price_ambiguous_5xx_resolves_from_http_rec
     state
         .betting_status_overrides
         .lock()
-        .unwrap()
         .remove(METHOD_REPLACE_ORDERS);
 
     let mut old_leg = load_json_fixture("rest/list_current_orders_harness_canceled.json")["result"]
@@ -4558,7 +5301,7 @@ async fn test_startup_restored_modify_price_ambiguous_5xx_resolves_from_http_rec
     unrelated_leg["customerOrderRef"] = Value::from("O-SOMEONE-ELSE");
 
     // List the superseded leg first to exercise order-independent resolution
-    state.betting_overrides.lock().unwrap().insert(
+    state.betting_overrides.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         serde_json::json!({
             "currentOrders": [old_leg, new_leg, unrelated_leg],
@@ -4661,7 +5404,6 @@ async fn test_startup_restored_ambiguous_replace_rejects_when_old_bet_stays_acti
     state
         .betting_status_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_REPLACE_ORDERS.to_string(), 502);
     client
         .modify_order(make_price_modify_order_cmd(
@@ -4671,12 +5413,10 @@ async fn test_startup_restored_ambiguous_replace_rejects_when_old_bet_stays_acti
             "3.00",
         ))
         .unwrap();
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move { betting_method_count(&state, METHOD_REPLACE_ORDERS) >= 2 }
-        },
-        Duration::from_secs(5),
+    wait_for_mock_state(
+        &state,
+        "METHOD_REPLACE_ORDERS request count >= 2",
+        |state| betting_method_count(state, METHOD_REPLACE_ORDERS) >= 2,
     )
     .await;
 
@@ -4693,7 +5433,7 @@ async fn test_startup_restored_ambiguous_replace_rejects_when_old_bet_stays_acti
     old_leg["selectionId"] = Value::from(235);
     old_leg["priceSize"]["price"] = Value::from(2.58);
     old_leg["customerOrderRef"] = Value::from(client_order_id);
-    state.betting_overrides.lock().unwrap().insert(
+    state.betting_overrides.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         serde_json::json!({
             "currentOrders": [old_leg],
@@ -4764,7 +5504,6 @@ async fn test_modify_price_reconciliation_keeps_in_flight_request_pending() {
     state
         .betting_response_delays
         .lock()
-        .unwrap()
         .insert(METHOD_REPLACE_ORDERS.to_string(), Duration::from_secs(1));
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -4798,7 +5537,7 @@ async fn test_modify_price_reconciliation_keeps_in_flight_request_pending() {
     unchanged["selectionId"] = Value::from(235);
     unchanged["priceSize"]["price"] = Value::from(2.58);
     unchanged["customerOrderRef"] = Value::from(client_order_id);
-    state.betting_overrides.lock().unwrap().insert(
+    state.betting_overrides.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         serde_json::json!({
             "currentOrders": [unchanged],
@@ -4815,12 +5554,10 @@ async fn test_modify_price_reconciliation_keeps_in_flight_request_pending() {
         ))
         .unwrap();
 
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move { betting_method_count(&state, METHOD_REPLACE_ORDERS) >= 1 }
-        },
-        Duration::from_secs(5),
+    wait_for_mock_state(
+        &state,
+        "METHOD_REPLACE_ORDERS request count >= 1",
+        |state| betting_method_count(state, METHOD_REPLACE_ORDERS) >= 1,
     )
     .await;
 
@@ -4892,7 +5629,6 @@ async fn test_startup_restored_modify_quantity_ambiguous_5xx_resolves_from_http_
     state
         .betting_status_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_CANCEL_ORDERS.to_string(), 502);
 
     client
@@ -4904,13 +5640,9 @@ async fn test_startup_restored_modify_quantity_ambiguous_5xx_resolves_from_http_
         ))
         .unwrap();
 
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move { betting_method_count(&state, METHOD_CANCEL_ORDERS) >= 2 }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 2", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 2
+    })
     .await;
 
     let quiet = drain_events(&mut rx, Duration::from_millis(300)).await;
@@ -4922,7 +5654,6 @@ async fn test_startup_restored_modify_quantity_ambiguous_5xx_resolves_from_http_
     state
         .betting_status_overrides
         .lock()
-        .unwrap()
         .remove(METHOD_CANCEL_ORDERS);
 
     let mut reduced =
@@ -4935,7 +5666,7 @@ async fn test_startup_restored_modify_quantity_ambiguous_5xx_resolves_from_http_
     reduced["sizeCancelled"] = Value::from(6.0);
     reduced["sizeRemaining"] = Value::from(4.0);
     reduced["customerOrderRef"] = Value::from(client_order_id);
-    state.betting_overrides.lock().unwrap().insert(
+    state.betting_overrides.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         serde_json::json!({
             "currentOrders": [reduced],
@@ -5035,7 +5766,6 @@ async fn test_startup_restored_modify_quantity_ambiguous_5xx_resolves_from_ocm()
     state
         .betting_status_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_CANCEL_ORDERS.to_string(), 502);
 
     client
@@ -5047,13 +5777,9 @@ async fn test_startup_restored_modify_quantity_ambiguous_5xx_resolves_from_ocm()
         ))
         .unwrap();
 
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move { betting_method_count(&state, METHOD_CANCEL_ORDERS) >= 2 }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 2", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 2
+    })
     .await;
 
     let quiet = drain_events(&mut rx, Duration::from_millis(300)).await;
@@ -5127,7 +5853,6 @@ async fn test_modify_price_instruction_failure_rejects() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_REPLACE_ORDERS.to_string(), replace["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -5204,7 +5929,6 @@ async fn test_modify_quantity_instruction_failure_rejects() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_CANCEL_ORDERS.to_string(), cancel["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -5282,7 +6006,6 @@ async fn test_reduction_success_after_a_terminal_stream_update_stays_silent() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_CANCEL_ORDERS.to_string(), cancel["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -5312,7 +6035,7 @@ async fn test_reduction_success_after_a_terminal_stream_update_stays_silent() {
 
     let waiters = Arc::new(AtomicUsize::new(0));
     let semaphore = Arc::new(tokio::sync::Semaphore::new(0));
-    *state.betting_response_gate.lock().unwrap() = Some(BettingResponseGate {
+    *state.betting_response_gate.lock() = Some(MockResponseGate {
         method: METHOD_CANCEL_ORDERS.to_string(),
         waiters: Arc::clone(&waiters),
         semaphore: Arc::clone(&semaphore),
@@ -5327,13 +6050,9 @@ async fn test_reduction_success_after_a_terminal_stream_update_stays_silent() {
         ))
         .unwrap();
 
-    wait_until_async(
-        || {
-            let waiters = Arc::clone(&waiters);
-            async move { waiters.load(Ordering::Relaxed) == 1 }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "response gate waiter count 1", |state| {
+        response_gate_waiter_count(state) == 1
+    })
     .await;
 
     // Lapse more than requested to close the bet at two matched
@@ -5364,7 +6083,7 @@ async fn test_reduction_success_after_a_terminal_stream_update_stays_silent() {
     );
 
     semaphore.add_permits(1);
-    state.betting_response_gate.lock().unwrap().take();
+    state.betting_response_gate.lock().take();
 
     let late_events = drain_events(&mut rx, Duration::from_millis(500)).await;
     assert!(
@@ -5410,7 +6129,6 @@ async fn test_modify_quantity_reduction_survives_a_terminal_report() {
     state
         .betting_status_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_CANCEL_ORDERS.to_string(), 502);
 
     client
@@ -5422,19 +6140,14 @@ async fn test_modify_quantity_reduction_survives_a_terminal_report() {
         ))
         .unwrap();
 
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move { betting_method_count(&state, METHOD_CANCEL_ORDERS) >= 2 }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_CANCEL_ORDERS request count >= 2", |state| {
+        betting_method_count(state, METHOD_CANCEL_ORDERS) >= 2
+    })
     .await;
 
     state
         .betting_status_overrides
         .lock()
-        .unwrap()
         .remove(METHOD_CANCEL_ORDERS);
 
     let mut ocm = load_json_fixture("stream/ocm_harness_cancel.json");
@@ -5473,7 +6186,7 @@ async fn test_modify_quantity_reduction_survives_a_terminal_report() {
     closed["sizeRemaining"] = Value::from(0.0);
     closed["sizeCancelled"] = Value::from(6.0);
     closed["customerOrderRef"] = Value::from(customer_order_ref);
-    state.betting_overrides.lock().unwrap().insert(
+    state.betting_overrides.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         serde_json::json!({
             "currentOrders": [closed],
@@ -5517,7 +6230,6 @@ async fn test_reduction_stream_before_rest_emits_updated_once() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_CANCEL_ORDERS.to_string(), cancel["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -5548,7 +6260,7 @@ async fn test_reduction_stream_before_rest_emits_updated_once() {
     // Hold the REST response so OCM resolves first
     let waiters = Arc::new(AtomicUsize::new(0));
     let semaphore = Arc::new(tokio::sync::Semaphore::new(0));
-    *state.betting_response_gate.lock().unwrap() = Some(BettingResponseGate {
+    *state.betting_response_gate.lock() = Some(MockResponseGate {
         method: METHOD_CANCEL_ORDERS.to_string(),
         waiters: Arc::clone(&waiters),
         semaphore: Arc::clone(&semaphore),
@@ -5563,13 +6275,9 @@ async fn test_reduction_stream_before_rest_emits_updated_once() {
         ))
         .unwrap();
 
-    wait_until_async(
-        || {
-            let waiters = Arc::clone(&waiters);
-            async move { waiters.load(Ordering::Relaxed) == 1 }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "response gate waiter count 1", |state| {
+        response_gate_waiter_count(state) == 1
+    })
     .await;
 
     let mut ocm = load_json_fixture("stream/ocm_harness_open.json");
@@ -5595,7 +6303,7 @@ async fn test_reduction_stream_before_rest_emits_updated_once() {
     assert_eq!(stream_updates[0].quantity, Quantity::from("4"));
 
     semaphore.add_permits(1);
-    state.betting_response_gate.lock().unwrap().take();
+    state.betting_response_gate.lock().take();
 
     let late_events = drain_events(&mut rx, Duration::from_millis(500)).await;
     assert!(
@@ -5616,7 +6324,6 @@ async fn test_modify_quantity_rejection_discards_the_pending_reduction() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_CANCEL_ORDERS.to_string(), cancel["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -5670,7 +6377,7 @@ async fn test_modify_quantity_rejection_discards_the_pending_reduction() {
     lapsed["sizeRemaining"] = Value::from(5.0);
     lapsed["sizeLapsed"] = Value::from(5.0);
     lapsed["customerOrderRef"] = Value::from(client_order_id);
-    state.betting_overrides.lock().unwrap().insert(
+    state.betting_overrides.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         serde_json::json!({
             "currentOrders": [lapsed],
@@ -5715,22 +6422,17 @@ async fn test_generate_order_status_reports_recovers_from_no_session() {
 
     // Make `listCurrentOrders` fail once with NO_SESSION; the next call
     // (the in-line retry in execution.rs) must succeed with the executable fixture.
-    state
-        .betting_error_one_shot_overrides
-        .lock()
-        .unwrap()
-        .insert(
-            METHOD_LIST_CURRENT_ORDERS.to_string(),
-            betting_api_error("NO_SESSION"),
-        );
+    state.betting_error_one_shot_overrides.lock().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        betting_api_error("NO_SESSION"),
+    );
     let fixture = load_fixture("rest/list_current_orders_executable.json");
     let v: Value = serde_json::from_str(&fixture).unwrap();
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), v["result"].clone());
-    state.betting_response_delays.lock().unwrap().insert(
+    state.betting_response_delays.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         Duration::from_secs(1),
     );
@@ -5750,13 +6452,9 @@ async fn test_generate_order_status_reports_recovers_from_no_session() {
         let initial_sub_json: Value = serde_json::from_str(&initial_sub).unwrap();
         assert_eq!(initial_sub_json["op"], "orderSubscription");
 
-        wait_until_async(
-            || {
-                let login_count = Arc::clone(&server_state.login_count);
-                async move { login_count.load(Ordering::Relaxed) == 2 }
-            },
-            Duration::from_secs(5),
-        )
+        wait_for_mock_state(&server_state, "login count 2", |state| {
+            state.login_count.load(Ordering::Relaxed) == 2
+        })
         .await;
         drop(reader);
         drop(write_half);
@@ -5792,10 +6490,8 @@ async fn test_generate_order_status_reports_recovers_from_no_session() {
     let mut login_response: Value =
         serde_json::from_str(&load_fixture("rest/login_success.json")).unwrap();
     login_response["token"] = Value::String("REFRESHED_SESSION_TOKEN".to_string());
-    *state.login_response_override.lock().unwrap() =
-        Some(serde_json::to_string(&login_response).unwrap());
-    *state.keep_alive_response_override.lock().unwrap() =
-        Some(load_fixture("rest/login_failure.json"));
+    *state.login_response_override.lock() = Some(serde_json::to_string(&login_response).unwrap());
+    *state.keep_alive_response_override.lock() = Some(load_fixture("rest/login_failure.json"));
 
     while rx.try_recv().is_ok() {}
 
@@ -5818,7 +6514,6 @@ async fn test_generate_order_status_reports_recovers_from_no_session() {
     let listcalls = state
         .betting_methods
         .lock()
-        .unwrap()
         .iter()
         .filter(|m| *m == METHOD_LIST_CURRENT_ORDERS)
         .count();
@@ -5855,20 +6550,15 @@ async fn test_generate_order_status_reports_recovers_from_no_session() {
 async fn test_generate_fill_reports_recovers_from_no_session() {
     let (addr, state) = start_mock_http().await;
 
-    state
-        .betting_error_one_shot_overrides
-        .lock()
-        .unwrap()
-        .insert(
-            METHOD_LIST_CURRENT_ORDERS.to_string(),
-            betting_api_error("NO_SESSION"),
-        );
+    state.betting_error_one_shot_overrides.lock().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        betting_api_error("NO_SESSION"),
+    );
     let fixture = load_fixture("rest/list_current_orders_execution_complete.json");
     let v: Value = serde_json::from_str(&fixture).unwrap();
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), v["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -5904,7 +6594,6 @@ async fn test_generate_fill_reports_recovers_from_no_session() {
     let listcalls = state
         .betting_methods
         .lock()
-        .unwrap()
         .iter()
         .filter(|m| *m == METHOD_LIST_CURRENT_ORDERS)
         .count();
@@ -5931,20 +6620,15 @@ async fn test_generate_fill_reports_recovers_from_no_session() {
 async fn test_query_order_recovers_from_no_session() {
     let (addr, state) = start_mock_http().await;
 
-    state
-        .betting_error_one_shot_overrides
-        .lock()
-        .unwrap()
-        .insert(
-            METHOD_LIST_CURRENT_ORDERS.to_string(),
-            betting_api_error("NO_SESSION"),
-        );
+    state.betting_error_one_shot_overrides.lock().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        betting_api_error("NO_SESSION"),
+    );
     let fixture = load_fixture("rest/list_current_orders_executable.json");
     let v: Value = serde_json::from_str(&fixture).unwrap();
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), v["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -6007,7 +6691,6 @@ async fn test_query_order_recovers_from_no_session() {
     let listcalls = state
         .betting_methods
         .lock()
-        .unwrap()
         .iter()
         .filter(|m| *m == METHOD_LIST_CURRENT_ORDERS)
         .count();
@@ -6100,18 +6783,10 @@ async fn test_replace_flow_suppresses_ocm_cancel_for_old_bet_id() {
     );
     client.modify_order(modify_cmd).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move {
-                methods
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .any(|m| m == "SportsAPING/v1.0/replaceOrders")
-            }
-        },
-        Duration::from_secs(5),
+    wait_for_mock_state(
+        &state,
+        "METHOD_REPLACE_ORDERS request count >= 1",
+        |state| betting_method_count(state, METHOD_REPLACE_ORDERS) >= 1,
     )
     .await;
 
@@ -6244,7 +6919,7 @@ async fn test_startup_restored_replace_stream_before_rest_emits_updated_once() {
 
     let waiters = Arc::new(AtomicUsize::new(0));
     let semaphore = Arc::new(tokio::sync::Semaphore::new(0));
-    *state.betting_response_gate.lock().unwrap() = Some(BettingResponseGate {
+    *state.betting_response_gate.lock() = Some(MockResponseGate {
         method: METHOD_REPLACE_ORDERS.to_string(),
         waiters: Arc::clone(&waiters),
         semaphore: Arc::clone(&semaphore),
@@ -6268,13 +6943,9 @@ async fn test_startup_restored_replace_stream_before_rest_emits_updated_once() {
         ))
         .unwrap();
 
-    wait_until_async(
-        || {
-            let waiters = Arc::clone(&waiters);
-            async move { waiters.load(Ordering::Relaxed) == 1 }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "response gate waiter count 1", |state| {
+        response_gate_waiter_count(state) == 1
+    })
     .await;
     assert_eq!(waiters.load(Ordering::Relaxed), 1);
 
@@ -6305,7 +6976,7 @@ async fn test_startup_restored_replace_stream_before_rest_emits_updated_once() {
     assert_eq!(updated.quantity, Quantity::from("10"));
 
     semaphore.add_permits(1);
-    state.betting_response_gate.lock().unwrap().take();
+    state.betting_response_gate.lock().take();
     let settle = tokio::time::sleep(Duration::from_millis(500));
     tokio::pin!(settle);
     let mut duplicate_update = None;
@@ -6381,25 +7052,14 @@ async fn test_submit_order_fok_sends_fill_or_kill_payload() {
 
     client.submit_order(make_submit_order_cmd(&order)).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move {
-                methods
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .any(|m| m == METHOD_PLACE_ORDERS)
-            }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_PLACE_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_PLACE_ORDERS) >= 1
+    })
     .await;
 
     let params = state
         .betting_request_params
         .lock()
-        .unwrap()
         .iter()
         .find(|(m, _)| m == METHOD_PLACE_ORDERS)
         .cloned()
@@ -6452,25 +7112,14 @@ async fn test_submit_limit_at_the_close_sends_limit_on_close_payload() {
     add_order_to_cache(&cache, order.clone());
     client.submit_order(make_submit_order_cmd(&order)).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move {
-                methods
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .any(|method| method == METHOD_PLACE_ORDERS)
-            }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_PLACE_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_PLACE_ORDERS) >= 1
+    })
     .await;
 
     let params = state
         .betting_request_params
         .lock()
-        .unwrap()
         .iter()
         .find(|(method, _)| method == METHOD_PLACE_ORDERS)
         .cloned()
@@ -6522,25 +7171,14 @@ async fn test_submit_order_market_on_close_sends_bsp_instruction() {
 
     client.submit_order(make_submit_order_cmd(&order)).unwrap();
 
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move {
-                methods
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .any(|m| m == METHOD_PLACE_ORDERS)
-            }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_PLACE_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_PLACE_ORDERS) >= 1
+    })
     .await;
 
     let params = state
         .betting_request_params
         .lock()
-        .unwrap()
         .iter()
         .find(|(m, _)| m == METHOD_PLACE_ORDERS)
         .cloned()
@@ -6571,7 +7209,6 @@ async fn test_submit_order_ambiguous_5xx_does_not_emit_rejected() {
     state
         .betting_status_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_PLACE_ORDERS.to_string(), 502);
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -6598,19 +7235,9 @@ async fn test_submit_order_ambiguous_5xx_does_not_emit_rejected() {
     // no-Rejected assertion below is grounded in the 5xx path having fired.
     // Without this, a regression that stops dispatching placeOrders after
     // local submit would still pass.
-    wait_until_async(
-        || {
-            let methods = Arc::clone(&state.betting_methods);
-            async move {
-                methods
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .any(|m| m == METHOD_PLACE_ORDERS)
-            }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "METHOD_PLACE_ORDERS request count >= 1", |state| {
+        betting_method_count(state, METHOD_PLACE_ORDERS) >= 1
+    })
     .await;
 
     let mut submitted_seen = false;
@@ -6768,14 +7395,27 @@ const RECONNECT_CONNECTION_MSG: &[u8] =
 const STREAM_CLOSED_MSG: &[u8] =
     b"{\"op\":\"status\",\"id\":1,\"statusCode\":\"FAILURE\",\"connectionClosed\":true}\r\n";
 
+/// Counts recorded calls of `method`, over the request params rather than the method list.
+///
+/// The mock pushes the method name first and the params second, publishing after each, so a
+/// predicate over the method list can wake between the two and read params that are not yet
+/// recorded. Counting the later of the two collections makes every caller of this function
+/// observe a request whose payload is already readable.
 fn betting_method_count(state: &MockState, method: &str) -> usize {
     state
-        .betting_methods
+        .betting_request_params
         .lock()
-        .unwrap()
         .iter()
-        .filter(|seen| seen.as_str() == method)
+        .filter(|(seen, _)| seen.as_str() == method)
         .count()
+}
+
+fn response_gate_waiter_count(state: &MockState) -> usize {
+    state
+        .betting_response_gate
+        .lock()
+        .as_ref()
+        .map_or(0, |gate| gate.waiters.load(Ordering::Relaxed))
 }
 
 fn submit_single_and_list(
@@ -6880,7 +7520,7 @@ async fn test_active_replacement_stream_denies_submit_before_connection_message(
     let (addr, state) = start_mock_http().await;
     let fixture = load_fixture("rest/list_current_orders_empty.json");
     let response: Value = serde_json::from_str(&fixture).unwrap();
-    state.betting_overrides.lock().unwrap().insert(
+    state.betting_overrides.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         response["result"].clone(),
     );
@@ -6962,14 +7602,7 @@ async fn test_active_replacement_stream_denies_submit_before_connection_message(
     assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 0);
 
     send_connection_tx.send(()).unwrap();
-    wait_until_async(
-        || {
-            let halted = client.is_reconciling();
-            async move { !halted }
-        },
-        Duration::from_secs(5),
-    )
-    .await;
+    wait_for_reconciliation_state(&client, false).await;
 
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());
@@ -7000,14 +7633,7 @@ async fn test_stream_closed_status_denies_submit_before_reconnect() {
     client.connect().await.unwrap();
 
     while rx.try_recv().is_ok() {}
-    wait_until_async(
-        || {
-            let halted = client.is_reconciling();
-            async move { halted }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_reconciliation_state(&client, true).await;
 
     let order = make_test_order(
         "1.181005744-86362-0.BETFAIR",
@@ -7033,7 +7659,7 @@ async fn test_degraded_order_stream_denies_submit_until_current_heartbeat() {
     let (addr, state) = start_mock_http().await;
     let fixture = load_fixture("rest/list_current_orders_empty.json");
     let response: Value = serde_json::from_str(&fixture).unwrap();
-    state.betting_overrides.lock().unwrap().insert(
+    state.betting_overrides.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         response["result"].clone(),
     );
@@ -7057,14 +7683,7 @@ async fn test_degraded_order_stream_denies_submit_until_current_heartbeat() {
     stream_tx
         .send(b"{\"op\":\"ocm\",\"id\":2,\"pt\":1001,\"ct\":\"HEARTBEAT\",\"status\":503}\r\n")
         .unwrap();
-    wait_until_async(
-        || {
-            let connected = client.is_connected();
-            async move { !connected }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_connection_state(&client, false).await;
 
     let denied = make_test_order(
         "1.181005744-86362-0.BETFAIR",
@@ -7084,7 +7703,7 @@ async fn test_degraded_order_stream_denies_submit_until_current_heartbeat() {
     stream_tx
         .send(b"{\"op\":\"ocm\",\"id\":2,\"pt\":1002,\"ct\":\"HEARTBEAT\"}\r\n")
         .unwrap();
-    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
+    wait_for_connection_state(&client, true).await;
 
     let allowed = make_test_order(
         "1.181005744-86362-0.BETFAIR",
@@ -7096,13 +7715,9 @@ async fn test_degraded_order_stream_denies_submit_until_current_heartbeat() {
     client
         .submit_order(make_submit_order_cmd(&allowed))
         .unwrap();
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move { betting_method_count(&state, METHOD_PLACE_ORDERS) == 1 }
-        },
-        Duration::from_secs(2),
-    )
+    wait_for_mock_state(&state, "METHOD_PLACE_ORDERS request count == 1", |state| {
+        betting_method_count(state, METHOD_PLACE_ORDERS) == 1
+    })
     .await;
 
     assert!(client.is_connected());
@@ -7122,7 +7737,6 @@ async fn test_post_reconnect_dispatches_mass_status() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), v["result"].clone());
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -7164,14 +7778,7 @@ async fn test_post_reconnect_dispatches_mass_status() {
         "expected ExecutionReport::MassStatus dispatch after reconnect",
     );
 
-    wait_until_async(
-        || {
-            let halted = client.is_reconciling();
-            async move { !halted }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_reconciliation_state(&client, false).await;
     assert!(!client.is_reconciling());
 
     client.disconnect().await.unwrap();
@@ -7185,7 +7792,7 @@ async fn test_command_before_reconnect_image_keeps_recovery_pending() {
     let (addr, state) = start_mock_http().await;
     let fixture = load_fixture("rest/list_current_orders_empty.json");
     let response: Value = serde_json::from_str(&fixture).unwrap();
-    state.betting_overrides.lock().unwrap().insert(
+    state.betting_overrides.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         response["result"].clone(),
     );
@@ -7219,14 +7826,7 @@ async fn test_command_before_reconnect_image_keeps_recovery_pending() {
 
     connect_execution_ready(&mut client).await;
     reconnect_tx.send(()).unwrap();
-    wait_until_async(
-        || {
-            let halted = client.is_reconciling();
-            async move { halted }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_reconciliation_state(&client, true).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -7257,14 +7857,7 @@ async fn test_command_before_reconnect_image_keeps_recovery_pending() {
     .expect("recovery was not queued after the replacement image");
 
     assert!(mass_status.order_reports().is_empty());
-    wait_until_async(
-        || {
-            let halted = client.is_reconciling();
-            async move { !halted }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_reconciliation_state(&client, false).await;
     assert!(!client.is_reconciling());
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());
@@ -7288,7 +7881,7 @@ async fn test_post_reconnect_paginates_match_time_fill_recovery() {
     let mut fill_page2 = response["result"].clone();
     fill_page2["currentOrders"] = Value::Array(vec![orders[2].clone()]);
     fill_page2["moreAvailable"] = Value::Bool(false);
-    state.betting_response_sequences.lock().unwrap().insert(
+    state.betting_response_sequences.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         VecDeque::from([order_page, fill_page1, fill_page2]),
     );
@@ -7335,7 +7928,6 @@ async fn test_post_reconnect_paginates_match_time_fill_recovery() {
     let list_params = state
         .betting_request_params
         .lock()
-        .unwrap()
         .iter()
         .filter(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
         .map(|(_, params)| params.clone())
@@ -7363,18 +7955,14 @@ async fn test_post_reconnect_retries_transient_mass_status_failure() {
     let (addr, state) = start_mock_http().await;
     let fixture = load_fixture("rest/list_current_orders_execution_complete.json");
     let response: Value = serde_json::from_str(&fixture).unwrap();
-    state.betting_overrides.lock().unwrap().insert(
+    state.betting_overrides.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         response["result"].clone(),
     );
-    state
-        .betting_error_one_shot_overrides
-        .lock()
-        .unwrap()
-        .insert(
-            METHOD_LIST_CURRENT_ORDERS.to_string(),
-            jsonrpc_error(-32603, "Internal error"),
-        );
+    state.betting_error_one_shot_overrides.lock().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        jsonrpc_error(-32603, "Internal error"),
+    );
 
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
@@ -7418,7 +8006,6 @@ async fn test_post_reconnect_retries_transient_mass_status_failure() {
     let fill_params = state
         .betting_request_params
         .lock()
-        .unwrap()
         .iter()
         .filter(|(method, params)| {
             method == METHOD_LIST_CURRENT_ORDERS && params.get("dateRange").is_some()
@@ -7441,7 +8028,7 @@ async fn test_post_reconnect_retries_transient_mass_status_failure() {
 #[tokio::test]
 async fn test_post_reconnect_retry_exhaustion_keeps_submissions_halted() {
     let (addr, state) = start_mock_http().await;
-    state.betting_error_overrides.lock().unwrap().insert(
+    state.betting_error_overrides.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         jsonrpc_error(-32603, "Internal error"),
     );
@@ -7462,12 +8049,10 @@ async fn test_post_reconnect_retry_exhaustion_keeps_submissions_halted() {
     });
 
     client.connect().await.unwrap();
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move { betting_method_count(&state, METHOD_LIST_CURRENT_ORDERS) == 4 }
-        },
-        Duration::from_secs(5),
+    wait_for_mock_state(
+        &state,
+        "METHOD_LIST_CURRENT_ORDERS request count == 4",
+        |state| betting_method_count(state, METHOD_LIST_CURRENT_ORDERS) == 4,
     )
     .await;
 
@@ -7504,9 +8089,8 @@ async fn test_post_reconnect_relogin_waits_for_reconciliation_and_does_not_loop(
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), v["result"].clone());
-    let response_gate = BettingResponseGate {
+    let response_gate = MockResponseGate {
         method: METHOD_LIST_CURRENT_ORDERS.to_string(),
         waiters: Arc::new(AtomicUsize::new(0)),
         semaphore: Arc::new(tokio::sync::Semaphore::new(0)),
@@ -7531,13 +8115,9 @@ async fn test_post_reconnect_relogin_waits_for_reconciliation_and_does_not_loop(
             .await
             .unwrap();
 
-        wait_until_async(
-            || {
-                let waiters = Arc::clone(&server_gate.waiters);
-                async move { waiters.load(Ordering::Relaxed) == 1 }
-            },
-            Duration::from_secs(2),
-        )
+        wait_for_mock_state(&server_state, "response gate waiter count 1", |state| {
+            response_gate_waiter_count(state) == 1
+        })
         .await;
 
         assert!(
@@ -7547,13 +8127,9 @@ async fn test_post_reconnect_relogin_waits_for_reconciliation_and_does_not_loop(
             "full re-login must not replace the stream before reconciliation completes",
         );
         server_gate.semaphore.add_permits(1);
-        wait_until_async(
-            || {
-                let waiters = Arc::clone(&server_gate.waiters);
-                async move { waiters.load(Ordering::Relaxed) == 2 }
-            },
-            Duration::from_secs(2),
-        )
+        wait_for_mock_state(&server_state, "response gate waiter count 2", |state| {
+            response_gate_waiter_count(state) == 2
+        })
         .await;
         assert!(
             tokio::time::timeout(Duration::from_millis(300), listener.accept())
@@ -7586,12 +8162,12 @@ async fn test_post_reconnect_relogin_waits_for_reconciliation_and_does_not_loop(
             serde_json::from_str::<Value>(&replayed_sub).unwrap(),
             serde_json::from_str::<Value>(&initial_sub).unwrap(),
         );
-        *server_state.betting_response_gate.lock().unwrap() = None;
+        *server_state.betting_response_gate.lock() = None;
 
         let mut keep_alive_response: Value =
             serde_json::from_str(&load_fixture("rest/login_success.json")).unwrap();
         keep_alive_response["token"] = Value::String("REFRESHED_SESSION_TOKEN".to_string());
-        *server_state.keep_alive_response_override.lock().unwrap() =
+        *server_state.keep_alive_response_override.lock() =
             Some(serde_json::to_string(&keep_alive_response).unwrap());
 
         tokio::time::sleep(Duration::from_millis(300)).await;
@@ -7612,14 +8188,12 @@ async fn test_post_reconnect_relogin_waits_for_reconciliation_and_does_not_loop(
 
     client.connect().await.unwrap();
 
-    *state.betting_response_gate.lock().unwrap() = Some(response_gate);
+    *state.betting_response_gate.lock() = Some(response_gate);
     let mut login_response: Value =
         serde_json::from_str(&load_fixture("rest/login_success.json")).unwrap();
     login_response["token"] = Value::String("REFRESHED_SESSION_TOKEN".to_string());
-    *state.login_response_override.lock().unwrap() =
-        Some(serde_json::to_string(&login_response).unwrap());
-    *state.keep_alive_response_override.lock().unwrap() =
-        Some(load_fixture("rest/login_failure.json"));
+    *state.login_response_override.lock() = Some(serde_json::to_string(&login_response).unwrap());
+    *state.keep_alive_response_override.lock() = Some(load_fixture("rest/login_failure.json"));
     trigger_tx.send(()).unwrap();
 
     server.await.unwrap();
@@ -7638,7 +8212,7 @@ async fn test_reconnect_transient_keep_alive_failure_continues_reconciliation() 
     let (addr, state) = start_mock_http().await;
     let fixture = load_fixture("rest/list_current_orders_empty.json");
     let response: Value = serde_json::from_str(&fixture).unwrap();
-    state.betting_overrides.lock().unwrap().insert(
+    state.betting_overrides.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         response["result"].clone(),
     );
@@ -7666,7 +8240,7 @@ async fn test_reconnect_transient_keep_alive_failure_continues_reconciliation() 
 
     while rx.try_recv().is_ok() {}
 
-    *state.keep_alive_status_override.lock().unwrap() = Some(503);
+    *state.keep_alive_status_override.lock() = Some(503);
     trigger_tx.send(()).unwrap();
 
     let mut saw_mass_status = false;
@@ -7684,14 +8258,7 @@ async fn test_reconnect_transient_keep_alive_failure_continues_reconciliation() 
         saw_mass_status,
         "reconciliation must continue after a transient keep-alive failure",
     );
-    wait_until_async(
-        || {
-            let halted = client.is_reconciling();
-            async move { !halted }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_reconciliation_state(&client, false).await;
 
     assert_eq!(state.keep_alive_count.load(Ordering::Relaxed), 1);
     assert_eq!(state.login_count.load(Ordering::Relaxed), 1);
@@ -7730,21 +8297,14 @@ async fn test_reconnect_auth_failure_keeps_submissions_halted() {
 
     while rx.try_recv().is_ok() {}
 
-    *state.keep_alive_response_override.lock().unwrap() =
-        Some(load_fixture("rest/login_failure.json"));
-    *state.login_response_override.lock().unwrap() = Some(load_fixture("rest/login_failure.json"));
+    *state.keep_alive_response_override.lock() = Some(load_fixture("rest/login_failure.json"));
+    *state.login_response_override.lock() = Some(load_fixture("rest/login_failure.json"));
     trigger_tx.send(()).unwrap();
 
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move {
-                state.keep_alive_count.load(Ordering::Relaxed) >= 1
-                    && state.login_count.load(Ordering::Relaxed) >= 2
-            }
-        },
-        Duration::from_secs(2),
-    )
+    wait_for_mock_state(&state, "keep-alive count 1 and login count 2", |state| {
+        state.keep_alive_count.load(Ordering::Relaxed) >= 1
+            && state.login_count.load(Ordering::Relaxed) >= 2
+    })
     .await;
     tokio::time::sleep(Duration::from_millis(100)).await;
 
@@ -7767,11 +8327,11 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
     let (addr, state) = start_mock_http().await;
     let fixture = load_fixture("rest/list_current_orders_execution_complete.json");
     let response: Value = serde_json::from_str(&fixture).unwrap();
-    state.betting_overrides.lock().unwrap().insert(
+    state.betting_overrides.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         response["result"].clone(),
     );
-    state.betting_error_overrides.lock().unwrap().insert(
+    state.betting_error_overrides.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         jsonrpc_error(-32603, "Internal error"),
     );
@@ -7805,12 +8365,10 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
 
     while rx.try_recv().is_ok() {}
 
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move { betting_method_count(&state, METHOD_LIST_CURRENT_ORDERS) >= 1 }
-        },
-        Duration::from_secs(2),
+    wait_for_mock_state(
+        &state,
+        "METHOD_LIST_CURRENT_ORDERS request count >= 1",
+        |state| betting_method_count(state, METHOD_LIST_CURRENT_ORDERS) >= 1,
     )
     .await;
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -7826,7 +8384,6 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
     let failed_params = state
         .betting_request_params
         .lock()
-        .unwrap()
         .iter()
         .find(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
         .cloned()
@@ -7837,26 +8394,21 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
         "fill recovery must not start before the order query succeeds",
     );
 
-    let response_gate = BettingResponseGate {
+    let response_gate = MockResponseGate {
         method: METHOD_LIST_CURRENT_ORDERS.to_string(),
         waiters: Arc::new(AtomicUsize::new(0)),
         semaphore: Arc::new(tokio::sync::Semaphore::new(0)),
     };
-    *state.betting_response_gate.lock().unwrap() = Some(response_gate.clone());
+    *state.betting_response_gate.lock() = Some(response_gate.clone());
     state
         .betting_error_overrides
         .lock()
-        .unwrap()
         .remove(METHOD_LIST_CURRENT_ORDERS);
     retry_tx.send(()).unwrap();
 
-    wait_until_async(
-        || {
-            let waiters = Arc::clone(&response_gate.waiters);
-            async move { waiters.load(Ordering::Relaxed) == 1 }
-        },
-        Duration::from_secs(2),
-    )
+    wait_for_mock_state(&state, "response gate waiter count 1", |state| {
+        response_gate_waiter_count(state) == 1
+    })
     .await;
 
     let expected = submit_single_and_list(&client, &cache, "MASS-HALT");
@@ -7867,13 +8419,9 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
     assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 0);
 
     response_gate.semaphore.add_permits(1);
-    wait_until_async(
-        || {
-            let waiters = Arc::clone(&response_gate.waiters);
-            async move { waiters.load(Ordering::Relaxed) == 2 }
-        },
-        Duration::from_secs(2),
-    )
+    wait_for_mock_state(&state, "response gate waiter count 2", |state| {
+        response_gate_waiter_count(state) == 2
+    })
     .await;
     assert!(client.is_reconciling());
     response_gate.semaphore.add_permits(1);
@@ -7889,14 +8437,7 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
             break;
         }
     }
-    wait_until_async(
-        || {
-            let halted = client.is_reconciling();
-            async move { !halted }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_reconciliation_state(&client, false).await;
 
     let allowed = make_test_order(
         "1.181005744-86362-0.BETFAIR",
@@ -7908,13 +8449,9 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
     client
         .submit_order(make_submit_order_cmd(&allowed))
         .unwrap();
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move { betting_method_count(&state, METHOD_PLACE_ORDERS) == 1 }
-        },
-        Duration::from_secs(2),
-    )
+    wait_for_mock_state(&state, "METHOD_PLACE_ORDERS request count == 1", |state| {
+        betting_method_count(state, METHOD_PLACE_ORDERS) == 1
+    })
     .await;
 
     assert_eq!(recovered_counts, Some((3, 2)));
@@ -7926,7 +8463,6 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
     let list_params = state
         .betting_request_params
         .lock()
-        .unwrap()
         .iter()
         .filter(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
         .map(|(_, params)| params.clone())
@@ -7952,14 +8488,13 @@ async fn test_submit_denied_during_reconciliation() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), v["result"].clone());
-    let response_gate = BettingResponseGate {
+    let response_gate = MockResponseGate {
         method: METHOD_LIST_CURRENT_ORDERS.to_string(),
         waiters: Arc::new(AtomicUsize::new(0)),
         semaphore: Arc::new(tokio::sync::Semaphore::new(0)),
     };
-    *state.betting_response_gate.lock().unwrap() = Some(response_gate.clone());
+    *state.betting_response_gate.lock() = Some(response_gate.clone());
 
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
@@ -7983,13 +8518,9 @@ async fn test_submit_denied_during_reconciliation() {
 
     while rx.try_recv().is_ok() {}
 
-    wait_until_async(
-        || {
-            let waiters = Arc::clone(&response_gate.waiters);
-            async move { waiters.load(Ordering::Relaxed) == 1 }
-        },
-        Duration::from_secs(2),
-    )
+    wait_for_mock_state(&state, "response gate waiter count 1", |state| {
+        response_gate_waiter_count(state) == 1
+    })
     .await;
     assert!(client.is_reconciling());
 
@@ -8004,13 +8535,9 @@ async fn test_submit_denied_during_reconciliation() {
     assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 0);
 
     response_gate.semaphore.add_permits(1);
-    wait_until_async(
-        || {
-            let waiters = Arc::clone(&response_gate.waiters);
-            async move { waiters.load(Ordering::Relaxed) == 2 }
-        },
-        Duration::from_secs(2),
-    )
+    wait_for_mock_state(&state, "response gate waiter count 2", |state| {
+        response_gate_waiter_count(state) == 2
+    })
     .await;
     assert!(client.is_reconciling());
     response_gate.semaphore.add_permits(1);
@@ -8025,14 +8552,7 @@ async fn test_submit_denied_during_reconciliation() {
             break;
         }
     }
-    wait_until_async(
-        || {
-            let halted = client.is_reconciling();
-            async move { !halted }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_reconciliation_state(&client, false).await;
 
     let allowed = make_test_order(
         "1.181005744-86362-0.BETFAIR",
@@ -8044,13 +8564,9 @@ async fn test_submit_denied_during_reconciliation() {
     client
         .submit_order(make_submit_order_cmd(&allowed))
         .unwrap();
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move { betting_method_count(&state, METHOD_PLACE_ORDERS) == 1 }
-        },
-        Duration::from_secs(2),
-    )
+    wait_for_mock_state(&state, "METHOD_PLACE_ORDERS request count == 1", |state| {
+        betting_method_count(state, METHOD_PLACE_ORDERS) == 1
+    })
     .await;
 
     assert!(saw_mass_status);
@@ -8072,14 +8588,13 @@ async fn test_queued_reconnect_generation_stays_halted() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), v["result"].clone());
-    let response_gate = BettingResponseGate {
+    let response_gate = MockResponseGate {
         method: METHOD_LIST_CURRENT_ORDERS.to_string(),
         waiters: Arc::new(AtomicUsize::new(0)),
         semaphore: Arc::new(tokio::sync::Semaphore::new(0)),
     };
-    *state.betting_response_gate.lock().unwrap() = Some(response_gate.clone());
+    *state.betting_response_gate.lock() = Some(response_gate.clone());
     let server_gate = response_gate.clone();
 
     let (stream_port, listener) = start_mock_stream().await;
@@ -8087,6 +8602,7 @@ async fn test_queued_reconnect_generation_stays_halted() {
 
     let (release_second_tx, release_second_rx) = tokio::sync::oneshot::channel();
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+    let server_state = state.clone();
 
     let server = tokio::spawn(async move {
         let (mut reader, mut write_half) = accept_and_auth(&listener).await;
@@ -8099,13 +8615,9 @@ async fn test_queued_reconnect_generation_stays_halted() {
             .await
             .unwrap();
 
-        wait_until_async(
-            || {
-                let waiters = Arc::clone(&server_gate.waiters);
-                async move { waiters.load(Ordering::Relaxed) == 1 }
-            },
-            Duration::from_secs(2),
-        )
+        wait_for_mock_state(&server_state, "response gate waiter count 1", |state| {
+            response_gate_waiter_count(state) == 1
+        })
         .await;
 
         tokio::io::AsyncWriteExt::write_all(&mut write_half, STREAM_CLOSED_MSG)
@@ -8116,22 +8628,14 @@ async fn test_queued_reconnect_generation_stays_halted() {
             .unwrap();
 
         server_gate.semaphore.add_permits(1);
-        wait_until_async(
-            || {
-                let waiters = Arc::clone(&server_gate.waiters);
-                async move { waiters.load(Ordering::Relaxed) == 2 }
-            },
-            Duration::from_secs(2),
-        )
+        wait_for_mock_state(&server_state, "response gate waiter count 2", |state| {
+            response_gate_waiter_count(state) == 2
+        })
         .await;
         server_gate.semaphore.add_permits(1);
-        wait_until_async(
-            || {
-                let waiters = Arc::clone(&server_gate.waiters);
-                async move { waiters.load(Ordering::Relaxed) == 3 }
-            },
-            Duration::from_secs(2),
-        )
+        wait_for_mock_state(&server_state, "response gate waiter count 3", |state| {
+            response_gate_waiter_count(state) == 3
+        })
         .await;
         release_second_rx.await.unwrap();
         server_gate.semaphore.add_permits(1);
@@ -8144,13 +8648,9 @@ async fn test_queued_reconnect_generation_stays_halted() {
 
     while rx.try_recv().is_ok() {}
 
-    wait_until_async(
-        || {
-            let waiters = Arc::clone(&response_gate.waiters);
-            async move { waiters.load(Ordering::Relaxed) == 3 }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_mock_state(&state, "response gate waiter count 3", |state| {
+        response_gate_waiter_count(state) == 3
+    })
     .await;
     assert!(client.is_reconciling());
     tokio::time::sleep(Duration::from_millis(300)).await;
@@ -8188,14 +8688,7 @@ async fn test_queued_reconnect_generation_stays_halted() {
     assert!(mass_status.order_reports().is_empty());
     assert_eq!(response_gate.waiters.load(Ordering::Relaxed), 3);
 
-    wait_until_async(
-        || {
-            let halted = client.is_reconciling();
-            async move { !halted }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_reconciliation_state(&client, false).await;
     assert!(!client.is_reconciling());
 
     client.disconnect().await.unwrap();
@@ -8214,9 +8707,8 @@ async fn test_submit_order_list_denied_during_reconciliation() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), v["result"].clone());
-    state.betting_response_delays.lock().unwrap().insert(
+    state.betting_response_delays.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         Duration::from_millis(800),
     );
@@ -8241,14 +8733,7 @@ async fn test_submit_order_list_denied_during_reconciliation() {
 
     client.connect().await.unwrap();
 
-    wait_until_async(
-        || {
-            let halted = client.is_reconciling();
-            async move { halted }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_reconciliation_state(&client, true).await;
     assert!(client.is_reconciling());
 
     while rx.try_recv().is_ok() {}
@@ -8323,10 +8808,9 @@ async fn test_disconnect_during_reconciliation_clears_halt() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), v["result"].clone());
     // Slow enough that the disconnect aborts an in-flight reconciliation.
-    state.betting_response_delays.lock().unwrap().insert(
+    state.betting_response_delays.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         Duration::from_secs(5),
     );
@@ -8351,14 +8835,7 @@ async fn test_disconnect_during_reconciliation_clears_halt() {
 
     client.connect().await.unwrap();
 
-    wait_until_async(
-        || {
-            let halted = client.is_reconciling();
-            async move { halted }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_reconciliation_state(&client, true).await;
     assert!(client.is_reconciling());
 
     // Disconnecting mid-reconcile aborts the reconnect task before it can clear
@@ -8380,16 +8857,16 @@ async fn test_stop_during_reconciliation_cancels_recovery() {
     let (addr, state) = start_mock_http().await;
     let fixture = load_fixture("rest/list_current_orders_empty.json");
     let response: Value = serde_json::from_str(&fixture).unwrap();
-    state.betting_overrides.lock().unwrap().insert(
+    state.betting_overrides.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         response["result"].clone(),
     );
-    let response_gate = BettingResponseGate {
+    let response_gate = MockResponseGate {
         method: METHOD_LIST_CURRENT_ORDERS.to_string(),
         waiters: Arc::new(AtomicUsize::new(0)),
         semaphore: Arc::new(tokio::sync::Semaphore::new(0)),
     };
-    *state.betting_response_gate.lock().unwrap() = Some(response_gate.clone());
+    *state.betting_response_gate.lock() = Some(response_gate.clone());
 
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
@@ -8408,13 +8885,9 @@ async fn test_stop_during_reconciliation_cancels_recovery() {
     });
 
     client.connect().await.unwrap();
-    wait_until_async(
-        || {
-            let waiters = Arc::clone(&response_gate.waiters);
-            async move { waiters.load(Ordering::Relaxed) == 1 }
-        },
-        Duration::from_secs(2),
-    )
+    wait_for_mock_state(&state, "response gate waiter count 1", |state| {
+        response_gate_waiter_count(state) == 1
+    })
     .await;
     assert!(client.is_reconciling());
 
@@ -8446,7 +8919,7 @@ async fn test_cancel_allowed_during_reconciliation() {
 
     let list_fixture = load_fixture("rest/list_current_orders_empty.json");
     let list_v: Value = serde_json::from_str(&list_fixture).unwrap();
-    state.betting_overrides.lock().unwrap().insert(
+    state.betting_overrides.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         list_v["result"].clone(),
     );
@@ -8455,9 +8928,8 @@ async fn test_cancel_allowed_during_reconciliation() {
     state
         .betting_overrides
         .lock()
-        .unwrap()
         .insert(METHOD_CANCEL_ORDERS.to_string(), cancel_v["result"].clone());
-    state.betting_response_delays.lock().unwrap().insert(
+    state.betting_response_delays.lock().insert(
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         Duration::from_millis(800),
     );
@@ -8482,14 +8954,7 @@ async fn test_cancel_allowed_during_reconciliation() {
 
     client.connect().await.unwrap();
 
-    wait_until_async(
-        || {
-            let halted = client.is_reconciling();
-            async move { halted }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_reconciliation_state(&client, true).await;
     assert!(client.is_reconciling());
 
     while rx.try_recv().is_ok() {}

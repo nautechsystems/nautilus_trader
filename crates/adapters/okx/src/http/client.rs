@@ -117,7 +117,7 @@ use crate::{
         consts::{
             OKX_FIELD_SCODE, OKX_FIELD_SMSG, OKX_HTTP_URL, OKX_NAUTILUS_BROKER_ID,
             OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE, OKX_SUPPORTED_ORDER_TYPES,
-            OKX_SUPPORTED_TIME_IN_FORCE,
+            OKX_SUPPORTED_TIME_IN_FORCE, okx_reduce_only_wire_value,
         },
         credential::Credential,
         enums::{
@@ -4276,14 +4276,14 @@ impl OKXHttpClient {
 
             if let Some(start_ns) = start_ns
                 && report.ts_last < start_ns
-                && !report.order_status.is_open()
+                && report.order_status.is_closed()
             {
                 continue;
             }
 
             if let Some(end_ns) = end_ns
                 && report.ts_last > end_ns
-                && !report.order_status.is_open()
+                && report.order_status.is_closed()
             {
                 continue;
             }
@@ -4550,14 +4550,14 @@ impl OKXHttpClient {
 
             if let Some(start_ns) = start_ns
                 && report.ts_last < start_ns
-                && !report.order_status.is_open()
+                && report.order_status.is_closed()
             {
                 continue;
             }
 
             if let Some(end_ns) = end_ns
                 && report.ts_last > end_ns
-                && !report.order_status.is_open()
+                && report.order_status.is_closed()
             {
                 continue;
             }
@@ -6189,7 +6189,7 @@ impl OKXHttpClient {
             ));
         }
 
-        let side = OKXSide::from(order_side.as_specified());
+        let side = OKXSide::from(order_side);
         let pos_side = position_side.map(Into::into).or({
             if matches!(
                 instrument_type,
@@ -6273,9 +6273,15 @@ impl OKXHttpClient {
             speed_bump
         };
 
-        // reduceOnly is not applicable to options per OKX docs
-        let reduce_only = if instrument_type == OKXInstrumentType::Option {
-            None
+        let reduce_only = if reduce_only == Some(true) {
+            okx_reduce_only_wire_value(
+                instrument_type,
+                td_mode,
+                order_side,
+                position_side,
+                reduce_only,
+            )
+            .map_err(OKXHttpError::ValidationError)?
         } else {
             reduce_only
         };
@@ -6371,7 +6377,7 @@ impl OKXHttpClient {
             sprd_id: instrument_id.symbol.as_str().to_string(),
             cl_ord_id: Some(client_order_id.as_str().to_string()),
             tag: Some(OKX_NAUTILUS_BROKER_ID.to_string()),
-            side: OKXSide::from(order_side.as_specified()),
+            side: OKXSide::from(order_side),
             ord_type,
             sz: quantity.to_string(),
             px: Some(price.to_string()),
@@ -6412,7 +6418,7 @@ impl OKXHttpClient {
             ));
         }
 
-        let okx_side = OKXSide::from(order_side.as_specified());
+        let okx_side = OKXSide::from(order_side);
 
         // Map trigger type to OKX format
         let trigger_px_type_enum = trigger_type.map_or(OKXTriggerType::Last, Into::into);
@@ -7099,6 +7105,7 @@ fn parse_http_algo_order(
         algo_cl_ord_id: order.algo_cl_ord_id.clone(),
         cl_ord_id: order.cl_ord_id.clone(),
         ord_id,
+        ord_id_list: order.ord_id_list.clone(),
         inst_id: order.inst_id,
         inst_type: order.inst_type,
         ord_type: order.ord_type,
@@ -7125,6 +7132,7 @@ fn parse_http_algo_order(
         c_time: order.c_time,
         u_time: order.u_time,
         trigger_time: order.trigger_time.clone(),
+        fail_code: String::new(),
         tag: order.tag.clone(),
         callback_ratio: order.callback_ratio.clone(),
         callback_spread: order.callback_spread.clone(),

@@ -547,7 +547,7 @@ struct CapturedQuery {
     query: HashMap<String, String>,
 }
 
-type CapturedQueries = Arc<std::sync::Mutex<Vec<CapturedQuery>>>;
+type CapturedQueries = Arc<parking_lot::Mutex<Vec<CapturedQuery>>>;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum WsSetupBehavior {
@@ -696,7 +696,7 @@ fn create_exec_test_router_with_fill_fixture(
                     }
 
                     if let Some(captured_queries) = &state.captured_queries {
-                        captured_queries.lock().unwrap().push(CapturedQuery {
+                        captured_queries.lock().push(CapturedQuery {
                             query: params.clone(),
                         });
                     }
@@ -800,10 +800,7 @@ async fn handle_account_trades(
         .and_then(|value| value.parse::<i64>().ok());
 
     if let Some(captured_queries) = &state.captured_queries {
-        captured_queries
-            .lock()
-            .unwrap()
-            .push(CapturedQuery { query });
+        captured_queries.lock().push(CapturedQuery { query });
     }
     let time_micros = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1403,7 +1400,7 @@ async fn start_exec_test_server_with_order_query_signal(
 async fn start_exec_test_server_with_fill_fixture(
     mode: FillFixtureMode,
 ) -> (SocketAddr, CapturedQueries) {
-    let captured_queries = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let captured_queries = Arc::new(parking_lot::Mutex::new(Vec::new()));
     let router =
         create_exec_test_router_with_fill_fixture(None, mode, Some(captured_queries.clone()));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1567,8 +1564,8 @@ fn create_test_execution_client_with_transport_and_gtd_and_ws_setup_timeout(
         use_ws_trading,
         ws_trading_setup_timeout_ms,
         use_gtd,
-        api_key: Some("test_api_key".to_string()),
-        api_secret: Some("test_api_secret".to_string()),
+        api_key: Some("test_api_key".into()),
+        api_secret: Some("test_api_secret".into()),
         ..Default::default()
     };
 
@@ -1590,8 +1587,8 @@ fn create_test_execution_client_us(
         base_url_ws: Some(base_url_ws),
         use_ws_trading: true,
         us: true,
-        api_key: Some("test_api_key".to_string()),
-        api_secret: Some("test_api_secret".to_string()),
+        api_key: Some("test_api_key".into()),
+        api_secret: Some("test_api_secret".into()),
         ..Default::default()
     };
 
@@ -1725,7 +1722,7 @@ async fn test_generate_mass_status_uses_execution_instrument_for_retained_order(
     assert_eq!(fill_reports.len(), 1);
     assert_eq!(fill_reports[0].instrument_id, test_instrument_id());
     assert_eq!(fill_reports[0].trade_id, TradeId::new("98765432"));
-    let queries = captured_queries.lock().unwrap();
+    let queries = captured_queries.lock();
     assert_eq!(queries.len(), 1);
     assert_eq!(
         queries[0].query.get("symbol").map(String::as_str),
@@ -1754,7 +1751,7 @@ async fn test_generate_mass_status_discovers_fill_instrument_from_venue_order() 
 
     assert_eq!(fill_reports.len(), 1);
     assert_eq!(fill_reports[0].trade_id, TradeId::new("98765432"));
-    assert_eq!(captured_queries.lock().unwrap().len(), 1);
+    assert_eq!(captured_queries.lock().len(), 1);
 }
 
 #[rstest]
@@ -1832,7 +1829,7 @@ async fn test_generate_fill_reports_uses_supported_order_cursor_query() {
     );
 
     let reports = client.generate_fill_reports(command).await.unwrap();
-    let queries = captured_queries.lock().unwrap();
+    let queries = captured_queries.lock();
 
     assert_eq!(reports.len(), 1_001);
     assert_eq!(reports[997].trade_id, TradeId::new("998"));
@@ -1889,7 +1886,7 @@ async fn test_generate_fill_reports_rejects_reversed_time_range() {
         error.to_string(),
         "fill report start time must not exceed end time"
     );
-    assert!(captured_queries.lock().unwrap().is_empty());
+    assert!(captured_queries.lock().is_empty());
 }
 
 #[rstest]
@@ -1929,7 +1926,7 @@ async fn test_generate_mass_status_paginates_fill_reports(
         .unwrap()
         .unwrap();
     let fill_reports: Vec<_> = mass_status.fill_reports().into_values().flatten().collect();
-    let queries = captured_queries.lock().unwrap();
+    let queries = captured_queries.lock();
 
     assert_eq!(fill_reports.len(), expected_reports);
     assert_eq!(fill_reports.first().unwrap().trade_id, TradeId::new("1"));
@@ -1991,7 +1988,7 @@ async fn test_generate_mass_status_splits_fill_lookback_into_supported_windows()
         .await
         .unwrap()
         .unwrap();
-    let queries = captured_queries.lock().unwrap();
+    let queries = captured_queries.lock();
     let first_start = queries[0].query["startTime"].parse::<i64>().unwrap();
     let first_end = queries[0].query["endTime"].parse::<i64>().unwrap();
     let second_start = queries[1].query["startTime"].parse::<i64>().unwrap();
@@ -2482,13 +2479,13 @@ async fn test_submit_spot_locally_managed_gtd_encodes_gtc() {
     wait_until_async(
         || {
             let captured_queries = captured_queries.clone();
-            async move { !captured_queries.lock().unwrap().is_empty() }
+            async move { !captured_queries.lock().is_empty() }
         },
         Duration::from_secs(5),
     )
     .await;
 
-    let queries = captured_queries.lock().unwrap();
+    let queries = captured_queries.lock();
     assert_eq!(
         queries[0].query.get("timeInForce").map(String::as_str),
         Some("GTC"),
@@ -2515,7 +2512,7 @@ async fn test_submit_spot_native_gtd_rejects_before_submission() {
         .unwrap_err();
 
     assert!(error.to_string().contains("does not support native GTD"));
-    assert!(captured_queries.lock().unwrap().is_empty());
+    assert!(captured_queries.lock().is_empty());
     assert!(rx.try_recv().is_err());
 }
 
@@ -2606,6 +2603,37 @@ async fn test_submit_independent_order_list_is_denied_without_http_request() {
 
 #[rstest]
 #[tokio::test]
+async fn test_submit_order_list_denies_all_orders_when_reduce_only_is_present() {
+    let (client, mut rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let reduce_only_id = ClientOrderId::new("spot-reduce-only-001");
+    let regular_id = ClientOrderId::new("spot-regular-001");
+    let orders = [
+        add_limit_order_for_instrument_to_cache(&cache, test_instrument_id(), reduce_only_id, true),
+        add_limit_order_to_cache(&cache, regular_id),
+    ];
+
+    client
+        .submit_order_list(submit_order_list_command(&orders))
+        .unwrap();
+
+    for client_order_id in [reduce_only_id, regular_id] {
+        let event = rx.try_recv().expect("missing OrderDenied");
+        let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+            panic!("Expected OrderDenied, was {event:?}");
+        };
+        assert_eq!(denied.client_order_id, client_order_id);
+        assert_eq!(denied.reason.as_str(), "UNSUPPORTED_REDUCE_ONLY");
+    }
+    assert!(rx.try_recv().is_err());
+    assert_eq!(request_count.load(Ordering::Relaxed), 0);
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_cancel_all_orders_generates_canceled_events() {
     let addr = start_exec_test_server().await;
     let base_url = format!("http://{addr}");
@@ -2623,7 +2651,7 @@ async fn test_cancel_all_orders_generates_canceled_events() {
         Some(*BINANCE_CLIENT_ID),
         StrategyId::from("TEST-STRATEGY"),
         instrument_id,
-        OrderSide::NoOrderSide,
+        None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
         None,
@@ -2946,6 +2974,34 @@ async fn test_explicit_venue_submit_rejection_emits_order_rejected() {
 
 #[rstest]
 #[tokio::test]
+async fn test_submit_order_denies_reduce_only() {
+    let (client, mut rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let client_order_id = ClientOrderId::new("reduce-only-test-001");
+    let order = add_limit_order_for_instrument_to_cache(
+        &cache,
+        test_instrument_id(),
+        client_order_id,
+        true,
+    );
+
+    client.submit_order(submit_order_command(&order)).unwrap();
+
+    let event = rx.try_recv().expect("missing OrderDenied");
+    let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+        panic!("Expected OrderDenied, was {event:?}");
+    };
+    assert_eq!(denied.client_order_id, client_order_id);
+    assert_eq!(denied.reason.as_str(), "UNSUPPORTED_REDUCE_ONLY");
+    assert!(rx.try_recv().is_err());
+    assert_eq!(request_count.load(Ordering::Relaxed), 0);
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_local_submit_failure_emits_order_rejected() {
     let (client, mut rx, cache, request_count) =
         connected_client_with_command_responses(CommandResponses::default()).await;
@@ -2955,6 +3011,7 @@ async fn test_local_submit_failure_emits_order_rejected() {
         &cache,
         InstrumentId::from("ETHUSDT.BINANCE"),
         client_order_id,
+        false,
     );
 
     client
@@ -3441,13 +3498,14 @@ fn add_limit_order_to_cache(
     cache: &Rc<RefCell<Cache>>,
     client_order_id: ClientOrderId,
 ) -> OrderAny {
-    add_limit_order_for_instrument_to_cache(cache, test_instrument_id(), client_order_id)
+    add_limit_order_for_instrument_to_cache(cache, test_instrument_id(), client_order_id, false)
 }
 
 fn add_limit_order_for_instrument_to_cache(
     cache: &Rc<RefCell<Cache>>,
     instrument_id: InstrumentId,
     client_order_id: ClientOrderId,
+    reduce_only: bool,
 ) -> OrderAny {
     let order = LimitOrder::new(
         test_trader_id(),
@@ -3460,7 +3518,7 @@ fn add_limit_order_for_instrument_to_cache(
         TimeInForce::Gtc,
         None,
         true,
-        false,
+        reduce_only,
         false,
         None,
         None,
@@ -3532,7 +3590,7 @@ fn add_open_order_to_cache(
     account_id: AccountId,
     venue_order_id: VenueOrderId,
 ) {
-    add_limit_order_for_instrument_to_cache(cache, instrument_id, client_order_id);
+    add_limit_order_for_instrument_to_cache(cache, instrument_id, client_order_id, false);
     let accepted = OrderAccepted::new(
         test_trader_id(),
         test_strategy_id(),

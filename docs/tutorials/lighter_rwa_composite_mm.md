@@ -87,7 +87,7 @@ inside the same event-driven runtime.
 The example reads credentials from environment variables and keeps the strategy
 parameters as editable Rust constants. It defaults to
 `LighterEnvironment::Testnet`, so follow the
-[testnet account setup](../integrations/lighter.md#testnet-account-setup) and set the testnet
+[account and API key setup](../integrations/lighter.md#account-and-api-key-setup) and set the testnet
 Lighter credentials:
 
 ```bash
@@ -186,8 +186,14 @@ the crates from [Project setup](#project-setup). A Python counterpart also lives
 strategy through PyO3.
 
 From a checkout, with the credential variables set, the shipped binary connects
-the data and execution clients. It defaults to `DRY_RUN = true`, which starts
-the clients without adding the order-submitting strategy:
+the data and execution clients. It defaults to `DRY_RUN = false`, which adds the
+order-submitting strategy.
+
+:::warning
+This command can submit live orders. Start with the smallest accepted size on a funded test
+account or a mainnet account sized for loss. Confirm the active instrument ID, account ID,
+numeric account index, and Lighter credentials before running it.
+:::
 
 ```bash
 cargo run --bin lighter-nvda-composite-mm --package nautilus-tutorials --features examples
@@ -256,10 +262,11 @@ if !DRY_RUN {
 }
 ```
 
-To allow order submission, edit the constant near the top of the example source:
+To connect without adding the order-submitting strategy, edit the constant near the top of the
+example source:
 
 ```rust
-const DRY_RUN: bool = false;
+const DRY_RUN: bool = true;
 ```
 
 Then run the same command:
@@ -267,12 +274,6 @@ Then run the same command:
 ```bash
 cargo run --bin lighter-nvda-composite-mm --package nautilus-tutorials --features examples
 ```
-
-:::warning
-This command can submit live orders when `DRY_RUN` is `false`. Start with the smallest accepted size
-on a funded test account or a mainnet account sized for loss. Confirm the active instrument ID,
-account ID, numeric account index, and Lighter credentials before changing it.
-:::
 
 For a testnet smoke run, keep `LIGHTER_ENVIRONMENT` as
 `LighterEnvironment::Testnet` and use the `LIGHTER_TESTNET_*` credential

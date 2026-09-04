@@ -75,10 +75,10 @@ use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     data::QuoteTick,
     enums::{
-        AccountType, OmsType, OrderSide, OrderStatus, OrderType, PositionSideSpecified,
-        TimeInForce, TriggerType,
+        AccountType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+        TriggerType,
     },
-    events::{AccountState, OrderEventAny, OrderInitialized},
+    events::{AccountState, OrderAccepted, OrderEventAny, OrderInitialized},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId,
         TraderId, VenueOrderId,
@@ -1072,7 +1072,7 @@ fn test_config(rest: SocketAddr, ws: SocketAddr) -> DeriveExecutionClientConfig 
     DeriveExecutionClientConfig {
         account_id: AccountId::from("DERIVE-001"),
         wallet_address: Some(TEST_WALLET.to_string()),
-        session_key: Some(TEST_SESSION_KEY.to_string()),
+        session_key: Some(TEST_SESSION_KEY.into()),
         subaccount_id: Some(TEST_SUBACCOUNT),
         base_url_rest: Some(rest_url(rest)),
         base_url_ws: Some(ws_url(ws)),
@@ -1328,6 +1328,35 @@ fn build_stop_market_order(
         .trigger_price(trigger_price)
         .trigger_type(TriggerType::MarkPrice)
         .build()
+}
+
+fn accepted_order(
+    mut order: OrderAny,
+    venue_order_id: VenueOrderId,
+    account_id: AccountId,
+) -> OrderAny {
+    order
+        .apply(OrderEventAny::Accepted(OrderAccepted::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            venue_order_id,
+            account_id,
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+            false,
+        )))
+        .expect("accept order");
+    order
+}
+
+fn add_order_to_cache(cache: &Rc<RefCell<Cache>>, order: OrderAny, client_id: Option<ClientId>) {
+    cache
+        .borrow_mut()
+        .add_order(order, None, client_id, false)
+        .expect("cache insert");
 }
 
 fn build_limit_if_touched_order(
@@ -3316,7 +3345,7 @@ async fn test_cancel_all_orders_without_side_sends_cancel_by_instrument_for_empt
     let ws_state = WsState::default();
     *ws_state.cancel_by_instrument_reply.lock().await =
         Some(json!({"result": {"cancelled_orders": 0}}));
-    let mut tc = build_client(rest_state, ws_state.clone()).await;
+    let mut tc = build_client(rest_state.clone(), ws_state.clone()).await;
     tc.client.connect().await.expect("connect succeeds");
 
     let cmd = CancelAllOrders::new(
@@ -3324,7 +3353,7 @@ async fn test_cancel_all_orders_without_side_sends_cancel_by_instrument_for_empt
         Some(ClientId::from("DERIVE")),
         StrategyId::from("S-1"),
         InstrumentId::from("ETH-PERP.DERIVE"),
-        OrderSide::NoOrderSide,
+        None,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -3352,6 +3381,8 @@ async fn test_cancel_all_orders_without_side_sends_cancel_by_instrument_for_empt
     assert!(ws_state.cancelled_orders.lock().await.is_empty());
     assert!(ws_state.cancelled_trigger_orders.lock().await.is_empty());
     assert!(ws_state.cancel_all_calls.lock().await.is_empty());
+    assert!(rest_state.open_orders_calls.lock().await.is_empty());
+    assert!(rest_state.trigger_orders_calls.lock().await.is_empty());
 
     tc.client.disconnect().await.expect("disconnect");
 }
@@ -3361,46 +3392,64 @@ async fn test_cancel_all_orders_without_side_sends_cancel_by_instrument_for_empt
 async fn test_cancel_all_orders_without_side_cancels_matching_triggers() {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
-    *rest_state.trigger_orders_response.lock().await = json!({
-        "orders": [
-            trigger_order_json_with(
-                "trig-eth",
-                "TRIGGER-ETH",
-                "buy",
-                "ETH-PERP",
-                1_700_000_001_000,
-                "market",
-                "untriggered",
-                "3500",
-                "3450",
-                "mark",
-                "stoploss",
-            ),
-            trigger_order_json_with(
-                "trig-btc",
-                "TRIGGER-BTC",
-                "sell",
-                "BTC-PERP",
-                1_700_000_002_000,
-                "market",
-                "untriggered",
-                "65000",
-                "66000",
-                "mark",
-                "takeprofit",
-            ),
-        ],
-        "subaccount_id": TEST_SUBACCOUNT,
-    });
-    let mut tc = build_client(rest_state, ws_state.clone()).await;
+    let mut tc = build_client(rest_state.clone(), ws_state.clone()).await;
     tc.client.connect().await.expect("connect succeeds");
+
+    let account_id = AccountId::from("DERIVE-001");
+    let client_id = Some(ClientId::from("DERIVE"));
+    add_order_to_cache(
+        &tc.cache,
+        accepted_order(
+            build_stop_market_order(
+                InstrumentId::from("ETH-PERP.DERIVE"),
+                ClientOrderId::from("TRIGGER-ETH"),
+                OrderSide::Buy,
+                Price::from("3450.00"),
+                Quantity::from("1.000"),
+            ),
+            VenueOrderId::from("trig-eth"),
+            account_id,
+        ),
+        client_id,
+    );
+    add_order_to_cache(
+        &tc.cache,
+        accepted_order(
+            build_stop_market_order(
+                InstrumentId::from("BTC-PERP.DERIVE"),
+                ClientOrderId::from("TRIGGER-BTC"),
+                OrderSide::Sell,
+                Price::from("66000.00"),
+                Quantity::from("1.000"),
+            ),
+            VenueOrderId::from("trig-btc"),
+            account_id,
+        ),
+        client_id,
+    );
+    add_order_to_cache(
+        &tc.cache,
+        accepted_order(
+            build_limit_order(
+                InstrumentId::from("ETH-PERP.DERIVE"),
+                ClientOrderId::from("REGULAR-ETH"),
+                OrderSide::Buy,
+                Price::from("3500.00"),
+                Quantity::from("1.000"),
+            ),
+            VenueOrderId::from("regular-eth"),
+            account_id,
+        ),
+        client_id,
+    );
+    tc.cache.borrow_mut().build_index();
 
     let cmd = CancelAllOrders::new(
         TraderId::from("TRADER-001"),
         Some(ClientId::from("DERIVE")),
         StrategyId::from("S-1"),
         InstrumentId::from("ETH-PERP.DERIVE"),
-        OrderSide::NoOrderSide,
+        None,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -3434,7 +3483,97 @@ async fn test_cancel_all_orders_without_side_cancels_matching_triggers() {
             "instrument_name": "ETH-PERP",
         })],
     );
+    assert!(ws_state.cancelled_orders.lock().await.is_empty());
     assert!(ws_state.cancel_all_calls.lock().await.is_empty());
+    assert!(rest_state.open_orders_calls.lock().await.is_empty());
+    assert!(rest_state.trigger_orders_calls.lock().await.is_empty());
+
+    tc.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_all_orders_trigger_failure_still_sends_cancel_by_instrument() {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    *ws_state.cancel_trigger_reply.lock().await = Some(json!({
+        "error": {"code": -32603, "message": "Internal venue error"}
+    }));
+    let mut tc = build_client(rest_state.clone(), ws_state.clone()).await;
+    tc.client.connect().await.expect("connect succeeds");
+
+    add_order_to_cache(
+        &tc.cache,
+        accepted_order(
+            build_stop_market_order(
+                InstrumentId::from("ETH-PERP.DERIVE"),
+                ClientOrderId::from("TRIGGER-ETH"),
+                OrderSide::Buy,
+                Price::from("3450.00"),
+                Quantity::from("1.000"),
+            ),
+            VenueOrderId::from("trig-eth"),
+            AccountId::from("DERIVE-001"),
+        ),
+        Some(ClientId::from("DERIVE")),
+    );
+    tc.cache.borrow_mut().build_index();
+
+    let cmd = CancelAllOrders::new(
+        TraderId::from("TRADER-001"),
+        Some(ClientId::from("DERIVE")),
+        StrategyId::from("S-1"),
+        InstrumentId::from("ETH-PERP.DERIVE"),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    tc.client.cancel_all_orders(cmd).expect("cancel_all Ok");
+
+    wait_until(
+        || {
+            let state = ws_state.clone();
+            async move {
+                !state.cancelled_trigger_orders.lock().await.is_empty()
+                    && !state.cancel_by_instrument_calls.lock().await.is_empty()
+            }
+        },
+        "trigger and instrument cancels posted",
+    )
+    .await;
+
+    assert_eq!(
+        ws_state.cancelled_trigger_orders.lock().await.as_slice(),
+        &[json!({
+            "subaccount_id": TEST_SUBACCOUNT,
+            "order_id": "trig-eth",
+        })],
+    );
+    assert_eq!(
+        ws_state.cancel_by_instrument_calls.lock().await.as_slice(),
+        &[json!({
+            "subaccount_id": TEST_SUBACCOUNT,
+            "instrument_name": "ETH-PERP",
+        })],
+    );
+    let outcome = tokio::time::timeout(Duration::from_millis(200), async {
+        loop {
+            match tc.rx.recv().await {
+                Some(ExecutionEvent::Order(event)) => return Some(event),
+                Some(_) => {}
+                None => return None,
+            }
+        }
+    })
+    .await;
+    assert!(
+        outcome.is_err(),
+        "cancel-all failure must not emit a per-order event, was {outcome:?}",
+    );
+    assert!(rest_state.open_orders_calls.lock().await.is_empty());
+    assert!(rest_state.trigger_orders_calls.lock().await.is_empty());
 
     tc.client.disconnect().await.expect("disconnect");
 }
@@ -3450,68 +3589,120 @@ async fn test_cancel_all_orders_side_filter_iterates_matching_open_orders(
 ) {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
-    // Three open orders: buy on ETH-PERP, sell on ETH-PERP, buy on BTC-PERP.
-    *rest_state.open_orders_response.lock().await = json!({
-        "orders": [
-            order_json_with("buy-eth", "L1", "buy", "ETH-PERP", 1, "open"),
-            order_json_with("sell-eth", "L2", "sell", "ETH-PERP", 1, "open"),
-            order_json_with("buy-btc", "L3", "buy", "BTC-PERP", 1, "open"),
-        ],
-        "subaccount_id": TEST_SUBACCOUNT,
-    });
-    *rest_state.trigger_orders_response.lock().await = json!({
-        "orders": [
-            trigger_order_json_with(
-                "trig-buy-eth",
-                "T1",
-                "buy",
-                "ETH-PERP",
-                1_700_000_001_000,
-                "market",
-                "untriggered",
-                "3500",
-                "3450",
-                "mark",
-                "stoploss",
-            ),
-            trigger_order_json_with(
-                "trig-sell-eth",
-                "T2",
-                "sell",
-                "ETH-PERP",
-                1_700_000_002_000,
-                "market",
-                "untriggered",
-                "3500",
-                "3550",
-                "mark",
-                "stoploss",
-            ),
-            trigger_order_json_with(
-                "trig-buy-btc",
-                "T3",
-                "buy",
-                "BTC-PERP",
-                1_700_000_003_000,
-                "market",
-                "untriggered",
-                "65000",
-                "64000",
-                "mark",
-                "stoploss",
-            ),
-        ],
-        "subaccount_id": TEST_SUBACCOUNT,
-    });
     let mut tc = build_client(rest_state.clone(), ws_state.clone()).await;
     tc.client.connect().await.expect("connect succeeds");
+
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let other_instrument_id = InstrumentId::from("BTC-PERP.DERIVE");
+    let account_id = AccountId::from("DERIVE-001");
+    let other_account_id = AccountId::from("DERIVE-OTHER");
+    let client_id = Some(ClientId::from("DERIVE"));
+    let other_client_id = Some(ClientId::from("DERIVE-OTHER"));
+    let regular_orders = [
+        (
+            "L-BUY-ETH",
+            "buy-eth",
+            OrderSide::Buy,
+            instrument_id,
+            account_id,
+            client_id,
+        ),
+        (
+            "L-SELL-ETH",
+            "sell-eth",
+            OrderSide::Sell,
+            instrument_id,
+            account_id,
+            client_id,
+        ),
+        (
+            "L-BUY-BTC",
+            "buy-btc",
+            OrderSide::Buy,
+            other_instrument_id,
+            account_id,
+            client_id,
+        ),
+        (
+            "L-BUY-OTHER-ACCOUNT",
+            "buy-other-account",
+            OrderSide::Buy,
+            instrument_id,
+            other_account_id,
+            client_id,
+        ),
+        (
+            "L-SELL-OTHER-ACCOUNT",
+            "sell-other-account",
+            OrderSide::Sell,
+            instrument_id,
+            other_account_id,
+            client_id,
+        ),
+        (
+            "L-BUY-OTHER-CLIENT",
+            "buy-other-client",
+            OrderSide::Buy,
+            instrument_id,
+            account_id,
+            other_client_id,
+        ),
+        (
+            "L-SELL-UNCLAIMED",
+            "sell-unclaimed",
+            OrderSide::Sell,
+            instrument_id,
+            account_id,
+            None,
+        ),
+    ];
+
+    for (order_id, venue_order_id, order_side, instrument, account, owner) in regular_orders {
+        add_order_to_cache(
+            &tc.cache,
+            accepted_order(
+                build_limit_order(
+                    instrument,
+                    ClientOrderId::from(order_id),
+                    order_side,
+                    Price::from("3500.00"),
+                    Quantity::from("1.000"),
+                ),
+                VenueOrderId::from(venue_order_id),
+                account,
+            ),
+            owner,
+        );
+    }
+
+    for (order_id, venue_order_id, order_side) in [
+        ("T-BUY-ETH", "trig-buy-eth", OrderSide::Buy),
+        ("T-SELL-ETH", "trig-sell-eth", OrderSide::Sell),
+    ] {
+        add_order_to_cache(
+            &tc.cache,
+            accepted_order(
+                build_stop_market_order(
+                    instrument_id,
+                    ClientOrderId::from(order_id),
+                    order_side,
+                    Price::from("3450.00"),
+                    Quantity::from("1.000"),
+                ),
+                VenueOrderId::from(venue_order_id),
+                account_id,
+            ),
+            client_id,
+        );
+    }
+    tc.cache.borrow_mut().build_index();
 
     let cmd = CancelAllOrders::new(
         TraderId::from("TRADER-001"),
         Some(ClientId::from("DERIVE")),
         StrategyId::from("S-1"),
-        InstrumentId::from("ETH-PERP.DERIVE"),
-        side,
+        instrument_id,
+        Some(side),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -3546,52 +3737,85 @@ async fn test_cancel_all_orders_side_filter_iterates_matching_open_orders(
     );
     assert!(ws_state.cancel_by_instrument_calls.lock().await.is_empty(),);
     assert!(ws_state.cancel_all_calls.lock().await.is_empty());
+    assert!(rest_state.open_orders_calls.lock().await.is_empty());
+    assert!(rest_state.trigger_orders_calls.lock().await.is_empty());
 
     tc.client.disconnect().await.expect("disconnect");
 }
 
 #[rstest]
+#[case(Some(OrderSide::Buy), OrderType::Limit)]
+#[case(None, OrderType::StopMarket)]
 #[tokio::test]
-async fn test_cancel_all_orders_trigger_list_failure_still_cancels_regular_orders() {
+async fn test_cancel_all_orders_missing_cached_venue_id_fails_closed(
+    #[case] order_side: Option<OrderSide>,
+    #[case] order_type: OrderType,
+) {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
-    *rest_state.trigger_orders_response.lock().await = json!({
-        "error": {"code": -32603, "message": "Trigger query unavailable"}
-    });
-    let mut tc = build_client(rest_state, ws_state.clone()).await;
+    let mut tc = build_client(rest_state.clone(), ws_state.clone()).await;
     tc.client.connect().await.expect("connect succeeds");
+
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let build_order = |client_order_id| match order_type {
+        OrderType::Limit => build_limit_order(
+            instrument_id,
+            client_order_id,
+            OrderSide::Buy,
+            Price::from("3500.00"),
+            Quantity::from("1.000"),
+        ),
+        OrderType::StopMarket => build_stop_market_order(
+            instrument_id,
+            client_order_id,
+            OrderSide::Buy,
+            Price::from("3450.00"),
+            Quantity::from("1.000"),
+        ),
+        _ => unreachable!(),
+    };
+    let account_id = AccountId::from("DERIVE-001");
+    let client_id = Some(ClientId::from("DERIVE"));
+    let valid = accepted_order(
+        build_order(ClientOrderId::from("VALID")),
+        VenueOrderId::from("valid-venue-id"),
+        account_id,
+    );
+    let mut missing = accepted_order(
+        build_order(ClientOrderId::from("MISSING")),
+        VenueOrderId::from("removed-venue-id"),
+        account_id,
+    );
+
+    match &mut missing {
+        OrderAny::Limit(order) => order.venue_order_id = None,
+        OrderAny::StopMarket(order) => order.venue_order_id = None,
+        _ => unreachable!(),
+    }
+    add_order_to_cache(&tc.cache, valid, client_id);
+    add_order_to_cache(&tc.cache, missing, client_id);
+    tc.cache.borrow_mut().build_index();
 
     let cmd = CancelAllOrders::new(
         TraderId::from("TRADER-001"),
         Some(ClientId::from("DERIVE")),
         StrategyId::from("S-1"),
-        InstrumentId::from("ETH-PERP.DERIVE"),
-        OrderSide::NoOrderSide,
+        instrument_id,
+        order_side,
         UUID4::new(),
         UnixNanos::default(),
         None,
         None,
     );
     tc.client.cancel_all_orders(cmd).expect("cancel_all Ok");
+    tokio::time::sleep(Duration::from_millis(100)).await;
 
-    wait_until(
-        || {
-            let state = ws_state.clone();
-            async move { !state.cancel_by_instrument_calls.lock().await.is_empty() }
-        },
-        "cancel_by_instrument posted",
-    )
-    .await;
-
-    assert_eq!(
-        ws_state.cancel_by_instrument_calls.lock().await.as_slice(),
-        &[json!({
-            "subaccount_id": TEST_SUBACCOUNT,
-            "instrument_name": "ETH-PERP",
-        })],
-    );
+    assert!(ws_state.cancelled_orders.lock().await.is_empty());
     assert!(ws_state.cancelled_trigger_orders.lock().await.is_empty());
+    assert!(ws_state.cancel_by_instrument_calls.lock().await.is_empty());
     assert!(ws_state.cancel_all_calls.lock().await.is_empty());
+    assert!(rest_state.open_orders_calls.lock().await.is_empty());
+    assert!(rest_state.trigger_orders_calls.lock().await.is_empty());
 
     tc.client.disconnect().await.expect("disconnect");
 }
@@ -5106,7 +5330,7 @@ async fn test_generate_order_status_reports_paginates_across_multiple_pages() {
 
 #[rstest]
 #[tokio::test]
-async fn test_generate_order_status_reports_open_only_applies_time_window() {
+async fn test_generate_order_status_reports_open_only_ignores_time_window() {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
     *rest_state.open_orders_response.lock().await = json!({
@@ -5135,8 +5359,13 @@ async fn test_generate_order_status_reports_open_only_applies_time_window() {
         .generate_order_status_reports(&cmd)
         .await
         .expect("reports");
-    assert_eq!(reports.len(), 1);
-    assert_eq!(reports[0].venue_order_id.as_str(), "middle");
+    assert_eq!(
+        reports
+            .iter()
+            .map(|report| report.venue_order_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["early", "middle", "late"],
+    );
 
     tc.client.disconnect().await.expect("disconnect");
 }
@@ -5670,7 +5899,7 @@ async fn test_generate_mass_status_adds_flat_position_without_current_position()
         .expect("ETH-PERP flat position report");
 
     assert_eq!(eth_reports.len(), 1);
-    assert_eq!(eth_reports[0].position_side, PositionSideSpecified::Flat);
+    assert_eq!(eth_reports[0].position_side, PositionSide::Flat);
     assert_eq!(eth_reports[0].signed_decimal_qty, dec!(0));
 
     tc.client.disconnect().await.expect("disconnect");
@@ -5729,14 +5958,14 @@ async fn test_generate_mass_status_does_not_flatten_unconverted_position() {
         .get(&InstrumentId::from("SOL-PERP.DERIVE"))
         .expect("valid SOL-PERP position report");
     assert_eq!(sol_reports.len(), 1);
-    assert_eq!(sol_reports[0].position_side, PositionSideSpecified::Long);
+    assert_eq!(sol_reports[0].position_side, PositionSide::Long);
     assert_eq!(sol_reports[0].signed_decimal_qty, dec!(2.5));
 
     let btc_reports = position_reports
         .get(&InstrumentId::from("BTC-PERP.DERIVE"))
         .expect("genuinely absent BTC-PERP position has a flat report");
     assert_eq!(btc_reports.len(), 1);
-    assert_eq!(btc_reports[0].position_side, PositionSideSpecified::Flat);
+    assert_eq!(btc_reports[0].position_side, PositionSide::Flat);
     assert_eq!(btc_reports[0].signed_decimal_qty, dec!(0));
 
     tc.client.disconnect().await.expect("disconnect");
@@ -7513,7 +7742,7 @@ async fn test_cancel_all_orders_bulk_failures_emit_no_order_events(
         Some(ClientId::from("DERIVE")),
         StrategyId::from("S-1"),
         InstrumentId::from("ETH-PERP.DERIVE"),
-        OrderSide::NoOrderSide,
+        None,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -7554,14 +7783,6 @@ async fn test_cancel_all_orders_bulk_failures_emit_no_order_events(
 async fn test_cancel_all_orders_buy_side_with_no_open_orders_is_noop() {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
-    *rest_state.open_orders_response.lock().await = json!({
-        "orders": [],
-        "subaccount_id": TEST_SUBACCOUNT,
-    });
-    *rest_state.trigger_orders_response.lock().await = json!({
-        "orders": [],
-        "subaccount_id": TEST_SUBACCOUNT,
-    });
     let mut tc = build_client(rest_state.clone(), ws_state.clone()).await;
     tc.client.connect().await.expect("connect succeeds");
 
@@ -7570,25 +7791,13 @@ async fn test_cancel_all_orders_buy_side_with_no_open_orders_is_noop() {
         Some(ClientId::from("DERIVE")),
         StrategyId::from("S-1"),
         InstrumentId::from("ETH-PERP.DERIVE"),
-        OrderSide::Buy,
+        Some(OrderSide::Buy),
         UUID4::new(),
         UnixNanos::default(),
         None,
         None,
     );
     tc.client.cancel_all_orders(cmd).expect("cancel_all Ok");
-
-    wait_until(
-        || {
-            let state = rest_state.clone();
-            async move {
-                !state.open_orders_calls.lock().await.is_empty()
-                    && !state.trigger_orders_calls.lock().await.is_empty()
-            }
-        },
-        "open orders queried",
-    )
-    .await;
 
     // Intentional quiet window: `wait_until_async` cannot prove absence of a future cancel.
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -7600,6 +7809,8 @@ async fn test_cancel_all_orders_buy_side_with_no_open_orders_is_noop() {
     );
     assert!(ws_state.cancelled_trigger_orders.lock().await.is_empty());
     assert!(ws_state.cancel_by_instrument_calls.lock().await.is_empty(),);
+    assert!(rest_state.open_orders_calls.lock().await.is_empty());
+    assert!(rest_state.trigger_orders_calls.lock().await.is_empty());
     let cancel_all = ws_state.cancel_all_calls.lock().await;
     assert!(
         cancel_all.is_empty(),
@@ -7705,10 +7916,10 @@ async fn test_generate_order_status_reports_open_no_filter_returns_all_instrumen
         Some("L-ETH-1".to_string()),
     );
     assert_eq!(eth1.instrument_id.symbol.as_str(), "ETH-PERP");
-    assert_eq!(eth1.order_side, OrderSide::Buy);
+    assert_eq!(eth1.order_side, Some(OrderSide::Buy));
 
     let eth2 = by_voi.get("ord-eth-2").expect("ord-eth-2 present");
-    assert_eq!(eth2.order_side, OrderSide::Sell);
+    assert_eq!(eth2.order_side, Some(OrderSide::Sell));
 
     let btc1 = by_voi.get("ord-btc-1").expect("ord-btc-1 present");
     assert_eq!(btc1.instrument_id.symbol.as_str(), "BTC-PERP");
@@ -7760,15 +7971,15 @@ async fn test_generate_position_status_reports_returns_long_short_and_flat() {
         .collect();
 
     let eth = by_symbol.get("ETH-PERP").expect("ETH-PERP present");
-    assert_eq!(eth.position_side, PositionSideSpecified::Long);
+    assert_eq!(eth.position_side, PositionSide::Long);
     assert_eq!(eth.signed_decimal_qty, dec!(3));
 
     let btc = by_symbol.get("BTC-PERP").expect("BTC-PERP present");
-    assert_eq!(btc.position_side, PositionSideSpecified::Short);
+    assert_eq!(btc.position_side, PositionSide::Short);
     assert_eq!(btc.signed_decimal_qty, dec!(-1.5));
 
     let sol = by_symbol.get("SOL-PERP").expect("SOL-PERP present");
-    assert_eq!(sol.position_side, PositionSideSpecified::Flat);
+    assert_eq!(sol.position_side, PositionSide::Flat);
     assert_eq!(sol.signed_decimal_qty, dec!(0));
 
     tc.client.disconnect().await.expect("disconnect");
@@ -8271,7 +8482,7 @@ async fn test_generate_position_status_reports_option_position() {
         reports[0].instrument_id.symbol.as_str(),
         "ETH-20260626-3500-C"
     );
-    assert_eq!(reports[0].position_side, PositionSideSpecified::Short);
+    assert_eq!(reports[0].position_side, PositionSide::Short);
     assert_eq!(reports[0].signed_decimal_qty, dec!(-2));
     assert_eq!(reports[0].avg_px_open, Some(dec!(80)));
 

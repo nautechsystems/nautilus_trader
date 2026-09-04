@@ -168,83 +168,23 @@ mod tests {
     }
 
     #[rstest]
-    fn test_params_option_get_u64() {
-        let params = Some(create_test_params());
-        assert_eq!(params.as_ref().and_then(|p| p.get_u64("u64_val")), Some(42));
-        assert_eq!(params.as_ref().and_then(|p| p.get_u64("missing")), None);
-        assert_eq!(params.as_ref().and_then(|p| p.get_u64("str_val")), None);
-    }
-
-    #[rstest]
-    fn test_params_option_get_i64() {
-        let params = Some(create_test_params());
-        assert_eq!(
-            params.as_ref().and_then(|p| p.get_i64("i64_val")),
-            Some(-100)
-        );
-        assert_eq!(params.as_ref().and_then(|p| p.get_i64("missing")), None);
-    }
-
-    #[rstest]
-    fn test_params_option_get_usize() {
-        let params = Some(create_test_params());
-        assert_eq!(
-            params.as_ref().and_then(|p| p.get_usize("usize_val")),
-            Some(5)
-        );
-        assert_eq!(params.as_ref().and_then(|p| p.get_usize("missing")), None);
-    }
-
-    #[rstest]
-    fn test_params_option_get_str() {
-        let params = Some(create_test_params());
-        assert_eq!(
-            params.as_ref().and_then(|p| p.get_str("str_val")),
-            Some("hello")
-        );
-        assert_eq!(params.as_ref().and_then(|p| p.get_str("missing")), None);
-        assert_eq!(params.as_ref().and_then(|p| p.get_str("u64_val")), None);
-    }
-
-    #[rstest]
-    fn test_params_option_get_bool() {
-        let params = Some(create_test_params());
-        assert_eq!(
-            params.as_ref().and_then(|p| p.get_bool("bool_val")),
-            Some(true)
-        );
-        assert_eq!(params.as_ref().and_then(|p| p.get_bool("missing")), None);
-    }
-
-    #[rstest]
-    fn test_params_option_get_f64() {
-        let params = Some(create_test_params());
-        assert_eq!(
-            params.as_ref().and_then(|p| p.get_f64("f64_val")),
-            Some(2.5)
-        );
-        assert_eq!(params.as_ref().and_then(|p| p.get_f64("missing")), None);
-    }
-
-    #[rstest]
-    fn test_params_option_none() {
-        let params: Option<Params> = None;
-        assert_eq!(params.as_ref().and_then(|p| p.get_u64("any")), None);
-        assert_eq!(params.as_ref().and_then(|p| p.get_str("any")), None);
-    }
-
-    #[rstest]
-    fn test_params_ref_get_u64() {
+    fn test_params_getters() {
         let params = create_test_params();
+
         assert_eq!(params.get_u64("u64_val"), Some(42));
-        assert_eq!(params.get_u64("missing"), None);
-    }
-
-    #[rstest]
-    fn test_params_ref_get_usize() {
-        let params = create_test_params();
+        assert_eq!(params.get_i64("i64_val"), Some(-100));
         assert_eq!(params.get_usize("usize_val"), Some(5));
+        assert_eq!(params.get_str("str_val"), Some("hello"));
+        assert_eq!(params.get_bool("bool_val"), Some(true));
+        assert_eq!(params.get_f64("f64_val"), Some(2.5));
+        assert_eq!(params.get_u64("missing"), None);
+        assert_eq!(params.get_i64("missing"), None);
         assert_eq!(params.get_usize("missing"), None);
+        assert_eq!(params.get_str("missing"), None);
+        assert_eq!(params.get_bool("missing"), None);
+        assert_eq!(params.get_f64("missing"), None);
+        assert_eq!(params.get_u64("str_val"), None);
+        assert_eq!(params.get_str("u64_val"), None);
     }
 
     #[rstest]
@@ -258,52 +198,5 @@ mod tests {
         assert_eq!(params.get_usize("u32_overflow"), None);
         #[cfg(target_pointer_width = "64")]
         assert_eq!(params.get_usize("u32_overflow"), Some(4_294_967_296));
-    }
-
-    #[rstest]
-    fn test_params_ref_get_str() {
-        let params = create_test_params();
-        assert_eq!(params.get_str("str_val"), Some("hello"));
-        assert_eq!(params.get_str("missing"), None);
-    }
-
-    #[rstest]
-    fn test_submit_tries_pattern() {
-        let mut params = Params::new();
-        params.insert("submit_tries".to_string(), json!(3u64));
-        let cmd_params = Some(params);
-
-        let submit_tries = cmd_params
-            .as_ref()
-            .and_then(|p| p.get_usize("submit_tries"))
-            .filter(|&n| n > 0);
-
-        assert_eq!(submit_tries, Some(3));
-    }
-
-    #[rstest]
-    fn test_submit_tries_pattern_zero_filtered() {
-        let mut params = Params::new();
-        params.insert("submit_tries".to_string(), json!(0u64));
-        let cmd_params = Some(params);
-
-        let submit_tries = cmd_params
-            .as_ref()
-            .and_then(|p| p.get_usize("submit_tries"))
-            .filter(|&n| n > 0);
-
-        assert_eq!(submit_tries, None);
-    }
-
-    #[rstest]
-    fn test_submit_tries_pattern_missing() {
-        let cmd_params: Option<Params> = None;
-
-        let submit_tries = cmd_params
-            .as_ref()
-            .and_then(|p| p.get_usize("submit_tries"))
-            .filter(|&n| n > 0);
-
-        assert_eq!(submit_tries, None);
     }
 }

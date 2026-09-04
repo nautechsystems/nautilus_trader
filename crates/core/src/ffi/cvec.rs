@@ -25,7 +25,7 @@
 //!
 //! - `cvec_new` - create an empty `CVec` sentinel that can be returned to foreign code.
 //!
-//! De-allocation is intentionally **not** provided via a generic helper. Instead each FFI module
+//! De-allocation is intentionally **not** provided via a generic deallocator. Instead each FFI module
 //! must expose its own *type-specific* `vec_*_drop` function which reconstructs the original
 //! `Vec<T>` with [`Vec::from_raw_parts`] and allows it to drop. This avoids the size-mismatch risk
 //! that a one-size-fits-all `cvec_drop` had in the past.

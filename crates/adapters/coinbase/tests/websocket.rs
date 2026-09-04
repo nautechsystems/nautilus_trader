@@ -269,7 +269,7 @@ async fn test_ws_connect_and_disconnect_lifecycle(#[case] endpoint: &str) {
     assert_eq!(change.endpoint, endpoint);
     assert_eq!(change.state, SocketState::Disconnected);
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
     assert!(
         registry
             .handle(ClientId::from("COINBASE"), endpoint)
@@ -314,7 +314,7 @@ async fn test_ws_subscribe_sends_typed_payload() {
     assert_eq!(pids.len(), 1);
     assert_eq!(pids[0].as_str(), Some("BTC-USD"));
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -361,7 +361,7 @@ async fn test_ws_unsubscribe_sends_typed_payload() {
         Some("ticker")
     );
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -384,7 +384,7 @@ async fn test_ws_user_channel_subscribe_without_credentials_fails() {
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert!(state.received_subscribes().await.is_empty());
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -465,7 +465,7 @@ async fn test_ws_resubscribes_topics_after_reconnect() {
         assert_eq!(sub.get("channel").and_then(|c| c.as_str()), Some("ticker"));
     }
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -500,7 +500,7 @@ async fn test_ws_emits_reconnected_message_after_drop() {
     }
     assert!(saw_reconnected, "client did not emit Reconnected sentinel");
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -537,7 +537,7 @@ async fn test_ws_handles_malformed_message_gracefully() {
         "connection dropped after malformed frame"
     );
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -587,5 +587,5 @@ async fn test_ws_multiple_subscribes_each_reach_server() {
     assert_eq!(counts.get("ticker").copied(), Some(1));
     assert_eq!(counts.get("level2").copied(), Some(1));
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
 }

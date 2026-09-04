@@ -81,6 +81,7 @@ pub enum OrderDeniedReason {
         /// The instrument's maximum price precision.
         max_precision: u8,
     },
+
     /// The price is not positive for an instrument that disallows negative prices.
     #[error("PRICE_NOT_POSITIVE: field={field}, price={price}")]
     PriceNotPositive {
@@ -89,6 +90,7 @@ pub enum OrderDeniedReason {
         /// The submitted price.
         price: Price,
     },
+
     /// The quantity precision exceeds the instrument maximum.
     #[error(
         "QUANTITY_PRECISION_EXCEEDS_MAXIMUM: quantity={quantity}, precision={quantity_precision}, max_precision={max_precision}"
@@ -101,12 +103,14 @@ pub enum OrderDeniedReason {
         /// The instrument's maximum quantity precision.
         max_precision: u8,
     },
+
     /// The order quantity could not be converted for risk checks.
     #[error("QUANTITY_CONVERSION_FAILED: {detail}")]
     QuantityConversionFailed {
         /// The underlying conversion error.
         detail: String,
     },
+
     /// The effective order quantity exceeds the instrument maximum.
     #[error("QUANTITY_EXCEEDS_MAXIMUM: effective={effective_quantity}, max={max_quantity}")]
     QuantityExceedsMaximum {
@@ -115,6 +119,7 @@ pub enum OrderDeniedReason {
         /// The instrument's maximum tradable quantity.
         max_quantity: Quantity,
     },
+
     /// The effective order quantity is below the instrument minimum.
     #[error("QUANTITY_BELOW_MINIMUM: effective={effective_quantity}, min={min_quantity}")]
     QuantityBelowMinimum {
@@ -132,33 +137,33 @@ pub enum OrderDeniedReason {
         /// The invalid configured value.
         value: Decimal,
     },
-    /// The order side is invalid for this operation.
-    #[error("INVALID_ORDER_SIDE: {order_side}")]
-    InvalidOrderSide {
-        /// The offending order side.
-        order_side: OrderSide,
-    },
+
     /// A GTD order is missing its expire time.
     #[error("MISSING_EXPIRE_TIME")]
     MissingExpireTime,
+
     /// The order's expire time is in the past.
     #[error("EXPIRE_TIME_IN_PAST: {expire_time}")]
     ExpireTimeInPast {
         /// The expire time that has already elapsed.
         expire_time: String,
     },
+
     /// The order is missing a required trailing offset type.
     #[error("MISSING_TRAILING_OFFSET_TYPE")]
     MissingTrailingOffsetType,
+
     /// The order's trailing offset type is not supported.
     #[error("UNSUPPORTED_TRAILING_OFFSET_TYPE: {offset_type}")]
     UnsupportedTrailingOffsetType {
         /// The unsupported trailing offset type.
         offset_type: TrailingOffsetType,
     },
+
     /// The order is missing a required trigger type.
     #[error("MISSING_TRIGGER_TYPE")]
     MissingTriggerType,
+
     /// The order is missing a required trailing offset.
     #[error("MISSING_TRAILING_OFFSET")]
     MissingTrailingOffset,
@@ -169,12 +174,14 @@ pub enum OrderDeniedReason {
         /// The instrument that was not found.
         instrument_id: InstrumentId,
     },
+
     /// The position for a reduce-only order was not found.
     #[error("POSITION_NOT_FOUND: {position_id}")]
     PositionNotFound {
         /// The position that was not found.
         position_id: PositionId,
     },
+
     /// No market price is available for the order risk check.
     #[error("MARKET_PRICE_UNAVAILABLE: order_type={order_type}, instrument_id={instrument_id}")]
     MarketPriceUnavailable {
@@ -190,12 +197,14 @@ pub enum OrderDeniedReason {
         /// The underlying calculation error.
         detail: String,
     },
+
     /// The order notional value could not be calculated.
     #[error("NOTIONAL_CALCULATION_FAILED: {detail}")]
     NotionalCalculationFailed {
         /// The underlying calculation error.
         detail: String,
     },
+
     /// The order notional is below the instrument minimum.
     #[error("NOTIONAL_BELOW_MINIMUM: min={min_notional}, notional={notional}")]
     NotionalBelowMinimum {
@@ -204,6 +213,7 @@ pub enum OrderDeniedReason {
         /// The order's notional value.
         notional: Money,
     },
+
     /// The order notional exceeds the instrument maximum.
     #[error("NOTIONAL_EXCEEDS_MAXIMUM: max={max_notional}, notional={notional}")]
     NotionalExceedsMaximum {
@@ -212,6 +222,7 @@ pub enum OrderDeniedReason {
         /// The order's notional value.
         notional: Money,
     },
+
     /// The order notional exceeds the configured maximum per order.
     #[error("NOTIONAL_EXCEEDS_MAX_PER_ORDER: max={max_notional}, notional={notional}")]
     NotionalExceedsMaxPerOrder {
@@ -220,6 +231,7 @@ pub enum OrderDeniedReason {
         /// The order's notional value.
         notional: Money,
     },
+
     /// The order notional exceeds the account free balance.
     #[error("NOTIONAL_EXCEEDS_FREE_BALANCE: free={free_balance}, notional={notional}")]
     NotionalExceedsFreeBalance {
@@ -228,12 +240,14 @@ pub enum OrderDeniedReason {
         /// The order's notional value.
         notional: Money,
     },
+
     /// The order initial margin could not be calculated.
     #[error("INITIAL_MARGIN_CALCULATION_FAILED: {detail}")]
     InitialMarginCalculationFailed {
         /// The underlying calculation error.
         detail: String,
     },
+
     /// The order initial margin exceeds the account free balance.
     #[error("INITIAL_MARGIN_EXCEEDS_FREE_BALANCE: free={free_balance}, margin={initial_margin}")]
     InitialMarginExceedsFreeBalance {
@@ -242,6 +256,7 @@ pub enum OrderDeniedReason {
         /// The initial margin required for the order.
         initial_margin: Money,
     },
+
     /// The balance to lock for the betting order could not be calculated.
     #[error("BETTING_BALANCE_LOCKED_CALCULATION_FAILED: {detail}")]
     BettingBalanceLockedCalculationFailed {
@@ -259,12 +274,14 @@ pub enum OrderDeniedReason {
         /// The cumulative notional across the checked orders.
         cumulative_notional: Money,
     },
+
     /// The cumulative initial margin could not be calculated.
     #[error("CUMULATIVE_INITIAL_MARGIN_CALCULATION_FAILED: {detail}")]
     CumulativeInitialMarginCalculationFailed {
         /// The underlying calculation error.
         detail: String,
     },
+
     /// The cumulative initial margin exceeds the account free balance.
     #[error(
         "CUMULATIVE_INITIAL_MARGIN_EXCEEDS_FREE_BALANCE: free={free_balance}, margin={cumulative_initial_margin}"
@@ -282,32 +299,38 @@ pub enum OrderDeniedReason {
         /// The position the order would increase.
         position_id: PositionId,
     },
+
     /// The order list is missing orders in the cache.
     #[error("ORDER_LIST_INCOMPLETE: {order_list_id}")]
     OrderListIncomplete {
         /// The order list with missing orders.
         order_list_id: OrderListId,
     },
+
     /// The order was denied because its order list failed risk checks.
     #[error("ORDER_LIST_DENIED: {order_list_id}")]
     OrderListDenied {
         /// The order list that failed risk checks.
         order_list_id: OrderListId,
     },
-    /// Trading is halted; new orders are denied.
+
+    /// Trading is halted; new submissions and modifications are denied.
     #[error("TRADING_HALTED")]
     TradingHalted,
-    /// Trading is reducing; the order would increase exposure.
+
+    /// Trading is reducing; only eligible reduce-only submissions are permitted.
     #[error("TRADING_STATE_REDUCING: side={order_side}, instrument_id={instrument_id}")]
     TradingStateReducing {
-        /// The side of the order that would increase exposure.
+        /// The side of the denied order.
         order_side: OrderSide,
         /// The instrument the order applies to.
         instrument_id: InstrumentId,
     },
+
     /// The order submission rate limit was exceeded.
     #[error("RATE_LIMIT_EXCEEDED")]
     RateLimitExceeded,
+
     /// The execution stream is unavailable or recovering; retry after recovery.
     #[error("STREAM_RECONCILING: execution stream unavailable or recovering, retry after recovery")]
     StreamReconciling,
@@ -323,6 +346,7 @@ pub enum OrderDeniedReason {
         /// The routing context used to look up an execution client.
         routing_context: String,
     },
+
     /// The execution client does not handle the order venue.
     #[error(
         "CLIENT_VENUE_MISMATCH: client_id={client_id}, order_venue={order_venue}, client_venue={client_venue}"
@@ -335,6 +359,7 @@ pub enum OrderDeniedReason {
         /// The execution client's venue.
         client_venue: Venue,
     },
+
     /// Submitting the order to the execution client failed.
     #[error("SUBMIT_FAILED: {detail}")]
     SubmitFailed {
@@ -348,6 +373,7 @@ pub enum OrderDeniedReason {
         /// The validation failure detail.
         detail: String,
     },
+
     /// The supplied position ID is invalid for the order submission.
     #[error("INVALID_POSITION_ID: {position_id}; {detail}")]
     InvalidPositionId {
@@ -356,27 +382,36 @@ pub enum OrderDeniedReason {
         /// The validation failure detail.
         detail: String,
     },
+
     /// The venue does not support the requested order list.
     #[error("UNSUPPORTED_ORDER_LIST: {detail}")]
     UnsupportedOrderList {
         /// The reason the order list is unsupported.
         detail: String,
     },
+
     /// The order type is not supported.
     #[error("UNSUPPORTED_ORDER_TYPE: {order_type}")]
     UnsupportedOrderType {
         /// The unsupported order type.
         order_type: OrderType,
     },
+
+    /// The execution client or venue does not support the requested reduce-only instruction.
+    #[error("UNSUPPORTED_REDUCE_ONLY")]
+    UnsupportedReduceOnly,
+
     /// The order's time in force is not supported.
     #[error("UNSUPPORTED_TIME_IN_FORCE: {0}")]
     UnsupportedTimeInForce(TimeInForce),
+
     /// The venue does not support the requested take-profit/stop-loss parameters.
     #[error("UNSUPPORTED_TP_SL: {detail}")]
     UnsupportedTpSl {
         /// The reason the take-profit/stop-loss parameters are unsupported.
         detail: String,
     },
+
     /// The order failed validation before submission.
     #[error("VALIDATION_FAILED: {detail}")]
     ValidationFailed {
@@ -409,7 +444,6 @@ impl OrderDeniedCode {
             Self::InvalidMaxNotionalPerOrder => {
                 "The configured maximum notional per order is invalid."
             }
-            Self::InvalidOrderSide => "The order side is invalid for this operation.",
             Self::MissingExpireTime => "A GTD order is missing its expire time.",
             Self::ExpireTimeInPast => "The order's expire time is in the past.",
             Self::MissingTrailingOffsetType => {
@@ -462,8 +496,12 @@ impl OrderDeniedCode {
             Self::OrderListDenied => {
                 "The order was denied because its order list failed risk checks."
             }
-            Self::TradingHalted => "Trading is halted; new orders are denied.",
-            Self::TradingStateReducing => "Trading is reducing; the order would increase exposure.",
+            Self::TradingHalted => {
+                "Trading is halted; new submissions and modifications are denied."
+            }
+            Self::TradingStateReducing => {
+                "Trading is reducing; only eligible reduce-only submissions are permitted."
+            }
             Self::RateLimitExceeded => "The order submission rate limit was exceeded.",
             Self::StreamReconciling => {
                 "The execution stream is unavailable or recovering; retry after recovery."
@@ -477,6 +515,9 @@ impl OrderDeniedCode {
             }
             Self::UnsupportedOrderList => "The venue does not support the requested order list.",
             Self::UnsupportedOrderType => "The order type is not supported.",
+            Self::UnsupportedReduceOnly => {
+                "The execution client or venue does not support the requested reduce-only instruction."
+            }
             Self::UnsupportedTimeInForce => "The order's time in force is not supported.",
             Self::UnsupportedTpSl => {
                 "The venue does not support the requested take-profit/stop-loss parameters."
@@ -653,9 +694,6 @@ mod tests {
         let not_found = OrderDeniedReason::InstrumentNotFound {
             instrument_id: InstrumentId::from("AUD/USD.SIM"),
         };
-        let bad_side = OrderDeniedReason::InvalidOrderSide {
-            order_side: OrderSide::NoOrderSide,
-        };
         let reducing = OrderDeniedReason::TradingStateReducing {
             order_side: OrderSide::Buy,
             instrument_id: InstrumentId::from("AUD/USD.SIM"),
@@ -697,7 +735,6 @@ mod tests {
             .to_string(),
             "ORDER_LIST_DENIED: OL-2"
         );
-        assert_eq!(bad_side.to_string(), "INVALID_ORDER_SIDE: NO_ORDER_SIDE");
         assert_eq!(
             OrderDeniedReason::TradingHalted.to_string(),
             "TRADING_HALTED"
@@ -763,6 +800,7 @@ mod tests {
         let unsupported_order_type = OrderDeniedReason::UnsupportedOrderType {
             order_type: OrderType::TrailingStopMarket,
         };
+        let unsupported_reduce_only = OrderDeniedReason::UnsupportedReduceOnly;
         let unsupported_tp_sl = OrderDeniedReason::UnsupportedTpSl {
             detail: "TP/SL trigger prices are not supported in demo mode".to_string(),
         };
@@ -782,6 +820,10 @@ mod tests {
         assert_eq!(
             unsupported_order_type.to_string(),
             "UNSUPPORTED_ORDER_TYPE: TRAILING_STOP_MARKET"
+        );
+        assert_eq!(
+            unsupported_reduce_only.to_string(),
+            "UNSUPPORTED_REDUCE_ONLY"
         );
         assert_eq!(
             unsupported_tp_sl.to_string(),
@@ -832,9 +874,6 @@ mod tests {
             OrderDeniedReason::InvalidMaxNotionalPerOrder {
                 instrument_id: InstrumentId::from("AUD/USD.SIM"),
                 value: Decimal::ONE,
-            },
-            OrderDeniedReason::InvalidOrderSide {
-                order_side: OrderSide::NoOrderSide,
             },
             OrderDeniedReason::MissingExpireTime,
             OrderDeniedReason::ExpireTimeInPast {
@@ -940,6 +979,7 @@ mod tests {
             OrderDeniedReason::UnsupportedOrderType {
                 order_type: OrderType::TrailingStopMarket,
             },
+            OrderDeniedReason::UnsupportedReduceOnly,
             OrderDeniedReason::UnsupportedTimeInForce(TimeInForce::Gtd),
             OrderDeniedReason::UnsupportedTpSl {
                 detail: "boom".to_string(),

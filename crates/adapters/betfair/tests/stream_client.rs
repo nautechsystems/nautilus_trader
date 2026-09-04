@@ -22,11 +22,7 @@
 //! - Reconnection: client re-sends auth + subscriptions with latest clk after a
 //!   server-side drop
 
-use std::{
-    fmt::Debug,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::{fmt::Debug, sync::Arc, time::Duration};
 
 use nautilus_betfair::{
     common::{
@@ -43,6 +39,7 @@ use nautilus_betfair::{
     },
 };
 use nautilus_network::socket::TcpMessageHandler;
+use parking_lot::Mutex;
 use rstest::rstest;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -203,7 +200,7 @@ async fn test_connect_sends_auth() {
     assert_eq!(json["appKey"], "test-app-key");
     assert_eq!(json["session"], "sess-token");
 
-    client.close().await;
+    client.close().await.expect("close stream");
 }
 
 #[rstest]
@@ -246,7 +243,7 @@ async fn test_authentication_rejection_is_correlated() {
         StreamLifecycleState::Rejected
     );
     assert!(!client.is_authenticated());
-    client.close().await;
+    client.close().await.expect("close stream");
     server.await.unwrap();
 }
 
@@ -300,7 +297,7 @@ async fn test_subscription_rejection_is_correlated() {
         StreamLifecycleState::Rejected
     );
     assert!(!client.is_order_ready());
-    client.close().await;
+    client.close().await.expect("close stream");
     server.await.unwrap();
 }
 
@@ -402,7 +399,7 @@ async fn test_degraded_initial_image_reissues_order_subscription() {
     image_tx.send(()).unwrap();
     wait_for_order_state(&client, StreamLifecycleState::Active).await;
     assert!(client.is_order_ready());
-    client.close().await;
+    client.close().await.expect("close stream");
     let (original_id, replacement) = server.await.unwrap();
     assert_eq!(replacement["op"], "orderSubscription");
     assert_ne!(replacement["id"], original_id);
@@ -575,7 +572,7 @@ async fn test_market_subscription_lifecycle_degrades_and_recovers() {
     finish_tx.send(()).unwrap();
     wait_for_market_state(&client, StreamLifecycleState::Active).await;
     assert!(client.is_market_ready());
-    client.close().await;
+    client.close().await.expect("close stream");
     let (original_id, replacement, final_sub) = server.await.unwrap();
     assert_eq!(replacement["op"], "marketSubscription");
     assert_ne!(replacement["id"], original_id);
@@ -668,7 +665,7 @@ async fn test_stale_subscription_change_is_not_forwarded() {
 
     assert!(client.is_market_ready());
     assert!(!*stale_forwarded.borrow());
-    client.close().await;
+    client.close().await.expect("close stream");
 }
 
 #[rstest]
@@ -727,7 +724,7 @@ async fn test_silent_subscribed_peer_reconnects_after_two_server_intervals() {
     let sub = serde_json::from_str::<serde_json::Value>(&sub).unwrap();
     assert_eq!(sub["op"], "orderSubscription");
     assert_eq!(sub["heartbeatMs"], 500);
-    client.close().await;
+    client.close().await.expect("close stream");
 }
 
 #[rstest]
@@ -787,7 +784,7 @@ async fn test_server_heartbeat_traffic_prevents_dead_peer_reconnect() {
         "heartbeat traffic must keep the peer current",
     );
     assert!(client.is_active());
-    client.close().await;
+    client.close().await.expect("close stream");
     let _ = done_tx.send(());
     server.await.unwrap();
 }
@@ -831,7 +828,7 @@ async fn test_connect_sends_configured_outbound_heartbeat() {
     let heartbeat: serde_json::Value = serde_json::from_str(&heartbeat).unwrap();
     assert_eq!(heartbeat, serde_json::json!({"op": "heartbeat"}));
 
-    client.close().await;
+    client.close().await.expect("close stream");
 }
 
 #[rstest]
@@ -875,7 +872,7 @@ async fn test_connect_without_heartbeat_keeps_idle_connection_active() {
     );
     assert!(client.is_active());
 
-    client.close().await;
+    client.close().await.expect("close stream");
 }
 
 #[rstest]
@@ -993,7 +990,7 @@ async fn test_subscribe_markets_includes_market_filter_and_fields() {
         "expected requested fields in payload, was: {field_strings:?}"
     );
 
-    client.close().await;
+    client.close().await.expect("close stream");
 }
 
 /// After subscribing, the subscription message arrives at the server.
@@ -1035,7 +1032,7 @@ async fn test_subscribe_markets_sends_subscription() {
     assert_eq!(json["heartbeatMs"], 5_000);
     assert_eq!(json["segmentationEnabled"], true);
 
-    client.close().await;
+    client.close().await.expect("close stream");
 }
 
 /// `orderSubscription` payload must include the supplied `OrderFilter` so the
@@ -1099,7 +1096,7 @@ async fn test_subscribe_orders_includes_order_filter_payload() {
     let ids: Vec<u64> = account_ids.iter().filter_map(|v| v.as_u64()).collect();
     assert_eq!(ids, vec![123_456]);
 
-    client.close().await;
+    client.close().await.expect("close stream");
 }
 
 /// After auth, a Status message from the server is informational and must
@@ -1178,7 +1175,7 @@ async fn test_stream_status_message_keeps_client_active() {
         "client must remain active after a non-closing status message",
     );
 
-    client.close().await;
+    client.close().await.expect("close stream");
     server.await.unwrap();
 }
 
@@ -1279,7 +1276,7 @@ async fn test_subscribe_orders_resubscribe_resets_clk_for_reconnect() {
         "resubscribe-on-reconnect must not replay stale initialClk, was: {resub_json}",
     );
 
-    client.close().await;
+    client.close().await.expect("close stream");
 }
 
 /// Malformed lines must not bring the connection down. The handler observes
@@ -1351,7 +1348,7 @@ async fn test_stream_invalid_json_does_not_drop_connection() {
         "client must remain active after a malformed message",
     );
 
-    client.close().await;
+    client.close().await.expect("close stream");
     server.await.unwrap();
 }
 
@@ -1391,7 +1388,7 @@ async fn test_subscribe_orders_sends_subscription() {
     assert_eq!(json["heartbeatMs"], 5_000);
     assert_eq!(json["segmentationEnabled"], true);
 
-    client.close().await;
+    client.close().await.expect("close stream");
 }
 
 /// MCM messages with a `clk` are forwarded to the user handler.
@@ -1438,7 +1435,7 @@ async fn test_mcm_data_reaches_handler() {
     .await;
 
     assert!(*received.borrow() > 0);
-    client.close().await;
+    client.close().await.expect("close stream");
 }
 
 #[rstest]
@@ -1485,7 +1482,7 @@ async fn test_segmented_mcm_survives_fragmented_and_coalesced_transport() {
 
     let handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
         if let Ok(StreamMessage::MarketChange(message)) = stream_decode(data) {
-            let mut received = received_handler.lock().unwrap();
+            let mut received = received_handler.lock();
             received.push(message.segment_type.unwrap());
             received_count_tx.send_replace(received.len());
         }
@@ -1504,10 +1501,10 @@ async fn test_segmented_mcm_survives_fragmented_and_coalesced_transport() {
     })
     .await;
 
-    client.close().await;
+    client.close().await.expect("close stream");
     server.await.unwrap();
 
-    let received = received.lock().unwrap();
+    let received = received.lock();
     assert_eq!(received.len(), SEQUENCE_COUNT * 3);
     let (sequences, remainder) = received.as_chunks::<3>();
     assert!(remainder.is_empty());
@@ -1624,7 +1621,7 @@ async fn test_reconnect_resends_auth_and_subscription_with_clk() {
         "subscription replayed with latest clk token"
     );
 
-    client.close().await;
+    client.close().await.expect("close stream");
 }
 
 /// `is_active()` returns true after connection and false after close.
@@ -1663,7 +1660,7 @@ async fn test_is_active_lifecycle() {
 
     assert!(client.is_active());
 
-    client.close().await;
+    client.close().await.expect("close stream");
     assert!(!client.is_active());
 }
 
@@ -1702,7 +1699,7 @@ async fn test_subscribe_after_close_returns_error() {
             .await
             .unwrap();
 
-    client.close().await;
+    client.close().await.expect("close stream");
 
     let market_err = client
         .subscribe_markets(Default::default(), Default::default(), None, None)
@@ -1802,7 +1799,7 @@ async fn test_reconnect_replays_both_subscriptions() {
     assert!(ops.contains(&"marketSubscription".to_string()));
     assert!(ops.contains(&"orderSubscription".to_string()));
 
-    client.close().await;
+    client.close().await.expect("close stream");
 }
 
 /// An explicit reconnect opens a replacement socket and replays current auth before the retained
@@ -1886,7 +1883,7 @@ async fn test_request_reconnect_uses_updated_auth_and_clk() {
 
     server.await.unwrap();
 
-    client.close().await;
+    client.close().await.expect("close stream");
 }
 
 #[rstest]
@@ -1921,7 +1918,7 @@ async fn test_request_reconnect_after_close_does_not_open_connection() {
     .unwrap();
 
     accepted_rx.await.unwrap();
-    client.close().await;
+    client.close().await.expect("close stream");
     assert!(!client.request_reconnect());
 
     server.await.unwrap();

@@ -13,12 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! BitMEX WebSocket message structures and helper types.
+//! BitMEX WebSocket message structures and supporting types.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Debug};
 
 use ahash::AHashMap;
 use jiff::Timestamp;
+use nautilus_core::string::secret::REDACTED;
 use rust_decimal::Decimal;
 use serde::{
     Deserialize, Deserializer, Serialize,
@@ -28,6 +29,7 @@ use serde_json::{Value, value::RawValue};
 use strum::Display;
 use ustr::Ustr;
 use uuid::Uuid;
+use zeroize::Zeroize;
 
 use super::enums::{
     BitmexAction, BitmexSide, BitmexTickDirection, BitmexWsAuthAction, BitmexWsOperation,
@@ -81,10 +83,29 @@ where
 ///
 /// The args array contains [api_key, expires/nonce, signature].
 /// The second element must be a number (not a string) for proper authentication.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct BitmexAuthentication {
     pub op: BitmexWsAuthAction,
     pub args: (String, i64, String),
+}
+
+impl Zeroize for BitmexAuthentication {
+    fn zeroize(&mut self) {
+        self.args.0.zeroize();
+        self.args.1.zeroize();
+        self.args.2.zeroize();
+    }
+}
+
+impl Debug for BitmexAuthentication {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(BitmexAuthentication))
+            .field("op", &self.op)
+            .field("api_key", &REDACTED)
+            .field("expires", &self.args.1)
+            .field("signature", &REDACTED)
+            .finish()
+    }
 }
 
 /// BitMEX WebSocket subscription message.
@@ -1256,6 +1277,28 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_authentication_redacts_and_zeroizes() {
+        let mut auth = BitmexAuthentication {
+            op: BitmexWsAuthAction::AuthKeyExpires,
+            args: (
+                "api-key-sentinel".to_string(),
+                123_456,
+                "signature-sentinel".to_string(),
+            ),
+        };
+
+        let debug = format!("{auth:?}");
+        auth.zeroize();
+
+        assert_eq!(debug.matches(REDACTED).count(), 2);
+        assert!(!debug.contains("api-key-sentinel"));
+        assert!(!debug.contains("signature-sentinel"));
+        assert_eq!(auth.args.0, "");
+        assert_eq!(auth.args.1, 0);
+        assert_eq!(auth.args.2, "");
+    }
 
     #[rstest]
     fn test_try_from_instrument_msg_with_full_data_success() {

@@ -17,16 +17,12 @@
 //!
 //! Edit the constants below to change the environment, target instrument, and order size.
 //!
-//! WARNING: With `DRY_RUN = false` this tester places REAL orders with REAL funds
-//! on the configured environment. Keep `DRY_RUN = true` unless you intend to
-//! trade live; dry-run mode logs the intended order flow without submitting.
-//!
 //! Run with: `cargo run --example okx-exec-tester --package nautilus-okx --features examples`
 //!
 //! Required credential environment variables:
-//! - `OKX_API_KEY`.
-//! - `OKX_API_SECRET`.
-//! - `OKX_API_PASSPHRASE`.
+//! - `OKX_API_KEY`
+//! - `OKX_API_SECRET`
+//! - `OKX_API_PASSPHRASE`
 
 use nautilus_common::enums::Environment;
 use nautilus_live::{config::LiveExecutionEngineConfig, node::LiveNode};
@@ -45,9 +41,11 @@ use nautilus_okx::{
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
-const OKX_ENVIRONMENT: OKXEnvironment = OKXEnvironment::Live;
-/// Set to `false` to submit real orders. Dry-run mode logs order flow only.
+// WARNING: With `DRY_RUN = false`, this tester submits orders to the configured
+// environment and may use real funds. Set `DRY_RUN = true` to connect without
+// submitting orders or sending shutdown cancel/close commands.
 const DRY_RUN: bool = false;
+const OKX_ENVIRONMENT: OKXEnvironment = OKXEnvironment::Live;
 const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "OKX-001";
 const NODE_NAME: &str = "OKX-EXEC-TESTER-001";
@@ -108,7 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from(STRATEGY_ID)),
-            external_order_claims: Some(vec![instrument_id]),
+            external_order_instrument_ids: Some(vec![instrument_id]),
             // OKX doesn't allow hyphens in client order IDs
             use_hyphens_in_client_order_ids: false,
             ..Default::default()
@@ -117,7 +115,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .client_id(client_id)
         .order_qty(order_qty)
         .dry_run(DRY_RUN)
-        .maybe_open_position_on_start_qty((!DRY_RUN).then_some(order_qty.as_decimal()))
+        .open_position_on_start_qty(order_qty.as_decimal())
         .log_data(false)
         // .enable_limit_buys(false)
         // .enable_limit_sells(false)

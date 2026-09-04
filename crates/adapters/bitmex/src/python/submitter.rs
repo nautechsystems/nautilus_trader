@@ -15,7 +15,7 @@
 
 //! Python bindings for the BitMEX submit broadcaster.
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::{python::to_pyvalue_err, string::secret::SecretString};
 use nautilus_model::{
     enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
     identifiers::{ClientOrderId, InstrumentId, OrderListId},
@@ -77,8 +77,8 @@ impl SubmitBroadcaster {
     ) -> PyResult<Self> {
         let config = SubmitBroadcasterConfig {
             pool_size,
-            api_key,
-            api_secret,
+            api_key: api_key.map(SecretString::from),
+            api_secret: api_secret.map(SecretString::from),
             base_url,
             environment,
             timeout_secs,
@@ -92,7 +92,11 @@ impl SubmitBroadcaster {
             health_check_timeout_secs,
             expected_reject_patterns: expected_reject_patterns
                 .unwrap_or_else(|| SubmitBroadcasterConfig::default().expected_reject_patterns),
-            proxy_urls: proxy_urls.unwrap_or_default(),
+            proxy_urls: proxy_urls
+                .unwrap_or_default()
+                .into_iter()
+                .map(|value| value.map(SecretString::from))
+                .collect(),
         };
 
         Self::new(config).map_err(to_pyvalue_err)

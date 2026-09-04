@@ -50,6 +50,18 @@ These types correspond to FIX
 [`ContingencyType <1385>`](https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_1385.html).
 :::
 
+### Strategy-managed contingencies
+
+Enable `StrategyConfig.manage_contingent_orders` to manage open OTO, OCO, and OUO relationships for
+orders that are not active local. The strategy sends the resulting cancel and quantity-update
+commands through the normal execution path before it calls the specific and aggregate user
+order-event handlers.
+
+The `OrderEmulator` always owns active-local orders. Enabling strategy management therefore does
+not make the strategy and emulator manage the same order. The option does not add native venue
+support or submit a non-active-local OTO child: it manages non-active-local orders that are already
+open.
+
 ### One-Triggers-Other (OTO)
 
 An OTO relationship has two parts:
@@ -60,6 +72,13 @@ An OTO relationship has two parts:
 The handler determines where the children wait. The backtest engine can hold them locally, while a
 live adapter may send native venue instructions, submit all legs, reject the list, or require the
 strategy to manage the relationship.
+
+Before the parent's first fill, strategy management propagates parent quantity updates to open,
+non-active-local OTO children. After filling starts, parent events keep each child quantity equal to
+the parent's cumulative filled quantity. A child fill or update waits for the next parent event to
+refresh that target. Parent processing cancels an open child if the parent closes without a fill or
+if the child's cumulative fills meet or exceed the refreshed target. The active-local emulator
+remains responsible for submitting a child held locally.
 
 #### Trigger models
 
@@ -94,16 +113,18 @@ child as complete protection.
 
 In backtest local matching, a full or partial fill in one OCO order causes a best-effort request to
 cancel its open siblings. The local order manager applies this behavior only while a sibling remains
-active local. After release, the adapter or venue determines cancellation behavior. Another sibling
-can fill before cancellation completes.
+active local. With strategy management enabled, the strategy requests cancellation for open,
+non-active-local siblings. Otherwise, the adapter or venue determines cancellation behavior.
+Another sibling can fill before cancellation completes.
 
 ### One-Updates-Other (OUO)
 
 In backtest local matching, a fill in one OUO order uses that order's remaining quantity as the
 target for each open sibling. The engine cancels a sibling when the target is zero or its filled
 quantity already meets the target; otherwise, it updates the sibling when needed. This behavior
-suits equal-sized peers and does not preserve a ratio between unequal starting quantities. Live
-behavior depends on adapter and venue support.
+suits equal-sized peers and does not preserve a ratio between unequal starting quantities. With
+strategy management enabled, the strategy applies the same update or cancellation behavior to
+open, non-active-local siblings. Otherwise, live behavior depends on adapter and venue support.
 
 ## Constructing contingent orders
 

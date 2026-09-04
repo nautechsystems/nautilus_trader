@@ -180,7 +180,7 @@ fn test_imbalance() -> DatabentoImbalance {
         Price::from("100.55"),
         Quantity::from("1000"),
         Quantity::from("500"),
-        OrderSide::Buy,
+        OrderSide::Buy.into(),
         b'Y' as std::ffi::c_char,
         1.into(),
         2.into(),

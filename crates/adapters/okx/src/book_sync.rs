@@ -16,13 +16,14 @@
 //! Adapter-local order book synchronization state for OKX.
 
 use std::{
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
 use ahash::{AHashMap, AHashSet};
-use nautilus_core::{AtomicMap, MUTEX_POISONED};
+use nautilus_core::AtomicMap;
 use nautilus_model::identifiers::InstrumentId;
+use parking_lot::Mutex;
 
 use crate::common::enums::OKXBookChannel;
 
@@ -70,7 +71,7 @@ pub(crate) enum BookSequenceOutcome {
 
 impl BookSyncTracker {
     pub(crate) fn record_subscription(&self, instrument_id: InstrumentId, now: Instant) {
-        let mut state = self.state.lock().expect(MUTEX_POISONED);
+        let mut state = self.state.lock();
         state.last_book_ts.insert(instrument_id, now);
         state.last_sequences.remove(&instrument_id);
         state.recovering.remove(&instrument_id);
@@ -117,7 +118,7 @@ impl BookSyncTracker {
             return BookSequenceOutcome::Suppress;
         }
 
-        let mut state = self.state.lock().expect(MUTEX_POISONED);
+        let mut state = self.state.lock();
 
         if is_snapshot {
             let invalid = sequences
@@ -176,7 +177,7 @@ impl BookSyncTracker {
     }
 
     fn record_update(&self, instrument_id: InstrumentId, is_snapshot: bool, now: Instant) {
-        let mut state = self.state.lock().expect(MUTEX_POISONED);
+        let mut state = self.state.lock();
         state.last_book_ts.insert(instrument_id, now);
 
         if is_snapshot {
@@ -185,7 +186,7 @@ impl BookSyncTracker {
     }
 
     pub(crate) fn remove(&self, instrument_id: InstrumentId) {
-        let mut state = self.state.lock().expect(MUTEX_POISONED);
+        let mut state = self.state.lock();
         state.last_book_ts.remove(&instrument_id);
         state.last_sequences.remove(&instrument_id);
         state.recovering.remove(&instrument_id);
@@ -193,7 +194,7 @@ impl BookSyncTracker {
     }
 
     pub(crate) fn clear(&self) {
-        let mut state = self.state.lock().expect(MUTEX_POISONED);
+        let mut state = self.state.lock();
         state.last_book_ts.clear();
         state.last_sequences.clear();
         state.recovering.clear();
@@ -212,7 +213,7 @@ impl BookSyncTracker {
                 book_channel_matches_scope(*channel, scope).then_some(*instrument_id)
             })
             .collect::<Vec<_>>();
-        let mut state = self.state.lock().expect(MUTEX_POISONED);
+        let mut state = self.state.lock();
 
         for instrument_id in instrument_ids {
             state.last_sequences.remove(&instrument_id);
@@ -240,7 +241,7 @@ impl BookSyncTracker {
             return 0;
         }
 
-        let mut state = self.state.lock().expect(MUTEX_POISONED);
+        let mut state = self.state.lock();
         for instrument_id in &instrument_ids {
             state.pending_snapshots.insert(*instrument_id, deadline);
         }
@@ -248,7 +249,7 @@ impl BookSyncTracker {
     }
 
     pub(crate) fn stale_books(&self, threshold: Duration, now: Instant) -> Vec<BookSyncSignal> {
-        let mut state = self.state.lock().expect(MUTEX_POISONED);
+        let mut state = self.state.lock();
         let stale = state
             .last_book_ts
             .iter()
@@ -270,7 +271,7 @@ impl BookSyncTracker {
     }
 
     pub(crate) fn expired_pending_snapshots(&self, now: Instant) -> Vec<BookSyncSignal> {
-        let mut state = self.state.lock().expect(MUTEX_POISONED);
+        let mut state = self.state.lock();
         let expired = state
             .pending_snapshots
             .iter()
@@ -332,7 +333,7 @@ fn book_channel_matches_scope(channel: OKXBookChannel, scope: BookChannelScope) 
 mod tests {
     use std::time::{Duration, Instant};
 
-    use nautilus_core::{AtomicMap, MUTEX_POISONED};
+    use nautilus_core::AtomicMap;
     use nautilus_model::identifiers::InstrumentId;
     use rstest::rstest;
 
@@ -700,7 +701,6 @@ mod tests {
         tracker
             .state
             .lock()
-            .expect(MUTEX_POISONED)
             .last_book_ts
             .contains_key(&instrument_id)
     }
@@ -709,7 +709,6 @@ mod tests {
         tracker
             .state
             .lock()
-            .expect(MUTEX_POISONED)
             .pending_snapshots
             .contains_key(&instrument_id)
     }
@@ -718,14 +717,13 @@ mod tests {
         tracker
             .state
             .lock()
-            .expect(MUTEX_POISONED)
             .last_sequences
             .get(&instrument_id)
             .copied()
     }
 
     fn is_empty(tracker: &BookSyncTracker) -> bool {
-        let state = tracker.state.lock().expect(MUTEX_POISONED);
+        let state = tracker.state.lock();
         state.last_book_ts.is_empty()
             && state.last_sequences.is_empty()
             && state.recovering.is_empty()

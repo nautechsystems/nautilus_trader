@@ -159,7 +159,7 @@ impl HyperliquidHttpClient {
             .collect()
     }
 
-    /// Get spot metadata (internal helper).
+    /// Gets spot metadata for internal use.
     #[pyo3(name = "get_spot_meta")]
     fn py_get_spot_meta<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();

@@ -3100,7 +3100,6 @@ impl Debug for DataActorCore {
 
 impl DataActorCore {
     /// Adds a subscription handler for the `topic`.
-    ///
     //// Logs a warning if the actor is already subscribed to the topic.
     pub(crate) fn add_subscription_any(
         &mut self,
@@ -4044,7 +4043,7 @@ impl DataActorCore {
         cache.borrow_mut().add_synthetic(synthetic)
     }
 
-    /// Helper method for registering data subscriptions from the trait.
+    /// Subscribes the actor to data.
     ///
     /// # Panics
     ///
@@ -4086,7 +4085,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Helper method for registering signal subscriptions from the trait.
+    /// Subscribes the actor to signal.
     ///
     /// An empty `name` subscribes to every signal via the `data.Signal*` wildcard pattern.
     ///
@@ -4145,7 +4144,7 @@ impl DataActorCore {
         self.add_subscription_any(topic, handler, priority);
     }
 
-    /// Helper method for registering quotes subscriptions from the trait.
+    /// Subscribes the actor to quotes.
     pub fn subscribe_quotes(
         &mut self,
         topic: MStr<Topic>,
@@ -4171,7 +4170,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Helper method for registering instruments subscriptions from the trait.
+    /// Subscribes the actor to instruments.
     pub fn subscribe_instruments(
         &mut self,
         pattern: MStr<Pattern>,
@@ -4196,7 +4195,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Helper method for registering instrument subscriptions from the trait.
+    /// Subscribes the actor to instrument.
     pub fn subscribe_instrument(
         &mut self,
         topic: MStr<Topic>,
@@ -4222,7 +4221,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Helper method for registering book deltas subscriptions from the trait.
+    /// Subscribes the actor to book deltas.
     #[expect(clippy::too_many_arguments)]
     pub fn subscribe_book_deltas(
         &mut self,
@@ -4255,7 +4254,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Helper method for registering book depth10 subscriptions from the trait.
+    /// Subscribes the actor to book depth10.
     #[expect(clippy::too_many_arguments)]
     pub fn subscribe_book_depth10(
         &mut self,
@@ -4287,7 +4286,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Helper method for registering book snapshots subscriptions from the trait.
+    /// Subscribes the actor to book snapshots.
     #[expect(clippy::too_many_arguments)]
     pub fn subscribe_book_at_interval(
         &mut self,
@@ -4320,7 +4319,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Helper method for registering trades subscriptions from the trait.
+    /// Subscribes the actor to trades.
     pub fn subscribe_trades(
         &mut self,
         topic: MStr<Topic>,
@@ -4346,7 +4345,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Helper method for registering bars subscriptions from the trait.
+    /// Subscribes the actor to bars.
     pub fn subscribe_bars(
         &mut self,
         topic: MStr<Topic>,
@@ -4372,7 +4371,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Helper method for registering mark prices subscriptions from the trait.
+    /// Subscribes the actor to mark prices.
     pub fn subscribe_mark_prices(
         &mut self,
         topic: MStr<Topic>,
@@ -4398,7 +4397,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Helper method for registering index prices subscriptions from the trait.
+    /// Subscribes the actor to index prices.
     pub fn subscribe_index_prices(
         &mut self,
         topic: MStr<Topic>,
@@ -4424,7 +4423,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Helper method for registering funding rates subscriptions from the trait.
+    /// Subscribes the actor to funding rates.
     pub fn subscribe_funding_rates(
         &mut self,
         topic: MStr<Topic>,
@@ -4450,7 +4449,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Helper method for registering option greeks subscriptions from the trait.
+    /// Subscribes the actor to option greeks.
     pub fn subscribe_option_greeks(
         &mut self,
         topic: MStr<Topic>,
@@ -4476,7 +4475,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Helper method for registering instrument status subscriptions from the trait.
+    /// Subscribes the actor to instrument status.
     pub fn subscribe_instrument_status(
         &mut self,
         topic: MStr<Topic>,
@@ -4502,7 +4501,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Helper method for registering instrument close subscriptions from the trait.
+    /// Subscribes the actor to instrument close.
     pub fn subscribe_instrument_close(
         &mut self,
         topic: MStr<Topic>,
@@ -4528,7 +4527,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Helper method for subscribing to option chain snapshots from the trait.
+    /// Subscribes the actor to option chain snapshots.
     #[expect(
         clippy::too_many_arguments,
         reason = "subscription command mirrors the option chain request fields"
@@ -4561,7 +4560,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Helper method for unsubscribing from data.
+    /// Unsubscribes the actor from data.
     pub fn unsubscribe_data(
         &mut self,
         data_type: DataType,
@@ -4590,7 +4589,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from signals.
+    /// Unsubscribes the actor from signals.
     ///
     /// # Panics
     ///
@@ -4633,7 +4632,7 @@ impl DataActorCore {
         self.remove_subscription_any(topic);
     }
 
-    /// Helper method for unsubscribing from instruments.
+    /// Unsubscribes the actor from instruments.
     pub fn unsubscribe_instruments(
         &mut self,
         venue: Venue,
@@ -4657,7 +4656,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from instrument.
+    /// Unsubscribes the actor from instrument.
     pub fn unsubscribe_instrument(
         &mut self,
         instrument_id: InstrumentId,
@@ -4682,7 +4681,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from book deltas.
+    /// Unsubscribes the actor from book deltas.
     pub fn unsubscribe_book_deltas(
         &mut self,
         instrument_id: InstrumentId,
@@ -4711,7 +4710,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from book depth10 snapshots.
+    /// Unsubscribes the actor from book depth10 snapshots.
     pub fn unsubscribe_book_depth10(
         &mut self,
         instrument_id: InstrumentId,
@@ -4740,7 +4739,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from book snapshots at interval.
+    /// Unsubscribes the actor from book snapshots at interval.
     pub fn unsubscribe_book_at_interval(
         &mut self,
         instrument_id: InstrumentId,
@@ -4767,7 +4766,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from quotes.
+    /// Unsubscribes the actor from quotes.
     pub fn unsubscribe_quotes(
         &mut self,
         instrument_id: InstrumentId,
@@ -4792,7 +4791,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from trades.
+    /// Unsubscribes the actor from trades.
     pub fn unsubscribe_trades(
         &mut self,
         instrument_id: InstrumentId,
@@ -4817,7 +4816,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from bars.
+    /// Unsubscribes the actor from bars.
     pub fn unsubscribe_bars(
         &mut self,
         bar_type: BarType,
@@ -4843,7 +4842,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from mark prices.
+    /// Unsubscribes the actor from mark prices.
     pub fn unsubscribe_mark_prices(
         &mut self,
         instrument_id: InstrumentId,
@@ -4868,7 +4867,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from index prices.
+    /// Unsubscribes the actor from index prices.
     pub fn unsubscribe_index_prices(
         &mut self,
         instrument_id: InstrumentId,
@@ -4893,7 +4892,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from funding rates.
+    /// Unsubscribes the actor from funding rates.
     pub fn unsubscribe_funding_rates(
         &mut self,
         instrument_id: InstrumentId,
@@ -4918,7 +4917,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from option greeks.
+    /// Unsubscribes the actor from option greeks.
     pub fn unsubscribe_option_greeks(
         &mut self,
         instrument_id: InstrumentId,
@@ -4943,7 +4942,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from instrument status.
+    /// Unsubscribes the actor from instrument status.
     pub fn unsubscribe_instrument_status(
         &mut self,
         instrument_id: InstrumentId,
@@ -4968,7 +4967,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from instrument close.
+    /// Unsubscribes the actor from instrument close.
     pub fn unsubscribe_instrument_close(
         &mut self,
         instrument_id: InstrumentId,
@@ -4993,7 +4992,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from option chain snapshots.
+    /// Unsubscribes the actor from option chain snapshots.
     pub fn unsubscribe_option_chain(
         &mut self,
         series_id: OptionSeriesId,
@@ -5015,7 +5014,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Helper method for requesting data.
+    /// Requests data for the actor.
     ///
     /// # Errors
     ///
@@ -5057,7 +5056,7 @@ impl DataActorCore {
         Ok(request_id)
     }
 
-    /// Helper method for requesting instrument.
+    /// Requests instrument for the actor.
     ///
     /// # Errors
     ///
@@ -5096,7 +5095,7 @@ impl DataActorCore {
         Ok(request_id)
     }
 
-    /// Helper method for requesting instruments.
+    /// Requests instruments for the actor.
     ///
     /// # Errors
     ///
@@ -5135,7 +5134,7 @@ impl DataActorCore {
         Ok(request_id)
     }
 
-    /// Helper method for requesting book snapshot.
+    /// Requests book snapshot for the actor.
     ///
     /// # Errors
     ///
@@ -5169,7 +5168,7 @@ impl DataActorCore {
         Ok(request_id)
     }
 
-    /// Helper method for requesting book deltas.
+    /// Requests book deltas for the actor.
     ///
     /// # Errors
     ///
@@ -5255,7 +5254,7 @@ impl DataActorCore {
         Ok(request_id)
     }
 
-    /// Helper method for requesting quotes.
+    /// Requests quotes for the actor.
     ///
     /// # Errors
     ///
@@ -5297,7 +5296,7 @@ impl DataActorCore {
         Ok(request_id)
     }
 
-    /// Helper method for requesting trades.
+    /// Requests trades for the actor.
     ///
     /// # Errors
     ///
@@ -5339,7 +5338,7 @@ impl DataActorCore {
         Ok(request_id)
     }
 
-    /// Helper method for requesting bars.
+    /// Requests bars for the actor.
     ///
     /// # Errors
     ///
@@ -5387,7 +5386,7 @@ impl DataActorCore {
         Ok(request_id)
     }
 
-    /// Helper method for requesting funding rates.
+    /// Requests funding rates for the actor.
     ///
     /// # Errors
     ///

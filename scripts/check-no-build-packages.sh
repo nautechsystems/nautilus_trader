@@ -1,28 +1,43 @@
-#!/bin/bash
-# Verify `[tool.uv].no-build-package` in pyproject.toml lists exactly the
-# third-party packages locked in the corresponding uv.lock.
-#
-# uv has no native "block third-party sdist builds but not the workspace project"
-# setting, so we maintain `no-build-package` as an explicit list of every locked
-# third-party package. This script catches drift between the lock and the list,
-# and is wired into pre-commit on changes to uv.lock or pyproject.toml.
-#
-#     scripts/check-no-build-packages.sh
-#
-# Exits 0 when the lock and manifest are in sync, 1 otherwise.
+#!/usr/bin/env bash
+# uv has no native "block third-party sdist builds but not the local project"
+# setting. Keep each `no-build-package` list aligned with its uv.lock so a new
+# third-party package cannot silently fall back to a source build.
 
 set -euo pipefail
 
-for tool in awk sort comm uniq diff; do
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "$REPO_ROOT"
+
+pairs=()
+while (($# > 0)); do
+  case "$1" in
+    --pair)
+      (($# >= 2)) || {
+        echo "--pair requires LOCK:MANIFEST" >&2
+        exit 2
+      }
+      pairs+=("$2")
+      shift 2
+      ;;
+    -h | --help)
+      echo "Usage: scripts/check-no-build-packages.sh [--pair LOCK:MANIFEST]..."
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      exit 2
+      ;;
+  esac
+done
+
+for tool in awk comm diff git grep sed sort tr uniq; do
   command -v "$tool" > /dev/null || {
     echo "Required tool not on PATH: $tool" >&2
     exit 2
   }
 done
 
-# Emit the names of third-party packages in a uv.lock - i.e. every package
-# whose source is a registry/git/url. Workspace members (source.editable or
-# source.virtual, or no source at all) are skipped.
 locked_third_party() {
   awk '
     function flush() {
@@ -46,15 +61,12 @@ locked_third_party() {
     }
     in_pkg && /^source = / {
       have_source=1
-      if ($0 ~ /editable|virtual/) is_local=1
+      if ($0 ~ /^source = \{[[:space:]]*(editable|virtual|directory|path)[[:space:]]*=/) is_local=1
     }
     END { flush() }
   ' "$1" | LC_ALL=C sort -u
 }
 
-# Emit the entries of `tool.uv.no-build-package` from a pyproject.toml in
-# source order (no sort), one per line. The block is expected to use the
-# multi-line array form that taplo emits.
 declared_packages() {
   awk '
     /^no-build-package = \[/ { in_list=1; next }
@@ -68,17 +80,51 @@ declared_packages() {
   ' "$1"
 }
 
-pairs=(
-  "python/uv.lock:python/pyproject.toml"
-)
+if ((${#pairs[@]} == 0)); then
+  while IFS= read -r -d '' lock; do
+    [[ "$lock" == "uv.lock" || "$lock" == */uv.lock ]] || continue
+    manifest="$(dirname "$lock")/pyproject.toml"
+    if [[ "$manifest" == "./pyproject.toml" ]]; then
+      manifest=pyproject.toml
+    fi
+    if [[ -f "$manifest" ]] && grep -q '^[[:space:]]*no-build-package[[:space:]]*=' "$manifest"; then
+      pairs+=("${lock}:${manifest}")
+    fi
+  done < <(git ls-files -z)
+fi
+
+if ((${#pairs[@]} == 0)); then
+  echo "No tracked uv.lock has a no-build-package policy."
+  exit 0
+fi
 
 failures=0
 
+validate_repo_path() {
+  local path=$1 component current=""
+  if [[ -z "$path" || "$path" == /* || "$path" == *\\* || "$path" == *$'\n'* ]]; then
+    return 1
+  fi
+  IFS='/' read -r -a components <<< "$path"
+  for component in "${components[@]}"; do
+    if [[ -z "$component" || "$component" == "." || "$component" == ".." ]]; then
+      return 1
+    fi
+    current=${current:+${current}/}${component}
+    [[ ! -L "$current" ]] || return 1
+  done
+}
+
 for pair in "${pairs[@]}"; do
+  if [[ "$pair" != *:* || "${pair#*:}" == *:* ]]; then
+    echo "ERROR: pair must be LOCK:MANIFEST: $pair" >&2
+    exit 2
+  fi
   lock="${pair%:*}"
   manifest="${pair#*:}"
 
-  if [[ ! -f "$lock" || ! -f "$manifest" ]]; then
+  if ! validate_repo_path "$lock" || ! validate_repo_path "$manifest" ||
+    [[ ! -f "$lock" || ! -f "$manifest" ]]; then
     echo "ERROR: missing $lock or $manifest" >&2
     exit 2
   fi
@@ -87,8 +133,8 @@ for pair in "${pairs[@]}"; do
   declared_raw=$(declared_packages "$manifest")
   declared_sorted=$(printf '%s\n' "$declared_raw" | LC_ALL=C sort -u)
 
-  missing=$(comm -23 <(printf '%s\n' "$locked") <(printf '%s\n' "$declared_sorted"))
-  stale=$(comm -13 <(printf '%s\n' "$locked") <(printf '%s\n' "$declared_sorted"))
+  missing=$(LC_ALL=C comm -23 <(printf '%s\n' "$locked") <(printf '%s\n' "$declared_sorted"))
+  stale=$(LC_ALL=C comm -13 <(printf '%s\n' "$locked") <(printf '%s\n' "$declared_sorted"))
   duplicates=$(printf '%s\n' "$declared_raw" | LC_ALL=C sort | uniq -d)
   out_of_order=""
   if ! diff -q <(printf '%s\n' "$declared_raw") <(printf '%s\n' "$declared_raw" | LC_ALL=C sort) > /dev/null 2>&1; then
@@ -96,7 +142,7 @@ for pair in "${pairs[@]}"; do
   fi
 
   if [[ -z "$missing" && -z "$stale" && -z "$duplicates" && -z "$out_of_order" ]]; then
-    count=$(printf '%s\n' "$locked" | grep -c .)
+    count=$(printf '%s\n' "$locked" | grep -c . || true)
     echo "OK  ${manifest}: ${count} packages, in sync with ${lock}"
     continue
   fi
@@ -115,8 +161,8 @@ for pair in "${pairs[@]}"; do
     printf '%s\n' "$stale" | sed 's/^/    - /'
   fi
   if [[ -n "$duplicates" ]]; then
-    dup_line=$(printf '%s' "$duplicates" | tr '\n' ' ')
-    echo "  Duplicate entries:${dup_line}"
+    duplicate_line=$(printf '%s' "$duplicates" | tr '\n' ' ')
+    echo "  Duplicate entries: ${duplicate_line}"
   fi
   if [[ -n "$out_of_order" ]]; then
     echo "  Entries are not sorted alphabetically."
@@ -125,6 +171,6 @@ done
 
 if ((failures > 0)); then
   echo >&2
-  echo "Fix by updating no-build-package in the failing manifest(s) to match uv.lock." >&2
+  echo "Update no-build-package in each failing manifest to match its uv.lock." >&2
   exit 1
 fi

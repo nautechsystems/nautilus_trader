@@ -28,7 +28,7 @@ use crate::messages::execution::{
     QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
 };
 
-/// Helper function to populate a `StringMap` builder from Params (`IndexMap<String, Value>`).
+/// Populates a `StringMap` builder from `Params` (`IndexMap<String, Value>`).
 fn populate_string_map(builder: base_capnp::string_map::Builder<'_>, params: &Params) {
     let mut entries_builder = builder.init_entries(params.len() as u32);
     for (i, (key, value)) in params.iter().enumerate() {
@@ -39,7 +39,7 @@ fn populate_string_map(builder: base_capnp::string_map::Builder<'_>, params: &Pa
     }
 }
 
-/// Helper function to populate a `TradingCommandHeader` builder
+/// Populates a `TradingCommandHeader` builder.
 #[expect(
     clippy::too_many_arguments,
     reason = "Cap'n Proto header builder needs each command header field"
@@ -539,7 +539,7 @@ mod tests {
             .client_id(None)
             .strategy_id(strategy_id)
             .instrument_id(instrument_id)
-            .order_side(OrderSide::Buy)
+            .order_side(Some(OrderSide::Buy))
             .command_id(command_id)
             .ts_init(ts_init)
             .params(None)

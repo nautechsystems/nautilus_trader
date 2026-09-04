@@ -9,27 +9,27 @@ examples use `nautilus_model`; Python examples use `nautilus_trader.model`.
 
 ## Instrument types
 
-| Instrument type                                   | Class              | Description                                          | Typical adapters                |
-| ------------------------------------------------- | ------------------ | ---------------------------------------------------- | ------------------------------- |
-| [`Equity`](equity.md)                             | Spot               | Listed share or ETF traded on a cash market.         | Databento, Interactive Brokers. |
-| [`CurrencyPair`](currency_pair.md)                | Spot               | Fiat FX or crypto spot pair in base/quote form.      | Binance, Kraken, OKX, Tardis.   |
-| [`Commodity`](commodity.md)                       | Spot               | Spot commodity such as gold or oil.                  | Interactive Brokers.            |
-| [`Cfd`](cfd.md)                                   | Contract for diff. | Contract for difference tracking an underlying.      | Interactive Brokers.            |
-| [`IndexInstrument`](index_instrument.md)          | Spot reference     | Reference index, not directly tradable.              | Interactive Brokers.            |
-| [`TokenizedAsset`](tokenized_asset.md)            | Tokenized spot     | Tokenized asset on a crypto venue.                   | Kraken.                         |
-| [`FuturesContract`](futures_contract.md)          | Future             | Dated futures contract.                              | Databento, Interactive Brokers. |
-| [`FuturesSpread`](futures_spread.md)              | Futures spread     | Exchange defined futures strategy with several legs. | Databento, Interactive Brokers. |
-| [`CryptoFuture`](crypto_future.md)                | Crypto future      | Dated crypto futures contract.                       | BitMEX, Bybit, Deribit, OKX.    |
-| [`CryptoFuturesSpread`](crypto_futures_spread.md) | Crypto spread      | Exchange defined crypto futures spread.              | Deribit, OKX.                   |
-| [`CryptoPerpetual`](crypto_perpetual.md)          | Swap               | Crypto perpetual futures contract.                   | Binance, BitMEX, Bybit, dYdX.   |
-| [`PerpetualContract`](perpetual_contract.md)      | Generic swap       | Perpetual futures contract across asset classes.     | Architect AX, Binance.          |
-| [`OptionContract`](option_contract.md)            | Option             | Exchange traded put or call option.                  | Databento, Interactive Brokers. |
-| [`OptionSpread`](option_spread.md)                | Option spread      | Exchange defined options strategy with several legs. | Databento, Interactive Brokers. |
-| [`CryptoOption`](crypto_option.md)                | Crypto option      | Option on a crypto underlying.                       | Bybit, Deribit, OKX, Tardis.    |
-| [`CryptoOptionSpread`](crypto_option_spread.md)   | Crypto spread      | Exchange defined crypto option spread.               | Deribit, OKX.                   |
-| [`BinaryOption`](binary_option.md)                | Binary outcome     | Binary instrument that settles to 0 or 1.            | Hyperliquid, OKX, Polymarket.   |
-| [`BettingInstrument`](betting_instrument.md)      | Betting market     | Sports or gaming market selection.                   | Betfair.                        |
-| [`SyntheticInstrument`](synthetic_instrument.md)  | Local synthetic    | Formula derived local instrument.                    | Local only.                     |
+| Instrument type                                   | `InstrumentClass` | Description                                          | Typical adapters                |
+| ------------------------------------------------- | ----------------- | ---------------------------------------------------- | ------------------------------- |
+| [`Equity`](equity.md)                             | `SPOT`            | Listed share or ETF traded on a cash market.         | Databento, Interactive Brokers. |
+| [`CurrencyPair`](currency_pair.md)                | `SPOT`            | Fiat FX or crypto spot pair in base/quote form.      | Binance, Kraken, OKX, Tardis.   |
+| [`Commodity`](commodity.md)                       | `SPOT`            | Spot commodity such as gold or oil.                  | Interactive Brokers.            |
+| [`Cfd`](cfd.md)                                   | `CFD`             | Contract for difference tracking an underlying.      | Interactive Brokers.            |
+| [`IndexInstrument`](index_instrument.md)          | `SPOT`            | Reference index, not directly tradable.              | Interactive Brokers.            |
+| [`TokenizedAsset`](tokenized_asset.md)            | `SPOT`            | Tokenized asset on a crypto venue.                   | Kraken.                         |
+| [`FuturesContract`](futures_contract.md)          | `FUTURE`          | Dated futures contract.                              | Databento, Interactive Brokers. |
+| [`FuturesSpread`](futures_spread.md)              | `FUTURES_SPREAD`  | Exchange defined futures strategy with several legs. | Databento, Interactive Brokers. |
+| [`CryptoFuture`](crypto_future.md)                | `FUTURE`          | Dated crypto futures contract.                       | BitMEX, Bybit, Deribit, OKX.    |
+| [`CryptoFuturesSpread`](crypto_futures_spread.md) | `FUTURES_SPREAD`  | Exchange defined crypto futures spread.              | Deribit, OKX.                   |
+| [`CryptoPerpetual`](crypto_perpetual.md)          | `SWAP`            | Crypto perpetual futures contract.                   | Binance, BitMEX, Bybit, dYdX.   |
+| [`PerpetualContract`](perpetual_contract.md)      | `SWAP`            | Perpetual futures contract across asset classes.     | Architect AX, Binance.          |
+| [`OptionContract`](option_contract.md)            | `OPTION`          | Exchange traded put or call option.                  | Databento, Interactive Brokers. |
+| [`OptionSpread`](option_spread.md)                | `OPTION_SPREAD`   | Exchange defined options strategy with several legs. | Databento, Interactive Brokers. |
+| [`CryptoOption`](crypto_option.md)                | `OPTION`          | Option on a crypto underlying.                       | Bybit, Deribit, OKX, Tardis.    |
+| [`CryptoOptionSpread`](crypto_option_spread.md)   | `OPTION_SPREAD`   | Exchange defined crypto option spread.               | Deribit, OKX.                   |
+| [`BinaryOption`](binary_option.md)                | `BINARY_OPTION`   | Binary instrument that settles to 0 or 1.            | Hyperliquid, OKX, Polymarket.   |
+| [`BettingInstrument`](betting_instrument.md)      | `SPORTS_BETTING`  | Sports or gaming market selection.                   | Betfair.                        |
+| [`SyntheticInstrument`](synthetic_instrument.md)  | n/a               | Formula derived local instrument.                    | Local only.                     |
 
 ## Taxonomy
 

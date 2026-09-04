@@ -43,7 +43,9 @@ from nautilus_trader.model import StrategyId
 from nautilus_trader.model import TraderId
 
 
-DRY_RUN = False  # Set True to log intended trades without submitting orders
+# WARNING: With DRY_RUN = False, this strategy submits orders to the configured
+# environment. Set DRY_RUN = True to log intended trades without submitting orders.
+DRY_RUN = False
 TRADER_ID = TraderId.from_str("TESTER-001")
 ACCOUNT_ID = AccountId.from_str("AX-001")
 STRATEGY_ID = StrategyId.from_str("AX-BOOK-IMBALANCE-001")

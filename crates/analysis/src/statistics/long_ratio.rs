@@ -94,7 +94,7 @@ mod tests {
     use indexmap::IndexMap;
     use nautilus_core::{UnixNanos, approx_eq};
     use nautilus_model::{
-        enums::{InstrumentClass, PositionSide},
+        enums::{InstrumentClass, OrderSide, PositionSide},
         identifiers::{
             AccountId, ClientOrderId, PositionId,
             stubs::{instrument_id_aud_usd_sim, strategy_id_ema_cross, trader_id},

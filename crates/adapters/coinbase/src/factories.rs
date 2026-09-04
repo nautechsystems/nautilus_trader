@@ -282,8 +282,8 @@ mod tests {
 
     fn make_test_exec_config() -> CoinbaseExecutionClientConfig {
         CoinbaseExecutionClientConfig {
-            api_key: Some("organizations/test-org/apiKeys/test-key".to_string()),
-            api_secret: Some("test-pem-placeholder".to_string()),
+            api_key: Some("organizations/test-org/apiKeys/test-key".into()),
+            api_secret: Some("test-pem-placeholder".into()),
             ..CoinbaseExecutionClientConfig::default()
         }
     }

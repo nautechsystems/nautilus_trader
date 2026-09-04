@@ -76,7 +76,7 @@ def test_market_order_construction() -> None:
         time_in_force=TimeInForce.GTC,
         reduce_only=False,
         quote_quantity=False,
-        contingency_type=ContingencyType.NO_CONTINGENCY,
+        contingency_type=None,
     )
 
     assert order.trader_id == TraderId("TRADER-001")
@@ -197,7 +197,7 @@ def test_market_order_str_and_repr() -> None:
         time_in_force=TimeInForce.GTC,
         reduce_only=False,
         quote_quantity=False,
-        contingency_type=ContingencyType.NO_CONTINGENCY,
+        contingency_type=None,
     )
 
     assert "BUY" in str(order)
@@ -220,7 +220,7 @@ def test_market_order_to_dict() -> None:
         time_in_force=TimeInForce.GTC,
         reduce_only=False,
         quote_quantity=False,
-        contingency_type=ContingencyType.NO_CONTINGENCY,
+        contingency_type=None,
     )
 
     d = order.to_dict()
@@ -267,7 +267,7 @@ def test_limit_order_construction() -> None:
         ts_init=0,
         expire_time=0,
         display_qty=None,
-        contingency_type=ContingencyType.NO_CONTINGENCY,
+        contingency_type=None,
     )
 
     assert order.trader_id == TraderId("TRADER-001")
@@ -301,7 +301,7 @@ def test_limit_order_str_and_repr() -> None:
         ts_init=0,
         expire_time=0,
         display_qty=None,
-        contingency_type=ContingencyType.NO_CONTINGENCY,
+        contingency_type=None,
     )
 
     assert "SELL" in str(order)
@@ -328,7 +328,7 @@ def test_limit_order_to_dict() -> None:
         ts_init=0,
         expire_time=0,
         display_qty=None,
-        contingency_type=ContingencyType.NO_CONTINGENCY,
+        contingency_type=None,
     )
 
     d = order.to_dict()
@@ -1031,7 +1031,7 @@ def _order_initialized(**metadata: object) -> object:
         "event_id": UUID4(),
         "ts_event": 0,
         "ts_init": 0,
-        "contingency_type": ContingencyType.NO_CONTINGENCY,
+        "contingency_type": None,
     }
     values.update(metadata)
     return OrderInitialized(**values)

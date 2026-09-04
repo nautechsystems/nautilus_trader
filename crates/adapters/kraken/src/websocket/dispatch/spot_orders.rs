@@ -25,8 +25,8 @@ use std::{
 
 use ahash::AHashMap;
 use dashmap::DashMap;
-use nautilus_common::live::get_runtime;
-use nautilus_core::{UUID4, time::AtomicTime};
+use nautilus_core::{UUID4, string::secret::SecretString, time::AtomicTime};
+use nautilus_live::task::TaskSpawner;
 use nautilus_model::{
     events::{
         OrderAccepted, OrderCancelRejected, OrderEventAny, OrderModifyRejected, OrderRejected,
@@ -35,7 +35,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, TraderId, VenueOrderId},
     types::{Price, Quantity},
 };
-use tokio_util::sync::CancellationToken;
+use parking_lot::RwLock;
 use ustr::Ustr;
 
 use super::WsDispatchState;
@@ -104,13 +104,9 @@ pub struct OrderRequestState {
     account_id: AccountId,
     /// WS auth token shared with the client; used to build compensating
     /// cancels when a submit request times out.
-    auth_token: Arc<tokio::sync::RwLock<Option<String>>>,
-    /// Cancellation signal that aborts pending timeout tasks on shutdown so
-    /// the runtime can drop without waiting for in-flight timers.
-    cancellation_token: CancellationToken,
-    /// Clock used to stamp `ts_event` on synthesized timeout events.
-    /// Sharing the caller's clock keeps test ts_event values consistent with
-    /// the ts_sent_ns the same caller stamped at submit time.
+    auth_token: Arc<tokio::sync::RwLock<Option<SecretString>>>,
+    task_spawner: RwLock<TaskSpawner>,
+    /// Clock used to stamp local timeout diagnostics.
     clock: &'static AtomicTime,
 }
 
@@ -127,8 +123,8 @@ impl OrderRequestState {
         timeout: Duration,
         trader_id: TraderId,
         account_id: AccountId,
-        auth_token: Arc<tokio::sync::RwLock<Option<String>>>,
-        cancellation_token: CancellationToken,
+        auth_token: Arc<tokio::sync::RwLock<Option<SecretString>>>,
+        task_spawner: TaskSpawner,
         clock: &'static AtomicTime,
     ) -> Self {
         Self {
@@ -141,7 +137,7 @@ impl OrderRequestState {
             trader_id,
             account_id,
             auth_token,
-            cancellation_token,
+            task_spawner: RwLock::new(task_spawner),
             clock,
         }
     }
@@ -256,8 +252,10 @@ impl OrderRequestState {
         envelope.req_id = Some(req_id);
         identity.ts_sent_ns = ts_now_ns;
 
-        let payload = serde_json::to_string(&envelope)
-            .map_err(|e| anyhow::anyhow!("serialize WS order request: {e}"))?;
+        let payload = SecretString::from(
+            serde_json::to_string(&envelope)
+                .map_err(|e| anyhow::anyhow!("serialize WS order request: {e}"))?,
+        );
 
         let cmd_tx = self
             .cmd_tx()
@@ -270,27 +268,48 @@ impl OrderRequestState {
             anyhow::bail!("handler command channel closed: {e}");
         }
 
-        let state_for_timeout = Arc::clone(self);
-        let cancel = state_for_timeout.cancellation_token.clone();
+        let state_for_timeout = Arc::downgrade(self);
+        let task_spawner = self.task_spawner.read().clone();
+        let cancel = task_spawner.cancellation_token();
+        let timeout = self.timeout;
 
-        get_runtime().spawn(async move {
+        if let Err(e) = task_spawner.spawn(async move {
             tokio::select! {
+                biased;
                 () = cancel.cancelled() => {
-                    state_for_timeout.pending.remove(&req_id);
+                    if let Some(state) = state_for_timeout.upgrade() {
+                        state.pending.remove(&req_id);
+                    }
                 }
-                () = tokio::time::sleep(state_for_timeout.timeout) => {
-                    if let Some((_, pending)) = state_for_timeout.pending.remove(&req_id) {
+                () = tokio::time::sleep(timeout) => {
+                    let Some(state) = state_for_timeout.upgrade() else {
+                        return;
+                    };
+
+                    if let Some(pending) = state.pending.get(&req_id) {
+                        if cancel.is_cancelled() {
+                            drop(pending);
+                            state.pending.remove(&req_id);
+                            return;
+                        }
+
+                        let ts_timeout_ns = state.clock.get_time_ns().as_u64();
                         log::warn!(
-                            "Kraken WS response timeout req_id={req_id} op={:?} cl_ord_ids={:?}",
+                            "Kraken WS response timeout req_id={req_id} op={:?} cl_ord_ids={:?} \
+                             ts_timeout_ns={ts_timeout_ns}; awaiting definitive venue evidence",
                             pending.operation,
                             pending.client_order_ids,
                         );
-                        let ts_event_ns = state_for_timeout.clock.get_time_ns().as_u64();
-                        state_for_timeout.emit_timeout_rejection(req_id, &pending, ts_event_ns);
+                        state.handle_timeout(&pending);
                     }
                 }
             }
-        });
+        }) {
+            log::warn!(
+                "Kraken order request {req_id} was sent without a local timeout task: {e}; \
+                 awaiting definitive venue evidence"
+            );
+        }
 
         Ok(req_id)
     }
@@ -299,7 +318,7 @@ impl OrderRequestState {
     ///
     /// `ts_event_ns` is the local receipt time. Kraken's `time_in`/`time_out`
     /// are ignored to keep event ordering monotonic against the local clock.
-    /// Late responses (after timeout eviction) are logged and dropped.
+    /// Timed-out requests remain correlated until a definitive response arrives.
     pub fn handle_response(&self, response: &KrakenWsOrderResponse, ts_event_ns: u64) {
         let req_id = match response.req_id {
             Some(id) => id,
@@ -313,84 +332,73 @@ impl OrderRequestState {
             }
         };
 
-        let Some((_, pending)) = self.pending.remove(&req_id) else {
-            log::debug!("Kraken WS response after eviction (timeout) req_id={req_id}");
+        let Some(pending) = self.pending.get(&req_id) else {
+            log::debug!("Kraken WS response without pending request req_id={req_id}");
             return;
         };
 
-        match (pending.operation, response.success, response.method) {
-            (PendingOperation::Submit, true, KrakenWsMethod::AddOrder) => {
+        let expected_method = pending_op_to_method(pending.operation);
+        if response.method != expected_method {
+            log::error!(
+                "Kraken WS response method {:?} mismatched pending op {:?} req_id={req_id}",
+                response.method,
+                pending.operation,
+            );
+            return;
+        }
+        drop(pending);
+
+        let Some((_, pending)) = self.pending.remove(&req_id) else {
+            log::debug!("Kraken WS duplicate response req_id={req_id}");
+            return;
+        };
+
+        match (pending.operation, response.success) {
+            (PendingOperation::Submit, true) => {
                 self.emit_order_accepted(&pending, response, ts_event_ns);
             }
-            (PendingOperation::Submit, false, KrakenWsMethod::AddOrder) => {
+            (PendingOperation::Submit, false) => {
                 self.emit_order_rejected(&pending, response, ts_event_ns);
             }
-            (PendingOperation::Amend, true, KrakenWsMethod::AmendOrder) => {
+            (PendingOperation::Amend, true) => {
                 self.emit_order_updated(&pending, response, ts_event_ns);
             }
-            (PendingOperation::Amend, false, KrakenWsMethod::AmendOrder) => {
+            (PendingOperation::Amend, false) => {
                 self.emit_order_modify_rejected(&pending, response, ts_event_ns);
             }
-            (PendingOperation::Cancel, true, KrakenWsMethod::CancelOrder) => {
+            (PendingOperation::Cancel, true) => {
                 log::debug!(
                     "Kraken WS cancel ack req_id={req_id} cl_ord_ids={:?}",
                     pending.client_order_ids,
                 );
             }
-            (PendingOperation::Cancel, false, KrakenWsMethod::CancelOrder) => {
+            (PendingOperation::Cancel, false) => {
                 self.emit_order_cancel_rejected(&pending, response, ts_event_ns);
             }
-            (PendingOperation::BatchAdd, _, KrakenWsMethod::BatchAdd) => {
+            (PendingOperation::BatchAdd, _) => {
                 self.handle_batch_add_response(&pending, response, ts_event_ns);
-            }
-            (op, ok, method) => {
-                log::error!(
-                    "Kraken WS response method {method:?} mismatched pending op {op:?} success={ok} req_id={req_id}",
-                );
             }
         }
     }
 
-    fn emit_timeout_rejection(&self, req_id: u64, pending: &PendingRequest, ts_event_ns: u64) {
-        let response = KrakenWsOrderResponse {
-            method: pending_op_to_method(pending.operation),
-            req_id: Some(req_id),
-            success: false,
-            time_in: None,
-            time_out: None,
-            error: Some(format!("Kraken WS request timed out req_id={req_id}")),
-            result: None,
-        };
-
+    fn handle_timeout(&self, pending: &PendingRequest) {
         match pending.operation {
             PendingOperation::Submit => {
-                self.emit_order_rejected(pending, &response, ts_event_ns);
                 self.send_compensating_cancel(&pending.client_order_ids);
             }
-            PendingOperation::Amend => {
-                self.emit_order_modify_rejected(pending, &response, ts_event_ns);
-            }
-            PendingOperation::Cancel => {
-                log::warn!(
-                    "Kraken WS cancel request timed out req_id={req_id}; awaiting reconciliation"
-                );
-            }
+            PendingOperation::Amend | PendingOperation::Cancel => {}
             PendingOperation::BatchAdd => {
-                for cl_ord_id in &pending.client_order_ids {
-                    let leg = PendingRequest {
-                        operation: PendingOperation::Submit,
-                        client_order_ids: vec![*cl_ord_id],
-                        venue_order_ids: vec![None],
-                        ts_sent_ns: pending.ts_sent_ns,
-                        new_quantity: None,
-                        new_price: None,
-                        new_trigger_price: None,
-                    };
-                    self.emit_order_rejected(&leg, &response, ts_event_ns);
-                }
                 self.send_compensating_cancel(&pending.client_order_ids);
             }
         }
+    }
+
+    pub(crate) fn clear(&self) {
+        self.pending.clear();
+    }
+
+    pub(crate) fn reset_task_spawner(&self, task_spawner: TaskSpawner) {
+        *self.task_spawner.write() = task_spawner;
     }
 
     /// Sends a best-effort `cancel_order` over the WebSocket after a Submit or
@@ -401,24 +409,15 @@ impl OrderRequestState {
     /// Fire-and-forget: the response is silently dropped because no `pending`
     /// entry is registered for the cancel `req_id`. If the auth token is not
     /// available or the command channel is closed the cancel is skipped and
-    /// the engine relies on reconciliation to detect any orphan order.
-    ///
-    /// # Known race
-    ///
-    /// When the timeout fires the dispatch has already emitted an
-    /// `OrderRejected` event, which moves the local cache to `Rejected`. If
-    /// the venue actually accepted the order AND the executions stream
-    /// delivers a fill before the compensating cancel lands at Kraken, the
-    /// fill cannot be applied to a `Rejected` order in the strategy state
-    /// machine. The live execution reconciliation engine
-    /// (`open_check_interval_secs`) is the recovery path: the next reconcile
-    /// poll observes the divergent venue state and emits the missing events.
-    /// Operators who cannot tolerate that recovery latency should set a
-    /// `ws_request_timeout_secs` comfortably above their observed Kraken
-    /// round-trip latency (default `5` is roughly 25× typical) so the timeout
-    /// only fires under genuine network failure.
+    /// the original request remains resolvable by a late response or
+    /// reconciliation.
     fn send_compensating_cancel(&self, cl_ord_ids: &[ClientOrderId]) {
-        let Some(token) = self.auth_token.try_read().ok().and_then(|g| g.clone()) else {
+        let Some(token) = self
+            .auth_token
+            .try_read()
+            .ok()
+            .and_then(|guard| guard.clone())
+        else {
             log::error!(
                 "Submit timeout: no auth token for compensating cancel cl_ord_ids={cl_ord_ids:?}; \
                  relying on reconciliation to recover any orphan order",
@@ -439,7 +438,7 @@ impl OrderRequestState {
         };
 
         let payload = match serde_json::to_string(&envelope) {
-            Ok(p) => p,
+            Ok(payload) => SecretString::from(payload),
             Err(e) => {
                 log::warn!("Submit timeout: compensating cancel serialise failed: {e}");
                 return;
@@ -803,6 +802,8 @@ impl OrderRequestState {
 mod tests {
     use std::sync::atomic::AtomicU64;
 
+    use nautilus_core::string::secret::REDACTED;
+    use nautilus_live::task::TaskGroup;
     use nautilus_model::{
         enums::{OrderSide, OrderType},
         identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
@@ -833,8 +834,8 @@ mod tests {
         pub(super) cmd_rx: tokio::sync::mpsc::UnboundedReceiver<SpotHandlerCommand>,
         pub(super) event_rx: tokio::sync::mpsc::UnboundedReceiver<OrderEventAny>,
         pub(super) dispatch_state: Arc<WsDispatchState>,
-        pub(super) auth_token: Arc<tokio::sync::RwLock<Option<String>>>,
-        pub(super) cancellation_token: CancellationToken,
+        pub(super) auth_token: Arc<tokio::sync::RwLock<Option<SecretString>>>,
+        pub(super) pending_tasks: TaskGroup,
         pub(super) cmd_tx_handle:
             Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<SpotHandlerCommand>>>,
     }
@@ -845,7 +846,8 @@ mod tests {
         let counter = Arc::new(AtomicU64::new(0));
         let dispatch_state = Arc::new(WsDispatchState::new());
         let auth_token = Arc::new(tokio::sync::RwLock::new(None));
-        let cancellation_token = CancellationToken::new();
+        let pending_tasks = TaskGroup::new();
+        let pending_spawner = pending_tasks.spawner().expect("pending task spawner");
         let cmd_tx_handle = Arc::new(tokio::sync::RwLock::new(cmd_tx));
         let state = Arc::new(OrderRequestState::new(
             Arc::clone(&cmd_tx_handle),
@@ -856,7 +858,7 @@ mod tests {
             TraderId::new("TESTER-001"),
             AccountId::new("KRAKEN-001"),
             Arc::clone(&auth_token),
-            cancellation_token.clone(),
+            pending_spawner,
             nautilus_core::time::get_atomic_clock_realtime(),
         ));
         Harness {
@@ -865,9 +867,22 @@ mod tests {
             event_rx,
             dispatch_state,
             auth_token,
-            cancellation_token,
+            pending_tasks,
             cmd_tx_handle,
         }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn debug_redacts_auth_token() {
+        let harness = make_harness(100);
+        *harness.auth_token.write().await =
+            Some(SecretString::from("kraken-auth-token".to_string()));
+
+        let debug = format!("{:?}", harness.state);
+
+        assert!(debug.contains(REDACTED));
+        assert!(!debug.contains("kraken-auth-token"));
     }
 
     fn register_default_identity(dispatch_state: &WsDispatchState, cl_ord_id: ClientOrderId) {
@@ -905,6 +920,25 @@ mod tests {
         }
     }
 
+    fn make_add_order_params(token: &str) -> KrakenWsAddOrderParams {
+        KrakenWsAddOrderParams {
+            order_type: KrakenOrderType::Limit,
+            side: KrakenOrderSide::Buy,
+            order_qty: dec!(0.001),
+            symbol: "BTC/USD".to_string(),
+            token: SecretString::from(token),
+            limit_price: Some(dec!(50000)),
+            time_in_force: None,
+            expire_time: None,
+            cl_ord_id: Some(CLIENT_ORDER_ID.to_string()),
+            post_only: None,
+            reduce_only: None,
+            leverage: None,
+            trigger: None,
+            conditional: None,
+        }
+    }
+
     #[rstest]
     fn test_next_req_id_is_monotonic() {
         let (state, _rx) = make_state(1_000);
@@ -924,7 +958,7 @@ mod tests {
             side: KrakenOrderSide::Buy,
             order_qty: dec!(0.001),
             symbol: "BTC/USD".to_string(),
-            token: "test-token".to_string(),
+            token: SecretString::from("test-token"),
             limit_price: Some(dec!(50000)),
             time_in_force: None,
             expire_time: None,
@@ -946,8 +980,12 @@ mod tests {
                 payload,
             } => {
                 assert_eq!(rid, req_id);
-                assert!(payload.contains("\"add_order\""));
-                assert!(payload.contains(&format!("\"req_id\":{req_id}")));
+                assert!(payload.expose_secret().contains("\"add_order\""));
+                assert!(
+                    payload
+                        .expose_secret()
+                        .contains(&format!("\"req_id\":{req_id}")),
+                );
             }
             _ => panic!("wrong cmd variant"),
         }
@@ -968,7 +1006,7 @@ mod tests {
             side: KrakenOrderSide::Buy,
             order_qty: dec!(0.001),
             symbol: "BTC/USD".to_string(),
-            token: "TKN".to_string(),
+            token: SecretString::from("TKN"),
             limit_price: Some(dec!(50000)),
             time_in_force: None,
             expire_time: None,
@@ -992,7 +1030,7 @@ mod tests {
 
         match cmd {
             SpotHandlerCommand::SendOrderRequest { payload, .. } => {
-                assert!(payload.contains("\"add_order\""));
+                assert!(payload.expose_secret().contains("\"add_order\""));
             }
             other => panic!("expected SendOrderRequest, was {other:?}"),
         }
@@ -1007,7 +1045,7 @@ mod tests {
             order_qty: Some(dec!(0.005)),
             limit_price: None,
             trigger_price: None,
-            token: "TKN".to_string(),
+            token: SecretString::from("TKN"),
         };
         let identity = PendingRequest {
             operation: PendingOperation::Amend,
@@ -1021,7 +1059,7 @@ mod tests {
         let _ = state.amend(params, identity, 1).expect("amend ok");
         let cmd = rx.try_recv().unwrap();
         if let SpotHandlerCommand::SendOrderRequest { payload, .. } = cmd {
-            assert!(payload.contains("\"amend_order\""));
+            assert!(payload.expose_secret().contains("\"amend_order\""));
         } else {
             panic!("wrong variant");
         }
@@ -1033,7 +1071,7 @@ mod tests {
         let params = KrakenWsCancelOrderParams {
             order_id: Some(vec!["O-VENUE".to_string()]),
             cl_ord_id: None,
-            token: "TKN".to_string(),
+            token: SecretString::from("TKN"),
         };
         let identity = PendingRequest {
             operation: PendingOperation::Cancel,
@@ -1047,7 +1085,7 @@ mod tests {
         let _ = state.cancel(params, identity, 1).expect("cancel ok");
         let cmd = rx.try_recv().unwrap();
         if let SpotHandlerCommand::SendOrderRequest { payload, .. } = cmd {
-            assert!(payload.contains("\"cancel_order\""));
+            assert!(payload.expose_secret().contains("\"cancel_order\""));
         } else {
             panic!("wrong variant");
         }
@@ -1059,7 +1097,7 @@ mod tests {
         let params = KrakenWsBatchAddParams {
             symbol: "BTC/USD".to_string(),
             orders: vec![],
-            token: "TKN".to_string(),
+            token: SecretString::from("TKN"),
         };
         let identity = PendingRequest {
             operation: PendingOperation::BatchAdd,
@@ -1073,7 +1111,7 @@ mod tests {
         let _ = state.batch_add(params, identity, 1).expect("batch ok");
         let cmd = rx.try_recv().unwrap();
         if let SpotHandlerCommand::SendOrderRequest { payload, .. } = cmd {
-            assert!(payload.contains("\"batch_add\""));
+            assert!(payload.expose_secret().contains("\"batch_add\""));
         } else {
             panic!("wrong variant");
         }
@@ -1402,13 +1440,17 @@ mod tests {
     }
 
     #[rstest]
-    fn test_cancel_timeout_emits_no_order_cancel_rejected() {
+    #[case(PendingOperation::Submit)]
+    #[case(PendingOperation::Amend)]
+    #[case(PendingOperation::Cancel)]
+    #[case(PendingOperation::BatchAdd)]
+    fn test_timeout_emits_no_order_event(#[case] operation: PendingOperation) {
         let mut harness = make_harness(60_000);
         let cl_ord_id = ClientOrderId::from(CLIENT_ORDER_ID);
         register_default_identity(&harness.dispatch_state, cl_ord_id);
 
         let pending = PendingRequest {
-            operation: PendingOperation::Cancel,
+            operation,
             client_order_ids: vec![cl_ord_id],
             venue_order_ids: vec![Some(VenueOrderId::from(VENUE_ORDER_ID))],
             ts_sent_ns: 0,
@@ -1417,23 +1459,32 @@ mod tests {
             new_trigger_price: None,
         };
 
-        harness.state.emit_timeout_rejection(23, &pending, 7_000);
+        harness.state.handle_timeout(&pending);
 
         assert!(harness.event_rx.try_recv().is_err());
     }
 
-    #[rstest]
-    fn test_handle_response_late_after_timeout_is_noop() {
-        let mut harness = make_harness(60_000);
+    #[tokio::test]
+    async fn test_late_submit_response_resolves_timed_out_request() {
+        let mut harness = make_harness(50);
         let cl_ord_id = ClientOrderId::from(CLIENT_ORDER_ID);
         register_default_identity(&harness.dispatch_state, cl_ord_id);
+        *harness.auth_token.write().await = Some(SecretString::from("TEST-TOKEN".to_string()));
 
-        let req_id = 99;
-        harness
+        let params = make_add_order_params("TEST-TOKEN");
+        let req_id = harness
             .state
-            .pending
-            .insert(req_id, make_identity(PendingOperation::Submit));
-        harness.state.pending.remove(&req_id);
+            .submit(params, make_identity(PendingOperation::Submit), 1)
+            .expect("submit ok");
+
+        let payloads = recv_send_payloads_until_cancel(&mut harness.cmd_rx).await;
+        assert!(
+            payloads
+                .iter()
+                .any(|p| p.expose_secret().contains("\"cancel_order\"")),
+        );
+        assert_eq!(harness.state.pending_len(), 1);
+        assert!(harness.event_rx.try_recv().is_err());
 
         let response = make_response(
             KrakenWsMethod::AddOrder,
@@ -1444,11 +1495,56 @@ mod tests {
         );
         harness.state.handle_response(&response, 7_000);
 
+        let event = harness.event_rx.try_recv().expect("late response event");
+        match event {
+            OrderEventAny::Accepted(e) => {
+                assert_eq!(e.client_order_id, cl_ord_id);
+                assert_eq!(e.venue_order_id.as_str(), VENUE_ORDER_ID);
+            }
+            other => panic!("expected Accepted, was {other:?}"),
+        }
+        assert_eq!(harness.state.pending_len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_late_submit_rejection_resolves_timed_out_request() {
+        let mut harness = make_harness(50);
+        let cl_ord_id = ClientOrderId::from(CLIENT_ORDER_ID);
+        register_default_identity(&harness.dispatch_state, cl_ord_id);
+        *harness.auth_token.write().await = Some(SecretString::from("TEST-TOKEN".to_string()));
+
+        let params = make_add_order_params("TEST-TOKEN");
+        let req_id = harness
+            .state
+            .submit(params, make_identity(PendingOperation::Submit), 1)
+            .expect("submit ok");
+
+        recv_send_payloads_until_cancel(&mut harness.cmd_rx).await;
+        assert_eq!(harness.state.pending_len(), 1);
         assert!(harness.event_rx.try_recv().is_err());
+
+        let response = make_response(
+            KrakenWsMethod::AddOrder,
+            false,
+            req_id,
+            None,
+            Some("Insufficient funds"),
+        );
+        harness.state.handle_response(&response, 7_000);
+
+        let event = harness.event_rx.try_recv().expect("late response event");
+        match event {
+            OrderEventAny::Rejected(e) => {
+                assert_eq!(e.client_order_id, cl_ord_id);
+                assert_eq!(e.reason.as_str(), "Insufficient funds");
+            }
+            other => panic!("expected Rejected, was {other:?}"),
+        }
+        assert_eq!(harness.state.pending_len(), 0);
     }
 
     #[rstest]
-    fn test_handle_response_method_op_mismatch_logs_and_drops() {
+    fn test_handle_response_method_op_mismatch_retains_pending() {
         let mut harness = make_harness(60_000);
         let cl_ord_id = ClientOrderId::from(CLIENT_ORDER_ID);
         register_default_identity(&harness.dispatch_state, cl_ord_id);
@@ -1462,8 +1558,30 @@ mod tests {
         let response = make_response(KrakenWsMethod::CancelOrder, true, req_id, None, None);
         harness.state.handle_response(&response, 8_000);
 
-        assert_eq!(harness.state.pending_len(), 0);
+        assert_eq!(harness.state.pending_len(), 1);
         assert!(harness.event_rx.try_recv().is_err());
+
+        let response = make_response(
+            KrakenWsMethod::AddOrder,
+            true,
+            req_id,
+            Some(VENUE_ORDER_ID),
+            None,
+        );
+        harness.state.handle_response(&response, 8_001);
+
+        let event = harness
+            .event_rx
+            .try_recv()
+            .expect("matching response event");
+        match event {
+            OrderEventAny::Accepted(e) => {
+                assert_eq!(e.client_order_id, cl_ord_id);
+                assert_eq!(e.venue_order_id.as_str(), VENUE_ORDER_ID);
+            }
+            other => panic!("expected Accepted, was {other:?}"),
+        }
+        assert_eq!(harness.state.pending_len(), 0);
     }
 
     #[rstest]
@@ -1689,7 +1807,7 @@ mod tests {
 
     fn drain_send_payloads(
         rx: &mut tokio::sync::mpsc::UnboundedReceiver<SpotHandlerCommand>,
-    ) -> Vec<String> {
+    ) -> Vec<SecretString> {
         let mut out = Vec::new();
 
         while let Ok(cmd) = rx.try_recv() {
@@ -1701,11 +1819,11 @@ mod tests {
     }
 
     // The compensating cancel is the last command the timeout task emits, so
-    // awaiting it means the original request and the rejection event are
-    // already enqueued; avoids racing a fixed sleep against the global runtime.
+    // awaiting it means timeout handling is complete without racing a fixed
+    // sleep against the global runtime.
     async fn recv_send_payloads_until_cancel(
         rx: &mut tokio::sync::mpsc::UnboundedReceiver<SpotHandlerCommand>,
-    ) -> Vec<String> {
+    ) -> Vec<SecretString> {
         let mut out = Vec::new();
 
         loop {
@@ -1717,7 +1835,7 @@ mod tests {
             let SpotHandlerCommand::SendOrderRequest { payload, .. } = cmd else {
                 continue;
             };
-            let is_cancel = payload.contains("\"cancel_order\"");
+            let is_cancel = payload.expose_secret().contains("\"cancel_order\"");
             out.push(payload);
 
             if is_cancel {
@@ -1731,24 +1849,9 @@ mod tests {
         let mut harness = make_harness(50);
         let cl_ord_id = ClientOrderId::from(CLIENT_ORDER_ID);
         register_default_identity(&harness.dispatch_state, cl_ord_id);
-        *harness.auth_token.write().await = Some("TEST-TOKEN".to_string());
+        *harness.auth_token.write().await = Some(SecretString::from("TEST-TOKEN".to_string()));
 
-        let params = KrakenWsAddOrderParams {
-            order_type: KrakenOrderType::Limit,
-            side: KrakenOrderSide::Buy,
-            order_qty: dec!(0.001),
-            symbol: "BTC/USD".to_string(),
-            token: "TEST-TOKEN".to_string(),
-            limit_price: Some(dec!(50000)),
-            time_in_force: None,
-            expire_time: None,
-            cl_ord_id: Some(CLIENT_ORDER_ID.to_string()),
-            post_only: None,
-            reduce_only: None,
-            leverage: None,
-            trigger: None,
-            conditional: None,
-        };
+        let params = make_add_order_params("TEST-TOKEN");
         let identity = make_identity(PendingOperation::Submit);
         harness
             .state
@@ -1757,51 +1860,36 @@ mod tests {
 
         let payloads = recv_send_payloads_until_cancel(&mut harness.cmd_rx).await;
         assert!(
-            payloads.iter().any(|p| p.contains("\"add_order\"")),
+            payloads
+                .iter()
+                .any(|p| p.expose_secret().contains("\"add_order\"")),
             "original add_order missing: {payloads:?}",
         );
         let cancel = payloads
             .iter()
-            .find(|p| p.contains("\"cancel_order\""))
+            .find(|p| p.expose_secret().contains("\"cancel_order\""))
             .expect("compensating cancel_order missing");
         assert!(
-            cancel.contains(CLIENT_ORDER_ID),
-            "compensating cancel must reference cl_ord_id, was {cancel}",
+            cancel.expose_secret().contains(CLIENT_ORDER_ID),
+            "compensating cancel must reference cl_ord_id, was {}",
+            cancel.expose_secret(),
         );
 
-        let event = harness.event_rx.try_recv().expect("rejection event");
-        match event {
-            OrderEventAny::Rejected(_) => {}
-            other => panic!("expected Rejected, was {other:?}"),
-        }
+        assert_eq!(harness.state.pending_len(), 1);
+        assert!(harness.event_rx.try_recv().is_err());
     }
 
     #[tokio::test]
     async fn test_compensating_cancel_response_is_silently_dropped() {
         // The compensating cancel after a submit timeout is fire-and-forget;
-        // a late response (success or failure) must not surface an event,
-        // since the order is already in `Rejected`.
+        // its response must not surface an event or resolve the original
+        // request correlation.
         let mut harness = make_harness(50);
         let cl_ord_id = ClientOrderId::from(CLIENT_ORDER_ID);
         register_default_identity(&harness.dispatch_state, cl_ord_id);
-        *harness.auth_token.write().await = Some("TEST-TOKEN".to_string());
+        *harness.auth_token.write().await = Some(SecretString::from("TEST-TOKEN".to_string()));
 
-        let params = KrakenWsAddOrderParams {
-            order_type: KrakenOrderType::Limit,
-            side: KrakenOrderSide::Buy,
-            order_qty: dec!(0.001),
-            symbol: "BTC/USD".to_string(),
-            token: "TEST-TOKEN".to_string(),
-            limit_price: Some(dec!(50000)),
-            time_in_force: None,
-            expire_time: None,
-            cl_ord_id: Some(CLIENT_ORDER_ID.to_string()),
-            post_only: None,
-            reduce_only: None,
-            leverage: None,
-            trigger: None,
-            conditional: None,
-        };
+        let params = make_add_order_params("TEST-TOKEN");
         let identity = make_identity(PendingOperation::Submit);
         harness
             .state
@@ -1810,13 +1898,12 @@ mod tests {
 
         let payloads = recv_send_payloads_until_cancel(&mut harness.cmd_rx).await;
 
-        let _ = harness.event_rx.try_recv().expect("rejection event");
-
         let cancel = payloads
             .iter()
-            .find(|p| p.contains("\"cancel_order\""))
+            .find(|p| p.expose_secret().contains("\"cancel_order\""))
             .expect("compensating cancel missing");
-        let cancel_value: serde_json::Value = serde_json::from_str(cancel).expect("valid json");
+        let cancel_value: serde_json::Value =
+            serde_json::from_str(cancel.expose_secret()).expect("valid json");
         let cancel_req_id = cancel_value["req_id"].as_u64().expect("req_id present");
 
         for success in [true, false] {
@@ -1836,101 +1923,23 @@ mod tests {
             harness.event_rx.try_recv().is_err(),
             "compensating-cancel responses must not surface events to strategies",
         );
+        assert_eq!(harness.state.pending_len(), 1);
     }
 
-    #[tokio::test]
-    async fn test_submit_timeout_rejection_uses_fire_time_not_send_time() {
-        let mut harness = make_harness(50);
+    #[rstest]
+    fn test_submit_timeout_without_token_skips_compensating_cancel() {
+        let mut harness = make_harness(60_000);
         let cl_ord_id = ClientOrderId::from(CLIENT_ORDER_ID);
         register_default_identity(&harness.dispatch_state, cl_ord_id);
-
-        let params = KrakenWsAddOrderParams {
-            order_type: KrakenOrderType::Limit,
-            side: KrakenOrderSide::Buy,
-            order_qty: dec!(0.001),
-            symbol: "BTC/USD".to_string(),
-            token: String::new(),
-            limit_price: Some(dec!(50000)),
-            time_in_force: None,
-            expire_time: None,
-            cl_ord_id: Some(CLIENT_ORDER_ID.to_string()),
-            post_only: None,
-            reduce_only: None,
-            leverage: None,
-            trigger: None,
-            conditional: None,
-        };
-        // Use a deliberately ancient ts_sent so we can prove the synthesized
-        // rejection's ts_event is NOT the send time. ts_sent_ns = 1 (1 ns past
-        // epoch) means a successful fix gives ts_event >> 1.
-        let identity = PendingRequest {
-            operation: PendingOperation::Submit,
-            client_order_ids: vec![cl_ord_id],
-            venue_order_ids: vec![None],
-            ts_sent_ns: 1,
-            new_quantity: None,
-            new_price: None,
-            new_trigger_price: None,
-        };
-        harness
-            .state
-            .submit(params, identity, 1)
-            .expect("submit ok");
-
-        let event = tokio::time::timeout(Duration::from_secs(5), harness.event_rx.recv())
-            .await
-            .expect("timed out awaiting rejection event")
-            .expect("event channel closed");
-        match event {
-            OrderEventAny::Rejected(e) => {
-                let ts_event_ns = e.ts_event.as_u64();
-                assert!(
-                    ts_event_ns > 1,
-                    "ts_event must be the timeout-fire time (clock now), \
-                     not the send time (1 ns); was {ts_event_ns}",
-                );
-            }
-            other => panic!("expected Rejected, was {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_submit_timeout_without_token_skips_compensating_cancel() {
-        let mut harness = make_harness(50);
-        let cl_ord_id = ClientOrderId::from(CLIENT_ORDER_ID);
-        register_default_identity(&harness.dispatch_state, cl_ord_id);
-
-        let params = KrakenWsAddOrderParams {
-            order_type: KrakenOrderType::Limit,
-            side: KrakenOrderSide::Buy,
-            order_qty: dec!(0.001),
-            symbol: "BTC/USD".to_string(),
-            token: String::new(),
-            limit_price: Some(dec!(50000)),
-            time_in_force: None,
-            expire_time: None,
-            cl_ord_id: Some(CLIENT_ORDER_ID.to_string()),
-            post_only: None,
-            reduce_only: None,
-            leverage: None,
-            trigger: None,
-            conditional: None,
-        };
         let identity = make_identity(PendingOperation::Submit);
-        harness
-            .state
-            .submit(params, identity, 1)
-            .expect("submit ok");
 
-        let event = tokio::time::timeout(Duration::from_secs(5), harness.event_rx.recv())
-            .await
-            .expect("timed out awaiting rejection event")
-            .expect("event channel closed");
-        assert!(matches!(event, OrderEventAny::Rejected(_)));
+        harness.state.handle_timeout(&identity);
 
         let payloads = drain_send_payloads(&mut harness.cmd_rx);
         assert!(
-            payloads.iter().all(|p| !p.contains("\"cancel_order\"")),
+            payloads
+                .iter()
+                .all(|p| !p.expose_secret().contains("\"cancel_order\"")),
             "no compensating cancel expected without token, was {payloads:?}",
         );
     }
@@ -1942,12 +1951,12 @@ mod tests {
         let cl_b = ClientOrderId::from("O-B");
         register_default_identity(&harness.dispatch_state, cl_a);
         register_default_identity(&harness.dispatch_state, cl_b);
-        *harness.auth_token.write().await = Some("TEST-TOKEN".to_string());
+        *harness.auth_token.write().await = Some(SecretString::from("TEST-TOKEN".to_string()));
 
         let params = KrakenWsBatchAddParams {
             symbol: "BTC/USD".to_string(),
             orders: vec![],
-            token: "TEST-TOKEN".to_string(),
+            token: SecretString::from("TEST-TOKEN"),
         };
         let identity = PendingRequest {
             operation: PendingOperation::BatchAdd,
@@ -1966,13 +1975,135 @@ mod tests {
         let payloads = recv_send_payloads_until_cancel(&mut harness.cmd_rx).await;
         let cancel = payloads
             .iter()
-            .find(|p| p.contains("\"cancel_order\""))
+            .find(|p| p.expose_secret().contains("\"cancel_order\""))
             .expect("compensating cancel missing");
-        assert!(cancel.contains("O-A") && cancel.contains("O-B"));
+        assert!(cancel.expose_secret().contains("O-A") && cancel.expose_secret().contains("O-B"),);
+        assert_eq!(harness.state.pending_len(), 1);
+        assert!(harness.event_rx.try_recv().is_err());
+
+        let batch_req_id = payloads
+            .iter()
+            .find(|p| p.expose_secret().contains("\"batch_add\""))
+            .and_then(|p| serde_json::from_str::<serde_json::Value>(p.expose_secret()).ok())
+            .and_then(|v| v["req_id"].as_u64())
+            .expect("batch req_id missing");
+        let response = KrakenWsOrderResponse {
+            method: KrakenWsMethod::BatchAdd,
+            req_id: Some(batch_req_id),
+            success: true,
+            time_in: None,
+            time_out: None,
+            error: None,
+            result: Some(KrakenWsOrderResult {
+                order_id: None,
+                cl_ord_id: None,
+                order_userref: None,
+                warning: None,
+                orders: Some(vec![
+                    KrakenWsBatchOrderResult {
+                        success: false,
+                        order_id: None,
+                        cl_ord_id: Some("O-B".to_string()),
+                        error: Some("Bad price".to_string()),
+                    },
+                    KrakenWsBatchOrderResult {
+                        success: true,
+                        order_id: Some("V-A".to_string()),
+                        cl_ord_id: Some("O-A".to_string()),
+                        error: None,
+                    },
+                ]),
+            }),
+        };
+        harness.state.handle_response(&response, 10_000);
+
+        let first = harness.event_rx.try_recv().expect("first late event");
+        let second = harness.event_rx.try_recv().expect("second late event");
+        let mut accepted = None;
+        let mut rejected = None;
+
+        for event in [first, second] {
+            match event {
+                OrderEventAny::Accepted(e) => {
+                    accepted = Some((e.client_order_id, e.venue_order_id));
+                }
+                OrderEventAny::Rejected(e) => {
+                    rejected = Some((e.client_order_id, e.reason));
+                }
+                other => panic!("expected Accepted or Rejected, was {other:?}"),
+            }
+        }
+        assert_eq!(
+            accepted.map(|(cl, venue)| (cl, venue.to_string())),
+            Some((cl_a, "V-A".to_string()))
+        );
+        assert_eq!(
+            rejected.map(|(cl, reason)| (cl, reason.to_string())),
+            Some((cl_b, "Bad price".to_string()))
+        );
+        assert_eq!(harness.state.pending_len(), 0);
     }
 
     #[tokio::test]
-    async fn test_cancellation_token_aborts_pending_timeout() {
+    async fn test_clear_removes_timed_out_request() {
+        let mut harness = make_harness(50);
+        let cl_ord_id = ClientOrderId::from(CLIENT_ORDER_ID);
+        register_default_identity(&harness.dispatch_state, cl_ord_id);
+        *harness.auth_token.write().await = Some(SecretString::from("TEST-TOKEN".to_string()));
+
+        let params = make_add_order_params("TEST-TOKEN");
+        harness
+            .state
+            .submit(params, make_identity(PendingOperation::Submit), 1)
+            .expect("submit ok");
+
+        recv_send_payloads_until_cancel(&mut harness.cmd_rx).await;
+        assert_eq!(harness.state.pending_len(), 1);
+
+        harness.state.clear();
+
+        assert_eq!(harness.state.pending_len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_reset_cancellation_token_keeps_new_timeout_pending() {
+        let mut harness = make_harness(50);
+        let cl_ord_id = ClientOrderId::from(CLIENT_ORDER_ID);
+        register_default_identity(&harness.dispatch_state, cl_ord_id);
+        *harness.auth_token.write().await = Some(SecretString::from("TEST-TOKEN".to_string()));
+        harness.pending_tasks.begin_shutdown();
+        harness
+            .pending_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(1))
+            .await
+            .expect("finish old timeout generation");
+        harness
+            .pending_tasks
+            .start_generation()
+            .expect("start timeout generation");
+        let pending_spawner = harness
+            .pending_tasks
+            .spawner()
+            .expect("pending task spawner");
+        harness.state.reset_task_spawner(pending_spawner);
+
+        harness
+            .state
+            .submit(
+                make_add_order_params("TEST-TOKEN"),
+                make_identity(PendingOperation::Submit),
+                1,
+            )
+            .expect("submit ok");
+
+        recv_send_payloads_until_cancel(&mut harness.cmd_rx).await;
+
+        assert_eq!(harness.state.pending_len(), 1);
+        assert!(harness.event_rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn test_task_group_shutdown_aborts_pending_timeout() {
         let harness = make_harness(60_000);
         let cl_ord_id = ClientOrderId::from(CLIENT_ORDER_ID);
         register_default_identity(&harness.dispatch_state, cl_ord_id);
@@ -1982,7 +2113,7 @@ mod tests {
             side: KrakenOrderSide::Buy,
             order_qty: dec!(0.001),
             symbol: "BTC/USD".to_string(),
-            token: String::new(),
+            token: SecretString::default(),
             limit_price: Some(dec!(50000)),
             time_in_force: None,
             expire_time: None,
@@ -2000,7 +2131,7 @@ mod tests {
             .expect("submit ok");
         assert_eq!(harness.state.pending_len(), 1);
 
-        harness.cancellation_token.cancel();
+        harness.pending_tasks.begin_shutdown();
 
         // Cancellation clears the pending entry from a task on the global runtime,
         // so poll the condition rather than racing a fixed sleep.

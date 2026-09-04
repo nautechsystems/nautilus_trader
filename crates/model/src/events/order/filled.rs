@@ -23,8 +23,8 @@ use ustr::Ustr;
 
 use crate::{
     enums::{
-        ContingencyType, LiquiditySide, OrderSide, OrderSideSpecified, OrderType, TimeInForce,
-        TrailingOffsetType, TriggerType,
+        ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TrailingOffsetType,
+        TriggerType,
     },
     events::OrderEvent,
     identifiers::{
@@ -54,6 +54,7 @@ pub struct OrderFilled {
     pub instrument_id: InstrumentId,
     /// The client order ID associated with the event.
     pub client_order_id: ClientOrderId,
+    /// The venue order ID associated with the event.
     pub venue_order_id: VenueOrderId,
     /// The account ID associated with the event.
     pub account_id: AccountId,
@@ -139,11 +140,6 @@ impl OrderFilled {
             info,
             causation_id: None,
         }
-    }
-
-    #[must_use]
-    pub fn specified_side(&self) -> OrderSideSpecified {
-        self.order_side.as_specified()
     }
 
     #[must_use]
@@ -468,6 +464,13 @@ impl OrderEvent for OrderFilled {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }
+    fn causation_id(&self) -> Option<UUID4> {
+        self.causation_id
+    }
+
+    fn info(&self) -> Option<IndexMap<Ustr, Ustr>> {
+        self.info.clone()
+    }
 }
 
 #[cfg(test)]
@@ -477,7 +480,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        enums::{OrderSide, OrderSideSpecified},
+        enums::OrderSide,
         events::order::stubs::*,
         identifiers::PositionId,
         types::{Currency, Money, Price, Quantity},
@@ -579,16 +582,6 @@ mod tests {
         assert_eq!(opening.event_id, opening_event_id);
         assert_eq!(opening.causation_id, Some(source_event_id));
         assert_eq!(opening.commission, Some(Money::new(1.5, Currency::USD())));
-    }
-
-    #[rstest]
-    fn test_order_filled_specified_side() {
-        let buy_order = create_test_order_filled();
-        assert_eq!(buy_order.specified_side(), OrderSideSpecified::Buy);
-
-        let mut sell_order = create_test_order_filled();
-        sell_order.order_side = OrderSide::Sell;
-        assert_eq!(sell_order.specified_side(), OrderSideSpecified::Sell);
     }
 
     #[rstest]

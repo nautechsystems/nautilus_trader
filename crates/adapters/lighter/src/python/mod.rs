@@ -37,10 +37,11 @@ use pyo3::prelude::*;
 use crate::{
     common::{
         consts::{
-            LIGHTER, LIGHTER_CLIENT_ID, LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX, LIGHTER_VENUE,
+            LIGHTER, LIGHTER_CLIENT_ID, LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
+            LIGHTER_ROBINHOOD, LIGHTER_ROBINHOOD_CLIENT_ID, LIGHTER_ROBINHOOD_VENUE, LIGHTER_VENUE,
         },
         credential::Credential,
-        enums::LighterEnvironment,
+        enums::{LighterDeployment, LighterEnvironment},
         urls::lighter_chain_id,
     },
     config::{LighterDataClientConfig, LighterExecutionClientConfig},
@@ -122,6 +123,7 @@ async fn submit_integrator_revocation(environment: LighterEnvironment) -> anyhow
         .nonce;
 
     let now_ms = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis() as i64;
+
     let tx = ApproveIntegratorTxInfo {
         context: TxContext {
             account_index: credential.account_index(),
@@ -158,7 +160,7 @@ async fn submit_integrator_revocation(environment: LighterEnvironment) -> anyhow
 /// and requires no revocation.
 ///
 /// See:
-/// <https://nautilustrader.io/docs/nightly/integrations/lighter.html#integrator-attribution>.
+/// <https://nautilustrader.io/docs/nightly/integrations/lighter/#integrator-attribution>.
 ///
 /// Reads mainnet L2 credentials from `LIGHTER_API_KEY_INDEX`, `LIGHTER_API_SECRET`,
 /// and `LIGHTER_ACCOUNT_INDEX`.
@@ -185,6 +187,16 @@ pub fn lighter(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(LIGHTER), LIGHTER)?;
     m.add(stringify!(LIGHTER_CLIENT_ID), *LIGHTER_CLIENT_ID)?;
     m.add(stringify!(LIGHTER_VENUE), *LIGHTER_VENUE)?;
+    m.add(stringify!(LIGHTER_ROBINHOOD), LIGHTER_ROBINHOOD)?;
+    m.add(
+        stringify!(LIGHTER_ROBINHOOD_CLIENT_ID),
+        *LIGHTER_ROBINHOOD_CLIENT_ID,
+    )?;
+    m.add(
+        stringify!(LIGHTER_ROBINHOOD_VENUE),
+        *LIGHTER_ROBINHOOD_VENUE,
+    )?;
+    m.add_class::<LighterDeployment>()?;
     m.add_class::<LighterEnvironment>()?;
     m.add_class::<LighterDataClientConfig>()?;
     m.add_class::<LighterDataClientFactory>()?;

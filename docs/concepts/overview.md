@@ -220,6 +220,7 @@ live and backtest environments:
 - `Margin` single-currency (base currency)
 - `Margin` multi-currency
 - `Betting` single-currency
+- `Wallet` multi-currency (blockchain wallets; execution client in development)
 
 ## Order types
 

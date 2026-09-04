@@ -123,9 +123,7 @@ impl From<tungstenite::Error> for TransportError {
             tungstenite::Error::Protocol(e) => Self::Protocol(e.to_string()),
             tungstenite::Error::Utf8(_) => Self::InvalidUtf8,
             tungstenite::Error::Url(e) => Self::InvalidUrl(e.to_string()),
-            tungstenite::Error::Http(resp) => {
-                Self::Handshake(format!("HTTP status {}", resp.status()))
-            }
+            tungstenite::Error::Http(resp) => Self::UpgradeRejected(resp.status().as_u16()),
             tungstenite::Error::HttpFormat(e) => Self::Handshake(e.to_string()),
             other => Self::Other(other.to_string()),
         }
@@ -310,5 +308,50 @@ mod tests {
     fn error_translation_utf8() {
         let err: TransportError = tungstenite::Error::Utf8(String::from("bad")).into();
         assert!(matches!(err, TransportError::InvalidUtf8));
+    }
+
+    #[rstest]
+    fn error_translation_message_too_long() {
+        let err: TransportError =
+            tungstenite::Error::Capacity(tungstenite::error::CapacityError::MessageTooLong {
+                size: 65,
+                max_size: 64,
+            })
+            .into();
+
+        assert!(matches!(err, TransportError::MessageTooLarge));
+    }
+
+    #[rstest]
+    fn error_translation_too_many_headers() {
+        let err: TransportError =
+            tungstenite::Error::Capacity(tungstenite::error::CapacityError::TooManyHeaders).into();
+
+        let TransportError::Other(message) = err else {
+            panic!("expected other error, was {err:?}");
+        };
+        assert_eq!(message, "Too many headers");
+    }
+
+    #[rstest]
+    fn error_translation_tls() {
+        let err: TransportError =
+            tungstenite::Error::Tls(tungstenite::error::TlsError::InvalidDnsName).into();
+
+        let TransportError::Tls(message) = err else {
+            panic!("expected TLS error, was {err:?}");
+        };
+        assert_eq!(message, "Invalid DNS name");
+    }
+
+    #[rstest]
+    fn error_translation_url() {
+        let err: TransportError =
+            tungstenite::Error::Url(tungstenite::error::UrlError::UnsupportedUrlScheme).into();
+
+        let TransportError::InvalidUrl(message) = err else {
+            panic!("expected invalid URL error, was {err:?}");
+        };
+        assert_eq!(message, "URL scheme not supported");
     }
 }

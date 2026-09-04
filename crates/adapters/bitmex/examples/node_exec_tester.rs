@@ -39,6 +39,10 @@ use nautilus_model::{
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
+// WARNING: With `DRY_RUN = false`, this tester submits orders to the configured
+// environment and may use real funds. Set `DRY_RUN = true` to connect without
+// submitting orders or sending shutdown cancel/close commands.
+const DRY_RUN: bool = false;
 const BITMEX_ENVIRONMENT: BitmexEnvironment = BitmexEnvironment::Testnet;
 const TRADER_ID: &str = "TESTER-001";
 const STRATEGY_ID: &str = "EXEC-TESTER-001";
@@ -87,12 +91,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tester_config = ExecTesterConfig::builder()
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from(STRATEGY_ID)),
-            external_order_claims: Some(vec![instrument_id]),
+            external_order_instrument_ids: Some(vec![instrument_id]),
             ..Default::default()
         })
         .instrument_id(instrument_id)
         .client_id(*BITMEX_CLIENT_ID)
         .order_qty(order_qty)
+        .dry_run(DRY_RUN)
         .use_post_only(true)
         .open_position_on_start_qty(order_qty.as_decimal())
         .open_position_time_in_force(TimeInForce::Ioc)

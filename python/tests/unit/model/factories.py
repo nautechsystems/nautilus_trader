@@ -87,7 +87,7 @@ def make_market_order_snapshot_values(instrument_id: InstrumentId) -> object:
         time_in_force=TimeInForce.GTC,
         reduce_only=False,
         quote_quantity=False,
-        contingency_type=ContingencyType.NO_CONTINGENCY,
+        contingency_type=None,
     )
     values = order.to_dict()
     values["order_type"] = values["type"]

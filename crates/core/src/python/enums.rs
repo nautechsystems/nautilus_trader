@@ -23,7 +23,7 @@ use super::to_pyvalue_err;
 /// Converts a raw string to the enum `E`, returning a nicely-formatted
 /// `PyValueError` if the string does not match any variant.
 ///
-/// The helper is aimed at Python-exposed functions that still accept plain
+/// This parser is intended for Python-exposed functions that still accept plain
 /// `&str` parameters internally: call `parse_enum` instead of writing repetitive
 /// `str::parse()` + error-formatting logic yourself.
 ///

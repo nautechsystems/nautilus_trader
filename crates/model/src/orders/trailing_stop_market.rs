@@ -490,7 +490,10 @@ impl Order for TrailingStopMarketOrder {
     }
 
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
-        let was_filled = matches!(event, OrderEventAny::Filled(_));
+        let updates_slippage = matches!(
+            event,
+            OrderEventAny::Filled(_) | OrderEventAny::FillVoided(_),
+        );
         let is_order_triggered = matches!(event, OrderEventAny::Triggered(_));
         let ts_event = if is_order_triggered {
             Some(event.ts_event())
@@ -509,7 +512,7 @@ impl Order for TrailingStopMarketOrder {
             self.ts_triggered = ts_event;
         }
 
-        if was_filled && let Some(trigger_price) = self.trigger_price {
+        if updates_slippage && let Some(trigger_price) = self.trigger_price {
             self.core.set_slippage(trigger_price);
         }
 
@@ -673,6 +676,7 @@ mod tests {
             .side(OrderSide::Buy)
             .trigger_price(Price::from("0.68000"))
             .trailing_offset(dec!(10))
+            .trailing_offset_type(TrailingOffsetType::Price)
             .quantity(Quantity::from(1))
             .build();
 
@@ -761,7 +765,7 @@ mod tests {
             .quantity(Quantity::from(10))
             .trigger_price(Price::new(100.0, 2))
             .trailing_offset(Decimal::new(5, 1)) // 0.5
-            .trailing_offset_type(TrailingOffsetType::NoTrailingOffset)
+            .trailing_offset_type(TrailingOffsetType::Price)
             .build();
 
         let mut accepted_order = TestOrderStubs::make_accepted_order(&order);
@@ -792,7 +796,7 @@ mod tests {
             .quantity(Quantity::from(10))
             .trigger_price(Price::new(100.0, 2))
             .trailing_offset(Decimal::new(5, 1))
-            .trailing_offset_type(TrailingOffsetType::NoTrailingOffset)
+            .trailing_offset_type(TrailingOffsetType::Price)
             .build();
         let mut accepted_order = TestOrderStubs::make_accepted_order(&order);
         let state = (
@@ -826,7 +830,7 @@ mod tests {
             .quantity(Quantity::from(10))
             .trigger_price(Price::new(100.0, 2))
             .trailing_offset(Decimal::new(5, 1)) // 0.5
-            .trailing_offset_type(TrailingOffsetType::NoTrailingOffset)
+            .trailing_offset_type(TrailingOffsetType::Price)
             .expire_time(expire_time)
             .build();
 
@@ -843,7 +847,7 @@ mod tests {
             .quantity(Quantity::from(10))
             .trigger_price(Price::new(100.0, 2))
             .trailing_offset(Decimal::new(5, 1)) // 0.5
-            .trailing_offset_type(TrailingOffsetType::NoTrailingOffset)
+            .trailing_offset_type(TrailingOffsetType::Price)
             .trigger_instrument_id(trigger_instrument_id)
             .build();
 
@@ -858,7 +862,7 @@ mod tests {
             .trigger_price(Price::new(100.0, 2))
             .trigger_type(TriggerType::Default)
             .trailing_offset(Decimal::new(5, 1)) // 0.5
-            .trailing_offset_type(TrailingOffsetType::NoTrailingOffset)
+            .trailing_offset_type(TrailingOffsetType::Price)
             .order_type(OrderType::TrailingStopMarket)
             .build();
 
@@ -894,6 +898,7 @@ mod tests {
             .activation_price(Price::from("0.68500"))
             .trigger_price(Price::from("0.68000"))
             .trailing_offset(dec!(10))
+            .trailing_offset_type(TrailingOffsetType::Price)
             .quantity(Quantity::from(1))
             .build();
 
@@ -932,7 +937,7 @@ mod tests {
             .side(OrderSide::Buy) // Explicitly setting Buy side
             .trigger_price(Price::new(90.0, 2)) // Trigger price LOWER than fill price
             .trailing_offset(Decimal::new(5, 1)) // 0.5
-            .trailing_offset_type(TrailingOffsetType::NoTrailingOffset)
+            .trailing_offset_type(TrailingOffsetType::Price)
             .build();
 
         // Accept the order first

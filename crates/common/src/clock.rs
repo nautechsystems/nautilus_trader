@@ -14,6 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Real-time and static `Clock` implementations.
+//!
+//! Defines the [`Clock`] contract, the user-facing [`ClockApi`] facade, and the deterministic
+//! [`TestClock`] used for controlled time advancement. Shared validation and callback registration
+//! support test and live clock implementations.
 
 use std::{
     any::Any,
@@ -39,11 +43,9 @@ use crate::timer::{
     create_valid_interval,
 };
 
-/// Represents a type of clock.
+/// Provides time access, timer scheduling, and callback registration.
 ///
-/// # Notes
-///
-/// An active timer is one which has not expired (`timer.is_expired == False`).
+/// An active timer is one that has not expired.
 pub trait Clock: Debug + Any {
     /// Returns the current UTC timestamp.
     fn utc_now(&self) -> Timestamp {
@@ -68,14 +70,13 @@ pub trait Clock: Debug + Any {
     /// Returns the count of active timers in the clock.
     fn timer_count(&self) -> usize;
 
-    /// If an active (not expired) timer with the `name` exists.
+    /// Returns whether an active timer named `name` exists.
     fn timer_exists(&self, name: &Ustr) -> bool;
 
-    /// Register a default event handler for the clock. If a timer
-    /// does not have an event handler, then this handler is used.
+    /// Registers the callback used when a timer has no named callback.
     fn register_default_handler(&mut self, callback: TimeEventCallback);
 
-    /// Cancel the registered default event handler (if any).
+    /// Cancels the registered default event handler, if any.
     ///
     /// Releases the held callback so any Python object owned by it can be dropped.
     /// `Trader::release_component` calls this at component retirement to break the cycle
@@ -83,7 +84,7 @@ pub trait Clock: Debug + Any {
     /// `Py<PyAny>` that Python's cycle collector cannot reach through.
     fn cancel_default_handler(&mut self);
 
-    /// Cancel all registered named event callbacks.
+    /// Cancels all registered named event callbacks, preserving the default handler.
     ///
     /// Releases callbacks registered via [`Clock::set_time_alert_ns`] or
     /// [`Clock::set_timer_ns`] with an explicit `callback` argument.
@@ -91,20 +92,22 @@ pub trait Clock: Debug + Any {
     /// cycle as [`Clock::cancel_default_handler`].
     fn cancel_callbacks(&mut self);
 
-    /// Set a timer to alert at the specified time.
+    /// Sets a timer to alert at the specified time.
     ///
     /// See [`Clock::set_time_alert_ns`] for flag semantics.
     ///
     /// # Callback
     ///
-    /// - `callback`: Some, then callback handles the time event.
-    /// - `callback`: None, then a callback previously registered under the same `name` is used
-    ///   if present; otherwise the clock's default time event callback is used.
+    /// - `Some(callback)` registers and uses `callback` for the named alert.
+    /// - `None` uses a callback registered under `name`, falling back to the default callback.
     ///
     /// # Errors
     ///
-    /// Returns an error if `name` is invalid, `alert_time` is in the past when not allowed,
-    /// before the UNIX epoch, or out of range for `UnixNanos`, or any predicate check fails.
+    /// Returns an error if:
+    /// - `name` is invalid.
+    /// - `alert_time` is before the UNIX epoch or outside the [`UnixNanos`] range.
+    /// - The alert is in the past and `allow_past` is `Some(false)`.
+    /// - No explicit, named, or default callback is available.
     fn set_time_alert(
         &mut self,
         name: &str,
@@ -120,27 +123,29 @@ pub trait Clock: Debug + Any {
         )
     }
 
-    /// Set a timer to alert at the specified time.
+    /// Sets a timer to alert at the specified time.
     ///
-    /// Any existing timer registered under the same `name` is cancelled with a warning before the new alert is scheduled.
+    /// Any active timer registered under the same `name` is canceled with a warning before the
+    /// new alert is scheduled. `allow_past` defaults to `true`.
     ///
     /// # Flags
     ///
-    /// | `allow_past` | Behavior                                                                                |
-    /// |--------------|-----------------------------------------------------------------------------------------|
-    /// | `true`       | If alert time is **in the past**, the alert fires immediately; otherwise at alert time. |
-    /// | `false`      | Returns an error if alert time is earlier than now.                                     |
+    /// | `allow_past` | Behavior                                                               |
+    /// | ------------ | ---------------------------------------------------------------------- |
+    /// | `true`       | A past alert is moved to the current time and fires immediately.       |
+    /// | `false`      | An alert earlier than the current time returns an error.               |
     ///
     /// # Callback
     ///
-    /// - `callback`: Some, then callback handles the time event.
-    /// - `callback`: None, then a callback previously registered under the same `name` is used
-    ///   if present; otherwise the clock's default time event callback is used.
+    /// - `Some(callback)` registers and uses `callback` for the named alert.
+    /// - `None` uses a callback registered under `name`, falling back to the default callback.
     ///
     /// # Errors
     ///
-    /// Returns an error if `name` is invalid, `alert_time_ns` is earlier than now when not allowed,
-    /// or any predicate check fails.
+    /// Returns an error if:
+    /// - `name` is invalid.
+    /// - `alert_time_ns` is earlier than now and `allow_past` is `Some(false)`.
+    /// - No explicit, named, or default callback is available.
     fn set_time_alert_ns(
         &mut self,
         name: &str,
@@ -149,17 +154,17 @@ pub trait Clock: Debug + Any {
         allow_past: Option<bool>,
     ) -> anyhow::Result<()>;
 
-    /// Set a timer to fire time events at every interval between start and stop time.
+    /// Sets a timer to fire time events at every interval between the start and stop times.
     ///
-    /// Any existing timer registered under the same `name` is cancelled with a warning before the new timer is scheduled.
+    /// Any active timer registered under the same `name` is canceled with a warning before the
+    /// new timer is scheduled.
     ///
     /// See [`Clock::set_timer_ns`] for flag semantics.
     ///
     /// # Callback
     ///
-    /// - `callback`: Some, then callback handles the time event.
-    /// - `callback`: None, then a callback previously registered under the same `name` is used
-    ///   if present; otherwise the clock's default time event callback is used.
+    /// - `Some(callback)` registers and uses `callback` for the named timer.
+    /// - `None` uses a callback registered under `name`, falling back to the default callback.
     ///
     /// # Errors
     ///
@@ -168,7 +173,10 @@ pub trait Clock: Debug + Any {
     /// - `interval` is zero or exceeds `u64::MAX` nanoseconds.
     /// - `start_time` or `stop_time` is before the UNIX epoch or out of range for `UnixNanos`.
     /// - The first event timestamp is out of range for `UnixNanos`.
-    /// - Any other timer predicate check fails.
+    /// - The first event is in the past when past times are disallowed.
+    /// - The stop time is not after the start time.
+    /// - The stop time is not after the current time when past times are disallowed.
+    /// - No explicit, named, or default callback is available.
     #[expect(clippy::too_many_arguments)]
     fn set_timer(
         &mut self,
@@ -191,9 +199,11 @@ pub trait Clock: Debug + Any {
         )
     }
 
-    /// Set a timer to fire time events at every interval between start and stop time.
+    /// Sets a timer to fire time events at every interval between the start and stop times.
     ///
-    /// Any existing timer registered under the same `name` is cancelled before the new timer is scheduled.
+    /// Any active timer registered under the same `name` is canceled with a warning before the
+    /// new timer is scheduled. `allow_past` defaults to `true`, and `fire_immediately` defaults to
+    /// `false`.
     ///
     /// # Start Time
     ///
@@ -202,18 +212,17 @@ pub trait Clock: Debug + Any {
     ///
     /// # Flags
     ///
-    /// | `allow_past` | `fire_immediately` | Behavior                                                                              |
-    /// |--------------|--------------------|---------------------------------------------------------------------------------------|
-    /// | `true`       | `true`             | First event fires immediately at start time, even if start time is in the past.       |
-    /// | `true`       | `false`            | First event fires at start time + interval, even if start time is in the past.        |
-    /// | `false`      | `true`             | Returns error if start time is in the past (first event would be immediate but past). |
-    /// | `false`      | `false`            | Returns error if start time + interval is in the past.                                |
+    /// | `allow_past` | `fire_immediately` | First event behavior                                |
+    /// | ------------ | ------------------ | --------------------------------------------------- |
+    /// | `true`       | `true`             | Fires at the start time, including a past start.    |
+    /// | `true`       | `false`            | Fires one interval after the start, including past. |
+    /// | `false`      | `true`             | A past start time returns an error.                 |
+    /// | `false`      | `false`            | A past first event returns an error.                |
     ///
     /// # Callback
     ///
-    /// - `callback`: Some, then callback handles the time event.
-    /// - `callback`: None, then a callback previously registered under the same `name` is used
-    ///   if present; otherwise the clock's default time event callback is used.
+    /// - `Some(callback)` registers and uses `callback` for the named timer.
+    /// - `None` uses a callback registered under `name`, falling back to the default callback.
     ///
     /// # Errors
     ///
@@ -221,7 +230,10 @@ pub trait Clock: Debug + Any {
     /// - `name` is invalid.
     /// - `interval_ns` is zero.
     /// - `start_time_ns + interval_ns` is out of range for `UnixNanos` when not firing immediately.
-    /// - Any other timer predicate check fails.
+    /// - The first event is in the past when past times are disallowed.
+    /// - The stop time is not after the start time.
+    /// - The stop time is not after the current time when past times are disallowed.
+    /// - No explicit, named, or default callback is available.
     #[expect(clippy::too_many_arguments)]
     fn set_timer_ns(
         &mut self,
@@ -234,18 +246,20 @@ pub trait Clock: Debug + Any {
         fire_immediately: Option<bool>,
     ) -> anyhow::Result<()>;
 
-    /// Returns the time interval in which the timer `name` is triggered.
+    /// Returns the next trigger timestamp for the active timer named `name`.
     ///
-    /// If no active (not expired) timer with `name` exists, `None` is returned.
+    /// Returns `None` if no active timer with that name exists.
     fn next_time_ns(&self, name: &str) -> Option<UnixNanos>;
 
-    /// Cancels the timer with `name`.
+    /// Cancels the timer named `name`, if it exists.
     fn cancel_timer(&mut self, name: &str);
 
     /// Cancels all timers.
     fn cancel_timers(&mut self);
 
-    /// Resets the clock by clearing it's internal state.
+    /// Resets scheduling state while preserving the default callback.
+    ///
+    /// The reset clears all timers and named callbacks. Static clocks also reset their stored time.
     fn reset(&mut self);
 }
 
@@ -254,57 +268,21 @@ impl dyn Clock {
     pub fn as_any(&self) -> &dyn std::any::Any {
         self
     }
+
     /// Returns a mutable reference to this clock as `Any` for downcasting.
     pub fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
 }
 
-/// User-facing clock API.
+/// Provides a user-facing facade over clock operations.
+///
+/// Calls delegate to either a borrowed [`Clock`] or a set of operation handlers.
+/// Panics from supplied operation handlers propagate to the caller.
 #[derive(Debug)]
 pub struct ClockApi<'a> {
     backing: ClockApiBacking<'a>,
 }
-
-enum ClockApiBacking<'a> {
-    Native(&'a RefCell<dyn Clock>),
-    Handlers(ClockApiHandlers<'a>),
-}
-
-struct ClockApiHandlers<'a> {
-    timestamp_ns: Box<dyn Fn() -> UnixNanos + 'a>,
-    set_time_alert_ns: Box<SetTimeAlertNsHandler<'a>>,
-    set_timer_ns: Box<SetTimerNsHandler<'a>>,
-    timer_names: Box<dyn Fn() -> Vec<String> + 'a>,
-    timer_count: Box<dyn Fn() -> usize + 'a>,
-    timer_exists: Box<dyn Fn(&str) -> bool + 'a>,
-    next_time_ns: Box<NextTimeNsHandler<'a>>,
-    cancel_timer: Box<dyn Fn(&str) + 'a>,
-    cancel_timers: Box<dyn Fn() + 'a>,
-}
-
-impl Debug for ClockApiBacking<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Native(_) => f.write_str("Native"),
-            Self::Handlers(_) => f.write_str("Handlers"),
-        }
-    }
-}
-
-type SetTimeAlertNsHandler<'a> =
-    dyn Fn(&str, UnixNanos, Option<TimeEventCallback>, Option<bool>) -> anyhow::Result<()> + 'a;
-type NextTimeNsHandler<'a> = dyn Fn(&str) -> Option<UnixNanos> + 'a;
-type SetTimerNsHandler<'a> = dyn Fn(
-        &str,
-        u64,
-        Option<UnixNanos>,
-        Option<UnixNanos>,
-        Option<TimeEventCallback>,
-        Option<bool>,
-        Option<bool>,
-    ) -> anyhow::Result<()>
-    + 'a;
 
 impl<'a> ClockApi<'a> {
     pub(crate) fn new(clock: &'a RefCell<dyn Clock>) -> Self {
@@ -313,7 +291,11 @@ impl<'a> ClockApi<'a> {
         }
     }
 
-    /// Creates a clock API from backing callbacks.
+    /// Creates a clock API backed by the supplied operation handlers.
+    ///
+    /// The nanosecond timestamp handler also supplies the derived UTC, second, millisecond, and
+    /// microsecond values. Timestamp-based scheduling methods convert their inputs before invoking
+    /// the corresponding nanosecond handler.
     #[doc(hidden)]
     #[must_use]
     #[expect(
@@ -377,11 +359,11 @@ impl<'a> ClockApi<'a> {
         }
     }
 
-    /// Returns the current UNIX nanoseconds timestamp.
+    /// Returns the current UNIX timestamp in nanoseconds.
     ///
     /// # Panics
     ///
-    /// Panics if the clock is already mutably borrowed.
+    /// With native backing, panics if the clock is already mutably borrowed.
     #[must_use]
     pub fn timestamp_ns(&self) -> UnixNanos {
         match &self.backing {
@@ -394,7 +376,7 @@ impl<'a> ClockApi<'a> {
     ///
     /// # Panics
     ///
-    /// Panics if the clock is already mutably borrowed.
+    /// With native backing, panics if the clock is already mutably borrowed.
     #[must_use]
     pub fn timestamp_us(&self) -> u64 {
         match &self.backing {
@@ -407,7 +389,7 @@ impl<'a> ClockApi<'a> {
     ///
     /// # Panics
     ///
-    /// Panics if the clock is already mutably borrowed.
+    /// With native backing, panics if the clock is already mutably borrowed.
     #[must_use]
     pub fn timestamp_ms(&self) -> u64 {
         match &self.backing {
@@ -420,7 +402,7 @@ impl<'a> ClockApi<'a> {
     ///
     /// # Panics
     ///
-    /// Panics if the clock is already mutably borrowed.
+    /// With native backing, panics if the clock is already mutably borrowed.
     #[must_use]
     pub fn timestamp(&self) -> f64 {
         match &self.backing {
@@ -431,11 +413,11 @@ impl<'a> ClockApi<'a> {
         }
     }
 
-    /// Returns the current UTC time.
+    /// Returns the current UTC timestamp.
     ///
     /// # Panics
     ///
-    /// Panics if the clock is already mutably borrowed.
+    /// With native backing, panics if the clock is already mutably borrowed.
     #[must_use]
     pub fn utc_now(&self) -> Timestamp {
         match &self.backing {
@@ -445,15 +427,18 @@ impl<'a> ClockApi<'a> {
     }
 
     // panics-doc-ok
-    /// Sets a time alert delivered through the actor's `on_time_event` callback.
+    /// Sets a time alert for the specified UTC timestamp.
+    ///
+    /// See [`Clock::set_time_alert`] for timing and callback selection semantics.
     ///
     /// # Errors
     ///
-    /// Returns an error if the alert cannot be scheduled.
+    /// Returns an error if the timestamp cannot be converted to [`UnixNanos`] or the backing clock
+    /// rejects the alert.
     ///
     /// # Panics
     ///
-    /// Panics if the clock is already borrowed.
+    /// With native backing, panics if the clock is already borrowed.
     pub fn set_time_alert(
         &self,
         name: &str,
@@ -475,15 +460,17 @@ impl<'a> ClockApi<'a> {
     }
 
     // panics-doc-ok
-    /// Sets a time alert in UNIX nanoseconds delivered through the actor's `on_time_event` callback.
+    /// Sets a time alert for the specified UNIX nanosecond timestamp.
+    ///
+    /// See [`Clock::set_time_alert_ns`] for timing and callback selection semantics.
     ///
     /// # Errors
     ///
-    /// Returns an error if the alert cannot be scheduled.
+    /// Returns an error if the backing clock rejects the alert.
     ///
     /// # Panics
     ///
-    /// Panics if the clock is already borrowed.
+    /// With native backing, panics if the clock is already borrowed.
     pub fn set_time_alert_ns(
         &self,
         name: &str,
@@ -504,15 +491,18 @@ impl<'a> ClockApi<'a> {
     }
 
     // panics-doc-ok
-    /// Sets a timer delivered through the actor's `on_time_event` callback.
+    /// Sets an interval timer using UTC timestamps.
+    ///
+    /// See [`Clock::set_timer`] for scheduling and callback selection semantics.
     ///
     /// # Errors
     ///
-    /// Returns an error if the timer cannot be scheduled.
+    /// Returns an error if the interval exceeds `u64::MAX` nanoseconds, a timestamp cannot be
+    /// converted to [`UnixNanos`], or the backing clock rejects the timer.
     ///
     /// # Panics
     ///
-    /// Panics if the clock is already borrowed.
+    /// With native backing, panics if the clock is already borrowed.
     #[expect(clippy::too_many_arguments, reason = "timer scheduling mirrors Clock")]
     pub fn set_timer(
         &self,
@@ -547,15 +537,17 @@ impl<'a> ClockApi<'a> {
     }
 
     // panics-doc-ok
-    /// Sets a timer in UNIX nanoseconds delivered through the actor's `on_time_event` callback.
+    /// Sets an interval timer using UNIX nanosecond timestamps.
+    ///
+    /// See [`Clock::set_timer_ns`] for scheduling and callback selection semantics.
     ///
     /// # Errors
     ///
-    /// Returns an error if the timer cannot be scheduled.
+    /// Returns an error if the backing clock rejects the timer.
     ///
     /// # Panics
     ///
-    /// Panics if the clock is already borrowed.
+    /// With native backing, panics if the clock is already borrowed.
     #[expect(clippy::too_many_arguments, reason = "timer scheduling mirrors Clock")]
     pub fn set_timer_ns(
         &self,
@@ -589,11 +581,11 @@ impl<'a> ClockApi<'a> {
         }
     }
 
-    /// Returns active timer names.
+    /// Returns the names of active timers.
     ///
     /// # Panics
     ///
-    /// Panics if the clock is already mutably borrowed.
+    /// With native backing, panics if the clock is already mutably borrowed.
     #[must_use]
     pub fn timer_names(&self) -> Vec<String> {
         match &self.backing {
@@ -611,7 +603,7 @@ impl<'a> ClockApi<'a> {
     ///
     /// # Panics
     ///
-    /// Panics if the clock is already mutably borrowed.
+    /// With native backing, panics if the clock is already mutably borrowed.
     #[must_use]
     pub fn timer_count(&self) -> usize {
         match &self.backing {
@@ -620,11 +612,11 @@ impl<'a> ClockApi<'a> {
         }
     }
 
-    /// Returns whether an active (not expired) timer `name` exists.
+    /// Returns whether an active timer named `name` exists.
     ///
     /// # Panics
     ///
-    /// Panics if the clock is already mutably borrowed.
+    /// With native backing, panics if the clock is already mutably borrowed.
     #[must_use]
     pub fn timer_exists(&self, name: &str) -> bool {
         match &self.backing {
@@ -633,11 +625,13 @@ impl<'a> ClockApi<'a> {
         }
     }
 
-    /// Returns the next trigger timestamp for the active (not expired) timer `name`.
+    /// Returns the next trigger timestamp for the active timer named `name`.
+    ///
+    /// Returns `None` if no active timer with that name exists.
     ///
     /// # Panics
     ///
-    /// Panics if the clock is already mutably borrowed.
+    /// With native backing, panics if the clock is already mutably borrowed.
     #[must_use]
     pub fn next_time_ns(&self, name: &str) -> Option<UnixNanos> {
         match &self.backing {
@@ -646,11 +640,11 @@ impl<'a> ClockApi<'a> {
         }
     }
 
-    /// Cancels the timer `name`.
+    /// Cancels the timer named `name`, if it exists.
     ///
     /// # Panics
     ///
-    /// Panics if the clock is already borrowed.
+    /// With native backing, panics if the clock is already borrowed.
     pub fn cancel_timer(&self, name: &str) {
         match &self.backing {
             ClockApiBacking::Native(clock) => clock.borrow_mut().cancel_timer(name),
@@ -662,7 +656,7 @@ impl<'a> ClockApi<'a> {
     ///
     /// # Panics
     ///
-    /// Panics if the clock is already borrowed.
+    /// With native backing, panics if the clock is already borrowed.
     pub fn cancel_timers(&self) {
         match &self.backing {
             ClockApiBacking::Native(clock) => clock.borrow_mut().cancel_timers(),
@@ -670,6 +664,46 @@ impl<'a> ClockApi<'a> {
         }
     }
 }
+
+enum ClockApiBacking<'a> {
+    Native(&'a RefCell<dyn Clock>),
+    Handlers(ClockApiHandlers<'a>),
+}
+
+struct ClockApiHandlers<'a> {
+    timestamp_ns: Box<dyn Fn() -> UnixNanos + 'a>,
+    set_time_alert_ns: Box<SetTimeAlertNsHandler<'a>>,
+    set_timer_ns: Box<SetTimerNsHandler<'a>>,
+    timer_names: Box<dyn Fn() -> Vec<String> + 'a>,
+    timer_count: Box<dyn Fn() -> usize + 'a>,
+    timer_exists: Box<dyn Fn(&str) -> bool + 'a>,
+    next_time_ns: Box<NextTimeNsHandler<'a>>,
+    cancel_timer: Box<dyn Fn(&str) + 'a>,
+    cancel_timers: Box<dyn Fn() + 'a>,
+}
+
+impl Debug for ClockApiBacking<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Native(_) => f.write_str("Native"),
+            Self::Handlers(_) => f.write_str("Handlers"),
+        }
+    }
+}
+
+type SetTimeAlertNsHandler<'a> =
+    dyn Fn(&str, UnixNanos, Option<TimeEventCallback>, Option<bool>) -> anyhow::Result<()> + 'a;
+type NextTimeNsHandler<'a> = dyn Fn(&str) -> Option<UnixNanos> + 'a;
+type SetTimerNsHandler<'a> = dyn Fn(
+        &str,
+        u64,
+        Option<UnixNanos>,
+        Option<UnixNanos>,
+        Option<TimeEventCallback>,
+        Option<bool>,
+        Option<bool>,
+    ) -> anyhow::Result<()>
+    + 'a;
 
 fn duration_to_nanos(duration: Duration) -> anyhow::Result<u64> {
     u64::try_from(duration.as_nanos())
@@ -687,37 +721,34 @@ pub struct CallbackRegistry {
 }
 
 impl CallbackRegistry {
-    /// Creates a new [`CallbackRegistry`] instance.
+    /// Creates an empty callback registry.
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            default_callback: None,
-            callbacks: AHashMap::new(),
-        }
+        Self::default()
     }
 
-    /// Registers a default handler callback.
+    /// Registers the callback used when no callback exists for a timer name.
     pub fn register_default_handler(&mut self, callback: TimeEventCallback) {
         self.default_callback = Some(callback);
     }
 
-    /// Cancels the registered default handler callback (if any).
+    /// Removes the default callback, preserving all named callbacks.
     pub fn cancel_default_handler(&mut self) {
         self.default_callback = None;
     }
 
-    /// Registers a callback for a specific timer name.
+    /// Registers a callback for `name`, replacing any existing callback for that name.
     pub fn register_callback(&mut self, name: Ustr, callback: TimeEventCallback) {
         self.callbacks.insert(name, callback);
     }
 
-    /// Returns whether a callback exists for the given name (either specific or default).
+    /// Returns whether a named or default callback is available for `name`.
     #[must_use]
     pub fn has_any_callback(&self, name: &Ustr) -> bool {
         self.callbacks.contains_key(name) || self.default_callback.is_some()
     }
 
-    /// Gets the callback for a specific timer name, falling back to the default.
+    /// Returns the callback for `name`, falling back to the default callback.
     #[must_use]
     pub fn get_callback(&self, name: &Ustr) -> Option<TimeEventCallback> {
         self.callbacks
@@ -726,11 +757,11 @@ impl CallbackRegistry {
             .or_else(|| self.default_callback.clone())
     }
 
-    /// Gets a handler for a time event.
+    /// Creates a handler for `event` using its named callback or the default callback.
     ///
     /// # Panics
     ///
-    /// Panics if no callback exists for the event name.
+    /// Panics if neither a named nor default callback exists for the event.
     #[must_use]
     pub fn get_handler(&self, event: TimeEvent) -> TimeEventHandler {
         let callback = self
@@ -740,19 +771,21 @@ impl CallbackRegistry {
         TimeEventHandler::new(event, callback)
     }
 
-    /// Clears all registered callbacks.
+    /// Clears all named callbacks, preserving the default callback.
     pub fn clear(&mut self) {
         self.callbacks.clear();
     }
 }
 
-/// Validates and prepares parameters for setting a time alert.
+/// Validates and normalizes parameters for a time alert.
 ///
-/// Handles name validation, default value unwrapping, and past timestamp adjustment.
+/// `allow_past` defaults to `true`. When enabled, a past alert timestamp is replaced with
+/// `ts_now`. Returns the interned name and normalized alert timestamp.
 ///
 /// # Errors
 ///
-/// Returns an error if the name is invalid or if the alert time is in the past when not allowed.
+/// Returns an error if `name` is invalid or the alert is in the past when past alerts are
+/// disallowed.
 pub fn validate_and_prepare_time_alert(
     name: &str,
     mut alert_time_ns: UnixNanos,
@@ -782,10 +815,11 @@ pub fn validate_and_prepare_time_alert(
     Ok((name, alert_time_ns))
 }
 
-/// Validates and prepares parameters for setting a timer.
+/// Validates and normalizes parameters for an interval timer.
 ///
-/// Handles name and interval validation, default value unwrapping, start time normalization,
-/// and stop time validation.
+/// A missing or zero `start_time_ns` resolves to `ts_now`. `allow_past` defaults to `true`, and
+/// `fire_immediately` defaults to `false`. Returns the interned name, normalized start and stop
+/// times, and resolved flag values.
 ///
 /// # Errors
 ///
@@ -793,8 +827,9 @@ pub fn validate_and_prepare_time_alert(
 /// - `name` is invalid.
 /// - `interval_ns` is zero.
 /// - `start_time_ns + interval_ns` is out of range for `UnixNanos` when not firing immediately.
-/// - The first event or stop time is invalid when past times are disallowed.
-/// - The stop time is not after the start time.
+/// - The first event is in the past when past times are disallowed.
+/// - The stop time is not after the normalized start time.
+/// - The stop time is not after `ts_now` when past times are disallowed.
 pub fn validate_and_prepare_timer(
     name: &str,
     interval_ns: u64,
@@ -811,12 +846,9 @@ pub fn validate_and_prepare_timer(
     let allow_past = allow_past.unwrap_or(true);
     let fire_immediately = fire_immediately.unwrap_or(false);
 
-    let mut start_time_ns = start_time_ns.unwrap_or_default();
-
-    if start_time_ns == 0 {
-        // Zero start time indicates no explicit start; we use the current time
-        start_time_ns = ts_now;
-    }
+    let start_time_ns = start_time_ns
+        .filter(|start_time_ns| *start_time_ns != 0)
+        .unwrap_or(ts_now);
 
     let next_event_time = if fire_immediately {
         start_time_ns
@@ -859,9 +891,10 @@ pub fn validate_and_prepare_timer(
     ))
 }
 
-/// A static test clock.
+/// A deterministic clock for controlled time advancement.
 ///
-/// Stores the current timestamp internally which can be advanced.
+/// The clock stores a manual timestamp, schedules [`TestTimer`] instances, and returns due events
+/// without waiting for wall-clock time.
 ///
 /// # Threading
 ///
@@ -875,7 +908,7 @@ pub struct TestClock {
 }
 
 impl TestClock {
-    /// Creates a new [`TestClock`] instance.
+    /// Creates a test clock at the UNIX epoch with no timers or callbacks.
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -886,18 +919,15 @@ impl TestClock {
         }
     }
 
-    /// Advances the internal clock to the specified `to_time_ns` and optionally sets the clock to that time.
+    /// Advances active timers through `to_time_ns` and returns their due events.
     ///
-    /// This function ensures that the clock behaves in a non-decreasing manner. If `set_time` is `true`,
-    /// the internal clock will be updated to the value of `to_time_ns`. Otherwise, the clock will advance
-    /// without explicitly setting the time.
-    ///
-    /// The method processes active timers, advancing them to `to_time_ns`, and collects any `TimeEvent`
-    /// objects that are triggered as a result. Only timers that are not expired are processed.
+    /// Events at `to_time_ns` are included and returned in ascending order by event timestamp and
+    /// timer name. If `set_time` is `true`, the stored clock timestamp is also set to `to_time_ns`;
+    /// otherwise the stored timestamp remains unchanged.
     ///
     /// # Warnings
     ///
-    /// Logs a warning if >= 1,000,000 time events are allocated during advancement.
+    /// Logs a warning if at least 1,000,000 time events are allocated during advancement.
     ///
     /// # Panics
     ///
@@ -958,15 +988,13 @@ impl TestClock {
         events
     }
 
-    /// Matches `TimeEvent` objects with their corresponding event handlers.
+    /// Matches time events with their registered callbacks, preserving input order.
     ///
-    /// This function takes an `events` vector of `TimeEvent` objects, assumes they are already sorted
-    /// by their `ts_event`, and matches them with the appropriate callback handler from the internal
-    /// registry of callbacks. If no specific callback is found for an event, the default callback is used.
+    /// A named callback takes precedence over the default callback for each event.
     ///
     /// # Panics
     ///
-    /// Panics if the default callback is not set for the clock when matching handlers.
+    /// Panics if an event has neither a named nor default callback.
     #[must_use]
     pub fn match_handlers(&self, events: Vec<TimeEvent>) -> Vec<TimeEventHandler> {
         events
@@ -1213,31 +1241,24 @@ impl Clock for TestClock {
 }
 
 pub(crate) fn replace_existing_timer<T: Timer>(timers: &mut BTreeMap<Ustr, T>, name: &Ustr) {
-    let is_expired = timers.get(name).map(T::is_expired);
-    match is_expired {
-        Some(true) => {
-            timers.remove(name);
-        }
-        Some(false) => {
-            if let Some(mut timer) = timers.remove(name) {
-                timer.cancel();
-            }
-            log::warn!("Timer '{name}' replaced");
-        }
-        None => {}
+    let Some(mut timer) = timers.remove(name) else {
+        return;
+    };
+
+    if timer.is_expired() {
+        return;
     }
+
+    timer.cancel();
+    log::warn!("Timer '{name}' replaced");
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        cell::RefCell,
-        collections::BTreeMap,
-        sync::{Arc, Mutex},
-        time::Duration,
-    };
+    use std::{cell::RefCell, collections::BTreeMap, sync::Arc, time::Duration};
 
-    use nautilus_core::{MUTEX_POISONED, UnixNanos};
+    use nautilus_core::UnixNanos;
+    use parking_lot::Mutex;
     use proptest::{prelude::*, test_runner::TestCaseResult};
     use rstest::{fixture, rstest};
     use ustr::Ustr;
@@ -1260,9 +1281,7 @@ mod tests {
     impl From<TestCallback> for TimeEventCallback {
         fn from(callback: TestCallback) -> Self {
             Self::from(move |_event: TimeEvent| {
-                if let Ok(mut called) = callback.called.lock() {
-                    *called = true;
-                }
+                *callback.called.lock() = true;
             })
         }
     }
@@ -1367,8 +1386,8 @@ mod tests {
             handler.callback.call(handler.event);
         }
 
-        assert!(*default_called.lock().expect(MUTEX_POISONED));
-        assert!(*custom_called.lock().expect(MUTEX_POISONED));
+        assert!(*default_called.lock());
+        assert!(*custom_called.lock());
     }
 
     #[rstest]
@@ -2516,17 +2535,11 @@ mod tests {
         let clock = ClockApi::from_handlers(
             || UnixNanos::from(1_700_000_000_000_000_000),
             move |name, _, _, _| {
-                calls_for_alert
-                    .lock()
-                    .expect(MUTEX_POISONED)
-                    .push(name.to_string());
+                calls_for_alert.lock().push(name.to_string());
                 Ok(())
             },
             move |name, _, _, _, _, _, _| {
-                calls_for_timer
-                    .lock()
-                    .expect(MUTEX_POISONED)
-                    .push(name.to_string());
+                calls_for_timer.lock().push(name.to_string());
                 Ok(())
             },
             Vec::new,
@@ -2558,7 +2571,7 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(err.to_string(), "Interval exceeds u64 nanoseconds");
-        assert!(calls.lock().expect(MUTEX_POISONED).is_empty());
+        assert!(calls.lock().is_empty());
     }
 
     #[rstest]
@@ -2600,11 +2613,9 @@ mod tests {
         let clock = ClockApi::from_handlers(
             || UnixNanos::from(1_700_000_000_123_456_789),
             move |name, alert_time_ns, _callback, allow_past| {
-                alerts_for_handler.lock().expect(MUTEX_POISONED).push((
-                    name.to_string(),
-                    alert_time_ns,
-                    allow_past,
-                ));
+                alerts_for_handler
+                    .lock()
+                    .push((name.to_string(), alert_time_ns, allow_past));
                 Ok(())
             },
             move |name,
@@ -2614,7 +2625,7 @@ mod tests {
                   _callback,
                   allow_past,
                   fire_immediately| {
-                timers_for_handler.lock().expect(MUTEX_POISONED).push((
+                timers_for_handler.lock().push((
                     name.to_string(),
                     interval_ns,
                     start_time_ns,
@@ -2629,13 +2640,10 @@ mod tests {
             |name| name == "alpha",
             |name| (name == "alpha").then(|| UnixNanos::from(1_700_000_000_999_000_000)),
             move |name| {
-                cancellations_for_handler
-                    .lock()
-                    .expect(MUTEX_POISONED)
-                    .push(name.to_string());
+                cancellations_for_handler.lock().push(name.to_string());
             },
             move || {
-                *cancel_all_for_handler.lock().expect(MUTEX_POISONED) = true;
+                *cancel_all_for_handler.lock() = true;
             },
         );
 
@@ -2698,7 +2706,7 @@ mod tests {
             Some(UnixNanos::from(1_700_000_000_999_000_000))
         );
         assert_eq!(
-            alerts.lock().expect(MUTEX_POISONED).as_slice(),
+            alerts.lock().as_slice(),
             &[
                 (
                     "alert".to_string(),
@@ -2713,7 +2721,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            timers.lock().expect(MUTEX_POISONED).as_slice(),
+            timers.lock().as_slice(),
             &[
                 (
                     "timer".to_string(),
@@ -2733,11 +2741,8 @@ mod tests {
                 )
             ]
         );
-        assert_eq!(
-            cancellations.lock().expect(MUTEX_POISONED).as_slice(),
-            &["alpha".to_string()]
-        );
-        assert!(*cancel_all.lock().expect(MUTEX_POISONED));
+        assert_eq!(cancellations.lock().as_slice(), &["alpha".to_string()]);
+        assert!(*cancel_all.lock());
     }
 
     proptest! {

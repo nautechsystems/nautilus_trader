@@ -15,11 +15,12 @@
 
 //! WebSocket message dispatch context for the Derive data client.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use nautilus_common::{cache::quote::QuoteCache, messages::DataEvent};
 use nautilus_core::{AtomicMap, AtomicSet, time::AtomicTime};
 use nautilus_model::{identifiers::InstrumentId, instruments::InstrumentAny};
+use parking_lot::Mutex;
 
 pub(crate) struct WsMessageContext {
     pub(crate) clock: &'static AtomicTime,

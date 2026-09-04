@@ -23,6 +23,9 @@ from the instrument cache, and logs every Greeks update. No orders are placed.
 
 from __future__ import annotations
 
+from typing import Any
+from typing import Self
+
 from nautilus_trader.adapters.deribit import DERIBIT
 from nautilus_trader.adapters.deribit import DeribitDataClientConfig
 from nautilus_trader.adapters.deribit import DeribitDataClientFactory
@@ -50,8 +53,18 @@ class OptionGreeksTesterConfig(DataActorConfig):
     Collect option greeks tester config tests.
     """
 
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+        """
+        Create a new instance.
+        """
+        # `actor_id` shares the base field name but widens the type to accept a string,
+        # so keep it from the base constructor, which validates it as an `ActorId`
+        kwargs.pop("actor_id", None)
+        return super().__new__(cls, *args, **kwargs)
+
     def __init__(
         self,
+        *,
         underlying: str = "BTC",
         max_subscriptions: int = 10,
         actor_id: ActorId | str | None = None,
@@ -59,7 +72,7 @@ class OptionGreeksTesterConfig(DataActorConfig):
         log_commands: bool = True,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         self.actor_id = ActorId.from_str(actor_id) if isinstance(actor_id, str) else actor_id
         self.log_events = log_events
@@ -75,7 +88,7 @@ class OptionGreeksTester(DataActor):
 
     def __init__(self, config: OptionGreeksTesterConfig) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self._subscribed_ids: list[InstrumentId] = []

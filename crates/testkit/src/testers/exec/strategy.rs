@@ -21,7 +21,6 @@ use nautilus_common::{
     config::ConfigError,
     enums::LogColor,
     log_info, log_warn,
-    timer::TimeEvent,
 };
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -110,8 +109,8 @@ pub(super) enum LimitOrderMaintenanceState {
 }
 
 nautilus_strategy!(ExecTester, {
-    fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
-        self.config.base.external_order_claims.clone()
+    fn external_order_instrument_ids(&self) -> Option<Vec<InstrumentId>> {
+        self.core.config.external_order_instrument_ids.clone()
     }
 
     fn on_order_accepted(&mut self, event: OrderAccepted) {
@@ -353,10 +352,6 @@ impl DataActor for ExecTester {
             log_info!("{index_price:?}", color = LogColor::Cyan);
         }
         Ok(())
-    }
-
-    fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
-        Strategy::on_time_event(self, event)
     }
 }
 
@@ -611,7 +606,6 @@ impl ExecTester {
         let cid = match side {
             OrderSide::Buy => self.buy_order.as_ref().map(OrderAny::client_order_id),
             OrderSide::Sell => self.sell_order.as_ref().map(OrderAny::client_order_id),
-            OrderSide::NoOrderSide => None,
         };
         let Some(cid) = cid else {
             return;
@@ -621,7 +615,6 @@ impl ExecTester {
             match side {
                 OrderSide::Buy => self.buy_order = Some(latest),
                 OrderSide::Sell => self.sell_order = Some(latest),
-                OrderSide::NoOrderSide => {}
             }
         }
     }
@@ -630,7 +623,6 @@ impl ExecTester {
         let cid = match side {
             OrderSide::Buy => self.buy_stop_order.as_ref().map(OrderAny::client_order_id),
             OrderSide::Sell => self.sell_stop_order.as_ref().map(OrderAny::client_order_id),
-            OrderSide::NoOrderSide => None,
         };
         let Some(cid) = cid else {
             return;
@@ -640,7 +632,6 @@ impl ExecTester {
             match side {
                 OrderSide::Buy => self.buy_stop_order = Some(latest),
                 OrderSide::Sell => self.sell_stop_order = Some(latest),
-                OrderSide::NoOrderSide => {}
             }
         }
     }
@@ -1070,7 +1061,6 @@ impl ExecTester {
         let passive = match side {
             OrderSide::Buy => sub_price_ticks(order_price, increment, 1, precision),
             OrderSide::Sell => add_price_ticks(order_price, increment, 1, precision),
-            OrderSide::NoOrderSide => return None,
         };
         let passive = clamp_price_to_range(passive, instrument, true);
         if passive != order_price {
@@ -1080,7 +1070,6 @@ impl ExecTester {
         let aggressive = match side {
             OrderSide::Buy => add_price_ticks(order_price, increment, 1, precision),
             OrderSide::Sell => sub_price_ticks(order_price, increment, 1, precision),
-            OrderSide::NoOrderSide => return None,
         };
         let aggressive = clamp_price_to_range(aggressive, instrument, true);
         (aggressive != order_price).then_some(aggressive)
@@ -1110,7 +1099,6 @@ impl ExecTester {
         match side {
             OrderSide::Buy => self.buy_limit_maintenance_state,
             OrderSide::Sell => self.sell_limit_maintenance_state,
-            OrderSide::NoOrderSide => LimitOrderMaintenanceState::Disabled,
         }
     }
 
@@ -1122,7 +1110,6 @@ impl ExecTester {
         match side {
             OrderSide::Buy => self.buy_limit_maintenance_state = state,
             OrderSide::Sell => self.sell_limit_maintenance_state = state,
-            OrderSide::NoOrderSide => {}
         }
     }
 
@@ -1130,7 +1117,6 @@ impl ExecTester {
         match side {
             OrderSide::Buy => self.buy_order.as_ref(),
             OrderSide::Sell => self.sell_order.as_ref(),
-            OrderSide::NoOrderSide => None,
         }
     }
 
@@ -1793,9 +1779,6 @@ impl ExecTester {
                 let sl = add_price_ticks(entry_price, increment, bracket_offset_ticks, precision);
                 (tp, sl)
             }
-            OrderSide::NoOrderSide => {
-                anyhow::bail!("Invalid order side for bracket: {order_side:?}")
-            }
         };
         let clamp = self.config.clamp_to_instrument_price_range;
         let tp_price = clamp_price_to_range(unclamped_tp_price, instrument, clamp);
@@ -1897,7 +1880,9 @@ impl ExecTester {
                 );
             }
 
-            let closing_side = OrderCore::closing_side(position.side);
+            let Some(closing_side) = OrderCore::closing_side(position.side) else {
+                continue;
+            };
             let order = self.order_factory().market(
                 position.instrument_id,
                 closing_side,
@@ -1926,6 +1911,11 @@ impl ExecTester {
         let Some(instrument) = &self.instrument else {
             anyhow::bail!("No instrument loaded");
         };
+
+        if self.config.dry_run {
+            log_warn!("Dry run, skipping open position");
+            return Ok(());
+        }
 
         if net_qty == Decimal::ZERO {
             log_warn!("Open position with zero quantity, skipping");
@@ -2157,8 +2147,6 @@ fn price_tick_offset(increment: Price, ticks: u64, precision: u8) -> Price {
         .unwrap_or_else(|e| panic!("Failed to calculate price tick offset: {e}"))
 }
 
-// `OrderAny::is_contingency` returns true for `Some(NoContingency)` (the factory
-// default on every order), so match the variant directly to distinguish bracket legs.
 fn is_in_contingency_group(order: &OrderAny) -> bool {
     matches!(
         order.contingency_type(),

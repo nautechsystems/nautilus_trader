@@ -457,7 +457,7 @@ fn py_field_init(ident: &syn::Ident, ty: &Type, json: bool) -> Option<TokenStrea
 
     if json {
         if let Some(map_kind) = typed_json_map_kind(ty) {
-            let helper = if map_kind == "IndexMap" {
+            let converter = if map_kind == "IndexMap" {
                 quote! { indexmap_from_pyobject_pyo3 }
             } else {
                 quote! { hashmap_from_pyobject_pyo3 }
@@ -465,7 +465,7 @@ fn py_field_init(ident: &syn::Ident, ty: &Type, json: bool) -> Option<TokenStrea
             return Some(quote! {
                 pyo3::Python::attach(|py| -> pyo3::PyResult<#ty> {
                     let value = #name.bind(py);
-                    nautilus_core::python::serialization::#helper::<_, _>(py, value)
+                    nautilus_core::python::serialization::#converter::<_, _>(py, value)
                         .map_err(|e| nautilus_core::python::to_pyvalue_err(format!("failed to deserialize JSON field '{}': {e}", stringify!(#name))))
                 })?
             });
@@ -520,14 +520,14 @@ fn py_getter_body(ident: &syn::Ident, ty: &Type, json: bool) -> Option<TokenStre
 
     if json {
         if let Some(map_kind) = typed_json_map_kind(ty) {
-            let helper = if map_kind == "IndexMap" {
+            let converter = if map_kind == "IndexMap" {
                 quote! { indexmap_to_pydict_pyo3 }
             } else {
                 quote! { hashmap_to_pydict_pyo3 }
             };
             return Some(quote! {
                 pyo3::Python::attach(|py| {
-                    nautilus_core::python::serialization::#helper(py, &self.#name)
+                    nautilus_core::python::serialization::#converter(py, &self.#name)
                         .map_err(|e| nautilus_core::python::to_pyvalue_err(format!("failed to serialize JSON field '{}': {e}", stringify!(#name))))
                 })
             });

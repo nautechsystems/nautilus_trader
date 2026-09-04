@@ -17,7 +17,10 @@
 
 use std::sync::Arc;
 
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_core::{
+    python::{to_pyruntime_err, to_pyvalue_err},
+    string::secret::REDACTED,
+};
 use pyo3::prelude::*;
 
 use crate::execution::wallet::Wallet;
@@ -59,6 +62,6 @@ impl PyDydxWallet {
     }
 
     fn __repr__(&self) -> String {
-        "DydxWallet(<redacted>)".to_string()
+        format!("DydxWallet({REDACTED})")
     }
 }

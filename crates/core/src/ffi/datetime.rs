@@ -97,3 +97,46 @@ pub extern "C" fn nanos_to_millis(nanos: u64) -> u64 {
 pub extern "C" fn nanos_to_micros(nanos: u64) -> u64 {
     abort_on_panic(|| crate::datetime::nanos_to_micros(nanos))
 }
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::CStr;
+
+    use rstest::rstest;
+
+    use super::*;
+    use crate::ffi::string::cstr_drop;
+
+    #[rstest]
+    fn test_unix_nanos_to_iso8601_cstr_conversions() {
+        let timestamp_ns = 1_702_857_600_123_456_789;
+
+        let nanos = take_cstr(unix_nanos_to_iso8601_cstr(timestamp_ns));
+        let millis = take_cstr(unix_nanos_to_iso8601_millis_cstr(timestamp_ns));
+
+        assert_eq!(nanos, "2023-12-18T00:00:00.123456789Z");
+        assert_eq!(millis, "2023-12-18T00:00:00.123Z");
+    }
+
+    #[rstest]
+    fn test_time_unit_conversions() {
+        assert_eq!(secs_to_nanos(1.25), 1_250_000_000);
+        assert_eq!(secs_to_millis(1.25), 1_250);
+        assert_eq!(millis_to_nanos(1.25), 1_250_000);
+        assert_eq!(micros_to_nanos(1.25), 1_250);
+        assert_eq!(
+            nanos_to_secs(42_897_123_111).to_bits(),
+            42.897_123_111_f64.to_bits()
+        );
+        assert_eq!(nanos_to_millis(1_234_567_890), 1_234);
+        assert_eq!(nanos_to_micros(1_234_567_890), 1_234_567);
+    }
+
+    fn take_cstr(ptr: *const c_char) -> String {
+        // SAFETY: The FFI conversion functions return valid pointers allocated by `str_to_cstr`
+        let value = unsafe { CStr::from_ptr(ptr) }.to_str().unwrap().to_owned();
+        // SAFETY: The pointer was allocated by `str_to_cstr` and has not been freed
+        unsafe { cstr_drop(ptr) };
+        value
+    }
+}

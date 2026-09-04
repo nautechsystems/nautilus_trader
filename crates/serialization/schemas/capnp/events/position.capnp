@@ -130,7 +130,7 @@ struct PositionAdjusted {
     positionId @3 :Identifiers.PositionId;
     accountId @4 :Identifiers.AccountId;
     adjustmentType @5 :Enums.PositionAdjustmentType;
-    quantityChange @6 :Types.Decimal;  # Optional - check if all fields are 0
+    quantityChange @6 :Types.Decimal;  # Optional - absence means None
     pnlChange @7 :Types.Money;         # Optional
     reason @8 :Text;                   # Optional - absence means None
     eventId @9 :Base.UUID4;
