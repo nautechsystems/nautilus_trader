@@ -17,6 +17,7 @@ Test zscore behavior.
 """
 
 from collections import deque
+from math import isfinite
 from math import isnan
 from math import sqrt
 
@@ -33,7 +34,8 @@ def _batch_zscore(window: list[float]) -> tuple[float, float, float]:
     m2 = sum((x - mean) ** 2 for x in window)
     std = (m2 / (n - 1)) ** 0.5
     x = window[-1]
-    z = 0.0 if std == 0.0 else (x - mean) / std
+    is_constant = all(isfinite(value) and value == x for value in window)
+    z = 0.0 if is_constant or std == 0.0 else (x - mean) / std
     return mean, std, z
 
 
@@ -172,21 +174,44 @@ def test_value_transitions_from_expanding_to_rolling() -> None:
     assert indicator.value == 1.0
 
 
-def test_constant_series_is_zero() -> None:
+@pytest.mark.parametrize(
+    ("period", "value"),
+    [
+        (4, 3.0),
+        (10, 1.00003),
+        (20, 0.1),
+    ],
+)
+def test_constant_series_is_zero(period: int, value: float) -> None:
     """
-    Test constant inputs produce zero std and z-score.
+    Test constant inputs produce a zero z-score.
     """
     # Arrange
-    indicator = ZScore(4)
+    indicator = ZScore(period)
 
     # Act
-    for _ in range(8):
-        indicator.update_raw(3.0)
+    for _ in range(period):
+        indicator.update_raw(value)
 
     # Assert
-    assert indicator.std == 0.0
     assert indicator.value == 0.0
-    assert indicator.mean == 3.0
+
+
+def test_constant_bars_produce_zero_zscore() -> None:
+    """
+    Test repeated bars with a non-exact close produce a zero z-score.
+    """
+    # Arrange
+    indicator = ZScore(10)
+    bar = TestDataProviderPyo3.bar_5decimal()
+
+    # Act
+    for _ in range(10):
+        indicator.handle_bar(bar)
+
+    # Assert
+    assert indicator.initialized
+    assert indicator.value == 0.0
 
 
 def test_non_finite_input_propagates_to_value() -> None:

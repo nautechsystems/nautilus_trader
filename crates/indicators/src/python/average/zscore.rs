@@ -31,7 +31,7 @@ impl ZScore {
     /// standard deviation (`n - 1`). Until `period` observations have arrived the
     /// window is expanding (`n = count`); afterwards it slides at length `period`.
     /// `price_type` is used only by `handle_quote`; `update_raw` accepts any `f64`
-    /// series. When `std` is 0, `value` is 0.
+    /// series. When the current window is constant or `std` is 0, `value` is 0.
     #[new]
     #[pyo3(signature = (period, price_type=None))]
     fn py_new(period: i64, price_type: Option<PriceType>) -> PyResult<Self> {

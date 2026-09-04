@@ -98,7 +98,7 @@ impl ZScore {
     /// standard deviation (`n - 1`). Until `period` observations have arrived the
     /// window is expanding (`n = count`); afterwards it slides at length `period`.
     /// `price_type` is used only by `handle_quote`; `update_raw` accepts any `f64`
-    /// series. When `std` is 0, `value` is 0.
+    /// series. When the current window is constant or `std` is 0, `value` is 0.
     ///
     /// # Panics
     ///
@@ -154,16 +154,18 @@ impl ZScore {
         }
 
         let mean = self.mean;
-        let m2: f64 = self
+        let (m2, is_constant) = self
             .inputs
             .iter()
-            .map(|&x| {
+            .fold((0.0, true), |(m2, is_constant), &x| {
                 let d = x - mean;
-                d * d
-            })
-            .sum();
+                (
+                    m2 + d * d,
+                    is_constant && x.is_finite() && x.to_bits() == value.to_bits(),
+                )
+            });
         self.std = (m2 / (n - 1.0)).sqrt();
-        self.value = if self.std == 0.0 {
+        self.value = if is_constant || self.std == 0.0 {
             0.0
         } else {
             (value - self.mean) / self.std
@@ -201,7 +203,14 @@ mod tests {
             .sum();
         let std = (m2 / (n - 1.0)).sqrt();
         let x = *window.last().unwrap();
-        let z = if std == 0.0 { 0.0 } else { (x - mean) / std };
+        let is_constant = window
+            .iter()
+            .all(|&value| value.is_finite() && value.to_bits() == x.to_bits());
+        let z = if is_constant || std == 0.0 {
+            0.0
+        } else {
+            (x - mean) / std
+        };
         (mean, std, z)
     }
 
@@ -249,6 +258,21 @@ mod tests {
     }
 
     #[rstest]
+    #[case(1.000_03, 10)]
+    #[case(0.1, 20)]
+    fn zscore_constant_series_with_rounding_error_is_zero(
+        #[case] value: f64,
+        #[case] period: usize,
+    ) {
+        let mut z = ZScore::new(period, None);
+        for _ in 0..period {
+            z.update_raw(value);
+        }
+
+        assert_eq!(z.value, 0.0);
+    }
+
+    #[rstest]
     fn zscore_preserves_non_finite_value() {
         let mut z = ZScore::new(2, None);
         z.update_raw(1.0);
@@ -262,7 +286,7 @@ mod tests {
     fn zscore_propagates_non_finite_arithmetic() {
         let mut z = ZScore::new(2, None);
         z.update_raw(f64::MAX);
-        z.update_raw(f64::MAX);
+        z.update_raw(f64::MAX / 2.0);
 
         assert!(z.std.is_infinite());
         assert!(z.value.is_nan());
