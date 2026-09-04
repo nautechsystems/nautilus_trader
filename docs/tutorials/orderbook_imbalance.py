@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Self
 
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model import (
@@ -23,22 +22,9 @@ from nautilus_trader.trading import Strategy
 
 
 class OrderBookImbalanceConfig(StrategyConfig):
-    _CUSTOM_FIELDS = (
-        "instrument_id",
-        "max_trade_size",
-        "trigger_min_size",
-        "trigger_imbalance_ratio",
-        "min_seconds_between_triggers",
-        "book_type",
-    )
-
-    def __new__(cls, *args: object, **kwargs: object) -> Self:
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_id: str,
         max_trade_size: str,
         trigger_min_size: float = 100.0,

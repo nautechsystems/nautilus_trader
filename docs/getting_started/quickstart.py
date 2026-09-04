@@ -17,6 +17,11 @@
 # A strategy extends the `Strategy` base class and overrides event handlers to
 # react to market data. This one trades an EMA crossover: buy when a fast
 # exponential moving average crosses above a slow one, sell when it crosses below.
+#
+# Its parameters live on a `StrategyConfig` subclass. Declare your own fields as
+# keyword-only arguments and absorb the rest in `**_kwargs`: the base config
+# reads its own fields (`strategy_id`, `oms_type`, and so on) from the same call
+# and ignores the ones it does not recognize.
 
 # %%
 from decimal import Decimal
@@ -31,21 +36,9 @@ from nautilus_trader.trading import Strategy
 
 
 class EMACrossConfig(StrategyConfig):
-    _CUSTOM_FIELDS = (
-        "instrument_id",
-        "bar_type",
-        "trade_size",
-        "fast_ema_period",
-        "slow_ema_period",
-    )
-
-    def __new__(cls, *args: object, **kwargs: object) -> object:
-        for field in cls._CUSTOM_FIELDS:
-            kwargs.pop(field, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_id: InstrumentId,
         bar_type: BarType,
         trade_size: Decimal,

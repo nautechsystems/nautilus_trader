@@ -29,7 +29,6 @@ from __future__ import annotations
 
 from decimal import Decimal
 from typing import Any
-from typing import Self
 
 from nautilus_trader.adapters.okx import OKX
 from nautilus_trader.adapters.okx import OKXDataClientConfig
@@ -78,26 +77,9 @@ class SpotSwapQuoterConfig(StrategyConfig):
     Configuration for the spot and swap quoter strategy.
     """
 
-    _CUSTOM_FIELDS = (
-        "spot_instrument_id",
-        "swap_instrument_id",
-        "spot_order_qty",
-        "swap_order_qty",
-        "tob_offset_ticks",
-        "log_data",
-        "close_positions_on_stop",
-    )
-
-    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
-        """
-        Create a new instance.
-        """
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         spot_instrument_id: InstrumentId,
         swap_instrument_id: InstrumentId,
         spot_order_qty: Decimal,

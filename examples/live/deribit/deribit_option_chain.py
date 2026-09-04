@@ -61,24 +61,18 @@ class OptionChainTesterConfig(DataActorConfig):
     Collect option chain tester config tests.
     """
 
-    _CUSTOM_FIELDS = (
-        "actor_id",
-        "underlying",
-        "strikes_above",
-        "strikes_below",
-        "snapshot_interval_ms",
-    )
-
     def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         """
         Create a new instance.
         """
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
+        # `actor_id` shares the base field name but widens the type to accept a string,
+        # so keep it from the base constructor, which validates it as an `ActorId`
+        kwargs.pop("actor_id", None)
         return super().__new__(cls, *args, **kwargs)
 
     def __init__(
         self,
+        *,
         underlying: str = UNDERLYING,
         strikes_above: int = STRIKES_ABOVE,
         strikes_below: int = STRIKES_BELOW,

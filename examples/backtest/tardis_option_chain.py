@@ -31,7 +31,6 @@ from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
-from typing import Self
 
 from nautilus_trader.backtest import BacktestNode  # type: ignore[attr-defined]
 from nautilus_trader.config import BacktestDataConfig
@@ -108,26 +107,9 @@ class OptionChainBacktestConfig(StrategyConfig):
     Collect option chain backtest config tests.
     """
 
-    _CUSTOM_FIELDS = (
-        "series_id",
-        "selection_mode",
-        "target_delta",
-        "delta_tolerance",
-        "target_strike",
-        "trade_size",
-        "snapshot_interval_ms",
-    )
-
-    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
-        """
-        Create a new instance.
-        """
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         series_id: str,
         selection_mode: str = "delta",
         target_delta: float = 0.25,

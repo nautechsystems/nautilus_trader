@@ -40,18 +40,18 @@ class BlockchainActorConfig(DataActorConfig):
     Collect blockchain actor config tests.
     """
 
-    _CUSTOM_FIELDS = ("actor_id", "chain", "client_id", "pools")
-
     def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         """
         Create a new instance.
         """
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
+        # `actor_id` shares the base field name but widens the type to accept a string,
+        # so keep it from the base constructor, which validates it as an `ActorId`
+        kwargs.pop("actor_id", None)
         return super().__new__(cls, *args, **kwargs)
 
     def __init__(
         self,
+        *,
         actor_id: ActorId | str | None = None,
         log_events: bool = True,
         log_commands: bool = True,

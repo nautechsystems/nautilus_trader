@@ -38,17 +38,9 @@ class EMACrossTWAPConfig(EMACrossConfig):
     Configuration for the EMA cross TWAP test strategy.
     """
 
-    def __new__(cls, *args: object, **kwargs: object) -> object:
-        """
-        Create a new instance.
-        """
-        kwargs.pop("exec_algorithm_id", None)
-        kwargs.pop("twap_horizon_secs", None)
-        kwargs.pop("twap_interval_secs", None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_id: str,
         bar_type: str,
         trade_size: str,

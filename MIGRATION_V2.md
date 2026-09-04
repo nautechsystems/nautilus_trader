@@ -499,9 +499,11 @@ class MyStrategy(Strategy):
         pass
 ```
 
-Annotated custom fields on a v1 `StrategyConfig` subclass do not carry over. In v2, remove custom
-keyword arguments in `__new__` before the PyO3 base validates them, then assign the fields in
-`__init__`. See the
+Annotated custom fields on a v1 `StrategyConfig` subclass do not carry over. In v2, declare them as
+keyword-only arguments on `__init__`, accept `**_kwargs` so the base keywords pass through, and call
+`super().__init__()` with no arguments. The PyO3 base reads its own fields in `__new__` from the same
+call and ignores the ones it does not recognize, so no `__new__` override is needed. Do not reuse a
+base field name for a custom field. See the
 [v2 strategy config example][python-v2-strategy-config].
 
 ### Register actors, strategies, and algorithms
@@ -686,8 +688,9 @@ numeric values. This keeps Python authoring aligned with the Rust `IndexMap<Ustr
 
 `ExecutionAlgorithmConfig` supports Python subclasses with custom fields. The inherited
 `__new__` applies the base fields before the Python `__init__` runs, so the subclass initializes
-only its custom attributes. Keep `**_kwargs` so the subclass accepts the base keywords. The base
-constructor ignores other unmatched keywords, so validate optional custom inputs in `__init__`.
+only its custom attributes. Declare those fields keyword-only and keep `**_kwargs` so the subclass
+accepts the base keywords. The base constructor ignores other unmatched keywords, so validate
+optional custom inputs in `__init__`.
 
 ```python
 from nautilus_trader.config import ExecutionAlgorithmConfig
@@ -697,10 +700,12 @@ from nautilus_trader.model import ExecAlgorithmId
 class RoutedAlgorithmConfig(ExecutionAlgorithmConfig):
     def __init__(
         self,
+        *,
         horizon_secs: str,
         interval_secs: str,
         **_kwargs,
     ) -> None:
+        super().__init__()
         self.horizon_secs = horizon_secs
         self.interval_secs = interval_secs
 

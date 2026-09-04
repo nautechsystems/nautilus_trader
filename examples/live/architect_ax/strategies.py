@@ -20,7 +20,6 @@ from __future__ import annotations
 
 from decimal import Decimal
 from typing import Any
-from typing import Self
 
 from nautilus_trader.common import LogColor
 from nautilus_trader.config import StrategyConfig
@@ -41,28 +40,9 @@ class BBMeanReversionConfig(StrategyConfig):
     Collect bbmean reversion config tests.
     """
 
-    _CUSTOM_FIELDS = (
-        "instrument_id",
-        "bar_type",
-        "trade_size",
-        "bb_period",
-        "bb_std",
-        "rsi_period",
-        "rsi_buy_threshold",
-        "rsi_sell_threshold",
-        "close_positions_on_stop",
-    )
-
-    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
-        """
-        Create a new instance.
-        """
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_id: InstrumentId,
         bar_type: BarType,
         trade_size: Decimal,
@@ -211,25 +191,9 @@ class OrderBookImbalanceConfig(StrategyConfig):
     Collect order book imbalance config tests.
     """
 
-    _CUSTOM_FIELDS = (
-        "instrument_id",
-        "max_trade_size",
-        "trigger_min_size",
-        "trigger_imbalance_ratio",
-        "min_seconds_between_triggers",
-        "dry_run",
-    )
-
-    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
-        """
-        Create a new instance.
-        """
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_id: InstrumentId,
         max_trade_size: Decimal,
         trigger_min_size: Decimal = Decimal(100),

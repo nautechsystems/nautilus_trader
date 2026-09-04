@@ -27,7 +27,6 @@ Example of databento futures settlement.
 
 # %%
 from pathlib import Path
-from typing import Self
 
 import pandas as pd
 
@@ -53,18 +52,9 @@ class FuturesSettlementConfig(StrategyConfig):
     Collect futures settlement config tests.
     """
 
-    _CUSTOM_FIELDS = ("future_id", "next_future_id")
-
-    def __new__(cls, *args: object, **kwargs: object) -> Self:
-        """
-        Create a new instance.
-        """
-        for field in cls._CUSTOM_FIELDS:
-            kwargs.pop(field, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         future_id: InstrumentId,
         next_future_id: InstrumentId,
         **_kwargs: object,
