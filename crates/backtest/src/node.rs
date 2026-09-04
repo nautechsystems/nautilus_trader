@@ -407,26 +407,63 @@ fn run_streaming(
 ) -> anyhow::Result<()> {
     let data_configs = config.data();
 
-    if data_configs.len() == 1 {
-        // Single config: stream directly from catalog iterator without
-        // materializing the full dataset, bounded by chunk_size
-        let data_config = &data_configs[0];
-        let mut catalog = create_catalog(data_config)?;
-        let result = dispatch_query(&mut catalog, data_config, config.start(), config.end())?;
-        let data = result.map(|item| item.map_err(anyhow::Error::from));
-        stream_chunks(engine, config, data.peekable(), chunk_size)?;
-    } else {
-        // Multiple configs require loading all data to merge-sort across types
-        let all_data = load_and_merge_data(config)?;
-        stream_chunks(
-            engine,
-            config,
-            all_data.into_iter().map(Ok).peekable(),
-            chunk_size,
-        )?;
+    // Stream directly from the catalog iterators without materializing the full
+    // dataset, so memory stays bounded by chunk_size for any number of configs
+    let mut catalogs = data_configs
+        .iter()
+        .map(create_catalog)
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let mut streams = Vec::with_capacity(catalogs.len());
+
+    for (catalog, data_config) in catalogs.iter_mut().zip(data_configs) {
+        let result = dispatch_query(catalog, data_config, config.start(), config.end())?;
+        let mut stream = result
+            .map(|item| item.map_err(anyhow::Error::from))
+            .peekable();
+
+        match stream.peek() {
+            Some(Ok(_)) => streams.push(stream),
+            // Surface a failed query in config order, before opening later ones
+            Some(Err(_)) => {
+                stream.next().transpose()?;
+            }
+            None => log::warn!("No data found for config: {:?}", data_config.data_type()),
+        }
     }
 
-    Ok(())
+    stream_chunks(
+        engine,
+        config,
+        merge_streams(streams).peekable(),
+        chunk_size,
+    )
+}
+
+// Merges the data streams of every config in ascending `ts_init` order, taking one
+// item at a time so the merge holds only a single item per config. Ties keep config
+// order, matching the stable sort the eager path applies.
+fn merge_streams<I: Iterator<Item = anyhow::Result<Data>>>(
+    mut streams: Vec<Peekable<I>>,
+) -> impl Iterator<Item = anyhow::Result<Data>> {
+    std::iter::from_fn(move || {
+        let mut next: Option<(usize, UnixNanos)> = None;
+
+        for (i, stream) in streams.iter_mut().enumerate() {
+            match stream.peek() {
+                Some(Ok(data)) => {
+                    let ts_init = data.ts_init();
+                    if next.is_none_or(|(_, ts)| ts_init < ts) {
+                        next = Some((i, ts_init));
+                    }
+                }
+                // A failed stream ends the merge rather than reading as exhaustion
+                Some(Err(_)) => return stream.next(),
+                None => {}
+            }
+        }
+
+        streams[next?.0].next()
+    })
 }
 
 // Feeds data from an iterator to the engine in timestamp-aligned chunks.
@@ -501,21 +538,6 @@ fn take_aligned_chunk<I: Iterator<Item = anyhow::Result<Data>>>(
     }
 
     Ok(chunk)
-}
-
-fn load_and_merge_data(config: &BacktestRunConfig) -> anyhow::Result<Vec<Data>> {
-    let mut all_data = Vec::new();
-
-    for data_config in config.data() {
-        let data = load_data(data_config, config.start(), config.end())?;
-        if data.is_empty() {
-            log::warn!("No data found for config: {:?}", data_config.data_type());
-            continue;
-        }
-        all_data.extend(data);
-    }
-    all_data.sort_by_key(HasTsInit::ts_init);
-    Ok(all_data)
 }
 
 fn create_catalog(config: &BacktestDataConfig) -> anyhow::Result<ParquetDataCatalog> {
@@ -614,7 +636,8 @@ mod tests {
     #[cfg(feature = "python")]
     use nautilus_model::enums::{AccountType, OmsType};
     use nautilus_model::{
-        identifiers::InstrumentId,
+        enums::AggressorSide,
+        identifiers::{InstrumentId, TradeId},
         types::{Price, Quantity},
     };
     #[cfg(feature = "python")]
@@ -641,8 +664,82 @@ mod tests {
         ))
     }
 
+    fn trade(ts_init: u64) -> Data {
+        Data::Trade(TradeTick::new(
+            InstrumentId::from("EUR/USD.SIM"),
+            Price::from("1.0001"),
+            Quantity::from("100"),
+            AggressorSide::Buy,
+            TradeId::from("T-1"),
+            UnixNanos::from(ts_init),
+            UnixNanos::from(ts_init),
+        ))
+    }
+
     fn stream_failure() -> anyhow::Error {
         anyhow::anyhow!("injected stream failure")
+    }
+
+    #[rstest]
+    fn merge_streams_orders_items_across_streams_by_ts_init() {
+        let streams = vec![
+            vec![Ok(quote(1)), Ok(quote(3)), Ok(quote(3))]
+                .into_iter()
+                .peekable(),
+            vec![Ok(trade(2)), Ok(trade(3))].into_iter().peekable(),
+            vec![].into_iter().peekable(),
+        ];
+
+        let merged: Vec<(u64, bool)> = merge_streams(streams)
+            .map(|item| item.expect("the merged stream must not fail"))
+            .map(|data| (data.ts_init().as_u64(), matches!(data, Data::Trade(_))))
+            .collect();
+
+        assert_eq!(
+            merged,
+            vec![(1, false), (2, true), (3, false), (3, false), (3, true)]
+        );
+    }
+
+    #[rstest]
+    fn merge_streams_leaves_its_streams_undrained() {
+        // Unbounded streams, so a merge that materialized its input would never return
+        let ok_quote: fn(u64) -> anyhow::Result<Data> = |ts_init| Ok(quote(ts_init));
+        let evens = (0u64..).step_by(2).map(ok_quote);
+        let odds = (1u64..).step_by(2).map(ok_quote);
+
+        let merged: Vec<u64> = merge_streams(vec![evens.peekable(), odds.peekable()])
+            .take(4)
+            .map(|item| item.expect("the merged stream must not fail").ts_init())
+            .map(|ts_init| ts_init.as_u64())
+            .collect();
+
+        assert_eq!(merged, vec![0, 1, 2, 3]);
+    }
+
+    #[rstest]
+    fn merge_streams_reports_a_stream_failure() {
+        let streams = vec![
+            vec![Ok(quote(1)), Err(stream_failure())]
+                .into_iter()
+                .peekable(),
+            vec![Ok(quote(2))].into_iter().peekable(),
+        ];
+        let mut merged = merge_streams(streams);
+
+        let first = merged.next().expect("the first item must be present");
+        let second = merged.next().expect("the failure must be yielded");
+
+        assert_eq!(
+            first.expect("the first item must not fail").ts_init(),
+            UnixNanos::from(1)
+        );
+        assert_eq!(
+            second
+                .expect_err("a failed stream must not read as exhaustion")
+                .to_string(),
+            "injected stream failure"
+        );
     }
 
     #[rstest]
