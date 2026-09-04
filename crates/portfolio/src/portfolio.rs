@@ -3558,8 +3558,10 @@ fn update_order(
                     .insert(event.instrument_id(), unrealized_pnl);
             }
             None => {
-                log::error!(
-                    "Failed to calculate unrealized PnL for instrument {}",
+                // The callee already logged the cause and marked the instrument pending; the
+                // usual cause is a book-only run with no price yet, which is not an error
+                log::debug!(
+                    "Failed to calculate unrealized PnL for {}, marking as pending",
                     event.instrument_id()
                 );
             }

@@ -74,6 +74,7 @@ TEST_DATA_DIR = (
 _GITHUB_RAW_URL = (
     "https://raw.githubusercontent.com/nautechsystems/nautilus_trader/{branch}/test_data/{path}"
 )
+_DEFAULT_BRANCH = "develop"
 
 
 def __getattr__(name: str) -> Any:
@@ -92,13 +93,31 @@ def __getattr__(name: str) -> Any:
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
+def _read_test_data(path: str, branch: str = _DEFAULT_BRANCH) -> bytes:
+    if TEST_DATA_DIR.exists():
+        return (TEST_DATA_DIR / path).read_bytes()
+
+    url = _GITHUB_RAW_URL.format(branch=branch, path=path)
+    with urllib.request.urlopen(url) as response:  # noqa: S310  # Fixed https scheme
+        return response.read()
+
+
+def _open_test_data_text(path: str) -> io.StringIO:
+    return io.StringIO(_read_test_data(path).decode("utf-8"))
+
+
 def _parse_iso_to_ns(value: str) -> int:
     s = value.strip()
     if "+" not in s and not s.endswith("Z"):
         s += "+00:00"
     elif s.endswith("Z"):
         s = s[:-1] + "+00:00"
-    return int(datetime.fromisoformat(s).timestamp() * 1_000_000_000)
+    parsed = datetime.fromisoformat(s)
+
+    # Scale the whole seconds separately, as float seconds cannot hold nanosecond precision
+    return (
+        int(parsed.replace(microsecond=0).timestamp()) * 1_000_000_000 + parsed.microsecond * 1_000
+    )
 
 
 class TestInstrumentProvider:
@@ -280,9 +299,10 @@ class TestDataProvider:
     """
     Load test data from a source checkout or the project's GitHub repository.
 
-    The CSV loader methods (`quotes_from_fxcm_bars`, `trades_from_binance_csv`,
-    etc.) read from the local `test_data/` directory only and require a source
-    checkout.
+    Loaders taking a path relative to `test_data/` resolve it against the local
+    directory when running from a source checkout, and download it from GitHub
+    otherwise, so they also work from an installed wheel. `quotes_from_histdata_csv`
+    is the exception: it reads only the caller-supplied `file_path`.
 
     Parameters
     ----------
@@ -293,23 +313,17 @@ class TestDataProvider:
 
     __test__ = False  # Prevents pytest from collecting this as a test class
 
-    def __init__(self, branch: str = "develop") -> None:
+    def __init__(self, branch: str = _DEFAULT_BRANCH) -> None:
         """
         Initialize the provider with the GitHub branch used for remote paths.
         """
         self.branch = branch
-        self.local_root: Path | None = TEST_DATA_DIR if TEST_DATA_DIR.exists() else None
 
     def read(self, path: str) -> bytes:
         """
         Return the raw bytes of the test data file at the given relative `path`.
         """
-        if self.local_root is not None:
-            return (self.local_root / path).read_bytes()
-
-        url = _GITHUB_RAW_URL.format(branch=self.branch, path=path)
-        with urllib.request.urlopen(url) as response:  # noqa: S310  # Fixed https scheme
-            return response.read()
+        return _read_test_data(path, self.branch)
 
     def _open(self, path: str) -> io.BytesIO:
         return io.BytesIO(self.read(path))
@@ -372,8 +386,8 @@ class TestDataProvider:
         For each bid/ask bar, emits four ticks in OHLC order with the bar timestamp.
 
         """
-        bid_rows = TestDataProvider._read_ohlc_rows(TEST_DATA_DIR / bid_csv, max_rows)
-        ask_rows = TestDataProvider._read_ohlc_rows(TEST_DATA_DIR / ask_csv, max_rows)
+        bid_rows = TestDataProvider._read_ohlc_rows(bid_csv, max_rows)
+        ask_rows = TestDataProvider._read_ohlc_rows(ask_csv, max_rows)
         precision = instrument.price_precision
         size = Quantity.from_str("1000000")
         ticks: list[QuoteTick] = []
@@ -408,7 +422,7 @@ class TestDataProvider:
         """
         Build Bars from an FXCM 1-minute OHLC CSV file.
         """
-        rows = TestDataProvider._read_ohlc_rows(TEST_DATA_DIR / bid_or_ask_csv, max_rows)
+        rows = TestDataProvider._read_ohlc_rows(bid_or_ask_csv, max_rows)
         precision = instrument.price_precision
         bars: list[Bar] = []
 
@@ -488,12 +502,11 @@ class TestDataProvider:
         """
         Build QuoteTicks from a TrueFX tick CSV file ('timestamp,bid,ask').
         """
-        path = TEST_DATA_DIR / csv_name
         precision = instrument.price_precision
         size = Quantity.from_str("1000000")
         ticks: list[QuoteTick] = []
 
-        with path.open("r") as f:
+        with _open_test_data_text(csv_name) as f:
             reader = csv.reader(f)
             header = next(reader)
             if header[:3] != ["timestamp", "bid", "ask"]:
@@ -526,12 +539,11 @@ class TestDataProvider:
         """
         Build TradeTicks from a Binance trade CSV file.
         """
-        path = TEST_DATA_DIR / csv_name
         price_precision = instrument.price_precision
         size_precision = instrument.size_precision
         trades: list[TradeTick] = []
 
-        with path.open("r") as f:
+        with _open_test_data_text(csv_name) as f:
             reader = csv.reader(f)
             header = next(reader)
             expected_header = ["timestamp", "trade_id", "price", "quantity", "buyer_maker"]
@@ -568,12 +580,11 @@ class TestDataProvider:
         """
         Build Bars from a Binance 1-minute OHLC CSV file.
         """
-        path = TEST_DATA_DIR / csv_name
         price_precision = instrument.price_precision
         size_precision = instrument.size_precision
         bars: list[Bar] = []
 
-        with path.open("r") as f:
+        with _open_test_data_text(csv_name) as f:
             reader = csv.reader(f)
             header = next(reader)
             if header[:6] != ["timestamp", "open", "high", "low", "close", "volume"]:
@@ -599,10 +610,10 @@ class TestDataProvider:
         return bars
 
     @staticmethod
-    def _read_ohlc_rows(path: Path, max_rows: int | None) -> list[list[str]]:
+    def _read_ohlc_rows(csv_name: str, max_rows: int | None) -> list[list[str]]:
         rows: list[list[str]] = []
 
-        with path.open("r") as f:
+        with _open_test_data_text(csv_name) as f:
             reader = csv.reader(f)
             header = next(reader)
             if header[:5] != ["timestamp", "open", "high", "low", "close"]:
