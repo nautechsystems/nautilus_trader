@@ -48,8 +48,9 @@ use crate::{
     },
     providers::extract_condition_id,
     resolve::{
-        StrictResolvedMarket, apply_watched_condition_resolution, build_strict_resolved_market,
-        remove_data_resolve_watch_entry, upsert_data_resolve_watch_entry_if_active,
+        StrictResolvedMarket, admit_data_resolution_instrument, apply_watched_condition_resolution,
+        build_strict_resolved_market, remove_data_resolve_watch_entry,
+        upsert_data_resolve_watch_entry_from_instrument,
     },
 };
 
@@ -91,10 +92,60 @@ impl Drop for AutoLoadScheduledGuard {
 }
 
 impl PolymarketDataClient {
+    pub(super) fn resume_resolution_subscriptions(&self) {
+        let status_ids = self.active_instrument_status_subs.load();
+        let close_ids = self.active_instrument_close_subs.load();
+        let mut instrument_ids = status_ids.union(&close_ids).copied().collect::<Vec<_>>();
+        instrument_ids.sort_unstable();
+        drop(status_ids);
+        drop(close_ids);
+
+        for instrument_id in instrument_ids {
+            let needs_load = {
+                let _guard = self.resolve_watch_apply_mutex.lock();
+
+                if !self.active_instrument_status_subs.contains(&instrument_id)
+                    && !self.active_instrument_close_subs.contains(&instrument_id)
+                {
+                    continue;
+                }
+
+                if self.deferred_resolutions.contains_key(&instrument_id) {
+                    true
+                } else {
+                    let closed = extract_condition_id(&instrument_id).is_ok_and(|condition_id| {
+                        is_condition_closed(&self.closed_condition_ids, &condition_id)
+                    });
+                    let loaded = self.instruments.load();
+                    if let Some(instrument) = loaded.get(&instrument_id) {
+                        if !closed {
+                            upsert_data_resolve_watch_entry_from_instrument(
+                                &self.resolve_poll_watchlist,
+                                instrument,
+                            );
+                        }
+                        false
+                    } else if closed {
+                        continue;
+                    } else {
+                        true
+                    }
+                }
+            };
+
+            if needs_load {
+                self.queue_pending_load(instrument_id);
+            } else {
+                self.sync_ws_subscription(instrument_id);
+            }
+        }
+    }
+
     pub(super) fn queue_pending_load(&self, instrument_id: InstrumentId) {
         if extract_condition_id(&instrument_id).is_ok_and(|condition_id| {
             is_condition_closed(&self.closed_condition_ids, &condition_id)
-        }) {
+        }) && !self.deferred_resolutions.contains_key(&instrument_id)
+        {
             return;
         }
 
@@ -353,6 +404,7 @@ impl PolymarketDataClient {
                                     let _guard = resolve_watch_apply_mutex.lock();
                                     active_instrument_status_subs.remove(&instrument_id);
                                     active_instrument_close_subs.remove(&instrument_id);
+                                    resolve_ctx.deferred_resolutions.remove(&instrument_id);
                                     remove_data_resolve_watch_entry(
                                         &resolve_poll_watchlist,
                                         instrument_id,
@@ -378,13 +430,7 @@ impl PolymarketDataClient {
                                     },
                                 );
 
-                                upsert_data_resolve_watch_entry_if_active(
-                                    &resolve_watch_apply_mutex,
-                                    &resolve_poll_watchlist,
-                                    &active_instrument_status_subs,
-                                    &active_instrument_close_subs,
-                                    instrument,
-                                );
+                                admit_data_resolution_instrument(&resolve_ctx, instrument).await;
                             }
                         }
                         AutoLoadOutcome::Closed {
@@ -413,6 +459,7 @@ impl PolymarketDataClient {
                                     let _guard = resolve_watch_apply_mutex.lock();
                                     active_instrument_status_subs.remove(&instrument_id);
                                     active_instrument_close_subs.remove(&instrument_id);
+                                    resolve_ctx.deferred_resolutions.remove(&instrument_id);
                                     remove_data_resolve_watch_entry(
                                         &resolve_poll_watchlist,
                                         instrument_id,
@@ -438,13 +485,7 @@ impl PolymarketDataClient {
                                     },
                                 );
 
-                                upsert_data_resolve_watch_entry_if_active(
-                                    &resolve_watch_apply_mutex,
-                                    &resolve_poll_watchlist,
-                                    &active_instrument_status_subs,
-                                    &active_instrument_close_subs,
-                                    instrument,
-                                );
+                                admit_data_resolution_instrument(&resolve_ctx, instrument).await;
                             }
 
                             if let Some(resolution) = resolution {

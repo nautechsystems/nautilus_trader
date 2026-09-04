@@ -26,6 +26,7 @@ use crate::{
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct StrictResolvedMarket {
     pub(crate) condition_id: String,
+    pub(crate) asset_ids: Vec<String>,
     pub(crate) winning_asset_id: String,
     pub(crate) winning_outcome: String,
 }
@@ -126,6 +127,7 @@ pub(crate) fn build_strict_resolved_market(market: &GammaMarket) -> Option<Stric
 
     Some(StrictResolvedMarket {
         condition_id: market.condition_id.clone(),
+        asset_ids,
         winning_asset_id,
         winning_outcome,
     })
@@ -161,6 +163,11 @@ pub(crate) fn build_resolved_market_from_clob_market(
 
     Some(StrictResolvedMarket {
         condition_id: market.condition_id.clone(),
+        asset_ids: market
+            .tokens
+            .iter()
+            .map(|token| token.token_id.clone())
+            .collect(),
         winning_asset_id: winner.token_id.clone(),
         winning_outcome: winner.outcome.clone(),
     })

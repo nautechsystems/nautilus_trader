@@ -36,7 +36,10 @@ use super::{
         resolve_token_id_from, sync_ws_subscription_with_resolution_and_terminal_async,
     },
 };
-use crate::{providers::extract_condition_id, resolve::ResolveWatchEntry};
+use crate::{
+    providers::extract_condition_id,
+    resolve::{ResolveWatchEntry, StrictResolvedMarket},
+};
 
 pub(crate) fn is_condition_closed(
     closed_condition_ids: &Arc<Mutex<AHashSet<String>>>,
@@ -220,6 +223,9 @@ pub(crate) async fn retire_local_instrument_state(
     }
 
     pending_snapshot_after_tick_change.remove(&instrument_id);
+    if is_watchlisted_instrument(resolve_poll_watchlist, instrument_id)
+        || (!active_status_subs.contains(&instrument_id)
+            && !active_close_subs.contains(&instrument_id))
     {
         let mut pending = pending_auto_loads.lock();
         pending.remove(&instrument_id);
@@ -409,6 +415,8 @@ pub(crate) async fn retire_expired_local_instruments(
     ws_sub_mutex: &Arc<tokio::sync::Mutex<()>>,
     ws: &crate::websocket::pool::PolymarketMarketPoolHandle,
     subscribe_new_markets: bool,
+    deferred_resolutions: &Arc<AtomicMap<InstrumentId, StrictResolvedMarket>>,
+    owner_lock: &Arc<Mutex<()>>,
 ) {
     let expired_candidates: Vec<(InstrumentId, String)> = {
         let loaded = instruments.load();
@@ -455,9 +463,15 @@ pub(crate) async fn retire_expired_local_instruments(
     }
 
     for instrument_id in expired_ids {
-        if !is_watchlisted_instrument(resolve_poll_watchlist, instrument_id) {
-            active_status_subs.remove(&instrument_id);
-            active_close_subs.remove(&instrument_id);
+        {
+            let _guard = owner_lock.lock();
+
+            if !is_watchlisted_instrument(resolve_poll_watchlist, instrument_id)
+                && !deferred_resolutions.contains_key(&instrument_id)
+            {
+                active_status_subs.remove(&instrument_id);
+                active_close_subs.remove(&instrument_id);
+            }
         }
 
         retire_local_instrument_state(
@@ -809,6 +823,8 @@ mod tests {
             &ws_sub_mutex,
             &ws,
             false,
+            &Arc::new(AtomicMap::new()),
+            &Arc::new(Mutex::new(())),
         )
         .await;
 
@@ -844,6 +860,8 @@ mod tests {
             &ws_sub_mutex,
             &ws,
             false,
+            &Arc::new(AtomicMap::new()),
+            &Arc::new(Mutex::new(())),
         )
         .await;
 
@@ -913,6 +931,8 @@ mod tests {
             &ws_sub_mutex,
             &ws,
             true,
+            &Arc::new(AtomicMap::new()),
+            &Arc::new(Mutex::new(())),
         )
         .await;
 

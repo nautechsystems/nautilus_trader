@@ -16,7 +16,7 @@
 use std::sync::Arc;
 
 use ahash::AHashSet;
-use nautilus_core::{AtomicMap, AtomicSet, UnixNanos};
+use nautilus_core::{AtomicMap, UnixNanos};
 use nautilus_model::{
     events::PositionEvent,
     identifiers::{InstrumentId, PositionId},
@@ -145,22 +145,6 @@ fn merge_expiration_ns(current: UnixNanos, incoming: UnixNanos) -> UnixNanos {
         (_, 0) => current,
         _ => current.max(incoming),
     }
-}
-
-pub(crate) fn upsert_data_resolve_watch_entry_if_active(
-    owner_lock: &Arc<Mutex<()>>,
-    watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
-    active_status_subs: &Arc<AtomicSet<InstrumentId>>,
-    active_close_subs: &Arc<AtomicSet<InstrumentId>>,
-    instrument: &InstrumentAny,
-) -> bool {
-    let _guard = owner_lock.lock();
-    let instrument_id = instrument.id();
-    if !active_status_subs.contains(&instrument_id) && !active_close_subs.contains(&instrument_id) {
-        return false;
-    }
-
-    upsert_data_resolve_watch_entry_from_instrument(watchlist, instrument)
 }
 
 pub(crate) fn remove_data_resolve_watch_entry(

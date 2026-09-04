@@ -1097,6 +1097,12 @@ data owner; open positions retain their independent ownership. If loading cannot
 metadata, no automatic watch is created. An accepted unresolved intent can still be checked with
 an explicit manual resolution selector.
 
+If an outcome arrives while a subscribed instrument is still loading, the client retains that
+outcome until its metadata passes the configured filters. Already admitted data and position owners
+settle immediately; a pending sibling does not delay them. Completing the pending subscription emits
+only its requested events and does not reopen ordinary market-data streams. Unsubscribing its last
+event type or rejecting its instrument filter discards the retained outcome.
+
 Once a watched condition expires, the data client waits `resolve_poll_grace_secs`, then polls Gamma
 every `resolve_poll_interval_secs` until the condition resolves or
 `resolve_poll_max_wait_secs` elapses.
@@ -1143,14 +1149,17 @@ polling or manual recovery; an enabled, unpaused resolution WebSocket may remain
 or timeout. Later live subscriptions cannot reopen the closed condition.
 
 The same apply path handles auto-load outcomes, WebSocket `market_resolved` events, automatic
-polling, and manual requests. Successful resolution emits each owned event type once, removes the
-condition's watch and subscription intents, and releases its WebSocket subscriptions.
+polling, and manual requests. Successful resolution emits each admitted owner's event types once,
+removes those owners and the condition's watch, and releases its WebSocket subscriptions. Existing
+pending data intents retain their outcome until admission or cancellation; new subscriptions cannot
+re-enroll the resolved condition. Automatic delivery never bypasses instrument-filter admission.
 
 After `resolve_poll_max_wait_secs`, the watch pauses and releases resolution-only WebSocket
 ownership, including when polling is disabled. An open market's independent quote, trade, or book
 subscriptions are unaffected by this pause. The client retains settlement metadata and ownership
 for manual recovery; a manual request does not restart the automatic deadline. Disconnect stops
-network work, while reset discards retained ownership and requires fresh subscriptions.
+network work, and reconnect resumes unfinished resolution-subscription loading. Reset discards
+retained ownership and outcomes and requires fresh subscriptions.
 
 #### Manual resolution requests
 

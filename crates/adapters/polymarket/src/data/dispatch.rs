@@ -69,7 +69,7 @@ use crate::{
     },
     resolve::{
         PendingResolution, PendingResolutionGuard, ResolveApplyResult, ResolveContext,
-        ResolveWatchEntry, apply_condition_resolution_with_assets,
+        ResolveWatchEntry, StrictResolvedMarket, apply_condition_resolution_with_assets,
     },
     rtds::PolymarketRtdsFeed,
     websocket::{
@@ -121,6 +121,7 @@ pub(super) struct WsMessageContext {
     pub(super) resolve_poll_watchlist: Arc<AtomicMap<String, ResolveWatchEntry>>,
     pub(super) resolve_watch_apply_mutex: Arc<Mutex<()>>,
     pub(super) pending_resolutions: Arc<DashMap<String, PendingResolution>>,
+    pub(super) deferred_resolutions: Arc<AtomicMap<InstrumentId, StrictResolvedMarket>>,
     pub(super) pending_snapshot_after_tick_change: Arc<AtomicSet<InstrumentId>>,
     pub(super) new_market_inflight_keys: Arc<DashMap<String, ()>>,
     pub(super) new_market_fetch_semaphore: Arc<tokio::sync::Semaphore>,
@@ -159,6 +160,7 @@ impl WsMessageContext {
             ws_sub_mutex: self.ws_sub_mutex.clone(),
             ws: self.ws.clone(),
             pending_resolutions: self.pending_resolutions.clone(),
+            deferred_resolutions: self.deferred_resolutions.clone(),
             subscribe_new_markets: self.subscribe_new_markets,
             cancellation_token: self.cancellation_token.clone(),
         }
@@ -1376,6 +1378,7 @@ mod tests {
             resolve_poll_watchlist: Arc::new(AtomicMap::new()),
             resolve_watch_apply_mutex: Arc::new(Mutex::new(())),
             pending_resolutions: Arc::new(DashMap::new()),
+            deferred_resolutions: Arc::new(AtomicMap::new()),
             pending_snapshot_after_tick_change: Arc::new(AtomicSet::new()),
             new_market_inflight_keys: Arc::new(DashMap::new()),
             new_market_fetch_semaphore: Arc::new(tokio::sync::Semaphore::new(
@@ -1547,6 +1550,7 @@ mod tests {
             resolve_poll_watchlist: client.resolve_poll_watchlist.clone(),
             resolve_watch_apply_mutex: client.resolve_watch_apply_mutex.clone(),
             pending_resolutions: client.pending_resolutions.clone(),
+            deferred_resolutions: client.deferred_resolutions.clone(),
             pending_snapshot_after_tick_change: client.pending_snapshot_after_tick_change.clone(),
             new_market_inflight_keys: client.new_market_inflight_keys.clone(),
             new_market_fetch_semaphore: client.new_market_fetch_semaphore.clone(),
@@ -4269,6 +4273,7 @@ mod tests {
             &ws_ctx.resolve_context(),
             &["0xCOND-REQ".to_string()],
             ResolveBatchErrorMode::StopOnFirstError,
+            true,
         )
         .await;
 
@@ -5468,21 +5473,10 @@ mod tests {
             make_market_resolved(TEST_CONDITION_ID, TEST_TOKEN_ID_YES, TEST_TOKEN_ID_NO),
             &ws_ctx,
         );
-        let status = tokio::time::timeout(StdDuration::from_secs(3), async {
-            loop {
-                match data_rx.recv().await {
-                    Some(DataEvent::InstrumentStatus(status))
-                        if status.instrument_id == instrument_id =>
-                    {
-                        return status;
-                    }
-                    Some(_) => {}
-                    None => panic!("data event channel closed before pending resolution"),
-                }
-            }
+        let events = collect_events_until(&mut data_rx, StdDuration::from_secs(3), |events| {
+            count_instrument_close_events(events) == 1
         })
-        .await
-        .expect("timed out waiting for independent sibling resolution");
+        .await;
         wait_until_async(
             || {
                 let client = &client;
@@ -5492,9 +5486,13 @@ mod tests {
         )
         .await;
 
-        assert_eq!(status.instrument_id, instrument_id);
         assert!(
-            !client
+            matches!(events.as_slice(), [DataEvent::InstrumentStatus(status), DataEvent::Data(NautilusData::InstrumentClose(close))]
+            if status.instrument_id == sibling.id() && close.instrument_id == sibling.id()
+                && close.close_price.as_decimal() == rust_decimal::Decimal::ZERO)
+        );
+        assert!(
+            client
                 .active_instrument_status_subs
                 .contains(&instrument_id)
         );
@@ -5508,12 +5506,23 @@ mod tests {
         reply_release.add_permits(1);
         wait_until_async(
             || {
-                let state = state.clone();
-                async move { state.completed_replies.load(Ordering::SeqCst) == 1 }
+                let client = &client;
+                async move { client.tasks.all_finished() }
             },
             StdDuration::from_secs(2),
         )
         .await;
+        let events = std::iter::from_fn(|| data_rx.try_recv().ok()).collect::<Vec<_>>();
+        assert!(
+            matches!(events.as_slice(), [DataEvent::Instrument(_), DataEvent::InstrumentStatus(status)]
+            if status.instrument_id == instrument_id && status.action == MarketStatusAction::Close)
+        );
+        assert!(
+            !client
+                .active_instrument_status_subs
+                .contains(&instrument_id)
+        );
+        assert!(client.deferred_resolutions.is_empty());
     }
 
     #[rstest]
@@ -6509,6 +6518,499 @@ mod tests {
                 None,
             ))
             .unwrap();
+    }
+
+    #[rstest]
+    #[case::during_fetch(true)]
+    #[case::during_debounce(false)]
+    #[tokio::test]
+    async fn resolution_subscription_resumes_after_reconnect(#[case] during_fetch: bool) {
+        let release = Arc::new(tokio::sync::Semaphore::new(0));
+        let mut resolved = gamma_market_future_closed_fixture_value();
+        resolved["outcomePrices"] = Value::String("[\"1\",\"0\"]".to_string());
+        let mut replies = Vec::new();
+
+        if during_fetch {
+            replies.push(ScriptedAutoLoadReply::gated(
+                serde_json::json!([gamma_market_recheck_fixture_value()]),
+                release.clone(),
+            ));
+        }
+        replies.push(ScriptedAutoLoadReply::ok(serde_json::json!([resolved])));
+        let state = ScriptedAutoLoadServerState::new(replies, vec![]);
+        let addr = start_scripted_auto_load_test_server(state.clone()).await;
+        let (mut client, mut data_rx) = create_test_client(addr);
+        client.config.auto_load_debounce_ms = if during_fetch { 0 } else { 10_000 };
+        client.connect().await.unwrap();
+        subscribe_test_resolution(&mut client, fixture_yes_instrument_id());
+
+        if during_fetch {
+            wait_until_async(
+                || async { !state.queries.lock().is_empty() },
+                StdDuration::from_secs(3),
+            )
+            .await;
+        }
+        client.disconnect().await.unwrap();
+        release.add_permits(1);
+        client.config.auto_load_debounce_ms = 0;
+        client.connect().await.unwrap();
+
+        let events = collect_events_until(&mut data_rx, StdDuration::from_secs(3), |events| {
+            count_instrument_close_events(events) == 1
+        })
+        .await;
+        client.disconnect().await.unwrap();
+        let statuses = events
+            .iter()
+            .filter_map(|event| match event {
+                DataEvent::InstrumentStatus(status) => Some(status),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let closes = events
+            .iter()
+            .filter_map(|event| match event {
+                DataEvent::Data(NautilusData::InstrumentClose(close)) => Some(close),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(statuses[0].instrument_id, fixture_yes_instrument_id());
+        assert_eq!(statuses[0].action, MarketStatusAction::Close);
+        assert_eq!(closes.len(), 1);
+        assert_eq!(closes[0].instrument_id, fixture_yes_instrument_id());
+        assert_eq!(
+            closes[0].close_price.as_decimal(),
+            rust_decimal::Decimal::ONE
+        );
+        assert_eq!(closes[0].close_type, InstrumentCloseType::ContractExpired);
+        assert!(client.active_instrument_status_subs.is_empty());
+        assert!(client.active_instrument_close_subs.is_empty());
+    }
+
+    #[derive(Clone, Copy)]
+    enum DeferredResolutionAction {
+        Unsubscribe,
+        Reset,
+        Reconnect,
+        Retire,
+    }
+
+    #[rstest]
+    #[case::rejected(false)]
+    #[case::accepted(true)]
+    #[tokio::test]
+    async fn automatic_poll_waits_for_pending_sibling_admission(#[case] accepted: bool) {
+        let release = Arc::new(tokio::sync::Semaphore::new(0));
+        let mut resolved = gamma_market_future_closed_fixture_value();
+        resolved["outcomePrices"] = Value::String("[\"1\",\"0\"]".to_string());
+        let state = ScriptedAutoLoadServerState::new(
+            vec![ScriptedAutoLoadReply::gated(
+                serde_json::json!([gamma_market_recheck_fixture_value()]),
+                release.clone(),
+            )],
+            vec![ScriptedAutoLoadReply::ok(serde_json::json!([
+                resolved.clone()
+            ]))],
+        );
+        let addr = start_scripted_auto_load_test_server(state.clone()).await;
+        let (mut client, mut data_rx) = create_test_client(addr);
+        client.config.auto_load_debounce_ms = 0;
+        client.config.resolve_poll_enabled = true;
+        client.config.resolve_poll_interval_secs = 1;
+        client.config.resolve_poll_grace_secs = 0;
+        client.config.resolve_poll_max_wait_secs = 300;
+        client.connect().await.unwrap();
+        client.add_instrument_filter(Arc::new(crate::filters::PredicateFilter::new(
+            "pending-sibling-admission",
+            move |_| accepted,
+        )));
+        let mut sibling = instruments_from_gamma_fixture(resolved)
+            .into_iter()
+            .find(|instrument| instrument.id() == fixture_no_instrument_id())
+            .unwrap();
+
+        if let InstrumentAny::BinaryOption(binary) = &mut sibling {
+            binary.expiration_ns =
+                UnixNanos::from(client.clock.get_time_ns().as_u64() - 1_000_000_000);
+        }
+        cache_instrument_unchecked(&client.instruments, &client.token_meta, &sibling);
+        upsert_resolve_watch_entry_from_instrument(
+            &client.resolve_poll_watchlist,
+            &sibling,
+            PositionId::new("P-POLL-ADMISSION"),
+        );
+        subscribe_test_resolution(&mut client, fixture_yes_instrument_id());
+        wait_until_async(
+            || async {
+                state
+                    .queries
+                    .lock()
+                    .iter()
+                    .any(|query| query.closed.is_none())
+            },
+            StdDuration::from_secs(3),
+        )
+        .await;
+        let mut events = collect_events_until(&mut data_rx, StdDuration::from_secs(3), |events| {
+            count_instrument_close_events(events) >= 1
+        })
+        .await;
+        assert!(
+            matches!(events.as_slice(), [DataEvent::InstrumentStatus(status), DataEvent::Data(NautilusData::InstrumentClose(close))]
+            if status.instrument_id == sibling.id() && close.instrument_id == sibling.id())
+        );
+
+        release.add_permits(1);
+        wait_until_async(
+            || async {
+                !client
+                    .active_instrument_close_subs
+                    .contains(&fixture_yes_instrument_id())
+            },
+            StdDuration::from_secs(3),
+        )
+        .await;
+        client.disconnect().await.unwrap();
+        events.extend(std::iter::from_fn(|| data_rx.try_recv().ok()));
+
+        assert_eq!(
+            count_instrument_close_events(&events),
+            1 + usize::from(accepted)
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, DataEvent::InstrumentStatus(_)))
+                .count(),
+            1 + usize::from(accepted)
+        );
+        assert!(client.deferred_resolutions.is_empty());
+        assert!(client.resolve_poll_watchlist.is_empty());
+    }
+
+    #[rstest]
+    #[case::unsubscribe(DeferredResolutionAction::Unsubscribe)]
+    #[case::reset(DeferredResolutionAction::Reset)]
+    #[case::reconnect(DeferredResolutionAction::Reconnect)]
+    #[case::retire(DeferredResolutionAction::Retire)]
+    #[tokio::test]
+    async fn deferred_resolution_respects_owner_lifecycle(
+        #[case] action: DeferredResolutionAction,
+    ) {
+        let release = Arc::new(tokio::sync::Semaphore::new(0));
+        let market = gamma_market_recheck_fixture_value();
+        let state = ScriptedAutoLoadServerState::new(
+            vec![
+                ScriptedAutoLoadReply::gated(serde_json::json!([market.clone()]), release.clone()),
+                ScriptedAutoLoadReply::ok(serde_json::json!([market])),
+            ],
+            vec![],
+        );
+        let addr = start_scripted_auto_load_test_server(state.clone()).await;
+        let (mut client, mut data_rx) = create_test_client_with_new_markets(addr, true);
+        client.config.auto_load_debounce_ms = 0;
+        client.connect().await.unwrap();
+        let instrument_id = fixture_yes_instrument_id();
+        subscribe_test_resolution(&mut client, instrument_id);
+        wait_until_async(
+            || async { !state.queries.lock().is_empty() },
+            StdDuration::from_secs(3),
+        )
+        .await;
+
+        if matches!(action, DeferredResolutionAction::Retire) {
+            let mut instrument =
+                instrument_from_gamma_fixture(gamma_market_recheck_fixture_value());
+
+            if let InstrumentAny::BinaryOption(binary) = &mut instrument {
+                binary.expiration_ns = UnixNanos::from(1);
+                crate::filters::set_market_closed(binary, true);
+            }
+            cache_instrument_unchecked(&client.instruments, &client.token_meta, &instrument);
+        }
+        let ctx = make_client_ws_ctx(&client);
+
+        for _ in 0..2 {
+            handle_market_message(
+                make_market_resolved(TEST_CONDITION_ID, TEST_TOKEN_ID_YES, TEST_TOKEN_ID_NO),
+                &ctx,
+            );
+        }
+        wait_until_async(
+            || async {
+                client.deferred_resolutions.contains_key(&instrument_id)
+                    && !client.pending_resolutions.contains_key(TEST_CONDITION_ID)
+            },
+            StdDuration::from_secs(3),
+        )
+        .await;
+        assert!(data_rx.try_recv().is_err());
+
+        match action {
+            DeferredResolutionAction::Unsubscribe => {
+                client
+                    .unsubscribe_instrument_status(&UnsubscribeInstrumentStatus::new(
+                        instrument_id,
+                        Some(client.client_id),
+                        None,
+                        UUID4::new(),
+                        UnixNanos::default(),
+                        None,
+                        None,
+                    ))
+                    .unwrap();
+                assert!(client.deferred_resolutions.contains_key(&instrument_id));
+                client
+                    .unsubscribe_instrument_close(&UnsubscribeInstrumentClose::new(
+                        instrument_id,
+                        Some(client.client_id),
+                        None,
+                        UUID4::new(),
+                        UnixNanos::default(),
+                        None,
+                        None,
+                    ))
+                    .unwrap();
+                assert!(client.deferred_resolutions.is_empty());
+                release.add_permits(1);
+            }
+            DeferredResolutionAction::Reset => {
+                client.reset().unwrap();
+                release.add_permits(1);
+                client.connect().await.unwrap();
+            }
+            DeferredResolutionAction::Reconnect => {
+                client.disconnect().await.unwrap();
+                release.add_permits(1);
+                client.connect().await.unwrap();
+            }
+            DeferredResolutionAction::Retire => {
+                super::super::runtime::retire_expired_local_instruments(
+                    client.clock.get_time_ns(),
+                    &client.instruments,
+                    &client.token_meta,
+                    &client.order_books,
+                    &client.last_quotes,
+                    &client.active_quote_subs,
+                    &client.active_delta_subs,
+                    &client.active_trade_subs,
+                    &client.active_instrument_status_subs,
+                    &client.active_instrument_close_subs,
+                    &client.closed_condition_ids,
+                    &client.resolve_poll_watchlist,
+                    &client.pending_snapshot_after_tick_change,
+                    &client.pending_auto_loads,
+                    &client.ws_open_tokens,
+                    &client.ws_sub_mutex,
+                    &client.ws_client.handle(),
+                    client.config.subscribe_new_markets,
+                    &client.deferred_resolutions,
+                    &client.resolve_watch_apply_mutex,
+                )
+                .await;
+                release.add_permits(1);
+            }
+        }
+        let expected_closes = usize::from(matches!(
+            action,
+            DeferredResolutionAction::Reconnect | DeferredResolutionAction::Retire
+        ));
+        let events = collect_events_until(&mut data_rx, StdDuration::from_secs(3), |events| {
+            if expected_closes == 1 {
+                count_instrument_close_events(events) == 1
+            } else {
+                state.completed_replies.load(Ordering::SeqCst) >= 1
+            }
+        })
+        .await;
+        client.disconnect().await.unwrap();
+
+        assert_eq!(count_instrument_close_events(&events), expected_closes);
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, DataEvent::InstrumentStatus(_)))
+                .count(),
+            expected_closes
+        );
+        assert!(client.deferred_resolutions.is_empty());
+        assert!(client.active_instrument_status_subs.is_empty());
+        assert!(client.active_instrument_close_subs.is_empty());
+        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.ws_open_tokens.is_empty());
+    }
+
+    #[rstest]
+    #[case::rejected(false)]
+    #[case::accepted(true)]
+    #[tokio::test]
+    async fn websocket_resolution_waits_for_instrument_filter_admission(#[case] accepted: bool) {
+        let release = Arc::new(tokio::sync::Semaphore::new(0));
+        let state = ScriptedAutoLoadServerState::new(
+            vec![ScriptedAutoLoadReply::gated(
+                serde_json::json!([gamma_market_recheck_fixture_value()]),
+                release.clone(),
+            )],
+            vec![],
+        );
+        let addr = start_scripted_auto_load_test_server(state.clone()).await;
+        let (mut client, mut data_rx) = create_test_client_with_new_markets(addr, true);
+        client.config.auto_load_debounce_ms = 0;
+        client.connect().await.unwrap();
+        let filter_calls = Arc::new(AtomicUsize::new(0));
+        let calls = filter_calls.clone();
+        client.add_instrument_filter(Arc::new(crate::filters::PredicateFilter::new(
+            "resolution-admission",
+            move |_| {
+                calls.fetch_add(1, Ordering::SeqCst);
+                accepted
+            },
+        )));
+        subscribe_test_resolution(&mut client, fixture_yes_instrument_id());
+        wait_until_async(
+            || async { !state.queries.lock().is_empty() },
+            StdDuration::from_secs(3),
+        )
+        .await;
+        let ctx = make_client_ws_ctx(&client);
+        handle_market_message(
+            make_market_resolved(TEST_CONDITION_ID, TEST_TOKEN_ID_YES, TEST_TOKEN_ID_NO),
+            &ctx,
+        );
+        wait_until_async(
+            || async { !client.pending_resolutions.contains_key(TEST_CONDITION_ID) },
+            StdDuration::from_secs(3),
+        )
+        .await;
+        let early_events = std::iter::from_fn(|| data_rx.try_recv().ok()).collect::<Vec<_>>();
+        assert_eq!(filter_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(count_instrument_close_events(&early_events), 0);
+        assert!(early_events.is_empty());
+
+        release.add_permits(1);
+        wait_until_async(
+            || async {
+                !client
+                    .active_instrument_close_subs
+                    .contains(&fixture_yes_instrument_id())
+            },
+            StdDuration::from_secs(3),
+        )
+        .await;
+        client.disconnect().await.unwrap();
+        let events = std::iter::from_fn(|| data_rx.try_recv().ok()).collect::<Vec<_>>();
+
+        assert!(filter_calls.load(Ordering::SeqCst) > 0);
+        assert_eq!(
+            count_instrument_close_events(&events),
+            usize::from(accepted)
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, DataEvent::InstrumentStatus(_)))
+                .count(),
+            usize::from(accepted)
+        );
+        assert!(client.deferred_resolutions.is_empty());
+        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.ws_open_tokens.is_empty());
+    }
+
+    #[rstest]
+    #[case::closed_reply(true)]
+    #[case::stale_open_reply(false)]
+    #[tokio::test]
+    async fn auto_load_resolution_preserves_pending_valid_sibling(#[case] closed_reply: bool) {
+        let mut resolved = gamma_market_future_closed_fixture_value();
+        resolved["outcomePrices"] = Value::String("[\"1\",\"0\"]".to_string());
+        let sibling_reply = if closed_reply {
+            resolved.clone()
+        } else {
+            gamma_market_recheck_fixture_value()
+        };
+        let release = Arc::new(tokio::sync::Semaphore::new(0));
+        let state = ScriptedAutoLoadServerState::new(
+            vec![
+                ScriptedAutoLoadReply::ok(serde_json::json!([resolved])),
+                ScriptedAutoLoadReply::gated(serde_json::json!([sibling_reply]), release.clone()),
+            ],
+            vec![],
+        );
+        let addr = start_scripted_auto_load_test_server(state.clone()).await;
+        let (mut client, mut data_rx) = create_test_client(addr);
+        client.config.auto_load_debounce_ms = 0;
+        client.config.auto_load_max_retries = 0;
+        client.connect().await.unwrap();
+        let guard = client.ws_sub_mutex.clone().lock_owned().await;
+        subscribe_test_resolution(&mut client, fixture_yes_instrument_id());
+        wait_until_async(
+            || async { client.pending_resolutions.contains_key(TEST_CONDITION_ID) },
+            StdDuration::from_secs(3),
+        )
+        .await;
+        subscribe_test_resolution(&mut client, fixture_no_instrument_id());
+        wait_until_async(
+            || async { state.queries.lock().len() == 2 },
+            StdDuration::from_secs(3),
+        )
+        .await;
+        drop(guard);
+        let mut events = collect_events_until(&mut data_rx, StdDuration::from_secs(3), |events| {
+            count_instrument_close_events(events) == 1
+        })
+        .await;
+        assert_eq!(count_instrument_close_events(&events), 1);
+
+        release.add_permits(1);
+        events.extend(
+            collect_events_until(&mut data_rx, StdDuration::from_secs(3), |events| {
+                count_instrument_close_events(events) == 1
+            })
+            .await,
+        );
+        client.disconnect().await.unwrap();
+        let mut closes = events
+            .iter()
+            .filter_map(|event| match event {
+                DataEvent::Data(NautilusData::InstrumentClose(close)) => Some((
+                    close.instrument_id,
+                    close.close_price.as_decimal(),
+                    close.close_type,
+                )),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        closes.sort_unstable_by_key(|close| close.0);
+        let mut expected = vec![
+            (
+                fixture_yes_instrument_id(),
+                rust_decimal::Decimal::ONE,
+                InstrumentCloseType::ContractExpired,
+            ),
+            (
+                fixture_no_instrument_id(),
+                rust_decimal::Decimal::ZERO,
+                InstrumentCloseType::ContractExpired,
+            ),
+        ];
+        expected.sort_unstable_by_key(|close| close.0);
+
+        assert_eq!(closes, expected);
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, DataEvent::InstrumentStatus(_)))
+                .count(),
+            2
+        );
+        assert!(client.active_instrument_status_subs.is_empty());
+        assert!(client.active_instrument_close_subs.is_empty());
+        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.ws_open_tokens.is_empty());
     }
 
     #[rstest]

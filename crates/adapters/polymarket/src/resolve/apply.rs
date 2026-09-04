@@ -168,6 +168,7 @@ pub(crate) struct ResolveContext {
     pub(crate) ws_sub_mutex: Arc<tokio::sync::Mutex<()>>,
     pub(crate) ws: crate::websocket::pool::PolymarketMarketPoolHandle,
     pub(crate) pending_resolutions: Arc<DashMap<String, PendingResolution>>,
+    pub(crate) deferred_resolutions: Arc<AtomicMap<InstrumentId, StrictResolvedMarket>>,
     pub(crate) subscribe_new_markets: bool,
     pub(crate) cancellation_token: CancellationToken,
 }
@@ -221,6 +222,7 @@ pub(crate) async fn fetch_and_apply_resolutions_by_condition_ids(
     ctx: &ResolveContext,
     condition_ids: &[String],
     error_mode: ResolveBatchErrorMode,
+    include_pending_intents: bool,
 ) -> ResolveApplyBatchStats {
     let mut stats = ResolveApplyBatchStats::default();
     let mut unique_condition_ids = condition_ids.to_vec();
@@ -257,13 +259,8 @@ pub(crate) async fn fetch_and_apply_resolutions_by_condition_ids(
                     };
 
                     stats.resolved_markets += 1;
-                    let result = apply_condition_resolution(
-                        ctx,
-                        &resolved.condition_id,
-                        &resolved.winning_asset_id,
-                        &resolved.winning_outcome,
-                    )
-                    .await;
+                    let result =
+                        apply_fetched_resolution(ctx, resolved, include_pending_intents).await;
 
                     if let ResolveApplyResult::Applied { emitted_closes } = result
                         && emitted_closes > 0
@@ -299,13 +296,8 @@ pub(crate) async fn fetch_and_apply_resolutions_by_condition_ids(
                     );
                     stats.clob_fallback_successes += 1;
                     stats.resolved_markets += 1;
-                    let result = apply_condition_resolution(
-                        ctx,
-                        &resolved.condition_id,
-                        &resolved.winning_asset_id,
-                        &resolved.winning_outcome,
-                    )
-                    .await;
+                    let result =
+                        apply_fetched_resolution(ctx, &resolved, include_pending_intents).await;
 
                     if let ResolveApplyResult::Applied { emitted_closes } = result
                         && emitted_closes > 0
@@ -356,6 +348,24 @@ pub(crate) async fn fetch_and_apply_resolutions_by_condition_ids(
     stats
 }
 
+async fn apply_fetched_resolution(
+    ctx: &ResolveContext,
+    resolved: &StrictResolvedMarket,
+    include_pending_intents: bool,
+) -> ResolveApplyResult {
+    if include_pending_intents {
+        apply_condition_resolution(
+            ctx,
+            &resolved.condition_id,
+            &resolved.winning_asset_id,
+            &resolved.winning_outcome,
+        )
+        .await
+    } else {
+        apply_watched_condition_resolution(ctx, resolved).await
+    }
+}
+
 pub(crate) async fn apply_condition_resolution(
     ctx: &ResolveContext,
     condition_id: &str,
@@ -400,16 +410,53 @@ pub(crate) async fn apply_watched_condition_resolution(
         &resolution.condition_id,
         &resolution.winning_asset_id,
         &resolution.winning_outcome,
-        ResolveOwnerSelection::Watched,
+        ResolveOwnerSelection::Watched(&resolution.asset_ids),
     )
     .await
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy)]
 enum ResolveOwnerSelection<'a> {
-    Watched,
+    Watched(&'a [String]),
     IncludePendingIntents,
     PayloadAssets(&'a [String]),
+    AdmittedInstrument(&'a InstrumentAny),
+}
+
+// Called only after auto-load has parsed and filtered this instrument. A known
+// outcome is replayed without recreating live routing or a terminal position watch.
+pub(crate) async fn admit_data_resolution_instrument(
+    ctx: &ResolveContext,
+    instrument: &InstrumentAny,
+) {
+    let resolution = {
+        let _guard = ctx.apply_mutex.lock();
+        if ctx.cancellation_token.is_cancelled()
+            || (!ctx.active_status_subs.contains(&instrument.id())
+                && !ctx.active_close_subs.contains(&instrument.id()))
+        {
+            return;
+        }
+        let resolution = ctx.deferred_resolutions.get_cloned(&instrument.id());
+        if resolution.is_none() {
+            super::watchlist::upsert_data_resolve_watch_entry_from_instrument(
+                &ctx.watchlist,
+                instrument,
+            );
+        }
+        resolution
+    };
+
+    if let Some(resolution) = resolution {
+        apply_condition_resolution_with_owners(
+            ctx,
+            &resolution.condition_id,
+            &resolution.winning_asset_id,
+            &resolution.winning_outcome,
+            ResolveOwnerSelection::AdmittedInstrument(instrument),
+        )
+        .await;
+    }
 }
 
 async fn apply_condition_resolution_with_owners(
@@ -525,14 +572,27 @@ async fn apply_condition_resolution_inner(
             .map(|tracked| (tracked.instrument_id, tracked.clone()))
             .collect();
 
-        if !matches!(owner_selection, ResolveOwnerSelection::Watched) {
+        if matches!(
+            owner_selection,
+            ResolveOwnerSelection::IncludePendingIntents
+                | ResolveOwnerSelection::AdmittedInstrument(_)
+        ) {
             for instrument_id in active_status_ids.union(&active_close_ids).copied() {
                 if tracked_instruments.contains_key(&instrument_id) {
                     continue;
                 }
 
-                let token_id = loaded
-                    .get(&instrument_id)
+                let admitted = match owner_selection {
+                    ResolveOwnerSelection::AdmittedInstrument(instrument) => {
+                        if instrument.id() != instrument_id {
+                            continue;
+                        }
+                        Some(instrument)
+                    }
+                    _ => None,
+                };
+                let token_id = admitted
+                    .or_else(|| loaded.get(&instrument_id))
                     .map(|instrument| instrument.raw_symbol().as_str().to_string())
                     .or_else(|| crate::providers::extract_token_id(&instrument_id).ok());
                 let Some(token_id) = token_id else {
@@ -542,14 +602,8 @@ async fn apply_condition_resolution_inner(
                     continue;
                 };
 
-                if let ResolveOwnerSelection::PayloadAssets(asset_ids) = owner_selection
-                    && !asset_ids.contains(&token_id)
-                {
-                    continue;
-                }
-
-                let price_precision = loaded
-                    .get(&instrument_id)
+                let price_precision = admitted
+                    .or_else(|| loaded.get(&instrument_id))
                     .map_or(POLYMARKET_PRICE_PRECISION, |instrument| {
                         instrument.price_precision()
                     });
@@ -566,9 +620,55 @@ async fn apply_condition_resolution_inner(
             }
         }
 
-        if tracked_instruments.is_empty() {
+        let mut deferred_ids = active_status_ids
+            .union(&active_close_ids)
+            .filter(|id| {
+                !tracked_instruments.contains_key(id) && ctx.deferred_resolutions.contains_key(id)
+            })
+            .copied()
+            .collect::<AHashSet<_>>();
+
+        if let ResolveOwnerSelection::Watched(asset_ids)
+        | ResolveOwnerSelection::PayloadAssets(asset_ids) = owner_selection
+        {
+            for instrument_id in active_status_ids.union(&active_close_ids).copied() {
+                if tracked_instruments.contains_key(&instrument_id)
+                    || !crate::providers::extract_token_id(&instrument_id)
+                        .is_ok_and(|token_id| asset_ids.contains(&token_id))
+                {
+                    continue;
+                }
+                deferred_ids.insert(instrument_id);
+                ctx.deferred_resolutions.rcu(|entries| {
+                    entries
+                        .entry(instrument_id)
+                        .or_insert_with(|| StrictResolvedMarket {
+                            condition_id: condition_id_string.clone(),
+                            asset_ids: asset_ids.to_vec(),
+                            winning_asset_id: winning_asset_id.to_string(),
+                            winning_outcome: winning_outcome.to_string(),
+                        });
+                });
+            }
+        }
+
+        if tracked_instruments.is_empty() && deferred_ids.is_empty() {
             ctx.watchlist.remove(&condition_id_string);
             return ResolveApplyResult::Ignored;
+        }
+
+        if let ResolveOwnerSelection::AdmittedInstrument(instrument) = owner_selection
+            && tracked_instruments.contains_key(&instrument.id())
+        {
+            let mut instrument = instrument.clone();
+            if let InstrumentAny::BinaryOption(binary) = &mut instrument {
+                crate::filters::set_market_closed(binary, true);
+            }
+
+            if let Err(e) = ctx.data_sender.send(DataEvent::Instrument(instrument)) {
+                log::error!("Failed to emit admitted resolution instrument: {e}");
+                return ResolveApplyResult::Ignored;
+            }
         }
 
         let mut emitted_closes = 0;
@@ -661,13 +761,29 @@ async fn apply_condition_resolution_inner(
             }
         }
 
+        // Clear settlement state before releasing the corresponding subscription intents
         ctx.watchlist.remove(&condition_id_string);
+
+        for instrument_id in active_status_ids.union(&active_close_ids) {
+            if !deferred_ids.contains(instrument_id) {
+                ctx.deferred_resolutions.remove(instrument_id);
+            }
+        }
+
+        for subscriptions in [&ctx.active_status_subs, &ctx.active_close_subs] {
+            subscriptions.rcu(|entries| {
+                entries.retain(|instrument_id| {
+                    deferred_ids.contains(instrument_id)
+                        || (!matches_condition(instrument_id)
+                            && !tracked_instruments.contains_key(instrument_id))
+                });
+            });
+        }
+
         for subscriptions in [
             &ctx.active_quote_subs,
             &ctx.active_delta_subs,
             &ctx.active_trade_subs,
-            &ctx.active_status_subs,
-            &ctx.active_close_subs,
         ] {
             subscriptions.rcu(|entries| {
                 entries.retain(|instrument_id| {
@@ -693,6 +809,9 @@ async fn apply_condition_resolution_inner(
     reconciliation_targets.sort_unstable_by(|left, right| left.1.cmp(&right.1));
 
     for (instrument_id, token_id) in reconciliation_targets {
+        if !ctx.ws_open_tokens.contains(&Ustr::from(token_id.as_str())) {
+            continue;
+        }
         crate::data::sync_ws_subscription_with_resolution_and_terminal_async(
             instrument_id,
             token_id,
@@ -749,6 +868,7 @@ mod tests {
             ws_sub_mutex: Arc::new(tokio::sync::Mutex::new(())),
             ws: crate::websocket::pool::PolymarketMarketPoolHandle::test_single_shard(ws_tx, &[]),
             pending_resolutions: Arc::new(DashMap::new()),
+            deferred_resolutions: Arc::new(AtomicMap::new()),
             subscribe_new_markets: false,
             cancellation_token: CancellationToken::new(),
         };
@@ -924,13 +1044,14 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn ignored_auto_load_keeps_manual_resolution_pending_barrier() {
+    async fn deferred_auto_load_keeps_manual_resolution_pending_barrier() {
         let (ctx, mut data_rx) = make_resolve_context();
         let instrument_id = InstrumentId::from("0xCOND-0xYES.POLYMARKET");
         ctx.active_status_subs.insert(instrument_id);
         ctx.active_close_subs.insert(instrument_id);
         let resolution = StrictResolvedMarket {
             condition_id: "0xCOND".to_string(),
+            asset_ids: vec!["0xYES".to_string(), "0xNO".to_string()],
             winning_asset_id: "0xYES".to_string(),
             winning_outcome: "Yes".to_string(),
         };
@@ -941,7 +1062,11 @@ mod tests {
         assert!(futures_util::poll!(&mut manual).is_pending());
 
         drop(reconcile_guard);
-        assert_eq!(auto_load.await, ResolveApplyResult::Ignored);
+        assert_eq!(
+            auto_load.await,
+            ResolveApplyResult::Applied { emitted_closes: 0 }
+        );
+        assert!(ctx.deferred_resolutions.contains_key(&instrument_id));
         assert!(ctx.pending_resolutions.contains_key("0xCOND"));
         assert!(data_rx.try_recv().is_err());
         assert_eq!(
@@ -949,6 +1074,7 @@ mod tests {
             ResolveApplyResult::Applied { emitted_closes: 1 }
         );
 
+        assert!(ctx.deferred_resolutions.is_empty());
         assert!(ctx.pending_resolutions.is_empty());
         assert!(ctx.closed_condition_ids.lock().contains("0xCOND"));
         assert_eq!(std::iter::from_fn(|| data_rx.try_recv().ok()).count(), 2);

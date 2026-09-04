@@ -93,8 +93,8 @@ use crate::{
     },
     providers::PolymarketInstrumentProvider,
     resolve::{
-        PendingResolution, ResolveContext, ResolveWatchEntry, remove_data_resolve_watch_entry,
-        upsert_data_resolve_watch_entry_from_instrument,
+        PendingResolution, ResolveContext, ResolveWatchEntry, StrictResolvedMarket,
+        remove_data_resolve_watch_entry, upsert_data_resolve_watch_entry_from_instrument,
     },
     rtds::{PolymarketRtdsFeed, is_supported_rtds_data_type},
     websocket::{RTDS_STREAMS_ENDPOINT, pool::PolymarketMarketConnectionPool},
@@ -137,6 +137,7 @@ pub struct PolymarketDataClient {
     resolve_poll_watchlist: Arc<AtomicMap<String, ResolveWatchEntry>>,
     resolve_watch_apply_mutex: Arc<Mutex<()>>,
     pending_resolutions: Arc<DashMap<String, PendingResolution>>,
+    deferred_resolutions: Arc<AtomicMap<InstrumentId, StrictResolvedMarket>>,
     pending_snapshot_after_tick_change: Arc<AtomicSet<InstrumentId>>,
     new_market_inflight_keys: Arc<DashMap<String, ()>>,
     new_market_fetch_semaphore: Arc<tokio::sync::Semaphore>,
@@ -237,6 +238,7 @@ impl PolymarketDataClient {
             resolve_poll_watchlist: Arc::new(AtomicMap::new()),
             resolve_watch_apply_mutex: Arc::new(Mutex::new(())),
             pending_resolutions: Arc::new(DashMap::new()),
+            deferred_resolutions: Arc::new(AtomicMap::new()),
             pending_snapshot_after_tick_change: Arc::new(AtomicSet::new()),
             new_market_inflight_keys: Arc::new(DashMap::new()),
             new_market_fetch_semaphore: Arc::new(tokio::sync::Semaphore::new(
@@ -333,6 +335,7 @@ impl PolymarketDataClient {
             ws_sub_mutex: self.ws_sub_mutex.clone(),
             ws: self.ws_client.handle(),
             pending_resolutions: self.pending_resolutions.clone(),
+            deferred_resolutions: self.deferred_resolutions.clone(),
             subscribe_new_markets: self.config.subscribe_new_markets,
             cancellation_token: self.cancellation_token.clone(),
         }
@@ -435,6 +438,9 @@ impl PolymarketDataClient {
         subscriptions.remove(&instrument_id);
         let has_data_subscription = self.active_instrument_status_subs.contains(&instrument_id)
             || self.active_instrument_close_subs.contains(&instrument_id);
+        if !has_data_subscription {
+            self.deferred_resolutions.remove(&instrument_id);
+        }
         remove_data_resolve_watch_entry(
             &self.resolve_poll_watchlist,
             instrument_id,

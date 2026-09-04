@@ -113,6 +113,7 @@ impl PolymarketDataClient {
             resolve_poll_watchlist: self.resolve_poll_watchlist.clone(),
             resolve_watch_apply_mutex: self.resolve_watch_apply_mutex.clone(),
             pending_resolutions: self.pending_resolutions.clone(),
+            deferred_resolutions: self.deferred_resolutions.clone(),
             pending_snapshot_after_tick_change: self.pending_snapshot_after_tick_change.clone(),
             new_market_inflight_keys: self.new_market_inflight_keys.clone(),
             new_market_fetch_semaphore: self.new_market_fetch_semaphore.clone(),
@@ -208,6 +209,7 @@ impl PolymarketDataClient {
             resolve_poll_watchlist: self.resolve_poll_watchlist.clone(),
             resolve_watch_apply_mutex: self.resolve_watch_apply_mutex.clone(),
             pending_resolutions: self.pending_resolutions.clone(),
+            deferred_resolutions: self.deferred_resolutions.clone(),
             pending_snapshot_after_tick_change: self.pending_snapshot_after_tick_change.clone(),
             new_market_inflight_keys: self.new_market_inflight_keys.clone(),
             new_market_fetch_semaphore: self.new_market_fetch_semaphore.clone(),
@@ -331,6 +333,8 @@ impl PolymarketDataClient {
                             &ws_sub_mutex,
                             &ws,
                             subscribe_new_markets,
+                            &resolve_ctx.deferred_resolutions,
+                            &resolve_ctx.apply_mutex,
                         )
                         .await;
 
@@ -396,6 +400,7 @@ impl PolymarketDataClient {
                             &resolve_ctx,
                             &selection.condition_ids,
                             ResolveBatchErrorMode::Continue,
+                            false,
                         )
                         .await;
                     }
@@ -462,6 +467,7 @@ impl PolymarketDataClient {
         update_guard.retire_generation();
         self.resolve_poll_watchlist = std::sync::Arc::new(AtomicMap::new());
         self.pending_resolutions.clear();
+        self.deferred_resolutions.rcu(|entries| entries.clear());
         self.instruments = std::sync::Arc::new(AtomicMap::new());
         self.instrument_update_state =
             std::sync::Arc::new(Mutex::new(InstrumentUpdateState::default()));
@@ -477,6 +483,7 @@ impl PolymarketDataClient {
         self.pending_snapshot_after_tick_change = std::sync::Arc::new(AtomicSet::new());
         self.new_market_inflight_keys = std::sync::Arc::new(DashMap::new());
         self.pending_resolutions = std::sync::Arc::new(DashMap::new());
+        self.deferred_resolutions = std::sync::Arc::new(AtomicMap::new());
         self.ws_open_tokens = std::sync::Arc::new(AtomicSet::new());
 
         self.pending_auto_loads = std::sync::Arc::new(parking_lot::Mutex::new(AHashSet::new()));
@@ -554,6 +561,7 @@ impl PolymarketDataClient {
         }
 
         setup_guard.disarm();
+        self.resume_resolution_subscriptions();
         self.is_connected
             .store(true, std::sync::atomic::Ordering::Relaxed);
         log::info!("Connected Polymarket data client");
@@ -1976,6 +1984,8 @@ mod tests {
                 &client.ws_sub_mutex,
                 &client.ws_client.handle(),
                 client.config.subscribe_new_markets,
+                &client.deferred_resolutions,
+                &client.resolve_watch_apply_mutex,
             )
             .await;
 

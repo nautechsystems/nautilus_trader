@@ -126,6 +126,7 @@ pub(super) fn request_data(client: &PolymarketDataClient, request: RequestCustom
             &resolve_ctx,
             &condition_ids,
             ResolveBatchErrorMode::StopOnFirstError,
+            has_explicit_selector,
         )
         .await;
         summary.fetched_markets = stats.fetched_markets;

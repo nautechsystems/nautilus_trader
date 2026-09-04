@@ -24,9 +24,10 @@ mod watchlist;
 pub(crate) use self::{
     apply::{
         PendingResolution, PendingResolutionGuard, ResolveApplyBatchStats, ResolveApplyResult,
-        ResolveBatchErrorMode, ResolveContext, apply_condition_resolution,
-        apply_condition_resolution_with_assets, apply_watched_condition_resolution,
-        fetch_and_apply_resolutions_by_condition_ids, pause_and_reconcile_resolve_watch_entries,
+        ResolveBatchErrorMode, ResolveContext, admit_data_resolution_instrument,
+        apply_condition_resolution, apply_condition_resolution_with_assets,
+        apply_watched_condition_resolution, fetch_and_apply_resolutions_by_condition_ids,
+        pause_and_reconcile_resolve_watch_entries,
     },
     parsing::{
         StrictResolvedMarket, build_resolved_market_from_clob_market, build_strict_resolved_market,
@@ -39,7 +40,7 @@ pub(crate) use self::{
         ResolveWatchEntry, ResolveWatchSelection, ResolveWatchSelectionMode, TrackedInstrument,
         collect_resolve_watch_selection, instrument_market_context, pause_resolve_watch_entries,
         remove_data_resolve_watch_entry, update_resolve_watchlist_from_position_event_serialized,
-        upsert_data_resolve_watch_entry_from_instrument, upsert_data_resolve_watch_entry_if_active,
+        upsert_data_resolve_watch_entry_from_instrument,
         upsert_resolve_watch_entry_from_instrument,
     },
 };
