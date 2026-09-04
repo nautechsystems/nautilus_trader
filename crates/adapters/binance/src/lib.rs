@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 //! [NautilusTrader](https://nautilustrader.io) adapter for the
-//! [Binance](https://www.binance.com/) cryptocurrency exchange.
+//! [Binance](https://www.binance.com) cryptocurrency exchange.
 //!
 //! The `nautilus-binance` crate provides client bindings (HTTP & WebSocket) and data
 //! models for the official **Binance API**. Live data and
@@ -46,13 +46,9 @@
 //! - `examples`: Enables the crate's example binaries.
 //! - `extension-module`: Builds as a Python extension module.
 //! - `high-precision` (default): Enables
-//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode)
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
 //!   to use 128-bit value types.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-//!
-//! # Documentation
-//!
-//! See <https://docs.rs/nautilus-binance> for the latest API documentation.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

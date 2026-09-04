@@ -13,7 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Plug-in artifact identity and boundary primitives for NautilusTrader.
+//! Plug-in artifact identity and boundary primitives for
+//! [NautilusTrader](https://nautilustrader.io).
 //!
 //! This crate provides the public contract that lets an independently compiled
 //! Rust cdylib identify itself to a Nautilus host. It defines versioned build

@@ -1,17 +1,17 @@
 # nautilus-kraken
 
 [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
-[![Documentation](https://img.shields.io/docsrs/nautilus-kraken)](https://docs.rs/nautilus-kraken/latest/nautilus-kraken/)
+[![Documentation](https://img.shields.io/docsrs/nautilus-kraken)](https://docs.rs/nautilus-kraken/latest/nautilus_kraken/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-kraken.svg)](https://crates.io/crates/nautilus-kraken)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
-[NautilusTrader](https://nautilustrader.io) adapter for the [Kraken](https://www.kraken.com/) exchange.
+[NautilusTrader](https://nautilustrader.io) adapter for the [Kraken](https://www.kraken.com) exchange.
 
 The `nautilus-kraken` crate provides client bindings (HTTP & WebSocket) and data models
 for the official **Kraken API v2**.
 
-The official Kraken API reference can be found at <https://docs.kraken.com/api/>.
+The official Kraken API reference can be found at <https://docs.kraken.com/api/docs/>.
 
 ## NautilusTrader
 
@@ -74,7 +74,7 @@ This crate provides feature flags to control source code inclusion during compil
 - `examples`: Enables the crate's example binaries.
 - `extension-module`: Builds as a Python extension module.
 - `high-precision` (default): Enables
-  [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode)
+  [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
   to use 128-bit value types.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 

@@ -17,6 +17,9 @@
 # 5. Hyphen-split words in table rows (e.g., "configu- ration")
 # 6. Soft hyphens (U+00AD)
 # 7. Table lines ending with a trailing hyphen on a word fragment
+#
+# Documentation site URLs (tracked sources, excluding RELEASES.md):
+# 8. `.html` suffix on a nautilustrader.io/docs URL, which the site does not serve
 
 set -euo pipefail
 
@@ -321,6 +324,25 @@ report_markdown_hits "Soft hyphen (U+00AD)" '\x{00AD}'
 
 # Table lines ending with a trailing hyphen on a word fragment
 report_markdown_hits "Trailing hyphen at end of table line" '^\|.*[a-z]-\s*$'
+
+# =============================================================================
+# Documentation site URL shape
+# =============================================================================
+
+# nautilustrader.io serves docs pages as directory URLs; the `.html` form 404s.
+# RELEASES.md is excluded because its entries record links as they were published, and
+# this hook's own tests because their fixtures carry the dead form on purpose. Hidden
+# paths are scanned so tracked files under .github/ and .pre-commit-hooks/ are covered,
+# which makes excluding .git essential: a commit message naming the dead form lands in
+# .git/COMMIT_EDITMSG and would block the next commit from a path no one can edit.
+while IFS= read -r hit; do
+  [[ -z "$hit" ]] && continue
+  echo -e "${RED}Error:${NC} Dead \`.html\` docs URL in $hit"
+  echo "  nautilustrader.io/docs serves directory URLs, so drop \`.html\`"
+  echo
+  VIOLATIONS=$((VIOLATIONS + 1))
+done < <(rg -n --no-heading --hidden -g '!.git/**' -g '!RELEASES.md' -g '!.pre-commit-hooks/test_*.sh' \
+  'nautilustrader\.io/docs/[^\s)>"]*\.html' . --sort path 2> /dev/null || true)
 
 if [ $VIOLATIONS -gt 0 ]; then
   echo -e "${RED}Found $VIOLATIONS documentation convention violation(s)${NC}"

@@ -1,7 +1,7 @@
 # nautilus-polymarket
 
 [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
-[![Documentation](https://img.shields.io/docsrs/nautilus-polymarket)](https://docs.rs/nautilus-polymarket/latest/nautilus-polymarket/)
+[![Documentation](https://img.shields.io/docsrs/nautilus-polymarket)](https://docs.rs/nautilus-polymarket/latest/nautilus_polymarket/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-polymarket.svg)](https://crates.io/crates/nautilus-polymarket)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
@@ -26,7 +26,7 @@ This crate provides feature flags to control source code inclusion during compil
 - `examples`: Enables the crate's example binaries.
 - `extension-module`: Builds as a Python extension module.
 - `high-precision` (default): Enables
-  [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode)
+  [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
   to use 128-bit value types.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 

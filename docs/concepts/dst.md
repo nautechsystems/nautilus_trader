@@ -39,7 +39,7 @@ explores different interleavings; reusing it selects the same interleaving.
 
 [FoundationDB](https://apple.github.io/foundationdb/testing.html) uses the pattern to test a
 production distributed database. In the Rust ecosystem,
-[madsim](https://github.com/madsim-rs/madsim) intercepts `tokio` primitives to provide a
+[madsim](https://crates.io/crates/madsim) intercepts `tokio` primitives to provide a
 deterministic scheduler.
 
 DST targets concurrency defects such as:
@@ -216,7 +216,7 @@ suitability requires a separate audit before they enter the DST path.
 
 ## Network seed soaks
 
-[Turmoil](https://github.com/tokio-rs/turmoil) simulates the network under a seeded scheduler. The
+[Turmoil](https://crates.io/crates/turmoil) simulates the network under a seeded scheduler. The
 `nautilus-network` transport tests use it to reach link and reconnect orderings outside the madsim
 runtime swap.
 

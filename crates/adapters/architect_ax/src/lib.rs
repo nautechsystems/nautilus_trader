@@ -19,7 +19,7 @@
 //! exchange for perpetual futures on traditional underlying asset classes (FX, rates, metals,
 //! energy, stock indexes). Designed for institutional and professional traders, it combines
 //! innovations from digital asset perpetual exchanges with the safety and risk management of
-//! traditional futures exchanges. Licensed under the [Bermuda Monetary Authority (BMA)](https://www.bma.bm/).
+//! traditional futures exchanges. Licensed under the [Bermuda Monetary Authority (BMA)](https://www.bma.bm).
 //!
 //! The `nautilus-architect-ax` crate provides client bindings (HTTP & WebSocket) and data models
 //! for the official AX Exchange API.
@@ -42,8 +42,7 @@
 //!
 //! # Documentation
 //!
-//! - API reference: <https://docs.architect.exchange/api-reference/>
-//! - Crate docs: <https://docs.rs/nautilus-architect-ax>
+//! - API reference: <https://docs.architect.exchange/api-reference>
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

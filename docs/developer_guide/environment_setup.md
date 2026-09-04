@@ -9,7 +9,7 @@ Use an editor with current Rust and Python language support, such as PyCharm or 
 Source builds and the Rust crates require [Rust](https://www.rust-lang.org)
 ([installation guide](https://www.rust-lang.org/tools/install)).
 
-[Cap'n Proto](https://capnproto.org/) is required for serialization schema compilation. The required
+[Cap'n Proto](https://capnproto.org) is required for serialization schema compilation. The required
 version is specified in `.nautilus-engineering/tools.toml`. Ubuntu's default package is typically
 too old, so you may need to install from source (see below).
 
@@ -332,7 +332,7 @@ python --version
 
 ## Cap'n Proto
 
-[Cap'n Proto](https://capnproto.org/) is required for serialization schema compilation.
+[Cap'n Proto](https://capnproto.org) is required for serialization schema compilation.
 The required version is defined in `.nautilus-engineering/tools.toml`.
 
 Install the correct version for your platform:

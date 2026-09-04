@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
+//! C foreign function interface (FFI) from [cbindgen](https://crates.io/crates/cbindgen).
 //!
 //! All exported functions route through `abort_on_panic` so that any panic inside the
 //! Rust implementation aborts immediately instead of unwinding across the foreign boundary.

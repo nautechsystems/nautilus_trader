@@ -253,7 +253,7 @@ The `--depth 1` flag fetches just the latest commit for a faster, lightweight cl
 
 ### 6. Install Cap'n Proto for development
 
-Install [Cap'n Proto](https://capnproto.org/) if you plan to enable the `capnp` Rust feature,
+Install [Cap'n Proto](https://capnproto.org) if you plan to enable the `capnp` Rust feature,
 regenerate serialization schemas, or work on serialization code. Use the repository script on
 Linux or macOS to install the pinned version from `.nautilus-engineering/tools.toml`:
 

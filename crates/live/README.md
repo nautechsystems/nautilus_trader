@@ -1,7 +1,7 @@
 # nautilus-live
 
 [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
-[![Documentation](https://img.shields.io/docsrs/nautilus-live)](https://docs.rs/nautilus-live/latest/nautilus-live/)
+[![Documentation](https://img.shields.io/docsrs/nautilus-live)](https://docs.rs/nautilus-live/latest/nautilus_live/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-live.svg)](https://crates.io/crates/nautilus-live)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
@@ -37,7 +37,7 @@ This crate provides feature flags to control source code inclusion during compil
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs) and auto-enables `node` and
   `streaming`.
 - `simulation`: Enables deterministic simulation testing with
-  [MadSim](https://github.com/madsim-rs/madsim).
+  [MadSim](https://crates.io/crates/madsim).
 - `streaming`: Enables the `nautilus-persistence` dependency for streaming configuration and
   requires `node`.
 

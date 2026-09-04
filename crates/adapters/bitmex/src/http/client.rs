@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides the HTTP client integration for the [BitMEX](https://bitmex.com) REST API.
+//! Provides the HTTP client integration for the [BitMEX](https://www.bitmex.com) REST API.
 //!
 //! This module defines and implements a [`BitmexHttpClient`] for
 //! sending requests to various BitMEX endpoints. It handles request signing
@@ -132,7 +132,8 @@ pub struct BitmexResponse<T> {
     pub data: Vec<T>,
 }
 
-/// Provides a lower-level HTTP client for connecting to the [BitMEX](https://bitmex.com) REST API.
+/// Provides a lower-level HTTP client for connecting to the
+/// [BitMEX](https://www.bitmex.com) REST API.
 ///
 /// This client wraps the underlying [`HttpClient`] to handle functionality
 /// specific to BitMEX, such as request signing (for authenticated endpoints),
@@ -858,7 +859,7 @@ impl BitmexRawHttpClient {
     }
 }
 
-/// Provides a HTTP client for connecting to the [BitMEX](https://bitmex.com) REST API.
+/// Provides a HTTP client for connecting to the [BitMEX](https://www.bitmex.com) REST API.
 ///
 /// This is the high-level client that wraps the inner client and provides
 /// Nautilus-specific functionality for trading operations.

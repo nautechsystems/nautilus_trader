@@ -2,7 +2,7 @@
 
 [AX Exchange](https://architect.exchange) is a centralized and regulated derivatives exchange for
 traditional underlying asset classes. Operated by Architect Bermuda Ltd. and licensed by the
-[Bermuda Monetary Authority (BMA)](https://www.bma.bm/), AX lists perpetual contracts in production
+[Bermuda Monetary Authority (BMA)](https://www.bma.bm), AX lists perpetual contracts in production
 and also exposes dated futures in its sandbox catalog.
 
 This integration supports live market data ingest and order execution with AX Exchange.

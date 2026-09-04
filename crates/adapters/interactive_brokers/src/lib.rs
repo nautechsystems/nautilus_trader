@@ -40,12 +40,8 @@
 //! - `gateway`: Enables the Dockerized IB Gateway manager via
 //!   [`bollard`](https://crates.io/crates/bollard), including its PyO3 bindings when combined with
 //!   `python`.
-//! - `python`: Enables PyO3 bindings for configs, enums, the historical client, and the instrument
-//!   provider.
-//!
-//! # Documentation
-//!
-//! See <https://docs.rs/nautilus-interactive-brokers> for the latest API documentation.
+//! - `python`: Enables [PyO3](https://pyo3.rs) bindings for configs, enums, the historical
+//!   client, and the instrument provider.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

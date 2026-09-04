@@ -37,9 +37,9 @@
 //! - `defi`: Enables the DeFi (Decentralized Finance) domain model.
 //! - `extension-module`: Builds as a Python extension module.
 //! - `ffi`: Enables the C foreign function interface (FFI) from
-//!   [cbindgen](https://github.com/mozilla/cbindgen).
+//!   [cbindgen](https://crates.io/crates/cbindgen).
 //! - `high-precision`: Enables
-//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode)
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
 //!   to use 128-bit value types.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `python-arrow`: Enables Python bindings together with `PyArrow` `RecordBatch` bridging.

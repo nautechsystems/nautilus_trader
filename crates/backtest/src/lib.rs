@@ -45,9 +45,9 @@
 //! - `examples`: Enables example strategies and the EMA crossover backtest example.
 //! - `extension-module`: Builds as a Python extension module.
 //! - `high-precision`: Enables
-//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode)
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
 //!   to use 128-bit value types.
-//! - `mimalloc`: Uses [mimalloc](https://github.com/microsoft/mimalloc) as the global allocator for
+//! - `mimalloc`: Uses [mimalloc](https://crates.io/crates/mimalloc) as the global allocator for
 //!   bundled Rust examples.
 //! - `plugin`: Provides a compatibility flag without enabling additional code.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).

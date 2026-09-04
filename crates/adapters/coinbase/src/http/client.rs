@@ -541,7 +541,7 @@ impl CoinbaseRawHttpClient {
     ///
     /// # References
     ///
-    /// - <https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/perpetuals/get-fcm-balance-summary>
+    /// - <https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/futures/get-futures-balance-summary>
     pub async fn get_cfm_balance_summary(&self) -> Result<CfmBalanceSummaryResponse> {
         let json = self.get("/cfm/balance_summary").await?;
         serde_json::from_value(json).map_err(Error::Serde)
@@ -551,7 +551,7 @@ impl CoinbaseRawHttpClient {
     ///
     /// # References
     ///
-    /// - <https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/perpetuals/get-fcm-positions>
+    /// - <https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/futures/list-futures-positions>
     pub async fn get_cfm_positions(&self) -> Result<CfmPositionsResponse> {
         let json = self.get("/cfm/positions").await?;
         serde_json::from_value(json).map_err(Error::Serde)
@@ -561,7 +561,7 @@ impl CoinbaseRawHttpClient {
     ///
     /// # References
     ///
-    /// - <https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/perpetuals/get-fcm-position>
+    /// - <https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/futures/get-futures-position>
     pub async fn get_cfm_position(&self, product_id: &str) -> Result<CfmPositionResponse> {
         let json = self.get(&format!("/cfm/positions/{product_id}")).await?;
         serde_json::from_value(json).map_err(Error::Serde)

@@ -37,7 +37,7 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BitmexHttpClient {
-    /// Provides a HTTP client for connecting to the [BitMEX](https://bitmex.com) REST API.
+    /// Provides a HTTP client for connecting to the [BitMEX](https://www.bitmex.com) REST API.
     ///
     /// This is the high-level client that wraps the inner client and provides
     /// Nautilus-specific functionality for trading operations.

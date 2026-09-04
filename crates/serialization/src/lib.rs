@@ -43,11 +43,11 @@
 //! or as part of a Rust only build.
 //!
 //! - `arrow`: Enables Apache Arrow schema definitions and RecordBatch encoding/decoding.
-//! - `capnp`: Enables [Cap'n Proto](https://capnproto.org/) serialization support.
+//! - `capnp`: Enables [Cap'n Proto](https://capnproto.org) serialization support.
 //! - `display`: Enables display-friendly Arrow encoders for market data and requires `arrow`.
 //! - `extension-module`: Builds as a Python extension module.
 //! - `high-precision`: Enables
-//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode)
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
 //!   to use 128-bit value types.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `sbe`: Enables generic SBE (Simple Binary Encoding) decode utilities.

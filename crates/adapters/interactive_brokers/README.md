@@ -1,7 +1,7 @@
 # nautilus-interactive-brokers
 
 [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
-[![Documentation](https://img.shields.io/docsrs/nautilus-interactive-brokers)](https://docs.rs/nautilus-interactive-brokers/latest/nautilus-interactive-brokers/)
+[![Documentation](https://img.shields.io/docsrs/nautilus-interactive-brokers)](https://docs.rs/nautilus-interactive-brokers/latest/nautilus_interactive_brokers/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-interactive-brokers.svg)](https://crates.io/crates/nautilus-interactive-brokers)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
@@ -47,7 +47,7 @@ This crate provides feature flags to control source code inclusion during compil
 - `gateway`: Enables the Dockerized IB Gateway manager via
   [`bollard`](https://crates.io/crates/bollard), including its PyO3 bindings when combined with
   `python`.
-- `python`: Enables PyO3 bindings for configs, enums, the historical client,
+- `python`: Enables [PyO3](https://pyo3.rs) bindings for configs, enums, the historical client,
   and the instrument provider.
 
 ## Default ports

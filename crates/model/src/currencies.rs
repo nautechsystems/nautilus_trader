@@ -18,9 +18,10 @@
 //! Precision and metadata references:
 //! - ISO 4217 Maintenance Agency dataset (<https://github.com/datasets/currency-codes>):
 //!   authoritative alphabetic codes, numeric codes, and minor units for fiat and commodity-backed entries.
-//! - Cardano ledger documentation (<https://docs.cardano.org/native-tokens/understanding-assets>):
+//! - Cardano ledger documentation (<https://developers.cardano.org/docs/native-tokens/>):
 //!   1 ADA = 1,000,000 lovelace, underpinning the six-decimal crypto precision we retain.
-//! - XRPL documentation on drops (<https://xrpl.org/xrp-ledger-tokens.html#drops-and-xrp>):
+//! - XRPL documentation on drops
+//!   (<https://xrpl.org/docs/references/protocol/data-types/currency-formats>):
 //!   1 XRP = 1,000,000 drops, confirming the six-decimal allowance for XRP.
 //! - Tezos protocol reference (<https://tezos.gitlab.io/active/numismatics.html>):
 //!   1 tez = 1,000,000 mutez, informing the six-decimal precision for XTZ.

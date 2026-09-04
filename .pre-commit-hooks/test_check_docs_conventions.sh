@@ -213,6 +213,15 @@ printf '%s\n' \
   '| configu- ration | x |' \
   '| word | frag-' \
   "| soft${soft_hyphen}hyphen | y |" > "$invalid_case/docs/tables.md"
+printf '%s\n' \
+  'See [the guide](https://nautilustrader.io/docs/nightly/integrations/lighter.html#anchor).' > "$invalid_case/docs/links.md"
+# Release notes record links as published, so the same shape must not be reported here.
+printf '%s\n' \
+  '- Added CLI (see [docs](https://nautilustrader.io/docs/nightly/developer_guide/index.html))' > "$invalid_case/RELEASES.md"
+# A commit message naming the dead form must not block the next commit.
+mkdir -p "$invalid_case/.git"
+printf '%s\n' \
+  'Add rule rejecting https://nautilustrader.io/docs/nightly/foo.html URLs' > "$invalid_case/.git/COMMIT_EDITMSG"
 run_hook "$invalid_case"
 if [ "$RUN_STATUS" -ne 1 ]; then
   echo "Expected documentation convention hook to reject invalid feature lists"
@@ -231,7 +240,8 @@ for result in \
   "Possible word split in docs/tables.md:1:| configu- ration | x |" \
   "Trailing hyphen at end of table line in docs/tables.md:2:| word | frag-" \
   "Soft hyphen (U+00AD) in docs/tables.md:3:| soft${soft_hyphen}hyphen | y |" \
-  "Found 10 documentation convention violation(s)"; do
+  "Dead \`.html\` docs URL in ./docs/links.md:1" \
+  "Found 11 documentation convention violation(s)"; do
   if ! rg -Fq "$result" "$invalid_case/output.txt"; then
     echo "Expected documentation convention result not found: $result"
     cat "$invalid_case/output.txt"

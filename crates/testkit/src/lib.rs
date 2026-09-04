@@ -42,7 +42,7 @@
 //!   loading.
 //! - `extension-module`: Builds as a Python extension module.
 //! - `high-precision`: Enables
-//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode)
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
 //!   to use 128-bit value types.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `testers` (default): Enables test actors, strategies, and in-memory cache backing.

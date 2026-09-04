@@ -1,7 +1,7 @@
 # nautilus-architect-ax
 
 [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
-[![Documentation](https://img.shields.io/docsrs/nautilus-architect-ax)](https://docs.rs/nautilus-architect-ax/latest/nautilus-architect-ax/)
+[![Documentation](https://img.shields.io/docsrs/nautilus-architect-ax)](https://docs.rs/nautilus-architect-ax/latest/nautilus_architect_ax/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-architect-ax.svg)](https://crates.io/crates/nautilus-architect-ax)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
@@ -14,7 +14,7 @@
 traditional underlying asset classes. Its production catalog lists perpetual contracts across FX,
 equities, energy ETFs, metals, energy, treasuries, and compute. Its sandbox also exposes dated
 futures. AX is licensed by the
-[Bermuda Monetary Authority (BMA)](https://www.bma.bm/).
+[Bermuda Monetary Authority (BMA)](https://www.bma.bm).
 
 ## NautilusTrader
 
@@ -35,8 +35,8 @@ This crate provides feature flags to control source code inclusion during compil
 ## Documentation
 
 - [Crate docs](https://docs.rs/nautilus-architect-ax)
-- [API reference](https://docs.architect.exchange/api-reference/)
-- [AX Exchange](https://architect.exchange/)
+- [API reference](https://docs.architect.exchange/api-reference)
+- [AX Exchange](https://architect.exchange)
 
 ## Authentication
 

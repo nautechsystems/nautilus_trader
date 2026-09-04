@@ -84,6 +84,7 @@ build/
 dist/
 env/
 .tmp-pre-commit/
+.tmp-doc-links/
 .nautilus-engineering.syncing
 .nautilus-engineering.sync-lock
 .nautilus-engineering.tmp.*

@@ -21,7 +21,7 @@
 //! Deribit uses JSON-RPC 2.0 over both HTTP and WebSocket transports (not REST).
 //! WebSocket is preferred for subscriptions and real-time data.
 //!
-//! The official Deribit API reference can be found at <https://docs.deribit.com/v2/>.
+//! The official Deribit API reference can be found at <https://docs.deribit.com/>.
 //!
 //! # NautilusTrader
 //!
@@ -42,7 +42,7 @@
 //! - `examples`: Enables the crate's example binaries.
 //! - `extension-module`: Builds as a Python extension module.
 //! - `high-precision` (default): Enables
-//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode)
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
 //!   to use 128-bit value types.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 

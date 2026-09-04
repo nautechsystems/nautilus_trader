@@ -34,7 +34,7 @@
 //! - `arrow`: Enables Apache Arrow data support.
 //! - `extension-module`: Builds as a Python extension module.
 //! - `high-precision` (default): Enables
-//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode)
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
 //!   to use 128-bit value types.
 //! - `live` (default): Enables live data functionality, including the `data`, `factories`, and
 //!   `live` modules.
