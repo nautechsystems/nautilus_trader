@@ -58,6 +58,7 @@ make install-tools
 make sync
 source .venv/bin/activate
 
+export UV_PROJECT_ENVIRONMENT="$PWD/.venv"
 export PYO3_PYTHON="$PWD/.venv/bin/python"
 
 if [ "$(uname -s)" = "Linux" ]; then
@@ -187,6 +188,15 @@ make pre-commit
 Make sure the Rust compiler reports **zero errors** -- broken builds slow everyone down.
 
 ### 4. Configure environment variables
+
+The Python project lives in `python/`, so a bare `uv` command creates and uses `python/.venv`
+instead of the repository-root `.venv`. Make targets and the repository's CI scripts set
+`UV_PROJECT_ENVIRONMENT` themselves; set it in your shell on every platform so direct `uv` commands
+agree with them:
+
+```bash
+export UV_PROJECT_ENVIRONMENT="$PWD/.venv"
+```
 
 **Required for Rust/PyO3 (Linux and macOS)**: When using Python installed via `uv` on Linux or
 macOS, set the following environment variables from the repository root after `make sync`:

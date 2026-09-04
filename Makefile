@@ -49,7 +49,7 @@ endif
 # UV_SYNC_FLAGS controls whether uv keeps packages not managed by this project
 # Set UV_SYNC_FLAGS= to make uv prune packages not in python/uv.lock
 UV_SYNC_FLAGS ?= --inexact
-UV_PROJECT_ENVIRONMENT ?= $(CURDIR)/.venv
+UV_PROJECT_ENVIRONMENT ?= $(shell bash scripts/uv-project-environment.bash)
 export UV_PROJECT_ENVIRONMENT
 
 # TARGET_DIR controls where Cargo places build artifacts
@@ -864,6 +864,7 @@ test-scripts:  #-- Run repository script tests
 	$Q bash scripts/ci/test-release-verification-retry.bash
 	$Q bash scripts/ci/test-select-attestation-bundle.bash
 	$Q bash scripts/ci/test-tool-version-scripts.bash
+	$Q bash scripts/ci/test-uv-project-environment.bash
 	$Q bash scripts/ci/test-validate-wheel-upload.bash
 	$Q bash scripts/ci/test-verify-published-registries-crates.bash
 	$Q bash scripts/test-check-cargo-cooldown.bash

@@ -284,6 +284,14 @@ Cap'n Proto is a development dependency. It is not required when installing pre-
 
 ### 7. Set environment variables
 
+The Python project lives in `python/`, so a bare `uv` command creates and uses `python/.venv`
+instead of the repository-root `.venv`. Set this on every platform so direct `uv` commands
+agree with the Make targets, which set it themselves:
+
+```bash
+export UV_PROJECT_ENVIRONMENT="$PWD/.venv"
+```
+
 Set environment variables for PyO3 compilation (Linux and macOS only). Run these commands from
 the repository root after `make sync`:
 
