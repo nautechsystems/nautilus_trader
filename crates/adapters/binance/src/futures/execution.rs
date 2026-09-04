@@ -538,6 +538,11 @@ impl BinanceFuturesExecutionClient {
             .as_ref()
             .and_then(|p| p.get_bool(PARAMS_CLOSE_POSITION))
             .unwrap_or(false);
+        let rpi = cmd
+            .params
+            .as_ref()
+            .and_then(|p| p.get_bool("rpi"))
+            .unwrap_or(false);
 
         // Register identity for tracked/external dispatch routing
         self.dispatch_state.order_identities.insert(
@@ -582,7 +587,9 @@ impl BinanceFuturesExecutionClient {
             let symbol = format_binance_symbol(&instrument_id);
             let binance_side = BinanceSide::try_from(order_side)?;
             let binance_order_type = order_type_to_binance_futures(order_type)?;
-            let binance_tif = if post_only {
+            let binance_tif = if rpi {
+                BinanceTimeInForce::Rpi
+            } else if post_only {
                 BinanceTimeInForce::Gtx
             } else {
                 BinanceTimeInForce::try_from(time_in_force)?
@@ -691,6 +698,7 @@ impl BinanceFuturesExecutionClient {
                         trigger_price,
                         reduce_only,
                         post_only,
+                        rpi,
                         position_side,
                         price_match,
                         good_till_date,
@@ -3657,6 +3665,24 @@ fn validate_order(
         .as_ref()
         .and_then(|params| params.get_bool(PARAMS_CLOSE_POSITION))
         .unwrap_or(false);
+
+    let rpi = cmd
+        .params
+        .as_ref()
+        .and_then(|params| params.get_bool("rpi"))
+        .unwrap_or(false);
+
+    if rpi {
+        anyhow::ensure!(
+            client.product_type == BinanceProductType::UsdM,
+            "rpi is only supported for Binance USD-M Futures"
+        );
+        anyhow::ensure!(
+            order.order_type() == OrderType::Limit,
+            "rpi is only supported for LIMIT orders"
+        );
+        anyhow::ensure!(order.is_post_only(), "rpi requires post_only=true");
+    }
 
     if close_position {
         let order_type = order.order_type();
