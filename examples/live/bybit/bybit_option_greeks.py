@@ -23,6 +23,9 @@ from the instrument cache, and logs every Greeks update. No orders are placed.
 
 from __future__ import annotations
 
+from typing import Any
+from typing import Self
+
 from nautilus_trader.adapters.bybit import BYBIT
 from nautilus_trader.adapters.bybit import BybitDataClientConfig
 from nautilus_trader.adapters.bybit import BybitDataClientFactory
@@ -50,8 +53,18 @@ class OptionGreeksTesterConfig(DataActorConfig):
     Collect option greeks tester config tests.
     """
 
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+        """
+        Create a new instance.
+        """
+        # `actor_id` shares the base field name but widens the type to accept a string,
+        # so keep it from the base constructor, which validates it as an `ActorId`
+        kwargs.pop("actor_id", None)
+        return super().__new__(cls, *args, **kwargs)
+
     def __init__(
         self,
+        *,
         underlying: str = "BTC",
         max_subscriptions: int = 10,
         actor_id: ActorId | str | None = None,

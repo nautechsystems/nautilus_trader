@@ -24,6 +24,9 @@ Black-Scholes, and combined convention shapes. No orders are placed.
 
 from __future__ import annotations
 
+from typing import Any
+from typing import Self
+
 from nautilus_trader.adapters.okx import OKX
 from nautilus_trader.adapters.okx import OKXDataClientConfig
 from nautilus_trader.adapters.okx import OKXDataClientFactory
@@ -53,8 +56,18 @@ class OptionGreeksTesterConfig(DataActorConfig):
     Collect option greeks tester config tests.
     """
 
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+        """
+        Create a new instance.
+        """
+        # `actor_id` shares the base field name but widens the type to accept a string,
+        # so keep it from the base constructor, which validates it as an `ActorId`
+        kwargs.pop("actor_id", None)
+        return super().__new__(cls, *args, **kwargs)
+
     def __init__(
         self,
+        *,
         underlying: str = "BTC",
         max_subscriptions: int = 10,
         actor_id: ActorId | str | None = None,
