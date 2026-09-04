@@ -1194,7 +1194,7 @@ mod tests {
             todo!()
         }
         fn calculate_balance_locked(
-            &mut self,
+            &self,
             _: &InstrumentAny,
             _: OrderSide,
             _: Quantity,

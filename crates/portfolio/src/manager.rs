@@ -476,11 +476,19 @@ impl AccountsManager {
             return None;
         }
 
+        let balances_before = account.base.balances.clone();
+        let locks_before = account.balances_locked.clone();
+
         // Clear existing locks before applying new ones to remove stale currency entries
         account.clear_balance_locked(instrument.id());
 
         for (_, balance_locked) in total_locked {
-            account.update_balance_locked(instrument.id(), balance_locked);
+            if let Err(e) = account.update_balance_locked(instrument.id(), balance_locked) {
+                log::error!("Cannot update balance locked: {e}");
+                account.base.balances = balances_before;
+                account.balances_locked = locks_before;
+                return None;
+            }
             log::info!("{} balance_locked={balance_locked}", instrument.id());
         }
 
@@ -912,10 +920,18 @@ impl AccountsManager {
             return None;
         }
 
+        let balances_before = account.base.balances.clone();
+        let locks_before = account.balances_locked.clone();
+
         account.clear_balance_locked(instrument.id());
 
         for (_, balance_locked) in total_locked {
-            account.update_balance_locked(instrument.id(), balance_locked);
+            if let Err(e) = account.update_balance_locked(instrument.id(), balance_locked) {
+                log::error!("Cannot update betting balance locked: {e}");
+                account.base.balances = balances_before;
+                account.balances_locked = locks_before;
+                return None;
+            }
             log::info!("{} balance_locked={balance_locked}", instrument.id());
         }
 
@@ -1614,7 +1630,8 @@ mod tests {
         let usd = Currency::USD();
         let mut instrument = audusd_sim();
         let instrument_id = instrument.id();
-        cash.update_balance_locked(instrument_id, Money::from("10 USD"));
+        cash.update_balance_locked(instrument_id, Money::from("10 USD"))
+            .unwrap();
         let balances_before = cash.base.balances.clone();
         let locks_before = cash.balances_locked.clone();
         let events_before = cash.base.events.clone();
@@ -1659,6 +1676,132 @@ mod tests {
         assert_eq!(cash.base.balances, balances_before);
         assert_eq!(cash.balances_locked, locks_before);
         assert_eq!(cash.base.events, events_before);
+    }
+
+    // A stale reservation recorded under another instrument passes `reservation_precisions_match`,
+    // which only inspects incoming reservations, then fails inside `balance_from_locks`.
+    #[rstest]
+    fn test_update_orders_cash_error_restores_locks() {
+        let mut cash = multi_currency_cash_account(false);
+        let instrument = audusd_sim();
+        let instrument_id = instrument.id();
+        cash.update_balance_locked(instrument_id, Money::from("10 USD"))
+            .unwrap();
+        cash.balances_locked.insert(
+            (InstrumentId::from("EURUSD.SIM"), Currency::USD()),
+            Money::from("-1 USD"),
+        );
+        let balances_before = cash.base.balances.clone();
+        let locks_before = cash.balances_locked.clone();
+        let events_before = cash.base.events.clone();
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .price(Price::from("0.75"))
+            .build();
+        order
+            .apply(OrderEventAny::Submitted(order_submitted_for(&order)))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Accepted(order_accepted_for(
+                &order,
+                VenueOrderId::new("1"),
+            )))
+            .unwrap();
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let manager = AccountsManager::new(clock, cache);
+        let mut account = AccountAny::Cash(cash);
+
+        let result = manager.update_orders_in_place(
+            &mut account,
+            &InstrumentAny::CurrencyPair(instrument),
+            &[&order],
+            UnixNanos::default(),
+        );
+
+        assert_eq!(result, None);
+        let AccountAny::Cash(cash) = account else {
+            panic!("Expected CashAccount")
+        };
+        assert_eq!(cash.base.balances, balances_before);
+        assert_eq!(cash.balances_locked, locks_before);
+        assert_eq!(cash.base.events, events_before);
+    }
+
+    #[rstest]
+    fn test_update_orders_betting_error_restores_locks() {
+        let gbp = Currency::GBP();
+        let account_state = AccountState::new(
+            AccountId::new("BETTING-001"),
+            AccountType::Betting,
+            vec![AccountBalance::new(
+                Money::from("1000 GBP"),
+                Money::zero(gbp),
+                Money::from("1000 GBP"),
+            )],
+            Vec::new(),
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+        let mut betting_account = BettingAccount::new(account_state, true);
+        let instrument = betting();
+        let instrument_id = instrument.id();
+        betting_account
+            .update_balance_locked(instrument_id, Money::from("100 GBP"))
+            .unwrap();
+        betting_account.balances_locked.insert(
+            (
+                InstrumentId::from("BETFAIR-1.9999999-99999999-0.0.NONE"),
+                gbp,
+            ),
+            Money::from("-1 GBP"),
+        );
+        let balances_before = betting_account.base.balances.clone();
+        let locks_before = betting_account.balances_locked.clone();
+        let events_before = betting_account.base.events.clone();
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("50"))
+            .price(Price::from("2.0"))
+            .build();
+        order
+            .apply(OrderEventAny::Submitted(order_submitted_for_account(
+                &order,
+                AccountId::new("BETTING-001"),
+            )))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Accepted(order_accepted_for_account(
+                &order,
+                VenueOrderId::new("1"),
+                AccountId::new("BETTING-001"),
+            )))
+            .unwrap();
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let manager = AccountsManager::new(clock, cache);
+        let mut account = AccountAny::Betting(betting_account);
+
+        let result = manager.update_orders_in_place(
+            &mut account,
+            &InstrumentAny::Betting(instrument),
+            &[&order],
+            UnixNanos::default(),
+        );
+
+        assert_eq!(result, None);
+        let AccountAny::Betting(betting_account) = account else {
+            panic!("Expected BettingAccount")
+        };
+        assert_eq!(betting_account.base.balances, balances_before);
+        assert_eq!(betting_account.balances_locked, locks_before);
+        assert_eq!(betting_account.base.events, events_before);
     }
 
     #[rstest]
@@ -1780,7 +1923,9 @@ mod tests {
         let mut betting_account = BettingAccount::new(account_state, true);
         let mut instrument = betting();
         let instrument_id = instrument.id();
-        betting_account.update_balance_locked(instrument_id, Money::from("100 GBP"));
+        betting_account
+            .update_balance_locked(instrument_id, Money::from("100 GBP"))
+            .unwrap();
         let balances_before = betting_account.base.balances.clone();
         let locks_before = betting_account.balances_locked.clone();
         let events_before = betting_account.base.events.clone();
