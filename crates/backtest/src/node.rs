@@ -456,7 +456,6 @@ fn merge_streams<I: Iterator<Item = anyhow::Result<Data>>>(
                         next = Some((i, ts_init));
                     }
                 }
-                // A failed stream ends the merge rather than reading as exhaustion
                 Some(Err(_)) => return stream.next(),
                 None => {}
             }
