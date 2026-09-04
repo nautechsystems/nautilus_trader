@@ -94,9 +94,9 @@ def _python_sources(path: Path) -> list[str]:
     Return the Python sources to check for the documentation file at `path`.
     """
     if path.suffix == ".py":
-        return [path.read_text()]
+        return [path.read_text(encoding="utf-8")]
 
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     blocks = _PYTHON_BLOCK.findall(text)
 
     # A fence the block pattern cannot read would skip its imports silently

@@ -65,7 +65,7 @@ def parse_log(path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     bars: list[dict] = []
     fills: list[dict] = []
 
-    for raw in path.read_text().splitlines():
+    for raw in path.read_text(encoding="utf-8").splitlines():
         line = ANSI.sub("", raw)
         m = BAR.search(line)
         if m:

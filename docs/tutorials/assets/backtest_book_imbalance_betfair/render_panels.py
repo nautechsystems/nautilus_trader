@@ -59,7 +59,7 @@ def parse_log(path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     batches: list[dict] = []
     summary: list[dict] = []
 
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         line = ANSI.sub("", line)
         m = BATCH.search(line)
         if m:

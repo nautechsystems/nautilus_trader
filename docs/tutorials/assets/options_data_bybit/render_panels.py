@@ -70,7 +70,7 @@ def parse_greeks(path: Path) -> pd.DataFrame:
 
     if not path.exists():
         return pd.DataFrame()
-    for raw in path.read_text().splitlines():
+    for raw in path.read_text(encoding="utf-8").splitlines():
         line = ANSI.sub("", raw)
         m = GREEKS.search(line)
         if m:
@@ -95,7 +95,7 @@ def parse_chain(path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     current_atm = None
     current_series = None
 
-    for raw in path.read_text().splitlines():
+    for raw in path.read_text(encoding="utf-8").splitlines():
         line = ANSI.sub("", raw)
         m = CHAIN.search(line)
         if m:

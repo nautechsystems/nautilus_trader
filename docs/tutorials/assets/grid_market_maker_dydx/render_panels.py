@@ -63,7 +63,7 @@ def parse_log(path: Path) -> object:
     accepts: dict[str, pd.Timestamp] = {}
     cancels: dict[str, pd.Timestamp] = {}
 
-    for raw in path.read_text().splitlines():
+    for raw in path.read_text(encoding="utf-8").splitlines():
         line = ANSI.sub("", raw)
         m = REQUOTE.search(line)
         if m:
