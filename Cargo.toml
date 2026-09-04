@@ -54,8 +54,6 @@ edition = "2024"
 rust-version = "1.98.0"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-only"
-readme = "README.md"
-description = "Production-grade Rust-native trading engine with deterministic event-driven architecture"
 categories = ["finance", "simulation", "asynchronous"]
 keywords = [
   "finance",
@@ -71,7 +69,6 @@ homepage = "https://nautilustrader.io"
 [workspace.dependencies]
 nautilus-analysis = { path = "crates/analysis", version = "0.64.0" }
 nautilus-backtest = { path = "crates/backtest", version = "0.64.0" }
-nautilus-cli = { path = "crates/cli", version = "0.64.0" }
 nautilus-common = { path = "crates/common", version = "0.64.0" }
 nautilus-core = { path = "crates/core", version = "0.64.0" }
 nautilus-cryptography = { path = "crates/cryptography", version = "0.64.0" }
@@ -85,7 +82,6 @@ nautilus-network = { path = "crates/network", version = "0.64.0" }
 nautilus-persistence = { path = "crates/persistence", version = "0.64.0" }
 nautilus-persistence-macros = { path = "crates/persistence/macros", version = "0.64.0" }
 nautilus-portfolio = { path = "crates/portfolio", version = "0.64.0" }
-nautilus-pyo3 = { path = "crates/pyo3", version = "0.64.0" }
 nautilus-risk = { path = "crates/risk", version = "0.64.0" }
 nautilus-serialization = { path = "crates/serialization", version = "0.64.0" }
 nautilus-system = { path = "crates/system", version = "0.64.0" }

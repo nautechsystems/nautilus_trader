@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-tardis"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -132,9 +131,9 @@ required-features = ["replay"]
 doc = false
 test = false
 
-# Run with `cargo run --bin stream_deltas_bench --profile bench`
+# Run with `cargo run --bin stream-deltas-bench --profile bench`
 [[bin]]
-name = "stream_deltas_bench"
+name = "stream-deltas-bench"
 path = "bin/stream_deltas_bench.rs"
 doc = false
 test = false

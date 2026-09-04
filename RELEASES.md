@@ -25,6 +25,9 @@ Released on TBD (UTC).
   no trades, where they receive an empty list; `Win Rate` and its peers now report NaN for such
   runs rather than being absent
 - Renamed blockchain log parsing modules to `hypersync::log` and `rpc::log`; update Rust imports
+- Renamed Cargo binary targets to kebab-case, including `to_json` to `to-json`, `to_parquet` to
+  `to-parquet`, and `node_wallet` to `node-wallet`; update any `cargo run --bin` invocation to
+  the new name
 - Changed `TradingState` to `ACTIVE=1`, `REDUCING=2`, and `HALTED=3`; update numeric and Cap'n Proto consumers
 - Changed `REDUCING` to allow only eligible reduce-only submissions, cancellations, and queries
 - Changed execution clients to reject `reduce_only` without an enforcing venue instruction (#4761), thanks @folknor
@@ -47,6 +50,8 @@ Released on TBD (UTC).
 - Added Cap'n Proto validation for decoded identifiers, currencies, balances, and decimals
 - Added serde support for `BetSide` and `OtoTriggerMode`
 - Added crate feature documentation checks for README and Rustdoc lists
+- Added Cargo convention checks for redundant README keys, uninherited workspace fields,
+  and binary target naming
 - Added acceptance tests running the documentation guides and resolving their documented imports
 - Improved Betfair execution client test synchronization (#4866), thanks @folknor
 - Pinned docs.rs checks to a compatible nightly toolchain
@@ -55,6 +60,7 @@ Released on TBD (UTC).
 - Refined bar aggregation internals and shared aggregator state
 - Refined core crate coverage, FFI safety, and collection conversion
 - Refined example and test config subclasses to keyword-only fields without a `__new__` override
+- Standardized crate manifests with inferred README paths and removed unused workspace fields
 - Standardized crate feature documentation across READMEs and Rustdoc
 - Standardized code and documentation terminology with domain-specific names
 - Updated Makefile help output to match the startup log header
@@ -73,6 +79,7 @@ Released on TBD (UTC).
 - Changed install commands to require `--pre` for the v2 wheel (#4919), thanks for reporting @pcoughlin
 - Changed the getting started and tutorial guides to run on bundled sample data without a download
 - Simplified documented `StrategyConfig` and `DataActorConfig` subclassing to keyword-only fields
+- Updated persistence catalog migration commands to kebab-case binary names
 - Fixed the actor configuration example rejecting a positional argument
 - Corrected documented enum values for instrument classes, wallet accounts, position entry sides,
   and Polymarket close types

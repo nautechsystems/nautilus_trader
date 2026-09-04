@@ -17,7 +17,7 @@
 //! Routes a Nautilus SELL market order through the real factory-registered execution client,
 //! risk engine, execution engine, and node wiring to a finalized Arbitrum Uniswap V3
 //! exact-input swap, then restarts a second node to prove reconnect safety. The operator
-//! wrap and approve setup uses the direct client construction shared with `node_wallet`,
+//! wrap and approve setup uses the direct client construction shared with `node-wallet`,
 //! because those operations precede node routing. The suite is gated behind
 //! `BLOCKCHAIN_FORK_TESTS=1`, requires `BLOCKCHAIN_FORK_RPC_URL`, and never runs in
 //! default CI.

@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-persistence"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -103,14 +102,14 @@ path = "benches/persistence.rs"
 harness = false
 
 [[bin]]
-name = "to_json"
+name = "to-json"
 path = "bin/to_json.rs"
 required-features = ["python"]
 doc = false
 test = false
 
 [[bin]]
-name = "to_parquet"
+name = "to-parquet"
 path = "bin/to_parquet.rs"
 required-features = ["python"]
 doc = false

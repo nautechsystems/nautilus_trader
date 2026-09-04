@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-serialization"
-readme = "README.md"
 build = "build.rs"
 include = [
   "src/**/*",

@@ -13,6 +13,10 @@
 # 9. Adapter dependencies section should only contain deps used exclusively by adapters
 # 10. Every name in [package.metadata.cargo-machete] ignored must be a declared dependency
 # 11. Adapter crates must obtain libfuzzer-sys through nautilus-live
+# 12. Every [workspace] member must resolve to a real manifest
+# 13. Member [package] sections must omit the redundant readme key
+# 14. All [workspace.package] fields must be inherited by at least one workspace member
+# 15. [[bin]] target names must be kebab-case
 #
 # Dependency groups are typically organized as:
 # - Internal nautilus-* dependencies
@@ -42,6 +46,54 @@ VIOLATIONS=0
 # package-shape and lints checks below.
 is_cargo_fuzz_crate() {
   grep -qE '^[[:space:]]*cargo-fuzz[[:space:]]*=[[:space:]]*true' "$1" 2> /dev/null
+}
+
+# Manifest paths of the root workspace members. Checks that must cover exactly the
+# workspace iterate this instead of globbing a directory tree, which would reach
+# vendored `patches/` code and standalone `cargo-fuzz` workspaces while missing
+# members outside `crates/`.
+workspace_member_manifests() {
+  awk '
+  function emit(chunk,   count, parts, i, entry) {
+    count = split(chunk, parts, ",")
+    for (i = 1; i <= count; i++) {
+      entry = parts[i]
+      gsub(/"/, "", entry)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", entry)
+      if (entry != "" && entry !~ /^#/) print entry "/Cargo.toml"
+    }
+  }
+
+  # Only the root [workspace] table declares members; [workspace.metadata.*] may
+  # legitimately carry its own members key
+  /^\[/ {
+    in_workspace = ($0 ~ /^\[workspace\]/ && $0 !~ /^\[workspace\./)
+    in_members = 0
+    next
+  }
+
+  # Handles both the single-line and the multi-line members array
+  in_workspace && /^members[[:space:]]*=[[:space:]]*\[/ {
+    line = $0
+    sub(/^members[[:space:]]*=[[:space:]]*\[/, "", line)
+    if (line ~ /\]/) {
+      sub(/\].*$/, "", line)
+    } else {
+      in_members = 1
+    }
+    emit(line)
+    next
+  }
+
+  in_workspace && in_members {
+    line = $0
+    if (line ~ /\]/) {
+      sub(/\].*$/, "", line)
+      in_members = 0
+    }
+    emit(line)
+  }
+  ' Cargo.toml
 }
 
 # Check 1: Dependency ordering within groups
@@ -230,7 +282,7 @@ if [[ -n "$doc_violations" ]]; then
 fi
 
 # Check 5: [package] section field ordering
-# Required order: name, readme, version.workspace, edition.workspace, rust-version.workspace,
+# Required order: name, version.workspace, edition.workspace, rust-version.workspace,
 #                 authors.workspace, license.workspace, description, categories.workspace,
 #                 keywords.workspace, documentation.workspace, repository.workspace, homepage.workspace
 # Optional fields (publish, build, include) can appear after homepage.workspace
@@ -243,18 +295,17 @@ package_violations=$(rg --files -g "Cargo.toml" --glob "!target/*" crates/ 2> /d
   BEGIN {
     # Define expected field order
     field_order["name"] = 1
-    field_order["readme"] = 2
-    field_order["version.workspace"] = 3
-    field_order["edition.workspace"] = 4
-    field_order["rust-version.workspace"] = 5
-    field_order["authors.workspace"] = 6
-    field_order["license.workspace"] = 7
-    field_order["description"] = 8
-    field_order["categories.workspace"] = 9
-    field_order["keywords.workspace"] = 10
-    field_order["documentation.workspace"] = 11
-    field_order["repository.workspace"] = 12
-    field_order["homepage.workspace"] = 13
+    field_order["version.workspace"] = 2
+    field_order["edition.workspace"] = 3
+    field_order["rust-version.workspace"] = 4
+    field_order["authors.workspace"] = 5
+    field_order["license.workspace"] = 6
+    field_order["description"] = 7
+    field_order["categories.workspace"] = 8
+    field_order["keywords.workspace"] = 9
+    field_order["documentation.workspace"] = 10
+    field_order["repository.workspace"] = 11
+    field_order["homepage.workspace"] = 12
 
     # Required fields
     required["name"] = 1
@@ -370,9 +421,6 @@ if [[ -f "Cargo.toml" ]]; then
 
     # Skip dev tools (defined for CI, not actual code dependencies)
     if (dep ~ /^cargo-/ || dep == "lychee") next
-
-    # Skip top-level workspace members (not dependencies of other crates)
-    if (dep == "nautilus-backtest" || dep == "nautilus-cli" || dep == "nautilus-pyo3") next
 
     print dep
   }
@@ -596,6 +644,124 @@ if [[ -n "$adapter_libfuzzer_violations" ]]; then
   VIOLATIONS=$((VIOLATIONS + $(echo "$adapter_libfuzzer_violations" | grep -c . || true)))
 fi
 
+# Check 12: Every [workspace] member must resolve to a real manifest
+# The member-scoped checks below iterate this list, so an entry that does not resolve
+# (a Cargo glob member, a typo, a deleted crate) would silently turn them into no-ops.
+member_manifests=""
+if [[ -f "Cargo.toml" ]]; then
+  member_manifests=$(workspace_member_manifests)
+fi
+
+# Read line by line: unquoted word splitting would let bash expand a glob member
+# into a real path and hide the very entry this check exists to reject.
+unresolved_members=$(printf '%s\n' "$member_manifests" | while read -r manifest; do
+  if [[ -n "$manifest" && ! -f "$manifest" ]]; then
+    echo "  Cargo.toml: [workspace] member manifest '$manifest' does not exist"
+  fi
+done) || true
+
+if [[ -n "$unresolved_members" ]]; then
+  echo -e "${RED}Unresolvable workspace members:${NC}"
+  echo "$unresolved_members"
+  echo -e "${YELLOW}This hook resolves literal member paths, not Cargo glob members${NC}"
+  echo
+  VIOLATIONS=$((VIOLATIONS + $(echo "$unresolved_members" | wc -l)))
+fi
+
+# Drop only the entries that did not resolve, so one bad entry does not stop the
+# checks below from covering every member that did
+member_manifests=$(printf '%s\n' "$member_manifests" | while read -r manifest; do
+  if [[ -n "$manifest" && -f "$manifest" ]]; then
+    echo "$manifest"
+  fi
+done) || true
+
+if [[ -n "$member_manifests" ]]; then
+  # Check 13: Member [package] sections must omit the redundant readme key
+  redundant_readme_violations=$(printf '%s\n' "$member_manifests" | while read -r file; do
+    awk '
+    /^\[package\]/ { in_package = 1; next }
+    /^\[/ { in_package = 0 }
+
+    in_package && /^readme[[:space:]]*=[[:space:]]*"README\.md"/ {
+      printf "  %s:%d redundant readme key\n", FILENAME, NR
+    }
+    ' "$file"
+  done) || true
+
+  if [[ -n "$redundant_readme_violations" ]]; then
+    echo -e "${RED}Redundant readme keys:${NC}"
+    echo "$redundant_readme_violations"
+    echo -e "${YELLOW}Cargo infers README.md next to the manifest${NC}"
+    echo
+    VIOLATIONS=$((VIOLATIONS + $(echo "$redundant_readme_violations" | wc -l)))
+  fi
+
+  # Check 14: Every [workspace.package] field must be inherited by at least one member
+  uninherited_workspace_fields=$(awk '
+  BEGIN { in_ws_pkg = 0 }
+
+  /^\[workspace\.package\]/ { in_ws_pkg = 1; next }
+  /^\[/ && !/^\[workspace\.package\]/ { in_ws_pkg = 0 }
+
+  # Match field definitions, skipping continuation lines of multi-line arrays
+  in_ws_pkg && /^[a-zA-Z][a-zA-Z0-9_-]*[[:space:]]*=/ {
+    match($0, /^[a-zA-Z][a-zA-Z0-9_-]*/)
+    print substr($0, RSTART, RLENGTH)
+  }
+  ' Cargo.toml | while read -r field; do
+    # Only a [package] entry inherits the field; the same dotted key under
+    # [dependencies] names a crate (for example `dashmap.workspace = true`).
+    # shellcheck disable=SC2086  # member paths carry no spaces
+    if ! awk -v field="$field" '
+    FNR == 1 { in_package = 0 }
+
+    /^\[package\]/ { in_package = 1; next }
+    /^\[/ { in_package = 0 }
+
+    in_package && $0 ~ ("^" field "\\.workspace[[:space:]]*=") { found = 1; exit }
+
+    END { exit(found ? 0 : 1) }
+    ' $member_manifests 2> /dev/null; then
+      echo "  Cargo.toml: [workspace.package] '$field' is not inherited by any workspace member"
+    fi
+  done) || true
+
+  if [[ -n "$uninherited_workspace_fields" ]]; then
+    echo -e "${RED}Uninherited workspace package fields:${NC}"
+    echo "$uninherited_workspace_fields"
+    echo
+    VIOLATIONS=$((VIOLATIONS + $(echo "$uninherited_workspace_fields" | wc -l)))
+  fi
+
+  # Check 15: [[bin]] target names must be kebab-case
+  bin_name_violations=$(printf '%s\n' "$member_manifests" | while read -r file; do
+    awk '
+    /^\[\[bin\]\]/ { in_bin = 1; next }
+
+    in_bin && /^name[[:space:]]*=/ {
+      name = $0
+      sub(/^name[[:space:]]*=[[:space:]]*"/, "", name)
+      sub(/".*$/, "", name)
+      if (name !~ /^[a-z0-9]+(-[a-z0-9]+)*$/) {
+        printf "  %s:%d [[bin]] name \047%s\047 is not kebab-case\n", FILENAME, NR, name
+      }
+      in_bin = 0
+      next
+    }
+
+    in_bin && /^\[/ { in_bin = 0 }
+    ' "$file"
+  done) || true
+
+  if [[ -n "$bin_name_violations" ]]; then
+    echo -e "${RED}Non kebab-case [[bin]] names:${NC}"
+    echo "$bin_name_violations"
+    echo
+    VIOLATIONS=$((VIOLATIONS + $(echo "$bin_name_violations" | wc -l)))
+  fi
+fi
+
 if [[ $VIOLATIONS -gt 0 ]]; then
   echo -e "${RED}Found $VIOLATIONS Cargo.toml convention violation(s)${NC}"
   echo
@@ -607,7 +773,7 @@ if [[ $VIOLATIONS -gt 0 ]]; then
   echo "  - Add [lints] workspace = true after [package] for all crates"
   echo "  - Add doc = false to all [[bin]] and [[example]] sections"
   echo "  - Add test = false to all [[bin]] sections"
-  echo "  - [package] fields must be in order: name, readme, version.workspace, edition.workspace,"
+  echo "  - [package] fields must be in order: name, version.workspace, edition.workspace,"
   echo "    rust-version.workspace, authors.workspace, license.workspace, description,"
   echo "    categories.workspace, keywords.workspace, documentation.workspace, repository.workspace,"
   echo "    homepage.workspace, then optional fields (publish, build, include)"
@@ -616,6 +782,10 @@ if [[ $VIOLATIONS -gt 0 ]]; then
   echo "  - Ensure related dependencies have matching versions (e.g., capnp and capnpc)"
   echo "  - Drop [package.metadata.cargo-machete] ignored entries whose dependency was removed"
   echo "  - Obtain adapter libfuzzer-sys support through nautilus-live/fuzz"
+  echo "  - Give every [workspace] member a literal manifest path, not a Cargo glob"
+  echo "  - Drop readme = \"README.md\"; Cargo infers it next to the manifest"
+  echo "  - Remove [workspace.package] fields that no workspace member inherits"
+  echo "  - Name [[bin]] targets in kebab-case"
   exit 1
 fi
 

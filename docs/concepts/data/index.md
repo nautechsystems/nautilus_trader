@@ -1002,9 +1002,9 @@ Use the migration utilities when changing
 
 The `nautilus_persistence` crate provides two utilities:
 
-#### `to_json`
+#### `to-json`
 
-`to_json` converts Parquet files to JSON and preserves their metadata:
+`to-json` converts Parquet files to JSON and preserves their metadata:
 
 - Creates two files:
 
@@ -1018,9 +1018,9 @@ The `nautilus_persistence` crate provides two utilities:
   - `TradeTick`: File name contains `trades` or `trade_tick`.
   - `Bar`: File name contains `bars`.
 
-#### `to_parquet`
+#### `to-parquet`
 
-`to_parquet` converts JSON back to Parquet:
+`to-parquet` converts JSON back to Parquet:
 
 - Reads both the data JSON and metadata JSON files.
 - Preserves row group sizes from original metadata.
@@ -1037,14 +1037,14 @@ Convert a standard-precision schema to a high-precision schema:
 
 :::note
 For catalogs that used the `Int64` and `UInt64` Arrow data types for prices and sizes, build the
-initial `to_json` conversion from
+initial `to-json` conversion from
 [commit `e284162`](https://github.com/nautechsystems/nautilus_trader/commit/e284162cf27a3222115aeb5d10d599c8cf09cf50).
 :::
 
 1. Convert standard-precision Parquet to JSON:
 
    ```bash
-   cargo run --features python --bin to_json -- trades.parquet
+   cargo run --features python --bin to-json -- trades.parquet
    ```
 
    This creates `trades.json` and `trades.metadata.json`.
@@ -1052,7 +1052,7 @@ initial `to_json` conversion from
 1. Convert the JSON to high-precision Parquet:
 
    ```bash
-   cargo run --features "python high-precision" --bin to_parquet -- trades.json
+   cargo run --features "python high-precision" --bin to-parquet -- trades.json
    ```
 
    This creates `trades.parquet` with the high-precision schema.
@@ -1067,7 +1067,7 @@ Convert data from one schema version to another:
    `--features "python high-precision"`.
 
    ```bash
-   cargo run --features python --bin to_json -- trades.parquet
+   cargo run --features python --bin to-json -- trades.parquet
    ```
 
    This creates `trades.json` and `trades.metadata.json`.
@@ -1081,7 +1081,7 @@ Convert data from one schema version to another:
 1. Convert the JSON to Parquet with the new schema:
 
    ```bash
-   cargo run --features "python high-precision" --bin to_parquet -- trades.json
+   cargo run --features "python high-precision" --bin to-parquet -- trades.json
    ```
 
    This creates `trades.parquet` with the new schema.
