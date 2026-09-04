@@ -93,8 +93,7 @@ use crate::{
     },
     providers::PolymarketInstrumentProvider,
     resolve::{
-        PendingResolution, ResolveContext, ResolveWatchEntry,
-        remove_data_resolve_watch_entry_from_instrument,
+        PendingResolution, ResolveContext, ResolveWatchEntry, remove_data_resolve_watch_entry,
         upsert_data_resolve_watch_entry_from_instrument,
     },
     rtds::{PolymarketRtdsFeed, is_supported_rtds_data_type},
@@ -334,6 +333,8 @@ impl PolymarketDataClient {
             ws_sub_mutex: self.ws_sub_mutex.clone(),
             ws: self.ws_client.handle(),
             pending_resolutions: self.pending_resolutions.clone(),
+            subscribe_new_markets: self.config.subscribe_new_markets,
+            cancellation_token: self.cancellation_token.clone(),
         }
     }
 
@@ -421,18 +422,25 @@ impl PolymarketDataClient {
         &self,
         instrument_id: InstrumentId,
         subscriptions: &Arc<AtomicSet<InstrumentId>>,
-    ) {
+    ) -> Option<String> {
         let _guard = self.resolve_watch_apply_mutex.lock();
+        let token_id = self.resolve_token_id(instrument_id).ok().or_else(|| {
+            self.resolve_poll_watchlist
+                .load()
+                .values()
+                .flat_map(|entry| entry.tracked.values())
+                .find(|tracked| tracked.instrument_id == instrument_id)
+                .map(|tracked| tracked.token_id.clone())
+        });
         subscriptions.remove(&instrument_id);
         let has_data_subscription = self.active_instrument_status_subs.contains(&instrument_id)
             || self.active_instrument_close_subs.contains(&instrument_id);
-        if let Some(instrument) = self.instruments.load().get(&instrument_id) {
-            remove_data_resolve_watch_entry_from_instrument(
-                &self.resolve_poll_watchlist,
-                instrument,
-                has_data_subscription,
-            );
-        }
+        remove_data_resolve_watch_entry(
+            &self.resolve_poll_watchlist,
+            instrument_id,
+            has_data_subscription,
+        );
+        token_id
     }
 
     fn subscribe_resolution(
@@ -440,7 +448,7 @@ impl PolymarketDataClient {
         instrument_id: InstrumentId,
         subscriptions: &Arc<AtomicSet<InstrumentId>>,
     ) -> anyhow::Result<()> {
-        self.ensure_live_subscription_allowed(instrument_id)?;
+        // Expiration bounds recovery; it does not disqualify metadata needed for settlement
         let cached = self.instruments.load().contains_key(&instrument_id);
 
         if !cached && !self.config.auto_load_missing_instruments {
@@ -492,10 +500,12 @@ impl PolymarketDataClient {
     // concurrent subscribe/unsubscribe calls deliver commands to the WS handler
     // in a consistent order with the final `active_*_subs` state.
     fn sync_ws_subscription(&self, instrument_id: InstrumentId) {
-        let token_id_str = match self.resolve_token_id(instrument_id) {
-            Ok(s) => s,
-            Err(_) => return,
-        };
+        if let Ok(token_id) = self.resolve_token_id(instrument_id) {
+            self.sync_ws_subscription_for_token(instrument_id, token_id);
+        }
+    }
+
+    fn sync_ws_subscription_for_token(&self, instrument_id: InstrumentId, token_id_str: String) {
         let active_quote_subs = self.active_quote_subs.clone();
         let active_delta_subs = self.active_delta_subs.clone();
         let active_trade_subs = self.active_trade_subs.clone();
@@ -505,6 +515,8 @@ impl PolymarketDataClient {
         let ws_open_tokens = self.ws_open_tokens.clone();
         let ws_sub_mutex = self.ws_sub_mutex.clone();
         let ws = self.ws_client.handle();
+        let watchlist = self.resolve_poll_watchlist.clone();
+        let subscribe_new_markets = self.config.subscribe_new_markets;
 
         if let Err(e) = self
             .tasks
@@ -520,6 +532,8 @@ impl PolymarketDataClient {
                 ws_open_tokens,
                 ws_sub_mutex,
                 ws,
+                watchlist,
+                subscribe_new_markets,
             ))
         {
             log::debug!("Skipping Polymarket data task after shutdown began: {e}");
@@ -775,12 +789,14 @@ impl DataClient for PolymarketDataClient {
         cmd: &UnsubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
-        self.remove_resolution_subscription_intent(
+        let token_id = self.remove_resolution_subscription_intent(
             instrument_id,
             &self.active_instrument_status_subs,
         );
         self.drop_pending_if_unwanted(instrument_id);
-        self.sync_ws_subscription(instrument_id);
+        if let Some(token_id) = token_id {
+            self.sync_ws_subscription_for_token(instrument_id, token_id);
+        }
         Ok(())
     }
 
@@ -789,12 +805,14 @@ impl DataClient for PolymarketDataClient {
         cmd: &UnsubscribeInstrumentClose,
     ) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
-        self.remove_resolution_subscription_intent(
+        let token_id = self.remove_resolution_subscription_intent(
             instrument_id,
             &self.active_instrument_close_subs,
         );
         self.drop_pending_if_unwanted(instrument_id);
-        self.sync_ws_subscription(instrument_id);
+        if let Some(token_id) = token_id {
+            self.sync_ws_subscription_for_token(instrument_id, token_id);
+        }
         Ok(())
     }
 

@@ -163,39 +163,22 @@ pub(crate) fn upsert_data_resolve_watch_entry_if_active(
     upsert_data_resolve_watch_entry_from_instrument(watchlist, instrument)
 }
 
-pub(crate) fn remove_data_resolve_watch_entry_from_instrument(
+pub(crate) fn remove_data_resolve_watch_entry(
     watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
-    instrument: &InstrumentAny,
+    instrument_id: InstrumentId,
     has_data_subscription: bool,
 ) {
-    let Some((condition_id, token_id, _expiration_ns, _tracked)) =
-        binary_option_context(instrument)
-    else {
-        return;
-    };
-
     watchlist.rcu(|entries| {
-        let remove_entry = match entries.get_mut(&condition_id) {
-            Some(entry) => {
-                let remove_token = match entry.tracked.get_mut(&token_id) {
-                    Some(tracked) => {
-                        tracked.has_data_subscription = has_data_subscription;
-                        tracked.open_position_ids.is_empty() && !tracked.has_data_subscription
-                    }
-                    None => false,
-                };
-
-                if remove_token {
-                    entry.tracked.remove(&token_id);
+        entries.retain(|_, entry| {
+            entry.tracked.retain(|_, tracked| {
+                if tracked.instrument_id != instrument_id {
+                    return true;
                 }
-                entry.tracked.is_empty()
-            }
-            None => false,
-        };
-
-        if remove_entry {
-            entries.remove(&condition_id);
-        }
+                tracked.has_data_subscription = has_data_subscription;
+                !tracked.open_position_ids.is_empty() || tracked.has_data_subscription
+            });
+            !entry.tracked.is_empty()
+        });
     });
 }
 
@@ -739,7 +722,7 @@ mod tests {
             &instruments,
             &stub_position_opened_event(yes.id()),
         );
-        remove_data_resolve_watch_entry_from_instrument(&watchlist, &yes, false);
+        remove_data_resolve_watch_entry(&watchlist, yes.id(), false);
 
         let entries = watchlist.load();
         let tracked = entries

@@ -16,7 +16,7 @@
 use std::sync::Arc;
 
 use ahash::{AHashMap, AHashSet};
-use dashmap::DashMap;
+use dashmap::{DashMap, mapref::entry::Entry};
 use nautilus_common::messages::DataEvent;
 use nautilus_core::{AtomicMap, AtomicSet, time::AtomicTime};
 use nautilus_model::{
@@ -27,6 +27,7 @@ use nautilus_model::{
     types::Price,
 };
 use parking_lot::Mutex;
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
@@ -60,46 +61,87 @@ pub(crate) enum ResolveBatchErrorMode {
     StopOnFirstError,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub(crate) struct PendingResolution {
     pub(crate) winning_asset_id: String,
     pub(crate) winning_outcome: String,
+    claim_id: Arc<()>,
+    claims: usize,
 }
 
 pub(crate) struct PendingResolutionGuard {
     pending_resolutions: Arc<DashMap<String, PendingResolution>>,
     condition_id: String,
-    resolution: PendingResolution,
-    armed: bool,
+    claim_id: Arc<()>,
 }
 
 impl PendingResolutionGuard {
-    pub(crate) fn new(
+    // WebSocket dispatch claims exclusively to deduplicate tasks, while application
+    // joins matching claims so one caller cannot clear another caller's barrier.
+    pub(crate) fn try_claim(
         pending_resolutions: Arc<DashMap<String, PendingResolution>>,
         condition_id: String,
-        resolution: PendingResolution,
-    ) -> Self {
-        Self {
+        winning_asset_id: &str,
+        winning_outcome: &str,
+        share_existing: bool,
+    ) -> Option<Self> {
+        let claim_id = match pending_resolutions.entry(condition_id.clone()) {
+            Entry::Occupied(mut entry) => {
+                if !share_existing {
+                    return None;
+                }
+                let current = entry.get_mut();
+
+                if current.winning_asset_id != winning_asset_id
+                    || current.winning_outcome != winning_outcome
+                {
+                    log::warn!(
+                        "Ignoring conflicting resolution for condition_id={condition_id}: existing winner={} ({}) received winner={winning_asset_id} ({winning_outcome})",
+                        current.winning_asset_id,
+                        current.winning_outcome,
+                    );
+                    return None;
+                }
+                current.claims += 1;
+                current.claim_id.clone()
+            }
+            Entry::Vacant(entry) => {
+                let claim_id = Arc::new(());
+                entry.insert(PendingResolution {
+                    winning_asset_id: winning_asset_id.to_string(),
+                    winning_outcome: winning_outcome.to_string(),
+                    claim_id: claim_id.clone(),
+                    claims: 1,
+                });
+                claim_id
+            }
+        };
+
+        Some(Self {
             pending_resolutions,
             condition_id,
-            resolution,
-            armed: true,
-        }
-    }
-
-    pub(crate) fn disarm(mut self) {
-        self.armed = false;
+            claim_id,
+        })
     }
 }
 
 impl Drop for PendingResolutionGuard {
     fn drop(&mut self) {
-        if !self.armed {
+        let Entry::Occupied(mut entry) = self.pending_resolutions.entry(self.condition_id.clone())
+        else {
+            return;
+        };
+
+        if !Arc::ptr_eq(&entry.get().claim_id, &self.claim_id) {
             return;
         }
 
-        self.pending_resolutions
-            .remove_if(&self.condition_id, |_, current| current == &self.resolution);
+        let current = entry.get_mut();
+        current.claims -= 1;
+
+        if current.claims == 0 {
+            entry.remove();
+        }
     }
 }
 
@@ -126,6 +168,51 @@ pub(crate) struct ResolveContext {
     pub(crate) ws_sub_mutex: Arc<tokio::sync::Mutex<()>>,
     pub(crate) ws: crate::websocket::pool::PolymarketMarketPoolHandle,
     pub(crate) pending_resolutions: Arc<DashMap<String, PendingResolution>>,
+    pub(crate) subscribe_new_markets: bool,
+    pub(crate) cancellation_token: CancellationToken,
+}
+
+pub(crate) async fn pause_and_reconcile_resolve_watch_entries(
+    ctx: &ResolveContext,
+    condition_ids: &[String],
+) {
+    let mut targets = {
+        let _guard = ctx.apply_mutex.lock();
+        super::watchlist::pause_resolve_watch_entries(&ctx.watchlist, condition_ids);
+
+        // Include already paused entries so interrupted cleanup converges after reconnect
+        ctx.watchlist
+            .load()
+            .values()
+            .filter(|entry| entry.paused)
+            .flat_map(|entry| entry.tracked.values())
+            .filter(|tracked| {
+                ctx.ws_open_tokens
+                    .contains(&Ustr::from(tracked.token_id.as_str()))
+            })
+            .map(|tracked| (tracked.instrument_id, tracked.token_id.clone()))
+            .collect::<Vec<_>>()
+    };
+    targets.sort_unstable_by(|left, right| left.1.cmp(&right.1));
+
+    for (instrument_id, token_id) in targets {
+        crate::data::sync_ws_subscription_with_resolution_and_terminal_async(
+            instrument_id,
+            token_id,
+            ctx.active_quote_subs.clone(),
+            ctx.active_delta_subs.clone(),
+            ctx.active_trade_subs.clone(),
+            ctx.active_status_subs.clone(),
+            ctx.active_close_subs.clone(),
+            ctx.closed_condition_ids.clone(),
+            ctx.ws_open_tokens.clone(),
+            ctx.ws_sub_mutex.clone(),
+            ctx.ws.clone(),
+            ctx.watchlist.clone(),
+            ctx.subscribe_new_markets,
+        )
+        .await;
+    }
 }
 
 pub(crate) async fn fetch_and_apply_resolutions_by_condition_ids(
@@ -275,32 +362,85 @@ pub(crate) async fn apply_condition_resolution(
     winning_asset_id: &str,
     winning_outcome: &str,
 ) -> ResolveApplyResult {
-    let condition_id_string = condition_id.to_string();
-    let pending_resolution = PendingResolution {
-        winning_asset_id: winning_asset_id.to_string(),
-        winning_outcome: winning_outcome.to_string(),
-    };
+    apply_condition_resolution_with_owners(
+        ctx,
+        condition_id,
+        winning_asset_id,
+        winning_outcome,
+        ResolveOwnerSelection::IncludePendingIntents,
+    )
+    .await
+}
 
-    if let Some(existing) = ctx.pending_resolutions.get(&condition_id_string)
-        && existing.value() != &pending_resolution
-    {
-        log::warn!(
-            "Ignoring conflicting resolution for condition_id={condition_id}: existing winner={} ({}) received winner={winning_asset_id} ({winning_outcome})",
-            existing.winning_asset_id,
-            existing.winning_outcome,
-        );
+pub(crate) async fn apply_condition_resolution_with_assets(
+    ctx: &ResolveContext,
+    condition_id: &str,
+    winning_asset_id: &str,
+    winning_outcome: &str,
+    asset_ids: &[String],
+) -> ResolveApplyResult {
+    apply_condition_resolution_with_owners(
+        ctx,
+        condition_id,
+        winning_asset_id,
+        winning_outcome,
+        ResolveOwnerSelection::PayloadAssets(asset_ids),
+    )
+    .await
+}
+
+// Auto-load admits data owners only after parsing and filtering, while existing
+// watched data and position owners can settle even if this payload is unusable.
+pub(crate) async fn apply_watched_condition_resolution(
+    ctx: &ResolveContext,
+    resolution: &StrictResolvedMarket,
+) -> ResolveApplyResult {
+    apply_condition_resolution_with_owners(
+        ctx,
+        &resolution.condition_id,
+        &resolution.winning_asset_id,
+        &resolution.winning_outcome,
+        ResolveOwnerSelection::Watched,
+    )
+    .await
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ResolveOwnerSelection<'a> {
+    Watched,
+    IncludePendingIntents,
+    PayloadAssets(&'a [String]),
+}
+
+async fn apply_condition_resolution_with_owners(
+    ctx: &ResolveContext,
+    condition_id: &str,
+    winning_asset_id: &str,
+    winning_outcome: &str,
+    owner_selection: ResolveOwnerSelection<'_>,
+) -> ResolveApplyResult {
+    if ctx.cancellation_token.is_cancelled() {
         return ResolveApplyResult::Ignored;
     }
-    ctx.pending_resolutions
-        .insert(condition_id_string.clone(), pending_resolution.clone());
 
-    let _pending_guard = PendingResolutionGuard::new(
+    let Some(_pending_guard) = PendingResolutionGuard::try_claim(
         ctx.pending_resolutions.clone(),
-        condition_id_string,
-        pending_resolution,
-    );
+        condition_id.to_string(),
+        winning_asset_id,
+        winning_outcome,
+        true,
+    ) else {
+        return ResolveApplyResult::Ignored;
+    };
 
-    apply_condition_resolution_inner(ctx, condition_id, winning_asset_id, winning_outcome).await
+    apply_condition_resolution_inner(
+        ctx,
+        condition_id,
+        winning_asset_id,
+        winning_outcome,
+        owner_selection,
+    )
+    .await
 }
 
 async fn apply_condition_resolution_inner(
@@ -308,12 +448,39 @@ async fn apply_condition_resolution_inner(
     condition_id: &str,
     winning_asset_id: &str,
     winning_outcome: &str,
+    owner_selection: ResolveOwnerSelection<'_>,
 ) -> ResolveApplyResult {
     let condition_id_string = condition_id.to_string();
-    let reconcile_guard = ctx.ws_sub_mutex.lock().await;
+    let reconcile_guard = tokio::select! {
+        () = ctx.cancellation_token.cancelled() => return ResolveApplyResult::Ignored,
+        guard = ctx.ws_sub_mutex.lock() => guard,
+    };
     let (reconciliation_targets, emitted_closes) = {
         let _guard = ctx.apply_mutex.lock();
+
+        // Reset takes the same lock, so an old context cannot publish after reset returns
+        if ctx.cancellation_token.is_cancelled() {
+            return ResolveApplyResult::Ignored;
+        }
+
         let entry = ctx.watchlist.get_cloned(&condition_id_string);
+
+        // Ownership can grow while waiting for reconciliation, so validate the retained
+        // payload again against every known leg before emitting or removing any owner.
+        if let ResolveOwnerSelection::PayloadAssets(asset_ids) = owner_selection
+            && entry.as_ref().is_some_and(|entry| {
+                entry
+                    .tracked
+                    .values()
+                    .any(|tracked| !asset_ids.contains(&tracked.token_id))
+            })
+        {
+            log::warn!(
+                "Ignoring resolution for condition_id={condition_id}: payload assets conflict with known resolution owners"
+            );
+            return ResolveApplyResult::Ignored;
+        }
+
         let matches_condition = |instrument_id: &InstrumentId| {
             crate::providers::extract_condition_id(instrument_id)
                 .is_ok_and(|candidate| candidate == condition_id)
@@ -358,34 +525,45 @@ async fn apply_condition_resolution_inner(
             .map(|tracked| (tracked.instrument_id, tracked.clone()))
             .collect();
 
-        for instrument_id in active_status_ids.union(&active_close_ids).copied() {
-            if tracked_instruments.contains_key(&instrument_id) {
-                continue;
-            }
+        if !matches!(owner_selection, ResolveOwnerSelection::Watched) {
+            for instrument_id in active_status_ids.union(&active_close_ids).copied() {
+                if tracked_instruments.contains_key(&instrument_id) {
+                    continue;
+                }
 
-            let token_id = loaded
-                .get(&instrument_id)
-                .map(|instrument| instrument.raw_symbol().as_str().to_string())
-                .or_else(|| crate::providers::extract_token_id(&instrument_id).ok());
-            let Some(token_id) = token_id else {
-                log::error!("Cannot apply resolution for {instrument_id}: token ID is unavailable");
-                continue;
-            };
-            let price_precision = loaded
-                .get(&instrument_id)
-                .map_or(POLYMARKET_PRICE_PRECISION, |instrument| {
-                    instrument.price_precision()
-                });
-            tracked_instruments.insert(
-                instrument_id,
-                TrackedInstrument {
+                let token_id = loaded
+                    .get(&instrument_id)
+                    .map(|instrument| instrument.raw_symbol().as_str().to_string())
+                    .or_else(|| crate::providers::extract_token_id(&instrument_id).ok());
+                let Some(token_id) = token_id else {
+                    log::error!(
+                        "Cannot apply resolution for {instrument_id}: token ID is unavailable"
+                    );
+                    continue;
+                };
+
+                if let ResolveOwnerSelection::PayloadAssets(asset_ids) = owner_selection
+                    && !asset_ids.contains(&token_id)
+                {
+                    continue;
+                }
+
+                let price_precision = loaded
+                    .get(&instrument_id)
+                    .map_or(POLYMARKET_PRICE_PRECISION, |instrument| {
+                        instrument.price_precision()
+                    });
+                tracked_instruments.insert(
                     instrument_id,
-                    token_id,
-                    price_precision,
-                    open_position_ids: AHashSet::new(),
-                    has_data_subscription: true,
-                },
-            );
+                    TrackedInstrument {
+                        instrument_id,
+                        token_id,
+                        price_precision,
+                        open_position_ids: AHashSet::new(),
+                        has_data_subscription: true,
+                    },
+                );
+            }
         }
 
         if tracked_instruments.is_empty() {
@@ -527,6 +705,8 @@ async fn apply_condition_resolution_inner(
             ctx.ws_open_tokens.clone(),
             ctx.ws_sub_mutex.clone(),
             ctx.ws.clone(),
+            ctx.watchlist.clone(),
+            ctx.subscribe_new_markets,
         )
         .await;
     }
@@ -569,6 +749,8 @@ mod tests {
             ws_sub_mutex: Arc::new(tokio::sync::Mutex::new(())),
             ws: crate::websocket::pool::PolymarketMarketPoolHandle::test_single_shard(ws_tx, &[]),
             pending_resolutions: Arc::new(DashMap::new()),
+            subscribe_new_markets: false,
+            cancellation_token: CancellationToken::new(),
         };
 
         (ctx, data_rx)
@@ -608,6 +790,67 @@ mod tests {
             Ok(DataEvent::InstrumentStatus(_))
         ));
         assert!(data_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn pending_resolution_claim_rejects_duplicates_and_conflicting_outcomes() {
+        let pending = Arc::new(DashMap::new());
+        let claim = PendingResolutionGuard::try_claim(
+            pending.clone(),
+            "0xCOND".to_string(),
+            "0xYES",
+            "Yes",
+            false,
+        )
+        .unwrap();
+
+        for (winning_asset_id, winning_outcome, share_existing) in [
+            ("0xYES", "Yes", false),
+            ("0xNO", "No", true),
+            ("0xYES", "No", true),
+        ] {
+            assert!(
+                PendingResolutionGuard::try_claim(
+                    pending.clone(),
+                    "0xCOND".to_string(),
+                    winning_asset_id,
+                    winning_outcome,
+                    share_existing,
+                )
+                .is_none()
+            );
+        }
+
+        assert_eq!(pending.get("0xCOND").unwrap().winning_asset_id, "0xYES");
+        drop(claim);
+        assert!(pending.is_empty());
+    }
+
+    #[rstest]
+    fn pending_resolution_guard_preserves_replacement_claim() {
+        let pending = Arc::new(DashMap::new());
+        let old_claim = PendingResolutionGuard::try_claim(
+            pending.clone(),
+            "0xCOND".to_string(),
+            "0xYES",
+            "Yes",
+            false,
+        )
+        .unwrap();
+        pending.clear();
+        let replacement = PendingResolutionGuard::try_claim(
+            pending.clone(),
+            "0xCOND".to_string(),
+            "0xYES",
+            "Yes",
+            false,
+        )
+        .unwrap();
+
+        drop(old_claim);
+        assert!(pending.contains_key("0xCOND"));
+        drop(replacement);
+        assert!(pending.is_empty());
     }
 
     #[rstest]
@@ -681,6 +924,76 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
+    async fn ignored_auto_load_keeps_manual_resolution_pending_barrier() {
+        let (ctx, mut data_rx) = make_resolve_context();
+        let instrument_id = InstrumentId::from("0xCOND-0xYES.POLYMARKET");
+        ctx.active_status_subs.insert(instrument_id);
+        ctx.active_close_subs.insert(instrument_id);
+        let resolution = StrictResolvedMarket {
+            condition_id: "0xCOND".to_string(),
+            winning_asset_id: "0xYES".to_string(),
+            winning_outcome: "Yes".to_string(),
+        };
+        let reconcile_guard = ctx.ws_sub_mutex.lock().await;
+        let mut auto_load = Box::pin(apply_watched_condition_resolution(&ctx, &resolution));
+        let mut manual = Box::pin(apply_condition_resolution(&ctx, "0xCOND", "0xYES", "Yes"));
+        assert!(futures_util::poll!(&mut auto_load).is_pending());
+        assert!(futures_util::poll!(&mut manual).is_pending());
+
+        drop(reconcile_guard);
+        assert_eq!(auto_load.await, ResolveApplyResult::Ignored);
+        assert!(ctx.pending_resolutions.contains_key("0xCOND"));
+        assert!(data_rx.try_recv().is_err());
+        assert_eq!(
+            manual.await,
+            ResolveApplyResult::Applied { emitted_closes: 1 }
+        );
+
+        assert!(ctx.pending_resolutions.is_empty());
+        assert!(ctx.closed_condition_ids.lock().contains("0xCOND"));
+        assert_eq!(std::iter::from_fn(|| data_rx.try_recv().ok()).count(), 2);
+    }
+
+    #[rstest]
+    #[case::first(true)]
+    #[case::second(false)]
+    #[tokio::test]
+    async fn cancelling_overlapping_resolution_preserves_pending_barrier(
+        #[case] cancel_first: bool,
+    ) {
+        let (ctx, mut data_rx) = make_resolve_context();
+        let instrument_id = InstrumentId::from("0xCOND-0xYES.POLYMARKET");
+        ctx.active_status_subs.insert(instrument_id);
+        ctx.active_close_subs.insert(instrument_id);
+        let reconcile_guard = ctx.ws_sub_mutex.lock().await;
+        let mut first = Box::pin(apply_condition_resolution(&ctx, "0xCOND", "0xYES", "Yes"));
+        let mut second = Box::pin(apply_condition_resolution(&ctx, "0xCOND", "0xYES", "Yes"));
+        assert!(futures_util::poll!(&mut first).is_pending());
+        assert!(futures_util::poll!(&mut second).is_pending());
+
+        let remaining = if cancel_first {
+            drop(first);
+            second
+        } else {
+            drop(second);
+            first
+        };
+
+        assert!(ctx.pending_resolutions.contains_key("0xCOND"));
+        assert!(data_rx.try_recv().is_err());
+        drop(reconcile_guard);
+        assert_eq!(
+            remaining.await,
+            ResolveApplyResult::Applied { emitted_closes: 1 }
+        );
+
+        assert!(ctx.pending_resolutions.is_empty());
+        assert!(ctx.closed_condition_ids.lock().contains("0xCOND"));
+        assert_eq!(std::iter::from_fn(|| data_rx.try_recv().ok()).count(), 2);
+    }
+
+    #[rstest]
+    #[tokio::test]
     async fn resolution_clears_pending_barrier_when_watch_disappears() {
         let (ctx, _data_rx) = make_resolve_context();
         let instrument_id = InstrumentId::from("0xCOND-0xYES.POLYMARKET");
@@ -702,17 +1015,20 @@ mod tests {
                 paused: false,
             },
         );
-        ctx.pending_resolutions.insert(
+        let pending_guard = PendingResolutionGuard::try_claim(
+            ctx.pending_resolutions.clone(),
             "0xCOND".to_string(),
-            PendingResolution {
-                winning_asset_id: "0xYES".to_string(),
-                winning_outcome: "Yes".to_string(),
-            },
-        );
+            "0xYES",
+            "Yes",
+            false,
+        )
+        .expect("pending WebSocket claim");
 
         let reconcile_guard = ctx.ws_sub_mutex.lock().await;
         let apply_ctx = ctx.clone();
+
         let apply_task = tokio::spawn(async move {
+            let _pending_guard = pending_guard;
             apply_condition_resolution(&apply_ctx, "0xCOND", "0xYES", "Yes").await
         });
         tokio::task::yield_now().await;

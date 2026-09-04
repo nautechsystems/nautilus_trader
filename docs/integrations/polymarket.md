@@ -1091,9 +1091,30 @@ position by subscribing to `InstrumentStatus`, `InstrumentClose`, or both. These
 independent: a status subscription emits only the status close, while a close subscription emits
 only the settlement price. Unsubscribing from one does not remove the other.
 
+Cached instruments establish a watch when the subscription is accepted. Missing instruments first
+pass through auto-loading and the configured instrument filters. Unsubscribing removes only that
+data owner; open positions retain their independent ownership. If loading cannot produce usable
+metadata, no automatic watch is created. An accepted unresolved intent can still be checked with
+an explicit manual resolution selector.
+
 Once a watched condition expires, the data client waits `resolve_poll_grace_secs`, then polls Gamma
 every `resolve_poll_interval_secs` until the condition resolves or
 `resolve_poll_max_wait_secs` elapses.
+
+| Delivery path         | Configuration and eligibility                                         | Release                                                      |
+| --------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Auto-load outcome.    | A strict outcome in a fetched Gamma payload, regardless of polling.   | Applied immediately; the auto-load task completes.           |
+| Gamma/CLOB polling.   | `resolve_poll_enabled=true`, within the expiration-based poll window. | Resolution, last owner removal, timeout, or shutdown.        |
+| Resolution WebSocket. | `subscribe_new_markets=true`, with an active, unpaused data watch.    | Resolution, last data owner removal, timeout, or shutdown.   |
+| Manual request.       | Any configuration, using explicit selectors or the watchlist rules.   | Request completion; successful resolution removes the watch. |
+
+The shipped defaults use polling, without a resolution-only WebSocket subscription. Disabling
+polling does not enable WebSocket resolution: that path requires `subscribe_new_markets=true`.
+With both disabled, later recovery requires a manual request.
+
+These WebSocket ownership rules apply to the data subscription's token, not the independently
+configured venue-wide discovery feed. Releasing the token does not disconnect that feed. Valid
+resolutions received there still use the shared apply path for existing data and position owners.
 
 Resolution uses strict winner inference:
 
@@ -1104,18 +1125,32 @@ Resolution uses strict winner inference:
 - Non-binary, ambiguous, malformed, or still-unresolved payloads are skipped. They remain on the
   watchlist until the poll window times out or a manual request resolves them.
 
+Auto-loading applies a strict outcome from either its normal lookup or positive closure probe
+immediately. An expiration that is future, stale, or missing does not discard an outcome already
+obtained. Without a strict outcome, existing expiration deadlines still apply: late subscriptions
+do not receive a fresh polling window, and missing expiration does not cause indefinite polling.
+
 When the client applies a resolution, position-owned legs emit one `InstrumentStatus` close and one
 `InstrumentClose`. Data-only legs emit whichever event types have active subscriptions. The winner
 leg closes at `1`, and the losing leg closes at `0`. The close type is
 `InstrumentCloseType.CONTRACT_EXPIRED`. This event closes Nautilus exposure and does not redeem
 tokens or claim funds on-chain.
 
-Resolution terminalizes the entire condition. The client stops normal quote, trade, and book-delta
-WebSocket streams for both outcome siblings and rejects later live subscriptions for either sibling.
+Gamma's positive `closed=true` evidence stops normal quote, trade, and book-delta streams for both
+outcome siblings, even when the payload cannot produce usable instruments. Closure alone does not
+establish a winner or emit settlement events. Existing resolution owners remain available for
+polling or manual recovery; an enabled, unpaused resolution WebSocket may remain until resolution
+or timeout. Later live subscriptions cannot reopen the closed condition.
 
-The same apply path handles WebSocket `market_resolved` events, automatic polling, and manual
-requests. After `resolve_poll_max_wait_secs`, automatic polling pauses the watched condition and
-logs it for manual recovery. Manual requests can still retry the condition later.
+The same apply path handles auto-load outcomes, WebSocket `market_resolved` events, automatic
+polling, and manual requests. Successful resolution emits each owned event type once, removes the
+condition's watch and subscription intents, and releases its WebSocket subscriptions.
+
+After `resolve_poll_max_wait_secs`, the watch pauses and releases resolution-only WebSocket
+ownership, including when polling is disabled. An open market's independent quote, trade, or book
+subscriptions are unaffected by this pause. The client retains settlement metadata and ownership
+for manual recovery; a manual request does not restart the automatic deadline. Disconnect stops
+network work, while reset discards retained ownership and requires fresh subscriptions.
 
 #### Manual resolution requests
 

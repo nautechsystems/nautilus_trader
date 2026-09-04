@@ -190,8 +190,11 @@ pub(crate) async fn retire_local_instrument_state(
     ws_open_tokens: &Arc<AtomicSet<Ustr>>,
     ws_sub_mutex: &Arc<tokio::sync::Mutex<()>>,
     ws: &crate::websocket::pool::PolymarketMarketPoolHandle,
+    subscribe_new_markets: bool,
 ) {
-    let token_id = resolve_token_id_from(instruments, instrument_id).ok();
+    let token_id = resolve_token_id_from(instruments, instrument_id)
+        .or_else(|_| crate::providers::extract_token_id(&instrument_id))
+        .ok();
 
     active_quote_subs.remove(&instrument_id);
     active_delta_subs.remove(&instrument_id);
@@ -210,6 +213,8 @@ pub(crate) async fn retire_local_instrument_state(
             ws_open_tokens.clone(),
             ws_sub_mutex.clone(),
             ws.clone(),
+            resolve_poll_watchlist.clone(),
+            subscribe_new_markets,
         )
         .await;
     }
@@ -260,6 +265,7 @@ pub(crate) async fn retire_closed_condition_state(
     ws_sub_mutex: &Arc<tokio::sync::Mutex<()>>,
     ws: &crate::websocket::pool::PolymarketMarketPoolHandle,
     cancellation: Option<&CancellationToken>,
+    subscribe_new_markets: bool,
 ) -> bool {
     if cancellation.is_some_and(CancellationToken::is_cancelled) {
         return false;
@@ -363,6 +369,7 @@ pub(crate) async fn retire_closed_condition_state(
             ws_open_tokens,
             ws_sub_mutex,
             ws,
+            subscribe_new_markets,
         );
 
         if let Some(cancellation) = cancellation {
@@ -401,6 +408,7 @@ pub(crate) async fn retire_expired_local_instruments(
     ws_open_tokens: &Arc<AtomicSet<Ustr>>,
     ws_sub_mutex: &Arc<tokio::sync::Mutex<()>>,
     ws: &crate::websocket::pool::PolymarketMarketPoolHandle,
+    subscribe_new_markets: bool,
 ) {
     let expired_candidates: Vec<(InstrumentId, String)> = {
         let loaded = instruments.load();
@@ -470,6 +478,7 @@ pub(crate) async fn retire_expired_local_instruments(
             ws_open_tokens,
             ws_sub_mutex,
             ws,
+            subscribe_new_markets,
         )
         .await;
     }
@@ -730,6 +739,7 @@ mod tests {
             &ws_open_tokens,
             &ws_sub_mutex,
             &ws,
+            false,
         )
         .await;
 
@@ -798,6 +808,7 @@ mod tests {
             &ws_open_tokens,
             &ws_sub_mutex,
             &ws,
+            false,
         )
         .await;
 
@@ -832,6 +843,7 @@ mod tests {
             &ws_open_tokens,
             &ws_sub_mutex,
             &ws,
+            false,
         )
         .await;
 
@@ -900,6 +912,7 @@ mod tests {
             &ws_open_tokens,
             &ws_sub_mutex,
             &ws,
+            true,
         )
         .await;
 

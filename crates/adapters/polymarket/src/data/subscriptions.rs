@@ -25,6 +25,8 @@ use nautilus_model::{
 use parking_lot::Mutex;
 use ustr::Ustr;
 
+use crate::resolve::ResolveWatchEntry;
+
 pub(crate) fn resolve_token_id_from(
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     instrument_id: InstrumentId,
@@ -56,15 +58,37 @@ pub(crate) async fn sync_ws_subscription_with_resolution_and_terminal_async(
     ws_open_tokens: Arc<AtomicSet<Ustr>>,
     ws_sub_mutex: Arc<tokio::sync::Mutex<()>>,
     ws: crate::websocket::pool::PolymarketMarketPoolHandle,
+    resolve_watchlist: Arc<AtomicMap<String, ResolveWatchEntry>>,
+    subscribe_new_markets: bool,
 ) {
     let token_id = Ustr::from(token_id_str.as_str());
     let _guard = ws_sub_mutex.lock().await;
 
-    let is_terminal = crate::providers::extract_condition_id(&instrument_id)
-        .is_ok_and(|condition_id| closed_condition_ids.lock().contains(&condition_id));
-    // Resolution subscriptions remain open until the official winner arrives
-    let wants_resolution = active_instrument_status_subs.contains(&instrument_id)
-        || active_instrument_close_subs.contains(&instrument_id);
+    let condition_id = crate::providers::extract_condition_id(&instrument_id).ok();
+    let is_terminal = condition_id
+        .as_ref()
+        .is_some_and(|condition_id| closed_condition_ids.lock().contains(condition_id));
+    // Only the enabled venue feed can carry resolution events, and a paused
+    // watch retains manual recovery ownership rather than a wire subscription.
+    let wants_resolution = subscribe_new_markets
+        && (active_instrument_status_subs.contains(&instrument_id)
+            || active_instrument_close_subs.contains(&instrument_id))
+        && {
+            let watchlist = resolve_watchlist.load();
+            let has_active_data_owner = |entry: &ResolveWatchEntry| {
+                !entry.paused
+                    && entry.tracked.values().any(|tracked| {
+                        tracked.instrument_id == instrument_id && tracked.has_data_subscription
+                    })
+            };
+
+            // Canonical IDs locate their watch directly, legacy IDs still use watch metadata
+            condition_id
+                .as_ref()
+                .and_then(|condition_id| watchlist.get(condition_id))
+                .is_some_and(&has_active_data_owner)
+                || watchlist.values().any(has_active_data_owner)
+        };
     let wants_subscribe = wants_resolution
         || (!is_terminal
             && (active_quote_subs.contains(&instrument_id)
@@ -91,6 +115,7 @@ pub(crate) async fn sync_ws_subscription_with_resolution_and_terminal_async(
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::UnixNanos;
     use rstest::rstest;
 
     use super::*;
@@ -154,6 +179,29 @@ mod tests {
         Ustr::from("0xCOND-0xTOKEN")
     }
 
+    fn resolution_watch(instrument_id: InstrumentId) -> Arc<AtomicMap<String, ResolveWatchEntry>> {
+        let watchlist = Arc::new(AtomicMap::new());
+        watchlist.insert(
+            "0xCOND".to_string(),
+            ResolveWatchEntry {
+                condition_id: "0xCOND".to_string(),
+                expiration_ns: UnixNanos::from(u64::MAX),
+                tracked: ahash::AHashMap::from_iter([(
+                    "0xTOKEN".to_string(),
+                    crate::resolve::TrackedInstrument {
+                        instrument_id,
+                        token_id: "0xTOKEN".to_string(),
+                        price_precision: 2,
+                        open_position_ids: AHashSet::new(),
+                        has_data_subscription: true,
+                    },
+                )]),
+                paused: false,
+            },
+        );
+        watchlist
+    }
+
     #[rstest]
     #[tokio::test]
     async fn sync_ws_subscribes_when_intent_present_and_ws_closed() {
@@ -175,6 +223,8 @@ mod tests {
             open.clone(),
             mutex,
             ws,
+            Arc::new(AtomicMap::new()),
+            false,
         )
         .await;
 
@@ -190,11 +240,14 @@ mod tests {
     }
 
     #[rstest]
+    #[case::canonical("0xCOND-0xTOKEN")]
+    #[case::legacy("0xTOKEN")]
+    #[case::metadata_condition("0xALIAS-0xTOKEN")]
     #[tokio::test]
-    async fn sync_ws_subscribes_when_resolution_intent_present_and_ws_closed() {
+    async fn sync_ws_subscribes_when_resolution_intent_present_and_ws_closed(#[case] symbol: &str) {
         let (ws, mut rx) = make_handle();
         let (quotes, deltas, trades, status, close, closed, open, mutex) = make_state();
-        let inst = instrument_id();
+        let inst = InstrumentId::from(format!("{symbol}.POLYMARKET").as_str());
         status.insert(inst);
 
         sync_ws_subscription_with_resolution_and_terminal_async(
@@ -209,10 +262,12 @@ mod tests {
             open.clone(),
             mutex,
             ws,
+            resolution_watch(inst),
+            true,
         )
         .await;
 
-        assert!(open.contains(&token_ustr()));
+        assert!(open.contains(&Ustr::from(symbol)));
         assert!(matches!(
             rx.try_recv(),
             Ok(HandlerCommand::SubscribeMarket(ids)) if ids == vec![inst.symbol.as_str().to_string()]
@@ -252,6 +307,8 @@ mod tests {
             open.clone(),
             mutex,
             ws,
+            resolution_watch(inst),
+            true,
         )
         .await;
 
@@ -260,6 +317,126 @@ mod tests {
             rx.try_recv(),
             Ok(HandlerCommand::SubscribeMarket(ids)) if ids == vec![inst.symbol.as_str().to_string()]
         ));
+    }
+
+    #[rstest]
+    #[case::disabled(false, false)]
+    #[case::paused(true, true)]
+    #[case::enabled(true, false)]
+    #[tokio::test]
+    async fn resolution_wire_ownership_requires_enabled_unpaused_watch(
+        #[case] enabled: bool,
+        #[case] paused: bool,
+    ) {
+        let (ws, mut rx) = make_handle_with_assigned(&["0xCOND-0xTOKEN"]);
+        let (quotes, deltas, trades, status, close, closed, open, mutex) = make_state();
+        let inst = instrument_id();
+        let watchlist = resolution_watch(inst);
+        watchlist.rcu(|entries| entries.get_mut("0xCOND").unwrap().paused = paused);
+        status.insert(inst);
+        closed.lock().insert("0xCOND".to_string());
+        open.insert(token_ustr());
+
+        sync_ws_subscription_with_resolution_and_terminal_async(
+            inst,
+            inst.symbol.as_str().to_string(),
+            quotes,
+            deltas,
+            trades,
+            status,
+            close,
+            closed,
+            open.clone(),
+            mutex,
+            ws,
+            watchlist,
+            enabled,
+        )
+        .await;
+
+        let retained = enabled && !paused;
+        assert_eq!(open.contains(&token_ustr()), retained);
+        if retained {
+            assert!(rx.try_recv().is_err());
+        } else {
+            assert!(
+                matches!(rx.try_recv(), Ok(HandlerCommand::UnsubscribeMarket(ids))
+                if ids == vec![inst.symbol.as_str().to_string()])
+            );
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn resolution_reconciliation_preserves_large_active_watchlist(
+        #[values(1_000, 10_000)] count: usize,
+    ) {
+        let (ws, mut rx) = make_handle();
+        let (quotes, deltas, trades, status, close, closed, open, mutex) = make_state();
+        let watchlist = Arc::new(AtomicMap::new());
+        let mut entries = ahash::AHashMap::new();
+        let mut targets = Vec::new();
+
+        for index in 0..count {
+            let condition_id = format!("0xCOND{index}");
+            let token_id = format!("0xTOKEN{index}");
+            let instrument_id =
+                InstrumentId::from(format!("{condition_id}-{token_id}.POLYMARKET").as_str());
+            entries.insert(
+                condition_id.clone(),
+                ResolveWatchEntry {
+                    condition_id,
+                    expiration_ns: UnixNanos::from(u64::MAX),
+                    tracked: ahash::AHashMap::from_iter([(
+                        token_id.clone(),
+                        crate::resolve::TrackedInstrument {
+                            instrument_id,
+                            token_id: token_id.clone(),
+                            price_precision: 4,
+                            open_position_ids: AHashSet::new(),
+                            has_data_subscription: true,
+                        },
+                    )]),
+                    paused: false,
+                },
+            );
+            targets.push((instrument_id, token_id));
+        }
+        watchlist.store(entries);
+        status.store(targets.iter().map(|(id, _)| *id).collect());
+        open.store(
+            targets
+                .iter()
+                .map(|(_, token_id)| Ustr::from(token_id.as_str()))
+                .collect(),
+        );
+        let started = std::time::Instant::now();
+
+        for (instrument_id, token_id) in &targets {
+            sync_ws_subscription_with_resolution_and_terminal_async(
+                *instrument_id,
+                token_id.clone(),
+                quotes.clone(),
+                deltas.clone(),
+                trades.clone(),
+                status.clone(),
+                close.clone(),
+                closed.clone(),
+                open.clone(),
+                mutex.clone(),
+                ws.clone(),
+                watchlist.clone(),
+                true,
+            )
+            .await;
+        }
+
+        eprintln!(
+            "Reconciled {count} active resolution watches in {:?}",
+            started.elapsed()
+        );
+        assert_eq!(open.len(), count);
+        assert!(rx.try_recv().is_err());
     }
 
     #[rstest]
@@ -283,6 +460,8 @@ mod tests {
             open.clone(),
             mutex,
             ws,
+            Arc::new(AtomicMap::new()),
+            false,
         )
         .await;
 
@@ -330,6 +509,8 @@ mod tests {
             open.clone(),
             mutex,
             ws,
+            Arc::new(AtomicMap::new()),
+            false,
         )
         .await;
 
@@ -361,6 +542,8 @@ mod tests {
             open.clone(),
             mutex,
             ws,
+            Arc::new(AtomicMap::new()),
+            false,
         )
         .await;
 
@@ -402,6 +585,8 @@ mod tests {
             open.clone(),
             mutex,
             ws,
+            Arc::new(AtomicMap::new()),
+            false,
         )
         .await;
 

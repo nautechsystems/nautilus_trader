@@ -15,7 +15,7 @@
 
 use std::time::Duration;
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashSet;
 use dashmap::DashMap;
 use nautilus_common::msgbus::{self, TypedHandler};
 use nautilus_core::{AtomicMap, AtomicSet};
@@ -36,7 +36,7 @@ use crate::{
     data_types::register_polymarket_custom_data,
     resolve::{
         ResolveBatchErrorMode, ResolveWatchSelectionMode, collect_resolve_watch_selection,
-        fetch_and_apply_resolutions_by_condition_ids, pause_resolve_watch_entries,
+        fetch_and_apply_resolutions_by_condition_ids, pause_and_reconcile_resolve_watch_entries,
         update_resolve_watchlist_from_position_event_serialized,
     },
     websocket::messages::PolymarketWsMessage,
@@ -160,6 +160,7 @@ impl PolymarketDataClient {
         let clob_public_client = self.clob_public_client.clone();
         let clock = self.clock;
         let resolve_poll_enabled = self.config.resolve_poll_enabled;
+        let subscribe_new_markets = self.config.subscribe_new_markets;
         let interval_secs = self.config.resolve_poll_interval_secs.max(1);
         let grace_secs = self.config.resolve_poll_grace_secs;
         let max_wait_secs = self.config.resolve_poll_max_wait_secs.max(grace_secs);
@@ -220,6 +221,8 @@ impl PolymarketDataClient {
         };
 
         let watchlist = self.resolve_poll_watchlist.clone();
+
+        let resolve_ctx = ctx.resolve_context();
 
         if resolve_poll_enabled {
             log::debug!("Polymarket resolve poll task started");
@@ -295,6 +298,7 @@ impl PolymarketDataClient {
                                 &ws_sub_mutex,
                                 &ws,
                                 Some(&cancellation),
+                                subscribe_new_markets,
                             )
                             .await;
 
@@ -326,12 +330,9 @@ impl PolymarketDataClient {
                             &ws_open_tokens,
                             &ws_sub_mutex,
                             &ws,
+                            subscribe_new_markets,
                         )
                         .await;
-
-                        if !resolve_poll_enabled {
-                            continue;
-                        }
 
                         let snapshot = watchlist.load();
                         let watched_conditions = snapshot.len();
@@ -350,7 +351,7 @@ impl PolymarketDataClient {
 
                         if !selection.pause_condition_ids.is_empty() {
                             log::warn!(
-                                "Polymarket resolve poll paused {} timed-out condition(s) for manual recovery",
+                                "Polymarket resolution monitoring paused {} timed-out condition(s) for manual recovery",
                                 selection.pause_condition_ids.len(),
                             );
                         }
@@ -378,12 +379,21 @@ impl PolymarketDataClient {
                             );
                         }
 
-                        pause_resolve_watch_entries(&watchlist, &selection.pause_condition_ids);
+                        tokio::select! {
+                            () = pause_and_reconcile_resolve_watch_entries(
+                                &resolve_ctx, &selection.pause_condition_ids,
+                            ) => {}
+                            () = cancellation.cancelled() => break,
+                        }
+
+                        if !resolve_poll_enabled {
+                            continue;
+                        }
 
                         let _ = fetch_and_apply_resolutions_by_condition_ids(
                             &gamma_client,
                             &clob_public_client,
-                            &ctx.resolve_context(),
+                            &resolve_ctx,
                             &selection.condition_ids,
                             ResolveBatchErrorMode::Continue,
                         )
@@ -439,15 +449,19 @@ impl PolymarketDataClient {
         // Hard reset contract: discard all retained reconnect replay state from
         // the previous generation. Callers must rebuild instrument/data
         // subscriptions after connect().
-        self.resolve_poll_watchlist.store(AHashMap::new());
-        self.pending_resolutions.clear();
         self.clear_position_event_subscription();
 
         let old_instrument_update_state = self.instrument_update_state.clone();
-        let _update_guard = old_instrument_update_state.lock();
+        let mut update_guard = old_instrument_update_state.lock();
+        let owner_lock = self.resolve_watch_apply_mutex.clone();
+        let _owner_guard = owner_lock.lock();
         let old_closed_condition_ids = self.closed_condition_ids.clone();
         let _generation_guard = old_closed_condition_ids.lock();
 
+        // Fence callbacks which resume after cancellation without yielding to the task runner
+        update_guard.retire_generation();
+        self.resolve_poll_watchlist = std::sync::Arc::new(AtomicMap::new());
+        self.pending_resolutions.clear();
         self.instruments = std::sync::Arc::new(AtomicMap::new());
         self.instrument_update_state =
             std::sync::Arc::new(Mutex::new(InstrumentUpdateState::default()));
@@ -1398,7 +1412,7 @@ mod tests {
                 .contains(&instrument_id)
         );
         assert!(client.active_instrument_close_subs.contains(&instrument_id));
-        assert!(client.ws_open_tokens.contains(&token_id));
+        assert!(!client.ws_open_tokens.contains(&token_id));
         assert!(
             !client
                 .pending_snapshot_after_tick_change
@@ -1616,7 +1630,7 @@ mod tests {
                     && client.active_trade_subs.is_empty()
                     && client.active_instrument_status_subs.len() == watched_count
                     && client.active_instrument_close_subs.len() == watched_count
-                    && client.ws_open_tokens.len() == watched_count
+                    && client.ws_open_tokens.is_empty()
                     && client.pending_snapshot_after_tick_change.is_empty()
                     && client.pending_auto_loads.lock().is_empty()
                     && client.instruments.load().len() == watched_count
@@ -1640,7 +1654,7 @@ mod tests {
         assert!(client.active_trade_subs.is_empty());
         assert_eq!(client.active_instrument_status_subs.len(), watched_count);
         assert_eq!(client.active_instrument_close_subs.len(), watched_count);
-        assert_eq!(client.ws_open_tokens.len(), watched_count);
+        assert!(client.ws_open_tokens.is_empty());
         assert!(client.pending_snapshot_after_tick_change.is_empty());
         assert!(client.pending_auto_loads.lock().is_empty());
         assert_eq!(client.instruments.load().len(), watched_count);
@@ -1680,6 +1694,7 @@ mod tests {
             &client.ws_open_tokens,
             &client.ws_sub_mutex,
             &client.ws_client.handle(),
+            client.config.subscribe_new_markets,
         )
         .await;
 
@@ -1960,6 +1975,7 @@ mod tests {
                 &client.ws_open_tokens,
                 &client.ws_sub_mutex,
                 &client.ws_client.handle(),
+                client.config.subscribe_new_markets,
             )
             .await;
 

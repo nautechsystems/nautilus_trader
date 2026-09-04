@@ -69,7 +69,7 @@ use crate::{
     },
     resolve::{
         PendingResolution, PendingResolutionGuard, ResolveApplyResult, ResolveContext,
-        ResolveWatchEntry, apply_condition_resolution,
+        ResolveWatchEntry, apply_condition_resolution_with_assets,
     },
     rtds::PolymarketRtdsFeed,
     websocket::{
@@ -159,6 +159,8 @@ impl WsMessageContext {
             ws_sub_mutex: self.ws_sub_mutex.clone(),
             ws: self.ws.clone(),
             pending_resolutions: self.pending_resolutions.clone(),
+            subscribe_new_markets: self.subscribe_new_markets,
+            cancellation_token: self.cancellation_token.clone(),
         }
     }
 }
@@ -868,7 +870,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
 
             let winning_asset_id = resolved.winning_asset_id;
             let winning_outcome = resolved.winning_outcome;
-            {
+            let pending_guard = {
                 let _guard = ctx.resolve_watch_apply_mutex.lock();
                 let has_resolution_intent = [
                     &ctx.active_instrument_status_subs,
@@ -887,15 +889,26 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                     return;
                 }
 
-                let watch_matches_asset = ctx
-                    .resolve_poll_watchlist
-                    .get_cloned(&condition_id)
-                    .is_some_and(|entry| {
-                        entry
-                            .tracked
-                            .values()
-                            .any(|tracked| distinct_assets.contains(tracked.token_id.as_str()))
-                    });
+                let watch_entry = ctx.resolve_poll_watchlist.get_cloned(&condition_id);
+
+                if watch_entry.as_ref().is_some_and(|entry| {
+                    entry
+                        .tracked
+                        .values()
+                        .any(|tracked| !distinct_assets.contains(tracked.token_id.as_str()))
+                }) {
+                    log::warn!(
+                        "Ignoring market_resolved for condition_id={condition_id}: payload assets conflict with known resolution owners"
+                    );
+                    return;
+                }
+
+                let watch_matches_asset = watch_entry.is_some_and(|entry| {
+                    entry
+                        .tracked
+                        .values()
+                        .any(|tracked| distinct_assets.contains(tracked.token_id.as_str()))
+                });
                 let loaded = ctx.instruments.load();
                 let intent_matches_asset = [
                     &ctx.active_instrument_status_subs,
@@ -926,39 +939,31 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                     return;
                 }
 
-                match ctx.pending_resolutions.entry(condition_id.clone()) {
-                    Entry::Occupied(_) => return,
-                    Entry::Vacant(entry) => {
-                        entry.insert(PendingResolution {
-                            winning_asset_id: winning_asset_id.clone(),
-                            winning_outcome: winning_outcome.clone(),
-                        });
-                    }
-                }
-            }
+                let Some(pending_guard) = PendingResolutionGuard::try_claim(
+                    ctx.pending_resolutions.clone(),
+                    condition_id.clone(),
+                    &winning_asset_id,
+                    &winning_outcome,
+                    false,
+                ) else {
+                    return;
+                };
+                pending_guard
+            };
 
             let resolve_ctx = ctx.resolve_context();
             let tasks = ctx.tasks.clone();
-            let pending_resolutions = ctx.pending_resolutions.clone();
-            let pending_condition_id = condition_id.clone();
-            let pending_resolution = PendingResolution {
-                winning_asset_id: winning_asset_id.clone(),
-                winning_outcome: winning_outcome.clone(),
-            };
-            let pending_guard = PendingResolutionGuard::new(
-                pending_resolutions,
-                pending_condition_id,
-                pending_resolution,
-            );
+            let asset_ids = resolved.assets_ids;
             let future = async move {
-                let result = apply_condition_resolution(
+                let _pending_guard = pending_guard;
+                let result = apply_condition_resolution_with_assets(
                     &resolve_ctx,
                     &condition_id,
                     &winning_asset_id,
                     &winning_outcome,
+                    &asset_ids,
                 )
                 .await;
-                pending_guard.disarm();
 
                 if let ResolveApplyResult::Applied { emitted_closes } = result
                     && emitted_closes > 0
@@ -1115,7 +1120,8 @@ mod tests {
             DataResponse,
             data::{
                 RequestBookSnapshot, RequestCustomData, RequestInstrument, RequestInstruments,
-                RequestTrades, SubscribeBookDeltas, SubscribeInstrumentStatus, SubscribeQuotes,
+                RequestTrades, SubscribeBookDeltas, SubscribeInstrumentClose,
+                SubscribeInstrumentStatus, SubscribeQuotes, UnsubscribeInstrumentClose,
                 UnsubscribeInstrumentStatus,
             },
         },
@@ -1124,7 +1130,10 @@ mod tests {
     use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
     use nautilus_model::{
         data::{BookOrder, CustomData as ModelCustomData, DataType, OrderBookDelta},
-        enums::{BookAction, InstrumentCloseType, OrderSide, PositionSide, RecordFlag},
+        enums::{
+            BookAction, InstrumentCloseType, MarketStatusAction, OrderSide, PositionSide,
+            RecordFlag,
+        },
         events::{PositionEvent, PositionOpened},
         identifiers::{
             AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol,
@@ -1151,8 +1160,8 @@ mod tests {
         http::{clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient},
         resolve::{
             PolymarketResolveRequestSummaryData, RESOLVE_REQUEST_TYPE_NAME, ResolveBatchErrorMode,
-            fetch_and_apply_resolutions_by_condition_ids, pause_resolve_watch_entries,
-            update_resolve_watchlist_from_position_event_serialized,
+            apply_condition_resolution, fetch_and_apply_resolutions_by_condition_ids,
+            pause_resolve_watch_entries, update_resolve_watchlist_from_position_event_serialized,
             upsert_data_resolve_watch_entry_from_instrument,
             upsert_resolve_watch_entry_from_instrument,
         },
@@ -2764,6 +2773,7 @@ mod tests {
         market_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
         market_cache_probe: Arc<Mutex<Option<CacheProbe>>>,
         market_cache_at_connect: Arc<Mutex<Vec<bool>>>,
+        resolution_on_subscribe: Arc<Mutex<Option<Value>>>,
     }
 
     async fn handle_gamma_markets(State(state): State<TestServerState>) -> Json<Value> {
@@ -2806,7 +2816,50 @@ mod tests {
             state.market_cache_at_connect.lock().push(cache_probe());
         }
 
-        ws.on_upgrade(move |socket| record_json_ws_payloads(socket, state.market_payloads))
+        ws.on_upgrade(move |mut socket| async move {
+            while let Some(Ok(message)) = socket.next().await {
+                match message {
+                    AxumWsMessage::Text(text) if text.as_str() == "PING" => {
+                        if socket
+                            .send(AxumWsMessage::Text("PONG".into()))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    AxumWsMessage::Text(text) => {
+                        let Ok(payload) = serde_json::from_str::<Value>(&text) else {
+                            continue;
+                        };
+                        let resolution = state.resolution_on_subscribe.lock().clone();
+                        let delivers_resolution = payload["custom_feature_enabled"] == true
+                            && payload["operation"] != "unsubscribe"
+                            && payload["assets_ids"]
+                                .as_array()
+                                .is_some_and(|ids| ids.iter().any(|id| id == TEST_TOKEN_ID_YES));
+                        state.market_payloads.lock().await.push(payload);
+
+                        if delivers_resolution
+                            && let Some(resolution) = resolution
+                            && socket
+                                .send(AxumWsMessage::Text(resolution.to_string().into()))
+                                .await
+                                .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    AxumWsMessage::Ping(data) => {
+                        if socket.send(AxumWsMessage::Pong(data)).await.is_err() {
+                            break;
+                        }
+                    }
+                    AxumWsMessage::Close(_) => break,
+                    _ => {}
+                }
+            }
+        })
     }
 
     async fn start_mock_server(state: TestServerState) -> SocketAddr {
@@ -3060,6 +3113,16 @@ mod tests {
         PolymarketDataClient,
         tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     ) {
+        create_test_client_with_new_markets(addr, false)
+    }
+
+    fn create_test_client_with_new_markets(
+        addr: SocketAddr,
+        subscribe_new_markets: bool,
+    ) -> (
+        PolymarketDataClient,
+        tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    ) {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         replace_data_event_sender(tx);
 
@@ -3073,7 +3136,7 @@ mod tests {
             PolymarketDataApiHttpClient::new(Some(base_url.clone()), 5).expect("data api client");
         let ws = PolymarketMarketConnectionPool::new(
             Some(format!("ws://{addr}/ws/market")),
-            false,
+            subscribe_new_markets,
             TransportBackend::default(),
             crate::common::consts::WS_DEFAULT_SUBSCRIPTIONS,
         );
@@ -3084,6 +3147,7 @@ mod tests {
             base_url_gamma: Some(base_url.clone()),
             base_url_data_api: Some(base_url),
             resolve_poll_enabled: false,
+            subscribe_new_markets,
             ..PolymarketDataClientConfig::default()
         };
 
@@ -3323,6 +3387,36 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
+    async fn market_resolved_clears_pending_claim_when_cancelled_before_apply() {
+        let asset_id = "0xCOND-BTC-0xTOKEN_YES";
+        let (ctx, mut data_rx, instrument_id) = quote_context(asset_id);
+        let instrument = ctx.instruments.get_cloned(&instrument_id).unwrap();
+        ctx.active_instrument_status_subs.insert(instrument_id);
+        assert!(upsert_data_resolve_watch_entry_from_instrument(
+            &ctx.resolve_poll_watchlist,
+            &instrument,
+        ));
+
+        // A queued task may first poll after graceful cancellation, while admission is separate
+        ctx.cancellation_token.cancel();
+        handle_market_message(
+            make_market_resolved("0xCOND-BTC", asset_id, "0xCOND-BTC-0xTOKEN_NO"),
+            &ctx,
+        );
+        ctx.wait_for_tasks().await;
+
+        assert!(ctx.pending_resolutions.is_empty());
+        assert!(!ctx.closed_condition_ids.lock().contains("0xCOND-BTC"));
+        assert!(ctx.active_instrument_status_subs.contains(&instrument_id));
+        assert!(
+            ctx.resolve_poll_watchlist
+                .contains_key(&"0xCOND-BTC".to_string())
+        );
+        assert!(data_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
     async fn market_resolved_rolls_back_pending_claim_when_task_admission_is_closed() {
         let (ctx, mut data_rx) = make_ws_ctx();
         let instrument = seed_instrument_with_context(
@@ -3436,6 +3530,119 @@ mod tests {
         assert!(!ctx.closed_condition_ids.lock().contains("0xCOND-BTC"));
         assert!(ctx.pending_resolutions.is_empty());
         assert!(data_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn market_resolved_does_not_settle_pending_intent_outside_payload_assets() {
+        let yes_token = "0xCOND-BTC-0xTOKEN_YES";
+        let (ctx, mut data_rx, instrument_id) = quote_context(yes_token);
+        let instrument = ctx.instruments.get_cloned(&instrument_id).unwrap();
+        let missing = InstrumentId::from("0xCOND-BTC-0xTOKEN_MISSING.POLYMARKET");
+
+        for id in [instrument_id, missing] {
+            ctx.active_instrument_status_subs.insert(id);
+            ctx.active_instrument_close_subs.insert(id);
+        }
+        upsert_data_resolve_watch_entry_from_instrument(&ctx.resolve_poll_watchlist, &instrument);
+        handle_market_message(
+            make_market_resolved("0xCOND-BTC", yes_token, "0xCOND-BTC-0xTOKEN_NO"),
+            &ctx,
+        );
+        ctx.wait_for_tasks().await;
+        let events: Vec<_> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+
+        assert_eq!(events.len(), 2);
+        assert!(events.iter().all(|event| match event {
+            DataEvent::InstrumentStatus(status) => status.instrument_id == instrument_id,
+            DataEvent::Data(NautilusData::InstrumentClose(close)) => {
+                close.instrument_id == instrument_id
+                    && close.close_price.as_decimal() == rust_decimal::Decimal::ONE
+            }
+            _ => false,
+        }));
+        assert!(ctx.active_instrument_status_subs.is_empty());
+        assert!(ctx.active_instrument_close_subs.is_empty());
+        assert!(ctx.resolve_poll_watchlist.is_empty());
+        assert!(ctx.pending_resolutions.is_empty());
+    }
+
+    #[rstest]
+    #[case::partial(false, false)]
+    #[case::known_pair(true, false)]
+    #[case::pair_loaded_while_pending(true, true)]
+    #[tokio::test]
+    async fn market_resolved_validates_all_known_legs_at_application(
+        #[case] sibling_known: bool,
+        #[case] load_sibling_while_pending: bool,
+    ) {
+        let yes_token = "0xCOND-BTC-0xTOKEN_YES";
+        let (ctx, mut data_rx, instrument_id) = quote_context(yes_token);
+        let yes = ctx.instruments.get_cloned(&instrument_id).unwrap();
+        ctx.active_instrument_close_subs.insert(instrument_id);
+        upsert_data_resolve_watch_entry_from_instrument(&ctx.resolve_poll_watchlist, &yes);
+        let add_sibling = || {
+            let no = seed_instrument_with_context(
+                &ctx,
+                "0xCOND-BTC-0xTOKEN_NO",
+                Price::from("0.001"),
+                Quantity::from("0.01"),
+                SeedInstrumentContext {
+                    condition_id: Some("0xCOND-BTC"),
+                    ..SeedInstrumentContext::default()
+                },
+            );
+            let _guard = ctx.resolve_watch_apply_mutex.lock();
+            upsert_resolve_watch_entry_from_instrument(
+                &ctx.resolve_poll_watchlist,
+                &no,
+                PositionId::new("P-KNOWN-NO"),
+            );
+        };
+
+        if sibling_known && !load_sibling_while_pending {
+            add_sibling();
+        }
+        let guard = ctx.ws_sub_mutex.lock().await;
+        let MarketWsMessage::MarketResolved(mut resolved) =
+            make_market_resolved("0xCOND-BTC", yes_token, "0xTOKEN_FOREIGN")
+        else {
+            panic!("expected market_resolved")
+        };
+        resolved.winning_asset_id = "0xTOKEN_FOREIGN".to_string();
+        resolved.winning_outcome = "No".to_string();
+        handle_market_message(MarketWsMessage::MarketResolved(resolved), &ctx);
+
+        if load_sibling_while_pending {
+            assert!(ctx.pending_resolutions.contains_key("0xCOND-BTC"));
+            add_sibling();
+        }
+        drop(guard);
+        ctx.wait_for_tasks().await;
+
+        assert!(ctx.pending_resolutions.is_empty());
+        if sibling_known {
+            assert!(!ctx.closed_condition_ids.lock().contains("0xCOND-BTC"));
+            assert_eq!(
+                ctx.resolve_poll_watchlist
+                    .get_cloned(&"0xCOND-BTC".to_string())
+                    .unwrap()
+                    .tracked
+                    .len(),
+                2
+            );
+            assert!(ctx.active_instrument_close_subs.contains(&instrument_id));
+            assert!(data_rx.try_recv().is_err());
+        } else {
+            let DataEvent::Data(NautilusData::InstrumentClose(close)) = data_rx.try_recv().unwrap()
+            else {
+                panic!("expected close for the known losing leg")
+            };
+            assert_eq!(close.instrument_id, instrument_id);
+            assert_eq!(close.close_price.as_decimal(), rust_decimal::Decimal::ZERO);
+            assert!(ctx.closed_condition_ids.lock().contains("0xCOND-BTC"));
+            assert!(data_rx.try_recv().is_err());
+        }
     }
 
     #[rstest]
@@ -4810,6 +5017,7 @@ mod tests {
                     &ws_sub_mutex,
                     &ws,
                     None,
+                    false,
                 ));
         });
 
@@ -4946,7 +5154,7 @@ mod tests {
         wait_until_async(
             || {
                 let client = &client;
-                async move { !client.auto_load_scheduled.load(Ordering::Acquire) }
+                async move { client.tasks.all_finished() }
             },
             StdDuration::from_secs(3),
         )
@@ -4997,7 +5205,7 @@ mod tests {
         wait_until_async(
             || {
                 let client = &client;
-                async move { !client.auto_load_scheduled.load(Ordering::Acquire) }
+                async move { client.tasks.all_finished() }
             },
             StdDuration::from_secs(3),
         )
@@ -5044,10 +5252,7 @@ mod tests {
         wait_until_async(
             || {
                 let client = &client;
-                async move {
-                    client.pending_auto_loads.lock().is_empty()
-                        && !client.auto_load_scheduled.load(Ordering::Acquire)
-                }
+                async move { client.tasks.all_finished() }
             },
             StdDuration::from_secs(3),
         )
@@ -5112,7 +5317,7 @@ mod tests {
             vec![],
         );
         let addr = start_scripted_auto_load_test_server(state.clone()).await;
-        let (mut client, mut data_rx) = create_test_client(addr);
+        let (mut client, mut data_rx) = create_test_client_with_new_markets(addr, true);
         client.config.auto_load_debounce_ms = 0;
         client.config.auto_load_max_retries = 0;
         let instrument_id = fixture_yes_instrument_id();
@@ -5132,10 +5337,7 @@ mod tests {
         wait_until_async(
             || {
                 let client = &client;
-                async move {
-                    client.pending_auto_loads.lock().is_empty()
-                        && !client.auto_load_scheduled.load(Ordering::Acquire)
-                }
+                async move { client.tasks.all_finished() }
             },
             StdDuration::from_secs(3),
         )
@@ -5378,7 +5580,7 @@ mod tests {
         wait_until_async(
             || {
                 let client = &client;
-                async move { !client.auto_load_scheduled.load(Ordering::Acquire) }
+                async move { client.tasks.all_finished() }
             },
             StdDuration::from_secs(3),
         )
@@ -5389,6 +5591,111 @@ mod tests {
                 .resolve_poll_watchlist
                 .contains_key(&TEST_CONDITION_ID.to_string())
         );
+    }
+
+    #[rstest]
+    #[case::open(false, false)]
+    #[case::closed(true, false)]
+    #[case::resolved(true, true)]
+    #[tokio::test]
+    async fn reset_isolates_auto_load_completion_after_filter(
+        #[case] closed: bool,
+        #[case] resolved: bool,
+    ) {
+        let mut market = gamma_market_recheck_fixture_value();
+        market["closed"] = Value::Bool(closed);
+
+        if resolved {
+            market["outcomePrices"] = Value::String("[\"1\",\"0\"]".to_string());
+        }
+        let state = ScriptedAutoLoadServerState::new(
+            vec![ScriptedAutoLoadReply::ok(serde_json::json!([market]))],
+            vec![],
+        );
+        let addr = start_scripted_auto_load_test_server(state).await;
+        let (mut client, mut data_rx) = create_test_client(addr);
+        client.config.auto_load_max_retries = 0;
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new((Mutex::new(false), parking_lot::Condvar::new()));
+        let filter_entered = entered.clone();
+        let filter_release = release.clone();
+        client.add_instrument_filter(Arc::new(crate::filters::PredicateFilter::new(
+            "reset-during-filter",
+            move |_| {
+                filter_entered.notify_one();
+                let (lock, condition) = &*filter_release;
+                let mut released = lock.lock();
+
+                while !*released {
+                    condition.wait(&mut released);
+                }
+                true
+            },
+        )));
+        subscribe_test_resolution(&mut client, fixture_yes_instrument_id());
+        tokio::time::timeout(StdDuration::from_secs(3), entered.notified())
+            .await
+            .expect("auto-load entered the filter");
+
+        client.reset_client();
+        let (lock, condition) = &*release;
+        *lock.lock() = true;
+        condition.notify_all();
+        client.disconnect_client().await.expect("old tasks drained");
+
+        assert!(client.instruments.is_empty());
+        assert!(client.token_meta.is_empty());
+        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.active_instrument_status_subs.is_empty());
+        assert!(client.active_instrument_close_subs.is_empty());
+        assert!(client.pending_resolutions.is_empty());
+        assert!(client.closed_condition_ids.lock().is_empty());
+        assert!(client.ws_open_tokens.is_empty());
+        assert!(data_rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn reset_rejects_old_resolution_context() {
+        let state = ScriptedAutoLoadServerState::new(vec![], vec![]);
+        let addr = start_scripted_auto_load_test_server(state).await;
+        let (mut client, mut data_rx) = create_test_client(addr);
+        let instrument = instrument_from_gamma_fixture(gamma_market_recheck_fixture_value());
+        cache_instrument_unchecked(&client.instruments, &client.token_meta, &instrument);
+        subscribe_test_resolution(&mut client, instrument.id());
+        let old_ctx = client.resolution_context();
+
+        client.reset_client();
+        let result =
+            apply_condition_resolution(&old_ctx, TEST_CONDITION_ID, TEST_TOKEN_ID_YES, "Yes").await;
+
+        assert_eq!(result, ResolveApplyResult::Ignored);
+        assert!(old_ctx.pending_resolutions.is_empty());
+        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.closed_condition_ids.lock().is_empty());
+        assert!(data_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn reset_rejects_old_instrument_publication() {
+        let mut client = make_local_test_client();
+        let old_ctx = make_client_ws_ctx(&client);
+        let instrument = instrument_from_gamma_fixture(gamma_market_recheck_fixture_value());
+        let mut published = false;
+
+        client.reset_client();
+        let applied = apply_live_instrument(
+            &old_ctx.closed_condition_ids,
+            &old_ctx.instrument_update_state,
+            &old_ctx.instruments,
+            &old_ctx.token_meta,
+            &instrument,
+            |_| published = true,
+        );
+
+        assert!(!applied);
+        assert!(!published);
+        assert!(old_ctx.instruments.is_empty());
+        assert!(client.instruments.is_empty());
     }
 
     #[rstest]
@@ -5653,10 +5960,14 @@ mod tests {
     }
 
     #[rstest]
+    #[case::transient("[]")]
+    #[case::malformed("not-json")]
     #[tokio::test]
-    async fn auto_load_unusable_closed_probe_remains_unresolved() {
+    async fn auto_load_transient_closed_market_uses_positive_closure_probe(
+        #[case] token_ids: &str,
+    ) {
         let mut closed_unusable = gamma_market_future_closed_fixture_value();
-        closed_unusable["clobTokenIds"] = Value::String("[]".to_string());
+        closed_unusable["clobTokenIds"] = Value::String(token_ids.to_string());
         let state = ScriptedAutoLoadServerState::new(
             vec![ScriptedAutoLoadReply::ok(serde_json::json!([
                 closed_unusable.clone()
@@ -5686,10 +5997,7 @@ mod tests {
         wait_until_async(
             || {
                 let client = &client;
-                async move {
-                    client.pending_auto_loads.lock().is_empty()
-                        && !client.auto_load_scheduled.load(Ordering::Acquire)
-                }
+                async move { !client.active_quote_subs.contains(&instrument_id) }
             },
             StdDuration::from_secs(3),
         )
@@ -5715,15 +6023,1278 @@ mod tests {
                 .contains_key(&Ustr::from(TEST_TOKEN_ID_YES))
         );
         assert!(client.ws_open_tokens.is_empty());
-        assert!(client.active_quote_subs.contains(&instrument_id));
+        assert!(!client.active_quote_subs.contains(&instrument_id));
         assert!(
-            !client
+            client
                 .closed_condition_ids
                 .lock()
                 .contains(TEST_CONDITION_ID)
         );
         assert!(state.market_payloads.lock().await.is_empty());
         assert!(data_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[case::status(true, false)]
+    #[case::close(false, true)]
+    #[case::both(true, true)]
+    #[tokio::test]
+    async fn auto_load_applies_fetched_resolution_without_polling(
+        #[case] status_intent: bool,
+        #[case] close_intent: bool,
+        #[values(false, true)] positive_probe: bool,
+        #[values("future", "stale", "missing")] expiration: &str,
+    ) {
+        let mut market = if expiration == "stale" {
+            gamma_market_expired_fixture_value()
+        } else {
+            gamma_market_future_closed_fixture_value()
+        };
+        market["closed"] = Value::Bool(true);
+        market["outcomePrices"] = Value::String("[\"1\",\"0\"]".to_string());
+
+        if expiration == "missing" {
+            for key in ["endDate", "endDateIso"] {
+                market[key] = Value::Null;
+            }
+            market["events"] = serde_json::json!([]);
+        }
+        let reply = ScriptedAutoLoadReply::ok(serde_json::json!([market]));
+        let state = if positive_probe {
+            ScriptedAutoLoadServerState::new(
+                vec![ScriptedAutoLoadReply::ok(serde_json::json!([]))],
+                vec![reply],
+            )
+        } else {
+            ScriptedAutoLoadServerState::new(vec![reply], vec![])
+        };
+        let addr = start_scripted_auto_load_test_server(state.clone()).await;
+        let (mut client, mut data_rx) = create_test_client(addr);
+        client.config.auto_load_max_retries = 0;
+        let instrument_ids = [
+            fixture_yes_instrument_id(),
+            fixture_instrument_id(TEST_CONDITION_ID, TEST_TOKEN_ID_NO),
+        ];
+
+        for instrument_id in instrument_ids {
+            if status_intent {
+                client
+                    .subscribe_instrument_status(SubscribeInstrumentStatus::new(
+                        instrument_id,
+                        Some(client.client_id),
+                        None,
+                        UUID4::new(),
+                        UnixNanos::default(),
+                        None,
+                        None,
+                    ))
+                    .unwrap();
+            }
+
+            if close_intent {
+                client
+                    .subscribe_instrument_close(SubscribeInstrumentClose::new(
+                        instrument_id,
+                        Some(client.client_id),
+                        None,
+                        UUID4::new(),
+                        UnixNanos::default(),
+                        None,
+                        None,
+                    ))
+                    .unwrap();
+            }
+        }
+
+        wait_until_async(
+            || async { client.tasks.all_finished() },
+            StdDuration::from_secs(5),
+        )
+        .await;
+
+        assert_eq!(
+            apply_condition_resolution(
+                &client.resolution_context(),
+                TEST_CONDITION_ID,
+                TEST_TOKEN_ID_YES,
+                "Yes"
+            )
+            .await,
+            ResolveApplyResult::Ignored,
+        );
+        let ws_ctx = make_client_ws_ctx(&client);
+        handle_market_message(
+            make_market_resolved(TEST_CONDITION_ID, TEST_TOKEN_ID_YES, TEST_TOKEN_ID_NO),
+            &ws_ctx,
+        );
+
+        let mut statuses = Vec::new();
+        let mut closes = Vec::new();
+
+        while let Ok(event) = data_rx.try_recv() {
+            match event {
+                DataEvent::InstrumentStatus(status) => statuses.push(status),
+                DataEvent::Data(NautilusData::InstrumentClose(close)) => closes.push(close),
+                _ => {}
+            }
+        }
+        assert_eq!(statuses.len(), usize::from(status_intent) * 2);
+        assert_eq!(closes.len(), usize::from(close_intent) * 2);
+        if status_intent {
+            assert_eq!(
+                statuses
+                    .iter()
+                    .map(|status| status.instrument_id)
+                    .collect::<AHashSet<_>>(),
+                AHashSet::from_iter(instrument_ids)
+            );
+        }
+
+        if close_intent {
+            assert_eq!(
+                closes
+                    .iter()
+                    .map(|close| close.instrument_id)
+                    .collect::<AHashSet<_>>(),
+                AHashSet::from_iter(instrument_ids)
+            );
+        }
+
+        for status in statuses {
+            assert!(instrument_ids.contains(&status.instrument_id));
+            assert_eq!(status.action, MarketStatusAction::Close);
+        }
+
+        for close in closes {
+            let expected = if close.instrument_id == instrument_ids[0] {
+                rust_decimal::Decimal::ONE
+            } else {
+                rust_decimal::Decimal::ZERO
+            };
+            assert_eq!(close.close_price.as_decimal(), expected);
+            assert_eq!(close.close_type, InstrumentCloseType::ContractExpired);
+        }
+        assert_eq!(
+            state.queries.lock().len(),
+            if positive_probe { 2 } else { 1 }
+        );
+        assert!(
+            client
+                .closed_condition_ids
+                .lock()
+                .contains(TEST_CONDITION_ID)
+        );
+        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.active_instrument_status_subs.is_empty());
+        assert!(client.active_instrument_close_subs.is_empty());
+        assert!(client.ws_open_tokens.is_empty());
+    }
+
+    #[tokio::test]
+    async fn default_resolution_subscription_does_not_open_websocket() {
+        let state = ScriptedAutoLoadServerState::new(
+            vec![ScriptedAutoLoadReply::ok(serde_json::json!([
+                gamma_market_recheck_fixture_value()
+            ]))],
+            vec![],
+        );
+        let addr = start_scripted_auto_load_test_server(state.clone()).await;
+        let (mut client, _data_rx) = create_test_client(addr);
+        client.config.auto_load_debounce_ms = 0;
+        client.config.auto_load_max_retries = 0;
+        client
+            .subscribe_instrument_status(SubscribeInstrumentStatus::new(
+                fixture_yes_instrument_id(),
+                Some(client.client_id),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+
+        wait_until_async(
+            || async { client.tasks.all_finished() },
+            StdDuration::from_secs(5),
+        )
+        .await;
+
+        assert!(
+            client
+                .resolve_poll_watchlist
+                .contains_key(&TEST_CONDITION_ID.to_string())
+        );
+        assert!(client.ws_open_tokens.is_empty());
+        assert!(state.market_payloads.lock().await.is_empty());
+    }
+
+    #[rstest]
+    #[case::status(true, false)]
+    #[case::close(false, true)]
+    #[case::both(true, true)]
+    #[tokio::test]
+    async fn cached_expired_resolution_subscription_preserves_deadline_and_delivery(
+        #[case] status_intent: bool,
+        #[case] close_intent: bool,
+        #[values(false, true)] timed_out: bool,
+        #[values(None, Some(true))] reported_closed: Option<bool>,
+    ) {
+        let mut market = gamma_market_future_closed_fixture_value();
+        market["outcomePrices"] = Value::String("[\"1\",\"0\"]".to_string());
+        let state = ScriptedAutoLoadServerState::new(
+            vec![],
+            vec![ScriptedAutoLoadReply::ok(serde_json::json!([
+                market.clone()
+            ]))],
+        );
+        let addr = start_scripted_auto_load_test_server(state).await;
+        let (mut client, mut data_rx) = create_test_client(addr);
+        client.config.resolve_poll_enabled = true;
+        client.config.resolve_poll_grace_secs = 0;
+        client.config.resolve_poll_max_wait_secs = 300;
+        let mut instrument = instrument_from_gamma_fixture(market);
+        let expiration = if timed_out {
+            UnixNanos::from(1)
+        } else {
+            UnixNanos::from(client.clock.get_time_ns().as_u64() - 1_000_000_000)
+        };
+
+        if let InstrumentAny::BinaryOption(binary) = &mut instrument {
+            binary.expiration_ns = expiration;
+            if let Some(closed) = reported_closed {
+                crate::filters::set_market_closed(binary, closed);
+            }
+        }
+        let instrument_id = instrument.id();
+        cache_instrument_unchecked(&client.instruments, &client.token_meta, &instrument);
+
+        if status_intent {
+            client
+                .subscribe_instrument_status(SubscribeInstrumentStatus::new(
+                    instrument_id,
+                    Some(client.client_id),
+                    None,
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                ))
+                .expect("expired metadata still supports a status owner");
+        }
+
+        if close_intent {
+            client
+                .subscribe_instrument_close(SubscribeInstrumentClose::new(
+                    instrument_id,
+                    Some(client.client_id),
+                    None,
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                ))
+                .expect("expired metadata still supports a close owner");
+        }
+        assert_eq!(
+            client
+                .resolve_poll_watchlist
+                .get_cloned(&TEST_CONDITION_ID.to_string())
+                .unwrap()
+                .expiration_ns,
+            expiration
+        );
+        assert!(
+            client
+                .subscribe_quotes(SubscribeQuotes::new(
+                    instrument_id,
+                    Some(client.client_id),
+                    None,
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                ))
+                .is_err()
+        );
+        client.register_resolve_poll_task().unwrap();
+
+        if timed_out {
+            wait_until_async(
+                || async {
+                    client
+                        .resolve_poll_watchlist
+                        .get_cloned(&TEST_CONDITION_ID.to_string())
+                        .is_some_and(|entry| entry.paused)
+                },
+                StdDuration::from_secs(3),
+            )
+            .await;
+            assert_eq!(
+                client
+                    .resolve_poll_watchlist
+                    .get_cloned(&TEST_CONDITION_ID.to_string())
+                    .unwrap()
+                    .expiration_ns,
+                expiration
+            );
+            assert!(data_rx.try_recv().is_err());
+            client
+                .request_data(RequestCustomData::new(
+                    client.client_id,
+                    DataType::new(RESOLVE_REQUEST_TYPE_NAME, None, None),
+                    None,
+                    None,
+                    None,
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                ))
+                .unwrap();
+        }
+        let events = collect_events_until(&mut data_rx, StdDuration::from_secs(3), |events| {
+            if timed_out {
+                events.iter().any(is_resolve_response)
+            } else {
+                events
+                    .iter()
+                    .filter(|event| matches!(event, DataEvent::InstrumentStatus(_)))
+                    .count()
+                    == usize::from(status_intent)
+                    && count_instrument_close_events(events) == usize::from(close_intent)
+            }
+        })
+        .await;
+        client.stop_client();
+        client
+            .await_tasks_with_timeout(StdDuration::from_secs(2))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, DataEvent::InstrumentStatus(_)))
+                .count(),
+            usize::from(status_intent)
+        );
+        assert_eq!(
+            count_instrument_close_events(&events),
+            usize::from(close_intent)
+        );
+        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.active_instrument_status_subs.is_empty());
+        assert!(client.active_instrument_close_subs.is_empty());
+        assert!(client.ws_open_tokens.is_empty());
+    }
+
+    #[rstest]
+    #[case::gamma(false)]
+    #[case::clob(true)]
+    #[tokio::test]
+    async fn data_only_resolution_delivers_with_default_discovery_disabled(
+        #[case] clob_fallback: bool,
+    ) {
+        let state = TestServerState::default();
+        *state.gamma_response.lock().await =
+            Some(serde_json::json!([gamma_market_recheck_fixture_value()]));
+        let addr = start_mock_server(state.clone()).await;
+        let (mut client, mut data_rx) = create_test_client(addr);
+        client.config.resolve_poll_enabled = true;
+        client.config.resolve_poll_interval_secs = 1;
+        client.config.resolve_poll_grace_secs = 0;
+        client.config.resolve_poll_max_wait_secs = 300;
+        client.connect().await.unwrap();
+        let instrument_ids = [
+            fixture_yes_instrument_id(),
+            fixture_instrument_id(TEST_CONDITION_ID, TEST_TOKEN_ID_NO),
+        ];
+
+        for instrument_id in instrument_ids {
+            subscribe_test_resolution(&mut client, instrument_id);
+        }
+        wait_until_async(
+            || async {
+                client
+                    .resolve_poll_watchlist
+                    .get_cloned(&TEST_CONDITION_ID.to_string())
+                    .is_some_and(|entry| entry.tracked.len() == 2)
+            },
+            StdDuration::from_secs(3),
+        )
+        .await;
+
+        let mut market = gamma_market_future_closed_fixture_value();
+
+        if clob_fallback {
+            state.clob_market_by_condition.lock().await.insert(
+                TEST_CONDITION_ID.to_string(),
+                make_clob_market_value(
+                    TEST_CONDITION_ID,
+                    TEST_TOKEN_ID_YES,
+                    TEST_TOKEN_ID_NO,
+                    true,
+                ),
+            );
+        } else {
+            market["outcomePrices"] = Value::String("[\"1\",\"0\"]".to_string());
+        }
+        *state.gamma_response.lock().await = Some(serde_json::json!([market]));
+        client.resolve_poll_watchlist.rcu(|entries| {
+            let entry = entries.get_mut(TEST_CONDITION_ID).unwrap();
+            entry.expiration_ns =
+                UnixNanos::from(client.clock.get_time_ns().as_u64() - 1_000_000_000);
+            assert!(
+                entry
+                    .tracked
+                    .values()
+                    .all(|tracked| tracked.open_position_ids.is_empty())
+            );
+        });
+
+        let events = collect_events_until(&mut data_rx, StdDuration::from_secs(5), |events| {
+            count_instrument_close_events(events) == 2
+        })
+        .await;
+        client.disconnect().await.unwrap();
+
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, DataEvent::InstrumentStatus(_)))
+                .count(),
+            2
+        );
+        assert_eq!(count_instrument_close_events(&events), 2);
+        for event in events {
+            if let DataEvent::Data(NautilusData::InstrumentClose(close)) = event {
+                assert_eq!(close.close_type, InstrumentCloseType::ContractExpired);
+                assert_eq!(
+                    close.close_price.as_decimal(),
+                    if close.instrument_id == instrument_ids[0] {
+                        rust_decimal::Decimal::ONE
+                    } else {
+                        rust_decimal::Decimal::ZERO
+                    }
+                );
+            }
+        }
+        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.active_instrument_status_subs.is_empty());
+        assert!(client.active_instrument_close_subs.is_empty());
+        assert!(client.ws_open_tokens.is_empty());
+        assert!(state.market_payloads.lock().await.is_empty());
+    }
+
+    fn subscribe_test_resolution(client: &mut PolymarketDataClient, instrument_id: InstrumentId) {
+        client
+            .subscribe_instrument_status(SubscribeInstrumentStatus::new(
+                instrument_id,
+                Some(client.client_id),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        client
+            .subscribe_instrument_close(SubscribeInstrumentClose::new(
+                instrument_id,
+                Some(client.client_id),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+    }
+
+    #[rstest]
+    #[case::open(false)]
+    #[case::closed_auto_load(true)]
+    #[tokio::test]
+    async fn resolution_websocket_delivers_on_enabled_wire_and_unsubscribes(
+        #[case] closed_auto_load: bool,
+    ) {
+        let state = TestServerState::default();
+        *state.gamma_response.lock().await = Some(if closed_auto_load {
+            serde_json::json!([])
+        } else {
+            serde_json::json!([gamma_market_recheck_fixture_value()])
+        });
+        *state.resolution_on_subscribe.lock() = Some(
+            serde_json::to_value(make_market_resolved(
+                TEST_CONDITION_ID,
+                TEST_TOKEN_ID_YES,
+                TEST_TOKEN_ID_NO,
+            ))
+            .unwrap(),
+        );
+        let addr = start_mock_server(state.clone()).await;
+        let (mut client, mut data_rx) = create_test_client_with_new_markets(addr, true);
+        client.connect().await.unwrap();
+
+        if closed_auto_load {
+            *state.gamma_response.lock().await = Some(serde_json::json!([
+                gamma_market_future_closed_fixture_value()
+            ]));
+        }
+        let guard = client.ws_sub_mutex.clone().lock_owned().await;
+        subscribe_test_resolution(&mut client, fixture_yes_instrument_id());
+        drop(guard);
+
+        let events = collect_events_until(&mut data_rx, StdDuration::from_secs(5), |events| {
+            count_instrument_close_events(events) == 1
+        })
+        .await;
+        wait_until_async(
+            || async {
+                state
+                    .market_payloads
+                    .lock()
+                    .await
+                    .iter()
+                    .any(|payload| payload["operation"] == "unsubscribe")
+            },
+            StdDuration::from_secs(3),
+        )
+        .await;
+        let payloads = state.market_payloads.lock().await.clone();
+        client.disconnect().await.unwrap();
+
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, DataEvent::InstrumentStatus(_)))
+                .count(),
+            1
+        );
+        assert_eq!(count_instrument_close_events(&events), 1);
+        assert!(payloads.iter().any(|payload| {
+            payload["custom_feature_enabled"] == true
+                && payload["assets_ids"] == serde_json::json!([TEST_TOKEN_ID_YES])
+        }));
+        assert!(
+            client
+                .closed_condition_ids
+                .lock()
+                .contains(TEST_CONDITION_ID)
+        );
+        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.ws_open_tokens.is_empty());
+    }
+
+    #[rstest]
+    #[case::automatic(true)]
+    #[case::manual_only(false)]
+    #[tokio::test]
+    async fn resolution_timeout_releases_wire_and_preserves_manual_recovery(
+        #[case] polling: bool,
+        #[values(false, true)] keep_quotes: bool,
+    ) {
+        let state = TestServerState::default();
+        *state.gamma_response.lock().await =
+            Some(serde_json::json!([gamma_market_recheck_fixture_value()]));
+        let addr = start_mock_server(state.clone()).await;
+        let (mut client, mut data_rx) = create_test_client_with_new_markets(addr, true);
+        client.config.resolve_poll_enabled = polling;
+        client.config.resolve_poll_interval_secs = 1;
+        client.config.resolve_poll_grace_secs = 0;
+        client.config.resolve_poll_max_wait_secs = 300;
+        client.connect().await.unwrap();
+        let instrument_id = fixture_yes_instrument_id();
+        subscribe_test_resolution(&mut client, instrument_id);
+        if keep_quotes {
+            client
+                .subscribe_quotes(SubscribeQuotes::new(
+                    instrument_id,
+                    Some(client.client_id),
+                    None,
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                ))
+                .unwrap();
+        }
+        wait_until_async(
+            || async {
+                state
+                    .market_payloads
+                    .lock()
+                    .await
+                    .iter()
+                    .any(|payload| payload["assets_ids"] == serde_json::json!([TEST_TOKEN_ID_YES]))
+            },
+            StdDuration::from_secs(3),
+        )
+        .await;
+        client.resolve_poll_watchlist.rcu(|entries| {
+            entries.get_mut(TEST_CONDITION_ID).unwrap().expiration_ns = UnixNanos::default();
+        });
+        wait_until_async(
+            || async {
+                client
+                    .resolve_poll_watchlist
+                    .get_cloned(&TEST_CONDITION_ID.to_string())
+                    .unwrap()
+                    .paused
+            },
+            StdDuration::from_secs(3),
+        )
+        .await;
+
+        if !keep_quotes {
+            wait_until_async(
+                || async {
+                    state
+                        .market_payloads
+                        .lock()
+                        .await
+                        .iter()
+                        .any(|payload| payload["operation"] == "unsubscribe")
+                },
+                StdDuration::from_secs(3),
+            )
+            .await;
+        }
+        assert_eq!(
+            client
+                .ws_open_tokens
+                .contains(&Ustr::from(TEST_TOKEN_ID_YES)),
+            keep_quotes
+        );
+        assert!(
+            client
+                .active_instrument_status_subs
+                .contains(&instrument_id)
+        );
+        assert!(client.active_instrument_close_subs.contains(&instrument_id));
+
+        let mut market = gamma_market_future_closed_fixture_value();
+        market["outcomePrices"] = Value::String("[\"1\",\"0\"]".to_string());
+        *state.gamma_response.lock().await = Some(serde_json::json!([market]));
+        client
+            .request_data(RequestCustomData::new(
+                client.client_id,
+                DataType::new(RESOLVE_REQUEST_TYPE_NAME, None, None),
+                None,
+                None,
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+            ))
+            .unwrap();
+        let events = collect_events_until(&mut data_rx, StdDuration::from_secs(5), |events| {
+            events.iter().any(is_resolve_response)
+        })
+        .await;
+        client.disconnect().await.unwrap();
+
+        assert_eq!(count_instrument_close_events(&events), 1);
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, DataEvent::InstrumentStatus(_)))
+                .count(),
+            1
+        );
+        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.ws_open_tokens.is_empty());
+        assert!(!client.active_quote_subs.contains(&instrument_id));
+    }
+
+    #[rstest]
+    #[case::data_only(false)]
+    #[case::position_owned(true)]
+    #[tokio::test]
+    async fn resolution_unsubscribe_removes_data_owner_without_cached_instrument(
+        #[case] position_owned: bool,
+    ) {
+        let state = TestServerState::default();
+        let addr = start_mock_server(state.clone()).await;
+        let (mut client, _data_rx) = create_test_client_with_new_markets(addr, true);
+        client.ws_client.connect().await.unwrap();
+        let instrument = instrument_from_gamma_fixture(gamma_market_recheck_fixture_value());
+        let instrument_id = instrument.id();
+        client.instruments.insert(instrument_id, instrument.clone());
+        client
+            .subscribe_instrument_status(SubscribeInstrumentStatus::new(
+                instrument_id,
+                Some(client.client_id),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        wait_until_async(
+            || async {
+                state
+                    .market_payloads
+                    .lock()
+                    .await
+                    .iter()
+                    .any(|payload| payload["assets_ids"] == serde_json::json!([TEST_TOKEN_ID_YES]))
+            },
+            StdDuration::from_secs(3),
+        )
+        .await;
+
+        if position_owned {
+            upsert_resolve_watch_entry_from_instrument(
+                &client.resolve_poll_watchlist,
+                &instrument,
+                PositionId::new("P-1"),
+            );
+        }
+        client.instruments.remove(&instrument_id);
+        client
+            .unsubscribe_instrument_status(&UnsubscribeInstrumentStatus::new(
+                instrument_id,
+                Some(client.client_id),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        wait_until_async(
+            || async {
+                state
+                    .market_payloads
+                    .lock()
+                    .await
+                    .iter()
+                    .any(|payload| payload["operation"] == "unsubscribe")
+            },
+            StdDuration::from_secs(3),
+        )
+        .await;
+        client.disconnect().await.unwrap();
+
+        let watch = client
+            .resolve_poll_watchlist
+            .get_cloned(&TEST_CONDITION_ID.to_string());
+        assert_eq!(watch.is_some(), position_owned);
+        assert!(client.ws_open_tokens.is_empty());
+
+        if let Some(watch) = watch {
+            let tracked = watch.tracked.get(TEST_TOKEN_ID_YES).unwrap();
+            assert!(!tracked.has_data_subscription);
+            assert_eq!(tracked.open_position_ids.len(), 1);
+        }
+    }
+
+    #[rstest]
+    #[case::remove_status(true)]
+    #[case::remove_close(false)]
+    #[tokio::test]
+    async fn resolution_unsubscribe_preserves_the_other_event_type(
+        #[case] remove_status: bool,
+        #[values(false, true)] evict_cache: bool,
+    ) {
+        let state = TestServerState::default();
+        let addr = start_mock_server(state).await;
+        let (mut client, mut data_rx) = create_test_client(addr);
+        let instrument = instrument_from_gamma_fixture(gamma_market_recheck_fixture_value());
+        let instrument_id = instrument.id();
+        client.instruments.insert(instrument_id, instrument);
+        subscribe_test_resolution(&mut client, instrument_id);
+
+        if evict_cache {
+            client.instruments.remove(&instrument_id);
+        }
+
+        if remove_status {
+            client
+                .unsubscribe_instrument_status(&UnsubscribeInstrumentStatus::new(
+                    instrument_id,
+                    Some(client.client_id),
+                    None,
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                ))
+                .unwrap();
+        } else {
+            client
+                .unsubscribe_instrument_close(&UnsubscribeInstrumentClose::new(
+                    instrument_id,
+                    Some(client.client_id),
+                    None,
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                ))
+                .unwrap();
+        }
+
+        let watch = client
+            .resolve_poll_watchlist
+            .get_cloned(&TEST_CONDITION_ID.to_string())
+            .unwrap();
+        assert!(
+            watch
+                .tracked
+                .get(TEST_TOKEN_ID_YES)
+                .unwrap()
+                .has_data_subscription
+        );
+        assert_eq!(
+            client
+                .active_instrument_status_subs
+                .contains(&instrument_id),
+            !remove_status
+        );
+        assert_eq!(
+            client.active_instrument_close_subs.contains(&instrument_id),
+            remove_status
+        );
+
+        apply_condition_resolution(
+            &client.resolution_context(),
+            TEST_CONDITION_ID,
+            TEST_TOKEN_ID_YES,
+            "Yes",
+        )
+        .await;
+        let mut statuses = 0;
+        let mut closes = 0;
+
+        while let Ok(event) = data_rx.try_recv() {
+            match event {
+                DataEvent::InstrumentStatus(status) => {
+                    assert_eq!(status.instrument_id, instrument_id);
+                    statuses += 1;
+                }
+                DataEvent::Data(NautilusData::InstrumentClose(close)) => {
+                    assert_eq!(close.instrument_id, instrument_id);
+                    assert_eq!(close.close_price.as_decimal(), rust_decimal::Decimal::ONE);
+                    closes += 1;
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(statuses, usize::from(!remove_status));
+        assert_eq!(closes, usize::from(remove_status));
+        assert!(client.resolve_poll_watchlist.is_empty());
+    }
+
+    #[tokio::test]
+    async fn manual_resolution_selection_pauses_and_releases_wire() {
+        let state = TestServerState::default();
+        *state.gamma_response.lock().await =
+            Some(serde_json::json!([gamma_market_recheck_fixture_value()]));
+        let addr = start_mock_server(state.clone()).await;
+        let (mut client, mut data_rx) = create_test_client_with_new_markets(addr, true);
+        client.config.resolve_poll_enabled = true;
+        let instrument_id = fixture_yes_instrument_id();
+        // Connect only the transport, without starting the automatic poll task
+        client.ws_client.connect().await.unwrap();
+        subscribe_test_resolution(&mut client, instrument_id);
+        wait_until_async(
+            || async {
+                state
+                    .market_payloads
+                    .lock()
+                    .await
+                    .iter()
+                    .any(|payload| payload["assets_ids"] == serde_json::json!([TEST_TOKEN_ID_YES]))
+            },
+            StdDuration::from_secs(3),
+        )
+        .await;
+        client.resolve_poll_watchlist.rcu(|entries| {
+            entries.get_mut(TEST_CONDITION_ID).unwrap().expiration_ns = UnixNanos::default();
+        });
+
+        client
+            .request_data(RequestCustomData::new(
+                client.client_id,
+                DataType::new(RESOLVE_REQUEST_TYPE_NAME, None, None),
+                None,
+                None,
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+            ))
+            .unwrap();
+        let events = collect_events_until(&mut data_rx, StdDuration::from_secs(5), |events| {
+            events.iter().any(is_resolve_response)
+        })
+        .await;
+        wait_until_async(
+            || async {
+                state
+                    .market_payloads
+                    .lock()
+                    .await
+                    .iter()
+                    .any(|payload| payload["operation"] == "unsubscribe")
+            },
+            StdDuration::from_secs(3),
+        )
+        .await;
+        client.disconnect().await.unwrap();
+
+        let watch = client
+            .resolve_poll_watchlist
+            .get_cloned(&TEST_CONDITION_ID.to_string())
+            .unwrap();
+        assert!(watch.paused);
+        assert_eq!(watch.expiration_ns, UnixNanos::default());
+        assert!(
+            client
+                .active_instrument_status_subs
+                .contains(&instrument_id)
+        );
+        assert!(client.active_instrument_close_subs.contains(&instrument_id));
+        assert!(client.ws_open_tokens.is_empty());
+        assert_eq!(count_instrument_close_events(&events), 0);
+        assert!(
+            events
+                .iter()
+                .all(|event| !matches!(event, DataEvent::InstrumentStatus(_)))
+        );
+    }
+
+    #[rstest]
+    #[case::invalid_tick(true, false)]
+    #[case::missing_token(false, true)]
+    #[case::filtered(false, false)]
+    #[tokio::test]
+    async fn auto_load_resolution_does_not_promote_unadmitted_intent(
+        #[case] invalid_tick: bool,
+        #[case] missing_token: bool,
+        #[values(false, true)] positive_probe: bool,
+    ) {
+        let mut market = gamma_market_future_closed_fixture_value();
+        market["outcomePrices"] = Value::String("[\"1\",\"0\"]".to_string());
+
+        if invalid_tick {
+            market["orderPriceMinTickSize"] = serde_json::json!(0);
+        }
+        let reply = ScriptedAutoLoadReply::ok(serde_json::json!([market]));
+        let state = if positive_probe {
+            ScriptedAutoLoadServerState::new(
+                vec![ScriptedAutoLoadReply::ok(serde_json::json!([]))],
+                vec![reply],
+            )
+        } else {
+            ScriptedAutoLoadServerState::new(vec![reply.clone()], vec![reply])
+        };
+        let addr = start_scripted_auto_load_test_server(state).await;
+        let (mut client, mut data_rx) = create_test_client(addr);
+        client.config.auto_load_max_retries = 0;
+        let filter_calls = Arc::new(AtomicUsize::new(0));
+        let calls = filter_calls.clone();
+        client.add_instrument_filter(Arc::new(crate::filters::PredicateFilter::new(
+            "reject-all",
+            move |_| {
+                calls.fetch_add(1, Ordering::SeqCst);
+                false
+            },
+        )));
+        let instrument_id = if missing_token {
+            fixture_instrument_id(TEST_CONDITION_ID, "MISSING_TOKEN")
+        } else {
+            fixture_yes_instrument_id()
+        };
+        subscribe_test_resolution(&mut client, instrument_id);
+        wait_until_async(
+            || async { client.tasks.all_finished() },
+            StdDuration::from_secs(3),
+        )
+        .await;
+
+        assert!(data_rx.try_recv().is_err());
+        assert_eq!(
+            filter_calls.load(Ordering::SeqCst),
+            usize::from(!invalid_tick && !missing_token)
+        );
+        assert!(client.instruments.is_empty());
+        assert!(client.token_meta.is_empty());
+        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.ws_open_tokens.is_empty());
+        assert!(client.pending_resolutions.is_empty());
+        assert!(
+            client
+                .closed_condition_ids
+                .lock()
+                .contains(TEST_CONDITION_ID)
+        );
+        assert_eq!(
+            client
+                .active_instrument_status_subs
+                .contains(&instrument_id),
+            invalid_tick || missing_token
+        );
+        assert_eq!(
+            client.active_instrument_close_subs.contains(&instrument_id),
+            invalid_tick || missing_token
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn auto_load_resolution_settles_existing_owner_not_missing_sibling(
+        #[values(false, true)] position_owned: bool,
+        #[values(false, true)] invalid_tick: bool,
+    ) {
+        let mut market = gamma_market_future_closed_fixture_value();
+        market["outcomePrices"] = Value::String("[\"1\",\"0\"]".to_string());
+        let instrument = instrument_from_gamma_fixture(market.clone());
+
+        if invalid_tick {
+            market["orderPriceMinTickSize"] = serde_json::json!(0);
+        }
+        let reply = ScriptedAutoLoadReply::ok(serde_json::json!([market]));
+        let state = ScriptedAutoLoadServerState::new(vec![reply.clone()], vec![reply]);
+        let addr = start_scripted_auto_load_test_server(state).await;
+        let (mut client, mut data_rx) = create_test_client(addr);
+        client.config.auto_load_max_retries = 0;
+        cache_instrument_unchecked(&client.instruments, &client.token_meta, &instrument);
+
+        if position_owned {
+            upsert_resolve_watch_entry_from_instrument(
+                &client.resolve_poll_watchlist,
+                &instrument,
+                PositionId::new("P-ADMITTED"),
+            );
+        } else {
+            subscribe_test_resolution(&mut client, instrument.id());
+        }
+        subscribe_test_resolution(
+            &mut client,
+            fixture_instrument_id(TEST_CONDITION_ID, "MISSING_TOKEN"),
+        );
+        wait_until_async(
+            || async { client.tasks.all_finished() },
+            StdDuration::from_secs(3),
+        )
+        .await;
+        let mut statuses = Vec::new();
+        let mut closes = Vec::new();
+
+        while let Ok(event) = data_rx.try_recv() {
+            match event {
+                DataEvent::InstrumentStatus(status) => statuses.push(status),
+                DataEvent::Data(NautilusData::InstrumentClose(close)) => closes.push(close),
+                _ => {}
+            }
+        }
+
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(statuses[0].instrument_id, instrument.id());
+        assert_eq!(statuses[0].action, MarketStatusAction::Close);
+        assert_eq!(closes.len(), 1);
+        assert_eq!(closes[0].instrument_id, instrument.id());
+        assert_eq!(
+            closes[0].close_price.as_decimal(),
+            rust_decimal::Decimal::ONE
+        );
+        assert_eq!(closes[0].close_type, InstrumentCloseType::ContractExpired);
+        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.active_instrument_status_subs.is_empty());
+        assert!(client.active_instrument_close_subs.is_empty());
+        assert!(client.pending_resolutions.is_empty());
+        assert!(client.ws_open_tokens.is_empty());
+    }
+
+    #[tokio::test]
+    async fn unusable_closed_auto_load_preserves_explicit_manual_resolution() {
+        let mut unusable = gamma_market_future_closed_fixture_value();
+        unusable["clobTokenIds"] = Value::String("[]".to_string());
+        let mut resolved = gamma_market_future_closed_fixture_value();
+        resolved["outcomePrices"] = Value::String("[\"1\",\"0\"]".to_string());
+        let state = ScriptedAutoLoadServerState::new(
+            vec![ScriptedAutoLoadReply::ok(serde_json::json!([
+                unusable.clone()
+            ]))],
+            vec![
+                ScriptedAutoLoadReply::ok(serde_json::json!([unusable])),
+                ScriptedAutoLoadReply::ok(serde_json::json!([resolved])),
+            ],
+        );
+        let addr = start_scripted_auto_load_test_server(state).await;
+        let (mut client, mut data_rx) = create_test_client(addr);
+        client.config.auto_load_max_retries = 0;
+        let instrument_id = fixture_yes_instrument_id();
+        subscribe_test_resolution(&mut client, instrument_id);
+        wait_until_async(
+            || async { client.tasks.all_finished() },
+            StdDuration::from_secs(3),
+        )
+        .await;
+        assert!(
+            client
+                .closed_condition_ids
+                .lock()
+                .contains(TEST_CONDITION_ID)
+        );
+        assert!(client.instruments.is_empty());
+        assert!(client.resolve_poll_watchlist.is_empty());
+        assert!(client.ws_open_tokens.is_empty());
+        assert!(data_rx.try_recv().is_err());
+
+        let mut params = Params::new();
+        params.insert(
+            "condition_id".to_string(),
+            Value::String(TEST_CONDITION_ID.to_string()),
+        );
+        client
+            .request_data(RequestCustomData::new(
+                client.client_id,
+                DataType::new(RESOLVE_REQUEST_TYPE_NAME, None, None),
+                None,
+                None,
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                Some(params),
+            ))
+            .unwrap();
+        let events = collect_events_until(&mut data_rx, StdDuration::from_secs(5), |events| {
+            events.iter().any(is_resolve_response)
+        })
+        .await;
+
+        assert_eq!(count_instrument_close_events(&events), 1);
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, DataEvent::InstrumentStatus(_)))
+                .count(),
+            1
+        );
+        assert!(client.active_instrument_status_subs.is_empty());
+        assert!(client.active_instrument_close_subs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn auto_load_resolution_cancellation_clears_pending_barrier() {
+        let mut market = gamma_market_future_closed_fixture_value();
+        market["outcomePrices"] = Value::String("[\"1\",\"0\"]".to_string());
+        let state = ScriptedAutoLoadServerState::new(
+            vec![ScriptedAutoLoadReply::ok(serde_json::json!([market]))],
+            vec![],
+        );
+        let addr = start_scripted_auto_load_test_server(state).await;
+        let (mut client, mut data_rx) = create_test_client(addr);
+        client.config.auto_load_debounce_ms = 0;
+        let guard = client.ws_sub_mutex.clone().lock_owned().await;
+        subscribe_test_resolution(&mut client, fixture_yes_instrument_id());
+        wait_until_async(
+            || async { client.pending_resolutions.contains_key(TEST_CONDITION_ID) },
+            StdDuration::from_secs(3),
+        )
+        .await;
+        client.tasks.abort();
+        client
+            .await_tasks_with_timeout(Duration::from_secs(2))
+            .await
+            .unwrap();
+        drop(guard);
+
+        assert!(client.pending_resolutions.is_empty());
+        assert!(
+            !client
+                .closed_condition_ids
+                .lock()
+                .contains(TEST_CONDITION_ID)
+        );
+
+        while let Ok(event) = data_rx.try_recv() {
+            assert!(!matches!(
+                event,
+                DataEvent::InstrumentStatus(_) | DataEvent::Data(NautilusData::InstrumentClose(_))
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn resolution_unsubscribe_does_not_subscribe_quotes_before_auto_load() {
+        let release = Arc::new(tokio::sync::Semaphore::new(0));
+        let state = ScriptedAutoLoadServerState::new(
+            vec![ScriptedAutoLoadReply::gated(
+                serde_json::json!([gamma_market_recheck_fixture_value()]),
+                release.clone(),
+            )],
+            vec![],
+        );
+        let addr = start_scripted_auto_load_test_server(state.clone()).await;
+        let (mut client, _data_rx) = create_test_client(addr);
+        let instrument_id = fixture_yes_instrument_id();
+        client
+            .subscribe_quotes(SubscribeQuotes::new(
+                instrument_id,
+                Some(client.client_id),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        client
+            .subscribe_instrument_status(SubscribeInstrumentStatus::new(
+                instrument_id,
+                Some(client.client_id),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        wait_until_async(
+            || async { !state.queries.lock().is_empty() },
+            StdDuration::from_secs(3),
+        )
+        .await;
+
+        client
+            .unsubscribe_instrument_status(&UnsubscribeInstrumentStatus::new(
+                instrument_id,
+                Some(client.client_id),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        wait_until_async(
+            || async { client.tasks.len() == 1 },
+            StdDuration::from_secs(3),
+        )
+        .await;
+        let subscribed_before_load = !state.market_payloads.lock().await.is_empty();
+        release.add_permits(1);
+        wait_until_async(
+            || async { client.tasks.all_finished() },
+            StdDuration::from_secs(3),
+        )
+        .await;
+
+        assert!(!subscribed_before_load);
+        assert!(client.instruments.contains_key(&instrument_id));
+        assert!(client.active_quote_subs.contains(&instrument_id));
+        assert!(
+            !client
+                .active_instrument_status_subs
+                .contains(&instrument_id)
+        );
+        assert!(client.resolve_poll_watchlist.is_empty());
     }
 
     #[rstest]
@@ -5861,6 +7432,7 @@ mod tests {
             &client.ws_sub_mutex,
             &client.ws_client.handle(),
             None,
+            false,
         )
         .await;
         wait_until_async(

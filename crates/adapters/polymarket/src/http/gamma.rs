@@ -378,7 +378,7 @@ fn parse_markets_to_instruments(markets: &[GammaMarket], ts_init: UnixNanos) -> 
 // `closed` state is recorded here rather than in `create_instrument_from_def`. Historical loader
 // instruments share that constructor and must not carry terminal state in `info`; they expose it
 // through `resolution_metadata` instead.
-fn parse_markets_with_transient(
+pub(crate) fn parse_markets_with_transient(
     markets: &[GammaMarket],
     ts_init: UnixNanos,
 ) -> (Vec<InstrumentAny>, Vec<String>) {

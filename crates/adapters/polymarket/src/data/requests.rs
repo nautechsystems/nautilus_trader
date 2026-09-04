@@ -35,7 +35,7 @@ use crate::{
         PolymarketResolveRequestSummaryData, RESOLVE_REQUEST_TYPE_NAME, ResolveBatchErrorMode,
         ResolveRequestSummary, ResolveWatchSelectionMode, collect_resolve_watch_selection,
         fetch_and_apply_resolutions_by_condition_ids, parse_condition_ids_from_request_params,
-        pause_resolve_watch_entries, request_params_has_explicit_condition_selector,
+        pause_and_reconcile_resolve_watch_entries, request_params_has_explicit_condition_selector,
     },
 };
 
@@ -108,7 +108,11 @@ pub(super) fn request_data(client: &PolymarketDataClient, request: RequestCustom
                 );
                 drop(snapshot);
 
-                pause_resolve_watch_entries(&watchlist, &selection.pause_condition_ids);
+                pause_and_reconcile_resolve_watch_entries(
+                    &resolve_ctx,
+                    &selection.pause_condition_ids,
+                )
+                .await;
                 summary.timed_out_watchlist = selection.timed_out_watchlist;
                 condition_ids = selection.condition_ids;
             }
