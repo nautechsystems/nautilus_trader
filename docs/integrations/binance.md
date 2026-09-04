@@ -416,8 +416,10 @@ command (Rust). The Binance execution clients recognize:
 | ---------------- | ------ | ----------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------- |
 | `price_match`    | `str`  | USDT/COIN Futures | Delegate price selection to Binance.             | `LIMIT` only; not with `post_only`.                                                       |
 | `close_position` | `bool` | USDT/COIN Futures | Close the whole position when the trigger fires. | `StopMarket` and `MarketIfTouched` only; requires `reduce_only=true`; not in order lists. |
+| `rpi`            | `bool` | USDT Futures      | Submit a Retail Price Improvement order.         | `LIMIT` only; requires `post_only=true`.                                                  |
 
-See [Price match](#price-match) and [Close position](#close-position) for the full behavior.
+See [Price match](#price-match), [RPI](#rpi), and [Close position](#close-position) for the full
+behavior.
 
 ### Price match
 
@@ -480,6 +482,31 @@ If Binance accepts the order at a different price (e.g. 64,995.50), you
 receive an `OrderAccepted` event followed by an `OrderUpdated` event with
 the new price.
 :::
+
+### RPI
+
+Binance RPI (Retail Price Improvement) uses `timeInForce=RPI`. It is post-only and only matches
+eligible retail orders from the Binance App or Web. Nautilus exposes it through the Binance-specific
+`rpi` parameter; use it only with a USD-M LIMIT order whose `post_only=true`. Without `rpi`, regular
+post-only orders continue to use `GTX`. See Binance's [USD-M Futures API definitions](https://developers.binance.com/zh-CN/docs/products/derivatives-trading-usds-futures/common-definition)
+for venue details.
+
+```rust tab="Rust"
+let params = Params::from([("rpi", true.into())]);
+self.submit_order(order, None, None, Some(params))?;
+```
+
+```python tab="Python"
+order = strategy.order_factory.limit(
+    instrument_id=InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
+    order_side=OrderSide.BUY,
+    quantity=Quantity.from_int(1),
+    price=Price.from_str("65000"),
+    post_only=True,
+)
+
+strategy.submit_order(order, params={"rpi": True})
+```
 
 ### Close position
 

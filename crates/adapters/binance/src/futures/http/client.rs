@@ -2141,6 +2141,7 @@ impl BinanceFuturesHttpClient {
         trigger_price: Option<Price>,
         reduce_only: bool,
         post_only: bool,
+        rpi: bool,
         position_side: Option<BinancePositionSide>,
         price_match: Option<BinancePriceMatch>,
         good_till_date: Option<i64>,
@@ -2150,7 +2151,9 @@ impl BinanceFuturesHttpClient {
 
         let binance_side = BinanceSide::try_from(order_side)?;
         let binance_order_type = order_type_to_binance_futures(order_type)?;
-        let binance_tif = if post_only {
+        let binance_tif = if rpi {
+            BinanceTimeInForce::Rpi
+        } else if post_only {
             BinanceTimeInForce::Gtx
         } else {
             BinanceTimeInForce::try_from(time_in_force)?

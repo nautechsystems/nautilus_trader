@@ -1875,6 +1875,90 @@ async fn test_submit_usdm_gtd_order_encodes_expiry_over_http() {
 }
 
 #[rstest]
+#[case::rpi(true, true, "RPI")]
+#[case::post_only(false, true, "GTX")]
+#[case::regular(false, false, "GTC")]
+#[tokio::test]
+async fn test_submit_order_maps_time_in_force_over_http(
+    #[case] rpi: bool,
+    #[case] post_only: bool,
+    #[case] expected_time_in_force: &str,
+) {
+    let (addr, captured_query) = start_exec_test_server_with_order_capture().await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let order = add_limit_order_with_post_only_to_cache(
+        &cache,
+        ClientOrderId::new("time-in-force-http-test-001"),
+        post_only,
+    );
+    let params = rpi.then(rpi_params);
+    client
+        .submit_order(submit_order_command_with_params(&order, params))
+        .unwrap();
+
+    wait_until_async(
+        || {
+            let captured_query = captured_query.clone();
+            async move { captured_query.lock().is_some() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let query = captured_query.lock().clone().unwrap();
+    assert_eq!(
+        query.get("timeInForce").map(String::as_str),
+        Some(expected_time_in_force),
+    );
+}
+
+#[rstest]
+#[case::coin_m(
+    BinanceProductType::CoinM,
+    true,
+    true,
+    "rpi is only supported for Binance USD-M Futures"
+)]
+#[case::non_limit(
+    BinanceProductType::UsdM,
+    false,
+    true,
+    "rpi is only supported for LIMIT orders"
+)]
+#[case::missing_post_only(BinanceProductType::UsdM, true, false, "rpi requires post_only=true")]
+#[tokio::test]
+async fn test_submit_rpi_rejects_invalid_order_combinations(
+    #[case] product_type: BinanceProductType,
+    #[case] limit_order: bool,
+    #[case] post_only: bool,
+    #[case] expected_error: &str,
+) {
+    let (client, _rx, cache) = create_test_execution_client_for_product(
+        "http://127.0.0.1:1".to_string(),
+        "ws://127.0.0.1:1/ws".to_string(),
+        product_type,
+    );
+
+    let client_order_id = ClientOrderId::new("rpi-invalid-order-test-001");
+    let order = if limit_order {
+        add_limit_order_with_post_only_to_cache(&cache, client_order_id, post_only)
+    } else {
+        add_stop_market_order_to_cache(&cache, client_order_id, OrderSide::Buy, false)
+    };
+    let error = client
+        .submit_order(submit_order_command_with_params(&order, Some(rpi_params())))
+        .unwrap_err();
+
+    assert_eq!(error.to_string(), expected_error);
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_submit_order_list_posts_batch_orders_for_independent_limits() {
     let (addr, captured_queries) = start_exec_test_server_with_query_capture().await;
@@ -5674,13 +5758,40 @@ fn add_limit_order_to_cache(
     cache: &Rc<RefCell<Cache>>,
     client_order_id: ClientOrderId,
 ) -> OrderAny {
-    add_limit_order_for_instrument_to_cache(cache, test_instrument_id(), client_order_id)
+    add_limit_order_with_post_only_to_cache(cache, client_order_id, true)
+}
+
+fn add_limit_order_with_post_only_to_cache(
+    cache: &Rc<RefCell<Cache>>,
+    client_order_id: ClientOrderId,
+    post_only: bool,
+) -> OrderAny {
+    add_limit_order_for_instrument_with_post_only_to_cache(
+        cache,
+        test_instrument_id(),
+        client_order_id,
+        post_only,
+    )
 }
 
 fn add_limit_order_for_instrument_to_cache(
     cache: &Rc<RefCell<Cache>>,
     instrument_id: InstrumentId,
     client_order_id: ClientOrderId,
+) -> OrderAny {
+    add_limit_order_for_instrument_with_post_only_to_cache(
+        cache,
+        instrument_id,
+        client_order_id,
+        true,
+    )
+}
+
+fn add_limit_order_for_instrument_with_post_only_to_cache(
+    cache: &Rc<RefCell<Cache>>,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    post_only: bool,
 ) -> OrderAny {
     let order = LimitOrder::new(
         test_trader_id(),
@@ -5692,7 +5803,7 @@ fn add_limit_order_for_instrument_to_cache(
         Price::from("50000.00"),
         TimeInForce::Gtc,
         None,
-        true,
+        post_only,
         false,
         false,
         None,
@@ -5925,6 +6036,12 @@ fn add_stop_market_order_to_cache(
 fn close_position_params() -> Params {
     let mut params = Params::new();
     params.insert("close_position".to_string(), json!(true));
+    params
+}
+
+fn rpi_params() -> Params {
+    let mut params = Params::new();
+    params.insert("rpi".to_string(), json!(true));
     params
 }
 
@@ -6475,6 +6592,37 @@ async fn test_submit_order_ws_reduce_only_respects_position_mode(
     assert_eq!(
         params.get("reduceOnly").and_then(|value| value.as_bool()),
         expected_reduce_only
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_with_rpi_uses_rpi_time_in_force_over_ws() {
+    let (addr, captured_ws_trading_messages) =
+        start_exec_test_server_with_ws_trading_capture().await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let base_url_ws_trading = format!("ws://{addr}/ws-fapi/v1");
+
+    let (mut client, _rx, cache) = create_test_execution_client_with_ws_trading(
+        base_url_http,
+        base_url_ws,
+        base_url_ws_trading,
+    );
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let order = add_limit_order_to_cache(&cache, ClientOrderId::new("rpi-ws-test-001"));
+    client
+        .submit_order(submit_order_command_with_params(&order, Some(rpi_params())))
+        .unwrap();
+
+    let message = wait_for_ws_trading_method(&captured_ws_trading_messages, "order.place").await;
+    let params = message.get("params").unwrap();
+    assert_eq!(
+        params.get("timeInForce").and_then(|value| value.as_str()),
+        Some("RPI"),
     );
 }
 
