@@ -197,7 +197,7 @@ jobs:
         && needs.plan.outputs.untrusted_pr != 'false'
         && 'ci-pr'
         || 'nextest' }}
-      # Scopes incremental clippy/doc checks; empty for non-PR/push events.
+      # Scopes changed-package Rust checks; empty for non-PR/push events.
       CHANGED_BASE_SHA: >-
         ${{ github.event.pull_request.base.sha || github.event.before }}
     steps:

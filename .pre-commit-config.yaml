@@ -411,10 +411,18 @@ repos:
 
       - id: cargo-machete
         name: cargo machete
-        description: Detect declared-but-unused workspace dependencies
+        description: Detect declared-but-unused dependencies in changed Rust packages
         entry: bash .pre-commit-hooks/cargo_machete.sh
         language: system
-        files: "(Cargo\\.toml|\\.rs)$|^\\.pre-commit-hooks/cargo_machete\\.sh$"
+        files: >-
+          (?x)^(
+            Cargo\.toml|
+            crates/.*(?:Cargo\.toml|\.rs)|
+            examples/tutorials/.*(?:Cargo\.toml|\.rs)|
+            examples/quickstarts/lighter-rust-data-client/.*(?:Cargo\.toml|\.rs)|
+            \.pre-commit-hooks/cargo_machete\.sh
+          )$
+        always_run: true
         pass_filenames: false
 
       - id: cargo-cooldown
