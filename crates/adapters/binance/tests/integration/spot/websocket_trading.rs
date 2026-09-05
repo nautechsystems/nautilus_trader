@@ -723,6 +723,7 @@ async fn test_command_send_failure_emits_request_failed_not_rejection(
                 price: Some("51000.00".to_string()),
                 cancel_order_id: Some(12345),
                 cancel_orig_client_order_id: None,
+                cancel_new_client_order_id: None,
                 new_client_order_id: Some("test-replace-send-fail".to_string()),
                 stop_price: None,
                 trailing_delta: None,
