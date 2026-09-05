@@ -714,8 +714,16 @@ connection failure, clean up resources already started and leave state consisten
 disposal.
 
 When an execution client uses
-[`ExecutionEventEmitter`](../../crates/live/src/execution/emitter.rs), install its sender during
-`start` before any task can emit.
+[`ExecutionEventEmitter`](../../crates/live/src/execution/emitter.rs), resolve the execution event
+sender with `try_get_exec_event_sender` and install it in the factory's `create`, before the client
+is returned. `LiveNodeBuilder` binds the runner's senders to thread-local storage before it calls
+any registered factory, so `create` runs with the sender available, and the emitter shares one
+sender slot across its clones, so every clone taken during construction, including those handed to
+client-owned tasks, carries the installed sender. `start` may install the sender again; installing
+it only in `start` is sufficient when `LiveNode` drives the client's lifecycle. A host that calls a
+factory outside `LiveNodeBuilder` must bind the runner's senders on the calling thread before
+`create`, or pass the sender through its own factory or client constructor, and in either case
+install it before any event-producing work starts.
 
 #### Bootstrap ordering
 
