@@ -138,8 +138,7 @@ because no measured performance case justifies the additional variant and dispat
 The open-source [plug-in crate](plugins.md) defines an artifact ABI, but model registration and the
 loading host are not part of this repository. The open-source distribution does not provide runtime
 native model plugins. Native models are composed at compile time and passed through the
-corresponding enum or handle. The v1 `Importable*ModelConfig` and `MarginModelConfig` types and their
-factories loaded Python or Cython classes by import path; v1 never provided native model plugins.
+corresponding enum or handle.
 
 ### Simulation modules
 

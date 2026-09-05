@@ -8,9 +8,8 @@ Set up a Python 3.12-3.14 environment and install the package:
 pip install -U --pre nautilus_trader
 ```
 
-These docs cover NautilusTrader 2.x, which PyPI still publishes as `2.0.0rcN` pre-releases.
-Without `--pre` you get the 1.x line, whose Python API differs, and the code on these pages fails
-to import. Confirm the install with:
+PyPI publishes NautilusTrader 2.x as `2.0.0rcN` pre-releases. Include `--pre` until `2.0.0` is
+released. Confirm the install with:
 
 ```bash
 python -c "import nautilus_trader; print(nautilus_trader.__version__)"

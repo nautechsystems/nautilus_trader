@@ -61,6 +61,11 @@ uv pip install --pre nautilus_trader
 The `--pre` flag is required because these wheels are pre-release builds. The installed import name
 is still `nautilus_trader`.
 
+:::warning
+We do not recommend release candidates for production environments, such as live trading
+controlling real capital.
+:::
+
 Run this command outside a NautilusTrader source checkout. The repository root uses an
 `exclude-newer` uv policy for reproducible development, which can filter out newly published
 wheels. Inside a source checkout, use [Build Python from source](#8-build-python-from-source)
@@ -77,9 +82,8 @@ Omitting `--pre` installs the latest stable 1.x release:
 uv pip install nautilus_trader
 ```
 
-We do not recommend release candidates for production environments, such as live trading
-controlling real capital. A 1.x install cannot run the examples on these pages; see
-[Migrating to v2](https://github.com/nautechsystems/nautilus_trader/blob/develop/MIGRATION_V2.md)
+A 1.x install cannot run the examples on these pages. See
+[Migrate from v1 to v2](https://github.com/nautechsystems/nautilus_trader/blob/develop/MIGRATION_V2.md)
 for the API differences.
 
 ## Extras
@@ -93,13 +97,16 @@ uv pip install --pre "nautilus_trader[visualization]"
 
 ## From the Nautech Systems package index
 
-The Nautech Systems package index (`packages.nautechsystems.io`) complies with [PEP-503](https://peps.python.org/pep-0503/) and hosts both stable and development binary wheels for `nautilus_trader`.
+The Nautech Systems package index (`packages.nautechsystems.io`) complies with
+[PEP-503](https://peps.python.org/pep-0503/) and hosts both stable and development binary wheels
+for `nautilus_trader`.
 This enables users to install either the latest stable release or pre-release versions for testing.
 
 ### Stable wheels
 
-Stable wheels correspond to official releases of `nautilus_trader` on PyPI, and use standard versioning.
-As on PyPI, the latest stable release is still on the 1.x line, so add `--pre` for a 2.x wheel.
+Stable wheels correspond to official releases of `nautilus_trader` on PyPI, and use standard
+versioning. As on PyPI, the latest stable release is still on the 1.x line, so add `--pre` for a
+2.x wheel.
 
 To install the latest stable release:
 
@@ -131,7 +138,8 @@ while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standa
 | `Windows (x86_64)` | -       | ✓       |
 
 :::warning
-We do not recommend using development wheels in production environments, such as live trading controlling real capital.
+We do not recommend using development wheels in production environments, such as live trading
+controlling real capital.
 :::
 
 By default, uv will install the latest stable release. Adding the `--pre` flag ensures that pre-release versions, including development wheels, are considered.
@@ -367,11 +375,9 @@ A `1.` version means the resolver picked the stable line. Reinstall with `--pre`
 uv pip install -U --pre nautilus_trader
 ```
 
-The 1.x API keeps enums, identifiers, and engines in their defining submodules
-(`nautilus_trader.model.enums`, `nautilus_trader.backtest.engine`), and builds configs on msgspec
-`Struct`, which rejects a subclass `__init__`. The 2.x API re-exports these names from the package
-root and builds configs in Rust. Neither set of imports works against the other version, so match
-the install to the documentation you are reading.
+The 1.x and 2.x Python APIs are not interchangeable. See
+[Migrate from v1 to v2](https://github.com/nautechsystems/nautilus_trader/blob/develop/MIGRATION_V2.md)
+when porting a 1.x application.
 
 ### uv resolves an older version inside the repository
 
