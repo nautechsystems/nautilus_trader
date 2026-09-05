@@ -77,7 +77,7 @@ use super::{
         AllOrdersParams, AvgPriceParams, BatchCancelItem, BatchOrderItem, CancelOpenOrdersParams,
         CancelOrderParams, CancelReplaceOrderParams, DepthParams, KlinesParams, ListenKeyParams,
         NewOcoOrderListParams, NewOrderParams, OpenOrdersParams, QueryOrderParams, TickerParams,
-        TradeFeeParams, TradesParams,
+        TradeFeeParams, TradesParams, cancel_replace_cancel_id,
     },
 };
 use crate::{
@@ -1689,6 +1689,7 @@ impl BinanceRawSpotHttpClient {
             price: price.map(|s| s.to_string()),
             cancel_order_id,
             cancel_orig_client_order_id: cancel_client_order_id.map(|s| s.to_string()),
+            cancel_new_client_order_id: Some(cancel_replace_cancel_id(cancel_order_id)),
             new_client_order_id: new_client_order_id.map(|s| s.to_string()),
             stop_price: None,
             trailing_delta: None,

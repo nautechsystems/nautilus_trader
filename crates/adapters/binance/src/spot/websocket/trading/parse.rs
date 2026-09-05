@@ -54,7 +54,7 @@ pub fn parse_spot_exec_report_to_order_status(
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     let client_order_id =
-        decode_client_order_id(&msg.client_order_id, BINANCE_NAUTILUS_SPOT_BROKER_ID)?;
+        decode_client_order_id(msg.order_client_order_id(), BINANCE_NAUTILUS_SPOT_BROKER_ID)?;
     let venue_order_id = VenueOrderId::new(msg.order_id.to_string());
     let ts_event = parse_millis_or_init(msg.event_time, "Spot execution event time", ts_init);
 
@@ -142,7 +142,7 @@ pub fn parse_spot_exec_report_to_fill(
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
     let client_order_id =
-        decode_client_order_id(&msg.client_order_id, BINANCE_NAUTILUS_SPOT_BROKER_ID)?;
+        decode_client_order_id(msg.order_client_order_id(), BINANCE_NAUTILUS_SPOT_BROKER_ID)?;
     let venue_order_id = VenueOrderId::new(msg.order_id.to_string());
     let trade_id = TradeId::new(msg.trade_id.to_string());
     let ts_event = parse_millis_or_init(msg.event_time, "Spot execution event time", ts_init);
@@ -423,6 +423,33 @@ mod tests {
         );
 
         assert_eq!(result.unwrap_err().to_string(), expected);
+    }
+
+    #[rstest]
+    #[case::orig_set(Some("x-TD67BGP9-T0000000000000"), "O-20200101-000000-000-000-0")]
+    #[case::orig_empty(Some(""), "web_9f8e7d6c5b4a")]
+    #[case::orig_missing(None, "web_9f8e7d6c5b4a")]
+    fn test_parse_execution_report_to_order_status_canceled_prefers_orig_client_order_id(
+        #[case] original_client_order_id: Option<&str>,
+        #[case] expected: &str,
+    ) {
+        let json = load_fixture_string("spot/user_data_json/execution_report_canceled.json");
+        let mut msg: BinanceSpotExecutionReport = serde_json::from_str(&json).unwrap();
+        msg.client_order_id = "web_9f8e7d6c5b4a".to_string();
+        msg.original_client_order_id = original_client_order_id.map(str::to_string);
+
+        let report = parse_spot_exec_report_to_order_status(
+            &msg,
+            instrument_id(),
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            AccountId::from("BINANCE-001"),
+            false,
+            UnixNanos::from(1_000_000_000u64),
+        )
+        .unwrap();
+
+        assert_eq!(report.client_order_id, Some(ClientOrderId::from(expected)));
     }
 
     #[rstest]
