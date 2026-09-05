@@ -4,7 +4,6 @@
 # Mirrors deny.toml [advisories] ignore list, plus advisories that cargo-audit
 # surfaces but cargo-deny does not match against the resolved feature graph:
 #   - RUSTSEC-2024-0388 (derivative, unmaintained via alloy-primitives -> ruint -> ark-ff)
-#   - RUSTSEC-2026-0235 (inactive rust_decimal optional dependency retained in Cargo.lock)
 #
 # With the current Cargo.lock, chrono 0.4.45 and chrono-tz 0.10.4 (IANA 2025b)
 # remain transitive via Arrow/DataFusion; object_store is an additional chrono path.
@@ -32,6 +31,4 @@ ignore = [
   # quick-xml DoS, transitive via the DataFusion-aligned object_store 0.13 release
   "RUSTSEC-2026-0194",
   "RUSTSEC-2026-0195",
-  # rkyv validation bug in an inactive rust_decimal optional dependency retained in Cargo.lock
-  "RUSTSEC-2026-0235",
 ]
