@@ -27,9 +27,11 @@ Released on TBD (UTC).
 
 - Removed Coinbase `CreateOrderRequest.reduce_only`; reduce-only orders are rejected before submission
 - Removed the dormant `PortfolioStatistic::calculate_from_orders` trait method; no analyzer supplied order data to statistics
+- Replaced `OKXHttpError::JsonError` and generic HTTP errors with typed transport and response failures
 - Changed FFI `orderbook_deltas_is_snapshot` to use `F_SNAPSHOT` instead of the first delta action
 - Changed `PortfolioAnalyzer.realized_pnls()` to return records in ascending event-time order rather than position-derived records followed by recorded ones
 - Changed registered PnL statistics to run on every analyzed currency, including runs that closed no trades, where they receive an empty list; `Win Rate` and its peers now report NaN for such runs rather than being absent
+- Changed OKX response decoding failures in Python from `ValueError` to `RuntimeError`
 - Renamed blockchain log parsing modules to `hypersync::log` and `rpc::log`; update Rust imports
 - Renamed Cargo binary targets to kebab-case, including `to_json` to `to-json`, `to_parquet` to `to-parquet`, and `node_wallet` to `node-wallet`; update any `cargo run --bin` invocation to the new name
 - Changed `TradingState` to `ACTIVE=1`, `REDUCING=2`, and `HALTED=3`; update numeric and Cap'n Proto consumers
@@ -63,6 +65,7 @@ Released on TBD (UTC).
 - Fixed TWD, 1INCH, CAKE, and SHIB currency lookup panics
 - Fixed order-status report windows filtering resting orders instead of closed history
 - Fixed foreign account events panicking and reservation failures leaving balances or margins in an inconsistent state
+- Fixed OKX retries to honor `Retry-After`, preserve request identity, and avoid ambiguous order replay
 
 ### Internal Improvements
 

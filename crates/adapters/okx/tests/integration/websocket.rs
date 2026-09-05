@@ -32,7 +32,8 @@ use axum::{
         State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
-    response::Response,
+    http::StatusCode,
+    response::{IntoResponse, Response},
     routing::get,
 };
 use futures_util::{StreamExt, pin_mut};
@@ -51,7 +52,7 @@ use nautilus_model::{
     instruments::InstrumentAny,
     types::{Price, Quantity},
 };
-use nautilus_network::websocket::TransportBackend;
+use nautilus_network::{error::SendError, websocket::TransportBackend};
 use nautilus_okx::{
     common::{
         enums::{OKXInstrumentType, OKXTradeMode},
@@ -59,7 +60,9 @@ use nautilus_okx::{
         parse::parse_instrument_any,
     },
     http::client::OKXResponse,
-    websocket::{client::OKXWebSocketClient, enums::OKXWsChannel, messages::OKXWsMessage},
+    websocket::{
+        client::OKXWebSocketClient, enums::OKXWsChannel, error::OKXWsError, messages::OKXWsMessage,
+    },
 };
 use rstest::rstest;
 use serde_json::{Value, json};
@@ -95,6 +98,7 @@ struct TestServerState {
     suppress_control_pong: Arc<AtomicBool>,
     control_ping_count: Arc<tokio::sync::Mutex<usize>>,
     fail_next_login: Arc<AtomicBool>,
+    reject_upgrades: Arc<AtomicBool>,
 }
 
 fn data_path() -> PathBuf {
@@ -298,6 +302,10 @@ async fn handle_ws_upgrade(
     ws: WebSocketUpgrade,
     State(state): State<Arc<TestServerState>>,
 ) -> Response {
+    if state.reject_upgrades.load(Ordering::Relaxed) {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 
@@ -873,6 +881,100 @@ async fn test_submit_margin_cross_order_preserves_reduce_only_on_wire() {
     assert_eq!(messages[0]["op"], "order");
     assert_eq!(arg["tdMode"], "cross");
     assert_eq!(arg["reduceOnly"], true);
+
+    client.close().await.expect("close failed");
+}
+
+#[tokio::test]
+async fn test_submit_order_during_reconnect_is_not_replayed() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url).await;
+    client.cache_instruments(&load_margin_instruments());
+    client.cache_inst_id_code(Ustr::from("BTC-USDT"), 1_000_000_101);
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+
+    state.reject_upgrades.store(true, Ordering::Relaxed);
+    state.drop_next_connection.store(true, Ordering::Relaxed);
+    client
+        .subscribe_trades(InstrumentId::from("BTC-USDT.OKX"), false)
+        .await
+        .expect("subscribe failed");
+    wait_until_async(
+        || {
+            let client = &client;
+            async move { !client.is_active() }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    let client_order_id = ClientOrderId::from("Oreconnectnoreplay000001");
+    client
+        .submit_order(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("STRATEGY-001"),
+            InstrumentId::from("BTC-USDT.OKX"),
+            OKXTradeMode::Cross,
+            client_order_id,
+            OrderSide::Sell,
+            OrderType::Market,
+            Quantity::from("0.001"),
+            None,
+            None,
+            None,
+            Some(false),
+            Some(false),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("submit order command failed");
+
+    let stream = client.stream();
+    pin_mut!(stream);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    state.reject_upgrades.store(false, Ordering::Relaxed);
+
+    let (failed_order_ids, error) = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let message = stream.next().await.expect("stream ended");
+
+            if let OKXWsMessage::SendFailed {
+                client_order_ids,
+                error,
+                ..
+            } = message
+                && client_order_ids.contains(&client_order_id)
+            {
+                return (client_order_ids, error);
+            }
+        }
+    })
+    .await
+    .expect("missing stale-connection send failure");
+
+    assert_eq!(failed_order_ids, vec![client_order_id]);
+    assert!(matches!(
+        error,
+        OKXWsError::TransportSend(SendError::ConnectionChanged)
+    ));
+    assert!(state.order_messages().await.is_empty());
 
     client.close().await.expect("close failed");
 }

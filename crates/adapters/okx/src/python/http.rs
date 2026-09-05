@@ -1577,8 +1577,22 @@ impl From<OKXHttpError> for PyErr {
             // Runtime/operational errors
             OKXHttpError::Canceled(msg) => to_pyruntime_err(format!("Request canceled: {msg}")),
             OKXHttpError::HttpClientError(e) => to_pyruntime_err(format!("Network error: {e}")),
+            OKXHttpError::RetryableStatus { status, body, .. } => {
+                to_pyruntime_err(format!("Temporary HTTP status code {status}: {body}"))
+            }
             OKXHttpError::UnexpectedStatus { status, body } => {
                 to_pyruntime_err(format!("Unexpected HTTP status code {status}: {body}"))
+            }
+            OKXHttpError::RetryableOkxError {
+                error_code,
+                message,
+                ..
+            } => to_pyruntime_err(format!("Temporary OKX error {error_code}: {message}")),
+            OKXHttpError::MalformedResponse(msg) => {
+                to_pyruntime_err(format!("Malformed response: {msg}"))
+            }
+            OKXHttpError::ResponseDecoding(msg) => {
+                to_pyruntime_err(format!("Response decoding error: {msg}"))
             }
             OKXHttpError::OperationTimeout { timeout_ms } => {
                 to_pyruntime_err(format!("Operation timed out after {timeout_ms}ms"))
@@ -1594,7 +1608,9 @@ impl From<OKXHttpError> for PyErr {
             OKXHttpError::ValidationError(msg) => {
                 to_pyvalue_err(format!("Parameter validation error: {msg}"))
             }
-            OKXHttpError::JsonError(msg) => to_pyvalue_err(format!("JSON error: {msg}")),
+            OKXHttpError::RequestSerialization(msg) => {
+                to_pyvalue_err(format!("Request serialization error: {msg}"))
+            }
             OKXHttpError::OkxError {
                 error_code,
                 message,

@@ -36,6 +36,7 @@ use nautilus_core::string::secret::{REDACTED, SecretString};
 use nautilus_model::identifiers::ClientOrderId;
 use nautilus_network::{
     RECONNECTED,
+    error::SendError,
     retry::{RetryError, RetryManager, create_websocket_retry_manager},
     websocket::{AuthTracker, SubscriptionState, TEXT_PING, TEXT_PONG, WebSocketClient},
 };
@@ -187,10 +188,10 @@ impl OKXWsFeedHandler {
                             client
                                 .send_text(payload.expose_secret().to_owned(), keys.as_deref())
                                 .await
-                                .map_err(|e| OKXWsError::SendFailed(e.to_string()))
+                                .map_err(OKXWsError::TransportSend)
                         }
                     },
-                    should_retry_okx_error,
+                    should_retry_replay_safe_error,
                     create_okx_retry_error,
                 )
                 .await
@@ -199,14 +200,27 @@ impl OKXWsFeedHandler {
         }
     }
 
+    async fn send_on_connection(
+        &self,
+        payload: String,
+        rate_limit_keys: Option<&[Ustr]>,
+    ) -> Result<(), OKXWsError> {
+        let client = self.inner.as_ref().ok_or(OKXWsError::NoActiveClient)?;
+        let connection_epoch = client.connection_epoch();
+        client
+            .send_text_on_connection(payload, rate_limit_keys, connection_epoch)
+            .await
+            .map_err(OKXWsError::TransportSend)
+    }
+
     pub(super) async fn send_pong(&self) -> anyhow::Result<()> {
-        match self.send_with_retry(TEXT_PONG.to_string(), None).await {
+        match self.send_on_connection(TEXT_PONG.to_string(), None).await {
             Ok(()) => {
                 log::trace!("Sent pong response to OKX text ping");
                 Ok(())
             }
             Err(e) => {
-                log::warn!("Failed to send pong after retries: error={e}");
+                log::warn!("Failed to send pong: error={e}");
                 Err(anyhow::anyhow!("Failed to send pong: {e}"))
             }
         }
@@ -257,11 +271,11 @@ impl OKXWsFeedHandler {
                             client_order_ids,
                             op,
                         } => {
-                            if let Err(e) = self.send_with_retry(
+                            if let Err(e) = self.send_on_connection(
                                 payload,
                                 rate_limit_keys.as_deref(),
                             ).await {
-                                log::error!("Failed to send message after retries: error={e}");
+                                log::error!("Failed to send message: error={e}");
 
                                 if let Some(request_id) = request_id {
                                     self.pending_messages.push_back(OKXWsMessage::SendFailed {
@@ -768,43 +782,25 @@ fn parse_array_items<T: serde::de::DeserializeOwned>(
     }
 }
 
-#[inline]
-fn contains_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
-    haystack
-        .as_bytes()
-        .windows(needle.len())
-        .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
-}
-
-// Specific phrases rather than bare "connection"/"network", which appear
-// in permanent errors too (e.g. "no active WebSocket client connection").
-const RETRYABLE_CLIENT_ERROR_PHRASES: &[&str] = &[
-    "timeout",
-    "timed out",
-    "connection reset",
-    "connection refused",
-    "connection closed",
-    "connection aborted",
-    "broken pipe",
-    "network unreachable",
-    "network is unreachable",
-    "no route to host",
-];
-
-fn should_retry_okx_error(error: &OKXWsError) -> bool {
+fn should_retry_replay_safe_error(error: &OKXWsError) -> bool {
     match error {
         OKXWsError::OkxError { error_code, .. } => should_retry_error_code(error_code),
-        OKXWsError::TungsteniteError(_)
-        | OKXWsError::SendFailed(_)
+        OKXWsError::TransportSend(SendError::Timeout | SendError::ConnectionChanged)
+        | OKXWsError::TungsteniteError(_)
         | OKXWsError::OperationTimeout { .. } => true,
-        OKXWsError::ClientError(msg) => RETRYABLE_CLIENT_ERROR_PHRASES
-            .iter()
-            .any(|phrase| contains_ignore_ascii_case(msg, phrase)),
         OKXWsError::AuthenticationError(_)
         | OKXWsError::JsonError(_)
         | OKXWsError::ParsingError(_)
+        | OKXWsError::ClientError(_)
         | OKXWsError::NoActiveClient
-        | OKXWsError::HandlerUnavailable(_) => false,
+        | OKXWsError::HandlerUnavailable(_)
+        | OKXWsError::TransportSend(
+            SendError::InvalidInput(_)
+            | SendError::Closed
+            | SendError::WriteTimeout
+            | SendError::BrokenPipe(_),
+        )
+        | OKXWsError::SendFailed(_) => false,
     }
 }
 
@@ -871,31 +867,41 @@ mod tests {
     }
 
     #[rstest]
-    fn test_should_retry_typed_send_and_timeout_errors() {
-        assert!(should_retry_okx_error(&OKXWsError::SendFailed(
-            "connection reset".to_string()
+    fn test_should_retry_typed_transport_and_timeout_errors() {
+        assert!(should_retry_replay_safe_error(&OKXWsError::TransportSend(
+            SendError::Timeout
         )));
-        assert!(should_retry_okx_error(&OKXWsError::OperationTimeout {
-            timeout_ms: 1_000
-        }));
-        assert!(!should_retry_okx_error(&OKXWsError::NoActiveClient));
-        assert!(!should_retry_okx_error(&OKXWsError::HandlerUnavailable(
-            "closed".to_string()
+        assert!(should_retry_replay_safe_error(&OKXWsError::TransportSend(
+            SendError::ConnectionChanged
         )));
+        assert!(!should_retry_replay_safe_error(&OKXWsError::TransportSend(
+            SendError::WriteTimeout
+        )));
+        assert!(!should_retry_replay_safe_error(&OKXWsError::TransportSend(
+            SendError::BrokenPipe("connection reset".to_string())
+        )));
+        assert!(should_retry_replay_safe_error(
+            &OKXWsError::OperationTimeout { timeout_ms: 1_000 }
+        ));
+        assert!(!should_retry_replay_safe_error(&OKXWsError::NoActiveClient));
+        assert!(!should_retry_replay_safe_error(
+            &OKXWsError::HandlerUnavailable("closed".to_string())
+        ));
     }
 
     #[rstest]
-    #[case("Connection reset by peer", true)]
-    #[case("send timeout after 30s", true)]
-    #[case("Connection closed unexpectedly", true)]
-    #[case("Broken pipe", true)]
-    #[case("Network unreachable", true)]
-    #[case("No active WebSocket client connection", false)]
-    #[case("network protocol upgrade required", false)]
-    #[case("invalid frame format", false)]
-    fn test_should_retry_client_error(#[case] msg: &str, #[case] expected: bool) {
-        let err = OKXWsError::ClientError(msg.to_string());
-        assert_eq!(should_retry_okx_error(&err), expected);
+    fn test_retryability_uses_websocket_error_type_not_message() {
+        let message = "connection reset".to_string();
+        let temporary = OKXWsError::OkxError {
+            error_code: "50011".to_string(),
+            message: message.clone(),
+        };
+        let permanent = OKXWsError::ClientError(message.clone());
+        let ambiguous = OKXWsError::SendFailed(message);
+
+        assert!(should_retry_replay_safe_error(&temporary));
+        assert!(!should_retry_replay_safe_error(&permanent));
+        assert!(!should_retry_replay_safe_error(&ambiguous));
     }
 
     #[rstest]

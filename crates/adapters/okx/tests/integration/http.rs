@@ -23,19 +23,20 @@ use std::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use axum::{
     Router,
     extract::Query,
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, HeaderValue, StatusCode, Uri, header::RETRY_AFTER},
     response::{IntoResponse, Json},
     routing::{get, post},
 };
 use jiff::{SignedDuration, Timestamp};
 use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
 use nautilus_core::UnixNanos;
+use nautilus_live::execution::failure::CommandFailure;
 use nautilus_model::{
     data::BarType,
     enums::{
@@ -45,7 +46,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
 };
-use nautilus_network::http::HttpClient;
+use nautilus_network::http::{HttpClient, HttpClientError};
 use nautilus_okx::{
     common::{
         enums::{
@@ -53,6 +54,7 @@ use nautilus_okx::{
             OKXPositionMode, OKXPositionSide, OKXRpiPermission, OKXSide, OKXTradeMode,
             OKXTriggerType,
         },
+        failure::classify_okx_http_failure,
         models::OKXInstrument,
     },
     http::{
@@ -76,6 +78,7 @@ use nautilus_okx::{
 use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use ustr::Ustr;
 
 #[derive(Clone, Default)]
@@ -407,7 +410,7 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                         return (
                             StatusCode::TOO_MANY_REQUESTS,
                             Json(json!({
-                                "code": "50116",
+                                "code": "50011",
                                 "msg": "Rate limit reached",
                                 "data": [],
                             })),
@@ -2437,8 +2440,10 @@ async fn test_http_get_instruments_handles_rate_limit_error() {
     }
 
     match last_error.unwrap() {
-        OKXHttpError::OkxError { error_code, .. } => assert_eq!(error_code, "50116"),
-        other => panic!("expected OkxError: {other:?}"),
+        OKXHttpError::RetryableOkxError { error_code, .. } => {
+            assert_eq!(error_code, "50011");
+        }
+        other => panic!("expected RetryableOkxError: {other:?}"),
     }
 }
 
@@ -5087,8 +5092,8 @@ async fn test_http_network_error_connection_closed() {
 
     assert!(result.is_err());
     match result {
-        Err(OKXHttpError::HttpClientError(_)) => {}
-        other => panic!("expected HttpClientError: {other:?}"),
+        Err(OKXHttpError::HttpClientError(HttpClientError::TransportError(_))) => {}
+        other => panic!("expected transport error: {other:?}"),
     }
 }
 
@@ -5152,15 +5157,36 @@ async fn test_http_okx_error_response() {
     }
 }
 
+#[rstest]
+#[case::permanent("51000", "Parameter state error", false)]
+#[case::retryable("50013", "System busy, please try again later", true)]
 #[tokio::test]
-async fn test_place_order_http_failure_is_sent_once_without_retry() {
+async fn test_place_order_venue_error_preserves_submit_retry_gate(
+    #[case] response_code: &'static str,
+    #[case] response_message: &'static str,
+    #[case] retryable: bool,
+) {
     let attempt_count = Arc::new(AtomicUsize::new(0));
     let counter = Arc::clone(&attempt_count);
+    let route_response_code = response_code.to_string();
+    let route_response_message = response_message.to_string();
     let router = Router::new().route(
         "/api/v5/trade/order",
-        post(move || async move {
-            counter.fetch_add(1, Ordering::SeqCst);
-            StatusCode::INTERNAL_SERVER_ERROR
+        post(move || {
+            let counter = Arc::clone(&counter);
+            let response_code = route_response_code.clone();
+            let response_message = route_response_message.clone();
+            async move {
+                counter.fetch_add(1, Ordering::SeqCst);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({
+                        "code": response_code,
+                        "msg": response_message,
+                        "data": [],
+                    })),
+                )
+            }
         }),
     );
 
@@ -5213,14 +5239,120 @@ async fn test_place_order_http_failure_is_sent_once_without_retry() {
         rpi_px_round: None,
     };
 
-    let result = client.place_order(request).await;
+    let error = client.place_order(request).await.unwrap_err();
 
-    assert!(result.is_err());
     assert_eq!(
         attempt_count.load(Ordering::SeqCst),
         1,
         "order placement must be sent once; a retry could double-place the order"
     );
+
+    match (&error, retryable) {
+        (OKXHttpError::RetryableOkxError { error_code, .. }, true)
+        | (OKXHttpError::OkxError { error_code, .. }, false) => {
+            assert_eq!(error_code, response_code);
+        }
+        _ => panic!("unexpected OKX error classification: {error:?}"),
+    }
+    let expected = if retryable {
+        CommandFailure::Ambiguous(error.to_string())
+    } else {
+        CommandFailure::VenueRejected(error.to_string())
+    };
+    assert_eq!(classify_okx_http_failure(&error), expected);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_place_order_truncated_response_is_ambiguous_transport_failure() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut received = Vec::new();
+        let mut buffer = [0; 4096];
+
+        loop {
+            let count = stream.read(&mut buffer).await.unwrap();
+            assert_ne!(count, 0, "request ended before its declared body");
+            received.extend_from_slice(&buffer[..count]);
+
+            let Some(header_end) = received.windows(4).position(|window| window == b"\r\n\r\n")
+            else {
+                continue;
+            };
+            let headers = std::str::from_utf8(&received[..header_end]).unwrap();
+            let content_length = headers
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().unwrap())
+                })
+                .unwrap();
+
+            if received.len() >= header_end + 4 + content_length {
+                break;
+            }
+        }
+
+        assert!(received.starts_with(b"POST /api/v5/trade/order HTTP/1.1\r\n"));
+        stream
+            .write_all(
+                b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 128\r\n\
+                  connection: close\r\n\r\n{\"code\":\"0\"",
+            )
+            .await
+            .unwrap();
+    });
+
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(format!("http://{addr}")),
+        2,
+        3,
+        1,
+        1,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+    let request = OKXPlaceOrderRequest {
+        inst_id: "BTC-USDT-SWAP".to_string(),
+        td_mode: OKXTradeMode::Cross,
+        ccy: None,
+        cl_ord_id: Some("Otruncatedresponse000001".to_string()),
+        tag: None,
+        side: OKXSide::Sell,
+        pos_side: None,
+        ord_type: OKXOrderType::Limit,
+        sz: "1".to_string(),
+        px: Some("65000.1".to_string()),
+        px_usd: None,
+        px_vol: None,
+        reduce_only: None,
+        tgt_ccy: None,
+        attach_algo_ords: None,
+        speed_bump: None,
+        outcome: None,
+        slippage_pct: None,
+        rpi_taker_access: None,
+        rpi_px_round: None,
+    };
+
+    let error = client.place_order(request).await.unwrap_err();
+    server.await.unwrap();
+
+    assert!(matches!(
+        &error,
+        OKXHttpError::HttpClientError(HttpClientError::TransportError(_))
+    ));
+    assert!(matches!(
+        classify_okx_http_failure(&error),
+        CommandFailure::Ambiguous(_)
+    ));
 }
 
 #[rstest]
@@ -5488,22 +5620,25 @@ async fn test_http_malformed_json_response() {
 
     assert!(result.is_err());
     match result {
-        Err(OKXHttpError::JsonError(_)) => {}
-        other => panic!("expected JsonError: {other:?}"),
+        Err(OKXHttpError::MalformedResponse(_)) => {}
+        other => panic!("expected MalformedResponse: {other:?}"),
     }
 }
 
 #[rstest]
 #[tokio::test]
-async fn test_http_500_internal_server_error() {
+async fn test_http_500_with_permanent_okx_code_is_not_retryable() {
+    let attempt_count = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&attempt_count);
     let router = Router::new().route(
         "/api/v5/public/instruments",
-        get(|| async {
+        get(move || async move {
+            counter.fetch_add(1, Ordering::SeqCst);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({
-                    "code": "50000",
-                    "msg": "Internal server error",
+                    "code": "51000",
+                    "msg": "Parameter state error",
                     "data": [],
                 })),
             )
@@ -5520,6 +5655,7 @@ async fn test_http_500_internal_server_error() {
     });
 
     wait_for_server(addr, "/api/v5/public/instruments").await;
+    attempt_count.store(0, Ordering::SeqCst);
 
     let base_url = format!("http://{addr}");
     let client = OKXRawHttpClient::new(
@@ -5543,10 +5679,11 @@ async fn test_http_500_internal_server_error() {
     assert!(result.is_err());
     match result {
         Err(OKXHttpError::OkxError { error_code, .. }) => {
-            assert_eq!(error_code, "50000");
+            assert_eq!(error_code, "51000");
         }
         other => panic!("expected OkxError: {other:?}"),
     }
+    assert_eq!(attempt_count.load(Ordering::SeqCst), 1);
 }
 
 #[rstest]
@@ -5594,10 +5731,10 @@ async fn test_http_503_service_unavailable() {
 
     assert!(result.is_err());
     match result {
-        Err(OKXHttpError::UnexpectedStatus { status, .. }) => {
+        Err(OKXHttpError::RetryableStatus { status, .. }) => {
             assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
         }
-        other => panic!("expected UnexpectedStatus: {other:?}"),
+        other => panic!("expected RetryableStatus: {other:?}"),
     }
 }
 
@@ -5652,10 +5789,10 @@ async fn test_http_invalid_response_structure() {
 
     assert!(result.is_err());
     match result {
-        Err(OKXHttpError::JsonError(msg)) => {
+        Err(OKXHttpError::ResponseDecoding(msg)) => {
             assert!(msg.contains("missing field") || msg.contains("UninitializedField"));
         }
-        other => panic!("expected JsonError: {other:?}"),
+        other => panic!("expected ResponseDecoding: {other:?}"),
     }
 }
 
@@ -5706,15 +5843,90 @@ async fn test_http_rate_limit_error_different_code() {
 
     assert!(result.is_err());
     match result {
-        Err(OKXHttpError::OkxError {
+        Err(OKXHttpError::RetryableOkxError {
             error_code,
             message,
+            ..
         }) => {
             assert_eq!(error_code, "50011");
             assert!(message.contains("frequent"));
         }
-        other => panic!("expected OkxError: {other:?}"),
+        other => panic!("expected RetryableOkxError: {other:?}"),
     }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_retry_after_delays_retry_and_preserves_query_bytes() {
+    let attempt_count = Arc::new(AtomicUsize::new(0));
+    let attempts = Arc::clone(&attempt_count);
+    let queries = Arc::new(tokio::sync::Mutex::new(Vec::<String>::new()));
+    let captured_queries = Arc::clone(&queries);
+    let router = Router::new().route(
+        "/api/v5/public/instruments",
+        get(move |uri: Uri| {
+            let attempts = Arc::clone(&attempts);
+            let queries = Arc::clone(&captured_queries);
+            async move {
+                queries
+                    .lock()
+                    .await
+                    .push(uri.query().unwrap_or_default().to_string());
+
+                if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                    let mut response = (
+                        StatusCode::TOO_MANY_REQUESTS,
+                        Json(json!({
+                            "code": "50011",
+                            "msg": "Request too frequent",
+                            "data": [],
+                        })),
+                    )
+                        .into_response();
+                    response
+                        .headers_mut()
+                        .insert(RETRY_AFTER, HeaderValue::from_static("1"));
+                    response
+                } else {
+                    Json(load_test_data("http_get_instruments_spot.json")).into_response()
+                }
+            }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    let client = OKXRawHttpClient::new(
+        Some(format!("http://{addr}")),
+        60,
+        1,
+        1,
+        1,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+    let params = GetInstrumentsParamsBuilder::default()
+        .inst_type(OKXInstrumentType::Spot)
+        .build()
+        .unwrap();
+    let start = Instant::now();
+
+    let instruments = client.get_instruments(params).await.unwrap();
+
+    assert_eq!(instruments.len(), 5);
+    assert_eq!(attempt_count.load(Ordering::SeqCst), 2);
+    assert!(start.elapsed() >= Duration::from_secs(1));
+    assert_eq!(
+        *queries.lock().await,
+        vec!["instType=SPOT".to_string(), "instType=SPOT".to_string()]
+    );
 }
 
 #[rstest]

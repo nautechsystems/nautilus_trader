@@ -25,6 +25,9 @@ pub enum HttpClientError {
     #[error("HTTP error occurred: {0}")]
     Error(String),
 
+    #[error("HTTP transport error: {0}")]
+    TransportError(String),
+
     #[error("HTTP request timed out: {0}")]
     TimeoutError(String),
 
@@ -49,6 +52,8 @@ impl From<reqwest::Error> for HttpClientError {
 
         if source.is_timeout() {
             Self::TimeoutError(message)
+        } else if source.is_request() || source.is_body() || source.is_decode() {
+            Self::TransportError(message)
         } else {
             Self::Error(message)
         }
