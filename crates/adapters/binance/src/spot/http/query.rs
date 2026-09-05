@@ -320,6 +320,21 @@ impl CancelOpenOrdersParams {
     }
 }
 
+/// Prefix of the `cancelNewClientOrderId` sent with cancel-replace requests.
+///
+/// Binance echoes it in `c` on the cancel half's `CANCELED` report, which
+/// tells that report apart from a standalone cancel.
+pub const CANCEL_REPLACE_CANCEL_ID_PREFIX: &str = "CR-";
+
+/// Returns the `cancelNewClientOrderId` for a cancel-replace of `cancel_order_id`.
+#[must_use]
+pub fn cancel_replace_cancel_id(cancel_order_id: Option<i64>) -> String {
+    match cancel_order_id {
+        Some(id) => format!("{CANCEL_REPLACE_CANCEL_ID_PREFIX}{id}"),
+        None => CANCEL_REPLACE_CANCEL_ID_PREFIX.to_string(),
+    }
+}
+
 /// Query parameters for cancel and replace order.
 #[derive(Debug, Clone, Serialize)]
 pub struct CancelReplaceOrderParams {
@@ -354,6 +369,12 @@ pub struct CancelReplaceOrderParams {
         rename = "cancelOrigClientOrderId"
     )]
     pub cancel_orig_client_order_id: Option<String>,
+    /// Client order ID for the cancel half of the request.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename = "cancelNewClientOrderId"
+    )]
+    pub cancel_new_client_order_id: Option<String>,
     /// New client order ID.
     #[serde(skip_serializing_if = "Option::is_none", rename = "newClientOrderId")]
     pub new_client_order_id: Option<String>,
