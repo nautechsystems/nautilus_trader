@@ -92,7 +92,10 @@ impl WeightedMovingAverage {
 
         check_predicate_true(period > 0, "`period` must be positive")?;
 
-        check_predicate_true(period <= MAX_PERIOD, "`period` must not exceed MAX_PERIOD")?;
+        check_predicate_true(
+            period <= MAX_PERIOD,
+            &format!("WeightedMovingAverage: period {period} exceeds MAX_PERIOD ({MAX_PERIOD})"),
+        )?;
 
         check_predicate_true(
             period == weights.len(),
@@ -599,7 +602,13 @@ mod tests {
     #[rstest]
     fn new_checked_period_exceeds_max_errors() {
         let period = MAX_PERIOD + 1;
-        assert!(WeightedMovingAverage::new_checked(period, vec![1.0; period], None).is_err());
+        let err = WeightedMovingAverage::new_checked(period, vec![1.0; period], None)
+            .expect_err("period above MAX_PERIOD must be rejected");
+        // `MAX_PERIOD` is not reachable from Python, so the message has to carry
+        // both the offending period and the bound it exceeded.
+        let msg = err.to_string();
+        assert!(msg.contains(&period.to_string()), "{msg}");
+        assert!(msg.contains(&MAX_PERIOD.to_string()), "{msg}");
     }
 
     #[rstest]
