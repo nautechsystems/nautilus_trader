@@ -15,13 +15,14 @@
 
 use std::fmt::Display;
 
+use nautilus_core::correctness::{FAILED, check_predicate_true};
 use nautilus_model::{
     data::{Bar, QuoteTick, TradeTick},
     enums::PriceType,
 };
 
 use crate::{
-    average::wma::WeightedMovingAverage,
+    average::wma::{MAX_PERIOD, WeightedMovingAverage},
     indicator::{Indicator, MovingAverage},
 };
 
@@ -107,13 +108,30 @@ impl HullMovingAverage {
     ///
     /// # Panics
     ///
-    /// Panics if `period` is not a positive integer (> 0).
+    /// Panics if `period` is not a positive integer (> 0), or exceeds `MAX_PERIOD`.
     #[must_use]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
-        assert!(
+        Self::new_checked(period, price_type).expect(FAILED)
+    }
+
+    /// Creates a new [`HullMovingAverage`] instance with the given period.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - `period` is not a positive integer (> 0).
+    /// - `period` exceeds `MAX_PERIOD`.
+    pub fn new_checked(period: usize, price_type: Option<PriceType>) -> anyhow::Result<Self> {
+        check_predicate_true(
             period > 0,
-            "HullMovingAverage: period must be > 0 (received {period})"
-        );
+            &format!("HullMovingAverage: period must be > 0 (received {period})"),
+        )?;
+        // `ma2` below is a `WeightedMovingAverage` over the full `period`, so this
+        // indicator cannot support a period its inner averages cannot buffer.
+        check_predicate_true(
+            period <= MAX_PERIOD,
+            &format!("HullMovingAverage: period {period} exceeds MAX_PERIOD ({MAX_PERIOD})"),
+        )?;
 
         let half = usize::max(1, period / 2);
         let root = usize::max(1, (period as f64).sqrt() as usize);
@@ -124,7 +142,7 @@ impl HullMovingAverage {
         let ma2 = WeightedMovingAverage::new(period, get_weights(period), Some(pt));
         let ma3 = WeightedMovingAverage::new(root, get_weights(root), Some(pt));
 
-        Self {
+        Ok(Self {
             period,
             price_type: pt,
             value: 0.0,
@@ -134,7 +152,7 @@ impl HullMovingAverage {
             ma1,
             ma2,
             ma3,
-        }
+        })
     }
 }
 
@@ -176,7 +194,7 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        average::hma::HullMovingAverage,
+        average::{hma::HullMovingAverage, wma::MAX_PERIOD},
         indicator::{Indicator, MovingAverage},
         stubs::*,
         testing::assert_approx_equal,
@@ -279,10 +297,28 @@ mod tests {
     }
 
     #[rstest]
+    #[should_panic(expected = "exceeds MAX_PERIOD")]
+    fn test_new_with_period_above_max_panics() {
+        let _ = HullMovingAverage::new(MAX_PERIOD + 1, None);
+    }
+
+    #[rstest]
+    fn test_new_checked_with_period_above_max_errors() {
+        // The Python binding constructs through `new_checked`, so this is the path
+        // that has to return rather than panic.
+        assert!(HullMovingAverage::new_checked(MAX_PERIOD + 1, None).is_err());
+    }
+
+    #[rstest]
+    fn test_new_checked_with_zero_period_errors() {
+        assert!(HullMovingAverage::new_checked(0, None).is_err());
+    }
+
+    #[rstest]
     #[case(1)]
     #[case(5)]
     #[case(128)]
-    #[case(10_000)]
+    #[case(MAX_PERIOD)]
     fn test_new_with_positive_period_constructs(#[case] period: usize) {
         let hma = HullMovingAverage::new(period, None);
         assert_eq!(hma.period, period);
