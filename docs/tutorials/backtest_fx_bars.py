@@ -269,9 +269,12 @@ engine.generate_positions_report()
 # backtest, pulls bars and fills from the engine cache, and writes PNGs using
 # the shared `nautilus_dark` tearsheet theme.
 #
+# After building NautilusTrader from source, run these commands from the repository root:
+#
 # ```bash
-# uv sync --extra visualization
-# python3 docs/tutorials/assets/backtest_fx_bars/render_panels.py
+# make sync
+# uv run --project python --no-sync \
+#     python docs/tutorials/assets/backtest_fx_bars/render_panels.py
 # ```
 
 # %% [markdown]

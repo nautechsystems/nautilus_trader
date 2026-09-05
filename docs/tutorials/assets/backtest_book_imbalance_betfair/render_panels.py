@@ -1,16 +1,18 @@
 """
 Render the Betfair book imbalance tutorial panels from a backtest log.
 
-Usage:
+After building NautilusTrader from source, run these commands from the repository root:
+
+    make sync
 
     # Run the example with a fine log interval so the panels have detail.
     IMBALANCE_LOG_INTERVAL=200 \
         cargo run -p nautilus-betfair --features examples --release \
         --example betfair-backtest > /tmp/betfair.log 2>&1
 
-    uv sync --extra visualization
     BETFAIR_LOG=/tmp/betfair.log \
-        python3 docs/tutorials/assets/backtest_book_imbalance_betfair/render_panels.py
+        uv run --project python --no-sync \
+            python docs/tutorials/assets/backtest_book_imbalance_betfair/render_panels.py
 
 The actor logs ``[runner] update #N: batch bid=B ask=A cumulative imbalance=I``
 on every Nth update. The renderer parses those lines and writes three PNG

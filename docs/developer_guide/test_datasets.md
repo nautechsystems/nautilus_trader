@@ -317,11 +317,9 @@ Build the Python package, then run the source tutorials from the repository root
 
 ```bash
 make build-debug
-UV_PROJECT_ENVIRONMENT="$PWD/.venv" \
-  NAUTILUS_DATA_DIR="$PWD/test_data/local" \
+NAUTILUS_DATA_DIR="$PWD/test_data/local" \
   uv run --project python --no-sync python docs/tutorials/backtest_orderbook_binance.py
-UV_PROJECT_ENVIRONMENT="$PWD/.venv" \
-  NAUTILUS_DATA_DIR="$PWD/test_data/local" \
+NAUTILUS_DATA_DIR="$PWD/test_data/local" \
   uv run --project python --no-sync python docs/tutorials/backtest_orderbook_bybit.py
 ```
 

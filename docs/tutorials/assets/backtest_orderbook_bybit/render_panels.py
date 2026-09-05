@@ -1,11 +1,12 @@
 """
 Render the Bybit order book imbalance tutorial panels from a backtest run.
 
-Usage:
+After building NautilusTrader from source, run these commands from the repository root:
 
-    uv sync --extra visualization
+    make sync
     NAUTILUS_DATA_DIR=test_data/local \
-        python3 docs/tutorials/assets/backtest_orderbook_bybit/render_panels.py
+        uv run --project python --no-sync \
+            python docs/tutorials/assets/backtest_orderbook_bybit/render_panels.py
 
 Replays the same Bybit ob500 XRPUSDT 2024-12-01 deltas as the tutorial, runs
 the shipped ``OrderBookImbalance`` strategy alongside a sampling actor that

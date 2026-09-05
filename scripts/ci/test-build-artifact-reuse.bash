@@ -57,7 +57,6 @@ run_make() {
     UV_LOG="$UV_LOG" \
     make -C "$REPO_ROOT" --no-print-directory \
     TARGET_DIR="$TARGET_DIR" \
-    UV_PROJECT_ENVIRONMENT="$CASE_ROOT/venv" \
     CARGO_CI_PROFILE=nextest \
     PY_STUB_INPUTS="$inputs" \
     PY_STUB_INPUT_LIST_COMMAND="$input_list_command" \

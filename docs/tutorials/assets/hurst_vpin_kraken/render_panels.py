@@ -1,7 +1,9 @@
 """
 Render the Hurst/VPIN tutorial's diagnostic panels from real backtest output.
 
-Usage:
+After building NautilusTrader from source, run these commands from the repository root:
+
+    make sync
 
     # Capture a backtest log against multi-day Tardis PF_XBTUSD data.
     RUST_LOG=info cargo run -p nautilus-kraken --features examples \\
@@ -9,10 +11,8 @@ Usage:
 
     # Parse the log and regenerate the five PNG panels next to this script.
     BACKTEST_LOG=/tmp/backtest.log \\
-        python3 docs/tutorials/assets/hurst_vpin_kraken/render_panels.py
-
-Requires the ``visualization`` extra for Kaleido/Plotly:
-    uv sync --extra visualization
+        uv run --project python --no-sync \\
+            python docs/tutorials/assets/hurst_vpin_kraken/render_panels.py
 
 Parses per-bar signal snapshots and ``OrderFilled`` events from the strategy's
 info-level log, then writes five PNGs using the ``nautilus_dark`` tearsheet

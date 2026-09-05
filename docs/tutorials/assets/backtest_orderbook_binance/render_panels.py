@@ -1,11 +1,12 @@
 """
 Render the Binance order book imbalance tutorial panels from a backtest run.
 
-Usage:
+After building NautilusTrader from source, run these commands from the repository root:
 
-    uv sync --extra visualization
+    make sync
     NAUTILUS_DATA_DIR=test_data/local \
-        python3 docs/tutorials/assets/backtest_orderbook_binance/render_panels.py
+        uv run --project python --no-sync \
+            python docs/tutorials/assets/backtest_orderbook_binance/render_panels.py
 
 Replays the three-million-row Binance T_DEPTH BTCUSDT 2022-11-01 panel window
 described by the tutorial, runs the shipped ``OrderBookImbalance`` strategy

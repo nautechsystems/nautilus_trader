@@ -317,8 +317,7 @@ needs Rust symbols:
 make sync
 (
   cd python
-  UV_PROJECT_ENVIRONMENT=../.venv \
-    CARGO_TARGET_DIR=../target \
+  CARGO_TARGET_DIR=../target \
     uv run --no-sync maturin develop --profile debug-pyo3
 )
 ```

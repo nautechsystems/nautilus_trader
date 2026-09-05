@@ -285,10 +285,13 @@ node.generate_account_report(config.id, venue=Venue("BYBIT"))
 # captures top of book once per second, then writes PNG panels to the asset
 # directory using the shared `nautilus_dark` tearsheet theme.
 #
+# After building NautilusTrader from source, run these commands from the repository root:
+#
 # ```bash
-# uv sync --extra visualization
+# make sync
 # NAUTILUS_DATA_DIR=test_data/local \
-#     python3 docs/tutorials/assets/backtest_orderbook_bybit/render_panels.py
+#     uv run --project python --no-sync \
+#         python docs/tutorials/assets/backtest_orderbook_bybit/render_panels.py
 # ```
 
 # %% [markdown]

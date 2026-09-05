@@ -468,21 +468,17 @@ It's possible to install from source using pip if you first install the build de
 >
 > The `--depth 1` flag fetches just the latest commit for a faster, lightweight clone.
 
-6. Set environment variables. Run these commands from the repository root after `make sync`:
+6. Use the uv project environment.
 
-    The Python project lives in `python/`, so a bare `uv` command creates and uses
-    `python/.venv` instead of the repository-root `.venv`. Set this on every platform so
-    direct `uv` commands agree with the Make targets, which set it themselves:
+    The uv project environment lives at `python/.venv`, beside `python/pyproject.toml`. Run direct uv
+    project commands from `python/` or pass `--project python` from the repository root.
 
-    ```bash
-    export UV_PROJECT_ENVIRONMENT="$PWD/.venv"
-    ```
-
-    For PyO3 compilation (Linux and macOS only):
+    For PyO3 compilation on Linux and macOS, run these commands from the repository root after
+    `make sync`:
 
     ```bash
     # Set the Python executable path for PyO3
-    export PYO3_PYTHON="$PWD/.venv/bin/python"
+    export PYO3_PYTHON="$PWD/python/.venv/bin/python"
 
     # Linux only: Set the library path for the uv-managed Python runtime
     PYTHON_LIB_DIR="$("$PYO3_PYTHON" -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')"

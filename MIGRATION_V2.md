@@ -26,10 +26,11 @@ To build from source, build the package from the repository root:
 
 ```bash
 make build-debug
-.venv/bin/python -c 'import nautilus_trader; print(nautilus_trader.__version__)'
+uv run --project python --no-sync python -c \
+  'import nautilus_trader; print(nautilus_trader.__version__)'
 ```
 
-The source build uses the root `.venv` and `target/` directories.
+The source build uses the `python/.venv` and `target/` directories.
 See [Installation](docs/getting_started/installation.md) for platform support and package-index options.
 
 ## Port Python code

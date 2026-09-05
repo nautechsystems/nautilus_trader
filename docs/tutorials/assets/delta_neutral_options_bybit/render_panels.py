@@ -1,13 +1,14 @@
 """
 Render the Bybit delta-neutral options tutorial panels.
 
-Usage:
+After building NautilusTrader from source, run these commands from the repository root:
 
+    make sync
     timeout 30 ./target/release/examples/bybit-delta-neutral > /tmp/bybit_dn.log 2>&1
 
-    uv sync --extra visualization
     DN_LOG=/tmp/bybit_dn.log \
-        python3 docs/tutorials/assets/delta_neutral_options_bybit/render_panels.py
+        uv run --project python --no-sync \
+            python docs/tutorials/assets/delta_neutral_options_bybit/render_panels.py
 
 The default example has ``enter_strangle: false`` so a clean account
 places no orders. The renderer parses the log for the selected call /

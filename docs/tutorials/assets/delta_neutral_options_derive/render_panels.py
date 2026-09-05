@@ -1,16 +1,17 @@
 """
 Render the Derive delta-neutral options tutorial panels.
 
-Usage:
+After building NautilusTrader from source, run these commands from the repository root:
 
-    set -gx DERIVE_ENVIRONMENT mainnet
-    set -gx DERIVE_DELTA_NEUTRAL_HEDGE_ENABLED false
+    make sync
+    export DERIVE_ENVIRONMENT=mainnet
+    export DERIVE_DELTA_NEUTRAL_HEDGE_ENABLED=false
     timeout 45 cargo run --example derive-delta-neutral --package nautilus-derive --features examples \
         > /tmp/derive_dn.log 2>&1
 
-    uv sync --extra visualization
-    set -gx DN_LOG /tmp/derive_dn.log
-    python3 docs/tutorials/assets/delta_neutral_options_derive/render_panels.py
+    export DN_LOG=/tmp/derive_dn.log
+    uv run --project python --no-sync \
+        python docs/tutorials/assets/delta_neutral_options_derive/render_panels.py
 
 The default example has ``enter_strangle: false`` so a clean account
 places no option entry orders. Set ``DERIVE_DELTA_NEUTRAL_HEDGE_ENABLED=false``

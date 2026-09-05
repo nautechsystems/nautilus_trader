@@ -274,7 +274,6 @@ runs:
       shell: bash
       run: >-
         VIRTUAL_ENV=""
-        UV_PROJECT_ENVIRONMENT="$(bash "$GITHUB_WORKSPACE/scripts/uv-project-environment.bash")"
         uv sync
         --project python
         --group dev

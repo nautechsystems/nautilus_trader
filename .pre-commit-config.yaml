@@ -494,8 +494,7 @@ repos:
             docs/tutorials/.*\.py|
             examples/.*\.py|
             python/(nautilus_trader/.*|pyproject\.toml|uv\.lock)|
-            scripts/ci/check-python-types\.bash|
-            scripts/uv-project-environment\.bash
+            scripts/ci/check-python-types\.bash
           )$
         pass_filenames: false
 

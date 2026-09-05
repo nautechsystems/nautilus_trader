@@ -435,15 +435,19 @@ VPIN. Shaded quadrant marks the entry-eligible region.*
 
 The backtest strategy logs `Hurst=… VPIN=… signed=… bar_close=…` on every
 bar close and standard `OrderFilled` events on entries and exits, so the
-panels above are fully reproducible from the run's stdout:
+panels above are fully reproducible from the run's stdout.
+
+After building NautilusTrader from source, run these commands from the repository root:
 
 ```bash
+make sync
+
 RUST_LOG=info cargo run -p nautilus-kraken --features examples \
     --example kraken-hurst-vpin-backtest --release > /tmp/backtest.log 2>&1
 
-uv sync --extra visualization
 BACKTEST_LOG=/tmp/backtest.log \
-    python3 docs/tutorials/assets/hurst_vpin_kraken/render_panels.py
+    uv run --project python --no-sync \
+        python docs/tutorials/assets/hurst_vpin_kraken/render_panels.py
 ```
 
 The renderer uses the shared `nautilus_dark` tearsheet theme and writes

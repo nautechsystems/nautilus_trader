@@ -42,8 +42,8 @@ orders by default (`dry_run=False`), stated in a warning at the top of the modul
 From the repository root:
 
 ```bash
-.venv/bin/python examples/live/lighter/data_tester.py
-.venv/bin/python examples/live/lighter/exec_tester.py
+uv run --project python --no-sync python examples/live/lighter/data_tester.py
+uv run --project python --no-sync python examples/live/lighter/exec_tester.py
 ```
 
 Rust examples live under `crates/adapters/lighter/examples/`. Both testers connect when run. The

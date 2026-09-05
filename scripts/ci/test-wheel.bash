@@ -6,13 +6,6 @@ temp_root="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
 neutral_dir="$(mktemp -d "$temp_root/nautilus-wheel.XXXXXX")"
 trap 'rm -rf "$neutral_dir"' EXIT
 
-# Pin the wheel environment so the nested doctest and type-check scripts validate the installed
-# wheel rather than defaulting to the repository-root development environment. Relative values
-# resolve against the uv project root, which keeps this correct under Git Bash on Windows where an
-# absolute POSIX path would reach native uv unconverted.
-UV_PROJECT_ENVIRONMENT=.venv
-export UV_PROJECT_ENVIRONMENT
-
 uv sync --group test --no-install-package nautilus-trader
 
 set -- ../dist/*.whl

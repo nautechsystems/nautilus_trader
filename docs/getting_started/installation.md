@@ -284,20 +284,15 @@ Cap'n Proto is a development dependency. It is not required when installing pre-
 
 ### 7. Set environment variables
 
-The Python project lives in `python/`, so a bare `uv` command creates and uses `python/.venv`
-instead of the repository-root `.venv`. Set this on every platform so direct `uv` commands
-agree with the Make targets, which set it themselves:
-
-```bash
-export UV_PROJECT_ENVIRONMENT="$PWD/.venv"
-```
+The uv project environment lives at `python/.venv`, beside `python/pyproject.toml`. Run direct uv
+project commands from `python/` or pass `--project python` from the repository root.
 
 Set environment variables for PyO3 compilation (Linux and macOS only). Run these commands from
 the repository root after `make sync`:
 
 ```bash
 # Set the Python executable path for PyO3
-export PYO3_PYTHON="$PWD/.venv/bin/python"
+export PYO3_PYTHON="$PWD/python/.venv/bin/python"
 
 # Linux only: Set the library path for the uv-managed Python runtime
 PYTHON_LIB_DIR="$("$PYO3_PYTHON" -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')"
@@ -316,7 +311,7 @@ Without it, tests that depend on PyO3 may fail to locate the Python runtime.
 
 ### 8. Build Python from source
 
-This path builds the PyO3 package from the `python/` directory and installs it into the root `.venv`.
+This path builds the PyO3 package from the `python/` directory and installs it into `python/.venv`.
 Use it from a NautilusTrader source checkout when a development wheel is not available for your
 platform or when you need local Rust changes.
 
@@ -326,13 +321,13 @@ From the repository root:
 make build-debug
 ```
 
-This target syncs `.venv`, builds the Rust extension with maturin, and regenerates Python type
+This target syncs `python/.venv`, builds the Rust extension with maturin, and regenerates Python type
 stubs. It uses `target/` for Cargo artifacts.
 
 Run a Python example with the project environment:
 
 ```bash
-.venv/bin/python examples/live/lighter/data_tester.py
+uv run --project python --no-sync python examples/live/lighter/data_tester.py
 ```
 
 The script connects to Lighter Testnet and starts streaming market data; stop it with Ctrl+C.
