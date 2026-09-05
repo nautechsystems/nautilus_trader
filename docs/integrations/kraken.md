@@ -442,7 +442,9 @@ the exchange state at startup or during operation.
 - Wallet balances: Fetched from `POST /0/private/BalanceEx`, which reports both the
   total and the held (`hold_trade`) amount per asset. The held amount populates
   `AccountBalance.locked`, so `free` excludes funds Kraken has reserved against
-  resting orders.
+  resting orders. For accounts with a credit line, net credit (`credit - credit_used`)
+  is included in `AccountBalance.total`, so `free` matches Kraken's available balance
+  of `balance + credit - credit_used - hold_trade`.
 
 **Margin position reports** (when `spot_account_type=Margin`):
 

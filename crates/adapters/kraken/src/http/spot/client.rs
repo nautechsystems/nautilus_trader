@@ -1821,7 +1821,10 @@ impl KrakenSpotHttpClient {
     /// avoids clamping free margin to one wallet bucket in multi-asset accounts.
     ///
     /// Wallet balances come from `BalanceEx`, whose per-asset `hold_trade` gives the amount
-    /// Kraken has reserved against resting orders and populates `locked`.
+    /// Kraken has reserved against resting orders and populates `locked`. Net credit
+    /// (`credit - credit_used`, returned only for credit-line accounts) is included in `total`,
+    /// so `free` derives to Kraken's available balance of
+    /// `balance + credit - credit_used - hold_trade`.
     ///
     /// The single shared fetch keeps Kraken rate-limit usage symmetric with `BalanceEx`
     /// (one request per account update), instead of two as if `request_account_state`
@@ -1863,8 +1866,14 @@ impl KrakenSpotHttpClient {
         let balances: Vec<AccountBalance> = balances_raw
             .iter()
             .filter_map(|(currency_code, entry)| {
-                let amount = Decimal::from_str_exact(&entry.balance).ok()?;
-                if amount.is_zero() {
+                let balance = Decimal::from_str_exact(&entry.balance).ok()?;
+                let credit = optional_credit_amount(entry.credit.as_deref())?;
+                let credit_used = optional_credit_amount(entry.credit_used.as_deref())?;
+
+                // Kraken defines available funds as `balance + credit - credit_used -
+                // hold_trade`, so net credit belongs in `total` for `free` to derive to it.
+                let total = balance + credit - credit_used;
+                if total.is_zero() {
                     return None;
                 }
 
@@ -1879,7 +1888,7 @@ impl KrakenSpotHttpClient {
 
                 let locked = Decimal::from_str_exact(&entry.hold_trade).ok()?;
                 let currency = Currency::new(normalized_code, 8, 0, "0", CurrencyType::Crypto);
-                AccountBalance::from_total_and_locked(amount, locked, currency).ok()
+                AccountBalance::from_total_and_locked(total, locked, currency).ok()
             })
             .chain(margin_entry)
             .collect();
@@ -3011,6 +3020,18 @@ struct TradeBalanceSnapshot {
     metrics: IndexMap<String, String>,
     free_margin: Decimal,
     equity: Decimal,
+}
+
+/// Parses an optional `BalanceEx` credit amount, treating an absent field as zero.
+///
+/// Kraken only includes `credit` and `credit_used` for accounts holding a credit line, so their
+/// absence means no credit rather than an unknown amount. Returns `None` when the field is present
+/// but unparsable, so the caller can skip the balance rather than understate it.
+fn optional_credit_amount(value: Option<&str>) -> Option<Decimal> {
+    match value {
+        Some(amount) => Decimal::from_str_exact(amount).ok(),
+        None => Some(Decimal::ZERO),
+    }
 }
 
 /// Resolves the Nautilus [`Currency`] used to denominate `TradeBalance` margin metrics.

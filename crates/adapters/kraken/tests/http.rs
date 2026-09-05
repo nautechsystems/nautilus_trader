@@ -93,6 +93,8 @@ struct TestServerState {
     trade_balance_json: Arc<tokio::sync::Mutex<Option<String>>>,
     /// Captures the last raw body posted to `/0/private/TradeBalance` for assertion.
     last_trade_balance_body: Arc<tokio::sync::Mutex<Option<String>>>,
+    /// When set, `/0/private/BalanceEx` returns this JSON string instead of the fixture file.
+    balance_ex_json: Arc<tokio::sync::Mutex<Option<String>>>,
     /// When true, `/0/private/OpenPositions` returns an empty positions map.
     open_positions_empty: Arc<AtomicBool>,
     /// When set, `/0/private/OpenPositions` returns this JSON string instead of the fixture file.
@@ -116,6 +118,7 @@ impl Default for TestServerState {
             trade_balance_error: Arc::new(AtomicBool::new(false)),
             trade_balance_json: Arc::new(tokio::sync::Mutex::new(None)),
             last_trade_balance_body: Arc::new(tokio::sync::Mutex::new(None)),
+            balance_ex_json: Arc::new(tokio::sync::Mutex::new(None)),
             open_positions_empty: Arc::new(AtomicBool::new(false)),
             open_positions_json: Arc::new(tokio::sync::Mutex::new(None)),
             spot_asset_pairs_empty: Arc::new(AtomicBool::new(false)),
@@ -572,7 +575,17 @@ async fn mock_handler(req: Request, state: Arc<TestServerState>) -> Response {
         }
         "/0/private/GetWebSocketsToken" => mock_websockets_token(req.headers().clone()).await,
         "/0/private/Balance" => mock_spot_balance().await,
-        "/0/private/BalanceEx" => mock_spot_balance_ex().await,
+        "/0/private/BalanceEx" => {
+            if let Some(json) = state.balance_ex_json.lock().await.clone() {
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header("content-type", "application/json")
+                    .body(Body::from(json))
+                    .unwrap()
+            } else {
+                mock_spot_balance_ex().await
+            }
+        }
         "/0/private/TradeBalance" => {
             let body_bytes = axum::body::to_bytes(req.into_body(), usize::MAX)
                 .await
@@ -3423,6 +3436,87 @@ async fn test_spot_request_account_state_cash_locks_held_amounts() {
         .expect("expected ETH balance");
     assert_eq!(eth.locked.as_decimal(), Decimal::ZERO);
     assert_eq!(eth.free, eth.total);
+}
+
+/// Credit-line accounts must include net credit in the available balance.
+///
+/// Kraken documents available funds as `balance + credit - credit_used - hold_trade`, so net
+/// credit belongs in `total` for `free` to derive to that figure. `credit` and `credit_used` are
+/// returned only for accounts holding a credit line, and are absent otherwise.
+#[rstest]
+#[tokio::test]
+async fn test_spot_request_account_state_cash_includes_net_credit() {
+    let server_state = Arc::new(TestServerState::default());
+    let app = create_router(server_state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    *server_state.balance_ex_json.lock().await = Some(
+        r#"{"error":[],"result":{
+            "ZUSD":{"balance":"1000.00","hold_trade":"250.00","credit":"5000.00","credit_used":"2000.00"},
+            "XXBT":{"balance":"0.0","hold_trade":"0.0","credit":"1.5","credit_used":"0.5"},
+            "ETH":{"balance":"3.0","hold_trade":"1.0"}
+        }}"#
+        .to_string(),
+    );
+
+    let client = KrakenSpotHttpClient::with_credentials(
+        "test".to_string(),
+        "test".to_string(),
+        KrakenEnvironment::Live,
+        Some(base_url),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let account_id = AccountId::new("KRAKEN-001");
+    let state = client
+        .request_account_state(account_id, AccountType::Cash, None)
+        .await
+        .unwrap();
+
+    // Net credit of 5000 - 2000 raises total above the 1000 wallet balance, and free becomes
+    // 1000 + 5000 - 2000 - 250.
+    let usd = state
+        .balances
+        .iter()
+        .find(|b| b.currency.code.as_str() == "USD")
+        .expect("expected USD balance");
+    assert_eq!(usd.total.as_decimal().normalize(), dec!(4000));
+    assert_eq!(usd.locked.as_decimal().normalize(), dec!(250));
+    assert_eq!(usd.free.as_decimal().normalize(), dec!(3750));
+
+    // Available credit alone must keep the wallet, even with a zero balance.
+    let xbt = state
+        .balances
+        .iter()
+        .find(|b| b.currency.code.as_str() == "XBT")
+        .expect("expected XBT balance from available credit alone");
+    assert_eq!(xbt.total.as_decimal().normalize(), dec!(1));
+    assert_eq!(xbt.locked.as_decimal(), Decimal::ZERO);
+    assert_eq!(xbt.free.as_decimal().normalize(), dec!(1));
+
+    // Absent credit fields mean no credit line, so total stays the wallet balance.
+    let eth = state
+        .balances
+        .iter()
+        .find(|b| b.currency.code.as_str() == "ETH")
+        .expect("expected ETH balance");
+    assert_eq!(eth.total.as_decimal().normalize(), dec!(3));
+    assert_eq!(eth.locked.as_decimal().normalize(), dec!(1));
+    assert_eq!(eth.free.as_decimal().normalize(), dec!(2));
 }
 
 #[rstest]

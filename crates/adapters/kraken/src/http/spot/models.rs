@@ -59,6 +59,12 @@ pub struct BalanceExEntry {
     pub balance: String,
     /// Total held amount for the asset, reserved by the venue against resting orders.
     pub hold_trade: String,
+    /// Total credit amount, present only for accounts with a credit line.
+    #[serde(default)]
+    pub credit: Option<String>,
+    /// Used credit amount, present only for accounts with a credit line.
+    #[serde(default)]
+    pub credit_used: Option<String>,
 }
 
 /// Response from `POST /0/private/BalanceEx`.
