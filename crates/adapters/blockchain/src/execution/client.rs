@@ -118,10 +118,8 @@ use crate::{
     },
 };
 
-/// Interval between receipt polls while awaiting transaction finality.
 const RECEIPT_POLL_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_PAYLOAD_OPERATION_BATCH_SIZE: usize = 1_000;
-/// Basis points denominator for slippage derivation.
 const BPS_DENOMINATOR: u32 = 10_000;
 /// Denial reason for order-list submissions, which have no on-chain execution route.
 const ORDER_LIST_UNSUPPORTED: &str =
@@ -134,168 +132,7 @@ const ORDER_CANCEL_UNSUPPORTED: &str = "Order cancellation is not supported";
 /// Error for venue report probes that cannot answer without implying absence.
 const VENUE_EXECUTION_REPORTS_UNSUPPORTED: &str =
     "Venue execution reports are not supported on the blockchain execution client";
-/// Maximum historical block range inspected to identify a signer-nonce replacement.
 const MAX_REPLACEMENT_SCAN_BLOCKS: u64 = 4_096;
-
-/// Result of authenticating every persisted signed transaction in one execution database.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PayloadStorageCheck {
-    /// Whether payload protection is active.
-    pub protected: bool,
-    /// Durable deployment identity when protection is active.
-    pub deployment_id: Option<String>,
-    /// Rows which still contain plaintext signed transaction bytes.
-    pub plaintext_rows: u64,
-    /// Signed transaction rows which require a payload.
-    pub original_rows: u64,
-    /// Canonical replacement rows whose original bytes are unavailable.
-    pub replacement_rows: u64,
-    /// Payload rows successfully opened and authenticated.
-    pub authenticated_rows: u64,
-    /// Key IDs referenced by protected payloads.
-    pub key_ids: Vec<String>,
-    /// Database roles with direct table ownership or `SELECT` grants.
-    pub read_roles: Vec<String>,
-}
-
-impl From<ExecutionPayloadCheck> for PayloadStorageCheck {
-    fn from(value: ExecutionPayloadCheck) -> Self {
-        Self {
-            protected: value.protected,
-            deployment_id: value.deployment_id,
-            plaintext_rows: value.plaintext_rows,
-            original_rows: value.original_rows,
-            replacement_rows: value.replacement_rows,
-            authenticated_rows: value.authenticated_rows,
-            key_ids: value.key_ids,
-            read_roles: value.read_roles,
-        }
-    }
-}
-
-// A broadcast transaction awaiting finality, occupying the single in-flight slot.
-#[derive(Debug, Clone, Copy)]
-struct InFlightTransaction {
-    intent_id: i64,
-    nonce: u64,
-    tx_hash: B256,
-    purpose: TransactionPurpose,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct RecoveryTransaction {
-    intent_id: i64,
-    nonce: u64,
-    purpose: TransactionPurpose,
-}
-
-/// The single in-flight transaction slot.
-///
-/// The slot is claimed before any preparation RPC call so the `pending` nonce read stays
-/// authoritative: a second transaction is rejected before it can sign. A claim is released
-/// only when preparation fails before signing; from persistence onward the slot is never
-/// released on failure, because the database may have committed before its acknowledgement
-/// was lost.
-#[derive(Debug, Clone, Copy)]
-enum InFlightSlot {
-    /// Claimed before preparation; no signed transaction exists yet.
-    Preparing(TransactionPurpose),
-    /// Restored durable ownership retained while persisted transaction data is authenticated.
-    Recovering(RecoveryTransaction),
-    /// Signed, persisted, and awaiting finality.
-    AwaitingFinality(InFlightTransaction),
-}
-
-#[derive(Debug, Clone)]
-struct IncludedTransaction {
-    intent_id: i64,
-    nonce: u64,
-    tx_hash: B256,
-    block_number: u64,
-    receipt: RpcTransactionReceipt,
-    finality: StableFinality,
-}
-
-#[derive(Debug, Clone)]
-struct StableFinality {
-    decisions: Vec<ExecutionVerificationDecision>,
-    inclusion_header: ExecutionVerifiedHeader,
-    finalized_headers: Vec<ExecutionVerifiedHeader>,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum TransactionAuthorization {
-    Wrap {
-        weth: Address,
-    },
-    Approve {
-        token: Address,
-        router: Address,
-        amount: U256,
-    },
-}
-
-/// The single-in-flight limit error naming the transaction currently occupying the slot.
-fn in_flight_limit_error(slot: &InFlightSlot) -> anyhow::Error {
-    match slot {
-        InFlightSlot::Preparing(purpose) => anyhow::anyhow!(
-            "A {} transaction is being prepared; at most one transaction can be in flight",
-            purpose.as_str()
-        ),
-        InFlightSlot::Recovering(recovery) => anyhow::anyhow!(
-            "Execution intent {} ({}, nonce {}) retains signer ownership pending recovery; at most one transaction can be in flight",
-            recovery.intent_id,
-            recovery.purpose.as_str(),
-            recovery.nonce
-        ),
-        InFlightSlot::AwaitingFinality(in_flight) => anyhow::anyhow!(
-            "Transaction {} (intent {}, {}, nonce {}) is still awaiting finality; at most one transaction can be in flight",
-            in_flight.tx_hash,
-            in_flight.intent_id,
-            in_flight.purpose.as_str(),
-            in_flight.nonce
-        ),
-    }
-}
-
-/// Releases a pre-signature slot claim when the slot is still in the preparing state.
-///
-/// Aborted or failed preparation can leave a claim behind; because no signed transaction
-/// exists for a preparing slot, releasing it cannot strand a broadcastable signature.
-fn release_preparing_slot(in_flight: &Mutex<Option<InFlightSlot>>) {
-    let mut slot = in_flight.lock();
-    if matches!(*slot, Some(InFlightSlot::Preparing(_))) {
-        *slot = None;
-    }
-}
-
-fn release_preparing_if_reservation_not_committed(
-    in_flight: &Mutex<Option<InFlightSlot>>,
-    error: &anyhow::Error,
-) {
-    if reservation_failure_proven_not_committed(error) {
-        release_preparing_slot(in_flight);
-    }
-}
-
-#[derive(Debug)]
-struct TransactionLimits {
-    allowed_token_pairs: HashSet<(Address, Address)>,
-    quote_spend_limits: HashMap<(Address, Address), QuoteSpendCeiling>,
-    slippage_bps: u32,
-    max_slippage_bps: u32,
-    max_order_amount: u64,
-    deadline_seconds: u64,
-    max_quote_age_blocks: u64,
-    receipt_timeout_secs: u64,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct QuoteSpendCeiling {
-    spend_token: Address,
-    spend_token_decimals: u8,
-    max_amount: U256,
-}
 
 /// Execution client for blockchain interactions including balance tracking and order execution.
 #[derive(Debug)]
@@ -375,7 +212,6 @@ impl BlockchainExecutionClient {
         let weth_address = validate_address(config.weth_address.as_str())?;
         Self::validate_manifest_contracts(&config, &router_addresses, weth_address)?;
 
-        // Initialize token universe, so we can fetch them from the blockchain later.
         let mut token_universe = HashSet::new();
 
         if let Some(specified_tokens) = &config.tokens {
@@ -643,7 +479,6 @@ impl BlockchainExecutionClient {
         Ok(())
     }
 
-    /// Fetches the native currency balance (e.g., ETH) for the wallet from the blockchain.
     async fn fetch_native_currency_balance(&self) -> anyhow::Result<Money> {
         let balance_u256 = self
             .http_rpc_client
@@ -655,12 +490,10 @@ impl BlockchainExecutionClient {
         Money::from_u256(balance_u256, native_currency).map_err(Into::into)
     }
 
-    /// Fetches the balance of a specific ERC-20 token for the wallet.
     async fn fetch_token_balance(
         &mut self,
         token_address: &Address,
     ) -> anyhow::Result<TokenBalance> {
-        // Get the cached token or fetch it from the blockchain and cache it.
         let token = if let Some(token) = self.cache.get_token(token_address) {
             token.to_owned()
         } else {
@@ -968,7 +801,6 @@ impl BlockchainExecutionClient {
             })
     }
 
-    /// Resolves the pool selected by `instrument_id` from the shared engine cache.
     fn resolve_pool(&self, instrument_id: &InstrumentId) -> anyhow::Result<Pool> {
         let (blockchain, dex_type) = instrument_id.venue.parse_dex()?;
         if blockchain != self.chain.name {
@@ -1126,11 +958,6 @@ impl BlockchainExecutionClient {
         }
     }
 
-    /// Builds the shared transaction executor from the connected client state.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if no durable store is configured or the signer is not initialized.
     fn transaction_executor(&self) -> anyhow::Result<TransactionExecutor> {
         let database = self.cache.database.clone().ok_or_else(|| {
             anyhow::anyhow!("No durable store configured; refusing to submit a transaction")
@@ -1918,6 +1745,166 @@ impl BlockchainExecutionClient {
             profiler_position: Some(profiler_position),
         })
     }
+}
+
+/// Result of authenticating every persisted signed transaction in one execution database.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PayloadStorageCheck {
+    /// Whether payload protection is active.
+    pub protected: bool,
+    /// Durable deployment identity when protection is active.
+    pub deployment_id: Option<String>,
+    /// Rows which still contain plaintext signed transaction bytes.
+    pub plaintext_rows: u64,
+    /// Signed transaction rows which require a payload.
+    pub original_rows: u64,
+    /// Canonical replacement rows whose original bytes are unavailable.
+    pub replacement_rows: u64,
+    /// Payload rows successfully opened and authenticated.
+    pub authenticated_rows: u64,
+    /// Key IDs referenced by protected payloads.
+    pub key_ids: Vec<String>,
+    /// Database roles with direct table ownership or `SELECT` grants.
+    pub read_roles: Vec<String>,
+}
+
+impl From<ExecutionPayloadCheck> for PayloadStorageCheck {
+    fn from(value: ExecutionPayloadCheck) -> Self {
+        Self {
+            protected: value.protected,
+            deployment_id: value.deployment_id,
+            plaintext_rows: value.plaintext_rows,
+            original_rows: value.original_rows,
+            replacement_rows: value.replacement_rows,
+            authenticated_rows: value.authenticated_rows,
+            key_ids: value.key_ids,
+            read_roles: value.read_roles,
+        }
+    }
+}
+
+// A broadcast transaction awaiting finality, occupying the single in-flight slot.
+#[derive(Debug, Clone, Copy)]
+struct InFlightTransaction {
+    intent_id: i64,
+    nonce: u64,
+    tx_hash: B256,
+    purpose: TransactionPurpose,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RecoveryTransaction {
+    intent_id: i64,
+    nonce: u64,
+    purpose: TransactionPurpose,
+}
+
+/// The single in-flight transaction slot.
+///
+/// The slot is claimed before any preparation RPC call so the `pending` nonce read stays
+/// authoritative: a second transaction is rejected before it can sign. A claim is released
+/// only when preparation fails before signing; from persistence onward the slot is never
+/// released on failure, because the database may have committed before its acknowledgement
+/// was lost.
+#[derive(Debug, Clone, Copy)]
+enum InFlightSlot {
+    /// Claimed before preparation; no signed transaction exists yet.
+    Preparing(TransactionPurpose),
+    /// Restored durable ownership retained while persisted transaction data is authenticated.
+    Recovering(RecoveryTransaction),
+    /// Signed, persisted, and awaiting finality.
+    AwaitingFinality(InFlightTransaction),
+}
+
+#[derive(Debug, Clone)]
+struct IncludedTransaction {
+    intent_id: i64,
+    nonce: u64,
+    tx_hash: B256,
+    block_number: u64,
+    receipt: RpcTransactionReceipt,
+    finality: StableFinality,
+}
+
+#[derive(Debug, Clone)]
+struct StableFinality {
+    decisions: Vec<ExecutionVerificationDecision>,
+    inclusion_header: ExecutionVerifiedHeader,
+    finalized_headers: Vec<ExecutionVerifiedHeader>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TransactionAuthorization {
+    Wrap {
+        weth: Address,
+    },
+    Approve {
+        token: Address,
+        router: Address,
+        amount: U256,
+    },
+}
+
+/// The single-in-flight limit error naming the transaction currently occupying the slot.
+fn in_flight_limit_error(slot: &InFlightSlot) -> anyhow::Error {
+    match slot {
+        InFlightSlot::Preparing(purpose) => anyhow::anyhow!(
+            "A {} transaction is being prepared; at most one transaction can be in flight",
+            purpose.as_str()
+        ),
+        InFlightSlot::Recovering(recovery) => anyhow::anyhow!(
+            "Execution intent {} ({}, nonce {}) retains signer ownership pending recovery; at most one transaction can be in flight",
+            recovery.intent_id,
+            recovery.purpose.as_str(),
+            recovery.nonce
+        ),
+        InFlightSlot::AwaitingFinality(in_flight) => anyhow::anyhow!(
+            "Transaction {} (intent {}, {}, nonce {}) is still awaiting finality; at most one transaction can be in flight",
+            in_flight.tx_hash,
+            in_flight.intent_id,
+            in_flight.purpose.as_str(),
+            in_flight.nonce
+        ),
+    }
+}
+
+/// Releases a pre-signature slot claim when the slot is still in the preparing state.
+///
+/// Aborted or failed preparation can leave a claim behind; because no signed transaction
+/// exists for a preparing slot, releasing it cannot strand a broadcastable signature.
+fn release_preparing_slot(in_flight: &Mutex<Option<InFlightSlot>>) {
+    let mut slot = in_flight.lock();
+    if matches!(*slot, Some(InFlightSlot::Preparing(_))) {
+        *slot = None;
+    }
+}
+
+fn release_preparing_if_reservation_not_committed(
+    in_flight: &Mutex<Option<InFlightSlot>>,
+    error: &anyhow::Error,
+) {
+    if reservation_failure_proven_not_committed(error) {
+        release_preparing_slot(in_flight);
+    }
+}
+
+#[derive(Debug)]
+struct TransactionLimits {
+    allowed_token_pairs: HashSet<(Address, Address)>,
+    quote_spend_limits: HashMap<(Address, Address), QuoteSpendCeiling>,
+    slippage_bps: u32,
+    max_slippage_bps: u32,
+    max_order_amount: u64,
+    deadline_seconds: u64,
+    max_quote_age_blocks: u64,
+    receipt_timeout_secs: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct QuoteSpendCeiling {
+    spend_token: Address,
+    spend_token_decimals: u8,
+    max_amount: U256,
 }
 
 /// A locally signed EIP-1559 transaction ready for persist-before-broadcast.
@@ -3234,7 +3221,6 @@ impl TransactionExecutor {
             .await
     }
 
-    /// Broadcasts the signed transaction and classifies the acceptance outcome.
     async fn broadcast(&self, prepared: &PreparedTransaction) -> anyhow::Result<BroadcastOutcome> {
         let tx_hash = prepared.tx_hash;
 
@@ -3666,7 +3652,6 @@ fn open_execution_payload(
     Ok(raw_transaction)
 }
 
-/// Derives the receipt poll budget from the configured inclusion timeout in seconds.
 fn receipt_max_polls(receipt_timeout_secs: u64) -> u32 {
     u32::try_from(receipt_timeout_secs.max(1)).unwrap_or(u32::MAX)
 }
@@ -5281,7 +5266,6 @@ fn raw_amount_to_quantity(amount: U256, decimals: u8) -> anyhow::Result<Quantity
     Ok(quantity)
 }
 
-/// Extracts the positive output amount from an exact-input swap quote.
 fn exact_output_amount(quote: &SwapQuote, zero_for_one: bool) -> anyhow::Result<U256> {
     let amount = if zero_for_one {
         quote.amount1
@@ -5877,7 +5861,6 @@ impl ExecutionClient for BlockchainExecutionClient {
         )?
         .map(Arc::new);
 
-        // Attach or reuse the durable store for execution transaction records
         if self.cache.database.is_some() || self.config.postgres_cache_database_config.is_some() {
             let keys = payload_keys.as_deref().ok_or_else(|| {
                 anyhow::anyhow!(
@@ -7297,14 +7280,12 @@ mod tests {
         finalized_swap_rpc_state(tx_hash, min_amount_out)
     }
 
-    /// The swap state with a broadcast response whose hash differs from the signed hash.
     async fn swap_rpc_state_for_mismatch() -> MockRpcState {
         swap_rpc_state()
             .await
             .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION)
     }
 
-    /// Extracts the transaction awaiting finality in the in-flight slot.
     fn awaiting_in_flight(client: &BlockchainExecutionClient) -> InFlightTransaction {
         let slot = *client.in_flight.lock();
         let Some(InFlightSlot::AwaitingFinality(in_flight)) = slot else {
@@ -7663,7 +7644,6 @@ mod tests {
         .abi_encode()
     }
 
-    /// Derives the expected minimum output with the same live profiler the plan used.
     fn expected_min_amount_out(slippage_bps: u32) -> U256 {
         expected_min_amount_out_for(&test_pool(), true, slippage_bps)
     }
@@ -8042,8 +8022,6 @@ mod tests {
         .to_string()
     }
 
-    /// The canonical block at the receipt height containing the given wrap transaction with
-    /// the exact persisted call fields.
     fn finalized_wrap_block(tx_hash: B256) -> String {
         serde_json::json!({
             "jsonrpc": "2.0",
@@ -8072,8 +8050,6 @@ mod tests {
         .to_string()
     }
 
-    /// The canonical block at the receipt height containing the given approve transaction
-    /// with the exact persisted call fields.
     fn finalized_approve_block(tx_hash: B256, amount: U256) -> String {
         let calldata = ERC20::approveCall {
             spender: ROUTER_ADDRESS,

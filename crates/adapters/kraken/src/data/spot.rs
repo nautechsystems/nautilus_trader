@@ -60,9 +60,6 @@ use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
-type OhlcBufferKey = (Ustr, u32);
-type OhlcBuffer = Arc<Mutex<AHashMap<OhlcBufferKey, (Bar, UnixNanos)>>>;
-
 use crate::{
     common::{consts::KRAKEN_VENUE, lookup_instrument_in_snapshot},
     config::KrakenDataClientConfig,
@@ -79,31 +76,6 @@ use crate::{
         parse::{parse_quote_tick, parse_trade_tick, parse_ws_bar},
     },
 };
-
-/// `L3Sink` implementation that forwards deltas to the data engine.
-struct DataEventSink<'a> {
-    sender: &'a tokio::sync::mpsc::UnboundedSender<DataEvent>,
-}
-
-impl L3Sink for DataEventSink<'_> {
-    fn emit_deltas(&mut self, deltas: OrderBookDeltas) {
-        if let Err(e) = self
-            .sender
-            .send(DataEvent::Data(Data::BookDeltas(Box::new(deltas))))
-        {
-            log::error!("Failed to send L3 deltas: {e}");
-        }
-    }
-}
-
-struct SpotMessageContext<'a> {
-    sender: &'a tokio::sync::mpsc::UnboundedSender<DataEvent>,
-    instruments: &'a Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-    book_sequence: &'a Arc<AtomicU64>,
-    l2_depths: &'a L2Depths,
-    ohlc_buffer: &'a OhlcBuffer,
-    clock: &'static AtomicTime,
-}
 
 /// Kraken Spot data client.
 ///
@@ -1235,6 +1207,33 @@ impl DataClient for KrakenSpotDataClient {
 
         Ok(())
     }
+}
+
+type OhlcBufferKey = (Ustr, u32);
+type OhlcBuffer = Arc<Mutex<AHashMap<OhlcBufferKey, (Bar, UnixNanos)>>>;
+
+struct DataEventSink<'a> {
+    sender: &'a tokio::sync::mpsc::UnboundedSender<DataEvent>,
+}
+
+impl L3Sink for DataEventSink<'_> {
+    fn emit_deltas(&mut self, deltas: OrderBookDeltas) {
+        if let Err(e) = self
+            .sender
+            .send(DataEvent::Data(Data::BookDeltas(Box::new(deltas))))
+        {
+            log::error!("Failed to send L3 deltas: {e}");
+        }
+    }
+}
+
+struct SpotMessageContext<'a> {
+    sender: &'a tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    instruments: &'a Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    book_sequence: &'a Arc<AtomicU64>,
+    l2_depths: &'a L2Depths,
+    ohlc_buffer: &'a OhlcBuffer,
+    clock: &'static AtomicTime,
 }
 
 #[cfg(test)]

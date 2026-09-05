@@ -85,31 +85,6 @@ use crate::{
     },
 };
 
-struct WsMessageContext {
-    clock: &'static AtomicTime,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
-    instrument_cache: Arc<InstrumentCache>,
-    order_books: Arc<DashMap<InstrumentId, OrderBook>>,
-    last_quotes: Arc<DashMap<InstrumentId, QuoteTick>>,
-    ws_client: DydxWebSocketClient,
-    http_client: DydxHttpClient,
-    active_quote_subs: Arc<AtomicSet<InstrumentId>>,
-    active_delta_subs: Arc<AtomicSet<InstrumentId>>,
-    active_trade_subs: Arc<AtomicSet<InstrumentId>>,
-    active_bar_subs: Arc<AtomicMap<(InstrumentId, String), BarType>>,
-    incomplete_bars: Arc<DashMap<BarType, Bar>>,
-    bar_type_mappings: Arc<AtomicMap<String, BarType>>,
-    active_mark_price_subs: Arc<AtomicSet<InstrumentId>>,
-    active_index_price_subs: Arc<AtomicSet<InstrumentId>>,
-    active_funding_rate_subs: Arc<AtomicSet<InstrumentId>>,
-    active_instrument_status_subs: Arc<AtomicSet<InstrumentId>>,
-    last_instrument_statuses: Arc<DashMap<InstrumentId, InstrumentStatus>>,
-    bars_timestamp_on_close: bool,
-    pending_bars: Arc<DashMap<String, Bar>>,
-    seen_tickers: Arc<AtomicSet<Ustr>>,
-    command_spawner: TaskSpawner,
-}
-
 /// dYdX data client for live market data streaming and historical data requests.
 ///
 /// This client integrates with the Nautilus DataEngine to provide:
@@ -1609,7 +1584,6 @@ impl DydxDataClient {
         clock: &'static AtomicTime,
     ) {
         for data in payloads {
-            // Filter bars through incomplete bars cache
             if let NautilusData::Bar(bar) = data {
                 Self::handle_bar_message(bar, data_sender, incomplete_bars, clock);
             } else if let Err(e) = data_sender.send(DataEvent::Data(data)) {
@@ -1628,14 +1602,12 @@ impl DydxDataClient {
         let bar_type = bar.bar_type;
 
         if bar.ts_event <= current_time_ns {
-            // Bar is complete - emit it and remove from incomplete cache
             incomplete_bars.remove(&bar_type);
 
             if let Err(e) = data_sender.send(DataEvent::Data(NautilusData::Bar(bar))) {
                 log::error!("Failed to emit completed bar: {e}");
             }
         } else {
-            // Bar is incomplete - cache it (updates existing entry)
             log::trace!(
                 "Caching incomplete bar for {} (ts_event={}, current={})",
                 bar_type,
@@ -1665,10 +1637,8 @@ impl DydxDataClient {
             .any(|d| d.flags & snapshot_flag != 0);
         let synthetic_flags = if is_snapshot_batch { snapshot_flag } else { 0 };
 
-        // Apply the original venue deltas first
         book.apply_deltas(venue_deltas)?;
 
-        // Check if orderbook is crossed
         let mut is_crossed = if let (Some(bid_price), Some(ask_price)) =
             (book.best_bid_price(), book.best_ask_price())
         {
@@ -1677,7 +1647,6 @@ impl DydxDataClient {
             false
         };
 
-        // Iteratively uncross the orderbook
         while is_crossed {
             log::debug!(
                 "Resolving crossed order book for {}: bid={:?} >= ask={:?}",
@@ -1706,7 +1675,6 @@ impl DydxDataClient {
             let mut temp_deltas = Vec::new();
 
             if bid_size > ask_size {
-                // Remove ask level, reduce bid level
                 let new_bid_size = Quantity::from_decimal_dp(
                     bid_size.as_decimal() - ask_size.as_decimal(),
                     instrument.size_precision(),
@@ -1735,7 +1703,6 @@ impl DydxDataClient {
                     ts_init,
                 ));
             } else if bid_size < ask_size {
-                // Remove bid level, reduce ask level
                 let new_ask_size = Quantity::from_decimal_dp(
                     ask_size.as_decimal() - bid_size.as_decimal(),
                     instrument.size_precision(),
@@ -1764,7 +1731,6 @@ impl DydxDataClient {
                     ts_init,
                 ));
             } else {
-                // Equal sizes: remove both levels
                 temp_deltas.push(OrderBookDelta::new(
                     instrument_id,
                     BookAction::Delete,
@@ -1795,12 +1761,10 @@ impl DydxDataClient {
                 ));
             }
 
-            // Apply temporary deltas to the book
             let temp_deltas_obj = OrderBookDeltas::new(instrument_id, temp_deltas.clone());
             book.apply_deltas(&temp_deltas_obj)?;
             all_deltas.extend(temp_deltas);
 
-            // Check if still crossed
             is_crossed = if let (Some(bid_price), Some(ask_price)) =
                 (book.best_bid_price(), book.best_ask_price())
             {
@@ -1830,12 +1794,10 @@ impl DydxDataClient {
     ) {
         let instrument_id = deltas.instrument_id;
 
-        // Get instrument for crossed orderbook resolution
         let instrument = match instrument_cache.get(&instrument_id) {
             Some(inst) => inst,
             None => {
                 log::error!("Cannot resolve crossed order book: no instrument for {instrument_id}");
-                // Still emit the raw deltas if delta subscription is active
                 if active_delta_subs.contains(&instrument_id)
                     && let Err(e) = data_sender.send(DataEvent::Data(NautilusData::from(deltas)))
                 {
@@ -1850,7 +1812,6 @@ impl DydxDataClient {
             .entry(instrument_id)
             .or_insert_with(|| OrderBook::new(instrument_id, BookType::L2_MBP));
 
-        // Resolve crossed orderbook (applies deltas internally)
         let resolved_deltas =
             match Self::resolve_crossed_order_book(&mut book, &deltas, &instrument) {
                 Ok(d) => d,
@@ -1860,9 +1821,7 @@ impl DydxDataClient {
                 }
             };
 
-        // Conditionally emit QuoteTick if instrument has quote subscription
         if active_quote_subs.contains(&instrument_id) {
-            // Generate QuoteTick from updated top-of-book
             // Edge case: If orderbook is empty after deltas, fall back to last quote
             let quote_opt = if let (Some(bid_price), Some(ask_price)) =
                 (book.best_bid_price(), book.best_ask_price())
@@ -1878,20 +1837,16 @@ impl DydxDataClient {
                     resolved_deltas.ts_event,
                     resolved_deltas.ts_init,
                 ))
+            } else if book.best_bid_price().is_none() && book.best_ask_price().is_none() {
+                log::debug!(
+                    "Empty orderbook for {instrument_id} after applying deltas, using last quote"
+                );
+                last_quotes.get(&instrument_id).map(|q| *q)
             } else {
-                // Edge case: Empty orderbook levels - use last quote as fallback
-                if book.best_bid_price().is_none() && book.best_ask_price().is_none() {
-                    log::debug!(
-                        "Empty orderbook for {instrument_id} after applying deltas, using last quote"
-                    );
-                    last_quotes.get(&instrument_id).map(|q| *q)
-                } else {
-                    None
-                }
+                None
             };
 
             if let Some(quote) = quote_opt {
-                // Only emit when top-of-book changes
                 let emit_quote = !matches!(
                     last_quotes.get(&instrument_id),
                     Some(existing) if *existing == quote
@@ -1904,7 +1859,6 @@ impl DydxDataClient {
                     }
                 }
             } else if book.best_bid_price().is_some() || book.best_ask_price().is_some() {
-                // Partial orderbook (only one side) - log but don't emit
                 log::debug!(
                     "Incomplete top-of-book for {instrument_id} (bid={:?}, ask={:?})",
                     book.best_bid_price(),
@@ -1913,7 +1867,6 @@ impl DydxDataClient {
             }
         }
 
-        // Conditionally emit OrderBookDeltas if instrument has delta subscription
         if active_delta_subs.contains(&instrument_id) {
             let data: NautilusData = resolved_deltas.into();
             if let Err(e) = data_sender.send(DataEvent::Data(data)) {
@@ -1921,6 +1874,31 @@ impl DydxDataClient {
             }
         }
     }
+}
+
+struct WsMessageContext {
+    clock: &'static AtomicTime,
+    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    instrument_cache: Arc<InstrumentCache>,
+    order_books: Arc<DashMap<InstrumentId, OrderBook>>,
+    last_quotes: Arc<DashMap<InstrumentId, QuoteTick>>,
+    ws_client: DydxWebSocketClient,
+    http_client: DydxHttpClient,
+    active_quote_subs: Arc<AtomicSet<InstrumentId>>,
+    active_delta_subs: Arc<AtomicSet<InstrumentId>>,
+    active_trade_subs: Arc<AtomicSet<InstrumentId>>,
+    active_bar_subs: Arc<AtomicMap<(InstrumentId, String), BarType>>,
+    incomplete_bars: Arc<DashMap<BarType, Bar>>,
+    bar_type_mappings: Arc<AtomicMap<String, BarType>>,
+    active_mark_price_subs: Arc<AtomicSet<InstrumentId>>,
+    active_index_price_subs: Arc<AtomicSet<InstrumentId>>,
+    active_funding_rate_subs: Arc<AtomicSet<InstrumentId>>,
+    active_instrument_status_subs: Arc<AtomicSet<InstrumentId>>,
+    last_instrument_statuses: Arc<DashMap<InstrumentId, InstrumentStatus>>,
+    bars_timestamp_on_close: bool,
+    pending_bars: Arc<DashMap<String, Bar>>,
+    seen_tickers: Arc<AtomicSet<Ustr>>,
+    command_spawner: TaskSpawner,
 }
 
 #[cfg(test)]
@@ -1951,7 +1929,6 @@ mod tests {
                 .settlement_currency(Currency::USD())
                 .is_inverse(false)
                 .price_precision(2)
-                // size_precision (wide enough to reveal f64 rounding)
                 .size_precision(8)
                 .price_increment(Price::new(0.01, 2))
                 .size_increment(Quantity::new(0.00000001, 8))
@@ -2071,13 +2048,11 @@ mod tests {
             .expect("expected a Buy Update delta from crossed-book resolution");
         assert_eq!(update.order.size.as_decimal(), dec!(0.50000001));
 
-        // The terminal delta must carry F_LAST so downstream buffering flushes.
         assert_eq!(
             resolved.deltas.last().unwrap().flags,
             RecordFlag::F_LAST as u8,
         );
 
-        // Book is no longer crossed.
         if let (Some(bid), Some(ask)) = (book.best_bid_price(), book.best_ask_price()) {
             assert!(bid < ask, "book still crossed: bid={bid:?} ask={ask:?}");
         }
@@ -2091,8 +2066,6 @@ mod tests {
         let ts = UnixNanos::default();
         let snapshot = RecordFlag::F_SNAPSHOT as u8;
         let last = RecordFlag::F_LAST as u8;
-        // Mimic an inbound snapshot: every delta carries F_SNAPSHOT; terminator also
-        // carries F_LAST.
         let deltas = vec![OrderBookDelta::new(
             instrument_id,
             BookAction::Add,
@@ -2110,10 +2083,6 @@ mod tests {
         OrderBookDeltas::new(instrument_id, deltas)
     }
 
-    /// A crossed snapshot must exit `resolve_crossed_order_book` still flagged as a
-    /// snapshot: every delta keeps `F_SNAPSHOT` and the terminator carries
-    /// `F_SNAPSHOT | F_LAST`, so downstream consumers treat the emitted batch as a
-    /// complete replacement image.
     #[rstest]
     fn test_resolve_crossed_order_book_preserves_snapshot_flags() {
         let instrument = test_instrument();
@@ -2133,7 +2102,6 @@ mod tests {
         let snapshot = RecordFlag::F_SNAPSHOT as u8;
         let last = RecordFlag::F_LAST as u8;
 
-        // Every delta must still carry F_SNAPSHOT; the terminator carries both.
         for (idx, delta) in resolved.deltas.iter().enumerate() {
             assert!(
                 delta.flags & snapshot != 0,
@@ -2150,8 +2118,6 @@ mod tests {
 
     #[rstest]
     fn test_resolve_crossed_order_book_equal_sizes_removes_both_levels() {
-        // Seed bid at 99.00 / ask at 100.05 size=1.0, then add a crossing bid at
-        // 100.10 size=1.0 -- both top-of-book sides match in size and must be deleted.
         let instrument = test_instrument();
         let instrument_id = instrument.id();
         let mut book = seed_book_with_levels(
@@ -2166,7 +2132,6 @@ mod tests {
             DydxDataClient::resolve_crossed_order_book(&mut book, &venue_deltas, &instrument)
                 .expect("resolution should succeed");
 
-        // Equal-size branch must emit two Deletes (one per side) at top-of-book.
         let deletes_count = resolved
             .deltas
             .iter()

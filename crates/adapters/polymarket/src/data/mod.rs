@@ -99,10 +99,6 @@ const NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP: usize = 64;
 pub(super) const NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS: usize = 1;
 pub(super) const NEW_MARKET_EMPTY_RECHECK_DELAY: Duration = Duration::from_millis(500);
 
-fn clamp_new_market_fetch_max_concurrency(value: usize) -> usize {
-    value.clamp(1, NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP)
-}
-
 /// Polymarket data client for live market data streaming.
 ///
 /// Integrates with the Nautilus DataEngine to provide:
@@ -694,6 +690,10 @@ impl DataClient for PolymarketDataClient {
 
         Ok(())
     }
+}
+
+fn clamp_new_market_fetch_max_concurrency(value: usize) -> usize {
+    value.clamp(1, NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP)
 }
 
 pub(super) fn spawn_task<F>(tasks: &TaskSpawner, future: F)

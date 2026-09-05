@@ -60,349 +60,24 @@ use nautilus_model::{
 
 use crate::config::SandboxExecutionClientConfig;
 
-/// Interval between periodic sweeps that retire expired matching engines with no open position.
-///
-/// This bounds retained matching-engine and cache state for quote-only instruments that expire
-/// without an `InstrumentClose`, expired-order, or `PositionClosed` event to trigger cleanup.
+// Bounds retained state for quote-only instruments that expire without event-driven cleanup
 const EXPIRED_ENGINE_SWEEP_INTERVAL_NS: u64 = 60 * NANOSECONDS_IN_SECOND;
 
-/// Inner state for the sandbox execution client.
+/// A sandbox execution client for paper trading against live market data.
 ///
-/// This is wrapped in `Rc<RefCell<>>` so message handlers can hold weak references.
-struct SandboxInner {
-    /// Dynamic clock for matching engines.
-    clock: Rc<RefCell<dyn Clock>>,
-    /// Reference to the cache.
-    cache: Rc<RefCell<Cache>>,
-    /// The sandbox configuration.
+/// The `SandboxExecutionClient` simulates order execution using the `OrderMatchingEngine`
+/// to match orders against market data. This enables strategy testing in real-time
+/// without actual order execution on exchanges.
+pub struct SandboxExecutionClient {
+    core: RefCell<ExecutionClientCore>,
+    factory: OrderEventFactory,
     config: SandboxExecutionClientConfig,
-    /// Shared fill-model handle for every matching engine on this client.
-    fill_model: FillModelHandle,
-    /// Matching engines per instrument.
-    matching_engines: AHashMap<InstrumentId, OrderMatchingEngine>,
-    /// Next raw ID assigned to a matching engine.
-    next_engine_raw_id: u32,
-    /// Current account balances.
-    balances: AHashMap<String, Money>,
-    event_handler: Option<Rc<dyn Fn(OrderEventAny)>>,
+    inner: Rc<RefCell<SandboxInner>>,
+    handlers: RefCell<Option<RegisteredHandlers>>,
+    clock: Rc<RefCell<dyn Clock>>,
+    cache: Rc<RefCell<Cache>>,
 }
 
-fn check_quote_or_drop(context: &str, quote: &QuoteTick, instrument: &InstrumentAny) -> bool {
-    if quote_matches_instrument_precision(quote, instrument) {
-        return true;
-    }
-
-    log::warn!(
-        "Dropping {context} for {} due to precision mismatch \
-         (bid_px={}, ask_px={}, bid_sz={}, ask_sz={}, expected_price={}, expected_size={})",
-        instrument.id(),
-        quote.bid_price.precision,
-        quote.ask_price.precision,
-        quote.bid_size.precision,
-        quote.ask_size.precision,
-        instrument.price_precision(),
-        instrument.size_precision(),
-    );
-    false
-}
-
-fn check_trade_or_drop(context: &str, trade: &TradeTick, instrument: &InstrumentAny) -> bool {
-    if trade_matches_instrument_precision(trade, instrument) {
-        return true;
-    }
-
-    log::warn!(
-        "Dropping {context} for {} due to precision mismatch \
-         (px={}, sz={}, expected_price={}, expected_size={})",
-        instrument.id(),
-        trade.price.precision,
-        trade.size.precision,
-        instrument.price_precision(),
-        instrument.size_precision(),
-    );
-    false
-}
-
-fn check_bar_or_drop(context: &str, bar: &Bar, instrument: &InstrumentAny) -> bool {
-    if bar_matches_instrument_precision(bar, instrument) {
-        return true;
-    }
-
-    log::warn!(
-        "Dropping {context} for {} due to precision mismatch \
-         (open={}, high={}, low={}, close={}, volume={}, expected_price={}, expected_size={})",
-        instrument.id(),
-        bar.open.precision,
-        bar.high.precision,
-        bar.low.precision,
-        bar.close.precision,
-        bar.volume.precision,
-        instrument.price_precision(),
-        instrument.size_precision(),
-    );
-    false
-}
-
-fn quote_matches_instrument_precision(quote: &QuoteTick, instrument: &InstrumentAny) -> bool {
-    let price_precision = instrument.price_precision();
-    let size_precision = instrument.size_precision();
-
-    quote.bid_price.precision == price_precision
-        && quote.ask_price.precision == price_precision
-        && quote.bid_size.precision == size_precision
-        && quote.ask_size.precision == size_precision
-}
-
-fn trade_matches_instrument_precision(trade: &TradeTick, instrument: &InstrumentAny) -> bool {
-    let price_precision = instrument.price_precision();
-    let size_precision = instrument.size_precision();
-
-    trade.price.precision == price_precision && trade.size.precision == size_precision
-}
-
-fn bar_matches_instrument_precision(bar: &Bar, instrument: &InstrumentAny) -> bool {
-    let price_precision = instrument.price_precision();
-    let size_precision = instrument.size_precision();
-
-    bar.open.precision == price_precision
-        && bar.high.precision == price_precision
-        && bar.low.precision == price_precision
-        && bar.close.precision == price_precision
-        && bar.volume.precision == size_precision
-}
-
-impl SandboxInner {
-    /// Ensures a matching engine exists for the given instrument.
-    fn ensure_matching_engine(&mut self, instrument: &InstrumentAny) {
-        let instrument_id = instrument.id();
-
-        if !self.matching_engines.contains_key(&instrument_id) {
-            let engine_config = self.config.to_matching_engine_config();
-            let fill_model = self.fill_model.clone();
-            let fee_model = self
-                .config
-                .fee_model
-                .clone()
-                .map(FeeModelHandle::from)
-                .unwrap_or_default();
-            let raw_id = self.next_engine_raw_id;
-            self.next_engine_raw_id = self.next_engine_raw_id.wrapping_add(1);
-
-            let mut engine = OrderMatchingEngine::new(
-                instrument.clone(),
-                raw_id,
-                fill_model,
-                fee_model,
-                self.config.book_type,
-                self.config.oms_type,
-                self.config.account_type,
-                self.clock.clone(),
-                self.cache.clone(),
-                engine_config,
-            );
-
-            if let Some(handler) = &self.event_handler {
-                engine.set_event_handler(handler.clone());
-            }
-
-            self.matching_engines.insert(instrument_id, engine);
-        }
-    }
-
-    /// Processes a quote tick through the matching engine.
-    fn process_quote_tick(&mut self, quote: &QuoteTick) {
-        let instrument_id = quote.instrument_id;
-
-        // Try to get instrument from cache, create engine if found
-        let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
-        if let Some(instrument) = instrument {
-            if !check_quote_or_drop("quote tick", quote, &instrument) {
-                return;
-            }
-
-            self.ensure_matching_engine(&instrument);
-
-            if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
-                engine.process_quote_tick(quote);
-            }
-        }
-    }
-
-    /// Processes a trade tick through the matching engine.
-    fn process_trade_tick(&mut self, trade: &TradeTick) {
-        if !self.config.trade_execution {
-            return;
-        }
-
-        let instrument_id = trade.instrument_id;
-
-        let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
-        if let Some(instrument) = instrument {
-            if !check_trade_or_drop("trade tick", trade, &instrument) {
-                return;
-            }
-
-            self.ensure_matching_engine(&instrument);
-
-            if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
-                engine.process_trade_tick(trade);
-            }
-        }
-    }
-
-    /// Processes a bar through the matching engine.
-    fn process_bar(&mut self, bar: &Bar) {
-        if !self.config.bar_execution {
-            return;
-        }
-
-        let instrument_id = bar.bar_type.instrument_id();
-
-        let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
-        if let Some(instrument) = instrument {
-            if !check_bar_or_drop("bar", bar, &instrument) {
-                return;
-            }
-
-            self.ensure_matching_engine(&instrument);
-
-            if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
-                engine.process_bar(bar);
-            }
-        }
-    }
-
-    fn process_order_book_deltas(&mut self, deltas: &OrderBookDeltas) {
-        let instrument_id = deltas.instrument_id;
-
-        let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
-        if let Some(instrument) = instrument {
-            self.ensure_matching_engine(&instrument);
-
-            if let Some(engine) = self.matching_engines.get_mut(&instrument_id)
-                && let Err(e) = engine.process_order_book_deltas(deltas)
-            {
-                log::error!("Error processing order book deltas: {e}");
-            }
-        }
-    }
-
-    fn process_instrument_status(&mut self, status: &InstrumentStatus) {
-        let instrument_id = status.instrument_id;
-
-        if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
-            engine.process_status(status.action);
-            return;
-        }
-
-        let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
-        if let Some(instrument) = instrument {
-            self.ensure_matching_engine(&instrument);
-
-            if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
-                engine.process_status(status.action);
-            }
-        } else {
-            log::warn!(
-                "Ignoring instrument status for {instrument_id}: instrument missing from cache",
-            );
-        }
-    }
-
-    fn process_instrument_close(&mut self, close: &InstrumentClose) {
-        let instrument_id = close.instrument_id;
-
-        // A delayed close belongs to an existing exposure lifecycle. Unlike an
-        // instrument status update, it must not recreate execution state from
-        // cache after rotation/unsubscribe; pending-settlement ownership stays
-        // with the already-initialized matching engine.
-        if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
-            engine.process_instrument_close(*close);
-            self.sync_expired_cleanup(instrument_id);
-        } else {
-            log::warn!(
-                "Ignoring instrument close for {instrument_id}: no existing matching engine",
-            );
-        }
-    }
-
-    fn is_expired_now(&self, instrument_id: InstrumentId) -> bool {
-        let Some(engine) = self.matching_engines.get(&instrument_id) else {
-            return false;
-        };
-
-        let now_ns = self.clock.borrow().timestamp_ns();
-        engine
-            .instrument
-            .expiration_ns()
-            .is_some_and(|ns| now_ns >= ns)
-    }
-
-    fn has_open_orders(&self, instrument_id: InstrumentId) -> bool {
-        self.cache.borrow().has_orders_open(
-            Some(&self.config.venue),
-            Some(&instrument_id),
-            None,
-            None,
-            None,
-        )
-    }
-
-    fn sync_expired_cleanup(&mut self, instrument_id: InstrumentId) {
-        if !self.is_expired_now(instrument_id) {
-            return;
-        }
-
-        let has_open_positions = self.cache.borrow().has_positions_open(
-            Some(&self.config.venue),
-            Some(&instrument_id),
-            None,
-            None,
-            None,
-        );
-
-        if has_open_positions {
-            return;
-        }
-
-        self.matching_engines.remove(&instrument_id);
-        self.cache
-            .borrow_mut()
-            .purge_instrument_skip_order_guard(instrument_id);
-    }
-
-    fn sync_expired_cleanup_many(&mut self, instrument_ids: &[InstrumentId]) {
-        for &instrument_id in instrument_ids {
-            self.sync_expired_cleanup(instrument_id);
-        }
-    }
-
-    /// Retires matching engines whose instrument has expired with no open position or order.
-    ///
-    /// This is the periodic trigger for quote-only instruments that create a matching engine from
-    /// market data but never reach an `InstrumentClose`, expired-order, or `PositionClosed` event.
-    /// It performs no settlement: `sync_expired_cleanup` retains any expired engine that still has
-    /// an open position.
-    ///
-    /// Instruments with open orders are retained too. The event-driven callers of
-    /// `sync_expired_cleanup` each terminalize order state through the matching engine first, which
-    /// is what `Cache::purge_instrument_skip_order_guard` requires of its callers; this sweep has
-    /// no such event, so purging here would orphan a resting order behind a removed engine.
-    fn sweep_expired_engines(&mut self) {
-        let expired_ids: Vec<InstrumentId> = self
-            .matching_engines
-            .keys()
-            .copied()
-            .filter(|instrument_id| {
-                self.is_expired_now(*instrument_id) && !self.has_open_orders(*instrument_id)
-            })
-            .collect();
-
-        self.sync_expired_cleanup_many(&expired_ids);
-    }
-}
-
-/// Registered message handlers for later deregistration.
 struct RegisteredHandlers {
     deltas_pattern: MStr<Pattern>,
     deltas_handler: TypedHandler<OrderBookDeltas>,
@@ -418,28 +93,6 @@ struct RegisteredHandlers {
     close_handler: ShareableMessageHandler,
     position_pattern: MStr<Pattern>,
     position_handler: TypedHandler<PositionEvent>,
-}
-
-/// A sandbox execution client for paper trading against live market data.
-///
-/// The `SandboxExecutionClient` simulates order execution using the `OrderMatchingEngine`
-/// to match orders against market data. This enables strategy testing in real-time
-/// without actual order execution on exchanges.
-pub struct SandboxExecutionClient {
-    /// The core execution client functionality.
-    core: RefCell<ExecutionClientCore>,
-    /// Factory for generating order events.
-    factory: OrderEventFactory,
-    /// The sandbox configuration.
-    config: SandboxExecutionClientConfig,
-    /// Inner state wrapped for handler access.
-    inner: Rc<RefCell<SandboxInner>>,
-    /// Registered message handlers for cleanup.
-    handlers: RefCell<Option<RegisteredHandlers>>,
-    /// Reference to the clock.
-    clock: Rc<RefCell<dyn Clock>>,
-    /// Reference to the cache.
-    cache: Rc<RefCell<Cache>>,
 }
 
 impl Debug for SandboxExecutionClient {
@@ -525,10 +178,6 @@ impl SandboxExecutionClient {
         }
     }
 
-    /// Registers message handlers for market data subscriptions.
-    ///
-    /// This subscribes to order book deltas, quotes, trades, and bars for the
-    /// configured venue, routing all received data to the matching engines.
     fn register_message_handlers(&self) {
         if self.handlers.borrow().is_some() {
             log::warn!("Sandbox message handlers already registered");
@@ -539,7 +188,6 @@ impl SandboxExecutionClient {
         let venue = self.config.venue;
         let account_id = self.core.borrow().account_id;
 
-        // Order book deltas handler
         let deltas_handler = {
             let inner = inner_weak.clone();
             TypedHandler::from(move |deltas: &OrderBookDeltas| {
@@ -551,7 +199,6 @@ impl SandboxExecutionClient {
             })
         };
 
-        // Quote tick handler
         let quote_handler = {
             let inner = inner_weak.clone();
             TypedHandler::from(move |quote: &QuoteTick| {
@@ -563,7 +210,6 @@ impl SandboxExecutionClient {
             })
         };
 
-        // Trade tick handler
         let trade_handler = {
             let inner = inner_weak.clone();
             TypedHandler::from(move |trade: &TradeTick| {
@@ -575,7 +221,7 @@ impl SandboxExecutionClient {
             })
         };
 
-        // Bar handler (topic is data.bars.{bar_type}, filter by venue in handler)
+        // Bar topics include the bar type, so filter by venue in the handler
         let bar_handler = {
             let inner = inner_weak.clone();
             TypedHandler::from(move |bar: &Bar| {
@@ -633,7 +279,6 @@ impl SandboxExecutionClient {
             })
         };
 
-        // Subscribe patterns
         let deltas_pattern: MStr<Pattern> = format!("data.book.deltas.{venue}.*").into();
         let quote_pattern: MStr<Pattern> = format!("data.quotes.{venue}.*").into();
         let trade_pattern: MStr<Pattern> = format!("data.trades.{venue}.*").into();
@@ -650,7 +295,6 @@ impl SandboxExecutionClient {
         msgbus::subscribe_instrument_close(close_pattern, close_handler.clone(), Some(10));
         msgbus::subscribe_position_events(position_pattern, position_handler.clone(), Some(10));
 
-        // Store handlers for later deregistration
         *self.handlers.borrow_mut() = Some(RegisteredHandlers {
             deltas_pattern,
             deltas_handler,
@@ -674,7 +318,6 @@ impl SandboxExecutionClient {
         );
     }
 
-    /// Deregisters message handlers to stop receiving market data.
     fn deregister_message_handlers(&self) {
         if let Some(handlers) = self.handlers.borrow_mut().take() {
             msgbus::unsubscribe_book_deltas(handlers.deltas_pattern, &handlers.deltas_handler);
@@ -699,7 +342,6 @@ impl SandboxExecutionClient {
         format!("{}-sandbox-expiry-sweep", self.core.borrow().client_id)
     }
 
-    /// Registers the periodic sweep that retires expired matching engines with no open position.
     fn register_expiry_sweep_timer(&self) {
         let inner_weak = WeakCell::from(Rc::downgrade(&self.inner));
         let callback: Rc<dyn Fn(TimeEvent)> = Rc::new(move |_event: TimeEvent| {
@@ -731,24 +373,20 @@ impl SandboxExecutionClient {
         }
     }
 
-    /// Cancels the periodic expired-engine sweep timer.
     fn cancel_expiry_sweep_timer(&self) {
         self.clock
             .borrow_mut()
             .cancel_timer(&self.expiry_sweep_timer_name());
     }
 
-    /// Returns current account balances, preferring cache state over starting balances.
     fn get_current_account_balances(&self) -> Vec<AccountBalance> {
         let account_id = self.core.borrow().account_id;
         let cache = self.cache.borrow();
 
-        // Use account from cache if available (updated by fill events)
         if let Some(account) = cache.account(&account_id) {
             return account.balances().into_values().collect();
         }
 
-        // Fall back to starting balances
         self.get_account_balances()
     }
 
@@ -877,7 +515,6 @@ impl SandboxExecutionClient {
         );
     }
 
-    /// Generates account balance entries from current balances.
     fn get_account_balances(&self) -> Vec<AccountBalance> {
         self.inner
             .borrow()
@@ -965,7 +602,6 @@ impl ExecutionClient for SandboxExecutionClient {
             }
         }
 
-        // Register message handlers to receive market data
         self.register_message_handlers();
         self.register_expiry_sweep_timer();
 
@@ -986,7 +622,6 @@ impl ExecutionClient for SandboxExecutionClient {
             return Ok(());
         }
 
-        // Deregister message handlers to stop receiving data
         self.deregister_message_handlers();
         self.cancel_expiry_sweep_timer();
 
@@ -1047,7 +682,6 @@ impl ExecutionClient for SandboxExecutionClient {
         let mut inner = self.inner.borrow_mut();
         inner.ensure_matching_engine(&instrument);
 
-        // Update matching engine with latest market data from cache
         let cache = self.cache.borrow();
 
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
@@ -1112,7 +746,6 @@ impl ExecutionClient for SandboxExecutionClient {
                 let mut inner = self.inner.borrow_mut();
                 inner.ensure_matching_engine(&instrument);
 
-                // Update with latest market data
                 let cache = self.cache.borrow();
 
                 if let Some(engine) = inner.matching_engines.get_mut(&instrument_id) {
@@ -1260,4 +893,318 @@ impl ExecutionClient for SandboxExecutionClient {
             None,
         )))
     }
+}
+
+// Wrapped in `Rc<RefCell<>>` so message handlers can hold weak references
+struct SandboxInner {
+    clock: Rc<RefCell<dyn Clock>>,
+    cache: Rc<RefCell<Cache>>,
+    config: SandboxExecutionClientConfig,
+    fill_model: FillModelHandle,
+    matching_engines: AHashMap<InstrumentId, OrderMatchingEngine>,
+    next_engine_raw_id: u32,
+    balances: AHashMap<String, Money>,
+    event_handler: Option<Rc<dyn Fn(OrderEventAny)>>,
+}
+
+impl SandboxInner {
+    fn ensure_matching_engine(&mut self, instrument: &InstrumentAny) {
+        let instrument_id = instrument.id();
+
+        if !self.matching_engines.contains_key(&instrument_id) {
+            let engine_config = self.config.to_matching_engine_config();
+            let fill_model = self.fill_model.clone();
+            let fee_model = self
+                .config
+                .fee_model
+                .clone()
+                .map(FeeModelHandle::from)
+                .unwrap_or_default();
+            let raw_id = self.next_engine_raw_id;
+            self.next_engine_raw_id = self.next_engine_raw_id.wrapping_add(1);
+
+            let mut engine = OrderMatchingEngine::new(
+                instrument.clone(),
+                raw_id,
+                fill_model,
+                fee_model,
+                self.config.book_type,
+                self.config.oms_type,
+                self.config.account_type,
+                self.clock.clone(),
+                self.cache.clone(),
+                engine_config,
+            );
+
+            if let Some(handler) = &self.event_handler {
+                engine.set_event_handler(handler.clone());
+            }
+
+            self.matching_engines.insert(instrument_id, engine);
+        }
+    }
+
+    fn process_quote_tick(&mut self, quote: &QuoteTick) {
+        let instrument_id = quote.instrument_id;
+
+        let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
+        if let Some(instrument) = instrument {
+            if !check_quote_or_drop("quote tick", quote, &instrument) {
+                return;
+            }
+
+            self.ensure_matching_engine(&instrument);
+
+            if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
+                engine.process_quote_tick(quote);
+            }
+        }
+    }
+
+    fn process_trade_tick(&mut self, trade: &TradeTick) {
+        if !self.config.trade_execution {
+            return;
+        }
+
+        let instrument_id = trade.instrument_id;
+
+        let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
+        if let Some(instrument) = instrument {
+            if !check_trade_or_drop("trade tick", trade, &instrument) {
+                return;
+            }
+
+            self.ensure_matching_engine(&instrument);
+
+            if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
+                engine.process_trade_tick(trade);
+            }
+        }
+    }
+
+    fn process_bar(&mut self, bar: &Bar) {
+        if !self.config.bar_execution {
+            return;
+        }
+
+        let instrument_id = bar.bar_type.instrument_id();
+
+        let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
+        if let Some(instrument) = instrument {
+            if !check_bar_or_drop("bar", bar, &instrument) {
+                return;
+            }
+
+            self.ensure_matching_engine(&instrument);
+
+            if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
+                engine.process_bar(bar);
+            }
+        }
+    }
+
+    fn process_order_book_deltas(&mut self, deltas: &OrderBookDeltas) {
+        let instrument_id = deltas.instrument_id;
+
+        let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
+        if let Some(instrument) = instrument {
+            self.ensure_matching_engine(&instrument);
+
+            if let Some(engine) = self.matching_engines.get_mut(&instrument_id)
+                && let Err(e) = engine.process_order_book_deltas(deltas)
+            {
+                log::error!("Error processing order book deltas: {e}");
+            }
+        }
+    }
+
+    fn process_instrument_status(&mut self, status: &InstrumentStatus) {
+        let instrument_id = status.instrument_id;
+
+        if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
+            engine.process_status(status.action);
+            return;
+        }
+
+        let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
+        if let Some(instrument) = instrument {
+            self.ensure_matching_engine(&instrument);
+
+            if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
+                engine.process_status(status.action);
+            }
+        } else {
+            log::warn!(
+                "Ignoring instrument status for {instrument_id}: instrument missing from cache",
+            );
+        }
+    }
+
+    fn process_instrument_close(&mut self, close: &InstrumentClose) {
+        let instrument_id = close.instrument_id;
+
+        // A delayed close belongs to an existing exposure lifecycle. Unlike an
+        // instrument status update, it must not recreate execution state from
+        // cache after rotation/unsubscribe; pending-settlement ownership stays
+        // with the already-initialized matching engine.
+        if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
+            engine.process_instrument_close(*close);
+            self.sync_expired_cleanup(instrument_id);
+        } else {
+            log::warn!(
+                "Ignoring instrument close for {instrument_id}: no existing matching engine",
+            );
+        }
+    }
+
+    fn is_expired_now(&self, instrument_id: InstrumentId) -> bool {
+        let Some(engine) = self.matching_engines.get(&instrument_id) else {
+            return false;
+        };
+
+        let now_ns = self.clock.borrow().timestamp_ns();
+        engine
+            .instrument
+            .expiration_ns()
+            .is_some_and(|ns| now_ns >= ns)
+    }
+
+    fn has_open_orders(&self, instrument_id: InstrumentId) -> bool {
+        self.cache.borrow().has_orders_open(
+            Some(&self.config.venue),
+            Some(&instrument_id),
+            None,
+            None,
+            None,
+        )
+    }
+
+    fn sync_expired_cleanup(&mut self, instrument_id: InstrumentId) {
+        if !self.is_expired_now(instrument_id) {
+            return;
+        }
+
+        let has_open_positions = self.cache.borrow().has_positions_open(
+            Some(&self.config.venue),
+            Some(&instrument_id),
+            None,
+            None,
+            None,
+        );
+
+        if has_open_positions {
+            return;
+        }
+
+        self.matching_engines.remove(&instrument_id);
+        self.cache
+            .borrow_mut()
+            .purge_instrument_skip_order_guard(instrument_id);
+    }
+
+    fn sync_expired_cleanup_many(&mut self, instrument_ids: &[InstrumentId]) {
+        for &instrument_id in instrument_ids {
+            self.sync_expired_cleanup(instrument_id);
+        }
+    }
+
+    // Quote-only instruments may never receive event-driven cleanup. Retain expired engines with
+    // open positions because this path cannot settle them. Open orders must also remain because
+    // `Cache::purge_instrument_skip_order_guard` requires callers to terminalize order state first
+    fn sweep_expired_engines(&mut self) {
+        let expired_ids: Vec<InstrumentId> = self
+            .matching_engines
+            .keys()
+            .copied()
+            .filter(|instrument_id| {
+                self.is_expired_now(*instrument_id) && !self.has_open_orders(*instrument_id)
+            })
+            .collect();
+
+        self.sync_expired_cleanup_many(&expired_ids);
+    }
+}
+
+fn check_quote_or_drop(context: &str, quote: &QuoteTick, instrument: &InstrumentAny) -> bool {
+    if quote_matches_instrument_precision(quote, instrument) {
+        return true;
+    }
+
+    log::warn!(
+        "Dropping {context} for {} due to precision mismatch \
+         (bid_px={}, ask_px={}, bid_sz={}, ask_sz={}, expected_price={}, expected_size={})",
+        instrument.id(),
+        quote.bid_price.precision,
+        quote.ask_price.precision,
+        quote.bid_size.precision,
+        quote.ask_size.precision,
+        instrument.price_precision(),
+        instrument.size_precision(),
+    );
+    false
+}
+
+fn check_trade_or_drop(context: &str, trade: &TradeTick, instrument: &InstrumentAny) -> bool {
+    if trade_matches_instrument_precision(trade, instrument) {
+        return true;
+    }
+
+    log::warn!(
+        "Dropping {context} for {} due to precision mismatch \
+         (px={}, sz={}, expected_price={}, expected_size={})",
+        instrument.id(),
+        trade.price.precision,
+        trade.size.precision,
+        instrument.price_precision(),
+        instrument.size_precision(),
+    );
+    false
+}
+
+fn check_bar_or_drop(context: &str, bar: &Bar, instrument: &InstrumentAny) -> bool {
+    if bar_matches_instrument_precision(bar, instrument) {
+        return true;
+    }
+
+    log::warn!(
+        "Dropping {context} for {} due to precision mismatch \
+         (open={}, high={}, low={}, close={}, volume={}, expected_price={}, expected_size={})",
+        instrument.id(),
+        bar.open.precision,
+        bar.high.precision,
+        bar.low.precision,
+        bar.close.precision,
+        bar.volume.precision,
+        instrument.price_precision(),
+        instrument.size_precision(),
+    );
+    false
+}
+
+fn quote_matches_instrument_precision(quote: &QuoteTick, instrument: &InstrumentAny) -> bool {
+    let price_precision = instrument.price_precision();
+    let size_precision = instrument.size_precision();
+
+    quote.bid_price.precision == price_precision
+        && quote.ask_price.precision == price_precision
+        && quote.bid_size.precision == size_precision
+        && quote.ask_size.precision == size_precision
+}
+
+fn trade_matches_instrument_precision(trade: &TradeTick, instrument: &InstrumentAny) -> bool {
+    let price_precision = instrument.price_precision();
+    let size_precision = instrument.size_precision();
+
+    trade.price.precision == price_precision && trade.size.precision == size_precision
+}
+
+fn bar_matches_instrument_precision(bar: &Bar, instrument: &InstrumentAny) -> bool {
+    let price_precision = instrument.price_precision();
+    let size_precision = instrument.size_precision();
+
+    bar.open.precision == price_precision
+        && bar.high.precision == price_precision
+        && bar.low.precision == price_precision
+        && bar.close.precision == price_precision
+        && bar.volume.precision == size_precision
 }

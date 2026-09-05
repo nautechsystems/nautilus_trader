@@ -53,106 +53,6 @@ use nautilus_model::{
     types::{AccountBalance, MarginBalance, Quantity},
 };
 use parking_lot::Mutex;
-
-#[derive(Debug, Clone)]
-struct StagedBracketChild {
-    order: OrderAny,
-    request: HyperliquidExchangePlaceOrderRequest,
-}
-
-#[derive(Debug, Default)]
-struct StagedBracketState {
-    children_by_parent: AHashMap<ClientOrderId, Vec<StagedBracketChild>>,
-    active_children: AHashMap<ClientOrderId, StagedBracketChild>,
-    active_siblings: AHashMap<ClientOrderId, ClientOrderId>,
-}
-
-impl StagedBracketState {
-    fn stage(&mut self, parent_id: ClientOrderId, children: Vec<StagedBracketChild>) {
-        self.children_by_parent.insert(parent_id, children);
-    }
-
-    fn activate(&mut self, parent_id: &ClientOrderId) -> Option<Vec<StagedBracketChild>> {
-        let children = self.children_by_parent.remove(parent_id)?;
-        self.track_active(&children);
-
-        Some(children)
-    }
-
-    fn restore_active(&mut self, children: &[StagedBracketChild]) {
-        self.track_active(children);
-    }
-
-    fn track_active(&mut self, children: &[StagedBracketChild]) {
-        let child_ids = children
-            .iter()
-            .map(|child| child.order.client_order_id())
-            .collect::<Vec<_>>();
-
-        for child in children {
-            let child_id = child.order.client_order_id();
-            if let Some(sibling_id) = child
-                .order
-                .linked_order_ids()
-                .and_then(|ids| ids.iter().find(|id| child_ids.contains(id)))
-            {
-                self.active_siblings.insert(child_id, *sibling_id);
-            }
-            self.active_children.insert(child_id, child.clone());
-        }
-    }
-
-    fn contains_parent(&self, parent_id: &ClientOrderId) -> bool {
-        self.children_by_parent.contains_key(parent_id)
-    }
-
-    fn cancel_child(&mut self, child_id: &ClientOrderId) -> Option<OrderAny> {
-        let parent_id = self
-            .children_by_parent
-            .iter()
-            .find_map(|(parent_id, children)| {
-                children
-                    .iter()
-                    .any(|child| child.order.client_order_id() == *child_id)
-                    .then_some(*parent_id)
-            })?;
-        let children = self.children_by_parent.get_mut(&parent_id)?;
-        let index = children
-            .iter()
-            .position(|child| child.order.client_order_id() == *child_id)?;
-        let child = children.remove(index);
-
-        if children.is_empty() {
-            self.children_by_parent.remove(&parent_id);
-        }
-
-        Some(child.order)
-    }
-
-    fn cancel_for_parent(&mut self, parent_id: &ClientOrderId) -> Vec<OrderAny> {
-        self.children_by_parent
-            .remove(parent_id)
-            .map(|children| children.into_iter().map(|child| child.order).collect())
-            .unwrap_or_default()
-    }
-
-    fn take_active_sibling(
-        &mut self,
-        client_order_id: &ClientOrderId,
-    ) -> Option<StagedBracketChild> {
-        self.active_children.remove(client_order_id);
-        let sibling_id = self.active_siblings.remove(client_order_id)?;
-        self.active_siblings.remove(&sibling_id);
-        self.active_children.remove(&sibling_id)
-    }
-
-    fn active_sibling(&self, client_order_id: &ClientOrderId) -> Option<StagedBracketChild> {
-        self.active_siblings
-            .get(client_order_id)
-            .and_then(|sibling_id| self.active_children.get(sibling_id))
-            .cloned()
-    }
-}
 use ustr::Ustr;
 
 use crate::{
@@ -452,7 +352,6 @@ impl HyperliquidExecutionClient {
         http_client.set_market_order_slippage_bps(config.market_order_slippage_bps);
         http_client.set_include_builder_attribution(config.include_builder_attribution);
 
-        // Apply URL overrides from config (used for testing with mock servers)
         if let Some(url) = &config.base_url_http {
             http_client.set_base_info_url(url.clone());
         }
@@ -853,7 +752,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let http_client = self.http_client.clone();
         let symbol = order.instrument_id().symbol.inner();
 
-        // Validate asset index exists before marking as submitted
+        // Complete venue conversion before emitting OrderSubmitted
         let asset = match http_client.get_asset_index_for_symbol(symbol) {
             Some(a) => a,
             None => {
@@ -863,7 +762,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
             }
         };
 
-        // Validate order conversion before marking as submitted
         let price_decimals = http_client
             .get_price_precision_for_symbol(symbol)
             .unwrap_or(2);
@@ -896,7 +794,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             .cached_client_order_id_cloid(&order.client_order_id())
             .unwrap_or_else(|| Cloid::from_client_order_id(order.client_order_id()));
         hyperliquid_order.cloid = Some(cloid);
-        // Market orders need a limit price derived from the cached quote
+
         if order.order_type() == OrderType::Market {
             let instrument_id = order.instrument_id();
             let cache = self.core.cache();
@@ -1145,7 +1043,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
             .venue_order_id
             .or_else(|| self.core.cache().venue_order_id(&client_order_id).copied());
 
-        // Look up cached order to get side, reduce_only, post_only, TIF
         let order = match self.core.cache().order(&client_order_id).map(|o| o.clone()) {
             Some(o) => o,
             None => {
@@ -1265,7 +1162,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
             None,
         ) {
             Ok(mut req) => {
-                // Only override price when explicitly provided
                 if let Some(p) = cmd.price.or(order.price()) {
                     let price_dec = p.as_decimal();
                     req.price = if should_normalize {
@@ -1283,11 +1179,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
                     req.price =
                         clamp_price_to_precision(sig_rounded, price_decimals, is_buy).normalize();
                 }
-                // else: keep the derived price from order_to_hyperliquid_request
-
                 req.size = quantity.as_decimal().normalize();
 
-                // Update trigger_px if the command provides a new trigger
                 if let (Some(tp), HyperliquidExchangeOrderKind::Trigger { trigger }) =
                     (cmd.trigger_price, &mut req.kind)
                 {
@@ -1329,7 +1222,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 old_venue_order_id,
                 target_total_qty,
             );
-            // Stashed so the cancel-replace promotion can reduce the replacement on an in-flight fill
+            // The promotion uses this request to reduce a replacement after an in-flight fill
             dispatch_state.stash_modify_request(client_order_id, hyperliquid_order.clone());
             generation
         });
@@ -1805,11 +1698,9 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 ws_client.begin_shutdown();
             });
 
-        // Ensure instruments are initialized
         self.ensure_instruments_initialized_async().await?;
         let ready_bracket_parents = self.restore_staged_brackets();
 
-        // Start WebSocket stream (connects and subscribes to user channels)
         if let Err(e) = self.start_ws_stream().await {
             if let Err(teardown_error) = self.teardown_partial_connect().await {
                 return Err(e.context(format!(
@@ -2005,7 +1896,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
             .await
             .context("failed to generate fill reports")?;
 
-        // Filter by time range if specified
         let reports = if let (Some(start), Some(end)) = (cmd.start, cmd.end) {
             reports
                 .into_iter()
@@ -2032,7 +1922,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
         let account_address = self.get_account_address()?;
 
-        // request_position_status_reports already merges spot holdings
         let reports = self
             .http_client
             .request_position_status_reports(&account_address, cmd.instrument_id)
@@ -2151,7 +2040,6 @@ impl HyperliquidExecutionClient {
             ws_client.cache_instrument(instrument);
         }
 
-        // Connect and subscribe before spawning the event loop
         ws_client.connect().await?;
         if let Err(e) = ws_client
             .subscribe_order_updates(&subscription_address)
@@ -2365,7 +2253,6 @@ impl HyperliquidExecutionClient {
                         NautilusWsMessage::Error(e) => {
                             log::warn!("WebSocket error: {e}");
                         }
-                        // Handled by data client
                         NautilusWsMessage::Trades(_)
                         | NautilusWsMessage::Quote(_)
                         | NautilusWsMessage::Deltas(_)
@@ -2386,6 +2273,106 @@ impl HyperliquidExecutionClient {
 
         log::debug!("Hyperliquid WebSocket execution stream started");
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+struct StagedBracketChild {
+    order: OrderAny,
+    request: HyperliquidExchangePlaceOrderRequest,
+}
+
+#[derive(Debug, Default)]
+struct StagedBracketState {
+    children_by_parent: AHashMap<ClientOrderId, Vec<StagedBracketChild>>,
+    active_children: AHashMap<ClientOrderId, StagedBracketChild>,
+    active_siblings: AHashMap<ClientOrderId, ClientOrderId>,
+}
+
+impl StagedBracketState {
+    fn stage(&mut self, parent_id: ClientOrderId, children: Vec<StagedBracketChild>) {
+        self.children_by_parent.insert(parent_id, children);
+    }
+
+    fn activate(&mut self, parent_id: &ClientOrderId) -> Option<Vec<StagedBracketChild>> {
+        let children = self.children_by_parent.remove(parent_id)?;
+        self.track_active(&children);
+
+        Some(children)
+    }
+
+    fn restore_active(&mut self, children: &[StagedBracketChild]) {
+        self.track_active(children);
+    }
+
+    fn track_active(&mut self, children: &[StagedBracketChild]) {
+        let child_ids = children
+            .iter()
+            .map(|child| child.order.client_order_id())
+            .collect::<Vec<_>>();
+
+        for child in children {
+            let child_id = child.order.client_order_id();
+            if let Some(sibling_id) = child
+                .order
+                .linked_order_ids()
+                .and_then(|ids| ids.iter().find(|id| child_ids.contains(id)))
+            {
+                self.active_siblings.insert(child_id, *sibling_id);
+            }
+            self.active_children.insert(child_id, child.clone());
+        }
+    }
+
+    fn contains_parent(&self, parent_id: &ClientOrderId) -> bool {
+        self.children_by_parent.contains_key(parent_id)
+    }
+
+    fn cancel_child(&mut self, child_id: &ClientOrderId) -> Option<OrderAny> {
+        let parent_id = self
+            .children_by_parent
+            .iter()
+            .find_map(|(parent_id, children)| {
+                children
+                    .iter()
+                    .any(|child| child.order.client_order_id() == *child_id)
+                    .then_some(*parent_id)
+            })?;
+        let children = self.children_by_parent.get_mut(&parent_id)?;
+        let index = children
+            .iter()
+            .position(|child| child.order.client_order_id() == *child_id)?;
+        let child = children.remove(index);
+
+        if children.is_empty() {
+            self.children_by_parent.remove(&parent_id);
+        }
+
+        Some(child.order)
+    }
+
+    fn cancel_for_parent(&mut self, parent_id: &ClientOrderId) -> Vec<OrderAny> {
+        self.children_by_parent
+            .remove(parent_id)
+            .map(|children| children.into_iter().map(|child| child.order).collect())
+            .unwrap_or_default()
+    }
+
+    fn take_active_sibling(
+        &mut self,
+        client_order_id: &ClientOrderId,
+    ) -> Option<StagedBracketChild> {
+        self.active_children.remove(client_order_id);
+        let sibling_id = self.active_siblings.remove(client_order_id)?;
+        self.active_siblings.remove(&sibling_id);
+        self.active_children.remove(&sibling_id)
+    }
+
+    fn active_sibling(&self, client_order_id: &ClientOrderId) -> Option<StagedBracketChild> {
+        self.active_siblings
+            .get(client_order_id)
+            .and_then(|sibling_id| self.active_children.get(sibling_id))
+            .cloned()
     }
 }
 
@@ -3309,7 +3296,6 @@ fn handle_execution_report(
                 remove_cloid_mapping_for_client_order_id(ws_client, http_client, &id);
             }
 
-            // Hand a fill-path promotion's corrective reduce to the loop to post
             client_order_id.and_then(|id| {
                 dispatch_state
                     .take_corrective(&id)
@@ -4040,7 +4026,6 @@ mod tests {
 
         let cid = ClientOrderId::from("O-HER-SKIP");
         state.register_context(test_context(cid));
-        // Prime state so the later CANCELED(old_voi) is classified as stale.
         state.insert_accepted(cid);
         state.record_venue_order_id(cid, VenueOrderId::new("new-voi"));
 
@@ -4058,12 +4043,10 @@ mod tests {
         );
 
         assert!(drain_events(&mut rx).is_empty());
-        // Cloid mapping preserved; the replacement order still resolves.
         assert_eq!(
             ws_client.get_cloid_mapping(&cloid_for("O-HER-SKIP")),
             Some(cid)
         );
-        // Identity is still tracked (the skip path did not clean up).
         assert!(state.lookup_context(&cid).is_some());
     }
 
@@ -4253,7 +4236,6 @@ mod tests {
             UnixNanos::default(),
         );
 
-        // Marker arrived: no event, cloid cleanup deferred, mapping retained.
         assert!(drain_events(&mut rx).is_empty());
         assert_eq!(
             ws_client.get_cloid_mapping(&cloid_for("O-HER-FILL")),
@@ -4277,7 +4259,6 @@ mod tests {
             events[0],
             ExecutionEvent::Order(OrderEventAny::Filled(_))
         ));
-        // Deferred cleanup fires once the fill lands.
         assert_eq!(ws_client.get_cloid_mapping(&cloid_for("O-HER-FILL")), None);
     }
 
@@ -4304,7 +4285,6 @@ mod tests {
 
         ws_client.cache_cloid_mapping(cloid_for("O-HER-BUF"), cid);
 
-        // Status-only FILLED marker arrives first; defers cloid eviction.
         let status_marker = make_status_report(Some("O-HER-BUF"), "new-voi", OrderStatus::Filled);
         handle_execution_report(
             ExecutionReport::Order(status_marker),
@@ -4321,9 +4301,6 @@ mod tests {
             Some(cid)
         );
 
-        // The replacement fill arrives with the new venue_order_id; the ACCEPTED
-        // was dropped. It promotes the binding, applies the fill, and -- being
-        // terminal and no longer buffered -- completes the deferred eviction.
         let fill = make_fill_report(Some("O-HER-BUF"), "new-voi", "trade-buf");
         handle_execution_report(
             ExecutionReport::Fill(fill),
@@ -4408,7 +4385,7 @@ mod tests {
             other => panic!("expected OrderUpdated, found {other:?}"),
         }
 
-        // context.quantity drives the terminal-fill threshold; must match target_total.
+        // Terminal-fill detection uses the context's absolute target quantity
         let context = state
             .lookup_context(&cid)
             .expect("context should still be tracked");
@@ -4502,15 +4479,11 @@ mod tests {
         state.insert_accepted(cid);
         state.record_venue_order_id(cid, VenueOrderId::new(old_voi));
 
-        // Modify dispatched while nothing had filled: marker plus the exact
-        // request sent to the venue, sized at the full target.
         state.mark_pending_modify(cid, VenueOrderId::new(old_voi), target_total);
         state.stash_modify_request(cid, limit_request(Decimal::from(1)));
 
-        // A 0.165 fill lands on the old leg after the modify was dispatched
         state.record_filled_qty(cid, Quantity::from("0.165"));
 
-        // Replacement ACCEPTED(new_voi) arrives: promotion runs
         let accepted = make_status_report_with_quantity(
             Some("O-HER-4154"),
             new_voi,
@@ -4527,7 +4500,6 @@ mod tests {
             UnixNanos::default(),
         );
 
-        // OrderUpdated still carries the absolute target total
         let events = drain_events(&mut rx);
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -4569,13 +4541,10 @@ mod tests {
         state.register_context(context);
         state.insert_accepted(cid);
         state.record_venue_order_id(cid, VenueOrderId::new(old_voi));
-        // Modify dispatched while nothing had filled: request sized at the full target
         state.mark_pending_modify(cid, VenueOrderId::new(old_voi), target_total);
         state.stash_modify_request(cid, limit_request(Decimal::from(1)));
-        // An old-leg fill raced the modify; the replacement ACCEPTED was dropped
         state.record_filled_qty(cid, Quantity::from("0.165"));
 
-        // A fill lands on the replacement leg: it must promote and queue the reduce
         let fill = make_fill_report_with_qty(
             Some("O-HER-FILL-CORR"),
             new_voi,
@@ -4592,7 +4561,6 @@ mod tests {
             UnixNanos::default(),
         );
 
-        // The fill promoted: OrderUpdated then OrderFilled
         let events = drain_events(&mut rx);
         assert_eq!(events.len(), 2);
         assert!(matches!(
@@ -4604,7 +4572,6 @@ mod tests {
             ExecutionEvent::Order(OrderEventAny::Filled(_))
         ));
 
-        // Corrective reduce queued to target - cumulative (1.000 - 0.265 = 0.735)
         let (corr_cid, oid, request) =
             corrective.expect("oversized replacement must queue a corrective reduce");
         assert_eq!(corr_cid, cid);
@@ -4653,7 +4620,6 @@ mod tests {
         assert!(corrective.is_none());
         assert!(state.pending_modify(&cid).is_none());
         assert!(state.take_corrective(&cid).is_none());
-        // Promotion clears the stashed request along with the marker
         assert!(state.modify_request(&cid).is_none());
     }
 
@@ -4679,7 +4645,6 @@ mod tests {
         state.mark_pending_modify(cid, VenueOrderId::new("445117664938"), target_total);
         state.stash_modify_request(cid, limit_request(Decimal::from(1)));
 
-        // Nothing recorded yet; the only fill arrives buffered on the new leg
         let buffered = make_fill_report_with_qty(
             Some("O-HER-4154-BUF"),
             new_voi,
@@ -4775,7 +4740,6 @@ mod tests {
         state.record_venue_order_id(cid, VenueOrderId::new("445117686214"));
         state.mark_pending_modify(cid, VenueOrderId::new("445117686214"), target_total);
         state.stash_modify_request(cid, limit_request("0.835".parse::<Decimal>().unwrap()));
-        // A further 0.300 lands in-flight: cumulative now 0.465
         state.record_filled_qty(cid, Quantity::from("0.465"));
 
         let accepted = make_status_report_with_quantity(
@@ -4837,7 +4801,6 @@ mod tests {
 
     #[rstest]
     fn test_handle_execution_report_open_status_preserves_cloid() {
-        // An open (non-terminal) status must never touch the cloid mapping.
         let ws_client = make_ws_client();
         let (emitter, _rx) = test_emitter();
         let state = WsDispatchState::new();
@@ -4858,7 +4821,6 @@ mod tests {
             UnixNanos::default(),
         );
 
-        // Accepted is open, so no cloid eviction occurs regardless of outcome.
         assert_eq!(
             ws_client.get_cloid_mapping(&cloid_for("O-HER-OPEN")),
             Some(cid)
@@ -4896,7 +4858,6 @@ mod tests {
             matches!(events[0], ExecutionEvent::Order(OrderEventAny::Accepted(_))),
             "tracked accepted should route through the typed-event path",
         );
-        // Mapping is unchanged because the status is still open.
         assert_eq!(
             ws_client.get_cloid_mapping(&cloid_for("O-HER-ACC")),
             Some(cid)
