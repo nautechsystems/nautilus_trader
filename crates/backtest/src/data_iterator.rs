@@ -19,7 +19,7 @@ use std::collections::BinaryHeap;
 
 use ahash::AHashMap;
 use nautilus_core::UnixNanos;
-use nautilus_model::data::{Data, DataRef, HasTsInit};
+use nautilus_model::data::{BatchView, Data, DataBatch, DataRef, HasTsInit};
 
 use crate::data_batch::ReplayBatch;
 #[cfg(feature = "defi")]
@@ -71,6 +71,51 @@ fn replay_key(data: DataRef<'_>) -> ReplayKey {
                 phase,
             }
         }
+    }
+}
+
+fn sort_by_replay_key(batch: &mut DataBatch) {
+    match batch {
+        DataBatch::BookDelta(data) => {
+            sort_view_by_replay_key(data, |item| DataRef::BookDelta(item));
+        }
+        DataBatch::BookDeltas(data) => {
+            sort_view_by_replay_key(data, |item| DataRef::BookDeltas(item));
+        }
+        DataBatch::BookDepth10(data) => {
+            sort_view_by_replay_key(data, |item| DataRef::BookDepth10(item));
+        }
+        DataBatch::Quote(data) => sort_view_by_replay_key(data, |item| DataRef::Quote(item)),
+        DataBatch::Trade(data) => sort_view_by_replay_key(data, |item| DataRef::Trade(item)),
+        DataBatch::Bar(data) => sort_view_by_replay_key(data, |item| DataRef::Bar(item)),
+        DataBatch::MarkPrice(data) => {
+            sort_view_by_replay_key(data, |item| DataRef::MarkPrice(item));
+        }
+        DataBatch::IndexPrice(data) => {
+            sort_view_by_replay_key(data, |item| DataRef::IndexPrice(item));
+        }
+        DataBatch::FundingRate(data) => {
+            sort_view_by_replay_key(data, |item| DataRef::FundingRate(item));
+        }
+        DataBatch::OptionGreeks(data) => {
+            sort_view_by_replay_key(data, |item| DataRef::OptionGreeks(item));
+        }
+        DataBatch::InstrumentStatus(data) => {
+            sort_view_by_replay_key(data, |item| DataRef::InstrumentStatus(item));
+        }
+        DataBatch::InstrumentClose(data) => {
+            sort_view_by_replay_key(data, |item| DataRef::InstrumentClose(item));
+        }
+        #[cfg(feature = "defi")]
+        DataBatch::Defi(data) => sort_view_by_replay_key(data, |item| DataRef::Defi(item)),
+    }
+}
+
+// `as_ref` takes a closure because `DataRef`'s lifetime is an enum parameter, so its constructors
+// cannot coerce to this higher-ranked fn pointer.
+fn sort_view_by_replay_key<T: Clone>(view: &mut BatchView<T>, as_ref: fn(&T) -> DataRef<'_>) {
+    if !view.is_sorted_by_key(|item| replay_key(as_ref(item))) {
+        view.make_mut().sort_by_key(|item| replay_key(as_ref(item)));
     }
 }
 
@@ -138,6 +183,21 @@ impl BacktestDataIterator {
         data.sort_by_key(|item| replay_key(DataRef::from(item)));
 
         self.add_stream(name, ReplayBatch::from_data(data), append_data);
+    }
+
+    /// Adds (or replaces) a named typed data stream.
+    ///
+    /// Items are ordered by replay key before insertion. A batch that arrives out of order while
+    /// sharing its backing allocation with another view is copied once, so the shared allocation
+    /// is never reordered.
+    pub fn add_data_batch(&mut self, name: &str, mut data: DataBatch, append_data: bool) {
+        if data.is_empty() {
+            return;
+        }
+
+        sort_by_replay_key(&mut data);
+
+        self.add_stream(name, ReplayBatch::Typed(data), append_data);
     }
 
     fn add_stream(&mut self, name: &str, data: ReplayBatch, append_data: bool) {
@@ -316,8 +376,18 @@ impl BacktestDataIterator {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use nautilus_model::{
-        data::{QuoteTick, stubs::stub_trade_ethusdt_buy},
+        data::{
+            Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
+            MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth10,
+            QuoteTick, TradeTick,
+            stubs::{
+                stub_bar, stub_delta, stub_deltas, stub_depth10, stub_instrument_close,
+                stub_instrument_status, stub_trade_ethusdt_buy,
+            },
+        },
         identifiers::InstrumentId,
         types::{Price, Quantity},
     };
@@ -334,17 +404,20 @@ mod tests {
 
     use super::*;
 
+    fn quote_tick(id: &str, ts: u64) -> QuoteTick {
+        QuoteTick::new(
+            InstrumentId::from(id),
+            Price::from("1.0"),
+            Price::from("1.0"),
+            Quantity::from(100),
+            Quantity::from(100),
+            ts.into(),
+            ts.into(),
+        )
+    }
+
     fn quote(id: &str, ts: u64) -> Data {
-        let inst = InstrumentId::from(id);
-        Data::Quote(QuoteTick::new(
-            inst,
-            Price::from("1.0"),
-            Price::from("1.0"),
-            Quantity::from(100),
-            Quantity::from(100),
-            ts.into(),
-            ts.into(),
-        ))
+        Data::Quote(quote_tick(id, ts))
     }
 
     fn trade(id: &str, ts: u64) -> Data {
@@ -373,7 +446,7 @@ mod tests {
     }
 
     #[cfg(feature = "defi")]
-    fn defi_snapshot(ts: u64, block: u64, transaction_index: u32, log_index: u32) -> Data {
+    fn defi_pool_snapshot(ts: u64, block: u64, transaction_index: u32, log_index: u32) -> DefiData {
         let instrument_id = InstrumentId::new(Symbol::from("ETH/USDC"), Venue::from("UNISWAPV3"));
         let snapshot = PoolSnapshot::new(
             instrument_id,
@@ -386,7 +459,17 @@ mod tests {
             UnixNanos::from(ts),
         );
 
-        Data::Defi(Box::new(DefiData::PoolSnapshot(snapshot)))
+        DefiData::PoolSnapshot(snapshot)
+    }
+
+    #[cfg(feature = "defi")]
+    fn defi_snapshot(ts: u64, block: u64, transaction_index: u32, log_index: u32) -> Data {
+        Data::Defi(Box::new(defi_pool_snapshot(
+            ts,
+            block,
+            transaction_index,
+            log_index,
+        )))
     }
 
     #[rstest]
@@ -798,6 +881,197 @@ mod tests {
         assert!(ids.contains(&InstrumentId::from("C.D")));
         assert!(ids.contains(&InstrumentId::from("E.F")));
         assert!(ids.contains(&InstrumentId::from("G.H")));
+    }
+
+    #[rstest]
+    fn test_add_data_batch_sorts_every_typed_family_by_replay_key() {
+        let instrument_id = InstrumentId::from("A.B");
+        let late = UnixNanos::from(200);
+        let early = UnixNanos::from(100);
+        let mark = |ts| MarkPriceUpdate::new(instrument_id, Price::from("1.0"), ts, ts);
+        let index = |ts| IndexPriceUpdate::new(instrument_id, Price::from("1.0"), ts, ts);
+        let funding = |ts| {
+            FundingRateUpdate::new(instrument_id, "0.0001".parse().unwrap(), None, None, ts, ts)
+        };
+        let greeks = |ts| OptionGreeks {
+            instrument_id,
+            ts_init: ts,
+            ..OptionGreeks::default()
+        };
+        let batches = vec![
+            DataBatch::from(vec![
+                OrderBookDelta {
+                    ts_init: late,
+                    ..stub_delta()
+                },
+                OrderBookDelta {
+                    ts_init: early,
+                    ..stub_delta()
+                },
+            ]),
+            DataBatch::from(vec![
+                OrderBookDeltas {
+                    ts_init: late,
+                    ..stub_deltas()
+                },
+                OrderBookDeltas {
+                    ts_init: early,
+                    ..stub_deltas()
+                },
+            ]),
+            DataBatch::from(vec![
+                OrderBookDepth10 {
+                    ts_init: late,
+                    ..stub_depth10()
+                },
+                OrderBookDepth10 {
+                    ts_init: early,
+                    ..stub_depth10()
+                },
+            ]),
+            DataBatch::from(vec![quote_tick("A.B", 200), quote_tick("A.B", 100)]),
+            DataBatch::from(vec![
+                TradeTick {
+                    ts_init: late,
+                    ..stub_trade_ethusdt_buy()
+                },
+                TradeTick {
+                    ts_init: early,
+                    ..stub_trade_ethusdt_buy()
+                },
+            ]),
+            DataBatch::from(vec![
+                Bar {
+                    ts_init: late,
+                    ..stub_bar()
+                },
+                Bar {
+                    ts_init: early,
+                    ..stub_bar()
+                },
+            ]),
+            DataBatch::from(vec![mark(late), mark(early)]),
+            DataBatch::from(vec![index(late), index(early)]),
+            DataBatch::from(vec![funding(late), funding(early)]),
+            DataBatch::from(vec![greeks(late), greeks(early)]),
+            DataBatch::from(vec![
+                InstrumentStatus {
+                    ts_init: late,
+                    ..stub_instrument_status()
+                },
+                InstrumentStatus {
+                    ts_init: early,
+                    ..stub_instrument_status()
+                },
+            ]),
+            DataBatch::from(vec![
+                InstrumentClose {
+                    ts_init: late,
+                    ..stub_instrument_close()
+                },
+                InstrumentClose {
+                    ts_init: early,
+                    ..stub_instrument_close()
+                },
+            ]),
+        ];
+        assert_eq!(
+            batches.len(),
+            12,
+            "every static DataBatch variant needs a case"
+        );
+
+        for batch in batches {
+            let mut it = BacktestDataIterator::new();
+            it.add_data_batch("typed", batch, true);
+
+            assert_eq!(collect_ts(&mut it), vec![100, 200]);
+        }
+    }
+
+    #[rstest]
+    fn test_add_data_batch_shares_sorted_backing_allocation() {
+        let data = Arc::new(vec![quote_tick("A.B", 100), quote_tick("A.B", 200)]);
+        let mut it = BacktestDataIterator::new();
+
+        it.add_data_batch(
+            "typed",
+            DataBatch::Quote(BatchView::from(Arc::clone(&data))),
+            true,
+        );
+
+        assert_eq!(Arc::strong_count(&data), 2);
+        assert_eq!(collect_ts(&mut it), vec![100, 200]);
+    }
+
+    #[rstest]
+    fn test_add_data_batch_copies_shared_unsorted_backing_allocation() {
+        let data = Arc::new(vec![quote_tick("A.B", 200), quote_tick("A.B", 100)]);
+        let mut it = BacktestDataIterator::new();
+
+        it.add_data_batch(
+            "typed",
+            DataBatch::Quote(BatchView::from(Arc::clone(&data))),
+            true,
+        );
+
+        assert_eq!(Arc::strong_count(&data), 1);
+        assert_eq!(data[0].ts_init, UnixNanos::from(200));
+        assert_eq!(collect_ts(&mut it), vec![100, 200]);
+    }
+
+    #[rstest]
+    fn test_add_empty_data_batch_is_noop() {
+        let mut it = BacktestDataIterator::new();
+        it.add_data_batch("typed", DataBatch::from(Vec::<QuoteTick>::new()), true);
+
+        assert!(it.is_done());
+        assert!(it.peek().is_none());
+    }
+
+    #[rstest]
+    fn test_typed_batch_and_legacy_streams_preserve_equal_key_order() {
+        let mut single_batch = BacktestDataIterator::new();
+        single_batch.add_data(
+            "single",
+            vec![quote("A.B", 10), trade("C.D", 10), quote("E.F", 20)],
+            true,
+        );
+
+        let mut split_streams = BacktestDataIterator::new();
+        split_streams.add_data_batch(
+            "typed",
+            DataBatch::from(vec![quote_tick("A.B", 10), quote_tick("E.F", 20)]),
+            true,
+        );
+        split_streams.add_data("legacy", vec![trade("C.D", 10)], true);
+
+        assert_eq!(
+            collect_sequence(&mut split_streams),
+            collect_sequence(&mut single_batch)
+        );
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_add_data_batch_orders_defi_by_block_position() {
+        let mut it = BacktestDataIterator::new();
+        it.add_data_batch(
+            "defi",
+            DataBatch::from(vec![
+                defi_pool_snapshot(100, 12, 4, 1),
+                defi_pool_snapshot(100, 11, 9, 9),
+                defi_pool_snapshot(100, 12, 2, 7),
+            ]),
+            true,
+        );
+
+        let mut positions = Vec::new();
+        while let Some(Data::Defi(data)) = it.next_item() {
+            positions.push(data.block_position());
+        }
+
+        assert_eq!(positions, vec![(11, 9, 9), (12, 2, 7), (12, 4, 1)]);
     }
 
     #[cfg(feature = "defi")]

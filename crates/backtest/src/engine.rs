@@ -52,7 +52,7 @@ use nautilus_data::client::DataClientAdapter;
 use nautilus_execution::models::fill::FillModelHandle;
 use nautilus_model::{
     accounts::{Account, AccountAny},
-    data::{Data, DataRef, HasTsInit},
+    data::{Data, DataBatch, DataRef, HasTsInit},
     enums::{AccountType, AggregationSource, BookType},
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -407,33 +407,72 @@ impl BacktestEngine {
     ///   `aggregation_source` is not [`AggregationSource::External`].
     pub fn add_data(
         &mut self,
-        data: Vec<Data>,
+        mut data: Vec<Data>,
         client_id: Option<ClientId>,
         validate: bool,
         sort: bool,
     ) -> anyhow::Result<()> {
+        if sort {
+            data.sort_by_key(HasTsInit::ts_init);
+        }
+
+        let stream_name =
+            self.register_added_data(data.iter().map(DataRef::from), client_id, validate)?;
+        self.data_iterator.add_data(&stream_name, data, true);
+        self.sorted = sort;
+
+        Ok(())
+    }
+
+    /// Adds a typed data batch to the engine for replay during the backtest run.
+    ///
+    /// The batch keeps its typed storage through replay, so no per-item [`Data`] value is
+    /// constructed. Items are ordered by replay key as the batch is added; `sort` records whether
+    /// the engine may run, matching [`add_data`](Self::add_data).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error under the same conditions as [`add_data`](Self::add_data).
+    pub fn add_data_batch(
+        &mut self,
+        data: DataBatch,
+        client_id: Option<ClientId>,
+        validate: bool,
+        sort: bool,
+    ) -> anyhow::Result<()> {
+        let stream_name = self.register_added_data(
+            (0..data.len()).filter_map(|index| data.get(index)),
+            client_id,
+            validate,
+        )?;
+        self.data_iterator.add_data_batch(&stream_name, data, true);
+        self.sorted = sort;
+
+        Ok(())
+    }
+
+    fn register_added_data<'a>(
+        &mut self,
+        items: impl Iterator<Item = DataRef<'a>> + Clone,
+        client_id: Option<ClientId>,
+        validate: bool,
+    ) -> anyhow::Result<String> {
         #[cfg(not(feature = "defi"))]
         let _ = client_id;
 
-        anyhow::ensure!(!data.is_empty(), "data was empty");
-
-        let count = data.len();
-        let mut to_add = data;
-
-        if sort {
-            to_add.sort_by_key(HasTsInit::ts_init);
-        }
+        let Some(first) = items.clone().next() else {
+            anyhow::bail!("data was empty");
+        };
 
         if validate {
             // Validate against the first element only and assume the batch is
             // homogeneous (documented contract on add_data).
-            let first = &to_add[0];
             #[cfg(feature = "defi")]
-            let first_is_defi = matches!(first, Data::Defi(_));
+            let first_is_defi = matches!(first, DataRef::Defi(_));
             #[cfg(not(feature = "defi"))]
             let first_is_defi = false;
 
-            if !first_is_defi && !matches!(first, Data::Custom(_)) {
+            if !first_is_defi && !matches!(first, DataRef::Custom(_)) {
                 let first_instrument_id = first.instrument_id();
                 anyhow::ensure!(
                     self.kernel
@@ -445,7 +484,7 @@ impl BacktestEngine {
                      Add the instrument through `add_instrument()` prior to adding related data."
                 );
 
-                if let Data::Bar(bar) = first {
+                if let DataRef::Bar(bar) = first {
                     anyhow::ensure!(
                         bar.bar_type.aggregation_source() == AggregationSource::External,
                         "bar_type.aggregation_source must be External, was {:?}",
@@ -460,25 +499,27 @@ impl BacktestEngine {
         // (e.g. node.rs run_oneshot loading from a catalog). Time bounds are
         // also tracked here so start/end defaults are correct even when the
         // batch was added with sort=false.
+        let mut count = 0;
         let mut batch_min_ts: Option<UnixNanos> = None;
         let mut batch_max_ts: Option<UnixNanos> = None;
 
         #[cfg(feature = "defi")]
-        if to_add.iter().any(|item| matches!(item, Data::Defi(_))) {
+        if items.clone().any(|item| matches!(item, DataRef::Defi(_))) {
             self.add_defi_data_client_if_not_exists(client_id);
         }
 
-        for item in &to_add {
+        for item in items {
+            count += 1;
             let ts = item.ts_init();
             batch_min_ts = Some(batch_min_ts.map_or(ts, |cur| cur.min(ts)));
             batch_max_ts = Some(batch_max_ts.map_or(ts, |cur| cur.max(ts)));
 
             #[cfg(feature = "defi")]
-            if matches!(item, Data::Defi(_)) {
+            if matches!(item, DataRef::Defi(_)) {
                 continue;
             }
 
-            if matches!(item, Data::Custom(_)) {
+            if matches!(item, DataRef::Custom(_)) {
                 // Custom data routes by DataType and is independent of market venue bookkeeping.
                 continue;
             }
@@ -508,9 +549,6 @@ impl BacktestEngine {
         self.data_len += count;
         let stream_name = format!("backtest_data_{}", self.data_stream_counter);
         self.data_stream_counter += 1;
-        self.data_iterator.add_data(&stream_name, to_add, true);
-
-        self.sorted = sort;
 
         log::info!(
             "Added {count} data element{} to BacktestEngine ({} total)",
@@ -518,7 +556,7 @@ impl BacktestEngine {
             self.data_len,
         );
 
-        Ok(())
+        Ok(stream_name)
     }
 
     /// Adds an actor to the backtest engine.

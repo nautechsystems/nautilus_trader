@@ -35,7 +35,7 @@ use nautilus_indicators::{
     indicator::{Indicator, MovingAverage},
 };
 use nautilus_model::{
-    data::{Bar, BarSpecification, BarType, Data, QuoteTick},
+    data::{Bar, BarSpecification, BarType, Data, DataBatch, QuoteTick},
     enums::{
         AccountType, AggregationSource, BarAggregation, BookType, OmsType, OrderSide, PriceType,
     },
@@ -61,6 +61,17 @@ pub(crate) const SCENARIOS: [CanonicalScenario; 4] = [
     CanonicalScenario::BarEmaCross,
 ];
 
+#[allow(dead_code, reason = "iterated by the Criterion benchmark target")]
+pub(crate) const INPUTS: [CanonicalInput; 2] = [CanonicalInput::Legacy, CanonicalInput::Typed];
+
+// Legacy submits one interleaved `Vec<Data>` through `add_data`; Typed submits a quote batch and a
+// bar batch through `add_data_batch`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CanonicalInput {
+    Legacy,
+    Typed,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CanonicalScenario {
     Replay,
@@ -76,6 +87,14 @@ impl CanonicalScenario {
             Self::ScheduledMarketOrders => "scheduled_market_orders",
             Self::PassiveLimitOrders => "passive_limit_orders",
             Self::BarEmaCross => "bar_ema_cross",
+        }
+    }
+
+    // Legacy cases keep the bare scenario name so saved baselines stay comparable.
+    pub(crate) fn case_name(self, input: CanonicalInput) -> String {
+        match input {
+            CanonicalInput::Legacy => self.name().to_string(),
+            CanonicalInput::Typed => format!("{}_typed", self.name()),
         }
     }
 
@@ -112,7 +131,13 @@ impl CanonicalScenario {
             }
         }
 
-        engine.add_data(fixture.data.clone(), None, true, true)?;
+        match &fixture.data {
+            CanonicalData::Legacy(data) => engine.add_data(data.clone(), None, true, true)?,
+            CanonicalData::Typed { quotes, bars } => {
+                engine.add_data_batch(DataBatch::from(quotes.clone()), None, true, true)?;
+                engine.add_data_batch(DataBatch::from(bars.clone()), None, true, true)?;
+            }
+        }
         Ok(engine)
     }
 
@@ -217,13 +242,54 @@ fn expected_result_digest(standard: &str, high_precision: &str) -> String {
 
 #[derive(Debug, Clone)]
 pub(crate) struct CanonicalFixture {
-    data: Vec<Data>,
+    data: CanonicalData,
     bar_type: BarType,
     timestamps: Vec<UnixNanos>,
 }
 
+#[derive(Debug, Clone)]
+enum CanonicalData {
+    Legacy(Vec<Data>),
+    Typed {
+        quotes: Vec<QuoteTick>,
+        bars: Vec<Bar>,
+    },
+}
+
+impl CanonicalData {
+    fn with_capacity(input: CanonicalInput, rows: usize) -> Self {
+        match input {
+            CanonicalInput::Legacy => Self::Legacy(Vec::with_capacity(rows * 2)),
+            CanonicalInput::Typed => Self::Typed {
+                quotes: Vec::with_capacity(rows),
+                bars: Vec::with_capacity(rows),
+            },
+        }
+    }
+
+    fn push(&mut self, quote: QuoteTick, bar: Bar) {
+        match self {
+            Self::Legacy(data) => {
+                data.push(Data::Quote(quote));
+                data.push(Data::Bar(bar));
+            }
+            Self::Typed { quotes, bars } => {
+                quotes.push(quote);
+                bars.push(bar);
+            }
+        }
+    }
+
+    const fn len(&self) -> usize {
+        match self {
+            Self::Legacy(data) => data.len(),
+            Self::Typed { quotes, bars } => quotes.len() + bars.len(),
+        }
+    }
+}
+
 impl CanonicalFixture {
-    fn load() -> anyhow::Result<Self> {
+    fn load(input: CanonicalInput) -> anyhow::Result<Self> {
         let path = get_test_data_path().join(DATA_FILE);
         let file = File::open(&path)
             .with_context(|| format!("failed to open canonical data at {}", path.display()))?;
@@ -241,7 +307,7 @@ impl CanonicalFixture {
             BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
             AggregationSource::External,
         );
-        let mut data = Vec::with_capacity(DATA_ROWS * 2);
+        let mut data = CanonicalData::with_capacity(input, DATA_ROWS);
         let mut timestamps = Vec::with_capacity(DATA_ROWS);
 
         for (index, line) in lines.take(DATA_ROWS).enumerate() {
@@ -273,8 +339,7 @@ impl CanonicalFixture {
             // LAST bars do not seed bid and ask prices for market orders
             let quote = QuoteTick::new(instrument_id, close, close, volume, volume, ts, ts);
             let bar = Bar::new_checked(bar_type, open, high, low, close, volume, ts, ts)?;
-            data.push(Data::Quote(quote));
-            data.push(Data::Bar(bar));
+            data.push(quote, bar);
             timestamps.push(ts);
         }
         anyhow::ensure!(
@@ -606,19 +671,12 @@ pub(crate) fn verify_matrix() -> anyhow::Result<()> {
     let mut mismatches = Vec::new();
 
     for scenario in SCENARIOS {
-        let fixture = load_fixture()?;
-        let preloaded = scenario.run(&fixture)?;
-        if let Err(e) = scenario.verify(&preloaded) {
-            mismatches.push(e.to_string());
-        }
-        let loaded = scenario.run(&load_fixture()?)?;
-        if let Err(e) = scenario.verify(&loaded) {
-            mismatches.push(e.to_string());
-        }
+        let legacy = verify_input(scenario, CanonicalInput::Legacy, &mut mismatches)?;
+        let typed = verify_input(scenario, CanonicalInput::Typed, &mut mismatches)?;
 
-        if let Some(divergence) = preloaded.first_divergence(&loaded) {
+        if let Some(divergence) = legacy.first_divergence(&typed) {
             mismatches.push(format!(
-                "canonical workload '{}' differed between preloaded and full paths: {divergence:?}",
+                "canonical workload '{}' differed between legacy and typed input: {divergence:?}",
                 scenario.name(),
             ));
         }
@@ -627,8 +685,32 @@ pub(crate) fn verify_matrix() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub(crate) fn load_fixture() -> anyhow::Result<CanonicalFixture> {
-    CanonicalFixture::load()
+fn verify_input(
+    scenario: CanonicalScenario,
+    input: CanonicalInput,
+    mismatches: &mut Vec<String>,
+) -> anyhow::Result<CanonicalBacktestResult> {
+    let case = scenario.case_name(input);
+    let fixture = load_fixture(input)?;
+    let preloaded = scenario.run(&fixture)?;
+    if let Err(e) = scenario.verify(&preloaded) {
+        mismatches.push(format!("[{case}] {e}"));
+    }
+    let loaded = scenario.run(&load_fixture(input)?)?;
+    if let Err(e) = scenario.verify(&loaded) {
+        mismatches.push(format!("[{case}] {e}"));
+    }
+
+    if let Some(divergence) = preloaded.first_divergence(&loaded) {
+        mismatches.push(format!(
+            "canonical workload '{case}' differed between preloaded and full paths: {divergence:?}",
+        ));
+    }
+    Ok(preloaded)
+}
+
+pub(crate) fn load_fixture(input: CanonicalInput) -> anyhow::Result<CanonicalFixture> {
+    CanonicalFixture::load(input)
 }
 
 #[allow(dead_code, reason = "called by the Criterion benchmark target")]
@@ -660,12 +742,16 @@ pub(crate) fn run_preloaded_iterations(
 }
 
 #[allow(dead_code, reason = "called by the Criterion benchmark target")]
-pub(crate) fn run_full_iterations(iterations: u64, scenario: CanonicalScenario) -> Duration {
+pub(crate) fn run_full_iterations(
+    iterations: u64,
+    scenario: CanonicalScenario,
+    input: CanonicalInput,
+) -> Duration {
     let mut elapsed = Duration::ZERO;
 
     for _ in 0..iterations {
         let started = Instant::now();
-        let fixture = load_fixture().expect("canonical full workload fixture should load");
+        let fixture = load_fixture(input).expect("canonical full workload fixture should load");
         let mut engine = scenario
             .build_engine(&fixture)
             .expect("canonical full workload engine should build");

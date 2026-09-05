@@ -17,71 +17,49 @@ Released on TBD (UTC).
 - Added Python `symbol` and `venue` properties to regular and synthetic instruments
 - Added Bybit self-match prevention, set with `smp_type` on the execution client config or per order
 - Added Polymarket collateral-sized limit BUY orders with exact limit price preservation
+- Added `BacktestEngine::add_data_batch` for typed data batches that replay without per-item `Data` values, thanks @faysou
 - Added typed external MessageBus streaming for control, execution, and reconciliation messages
 - Added cache-backed claims that route external orders, fills, and reconciliation activity to the strategy
 
 ### Breaking Changes
 
 - Removed Coinbase `CreateOrderRequest.reduce_only`; reduce-only orders are rejected before submission
-- Removed the dormant `PortfolioStatistic::calculate_from_orders` trait method; no analyzer
-  supplied order data to statistics
-- Changed `PortfolioAnalyzer.realized_pnls()` to return records in ascending event-time order
-  rather than position-derived records followed by recorded ones
-- Changed registered PnL statistics to run on every analyzed currency, including runs that closed
-  no trades, where they receive an empty list; `Win Rate` and its peers now report NaN for such
-  runs rather than being absent
+- Removed the dormant `PortfolioStatistic::calculate_from_orders` trait method; no analyzer supplied order data to statistics
+- Changed `PortfolioAnalyzer.realized_pnls()` to return records in ascending event-time order rather than position-derived records followed by recorded ones
+- Changed registered PnL statistics to run on every analyzed currency, including runs that closed no trades, where they receive an empty list; `Win Rate` and its peers now report NaN for such runs rather than being absent
 - Renamed blockchain log parsing modules to `hypersync::log` and `rpc::log`; update Rust imports
-- Renamed Cargo binary targets to kebab-case, including `to_json` to `to-json`, `to_parquet` to
-  `to-parquet`, and `node_wallet` to `node-wallet`; update any `cargo run --bin` invocation to
-  the new name
+- Renamed Cargo binary targets to kebab-case, including `to_json` to `to-json`, `to_parquet` to `to-parquet`, and `node_wallet` to `node-wallet`; update any `cargo run --bin` invocation to the new name
 - Changed `TradingState` to `ACTIVE=1`, `REDUCING=2`, and `HALTED=3`; update numeric and Cap'n Proto consumers
 - Changed `REDUCING` to allow only eligible reduce-only submissions, cancellations, and queries
 - Changed execution clients to reject `reduce_only` without an enforcing venue instruction (#4761), thanks @folknor
 - Changed backtest and sandbox venues to reject reduce-only orders when `use_reduce_only=false`
 - Changed PostgreSQL cache startup to require the `instrument_close` table; run `nautilus database init`
-- Changed PostgreSQL `order_event` and `position_event` tables to carry the order event
-  fields that were previously dropped; run `nautilus database init` to add the columns, as cache
-  startup now fails fast when they are missing. `OrderReleased` and `OrderFillVoided` rows written
-  before the upgrade cannot be restored, because their `released_price` and `correction_id` were
-  never stored; delete those rows if startup reports them
+- Changed PostgreSQL `order_event` and `position_event` tables to carry the order event fields that were previously dropped; run `nautilus database init` to add the columns, as cache startup now fails fast when they are missing. `OrderReleased` and `OrderFillVoided` rows written before the upgrade cannot be restored, because their `released_price` and `correction_id` were never stored; delete those rows if startup reports them
 - Changed Binance `close_position` orders to require `reduce_only=true` in Nautilus
-- Changed Arrow instrument `asset_class` and `option_kind` columns to the canonical enum labels
-  such as `EQUITY` and `CALL`; existing catalogs still decode, but earlier versions cannot read
-  newly written files
-- Renamed Rust `Data::Delta`, `Data::Deltas`, and `Data::Depth10` variants to `Data::BookDelta`,
-  `Data::BookDeltas`, and `Data::BookDepth10`; JSON and SBE wire formats are unchanged
-- Renamed `StrategyConfig.external_order_claims` to `external_order_instrument_ids`; use
-  `Strategy.set_external_order_instrument_ids()` after registration to replace active claims
-- Changed `OrderStatus::is_open()` to exclude the in-flight `SUBMITTED` state; use
-  `OrderStatus::is_inflight()` when a pending venue request must also match
+- Changed Arrow instrument `asset_class` and `option_kind` columns to the canonical enum labels such as `EQUITY` and `CALL`; existing catalogs still decode, but earlier versions cannot read newly written files
+- Renamed Rust `Data::Delta`, `Data::Deltas`, and `Data::Depth10` variants to `Data::BookDelta`, `Data::BookDeltas`, and `Data::BookDepth10`; JSON and SBE wire formats are unchanged
+- Renamed `StrategyConfig.external_order_claims` to `external_order_instrument_ids`; use `Strategy.set_external_order_instrument_ids()` after registration to replace active claims
+- Changed `OrderStatus::is_open()` to exclude the in-flight `SUBMITTED` state; use `OrderStatus::is_inflight()` when a pending venue request must also match
 
 ### Security
 
-- Added zeroizing secret storage and consistent credential redaction across adapter configuration,
-  signing, and transport paths
+- Added zeroizing secret storage and consistent credential redaction across adapter configuration, signing, and transport paths
 
 ### Fixes
 
-- Fixed engine panic on startup when the PostgreSQL cache held an `OrderCanceled`, `OrderDenied`,
-  `OrderEmulated`, `OrderExpired`, `OrderPendingCancel`, `OrderPendingUpdate`, `OrderRejected`,
-  `OrderReleased`, `OrderTriggered`, or `OrderUpdated` event (#4917)
+- Fixed engine panic on startup when the PostgreSQL cache held an `OrderCanceled`, `OrderDenied`, `OrderEmulated`, `OrderExpired`, `OrderPendingCancel`, `OrderPendingUpdate`, `OrderRejected`, `OrderReleased`, `OrderTriggered`, or `OrderUpdated` event (#4917)
 - Fixed PostgreSQL cache load failing on a persisted `OrderFillVoided` event
-- Fixed `reconciliation` being persisted as `false` for every order event that carries the flag,
-  so reconciled orders no longer restore as though they were not reconciled
-- Fixed `OrderUpdated.to_dict()` dropping `protection_price`, which made the dictionary round trip
-  lossy and lost the calculated protection price of a restored order
-- Fixed `released_price`, `due_post_only`, `protection_price`, `causation_id`, `correction_id`,
-  `is_reopened`, and fill `info` being dropped when an order event was persisted to PostgreSQL
+- Fixed `reconciliation` being persisted as `false` for every order event that carries the flag, so reconciled orders no longer restore as though they were not reconciled
+- Fixed `OrderUpdated.to_dict()` dropping `protection_price`, which made the dictionary round trip lossy and lost the calculated protection price of a restored order
+- Fixed `released_price`, `due_post_only`, `protection_price`, `causation_id`, `correction_id`, `is_reopened`, and fill `info` being dropped when an order event was persisted to PostgreSQL
 - Fixed position commissions and realized PnL after fill-void replay
 - Fixed nanosecond precision loss when `TestDataProvider` parses timestamps
 - Fixed Python `OrderBook` aggregation to raise `ValueError` for invalid precision and quantity overflow
-- Fixed `BacktestNode.run_streaming()` loading all records when more than one data config was used
-  (#4897), thanks @abhijeetvichare76
+- Fixed `BacktestNode.run_streaming()` loading all records when more than one data config was used (#4897), thanks @abhijeetvichare76
 - Fixed stale or terminal single and list order submissions reaching execution clients
 - Fixed TWD, 1INCH, CAKE, and SHIB currency lookup panics
 - Fixed order-status report windows filtering resting orders instead of closed history
-- Fixed foreign account events panicking and reservation failures leaving balances or margins in
-  an inconsistent state
+- Fixed foreign account events panicking and reservation failures leaving balances or margins in an inconsistent state
 
 ### Internal Improvements
 
@@ -110,13 +88,13 @@ Released on TBD (UTC).
 - Upgraded `flate2` crate to v1.1.10
 - Upgraded `indexmap` crate to v2.14.1
 - Upgraded `rcgen` crate to v0.14.10
-- Upgraded `linkify-it-py` package to v2.1.1
 - Upgraded `arrow`, `arrow-row`, and `parquet` crates to v59.3.0
 - Upgraded `aws-lc-rs` crate to v1.18.1
 - Upgraded `databento` crate to v0.61.0
 - Upgraded `rust_decimal` crate to v1.43.0
 - Upgraded `smallvec` crate to v1.16.0
 - Upgraded `toml` crate to v1.1.5
+- Upgraded `linkify-it-py` package to v2.1.1
 - Upgraded `plotly` package to v7.0.0
 - Upgraded `ruff` package to v0.16.5
 - Upgraded `simplejson` package to v4.1.2
@@ -137,8 +115,7 @@ Released on TBD (UTC).
 - Standardized Rust documentation links and added offline link coverage
 - Fixed the actor configuration example rejecting a positional argument
 - Fixed option Greeks examples ignoring string `actor_id` overrides
-- Corrected documented enum values for instrument classes, wallet accounts, position entry sides,
-  and Polymarket close types
+- Corrected documented enum values for instrument classes, wallet accounts, position entry sides, and Polymarket close types
 
 ### Deprecations
 

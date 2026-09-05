@@ -47,8 +47,8 @@ use nautilus_indicators::{
 use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{
-        Bar, BarSpecification, BarType, BookOrder, CustomData, Data, DataType, FundingRateUpdate,
-        InstrumentClose, MarkPriceUpdate, OrderBookDelta, QuoteTick, TradeTick,
+        Bar, BarSpecification, BarType, BookOrder, CustomData, Data, DataBatch, DataType,
+        FundingRateUpdate, InstrumentClose, MarkPriceUpdate, OrderBookDelta, QuoteTick, TradeTick,
         stubs::{StubCustomData, stub_custom_data},
     },
     enums::{
@@ -1152,8 +1152,8 @@ fn create_eur_base_margin_engine() -> BacktestEngine {
     engine
 }
 
-fn quote(instrument_id: InstrumentId, bid: &str, ask: &str, ts: u64) -> Data {
-    Data::Quote(QuoteTick::new(
+fn quote_tick(instrument_id: InstrumentId, bid: &str, ask: &str, ts: u64) -> QuoteTick {
+    QuoteTick::new(
         instrument_id,
         Price::from(bid),
         Price::from(ask),
@@ -1161,7 +1161,11 @@ fn quote(instrument_id: InstrumentId, bid: &str, ask: &str, ts: u64) -> Data {
         Quantity::from("1.000"),
         ts.into(),
         ts.into(),
-    ))
+    )
+}
+
+fn quote(instrument_id: InstrumentId, bid: &str, ask: &str, ts: u64) -> Data {
+    Data::Quote(quote_tick(instrument_id, bid, ask, ts))
 }
 
 fn trade(instrument_id: InstrumentId, price: &str, size: &str, ts: u64) -> Data {
@@ -1384,6 +1388,147 @@ fn test_add_data_rejects_bar_internal_aggregation(crypto_perpetual_ethusdt: Cryp
             .contains("aggregation_source must be External"),
         "got: {err}",
     );
+}
+
+#[rstest]
+fn test_add_data_batch_rejects_empty(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let mut engine = create_engine();
+    engine
+        .add_instrument(&InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt))
+        .unwrap();
+
+    let err = engine
+        .add_data_batch(DataBatch::from(Vec::<QuoteTick>::new()), None, true, true)
+        .unwrap_err();
+    assert!(err.to_string().contains("data was empty"), "got: {err}");
+}
+
+#[rstest]
+fn test_add_data_batch_rejects_unknown_instrument(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let mut engine = create_engine();
+    let instrument_id = crypto_perpetual_ethusdt.id();
+    // Note: instrument intentionally NOT added to engine.
+
+    let quotes = DataBatch::from(vec![quote_tick(instrument_id, "1000.00", "1000.10", 1)]);
+    let err = engine.add_data_batch(quotes, None, true, true).unwrap_err();
+    assert!(
+        err.to_string().contains("not found in the cache"),
+        "got: {err}"
+    );
+}
+
+#[rstest]
+fn test_add_data_batch_rejects_bar_internal_aggregation(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    let bar = Bar::try_from(bar_with_aggregation(
+        instrument_id,
+        AggregationSource::Internal,
+        1_000_000_000,
+    ))
+    .unwrap();
+    let err = engine
+        .add_data_batch(DataBatch::from(vec![bar]), None, true, true)
+        .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("aggregation_source must be External"),
+        "got: {err}",
+    );
+}
+
+#[rstest]
+fn test_add_data_batch_sort_flag_matches_add_data(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    let quotes = DataBatch::from(vec![quote_tick(
+        instrument_id,
+        "1000.00",
+        "1000.10",
+        1_000_000_000,
+    )]);
+    engine.add_data_batch(quotes, None, true, false).unwrap();
+
+    let err = engine.run(None, None, None, false).unwrap_err();
+    assert!(err.to_string().contains("not sorted"), "got: {err}");
+}
+
+#[rstest]
+fn test_add_data_batch_orders_items_and_merges_with_legacy_stream(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    let typed = DataBatch::from(vec![
+        quote_tick(instrument_id, "1002.00", "1002.10", 3_000_000_000),
+        quote_tick(instrument_id, "1000.00", "1000.10", 1_000_000_000),
+    ]);
+    let legacy = vec![
+        quote(instrument_id, "1001.00", "1001.10", 2_000_000_000),
+        quote(instrument_id, "1003.00", "1003.10", 4_000_000_000),
+    ];
+    engine.add_data_batch(typed, None, true, true).unwrap();
+    engine.add_data(legacy, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+
+    let result = engine.get_result();
+    let replayed: Vec<u64> = engine
+        .kernel()
+        .cache
+        .borrow()
+        .quotes(&instrument_id)
+        .unwrap()
+        .iter()
+        .rev()
+        .map(|quote| quote.ts_init.as_u64())
+        .collect();
+    assert_eq!(result.iterations, 4);
+    assert_eq!(result.backtest_start, Some(UnixNanos::from(1_000_000_000)));
+    assert_eq!(
+        replayed,
+        vec![1_000_000_000, 2_000_000_000, 3_000_000_000, 4_000_000_000]
+    );
+}
+
+#[rstest]
+fn test_run_with_depth_venue_and_typed_book_batch_succeeds(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    // Typed twin of test_run_with_depth_venue_and_book_data_succeeds: the L2
+    // requirement is satisfied only if book-data tracking covers typed batches.
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    let venue_config = SimulatedVenueConfig::builder()
+        .venue(Venue::from("BINANCE"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Margin)
+        .book_type(BookType::L2_MBP)
+        .starting_balances(vec![Money::from("1_000_000 USDT")])
+        .build()
+        .unwrap();
+    engine.add_venue(venue_config).unwrap();
+
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    let deltas = DataBatch::from(vec![
+        OrderBookDelta::try_from(bid_delta(instrument_id, "1000.00", 1, 1_000_000_000)).unwrap(),
+        OrderBookDelta::try_from(bid_delta(instrument_id, "1000.50", 2, 2_000_000_000)).unwrap(),
+    ]);
+    engine.add_data_batch(deltas, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+    assert_eq!(engine.get_result().iterations, 2);
 }
 
 #[rstest]

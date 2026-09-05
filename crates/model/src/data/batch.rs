@@ -115,6 +115,17 @@ impl<T> BatchView<T> {
             range: (self.range.start + start)..(self.range.start + end),
         }
     }
+
+    /// Returns the items in this view's range for in-place modification.
+    ///
+    /// Clones the backing allocation first when other views share it, so an unshared batch is
+    /// modified without copying.
+    pub fn make_mut(&mut self) -> &mut [T]
+    where
+        T: Clone,
+    {
+        &mut Arc::make_mut(&mut self.data)[self.range.clone()]
+    }
 }
 
 impl<T> From<Vec<T>> for BatchView<T> {
@@ -240,12 +251,53 @@ impl DataBatch {
     }
 }
 
+macro_rules! impl_data_batch_from_vec {
+    ($variant:ident, $type:ty) => {
+        impl From<Vec<$type>> for DataBatch {
+            fn from(data: Vec<$type>) -> Self {
+                Self::$variant(BatchView::from(data))
+            }
+        }
+    };
+}
+
+impl_data_batch_from_vec!(BookDelta, OrderBookDelta);
+impl_data_batch_from_vec!(BookDeltas, OrderBookDeltas);
+impl_data_batch_from_vec!(BookDepth10, OrderBookDepth10);
+impl_data_batch_from_vec!(Quote, QuoteTick);
+impl_data_batch_from_vec!(Trade, TradeTick);
+impl_data_batch_from_vec!(Bar, Bar);
+impl_data_batch_from_vec!(MarkPrice, MarkPriceUpdate);
+impl_data_batch_from_vec!(IndexPrice, IndexPriceUpdate);
+impl_data_batch_from_vec!(FundingRate, FundingRateUpdate);
+impl_data_batch_from_vec!(OptionGreeks, OptionGreeks);
+impl_data_batch_from_vec!(InstrumentStatus, InstrumentStatus);
+impl_data_batch_from_vec!(InstrumentClose, InstrumentClose);
+#[cfg(feature = "defi")]
+impl_data_batch_from_vec!(Defi, DefiData);
+
 #[cfg(test)]
 mod tests {
     use nautilus_core::UnixNanos;
     use rstest::rstest;
 
     use super::*;
+    use crate::{
+        data::stubs::{
+            stub_bar, stub_delta, stub_deltas, stub_depth10, stub_instrument_close,
+            stub_instrument_status, stub_trade_ethusdt_buy,
+        },
+        identifiers::InstrumentId,
+        types::Price,
+    };
+    #[cfg(feature = "defi")]
+    use crate::{
+        defi::{
+            data::block::BlockPosition,
+            pool_analysis::snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
+        },
+        identifiers::{Symbol, Venue},
+    };
 
     struct NonClone(i32);
 
@@ -324,5 +376,108 @@ mod tests {
     #[should_panic(expected = "batch slice range exceeds view length")]
     fn test_data_batch_slice_rejects_out_of_bounds_range() {
         let _ = DataBatch::Quote(vec![QuoteTick::default()].into()).slice(0, 2);
+    }
+
+    #[rstest]
+    fn test_batch_view_make_mut_reuses_unshared_backing() {
+        let mut view = BatchView::from(vec![3, 1, 2]);
+        let backing = Arc::as_ptr(view.arc());
+
+        view.make_mut().sort_unstable();
+
+        assert!(std::ptr::eq(Arc::as_ptr(view.arc()), backing));
+        assert_eq!(view.as_ref(), &[1, 2, 3]);
+    }
+
+    #[rstest]
+    fn test_batch_view_make_mut_clones_shared_backing_within_range() {
+        let source = BatchView::new(Arc::new(vec![9, 3, 1, 2]), 1..4);
+        let mut view = source.clone();
+
+        view.make_mut().sort_unstable();
+
+        assert!(!Arc::ptr_eq(source.arc(), view.arc()));
+        assert_eq!(source.as_ref(), &[3, 1, 2]);
+        assert_eq!(view.as_ref(), &[1, 2, 3]);
+        assert_eq!(view.arc().as_slice(), &[9, 1, 2, 3]);
+    }
+
+    #[rstest]
+    fn test_data_batch_from_vec_uses_matching_variant() {
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let mark_price = MarkPriceUpdate::new(
+            instrument_id,
+            Price::from("100.10"),
+            UnixNanos::from(7),
+            UnixNanos::from(8),
+        );
+        let index_price = IndexPriceUpdate::new(
+            instrument_id,
+            Price::from("100.20"),
+            UnixNanos::from(9),
+            UnixNanos::from(10),
+        );
+        let funding_rate = FundingRateUpdate::new(
+            instrument_id,
+            "0.0001".parse().unwrap(),
+            Some(480),
+            Some(UnixNanos::from(12)),
+            UnixNanos::from(11),
+            UnixNanos::from(12),
+        );
+        let greeks = OptionGreeks {
+            instrument_id,
+            ts_event: UnixNanos::from(13),
+            ts_init: UnixNanos::from(14),
+            ..OptionGreeks::default()
+        };
+
+        let batches = [
+            DataBatch::from(vec![stub_delta()]),
+            DataBatch::from(vec![stub_deltas()]),
+            DataBatch::from(vec![stub_depth10()]),
+            DataBatch::from(vec![QuoteTick::default()]),
+            DataBatch::from(vec![stub_trade_ethusdt_buy()]),
+            DataBatch::from(vec![stub_bar()]),
+            DataBatch::from(vec![mark_price]),
+            DataBatch::from(vec![index_price]),
+            DataBatch::from(vec![funding_rate]),
+            DataBatch::from(vec![greeks]),
+            DataBatch::from(vec![stub_instrument_status()]),
+            DataBatch::from(vec![stub_instrument_close()]),
+        ];
+
+        assert!(matches!(batches[0], DataBatch::BookDelta(ref data) if data.len() == 1));
+        assert!(matches!(batches[1], DataBatch::BookDeltas(ref data) if data.len() == 1));
+        assert!(matches!(batches[2], DataBatch::BookDepth10(ref data) if data.len() == 1));
+        assert!(matches!(batches[3], DataBatch::Quote(ref data) if data.len() == 1));
+        assert!(matches!(batches[4], DataBatch::Trade(ref data) if data.len() == 1));
+        assert!(matches!(batches[5], DataBatch::Bar(ref data) if data.len() == 1));
+        assert!(matches!(batches[6], DataBatch::MarkPrice(ref data) if data.len() == 1));
+        assert!(matches!(batches[7], DataBatch::IndexPrice(ref data) if data.len() == 1));
+        assert!(matches!(batches[8], DataBatch::FundingRate(ref data) if data.len() == 1));
+        assert!(matches!(batches[9], DataBatch::OptionGreeks(ref data) if data.len() == 1));
+        assert!(matches!(batches[10], DataBatch::InstrumentStatus(ref data) if data.len() == 1));
+        assert!(matches!(batches[11], DataBatch::InstrumentClose(ref data) if data.len() == 1));
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_data_batch_from_defi_vec_uses_defi_variant() {
+        let instrument_id = InstrumentId::new(Symbol::from("ETH/USDC"), Venue::from("UNISWAPV3"));
+        let snapshot = PoolSnapshot::new(
+            instrument_id,
+            PoolState::default(),
+            Vec::new(),
+            Vec::new(),
+            PoolAnalytics::default(),
+            BlockPosition::new(12, "0xabc".to_string(), 3, 4),
+            UnixNanos::from(5),
+            UnixNanos::from(6),
+        );
+
+        let batch = DataBatch::from(vec![DefiData::PoolSnapshot(snapshot)]);
+
+        assert!(matches!(batch, DataBatch::Defi(ref data) if data.len() == 1));
     }
 }

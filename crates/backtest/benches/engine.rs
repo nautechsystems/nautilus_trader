@@ -25,6 +25,8 @@
 //!   bar-EMA workloads over the same preloaded checked-in data.
 //! - `canonical/load_build_run`: the same four workloads including CSV loading, engine setup, and
 //!   `BacktestEngine::run`.
+//! - `canonical/*/<scenario>_typed`: the same workloads under both boundaries with quotes and bars
+//!   submitted as two typed batches through `BacktestEngine::add_data_batch`.
 //! - `market_data_replay`: interleaved quote and trade ticks with no strategy orders.
 //! - `market_data_replay_4_streams`: the same events split across four streams to exercise heap
 //!   merging, with a separate two-instrument case.
@@ -98,17 +100,23 @@ fn bench_canonical(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("backtest_engine/canonical");
 
-    for scenario in canonical::SCENARIOS {
-        let fixture = canonical::load_fixture().expect("canonical workload fixture should load");
-        let data_count = fixture.len();
-        group.throughput(Throughput::Elements(data_count as u64));
+    for input in canonical::INPUTS {
+        for scenario in canonical::SCENARIOS {
+            let fixture =
+                canonical::load_fixture(input).expect("canonical workload fixture should load");
+            let data_count = fixture.len();
+            group.throughput(Throughput::Elements(data_count as u64));
+            let case = scenario.case_name(input);
 
-        group.bench_function(BenchmarkId::new("run_preloaded", scenario.name()), |b| {
-            b.iter_custom(|iters| canonical::run_preloaded_iterations(iters, scenario, &fixture));
-        });
-        group.bench_function(BenchmarkId::new("load_build_run", scenario.name()), |b| {
-            b.iter_custom(|iters| canonical::run_full_iterations(iters, scenario));
-        });
+            group.bench_function(BenchmarkId::new("run_preloaded", &case), |b| {
+                b.iter_custom(|iters| {
+                    canonical::run_preloaded_iterations(iters, scenario, &fixture)
+                });
+            });
+            group.bench_function(BenchmarkId::new("load_build_run", &case), |b| {
+                b.iter_custom(|iters| canonical::run_full_iterations(iters, scenario, input));
+            });
+        }
     }
 
     group.finish();
