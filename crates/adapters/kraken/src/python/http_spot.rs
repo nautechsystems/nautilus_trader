@@ -369,7 +369,13 @@ impl KrakenSpotHttpClient {
     /// `TradeBalance`. Kraken reports these values across all collateral, which
     /// avoids clamping free margin to one wallet bucket in multi-asset accounts.
     ///
-    /// The single shared fetch keeps Kraken rate-limit usage symmetric with `Balance`
+    /// Wallet balances come from `BalanceEx`, whose per-asset `hold_trade` gives the amount
+    /// Kraken has reserved against resting orders and populates `locked`. Net credit
+    /// (`credit - credit_used`, returned only for credit-line accounts) is included in `total`,
+    /// so `free` derives to Kraken's available balance of
+    /// `balance + credit - credit_used - hold_trade`.
+    ///
+    /// The single shared fetch keeps Kraken rate-limit usage symmetric with `BalanceEx`
     /// (one request per account update), instead of two as if `request_account_state`
     /// and `request_margin_metrics` were called in sequence.
     #[pyo3(name = "request_account_state_with_metrics")]

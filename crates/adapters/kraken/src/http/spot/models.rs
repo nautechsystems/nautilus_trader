@@ -48,6 +48,29 @@ pub struct KrakenResponse<T> {
 /// Maps currency codes (e.g., "USDT", "ETH") to their balance amounts as strings.
 pub type BalanceResponse = IndexMap<String, String>;
 
+/// A single per-asset entry from `POST /0/private/BalanceEx`.
+///
+/// Distinct from [`BalanceResponse`], which carries only the total wallet amount: this also
+/// reports the portion Kraken holds against resting orders, which maps to the `locked` component
+/// of [`nautilus_model::types::AccountBalance`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BalanceExEntry {
+    /// Total balance amount for the asset.
+    pub balance: String,
+    /// Total held amount for the asset, reserved by the venue against resting orders.
+    pub hold_trade: String,
+    /// Total credit amount, present only for accounts with a credit line.
+    #[serde(default)]
+    pub credit: Option<String>,
+    /// Used credit amount, present only for accounts with a credit line.
+    #[serde(default)]
+    pub credit_used: Option<String>,
+}
+
+/// Response from `POST /0/private/BalanceEx`.
+/// Maps currency codes (e.g., "ZUSD", "XXBT") to their total and held amounts.
+pub type BalanceExResponse = IndexMap<String, BalanceExEntry>;
+
 /// Response from `POST /0/private/TradeBalance` (margin accounts only).
 ///
 /// Distinct from [`BalanceResponse`]: wallet balances give currency amounts held; this gives
