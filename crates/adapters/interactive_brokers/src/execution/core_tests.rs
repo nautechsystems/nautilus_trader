@@ -1594,7 +1594,7 @@ async fn test_get_leg_instrument_id_and_ratio_with_sell_action() {
 }
 
 #[rstest]
-fn test_cached_spread_instrument_ids_for_preload_deduplicates_spread_orders() {
+fn test_cached_instrument_ids_for_preload_deduplicates_spread_orders() {
     let instrument_provider = create_test_instrument_provider();
     let mut cache = Cache::default();
     let spread_instrument_id = create_test_spread_instrument();
@@ -1616,7 +1616,7 @@ fn test_cached_spread_instrument_ids_for_preload_deduplicates_spread_orders() {
     cache.add_order(order_one, None, None, false).unwrap();
     cache.add_order(order_two, None, None, false).unwrap();
 
-    let spread_ids = InteractiveBrokersExecutionClient::cached_spread_instrument_ids_for_preload(
+    let spread_ids = InteractiveBrokersExecutionClient::cached_instrument_ids_for_preload(
         &cache,
         &instrument_provider,
     );
@@ -1625,7 +1625,7 @@ fn test_cached_spread_instrument_ids_for_preload_deduplicates_spread_orders() {
 }
 
 #[rstest]
-fn test_cached_spread_instrument_ids_for_preload_ignores_non_spread_orders() {
+fn test_cached_instrument_ids_for_preload_includes_single_leg_orders() {
     let instrument_provider = create_test_instrument_provider();
     let mut cache = Cache::default();
     let instrument_id = InstrumentId::new(Symbol::from("AAPL"), Venue::from("SMART"));
@@ -1639,12 +1639,39 @@ fn test_cached_spread_instrument_ids_for_preload_ignores_non_spread_orders() {
 
     cache.add_order(order, None, None, false).unwrap();
 
-    let spread_ids = InteractiveBrokersExecutionClient::cached_spread_instrument_ids_for_preload(
+    let instrument_ids = InteractiveBrokersExecutionClient::cached_instrument_ids_for_preload(
         &cache,
         &instrument_provider,
     );
 
-    assert!(spread_ids.is_empty());
+    // A single-leg instrument referenced by a cached order must be preloaded too,
+    // otherwise replayed executions on it are dropped after a restart
+    assert_eq!(instrument_ids, vec![instrument_id]);
+}
+
+#[rstest]
+fn test_cached_instrument_ids_for_preload_skips_instruments_already_loaded() {
+    let instrument_provider = create_test_instrument_provider();
+    let equity = equity_aapl();
+    let instrument_id = equity.id();
+    instrument_provider.insert_test_instrument(InstrumentAny::from(equity), 265598, 1);
+
+    let mut cache = Cache::default();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00"))
+        .quantity(Quantity::from(1))
+        .build();
+
+    cache.add_order(order, None, None, false).unwrap();
+
+    let instrument_ids = InteractiveBrokersExecutionClient::cached_instrument_ids_for_preload(
+        &cache,
+        &instrument_provider,
+    );
+
+    assert!(instrument_ids.is_empty());
 }
 
 #[rstest]

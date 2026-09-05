@@ -385,6 +385,10 @@ impl InteractiveBrokersExecutionClient {
         account_id: AccountId,
     ) -> anyhow::Result<()> {
         let Some(instrument) = instrument_provider.find(&instrument_id) else {
+            tracing::warn!(
+                "Instrument {} not found in provider, dropping OrderUpdated",
+                instrument_id
+            );
             return Ok(());
         };
 
@@ -919,6 +923,10 @@ impl InteractiveBrokersExecutionClient {
         }
 
         let Some(instrument) = instrument_provider.find(instrument_id) else {
+            tracing::warn!(
+                "Instrument {} not found in provider, cannot update average fill price",
+                instrument_id
+            );
             return Ok(());
         };
 
