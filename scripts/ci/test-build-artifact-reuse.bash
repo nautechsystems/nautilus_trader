@@ -110,8 +110,35 @@ grep -Fq "entry: make pytest-collect-fast" "$REPO_ROOT/.pre-commit-config.yaml" 
   fail "Pre-commit does not use fast Python collection"
 
 pre_flight_recipe=$(sed -n '/^pre-flight:  /,/^\t\$(call timer_end,Pre-flight)/p' "$REPO_ROOT/Makefile")
-[[ "$pre_flight_recipe" == *'check-code-sim'*'cargo-test-doc'*'cargo-test-sim'*'cargo-test-extras'* ]] ||
-  fail "Pre-flight Rust checks do not preserve early DST linting and doctest disk safety"
+[[ "$pre_flight_recipe" == *'check-code-sim'*'cargo-test-sim'*'cargo-test-extras'* ]] ||
+  fail "Pre-flight Rust checks do not preserve early DST linting and test order"
+[[ "$pre_flight_recipe" != *'cargo-test-doc'* ]] ||
+  fail "Pre-flight still runs Rust doctests"
+
+for workflow in build.yml test.yml; do
+  if grep -Fq 'make cargo-test-doc' "$REPO_ROOT/.github/workflows/$workflow"; then
+    fail "Regular CI still runs Rust doctests: $workflow"
+  fi
+done
+
+nightly_doctest_job=$(awk '
+  /^  rust-doctests:/ {
+    capture = 1
+  }
+  capture && /^  [[:alnum:]_-]+:/ && !/^  rust-doctests:/ {
+    exit
+  }
+  capture {
+    print
+  }
+' "$REPO_ROOT/.github/workflows/nightly-tests.yml")
+[[ -n "$nightly_doctest_job" ]] || fail "Nightly tests do not define a Rust doctest job"
+[[ "$nightly_doctest_job" == *$'        python-version:\n          - "3.13"\n          - "3.14"'* ]] ||
+  fail "Nightly Rust doctests do not cover Python 3.13 and 3.14"
+[[ "$nightly_doctest_job" == *'make cargo-test-doc'* ]] ||
+  fail "Nightly tests do not run Rust doctests"
+[[ "$nightly_doctest_job" == *'EXTRA_FEATURES="capnp,hypersync,nautilus-serialization/sbe,nautilus-infrastructure/postgres"'* ]] ||
+  fail "Nightly Rust doctests do not preserve the CI feature set"
 
 : > "$CARGO_LOG"
 PATH="$MOCK_BIN:$PATH" \

@@ -258,15 +258,6 @@ jobs:
         run: bash scripts/ci/report-disk-space.bash "before Rust tests"
 
       # Keep these commands and features aligned with rust-tests-linux-x86 in build.yml
-      - name: Run Rust doctests
-        run: >-
-          make cargo-test-doc
-          EXTRA_FEATURES="capnp,hypersync,nautilus-serialization/sbe,nautilus-infrastructure/postgres"
-
-      - name: Report disk space after Rust doctests
-        if: always()
-        run: bash scripts/ci/report-disk-space.bash "after Rust doctests"
-
       - name: Run Rust tests
         run: >-
           make cargo-test NEXTEST_PROFILE=ci

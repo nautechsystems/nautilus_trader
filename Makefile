@@ -488,7 +488,6 @@ pre-flight:  #-- Run pre-flight checks (format, tests, build, generated drift, a
 		&& $(MAKE) --no-print-directory test-scripts-quiet \
 		&& $(MAKE) --no-print-directory check-code EXTRA_FEATURES="capnp,hypersync" \
 		&& $(MAKE) --no-print-directory check-code-sim \
-		&& $(MAKE) --no-print-directory cargo-test-doc EXTRA_FEATURES="capnp,hypersync" \
 		&& $(MAKE) --no-print-directory cargo-test-sim \
 		&& $(MAKE) --no-print-directory cargo-test-extras \
 		&& $(MAKE) --no-print-directory cargo-test-postgres-changed \
@@ -929,10 +928,7 @@ cargo-test-postgres-changed:  #-- Run PostgreSQL bootstrap tests when related st
 	fi
 
 # Doctests need their own target because `cargo nextest` cannot run them.
-# Sharing --features and --profile with the nextest targets lets both reuse the
-# same compiled artifacts. Run this before those targets: rustdoc links a
-# throwaway binary per doc example, and going first releases those transient
-# files before the nextest test-binary set lands, which keeps peak disk lower.
+# The scheduled nightly test workflow runs them separately from regular CI.
 .PHONY: cargo-test-doc
 cargo-test-doc: export RUST_BACKTRACE=1
 cargo-test-doc:  #-- Run Rust doctests (examples in `///` and `//!` comments)

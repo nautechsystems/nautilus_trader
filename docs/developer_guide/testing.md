@@ -197,9 +197,9 @@ make cargo-test-doc
 cargo test --doc --workspace --features "$(bash scripts/cargo-features.bash)" --profile nextest
 ```
 
-Doc examples are a maintained test surface: CI runs this target on pull requests that touch Rust
-code, and the `pre-flight` target includes it. See the [Rust guide](rust.md#doc-examples) for how to
-annotate a fence so it compiles.
+Doc examples are a maintained test surface. The scheduled `nightly-tests` workflow runs this target
+with Python 3.13 and 3.14. See the [Rust guide](rust.md#doc-examples) for how to annotate a fence so
+it compiles.
 
 #### Testing with optional features
 

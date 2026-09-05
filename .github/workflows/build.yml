@@ -536,15 +536,6 @@ jobs:
       - name: Report disk space before Rust tests
         run: bash scripts/ci/report-disk-space.bash "before Rust tests"
 
-      - name: Run Rust doctests
-        run: >-
-          make cargo-test-doc
-          EXTRA_FEATURES="capnp,hypersync,nautilus-serialization/sbe,nautilus-infrastructure/postgres"
-
-      - name: Report disk space after Rust doctests
-        if: always()
-        run: bash scripts/ci/report-disk-space.bash "after Rust doctests"
-
       - name: Run Rust tests
         run: >-
           make cargo-test NEXTEST_PROFILE=ci
