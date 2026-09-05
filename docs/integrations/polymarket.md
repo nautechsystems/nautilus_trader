@@ -223,9 +223,10 @@ We recommend using environment variables to manage your credentials.
 
 ## Data capability
 
-Polymarket supports live `L2_MBP` order book deltas, quotes, and trades. Instrument definitions are
-published by bootstrap, configured refreshes, on-demand loading, single-instrument requests,
-new-market discovery, and tick-size changes.
+Polymarket supports live `L2_MBP` order book deltas, quotes, trades, and resolution
+`InstrumentStatus`/`InstrumentClose` events. Instrument definitions are published by bootstrap,
+configured refreshes, on-demand loading, single-instrument requests, new-market discovery, and
+tick-size changes.
 
 ## Orders capability
 
@@ -1043,8 +1044,9 @@ the full universe at startup is rarely practical. The data adapter auto-loads mi
 demand so that strategies can subscribe to markets that are not in the cache:
 
 - When a strategy issues `subscribe_quotes`, `subscribe_trades`, `subscribe_book_deltas`,
-  or `request_instrument` for an instrument that is not cached, the adapter registers the request and
-  waits `auto_load_debounce_ms` (default 100 ms) so that concurrent requests coalesce.
+  `subscribe_instrument_status`, `subscribe_instrument_close`, or `request_instrument` for an
+  instrument that is not cached, the adapter registers the request and waits
+  `auto_load_debounce_ms` (default 100 ms) so that concurrent requests coalesce.
 - It then issues a single batched Gamma API call. Batches larger than the Gamma `condition_ids`
   query ceiling (about 100) are split across multiple calls and merged.
 - Once the instruments are loaded, they are published to the data engine (populating the cache)
@@ -1084,9 +1086,41 @@ caller must resubscribe after the market becomes available.
 
 The Rust data client tracks Polymarket exposure at `condition_id` level so both YES and NO legs
 close together when the venue resolves the market. Position events add open Polymarket binary
-option instruments to an internal watchlist. Once a watched condition expires, the data client
-waits `resolve_poll_grace_secs`, then polls Gamma every `resolve_poll_interval_secs` until the
-condition resolves or `resolve_poll_max_wait_secs` elapses.
+option instruments to an internal watchlist. Data clients can also watch an instrument without a
+position by subscribing to `InstrumentStatus`, `InstrumentClose`, or both. These subscriptions are
+independent: a status subscription emits only the status close, while a close subscription emits
+only the settlement price. Unsubscribing from one does not remove the other.
+
+Cached instruments establish a watch when the subscription is accepted. Missing instruments first
+pass through auto-loading and the configured instrument filters. Unsubscribing removes only that
+data owner; open positions retain their independent ownership. If loading cannot produce usable
+metadata, no automatic watch is created. An accepted unresolved intent can still be checked with
+an explicit manual resolution selector.
+
+If an outcome arrives while a subscribed instrument is still loading, the client retains that
+outcome until its metadata passes the configured filters. Already admitted data and position owners
+settle immediately; a pending sibling does not delay them. Completing the pending subscription emits
+only its requested events and does not reopen ordinary market-data streams. Unsubscribing its last
+event type or rejecting its instrument filter discards the retained outcome.
+
+Once a watched condition expires, the data client waits `resolve_poll_grace_secs`, then polls Gamma
+every `resolve_poll_interval_secs` until the condition resolves or
+`resolve_poll_max_wait_secs` elapses.
+
+| Delivery path         | Configuration and eligibility                                         | Release                                                      |
+| --------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Auto-load outcome.    | A strict outcome in a fetched Gamma payload, regardless of polling.   | Applied immediately; the auto-load task completes.           |
+| Gamma/CLOB polling.   | `resolve_poll_enabled=true`, within the expiration-based poll window. | Resolution, last owner removal, timeout, or shutdown.        |
+| Resolution WebSocket. | `subscribe_new_markets=true`, with an active, unpaused data watch.    | Resolution, last data owner removal, timeout, or shutdown.   |
+| Manual request.       | Any configuration, using explicit selectors or the watchlist rules.   | Request completion; successful resolution removes the watch. |
+
+The shipped defaults use polling, without a resolution-only WebSocket subscription. Disabling
+polling does not enable WebSocket resolution: that path requires `subscribe_new_markets=true`.
+With both disabled, later recovery requires a manual request.
+
+These WebSocket ownership rules apply to the data subscription's token, not the independently
+configured venue-wide discovery feed. Releasing the token does not disconnect that feed. Valid
+resolutions received there still use the shared apply path for existing data and position owners.
 
 Resolution uses strict winner inference:
 
@@ -1097,14 +1131,36 @@ Resolution uses strict winner inference:
 - Non-binary, ambiguous, malformed, or still-unresolved payloads are skipped. They remain on the
   watchlist until the poll window times out or a manual request resolves them.
 
-When the client applies a resolution, it emits one `InstrumentStatus` close and one
-`InstrumentClose` per tracked leg. The winner leg closes at `1`, and the losing leg closes at `0`.
-The close type is `InstrumentCloseType.CONTRACT_EXPIRED`. This event closes Nautilus exposure and
-does not redeem tokens or claim funds on-chain.
+Auto-loading applies a strict outcome from either its normal lookup or positive closure probe
+immediately. An expiration that is future, stale, or missing does not discard an outcome already
+obtained. Without a strict outcome, existing expiration deadlines still apply: late subscriptions
+do not receive a fresh polling window, and missing expiration does not cause indefinite polling.
 
-The same apply path handles WebSocket `market_resolved` events, automatic polling, and manual
-requests. After `resolve_poll_max_wait_secs`, automatic polling pauses the watched condition and
-logs it for manual recovery. Manual requests can still retry the condition later.
+When the client applies a resolution, position-owned legs emit one `InstrumentStatus` close and one
+`InstrumentClose`. Data-only legs emit whichever event types have active subscriptions. The winner
+leg closes at `1`, and the losing leg closes at `0`. The close type is
+`InstrumentCloseType.CONTRACT_EXPIRED`. This event closes Nautilus exposure and does not redeem
+tokens or claim funds on-chain.
+
+Gamma's positive `closed=true` evidence stops normal quote, trade, and book-delta streams for both
+outcome siblings, even when the payload cannot produce usable instruments. Closure alone does not
+establish a winner or emit settlement events. Existing resolution owners remain available for
+polling or manual recovery; an enabled, unpaused resolution WebSocket may remain until resolution
+or timeout. Later live subscriptions cannot reopen the closed condition.
+
+The same apply path handles auto-load outcomes, WebSocket `market_resolved` events, automatic
+polling, and manual requests. Successful resolution emits each admitted owner's event types once,
+removes those owners and the condition's watch, and releases its WebSocket subscriptions. Existing
+pending data intents retain their outcome until admission or cancellation; new subscriptions cannot
+re-enroll the resolved condition. Automatic delivery never bypasses instrument-filter admission.
+
+After `resolve_poll_max_wait_secs`, the watch pauses and releases resolution-only WebSocket
+ownership, including when polling is disabled. An open market's independent quote, trade, or book
+subscriptions are unaffected by this pause. The client retains settlement metadata and ownership
+for manual recovery; a manual request does not restart the automatic deadline. Disconnect stops
+network work, and reconnect resumes unfinished loading and replays cached, active resolution
+WebSocket subscriptions. Reset discards retained ownership and outcomes and requires fresh
+subscriptions.
 
 #### Manual resolution requests
 
@@ -1350,7 +1406,7 @@ Class/struct: `PolymarketDataClientConfig`.
 | `http_timeout_secs`, `ws_timeout_secs` | `60`, `30` | HTTP and WebSocket timeout in seconds.                                                    |
 | `ws_max_subscriptions`                 | `200`      | Per-connection subscription cap; the market pool shards across connections at this bound. |
 | `update_instruments_interval_mins`     | `60`       | Instrument catalogue refresh interval; pass `None` to disable it.                         |
-| `subscribe_new_markets`                | `false`    | Subscribe to new-market discovery events; also enables `best_bid_ask` quote ticks.        |
+| `subscribe_new_markets`                | `false`    | Subscribe to discovery and resolution events; also enables `best_bid_ask` quote ticks.    |
 | `new_market_filter`                    | `None`     | Rust-only filter applied to newly discovered markets before instrument emission.          |
 | `new_market_fetch_max_concurrency`     | `8`        | Bound concurrent market fetches from discovery events.                                    |
 | `drop_quotes_missing_side`             | `true`     | Drop quotes that do not contain both a bid and an ask.                                    |

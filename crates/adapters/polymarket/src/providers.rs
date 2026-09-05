@@ -592,6 +592,20 @@ pub fn extract_condition_id(instrument_id: &InstrumentId) -> anyhow::Result<Stri
         })
 }
 
+/// Extracts the token ID from an instrument symbol.
+///
+/// Polymarket instrument symbols follow the pattern `{condition_id}-{token_id}`. This extracts the
+/// token_id by splitting at the last `-`.
+pub(crate) fn extract_token_id(instrument_id: &InstrumentId) -> anyhow::Result<String> {
+    let symbol = instrument_id.symbol.as_str();
+    symbol
+        .rsplit_once('-')
+        .map(|(_, token_id)| token_id.to_string())
+        .ok_or_else(|| {
+            anyhow::anyhow!("Cannot extract token_id from symbol '{symbol}': no '-' separator")
+        })
+}
+
 /// Builds validated market keyset parameters from string key/value filters.
 ///
 /// # Errors
@@ -1137,5 +1151,24 @@ impl InstrumentProvider for PolymarketInstrumentProvider {
         } else {
             anyhow::bail!("Instrument {instrument_id} not found on Polymarket")
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case("0xcondition-0xtoken", Some("0xtoken"))]
+    #[case("0xcondition-with-dash-0xtoken", Some("0xtoken"))]
+    #[case("0xcondition", None)]
+    fn extracts_token_id_from_instrument_symbol(
+        #[case] symbol: &str,
+        #[case] expected: Option<&str>,
+    ) {
+        let instrument_id = InstrumentId::from(format!("{symbol}.POLYMARKET").as_str());
+        assert_eq!(extract_token_id(&instrument_id).ok().as_deref(), expected,);
     }
 }

@@ -405,6 +405,21 @@ fn create_test_data_client_with_new_markets(
     PolymarketDataClient,
     tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
 ) {
+    create_test_data_client_with_resolution_options(
+        addr,
+        subscribe_new_markets,
+        PolymarketDataClientConfig::default().resolve_poll_enabled,
+    )
+}
+
+fn create_test_data_client_with_resolution_options(
+    addr: SocketAddr,
+    subscribe_new_markets: bool,
+    resolve_poll_enabled: bool,
+) -> (
+    PolymarketDataClient,
+    tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     // Use replace_ rather than set_ so this test can run on a thread that
     // already had a sender installed by another test in the same harness.
@@ -429,6 +444,7 @@ fn create_test_data_client_with_new_markets(
         base_url_gamma: Some(base_url.clone()),
         base_url_data_api: Some(base_url),
         subscribe_new_markets,
+        resolve_poll_enabled,
         ..PolymarketDataClientConfig::default()
     };
     let client = PolymarketDataClient::new(
@@ -450,8 +466,6 @@ fn yes_instrument_id() -> InstrumentId {
 #[derive(Clone, Copy)]
 enum UnsupportedGenericSubscription {
     BookDepth10,
-    InstrumentStatus,
-    InstrumentClose,
 }
 
 async fn wait_for_market_payload_count(
@@ -658,14 +672,6 @@ async fn test_subscribe_instrument_does_not_replay_cached_definition() {
     UnsupportedGenericSubscription::BookDepth10,
     "Polymarket does not support OrderBookDepth10 subscriptions; use managed L2_MBP order book deltas"
 )]
-#[case::instrument_status(
-    UnsupportedGenericSubscription::InstrumentStatus,
-    "Polymarket does not support generic instrument status subscriptions; resolution status is owned by position tracking"
-)]
-#[case::instrument_close(
-    UnsupportedGenericSubscription::InstrumentClose,
-    "Polymarket does not support generic instrument close subscriptions; resolution close is owned by position tracking"
-)]
 #[tokio::test]
 async fn test_unsupported_generic_subscription_returns_exact_reason(
     #[case] subscription: UnsupportedGenericSubscription,
@@ -691,32 +697,42 @@ async fn test_unsupported_generic_subscription_returns_exact_reason(
                 None,
             ))
         }
-        UnsupportedGenericSubscription::InstrumentStatus => {
-            client.subscribe_instrument_status(SubscribeInstrumentStatus::new(
-                instrument_id,
-                Some(*POLYMARKET_CLIENT_ID),
-                None,
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-                None,
-            ))
-        }
-        UnsupportedGenericSubscription::InstrumentClose => {
-            client.subscribe_instrument_close(SubscribeInstrumentClose::new(
-                instrument_id,
-                Some(*POLYMARKET_CLIENT_ID),
-                None,
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-                None,
-            ))
-        }
     };
 
     let error = result.expect_err("subscription should be unsupported");
     assert_eq!(error.to_string(), expected);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_instrument_status_and_close_subscriptions_are_accepted_without_position() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx) = create_test_data_client(addr);
+    let instrument_id = yes_instrument_id();
+
+    client
+        .subscribe_instrument_status(SubscribeInstrumentStatus::new(
+            instrument_id,
+            Some(*POLYMARKET_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .expect("instrument status subscription should establish resolution monitoring");
+    client
+        .subscribe_instrument_close(SubscribeInstrumentClose::new(
+            instrument_id,
+            Some(*POLYMARKET_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .expect("instrument close subscription should establish resolution monitoring");
 }
 
 #[rstest]
@@ -1138,6 +1154,67 @@ async fn test_stop_reconnect_recreates_market_message_receiver() {
     client.stop().expect("stop");
     client.connect().await.expect("connect #2");
     client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cached_resolution_subscription_replays_after_disconnect_reconnect() {
+    let state = TestServerState::default();
+    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_request_fixture()]));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx) = create_test_data_client_with_resolution_options(addr, true, false);
+    let instrument_id = yes_instrument_id();
+
+    client.connect().await.expect("connect #1");
+    client
+        .subscribe_instrument_status(SubscribeInstrumentStatus::new(
+            instrument_id,
+            Some(*POLYMARKET_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .expect("subscribe instrument status");
+    client
+        .subscribe_instrument_close(SubscribeInstrumentClose::new(
+            instrument_id,
+            Some(*POLYMARKET_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .expect("subscribe instrument close");
+    wait_for_market_payload_count(&state, 1, false, Duration::from_secs(5)).await;
+
+    client.disconnect().await.expect("disconnect #1");
+    client.connect().await.expect("connect #2");
+    wait_for_market_payload_count(&state, 2, false, Duration::from_secs(5)).await;
+
+    let asset_payloads = state
+        .market_payloads
+        .lock()
+        .await
+        .iter()
+        .filter_map(|payload| {
+            payload
+                .get("assets_ids")
+                .and_then(Value::as_array)
+                .filter(|ids| !ids.is_empty())
+                .cloned()
+        })
+        .collect::<Vec<_>>();
+    let expected_assets = vec![Value::String(TEST_TOKEN_ID_YES.to_string())];
+
+    client.disconnect().await.expect("disconnect #2");
+
+    assert_eq!(
+        asset_payloads,
+        vec![expected_assets.clone(), expected_assets]
+    );
 }
 
 #[rstest]

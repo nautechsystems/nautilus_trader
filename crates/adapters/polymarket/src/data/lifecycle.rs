@@ -15,7 +15,7 @@
 
 use std::time::Duration;
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashSet;
 use dashmap::DashMap;
 use nautilus_common::msgbus::{self, TypedHandler};
 use nautilus_core::{AtomicMap, AtomicSet};
@@ -36,8 +36,8 @@ use crate::{
     data_types::register_polymarket_custom_data,
     resolve::{
         ResolveBatchErrorMode, ResolveWatchSelectionMode, collect_resolve_watch_selection,
-        fetch_and_apply_resolutions_by_condition_ids, pause_resolve_watch_entries,
-        update_resolve_watchlist_from_position_event,
+        fetch_and_apply_resolutions_by_condition_ids, pause_and_reconcile_resolve_watch_entries,
+        update_resolve_watchlist_from_position_event_serialized,
     },
     websocket::messages::PolymarketWsMessage,
 };
@@ -52,8 +52,16 @@ impl PolymarketDataClient {
 
         let watchlist = self.resolve_poll_watchlist.clone();
         let instruments = self.instruments.clone();
+        let owner_lock = self.resolve_watch_apply_mutex.clone();
+        let closed_condition_ids = self.closed_condition_ids.clone();
         let handler = TypedHandler::from(move |event: &PositionEvent| {
-            update_resolve_watchlist_from_position_event(&watchlist, &instruments, event);
+            update_resolve_watchlist_from_position_event_serialized(
+                &owner_lock,
+                &closed_condition_ids,
+                &watchlist,
+                &instruments,
+                event,
+            );
         });
 
         msgbus::subscribe_position_events("events.position.*".into(), handler.clone(), Some(10));
@@ -96,9 +104,16 @@ impl PolymarketDataClient {
             active_quote_subs: self.active_quote_subs.clone(),
             active_delta_subs: self.active_delta_subs.clone(),
             active_trade_subs: self.active_trade_subs.clone(),
+            active_instrument_status_subs: self.active_instrument_status_subs.clone(),
+            active_instrument_close_subs: self.active_instrument_close_subs.clone(),
             closed_condition_ids: self.closed_condition_ids.clone(),
+            ws_open_tokens: self.ws_open_tokens.clone(),
+            ws_sub_mutex: self.ws_sub_mutex.clone(),
+            ws: self.ws_client.handle(),
             resolve_poll_watchlist: self.resolve_poll_watchlist.clone(),
             resolve_watch_apply_mutex: self.resolve_watch_apply_mutex.clone(),
+            pending_resolutions: self.pending_resolutions.clone(),
+            deferred_resolutions: self.deferred_resolutions.clone(),
             pending_snapshot_after_tick_change: self.pending_snapshot_after_tick_change.clone(),
             new_market_inflight_keys: self.new_market_inflight_keys.clone(),
             new_market_fetch_semaphore: self.new_market_fetch_semaphore.clone(),
@@ -146,6 +161,7 @@ impl PolymarketDataClient {
         let clob_public_client = self.clob_public_client.clone();
         let clock = self.clock;
         let resolve_poll_enabled = self.config.resolve_poll_enabled;
+        let subscribe_new_markets = self.config.subscribe_new_markets;
         let interval_secs = self.config.resolve_poll_interval_secs.max(1);
         let grace_secs = self.config.resolve_poll_grace_secs;
         let max_wait_secs = self.config.resolve_poll_max_wait_secs.max(grace_secs);
@@ -156,6 +172,8 @@ impl PolymarketDataClient {
         let active_quote_subs = self.active_quote_subs.clone();
         let active_delta_subs = self.active_delta_subs.clone();
         let active_trade_subs = self.active_trade_subs.clone();
+        let active_instrument_status_subs = self.active_instrument_status_subs.clone();
+        let active_instrument_close_subs = self.active_instrument_close_subs.clone();
         let pending_snapshot_after_tick_change = self.pending_snapshot_after_tick_change.clone();
         let pending_auto_loads = self.pending_auto_loads.clone();
         let ws_open_tokens = self.ws_open_tokens.clone();
@@ -182,9 +200,16 @@ impl PolymarketDataClient {
             active_quote_subs: self.active_quote_subs.clone(),
             active_delta_subs: self.active_delta_subs.clone(),
             active_trade_subs: self.active_trade_subs.clone(),
+            active_instrument_status_subs: self.active_instrument_status_subs.clone(),
+            active_instrument_close_subs: self.active_instrument_close_subs.clone(),
             closed_condition_ids: self.closed_condition_ids.clone(),
+            ws_open_tokens: self.ws_open_tokens.clone(),
+            ws_sub_mutex: self.ws_sub_mutex.clone(),
+            ws: self.ws_client.handle(),
             resolve_poll_watchlist: self.resolve_poll_watchlist.clone(),
             resolve_watch_apply_mutex: self.resolve_watch_apply_mutex.clone(),
+            pending_resolutions: self.pending_resolutions.clone(),
+            deferred_resolutions: self.deferred_resolutions.clone(),
             pending_snapshot_after_tick_change: self.pending_snapshot_after_tick_change.clone(),
             new_market_inflight_keys: self.new_market_inflight_keys.clone(),
             new_market_fetch_semaphore: self.new_market_fetch_semaphore.clone(),
@@ -198,6 +223,8 @@ impl PolymarketDataClient {
         };
 
         let watchlist = self.resolve_poll_watchlist.clone();
+
+        let resolve_ctx = ctx.resolve_context();
 
         if resolve_poll_enabled {
             log::debug!("Polymarket resolve poll task started");
@@ -264,6 +291,8 @@ impl PolymarketDataClient {
                                 &active_quote_subs,
                                 &active_delta_subs,
                                 &active_trade_subs,
+                                &active_instrument_status_subs,
+                                &active_instrument_close_subs,
                                 &watchlist,
                                 &pending_snapshot_after_tick_change,
                                 &pending_auto_loads,
@@ -271,6 +300,7 @@ impl PolymarketDataClient {
                                 &ws_sub_mutex,
                                 &ws,
                                 Some(&cancellation),
+                                subscribe_new_markets,
                             )
                             .await;
 
@@ -293,18 +323,20 @@ impl PolymarketDataClient {
                             &active_quote_subs,
                             &active_delta_subs,
                             &active_trade_subs,
+                            &active_instrument_status_subs,
+                            &active_instrument_close_subs,
+                            &closed_condition_ids,
                             &watchlist,
                             &pending_snapshot_after_tick_change,
                             &pending_auto_loads,
                             &ws_open_tokens,
                             &ws_sub_mutex,
                             &ws,
+                            subscribe_new_markets,
+                            &resolve_ctx.deferred_resolutions,
+                            &resolve_ctx.apply_mutex,
                         )
                         .await;
-
-                        if !resolve_poll_enabled {
-                            continue;
-                        }
 
                         let snapshot = watchlist.load();
                         let watched_conditions = snapshot.len();
@@ -323,7 +355,7 @@ impl PolymarketDataClient {
 
                         if !selection.pause_condition_ids.is_empty() {
                             log::warn!(
-                                "Polymarket resolve poll paused {} timed-out condition(s) for manual recovery",
+                                "Polymarket resolution monitoring paused {} timed-out condition(s) for manual recovery",
                                 selection.pause_condition_ids.len(),
                             );
                         }
@@ -351,14 +383,24 @@ impl PolymarketDataClient {
                             );
                         }
 
-                        pause_resolve_watch_entries(&watchlist, &selection.pause_condition_ids);
+                        tokio::select! {
+                            () = pause_and_reconcile_resolve_watch_entries(
+                                &resolve_ctx, &selection.pause_condition_ids,
+                            ) => {}
+                            () = cancellation.cancelled() => break,
+                        }
+
+                        if !resolve_poll_enabled {
+                            continue;
+                        }
 
                         let _ = fetch_and_apply_resolutions_by_condition_ids(
                             &gamma_client,
                             &clob_public_client,
-                            &ctx.resolve_context(),
+                            &resolve_ctx,
                             &selection.condition_ids,
                             ResolveBatchErrorMode::Continue,
+                            false,
                         )
                         .await;
                     }
@@ -412,14 +454,20 @@ impl PolymarketDataClient {
         // Hard reset contract: discard all retained reconnect replay state from
         // the previous generation. Callers must rebuild instrument/data
         // subscriptions after connect().
-        self.resolve_poll_watchlist.store(AHashMap::new());
         self.clear_position_event_subscription();
 
         let old_instrument_update_state = self.instrument_update_state.clone();
-        let _update_guard = old_instrument_update_state.lock();
+        let mut update_guard = old_instrument_update_state.lock();
+        let owner_lock = self.resolve_watch_apply_mutex.clone();
+        let _owner_guard = owner_lock.lock();
         let old_closed_condition_ids = self.closed_condition_ids.clone();
         let _generation_guard = old_closed_condition_ids.lock();
 
+        // Fence callbacks which resume after cancellation without yielding to the task runner
+        update_guard.retire_generation();
+        self.resolve_poll_watchlist = std::sync::Arc::new(AtomicMap::new());
+        self.pending_resolutions.clear();
+        self.deferred_resolutions.rcu(|entries| entries.clear());
         self.instruments = std::sync::Arc::new(AtomicMap::new());
         self.instrument_update_state =
             std::sync::Arc::new(Mutex::new(InstrumentUpdateState::default()));
@@ -430,8 +478,12 @@ impl PolymarketDataClient {
         self.active_quote_subs = std::sync::Arc::new(AtomicSet::new());
         self.active_delta_subs = std::sync::Arc::new(AtomicSet::new());
         self.active_trade_subs = std::sync::Arc::new(AtomicSet::new());
+        self.active_instrument_status_subs = std::sync::Arc::new(AtomicSet::new());
+        self.active_instrument_close_subs = std::sync::Arc::new(AtomicSet::new());
         self.pending_snapshot_after_tick_change = std::sync::Arc::new(AtomicSet::new());
         self.new_market_inflight_keys = std::sync::Arc::new(DashMap::new());
+        self.pending_resolutions = std::sync::Arc::new(DashMap::new());
+        self.deferred_resolutions = std::sync::Arc::new(AtomicMap::new());
         self.ws_open_tokens = std::sync::Arc::new(AtomicSet::new());
 
         self.pending_auto_loads = std::sync::Arc::new(parking_lot::Mutex::new(AHashSet::new()));
@@ -509,6 +561,7 @@ impl PolymarketDataClient {
         }
 
         setup_guard.disarm();
+        self.resume_resolution_subscriptions();
         self.is_connected
             .store(true, std::sync::atomic::Ordering::Relaxed);
         log::info!("Connected Polymarket data client");
@@ -553,6 +606,8 @@ impl PolymarketDataClient {
             && !self.rtds_feed.has_retained_tasks().await;
 
         if drained {
+            self.ws_open_tokens.rcu(|tokens| tokens.clear());
+
             if self.reset_pending {
                 self.ws_client.clear_reconnect_state();
                 self.rtds_feed = crate::rtds::PolymarketRtdsFeed::new_with_proxy_and_socket_control(
@@ -800,6 +855,8 @@ mod tests {
         client.active_quote_subs.insert(instrument_id);
         client.active_delta_subs.insert(instrument_id);
         client.active_trade_subs.insert(instrument_id);
+        client.active_instrument_status_subs.insert(instrument_id);
+        client.active_instrument_close_subs.insert(instrument_id);
         client
             .ws_open_tokens
             .insert(Ustr::from(inst.raw_symbol().as_str()));
@@ -834,6 +891,8 @@ mod tests {
         client.active_quote_subs.insert(instrument_id);
         client.active_delta_subs.insert(instrument_id);
         client.active_trade_subs.insert(instrument_id);
+        client.active_instrument_status_subs.insert(instrument_id);
+        client.active_instrument_close_subs.insert(instrument_id);
         client.ws_open_tokens.insert(Ustr::from("0xCOND-0xTOKEN"));
         client
             .new_market_inflight_keys
@@ -871,6 +930,8 @@ mod tests {
         assert!(client.active_quote_subs.is_empty());
         assert!(client.active_delta_subs.is_empty());
         assert!(client.active_trade_subs.is_empty());
+        assert!(client.active_instrument_status_subs.is_empty());
+        assert!(client.active_instrument_close_subs.is_empty());
         assert!(client.ws_open_tokens.is_empty());
         assert!(client.order_books.is_empty());
         assert!(client.last_quotes.is_empty());
@@ -1355,6 +1416,12 @@ mod tests {
         assert!(!client.active_quote_subs.contains(&instrument_id));
         assert!(!client.active_delta_subs.contains(&instrument_id));
         assert!(!client.active_trade_subs.contains(&instrument_id));
+        assert!(
+            client
+                .active_instrument_status_subs
+                .contains(&instrument_id)
+        );
+        assert!(client.active_instrument_close_subs.contains(&instrument_id));
         assert!(!client.ws_open_tokens.contains(&token_id));
         assert!(
             !client
@@ -1571,6 +1638,8 @@ mod tests {
                     && client.active_quote_subs.is_empty()
                     && client.active_delta_subs.is_empty()
                     && client.active_trade_subs.is_empty()
+                    && client.active_instrument_status_subs.len() == watched_count
+                    && client.active_instrument_close_subs.len() == watched_count
                     && client.ws_open_tokens.is_empty()
                     && client.pending_snapshot_after_tick_change.is_empty()
                     && client.pending_auto_loads.lock().is_empty()
@@ -1593,6 +1662,8 @@ mod tests {
         assert!(client.active_quote_subs.is_empty());
         assert!(client.active_delta_subs.is_empty());
         assert!(client.active_trade_subs.is_empty());
+        assert_eq!(client.active_instrument_status_subs.len(), watched_count);
+        assert_eq!(client.active_instrument_close_subs.len(), watched_count);
         assert!(client.ws_open_tokens.is_empty());
         assert!(client.pending_snapshot_after_tick_change.is_empty());
         assert!(client.pending_auto_loads.lock().is_empty());
@@ -1624,12 +1695,16 @@ mod tests {
             &client.active_quote_subs,
             &client.active_delta_subs,
             &client.active_trade_subs,
+            &client.active_instrument_status_subs,
+            &client.active_instrument_close_subs,
+            &client.closed_condition_ids,
             &client.resolve_poll_watchlist,
             &client.pending_snapshot_after_tick_change,
             &client.pending_auto_loads,
             &client.ws_open_tokens,
             &client.ws_sub_mutex,
             &client.ws_client.handle(),
+            client.config.subscribe_new_markets,
         )
         .await;
 
@@ -1764,6 +1839,14 @@ mod tests {
             ("active_quote_subs", client.active_quote_subs.len()),
             ("active_delta_subs", client.active_delta_subs.len()),
             ("active_trade_subs", client.active_trade_subs.len()),
+            (
+                "active_instrument_status_subs",
+                client.active_instrument_status_subs.len(),
+            ),
+            (
+                "active_instrument_close_subs",
+                client.active_instrument_close_subs.len(),
+            ),
             ("ws_open_tokens", client.ws_open_tokens.len()),
             (
                 "pending_snapshot_after_tick_change",
@@ -1893,12 +1976,18 @@ mod tests {
                 &client.active_quote_subs,
                 &client.active_delta_subs,
                 &client.active_trade_subs,
+                &client.active_instrument_status_subs,
+                &client.active_instrument_close_subs,
+                &client.closed_condition_ids,
                 &client.resolve_poll_watchlist,
                 &client.pending_snapshot_after_tick_change,
                 &client.pending_auto_loads,
                 &client.ws_open_tokens,
                 &client.ws_sub_mutex,
                 &client.ws_client.handle(),
+                client.config.subscribe_new_markets,
+                &client.deferred_resolutions,
+                &client.resolve_watch_apply_mutex,
             )
             .await;
 

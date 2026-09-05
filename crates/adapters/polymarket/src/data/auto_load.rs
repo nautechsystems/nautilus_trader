@@ -31,22 +31,36 @@ use nautilus_model::{
 use super::{
     PolymarketDataClient,
     instruments::{
-        apply_live_instrument, publish_cached_condition_closed, query_positive_closed_condition_ids,
+        apply_live_instrument, publish_cached_condition_closed, query_positive_closed_markets,
     },
     runtime::{
         is_condition_closed, register_closed_condition_for_live_data, retire_closed_condition_state,
     },
-    subscriptions::{resolve_token_id_from, sync_ws_subscription_with_terminal_async},
+    subscriptions::{
+        resolve_token_id_from, sync_ws_subscription_with_resolution_and_terminal_async,
+    },
 };
 use crate::{
-    common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE, filters::market_closed,
-    http::query::GetGammaMarketsParams, providers::extract_condition_id,
+    common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE,
+    filters::market_closed,
+    http::{
+        gamma::parse_markets_with_transient, models::GammaMarket, query::GetGammaMarketsParams,
+    },
+    providers::extract_condition_id,
+    resolve::{
+        StrictResolvedMarket, admit_data_resolution_instrument, apply_watched_condition_resolution,
+        build_strict_resolved_market, remove_data_resolve_watch_entry,
+        upsert_data_resolve_watch_entry_from_instrument,
+    },
 };
 
 #[derive(Debug)]
 enum AutoLoadOutcome {
     Open(Vec<InstrumentAny>),
-    Closed,
+    Closed {
+        instruments: Vec<InstrumentAny>,
+        resolution: Option<StrictResolvedMarket>,
+    },
     Unknown,
 }
 
@@ -78,10 +92,60 @@ impl Drop for AutoLoadScheduledGuard {
 }
 
 impl PolymarketDataClient {
+    pub(super) fn resume_resolution_subscriptions(&self) {
+        let status_ids = self.active_instrument_status_subs.load();
+        let close_ids = self.active_instrument_close_subs.load();
+        let mut instrument_ids = status_ids.union(&close_ids).copied().collect::<Vec<_>>();
+        instrument_ids.sort_unstable();
+        drop(status_ids);
+        drop(close_ids);
+
+        for instrument_id in instrument_ids {
+            let needs_load = {
+                let _guard = self.resolve_watch_apply_mutex.lock();
+
+                if !self.active_instrument_status_subs.contains(&instrument_id)
+                    && !self.active_instrument_close_subs.contains(&instrument_id)
+                {
+                    continue;
+                }
+
+                if self.deferred_resolutions.contains_key(&instrument_id) {
+                    true
+                } else {
+                    let closed = extract_condition_id(&instrument_id).is_ok_and(|condition_id| {
+                        is_condition_closed(&self.closed_condition_ids, &condition_id)
+                    });
+                    let loaded = self.instruments.load();
+                    if let Some(instrument) = loaded.get(&instrument_id) {
+                        if !closed {
+                            upsert_data_resolve_watch_entry_from_instrument(
+                                &self.resolve_poll_watchlist,
+                                instrument,
+                            );
+                        }
+                        false
+                    } else if closed {
+                        continue;
+                    } else {
+                        true
+                    }
+                }
+            };
+
+            if needs_load {
+                self.queue_pending_load(instrument_id);
+            } else {
+                self.sync_ws_subscription(instrument_id);
+            }
+        }
+    }
+
     pub(super) fn queue_pending_load(&self, instrument_id: InstrumentId) {
         if extract_condition_id(&instrument_id).is_ok_and(|condition_id| {
             is_condition_closed(&self.closed_condition_ids, &condition_id)
-        }) {
+        }) && !self.deferred_resolutions.contains_key(&instrument_id)
+        {
             return;
         }
 
@@ -97,6 +161,8 @@ impl PolymarketDataClient {
         if self.active_quote_subs.contains(&instrument_id)
             || self.active_delta_subs.contains(&instrument_id)
             || self.active_trade_subs.contains(&instrument_id)
+            || self.active_instrument_status_subs.contains(&instrument_id)
+            || self.active_instrument_close_subs.contains(&instrument_id)
         {
             return;
         }
@@ -133,6 +199,7 @@ impl PolymarketDataClient {
         let base_secs = self.config.auto_load_retry_delay_initial_secs;
         let max_secs = self.config.auto_load_retry_delay_max_secs;
         let http = self.provider.http_client().clone();
+        let resolve_ctx = self.resolution_context();
         let filters = self.provider.filters();
         let instruments = self.instruments.clone();
         let instrument_update_state = self.instrument_update_state.clone();
@@ -140,6 +207,8 @@ impl PolymarketDataClient {
         let active_quote_subs = self.active_quote_subs.clone();
         let active_delta_subs = self.active_delta_subs.clone();
         let active_trade_subs = self.active_trade_subs.clone();
+        let active_instrument_status_subs = self.active_instrument_status_subs.clone();
+        let active_instrument_close_subs = self.active_instrument_close_subs.clone();
         let ws_open_tokens = self.ws_open_tokens.clone();
         let ws_sub_mutex = self.ws_sub_mutex.clone();
         let ws_client = self.ws_client.handle();
@@ -148,9 +217,9 @@ impl PolymarketDataClient {
         let order_books = self.order_books.clone();
         let last_quotes = self.last_quotes.clone();
         let resolve_poll_watchlist = self.resolve_poll_watchlist.clone();
+        let resolve_watch_apply_mutex = self.resolve_watch_apply_mutex.clone();
         let pending_snapshot_after_tick_change = self.pending_snapshot_after_tick_change.clone();
         let scheduled_guard = AutoLoadScheduledGuard::new(scheduled);
-
         let future = async move {
             let mut scheduled_guard = scheduled_guard;
 
@@ -189,6 +258,8 @@ impl PolymarketDataClient {
                     active_quote_subs.contains(id)
                         || active_delta_subs.contains(id)
                         || active_trade_subs.contains(id)
+                        || active_instrument_status_subs.contains(id)
+                        || active_instrument_close_subs.contains(id)
                 });
 
                 if batch.is_empty() {
@@ -228,7 +299,7 @@ impl PolymarketDataClient {
                     };
 
                     let normal_result = tokio::select! {
-                        result = http.request_instruments_by_params_with_transient(params) => result,
+                        result = http.request_markets_by_params(params) => result,
                         () = cancellation.cancelled() => return,
                     };
 
@@ -237,28 +308,18 @@ impl PolymarketDataClient {
                     }
 
                     match normal_result {
-                        Ok((insts, trans)) => {
-                            batch_returned_any |= !insts.is_empty() || !trans.is_empty();
-                            let mut open_by_condition: AHashMap<String, Vec<InstrumentAny>> =
-                                AHashMap::new();
-                            let mut explicitly_closed = AHashSet::new();
-
-                            for instrument in insts {
-                                if let Ok(condition_id) = extract_condition_id(&instrument.id()) {
-                                    if market_closed(&instrument) == Some(true) {
-                                        explicitly_closed.insert(condition_id);
-                                    } else {
-                                        open_by_condition
-                                            .entry(condition_id)
-                                            .or_default()
-                                            .push(instrument);
-                                    }
-                                }
-                            }
-                            let classified_condition_ids: AHashSet<String> = open_by_condition
-                                .keys()
-                                .cloned()
-                                .chain(explicitly_closed.iter().cloned())
+                        Ok(mut markets) => {
+                            markets.retain(|market| chunk.contains(&market.condition_id));
+                            batch_returned_any |= !markets.is_empty();
+                            let (insts, trans) = parse_markets_with_transient(
+                                &markets,
+                                resolve_ctx.clock.get_time_ns(),
+                            );
+                            let classified_condition_ids: AHashSet<String> = insts
+                                .iter()
+                                .filter_map(|instrument| {
+                                    extract_condition_id(&instrument.id()).ok()
+                                })
                                 .collect();
                             let probe_condition_ids: Vec<String> = chunk
                                 .iter()
@@ -266,16 +327,7 @@ impl PolymarketDataClient {
                                 .cloned()
                                 .collect();
 
-                            for (condition_id, instruments) in open_by_condition {
-                                if !explicitly_closed.contains(&condition_id) {
-                                    outcomes
-                                        .insert(condition_id, AutoLoadOutcome::Open(instruments));
-                                }
-                            }
-
-                            for condition_id in explicitly_closed {
-                                outcomes.insert(condition_id, AutoLoadOutcome::Closed);
-                            }
+                            record_auto_load_outcomes(&mut outcomes, &markets, insts);
                             transient.extend(trans);
 
                             if probe_condition_ids.is_empty() {
@@ -283,10 +335,7 @@ impl PolymarketDataClient {
                             }
 
                             let closed_result = tokio::select! {
-                                result = query_positive_closed_condition_ids(
-                                    &http,
-                                    &probe_condition_ids,
-                                ) => result,
+                                result = query_positive_closed_markets(&http, &probe_condition_ids) => result,
                                 () = cancellation.cancelled() => return,
                             };
 
@@ -295,11 +344,19 @@ impl PolymarketDataClient {
                             }
 
                             match closed_result {
-                                Ok(closed_ids) => {
-                                    batch_returned_any |= !closed_ids.is_empty();
-                                    for condition_id in closed_ids {
-                                        outcomes.insert(condition_id, AutoLoadOutcome::Closed);
-                                    }
+                                Ok(markets) => {
+                                    batch_returned_any |= !markets.is_empty();
+                                    let (closed_instruments, closed_transient) =
+                                        parse_markets_with_transient(
+                                            &markets,
+                                            resolve_ctx.clock.get_time_ns(),
+                                        );
+                                    transient.extend(closed_transient);
+                                    record_auto_load_outcomes(
+                                        &mut outcomes,
+                                        &markets,
+                                        closed_instruments,
+                                    );
                                 }
                                 Err(e) => {
                                     log::error!(
@@ -332,15 +389,30 @@ impl PolymarketDataClient {
                             }
 
                             for instrument in loaded {
-                                if !filters.iter().all(|f| f.accept(instrument)) {
+                                let instrument_id = instrument.id();
+                                let accepted = filters.iter().all(|f| f.accept(instrument));
+
+                                if cancellation.is_cancelled() {
+                                    return;
+                                }
+
+                                if !accepted {
                                     log::debug!(
                                         "Auto-loaded instrument {} filtered out",
                                         instrument.id()
                                     );
+                                    let _guard = resolve_watch_apply_mutex.lock();
+                                    active_instrument_status_subs.remove(&instrument_id);
+                                    active_instrument_close_subs.remove(&instrument_id);
+                                    resolve_ctx.deferred_resolutions.remove(&instrument_id);
+                                    remove_data_resolve_watch_entry(
+                                        &resolve_poll_watchlist,
+                                        instrument_id,
+                                        false,
+                                    );
                                     continue;
                                 }
 
-                                let instrument_id = instrument.id();
                                 apply_live_instrument(
                                     &closed_condition_ids,
                                     &instrument_update_state,
@@ -357,9 +429,75 @@ impl PolymarketDataClient {
                                         }
                                     },
                                 );
+
+                                admit_data_resolution_instrument(&resolve_ctx, instrument).await;
                             }
                         }
-                        AutoLoadOutcome::Closed => {
+                        AutoLoadOutcome::Closed {
+                            instruments: loaded,
+                            resolution,
+                        } => {
+                            for instrument in loaded {
+                                let instrument_id = instrument.id();
+                                if !active_instrument_status_subs.contains(&instrument_id)
+                                    && !active_instrument_close_subs.contains(&instrument_id)
+                                {
+                                    continue;
+                                }
+
+                                let accepted = filters.iter().all(|f| f.accept(instrument));
+
+                                if cancellation.is_cancelled() {
+                                    return;
+                                }
+
+                                if !accepted {
+                                    log::debug!(
+                                        "Auto-loaded instrument {} filtered out",
+                                        instrument.id()
+                                    );
+                                    let _guard = resolve_watch_apply_mutex.lock();
+                                    active_instrument_status_subs.remove(&instrument_id);
+                                    active_instrument_close_subs.remove(&instrument_id);
+                                    resolve_ctx.deferred_resolutions.remove(&instrument_id);
+                                    remove_data_resolve_watch_entry(
+                                        &resolve_poll_watchlist,
+                                        instrument_id,
+                                        false,
+                                    );
+                                    continue;
+                                }
+
+                                apply_live_instrument(
+                                    &closed_condition_ids,
+                                    &instrument_update_state,
+                                    &instruments,
+                                    &token_meta,
+                                    instrument,
+                                    |instrument| {
+                                        if let Err(e) = data_sender
+                                            .send(DataEvent::Instrument(instrument.clone()))
+                                        {
+                                            log::error!(
+                                                "Failed to emit auto-loaded instrument {instrument_id}: {e}"
+                                            );
+                                        }
+                                    },
+                                );
+
+                                admit_data_resolution_instrument(&resolve_ctx, instrument).await;
+                            }
+
+                            if let Some(resolution) = resolution {
+                                tokio::select! {
+                                    _ = apply_watched_condition_resolution(
+                                        &resolve_ctx,
+                                        resolution,
+                                    ) => {}
+                                    () = cancellation.cancelled() => return,
+                                }
+                            }
+
                             if !register_closed_condition_for_live_data(
                                 &closed_condition_ids,
                                 &ws_sub_mutex,
@@ -375,9 +513,9 @@ impl PolymarketDataClient {
                                 return;
                             }
 
-                            // Registration above made the marker visible, so hold no guard here
                             publish_cached_condition_closed(
                                 condition_id,
+                                &instrument_update_state,
                                 &instruments,
                                 &data_sender,
                             );
@@ -393,6 +531,8 @@ impl PolymarketDataClient {
                                 &active_quote_subs,
                                 &active_delta_subs,
                                 &active_trade_subs,
+                                &active_instrument_status_subs,
+                                &active_instrument_close_subs,
                                 &resolve_poll_watchlist,
                                 &pending_snapshot_after_tick_change,
                                 &pending,
@@ -400,6 +540,7 @@ impl PolymarketDataClient {
                                 &ws_sub_mutex,
                                 &ws_client,
                                 Some(&cancellation),
+                                resolve_ctx.subscribe_new_markets,
                             )
                             .await;
                         }
@@ -433,28 +574,41 @@ impl PolymarketDataClient {
                         Err(_) => continue,
                     };
 
+                    if !active_quote_subs.contains(id)
+                        && !active_delta_subs.contains(id)
+                        && !active_trade_subs.contains(id)
+                        && !active_instrument_status_subs.contains(id)
+                        && !active_instrument_close_subs.contains(id)
+                    {
+                        continue;
+                    }
+
                     match outcomes.get(&condition_id) {
                         Some(AutoLoadOutcome::Open(_)) => {
                             if loaded_ids.contains(id)
                                 && let Ok(token_id) = resolve_token_id_from(&instruments, *id)
                             {
-                                sync_ws_subscription_with_terminal_async(
+                                sync_ws_subscription_with_resolution_and_terminal_async(
                                     *id,
                                     token_id,
                                     active_quote_subs.clone(),
                                     active_delta_subs.clone(),
                                     active_trade_subs.clone(),
+                                    active_instrument_status_subs.clone(),
+                                    active_instrument_close_subs.clone(),
                                     closed_condition_ids.clone(),
                                     ws_open_tokens.clone(),
                                     ws_sub_mutex.clone(),
                                     ws_client.clone(),
+                                    resolve_poll_watchlist.clone(),
+                                    resolve_ctx.subscribe_new_markets,
                                 )
                                 .await;
                             } else {
                                 next_batch.insert(*id);
                             }
                         }
-                        Some(AutoLoadOutcome::Closed) => {
+                        Some(AutoLoadOutcome::Closed { .. }) => {
                             // Terminal for live data; settlement metadata is
                             // retained by `retire_local_instrument_state`.
                         }
@@ -525,6 +679,54 @@ impl PolymarketDataClient {
 
         if let Err(e) = self.tasks.spawn(future) {
             log::debug!("Skipping Polymarket data task after shutdown began: {e}");
+        }
+    }
+}
+
+// Closure and winner evidence do not depend on construction of a tradable instrument
+fn record_auto_load_outcomes(
+    outcomes: &mut AHashMap<String, AutoLoadOutcome>,
+    markets: &[GammaMarket],
+    instruments: Vec<InstrumentAny>,
+) {
+    for market in markets.iter().filter(|market| market.closed == Some(true)) {
+        let incoming = build_strict_resolved_market(market);
+        match outcomes
+            .entry(market.condition_id.clone())
+            .or_insert(AutoLoadOutcome::Unknown)
+        {
+            AutoLoadOutcome::Closed { resolution, .. } => {
+                if resolution.is_none() {
+                    *resolution = incoming;
+                }
+            }
+            outcome => {
+                *outcome = AutoLoadOutcome::Closed {
+                    instruments: Vec::new(),
+                    resolution: incoming,
+                };
+            }
+        }
+    }
+
+    for instrument in instruments {
+        let Ok(condition_id) = extract_condition_id(&instrument.id()) else {
+            continue;
+        };
+
+        match outcomes
+            .entry(condition_id)
+            .or_insert(AutoLoadOutcome::Unknown)
+        {
+            AutoLoadOutcome::Closed { instruments, .. } => {
+                if market_closed(&instrument) == Some(true) {
+                    instruments.push(instrument);
+                }
+            }
+            AutoLoadOutcome::Open(instruments) => instruments.push(instrument),
+            outcome @ AutoLoadOutcome::Unknown => {
+                *outcome = AutoLoadOutcome::Open(vec![instrument]);
+            }
         }
     }
 }

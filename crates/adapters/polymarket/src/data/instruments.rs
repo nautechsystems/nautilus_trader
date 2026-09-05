@@ -34,7 +34,7 @@ use crate::{
     filters::{
         InstrumentFilter, binary_market_closed, is_expired, market_closed, set_market_closed,
     },
-    http::{gamma::PolymarketGammaHttpClient, query::GetGammaMarketsParams},
+    http::{gamma::PolymarketGammaHttpClient, models::GammaMarket, query::GetGammaMarketsParams},
     providers::extract_condition_id,
 };
 
@@ -56,9 +56,14 @@ struct LiveTick {
 #[derive(Debug, Default)]
 pub(super) struct InstrumentUpdateState {
     live_ticks: AHashMap<Ustr, LiveTick>,
+    retired: bool,
 }
 
 impl InstrumentUpdateState {
+    pub(super) fn retire_generation(&mut self) {
+        self.retired = true;
+    }
+
     pub(super) fn is_stale_tick(&self, token_id: &Ustr, ts_event: UnixNanos) -> bool {
         self.live_ticks
             .get(token_id)
@@ -147,6 +152,10 @@ pub(super) fn apply_live_instrument_locked(
     instrument: &InstrumentAny,
     apply: impl FnOnce(&InstrumentAny),
 ) -> bool {
+    if update_state.retired {
+        return false;
+    }
+
     let instrument = match update_state.compose_instrument(instrument) {
         Ok(instrument) => instrument,
         Err(e) => {
@@ -177,9 +186,15 @@ pub(super) fn apply_live_instrument_locked(
 
 pub(super) fn publish_cached_condition_closed(
     condition_id: &str,
+    instrument_update_state: &Arc<Mutex<InstrumentUpdateState>>,
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
 ) -> usize {
+    let update_state = instrument_update_state.lock();
+    if update_state.retired {
+        return 0;
+    }
+
     let mut updated = Vec::new();
 
     instruments.rcu(|map| {
@@ -310,6 +325,18 @@ pub(super) async fn query_positive_closed_condition_ids(
     http: &PolymarketGammaHttpClient,
     condition_ids: &[String],
 ) -> anyhow::Result<Vec<String>> {
+    Ok(query_positive_closed_markets(http, condition_ids)
+        .await?
+        .into_iter()
+        .map(|market| market.condition_id)
+        .collect())
+}
+
+// Retains closure evidence and outcomes independently of instrument parsability
+pub(super) async fn query_positive_closed_markets(
+    http: &PolymarketGammaHttpClient,
+    condition_ids: &[String],
+) -> anyhow::Result<Vec<GammaMarket>> {
     let requested = condition_ids
         .iter()
         .map(String::as_str)
@@ -327,7 +354,6 @@ pub(super) async fn query_positive_closed_condition_ids(
         .filter(|market| {
             market.closed == Some(true) && requested.contains(market.condition_id.as_str())
         })
-        .map(|market| market.condition_id)
         .collect())
 }
 

@@ -15,6 +15,7 @@
 
 use nautilus_core::Params;
 use nautilus_model::identifiers::InstrumentId;
+use rust_decimal::Decimal;
 
 use crate::{
     common::consts::POLYMARKET_VENUE,
@@ -25,6 +26,7 @@ use crate::{
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct StrictResolvedMarket {
     pub(crate) condition_id: String,
+    pub(crate) asset_ids: Vec<String>,
     pub(crate) winning_asset_id: String,
     pub(crate) winning_outcome: String,
 }
@@ -32,7 +34,7 @@ pub(crate) struct StrictResolvedMarket {
 fn parse_json_string_array(raw: &str) -> Option<Vec<String>> {
     serde_json::from_str::<Vec<String>>(raw)
         .ok()
-        .filter(|values| !values.is_empty())
+        .filter(|values| !values.is_empty() && values.iter().all(|value| !value.is_empty()))
 }
 
 fn parse_string_array_param(value: &serde_json::Value) -> Option<Vec<String>> {
@@ -58,24 +60,28 @@ fn parse_string_array_param(value: &serde_json::Value) -> Option<Vec<String>> {
     }
 }
 
-fn parse_outcome_prices(raw: &Option<String>) -> Option<Vec<f64>> {
+fn parse_outcome_prices(raw: &Option<String>) -> Option<Vec<Decimal>> {
     let raw = raw.as_ref()?;
+    let encoded = serde_json::from_str::<Vec<serde_json::Value>>(raw).ok()?;
+    let mut values = Vec::with_capacity(encoded.len());
 
-    if let Ok(values) = serde_json::from_str::<Vec<f64>>(raw)
-        && !values.is_empty()
-    {
-        return Some(values);
+    for value in encoded {
+        let value = match value {
+            serde_json::Value::Number(value) => value.to_string().parse::<Decimal>().ok()?,
+            serde_json::Value::String(value) => value.parse::<Decimal>().ok()?,
+            _ => return None,
+        };
+
+        if !(Decimal::ZERO..=Decimal::ONE).contains(&value) {
+            return None;
+        }
+        values.push(value);
     }
 
-    let as_strings = serde_json::from_str::<Vec<String>>(raw).ok()?;
-    let mut values = Vec::with_capacity(as_strings.len());
-    for value in as_strings {
-        values.push(value.parse::<f64>().ok()?);
-    }
     (!values.is_empty()).then_some(values)
 }
 
-fn strict_winner_index(prices: &[f64]) -> Option<usize> {
+fn strict_winner_index(prices: &[Decimal]) -> Option<usize> {
     if prices.is_empty() {
         return None;
     }
@@ -83,12 +89,12 @@ fn strict_winner_index(prices: &[f64]) -> Option<usize> {
     let mut winner_idx: Option<usize> = None;
 
     for (idx, value) in prices.iter().copied().enumerate() {
-        if value >= 0.999 {
+        if value >= Decimal::new(999, 3) {
             if winner_idx.is_some() {
                 return None;
             }
             winner_idx = Some(idx);
-        } else if value > 0.001 {
+        } else if value > Decimal::new(1, 3) {
             return None;
         }
     }
@@ -102,12 +108,12 @@ pub(crate) fn build_strict_resolved_market(market: &GammaMarket) -> Option<Stric
     }
 
     let asset_ids = parse_json_string_array(&market.clob_token_ids)?;
-    if asset_ids.len() != 2 {
+    if asset_ids.len() != 2 || asset_ids[0] == asset_ids[1] {
         return None;
     }
 
     let outcomes = parse_json_string_array(&market.outcomes)?;
-    if outcomes.len() != 2 {
+    if outcomes.len() != 2 || outcomes[0] == outcomes[1] {
         return None;
     }
 
@@ -121,6 +127,7 @@ pub(crate) fn build_strict_resolved_market(market: &GammaMarket) -> Option<Stric
 
     Some(StrictResolvedMarket {
         condition_id: market.condition_id.clone(),
+        asset_ids,
         winning_asset_id,
         winning_outcome,
     })
@@ -156,6 +163,11 @@ pub(crate) fn build_resolved_market_from_clob_market(
 
     Some(StrictResolvedMarket {
         condition_id: market.condition_id.clone(),
+        asset_ids: market
+            .tokens
+            .iter()
+            .map(|token| token.token_id.clone())
+            .collect(),
         winning_asset_id: winner.token_id.clone(),
         winning_outcome: winner.outcome.clone(),
     })
@@ -366,6 +378,27 @@ mod tests {
             Some(true),
         );
         assert!(build_strict_resolved_market(&not_final).is_none());
+    }
+
+    #[rstest]
+    #[case::empty_asset("[\"\",\"0xNO\"]", "[\"1\",\"0\"]")]
+    #[case::duplicate_asset("[\"0xYES\",\"0xYES\"]", "[\"1\",\"0\"]")]
+    #[case::above_one("[\"0xYES\",\"0xNO\"]", "[\"2\",\"0\"]")]
+    #[case::below_zero("[\"0xYES\",\"0xNO\"]", "[\"1\",\"-0.25\"]")]
+    #[case::not_a_number("[\"0xYES\",\"0xNO\"]", "[\"1\",\"NaN\"]")]
+    fn build_strict_resolved_market_rejects_invalid_assets_and_prices(
+        #[case] asset_ids: &str,
+        #[case] prices: &str,
+    ) {
+        let market = make_gamma_market_with_outcome_prices(
+            "0xCOND",
+            asset_ids,
+            Some(prices),
+            Some(true),
+            Some(false),
+        );
+
+        assert!(build_strict_resolved_market(&market).is_none());
     }
 
     #[rstest]
