@@ -931,6 +931,7 @@ pub(crate) fn parse_lighter_order_event(
                 false,
                 Some(venue_order_id),
                 Some(account_id),
+                order.status.as_cancel_reason().map(Ustr::from),
             );
             Ok(Some(ParsedOrderEvent::Canceled(canceled)))
         }
@@ -3000,12 +3001,13 @@ mod tests {
     }
 
     #[rstest]
-    #[case::canceled(LighterOrderStatus::Canceled)]
-    #[case::reduce_only(LighterOrderStatus::CanceledReduceOnly)]
-    #[case::self_trade(LighterOrderStatus::CanceledSelfTrade)]
-    #[case::liquidation(LighterOrderStatus::CanceledLiquidation)]
+    #[case::canceled(LighterOrderStatus::Canceled, None)]
+    #[case::reduce_only(LighterOrderStatus::CanceledReduceOnly, Some("reduce-only"))]
+    #[case::self_trade(LighterOrderStatus::CanceledSelfTrade, Some("self-trade"))]
+    #[case::liquidation(LighterOrderStatus::CanceledLiquidation, Some("liquidation"))]
     fn parse_lighter_order_event_emits_canceled_for_other_cancel_variants(
         #[case] status: LighterOrderStatus,
+        #[case] expected_reason: Option<&str>,
     ) {
         let instrument = create_test_instrument();
         let order = stub_order(status);
@@ -3028,7 +3030,12 @@ mod tests {
         .expect("cancel variant emits Canceled");
 
         match event {
-            ParsedOrderEvent::Canceled(_) => {}
+            ParsedOrderEvent::Canceled(canceled) => {
+                assert_eq!(
+                    canceled.reason.map(|reason| reason.as_str()),
+                    expected_reason
+                );
+            }
             other => panic!("expected Canceled, was {other:?}"),
         }
     }

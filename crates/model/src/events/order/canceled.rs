@@ -66,6 +66,9 @@ pub struct OrderCanceled {
     pub venue_order_id: Option<VenueOrderId>,
     /// The account ID associated with the event.
     pub account_id: Option<AccountId>,
+    /// The cancellation reason supplied by the venue.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<Ustr>,
     /// The causation ID associated with the event.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub causation_id: Option<UUID4>,
@@ -86,6 +89,7 @@ impl OrderCanceled {
         reconciliation: bool,
         venue_order_id: Option<VenueOrderId>,
         account_id: Option<AccountId>,
+        reason: Option<Ustr>,
     ) -> Self {
         Self {
             trader_id,
@@ -98,6 +102,7 @@ impl OrderCanceled {
             reconciliation,
             venue_order_id,
             account_id,
+            reason,
             causation_id: None,
         }
     }
@@ -130,7 +135,7 @@ impl Display for OrderCanceled {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={}, ts_event={})",
+            "{}(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={}, reason={}, ts_event={})",
             stringify!(OrderCanceled),
             self.instrument_id,
             self.client_order_id,
@@ -140,6 +145,7 @@ impl Display for OrderCanceled {
                 )),
             self.account_id
                 .map_or("None".to_string(), |account_id| format!("{account_id}")),
+            self.reason.map_or("None", |reason| reason.as_str()),
             self.ts_event
         )
     }
@@ -187,7 +193,7 @@ impl OrderEvent for OrderCanceled {
     }
 
     fn reason(&self) -> Option<Ustr> {
-        None
+        self.reason
     }
 
     fn quantity(&self) -> Option<Quantity> {
@@ -329,10 +335,27 @@ mod tests {
     use super::*;
 
     #[rstest]
-    fn test_serialization_roundtrip() {
-        let original = OrderCanceled::default();
+    fn test_serialization_roundtrip_with_reason() {
+        let original = OrderCanceled {
+            reason: Some(Ustr::from("not-enough-liquidity")),
+            ..OrderCanceled::default()
+        };
         let json = serde_json::to_string(&original).unwrap();
         let deserialized: OrderCanceled = serde_json::from_str(&json).unwrap();
         assert_eq!(original, deserialized);
+        assert_eq!(
+            deserialized.reason(),
+            Some(Ustr::from("not-enough-liquidity"))
+        );
+    }
+
+    #[rstest]
+    fn test_deserialization_defaults_missing_reason_to_none() {
+        let payload = serde_json::to_value(OrderCanceled::default()).unwrap();
+        assert!(payload.get("reason").is_none());
+
+        let deserialized: OrderCanceled = serde_json::from_value(payload).unwrap();
+
+        assert_eq!(deserialized.reason(), None);
     }
 }

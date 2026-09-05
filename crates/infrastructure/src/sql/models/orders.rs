@@ -414,6 +414,7 @@ impl<'r> FromRow<'r, PgRow> for OrderCanceledRow {
         let account_id = row
             .try_get::<Option<&str>, _>("account_id")?
             .map(Into::into);
+        let reason = row.try_get::<Option<&str>, _>("reason")?.map(Ustr::from);
         let causation_id = causation_id_from_row(row)?;
         let mut order_event = OrderCanceled::new(
             trader_id,
@@ -426,6 +427,7 @@ impl<'r> FromRow<'r, PgRow> for OrderCanceledRow {
             reconciliation,
             venue_order_id,
             account_id,
+            reason,
         );
         order_event.causation_id = causation_id;
         Ok(Self(order_event))

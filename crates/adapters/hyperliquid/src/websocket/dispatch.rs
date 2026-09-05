@@ -1207,6 +1207,7 @@ fn handle_canceled(
         false,
         Some(venue_order_id),
         Some(report.account_id),
+        None,
     );
     emitter.send_order_event(OrderEventAny::Canceled(canceled));
 

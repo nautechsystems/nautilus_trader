@@ -6250,6 +6250,7 @@ impl OrderMatchingEngine {
             false,
             Some(venue_order_id),
             order.account_id(),
+            None,
         ));
         self.dispatch_order_event(event);
     }

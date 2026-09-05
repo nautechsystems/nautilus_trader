@@ -998,6 +998,7 @@ impl ExecutionClient for AxExecutionClient {
                             false,
                             *venue_order_id,
                             Some(account_id),
+                            None,
                         );
                         emitter.send_order_event(OrderEventAny::Canceled(event));
 
@@ -1713,6 +1714,7 @@ pub(crate) fn create_order_canceled(
         false,
         Some(venue_order_id),
         Some(account_id),
+        None,
     ))
 }
 
