@@ -249,7 +249,8 @@ impl TxBroadcaster {
         // Permit is held throughout retry loop, released when _permit drops
         let result = self
             .retry_manager
-            .execute_with_retry(operation_name, operation, should_retry, create_error)
+            .invocation(operation_name, operation, should_retry, create_error)
+            .execute()
             .await;
 
         if let Err(ref e) = result

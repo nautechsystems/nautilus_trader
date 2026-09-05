@@ -371,7 +371,7 @@ impl FeedHandler {
     async fn send_secret_with_retry(&self, payload: SecretString) -> Result<(), LighterWsError> {
         if let Some(client) = &self.inner {
             self.retry_manager
-                .execute_with_retry(
+                .invocation(
                     "websocket_send",
                     || {
                         let payload = payload.clone();
@@ -388,6 +388,7 @@ impl FeedHandler {
                     should_retry_lighter_ws_error,
                     |e| create_lighter_ws_timeout_error(e.to_string()),
                 )
+                .execute()
                 .await
         } else {
             Err(LighterWsError::Client(

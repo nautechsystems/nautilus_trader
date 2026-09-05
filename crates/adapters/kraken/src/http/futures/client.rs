@@ -391,13 +391,9 @@ impl KrakenFuturesRawHttpClient {
         let cancellation_token = self.cancellation_token();
 
         self.retry_manager
-            .execute_with_retry_with_cancel(
-                &endpoint,
-                operation,
-                should_retry,
-                create_error,
-                &cancellation_token,
-            )
+            .invocation(&endpoint, operation, should_retry, create_error)
+            .cancellation_token(&cancellation_token)
+            .execute()
             .await
     }
 

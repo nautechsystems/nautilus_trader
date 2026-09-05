@@ -576,13 +576,9 @@ impl DeribitRawHttpClient {
 
         let result = self
             .retry_manager
-            .execute_with_retry_with_cancel(
-                &operation_id,
-                operation,
-                should_retry,
-                create_error,
-                &self.cancellation_token,
-            )
+            .invocation(&operation_id, operation, should_retry, create_error)
+            .cancellation_token(&self.cancellation_token)
+            .execute()
             .await;
 
         if let Err(ref e) = result

@@ -387,7 +387,7 @@ impl DeribitWsFeedHandler {
         if let Some(client) = &self.inner {
             let keys_owned: Option<Vec<Ustr>> = rate_limit_keys.map(<[Ustr]>::to_vec);
             self.retry_manager
-                .execute_with_retry(
+                .invocation(
                     "websocket_send",
                     || {
                         let payload = payload.clone();
@@ -402,6 +402,7 @@ impl DeribitWsFeedHandler {
                     |e| matches!(e, DeribitWsError::Send(_)),
                     |e| DeribitWsError::Timeout(e.to_string()),
                 )
+                .execute()
                 .await
         } else {
             Err(DeribitWsError::NotConnected)

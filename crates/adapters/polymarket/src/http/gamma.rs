@@ -634,7 +634,7 @@ impl PolymarketGammaHttpClient {
         let ts_init = self.clock.get_time_ns();
 
         self.retry_manager
-            .execute_with_retry(
+            .invocation(
                 "gamma_fetch_by_slugs",
                 || {
                     let inner = Arc::clone(&inner);
@@ -678,6 +678,7 @@ impl PolymarketGammaHttpClient {
                 |e| e.is_retryable(),
                 |e| Error::transport(e.to_string()),
             )
+            .execute()
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))
     }

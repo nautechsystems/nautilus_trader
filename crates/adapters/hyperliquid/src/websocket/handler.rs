@@ -294,7 +294,7 @@ impl FeedHandler {
     async fn send_with_retry(&self, payload: String) -> anyhow::Result<()> {
         if let Some(client) = &self.client {
             self.retry_manager
-                .execute_with_retry(
+                .invocation(
                     "websocket_send",
                     || {
                         let payload = payload.clone();
@@ -307,6 +307,7 @@ impl FeedHandler {
                     should_retry_hyperliquid_error,
                     |e| create_hyperliquid_timeout_error(e.to_string()),
                 )
+                .execute()
                 .await
                 .map_err(|e| anyhow::anyhow!("{e}"))
         } else {

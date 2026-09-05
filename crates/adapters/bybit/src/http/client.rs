@@ -609,13 +609,14 @@ impl BybitRawHttpClient {
         let token = self.cancellation_token();
 
         self.retry_manager
-            .execute_with_retry_with_cancel(
+            .invocation(
                 endpoint.as_str(),
                 operation,
                 should_retry_http,
                 create_error,
-                &token,
             )
+            .cancellation_token(&token)
+            .execute()
             .await
     }
 

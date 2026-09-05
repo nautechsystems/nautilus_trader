@@ -1147,14 +1147,10 @@ impl OKXRawHttpClient {
 
         let result = self
             .retry_manager
-            .execute_with_retry_with_delay_and_cancel(
-                path,
-                operation,
-                should_retry,
-                OKXHttpError::retry_after,
-                create_error,
-                &self.cancellation_token,
-            )
+            .invocation(path, operation, should_retry, create_error)
+            .retry_delay(&OKXHttpError::retry_after)
+            .cancellation_token(&self.cancellation_token)
+            .execute()
             .await;
 
         if let Err(ref e) = result

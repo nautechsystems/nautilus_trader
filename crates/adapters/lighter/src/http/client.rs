@@ -493,7 +493,7 @@ impl LighterRawHttpClient {
         let url = self.url(endpoint);
         let rate_limit_keys = Self::rate_limit_keys(endpoint);
         self.retry_manager
-            .execute_with_retry(
+            .invocation(
                 endpoint,
                 || {
                     let url = url.clone();
@@ -519,6 +519,7 @@ impl LighterRawHttpClient {
                 should_retry_lighter_http_error,
                 |e| create_lighter_http_timeout_error(e.to_string()),
             )
+            .execute()
             .await
     }
 

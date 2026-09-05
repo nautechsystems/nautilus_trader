@@ -157,7 +157,7 @@ impl BybitWsFeedHandler {
     async fn send_secret_with_retry(&self, payload: SecretString) -> Result<(), BybitWsError> {
         if let Some(client) = &self.inner {
             self.retry_manager
-                .execute_with_retry(
+                .invocation(
                     "websocket_send",
                     || {
                         let payload = payload.clone();
@@ -171,6 +171,7 @@ impl BybitWsFeedHandler {
                     should_retry_bybit_error,
                     |e| create_bybit_timeout_error(e.to_string()),
                 )
+                .execute()
                 .await
         } else {
             Err(BybitWsError::ClientError(

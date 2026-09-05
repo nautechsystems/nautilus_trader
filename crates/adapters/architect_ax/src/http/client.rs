@@ -407,13 +407,9 @@ impl AxRawHttpClient {
         let cancel_token = self.cancellation_token.read().clone();
 
         self.retry_manager
-            .execute_with_retry_with_cancel(
-                endpoint.as_str(),
-                operation,
-                should_retry,
-                create_error,
-                &cancel_token,
-            )
+            .invocation(endpoint.as_str(), operation, should_retry, create_error)
+            .cancellation_token(&cancel_token)
+            .execute()
             .await
     }
 

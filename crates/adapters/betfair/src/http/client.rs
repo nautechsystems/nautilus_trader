@@ -599,13 +599,9 @@ impl BetfairHttpClient {
             &self.retry_manager
         };
         let result = retry_manager
-            .execute_with_retry_with_cancel(
-                &operation_id,
-                operation,
-                should_retry,
-                create_error,
-                &token,
-            )
+            .invocation(&operation_id, operation, should_retry, create_error)
+            .cancellation_token(&token)
+            .execute()
             .await;
 
         let result = match result {
@@ -998,7 +994,7 @@ mod tests {
 
         let result = client
             .order_retry_manager
-            .execute_with_retry(
+            .invocation(
                 "placeOrders",
                 move || {
                     let attempt_times = Arc::clone(&attempt_times_for_operation);
@@ -1013,6 +1009,7 @@ mod tests {
                 BetfairHttpError::is_order_retryable,
                 |e| BetfairHttpError::NetworkError(e.to_string()),
             )
+            .execute()
             .await;
 
         assert!(matches!(result, Err(BetfairHttpError::NetworkError(_))));

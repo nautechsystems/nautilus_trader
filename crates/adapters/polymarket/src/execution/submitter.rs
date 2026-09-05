@@ -226,7 +226,7 @@ impl OrderSubmitter {
 
         let response = match self
             .retry_manager
-            .execute_with_retry_with_delay(
+            .invocation(
                 "submit_market_order",
                 || {
                     let http_client = http_client.clone();
@@ -243,9 +243,10 @@ impl OrderSubmitter {
                     }
                 },
                 |e| e.is_retryable(),
-                Error::retry_after,
                 |e| submit_retry_error(e, &saw_unknown_outcome),
             )
+            .retry_delay(&Error::retry_after)
+            .execute()
             .await
         {
             Ok(response) => {
@@ -300,7 +301,7 @@ impl OrderSubmitter {
         let order_id = venue_order_id.to_string();
 
         self.retry_manager
-            .execute_with_retry_with_delay(
+            .invocation(
                 "cancel_order",
                 || {
                     let http_client = http_client.clone();
@@ -308,9 +309,10 @@ impl OrderSubmitter {
                     async move { http_client.cancel_order(&order_id).await }
                 },
                 |e| e.is_retryable(),
-                Error::retry_after,
                 |e| Error::transport(e.to_string()),
             )
+            .retry_delay(&Error::retry_after)
+            .execute()
             .await
     }
 
@@ -320,7 +322,7 @@ impl OrderSubmitter {
         let asset_id = asset_id.to_string();
 
         self.retry_manager
-            .execute_with_retry_with_delay(
+            .invocation(
                 "cancel_market_orders",
                 || {
                     let http_client = http_client.clone();
@@ -335,9 +337,10 @@ impl OrderSubmitter {
                     }
                 },
                 |e| e.is_retryable(),
-                Error::retry_after,
                 |e| Error::transport(e.to_string()),
             )
+            .retry_delay(&Error::retry_after)
+            .execute()
             .await
     }
 
@@ -376,7 +379,7 @@ impl OrderSubmitter {
         let order_ids = order_ids.to_vec();
 
         self.retry_manager
-            .execute_with_retry_with_delay(
+            .invocation(
                 "cancel_orders",
                 || {
                     let http_client = http_client.clone();
@@ -387,9 +390,10 @@ impl OrderSubmitter {
                     }
                 },
                 |e| e.is_retryable(),
-                Error::retry_after,
                 |e| Error::transport(e.to_string()),
             )
+            .retry_delay(&Error::retry_after)
+            .execute()
             .await
     }
 
@@ -404,7 +408,7 @@ impl OrderSubmitter {
         let oid = order_id.to_string();
 
         self.retry_manager
-            .execute_with_retry_with_delay(
+            .invocation(
                 "get_order",
                 || {
                     let http_client = http_client.clone();
@@ -412,9 +416,10 @@ impl OrderSubmitter {
                     async move { http_client.get_order_optional(&oid).await }
                 },
                 |e| e.is_retryable(),
-                Error::retry_after,
                 |e| Error::transport(e.to_string()),
             )
+            .retry_delay(&Error::retry_after)
+            .execute()
             .await
             .map_err(|e| anyhow::anyhow!("Failed to fetch order status: {e}"))
     }
@@ -502,7 +507,7 @@ impl OrderSubmitter {
 
         let result = self
             .retry_manager
-            .execute_with_retry_with_delay(
+            .invocation(
                 "submit_limit_order",
                 || {
                     let http_client = http_client.clone();
@@ -525,9 +530,10 @@ impl OrderSubmitter {
                     }
                 },
                 |e| e.is_retryable(),
-                Error::retry_after,
                 |e| submit_retry_error(e, &saw_unknown_outcome),
             )
+            .retry_delay(&Error::retry_after)
+            .execute()
             .await;
 
         match result {

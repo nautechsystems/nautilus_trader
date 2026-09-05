@@ -438,13 +438,14 @@ impl WebSocketClientInner {
             retryable
         };
         let transport = retry_manager
-            .execute_with_retry_with_cancel(
+            .invocation(
                 INITIAL_CONNECT_OPERATION,
                 operation,
                 classify,
                 initial_connect_retry_error,
-                &cancellation_token,
             )
+            .cancellation_token(&cancellation_token)
+            .execute()
             .await?;
         let attempt = attempt.load(Ordering::Relaxed);
         if attempt > 1 {

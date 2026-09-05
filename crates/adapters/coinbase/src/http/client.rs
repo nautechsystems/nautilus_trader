@@ -366,13 +366,11 @@ impl CoinbaseRawHttpClient {
         let should_retry = move |err: &Error| is_idempotent && err.is_retryable();
 
         self.retry_manager
-            .execute_with_retry_with_cancel(
-                &operation_name,
-                operation,
-                should_retry,
-                |e| Error::transport(e.to_string()),
-                &self.cancellation_token,
-            )
+            .invocation(&operation_name, operation, should_retry, |e| {
+                Error::transport(e.to_string())
+            })
+            .cancellation_token(&self.cancellation_token)
+            .execute()
             .await
     }
 

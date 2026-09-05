@@ -337,13 +337,9 @@ impl DydxRawHttpClient {
 
         let response = self
             .retry_manager
-            .execute_with_retry_with_cancel(
-                endpoint,
-                operation,
-                should_retry,
-                create_retry_error,
-                &self.cancellation_token,
-            )
+            .invocation(endpoint, operation, should_retry, create_retry_error)
+            .cancellation_token(&self.cancellation_token)
+            .execute()
             .await?;
 
         serde_json::from_slice(&response.body).map_err(|e| DydxHttpError::Deserialization {
@@ -415,13 +411,9 @@ impl DydxRawHttpClient {
 
         let response = self
             .retry_manager
-            .execute_with_retry_with_cancel(
-                endpoint,
-                operation,
-                should_retry,
-                create_retry_error,
-                &self.cancellation_token,
-            )
+            .invocation(endpoint, operation, should_retry, create_retry_error)
+            .cancellation_token(&self.cancellation_token)
+            .execute()
             .await?;
 
         serde_json::from_slice(&response.body).map_err(|e| DydxHttpError::Deserialization {

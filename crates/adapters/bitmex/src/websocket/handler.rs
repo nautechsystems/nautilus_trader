@@ -98,7 +98,7 @@ impl BitmexWsFeedHandler {
     async fn send_secret_with_retry(&self, payload: SecretString) -> anyhow::Result<()> {
         if let Some(client) = &self.inner {
             self.retry_manager
-                .execute_with_retry(
+                .invocation(
                     "websocket_send",
                     || {
                         let payload = payload.clone();
@@ -114,6 +114,7 @@ impl BitmexWsFeedHandler {
                     should_retry_bitmex_error,
                     |e| create_bitmex_timeout_error(e.to_string()),
                 )
+                .execute()
                 .await
                 .map_err(|e| anyhow::anyhow!("{e}"))
         } else {

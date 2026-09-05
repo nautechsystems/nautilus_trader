@@ -179,7 +179,7 @@ impl OKXWsFeedHandler {
         if let Some(client) = &self.inner {
             let keys_owned: Option<Vec<Ustr>> = rate_limit_keys.map(<[Ustr]>::to_vec);
             self.retry_manager
-                .execute_with_retry(
+                .invocation(
                     "websocket_send",
                     || {
                         let payload = payload.clone();
@@ -194,6 +194,7 @@ impl OKXWsFeedHandler {
                     should_retry_replay_safe_error,
                     create_okx_retry_error,
                 )
+                .execute()
                 .await
         } else {
             Err(OKXWsError::NoActiveClient)

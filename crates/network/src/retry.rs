@@ -128,6 +128,7 @@ pub struct RetryManager<E> {
     _phantom: PhantomData<E>,
 }
 
+#[bon::bon]
 impl<E> RetryManager<E>
 where
     E: std::error::Error,
@@ -151,9 +152,14 @@ where
         }
     }
 
-    /// Executes an operation with retry logic and optional cancellation.
+    /// Returns a builder for a retry-managed invocation.
     ///
-    /// Cancellation is checked at three points:
+    /// Set `retry_delay` to derive a minimum delay from an operation error. The retry loop uses the
+    /// greater of this minimum and the configured exponential backoff. Retry delays do not consume
+    /// the per-operation timeout. If the effective delay cannot fit within the remaining elapsed
+    /// budget, the original operation error is returned.
+    ///
+    /// Set `cancellation_token` to cancel the operation. Cancellation is checked at three points:
     ///
     /// - Before each operation attempt.
     /// - During operation execution through `tokio::select!`.
@@ -165,39 +171,50 @@ where
     ///
     /// # Errors
     ///
-    /// Returns an error if the operation fails after exhausting all retries,
-    /// if the operation times out, if creating the backoff state fails, or if canceled.
-    pub async fn execute_with_retry_inner<F, Fut, T>(
+    /// Returns an error if:
+    ///
+    /// - The operation returns a non-retryable error or exhausts the configured retries.
+    /// - An operation timeout terminates retry execution.
+    /// - The total elapsed-time budget expires.
+    /// - The backoff state cannot be created from the configuration.
+    /// - Cancellation is requested.
+    #[expect(
+        clippy::type_complexity,
+        reason = "bon needs one concrete optional callback type for omitted retry delays"
+    )]
+    #[builder(finish_fn = execute)]
+    pub async fn invocation<F, Fut, T>(
         &self,
-        operation_name: &str,
-        operation: F,
-        should_retry: impl Fn(&E) -> bool,
-        create_error: impl Fn(RetryError) -> E,
-        cancel: Option<&CancellationToken>,
+        #[builder(start_fn)] operation_name: &str,
+        #[builder(start_fn)] operation: F,
+        #[builder(start_fn)] should_retry: impl Fn(&E) -> bool,
+        #[builder(start_fn)] create_error: impl Fn(RetryError) -> E,
+        retry_delay: Option<&(dyn Fn(&E) -> Option<Duration> + Sync)>,
+        cancellation_token: Option<&CancellationToken>,
     ) -> Result<T, E>
     where
         F: FnMut() -> Fut,
         Fut: Future<Output = Result<T, E>>,
     {
-        self.execute_with_retry_inner_delay(
+        self.execute_retry_loop(
             operation_name,
             operation,
             should_retry,
-            |_| None,
+            |e| retry_delay.and_then(|retry_delay| retry_delay(e)),
             create_error,
-            cancel,
+            cancellation_token,
         )
         .await
     }
 
-    async fn execute_with_retry_inner_delay<F, Fut, T>(
+    async fn execute_retry_loop<F, Fut, T>(
         &self,
         operation_name: &str,
         mut operation: F,
         should_retry: impl Fn(&E) -> bool,
         retry_delay: impl Fn(&E) -> Option<Duration>,
         create_error: impl Fn(RetryError) -> E,
-        cancel: Option<&CancellationToken>,
+        cancellation_token: Option<&CancellationToken>,
     ) -> Result<T, E>
     where
         F: FnMut() -> Fut,
@@ -223,7 +240,7 @@ where
         let mut last_delayed_error = None;
 
         loop {
-            if let Some(token) = cancel
+            if let Some(token) = cancellation_token
                 && token.is_cancelled()
             {
                 log::debug!("Operation '{operation_name}' canceled after {attempt} attempts");
@@ -242,7 +259,7 @@ where
             last_delayed_error = None;
 
             let attempt_future = async {
-                let result = match (self.config.operation_timeout_ms, cancel) {
+                let result = match (self.config.operation_timeout_ms, cancellation_token) {
                     (Some(timeout_ms), Some(token)) => {
                         tokio::select! {
                             biased;
@@ -272,7 +289,7 @@ where
                 tokio::select! {
                     biased;
                     () = dst::time::sleep_until(deadline) => {
-                        if cancel.is_some_and(CancellationToken::is_cancelled) {
+                        if cancellation_token.is_some_and(CancellationToken::is_cancelled) {
                             log::debug!("Operation '{operation_name}' canceled during execution");
                             return Err(create_error(RetryError::Canceled));
                         }
@@ -386,7 +403,7 @@ where
                 continue;
             }
 
-            if let Some(token) = cancel {
+            if let Some(token) = cancellation_token {
                 tokio::select! {
                     biased;
                     () = dst::time::sleep(delay) => {},
@@ -405,117 +422,6 @@ where
 
             attempt += 1;
         }
-    }
-
-    /// Executes an operation with retry logic.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the operation fails after exhausting all retries,
-    /// if the operation times out, or if creating the backoff state fails.
-    pub async fn execute_with_retry<F, Fut, T>(
-        &self,
-        operation_name: &str,
-        operation: F,
-        should_retry: impl Fn(&E) -> bool,
-        create_error: impl Fn(RetryError) -> E,
-    ) -> Result<T, E>
-    where
-        F: FnMut() -> Fut,
-        Fut: Future<Output = Result<T, E>>,
-    {
-        self.execute_with_retry_inner(operation_name, operation, should_retry, create_error, None)
-            .await
-    }
-
-    /// Executes an operation with retry logic and an error-provided minimum retry delay.
-    ///
-    /// The delay runs between attempts and does not consume the per-operation timeout. If the
-    /// required delay cannot fit within the remaining retry budget, the original error is returned.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the operation fails after exhausting all retries,
-    /// if the operation times out, or if creating the backoff state fails.
-    pub async fn execute_with_retry_with_delay<F, Fut, T>(
-        &self,
-        operation_name: &str,
-        operation: F,
-        should_retry: impl Fn(&E) -> bool,
-        retry_delay: impl Fn(&E) -> Option<Duration>,
-        create_error: impl Fn(RetryError) -> E,
-    ) -> Result<T, E>
-    where
-        F: FnMut() -> Fut,
-        Fut: Future<Output = Result<T, E>>,
-    {
-        self.execute_with_retry_inner_delay(
-            operation_name,
-            operation,
-            should_retry,
-            retry_delay,
-            create_error,
-            None,
-        )
-        .await
-    }
-
-    /// Executes an operation with an error-provided minimum retry delay and cancellation support.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the operation fails after exhausting all retries,
-    /// if the operation times out, if creating the backoff state fails, or if canceled.
-    pub async fn execute_with_retry_with_delay_and_cancel<F, Fut, T>(
-        &self,
-        operation_name: &str,
-        operation: F,
-        should_retry: impl Fn(&E) -> bool,
-        retry_delay: impl Fn(&E) -> Option<Duration>,
-        create_error: impl Fn(RetryError) -> E,
-        cancellation_token: &CancellationToken,
-    ) -> Result<T, E>
-    where
-        F: FnMut() -> Fut,
-        Fut: Future<Output = Result<T, E>>,
-    {
-        self.execute_with_retry_inner_delay(
-            operation_name,
-            operation,
-            should_retry,
-            retry_delay,
-            create_error,
-            Some(cancellation_token),
-        )
-        .await
-    }
-
-    /// Executes an operation with retry logic and cancellation support.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the operation fails after exhausting all retries,
-    /// if the operation times out, if creating the backoff state fails, or if canceled.
-    pub async fn execute_with_retry_with_cancel<F, Fut, T>(
-        &self,
-        operation_name: &str,
-        operation: F,
-        should_retry: impl Fn(&E) -> bool,
-        create_error: impl Fn(RetryError) -> E,
-        cancellation_token: &CancellationToken,
-    ) -> Result<T, E>
-    where
-        F: FnMut() -> Fut,
-        Fut: Future<Output = Result<T, E>>,
-    {
-        self.execute_with_retry_inner(
-            operation_name,
-            operation,
-            should_retry,
-            create_error,
-            Some(cancellation_token),
-        )
-        .await
     }
 }
 
@@ -714,12 +620,13 @@ mod tests {
         });
 
         let error = manager
-            .execute_with_retry(
+            .invocation(
                 "test_invalid_configuration",
                 || async { Ok::<i32, TestError>(42) },
                 should_retry_test_error,
                 create_test_error,
             )
+            .execute()
             .await
             .unwrap_err();
 
@@ -740,12 +647,13 @@ mod tests {
         let manager = RetryManager::new(RetryConfig::default());
 
         let result = manager
-            .execute_with_retry(
+            .invocation(
                 "test_operation",
                 || async { Ok::<i32, TestError>(42) },
                 should_retry_test_error,
                 create_test_error,
             )
+            .execute()
             .await;
 
         assert_eq!(result.unwrap(), 42);
@@ -757,12 +665,13 @@ mod tests {
         let manager = RetryManager::new(RetryConfig::default());
 
         let result = manager
-            .execute_with_retry(
+            .invocation(
                 "test_operation",
                 || async { Err::<i32, TestError>(TestError::NonRetryable("test".to_string())) },
                 should_retry_test_error,
                 create_test_error,
             )
+            .execute()
             .await;
 
         assert!(result.is_err());
@@ -785,12 +694,13 @@ mod tests {
         let manager = RetryManager::new(config);
 
         let result = manager
-            .execute_with_retry(
+            .invocation(
                 "test_operation",
                 || async { Err::<i32, TestError>(TestError::Retryable("test".to_string())) },
                 should_retry_test_error,
                 create_test_error,
             )
+            .execute()
             .await;
 
         assert!(result.is_err());
@@ -820,7 +730,7 @@ mod tests {
         let start = time::Instant::now();
 
         let result = manager
-            .execute_with_retry_with_delay(
+            .invocation(
                 "test_error_delay",
                 move || {
                     let attempts = attempts_clone.clone();
@@ -833,9 +743,10 @@ mod tests {
                     }
                 },
                 should_retry_test_error,
-                |_| Some(Duration::from_millis(200)),
                 create_test_error,
             )
+            .retry_delay(&|_| Some(Duration::from_millis(200)))
+            .execute()
             .await;
 
         assert_eq!(result.unwrap(), 42);
@@ -878,7 +789,7 @@ mod tests {
         });
 
         let error = manager
-            .execute_with_retry_with_delay_and_cancel(
+            .invocation(
                 "test_error_delay_cancellation",
                 move || {
                     let attempts = attempts_clone.clone();
@@ -888,10 +799,11 @@ mod tests {
                     }
                 },
                 should_retry_test_error,
-                |_| Some(Duration::from_millis(200)),
                 create_test_error,
-                &token,
             )
+            .retry_delay(&|_| Some(Duration::from_millis(200)))
+            .cancellation_token(&token)
+            .execute()
             .await
             .unwrap_err();
 
@@ -921,7 +833,7 @@ mod tests {
         let attempts_clone = attempts.clone();
 
         let error = manager
-            .execute_with_retry_with_delay(
+            .invocation(
                 "test_error_delay_budget",
                 move || {
                     let attempts = attempts_clone.clone();
@@ -931,9 +843,10 @@ mod tests {
                     }
                 },
                 should_retry_test_error,
-                |_| Some(Duration::from_millis(200)),
                 create_test_error,
             )
+            .retry_delay(&|_| Some(Duration::from_millis(200)))
+            .execute()
             .await
             .unwrap_err();
 
@@ -968,7 +881,7 @@ mod tests {
 
         let handle = spawn(async move {
             manager
-                .execute_with_retry_with_delay(
+                .invocation(
                     "test_error_delay_overshoot",
                     move || {
                         let attempts = attempts_clone.clone();
@@ -978,9 +891,10 @@ mod tests {
                         }
                     },
                     should_retry_test_error,
-                    |_| Some(Duration::from_millis(50)),
                     create_test_error,
                 )
+                .retry_delay(&|_| Some(Duration::from_millis(50)))
+                .execute()
                 .await
         });
 
@@ -1011,7 +925,7 @@ mod tests {
         let manager = RetryManager::new(config);
 
         let result = manager
-            .execute_with_retry(
+            .invocation(
                 "test_timeout",
                 || async {
                     time::sleep(Duration::from_millis(100)).await;
@@ -1020,6 +934,7 @@ mod tests {
                 should_retry_test_error,
                 create_test_error,
             )
+            .execute()
             .await;
 
         let TestError::Timeout(reason) = result.unwrap_err() else {
@@ -1045,12 +960,13 @@ mod tests {
 
         let start = time::Instant::now();
         let result = manager
-            .execute_with_retry(
+            .invocation(
                 "test_budget",
                 || async { Err::<i32, TestError>(TestError::Retryable("test".to_string())) },
                 should_retry_test_error,
                 create_test_error,
             )
+            .execute()
             .await;
 
         let elapsed = start.elapsed();
@@ -1087,7 +1003,7 @@ mod tests {
         let start = time::Instant::now();
 
         let error = manager
-            .execute_with_retry(
+            .invocation(
                 "test_in_flight_budget",
                 move || {
                     let attempts = Arc::clone(&attempts_clone);
@@ -1102,6 +1018,7 @@ mod tests {
                 should_retry_test_error,
                 create_test_error,
             )
+            .execute()
             .await
             .unwrap_err();
 
@@ -1148,7 +1065,7 @@ mod tests {
         let attempts_clone = Arc::clone(&attempts);
 
         let error = manager
-            .execute_with_retry(
+            .invocation(
                 "test_later_in_flight_budget",
                 move || {
                     let attempt = attempts_clone.fetch_add(1, Ordering::SeqCst);
@@ -1163,6 +1080,7 @@ mod tests {
                 should_retry_test_error,
                 create_test_error,
             )
+            .execute()
             .await
             .unwrap_err();
 
@@ -1198,13 +1116,17 @@ mod tests {
         };
         let manager = RetryManager::new(config);
         let token = CancellationToken::new();
-        let mut operation = Box::pin(manager.execute_with_retry_with_cancel(
-            "test_cancellation_at_deadline",
-            std::future::pending::<Result<i32, TestError>>,
-            should_retry_test_error,
-            create_test_error,
-            &token,
-        ));
+        let mut operation = Box::pin(
+            manager
+                .invocation(
+                    "test_cancellation_at_deadline",
+                    std::future::pending::<Result<i32, TestError>>,
+                    should_retry_test_error,
+                    create_test_error,
+                )
+                .cancellation_token(&token)
+                .execute(),
+        );
 
         assert!(futures_util::poll!(&mut operation).is_pending());
         advance_clock(Duration::from_millis(100)).await;
@@ -1233,12 +1155,13 @@ mod tests {
         let manager = RetryManager::new(config);
 
         let result = manager
-            .execute_with_retry(
+            .invocation(
                 "test_budget_msg",
                 || async { Err::<i32, TestError>(TestError::Retryable("test".to_string())) },
                 should_retry_test_error,
                 create_test_error,
             )
+            .execute()
             .await;
 
         assert!(result.is_err());
@@ -1285,7 +1208,7 @@ mod tests {
 
         let handle = spawn(async move {
             manager
-                .execute_with_retry(
+                .invocation(
                     "test_first_attempt",
                     move || {
                         let count = count_clone.clone();
@@ -1297,6 +1220,7 @@ mod tests {
                     should_retry_test_error,
                     create_test_error,
                 )
+                .execute()
                 .await
         });
 
@@ -1334,12 +1258,13 @@ mod tests {
         let manager = RetryManager::new(config);
 
         let result = manager
-            .execute_with_retry(
+            .invocation(
                 "test_overflow",
                 || async { Err::<i32, TestError>(TestError::Retryable("test".to_string())) },
                 should_retry_test_error,
                 create_test_error,
             )
+            .execute()
             .await;
 
         assert!(result.is_err());
@@ -1385,7 +1310,7 @@ mod tests {
         let should_not_retry_timeouts = |error: &TestError| !matches!(error, TestError::Timeout(_));
 
         let result = manager
-            .execute_with_retry(
+            .invocation(
                 "test_timeout_non_retryable",
                 || async {
                     time::sleep(Duration::from_millis(100)).await;
@@ -1394,6 +1319,7 @@ mod tests {
                 should_not_retry_timeouts,
                 create_test_error,
             )
+            .execute()
             .await;
 
         // Should fail immediately without retries since timeout is non-retryable
@@ -1421,7 +1347,7 @@ mod tests {
 
         let start = time::Instant::now();
         let result = manager
-            .execute_with_retry(
+            .invocation(
                 "test_timeout_retryable",
                 || async {
                     time::sleep(Duration::from_millis(100)).await;
@@ -1430,6 +1356,7 @@ mod tests {
                 should_retry_timeouts,
                 create_test_error,
             )
+            .execute()
             .await;
 
         let elapsed = start.elapsed();
@@ -1460,7 +1387,7 @@ mod tests {
         let counter_clone = attempt_counter.clone();
 
         let result = manager
-            .execute_with_retry(
+            .invocation(
                 "test_eventual_success",
                 move || {
                     let counter = counter_clone.clone();
@@ -1476,6 +1403,7 @@ mod tests {
                 should_retry_test_error,
                 create_test_error,
             )
+            .execute()
             .await;
 
         assert_eq!(result.unwrap(), 42);
@@ -1508,7 +1436,7 @@ mod tests {
             let times_clone = times_clone.clone();
             async move {
                 let _ = manager
-                    .execute_with_retry(
+                    .invocation(
                         "test_immediate",
                         move || {
                             let times = times_clone.clone();
@@ -1520,6 +1448,7 @@ mod tests {
                         should_retry_test_error,
                         create_test_error,
                     )
+                    .execute()
                     .await;
             }
         });
@@ -1563,7 +1492,7 @@ mod tests {
 
         let start = time::Instant::now();
         let result = manager
-            .execute_with_retry(
+            .invocation(
                 "test_no_timeout",
                 || async {
                     time::sleep(Duration::from_millis(50)).await;
@@ -1572,6 +1501,7 @@ mod tests {
                 should_retry_test_error,
                 create_test_error,
             )
+            .execute()
             .await;
 
         let elapsed = start.elapsed();
@@ -1600,7 +1530,7 @@ mod tests {
         let counter_clone = attempt_counter.clone();
 
         let result = manager
-            .execute_with_retry(
+            .invocation(
                 "test_no_retries",
                 move || {
                     let counter = counter_clone.clone();
@@ -1612,6 +1542,7 @@ mod tests {
                 should_retry_test_error,
                 create_test_error,
             )
+            .execute()
             .await;
 
         assert!(result.is_err());
@@ -1646,7 +1577,7 @@ mod tests {
             let delays_clone = delays_clone.clone();
             async move {
                 let _ = manager
-                    .execute_with_retry(
+                    .invocation(
                         "test_jitter",
                         move || {
                             let delays = delays_clone.clone();
@@ -1666,6 +1597,7 @@ mod tests {
                         should_retry_test_error,
                         create_test_error,
                     )
+                    .execute()
                     .await;
             }
         });
@@ -1706,7 +1638,7 @@ mod tests {
 
         let start = time::Instant::now();
         let result = manager
-            .execute_with_retry(
+            .invocation(
                 "test_elapsed_limit",
                 move || {
                     let counter = counter_clone.clone();
@@ -1718,6 +1650,7 @@ mod tests {
                 should_retry_test_error,
                 create_test_error,
             )
+            .execute()
             .await;
 
         let elapsed = start.elapsed();
@@ -1749,7 +1682,7 @@ mod tests {
         let counter_clone = attempt_counter.clone();
 
         let result = manager
-            .execute_with_retry(
+            .invocation(
                 "test_mixed_errors",
                 move || {
                     let counter = counter_clone.clone();
@@ -1766,6 +1699,7 @@ mod tests {
                 should_retry_test_error,
                 create_test_error,
             )
+            .execute()
             .await;
 
         assert!(result.is_err());
@@ -1805,7 +1739,7 @@ mod tests {
 
         let start = time::Instant::now();
         let result = manager
-            .execute_with_retry_with_cancel(
+            .invocation(
                 "test_cancellation",
                 move || {
                     let counter = counter_clone.clone();
@@ -1816,8 +1750,9 @@ mod tests {
                 },
                 should_retry_test_error,
                 create_test_error,
-                &token,
             )
+            .cancellation_token(&token)
+            .execute()
             .await;
 
         let elapsed = start.elapsed();
@@ -1863,7 +1798,7 @@ mod tests {
 
         let start = time::Instant::now();
         let result = manager
-            .execute_with_retry_with_cancel(
+            .invocation(
                 "test_cancellation_during_op",
                 || async {
                     // Long-running operation
@@ -1872,8 +1807,9 @@ mod tests {
                 },
                 should_retry_test_error,
                 create_test_error,
-                &token,
             )
+            .cancellation_token(&token)
+            .execute()
             .await;
 
         let elapsed = start.elapsed();
@@ -1899,13 +1835,14 @@ mod tests {
         token.cancel(); // Pre-cancel for immediate cancellation
 
         let result = manager
-            .execute_with_retry_with_cancel(
+            .invocation(
                 "test_operation",
                 || async { Ok::<i32, TestError>(42) },
                 should_retry_test_error,
                 create_test_error,
-                &token,
             )
+            .cancellation_token(&token)
+            .execute()
             .await;
 
         assert!(result.is_err());
@@ -2005,7 +1942,7 @@ mod proptest_tests {
             let attempt_counter = Arc::new(AtomicU32::new(0));
             let counter_clone = attempt_counter.clone();
 
-            let _result = rt.block_on(manager.execute_with_retry(
+            let _result = rt.block_on(manager.invocation(
                 "prop_test",
                 move || {
                     let counter = counter_clone.clone();
@@ -2016,7 +1953,7 @@ mod proptest_tests {
                 },
                 |e: &TestError| matches!(e, TestError::Retryable(_)),
                 TestError::Timeout,
-            ));
+            ).execute());
 
             let attempts = attempt_counter.load(Ordering::SeqCst);
             // Total attempts should be 1 (initial) + max_retries
@@ -2049,7 +1986,7 @@ mod proptest_tests {
             let (result, elapsed) = rt.block_on(async {
                 let start = time::Instant::now();
                 let result = manager
-                    .execute_with_retry_with_delay(
+                    .invocation(
                         "prop_error_delay_selection",
                         move || {
                             let attempts = attempts_clone.clone();
@@ -2062,9 +1999,10 @@ mod proptest_tests {
                             }
                         },
                         should_retry_test_error,
-                        |_| Some(minimum_delay),
                         create_test_error,
                     )
+                    .retry_delay(&|_| Some(minimum_delay))
+                    .execute()
                     .await;
                 (result, start.elapsed())
             });
@@ -2086,7 +2024,7 @@ mod proptest_tests {
             let (error, elapsed) = rt.block_on(async {
                 let start = time::Instant::now();
                 let error = manager
-                    .execute_with_retry_with_delay(
+                    .invocation(
                         "prop_error_delay_budget",
                         move || {
                             let attempts = attempts_clone.clone();
@@ -2098,9 +2036,10 @@ mod proptest_tests {
                             }
                         },
                         should_retry_test_error,
-                        |_| Some(minimum_delay),
                         create_test_error,
                     )
+                    .retry_delay(&|_| Some(minimum_delay))
+                    .execute()
                     .await
                     .unwrap_err();
                 (error, start.elapsed())
@@ -2135,7 +2074,7 @@ mod proptest_tests {
             let manager = RetryManager::new(config);
 
             let result = rt.block_on(async {
-                let operation_future = manager.execute_with_retry(
+                let operation_future = manager.invocation(
                     "timeout_test",
                     move || async move {
                         time::sleep(Duration::from_millis(operation_delay_ms)).await;
@@ -2143,7 +2082,7 @@ mod proptest_tests {
                     },
                     |_: &TestError| true,
                     TestError::Timeout,
-                );
+                ).execute();
 
                 // Advance time to trigger timeout
                 advance_clock(Duration::from_millis(timeout_ms + 10)).await;
@@ -2180,7 +2119,7 @@ mod proptest_tests {
             let counter_clone = attempt_counter.clone();
 
             let result = rt.block_on(async {
-                let operation_future = manager.execute_with_retry(
+                let operation_future = manager.invocation(
                     "elapsed_test",
                     move || {
                         let counter = counter_clone.clone();
@@ -2191,7 +2130,7 @@ mod proptest_tests {
                     },
                     |e: &TestError| matches!(e, TestError::Retryable(_)),
                     TestError::Timeout,
-                );
+                ).execute();
 
                 // Advance time past max_elapsed_ms
                 advance_clock(Duration::from_millis(max_elapsed_ms + delay_per_retry)).await;
@@ -2239,7 +2178,7 @@ mod proptest_tests {
                     async move {
                         let start_time = time::Instant::now();
                         let _ = manager
-                            .execute_with_retry(
+                            .invocation(
                                 "jitter_test",
                                 move || {
                                     let attempt_times_inner = attempt_times_for_task.clone();
@@ -2252,7 +2191,7 @@ mod proptest_tests {
                                 },
                                 |e: &TestError| matches!(e, TestError::Retryable(_)),
                                 TestError::Timeout,
-                            )
+                            ).execute()
                             .await;
                     }
                 });
@@ -2336,7 +2275,7 @@ mod proptest_tests {
                     async move {
                         let start = time::Instant::now();
                         let _ = manager
-                            .execute_with_retry(
+                            .invocation(
                                 "immediate_test",
                                 move || {
                                     let attempt_times_inner = attempt_times_for_task.clone();
@@ -2348,7 +2287,7 @@ mod proptest_tests {
                                 },
                                 |e: &TestError| matches!(e, TestError::Retryable(_)),
                                 TestError::Timeout,
-                            )
+                            ).execute()
                             .await;
                     }
                 });
@@ -2404,7 +2343,7 @@ mod proptest_tests {
             let attempt_counter = Arc::new(AtomicU32::new(0));
             let counter_clone = attempt_counter.clone();
 
-            let result: Result<i32, TestError> = rt.block_on(manager.execute_with_retry(
+            let result: Result<i32, TestError> = rt.block_on(manager.invocation(
                 "non_retryable_test",
                 move || {
                     let counter = counter_clone.clone();
@@ -2419,7 +2358,7 @@ mod proptest_tests {
                 },
                 |e: &TestError| matches!(e, TestError::Retryable(_)),
                 TestError::Timeout,
-            ));
+            ).execute());
 
             let attempts = attempt_counter.load(Ordering::SeqCst) as usize;
 
@@ -2460,15 +2399,16 @@ mod proptest_tests {
                     token_clone.cancel();
                 });
 
-                let operation_future = manager.execute_with_retry_with_cancel(
+                let operation_future = manager.invocation(
                     "cancellation_test",
                     || async {
                         Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
                     },
                     |e: &TestError| matches!(e, TestError::Retryable(_)),
                     create_test_error,
-                    &token,
-                );
+                )
+                .cancellation_token(&token)
+                .execute();
 
                 // Advance time to trigger cancellation
                 advance_clock(Duration::from_millis(cancel_after_ms + 10)).await;
@@ -2506,7 +2446,7 @@ mod proptest_tests {
 
             let (result, elapsed) = rt.block_on(async {
                 let started_at = time::Instant::now();
-                let result = manager.execute_with_retry(
+                let result = manager.invocation(
                     "budget_clamp_test",
                     move || {
                         let attempts = Arc::clone(&attempts_for_operation);
@@ -2517,7 +2457,7 @@ mod proptest_tests {
                     },
                     |e: &TestError| matches!(e, TestError::Retryable(_)),
                     create_test_error,
-                ).await;
+                ).execute().await;
                 (result, started_at.elapsed())
             });
 
@@ -2565,7 +2505,7 @@ mod proptest_tests {
             let (result, _elapsed) = rt.block_on(async {
                 let start = time::Instant::now();
 
-                let operation_future = manager.execute_with_retry(
+                let operation_future = manager.invocation(
                     "kth_attempt_test",
                     move || {
                         let counter = counter_clone.clone();
@@ -2580,7 +2520,7 @@ mod proptest_tests {
                     },
                     |e: &TestError| matches!(e, TestError::Retryable(_)),
                     create_test_error,
-                );
+                ).execute();
 
                 // Advance time to allow enough retries
                 for _ in 0..k {
