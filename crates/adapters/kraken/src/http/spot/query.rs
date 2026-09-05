@@ -358,12 +358,57 @@ pub struct SpotTradeBalanceParams {
     pub asset: Option<String>,
 }
 
+/// Parameters for a non-forex pair in `POST /0/private/TradeVolume`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SpotTradeVolumePairWithClass {
+    pub asset: String,
+    pub aclass: String,
+}
+
+/// Pair specification accepted by `POST /0/private/TradeVolume`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SpotTradeVolumePair {
+    PairNames(String),
+    PairsWithClass(Vec<SpotTradeVolumePairWithClass>),
+}
+
+/// Parameters for `POST /0/private/TradeVolume`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SpotTradeVolumeParams {
+    pub pair: SpotTradeVolumePair,
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
     use serde_json;
 
     use super::*;
+
+    #[rstest]
+    fn test_trade_volume_params_with_equity_pair_serialization() {
+        let params = SpotTradeVolumeParams {
+            pair: SpotTradeVolumePair::PairsWithClass(vec![SpotTradeVolumePairWithClass {
+                asset: "AAPLx/USD".to_string(),
+                aclass: "equity_pair".to_string(),
+            }]),
+        };
+
+        let json = serde_json::to_value(&params).unwrap();
+
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "pair": [
+                    {
+                        "asset": "AAPLx/USD",
+                        "aclass": "equity_pair"
+                    }
+                ]
+            })
+        );
+    }
 
     #[rstest]
     fn test_add_order_params_builder() {

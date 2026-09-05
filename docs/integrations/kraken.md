@@ -153,6 +153,15 @@ InstrumentId.from_str("BTC/USDT.KRAKEN")  # Spot BTC/USDT
 InstrumentId.from_str("ETH/BTC.KRAKEN")  # Spot ETH/BTC (normalized from ETH/XBT)
 ```
 
+:::note
+**Spot instrument fees**: When API credentials are available, the adapter
+resolves maker and taker fees for Spot currency-pair instruments from Kraken's
+private `TradeVolume` endpoint for the connected account. Without credentials,
+the adapter falls back to the base-tier fees reported by the public `AssetPairs`
+endpoint. Kraken's public `AssetPairs` fee ladder can lag the currently
+published fee schedule, so unauthenticated instrument fee values may be stale.
+:::
+
 ### Futures markets
 
 Kraken Futures instruments use a specific naming convention with prefixes:
