@@ -165,6 +165,19 @@ impl OKXInstrumentDefinitionError {
     }
 }
 
+#[derive(Debug, Error)]
+#[error("Failed to fetch pending algo order reports: {source}")]
+pub(crate) struct OKXPendingAlgoOrderReportsError {
+    #[source]
+    source: anyhow::Error,
+}
+
+impl OKXPendingAlgoOrderReportsError {
+    fn new(source: anyhow::Error) -> Self {
+        Self { source }
+    }
+}
+
 /// Ranks a spot instrument's quote currency for deterministic tie-breaking
 /// when multiple pairs share the same base. Matches OKX's dominant-quote
 /// ordering so spot-margin position reports stay on a stable instrument id
@@ -4955,6 +4968,7 @@ impl OKXHttpClient {
         &self,
         base: &GetAlgoOrdersParams,
         limit: Option<usize>,
+        require_complete_active_coverage: bool,
     ) -> anyhow::Result<PageSweep<OKXOrderAlgo>> {
         let mut all = Vec::new();
         let mut cursor: Option<String> = None;
@@ -4967,7 +4981,7 @@ impl OKXHttpClient {
             let page = match self.inner.get_order_algo_pending(params).await {
                 Ok(result) => result,
                 Err(OKXHttpError::UnexpectedStatus { status, .. })
-                    if status == StatusCode::NOT_FOUND =>
+                    if status == StatusCode::NOT_FOUND && !require_complete_active_coverage =>
                 {
                     exhausted = false;
                     break;
@@ -5008,6 +5022,7 @@ impl OKXHttpClient {
         &self,
         base: &GetAlgoOrdersParams,
         limit: Option<usize>,
+        require_complete_active_coverage: bool,
     ) -> anyhow::Result<PageSweep<OKXOrderAlgo>> {
         let mut all = Vec::new();
         let mut cursor: Option<String> = None;
@@ -5020,7 +5035,7 @@ impl OKXHttpClient {
             let page = match self.inner.get_order_algo_history(params).await {
                 Ok(result) => result,
                 Err(OKXHttpError::UnexpectedStatus { status, .. })
-                    if status == StatusCode::NOT_FOUND =>
+                    if status == StatusCode::NOT_FOUND && !require_complete_active_coverage =>
                 {
                     exhausted = false;
                     break;
@@ -6717,6 +6732,7 @@ impl OKXHttpClient {
                 limit,
                 None,
                 None,
+                false,
             )
             .await?
             .reports)
@@ -6734,6 +6750,7 @@ impl OKXHttpClient {
         limit: Option<u32>,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
+        require_complete_active_coverage: bool,
     ) -> anyhow::Result<AlgoOrderReportSweep> {
         let mut instruments_cache: AHashMap<Ustr, InstrumentAny> = AHashMap::new();
         let mut ambiguous_triggered_child_ids = AHashSet::new();
@@ -6791,6 +6808,7 @@ impl OKXHttpClient {
                 .collect_algo_reports(
                     account_id,
                     &orders,
+                    false,
                     &mut instruments_cache,
                     ts_init,
                     start_ns,
@@ -6858,7 +6876,23 @@ impl OKXHttpClient {
 
             if query_pending {
                 let remaining = limit.map(|l| (l as usize).saturating_sub(reports.len()));
-                let pending_sweep = self.paginate_algo_pending(&params, remaining).await?;
+                let pending_sweep = match self
+                    .paginate_algo_pending(&params, remaining, require_complete_active_coverage)
+                    .await
+                {
+                    Ok(sweep) => sweep,
+                    Err(e) if require_complete_active_coverage => {
+                        return Err(OKXPendingAlgoOrderReportsError::new(e).into());
+                    }
+                    Err(e) => return Err(e),
+                };
+
+                if require_complete_active_coverage && !pending_sweep.complete {
+                    return Err(OKXPendingAlgoOrderReportsError::new(anyhow::anyhow!(
+                        "Pending {ord_type:?} algo order pagination for {inst_type:?} did not establish complete coverage"
+                    ))
+                    .into());
+                }
                 complete &= pending_sweep.complete;
                 let mut pending = pending_sweep.items;
 
@@ -6866,10 +6900,11 @@ impl OKXHttpClient {
                     pending.retain(|order| order.state == state);
                 }
 
-                complete &= self
+                let pending_reports_complete = match self
                     .collect_algo_reports(
                         account_id,
                         &pending,
+                        require_complete_active_coverage,
                         &mut instruments_cache,
                         ts_init,
                         start_ns,
@@ -6878,7 +6913,22 @@ impl OKXHttpClient {
                         &mut reports,
                         &mut ambiguous_triggered_child_ids,
                     )
-                    .await?;
+                    .await
+                {
+                    Ok(complete) => complete,
+                    Err(e) if require_complete_active_coverage => {
+                        return Err(OKXPendingAlgoOrderReportsError::new(e).into());
+                    }
+                    Err(e) => return Err(e),
+                };
+
+                if require_complete_active_coverage && !pending_reports_complete {
+                    return Err(OKXPendingAlgoOrderReportsError::new(anyhow::anyhow!(
+                        "Pending {ord_type:?} algo order reports for {inst_type:?} could not be completely converted"
+                    ))
+                    .into());
+                }
+                complete &= pending_reports_complete;
 
                 if let Some(lim) = limit
                     && reports.len() >= lim as usize
@@ -6895,7 +6945,20 @@ impl OKXHttpClient {
             for history_state in history_states {
                 params.state = Some(*history_state);
                 let remaining = limit.map(|l| (l as usize).saturating_sub(reports.len()));
-                let history_sweep = self.paginate_algo_history(&params, remaining).await?;
+                let history_sweep = match self
+                    .paginate_algo_history(&params, remaining, require_complete_active_coverage)
+                    .await
+                {
+                    Ok(sweep) => sweep,
+                    Err(e) if require_complete_active_coverage => {
+                        log::warn!(
+                            "Failed to fetch {history_state:?} {ord_type:?} algo order history for {inst_type:?}: {e}"
+                        );
+                        complete = false;
+                        continue;
+                    }
+                    Err(e) => return Err(e),
+                };
                 complete &= history_sweep.complete;
                 let mut history = history_sweep.items;
 
@@ -6907,6 +6970,7 @@ impl OKXHttpClient {
                     .collect_algo_reports(
                         account_id,
                         &history,
+                        false,
                         &mut instruments_cache,
                         ts_init,
                         start_ns,
@@ -6973,6 +7037,7 @@ impl OKXHttpClient {
         &self,
         account_id: AccountId,
         orders: &[OKXOrderAlgo],
+        from_pending_source: bool,
         instruments_cache: &mut AHashMap<Ustr, InstrumentAny>,
         ts_init: UnixNanos,
         start_ns: Option<UnixNanos>,
@@ -6994,9 +7059,10 @@ impl OKXHttpClient {
                         if !order.ord_id.is_empty() && child_order_id != &order.ord_id
                 );
 
-            // Live algo orders are authoritative regardless of age; only
-            // terminal history respects the report window.
-            if report_ts_outside_window(order.u_time, start_ns, end_ns)
+            // Pending-source records are authoritative regardless of age or
+            // mapped state; only terminal history respects the report window.
+            if !from_pending_source
+                && report_ts_outside_window(order.u_time, start_ns, end_ns)
                 && !is_open_okx_algo(order.state)
             {
                 continue;

@@ -93,7 +93,8 @@ use nautilus_okx::{
             OKX_VENUE,
         },
         enums::{
-            OKXInstrumentType, OKXMarginMode, OKXOrderStatus, OKXOrderType, OKXSide, OKXTradeMode,
+            OKXEnvironment, OKXInstrumentType, OKXMarginMode, OKXOrderStatus, OKXOrderType,
+            OKXSide, OKXTradeMode,
         },
         models::OKXInstrument,
         parse::parse_instrument_any,
@@ -101,7 +102,8 @@ use nautilus_okx::{
     config::OKXExecutionClientConfig,
     execution::OKXExecutionClient,
     http::{
-        client::OKXResponse,
+        client::{OKXHttpClient, OKXResponse},
+        error::OKXHttpError,
         models::{OKXCancelAlgoOrderResponse, OKXSpreadOrder},
     },
     websocket::{
@@ -4687,6 +4689,537 @@ async fn test_generate_mass_status_sets_report_window(
         Some(expected_begin.as_str())
     );
     assert!(!fill_query.contains_key("end"));
+}
+
+#[rstest]
+#[case::service_unavailable(StatusCode::SERVICE_UNAVAILABLE, 2)]
+#[case::not_found(StatusCode::NOT_FOUND, 1)]
+#[tokio::test]
+async fn test_generate_mass_status_fails_when_pending_algo_orders_are_unavailable(
+    #[case] failure_status: StatusCode,
+    #[case] expected_attempts: usize,
+) {
+    let pending_attempts = Arc::new(AtomicUsize::new(0));
+    let handler_attempts = Arc::clone(&pending_attempts);
+    let empty = get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() });
+    let router = Router::new()
+        .route("/api/v5/trade/orders-pending", empty.clone())
+        .route("/api/v5/trade/orders-history", empty.clone())
+        .route(
+            "/api/v5/trade/orders-algo-pending",
+            get(move || {
+                let attempts = Arc::clone(&handler_attempts);
+                async move {
+                    attempts.fetch_add(1, Ordering::Relaxed);
+                    failure_status.into_response()
+                }
+            }),
+        )
+        .route("/api/v5/trade/orders-algo-history", empty.clone())
+        .route("/api/v5/trade/fills", empty.clone())
+        .route("/api/v5/account/positions", empty.clone())
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let (client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+            config.max_retries = 1;
+            config.retry_delay_initial_ms = 1;
+            config.retry_delay_max_ms = 1;
+        });
+
+    let error = client.generate_mass_status(None).await.unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("Failed to fetch pending algo order reports"),
+        "was {error:#}"
+    );
+    assert_eq!(pending_attempts.load(Ordering::Relaxed), expected_attempts);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_fails_when_pending_algo_pagination_is_incomplete() {
+    let pending_attempts = Arc::new(AtomicUsize::new(0));
+    let handler_attempts = Arc::clone(&pending_attempts);
+    let pending_order = load_test_data("http_get_orders_algo_pending.json")["data"][0].clone();
+    let pending_page = json!({
+        "code": "0",
+        "msg": "",
+        "data": vec![pending_order; 100],
+    });
+    let empty = get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() });
+    let router = Router::new()
+        .route("/api/v5/trade/orders-pending", empty.clone())
+        .route("/api/v5/trade/orders-history", empty.clone())
+        .route(
+            "/api/v5/trade/orders-algo-pending",
+            get(move || {
+                let attempts = Arc::clone(&handler_attempts);
+                let page = pending_page.clone();
+                async move {
+                    attempts.fetch_add(1, Ordering::Relaxed);
+                    Json(page).into_response()
+                }
+            }),
+        )
+        .route("/api/v5/trade/orders-algo-history", empty.clone())
+        .route("/api/v5/trade/fills", empty.clone())
+        .route("/api/v5/account/positions", empty.clone())
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let (client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+        });
+
+    let error = client.generate_mass_status(None).await.unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("did not establish complete coverage"),
+        "was {error:#}"
+    );
+    assert_eq!(pending_attempts.load(Ordering::Relaxed), 50);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_fails_when_pending_algo_report_conversion_is_incomplete() {
+    let empty = get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() });
+    let router = Router::new()
+        .route("/api/v5/trade/orders-pending", empty.clone())
+        .route("/api/v5/trade/orders-history", empty.clone())
+        .route(
+            "/api/v5/trade/orders-algo-pending",
+            get(|Query(params): Query<HashMap<String, String>>| async move {
+                if params
+                    .get("ordType")
+                    .is_some_and(|value| value == "trigger")
+                {
+                    let mut response = load_test_data("http_get_orders_algo_pending.json");
+                    response["data"][0]["sz"] = json!("invalid");
+                    Json(response).into_response()
+                } else {
+                    Json(json!({"code": "0", "msg": "", "data": []})).into_response()
+                }
+            }),
+        )
+        .route("/api/v5/trade/orders-algo-history", empty.clone())
+        .route("/api/v5/trade/fills", empty.clone())
+        .route("/api/v5/account/positions", empty.clone())
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let (mut client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+        });
+    client.on_instrument(btc_usdt_swap_instrument());
+
+    let error = client.generate_mass_status(None).await.unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("could not be completely converted"),
+        "was {error:#}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_fails_when_old_pending_algo_state_is_unknown() {
+    let empty = get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() });
+    let router = Router::new()
+        .route("/api/v5/trade/orders-pending", empty.clone())
+        .route("/api/v5/trade/orders-history", empty.clone())
+        .route(
+            "/api/v5/trade/orders-algo-pending",
+            get(|Query(params): Query<HashMap<String, String>>| async move {
+                if params
+                    .get("ordType")
+                    .is_some_and(|value| value == "trigger")
+                {
+                    let mut response = load_test_data("http_get_orders_algo_pending.json");
+                    response["data"][0]["state"] = json!("future_state");
+                    response["data"][0]["uTime"] = json!("1");
+                    Json(response).into_response()
+                } else {
+                    Json(json!({"code": "0", "msg": "", "data": []})).into_response()
+                }
+            }),
+        )
+        .route("/api/v5/trade/orders-algo-history", empty.clone())
+        .route("/api/v5/trade/fills", empty.clone())
+        .route("/api/v5/account/positions", empty.clone())
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let (mut client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+        });
+    client.on_instrument(btc_usdt_swap_instrument());
+
+    let error = client.generate_mass_status(None).await.unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("could not be completely converted"),
+        "was {error:#}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_public_algo_report_request_preserves_http_error_identity() {
+    let router = Router::new().route(
+        "/api/v5/trade/orders-algo-pending",
+        get(|| async { StatusCode::FORBIDDEN.into_response() }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let client = OKXHttpClient::with_credentials(
+        Some("api_key".to_string()),
+        Some("api_secret".to_string()),
+        Some("passphrase".to_string()),
+        Some(format!("http://{addr}")),
+        60,
+        0,
+        1,
+        1,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    let error = client
+        .request_algo_order_status_reports(
+            AccountId::from("OKX-001"),
+            Some(OKXInstrumentType::Swap),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+
+    assert!(
+        error.downcast_ref::<OKXHttpError>().is_some(),
+        "was {error:#}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_reports_preserves_history_after_pending_not_found() {
+    let empty = get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() });
+    let router = Router::new()
+        .route("/api/v5/trade/orders-pending", empty.clone())
+        .route("/api/v5/trade/orders-history", empty.clone())
+        .route(
+            "/api/v5/trade/orders-algo-pending",
+            get(|| async { StatusCode::NOT_FOUND.into_response() }),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-history",
+            get(|Query(params): Query<HashMap<String, String>>| async move {
+                let is_target = params
+                    .get("ordType")
+                    .is_some_and(|value| value == "trigger")
+                    && params
+                        .get("state")
+                        .is_some_and(|value| value == "effective");
+
+                if is_target {
+                    Json(load_test_data("http_get_orders_algo_history.json")).into_response()
+                } else {
+                    Json(json!({"code": "0", "msg": "", "data": []})).into_response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let (mut client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+        });
+    client.on_instrument(query_order_instrument());
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].venue_order_id, VenueOrderId::from("ord_456"));
+    assert_eq!(reports[0].order_status, OrderStatus::Triggered);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_reports_preserves_pending_after_history_not_found() {
+    let empty = get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() });
+    let router = Router::new()
+        .route("/api/v5/trade/orders-pending", empty.clone())
+        .route("/api/v5/trade/orders-history", empty.clone())
+        .route(
+            "/api/v5/trade/orders-algo-pending",
+            get(|Query(params): Query<HashMap<String, String>>| async move {
+                if params
+                    .get("ordType")
+                    .is_some_and(|value| value == "trigger")
+                {
+                    Json(load_test_data("http_get_orders_algo_pending.json")).into_response()
+                } else {
+                    Json(json!({"code": "0", "msg": "", "data": []})).into_response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-history",
+            get(|Query(params): Query<HashMap<String, String>>| async move {
+                let is_target = params
+                    .get("ordType")
+                    .is_some_and(|value| value == "trigger")
+                    && params
+                        .get("state")
+                        .is_some_and(|value| value == "effective");
+
+                if is_target {
+                    StatusCode::NOT_FOUND.into_response()
+                } else {
+                    Json(json!({"code": "0", "msg": "", "data": []})).into_response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let (mut client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+        });
+    client.on_instrument(btc_usdt_swap_instrument());
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].venue_order_id, VenueOrderId::from("123456789"));
+    assert_eq!(reports[0].order_status, OrderStatus::Accepted);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_reports_excludes_old_terminal_pending_record() {
+    let empty = get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() });
+    let router = Router::new()
+        .route("/api/v5/trade/orders-pending", empty.clone())
+        .route("/api/v5/trade/orders-history", empty.clone())
+        .route(
+            "/api/v5/trade/orders-algo-pending",
+            get(|Query(params): Query<HashMap<String, String>>| async move {
+                if params
+                    .get("ordType")
+                    .is_some_and(|value| value == "trigger")
+                {
+                    let mut response = load_test_data("http_get_orders_algo_pending.json");
+                    response["data"][0]["state"] = json!("effective");
+                    response["data"][0]["uTime"] = json!("1");
+                    Json(response).into_response()
+                } else {
+                    Json(json!({"code": "0", "msg": "", "data": []})).into_response()
+                }
+            }),
+        )
+        .route("/api/v5/trade/orders-algo-history", empty.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let (mut client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+        });
+    client.on_instrument(btc_usdt_swap_instrument());
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        None,
+        Some(UnixNanos::from(2_000_000_u64)),
+        None,
+        None,
+        None,
+    );
+
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+
+    assert!(reports.is_empty());
+}
+
+#[rstest]
+#[case::service_unavailable(StatusCode::SERVICE_UNAVAILABLE, 2)]
+#[case::not_found(StatusCode::NOT_FOUND, 1)]
+#[tokio::test]
+async fn test_generate_mass_status_preserves_reports_when_algo_history_is_unavailable(
+    #[case] failure_status: StatusCode,
+    #[case] expected_attempts: usize,
+) {
+    let pending_attempts = Arc::new(AtomicUsize::new(0));
+    let pending_handler_attempts = Arc::clone(&pending_attempts);
+    let history_attempts = Arc::new(AtomicUsize::new(0));
+    let history_handler_attempts = Arc::clone(&history_attempts);
+    let empty = get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() });
+    let router = Router::new()
+        .route("/api/v5/trade/orders-pending", empty.clone())
+        .route("/api/v5/trade/orders-history", empty.clone())
+        .route(
+            "/api/v5/trade/orders-algo-pending",
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let attempts = Arc::clone(&pending_handler_attempts);
+                async move {
+                    attempts.fetch_add(1, Ordering::Relaxed);
+
+                    if params
+                        .get("ordType")
+                        .is_some_and(|value| value == "trigger")
+                    {
+                        Json(load_test_data("http_get_orders_algo_pending.json")).into_response()
+                    } else {
+                        Json(json!({"code": "0", "msg": "", "data": []})).into_response()
+                    }
+                }
+            }),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-history",
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let attempts = Arc::clone(&history_handler_attempts);
+                async move {
+                    let is_target = params
+                        .get("ordType")
+                        .is_some_and(|value| value == "trigger")
+                        && params
+                            .get("state")
+                            .is_some_and(|value| value == "effective");
+
+                    if is_target {
+                        attempts.fetch_add(1, Ordering::Relaxed);
+                        failure_status.into_response()
+                    } else {
+                        Json(json!({"code": "0", "msg": "", "data": []})).into_response()
+                    }
+                }
+            }),
+        )
+        .route("/api/v5/trade/fills", empty.clone())
+        .route("/api/v5/account/positions", empty.clone())
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let (mut client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+            config.max_retries = 1;
+            config.retry_delay_initial_ms = 1;
+            config.retry_delay_max_ms = 1;
+        });
+    client.on_instrument(btc_usdt_swap_instrument());
+
+    let mass_status = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    assert!(!mass_status.reports_complete());
+    assert!(
+        mass_status
+            .order_reports()
+            .contains_key(&VenueOrderId::from("123456789"))
+    );
+    assert_eq!(pending_attempts.load(Ordering::Relaxed), 4);
+    assert_eq!(history_attempts.load(Ordering::Relaxed), expected_attempts);
 }
 
 #[rstest]
