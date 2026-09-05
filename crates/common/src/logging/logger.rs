@@ -1798,7 +1798,7 @@ mod tests {
         assert_eq!(parsed["venue"], "OKX");
     }
 
-    /// Helper to convert module level map to sorted vec (descending by path length)
+    /// Converts the module-level map to a vector sorted by descending path length.
     fn sorted_module_filters(map: AHashMap<Ustr, LevelFilter>) -> Vec<(Ustr, LevelFilter)> {
         let mut v: Vec<_> = map.into_iter().collect();
         v.sort_by_key(|b| std::cmp::Reverse(b.0.len()));

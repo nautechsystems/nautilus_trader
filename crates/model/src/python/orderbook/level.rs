@@ -13,10 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use pyo3::prelude::*;
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+};
+
+use nautilus_core::python::IntoPyObjectNautilusExt;
+use pyo3::{prelude::*, pyclass::CompareOp};
 
 use crate::{
     data::order::BookOrder,
+    enums::OrderSide,
     orderbook::BookLevel,
     types::{price::Price, quantity::QuantityRaw},
 };
@@ -33,10 +40,35 @@ impl BookLevel {
         format!("{self:?}")
     }
 
+    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
+        match op {
+            CompareOp::Eq => self.eq(other).into_py_any_unwrap(py),
+            CompareOp::Ne => self.ne(other).into_py_any_unwrap(py),
+            CompareOp::Ge if self.side() == other.side() => self.ge(other).into_py_any_unwrap(py),
+            CompareOp::Gt if self.side() == other.side() => self.gt(other).into_py_any_unwrap(py),
+            CompareOp::Le if self.side() == other.side() => self.le(other).into_py_any_unwrap(py),
+            CompareOp::Lt if self.side() == other.side() => self.lt(other).into_py_any_unwrap(py),
+            CompareOp::Ge | CompareOp::Gt | CompareOp::Le | CompareOp::Lt => py.NotImplemented(),
+        }
+    }
+
+    fn __hash__(&self) -> isize {
+        let mut hasher = DefaultHasher::new();
+        self.side().hash(&mut hasher);
+        self.price.value.hash(&mut hasher);
+        hasher.finish() as isize
+    }
+
     #[getter]
     #[pyo3(name = "price")]
     fn py_price(&self) -> Price {
         self.price.value
+    }
+
+    #[getter]
+    #[pyo3(name = "side")]
+    fn py_side(&self) -> OrderSide {
+        self.side()
     }
 
     /// Returns the number of orders at this price level.

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Helpers for working with Bybit-specific symbol strings.
+//! Bybit-specific symbol parsing.
 
 use std::{borrow::Cow, fmt::Display};
 

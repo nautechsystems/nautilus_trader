@@ -226,7 +226,6 @@ pub static OKX_RETRY_ERROR_CODES: LazyLock<AHashSet<&'static str>> = LazyLock::n
 
     // Rate limit errors (temporary)
     codes.insert("50011"); // Request too frequent
-    codes.insert("50113"); // API requests exceed the limit
 
     // WebSocket connection issues (temporary)
     codes.insert("60001"); // OK not received in time
@@ -357,8 +356,10 @@ mod tests {
 
     #[rstest]
     #[case("50001", true)]
+    #[case("50011", true)]
     #[case("60005", true)]
     #[case(OKX_SERVICE_UPGRADE_RECONNECT_CODE, true)]
+    #[case("50113", false)]
     #[case("60012", false)]
     fn test_should_retry_error_code(#[case] code: &str, #[case] expected: bool) {
         assert_eq!(should_retry_error_code(code), expected);

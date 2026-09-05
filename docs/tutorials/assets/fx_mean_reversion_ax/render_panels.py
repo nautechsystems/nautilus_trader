@@ -1,11 +1,12 @@
 """
 Render the AX EURUSD-PERP mean reversion tutorial panels from a backtest run.
 
-Usage:
+After building NautilusTrader from source, run these commands from the repository root:
 
-    uv sync --extra visualization
+    make sync
     TRUEFX_CSV=test_data/local/truefx/EURUSD-2025-12.csv \
-        python3 docs/tutorials/assets/fx_mean_reversion_ax/render_panels.py
+        uv run --project python --no-sync \
+            python docs/tutorials/assets/fx_mean_reversion_ax/render_panels.py
 
 Replays TrueFX EUR/USD ticks through the shipped ``BBMeanReversion`` strategy,
 then writes four PNG panels using the ``nautilus_dark`` tearsheet theme.

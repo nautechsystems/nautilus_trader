@@ -41,7 +41,7 @@ class DemoStrategy(Strategy):
 
     def __init__(self, input_bartype: BarType) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
 

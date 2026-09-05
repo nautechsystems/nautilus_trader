@@ -160,7 +160,7 @@ Run the semantic check first:
 
 ```bash
 CARGO_BUILD_JOBS=16 cargo test --locked -p nautilus-backtest \
-    --test canonical_backtest_workloads
+    --test integration canonical_backtest_workloads::
 ```
 
 Then run Criterion in test mode to confirm that every affected benchmark case executes without
@@ -179,77 +179,8 @@ reported duration, while still checking the result after every measured iteratio
 See [`crates/backtest/benches/BENCHMARKS.md`](../../crates/backtest/benches/BENCHMARKS.md) for the
 published baseline, measurement record, and current profile target.
 
-### Compare v1 and v2 backtest engines
-
-Use `scripts/benchmark-backtest-versions.py` for a wall-clock comparison between the released v1
-Cython engine and the v2 PyO3 engine. The driver owns one shared scenario matrix and normalizes the
-small API differences at runtime. It rejects a run before timing unless both environments use the
-expected package version, backend, source revision, Python version, and precision mode. For v2, it
-also requires the requested source revision to be embedded in the loaded extension.
-
-Run the comparison on a quiet host. These commands create isolated release environments and a
-detached v1 worktree without changing the current branch:
-
-```bash
-COMPARE_ROOT=$(mktemp -d /tmp/nautilus-backtest-compare.XXXXXX)
-git worktree add --detach "$COMPARE_ROOT/v1" v1.231.0
-
-uv venv --python /usr/bin/python3.12 "$COMPARE_ROOT/env-v1"
-(
-    cd "$COMPARE_ROOT/v1"
-    uvx --from uv==0.11.33 uv build --wheel --python /usr/bin/python3.12 \
-        --out-dir "$COMPARE_ROOT/wheels-v1"
-)
-V1_WHEEL=$(find "$COMPARE_ROOT/wheels-v1" -type f -name 'nautilus_trader-*.whl')
-UV_LINK_MODE=copy uv pip install --no-cache \
-    --python "$COMPARE_ROOT/env-v1/bin/python" "$V1_WHEEL"
-
-uv venv --python /usr/bin/python3.12 "$COMPARE_ROOT/env-v2"
-uv pip install --python "$COMPARE_ROOT/env-v2/bin/python" maturin==1.14.1 patchelf
-(
-    cd python
-    CARGO_BUILD_JOBS=16 "$COMPARE_ROOT/env-v2/bin/maturin" build --release \
-        --out "$COMPARE_ROOT/wheels-v2"
-)
-V2_WHEEL=$(find "$COMPARE_ROOT/wheels-v2" -type f -name 'nautilus_trader-*.whl')
-UV_LINK_MODE=copy uv pip install --no-cache \
-    --python "$COMPARE_ROOT/env-v2/bin/python" "$V2_WHEEL"
-
-V1_COMMIT=$(git -C "$COMPARE_ROOT/v1" rev-parse HEAD)
-V2_COMMIT=$(git rev-parse HEAD)
-python3.12 scripts/benchmark-backtest-versions.py compare \
-    --v1-python "$COMPARE_ROOT/env-v1/bin/python" \
-    --v1-artifact "$V1_WHEEL" \
-    --v1-source "$COMPARE_ROOT/v1" \
-    --v1-commit "$V1_COMMIT" \
-    --v2-python "$COMPARE_ROOT/env-v2/bin/python" \
-    --v2-artifact "$V2_WHEEL" \
-    --v2-source "$PWD" \
-    --v2-commit "$V2_COMMIT" \
-    --sessions 5 \
-    --output "$COMPARE_ROOT/results.json"
-```
-
-The driver runs each boundary in both environments back-to-back and reverses or rotates the case
-order across sessions. `run_preloaded` times only `BacktestEngine.run()` after fixture creation,
-engine construction, and data registration. `load_build_run` includes instrument and data fixture
-creation, engine construction, data registration, and `run()`. The coordinator proves that each
-loaded extension byte-matches the corresponding wheel member before the run and rechecks the full
-identities after it. After every timed sample, its worker repeats the complete wheel, extension,
-source, and runtime identity proof and checks its canonical digest against the coordinator's
-initial identity. Raw output stores each full identity once and binds every sample to it by digest.
-Source identity hashes staged diffs, unstaged diffs, and untracked file contents in addition to the
-revision. Exact event, order, position, and account fingerprints are checked after
-every timed iteration without adding fingerprint work to the duration.
-
-Repeat `--scenario <name>` or `--boundary <name>` on the `compare` command to run a targeted subset.
-Omit both options to run the complete matrix. Raw output stores one full fingerprint for each
-selected scenario and boundary, then binds every timed sample to it by digest.
-
-The JSON output contains every elapsed sample, the observed host state, boundary definitions,
-medians, minimum-to-maximum spread, v2/v1 ratios, and percentage gaps. The driver requires at least
-three full sessions. It records CPU governor and `perf_event_paranoid` values but does not change
-host controls.
+The [v2 migration guide](../../MIGRATION_V2.md#compare-backtest-performance) contains the
+cross-version backtest comparison procedure.
 
 ---
 

@@ -124,25 +124,30 @@ flowchart TB
     Accepted --> Expired
 ```
 
+The diagram shows the primary transitions, while the order model validates the complete transition
+set for recovery and venue edge cases. An order status describes local state, not the evidence that
+produced it. See [Execution policies](../execution/policies.md) for command outcome classes,
+event provenance, delivery limits, and reconciliation policy.
+
 ### Order status definitions
 
-| Status             | Description                                                                               |
-| ------------------ | ----------------------------------------------------------------------------------------- |
-| `INITIALIZED`      | Order is instantiated within the Nautilus system.                                         |
-| `DENIED`           | Order was denied by Nautilus for being invalid, unprocessable, or exceeding a risk limit. |
-| `EMULATED`         | Order is being emulated by the `OrderEmulator` component.                                 |
-| `RELEASED`         | Order was released from the `OrderEmulator` component.                                    |
-| `SUBMITTED`        | Order was submitted to the venue (awaiting acknowledgement).                              |
-| `ACCEPTED`         | Order was acknowledged by the venue as received and valid (may now be working).           |
-| `REJECTED`         | Order was rejected by the trading venue.                                                  |
-| `CANCELED`         | Order was canceled (terminal).                                                            |
-| `EXPIRED`          | Order reached its GTD expiration (terminal).                                              |
-| `TRIGGERED`        | A stop-limit, trailing-stop-limit, or limit-if-touched order triggered on the venue.      |
-| `PENDING_UPDATE`   | Order is pending a modification request on the venue.                                     |
-| `PENDING_CANCEL`   | Order is pending a cancellation request on the venue.                                     |
-| `PARTIALLY_FILLED` | Order has been partially filled on the venue.                                             |
-| `FILLED`           | Order has been completely filled (terminal).                                              |
-| `VOIDED`           | Order is terminal after an authoritative fill correction.                                 |
+| Status             | Description                                                                                    |
+| ------------------ | ---------------------------------------------------------------------------------------------- |
+| `INITIALIZED`      | Order is instantiated within the Nautilus system.                                              |
+| `DENIED`           | Order was denied by Nautilus for being invalid, unprocessable, or exceeding a risk limit.      |
+| `EMULATED`         | Order is being emulated by the `OrderEmulator` component.                                      |
+| `RELEASED`         | Order was released from the `OrderEmulator` component.                                         |
+| `SUBMITTED`        | Order was submitted to the venue (awaiting acknowledgement).                                   |
+| `ACCEPTED`         | Order was acknowledged by the venue as received and valid (may now be working).                |
+| `REJECTED`         | Order is terminal as rejected; `reconciliation` and `reason` provide the available provenance. |
+| `CANCELED`         | Order is terminal as canceled; status alone does not identify venue, local, or policy cause.   |
+| `EXPIRED`          | Order reached its GTD expiration (terminal).                                                   |
+| `TRIGGERED`        | A stop-limit, trailing-stop-limit, or limit-if-touched order triggered on the venue.           |
+| `PENDING_UPDATE`   | Order is pending a modification request on the venue.                                          |
+| `PENDING_CANCEL`   | Order is pending a cancellation request on the venue.                                          |
+| `PARTIALLY_FILLED` | Order has been partially filled on the venue.                                                  |
+| `FILLED`           | Order has been completely filled (terminal).                                                   |
+| `VOIDED`           | Order is terminal after an authoritative fill correction.                                      |
 
 ## Execution instructions
 
@@ -293,6 +298,6 @@ the emulation lifecycle, supported types, querying, and best practices.
 ## Related guides
 
 - [Events](../events/) - Order events, position events, and handler dispatch.
-- [Execution](../execution.md) - Order execution and fill handling.
+- [Execution](../execution/) - Order execution and fill handling.
 - [Positions](../positions.md) - Positions created from order fills.
 - [Strategies](../strategies.md) - Order management from strategies.

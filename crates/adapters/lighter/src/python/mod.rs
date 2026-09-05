@@ -160,7 +160,7 @@ async fn submit_integrator_revocation(environment: LighterEnvironment) -> anyhow
 /// and requires no revocation.
 ///
 /// See:
-/// <https://nautilustrader.io/docs/nightly/integrations/lighter.html#integrator-attribution>.
+/// <https://nautilustrader.io/docs/nightly/integrations/lighter/#integrator-attribution>.
 ///
 /// Reads mainnet L2 credentials from `LIGHTER_API_KEY_INDEX`, `LIGHTER_API_SECRET`,
 /// and `LIGHTER_ACCOUNT_INDEX`.

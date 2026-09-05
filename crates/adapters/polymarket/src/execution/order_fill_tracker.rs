@@ -863,7 +863,7 @@ mod tests {
         assert_eq!(result, fill_qty);
     }
 
-    // Verifies the batch helper used by REST callers (`generate_fill_reports`,
+    // Verifies `snap_fill_reports`, used by REST callers (`generate_fill_reports`,
     // `generate_mass_status`) snaps each report's `last_qty` and leaves
     // unregistered reports alone. Commission is intentionally untouched.
     #[rstest]

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Common test related helper functions.
+//! Floating-point assertions for indicator tests.
 
 /// Relative tolerance used by [`approx_equal`].
 ///

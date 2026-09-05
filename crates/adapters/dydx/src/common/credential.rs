@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! dYdX credential storage and wallet-based transaction signing helpers.
+//! dYdX credential resolution, storage, and wallet-based transaction signing.
 //!
 //! dYdX v4 uses Cosmos SDK-style wallet signing rather than API key authentication.
 //! Trading operations require signing transactions with a secp256k1 private key.

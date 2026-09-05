@@ -27,6 +27,7 @@ use arrow::{
 };
 use nautilus_core::Params;
 use nautilus_model::{
+    enums::{AssetClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
     instruments::option_contract::OptionContract,
     types::{price::Price, quantity::Quantity},
@@ -123,7 +124,7 @@ impl EncodeToRecordBatch for OptionContract {
             id_builder.append_value(oc.id.to_string());
             raw_symbol_builder.append_value(oc.raw_symbol);
             underlying_builder.append_value(oc.underlying);
-            asset_class_builder.append_value(super::asset_class_to_string(oc.asset_class));
+            asset_class_builder.append_value(oc.asset_class);
 
             if let Some(exchange) = oc.exchange {
                 exchange_builder.append_value(exchange);
@@ -131,7 +132,7 @@ impl EncodeToRecordBatch for OptionContract {
                 exchange_builder.append_null();
             }
 
-            option_kind_builder.append_value(super::option_kind_to_string(oc.option_kind));
+            option_kind_builder.append_value(oc.option_kind);
             strike_price_builder.append_value(oc.strike_price.to_string());
             currency_builder.append_value(oc.currency.to_string());
             activation_ns_builder.append_value(oc.activation_ns.as_u64());
@@ -325,7 +326,8 @@ pub fn decode_option_contract_batch(
             .map_err(|e| EncodingError::ParseError("id", format!("row {i}: {e}")))?;
         let raw_symbol = Symbol::from(raw_symbol_values.value(i));
         let underlying = Ustr::from(underlying_values.value(i));
-        let asset_class = super::asset_class_from_str(asset_class_values.value(i))?;
+        let asset_class = AssetClass::from_str(asset_class_values.value(i))
+            .map_err(|e| EncodingError::ParseError("asset_class", format!("row {i}: {e}")))?;
 
         let exchange = if exchange_values.is_null(i) {
             None
@@ -340,7 +342,8 @@ pub fn decode_option_contract_batch(
             Some(Ustr::from(exchange_str))
         };
 
-        let option_kind = super::option_kind_from_str(option_kind_values.value(i))?;
+        let option_kind = OptionKind::from_str(option_kind_values.value(i))
+            .map_err(|e| EncodingError::ParseError("option_kind", format!("row {i}: {e}")))?;
         let strike_price = Price::from_str(strike_price_values.value(i))
             .map_err(|e| EncodingError::ParseError("strike_price", format!("row {i}: {e}")))?;
         let currency = super::decode_currency(

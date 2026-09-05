@@ -631,7 +631,7 @@ mod tests {
     #[case(DydxNetwork::Testnet)]
     fn test_for_network_preserves_grpc_rate_limit_default(#[case] network: DydxNetwork) {
         // Regression guard: earlier implementations spread `..Self::builder().build()`,
-        // which returned `None` and silently disabled gRPC throttling. The helper must
+        // which returned `None` and silently disabled gRPC throttling. The constructor must
         // retain the `Some(4)` default from `Default::default()`.
         let config = DydxAdapterConfig::for_network(network);
         assert_eq!(config.grpc_rate_limit_per_second, Some(4));

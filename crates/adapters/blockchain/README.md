@@ -1,7 +1,7 @@
 # nautilus-blockchain
 
 [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
-[![Documentation](https://img.shields.io/docsrs/nautilus-blockchain)](https://docs.rs/nautilus-blockchain/latest/nautilus-blockchain/)
+[![Documentation](https://img.shields.io/docsrs/nautilus-blockchain)](https://docs.rs/nautilus-blockchain/latest/nautilus_blockchain/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-blockchain.svg)](https://crates.io/crates/nautilus-blockchain)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
@@ -25,9 +25,9 @@ event-driven architecture, providing research-to-live semantic parity.
 This crate provides feature flags to control source code inclusion during compilation:
 
 - `extension-module`: Builds as a Python extension module.
-- `hypersync`: Enables the [HyperSync](https://envio.dev/#hypersync) client integration.
+- `hypersync`: Enables the [`hypersync-client`](https://crates.io/crates/hypersync-client) integration.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
-- `turmoil`: Enables deterministic network simulation testing with [turmoil](https://github.com/tokio-rs/turmoil).
+- `turmoil`: Enables deterministic network simulation testing with [turmoil](https://crates.io/crates/turmoil).
 
 ## Scripts
 

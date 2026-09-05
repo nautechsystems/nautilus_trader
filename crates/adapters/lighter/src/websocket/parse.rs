@@ -574,7 +574,7 @@ fn order_type_requires_trigger_type(order_type: OrderType) -> bool {
 /// involves the supplied account.
 ///
 /// Returns `Ok(None)` if `account_index` is neither the bid nor ask account on
-/// the trade. The handler routes account-stream trades through this helper, so
+/// the trade. The handler routes account-stream trades through this parser, so
 /// crossed pairs the user is not part of (e.g. when sharing a market with
 /// other participants) are skipped silently rather than misattributed.
 ///

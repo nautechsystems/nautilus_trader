@@ -46,7 +46,7 @@ fn default_instrument_state() -> AxInstrumentState {
 /// Fee rates and close-only state are per account rather than per user.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/user-management/whoami>
+/// - <https://docs.architect.exchange/api-reference/user-management/get-whoami>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxWhoAmIAccount {
@@ -77,7 +77,7 @@ pub struct AxWhoAmIAccount {
 /// Response payload returned by `GET /whoami`.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/user-management/whoami>
+/// - <https://docs.architect.exchange/api-reference/user-management/get-whoami>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxWhoAmI {
@@ -383,7 +383,7 @@ pub struct AxTickerResponse {
 /// Response payload returned by `POST /authenticate`.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/user-management/get-user-token>
+/// - <https://docs.architect.exchange/api-reference/user-management/authenticate>
 #[derive(Debug, Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 #[serde(rename_all = "snake_case")]
 pub struct AxAuthenticateResponse {
@@ -422,7 +422,7 @@ pub struct AxCancelOrderResponse {
 /// Individual trade entry from the REST API.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/market-data/get-trades>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-trades>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxRestTrade {
     /// Timestamp (Unix epoch seconds).
@@ -443,7 +443,7 @@ pub struct AxRestTrade {
 /// Response payload returned by `GET /trades`.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/market-data/get-trades>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-trades>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxTradesResponse {
     /// List of trades.
@@ -453,7 +453,7 @@ pub struct AxTradesResponse {
 /// Individual price level in the order book.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/market-data/get-book>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-book>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxBookLevel {
     /// Price (decimal string).
@@ -469,7 +469,7 @@ pub struct AxBookLevel {
 /// Order book snapshot.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/market-data/get-book>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-book>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxBook {
     /// Timestamp (Unix epoch seconds).
@@ -487,7 +487,7 @@ pub struct AxBook {
 /// Response payload returned by `GET /book`.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/market-data/get-book>
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-book>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxBookResponse {
     /// The order book snapshot.
@@ -633,7 +633,7 @@ pub struct AxOrdersResponse {
 /// Response payload returned by `POST /initial-margin-requirement`.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/portfolio-management/post-initial-margin-requirement>
+/// - <https://docs.architect.exchange/api-reference/order-management/calculate-initial-margin-requirement>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AxInitialMarginRequirementResponse {
     /// Initial margin requirement.
@@ -861,7 +861,7 @@ pub struct AxFundingRatesResponse {
 /// One funding slot of a trading day, as returned by `GET /funding-slots`.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/marketdata/get-funding-slots>
+/// - <https://docs.architect.exchange/api-reference>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxFundingSlot {
@@ -896,7 +896,7 @@ pub struct AxFundingSlot {
 /// symbols report a single slot.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/marketdata/get-funding-slots>
+/// - <https://docs.architect.exchange/api-reference>
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxFundingSlotsResponse {
@@ -1063,7 +1063,7 @@ pub struct AxTransactionsResponse {
 /// Request body for `POST /authenticate` using API key and secret.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/user-management/get-user-token>
+/// - <https://docs.architect.exchange/api-reference/user-management/authenticate>
 #[derive(Debug, Clone, Serialize, Deserialize, Zeroize)]
 #[serde(rename_all = "snake_case")]
 pub struct AuthenticateApiKeyRequest {

@@ -42,8 +42,8 @@ orders by default (`dry_run=False`), stated in a warning at the top of the modul
 From the repository root:
 
 ```bash
-.venv/bin/python examples/live/lighter/data_tester.py
-.venv/bin/python examples/live/lighter/exec_tester.py
+uv run --project python --no-sync python examples/live/lighter/data_tester.py
+uv run --project python --no-sync python examples/live/lighter/exec_tester.py
 ```
 
 Rust examples live under `crates/adapters/lighter/examples/`. Both testers connect when run. The
@@ -498,7 +498,7 @@ Each bounded mass status captures one cutoff for its inactive orders and fills. 
 the report set complete only when the required order, fill, and position sources succeed and every
 historical fill maps to its order. If a historical source fails, active orders remain available for
 reconciliation while historical fills follow the engine's
-[order-only projection](../concepts/execution.md#order-only-fill-projection) rules.
+[order-only projection](../concepts/execution/reconciliation.md#order-only-fill-projection) rules.
 
 The `trades` endpoint retains only the most recent 3,000 trades per `account_index`, so a bounded
 lookback can request more fill history than the venue serves. Pagination walks back from the newest

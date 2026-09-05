@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-coinbase"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -136,8 +135,3 @@ name = "coinbase-exec-tester"
 path = "examples/node_exec_tester.rs"
 required-features = ["examples"]
 doc = false
-
-[[test]]
-name = "python"
-path = "tests/python.rs"
-required-features = ["python"]

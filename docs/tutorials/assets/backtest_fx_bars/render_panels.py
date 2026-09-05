@@ -1,10 +1,11 @@
 """
 Render the FX bars tutorial panels from a backtest run.
 
-Usage:
+After building NautilusTrader from source, run these commands from the repository root:
 
-    uv sync --extra visualization
-    python3 docs/tutorials/assets/backtest_fx_bars/render_panels.py
+    make sync
+    uv run --project python --no-sync \
+        python docs/tutorials/assets/backtest_fx_bars/render_panels.py
 
 Runs the same EMACross backtest as ``docs/tutorials/backtest_fx_bars.py``
 on bundled FXCM USD/JPY 2013-02 1-minute bars, then writes four PNG panels

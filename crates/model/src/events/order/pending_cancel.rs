@@ -216,7 +216,7 @@ impl OrderEvent for OrderPendingCancel {
     }
 
     fn reconciliation(&self) -> bool {
-        false
+        self.reconciliation
     }
 
     fn price(&self) -> Option<Price> {
@@ -317,6 +317,9 @@ impl OrderEvent for OrderPendingCancel {
 
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
+    }
+    fn causation_id(&self) -> Option<UUID4> {
+        self.causation_id
     }
 }
 

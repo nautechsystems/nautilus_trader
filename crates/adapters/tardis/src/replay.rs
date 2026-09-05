@@ -180,7 +180,13 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
         match result {
             Ok(msg) => {
                 match msg {
-                    Data::Deltas(msg) => {
+                    Data::BookDelta(delta) => {
+                        log::warn!(
+                            "Skipping individual delta message for {} (use Deltas batch instead)",
+                            delta.instrument_id
+                        );
+                    }
+                    Data::BookDeltas(msg) => {
                         handle_deltas_msg(
                             &msg,
                             &mut deltas_map,
@@ -189,7 +195,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
                             compression,
                         );
                     }
-                    Data::Depth10(msg) => {
+                    Data::BookDepth10(msg) => {
                         handle_depth10_msg(
                             *msg,
                             &mut depths_map,
@@ -219,10 +225,10 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
                     Data::Bar(msg) => {
                         handle_bar_msg(msg, &mut bars_map, &mut bars_cursors, &path, compression);
                     }
-                    Data::Delta(delta) => {
-                        log::warn!(
-                            "Skipping individual delta message for {} (use Deltas batch instead)",
-                            delta.instrument_id
+                    Data::MarkPrice(_) | Data::IndexPrice(_) | Data::FundingRate(_) => {
+                        log::debug!(
+                            "Skipping unsupported data type for instrument {}",
+                            msg.instrument_id()
                         );
                     }
                     Data::OptionGreeks(msg) => {
@@ -234,12 +240,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
                             compression,
                         );
                     }
-                    Data::MarkPrice(_)
-                    | Data::IndexPrice(_)
-                    | Data::FundingRate(_)
-                    | Data::InstrumentStatus(_)
-                    | Data::InstrumentClose(_)
-                    | Data::Custom(_) => {
+                    Data::InstrumentStatus(_) | Data::InstrumentClose(_) | Data::Custom(_) => {
                         log::debug!(
                             "Skipping unsupported data type for instrument {}",
                             msg.instrument_id()

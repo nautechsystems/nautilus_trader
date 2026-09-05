@@ -26,7 +26,10 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use indexmap::{IndexMap, IndexSet};
-use nautilus_analysis::{analyzer::PortfolioAnalyzer, snapshot::PortfolioStatistics};
+use nautilus_analysis::{
+    analyzer::{PortfolioAnalyzer, Statistic},
+    snapshot::PortfolioStatistics,
+};
 use nautilus_common::{
     cache::{AccountLookupError, AccountRef, Cache},
     clock::Clock,
@@ -2005,6 +2008,18 @@ impl Portfolio {
     /// should invoke it sparingly.
     #[must_use]
     pub fn statistics(&self) -> PortfolioStatistics {
+        self.analyzer().statistics()
+    }
+
+    /// Builds a [`PortfolioAnalyzer`] populated from the portfolio's current cache state.
+    ///
+    /// Aggregates balances across every account, includes cached positions and their snapshots,
+    /// merges close-time PnLs recorded during processing, and carries the registered statistics
+    /// so custom registrations participate. Every analysis path builds its analyzer here, so a
+    /// new caller cannot omit the registrations. Recomputes on each call; callers on hot paths
+    /// should invoke it sparingly.
+    #[must_use]
+    pub fn analyzer(&self) -> PortfolioAnalyzer {
         let cache = self.cache.borrow();
         let accounts = cache.accounts_all_owned();
         let positions: Vec<Position> = cache
@@ -2024,14 +2039,49 @@ impl Portfolio {
             .values()
             .flat_map(|ring| ring.iter())
             .collect::<Vec<_>>();
-        PortfolioAnalyzer::from_accounts_with_snapshots(
+        let mut analyzer = PortfolioAnalyzer::from_accounts_with_snapshots(
             &accounts,
             &positions,
             &snapshots,
             portfolio_snapshots,
             recorded,
-        )
-        .statistics()
+        );
+        analyzer.replace_statistics(inner.analyzer.statistics.clone());
+
+        analyzer
+    }
+
+    /// Returns the statistics registered for portfolio and backtest analysis.
+    ///
+    /// The set contains the built-in defaults plus any statistic registered through
+    /// [`Self::register_statistic`], minus any deregistered.
+    #[must_use]
+    pub fn registered_statistics(&self) -> AHashMap<String, Statistic> {
+        self.inner.borrow().analyzer.statistics.clone()
+    }
+
+    /// Registers `statistic` for inclusion in portfolio and backtest analysis.
+    ///
+    /// The registration persists across [`Self::statistics`] calls and analyzer state resets.
+    /// Registering a statistic whose name matches an existing one replaces it.
+    pub fn register_statistic(&mut self, statistic: Statistic) {
+        self.inner
+            .borrow_mut()
+            .analyzer
+            .register_statistic(statistic);
+    }
+
+    /// Removes the statistic matching `statistic` by name from analysis.
+    pub fn deregister_statistic(&mut self, statistic: &Statistic) {
+        self.inner
+            .borrow_mut()
+            .analyzer
+            .deregister_statistic(statistic);
+    }
+
+    /// Removes all registered statistics, including the built-in defaults.
+    pub fn deregister_statistics(&mut self) {
+        self.inner.borrow_mut().analyzer.deregister_statistics();
     }
 
     /// Updates portfolio calculations based on a position event.
@@ -3508,8 +3558,10 @@ fn update_order(
                     .insert(event.instrument_id(), unrealized_pnl);
             }
             None => {
-                log::error!(
-                    "Failed to calculate unrealized PnL for instrument {}",
+                // The callee already logged the cause and marked the instrument pending; the
+                // usual cause is a book-only run with no price yet, which is not an error
+                log::debug!(
+                    "Failed to calculate unrealized PnL for {}, marking as pending",
                     event.instrument_id()
                 );
             }

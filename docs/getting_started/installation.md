@@ -42,16 +42,17 @@ Conda and other Python distributions *may* work but aren't officially supported.
 
 ## From PyPI
 
-To install the latest [nautilus_trader](https://pypi.org/project/nautilus_trader/) binary wheel (or sdist package) from PyPI:
+:::warning[Install the 2.x wheel for these docs]
+This documentation covers NautilusTrader 2.x. PyPI still resolves a plain
+`uv pip install nautilus_trader` to the 1.x line, whose Python API differs, so the code on these
+pages fails with `ImportError` and `TypeError` against a 1.x install. Pass `--pre` until `2.0.0`
+is released, and confirm that
+`python -c "import nautilus_trader; print(nautilus_trader.__version__)"` reports a `2.` version.
+:::
 
-```bash
-uv pip install nautilus_trader
-```
-
-### Release-candidate wheels
-
-NautilusTrader publishes release-candidate wheels to PyPI using
-`2.0.0rcN` versions while final validation is in progress.
+NautilusTrader publishes 2.x release-candidate wheels to PyPI using `2.0.0rcN` versions while final
+validation is in progress. To install the latest
+[nautilus_trader](https://pypi.org/project/nautilus_trader/) binary wheel (or sdist package):
 
 ```bash
 uv pip install --pre nautilus_trader
@@ -59,6 +60,11 @@ uv pip install --pre nautilus_trader
 
 The `--pre` flag is required because these wheels are pre-release builds. The installed import name
 is still `nautilus_trader`.
+
+:::warning
+We do not recommend release candidates for production environments, such as live trading
+controlling real capital.
+:::
 
 Run this command outside a NautilusTrader source checkout. The repository root uses an
 `exclude-newer` uv policy for reproducible development, which can filter out newly published
@@ -68,23 +74,39 @@ instead.
 Current wheels target Python 3.12-3.14. Build from source when you need local Rust changes,
 a debug build, or a platform wheel that is not available.
 
+### Stable 1.x wheels
+
+Omitting `--pre` installs the latest stable 1.x release:
+
+```bash
+uv pip install nautilus_trader
+```
+
+A 1.x install cannot run the examples on these pages. See
+[Migrate from v1 to v2](https://github.com/nautechsystems/nautilus_trader/blob/develop/MIGRATION_V2.md)
+for the API differences.
+
 ## Extras
 
 Install the optional dependencies for Plotly-based interactive tearsheets and charts with the
 `visualization` extra:
 
 ```bash
-uv pip install "nautilus_trader[visualization]"
+uv pip install --pre "nautilus_trader[visualization]"
 ```
 
 ## From the Nautech Systems package index
 
-The Nautech Systems package index (`packages.nautechsystems.io`) complies with [PEP-503](https://peps.python.org/pep-0503/) and hosts both stable and development binary wheels for `nautilus_trader`.
+The Nautech Systems package index (`packages.nautechsystems.io`) complies with
+[PEP-503](https://peps.python.org/pep-0503/) and hosts both stable and development binary wheels
+for `nautilus_trader`.
 This enables users to install either the latest stable release or pre-release versions for testing.
 
 ### Stable wheels
 
-Stable wheels correspond to official releases of `nautilus_trader` on PyPI, and use standard versioning.
+Stable wheels correspond to official releases of `nautilus_trader` on PyPI, and use standard
+versioning. As on PyPI, the latest stable release is still on the 1.x line, so add `--pre` for a
+2.x wheel.
 
 To install the latest stable release:
 
@@ -116,7 +138,8 @@ while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standa
 | `Windows (x86_64)` | -       | ✓       |
 
 :::warning
-We do not recommend using development wheels in production environments, such as live trading controlling real capital.
+We do not recommend using development wheels in production environments, such as live trading
+controlling real capital.
 :::
 
 By default, uv will install the latest stable release. Adding the `--pre` flag ensures that pre-release versions, including development wheels, are considered.
@@ -253,7 +276,7 @@ The `--depth 1` flag fetches just the latest commit for a faster, lightweight cl
 
 ### 6. Install Cap'n Proto for development
 
-Install [Cap'n Proto](https://capnproto.org/) if you plan to enable the `capnp` Rust feature,
+Install [Cap'n Proto](https://capnproto.org) if you plan to enable the `capnp` Rust feature,
 regenerate serialization schemas, or work on serialization code. Use the repository script on
 Linux or macOS to install the pinned version from `.nautilus-engineering/tools.toml`:
 
@@ -269,12 +292,15 @@ Cap'n Proto is a development dependency. It is not required when installing pre-
 
 ### 7. Set environment variables
 
+The uv project environment lives at `python/.venv`, beside `python/pyproject.toml`. Run direct uv
+project commands from `python/` or pass `--project python` from the repository root.
+
 Set environment variables for PyO3 compilation (Linux and macOS only). Run these commands from
 the repository root after `make sync`:
 
 ```bash
 # Set the Python executable path for PyO3
-export PYO3_PYTHON="$PWD/.venv/bin/python"
+export PYO3_PYTHON="$PWD/python/.venv/bin/python"
 
 # Linux only: Set the library path for the uv-managed Python runtime
 PYTHON_LIB_DIR="$("$PYO3_PYTHON" -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')"
@@ -293,7 +319,7 @@ Without it, tests that depend on PyO3 may fail to locate the Python runtime.
 
 ### 8. Build Python from source
 
-This path builds the PyO3 package from the `python/` directory and installs it into the root `.venv`.
+This path builds the PyO3 package from the `python/` directory and installs it into `python/.venv`.
 Use it from a NautilusTrader source checkout when a development wheel is not available for your
 platform or when you need local Rust changes.
 
@@ -303,13 +329,13 @@ From the repository root:
 make build-debug
 ```
 
-This target syncs `.venv`, builds the Rust extension with maturin, and regenerates Python type
+This target syncs `python/.venv`, builds the Rust extension with maturin, and regenerates Python type
 stubs. It uses `target/` for Cargo artifacts.
 
 Run a Python example with the project environment:
 
 ```bash
-.venv/bin/python examples/live/lighter/data_tester.py
+uv run --project python --no-sync python examples/live/lighter/data_tester.py
 ```
 
 The script connects to Lighter Testnet and starts streaming market data; stop it with Ctrl+C.
@@ -326,6 +352,44 @@ Download the appropriate `.whl` for your operating system and Python version, th
 ```bash
 uv pip install <file-name>.whl
 ```
+
+## Troubleshooting
+
+### Documentation examples fail to import
+
+```text
+ImportError: cannot import name 'OrderSide' from 'nautilus_trader.model'
+ImportError: cannot import name 'BacktestEngine' from 'nautilus_trader.backtest'
+TypeError: Struct types cannot define __init__
+```
+
+These come from running 2.x documentation against a 1.x install. Check what you have:
+
+```bash
+python -c "import nautilus_trader; print(nautilus_trader.__version__)"
+```
+
+A `1.` version means the resolver picked the stable line. Reinstall with `--pre`:
+
+```bash
+uv pip install -U --pre nautilus_trader
+```
+
+The 1.x and 2.x Python APIs are not interchangeable. See
+[Migrate from v1 to v2](https://github.com/nautechsystems/nautilus_trader/blob/develop/MIGRATION_V2.md)
+when porting a 1.x application.
+
+### uv resolves an older version inside the repository
+
+The repository root sets an `exclude-newer` policy for reproducible development, which hides
+recently published wheels. Run install commands from another directory, or
+[build from source](#from-source).
+
+### Wheel not found for your platform
+
+Check your Python version is 3.12-3.14 and your platform is listed at the top of this page. On
+Linux, `ldd --version` must report glibc 2.35 or newer. Otherwise
+[build from source](#from-source).
 
 ## Versioning and releases
 

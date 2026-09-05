@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Deribit API credential storage and request signing helpers.
+//! Deribit API credential resolution, storage, and request signing.
 
 #![allow(unused_assignments)] // Fields are accessed externally, false positive from nightly
 

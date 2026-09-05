@@ -78,6 +78,7 @@ Every concrete Python order event exposes these fields:
 | `event_id`        | Unique event identifier.                                     |
 | `ts_event`        | UNIX timestamp (nanoseconds) when the event occurred.        |
 | `ts_init`         | UNIX timestamp (nanoseconds) when the event was initialized. |
+| `causation_id`    | Source event or report which caused this event, if known.    |
 
 Each order event page lists its type-specific fields. These include `venue_order_id`, `account_id`,
 and `reconciliation` only on the Python event classes that expose them. For example,
@@ -237,6 +238,6 @@ the raw message bus. Use signals to send derived values from a strategy to a dat
 
 - [Orders](../orders/) - Order types and state machine.
 - [Positions](../positions.md) - Position lifecycle and PnL.
-- [Execution](../execution.md) - Execution flow and risk checks.
+- [Execution](../execution/) - Execution flow and risk checks.
 - [Strategies](../strategies.md) - Handler implementations in strategies.
 - [Architecture](../architecture.md) - Data and execution flow patterns.

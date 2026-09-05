@@ -319,7 +319,7 @@ def test_fee_model_subclass_with_init_args() -> None:
 
         def __init__(self, rate: object) -> None:
             """
-            Initialize the helper.
+            Initialize the instance.
             """
             self.rate = rate
 
@@ -338,7 +338,7 @@ def test_fee_model_subclass_get_commission_dispatches_to_override() -> None:
 
         def __init__(self, commission: object) -> None:
             """
-            Initialize the helper.
+            Initialize the instance.
             """
             self.commission = commission
 

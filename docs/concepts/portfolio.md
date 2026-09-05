@@ -244,11 +244,13 @@ flags raised by other accounts on the same venue survive.
 
 ### Python query boundary
 
-The Python Portfolio is a read-only query facade. It does not expose initialization, reset, or
-update commands; the Rust engine remains responsible for authoritative mutation. It also does not
-expose the internal recorded realized-PnL cache. `account()` returns a detached, point-in-time copy.
-The copy does not reflect later account updates, and changing it does not affect the Portfolio.
-Call `account()` again to obtain the latest account state.
+The Python Portfolio is a read-only query facade for portfolio state. It does not expose
+initialization, reset, or update commands; the Rust engine remains responsible for authoritative
+mutation. Statistic registration is the exception, because it configures analysis rather than
+portfolio state. The facade also does not expose the internal recorded realized-PnL cache.
+`account()` returns a detached, point-in-time copy. The copy does not reflect later account
+updates, and changing it does not affect the Portfolio. Call `account()` again to obtain the
+latest account state.
 
 ## Portfolio statistics
 
@@ -263,18 +265,63 @@ The result contains:
 - General statistics derived from positions.
 
 The default set includes `WinRate`, `ProfitFactor`, `SharpeRatio`, and `LongRatio`. See the
-[Analysis API Reference](/docs/python-api-latest/analysis.html) for all built-in statistic types. A
-standalone `PortfolioAnalyzer` can register other built-in types such as `MaxDrawdown`, but this does
-not change the default set used by `Portfolio.statistics()`, backtest results, or post-run logs.
+[Analysis API Reference](/docs/python-api-latest/analysis.html) for all built-in statistic types.
+Pass another built-in type, such as `MaxDrawdown`, to `Portfolio.register_statistic()` to add it to
+`Portfolio.statistics()`, backtest results, and post-run logs. A standalone `PortfolioAnalyzer`
+keeps its own registrations, which do not reach the Portfolio.
 
 After a backtest, `engine.get_result()` exposes these categories through `stats_pnls`,
 `stats_returns`, and `stats_general`, plus the selected `returns_series`. When `run_analysis=true`,
 the engine also logs the three statistic categories under `PORTFOLIO PERFORMANCE` after the run.
 
-For metrics outside the built-in set, calculate them from reports, snapshots, or position data and
-add them to compatible offline tearsheet inputs. See [Visualization](visualization.md). Define the
-result for empty or insufficient data: return `None` when the metric is unknown, or use a
-domain-appropriate default such as `0.0`.
+### Custom statistics
+
+Subclass `PortfolioStatistic` and override the calculation methods for the input categories the
+statistic supports. Each category receives the same data the built-in statistics use, and a
+statistic contributes a value only where it overrides the matching method.
+`Portfolio.statistics()` feeds the first three categories; benchmark-relative results come from
+`PortfolioAnalyzer.get_performance_stats_returns_vs_benchmark()`, which takes the benchmark
+series from the caller.
+
+| Method                                  | Input                                        | Result category          |
+| --------------------------------------- | -------------------------------------------- | ------------------------ |
+| `calculate_from_returns`                | Returns keyed by UNIX nanoseconds            | `returns`                |
+| `calculate_from_realized_pnls`          | Realized PnLs for one currency, oldest first | `pnls`                   |
+| `calculate_from_positions`              | Positions and position snapshots             | `general`                |
+| `calculate_from_returns_with_benchmark` | Strategy returns and benchmark returns       | `PortfolioAnalyzer` only |
+
+```python
+from nautilus_trader.analysis import PortfolioStatistic
+
+
+class TradeCount(PortfolioStatistic):
+    def calculate_from_realized_pnls(self, realized_pnls: list[float]) -> float | None:
+        return float(len(realized_pnls))
+
+
+engine.portfolio.register_statistic(TradeCount())
+```
+
+The name defaults to the class name split on word boundaries, so `TradeCount` registers as
+"Trade Count". Override the `name` property to choose the name directly. Registering a statistic
+whose name matches an existing one replaces it, and `Portfolio.deregister_statistic()` removes one
+by name.
+
+A registration persists across `Portfolio.statistics()` calls and analyzer state resets, so it
+reaches backtest results and post-run logs for the whole run. Register before the run to cover
+every query.
+
+Return a `float`, or `None` when the metric is undefined for the given data. Define the result for
+empty or insufficient data: return `None` when the metric is unknown, or use a domain-appropriate
+default such as `0.0`. A statistic that raises, or that returns a non-numeric value, logs an error
+and contributes no value for that category; the remaining statistics still calculate.
+
+Every category is called for a registered statistic, including on a run that closed no trades,
+where the PnL category receives an empty list.
+
+A calculation method runs while the Portfolio holds its internal state borrowed, so calling a
+Portfolio method that mutates state from inside one panics. Keep a statistic a pure function of
+the data it is given.
 
 ## Returns: position vs portfolio
 

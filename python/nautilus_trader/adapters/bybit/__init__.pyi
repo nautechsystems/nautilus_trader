@@ -152,8 +152,11 @@ class BybitExecutionClientConfig:
         use_spot_position_reports: bool | None = None,
         auto_repay_spot_borrows: bool | None = None,
         margin_mode: BybitMarginMode | None = None,
+        smp_type: str | None = None,
         transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
+    @property
+    def smp_type(self) -> str | None: ...
     @property
     def has_proxy_url(self) -> bool: ...
 
@@ -235,6 +238,7 @@ class BybitHttpClient:
         position_idx: BybitPositionIdx | None = None,
         bbo_side_type: str | None = None,
         bbo_level: str | None = None,
+        smp_type: str | None = None,
         native_tp_sl: BybitNativeTpSlParams | None = None,
     ) -> typing.Any: ...
     def modify_order(

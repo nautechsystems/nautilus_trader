@@ -57,7 +57,6 @@ run_make() {
     UV_LOG="$UV_LOG" \
     make -C "$REPO_ROOT" --no-print-directory \
     TARGET_DIR="$TARGET_DIR" \
-    UV_PROJECT_ENVIRONMENT="$CASE_ROOT/venv" \
     CARGO_CI_PROFILE=nextest \
     PY_STUB_INPUTS="$inputs" \
     PY_STUB_INPUT_LIST_COMMAND="$input_list_command" \
@@ -111,8 +110,35 @@ grep -Fq "entry: make pytest-collect-fast" "$REPO_ROOT/.pre-commit-config.yaml" 
   fail "Pre-commit does not use fast Python collection"
 
 pre_flight_recipe=$(sed -n '/^pre-flight:  /,/^\t\$(call timer_end,Pre-flight)/p' "$REPO_ROOT/Makefile")
-[[ "$pre_flight_recipe" == *'check-code-sim'*'cargo-test-doc'*'cargo-test-sim'*'cargo-test-extras'* ]] ||
-  fail "Pre-flight Rust checks do not preserve early DST linting and doctest disk safety"
+[[ "$pre_flight_recipe" == *'check-code-sim'*'cargo-test-sim'*'cargo-test-extras'* ]] ||
+  fail "Pre-flight Rust checks do not preserve early DST linting and test order"
+[[ "$pre_flight_recipe" != *'cargo-test-doc'* ]] ||
+  fail "Pre-flight still runs Rust doctests"
+
+for workflow in build.yml test.yml; do
+  if grep -Fq 'make cargo-test-doc' "$REPO_ROOT/.github/workflows/$workflow"; then
+    fail "Regular CI still runs Rust doctests: $workflow"
+  fi
+done
+
+nightly_doctest_job=$(awk '
+  /^  rust-doctests:/ {
+    capture = 1
+  }
+  capture && /^  [[:alnum:]_-]+:/ && !/^  rust-doctests:/ {
+    exit
+  }
+  capture {
+    print
+  }
+' "$REPO_ROOT/.github/workflows/nightly-tests.yml")
+[[ -n "$nightly_doctest_job" ]] || fail "Nightly tests do not define a Rust doctest job"
+[[ "$nightly_doctest_job" == *$'        python-version:\n          - "3.13"\n          - "3.14"'* ]] ||
+  fail "Nightly Rust doctests do not cover Python 3.13 and 3.14"
+[[ "$nightly_doctest_job" == *'make cargo-test-doc'* ]] ||
+  fail "Nightly tests do not run Rust doctests"
+[[ "$nightly_doctest_job" == *'EXTRA_FEATURES="capnp,hypersync,nautilus-serialization/sbe,nautilus-infrastructure/postgres"'* ]] ||
+  fail "Nightly Rust doctests do not preserve the CI feature set"
 
 : > "$CARGO_LOG"
 PATH="$MOCK_BIN:$PATH" \
@@ -376,7 +402,7 @@ PATH="$MOCK_BIN:$PATH" \
   MAKE="$MOCK_BIN/make" cargo-test-postgres-changed > /dev/null
 [[ ! -s "$MAKE_LOG" ]] || fail "PostgreSQL bootstrap tests ran without related changes"
 grep -Fq \
-  "diff --cached --quiet -- schema/sql crates/infrastructure/src/sql/pg.rs crates/infrastructure/tests/test_cache_database_postgres.rs crates/cli/src/database crates/cli/src/bin/cli.rs crates/cli/src/lib.rs crates/cli/src/opt.rs scripts/ci/test-postgres-bootstrap.bash" \
+  "diff --cached --quiet -- schema/sql crates/infrastructure/src/sql/pg.rs crates/infrastructure/tests/integration/test_cache_database_postgres.rs crates/cli/src/database crates/cli/src/bin/cli.rs crates/cli/src/lib.rs crates/cli/src/opt.rs scripts/ci/test-postgres-bootstrap.bash" \
   "$GIT_LOG" || fail "PostgreSQL bootstrap change detection does not cover its inputs"
 
 PATH="$MOCK_BIN:$PATH" \

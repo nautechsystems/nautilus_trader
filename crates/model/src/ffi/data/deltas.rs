@@ -19,8 +19,7 @@ use nautilus_core::{
 };
 
 use crate::{
-    data::OrderBookDeltas, enums::BookAction, ffi::data::delta::OrderBookDeltaFfi,
-    identifiers::InstrumentId,
+    data::OrderBookDeltas, ffi::data::delta::OrderBookDeltaFfi, identifiers::InstrumentId,
 };
 
 /// Creates a new `OrderBookDeltas` instance from a `CVec` of `OrderBookDeltaFfi`.
@@ -89,15 +88,10 @@ pub extern "C" fn orderbook_deltas_vec_deltas(deltas: &OrderBookDeltas) -> CVec 
         .into()
 }
 
-/// Returns `1` if the first delta is a `Clear` action (snapshot), `0` otherwise.
-///
-/// Returns `0` for empty delta vectors to avoid panicking on malformed FFI input.
+/// Returns `1` if `deltas` has the `F_SNAPSHOT` record flag, `0` otherwise.
 #[unsafe(no_mangle)]
 pub extern "C" fn orderbook_deltas_is_snapshot(deltas: &OrderBookDeltas) -> u8 {
-    deltas
-        .deltas
-        .first()
-        .map_or(0, |first| u8::from(first.action == BookAction::Clear))
+    u8::from(deltas.is_snapshot())
 }
 
 #[unsafe(no_mangle)]
@@ -136,7 +130,10 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::data::stubs::stub_delta;
+    use crate::{
+        data::stubs::stub_delta,
+        enums::{BookAction, RecordFlag},
+    };
 
     #[rstest]
     fn test_empty_delta_drop_returns_without_panic() {
@@ -162,5 +159,31 @@ mod tests {
         assert_ne!(deltas.deltas[0].sequence, caller_owned[0].sequence);
 
         unsafe { orderbook_deltas_drop(deltas_ptr) };
+    }
+
+    #[rstest]
+    #[case::snapshot(
+        BookAction::Add,
+        RecordFlag::F_SNAPSHOT as u8,
+        1
+    )]
+    #[case::combined_flags(
+        BookAction::Add,
+        RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8,
+        1
+    )]
+    #[case::not_snapshot(BookAction::Add, RecordFlag::F_MBP as u8, 0)]
+    #[case::clear_without_snapshot(BookAction::Clear, 0, 0)]
+    fn test_orderbook_deltas_is_snapshot(
+        #[case] action: BookAction,
+        #[case] flags: u8,
+        #[case] expected: u8,
+    ) {
+        let mut delta = stub_delta();
+        delta.action = action;
+        delta.flags = flags;
+        let deltas = OrderBookDeltas::new(delta.instrument_id, vec![delta]);
+
+        assert_eq!(orderbook_deltas_is_snapshot(&deltas), expected);
     }
 }

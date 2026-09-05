@@ -1944,7 +1944,7 @@ mod tests {
     // Regression for the #3867 bug class: wire values with more decimal places
     // than the currency precision (USDT=8) previously tripped the
     // `total == locked + free` invariant when Money::new rounded each side
-    // independently. The `from_total_and_free` helper must keep the invariant.
+    // independently. The `from_total_and_free` constructor must keep the invariant.
     #[rstest]
     fn test_account_info_to_account_state_precision_drift() {
         let json = r#"{

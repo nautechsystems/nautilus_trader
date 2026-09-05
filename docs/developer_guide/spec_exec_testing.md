@@ -1859,7 +1859,9 @@ ExecTesterConfig::builder()
 **Considerations:**
 
 - `OrderDenied` occurs at the adapter level before the order reaches the venue.
-- This differs from `OrderRejected` which comes from the venue.
+- This differs from the normal `OrderRejected` path, which follows a venue rejection.
+  Reconciliation can also synthesize `OrderRejected`; see
+  [Terminal reconciliation provenance](../concepts/execution/policies.md#terminal-reconciliation-provenance).
 - Test by configuring a stop order type that the adapter does not support.
 
 ### TC-E73: Unsupported TIF

@@ -312,7 +312,7 @@ remaining rows, position report generation warns when an amount cannot be parsed
 positions are removed, unresolved instruments and other conversion failures also warn. If any
 position fails, `generate_position_status_reports` returns an error with the failure count instead
 of an incomplete report set. See
-[instrument availability](../concepts/reconciliation.md#instrument-availability).
+[instrument availability](../concepts/execution/reconciliation.md#instrument-availability).
 
 ### Risk events
 
@@ -393,7 +393,7 @@ time also requires a start time.
 For mass status, an unset `reconciliation_lookback_mins` or a value longer than the complete window
 applies that window. The returned `ExecutionMassStatus` sets `lookback_start` to the applied boundary
 and `reports_complete` to `false`; see the
-[mass-status history contract](../concepts/reconciliation.md#mass-status-history-contract). Binance
+[mass-status history contract](../concepts/execution/reconciliation.md#mass-status-history-contract). Binance
 Spot is unaffected. See the Binance
 [Futures change log](https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/change-log).
 

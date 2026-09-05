@@ -37,7 +37,7 @@ use rust_decimal::Decimal;
 use thiserror::Error;
 
 use super::{
-    order_builder::{PolymarketOrderBuilder, signed_limit_order_quantity},
+    order_builder::PolymarketOrderBuilder,
     parse::{adjust_market_buy_amount, calculate_market_price},
     types::{LimitOrderSubmitRequest, SignedLimitOrderSubmission},
 };
@@ -439,9 +439,21 @@ impl OrderSubmitter {
         let side = PolymarketOrderSide::from(request.side);
         let expiration = limit_order_expiration(request.expire_time);
 
-        let order = self
-            .order_builder
-            .build_limit_order(
+        let order = if request.quote_quantity {
+            anyhow::ensure!(
+                side == PolymarketOrderSide::Buy,
+                "Limit SELL orders require quote_quantity=false (amount in shares)"
+            );
+            self.order_builder.build_limit_order_from_collateral(
+                &request.token_id,
+                request.price.as_decimal(),
+                request.quantity.as_decimal(),
+                &expiration,
+                request.neg_risk,
+                request.tick_decimals,
+            )
+        } else {
+            self.order_builder.build_limit_order(
                 &request.token_id,
                 side,
                 request.price.as_decimal(),
@@ -451,7 +463,22 @@ impl OrderSubmitter {
                 request.neg_risk,
                 request.tick_decimals,
             )
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        }
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+        let signed_base_qty = signed_base_quantity(order.maker_amount, order.taker_amount, side);
+        let expected_base_qty =
+            Quantity::from_decimal_dp(signed_base_qty, request.size_precision).map_err(|e| {
+                anyhow::anyhow!(
+                    "Signed limit order share quantity {signed_base_qty} is invalid at instrument size precision {}: {e}",
+                    request.size_precision,
+                )
+            })?;
+        anyhow::ensure!(
+            expected_base_qty.as_decimal() == signed_base_qty,
+            "Signed limit order share quantity {signed_base_qty} cannot be represented exactly at instrument size precision {}",
+            request.size_precision,
+        );
 
         let expected_venue_order_id = self
             .order_builder
@@ -462,7 +489,7 @@ impl OrderSubmitter {
             order_type,
             post_only: request.post_only,
             expected_venue_order_id,
-            expected_base_qty: signed_limit_order_quantity(request.quantity.as_decimal()),
+            expected_base_qty,
         })
     }
 

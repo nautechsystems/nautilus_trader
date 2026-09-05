@@ -19,7 +19,7 @@ use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::{
-    identifiers::{InstrumentId, Symbol},
+    identifiers::{InstrumentId, Symbol, Venue},
     instruments::SyntheticInstrument,
     types::Price,
 };
@@ -64,6 +64,18 @@ impl SyntheticInstrument {
     #[pyo3(name = "id")]
     fn py_id(&self) -> InstrumentId {
         self.id
+    }
+
+    #[getter]
+    #[pyo3(name = "symbol")]
+    fn py_symbol(&self) -> Symbol {
+        self.id.symbol
+    }
+
+    #[getter]
+    #[pyo3(name = "venue")]
+    fn py_venue(&self) -> Venue {
+        self.id.venue
     }
 
     #[getter]

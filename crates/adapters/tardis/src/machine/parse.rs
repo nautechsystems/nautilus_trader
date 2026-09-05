@@ -70,7 +70,7 @@ pub fn parse_tardis_ws_message(
                 info.size_precision,
                 info.instrument_id,
             ) {
-                Ok(deltas) => Some(Data::Deltas(Box::new(deltas))),
+                Ok(deltas) => Some(Data::BookDeltas(Box::new(deltas))),
                 Err(e) => {
                     log::error!("Failed to parse book change message: {e}");
                     None
@@ -100,7 +100,7 @@ pub fn parse_tardis_ws_message(
                         info.size_precision,
                         info.instrument_id,
                     ) {
-                        Ok(depth10) => Some(Data::Depth10(Box::new(depth10))),
+                        Ok(depth10) => Some(Data::BookDepth10(Box::new(depth10))),
                         Err(e) => {
                             log::error!("Failed to parse book snapshot as depth10: {e}");
                             None
@@ -114,7 +114,7 @@ pub fn parse_tardis_ws_message(
                         info.size_precision,
                         info.instrument_id,
                     ) {
-                        Ok(deltas) => Some(Data::Deltas(Box::new(deltas))),
+                        Ok(deltas) => Some(Data::BookDeltas(Box::new(deltas))),
                         Err(e) => {
                             log::error!("Failed to parse book snapshot as deltas: {e}");
                             None
@@ -987,7 +987,7 @@ mod tests {
         let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Depth10);
 
         assert!(result.is_some());
-        assert!(matches!(result.unwrap(), Data::Depth10(_)));
+        assert!(matches!(result.unwrap(), Data::BookDepth10(_)));
     }
 
     #[rstest]
@@ -1019,7 +1019,7 @@ mod tests {
         let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Depth10);
 
         assert!(result.is_some());
-        assert!(matches!(result.unwrap(), Data::Depth10(_)));
+        assert!(matches!(result.unwrap(), Data::BookDepth10(_)));
     }
 
     #[rstest]
@@ -1040,7 +1040,7 @@ mod tests {
         let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Deltas);
 
         assert!(result.is_some());
-        assert!(matches!(result.unwrap(), Data::Deltas(_)));
+        assert!(matches!(result.unwrap(), Data::BookDeltas(_)));
     }
 
     #[rstest]
@@ -1060,8 +1060,8 @@ mod tests {
 
         let result = parse_tardis_ws_message(ws_msg, &info, &BookSnapshotOutput::Deltas);
 
-        let Some(Data::Deltas(deltas)) = result else {
-            panic!("Expected Data::Deltas, was {result:?}");
+        let Some(Data::BookDeltas(deltas)) = result else {
+            panic!("Expected Data::BookDeltas, was {result:?}");
         };
         assert_eq!(deltas.instrument_id, instrument_id);
         assert_eq!(deltas.deltas.len(), 7);

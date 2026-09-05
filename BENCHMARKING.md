@@ -112,8 +112,8 @@ before Criterion measures either preloaded `run()` time or full data loading,
 engine setup, and `run()` time.
 
 The benchmarks under `crates/live/benches/` cover scoped operations such as
-dispatch. The ignored stress test at `crates/live/tests/stress.rs` covers the
-deeper runner and engine workload.
+dispatch. The ignored stress test at `crates/live/tests/integration/stress.rs`
+covers the deeper runner and engine workload.
 
 ---
 

@@ -36,7 +36,7 @@
 //! - `examples`: Enables the crate's example binaries.
 //! - `extension-module`: Builds as a Python extension module.
 //! - `high-precision` (default): Enables
-//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode)
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
 //!   to use 128-bit value types.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 

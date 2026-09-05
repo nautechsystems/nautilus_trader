@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-trader"
-readme = "README.md"
 rust-version.workspace = true
 version.workspace = true
 edition.workspace = true

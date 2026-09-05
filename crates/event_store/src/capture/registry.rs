@@ -280,7 +280,7 @@ impl EncoderRegistry {
     /// Registers `headers_fn` as the headers extractor for `T`.
     ///
     /// Call after [`Self::register`] when the encoder is preregistered through a shared
-    /// helper but the call site wants a typed headers extractor. Replaces any prior
+    /// encoder but the call site wants a typed headers extractor. Replaces any prior
     /// extractor for `T`. Returns silently when `T` has no encoder registered: callers
     /// that care about the contract should rely on [`Self::contains`].
     pub fn register_headers<T, H>(&mut self, headers_fn: H)
@@ -659,7 +659,7 @@ mod tests {
     #[rstest]
     fn register_headers_overrides_default_extractor_post_register() {
         // Callers can attach a headers extractor after registering the encoder, which
-        // is how shared encoder helpers (default_registry) compose with site-specific
+        // is how the shared default_registry encoders compose with site-specific
         // header propagation.
         let mut registry = EncoderRegistry::new();
         registry.register::<Sample, _>(Ustr::from("Sample"), |s| {

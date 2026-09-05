@@ -27,7 +27,7 @@
 
 pub mod halt;
 
-// `batcher` carries thread-loop helpers gated out under cfg(madsim) since the
+// `batcher` carries thread-loop routines gated out under cfg(madsim) since the
 // synchronous path bypasses the channel and the run loop, but `build_append_entry`
 // is reused in both paths so the module stays compiled either way.
 mod batcher;

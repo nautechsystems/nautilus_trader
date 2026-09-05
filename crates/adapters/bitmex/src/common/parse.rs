@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Shared parsing helpers that transform BitMEX payloads into Nautilus types.
+//! Shared parsers that transform BitMEX payloads into Nautilus types.
 
 use std::{borrow::Cow, str::FromStr};
 

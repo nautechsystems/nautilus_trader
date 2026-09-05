@@ -4434,7 +4434,7 @@ mod tests {
 
     #[rstest]
     fn set_bus_tap_then_send_endpoint_owned_invokes_tap() {
-        // send_trading_command (and the other owned send helpers) reach the tap
+        // send_trading_command and the other owned send functions reach the tap
         // through send_endpoint_owned_counted. Without this site instrumented, real
         // production order commands would bypass the audit log.
         let _msgbus = get_message_bus();
@@ -4467,7 +4467,7 @@ mod tests {
 
     #[rstest]
     fn set_bus_tap_then_send_endpoint_ref_invokes_tap() {
-        // send_quote (and the other typed-ref send helpers) reach the tap through
+        // send_quote and the other typed-reference send functions reach the tap through
         // send_endpoint_ref. Mirrors the owned path coverage.
         let _msgbus = get_message_bus();
         let tap = Rc::new(RecordingTap::default());

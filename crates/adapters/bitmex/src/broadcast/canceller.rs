@@ -520,7 +520,7 @@ impl CancelBroadcaster {
 
     /// Processes cancel request results, handling success, idempotent success, and failures.
     ///
-    /// This helper consolidates the common error handling loop used across all broadcast methods.
+    /// This method consolidates the error handling loop used across all broadcast methods.
     async fn process_cancel_results<T>(
         &self,
         mut handles: Vec<JoinHandle<(String, anyhow::Result<T>)>>,

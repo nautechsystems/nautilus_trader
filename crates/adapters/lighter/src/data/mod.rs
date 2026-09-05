@@ -464,14 +464,14 @@ impl LighterDataClient {
                                 }
                             }
                             Some(NautilusWsMessage::Deltas(deltas)) => {
-                                let data = Data::Deltas(Box::new(deltas));
+                                let data = Data::BookDeltas(Box::new(deltas));
                                 if let Err(e) = data_sender.send(DataEvent::Data(data)) {
                                     log::error!("Failed to send order book deltas: {e}");
                                 }
                             }
                             Some(NautilusWsMessage::Depth10(depth)) => {
                                 if let Err(e) =
-                                    data_sender.send(DataEvent::Data(Data::Depth10(depth)))
+                                    data_sender.send(DataEvent::Data(Data::BookDepth10(depth)))
                                 {
                                     log::error!("Failed to send order book depth10: {e}");
                                 }

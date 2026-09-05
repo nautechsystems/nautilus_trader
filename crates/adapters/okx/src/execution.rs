@@ -46,6 +46,7 @@ use nautilus_live::{
     execution::{
         context::{OrderContext, OrderIdentity},
         failure::CommandFailure,
+        reports::retain_order_status_reports,
     },
     task::{TaskGroup, TaskGroupGuard},
 };
@@ -84,7 +85,10 @@ use crate::{
     },
     config::OKXExecutionClientConfig,
     http::{
-        client::{AlgoOrderReportSweep, FillHistory, OKXHttpClient, ReportInstrumentScope},
+        client::{
+            AlgoOrderReportSweep, FillHistory, OKXHttpClient, OKXPendingAlgoOrderReportsError,
+            ReportInstrumentScope,
+        },
         models::OKXCancelAlgoOrderRequest,
     },
     websocket::{
@@ -286,6 +290,7 @@ impl OKXExecutionClient {
     async fn collect_order_status_reports(
         &self,
         cmd: &GenerateOrderStatusReports,
+        require_complete_active_coverage: bool,
     ) -> anyhow::Result<OrderReportSweep> {
         let instrument_types = self.instrument_types();
         let routing_types = order_routing_instrument_types(&instrument_types);
@@ -339,6 +344,7 @@ impl OKXExecutionClient {
                         None,
                         start,
                         end,
+                        require_complete_active_coverage,
                     )
                     .await
                 {
@@ -349,6 +355,13 @@ impl OKXExecutionClient {
                             &mut ambiguous_triggered_child_ids,
                             &mut complete,
                         );
+                    }
+                    Err(e)
+                        if require_complete_active_coverage
+                            && e.downcast_ref::<OKXPendingAlgoOrderReportsError>()
+                                .is_some() =>
+                    {
+                        return Err(e);
                     }
                     Err(e) if is_instrument_cache_miss(&e) => return Err(e),
                     Err(e) => {
@@ -398,6 +411,7 @@ impl OKXExecutionClient {
                             None,
                             start,
                             end,
+                            require_complete_active_coverage,
                         )
                         .await
                     {
@@ -408,6 +422,13 @@ impl OKXExecutionClient {
                                 &mut ambiguous_triggered_child_ids,
                                 &mut complete,
                             );
+                        }
+                        Err(e)
+                            if require_complete_active_coverage
+                                && e.downcast_ref::<OKXPendingAlgoOrderReportsError>()
+                                    .is_some() =>
+                        {
+                            return Err(e);
                         }
                         Err(e) if is_instrument_cache_miss(&e) => return Err(e),
                         Err(e) => {
@@ -448,19 +469,7 @@ impl OKXExecutionClient {
             }
         }
 
-        if cmd.open_only {
-            reports.retain(|r| r.order_status.is_open());
-        }
-
-        if let Some(start) = cmd.start {
-            // Open orders are authoritative regardless of age; only closed
-            // history respects the report window.
-            reports.retain(|r| r.ts_last >= start || r.order_status.is_open());
-        }
-
-        if let Some(end) = cmd.end {
-            reports.retain(|r| r.ts_last <= end || r.order_status.is_open());
-        }
+        retain_order_status_reports(&mut reports, cmd);
 
         Ok(OrderReportSweep {
             reports,
@@ -2130,7 +2139,7 @@ impl ExecutionClient for OKXExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        Ok(self.collect_order_status_reports(cmd).await?.reports)
+        Ok(self.collect_order_status_reports(cmd, false).await?.reports)
     }
 
     async fn generate_fill_reports(
@@ -2190,7 +2199,7 @@ impl ExecutionClient for OKXExecutionClient {
             (fill_reports, fills_complete),
             (mut position_reports, positions_complete),
         ) = tokio::try_join!(
-            self.collect_order_status_reports(&order_cmd),
+            self.collect_order_status_reports(&order_cmd, true),
             self.collect_fill_reports(fill_cmd, fill_history),
             self.collect_position_status_reports(&position_cmd),
         )?;

@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-bybit"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -167,8 +166,3 @@ name = "bybit-delta-neutral"
 path = "examples/node_delta_neutral.rs"
 required-features = ["examples"]
 doc = false
-
-[[test]]
-name = "python"
-path = "tests/python.rs"
-required-features = ["python"]

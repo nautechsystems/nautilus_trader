@@ -64,9 +64,9 @@ use crate::{
         consts::{BYBIT_NAUTILUS_BROKER_ID, BYBIT_WS_TOPIC_DELIMITER},
         credential::Credential,
         enums::{
-            BybitBboSideType, BybitEnvironment, BybitOrderSide, BybitOrderType, BybitPositionIdx,
-            BybitProductType, BybitTimeInForce, BybitTpSlMode, BybitWsOrderRequestOp,
-            resolve_trigger_type,
+            BybitBboSideType, BybitEnvironment, BybitOrderSide, BybitOrderSmpType, BybitOrderType,
+            BybitPositionIdx, BybitProductType, BybitTimeInForce, BybitTpSlMode,
+            BybitWsOrderRequestOp, resolve_trigger_type,
         },
         parse::{
             bar_spec_to_bybit_interval, extract_base_coin, extract_raw_symbol, map_time_in_force,
@@ -550,7 +550,7 @@ impl BybitWebSocketClient {
                 recv_window_ms,
             );
 
-            // Helper closure to resubscribe all tracked subscriptions after reconnection
+            // Resubscribe all tracked subscriptions after reconnection
             let resubscribe_all = || async {
                 let topics = subscriptions.all_topics();
 
@@ -1592,6 +1592,7 @@ impl BybitWebSocketClient {
                 sl_limit_price: order.sl_limit_price,
                 tp_limit_price: order.tp_limit_price,
                 order_iv: order.order_iv,
+                smp_type: order.smp_type,
                 mmp: order.mmp,
                 position_idx: order.position_idx,
                 bbo_side_type: order.bbo_side_type,
@@ -1802,6 +1803,7 @@ impl BybitWebSocketClient {
         position_idx: Option<BybitPositionIdx>,
         bbo_side_type: Option<BybitBboSideType>,
         bbo_level: Option<String>,
+        smp_type: Option<BybitOrderSmpType>,
     ) -> BybitWsResult<String> {
         let params = self.build_place_order_params(
             product_type,
@@ -1823,6 +1825,7 @@ impl BybitWebSocketClient {
             position_idx,
             bbo_side_type,
             bbo_level,
+            smp_type,
         )?;
 
         self.place_order(params).await
@@ -1899,6 +1902,7 @@ impl BybitWebSocketClient {
         position_idx: Option<BybitPositionIdx>,
         bbo_side_type: Option<BybitBboSideType>,
         bbo_level: Option<String>,
+        smp_type: Option<BybitOrderSmpType>,
     ) -> BybitWsResult<BybitWsPlaceOrderParams> {
         let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())
             .map_err(|e| BybitWsError::ClientError(e.to_string()))?;
@@ -1967,6 +1971,7 @@ impl BybitWebSocketClient {
                 sl_limit_price: None,
                 tp_limit_price: None,
                 order_iv: None,
+                smp_type,
                 mmp: None,
                 position_idx,
                 bbo_side_type,
@@ -2009,6 +2014,7 @@ impl BybitWebSocketClient {
                 sl_limit_price: None,
                 tp_limit_price: None,
                 order_iv: None,
+                smp_type,
                 mmp: None,
                 position_idx,
                 bbo_side_type,
@@ -2447,6 +2453,7 @@ mod tests {
             sl_limit_price: None,
             tp_limit_price: None,
             order_iv: Some("0.80".to_string()),
+            smp_type: None,
             mmp: Some(true),
             position_idx: None,
             bbo_side_type: None,
@@ -2630,6 +2637,68 @@ mod tests {
     }
 
     #[rstest]
+    fn batch_place_command_carries_smp_type_per_order() {
+        let client = BybitWebSocketClient::new_trade(
+            BybitEnvironment::Testnet,
+            Some("test-key".to_string()),
+            Some("test-secret".to_string()),
+            None,
+            20,
+            TransportBackend::default(),
+            None,
+        );
+
+        let expectations = [
+            (Some(BybitOrderSmpType::CancelMaker), Some("CancelMaker")),
+            (Some(BybitOrderSmpType::CancelBoth), Some("CancelBoth")),
+            (None, None),
+        ];
+
+        let orders = expectations
+            .into_iter()
+            .enumerate()
+            .map(|(index, (smp_type, _))| {
+                client
+                    .build_place_order_params(
+                        BybitProductType::Linear,
+                        InstrumentId::from("ETHUSDT-LINEAR.BYBIT"),
+                        ClientOrderId::from(format!("smp-batch-{index}").as_str()),
+                        OrderSide::Buy,
+                        OrderType::Limit,
+                        Quantity::from("1.0"),
+                        false,
+                        Some(TimeInForce::Gtc),
+                        Some(Price::from("50000.0")),
+                        None,
+                        None,
+                        None,
+                        None,
+                        false,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        smp_type,
+                    )
+                    .expect("failed to build params")
+            })
+            .collect::<Vec<_>>();
+
+        let command = client
+            .build_batch_place_command(orders, "req-smp-batch".to_string())
+            .expect("failed to build batch command");
+
+        let items = batch_nested_items(&command);
+
+        assert_eq!(items.len(), expectations.len());
+
+        for (item, (_, expected)) in items.iter().zip(expectations) {
+            assert_eq!(item.get("smpType").and_then(Value::as_str), expected);
+        }
+    }
+
+    #[rstest]
     fn test_race_duplicate_subscribe_messages_idempotent() {
         let subscriptions = SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER);
         let topic = "publicTrade.BTCUSDT";
@@ -2699,6 +2768,7 @@ mod tests {
                 None,
                 None,
                 is_leverage,
+                None,
                 None,
                 None,
                 None,
@@ -2779,6 +2849,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
             )
             .expect("Failed to build params");
 
@@ -2818,6 +2889,7 @@ mod tests {
                 None,
                 Some(BybitBboSideType::Queue),
                 Some("2".to_string()),
+                None,
             )
             .expect("Failed to build params");
 

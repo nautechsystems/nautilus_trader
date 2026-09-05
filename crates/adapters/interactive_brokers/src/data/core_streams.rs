@@ -1459,7 +1459,7 @@ async fn process_market_depth_stream(
                             ts_init,
                         );
 
-                        if data_sender.send(DataEvent::Data(Data::Delta(delta))).is_err() {
+                        if data_sender.send(DataEvent::Data(Data::BookDelta(delta))).is_err() {
                             return Ok(StreamAction::Stop);
                         }
                     }
@@ -1491,7 +1491,7 @@ async fn process_market_depth_stream(
                             ts_init,
                         );
 
-                        if data_sender.send(DataEvent::Data(Data::Delta(delta))).is_err() {
+                        if data_sender.send(DataEvent::Data(Data::BookDelta(delta))).is_err() {
                             return Ok(StreamAction::Stop);
                         }
                     }
@@ -3292,7 +3292,7 @@ mod tests {
         .unwrap();
 
         match receiver.recv().await.unwrap() {
-            DataEvent::Data(Data::Delta(delta)) => {
+            DataEvent::Data(Data::BookDelta(delta)) => {
                 assert_eq!(delta.sequence, 1);
                 assert_eq!(delta.order.price.as_f64(), 100.0);
                 assert_eq!(delta.order.size.as_f64(), 5.0);
@@ -3301,7 +3301,7 @@ mod tests {
         }
 
         match receiver.recv().await.unwrap() {
-            DataEvent::Data(Data::Delta(delta)) => {
+            DataEvent::Data(Data::BookDelta(delta)) => {
                 assert_eq!(delta.sequence, 2);
                 assert_eq!(delta.order.price.as_f64(), 101.0);
                 assert_eq!(delta.order.size.as_f64(), 7.0);

@@ -38,9 +38,9 @@
 //! - `extension-module`: Builds as a Python extension module and is automatically enabled by
 //!   `maturin`.
 //! - `high-precision`: Uses 128-bit value types throughout the workspace.
-//! - `hypersync`: Enables [HyperSync](https://envio.dev/#hypersync) support for the blockchain
-//!   adapter.
-//! - `mimalloc`: Sets [mimalloc](https://github.com/microsoft/mimalloc) as Rust's global allocator.
+//! - `hypersync`: Enables [`hypersync-client`](https://crates.io/crates/hypersync-client)
+//!   support for the blockchain adapter.
+//! - `mimalloc`: Sets [mimalloc](https://crates.io/crates/mimalloc) as Rust's global allocator.
 //! - `postgres`: Enables PostgreSQL (sqlx) back-ends in dependent crates.
 //! - `redis`: Enables Redis based infrastructure in dependent crates.
 //! - `tracing-bridge`: Enables the `tracing` subscriber bridge for log integration.

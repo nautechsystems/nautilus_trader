@@ -1,11 +1,12 @@
 """
 Render the AX XAU-PERP book imbalance tutorial panels from a backtest run.
 
-Usage:
+After building NautilusTrader from source, run these commands from the repository root:
 
-    uv sync --extra visualization
+    make sync
     GC_DBN=test_data/local/Databento/gc_gold_quotes.dbn.zst \
-        python3 docs/tutorials/assets/gold_book_imbalance_ax/render_panels.py
+        uv run --project python --no-sync \
+            python docs/tutorials/assets/gold_book_imbalance_ax/render_panels.py
 
 Replays a Databento ``GC.v.0`` mbp-1 file through the AX example
 ``OrderBookImbalance`` strategy. Quote ticks are sampled once per second by an
@@ -78,15 +79,9 @@ MIN_TRIGGER_SIZE = 1.0
 
 
 class QuoteSamplerConfig(DataActorConfig):
-    _CUSTOM_FIELDS = ("instrument_id", "sample_every_secs")
-
-    def __new__(cls, *args: object, **kwargs: object) -> object:
-        for key in cls._CUSTOM_FIELDS:
-            kwargs.pop(key, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_id: InstrumentId,
         sample_every_secs: int = 1,
         **_kwargs: object,

@@ -93,8 +93,8 @@ use crate::common::{
     credential::{Credential, credential_env_vars},
     enums::{
         BybitAccountType, BybitBboSideType, BybitContractType, BybitEnvironment, BybitMarginMode,
-        BybitOpenOnly, BybitOrderFilter, BybitOrderSide, BybitOrderType, BybitPositionIdx,
-        BybitPositionMode, BybitProductType, BybitRepayStatus, BybitTpSlMode,
+        BybitOpenOnly, BybitOrderFilter, BybitOrderSide, BybitOrderSmpType, BybitOrderType,
+        BybitPositionIdx, BybitPositionMode, BybitProductType, BybitRepayStatus, BybitTpSlMode,
     },
     models::{BybitCursorListResponse, BybitErrorCheck, BybitResponseCheck},
     parse::{
@@ -2510,6 +2510,7 @@ impl BybitHttpClient {
         position_idx: Option<BybitPositionIdx>,
         bbo_side_type: Option<BybitBboSideType>,
         bbo_level: Option<String>,
+        smp_type: Option<BybitOrderSmpType>,
         native_tp_sl: Option<&BybitNativeTpSlParams>,
     ) -> anyhow::Result<OrderStatusReport> {
         let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
@@ -2566,6 +2567,7 @@ impl BybitHttpClient {
 
         order_entry.bbo_side_type(bbo_side_type);
         order_entry.bbo_level(bbo_level);
+        order_entry.smp_type(smp_type);
 
         if let Some(tp_sl) = native_tp_sl {
             if let Some(ref tp) = tp_sl.take_profit {

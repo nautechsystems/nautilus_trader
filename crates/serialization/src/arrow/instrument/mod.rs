@@ -28,7 +28,6 @@ use arrow::{
     record_batch::RecordBatch,
 };
 use nautilus_model::{
-    enums::{AssetClass, OptionKind},
     instruments::{
         Instrument, InstrumentAny, betting::BettingInstrument, binary_option::BinaryOption,
         cfd::Cfd, commodity::Commodity, crypto_future::CryptoFuture,
@@ -123,56 +122,6 @@ pub(crate) fn decode_currency(
         trimmed,
         Some(context),
     ))
-}
-
-// The instrument modules that call these write the enums as PascalCase, which differs from the
-// `Display`/`FromStr` impls on the enums themselves (SCREAMING_SNAKE_CASE), so the mapping is
-// written out rather than derived. Other modules encode `asset_class` through the enum's own
-// impls instead, so a column's format follows the module that writes it.
-pub(crate) fn asset_class_to_string(value: AssetClass) -> String {
-    match value {
-        AssetClass::FX => "FX".to_string(),
-        AssetClass::Equity => "Equity".to_string(),
-        AssetClass::Commodity => "Commodity".to_string(),
-        AssetClass::Debt => "Debt".to_string(),
-        AssetClass::Index => "Index".to_string(),
-        AssetClass::Cryptocurrency => "Cryptocurrency".to_string(),
-        AssetClass::Alternative => "Alternative".to_string(),
-    }
-}
-
-pub(crate) fn asset_class_from_str(value: &str) -> Result<AssetClass, EncodingError> {
-    match value {
-        "FX" => Ok(AssetClass::FX),
-        "Equity" => Ok(AssetClass::Equity),
-        "Commodity" => Ok(AssetClass::Commodity),
-        "Debt" => Ok(AssetClass::Debt),
-        "Index" => Ok(AssetClass::Index),
-        "Cryptocurrency" => Ok(AssetClass::Cryptocurrency),
-        "Alternative" => Ok(AssetClass::Alternative),
-        _ => Err(EncodingError::ParseError(
-            "asset_class",
-            format!("Unknown asset class: {value}"),
-        )),
-    }
-}
-
-pub(crate) fn option_kind_to_string(value: OptionKind) -> String {
-    match value {
-        OptionKind::Call => "Call".to_string(),
-        OptionKind::Put => "Put".to_string(),
-    }
-}
-
-pub(crate) fn option_kind_from_str(value: &str) -> Result<OptionKind, EncodingError> {
-    match value {
-        "Call" => Ok(OptionKind::Call),
-        "Put" => Ok(OptionKind::Put),
-        _ => Err(EncodingError::ParseError(
-            "option_kind",
-            format!("Unknown option kind: {value}"),
-        )),
-    }
 }
 
 pub(crate) const KEY_CLASS: &str = "class";
@@ -905,6 +854,19 @@ mod tests {
         RecordBatch::try_new(schema, columns).unwrap()
     }
 
+    fn batch_with_string_column(
+        record_batch: &RecordBatch,
+        column_name: &str,
+        value: &str,
+    ) -> RecordBatch {
+        let schema = record_batch.schema();
+        let column_index = schema.index_of(column_name).unwrap();
+        let mut columns = record_batch.columns().to_vec();
+        columns[column_index] = Arc::new(StringArray::from(vec![value]));
+
+        RecordBatch::try_new(schema, columns).unwrap()
+    }
+
     fn batch_with_uint8_column(
         record_batch: &RecordBatch,
         column_name: &str,
@@ -1287,5 +1249,116 @@ mod tests {
     fn test_roundtrip_tokenized_asset() {
         use nautilus_model::instruments::stubs::tokenized_asset_aaplx;
         roundtrip_case(&InstrumentAny::TokenizedAsset(tokenized_asset_aaplx()));
+    }
+
+    fn encoded_string_column(instrument: &InstrumentAny, name: &str) -> Option<String> {
+        let metadata = instrument.metadata();
+        let batch =
+            InstrumentAny::encode_batch(&metadata, std::slice::from_ref(instrument)).unwrap();
+        batch.column_by_name(name).map(|column| {
+            column
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap_or_else(|| panic!("{name} column is not Utf8"))
+                .value(0)
+                .to_string()
+        })
+    }
+
+    #[rstest]
+    #[case::binary_option(InstrumentAny::BinaryOption(
+        nautilus_model::instruments::stubs::binary_option()
+    ))]
+    #[case::cfd(InstrumentAny::Cfd(nautilus_model::instruments::stubs::cfd_gold()))]
+    #[case::commodity(InstrumentAny::Commodity(
+        nautilus_model::instruments::stubs::commodity_gold()
+    ))]
+    #[case::futures_contract(InstrumentAny::FuturesContract(
+        nautilus_model::instruments::stubs::futures_contract_es(None, None)
+    ))]
+    #[case::futures_spread(InstrumentAny::FuturesSpread(
+        nautilus_model::instruments::stubs::futures_spread_es()
+    ))]
+    #[case::option_contract(InstrumentAny::OptionContract(
+        nautilus_model::instruments::stubs::option_contract_appl()
+    ))]
+    #[case::option_spread(InstrumentAny::OptionSpread(
+        nautilus_model::instruments::stubs::option_spread()
+    ))]
+    #[case::perpetual_contract(InstrumentAny::PerpetualContract(
+        nautilus_model::instruments::stubs::perpetual_contract_eurusd()
+    ))]
+    #[case::tokenized_asset(InstrumentAny::TokenizedAsset(
+        nautilus_model::instruments::stubs::tokenized_asset_aaplx()
+    ))]
+    fn test_encoded_asset_class_uses_canonical_label(#[case] instrument: InstrumentAny) {
+        assert_eq!(
+            encoded_string_column(&instrument, "asset_class"),
+            Some(Instrument::asset_class(&instrument).as_ref().to_string()),
+        );
+    }
+
+    #[rstest]
+    #[case::crypto_option(InstrumentAny::CryptoOption(
+        nautilus_model::instruments::stubs::crypto_option_btc_deribit(
+            3,
+            1,
+            Price::from("0.001"),
+            Quantity::from("0.1"),
+        )
+    ))]
+    #[case::option_contract(InstrumentAny::OptionContract(
+        nautilus_model::instruments::stubs::option_contract_appl()
+    ))]
+    fn test_encoded_option_kind_uses_canonical_label(#[case] instrument: InstrumentAny) {
+        let expected =
+            Instrument::option_kind(&instrument).expect("stub must carry an option kind");
+        assert_eq!(
+            encoded_string_column(&instrument, "option_kind"),
+            Some(expected.as_ref().to_string()),
+        );
+    }
+
+    fn decoded_option_contract_with_column(name: &str, value: &str) -> InstrumentAny {
+        let instrument = InstrumentAny::OptionContract(
+            nautilus_model::instruments::stubs::option_contract_appl(),
+        );
+        let metadata = instrument.metadata();
+        let batch =
+            InstrumentAny::encode_batch(&metadata, std::slice::from_ref(&instrument)).unwrap();
+        let batch = batch_with_string_column(&batch, name, value);
+
+        decode_instrument_any_batch(&metadata, &batch)
+            .unwrap()
+            .remove(0)
+    }
+
+    #[rstest]
+    #[case("EQUITY", AssetClass::Equity)]
+    #[case("Equity", AssetClass::Equity)]
+    #[case("CRYPTOCURRENCY", AssetClass::Cryptocurrency)]
+    #[case("Cryptocurrency", AssetClass::Cryptocurrency)]
+    #[case("FX", AssetClass::FX)]
+    fn test_decode_asset_class_accepts_legacy_labels(
+        #[case] label: &str,
+        #[case] expected: AssetClass,
+    ) {
+        let decoded = decoded_option_contract_with_column("asset_class", label);
+
+        assert_eq!(Instrument::asset_class(&decoded), expected);
+    }
+
+    #[rstest]
+    #[case("CALL", OptionKind::Call)]
+    #[case("Call", OptionKind::Call)]
+    #[case("PUT", OptionKind::Put)]
+    #[case("Put", OptionKind::Put)]
+    fn test_decode_option_kind_accepts_legacy_labels(
+        #[case] label: &str,
+        #[case] expected: OptionKind,
+    ) {
+        let decoded = decoded_option_contract_with_column("option_kind", label);
+
+        assert_eq!(Instrument::option_kind(&decoded), Some(expected));
     }
 }

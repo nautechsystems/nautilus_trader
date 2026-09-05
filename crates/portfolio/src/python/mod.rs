@@ -18,7 +18,9 @@
 use std::{cell::RefCell, rc::Rc};
 
 use indexmap::{IndexMap, IndexSet};
-use nautilus_analysis::snapshot::PortfolioStatistics;
+use nautilus_analysis::{
+    python::statistic::statistic_from_pyobject, snapshot::PortfolioStatistics,
+};
 use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
@@ -487,6 +489,43 @@ impl PyPortfolio {
     #[pyo3(name = "statistics")]
     fn py_statistics(&self) -> PortfolioStatistics {
         self.0.borrow().statistics()
+    }
+
+    /// Registers a portfolio statistic for inclusion in portfolio and backtest analysis.
+    ///
+    /// Accepts a built-in statistic type or any user-defined object exposing a `name` and the
+    /// calculation methods for the input categories it supports. The registration persists
+    /// across `statistics()` calls, so it also reaches backtest results and post-run analysis
+    /// logs. Registering a statistic whose name matches an existing one replaces it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `statistic` cannot be converted into a registrable statistic.
+    #[pyo3(name = "register_statistic")]
+    fn py_register_statistic(&self, py: Python, statistic: Py<PyAny>) -> PyResult<()> {
+        let statistic = statistic_from_pyobject(py, statistic)?;
+        self.0.borrow_mut().register_statistic(statistic);
+        Ok(())
+    }
+
+    /// Removes the statistic matching `statistic` by name from analysis.
+    ///
+    /// Deregistering a statistic that was never registered is a no-op.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `statistic` cannot be converted into a registrable statistic.
+    #[pyo3(name = "deregister_statistic")]
+    fn py_deregister_statistic(&self, py: Python, statistic: Py<PyAny>) -> PyResult<()> {
+        let statistic = statistic_from_pyobject(py, statistic)?;
+        self.0.borrow_mut().deregister_statistic(&statistic);
+        Ok(())
+    }
+
+    /// Removes all registered statistics, including the built-in defaults.
+    #[pyo3(name = "deregister_statistics")]
+    fn py_deregister_statistics(&self) {
+        self.0.borrow_mut().deregister_statistics();
     }
 }
 

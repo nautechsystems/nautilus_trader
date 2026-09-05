@@ -1,6 +1,6 @@
 # Scripts directory
 
-This directory contains assorted helper scripts used by NautilusTrader's
+This directory contains scripts used by NautilusTrader's
 developer tooling and CI pipeline. Only one of them (`curate-dataset.sh`)
 needs a brief explanation because it is meant to be executed manually when
 curating test-fixture datasets.
@@ -66,6 +66,6 @@ and downstream tooling can verify the checksum.
 
 ---
 
-For details on the other helper scripts, run them with `-h` or read the
+For details on the other scripts, run them with `-h` or read the
 inline comments; they are mostly invoked from CI and rarely need manual
 execution.

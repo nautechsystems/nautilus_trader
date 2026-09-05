@@ -2,8 +2,8 @@
 
 Set up a `LiveNode` for live market connectivity. For the node lifecycle, see
 [Live trading](../concepts/live.md). For command outcomes, see
-[Execution](../concepts/execution.md#command-outcomes). For state recovery, see
-[Execution reconciliation](../concepts/reconciliation.md).
+[Execution policies](../concepts/execution/policies.md#command-outcomes). For state recovery, see
+[Execution reconciliation](../concepts/execution/reconciliation.md).
 
 :::danger[Jupyter notebooks not recommended for live trading]
 Do not run live trading nodes in Jupyter notebooks. The node owns a long-running loop on the
@@ -327,7 +327,7 @@ Recovers missed order and position events to keep system state consistent with t
 | `reconciliation_instrument_ids` | None    | Include list of instrument IDs to reconcile.                                  |
 | `filtered_client_order_ids`     | None    | Client order IDs to skip during reconciliation (for venue-side duplicates).   |
 
-See [Execution reconciliation](../concepts/reconciliation.md) for details.
+See [Execution reconciliation](../concepts/execution/reconciliation.md) for details.
 
 ### Order filtering
 
@@ -354,7 +354,7 @@ When `filter_unclaimed_external_orders` is enabled, only `VENUE`-tagged orders a
 Continuous reconciliation keeps runtime execution state aligned after startup by checking
 in-flight orders, polling open orders, checking position status, and auditing own order books.
 Configure the loop with these settings. For runtime state-transition rules, retry coordination,
-and caveats, see [Runtime checks](../concepts/reconciliation.md#runtime-checks).
+and caveats, see [Runtime checks](../concepts/execution/reconciliation.md#runtime-checks).
 
 | Setting                              | Default        | Description                                                                                                                                                                                    |
 | ------------------------------------ | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -430,13 +430,13 @@ For a complete parameter list see the `StrategyConfig`
 
 ### Order management
 
-| Setting                         | Default | Description                                                                                  |
-| ------------------------------- | ------- | -------------------------------------------------------------------------------------------- |
-| `oms_type`                      | None    | [OMS type](../concepts/execution.md#oms-configuration) for position ID and order processing. |
-| `use_uuid_client_order_ids`     | False   | Use UUID4 values for client order IDs.                                                       |
-| `external_order_instrument_ids` | None    | Serializable intent to claim external orders and reconciliation activity by instrument.      |
-| `manage_contingent_orders`      | False   | Manage open, non-active-local OTO, OCO, and OUO relationships.                               |
-| `manage_gtd_expiry`             | False   | Manage GTD expirations for orders.                                                           |
+| Setting                         | Default | Description                                                                                        |
+| ------------------------------- | ------- | -------------------------------------------------------------------------------------------------- |
+| `oms_type`                      | None    | [OMS type](../concepts/execution/index.md#oms-configuration) for position ID and order processing. |
+| `use_uuid_client_order_ids`     | False   | Use UUID4 values for client order IDs.                                                             |
+| `external_order_instrument_ids` | None    | Serializable intent to claim external orders and reconciliation activity by instrument.            |
+| `manage_contingent_orders`      | False   | Manage open, non-active-local OTO, OCO, and OUO relationships.                                     |
+| `manage_gtd_expiry`             | False   | Manage GTD expirations for orders.                                                                 |
 
 See [Claiming external orders](../concepts/strategies.md#claiming-external-orders) for active claim
 lifecycle and runtime updates.

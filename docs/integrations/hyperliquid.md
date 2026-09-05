@@ -532,7 +532,7 @@ await client.submit_split_outcome(50, Decimal("1.0"))
 # Burn a matched Yes + No pair back to USDH (amount=None merges the max)
 await client.submit_merge_outcome(50, None)
 
-# Multi-outcome priceBucket helpers
+# Multi-outcome priceBucket operations
 await client.submit_merge_question(9, None)
 await client.submit_negate_outcome(9, 52, Decimal("1.0"))
 ```

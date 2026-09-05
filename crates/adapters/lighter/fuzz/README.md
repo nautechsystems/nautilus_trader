@@ -26,13 +26,13 @@ rustup toolchain install nightly
 
 | Target                    | What it stresses                                                             |
 | ------------------------- | ---------------------------------------------------------------------------- |
-| `fuzz_verify`             | `PublicKey::verify` against arbitrary `(pk, msg, sig)` byte triples.         |
-| `fuzz_point_decode`       | `Point::decode` panic-freedom and decode/encode/decode round trip.           |
-| `fuzz_signature_codec`    | `Signature::from_le_bytes_reduce` canonicality and codec idempotence.        |
-| `fuzz_hash_no_pad`        | `hash_n_to_m_no_pad` panic-freedom, output length, and determinism.          |
-| `fuzz_auth_message`       | `hash_auth_message` panic-freedom over arbitrary UTF-8.                      |
-| `fuzz_compute_tx_hash`    | `compute_tx_hash` over arbitrary `CreateOrderTxInfo` body fields.            |
-| `fuzz_scalar_mul_ct_diff` | `scalar_mul_ct` vs `scalar_mul` differential on every `(scalar, base)` pair. |
+| `fuzz-verify`             | `PublicKey::verify` against arbitrary `(pk, msg, sig)` byte triples.         |
+| `fuzz-point-decode`       | `Point::decode` panic-freedom and decode/encode/decode round trip.           |
+| `fuzz-signature-codec`    | `Signature::from_le_bytes_reduce` canonicality and codec idempotence.        |
+| `fuzz-hash-no-pad`        | `hash_n_to_m_no_pad` panic-freedom, output length, and determinism.          |
+| `fuzz-auth-message`       | `hash_auth_message` panic-freedom over arbitrary UTF-8.                      |
+| `fuzz-compute-tx-hash`    | `compute_tx_hash` over arbitrary `CreateOrderTxInfo` body fields.            |
+| `fuzz-scalar-mul-ct-diff` | `scalar_mul_ct` vs `scalar_mul` differential on every `(scalar, base)` pair. |
 
 Direct adapter-target runs disable the workspace's fat-LTO release setting because it is
 incompatible with sanitizer-coverage linking. The shared runner sets this environment override
@@ -41,7 +41,7 @@ automatically.
 Run one adapter target:
 
 ```bash
-CARGO_PROFILE_RELEASE_LTO=false cargo +nightly fuzz run fuzz_verify \
+CARGO_PROFILE_RELEASE_LTO=false cargo +nightly fuzz run fuzz-verify \
   --fuzz-dir crates/adapters/lighter \
   --features fuzz
 ```
@@ -49,7 +49,7 @@ CARGO_PROFILE_RELEASE_LTO=false cargo +nightly fuzz run fuzz_verify \
 Run a bounded adapter target:
 
 ```bash
-CARGO_PROFILE_RELEASE_LTO=false cargo +nightly fuzz run fuzz_verify \
+CARGO_PROFILE_RELEASE_LTO=false cargo +nightly fuzz run fuzz-verify \
   --fuzz-dir crates/adapters/lighter \
   --features fuzz \
   -- \

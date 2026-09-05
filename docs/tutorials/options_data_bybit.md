@@ -485,13 +485,17 @@ Snapshots arrive every five seconds (`snapshot_interval_ms=5000`).*
 
 ### Regenerate the panels
 
+After building NautilusTrader from source, run these commands from the repository root:
+
 ```bash
+make sync
+
 timeout 30 ./target/release/examples/bybit-greeks-tester > /tmp/bybit_greeks.log 2>&1
 timeout 30 ./target/release/examples/bybit-option-chain > /tmp/bybit_chain.log 2>&1
 
-uv sync --extra visualization
 GREEKS_LOG=/tmp/bybit_greeks.log CHAIN_LOG=/tmp/bybit_chain.log \
-    python3 docs/tutorials/assets/options_data_bybit/render_panels.py
+    uv run --project python --no-sync \
+        python docs/tutorials/assets/options_data_bybit/render_panels.py
 ```
 
 ## Complete source

@@ -123,7 +123,7 @@ pub fn parse_book_msg_vec(
         if let Some(instrument) = instruments.get(&msg.symbol) {
             let instrument_id = instrument.id();
             let price_precision = instrument.price_precision();
-            deltas.push(Data::Delta(parse_book_msg(
+            deltas.push(Data::BookDelta(parse_book_msg(
                 &msg,
                 &action,
                 instrument,
@@ -140,7 +140,7 @@ pub fn parse_book_msg_vec(
     }
 
     // Set F_LAST on the last delta so data engine knows the batch is complete
-    if let Some(Data::Delta(last_delta)) = deltas.last_mut() {
+    if let Some(Data::BookDelta(last_delta)) = deltas.last_mut() {
         *last_delta = OrderBookDelta::new(
             last_delta.instrument_id,
             last_delta.action,
@@ -169,7 +169,7 @@ pub fn parse_book10_msg_vec(
             let instrument_id = instrument.id();
             let price_precision = instrument.price_precision();
             match parse_book10_msg(&msg, instrument, instrument_id, price_precision, ts_init) {
-                Ok(depth) => depths.push(Data::Depth10(Box::new(depth))),
+                Ok(depth) => depths.push(Data::BookDepth10(Box::new(depth))),
                 Err(e) => {
                     log::error!("Failed to parse orderBook10 for symbol={}: {e}", msg.symbol);
                 }
@@ -1133,7 +1133,7 @@ pub fn parse_wallet_msg(msg: &BitmexWalletMsg, ts_init: UnixNanos) -> AccountSta
     let currency = get_currency(&currency_str);
 
     // Wallet messages do not expose locked margin; treat the full balance as free
-    // and let the centralized helper enforce `total == locked + free` at currency precision.
+    // and let the centralized constructor enforce `total == locked + free` at currency precision.
     let divisor = bitmex_currency_divisor(msg.currency.as_str());
     let amount_dec = Decimal::from(msg.amount.unwrap_or(0)) / divisor;
 
@@ -1216,7 +1216,6 @@ mod tests {
         testing::load_test_json,
     };
 
-    // Helper function to create a test perpetual instrument for tests
     fn create_test_perpetual_instrument_with_precisions(
         price_precision: u8,
         size_precision: u8,

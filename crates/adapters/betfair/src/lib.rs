@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! [NautilusTrader](https://nautilustrader.io) adapter for the [Betfair](https://www.betfair.com/) betting exchange.
+//! [NautilusTrader](https://nautilustrader.io) adapter for the [Betfair](https://www.betfair.com) betting exchange.
 //!
 //! The `nautilus-betfair` crate provides data and execution clients, streaming
 //! and REST API models, and full NautilusTrader integration for the Betfair
@@ -42,7 +42,7 @@
 //! - `examples`: Enables the crate's example binaries.
 //! - `extension-module`: Builds as a Python extension module.
 //! - `high-precision`: Enables
-//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode)
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
 //!   to use 128-bit value types.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 

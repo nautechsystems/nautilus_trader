@@ -110,8 +110,7 @@ impl SizeForImpactResult {
 
 /// Internal state from binary search algorithm.
 ///
-/// Used by the private helper function to return all tracking information
-/// without timing overhead.
+/// Captures all binary search tracking information without timing overhead.
 #[derive(Debug, Clone)]
 struct BinarySearchState {
     /// Final lower bound when search terminated.

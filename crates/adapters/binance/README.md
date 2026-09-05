@@ -1,16 +1,16 @@
 # nautilus-binance
 
 [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
-[![Documentation](https://img.shields.io/docsrs/nautilus-binance)](https://docs.rs/nautilus-binance/latest/nautilus-binance/)
+[![Documentation](https://img.shields.io/docsrs/nautilus-binance)](https://docs.rs/nautilus-binance/latest/nautilus_binance/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-binance.svg)](https://crates.io/crates/nautilus-binance)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
 [NautilusTrader](https://nautilustrader.io) adapter for the
-[Binance](https://www.binance.com/) cryptocurrency exchange.
+[Binance](https://www.binance.com) cryptocurrency exchange.
 
-The `nautilus-binance` crate provides client bindings (HTTP & WebSocket), data models,
-and helper utilities that wrap the official **Binance API**. Live data and execution
+The `nautilus-binance` crate provides client bindings (HTTP & WebSocket) and data models
+for the official **Binance API**. Live data and execution
 clients are available for:
 
 - Spot markets, including Binance US (api.binance.com)
@@ -59,7 +59,7 @@ This crate provides feature flags to control source code inclusion during compil
 - `examples`: Enables the crate's example binaries.
 - `extension-module`: Builds as a Python extension module.
 - `high-precision` (default): Enables
-  [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode)
+  [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
   to use 128-bit value types.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 

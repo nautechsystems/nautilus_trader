@@ -39,7 +39,7 @@ explores different interleavings; reusing it selects the same interleaving.
 
 [FoundationDB](https://apple.github.io/foundationdb/testing.html) uses the pattern to test a
 production distributed database. In the Rust ecosystem,
-[madsim](https://github.com/madsim-rs/madsim) intercepts `tokio` primitives to provide a
+[madsim](https://crates.io/crates/madsim) intercepts `tokio` primitives to provide a
 deterministic scheduler.
 
 DST targets concurrency defects such as:
@@ -216,7 +216,7 @@ suitability requires a separate audit before they enter the DST path.
 
 ## Network seed soaks
 
-[Turmoil](https://github.com/tokio-rs/turmoil) simulates the network under a seeded scheduler. The
+[Turmoil](https://crates.io/crates/turmoil) simulates the network under a seeded scheduler. The
 `nautilus-network` transport tests use it to reach link and reconnect orderings outside the madsim
 runtime swap.
 
@@ -576,7 +576,7 @@ The following test modules drive real localhost sockets and are cfg-gated out un
 - `crates/network/src/socket/client.rs::rust_tests`
 - `crates/network/src/websocket/client.rs::tests`
 - `crates/network/src/websocket/client.rs::rust_tests`
-- `crates/network/tests/websocket_proxy.rs`
+- `crates/network/tests/integration/websocket_proxy.rs`
 
 Their production paths reach madsim time primitives through `dst::time::*`, which panic when called
 from a `#[tokio::test]` runtime.
@@ -659,10 +659,10 @@ identical observable behavior across complete runs.
 
 The dedicated workflow and local pre-flight use the same DST targets:
 
-| Entry point                 | Relevant order                                                               | Purpose                                                                   |
-| --------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `.github/workflows/dst.yml` | `check-code-sim` > `cargo-test-sim`                                          | Runs the nightly and manually dispatched DST smoke gate.                  |
-| `make pre-flight`           | `check-code-sim` > `cargo-test-doc` > `cargo-test-sim` > `cargo-test-extras` | Fails early on DST lint while keeping doctests ahead of nextest binaries. |
+| Entry point                 | Relevant order                                            | Purpose                                                  |
+| --------------------------- | --------------------------------------------------------- | -------------------------------------------------------- |
+| `.github/workflows/dst.yml` | `check-code-sim` > `cargo-test-sim`                       | Runs the nightly and manually dispatched DST smoke gate. |
+| `make pre-flight`           | `check-code-sim` > `cargo-test-sim` > `cargo-test-extras` | Fails early on DST lint before the Rust test suites.     |
 
 `check-code-sim` runs pinned stable Clippy with `--features simulation` and `cfg(madsim)` across
 `nautilus-common`, `nautilus-core`, `nautilus-event-store`, `nautilus-network`,

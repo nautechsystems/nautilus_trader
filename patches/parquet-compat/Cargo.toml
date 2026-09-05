@@ -60,4 +60,4 @@ variant_experimental = ["parquet-upstream/variant_experimental"]
 zstd = ["parquet-upstream/zstd"]
 
 [dependencies]
-parquet-upstream = { package = "parquet", version = "=59.2.0", default-features = false }
+parquet-upstream = { package = "parquet", version = "=59.3.0", default-features = false }

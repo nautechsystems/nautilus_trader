@@ -78,7 +78,7 @@ for AX EURUSD-PERP backtests.
 ## Prerequisites
 
 - Python 3.12+
-- [NautilusTrader](https://pypi.org/project/nautilus_trader/) installed.
+- [NautilusTrader installed](../getting_started/installation.md).
 - A free TrueFX account, used to download a monthly tick archive.
 
 ## Data preparation
@@ -314,10 +314,13 @@ A self-contained renderer re-runs the backtest, computes BB and RSI on the
 captured bars, and writes PNG panels using the shared `nautilus_dark`
 tearsheet theme.
 
+After building NautilusTrader from source, run these commands from the repository root:
+
 ```bash
-uv sync --extra visualization
+make sync
 TRUEFX_CSV=test_data/local/truefx/EURUSD-2025-12.csv \
-    python3 docs/tutorials/assets/fx_mean_reversion_ax/render_panels.py
+    uv run --project python --no-sync \
+        python docs/tutorials/assets/fx_mean_reversion_ax/render_panels.py
 ```
 
 Set `TRUEFX_CSV` to wherever you saved the EUR/USD archive.

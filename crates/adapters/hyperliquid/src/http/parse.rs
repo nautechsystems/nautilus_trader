@@ -2322,7 +2322,7 @@ mod tests {
         let defs = parse_outcome_instruments(&meta).unwrap();
         let no = create_instrument_from_def(&defs[1], UnixNanos::default()).unwrap();
 
-        // Use a token that the venue would not normally emit; the helper must still
+        // Use a token that the venue would not normally emit; resolve_fee_currency must still
         // return the instrument's quote currency on a zero-fee fill.
         let currency = resolve_fee_currency("+UNREGISTERED-TOKEN", Decimal::ZERO, &no)
             .expect("zero-fee fallback should succeed");

@@ -13,12 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Cross-cutting parsing helpers shared between HTTP and WebSocket layers.
+//! Cross-cutting parsers shared between HTTP and WebSocket layers.
 //!
 //! Lighter's wire payloads encode prices and order sizes as integer multiples
 //! of a per-market tick. The number of decimal places (`price_decimals` and
 //! `size_decimals`) is published once per market in the `orderBookDetails`
-//! REST response. The helpers here turn those mantissa/precision pairs into
+//! REST response. These parsers turn the mantissa/precision pairs into
 //! Nautilus [`Price`] and [`Quantity`] without a floating-point round-trip.
 
 use std::str::FromStr;
@@ -60,7 +60,7 @@ pub fn parse_price_from_ticks(ticks: u32, decimals: u8) -> anyhow::Result<Price>
 /// Order sizes on the wire are signed `i64` multiples of `10^-decimals`
 /// base-asset units. Nautilus [`Quantity`] is non-negative, so a negative
 /// `ticks` value is rejected: callers (e.g. position parsers) extract the
-/// sign separately before invoking this helper.
+/// sign separately before invoking this parser.
 ///
 /// Conversion routes through [`Decimal`] and [`Quantity::from_decimal_dp`]
 /// so out-of-range tick counts return an error rather than panicking inside
@@ -205,7 +205,7 @@ pub fn parse_secs_to_nanos(secs: u64) -> anyhow::Result<UnixNanos> {
 /// where the wire uses `-1` (or any negative sentinel) as "absent". Fields
 /// that overload `0` with a separate meaning (e.g. `0` for IOC on
 /// `OrderInfo::order_expiry`) must apply that interpretation at the call
-/// site; this helper treats `0` as a literal Unix epoch timestamp.
+/// site; this parser treats `0` as a literal Unix epoch timestamp.
 ///
 /// # Errors
 ///

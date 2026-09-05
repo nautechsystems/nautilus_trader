@@ -664,8 +664,8 @@ Do not shorten `Execution` in public, project-owned PascalCase type names. Inter
 types may retain established `Exec` names. Also keep `Exec` where the
 [general naming convention](coding_standards.md#naming-conventions) allows it, including venue
 protocol terms such as `ExecType`. Name protocol-specific wire models after the venue concept, such
-as `HyperliquidExchangeAction`. Legacy v1 compatibility surfaces retain their shipped names; apply
-this convention to v2 and new APIs.
+as `HyperliquidExchangeAction`. Preserve established public names, and apply this convention to new
+APIs.
 
 Factories receive a downcast `ClientConfig` and a read-only
 [`CacheView`](../../crates/common/src/cache/mod.rs). Data factories also receive the shared clock.
@@ -862,7 +862,7 @@ A failed lookup returned as `Ok(None)` can therefore reject or cancel an order t
 venue. The trait default returns `Ok(None)` after logging that the handler is not implemented, so
 implement this method before an open-order check runs in full-history mode.
 
-[Execution reconciliation](../concepts/reconciliation.md) documents what the engine does with these
+[Execution reconciliation](../concepts/execution/reconciliation.md) documents what the engine does with these
 reports, including the startup procedure, the runtime checks that drive the periodic and targeted
 requests, and their retry and throttling rules. Cases TC-E84 to TC-E87 and TC-E101 in the
 [execution testing specification](spec_exec_testing.md) exercise startup reconciliation against a
@@ -951,7 +951,7 @@ report for an absent touched instrument only after that coverage is established.
 Preserve stable venue order and trade identities across live dispatch and mass status. Include
 client order linkage and `venue_position_id` where the venue supplies them so the execution engine
 can distinguish a coherent lifecycle from ambiguous history. See
-[Bounded history safety](../concepts/reconciliation.md#bounded-history-safety) for the engine's
+[Bounded history safety](../concepts/execution/reconciliation.md#bounded-history-safety) for the engine's
 economic application rules.
 
 #### Instrument resolution during reconciliation
@@ -1006,7 +1006,7 @@ Route execution updates according to order ownership, independent of the dispatc
 
 Do not invent strategy or client identity for an untracked order. Preserve available venue
 identity in the report and let the engine apply
-[external order ownership](../concepts/execution.md#external-order-creation). The adapter may use
+[external order ownership](../concepts/execution/reconciliation.md#external-order-creation). The adapter may use
 any state structure that proves this routing decision.
 
 Model tracked ownership with two conceptual layers. Order identity contains the stable fields that
@@ -1109,6 +1109,9 @@ duplicates from overlapping sources, submission or venue-binding races, and stal
 updates. Test active-context retention separately from bounded replay eviction.
 
 #### Order command outcome policy
+
+Use [Execution policies](../concepts/execution/policies.md) as the cross-adapter contract for
+command delivery, event application, persistence, and recovery.
 
 Separate three evidence classes:
 
@@ -1613,7 +1616,7 @@ Classify every production task by its owner before choosing its storage and shut
 | ------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | Session-scoped      | Stream consumers, keepalives, health polls, refresh loops, and reconnect drivers.           | One session group owns the task from successful admission through disconnect or failed startup.    |
 | Command-scoped      | Work spawned by synchronous data requests or execution commands.                            | A separate command group owns the task without tying its outcome to the transport session.         |
-| Explicitly singular | One transport loop or disconnect operation whose identity is part of the owning state.      | Store one named handle and apply the same bounded join, forced abort, and failure reporting rules. |
+| Explicitly singular | One task whose handle or typed result must remain in owning state for direct joining.       | Store one named handle and apply the same bounded join, forced abort, and failure reporting rules. |
 | Handler-local       | Retry futures, send workers, and child work created and joined inside one handler.          | The handler drains the work before it exits and exposes failure to its owner.                      |
 | Protocol exception  | Typed fan-out results, keyed timeouts, or work whose local join preserves protocol meaning. | Keep the exception local, state why a shared group would lose meaning, and test its shutdown path. |
 
@@ -1624,9 +1627,18 @@ explicit ambiguous outcome. Do not let transport shutdown silently reclassify th
 [`TaskHandles`](../../crates/common/src/live/task.rs) stores unit task handles without setting
 spawn, cancellation, generation, or join policy. Use it inside a component that defines those
 rules. [`TaskGroup`](../../crates/live/src/task.rs) supplies the shared live-client policy for
-unit-output session and command tasks. The module's `finish_task` function applies the same bounded
-policy to an explicitly singular handle without erasing a typed result. For another explicit ownership
-pattern, spawn through `nautilus_common::live::get_runtime().spawn()` as described in
+unit-output session and command tasks. Use `TaskGroup::spawn_named` when client state must observe a
+grouped task's logical name, instance identity, or terminal state. Its `TaskRef` is read-only: the
+group remains the sole owner of cancellation and joining. Read-only observation does not make the
+task explicitly singular.
+
+`TaskRef::is_active` and `TaskRef::is_finished` expose the same one-way lifecycle state. Active means
+the task was admitted and has not reached a terminal state. A task may finish before `spawn_named`
+returns; neither state proves that the user future received its first poll.
+
+The same task module's `finish_task` function applies the bounded policy to an explicitly singular
+handle without erasing a typed result. For another explicit ownership pattern, spawn through
+`nautilus_common::live::get_runtime().spawn()` as described in
 [Async code](rust.md#async-code), then retain or locally await the returned handle.
 
 ### Spawn through a task group
@@ -1661,7 +1673,8 @@ where
 Validate the command and clone every input before constructing the future. Do not capture a
 `RefCell` borrow, cache guard, clock borrow, or reference to the command in work that outlives the
 trait call. When a long-lived task creates children, capture a `TaskSpawner` from the owning group.
-A spawner from an older generation cannot register work in the replacement generation.
+Use `TaskSpawner::spawn_named` when those child tasks also need identity in shutdown failures. A
+spawner from an older generation cannot register work in the replacement generation.
 
 Give each task:
 
@@ -1729,13 +1742,13 @@ payloads from official venue documentation or captured venue responses; do not h
 them. Synthetic malformed or mutated inputs remain useful for negative, property, and fuzz tests
 when the test marks them as such.
 
-| Boundary                    | Typical location                                      | Required proof                                                                                  |
-| --------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Pure protocol logic         | `src/**` test modules                                 | Symbols, enums, timestamps, decimals, signatures, codecs, parsers, and malformed input.         |
-| Public Rust client boundary | `tests/`                                              | Typed HTTP and WebSocket behavior through mock servers, event dispatch, lifecycle, and retries. |
-| Rust PyO3 boundary          | `tests/python.rs` or another feature-gated crate test | Module registration, conversion, constructors, and representative async calls.                  |
-| Public Python package       | `python/tests/unit/adapters/`                         | Package imports, config, factories, and user-visible behavior not proved by Rust tests.         |
-| Live venue acceptance       | Adapter examples or test nodes                        | Authentication, subscriptions, execution, reports, recovery, and advertised limitations.        |
+| Boundary                    | Typical location                                                  | Required proof                                                                                  |
+| --------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Pure protocol logic         | `src/**` test modules                                             | Symbols, enums, timestamps, decimals, signatures, codecs, parsers, and malformed input.         |
+| Public Rust client boundary | `tests/`                                                          | Typed HTTP and WebSocket behavior through mock servers, event dispatch, lifecycle, and retries. |
+| Rust PyO3 boundary          | `tests/integration/python.rs` or another feature-gated crate test | Module registration, conversion, constructors, and representative async calls.                  |
+| Public Python package       | `python/tests/unit/adapters/`                                     | Package imports, config, factories, and user-visible behavior not proved by Rust tests.         |
+| Live venue acceptance       | Adapter examples or test nodes                                    | Authentication, subscriptions, execution, reports, recovery, and advertised limitations.        |
 
 ### Rust testing
 
@@ -1760,10 +1773,12 @@ When HTTP and WebSocket tests share fixture loaders or model builders, place tes
 when no test code is shared.
 
 Client tests should drive public methods through mock HTTP or WebSocket servers. Assert emitted
-events, requests, connection state, subscription state, retry count, and shutdown behavior. Wait
-on observable state with [`wait_until_async`](../../crates/common/src/testing.rs) when possible. A
-short sleep is valid when the time window itself is under test or no protocol signal exists, but
-it should not mask a missing synchronization point.
+events, requests, connection state, subscription state, retry count, and shutdown behavior. Prefer
+a notification owned by the test or mock when the operation exposes one. Subscribe before reading
+the authoritative state, then recheck it after every notification so a transition between the read
+and the await cannot be missed. When no suitable signal exists, use
+[`wait_until_async`](../../crates/common/src/testing.rs). A short sleep is valid when the time window
+itself is under test, but it should not mask a missing synchronization point.
 
 Shared repository test policy uses `#[rstest]` for Rust test functions, permits
 `#[tokio::test]` for async tests, and rejects arrange/act/assert comments. The

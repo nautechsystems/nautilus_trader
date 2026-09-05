@@ -28,5 +28,5 @@ def on_order_denied(self, event: OrderDenied) -> None:
 ## Related guides
 
 - [Events](index.md) - Event categories, dispatch, and the common order event fields.
-- [Execution](../execution.md) - Risk checks and order denied reasons.
+- [Execution](../execution/) - Risk checks and order denied reasons.
 - [Orders](../orders/) - Order types and the state machine.

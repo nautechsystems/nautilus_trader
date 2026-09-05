@@ -800,7 +800,7 @@ order event handling, and order book maintenance all exercise the heap on every 
 system allocators handle this pattern poorly; profiling shows allocator overhead approaching half
 of hot-loop time on both the Windows CRT heap and glibc malloc under order-flow workloads.
 
-The `nautilus` CLI and Python wheels use [mimalloc](https://github.com/microsoft/mimalloc) for Rust
+The `nautilus` CLI and Python wheels use [mimalloc](https://crates.io/crates/mimalloc) for Rust
 allocations. Backtest engine benchmarks run roughly 3% to 44% faster depending on workload, with
 order-flow heavy paths gaining the most. The trade-off is a modest increase in resident memory from
 mimalloc's segment caching.

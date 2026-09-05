@@ -123,7 +123,7 @@ class TestStrategyConfig(StrategyConfig):
 
     def __init__(self, _strategy_id: str | None = None, **_kwargs: object) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__()
 
@@ -155,7 +155,7 @@ class ControllerRegistrationProbeConfig(DataActorConfig):
         log_commands: bool = True,
     ) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         self.actor_id = actor_id
         self.log_events = log_events
@@ -180,7 +180,7 @@ class ControllerRegistrationProbe(Controller):
 
     def __init__(self, config: object) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         type(self).constructed += 1

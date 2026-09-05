@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-live"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -143,16 +142,6 @@ harness = false
 required-features = ["node"]
 
 [[test]]
-name = "manager"
-path = "tests/manager.rs"
-required-features = ["node"]
-
-[[test]]
-name = "node"
-path = "tests/node.rs"
-required-features = ["node"]
-
-[[test]]
-name = "stress"
-path = "tests/stress.rs"
+name = "integration"
+path = "tests/integration/main.rs"
 required-features = ["node"]

@@ -1,14 +1,34 @@
 # Live Trading
 
-NautilusTrader deploys backtested strategies to live markets with no code changes.
-The same actors, strategies, and execution algorithms run against both the backtest
-engine and a live trading node.
+The same strategy and execution-algorithm code can run across backtest and live environments. Live
+execution also introduces venue, transport, timing, persistence, external-activity, and
+reconciliation behavior that a simulation may not reproduce.
 
 :::warning
 **Live trading involves real financial risk. Before deploying to production, understand
 system configuration, node operations, execution reconciliation, and the differences
 between backtesting and live trading.**
 :::
+
+## Backtest and live differences
+
+Backtests advance a controlled clock from historical data and execute orders on simulated venues.
+A live node shares strategy and execution-algorithm code with a backtest, but coordinates with
+systems outside the process boundary.
+
+- **Venue**: Venue rules and adapter capabilities determine which order types, instructions, and
+  events are available. See [Adapters](adapters.md).
+- **Transport**: A network failure can leave an order command outcome unknown. See
+  [Command outcomes](execution/policies.md#command-outcomes).
+- **Timing**: Independent inputs can interleave, and the runner does not define one global FIFO
+  order. See [Dispatch priority](#dispatch-priority-and-overload-behavior).
+- **Persistence**: Built-in cache backends process writes independently of venue transport, and
+  event-store capture does not gate dispatch on durable commit. See
+  [Persistence before transport](execution/policies.md#persistence-before-transport).
+- **External activity**: Venue reports can include orders created outside the node. See
+  [External order creation](execution/reconciliation.md#external-order-creation).
+- **Reconciliation**: Startup and runtime checks align retained local state with venue reports. See
+  [Execution reconciliation](execution/reconciliation.md).
 
 ## Live node lifecycle
 
@@ -141,7 +161,7 @@ wiring, see the
 ## Execution reconciliation
 
 For how submit, modify, and cancel commands resolve, see
-[Command outcomes](execution.md#command-outcomes).
+[Command outcomes](execution/policies.md#command-outcomes).
 
 At startup, reconciliation aligns cached order and position state with venue reports before trader
 components start. Continuous checks can then monitor in-flight orders, open orders, positions, and
@@ -152,7 +172,7 @@ economics only when the report set and retained state prove a coherent position 
 Incomplete or ambiguous history can still recover exact order state without changing positions or
 portfolio economics.
 
-See [Execution reconciliation](reconciliation.md) for configuration, recovery procedures,
+See [Execution reconciliation](execution/reconciliation.md) for configuration, recovery procedures,
 runtime checks, scenarios, and invariants.
 
 ## Rust live runner metrics
@@ -221,6 +241,28 @@ not include startup buffering, startup flushes, or the final post-loop drain. Qu
 samples from the maintenance tick while the node is running, and can be stale during shutdown grace.
 Snapshots are lock-free and may not be a consistent cross-field view; derive rates from successive
 snapshots with saturating deltas. Counters reset when `LiveNode::run` enters steady state.
+
+## Dispatch priority and overload behavior
+
+The live runner's seven internal message channels are separate and unbounded. When several message
+channels are ready together, the runner polls time and system work first, then execution events,
+execution commands, external message-bus ingress, data events, and data commands. Events precede
+commands within the execution and data channel pairs.
+
+This polling order keeps a market-data backlog from taking priority over ready execution traffic.
+It does not define one global FIFO order across channels, adapters, or venues. Each selected branch
+runs to completion before the runner polls again, so a slow handler delays every channel. The runner
+yields to the host event loop periodically, but yielding does not change channel priority or shorten
+a slow handler.
+
+Runner channels do not apply producer backpressure, coalesce messages, shed market data, or impose a
+maximum queue depth. Sustained input above dispatch capacity therefore increases queue depth,
+latency, and memory use. The runner does not automatically throttle a feed, halt trading, or shut
+down when a threshold is crossed.
+
+Use runner metrics and queue-state events to detect this pressure. The thresholds are operational
+signals, not service-time guarantees. The application must decide how to alert, reduce input, halt
+new exposure, or stop the node when pressure persists.
 
 ## Queue pressure monitoring
 
@@ -325,7 +367,8 @@ reported.
 
 Socket state is operational evidence, not an execution-command outcome. A disconnect by itself does
 not reject, cancel, or resolve an in-flight command; stream updates, queries, or reconciliation
-provide that evidence under the [command outcome policy](execution.md#command-outcomes).
+provide that evidence under the
+[command outcome policy](execution/policies.md#command-outcomes).
 
 ### Dead-peer detection
 
@@ -399,11 +442,13 @@ node/kernel level instead. Shutdown-on-error observes Rust `log` records, not Py
 
 ## Related guides
 
-- [Execution reconciliation](reconciliation.md) - State recovery and runtime consistency checks.
+- [Execution reconciliation](execution/reconciliation.md) - State recovery and runtime consistency checks.
+- [Execution policies](execution/policies.md) - Command delivery, persistence, and recovery
+  boundaries.
 - [Python](python.md) - Python ownership, runtime, and public API boundaries.
 - [Configure a live trading node](../how_to/configure_live_trading.md) - Node and engine configuration.
 - [Run live trading with Rust](../how_to/run_rust_live_trading.md) - Rust node setup and venue connection.
 - [Adapters](adapters.md) - Venue connectivity.
-- [Execution](execution.md) - Command outcomes and order execution.
+- [Execution](execution/) - Command outcomes and order execution.
 - [Message bus](message_bus.md) - Typed in-process publish and subscribe behavior.
 - [Backtesting](backtesting/) - Testing strategies before deployment.

@@ -52,7 +52,7 @@ use nautilus_data::client::DataClientAdapter;
 use nautilus_execution::models::fill::FillModelHandle;
 use nautilus_model::{
     accounts::{Account, AccountAny},
-    data::{Data, DataRef, HasTsInit},
+    data::{Data, DataBatch, DataRef, HasTsInit},
     enums::{AccountType, AggregationSource, BookType},
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -407,33 +407,72 @@ impl BacktestEngine {
     ///   `aggregation_source` is not [`AggregationSource::External`].
     pub fn add_data(
         &mut self,
-        data: Vec<Data>,
+        mut data: Vec<Data>,
         client_id: Option<ClientId>,
         validate: bool,
         sort: bool,
     ) -> anyhow::Result<()> {
+        if sort {
+            data.sort_by_key(HasTsInit::ts_init);
+        }
+
+        let stream_name =
+            self.register_added_data(data.iter().map(DataRef::from), client_id, validate)?;
+        self.data_iterator.add_data(&stream_name, data, true);
+        self.sorted = sort;
+
+        Ok(())
+    }
+
+    /// Adds a typed data batch to the engine for replay during the backtest run.
+    ///
+    /// The batch keeps its typed storage through replay, so no per-item [`Data`] value is
+    /// constructed. Items are ordered by replay key as the batch is added; `sort` records whether
+    /// the engine may run, matching [`add_data`](Self::add_data).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error under the same conditions as [`add_data`](Self::add_data).
+    pub fn add_data_batch(
+        &mut self,
+        data: DataBatch,
+        client_id: Option<ClientId>,
+        validate: bool,
+        sort: bool,
+    ) -> anyhow::Result<()> {
+        let stream_name = self.register_added_data(
+            (0..data.len()).filter_map(|index| data.get(index)),
+            client_id,
+            validate,
+        )?;
+        self.data_iterator.add_data_batch(&stream_name, data, true);
+        self.sorted = sort;
+
+        Ok(())
+    }
+
+    fn register_added_data<'a>(
+        &mut self,
+        items: impl Iterator<Item = DataRef<'a>> + Clone,
+        client_id: Option<ClientId>,
+        validate: bool,
+    ) -> anyhow::Result<String> {
         #[cfg(not(feature = "defi"))]
         let _ = client_id;
 
-        anyhow::ensure!(!data.is_empty(), "data was empty");
-
-        let count = data.len();
-        let mut to_add = data;
-
-        if sort {
-            to_add.sort_by_key(HasTsInit::ts_init);
-        }
+        let Some(first) = items.clone().next() else {
+            anyhow::bail!("data was empty");
+        };
 
         if validate {
             // Validate against the first element only and assume the batch is
             // homogeneous (documented contract on add_data).
-            let first = &to_add[0];
             #[cfg(feature = "defi")]
-            let first_is_defi = matches!(first, Data::Defi(_));
+            let first_is_defi = matches!(first, DataRef::Defi(_));
             #[cfg(not(feature = "defi"))]
             let first_is_defi = false;
 
-            if !first_is_defi && !matches!(first, Data::Custom(_)) {
+            if !first_is_defi && !matches!(first, DataRef::Custom(_)) {
                 let first_instrument_id = first.instrument_id();
                 anyhow::ensure!(
                     self.kernel
@@ -445,7 +484,7 @@ impl BacktestEngine {
                      Add the instrument through `add_instrument()` prior to adding related data."
                 );
 
-                if let Data::Bar(bar) = first {
+                if let DataRef::Bar(bar) = first {
                     anyhow::ensure!(
                         bar.bar_type.aggregation_source() == AggregationSource::External,
                         "bar_type.aggregation_source must be External, was {:?}",
@@ -460,25 +499,27 @@ impl BacktestEngine {
         // (e.g. node.rs run_oneshot loading from a catalog). Time bounds are
         // also tracked here so start/end defaults are correct even when the
         // batch was added with sort=false.
+        let mut count = 0;
         let mut batch_min_ts: Option<UnixNanos> = None;
         let mut batch_max_ts: Option<UnixNanos> = None;
 
         #[cfg(feature = "defi")]
-        if to_add.iter().any(|item| matches!(item, Data::Defi(_))) {
+        if items.clone().any(|item| matches!(item, DataRef::Defi(_))) {
             self.add_defi_data_client_if_not_exists(client_id);
         }
 
-        for item in &to_add {
+        for item in items {
+            count += 1;
             let ts = item.ts_init();
             batch_min_ts = Some(batch_min_ts.map_or(ts, |cur| cur.min(ts)));
             batch_max_ts = Some(batch_max_ts.map_or(ts, |cur| cur.max(ts)));
 
             #[cfg(feature = "defi")]
-            if matches!(item, Data::Defi(_)) {
+            if matches!(item, DataRef::Defi(_)) {
                 continue;
             }
 
-            if matches!(item, Data::Custom(_)) {
+            if matches!(item, DataRef::Custom(_)) {
                 // Custom data routes by DataType and is independent of market venue bookkeeping.
                 continue;
             }
@@ -508,9 +549,6 @@ impl BacktestEngine {
         self.data_len += count;
         let stream_name = format!("backtest_data_{}", self.data_stream_counter);
         self.data_stream_counter += 1;
-        self.data_iterator.add_data(&stream_name, to_add, true);
-
-        self.sorted = sort;
 
         log::info!(
             "Added {count} data element{} to BacktestEngine ({} total)",
@@ -518,7 +556,7 @@ impl BacktestEngine {
             self.data_len,
         );
 
-        Ok(())
+        Ok(stream_name)
     }
 
     /// Adds an actor to the backtest engine.
@@ -788,7 +826,7 @@ impl BacktestEngine {
             if d.ts_init() >= start_ns {
                 break;
             }
-            self.data_iterator.next_item();
+            self.data_iterator.advance();
         }
 
         // Initialize last_ns before first data point
@@ -814,7 +852,7 @@ impl BacktestEngine {
                 break;
             }
 
-            let Some(d) = self.data_iterator.peek() else {
+            let Some(data) = self.data_iterator.peek() else {
                 if streaming {
                     // In streaming mode, don't advance timers past the
                     // current batch. The next batch will provide more data
@@ -828,14 +866,11 @@ impl BacktestEngine {
                 continue;
             };
 
-            let ts_init = d.ts_init();
+            let ts_init = data.ts_init();
 
             if ts_init > end_ns {
                 break;
             }
-
-            let d = self.data_iterator.next_item().unwrap();
-            let settlement_scope = Self::settlement_scope(&d);
 
             if ts_init > self.last_ns {
                 self.advance_time_impl(ts_init, &clocks)?;
@@ -848,8 +883,21 @@ impl BacktestEngine {
                 break;
             }
 
-            self.route_data_to_exchange(DataRef::from(&d))?;
-            self.kernel.data_engine.borrow_mut().process_data(d);
+            let settlement_scope = {
+                let Some(data) = self.data_iterator.peek() else {
+                    continue;
+                };
+                let settlement_scope = Self::settlement_scope(data);
+                Self::route_data_to_exchange(
+                    &self.venues,
+                    &mut self.has_book_processed,
+                    &self.kernel.clock,
+                    data,
+                )?;
+                self.kernel.data_engine.borrow_mut().process_data_ref(data);
+                settlement_scope
+            };
+            self.data_iterator.advance();
 
             // Drain deferred commands, then process exchange queues
             self.drain_command_queues();
@@ -886,19 +934,24 @@ impl BacktestEngine {
         Ok(())
     }
 
-    fn settlement_scope(data: &Data) -> SettlementScope {
-        if matches!(
-            data,
-            Data::MarkPrice(_) | Data::IndexPrice(_) | Data::OptionGreeks(_) | Data::Custom(_)
-        ) {
-            return SettlementScope::Data(None);
+    fn settlement_scope(data: DataRef<'_>) -> SettlementScope {
+        match data {
+            DataRef::BookDelta(_)
+            | DataRef::BookDeltas(_)
+            | DataRef::BookDepth10(_)
+            | DataRef::Quote(_)
+            | DataRef::Trade(_)
+            | DataRef::Bar(_) => SettlementScope::Data(Some(data.instrument_id())),
+            DataRef::MarkPrice(_) | DataRef::IndexPrice(_) => SettlementScope::Data(None),
+            DataRef::FundingRate(_) => SettlementScope::Data(Some(data.instrument_id())),
+            DataRef::OptionGreeks(_) => SettlementScope::Data(None),
+            DataRef::InstrumentStatus(_) | DataRef::InstrumentClose(_) => {
+                SettlementScope::Data(Some(data.instrument_id()))
+            }
+            DataRef::Custom(_) => SettlementScope::Data(None),
+            #[cfg(feature = "defi")]
+            DataRef::Defi(_) => SettlementScope::Data(None),
         }
-        #[cfg(feature = "defi")]
-        if matches!(data, Data::Defi(_)) {
-            return SettlementScope::Data(None);
-        }
-
-        SettlementScope::Data(Some(data.instrument_id()))
     }
 
     fn abort_run(&mut self) {
@@ -1426,7 +1479,12 @@ impl BacktestEngine {
         summary
     }
 
-    fn route_data_to_exchange(&mut self, data: DataRef<'_>) -> anyhow::Result<()> {
+    fn route_data_to_exchange(
+        venues: &IndexMap<Venue, Rc<RefCell<SimulatedExchange>>>,
+        has_book_processed: &mut AHashSet<InstrumentId>,
+        clock: &Rc<RefCell<dyn Clock>>,
+        data: DataRef<'_>,
+    ) -> anyhow::Result<()> {
         if matches!(
             data,
             DataRef::MarkPrice(_)
@@ -1442,41 +1500,42 @@ impl BacktestEngine {
         }
 
         let venue = data.instrument_id().venue;
-        if let Some(exchange) = self.venues.get(&venue) {
+        if let Some(exchange) = venues.get(&venue) {
             let mut exchange_ref = exchange.borrow_mut();
             let mut processed_book_data = false;
 
             match data {
-                DataRef::Delta(delta) => {
+                DataRef::BookDelta(delta) => {
                     exchange_ref.process_order_book_delta(*delta)?;
                     processed_book_data = true;
                 }
-                DataRef::Deltas(deltas) => {
+                DataRef::BookDeltas(deltas) => {
                     exchange_ref.process_order_book_deltas(deltas)?;
                     processed_book_data = true;
                 }
-                DataRef::Depth10(depth) => {
+                DataRef::BookDepth10(depth) => {
                     exchange_ref.process_order_book_depth10(depth)?;
                     processed_book_data = true;
                 }
                 DataRef::Quote(quote) => exchange_ref.process_quote_tick(quote)?,
                 DataRef::Trade(trade) => exchange_ref.process_trade_tick(trade)?,
                 DataRef::Bar(bar) => exchange_ref.process_bar(*bar)?,
+                DataRef::MarkPrice(_) | DataRef::IndexPrice(_) => {
+                    unreachable!("filtered before exchange routing")
+                }
+                DataRef::FundingRate(funding) => {
+                    let settlement_ns =
+                        exchange_ref.process_funding_rate_deferred(*funding, data.ts_init())?;
+                    Self::schedule_funding_settlement_if_required(clock, venue, settlement_ns);
+                }
+                DataRef::OptionGreeks(_) => unreachable!("filtered before exchange routing"),
                 DataRef::InstrumentStatus(status) => {
                     exchange_ref.process_instrument_status(*status)?;
                 }
                 DataRef::InstrumentClose(close) => {
                     exchange_ref.process_instrument_close(*close)?;
                 }
-                DataRef::FundingRate(funding) => {
-                    let settlement_ns =
-                        exchange_ref.process_funding_rate_deferred(*funding, data.ts_init())?;
-                    self.schedule_funding_settlement_if_required(venue, settlement_ns);
-                }
-                DataRef::MarkPrice(_)
-                | DataRef::IndexPrice(_)
-                | DataRef::OptionGreeks(_)
-                | DataRef::Custom(_) => unreachable!("filtered before exchange routing"),
+                DataRef::Custom(_) => unreachable!("filtered before exchange routing"),
                 #[cfg(feature = "defi")]
                 DataRef::Defi(_) => unreachable!("filtered before exchange routing"),
             }
@@ -1484,7 +1543,7 @@ impl BacktestEngine {
             drop(exchange_ref);
 
             if processed_book_data {
-                self.has_book_processed.insert(data.instrument_id());
+                has_book_processed.insert(data.instrument_id());
             }
         } else {
             log::warn!("No exchange found for venue {venue}, data not routed");
@@ -1747,7 +1806,11 @@ impl BacktestEngine {
             .collect::<Vec<_>>();
 
         for (venue, boundary) in next_boundaries {
-            self.schedule_funding_settlement_if_required(venue, Some(boundary));
+            Self::schedule_funding_settlement_if_required(
+                &self.kernel.clock,
+                venue,
+                Some(boundary),
+            );
         }
 
         Ok(true)
@@ -1812,7 +1875,7 @@ impl BacktestEngine {
     }
 
     fn schedule_funding_settlement_if_required(
-        &self,
+        clock: &Rc<RefCell<dyn Clock>>,
         venue: Venue,
         settlement_ns: Option<UnixNanos>,
     ) {
@@ -1820,19 +1883,19 @@ impl BacktestEngine {
             return;
         };
 
-        if let Err(e) = self.set_funding_settlement_timer(venue, settlement_ns) {
+        if let Err(e) = Self::set_funding_settlement_timer(clock, venue, settlement_ns) {
             log::error!("Cannot schedule funding settlement for {venue}: {e}");
         }
     }
 
     fn set_funding_settlement_timer(
-        &self,
+        clock: &Rc<RefCell<dyn Clock>>,
         venue: Venue,
         settlement_ns: UnixNanos,
     ) -> anyhow::Result<()> {
         let timer_name = Self::funding_settlement_timer_name(venue);
         let callback: Rc<dyn Fn(TimeEvent)> = Rc::new(|_| {});
-        let mut clock = self.kernel.clock.borrow_mut();
+        let mut clock = clock.borrow_mut();
 
         clock.set_time_alert_ns(
             &timer_name,
@@ -2115,25 +2178,7 @@ impl BacktestEngine {
             return;
         }
 
-        let accounts = cache.accounts_all_owned();
-        let mut snapshots = Vec::new();
-        for position in &positions {
-            snapshots.extend(cache.position_snapshots(Some(&position.id), None));
-        }
-        let recorded = self.kernel.portfolio.borrow().recorded_realized_pnls();
-        let portfolio = self.kernel.portfolio.borrow();
-        let portfolio_snapshots = accounts
-            .iter()
-            .flat_map(|account| portfolio.snapshots(&account.id()))
-            .collect::<Vec<_>>();
-        let analyzer = PortfolioAnalyzer::from_accounts_with_snapshots(
-            &accounts,
-            &positions,
-            &snapshots,
-            &portfolio_snapshots,
-            recorded,
-        );
-        log_portfolio_performance(&analyzer);
+        log_portfolio_performance(&self.kernel.portfolio.borrow().analyzer());
     }
 
     fn total_positions_with_snapshots(cache: &Cache, cached_positions_count: usize) -> usize {
@@ -3443,9 +3488,13 @@ mod tests {
             None,
         );
 
-        engine
-            .route_data_to_exchange(DataRef::InstrumentStatus(&status))
-            .unwrap();
+        BacktestEngine::route_data_to_exchange(
+            &engine.venues,
+            &mut engine.has_book_processed,
+            &engine.kernel.clock,
+            DataRef::InstrumentStatus(&status),
+        )
+        .unwrap();
 
         let exchange = engine.venues.get(&instrument_id.venue).unwrap().borrow();
         let market_status = exchange

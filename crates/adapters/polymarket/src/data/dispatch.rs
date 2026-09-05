@@ -6923,7 +6923,7 @@ mod tests {
         assert_eq!(events.len(), 2);
         assert!(matches!(
             events[0],
-            DataEvent::Data(NautilusData::Deltas(_))
+            DataEvent::Data(NautilusData::BookDeltas(_))
         ));
         assert!(matches!(events[1], DataEvent::Data(NautilusData::Quote(_))));
     }
@@ -6967,7 +6967,7 @@ mod tests {
         assert_eq!(events.len(), 2);
         assert!(matches!(
             events[0],
-            DataEvent::Data(NautilusData::Deltas(_))
+            DataEvent::Data(NautilusData::BookDeltas(_))
         ));
         assert!(matches!(events[1], DataEvent::Data(NautilusData::Quote(_))));
     }
@@ -6998,7 +6998,7 @@ mod tests {
         assert!(
             events
                 .iter()
-                .any(|e| matches!(e, DataEvent::Data(NautilusData::Deltas(_)))),
+                .any(|e| matches!(e, DataEvent::Data(NautilusData::BookDeltas(_)))),
             "delta must be emitted on the not-pending happy path: {events:?}",
         );
 
@@ -7092,7 +7092,7 @@ mod tests {
         let batches: Vec<_> = events
             .iter()
             .filter_map(|event| match event {
-                DataEvent::Data(NautilusData::Deltas(deltas)) => Some(deltas),
+                DataEvent::Data(NautilusData::BookDeltas(deltas)) => Some(deltas),
                 _ => None,
             })
             .collect();
@@ -7106,7 +7106,7 @@ mod tests {
         let event_sequence: Vec<_> = events
             .iter()
             .filter_map(|event| match event {
-                DataEvent::Data(NautilusData::Deltas(deltas)) => {
+                DataEvent::Data(NautilusData::BookDeltas(deltas)) => {
                     Some(("deltas", deltas.instrument_id))
                 }
                 DataEvent::Data(NautilusData::Quote(quote)) => Some(("quote", quote.instrument_id)),
@@ -7384,7 +7384,7 @@ mod tests {
         let batches: Vec<_> = events
             .iter()
             .filter_map(|event| match event {
-                DataEvent::Data(NautilusData::Deltas(deltas)) => Some(deltas),
+                DataEvent::Data(NautilusData::BookDeltas(deltas)) => Some(deltas),
                 _ => None,
             })
             .collect();
@@ -7497,7 +7497,7 @@ mod tests {
         assert!(
             !events
                 .iter()
-                .any(|e| matches!(e, DataEvent::Data(NautilusData::Deltas(_)))),
+                .any(|e| matches!(e, DataEvent::Data(NautilusData::BookDeltas(_)))),
             "delta must be dropped while pending: {events:?}",
         );
         let emitted_quote = events
@@ -7657,7 +7657,7 @@ mod tests {
     ) -> Vec<OrderBookDeltas> {
         std::iter::from_fn(|| data_rx.try_recv().ok())
             .filter_map(|event| match event {
-                DataEvent::Data(NautilusData::Deltas(deltas)) => Some(*deltas),
+                DataEvent::Data(NautilusData::BookDeltas(deltas)) => Some(*deltas),
                 _ => None,
             })
             .collect()

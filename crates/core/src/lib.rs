@@ -23,7 +23,7 @@
 //! - UUID generation and management.
 //! - Mathematical functions and interpolation utilities.
 //! - Correctness validation functions.
-//! - Serialization traits and helpers.
+//! - Serialization traits and codecs.
 //! - Cross-platform environment utilities.
 //! - Abstractions over common collections.
 //!
@@ -44,10 +44,10 @@
 //!
 //! - `extension-module`: Builds as a Python extension module.
 //! - `ffi`: Enables the C foreign function interface (FFI) from
-//!   [cbindgen](https://github.com/mozilla/cbindgen).
+//!   [cbindgen](https://crates.io/crates/cbindgen).
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `simulation`: Enables deterministic simulation testing with
-//!   [MadSim](https://github.com/madsim-rs/madsim).
+//!   [MadSim](https://crates.io/crates/madsim).
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]

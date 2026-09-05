@@ -114,29 +114,6 @@ const SNAPSHOT_RETRY_BACKOFF_CAP_MS: u64 = 3_000;
 const MARKET_STREAMS_ENDPOINT: &str = "binance-futures-market-streams";
 const PUBLIC_STREAMS_ENDPOINT: &str = "binance-futures-public-streams";
 
-#[derive(Debug, Clone)]
-struct BufferedDepthUpdate {
-    deltas: OrderBookDeltas,
-    first_update_id: u64,
-    final_update_id: u64,
-    prev_final_update_id: u64,
-}
-
-#[derive(Debug, Clone)]
-struct BookBuffer {
-    updates: Vec<BufferedDepthUpdate>,
-    epoch: u64,
-}
-
-impl BookBuffer {
-    fn new(epoch: u64) -> Self {
-        Self {
-            updates: Vec::new(),
-            epoch,
-        }
-    }
-}
-
 /// Binance Futures data client for USD-M and COIN-M markets.
 #[derive(Debug)]
 pub struct BinanceFuturesDataClient {
@@ -159,6 +136,7 @@ pub struct BinanceFuturesDataClient {
     book_subscriptions: Arc<AtomicMap<InstrumentId, u32>>,
     l1_book_subscriptions: Arc<AtomicMap<InstrumentId, u32>>,
     quote_refs: Arc<AtomicMap<InstrumentId, u32>>,
+    // Mark, index, and funding subscriptions share one ref-counted `@markPrice@1s` stream
     mark_price_refs: Arc<AtomicMap<InstrumentId, u32>>,
     ticker_refs: Arc<AtomicMap<InstrumentId, u32>>,
     force_order_refs: Arc<AtomicMap<InstrumentId, u32>>,
@@ -725,7 +703,7 @@ impl BinanceFuturesDataClient {
                                 }
                             }
 
-                            Self::send_data(data_sender, Data::Deltas(Box::new(deltas)));
+                            Self::send_data(data_sender, Data::BookDeltas(Box::new(deltas)));
                         }
                         Err(e) => log::warn!("Failed to parse depth update: {e}"),
                     }
@@ -873,7 +851,6 @@ impl BinanceFuturesDataClient {
                     }
                 }
             }
-            // Execution messages ignored by data client
             BinanceFuturesWsStreamsMessage::AccountUpdate(_)
             | BinanceFuturesWsStreamsMessage::OrderUpdate(_)
             | BinanceFuturesWsStreamsMessage::TradeLite(_)
@@ -946,7 +923,7 @@ impl BinanceFuturesDataClient {
         Self::send_data(data_sender, Data::Quote(quote));
         if l1_book_subscriptions.contains_key(&quote.instrument_id) {
             let deltas = quote_to_l1_deltas(quote, sequence);
-            Self::send_data(data_sender, Data::Deltas(Box::new(deltas)));
+            Self::send_data(data_sender, Data::BookDeltas(Box::new(deltas)));
         }
     }
 
@@ -1005,7 +982,6 @@ impl BinanceFuturesDataClient {
                 let ts_init = clock.get_time_ns();
                 let last_update_id = order_book.last_update_id as u64;
 
-                // Check if subscription was cancelled or epoch changed
                 {
                     let guard = buffers.load();
                     match guard.get(&instrument_id) {
@@ -1028,7 +1004,6 @@ impl BinanceFuturesDataClient {
                     }
                 }
 
-                // Get instrument for precision
                 let (price_precision, size_precision) = {
                     let guard = instruments.load();
                     match guard.get(&instrument_id) {
@@ -1124,7 +1099,6 @@ impl BinanceFuturesDataClient {
                     taken
                 };
 
-                // Replay buffered updates with continuity validation
                 let mut replayed = 0;
                 let mut last_final_update_id = last_update_id;
                 let mut is_first = true;
@@ -1186,14 +1160,14 @@ impl BinanceFuturesDataClient {
                 }
 
                 if let Err(e) =
-                    sender.send(DataEvent::Data(Data::Deltas(Box::new(snapshot_deltas))))
+                    sender.send(DataEvent::Data(Data::BookDeltas(Box::new(snapshot_deltas))))
                 {
                     log::error!("Failed to send snapshot: {e}");
                 }
 
                 for update in replay_ready {
                     if let Err(e) =
-                        sender.send(DataEvent::Data(Data::Deltas(Box::new(update.deltas))))
+                        sender.send(DataEvent::Data(Data::BookDeltas(Box::new(update.deltas))))
                     {
                         log::error!("Failed to send replayed deltas: {e}");
                     }
@@ -1271,7 +1245,7 @@ impl BinanceFuturesDataClient {
                         replayed += 1;
 
                         if let Err(e) =
-                            sender.send(DataEvent::Data(Data::Deltas(Box::new(update.deltas))))
+                            sender.send(DataEvent::Data(Data::BookDeltas(Box::new(update.deltas))))
                         {
                             log::error!("Failed to send replayed deltas: {e}");
                         }
@@ -1432,7 +1406,6 @@ fn parse_order_book_snapshot(
     let total_levels = order_book.bids.len() + order_book.asks.len();
     let mut deltas = Vec::with_capacity(total_levels + 1);
 
-    // First delta is CLEAR to reset the book
     deltas.push(OrderBookDelta::clear(
         instrument_id,
         sequence,
@@ -2026,7 +1999,6 @@ impl DataClient for BinanceFuturesDataClient {
             );
         }
 
-        // Track subscription for reconnect handling
         self.book_subscriptions.insert(instrument_id, depth);
 
         // Bump epoch to invalidate any in-flight snapshot from a prior subscription
@@ -2036,7 +2008,6 @@ impl DataClient for BinanceFuturesDataClient {
             *guard
         };
 
-        // Start buffering deltas for this instrument
         self.book_buffers
             .insert(instrument_id, BookBuffer::new(epoch));
 
@@ -2055,7 +2026,6 @@ impl DataClient for BinanceFuturesDataClient {
             "order book subscription",
         );
 
-        // Spawn task to fetch HTTP snapshot and replay buffered deltas
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
         let buffers = self.book_buffers.clone();
@@ -2131,7 +2101,6 @@ impl DataClient for BinanceFuturesDataClient {
     fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
 
-        // Mark/index/funding share the same stream - use ref counting
         let should_subscribe = {
             let prev = self
                 .mark_price_refs
@@ -2168,7 +2137,6 @@ impl DataClient for BinanceFuturesDataClient {
     fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
 
-        // Mark/index/funding share the same stream - use ref counting
         let should_subscribe = {
             let prev = self
                 .mark_price_refs
@@ -2272,7 +2240,6 @@ impl DataClient for BinanceFuturesDataClient {
         }
         let ws = self.ws_public_client.clone();
 
-        // Remove subscription tracking
         self.book_subscriptions.remove(&instrument_id);
 
         // Remove buffer to prevent snapshot task from emitting after unsubscribe
@@ -2465,7 +2432,6 @@ impl DataClient for BinanceFuturesDataClient {
     fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
 
-        // Mark/index/funding share the same stream - use ref counting
         let should_unsubscribe = {
             let prev = self.mark_price_refs.load().get(&instrument_id).copied();
             match prev {
@@ -2509,7 +2475,6 @@ impl DataClient for BinanceFuturesDataClient {
     fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
 
-        // Mark/index/funding share the same stream - use ref counting
         let should_unsubscribe = {
             let prev = self.mark_price_refs.load().get(&instrument_id).copied();
             match prev {
@@ -3221,6 +3186,29 @@ impl BinanceFuturesDataClient {
                 },
                 "top-of-book unsubscribe",
             );
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct BufferedDepthUpdate {
+    deltas: OrderBookDeltas,
+    first_update_id: u64,
+    final_update_id: u64,
+    prev_final_update_id: u64,
+}
+
+#[derive(Debug, Clone)]
+struct BookBuffer {
+    updates: Vec<BufferedDepthUpdate>,
+    epoch: u64,
+}
+
+impl BookBuffer {
+    fn new(epoch: u64) -> Self {
+        Self {
+            updates: Vec::new(),
+            epoch,
         }
     }
 }

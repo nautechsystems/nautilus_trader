@@ -1603,11 +1603,11 @@ pub(crate) fn pyobject_to_margin_model_any(
 
 fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
     if let Ok(delta) = obj.extract::<OrderBookDelta>() {
-        return Ok(Data::Delta(delta));
+        return Ok(Data::BookDelta(delta));
     }
 
     if let Ok(deltas) = obj.extract::<OrderBookDeltas>() {
-        return Ok(Data::Deltas(Box::new(deltas)));
+        return Ok(Data::BookDeltas(Box::new(deltas)));
     }
 
     if let Ok(quote) = obj.extract::<QuoteTick>() {
@@ -1623,7 +1623,7 @@ fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
     }
 
     if let Ok(depth) = obj.extract::<OrderBookDepth10>() {
-        return Ok(Data::Depth10(Box::new(depth)));
+        return Ok(Data::BookDepth10(Box::new(depth)));
     }
 
     if let Ok(mark) = obj.extract::<MarkPriceUpdate>() {

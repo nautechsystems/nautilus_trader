@@ -9,7 +9,7 @@ Use an editor with current Rust and Python language support, such as PyCharm or 
 Source builds and the Rust crates require [Rust](https://www.rust-lang.org)
 ([installation guide](https://www.rust-lang.org/tools/install)).
 
-[Cap'n Proto](https://capnproto.org/) is required for serialization schema compilation. The required
+[Cap'n Proto](https://capnproto.org) is required for serialization schema compilation. The required
 version is specified in `.nautilus-engineering/tools.toml`. Ubuntu's default package is typically
 too old, so you may need to install from source (see below).
 
@@ -56,9 +56,9 @@ make install-tools
 ./scripts/install-capnp.sh
 
 make sync
-source .venv/bin/activate
+source python/.venv/bin/activate
 
-export PYO3_PYTHON="$PWD/.venv/bin/python"
+export PYO3_PYTHON="$PWD/python/.venv/bin/python"
 
 if [ "$(uname -s)" = "Linux" ]; then
   PYTHON_LIB_DIR="$("$PYO3_PYTHON" -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')"
@@ -84,7 +84,7 @@ test dependencies from the repository root:
 make sync
 ```
 
-For frequent development, install a debug build of the package into the root `.venv`:
+For frequent development, install a debug build of the package into `python/.venv`:
 
 ```bash
 make install-debug
@@ -188,12 +188,25 @@ Make sure the Rust compiler reports **zero errors** -- broken builds slow everyo
 
 ### 4. Configure environment variables
 
+NautilusTrader keeps its uv-managed environment at `python/.venv`, beside
+`python/pyproject.toml`. This follows
+[uv's default project environment layout](https://docs.astral.sh/uv/concepts/projects/layout/#the-project-environment),
+which keeps the environment where uv and Python editors expect to discover it. Run direct uv project
+commands from `python/` or pass `--project python` from the repository root. Make targets and CI
+select the project themselves.
+
+:::warning
+If this checkout previously used the root `.venv`, remove any `UV_PROJECT_ENVIRONMENT` export from
+your shell startup files and the current shell before running Make or uv. This override takes
+precedence over uv's project discovery.
+:::
+
 **Required for Rust/PyO3 (Linux and macOS)**: When using Python installed via `uv` on Linux or
 macOS, set the following environment variables from the repository root after `make sync`:
 
 ```bash
 # Set the Python executable path for PyO3
-export PYO3_PYTHON="$PWD/.venv/bin/python"
+export PYO3_PYTHON="$PWD/python/.venv/bin/python"
 
 # Linux only: Set the library path for the uv-managed Python runtime
 PYTHON_LIB_DIR="$("$PYO3_PYTHON" -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')"
@@ -281,7 +294,7 @@ image. Run `make update-uv` to install the project version locally.
 ## Builds
 
 The Python package and the standalone Nautilus CLI are separate build artifacts. `make build-debug`
-and `make build` install the Python package into the root `.venv`; neither command updates the
+and `make build` install the Python package into `python/.venv`; neither command updates the
 `nautilus` binary in Cargo's binary directory. See the
 [Nautilus CLI developer guide](#nautilus-cli-developer-guide) when changing or using the CLI.
 
@@ -313,7 +326,7 @@ Use the command that updates the affected artifact. The build targets call their
 
 | Changed input                                       | Command                      | Updated artifact                                  |
 | --------------------------------------------------- | ---------------------------- | ------------------------------------------------- |
-| `python/pyproject.toml` or `python/uv.lock`         | `make sync`                  | Dependencies in the root `.venv`.                 |
+| `python/pyproject.toml` or `python/uv.lock`         | `make sync`                  | Dependencies in `python/.venv`.                   |
 | Rust bindings, Python package code, or stub sources | `make build-debug`           | Debug Python package and generated type stubs.    |
 | CLI code, SQL initialization code, or `schema/sql`  | `make install-cli`           | Standalone `nautilus` binary in Cargo's bin path. |
 | Cargo, uv, `prek`, or OSV Scanner tool pins         | `make install-tools`         | Pinned development tools.                         |
@@ -321,18 +334,18 @@ Use the command that updates the affected artifact. The build targets call their
 
 The environment variables in [Configure environment variables](#4-configure-environment-variables)
 contain checkout-specific paths. After switching checkouts, changing the selected Python version,
-or recreating `.venv`, activate that checkout's environment and export the variables again. Verify
-that the shell resolves Python from the expected checkout:
+or recreating `python/.venv`, activate that checkout's environment and export the variables again.
+Verify that the shell resolves Python from the expected checkout:
 
 ```bash
-source .venv/bin/activate
+source python/.venv/bin/activate
 command -v python
 python --version
 ```
 
 ## Cap'n Proto
 
-[Cap'n Proto](https://capnproto.org/) is required for serialization schema compilation.
+[Cap'n Proto](https://capnproto.org) is required for serialization schema compilation.
 The required version is defined in `.nautilus-engineering/tools.toml`.
 
 Install the correct version for your platform:
@@ -568,7 +581,7 @@ Run `nautilus database --help` for the complete command syntax.
 ## Rust analyzer settings
 
 Rust analyzer is a popular language server for Rust and integrates with many IDEs. Configure its
-`VIRTUAL_ENV` to use the root `.venv`. If PyO3 analysis cannot locate Python, also provide the
+`VIRTUAL_ENV` to use `python/.venv`. If PyO3 analysis cannot locate Python, also provide the
 `PYO3_PYTHON` and `PYTHONHOME` values from [Configure environment variables](#4-configure-environment-variables).
 The examples below cover VS Code and AstroNvim. For other settings, see the
 [rust-analyzer configuration](https://rust-analyzer.github.io/book/configuration.html).
@@ -582,17 +595,17 @@ The examples below cover VS Code and AstroNvim. For other settings, see the
     "rust-analyzer.cargo.features": "all",
     "rust-analyzer.check.workspace": false,
     "rust-analyzer.check.extraEnv": {
-        "VIRTUAL_ENV": "<path-to-your-virtual-environment>/.venv",
+        "VIRTUAL_ENV": "<path-to-nautilus-trader>/python/.venv",
         "CC": "clang",
         "CXX": "clang++"
     },
     "rust-analyzer.cargo.extraEnv": {
-        "VIRTUAL_ENV": "<path-to-your-virtual-environment>/.venv",
+        "VIRTUAL_ENV": "<path-to-nautilus-trader>/python/.venv",
         "CC": "clang",
         "CXX": "clang++"
     },
     "rust-analyzer.runnables.extraEnv": {
-        "VIRTUAL_ENV": "<path-to-your-virtual-environment>/.venv",
+        "VIRTUAL_ENV": "<path-to-nautilus-trader>/python/.venv",
         "CC": "clang",
         "CXX": "clang++"
     },
@@ -611,7 +624,7 @@ config = {
         cargo = {
           features = "all",
           extraEnv = {
-            VIRTUAL_ENV = "<path-to-your-virtual-environment>/.venv",
+            VIRTUAL_ENV = "<path-to-nautilus-trader>/python/.venv",
             CC = "clang",
             CXX = "clang++",
           },
@@ -621,14 +634,14 @@ config = {
           command = "check",
           features = "all",
           extraEnv = {
-            VIRTUAL_ENV = "<path-to-your-virtual-environment>/.venv",
+            VIRTUAL_ENV = "<path-to-nautilus-trader>/python/.venv",
             CC = "clang",
             CXX = "clang++",
           },
         },
         runnables = {
           extraEnv = {
-            VIRTUAL_ENV = "<path-to-your-virtual-environment>/.venv",
+            VIRTUAL_ENV = "<path-to-nautilus-trader>/python/.venv",
             CC = "clang",
             CXX = "clang++",
           },

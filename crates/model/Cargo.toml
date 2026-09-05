@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-model"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -76,6 +75,7 @@ criterion = { workspace = true }
 iai = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
+tempfile = { workspace = true }
 
 [[bench]]
 name = "greeks_criterion"

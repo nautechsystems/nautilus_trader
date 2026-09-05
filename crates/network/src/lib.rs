@@ -33,11 +33,11 @@
 //! - `extension-module`: Builds as a Python extension module.
 //! - `python`: Exposes the `TransportBackend` enum through [PyO3](https://pyo3.rs).
 //! - `simulation`: Enables deterministic simulation testing with
-//!   [MadSim](https://github.com/madsim-rs/madsim).
+//!   [MadSim](https://crates.io/crates/madsim).
 //! - `transport-sockudo` (default): Adds the [sockudo-ws](https://crates.io/crates/sockudo-ws)
 //!   WebSocket backend, selectable through `WebSocketConfig.backend`.
 //! - `turmoil`: Enables deterministic network simulation testing with
-//!   [turmoil](https://github.com/tokio-rs/turmoil).
+//!   [turmoil](https://crates.io/crates/turmoil).
 //!
 //! # Testing
 //!

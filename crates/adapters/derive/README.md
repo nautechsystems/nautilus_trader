@@ -1,7 +1,7 @@
 # nautilus-derive
 
 [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
-[![Documentation](https://img.shields.io/docsrs/nautilus-derive)](https://docs.rs/nautilus-derive/latest/nautilus-derive/)
+[![Documentation](https://img.shields.io/docsrs/nautilus-derive)](https://docs.rs/nautilus-derive/latest/nautilus_derive/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-derive.svg)](https://crates.io/crates/nautilus-derive)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
@@ -33,7 +33,7 @@ This crate provides feature flags to control source code inclusion during compil
 - `extension-module`: Builds as a Python extension module.
 - `fuzz`: Enables libFuzzer integration for fuzz targets.
 - `high-precision` (default): Enables
-  [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode)
+  [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
   to use 128-bit value types.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
@@ -45,13 +45,13 @@ nightly toolchain.
 
 ## Documentation
 
-See the [Derive integration guide](https://nautilustrader.io/docs/nightly/integrations/derive)
+See the [Derive integration guide](https://nautilustrader.io/docs/nightly/integrations/derive/)
 and [crate docs](https://docs.rs/nautilus-derive) for more detailed usage.
 
 ## License
 
 The source code for NautilusTrader is available on GitHub under the
-[GNU Lesser General Public License v3.0](https://github.com/nautechsystems/nautilus_trader/blob/develop/LICENSE).
+[GNU Lesser General Public License v3.0](https://www.gnu.org/licenses/lgpl-3.0.en.html).
 
 ---
 

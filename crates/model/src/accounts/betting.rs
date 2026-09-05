@@ -30,14 +30,15 @@ use crate::{
         Account,
         base::{self, BaseAccount},
     },
-    enums::{AccountType, InstrumentClass, LiquiditySide, OrderSide},
+    enums::{InstrumentClass, OrderSide},
     events::{AccountState, OrderFilled},
-    identifiers::{AccountId, InstrumentId},
+    identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
     position::Position,
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 
+/// Represents a betting account that stakes on sports betting markets.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
@@ -48,6 +49,7 @@ use crate::{
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
 )]
 pub struct BettingAccount {
+    /// The account state shared by every account type.
     pub base: BaseAccount,
     /// Per-(instrument, currency) locked balances (transient, not persisted).
     #[serde(skip, default)]
@@ -73,18 +75,23 @@ impl BettingAccount {
     }
 
     /// Updates the locked balance for the given instrument and currency.
-    /// Leaves the existing balance and reservations unchanged if their precision differs.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `locked` is negative.
-    pub fn update_balance_locked(&mut self, instrument_id: InstrumentId, locked: Money) {
+    /// Returns an error if `locked` is negative, its precision differs from the balance
+    /// precision, or the reservations cannot produce a valid balance. The balance and
+    /// reservations are left unchanged when an error is returned.
+    pub fn update_balance_locked(
+        &mut self,
+        instrument_id: InstrumentId,
+        locked: Money,
+    ) -> anyhow::Result<()> {
         base::update_balance_locked(
             &mut self.base.balances,
             &mut self.balances_locked,
             instrument_id,
             locked,
-        );
+        )
     }
 
     /// Clears all locked balances for the given instrument ID.
@@ -152,17 +159,7 @@ impl BettingAccount {
 }
 
 impl Account for BettingAccount {
-    fn id(&self) -> AccountId {
-        self.id
-    }
-
-    fn account_type(&self) -> AccountType {
-        self.account_type
-    }
-
-    fn base_currency(&self) -> Option<Currency> {
-        self.base_currency
-    }
+    impl_account_base_members!();
 
     fn is_cash_account(&self) -> bool {
         true
@@ -172,63 +169,9 @@ impl Account for BettingAccount {
         false
     }
 
-    fn calculated_account_state(&self) -> bool {
-        self.calculate_account_state
-    }
-
-    fn balance_total(&self, currency: Option<Currency>) -> Option<Money> {
-        self.base_balance_total(currency)
-    }
-
-    fn balances_total(&self) -> IndexMap<Currency, Money> {
-        self.base_balances_total()
-    }
-
-    fn balance_free(&self, currency: Option<Currency>) -> Option<Money> {
-        self.base_balance_free(currency)
-    }
-
-    fn balances_free(&self) -> IndexMap<Currency, Money> {
-        self.base_balances_free()
-    }
-
-    fn balance_locked(&self, currency: Option<Currency>) -> Option<Money> {
-        self.base_balance_locked(currency)
-    }
-
-    fn balances_locked(&self) -> IndexMap<Currency, Money> {
-        self.base_balances_locked()
-    }
-
-    fn balance(&self, currency: Option<Currency>) -> Option<&AccountBalance> {
-        self.base_balance(currency)
-    }
-
-    fn last_event(&self) -> Option<AccountState> {
-        self.base_last_event()
-    }
-
-    fn events(&self) -> Vec<AccountState> {
-        self.events.clone()
-    }
-
-    fn event_count(&self) -> usize {
-        self.events.len()
-    }
-
-    fn currencies(&self) -> Vec<Currency> {
-        self.balances.keys().copied().collect()
-    }
-
-    fn starting_balances(&self) -> IndexMap<Currency, Money> {
-        self.balances_starting.clone()
-    }
-
-    fn balances(&self) -> IndexMap<Currency, AccountBalance> {
-        self.balances.clone()
-    }
-
     fn apply(&mut self, event: AccountState) -> anyhow::Result<()> {
+        self.check_event_account_id(&event)?;
+
         for balance in &event.balances {
             if balance.total.raw < 0 {
                 anyhow::bail!(
@@ -248,12 +191,8 @@ impl Account for BettingAccount {
         Ok(())
     }
 
-    fn purge_account_events(&mut self, ts_now: nautilus_core::UnixNanos, lookback_secs: u64) {
-        self.base.base_purge_account_events(ts_now, lookback_secs);
-    }
-
     fn calculate_balance_locked(
-        &mut self,
+        &self,
         instrument: &InstrumentAny,
         side: OrderSide,
         quantity: Quantity,
@@ -331,23 +270,6 @@ impl Account for BettingAccount {
         }
 
         Ok(pnls.into_values().collect())
-    }
-
-    fn calculate_commission(
-        &self,
-        instrument: &InstrumentAny,
-        last_qty: Quantity,
-        last_px: Price,
-        liquidity_side: LiquiditySide,
-        use_quote_for_inverse: Option<bool>,
-    ) -> anyhow::Result<Money> {
-        self.base_calculate_commission(
-            instrument,
-            last_qty,
-            last_px,
-            liquidity_side,
-            use_quote_for_inverse,
-        )
     }
 }
 
@@ -486,7 +408,7 @@ mod tests {
     #[case(OrderSide::Buy, "2.00", "10", "10 GBP")]
     #[case(OrderSide::Buy, "10.00", "10", "90 GBP")]
     fn test_calculate_balance_locked(
-        mut betting_account: BettingAccount,
+        betting_account: BettingAccount,
         betting: crate::instruments::BettingInstrument,
         #[case] side: OrderSide,
         #[case] price: &str,
@@ -676,7 +598,9 @@ mod tests {
         let instrument_id =
             crate::identifiers::InstrumentId::from("BETFAIR-1.2345678-12345678-0.0.NONE");
 
-        betting_account.update_balance_locked(instrument_id, Money::from("1500 GBP"));
+        betting_account
+            .update_balance_locked(instrument_id, Money::from("1500 GBP"))
+            .unwrap();
 
         let balance = betting_account.balance(Some(Currency::GBP())).unwrap();
         assert_eq!(balance.locked, Money::from("1000 GBP"));
@@ -690,7 +614,9 @@ mod tests {
     ) {
         let instrument_id = InstrumentId::from("BETFAIR-1.2345678-12345678-0.0.NONE");
         let gbp = Currency::GBP();
-        betting_account.update_balance_locked(instrument_id, Money::from("100 GBP"));
+        betting_account
+            .update_balance_locked(instrument_id, Money::from("100 GBP"))
+            .unwrap();
         let balance_before = *betting_account.balance(Some(gbp)).unwrap();
         let locks_before = betting_account.balances_locked.clone();
         let mismatched_gbp = Currency::new(
@@ -702,8 +628,14 @@ mod tests {
         );
         let locked = Money::from_decimal(Decimal::from(50), mismatched_gbp).unwrap();
 
-        betting_account.update_balance_locked(instrument_id, locked);
+        let error = betting_account
+            .update_balance_locked(instrument_id, locked)
+            .unwrap_err();
 
+        assert_eq!(
+            error.to_string(),
+            "Cannot update GBP reservation: precision 3 differed from balance precision 2"
+        );
         assert_eq!(betting_account.balance(Some(gbp)), Some(&balance_before));
         assert_eq!(betting_account.balances_locked, locks_before);
     }
@@ -743,7 +675,7 @@ mod tests {
 
     #[rstest]
     fn test_calculate_balance_locked_rejects_non_betting_instrument(
-        mut betting_account: BettingAccount,
+        betting_account: BettingAccount,
     ) {
         let audusd = crate::instruments::stubs::audusd_sim();
         let result = betting_account.calculate_balance_locked(
@@ -756,5 +688,55 @@ mod tests {
 
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("sports betting"));
+    }
+
+    #[rstest]
+    fn test_calculate_balance_locked_rejects_use_quote_for_inverse(
+        betting_account: BettingAccount,
+        betting: crate::instruments::BettingInstrument,
+    ) {
+        let result = betting_account.calculate_balance_locked(
+            &betting.into_any(),
+            OrderSide::Buy,
+            Quantity::from("100"),
+            Price::from("1.5"),
+            Some(true),
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "`use_quote_for_inverse` is not applicable for betting accounts"
+        );
+    }
+
+    #[rstest]
+    fn test_calculate_pnls_rejects_non_betting_instrument(betting_account: BettingAccount) {
+        let audusd = crate::instruments::stubs::audusd_sim();
+        let audusd_any = audusd.into_any();
+        let order = crate::orders::builder::OrderTestBuilder::new(crate::enums::OrderType::Market)
+            .instrument_id(audusd_any.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("100000"))
+            .build();
+        let fill: crate::events::OrderFilled = TestOrderEventStubs::filled(
+            &order,
+            &audusd_any,
+            None,
+            None,
+            Some(Price::from("0.8")),
+            None,
+            None,
+            None,
+            None,
+            Some(AccountId::from("SIM-001")),
+        )
+        .into();
+
+        let result = betting_account.calculate_pnls(&audusd_any, &fill, None);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "BettingAccount requires a sports betting instrument"
+        );
     }
 }

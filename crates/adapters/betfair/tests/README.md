@@ -15,10 +15,10 @@ documented in `docs/developer_guide/adapters.md`.
 
 ## Layout
 
-- `live.rs`: the seam test target, one test per scenario.
-- `node.rs`: the full-node smoke target (phase 2), booting a real `LiveNode` against the mock
-  venue (see [Full-node smoke](#full-node-smoke) below).
-- `harness/mod.rs`: the reusable harness, made up of:
+- `integration/live.rs`: the seam test module, one test per scenario.
+- `integration/node.rs`: the full-node smoke module (phase 2), booting a real `LiveNode` against the
+  mock venue (see [Full-node smoke](#full-node-smoke) below).
+- `integration/harness/mod.rs`: the reusable harness, made up of:
   - `Harness::build`
   - the `submit_via_risk` / `modify_via_risk` command drivers
   - the `reconcile_from_venue` HTTP reconcile driver
@@ -32,7 +32,7 @@ documented in `docs/developer_guide/adapters.md`.
   adapter adopts the pattern.
 - `../test_data/stream/ocm_harness_*.json`: matched OCM frames (cancel, fill, partial fill, external).
 
-## Why two targets
+## Why two layers
 
 The two layers are complementary: each asserts something the other structurally cannot.
 
@@ -49,14 +49,14 @@ A seam failure localizes to the fork; a node failure points at assembly or the r
 ## Running
 
 ```bash
-cargo nextest run -p nautilus-betfair --test live
-cargo nextest run -p nautilus-betfair --test node
+cargo nextest run -p nautilus-betfair --test integration live::
+cargo nextest run -p nautilus-betfair --test integration node::
 ```
 
 nextest runs each test in its own process, which isolates the thread-local message bus and logging
 that the engines rely on. The seam harness also tolerates multiple builds on one thread (it installs
 a fresh bus per build and uses the replace-style sender setters), so `cargo test -- --test-threads=1`
-works too. The `node` target boots a real `LiveNode` (one global logger per process), so prefer
+works too. The `node` module boots a real `LiveNode` (one global logger per process), so prefer
 nextest for it.
 
 ## Flow
@@ -116,8 +116,8 @@ OCM-stream scenario:
 ## Reusing for another adapter
 
 Supply the adapter's own mock venue and matched frames; reuse the engine wiring, the pump, and the
-invariants from `harness/mod.rs`. ExecTester registers against any adapter via the `Strategy` trait's
-`core_mut`, configured to the adapter's instrument and client id.
+invariants from `integration/harness/mod.rs`. ExecTester registers against any adapter via the
+`Strategy` trait's `core_mut`, configured to the adapter's instrument and client id.
 
 ## Routing-contract proof
 

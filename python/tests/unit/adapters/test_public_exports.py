@@ -72,7 +72,7 @@ REMOVED_PYTHON_WEBSOCKET_TYPES = {
 }
 
 # Members that must never reach a facade's public surface: raw transport clients,
-# endpoint helpers, and leaked future-import names.
+# endpoint URL resolvers, and leaked future-import names.
 FORBIDDEN_SUFFIXES = (
     "HttpClient",
     "RawHttpClient",
@@ -91,7 +91,7 @@ def _is_forbidden(name: str) -> bool:
         return True
     if name.endswith(FORBIDDEN_SUFFIXES):
         return True
-    # Endpoint helpers such as get_<adapter>_http_base_url / get_<adapter>_ws_url,
+    # Endpoint URL resolvers such as get_<adapter>_http_base_url / get_<adapter>_ws_url,
     # but not legitimate utilities such as get_<adapter>_arrow_schema_map.
     return name.startswith("get_") and "url" in name
 
@@ -150,9 +150,9 @@ def test_runtime_all_matches_stub_all_exactly(adapter: object) -> None:
 
 
 @pytest.mark.parametrize("adapter", ADAPTERS)
-def test_facade_exposes_no_raw_clients_endpoints_or_helpers(adapter: object) -> None:
+def test_facade_exposes_no_raw_clients_endpoints_or_url_resolvers(adapter: object) -> None:
     """
-    Test facade exposes no raw clients endpoints or helpers.
+    Test facade exposes no raw clients, endpoints, or URL resolvers.
     """
     module = _import(adapter)
 

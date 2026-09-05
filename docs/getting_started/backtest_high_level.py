@@ -14,7 +14,10 @@
 # %% [markdown]
 # ## Prerequisites
 # - Python 3.12+
-# - [NautilusTrader](https://pypi.org/project/nautilus_trader/) latest release installed (`pip install nautilus_trader`)
+# - [NautilusTrader](https://pypi.org/project/nautilus_trader/) 2.x installed
+#   (`pip install -U --pre nautilus_trader`). The `--pre` flag is required while 2.x
+#   ships as `2.0.0rcN`.
+# - pandas (`pip install pandas`). The wheel declares no runtime dependencies.
 
 # %%
 import os
@@ -41,42 +44,59 @@ from nautilus_trader.trading import EmaCrossConfig
 
 
 # %% [markdown]
-# ## Download sample data
+# ## Load the sample data
 #
-# This example uses FX tick data from [histdata.com](https://www.histdata.com/download-free-forex-historical-data/?/ascii/tick-data-quotes/).
-# Select an FX pair and one or more months to download.
+# The tutorial runs with no download: `TestDataProvider` ships AUD/USD quote
+# ticks, read from the local `test_data/` directory in a source checkout and
+# from GitHub otherwise. We take the first 20,000 to keep the run short.
 #
-# Downloaded files look like:
-#
-# - `DAT_ASCII_EURUSD_T_202410.csv` (EUR/USD for October 2024)
-# - `DAT_ASCII_EURUSD_T_202411.csv` (EUR/USD for November 2024)
-#
-# Extract the CSV files into `~/Downloads/Data/HISTDATA/` (or set the
+# To replay a longer history, download FX tick data from
+# [histdata.com](https://www.histdata.com/download-free-forex-historical-data/?/ascii/tick-data-quotes/)
+# and extract the CSV files into `~/Downloads/Data/HISTDATA/` (or set the
 # `NAUTILUS_DATA_DIR` environment variable to the parent directory containing a
-# `HISTDATA` subfolder).
+# `HISTDATA` subfolder). Downloaded files look like
+# `DAT_ASCII_EURUSD_T_202410.csv` (EUR/USD for October 2024). The cell below
+# picks them up automatically. A full month of tick data runs to millions of
+# rows, so expect the catalog write to take several minutes.
 
 # %%
 DATA_DIR = Path(os.environ.get("NAUTILUS_DATA_DIR", "~/Downloads/Data")).expanduser() / "HISTDATA"
 
-# %%
-path = DATA_DIR
-raw_files = [
-    f for f in path.iterdir() if f.is_file() and (f.suffix == ".csv" or f.name.endswith(".csv.gz"))
-]
-assert raw_files, f"Unable to find any CSV files in directory {path}"
+raw_files = (
+    sorted(
+        f
+        for f in DATA_DIR.iterdir()
+        if f.is_file() and (f.suffix == ".csv" or f.name.endswith(".csv.gz"))
+    )
+    if DATA_DIR.is_dir()
+    else []
+)
 raw_files
 
 # %% [markdown]
 # ## Load data into the catalog
 #
-# Histdata CSV files contain `timestamp, bid_price, ask_price` fields.
-# `TestDataProvider.quotes_from_histdata_csv` parses them into Nautilus
-# `QuoteTick` objects with a default notional size.
+# Both loaders parse vendor rows into Nautilus `QuoteTick` objects with a
+# default notional size. Histdata CSV files contain
+# `timestamp, bid_price, ask_price` fields; the bundled TrueFX sample contains
+# `timestamp, bid, ask`.
 
 # %%
-# Create a EUR/USD instrument on the SIM venue and parse the CSV into quote ticks
-EURUSD = TestInstrumentProvider.default_fx_ccy("EUR/USD")
-ticks = TestDataProvider.quotes_from_histdata_csv(EURUSD, raw_files[0])
+if raw_files:
+    instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD")
+    ticks = TestDataProvider.quotes_from_histdata_csv(instrument, raw_files[0])
+else:
+    instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+    ticks = TestDataProvider.quotes_from_truefx_csv(
+        instrument,
+        "truefx/audusd-ticks.csv",
+        max_rows=20_000,
+    )
+
+# Vendor exports are not always monotonic; the catalog requires ascending timestamps
+ticks.sort(key=lambda tick: tick.ts_init)
+
+print(f"Loaded {len(ticks)} quote ticks for {instrument.id}")
 
 # Preview: see first 2 ticks
 ticks[0:2]
@@ -100,7 +120,7 @@ CATALOG_PATH.mkdir(parents=True)
 catalog = ParquetDataCatalog(str(CATALOG_PATH))
 
 # Write instrument to the catalog
-catalog.write_instruments([EURUSD])
+catalog.write_instruments([instrument])
 
 # Write ticks to the catalog
 catalog.write_quote_ticks(ticks)
@@ -117,12 +137,11 @@ catalog.instruments()
 
 # %%
 # See 1st instrument from catalog
-instrument = catalog.instruments()[0]
-instrument
+catalog.instruments()[0]
 
 # %%
 # Query quote ticks from catalog to determine the data range
-all_ticks = catalog.query_quote_ticks(identifiers=[EURUSD.id.value])
+all_ticks = catalog.query_quote_ticks(identifiers=[instrument.id.value])
 print(f"Total ticks in catalog: {len(all_ticks)}")
 
 if all_ticks:
@@ -138,7 +157,7 @@ if all_ticks:
 
     # Preview selected data
     selected_quote_ticks = catalog.query_quote_ticks(
-        identifiers=[EURUSD.id.value],
+        identifiers=[instrument.id.value],
         start=start_ns,
         end=end_ns,
     )

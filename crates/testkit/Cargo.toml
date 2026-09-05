@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-testkit"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -128,13 +127,6 @@ tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 
 [[test]]
-name = "common"
-required-features = ["datasets"]
-
-[[test]]
-name = "large_data"
-required-features = ["datasets"]
-
-[[test]]
-name = "orderbook_integration"
+name = "integration"
+path = "tests/integration/main.rs"
 required-features = ["datasets"]

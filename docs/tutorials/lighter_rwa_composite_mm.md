@@ -342,9 +342,12 @@ Equities cash-session signal, with signal age after the regular session.*
 
 ## Regenerate the panels
 
+After building NautilusTrader from source, run these commands from the repository root:
+
 ```bash
-uv sync --extra visualization
-python3 docs/tutorials/assets/lighter_rwa_composite_mm/render_panels.py
+make sync
+uv run --project python --no-sync \
+    python docs/tutorials/assets/lighter_rwa_composite_mm/render_panels.py
 ```
 
 The renderer writes four PNGs into

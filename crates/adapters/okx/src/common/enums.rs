@@ -1373,12 +1373,12 @@ pub enum OKXAlgoOrderType {
     Other,
 }
 
-/// Helper to determine if an order type requires algo order handling.
+/// Returns whether an order type requires algo order handling.
 pub fn is_conditional_order(order_type: OrderType) -> bool {
     OKX_CONDITIONAL_ORDER_TYPES.contains(&order_type)
 }
 
-/// Helper to determine if an order type requires the advance algo cancel endpoint.
+/// Returns whether an order type requires the advance algo cancel endpoint.
 pub fn is_advance_algo_order(order_type: OrderType) -> bool {
     OKX_ADVANCE_ALGO_ORDER_TYPES.contains(&order_type)
 }

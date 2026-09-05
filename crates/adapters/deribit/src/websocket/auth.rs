@@ -83,7 +83,7 @@ impl AuthState {
 
 /// Sends an authentication request using client_signature grant type.
 ///
-/// This is a helper function used by both initial authentication and re-authentication
+/// This function supports both initial authentication and re-authentication
 /// after reconnection. It generates the signature and sends auth params via the command channel.
 /// The handler is responsible for generating the request ID.
 ///

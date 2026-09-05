@@ -63,7 +63,7 @@ const LOG_INTERVAL: u64 = 5000;
 /// deltas, trades, and settlement events, and skip Betfair-specific types
 /// (tickers, BSP, race GPS data) that have no `Data` variant.
 ///
-/// `Data::Deltas` boxes its `OrderBookDeltas` payload to keep the enum small.
+/// `Data::BookDeltas` boxes its `OrderBookDeltas` payload to keep the enum small.
 fn load_betfair_data(
     filepath: &std::path::Path,
 ) -> anyhow::Result<(AHashMap<InstrumentId, InstrumentAny>, Vec<Data>)> {
@@ -93,7 +93,7 @@ fn load_betfair_data(
             }
             // Order book deltas and trades map directly to Data variants
             BetfairDataItem::Deltas(d) => {
-                data.push(Data::Deltas(Box::new(d)));
+                data.push(Data::BookDeltas(Box::new(d)));
             }
             BetfairDataItem::Trade(t) => {
                 data.push(Data::Trade(t));
