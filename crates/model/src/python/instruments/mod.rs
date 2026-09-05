@@ -25,6 +25,7 @@ use serde::de::DeserializeOwned;
 
 use crate::{
     enums::{AssetClass, InstrumentClass},
+    identifiers::{Symbol, Venue},
     instruments::{
         BettingInstrument, BinaryOption, Cfd, Commodity, CryptoFuture, CryptoFuturesSpread,
         CryptoOptionSpread, CryptoPerpetual, CurrencyPair, Equity, FuturesContract, FuturesSpread,
@@ -108,6 +109,18 @@ macro_rules! impl_instrument_common_pymethods {
                     self.price_precision(),
                     self.size_precision(),
                 )
+            }
+
+            #[getter]
+            #[pyo3(name = "symbol")]
+            fn py_symbol(&self) -> Symbol {
+                self.id().symbol
+            }
+
+            #[getter]
+            #[pyo3(name = "venue")]
+            fn py_venue(&self) -> Venue {
+                self.id().venue
             }
 
             #[getter]

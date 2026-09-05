@@ -251,8 +251,6 @@ Several v1 inspection names have direct v2 replacements:
 
 | v1 name                                              | v2 name                         |
 | ---------------------------------------------------- | ------------------------------- |
-| `instrument.symbol`                                  | `instrument.id.symbol`          |
-| `instrument.venue`                                   | `instrument.id.venue`           |
 | `instrument.activation_utc`                          | `instrument.activation_ns`      |
 | `instrument.expiration_utc`                          | `instrument.expiration_ns`      |
 | `instrument.tick_scheme_name`                        | `instrument.tick_scheme`        |

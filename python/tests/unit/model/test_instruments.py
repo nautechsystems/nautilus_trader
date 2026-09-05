@@ -91,8 +91,10 @@ GENERIC_INSTRUMENT_PROPERTIES = (
     "min_quantity",
     "multiplier",
     "quote_currency",
+    "symbol",
     "taker_fee",
     "tick_scheme",
+    "venue",
 )
 
 
@@ -114,6 +116,8 @@ def test_audusd_sim_construction() -> None:
     audusd = TestInstrumentProvider.audusd_sim()
 
     assert audusd.id == InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+    assert audusd.symbol == audusd.id.symbol == Symbol("AUD/USD")
+    assert audusd.venue == audusd.id.venue == Venue("SIM")
     assert audusd.base_currency == Currency.from_str("AUD")
     assert audusd.quote_currency == Currency.from_str("USD")
     assert audusd.price_precision == 5
@@ -1287,6 +1291,8 @@ def test_synthetic_instrument_construction() -> None:
     )
 
     assert synth.id == InstrumentId(Symbol("BTC-ETH"), Venue("SYNTH"))
+    assert synth.symbol == synth.id.symbol == Symbol("BTC-ETH")
+    assert synth.venue == synth.id.venue == Venue("SYNTH")
     assert synth.price_precision == 8
     assert len(synth.components) == 2
     assert synth.formula == "(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2"

@@ -7,15 +7,16 @@ Released on TBD (UTC).
 - Added `Cache` APIs and Redis/PostgreSQL persistence for `InstrumentClose` data, with later values
   replacing earlier values for the same instrument
 - Added `avg_px` and report window fields to persisted execution reports
+- Added a `causation_id` property to every order event, and a `protection_price` property to `OrderUpdated`
+- Added `due_post_only` to the `OrderRejected` constructor, defaulting to `false`
 - Added the standard Python enum surface (`from_str`, `name`, `value`, `variants`) to `BarIntervalType`
 - Added remote resolution for `TestDataProvider` CSV loaders so they work from an installed wheel
-- Added user-defined portfolio statistics through `Portfolio.register_statistic()`, with a
-  `PortfolioStatistic` base class for Python implementations
+- Added user-defined portfolio statistics through `Portfolio.register_statistic()`, with a `PortfolioStatistic` base class
+- Added Python `OrderBook.to_deltas(...)` and `OrderBook.get_all_crossed_levels(...)`
+- Added Python `OrderBook` pickle and deep-copy support and `BookLevel` comparisons
+- Added Python `symbol` and `venue` properties to regular and synthetic instruments
 - Added Bybit self-match prevention, set with `smp_type` on the execution client config or per order
 - Added Polymarket collateral-sized limit BUY orders with exact limit price preservation
-- Added a `causation_id` property to every order event, and a `protection_price` property to
-  `OrderUpdated`
-- Added `due_post_only` to the `OrderRejected` constructor, defaulting to `false`
 
 ### Breaking Changes
 
@@ -35,8 +36,8 @@ Released on TBD (UTC).
 - Changed `REDUCING` to allow only eligible reduce-only submissions, cancellations, and queries
 - Changed execution clients to reject `reduce_only` without an enforcing venue instruction (#4761), thanks @folknor
 - Changed backtest and sandbox venues to reject reduce-only orders when `use_reduce_only=false`
-- Changed v2 PostgreSQL cache startup to require the `instrument_close` table; run `nautilus database init`
-- Changed the v2 PostgreSQL `order_event` and `position_event` tables to carry the order event
+- Changed PostgreSQL cache startup to require the `instrument_close` table; run `nautilus database init`
+- Changed PostgreSQL `order_event` and `position_event` tables to carry the order event
   fields that were previously dropped; run `nautilus database init` to add the columns, as cache
   startup now fails fast when they are missing. `OrderReleased` and `OrderFillVoided` rows written
   before the upgrade cannot be restored, because their `released_price` and `correction_id` were
@@ -62,6 +63,7 @@ Released on TBD (UTC).
   `is_reopened`, and fill `info` being dropped when an order event was persisted to PostgreSQL
 - Fixed position commissions and realized PnL after fill-void replay
 - Fixed nanosecond precision loss when `TestDataProvider` parses timestamps
+- Fixed Python `OrderBook` aggregation to raise `ValueError` for invalid precision and quantity overflow
 
 ### Internal Improvements
 
@@ -98,6 +100,7 @@ Released on TBD (UTC).
 - Changed the getting started and tutorial guides to run on bundled sample data without a download
 - Simplified documented `StrategyConfig` and `DataActorConfig` subclassing to keyword-only fields
 - Updated persistence catalog migration commands to kebab-case binary names
+- Updated migration guidance for order books and instrument inspection
 - Fixed the actor configuration example rejecting a positional argument
 - Corrected documented enum values for instrument classes, wallet accounts, position entry sides,
   and Polymarket close types
