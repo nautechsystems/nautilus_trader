@@ -9,7 +9,8 @@ Released on TBD (UTC).
 - Added a `causation_id` property to every order event, and a `protection_price` property to `OrderUpdated`
 - Added `due_post_only` to the `OrderRejected` constructor, defaulting to `false`
 - Added remote resolution for `TestDataProvider` CSV loaders so they work from an installed wheel
-- Added user-defined portfolio statistics through `Portfolio.register_statistic()`, with a `PortfolioStatistic` base class
+- Added user-defined portfolio statistics via `Portfolio.register_statistic()` and Python `PortfolioStatistic`
+- Added named task identity and lifecycle observation to live `TaskGroup`
 - Added Python enum surface (`from_str`, `name`, `value`, `variants`) to `BarIntervalType`
 - Added Python `OrderBook.to_deltas(...)` and `OrderBook.get_all_crossed_levels(...)`
 - Added Python `OrderBook` pickle and deep-copy support and `BookLevel` comparisons

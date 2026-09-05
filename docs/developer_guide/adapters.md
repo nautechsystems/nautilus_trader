@@ -1616,7 +1616,7 @@ Classify every production task by its owner before choosing its storage and shut
 | ------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | Session-scoped      | Stream consumers, keepalives, health polls, refresh loops, and reconnect drivers.           | One session group owns the task from successful admission through disconnect or failed startup.    |
 | Command-scoped      | Work spawned by synchronous data requests or execution commands.                            | A separate command group owns the task without tying its outcome to the transport session.         |
-| Explicitly singular | One transport loop or disconnect operation whose identity is part of the owning state.      | Store one named handle and apply the same bounded join, forced abort, and failure reporting rules. |
+| Explicitly singular | One task whose handle or typed result must remain in owning state for direct joining.       | Store one named handle and apply the same bounded join, forced abort, and failure reporting rules. |
 | Handler-local       | Retry futures, send workers, and child work created and joined inside one handler.          | The handler drains the work before it exits and exposes failure to its owner.                      |
 | Protocol exception  | Typed fan-out results, keyed timeouts, or work whose local join preserves protocol meaning. | Keep the exception local, state why a shared group would lose meaning, and test its shutdown path. |
 
@@ -1627,9 +1627,18 @@ explicit ambiguous outcome. Do not let transport shutdown silently reclassify th
 [`TaskHandles`](../../crates/common/src/live/task.rs) stores unit task handles without setting
 spawn, cancellation, generation, or join policy. Use it inside a component that defines those
 rules. [`TaskGroup`](../../crates/live/src/task.rs) supplies the shared live-client policy for
-unit-output session and command tasks. The module's `finish_task` function applies the same bounded
-policy to an explicitly singular handle without erasing a typed result. For another explicit ownership
-pattern, spawn through `nautilus_common::live::get_runtime().spawn()` as described in
+unit-output session and command tasks. Use `TaskGroup::spawn_named` when client state must observe a
+grouped task's logical name, instance identity, or terminal state. Its `TaskRef` is read-only: the
+group remains the sole owner of cancellation and joining. Read-only observation does not make the
+task explicitly singular.
+
+`TaskRef::is_active` and `TaskRef::is_finished` expose the same one-way lifecycle state. Active means
+the task was admitted and has not reached a terminal state. A task may finish before `spawn_named`
+returns; neither state proves that the user future received its first poll.
+
+The same task module's `finish_task` function applies the bounded policy to an explicitly singular
+handle without erasing a typed result. For another explicit ownership pattern, spawn through
+`nautilus_common::live::get_runtime().spawn()` as described in
 [Async code](rust.md#async-code), then retain or locally await the returned handle.
 
 ### Spawn through a task group
@@ -1664,7 +1673,8 @@ where
 Validate the command and clone every input before constructing the future. Do not capture a
 `RefCell` borrow, cache guard, clock borrow, or reference to the command in work that outlives the
 trait call. When a long-lived task creates children, capture a `TaskSpawner` from the owning group.
-A spawner from an older generation cannot register work in the replacement generation.
+Use `TaskSpawner::spawn_named` when those child tasks also need identity in shutdown failures. A
+spawner from an older generation cannot register work in the replacement generation.
 
 Give each task:
 
