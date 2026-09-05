@@ -20,7 +20,10 @@ use std::cmp::Ordering;
 #[cfg(feature = "defi")]
 use alloy_primitives::U256;
 use indexmap::IndexMap;
-use nautilus_core::UnixNanos;
+use nautilus_core::{
+    UnixNanos,
+    correctness::{CorrectnessError, CorrectnessResult, CorrectnessResultExt},
+};
 use rust_decimal::Decimal;
 
 #[cfg(feature = "defi")]
@@ -118,12 +121,24 @@ impl BookLevel {
     /// Panics if the total raw size exceeds [`QuantityRaw::MAX`].
     #[must_use]
     pub fn size_raw(&self) -> QuantityRaw {
+        self.size_raw_checked()
+            .expect_display("Overflow occurred when summing `BookLevel` raw size")
+    }
+
+    /// Returns the total size of all orders at this price level as raw integer units.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the total raw size exceeds [`QuantityRaw::MAX`].
+    pub(crate) fn size_raw_checked(&self) -> CorrectnessResult<QuantityRaw> {
         self.orders
             .values()
             .try_fold(0, |total: QuantityRaw, order| {
                 total.checked_add(order.size.raw)
             })
-            .expect("Overflow occurred when summing `BookLevel` raw size")
+            .ok_or_else(|| CorrectnessError::PredicateViolation {
+                message: "Overflow occurred when summing `BookLevel` raw size".to_string(),
+            })
     }
 
     /// Returns the total size of all orders at this price level as a decimal.

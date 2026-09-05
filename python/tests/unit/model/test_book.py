@@ -16,6 +16,8 @@
 Test book behavior.
 """
 
+import copy
+import operator
 import pickle
 from decimal import Decimal
 
@@ -40,6 +42,7 @@ from nautilus_trader.model import OwnOrderBook
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import QuoteTick
+from nautilus_trader.model import RecordFlag
 from nautilus_trader.model import TimeInForce
 from nautilus_trader.model import TradeId
 from nautilus_trader.model import TraderId
@@ -321,6 +324,291 @@ def test_order_book_construction(audusd_id: InstrumentId) -> None:
     assert book.update_count == 0
 
 
+def create_populated_l3_book(instrument_id: InstrumentId) -> tuple[OrderBook, list[BookOrder]]:
+    """
+    Create a populated L3 order book with multiple levels and FIFO orders.
+    """
+    orders = [
+        BookOrder(
+            OrderSide.BUY,
+            Price.from_str("100.50"),
+            Quantity.from_str("10.25"),
+            11,
+        ),
+        BookOrder(
+            OrderSide.BUY,
+            Price.from_str("100.50"),
+            Quantity.from_str("5.75"),
+            12,
+        ),
+        BookOrder(
+            OrderSide.BUY,
+            Price.from_str("100.40"),
+            Quantity.from_str("4.50"),
+            13,
+        ),
+        BookOrder(
+            OrderSide.SELL,
+            Price.from_str("100.60"),
+            Quantity.from_str("8.125"),
+            21,
+        ),
+    ]
+    book = OrderBook(instrument_id=instrument_id, book_type=BookType.L3_MBO)
+    for sequence, order in enumerate(orders, start=41):
+        book.add(order, flags=0, sequence=sequence, ts_event=sequence + 100)
+
+    return book, orders
+
+
+def create_aggregate_overflow_book(
+    instrument_id: InstrumentId,
+) -> tuple[OrderBook, Price, int]:
+    """
+    Create an order book whose aggregated level exceeds the quantity domain.
+    """
+    try:
+        size = Quantity.from_str("20000000000000")
+    except ValueError:
+        size = Quantity.from_str("10000000000")
+
+    book = OrderBook(instrument_id=instrument_id, book_type=BookType.L3_MBO)
+    price = Price.from_str("100.60")
+    book.add(BookOrder(OrderSide.SELL, price, size, 1), flags=0, sequence=1, ts_event=1)
+    book.add(BookOrder(OrderSide.SELL, price, size, 2), flags=0, sequence=2, ts_event=2)
+
+    return book, price, size.precision
+
+
+def assert_order_book_state(actual: OrderBook, expected: OrderBook) -> None:
+    """
+    Assert all observable order book state, including nested order fields.
+    """
+    assert actual.instrument_id == expected.instrument_id
+    assert actual.book_type == expected.book_type
+    assert actual.sequence == expected.sequence
+    assert actual.ts_last == expected.ts_last
+    assert actual.update_count == expected.update_count
+
+    actual_levels = actual.bids() + actual.asks()
+    expected_levels = expected.bids() + expected.asks()
+    assert len(actual_levels) == len(expected_levels)
+
+    for actual_level, expected_level in zip(actual_levels, expected_levels, strict=True):
+        assert actual_level.side == expected_level.side
+        assert actual_level.price.raw == expected_level.price.raw
+        assert actual_level.price.precision == expected_level.price.precision
+        assert actual_level.len() == expected_level.len()
+
+        actual_orders = actual_level.get_orders()
+        expected_orders = expected_level.get_orders()
+        assert len(actual_orders) == len(expected_orders)
+
+        for actual_order, expected_order in zip(actual_orders, expected_orders, strict=True):
+            assert actual_order.side == expected_order.side
+            assert actual_order.price.raw == expected_order.price.raw
+            assert actual_order.price.precision == expected_order.price.precision
+            assert actual_order.size.raw == expected_order.size.raw
+            assert actual_order.size.precision == expected_order.size.precision
+            assert actual_order.order_id == expected_order.order_id
+
+
+def test_order_book_pickle_roundtrip_preserves_complete_state(audusd_id: InstrumentId) -> None:
+    """
+    Test order book pickle roundtrip preserves complete state.
+    """
+    book, _ = create_populated_l3_book(audusd_id)
+
+    restored = pickle.loads(pickle.dumps(book))
+
+    assert restored is not book
+    assert_order_book_state(restored, book)
+
+
+def test_order_book_pickle_roundtrip_preserves_l2_state(audusd_id: InstrumentId) -> None:
+    """
+    Test order book pickle roundtrip preserves L2 price-based order IDs.
+    """
+    book = OrderBook(instrument_id=audusd_id, book_type=BookType.L2_MBP)
+    orders = [
+        BookOrder(OrderSide.BUY, Price.from_str("100.50"), Quantity.from_str("1.25"), 11),
+        BookOrder(OrderSide.BUY, Price.from_str("100.40"), Quantity.from_str("2.50"), 12),
+        BookOrder(OrderSide.SELL, Price.from_str("100.60"), Quantity.from_str("3.75"), 21),
+    ]
+
+    for sequence, order in enumerate(orders, start=1):
+        book.add(order, flags=0, sequence=sequence, ts_event=sequence + 10)
+
+    restored = pickle.loads(pickle.dumps(book))
+
+    assert restored is not book
+    assert_order_book_state(restored, book)
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [
+        pytest.param(RecordFlag.F_TOB.value, id="top-of-book"),
+        pytest.param(RecordFlag.F_MBP.value, id="market-by-price"),
+    ],
+)
+def test_order_book_pickle_roundtrip_preserves_flag_normalized_l3_state(
+    audusd_id: InstrumentId,
+    flags: int,
+) -> None:
+    """
+    Test order book pickle roundtrip preserves flag-normalized L3 order IDs.
+    """
+    book = OrderBook(instrument_id=audusd_id, book_type=BookType.L3_MBO)
+    orders = [
+        BookOrder(OrderSide.BUY, Price.from_str("100.50"), Quantity.from_str("1.25"), 11),
+        BookOrder(OrderSide.BUY, Price.from_str("100.40"), Quantity.from_str("2.50"), 12),
+        BookOrder(OrderSide.SELL, Price.from_str("100.60"), Quantity.from_str("3.75"), 21),
+    ]
+
+    for sequence, order in enumerate(orders, start=1):
+        book.add(order, flags=flags, sequence=sequence, ts_event=sequence + 10)
+
+    stored_orders = [order for level in book.bids() + book.asks() for order in level.get_orders()]
+    restored = pickle.loads(pickle.dumps(book))
+
+    assert stored_orders
+    assert all(order.order_id not in {11, 12, 21} for order in stored_orders)
+    assert restored is not book
+    assert_order_book_state(restored, book)
+
+
+def test_order_book_deepcopy_is_independent(audusd_id: InstrumentId) -> None:
+    """
+    Test order book deepcopy is independent.
+    """
+    book, orders = create_populated_l3_book(audusd_id)
+
+    copied = copy.deepcopy(book)
+    copied.delete(orders[0], flags=0, sequence=99, ts_event=999)
+
+    assert copied is not book
+    assert [order.order_id for order in book.bids()[0].get_orders()] == [11, 12]
+    assert [order.order_id for order in copied.bids()[0].get_orders()] == [12]
+    assert book.sequence == 44
+    assert book.ts_last == 144
+    assert book.update_count == 4
+    assert copied.sequence == 99
+    assert copied.ts_last == 999
+    assert copied.update_count == 5
+
+
+@pytest.mark.parametrize("batch_flag", [RecordFlag.F_MBP.value, RecordFlag.F_SNAPSHOT.value])
+@pytest.mark.parametrize("side", [OrderSide.BUY, OrderSide.SELL])
+@pytest.mark.parametrize("copy_method", ["pickle", "deepcopy"])
+def test_order_book_copy_preserves_unfinished_l1_batch(
+    audusd_id: InstrumentId,
+    batch_flag: int,
+    side: OrderSide,
+    copy_method: str,
+) -> None:
+    """
+    Test order book copies preserve unfinished L1 batch state.
+    """
+    book = OrderBook(instrument_id=audusd_id, book_type=BookType.L1_MBP)
+    initial_price = Price.from_str("100.00")
+    worse_price = Price.from_str("99.00" if side == OrderSide.BUY else "101.00")
+    initial = BookOrder(side, initial_price, Quantity.from_str("10"), 1)
+    terminal = BookOrder(side, worse_price, Quantity.from_str("20"), 1)
+    book.add(initial, flags=batch_flag, sequence=1, ts_event=101)
+
+    restored = pickle.loads(pickle.dumps(book)) if copy_method == "pickle" else copy.deepcopy(book)
+
+    terminal_flags = batch_flag | RecordFlag.F_LAST.value
+    book.add(terminal, flags=terminal_flags, sequence=2, ts_event=102)
+    restored.add(terminal, flags=terminal_flags, sequence=2, ts_event=102)
+
+    assert_order_book_state(restored, book)
+    if side == OrderSide.BUY:
+        assert restored.best_bid_price() == initial_price
+        assert restored.best_ask_price() is None
+    else:
+        assert restored.best_ask_price() == initial_price
+        assert restored.best_bid_price() is None
+
+
+def test_order_book_setstate_rejects_identity_mismatch_without_mutation(
+    audusd_id: InstrumentId,
+) -> None:
+    """
+    Test order book setstate rejects identity mismatch without mutation.
+    """
+    book, _ = create_populated_l3_book(audusd_id)
+    state = list(book.__getstate__())
+    state[0] = InstrumentId.from_str("GBP/USD.SIM")
+
+    with pytest.raises(ValueError, match="does not match instance instrument ID"):
+        book.__setstate__(tuple(state))
+
+    expected, _ = create_populated_l3_book(audusd_id)
+    assert_order_book_state(book, expected)
+
+
+def test_order_book_setstate_rejects_book_type_mismatch_without_mutation(
+    audusd_id: InstrumentId,
+) -> None:
+    """
+    Test order book setstate rejects book type mismatch without mutation.
+    """
+    book, _ = create_populated_l3_book(audusd_id)
+    state = list(book.__getstate__())
+    state[1] = "L2_MBP"
+
+    with pytest.raises(ValueError, match="does not match instance book type"):
+        book.__setstate__(tuple(state))
+
+    expected, _ = create_populated_l3_book(audusd_id)
+    assert_order_book_state(book, expected)
+
+
+def test_order_book_setstate_rejects_order_without_side_without_mutation(
+    audusd_id: InstrumentId,
+) -> None:
+    """
+    Test order book setstate rejects order without side without mutation.
+    """
+    book, _ = create_populated_l3_book(audusd_id)
+    state = list(book.__getstate__())
+    state[5] = [BookOrder(None, Price.from_str("1.0"), Quantity.from_str("1.0"), 1)]
+
+    with pytest.raises(ValueError, match="contains an order with no side"):
+        book.__setstate__(tuple(state))
+
+    expected, _ = create_populated_l3_book(audusd_id)
+    assert_order_book_state(book, expected)
+
+
+@pytest.mark.parametrize(
+    ("batch_state", "message"),
+    [
+        (1, "Cannot restore L1 batch state"),
+        (3, "Invalid L1 batch state code"),
+    ],
+)
+def test_order_book_setstate_rejects_invalid_batch_state_without_mutation(
+    audusd_id: InstrumentId,
+    batch_state: int,
+    message: str,
+) -> None:
+    """
+    Test order book setstate rejects invalid batch state without mutation.
+    """
+    book, _ = create_populated_l3_book(audusd_id)
+    state = list(book.__getstate__())
+    state[6] = batch_state
+
+    with pytest.raises(ValueError, match=message):
+        book.__setstate__(tuple(state))
+
+    expected, _ = create_populated_l3_book(audusd_id)
+    assert_order_book_state(book, expected)
+
+
 def test_order_book_add_and_query(audusd_id: InstrumentId) -> None:
     """
     Test order book add and query.
@@ -599,6 +887,7 @@ def test_book_level_properties(audusd_id: InstrumentId) -> None:
     level = book.bids()[0]
 
     assert isinstance(level, BookLevel)
+    assert level.side == OrderSide.BUY
     assert level.price == Price.from_str("100.50")
     assert level.len() == 1
     assert not level.is_empty()
@@ -609,6 +898,69 @@ def test_book_level_properties(audusd_id: InstrumentId) -> None:
     assert first.price == level.price
     assert first.size == Quantity.from_str("10")
     assert len(level.get_orders()) == 1
+
+    with pytest.raises(AttributeError):
+        level.side = OrderSide.SELL
+
+
+def test_book_level_comparisons_follow_ladder_order(audusd_id: InstrumentId) -> None:
+    """
+    Test book level comparisons follow ladder order.
+    """
+    book = OrderBook(instrument_id=audusd_id, book_type=BookType.L2_MBP)
+
+    for sequence, order in enumerate(
+        [
+            BookOrder(OrderSide.BUY, Price.from_str("100.50"), Quantity.from_str("1"), 1),
+            BookOrder(OrderSide.BUY, Price.from_str("100.40"), Quantity.from_str("2"), 2),
+            BookOrder(OrderSide.SELL, Price.from_str("100.60"), Quantity.from_str("3"), 3),
+            BookOrder(OrderSide.SELL, Price.from_str("100.70"), Quantity.from_str("4"), 4),
+        ],
+        start=1,
+    ):
+        book.add(order, flags=0, sequence=sequence, ts_event=sequence)
+
+    best_bid, next_bid = book.bids()
+    best_ask, next_ask = book.asks()
+
+    assert best_bid == book.bids()[0]
+    assert best_bid != next_bid
+    assert best_bid < next_bid
+    assert best_bid <= next_bid
+    assert next_bid > best_bid
+    assert next_bid >= best_bid
+    assert best_ask < next_ask
+    assert best_ask <= next_ask
+    assert next_ask > best_ask
+    assert next_ask >= best_ask
+    assert best_bid != best_ask
+    assert hash(best_bid) == hash(book.bids()[0])
+
+
+@pytest.mark.parametrize("comparison", [operator.lt, operator.le, operator.gt, operator.ge])
+def test_book_level_cross_side_ordering_raises_type_error(
+    audusd_id: InstrumentId,
+    comparison: object,
+) -> None:
+    """
+    Test book level cross-side ordering raises TypeError.
+    """
+    book = OrderBook(instrument_id=audusd_id, book_type=BookType.L2_MBP)
+    book.add(
+        BookOrder(OrderSide.BUY, Price.from_str("100.50"), Quantity.from_str("1"), 1),
+        flags=0,
+        sequence=1,
+        ts_event=1,
+    )
+    book.add(
+        BookOrder(OrderSide.SELL, Price.from_str("100.60"), Quantity.from_str("1"), 2),
+        flags=0,
+        sequence=2,
+        ts_event=2,
+    )
+
+    with pytest.raises(TypeError):
+        comparison(book.bids()[0], book.asks()[0])
 
 
 def test_order_book_grouped_views(audusd_id: InstrumentId) -> None:
@@ -819,6 +1171,150 @@ def test_order_book_get_quantity_methods(audusd_id: InstrumentId) -> None:
         OrderSide.SELL,
         1,
     ) == Quantity.from_str("10.0")
+
+
+def test_order_book_get_quantity_at_level_rejects_invalid_precision(
+    audusd_id: InstrumentId,
+) -> None:
+    """
+    Test order book quantity at level rejects invalid precision.
+    """
+    book = OrderBook(instrument_id=audusd_id, book_type=BookType.L2_MBP)
+
+    with pytest.raises(ValueError, match="precision"):
+        book.get_quantity_at_level(Price.from_str("100.60"), OrderSide.BUY, 255)
+
+
+def test_order_book_get_quantity_at_level_rejects_aggregate_overflow(
+    audusd_id: InstrumentId,
+) -> None:
+    """
+    Test order book quantity at level rejects aggregate overflow.
+    """
+    book, price, size_precision = create_aggregate_overflow_book(audusd_id)
+
+    with pytest.raises(ValueError, match=r"Overflow occurred|QUANTITY_RAW_MAX"):
+        book.get_quantity_at_level(price, OrderSide.BUY, size_precision)
+
+
+def test_order_book_get_all_crossed_levels(audusd_id: InstrumentId) -> None:
+    """
+    Test order book get all crossed levels.
+    """
+    book = OrderBook(instrument_id=audusd_id, book_type=BookType.L2_MBP)
+    orders = [
+        BookOrder(OrderSide.BUY, Price.from_str("100.50"), Quantity.from_str("10"), 1),
+        BookOrder(OrderSide.BUY, Price.from_str("100.40"), Quantity.from_str("20"), 2),
+        BookOrder(OrderSide.SELL, Price.from_str("100.60"), Quantity.from_str("5"), 3),
+        BookOrder(OrderSide.SELL, Price.from_str("100.70"), Quantity.from_str("15"), 4),
+    ]
+
+    for sequence, order in enumerate(orders, start=1):
+        book.add(order, flags=0, sequence=sequence, ts_event=sequence)
+
+    buy_levels = book.get_all_crossed_levels(OrderSide.BUY, Price.from_str("100.70"), 1)
+    sell_levels = book.get_all_crossed_levels(OrderSide.SELL, Price.from_str("100.40"), 1)
+    no_buy_levels = book.get_all_crossed_levels(OrderSide.BUY, Price.from_str("100.50"), 1)
+    empty_levels = OrderBook(audusd_id, BookType.L2_MBP).get_all_crossed_levels(
+        OrderSide.SELL,
+        Price.from_str("100.50"),
+        1,
+    )
+
+    assert buy_levels == [
+        (Price.from_str("100.60"), Quantity.from_str("5.0")),
+        (Price.from_str("100.70"), Quantity.from_str("15.0")),
+    ]
+    assert sell_levels == [
+        (Price.from_str("100.50"), Quantity.from_str("10.0")),
+        (Price.from_str("100.40"), Quantity.from_str("20.0")),
+    ]
+    assert no_buy_levels == []
+    assert empty_levels == []
+
+
+def test_order_book_get_all_crossed_levels_rejects_invalid_precision(
+    audusd_id: InstrumentId,
+) -> None:
+    """
+    Test order book get all crossed levels rejects invalid precision.
+    """
+    book = OrderBook(instrument_id=audusd_id, book_type=BookType.L2_MBP)
+
+    with pytest.raises(ValueError, match="precision"):
+        book.get_all_crossed_levels(OrderSide.BUY, Price.from_str("100.60"), 255)
+
+
+def test_order_book_get_all_crossed_levels_rejects_aggregate_overflow(
+    audusd_id: InstrumentId,
+) -> None:
+    """
+    Test order book get all crossed levels rejects aggregate overflow.
+    """
+    book, price, size_precision = create_aggregate_overflow_book(audusd_id)
+
+    with pytest.raises(ValueError, match=r"Overflow occurred|QUANTITY_RAW_MAX"):
+        book.get_all_crossed_levels(OrderSide.BUY, price, size_precision)
+
+
+def test_order_book_to_deltas_preserves_snapshot_contract(audusd_id: InstrumentId) -> None:
+    """
+    Test order book to deltas preserves snapshot contract.
+    """
+    book, orders = create_populated_l3_book(audusd_id)
+
+    snapshot = book.to_deltas(ts_event=1_000, ts_init=2_000)
+
+    assert snapshot.instrument_id == audusd_id
+    assert len(snapshot.deltas) == 5
+    clear = snapshot.deltas[0]
+    assert clear.instrument_id == audusd_id
+    assert clear.action == BookAction.CLEAR
+    assert clear.order.side is None
+    assert clear.order.price.raw == 0
+    assert clear.order.price.precision == 0
+    assert clear.order.size.raw == 0
+    assert clear.order.size.precision == 0
+    assert clear.order.order_id == 0
+    assert clear.flags == RecordFlag.F_SNAPSHOT.value
+    assert clear.sequence == 44
+    assert clear.ts_event == 1_000
+    assert clear.ts_init == 2_000
+
+    for index, (delta, order) in enumerate(zip(snapshot.deltas[1:], orders, strict=True)):
+        expected_flags = RecordFlag.F_SNAPSHOT.value
+        if index == len(orders) - 1:
+            expected_flags |= RecordFlag.F_LAST.value
+
+        assert delta.instrument_id == audusd_id
+        assert delta.action == BookAction.ADD
+        assert delta.order.side == order.side
+        assert delta.order.price.raw == order.price.raw
+        assert delta.order.price.precision == order.price.precision
+        assert delta.order.size.raw == order.size.raw
+        assert delta.order.size.precision == order.size.precision
+        assert delta.order.order_id == order.order_id
+        assert delta.flags == expected_flags
+        assert delta.sequence == 44
+        assert delta.ts_event == 1_000
+        assert delta.ts_init == 2_000
+
+
+def test_order_book_to_deltas_marks_empty_snapshot_final(audusd_id: InstrumentId) -> None:
+    """
+    Test order book to deltas marks empty snapshot final.
+    """
+    book = OrderBook(instrument_id=audusd_id, book_type=BookType.L2_MBP)
+
+    snapshot = book.to_deltas(ts_event=1_000, ts_init=2_000)
+
+    assert snapshot.instrument_id == audusd_id
+    assert len(snapshot.deltas) == 1
+    assert snapshot.deltas[0].action == BookAction.CLEAR
+    assert snapshot.deltas[0].flags == (RecordFlag.F_SNAPSHOT.value | RecordFlag.F_LAST.value)
+    assert snapshot.deltas[0].sequence == 0
+    assert snapshot.deltas[0].ts_event == 1_000
+    assert snapshot.deltas[0].ts_init == 2_000
 
 
 def test_order_book_get_avg_px_qty_for_exposure(depth10: object) -> None:

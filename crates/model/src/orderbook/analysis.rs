@@ -17,13 +17,18 @@
 
 use std::collections::BTreeMap;
 
+use nautilus_core::correctness::{CorrectnessResult, CorrectnessResultExt};
 use rust_decimal::Decimal;
 
 use super::{BookLevel, BookPrice, OrderBook};
 use crate::{
     enums::{BookType, OrderSide},
     orderbook::BookIntegrityError,
-    types::{Price, Quantity, fixed::FIXED_SCALAR, quantity::QuantityRaw},
+    types::{
+        Price, Quantity,
+        fixed::{FIXED_SCALAR, check_fixed_precision},
+        quantity::QuantityRaw,
+    },
 };
 
 /// Calculates the estimated fill quantity for a specified price from a set of
@@ -52,6 +57,12 @@ pub fn get_quantity_for_price(
 /// Unlike `get_quantity_for_price` which returns just the total, this returns
 /// each individual level as (price, size). Used when liquidity consumption
 /// tracking needs visibility into all available levels.
+///
+/// # Panics
+///
+/// Panics if:
+/// - `size_precision` exceeds the supported fixed precision.
+/// - An aggregated level size cannot be represented as a [`Quantity`].
 #[must_use]
 pub fn get_levels_for_price(
     price: Price,
@@ -59,6 +70,24 @@ pub fn get_levels_for_price(
     levels: &BTreeMap<BookPrice, BookLevel>,
     size_precision: u8,
 ) -> Vec<(Price, Quantity)> {
+    get_levels_for_price_checked(price, order_side, levels, size_precision)
+        .expect_display("Failed to collect crossed order book levels")
+}
+
+/// Returns all price levels that would be crossed by an order at the given price.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - `size_precision` exceeds the supported fixed precision.
+/// - An aggregated level size cannot be represented as a [`Quantity`].
+pub(crate) fn get_levels_for_price_checked(
+    price: Price,
+    order_side: OrderSide,
+    levels: &BTreeMap<BookPrice, BookLevel>,
+    size_precision: u8,
+) -> CorrectnessResult<Vec<(Price, Quantity)>> {
+    check_fixed_precision(size_precision)?;
     let mut result = Vec::new();
 
     for (book_price, level) in levels {
@@ -66,11 +95,11 @@ pub fn get_levels_for_price(
             break;
         }
 
-        let level_size = Quantity::from_raw(level.size_raw(), size_precision);
+        let level_size = Quantity::from_raw_checked(level.size_raw_checked()?, size_precision)?;
         result.push((level.price.value, level_size));
     }
 
-    result
+    Ok(result)
 }
 
 fn is_level_within_price(order_side: OrderSide, level_price: Price, limit_price: Price) -> bool {

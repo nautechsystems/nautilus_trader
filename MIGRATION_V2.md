@@ -248,23 +248,22 @@ precision and increment, and timestamps instead.
 
 Several v1 inspection names have direct v2 replacements:
 
-| v1 name                                              | v2 name                               |
-| ---------------------------------------------------- | ------------------------------------- |
-| `instrument.symbol`                                  | `instrument.id.symbol`                |
-| `instrument.venue`                                   | `instrument.id.venue`                 |
-| `instrument.activation_utc`                          | `instrument.activation_ns`            |
-| `instrument.expiration_utc`                          | `instrument.expiration_ns`            |
-| `instrument.tick_scheme_name`                        | `instrument.tick_scheme`              |
-| `AdaptiveMovingAverage.period` or `.period_er`       | `.period_efficiency_ratio`            |
-| `AdaptiveMovingAverage.period_alpha_fast`            | `.period_fast`                        |
-| `AdaptiveMovingAverage.period_alpha_slow`            | `.period_slow`                        |
-| `LinearRegression.R2`                                | `LinearRegression.r2`                 |
-| `DirectionalMovement.value`                          | `.pos` and `.neg`                     |
-| `DataType.type`                                      | `DataType.type_name`                  |
-| `OrderBookDelta.is_add/is_clear/is_delete/is_update` | inspect `OrderBookDelta.action`       |
-| `OrderBookDeltas.is_snapshot`                        | inspect `OrderBookDeltas.flags`       |
-| `BookLevel.side`                                     | use the containing bid or ask context |
-| `Bar.is_revision`                                    | removed                               |
+| v1 name                                              | v2 name                         |
+| ---------------------------------------------------- | ------------------------------- |
+| `instrument.symbol`                                  | `instrument.id.symbol`          |
+| `instrument.venue`                                   | `instrument.id.venue`           |
+| `instrument.activation_utc`                          | `instrument.activation_ns`      |
+| `instrument.expiration_utc`                          | `instrument.expiration_ns`      |
+| `instrument.tick_scheme_name`                        | `instrument.tick_scheme`        |
+| `AdaptiveMovingAverage.period` or `.period_er`       | `.period_efficiency_ratio`      |
+| `AdaptiveMovingAverage.period_alpha_fast`            | `.period_fast`                  |
+| `AdaptiveMovingAverage.period_alpha_slow`            | `.period_slow`                  |
+| `LinearRegression.R2`                                | `LinearRegression.r2`           |
+| `DirectionalMovement.value`                          | `.pos` and `.neg`               |
+| `DataType.type`                                      | `DataType.type_name`            |
+| `OrderBookDelta.is_add/is_clear/is_delete/is_update` | inspect `OrderBookDelta.action` |
+| `OrderBookDeltas.is_snapshot`                        | inspect `OrderBookDeltas.flags` |
+| `Bar.is_revision`                                    | removed                         |
 
 `activation_ns` and `expiration_ns` contain UNIX nanoseconds; convert them to the datetime type
 used by the application when calendar-time inspection is needed. V1 `DirectionalMovement.value`
@@ -744,6 +743,11 @@ Do not assume that a v1 adapter config field also exists on its v2 Rust config.
 
 Account for these differences from v1:
 
+- V2 `BookLevel` comparisons follow ladder priority: bids sort from highest to lowest price, and
+  asks sort from lowest to highest. Equality includes the side, and ordering levels from opposite
+  sides raises `TypeError`. Sort on `level.price` when code needs side-independent price order.
+- V2 `OrderBook` pickle data is not interchangeable with v1 pickle data. Rebuild snapshots from
+  source market data when moving between the implementations.
 - v2 caches `OptionGreeks` for option fee calculation; this extends v1.
 - `Bar.is_revision` is not exposed on the v2 Python surface. Do not depend on it during migration.
 - A direct `Position.apply` fill that crosses zero resets the open entry price to the flipping fill.
