@@ -220,7 +220,16 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
             .body(Body::from("OK"))
             .unwrap(),
         "/derivatives/api/v3/instruments" => {
-            json_response(load_test_data("http_futures_instruments.json"))
+            let mut data: Value =
+                serde_json::from_str(&load_test_data("http_futures_instruments.json")).unwrap();
+
+            if !cfg!(feature = "high-precision") {
+                data["instruments"]
+                    .as_array_mut()
+                    .unwrap()
+                    .retain(|instrument| instrument["symbol"] != "PF_PEPEUSD");
+            }
+            json_response(data.to_string())
         }
         "/derivatives/api/v3/accounts" => {
             json_response(r#"{"result":"success","accounts":{}}"#.to_string())

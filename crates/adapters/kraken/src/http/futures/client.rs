@@ -1259,27 +1259,25 @@ impl KrakenFuturesHttpClient {
         self.clock.get_time_ns()
     }
 
-    /// Requests tradable instruments from Kraken Futures.
+    /// Requests the complete tradable instrument catalogue from Kraken Futures.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying request fails or any instrument definition cannot be
+    /// parsed. An instrument parse failure returns [`KrakenHttpError::ParseError`] without a
+    /// partial catalogue.
     pub async fn request_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>, KrakenHttpError> {
         let ts_init = self.generate_ts_init();
         let response = self.inner.get_instruments().await?;
 
-        let instruments: Vec<InstrumentAny> = response
+        response
             .instruments
             .iter()
-            .filter_map(|fut_instrument| {
-                match parse_futures_instrument(fut_instrument, ts_init, ts_init) {
-                    Ok(instrument) => Some(instrument),
-                    Err(e) => {
-                        let symbol = &fut_instrument.symbol;
-                        log::warn!("Failed to parse futures instrument {symbol}: {e}");
-                        None
-                    }
-                }
+            .map(|fut_instrument| {
+                parse_futures_instrument(fut_instrument, ts_init, ts_init)
+                    .map_err(|e| KrakenHttpError::ParseError(e.to_string()))
             })
-            .collect();
-
-        Ok(instruments)
+            .collect()
     }
 
     /// Requests the current market status for Kraken Futures instruments.

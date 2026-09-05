@@ -69,7 +69,7 @@ use nautilus_model::{
     },
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
     instruments::{CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
-    types::{Currency, Price, Quantity},
+    types::{Currency, Price, Quantity, fixed::FIXED_PRECISION},
 };
 use nautilus_network::http::HttpClient;
 use nautilus_testkit::events::drain_data_events;
@@ -100,6 +100,7 @@ struct TestServerState {
     spot_asset_pairs_empty: Arc<AtomicBool>,
     spot_asset_pairs_request_count: Arc<AtomicUsize>,
     futures_instruments_empty: Arc<AtomicBool>,
+    futures_instruments_over_precision: Arc<AtomicBool>,
     futures_instruments_request_count: Arc<AtomicUsize>,
 }
 
@@ -121,6 +122,7 @@ impl Default for TestServerState {
             spot_asset_pairs_empty: Arc::new(AtomicBool::new(false)),
             spot_asset_pairs_request_count: Arc::new(AtomicUsize::new(0)),
             futures_instruments_empty: Arc::new(AtomicBool::new(false)),
+            futures_instruments_over_precision: Arc::new(AtomicBool::new(false)),
             futures_instruments_request_count: Arc::new(AtomicUsize::new(0)),
         }
     }
@@ -321,7 +323,27 @@ async fn mock_futures_instruments(state: Arc<TestServerState>) -> Response {
             .unwrap();
     }
 
-    let data = load_test_data("http_futures_instruments.json");
+    let mut data = load_test_data("http_futures_instruments.json");
+
+    if state
+        .futures_instruments_over_precision
+        .load(Ordering::Relaxed)
+    {
+        let instrument = data["instruments"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|instrument| instrument["symbol"] == "PF_PEPEUSD")
+            .unwrap();
+        let tick_size = format!("0.{}1", "0".repeat(usize::from(FIXED_PRECISION)));
+        instrument["tickSize"] = serde_json::from_str(&tick_size).unwrap();
+    } else if !cfg!(feature = "high-precision") {
+        data["instruments"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|instrument| instrument["symbol"] != "PF_PEPEUSD");
+    }
+
     Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/json")
@@ -886,6 +908,86 @@ async fn test_futures_data_client_request_instrument_refetches_when_cached() {
     assert!(
         instrument_response(&events).is_none(),
         "request_instrument must not emit a stale cached response when Kraken Futures returns no instruments; events were: {events:?}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_data_client_does_not_cache_partial_catalogue() {
+    let (addr, state) = start_test_server().await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+    let client = KrakenFuturesDataClient::new(
+        *KRAKEN_CLIENT_ID,
+        create_data_config(addr, KrakenProductType::Futures),
+    )
+    .expect("Kraken futures data client");
+    let instrument_id = InstrumentId::from("PF_ETHUSD.KRAKEN");
+
+    client
+        .request_instrument(RequestInstrument::new(
+            instrument_id,
+            None,
+            None,
+            Some(*KRAKEN_CLIENT_ID),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("initial request_instrument");
+
+    wait_until_async(
+        || async {
+            state
+                .futures_instruments_request_count
+                .load(Ordering::Relaxed)
+                >= 1
+                && !rx.is_empty()
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+    let events = drain_data_events(&mut rx, Duration::from_millis(200)).await;
+    assert!(instrument_response(&events).is_some());
+    let cached_count = client.instruments().len();
+    let cached_ts_init = client.get_instrument(&instrument_id).unwrap().ts_init();
+
+    state
+        .futures_instruments_over_precision
+        .store(true, Ordering::Relaxed);
+    client
+        .request_instrument(RequestInstrument::new(
+            instrument_id,
+            None,
+            None,
+            Some(*KRAKEN_CLIENT_ID),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("mixed-catalogue request_instrument");
+
+    wait_until_async(
+        || async {
+            state
+                .futures_instruments_request_count
+                .load(Ordering::Relaxed)
+                >= 2
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let events = drain_data_events(&mut rx, Duration::from_millis(300)).await;
+    let cached = client.instruments();
+    assert!(
+        instrument_response(&events).is_none(),
+        "failed catalogue must not emit an instrument response; events were: {events:?}",
+    );
+    assert_eq!(cached.len(), cached_count);
+    assert_eq!(
+        client.get_instrument(&instrument_id).unwrap().ts_init(),
+        cached_ts_init
     );
 }
 
@@ -2637,6 +2739,66 @@ async fn test_futures_domain_request_instruments_includes_tokenized_contract() {
             assert_eq!(perp.size_increment.as_decimal(), dec!(0.01));
         }
         _ => panic!("Expected CryptoPerpetual"),
+    }
+}
+
+#[cfg(feature = "high-precision")]
+#[rstest]
+#[tokio::test]
+async fn test_futures_domain_request_instruments_includes_precision_10_contract() {
+    let (addr, _) = start_test_server().await;
+    let client = KrakenFuturesHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(format!("http://{addr}")),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let instruments = client.request_instruments().await.unwrap();
+    let instrument = instruments
+        .iter()
+        .find(|instrument| instrument.raw_symbol().as_str() == "PF_PEPEUSD")
+        .expect("PF_PEPEUSD instrument");
+
+    assert_eq!(instrument.price_precision(), 10);
+    assert_eq!(instrument.price_increment(), Price::from("0.0000000001"));
+}
+
+#[cfg(not(feature = "high-precision"))]
+#[rstest]
+#[tokio::test]
+async fn test_futures_domain_request_instruments_rejects_partial_catalogue() {
+    let (addr, state) = start_test_server().await;
+    state
+        .futures_instruments_over_precision
+        .store(true, Ordering::Relaxed);
+    let client = KrakenFuturesHttpClient::new(
+        KrakenEnvironment::Live,
+        Some(format!("http://{addr}")),
+        10,
+        None,
+        None,
+        None,
+        None,
+        5,
+    )
+    .unwrap();
+
+    let error = client.request_instruments().await.unwrap_err();
+
+    match error {
+        KrakenHttpError::ParseError(message) => assert_eq!(
+            message,
+            "Cannot parse Kraken Futures instrument 'PF_PEPEUSD': tick_size 0.0000000001 requires \
+             precision 10, but this build supports at most 9; enable the 'high-precision' Cargo \
+             feature and rebuild"
+        ),
+        other => panic!("Expected parse error, was {other:?}"),
     }
 }
 

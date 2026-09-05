@@ -42,7 +42,8 @@
 //! - `extension-module`: Builds as a Python extension module.
 //! - `high-precision` (default): Enables
 //!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
-//!   to use 128-bit value types.
+//!   to use 128-bit value types. Keep this default for Futures because Kraken may return instrument
+//!   precision above standard-precision mode's nine-decimal limit.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
 // pyo3's `from_py_object` generates `.clone()` on `Copy` fields that clippy flags from the
