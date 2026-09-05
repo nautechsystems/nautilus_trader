@@ -12,7 +12,8 @@ The `nautilus-indicators` crate provides a collection of technical analysis indi
 for quantitative trading and market research. This includes a wide variety of indicators
 organized by category, with a unified trait-based architecture for consistent usage:
 
-- **Moving averages**: SMA, EMA, DEMA, HMA, WMA, VWAP, adaptive averages, and linear regression.
+- **Moving averages**: SMA, EMA, DEMA, HMA, WMA, VWAP, adaptive averages, linear regression,
+  and z-score.
 - **Momentum indicators**: RSI, MACD, Aroon, Bollinger Bands, CCI, Stochastics, and rate of change.
 - **Volatility indicators**: ATR, Donchian Channels, Keltner Channels, and volatility ratios.
 - **Ratio analysis**: Efficiency ratios and spread analysis for relative performance.

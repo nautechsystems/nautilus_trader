@@ -51,6 +51,7 @@ pub fn indicators(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::average::vwap::VolumeWeightedAveragePrice>()?;
     m.add_class::<crate::average::lr::LinearRegression>()?;
     m.add_class::<crate::average::wma::WeightedMovingAverage>()?;
+    m.add_class::<crate::average::zscore::ZScore>()?;
 
     // Book
     m.add_class::<crate::book::imbalance::BookImbalanceRatio>()?;
