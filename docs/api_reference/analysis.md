@@ -39,3 +39,11 @@
    :members:
    :member-order: bysource
 ```
+
+```{eval-rst}
+.. automodule:: nautilus_trader.analysis.statistic
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```

@@ -607,6 +607,12 @@ criteria = "safe-to-deploy"
 delta = "58.4.0 -> 59.2.0"
 notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
 
+[[audits.arrow]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.2.0 -> 59.3.0"
+notes = "Reviewed the published 59.2.0 to 59.3.0 crate. Version and dependency metadata only; no source, unsafe, build-script, filesystem, network, process, or credential behavior changed."
+
 [[audits.arrow-arith]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -618,6 +624,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "58.4.0 -> 59.2.0"
 notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
+
+[[audits.arrow-arith]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.2.0 -> 59.3.0"
+notes = "Reviewed the published 59.2.0 to 59.3.0 crate. Version and dependency metadata only; no source, unsafe, build-script, filesystem, network, process, or credential behavior changed."
 
 [[audits.arrow-array]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -631,6 +643,12 @@ criteria = "safe-to-deploy"
 delta = "58.4.0 -> 59.2.0"
 notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
 
+[[audits.arrow-array]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.2.0 -> 59.3.0"
+notes = "Reviewed the published 59.2.0 to 59.3.0 crate. Version and dependency metadata only; no source, unsafe, build-script, filesystem, network, process, or credential behavior changed."
+
 [[audits.arrow-buffer]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -642,6 +660,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "58.4.0 -> 59.2.0"
 notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
+
+[[audits.arrow-buffer]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.2.0 -> 59.3.0"
+notes = "Reviewed the published 59.2.0 to 59.3.0 crate. Version and dependency metadata only; no source, unsafe, build-script, filesystem, network, process, or credential behavior changed."
 
 [[audits.arrow-cast]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -655,6 +679,12 @@ criteria = "safe-to-deploy"
 delta = "58.4.0 -> 59.2.0"
 notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
 
+[[audits.arrow-cast]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.2.0 -> 59.3.0"
+notes = "Reviewed the published 59.2.0 to 59.3.0 crate. Version and dependency metadata only; no source, unsafe, build-script, filesystem, network, process, or credential behavior changed."
+
 [[audits.arrow-csv]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -666,6 +696,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "58.4.0 -> 59.2.0"
 notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
+
+[[audits.arrow-csv]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.2.0 -> 59.3.0"
+notes = "Reviewed the published 59.2.0 to 59.3.0 crate. Version and dependency metadata only; no source, unsafe, build-script, filesystem, network, process, or credential behavior changed."
 
 [[audits.arrow-data]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -679,6 +715,12 @@ criteria = "safe-to-deploy"
 delta = "58.4.0 -> 59.2.0"
 notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
 
+[[audits.arrow-data]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.2.0 -> 59.3.0"
+notes = "Reviewed the published 59.2.0 to 59.3.0 crate. Version and dependency metadata only; no source, unsafe, build-script, filesystem, network, process, or credential behavior changed."
+
 [[audits.arrow-ipc]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -690,6 +732,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "58.4.0 -> 59.2.0"
 notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
+
+[[audits.arrow-ipc]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.2.0 -> 59.3.0"
+notes = "Reviewed the published 59.2.0 to 59.3.0 crate. Version and dependency metadata only; no source, unsafe, build-script, filesystem, network, process, or credential behavior changed."
 
 [[audits.arrow-json]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -703,6 +751,12 @@ criteria = "safe-to-deploy"
 delta = "58.4.0 -> 59.2.0"
 notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
 
+[[audits.arrow-json]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.2.0 -> 59.3.0"
+notes = "Reviewed the published 59.2.0 to 59.3.0 crate. Version and dependency metadata only; no source, unsafe, build-script, filesystem, network, process, or credential behavior changed."
+
 [[audits.arrow-ord]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -714,6 +768,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "58.4.0 -> 59.2.0"
 notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
+
+[[audits.arrow-ord]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.2.0 -> 59.3.0"
+notes = "Reviewed the published 59.2.0 to 59.3.0 crate. Version and dependency metadata only; no source, unsafe, build-script, filesystem, network, process, or credential behavior changed."
 
 [[audits.arrow-row]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -727,6 +787,12 @@ criteria = "safe-to-deploy"
 delta = "58.4.0 -> 59.2.0"
 notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
 
+[[audits.arrow-row]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.2.0 -> 59.3.0"
+notes = "Reviewed the published 59.2.0 to 59.3.0 crate. Version and dependency metadata only; no source, unsafe, build-script, filesystem, network, process, or credential behavior changed."
+
 [[audits.arrow-schema]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -738,6 +804,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "58.4.0 -> 59.2.0"
 notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
+
+[[audits.arrow-schema]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.2.0 -> 59.3.0"
+notes = "Reviewed the published 59.2.0 to 59.3.0 crate. Version and dependency metadata only; no source, unsafe, build-script, filesystem, network, process, or credential behavior changed."
 
 [[audits.arrow-select]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -751,6 +823,12 @@ criteria = "safe-to-deploy"
 delta = "58.4.0 -> 59.2.0"
 notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
 
+[[audits.arrow-select]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.2.0 -> 59.3.0"
+notes = "Fixes concatenation of all-empty run arrays by returning an empty array with the input data type, with a targeted regression test. No new unsafe, dependencies, build script, filesystem, network, process, or credential behavior."
+
 [[audits.arrow-string]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -762,6 +840,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "58.4.0 -> 59.2.0"
 notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Arrow 59 releases: array construction and validation, compute and IPC kernels, FFI alignment, and performance paths. Added unchecked operations are bounded by validated lengths and capacities. No new build script, filesystem, network, process, or credential behavior."
+
+[[audits.arrow-string]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.2.0 -> 59.3.0"
+notes = "Reviewed the published 59.2.0 to 59.3.0 crate. Version and dependency metadata only; no source, unsafe, build-script, filesystem, network, process, or credential behavior changed."
 
 [[audits.async-compression]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -793,6 +877,12 @@ criteria = "safe-to-deploy"
 delta = "1.17.3 -> 1.18.0"
 notes = "Reviewed the Rust wrapper delta. ML-DSA/PQDSA moves from unstable::signature to signature with deprecated aliases, which is inert for this workspace since it enables neither unstable nor fips; the FIPS 4.0 module switch applies only to aws-lc-fips-sys behind the fips feature. Also adds out-of-place AEAD seal_out_of_place_scatter with length checks made before the AEAD call, guards a length underflow in key-wrap decrypt when ciphertext is shorter than 8 bytes, and exports rsa::KeyPairComponents. The hmac, digest, rand, and rsa paths this workspace uses are unchanged. No new build, network, process, filesystem, or credential behavior."
 
+[[audits.aws-lc-rs]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.18.0 -> 1.18.1"
+notes = "Reviewed the published Rust wrapper delta. It fails closed for malformed custom AEAD buffers, missing or mismatched cipher IVs, HKDF algorithm mismatches, fallible ECDH derives, and RSA digest mismatches; legacy ECDSA P-256 SHA-1 verification is additive and verification-only. Build changes only refine existing local compiler handling and metadata. No new network destination, credential disclosure, or data-exfiltration behavior."
+
 [[audits.aws-lc-sys]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -810,6 +900,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.43.0 -> 0.44.0"
 notes = "Reviewed the build scripts, generated bindings, packaged sources, and bundled AWS-LC delta (5.2.0 -> 5.5.0). The bulk of the diff is the mechanical aws_lc_0_43_0_ to aws_lc_0_44_0_ symbol-prefix rename across generated bindings and generated-src. Build changes add an OPENSSL_SMALL size-optimized option plumbed through the cc, cmake, and nasm builders, a copy_writable that clears read-only permissions when staging prebuilt objects out of a read-only store, and a platform-specific library_filename for system-library probing. C changes are an upstream sync confined to fipsmodule, cipher_extra, chacha, and rsa_extra. The refreshed Windows prebuilt NASM objects stay gated behind use_prebuilt_nasm, which needs Windows x86_64, absent NASM, and explicit env or feature opt-in that this workspace does not set. No network fetch, credential, or new process behavior beyond local compiler probes."
+
+[[audits.aws-lc-sys]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.44.0 -> 0.45.0"
+notes = "Reviewed the build scripts, generated bindings, packaged sources, Windows prebuilt NASM objects, and bundled AWS-LC 5.5.0 to 5.7.0 delta. Upstream changes add cryptographic algorithms and platform support and fix GCM IV validation, AArch64 modular inversion, and EVP_DecryptUpdate output bounds. Build changes refine existing compiler flags, system-library metadata, and jitterentropy flag filtering. Prebuilt objects remain behind the existing Windows x86_64 fallback. No network fetch, credential, or new process behavior beyond local compiler probes."
 
 [[audits.base32]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -1167,6 +1263,12 @@ criteria = "safe-to-deploy"
 delta = "0.59.0 -> 0.60.0"
 notes = "Reviewed 0.59.0 -> 0.60.0: batch listing short-form API and compatibility method"
 
+[[audits.databento]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.60.0 -> 0.61.0"
+notes = "Published client source is unchanged apart from the DBN 0.69 dependency and release notes. No client API, endpoint, authentication, unsafe, build-script, filesystem, process, credential, or network-destination behavior changed."
+
 [[audits.datafusion]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1419,6 +1521,12 @@ criteria = "safe-to-deploy"
 delta = "0.67.0 -> 0.68.0"
 notes = "Reviewed 0.67.0 -> 0.68.0: metadata sizing, C-string bounds correction, and documentation"
 
+[[audits.dbn]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.68.0 -> 0.69.0"
+notes = "Clamps RecordBuf byte slices to their fixed capacity, fixing an unsound safe mutation path. Metadata decoding is bounded to the declared metadata section and validates collection counts before allocation and reads. Other changes add UnsubscribeAck and expose the last decoded record from async decoders. No new build script, dependency class, or ambient capability."
+
 [[audits.dbn-macros]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1484,6 +1592,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.67.0 -> 0.68.0"
 notes = "Reviewed 0.67.0 -> 0.68.0: version metadata only"
+
+[[audits.dbn-macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.68.0 -> 0.69.0"
+notes = "Published source is unchanged; only package version metadata advances in lockstep with dbn 0.69.0."
 
 [[audits.displaydoc]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -1922,6 +2036,12 @@ criteria = "safe-to-deploy"
 delta = "58.4.0 -> 59.2.0"
 notes = "Reviewed the 58.4.0 to 59.2.0 delta across the Parquet 59 releases: the external thrift crate is replaced by an internal compact protocol, corrupt-input validation is strengthened, and read/write paths are optimized. Added bit-unpack transmutation and target-feature operations preserve documented size, alignment, and CPU-feature invariants. No new build script, network, process, credential, or network-destination behavior."
 
+[[audits.parquet]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "59.2.0 -> 59.3.0"
+notes = "Fixes cached sparse-mask reads that cross unloaded pages and preserves DELTA_BYTE_ARRAY prefix compression when values exceed the page size limit. The latter exempts only the mandatory first value for encodings that depend on the previous value and uses saturating subtraction, with targeted bounds tests. No new unsafe, build script, network, process, or credential behavior."
+
 [[audits.pem]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2162,6 +2282,12 @@ criteria = "safe-to-deploy"
 delta = "1.19.0 -> 1.20.0"
 notes = "Fixes RUSTSEC-2026-0220 shift overflow handling plus parsing, conversion, and soundness defects. Runtime dependencies and build behavior are unchanged; new unsafe blocks use proven slice lengths and disjoint storage, and formerly unsound safe functions now require unsafe callers."
 
+[[audits.rust_decimal]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.42.1 -> 1.43.0"
+notes = "Reviewed the published arithmetic, conversion, formatting, and feature delta. Chunked rescaling preserves digit-by-digit rounding and adds boundary tests; addition, multiplication, floor, ceiling, equality, and normalization changes are bounded arithmetic fast paths with fallbacks. The crate forbids unsafe code, removes the rkyv 0.7 feature bridge, and adds no build script or ambient capabilities."
+
 [[audits.rustls]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2269,6 +2395,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.2.0 -> 3.0.0"
 notes = "Reviewed the v3 signing and verification trait changes used by ed25519-dalek. The crate forbids unsafe code and has no build script, filesystem, network, process, or credential behavior."
+
+[[audits.smallvec]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.15.2 -> 1.16.0"
+notes = "Reviewed the published crate delta. Runtime source changes are rustfmt-only; the release removes the nightly debugger_visualizer feature and its dev-only debugger dependencies. Existing unsafe implementations are unchanged, and there is no build script or filesystem, network, process, or credential behavior."
 
 [[audits.snap]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2424,6 +2556,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.1.3+spec-1.1.0 -> 1.1.4+spec-1.1.0"
 notes = "Fixes Serde struct deserialization for TOML datetime values. The crate forbids unsafe code and adds no dependencies, build script, filesystem, network, process, or credential behavior."
+
+[[audits.toml]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.1.4+spec-1.1.0 -> 1.1.5+spec-1.1.0"
+notes = "Fixes ownership conversion for parsed integers and floats. Other changes are test data and documentation. No new unsafe, dependencies, build script, filesystem, network, process, or credential behavior."
 
 [[audits.toml_edit]]
 who = "Nautech Systems <info@nautechsystems.io>"

@@ -1708,7 +1708,7 @@ impl HyperliquidHttpClient {
         mapping
     }
 
-    /// Get perpetuals metadata (internal helper).
+    /// Gets perpetuals metadata for internal use.
     #[allow(dead_code)]
     pub(crate) async fn load_perp_meta(&self) -> Result<PerpMeta> {
         self.inner.load_perp_meta().await
@@ -1720,13 +1720,13 @@ impl HyperliquidHttpClient {
         self.inner.load_all_perp_metas().await
     }
 
-    /// Get spot metadata (internal helper).
+    /// Gets spot metadata for internal use.
     #[allow(dead_code)]
     pub(crate) async fn get_spot_meta(&self) -> Result<SpotMeta> {
         self.inner.get_spot_meta().await
     }
 
-    /// Get outcome metadata (internal helper).
+    /// Gets outcome metadata for internal use.
     pub(crate) async fn get_outcome_meta(&self) -> Result<OutcomeMeta> {
         self.inner.get_outcome_meta().await
     }

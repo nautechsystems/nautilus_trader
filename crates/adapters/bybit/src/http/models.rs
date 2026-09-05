@@ -2379,7 +2379,7 @@ mod tests {
     #[rstest]
     fn deserialize_sub_members_paged_response() {
         // The final-page sentinel is `"0"`; both `"0"` and `None` collapse to
-        // `continuation_cursor() == None` via the helper.
+        // `continuation_cursor() == None` through the method.
         let json = load_test_json("http_get_user_sub_members_paged.json");
         let response: BybitSubMembersPagedResponse =
             serde_json::from_str(&json).expect("parse paged sub members");
@@ -2407,7 +2407,7 @@ mod tests {
     #[rstest]
     fn deserialize_sub_api_keys_response() {
         // `readOnly` arrives as a bool here; the masked `"******"` secret
-        // collapses to `None` through the `masked_secret` helper.
+        // collapses to `None` through the `masked_secret` Serde adapter.
         let json = load_test_json("http_get_user_sub_apikeys.json");
         let response: BybitSubApiKeysResponse =
             serde_json::from_str(&json).expect("parse sub apikeys");

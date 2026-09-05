@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Helpers for owning, redacting, and masking secrets in strings.
+//! Secret string ownership, redaction, and masking.
 
 use std::fmt::Debug;
 

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! OKX-specific subscription helpers.
+//! OKX subscription topic construction.
 
 use ustr::Ustr;
 

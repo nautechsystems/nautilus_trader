@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-blockchain"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -97,7 +96,7 @@ toml = { workspace = true }
 turmoil = { workspace = true }
 
 [[bin]]
-name = "node_wallet"
+name = "node-wallet"
 path = "bin/node_wallet.rs"
 required-features = ["hypersync"]
 doc = false
@@ -108,8 +107,3 @@ name = "blockchain-data-tester"
 path = "examples/node_data_tester.rs"
 required-features = ["hypersync"]
 doc = false
-
-[[test]]
-name = "python"
-path = "tests/python.rs"
-required-features = ["python", "hypersync"]

@@ -266,7 +266,7 @@ impl PostBatcher {
     }
 }
 
-// Helpers to classify lane from an action
+// Classifies an action into its submission lane
 pub fn lane_for_action(action: &ActionRequest) -> PostLane {
     match action {
         ActionRequest::Order { orders, .. } => {

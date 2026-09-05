@@ -90,7 +90,9 @@ impl From<HttpClientError> for BinanceFuturesHttpError {
             HttpClientError::InvalidProxy(msg) | HttpClientError::ClientBuildError(msg) => {
                 Self::NetworkError(msg)
             }
-            HttpClientError::Error(msg) => Self::NetworkError(msg),
+            HttpClientError::Error(msg) | HttpClientError::TransportError(msg) => {
+                Self::NetworkError(msg)
+            }
         }
     }
 }

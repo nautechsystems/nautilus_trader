@@ -113,7 +113,7 @@ checkout, or build the package from source before running these examples. See
 From the repository root with Python installed:
 
 ```bash
-.venv/bin/python examples/live/lighter/data_tester.py
+uv run --project python --no-sync python examples/live/lighter/data_tester.py
 ```
 
 The script connects to Lighter Testnet immediately and starts streaming. The deployment,
@@ -139,7 +139,7 @@ builder = LiveNode.builder(
 Use the execution tester only after the data tester works:
 
 ```bash
-.venv/bin/python examples/live/lighter/exec_tester.py
+uv run --project python --no-sync python examples/live/lighter/exec_tester.py
 ```
 
 The execution tester also connects immediately, and it places real orders by default

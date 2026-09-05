@@ -1325,7 +1325,7 @@ def test_account_purge_account_events_retains_at_least_latest() -> None:
     """
     for account_type in (AccountType.CASH, AccountType.MARGIN, AccountType.BETTING):
         account, _state = _account_for_purge(account_type)
-        ts_now = 2_000_000_000  # one second after ts_event in helper
+        ts_now = 2_000_000_000  # one second after ts_event in _account_for_purge
         account.purge_account_events(ts_now=ts_now, lookback_secs=0)
         assert account.event_count == 1, (
             f"{account_type}: latest event must be retained even with lookback=0"
@@ -1383,7 +1383,7 @@ def test_account_purge_account_events_retains_recent_events() -> None:
         )
 
 
-def test_account_is_cash_vs_margin_helpers() -> None:
+def test_account_cash_and_margin_predicates() -> None:
     """
     ``is_cash_account`` / ``is_margin_account`` were newly exposed on all three classes.
 

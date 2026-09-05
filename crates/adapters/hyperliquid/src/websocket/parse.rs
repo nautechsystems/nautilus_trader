@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Parsing helpers for Hyperliquid WebSocket payloads.
+//! Parsers for Hyperliquid WebSocket payloads.
 
 use anyhow::Context;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};

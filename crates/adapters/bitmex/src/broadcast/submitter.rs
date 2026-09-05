@@ -558,7 +558,7 @@ impl SubmitBroadcaster {
 
     /// Processes submit request results, handling success and failures.
     ///
-    /// This helper consolidates the common error handling loop used for submit broadcasts.
+    /// This method consolidates the error handling loop used for submit broadcasts.
     async fn process_submit_results<T>(
         &self,
         mut handles: Vec<JoinHandle<(String, anyhow::Result<T>)>>,

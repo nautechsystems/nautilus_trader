@@ -3,6 +3,7 @@ set -euo pipefail
 
 project_dir="${1:?Expected project directory}"
 project_dir="$(cd "$project_dir" && pwd -P)"
+
 temp_root="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
 neutral_dir="$(mktemp -d "$temp_root/nautilus-python-doctests.XXXXXX")"
 trap 'rm -rf "$neutral_dir"' EXIT

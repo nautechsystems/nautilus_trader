@@ -15,8 +15,8 @@
 
 //! [NautilusTrader](https://nautilustrader.io) adapter for the [OKX](https://www.okx.com) cryptocurrency exchange.
 //!
-//! The `nautilus-okx` crate provides client bindings (HTTP & WebSocket), data
-//! models and helper utilities that wrap the official **OKX v5 API**.
+//! The `nautilus-okx` crate provides client bindings (HTTP & WebSocket) and data
+//! models for the official **OKX v5 API**.
 //!
 //! The official OKX API reference can be found at <https://www.okx.com/docs-v5/en/>.
 //! All public links inside this crate reference the English version.
@@ -39,7 +39,7 @@
 //! - `examples`: Enables the crate's example binaries.
 //! - `extension-module`: Builds as a Python extension module.
 //! - `high-precision` (default): Enables
-//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode)
+//!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
 //!   to use 128-bit value types.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 

@@ -139,6 +139,34 @@ impl OrderBookDelta {
         }
     }
 
+    /// Returns whether the delta adds an order.
+    #[cfg_attr(not(feature = "python"), allow(dead_code))]
+    #[must_use]
+    pub(crate) const fn is_add(&self) -> bool {
+        matches!(self.action, BookAction::Add)
+    }
+
+    /// Returns whether the delta updates an order.
+    #[cfg_attr(not(feature = "python"), allow(dead_code))]
+    #[must_use]
+    pub(crate) const fn is_update(&self) -> bool {
+        matches!(self.action, BookAction::Update)
+    }
+
+    /// Returns whether the delta deletes an order.
+    #[cfg_attr(not(feature = "python"), allow(dead_code))]
+    #[must_use]
+    pub(crate) const fn is_delete(&self) -> bool {
+        matches!(self.action, BookAction::Delete)
+    }
+
+    /// Returns whether the delta clears the order book.
+    #[cfg_attr(not(feature = "python"), allow(dead_code))]
+    #[must_use]
+    pub(crate) const fn is_clear(&self) -> bool {
+        matches!(self.action, BookAction::Clear)
+    }
+
     /// Returns the metadata for the type, for use with serialization formats.
     #[must_use]
     pub fn get_metadata(
@@ -424,11 +452,14 @@ mod tests {
     }
 
     #[rstest]
-    #[case(BookAction::Add)]
-    #[case(BookAction::Update)]
-    #[case(BookAction::Delete)]
-    #[case(BookAction::Clear)]
-    fn test_order_book_delta_with_different_actions(#[case] action: BookAction) {
+    #[case::add(BookAction::Add, (true, false, false, false))]
+    #[case::update(BookAction::Update, (false, true, false, false))]
+    #[case::delete(BookAction::Delete, (false, false, true, false))]
+    #[case::clear(BookAction::Clear, (false, false, false, true))]
+    fn test_order_book_delta_action_predicates(
+        #[case] action: BookAction,
+        #[case] expected: (bool, bool, bool, bool),
+    ) {
         let order = BookOrder::new(
             OrderSide::Buy,
             Price::from("100.00"),
@@ -462,6 +493,15 @@ mod tests {
         assert!(result.is_ok());
         let delta = result.unwrap();
         assert_eq!(delta.action, action);
+        assert_eq!(
+            (
+                delta.is_add(),
+                delta.is_update(),
+                delta.is_delete(),
+                delta.is_clear(),
+            ),
+            expected
+        );
     }
 
     #[rstest]

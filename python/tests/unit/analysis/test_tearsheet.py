@@ -1037,7 +1037,7 @@ def _run_issue_3899_backtest() -> object:
 
         def __init__(self) -> None:
             """
-            Initialize the helper.
+            Initialize the instance.
             """
             super().__init__()
             self.instrument = None
@@ -1257,7 +1257,7 @@ def test_resolve_tearsheet_returns_prefers_mark_to_market_snapshots() -> None:
 
         def __init__(self, value: object) -> None:
             """
-            Initialize the helper.
+            Initialize the instance.
             """
             self.value = value
 
@@ -1276,7 +1276,7 @@ def test_resolve_tearsheet_returns_prefers_mark_to_market_snapshots() -> None:
 
         def __init__(self, value: object, ts_event: object, unpriced: object = False) -> None:
             """
-            Initialize the helper.
+            Initialize the instance.
             """
             self.total_equity = [DummyMoney(value)]
             self.ts_event = ts_event
@@ -1361,7 +1361,7 @@ def test_calculate_snapshot_returns_rejects_mixed_account_currencies() -> None:
 
         def __init__(self, code: object) -> None:
             """
-            Initialize the helper.
+            Initialize the instance.
             """
             self.code = code
 
@@ -1372,7 +1372,7 @@ def test_calculate_snapshot_returns_rejects_mixed_account_currencies() -> None:
 
         def __init__(self, value: object, currency: object) -> None:
             """
-            Initialize the helper.
+            Initialize the instance.
             """
             self.value = value
             self.currency = DummyCurrency(currency)
@@ -1392,7 +1392,7 @@ def test_calculate_snapshot_returns_rejects_mixed_account_currencies() -> None:
 
         def __init__(self, value: object, currency: object, ts_event: object) -> None:
             """
-            Initialize the helper.
+            Initialize the instance.
             """
             self.total_equity = [DummyMoney(value, currency)]
             self.ts_event = ts_event
@@ -1404,7 +1404,7 @@ def test_calculate_snapshot_returns_rejects_mixed_account_currencies() -> None:
 
         def __init__(self, account_id: AccountId) -> None:
             """
-            Initialize the helper.
+            Initialize the instance.
             """
             self.id = account_id
 

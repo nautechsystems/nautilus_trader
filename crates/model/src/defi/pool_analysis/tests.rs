@@ -2921,8 +2921,6 @@ fn pool_high_fee_1on1_price_2e18_max_liquidity() -> PoolTestCase {
     }
 }
 
-// Swap test case helper functions
-
 /// Swap exactly 1.0000 token0 for token1
 fn swap_exact_0_for_1_1e18() -> SwapTestCase {
     SwapTestCase::SwapExact0For1 {

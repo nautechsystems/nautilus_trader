@@ -54,6 +54,7 @@ pub struct OrderFilled {
     pub instrument_id: InstrumentId,
     /// The client order ID associated with the event.
     pub client_order_id: ClientOrderId,
+    /// The venue order ID associated with the event.
     pub venue_order_id: VenueOrderId,
     /// The account ID associated with the event.
     pub account_id: AccountId,
@@ -462,6 +463,13 @@ impl OrderEvent for OrderFilled {
 
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
+    }
+    fn causation_id(&self) -> Option<UUID4> {
+        self.causation_id
+    }
+
+    fn info(&self) -> Option<IndexMap<Ustr, Ustr>> {
+        self.info.clone()
     }
 }
 

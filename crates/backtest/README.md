@@ -1,7 +1,7 @@
 # nautilus-backtest
 
 [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
-[![Documentation](https://img.shields.io/docsrs/nautilus-backtest)](https://docs.rs/nautilus-backtest/latest/nautilus-backtest/)
+[![Documentation](https://img.shields.io/docsrs/nautilus-backtest)](https://docs.rs/nautilus-backtest/latest/nautilus_backtest/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-backtest.svg)](https://crates.io/crates/nautilus-backtest)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
@@ -34,9 +34,9 @@ This crate provides feature flags to control source code inclusion during compil
 - `examples`: Enables example strategies and the EMA crossover backtest example.
 - `extension-module`: Builds as a Python extension module.
 - `high-precision`: Enables
-  [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode)
+  [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
   to use 128-bit value types.
-- `mimalloc`: Uses [mimalloc](https://github.com/microsoft/mimalloc) as the global allocator for
+- `mimalloc`: Uses [mimalloc](https://crates.io/crates/mimalloc) as the global allocator for
   bundled Rust examples.
 - `plugin`: Provides a compatibility flag without enabling additional code.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).

@@ -57,7 +57,6 @@ run_make() {
     UV_LOG="$UV_LOG" \
     make -C "$REPO_ROOT" --no-print-directory \
     TARGET_DIR="$TARGET_DIR" \
-    UV_PROJECT_ENVIRONMENT="$CASE_ROOT/venv" \
     CARGO_CI_PROFILE=nextest \
     PY_STUB_INPUTS="$inputs" \
     PY_STUB_INPUT_LIST_COMMAND="$input_list_command" \
@@ -376,7 +375,7 @@ PATH="$MOCK_BIN:$PATH" \
   MAKE="$MOCK_BIN/make" cargo-test-postgres-changed > /dev/null
 [[ ! -s "$MAKE_LOG" ]] || fail "PostgreSQL bootstrap tests ran without related changes"
 grep -Fq \
-  "diff --cached --quiet -- schema/sql crates/infrastructure/src/sql/pg.rs crates/infrastructure/tests/test_cache_database_postgres.rs crates/cli/src/database crates/cli/src/bin/cli.rs crates/cli/src/lib.rs crates/cli/src/opt.rs scripts/ci/test-postgres-bootstrap.bash" \
+  "diff --cached --quiet -- schema/sql crates/infrastructure/src/sql/pg.rs crates/infrastructure/tests/integration/test_cache_database_postgres.rs crates/cli/src/database crates/cli/src/bin/cli.rs crates/cli/src/lib.rs crates/cli/src/opt.rs scripts/ci/test-postgres-bootstrap.bash" \
   "$GIT_LOG" || fail "PostgreSQL bootstrap change detection does not cover its inputs"
 
 PATH="$MOCK_BIN:$PATH" \

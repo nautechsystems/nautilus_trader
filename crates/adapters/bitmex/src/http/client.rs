@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides the HTTP client integration for the [BitMEX](https://bitmex.com) REST API.
+//! Provides the HTTP client integration for the [BitMEX](https://www.bitmex.com) REST API.
 //!
 //! This module defines and implements a [`BitmexHttpClient`] for
 //! sending requests to various BitMEX endpoints. It handles request signing
@@ -132,7 +132,8 @@ pub struct BitmexResponse<T> {
     pub data: Vec<T>,
 }
 
-/// Provides a lower-level HTTP client for connecting to the [BitMEX](https://bitmex.com) REST API.
+/// Provides a lower-level HTTP client for connecting to the
+/// [BitMEX](https://www.bitmex.com) REST API.
 ///
 /// This client wraps the underlying [`HttpClient`] to handle functionality
 /// specific to BitMEX, such as request signing (for authenticated endpoints),
@@ -462,7 +463,7 @@ impl BitmexRawHttpClient {
         // "Account has insufficient Available Balance", "Invalid API Key") which should NOT
         // be retried. We only retry when the message explicitly mentions rate limiting.
         //
-        // See tests in tests/http.rs for retry behavior validation.
+        // See tests in tests/integration/http.rs for retry behavior validation.
         let should_retry = |error: &BitmexHttpError| -> bool {
             match error {
                 BitmexHttpError::NetworkError(_) => true,
@@ -565,7 +566,7 @@ impl BitmexRawHttpClient {
     /// Get the instrument definition for the specified symbol.
     ///
     /// BitMEX responds to `/instrument?symbol=...` with an array, even when
-    /// a single symbol is requested. This helper returns the first element of
+    /// a single symbol is requested. This method returns the first element of
     /// that array and yields `Ok(None)` when the venue returns an empty list
     /// (e.g. unknown symbol).
     ///
@@ -858,7 +859,7 @@ impl BitmexRawHttpClient {
     }
 }
 
-/// Provides a HTTP client for connecting to the [BitMEX](https://bitmex.com) REST API.
+/// Provides a HTTP client for connecting to the [BitMEX](https://www.bitmex.com) REST API.
 ///
 /// This is the high-level client that wraps the inner client and provides
 /// Nautilus-specific functionality for trading operations.

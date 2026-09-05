@@ -47,9 +47,8 @@ ignore = [
   # object_store 0.14 is fixed, but the current DataFusion release requires object_store 0.13.
   { id = "RUSTSEC-2026-0195", reason = "quick-xml NsReader DoS via DataFusion-aligned object_store 0.13.2" },
 
-  # NOTE: lockfile scanners also flag RUSTSEC-2024-0388 (derivative) and
-  # RUSTSEC-2026-0235 (inactive rust_decimal optional dependency), which cargo-deny
-  # does not surface. Their scanner-specific ignores are in .cargo/audit.toml and
+  # NOTE: lockfile scanners also flag RUSTSEC-2024-0388 (derivative), which cargo-deny
+  # does not surface. Its scanner-specific ignores are in .cargo/audit.toml and
   # osv-scanner.toml.
 ]
 
@@ -152,7 +151,7 @@ skip = [
   { crate = "rand_chacha" },
   { crate = "rand_core" },
 
-  # Proc-macro helpers - transitive via derive macros in various crates
+  # Proc-macro support crates - transitive via derive macros in various crates
   { crate = "darling" },
   { crate = "darling_core" },
   { crate = "darling_macro" },

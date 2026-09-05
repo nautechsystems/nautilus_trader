@@ -65,7 +65,7 @@ Databento's
 ## Prerequisites
 
 - Python 3.12+
-- [NautilusTrader](https://pypi.org/project/nautilus_trader/) installed.
+- [NautilusTrader installed](../getting_started/installation.md).
 - A Databento API key:
 
 ```bash
@@ -286,10 +286,13 @@ A self-contained renderer re-runs the backtest with a quote-sampling actor
 and writes PNGs to the asset directory using the `nautilus_dark` tearsheet
 theme.
 
+After building NautilusTrader from source, run these commands from the repository root:
+
 ```bash
-uv sync --extra visualization
+make sync
 GC_DBN=test_data/local/Databento/gc_gold_quotes.dbn.zst \
-    python3 docs/tutorials/assets/gold_book_imbalance_ax/render_panels.py
+    uv run --project python --no-sync \
+        python docs/tutorials/assets/gold_book_imbalance_ax/render_panels.py
 ```
 
 ## Next steps

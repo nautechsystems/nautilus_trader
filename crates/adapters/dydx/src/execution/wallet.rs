@@ -31,7 +31,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Account prefix for dYdX addresses.
 ///
-/// See [Cosmos accounts](https://docs.cosmos.network/main/learn/beginner/accounts).
+/// See [Cosmos accounts](https://docs.cosmos.network/sdk/latest/learn).
 const BECH32_PREFIX_DYDX: &str = "dydx";
 
 /// Wallet for dYdX v4 transaction signing.

@@ -45,7 +45,7 @@ def load_example_module(adapter: str, module: str) -> ModuleType:
 class _CaptureNode:
     def __init__(self, captured: dict[str, object]) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         self._captured = captured
 
@@ -79,7 +79,7 @@ class _CaptureNode:
 class _CaptureBuilder:
     def __init__(self, captured: dict[str, object]) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         self._captured = captured
 
@@ -163,7 +163,7 @@ class _CaptureExecTesterConfig:
 
     def __init__(self, **kwargs: object) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         self.captured["exec_tester_kwargs"] = kwargs
 
@@ -173,7 +173,7 @@ class _CaptureDataTesterConfig:
 
     def __init__(self, **kwargs: object) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         self.captured["data_tester_kwargs"] = kwargs
 

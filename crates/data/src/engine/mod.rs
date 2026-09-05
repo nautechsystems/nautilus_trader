@@ -59,8 +59,8 @@ use anyhow::Context;
 pub use bar::BarAggregatorSubscription;
 use bar::{BarAggregatorKey, bar_aggregator_key};
 use book::{
-    BookSnapshotInfo, BookSnapshotInfos, BookSnapshotKey, BookSnapshotUnsubscribeResult,
-    BookSnapshotter, BookUpdater,
+    BookDeltasKey, BookDeltasUnsubscribeResult, BookSnapshotInfo, BookSnapshotInfos,
+    BookSnapshotKey, BookSnapshotUnsubscribeResult, BookSnapshotter, BookUpdater,
 };
 pub(crate) use commands::{DeferredCommand, DeferredCommandQueue};
 use config::DataEngineConfig;
@@ -205,14 +205,6 @@ pub struct DataEngine {
     #[cfg(feature = "defi")]
     pub(crate) pool_event_buffers: AHashMap<InstrumentId, Vec<DefiData>>,
 }
-
-enum BookDeltasUnsubscribeResult {
-    NotSubscribed,
-    Decremented,
-    Removed,
-}
-
-type BookDeltasKey = (InstrumentId, Option<ClientId>, Option<Venue>);
 
 impl DataEngine {
     /// Creates a new [`DataEngine`] instance.
@@ -1772,9 +1764,9 @@ impl DataEngine {
         self.data_count += 1;
 
         match data {
-            DataRef::Delta(delta) => self.handle_delta(*delta),
-            DataRef::Deltas(deltas) => self.handle_deltas(deltas),
-            DataRef::Depth10(depth) => self.handle_depth10(*depth),
+            DataRef::BookDelta(delta) => self.handle_delta(*delta),
+            DataRef::BookDeltas(deltas) => self.handle_deltas(deltas),
+            DataRef::BookDepth10(depth) => self.handle_depth10(*depth),
             DataRef::Quote(quote) => {
                 self.handle_quote(*quote);
                 self.drain_deferred_commands();
@@ -1848,9 +1840,9 @@ impl DataEngine {
         self.data_count += 1;
 
         match data {
-            Data::Delta(delta) => self.handle_delta_pipeline(delta),
-            Data::Deltas(deltas) => self.handle_deltas_pipeline(&deltas),
-            Data::Depth10(depth) => self.handle_depth10_pipeline(*depth),
+            Data::BookDelta(delta) => self.handle_delta_pipeline(delta),
+            Data::BookDeltas(deltas) => self.handle_deltas_pipeline(&deltas),
+            Data::BookDepth10(depth) => self.handle_depth10_pipeline(*depth),
             Data::Quote(quote) => self.handle_quote_pipeline(quote),
             Data::Trade(trade) => self.handle_trade_pipeline(trade),
             Data::Bar(bar) => self.handle_bar_pipeline(bar),

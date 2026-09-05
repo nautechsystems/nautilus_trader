@@ -275,7 +275,7 @@ fn bench_memory_usage(c: &mut Criterion) {
 // increment, and a noop handler. Skips the 5-branch `select!` poll cost,
 // which is bounded by `tokio::mpsc::recv` and is small relative to the
 // dispatch shown by this bench. Pair with the `stress_trade_burst` test
-// (`crates/live/tests/stress.rs`) for end-to-end runner+engine numbers.
+// (`crates/live/tests/integration/stress.rs`) for end-to-end runner+engine numbers.
 fn bench_runner_dispatch(c: &mut Criterion) {
     msgbus::set_message_bus(Rc::new(RefCell::new(MessageBus::default())));
 

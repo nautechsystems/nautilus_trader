@@ -363,7 +363,7 @@ HISTORICAL_REQUEST_DATETIME_CASES = [
 def _make_recording_method(method_name: str) -> object:
     def method(self: object, *args: object) -> None:
         """
-        Run the helper method.
+        Run the method.
         """
         self.calls.append((method_name, args))
 

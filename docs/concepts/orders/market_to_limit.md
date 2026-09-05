@@ -64,4 +64,4 @@ for further details.
 ## Related guides
 
 - [Orders](index.md) - Order concepts, execution instructions, and the order factory.
-- [Execution](../execution.md) - How orders reach the venue and fills are handled.
+- [Execution](../execution/) - How orders reach the venue and fills are handled.

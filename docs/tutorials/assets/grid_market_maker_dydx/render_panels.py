@@ -1,15 +1,16 @@
 """
 Render the dYdX grid market maker tutorial panels from a captured live run.
 
-Usage:
+After building NautilusTrader from source, run these commands from the repository root:
 
+    make sync
     # Capture a live run (mainnet by default; pass DYDX_NETWORK=testnet for testnet
     # if you have an API trading key configured for the testnet wallet).
     timeout 35 ./target/release/examples/dydx-grid-mm > /tmp/dydx_main.log 2>&1
 
-    uv sync --extra visualization
     DYDX_LOG=/tmp/dydx_main.log \
-        python3 docs/tutorials/assets/grid_market_maker_dydx/render_panels.py
+        uv run --project python --no-sync \
+            python docs/tutorials/assets/grid_market_maker_dydx/render_panels.py
 
 The renderer parses ``Requoting`` lines for the mid trajectory and
 ``[SUBMIT_ORDER]`` / ``OrderAccepted`` / ``OrderCanceled`` events for the
@@ -63,7 +64,7 @@ def parse_log(path: Path) -> object:
     accepts: dict[str, pd.Timestamp] = {}
     cancels: dict[str, pd.Timestamp] = {}
 
-    for raw in path.read_text().splitlines():
+    for raw in path.read_text(encoding="utf-8").splitlines():
         line = ANSI.sub("", raw)
         m = REQUOTE.search(line)
         if m:

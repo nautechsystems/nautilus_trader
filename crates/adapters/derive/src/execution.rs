@@ -54,6 +54,7 @@ use nautilus_core::{
 };
 use nautilus_live::{
     ExecutionClientCore, ExecutionEventEmitter, SocketControl,
+    execution::reports::retain_order_status_reports,
     task::{TaskGroup, TaskGroupGuard},
 };
 use nautilus_model::{
@@ -2111,17 +2112,13 @@ impl DeriveReconciliationContext {
         };
 
         let ts_init = self.clock.get_time_ns();
-        let start_ms = cmd.start.map(|t| t.as_millis() as i64);
-        let end_ms = cmd.end.map(|t| t.as_millis() as i64);
-
         let orders: Vec<DeriveOrder> = orders
             .into_iter()
             .filter(|order| {
                 cmd.instrument_id.is_none_or(|instrument_id| {
                     InstrumentId::new(Symbol::new(order.instrument_name.as_str()), *DERIVE_VENUE)
                         == instrument_id
-                }) && start_ms.is_none_or(|start| order.last_update_timestamp >= start)
-                    && end_ms.is_none_or(|end| order.last_update_timestamp <= end)
+                })
             })
             .collect();
 
@@ -2154,6 +2151,8 @@ impl DeriveReconciliationContext {
                 Err(e) => log::warn!("Skipping order in status report: {e}"),
             }
         }
+
+        retain_order_status_reports(&mut reports, cmd);
         Ok(reports)
     }
 

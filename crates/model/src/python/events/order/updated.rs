@@ -84,6 +84,12 @@ impl OrderUpdated {
         self.to_string()
     }
 
+    #[getter]
+    #[pyo3(name = "causation_id")]
+    fn py_causation_id(&self) -> Option<UUID4> {
+        self.causation_id
+    }
+
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
@@ -142,6 +148,12 @@ impl OrderUpdated {
     #[pyo3(name = "trigger_price")]
     fn py_trigger_price(&self) -> Option<Price> {
         self.trigger_price
+    }
+
+    #[getter]
+    #[pyo3(name = "protection_price")]
+    fn py_protection_price(&self) -> Option<Price> {
+        self.protection_price
     }
 
     #[getter]
@@ -205,6 +217,13 @@ impl OrderUpdated {
         match self.trigger_price {
             Some(trigger_price) => dict.set_item("trigger_price", trigger_price.to_string())?,
             None => dict.set_item("trigger_price", py.None())?,
+        }
+
+        match self.protection_price {
+            Some(protection_price) => {
+                dict.set_item("protection_price", protection_price.to_string())?;
+            }
+            None => dict.set_item("protection_price", py.None())?,
         }
         dict.set_item("is_quote_quantity", self.is_quote_quantity)?;
         match self.causation_id {

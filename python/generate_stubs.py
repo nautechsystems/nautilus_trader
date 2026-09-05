@@ -204,6 +204,7 @@ EXTRA_REEXPORTS: dict[str, tuple[str, ...]] = {
             "TearsheetYearlyReturnsChart"
         ),
         "from nautilus_trader.analysis.reporter import ReportProvider as ReportProvider",
+        ("from nautilus_trader.analysis.statistic import PortfolioStatistic as PortfolioStatistic"),
         (
             "from nautilus_trader.analysis.tearsheet import create_bars_with_fills as "
             "create_bars_with_fills"
@@ -1621,7 +1622,7 @@ def render_missing_staticmethod_stub(
     params: str,
 ) -> str | None:
     """
-    Render a conservative stub for missing deserializer helpers.
+    Render a conservative stub for missing deserializer methods.
     """
     params = params.strip()
 
@@ -3152,7 +3153,7 @@ def sync_adapter_all_exports(root: Path) -> None:
     Replace each adapter stub's ``__all__`` with the runtime adapter ``__all__``.
 
     pyo3-stub-gen derives ``__all__`` from every registered module member, which exposes
-    raw clients, wire models, and endpoint helpers that the runtime facade keeps
+    raw clients, wire models, and endpoint URL resolvers that the runtime facade keeps
     private. Each adapter ``__init__.py`` defines a curated ``__all__``; this copies it
     into the matching stub so runtime and stub exports stay in exact agreement after
     every regeneration.

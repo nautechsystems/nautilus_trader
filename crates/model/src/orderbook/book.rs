@@ -19,7 +19,10 @@ use std::fmt::Display;
 
 use ahash::AHashSet;
 use indexmap::IndexMap;
-use nautilus_core::{UnixNanos, correctness::FAILED};
+use nautilus_core::{
+    UnixNanos,
+    correctness::{CorrectnessResult, CorrectnessResultExt, FAILED},
+};
 use rust_decimal::Decimal;
 
 use super::{
@@ -36,6 +39,7 @@ use crate::{
     },
     types::{
         Price, Quantity,
+        fixed::check_fixed_precision,
         price::{PRICE_ERROR, PRICE_UNDEF},
     },
 };
@@ -1021,6 +1025,15 @@ impl OrderBook {
     ///
     /// Unlike `get_quantity_for_price` which returns cumulative quantity across
     /// multiple levels, this returns only the quantity at the exact price level.
+    ///
+    /// The Python binding raises `ValueError` for an unsupported `size_precision` or an
+    /// aggregated level size that cannot be represented as a [`Quantity`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - `size_precision` exceeds the supported fixed precision.
+    /// - The aggregated level size cannot be represented as a [`Quantity`].
     #[must_use]
     pub fn get_quantity_at_level(
         &self,
@@ -1028,6 +1041,25 @@ impl OrderBook {
         order_side: OrderSide,
         size_precision: u8,
     ) -> Quantity {
+        self.get_quantity_at_level_checked(price, order_side, size_precision)
+            .expect_display("Failed to get order book level quantity")
+    }
+
+    /// Returns the quantity at a specific price level only, or zero if no level exists.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - `size_precision` exceeds the supported fixed precision.
+    /// - The aggregated level size cannot be represented as a [`Quantity`].
+    pub(crate) fn get_quantity_at_level_checked(
+        &self,
+        price: Price,
+        order_side: OrderSide,
+        size_precision: u8,
+    ) -> CorrectnessResult<Quantity> {
+        check_fixed_precision(size_precision)?;
+
         // For a BUY order, we look in asks (sell side); for SELL order, we look in bids (buy side)
         // BookPrice keys use the side of orders IN the book, not the incoming order side
         let (levels, book_side) = match order_side {
@@ -1037,11 +1069,10 @@ impl OrderBook {
 
         let book_price = BookPrice::new(price, book_side);
 
-        levels
-            .get(&book_price)
-            .map_or(Quantity::zero(size_precision), |level| {
-                Quantity::from_raw(level.size_raw(), size_precision)
-            })
+        match levels.get(&book_price) {
+            Some(level) => Quantity::from_raw_checked(level.size_raw_checked()?, size_precision),
+            None => Quantity::from_raw_checked(0, size_precision),
+        }
     }
 
     /// Returns the orders at a specific price level in FIFO order, or an empty vec if no level exists.
@@ -1080,6 +1111,15 @@ impl OrderBook {
     /// Unlike `simulate_fills`, this returns ALL crossed levels regardless of
     /// order quantity. Used when liquidity consumption tracking needs visibility
     /// into all available levels.
+    ///
+    /// The Python binding raises `ValueError` for an unsupported `size_precision` or an
+    /// aggregated level size that cannot be represented as a [`Quantity`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - `size_precision` exceeds the supported fixed precision.
+    /// - An aggregated level size cannot be represented as a [`Quantity`].
     #[must_use]
     pub fn get_all_crossed_levels(
         &self,
@@ -1087,12 +1127,29 @@ impl OrderBook {
         price: Price,
         size_precision: u8,
     ) -> Vec<(Price, Quantity)> {
+        self.get_all_crossed_levels_checked(order_side, price, size_precision)
+            .expect_display("Failed to collect crossed order book levels")
+    }
+
+    /// Returns all price levels crossed by an order at the given price and side.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - `size_precision` exceeds the supported fixed precision.
+    /// - An aggregated level size cannot be represented as a [`Quantity`].
+    pub(crate) fn get_all_crossed_levels_checked(
+        &self,
+        order_side: OrderSide,
+        price: Price,
+        size_precision: u8,
+    ) -> CorrectnessResult<Vec<(Price, Quantity)>> {
         let levels = match order_side {
             OrderSide::Buy => &self.asks.levels,
             OrderSide::Sell => &self.bids.levels,
         };
 
-        analysis::get_levels_for_price(price, order_side, levels, size_precision)
+        analysis::get_levels_for_price_checked(price, order_side, levels, size_precision)
     }
 
     /// Return a formatted string representation of the order book.

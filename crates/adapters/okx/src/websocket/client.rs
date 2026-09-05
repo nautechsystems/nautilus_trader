@@ -743,7 +743,6 @@ impl OKXWebSocketClient {
                     subscriptions_state.clone(),
                 );
 
-                // Helper closure to resubscribe all tracked subscriptions after reconnection
                 let resubscribe_all = || {
                     for entry in subscriptions_inst_id.iter() {
                         let (channel, inst_ids) = entry.pair();

@@ -21,7 +21,7 @@ use std::{
 use ahash::AHashSet;
 use indexmap::IndexMap;
 use log::{Level, LevelFilter, Log, Metadata, Record};
-use nautilus_core::UnixNanos;
+use nautilus_core::{UnixNanos, correctness::CorrectnessError};
 use parking_lot::{Mutex, MutexGuard};
 use rstest::{fixture, rstest};
 use rust_decimal::Decimal;
@@ -9954,6 +9954,32 @@ fn test_book_get_levels_for_price_panics_on_raw_size_overflow() {
     book.add(ask2, 0, 2, 2.into());
 
     let _ = book.get_all_crossed_levels(OrderSide::Buy, price, FIXED_PRECISION);
+}
+
+#[rstest]
+fn test_book_get_levels_for_price_checked_returns_error_on_aggregate_overflow() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L3_MBO);
+    let price = Price::from("1.001");
+    let size = Quantity::from_raw(QUANTITY_RAW_MAX, FIXED_PRECISION);
+    let ask1 = BookOrder::new(OrderSide::Sell, price, size, 1);
+    let ask2 = BookOrder::new(OrderSide::Sell, price, size, 2);
+    book.add(ask1, 0, 1, 1.into());
+    book.add(ask2, 0, 2, 2.into());
+
+    let error = book
+        .get_all_crossed_levels_checked(OrderSide::Buy, price, FIXED_PRECISION)
+        .unwrap_err();
+
+    #[cfg(not(feature = "high-precision"))]
+    let message = "Overflow occurred when summing `BookLevel` raw size".to_string();
+    #[cfg(feature = "high-precision")]
+    let message = format!(
+        "raw value {} exceeds QUANTITY_RAW_MAX={QUANTITY_RAW_MAX}",
+        QUANTITY_RAW_MAX * 2
+    );
+
+    assert_eq!(error, CorrectnessError::PredicateViolation { message });
 }
 
 #[rstest]

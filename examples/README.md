@@ -25,7 +25,7 @@ for more information.
 From the repository root, run a Rust-native adapter tester against the venue testnet:
 
 ```bash
-.venv/bin/python examples/live/lighter/data_tester.py
+uv run --project python --no-sync python examples/live/lighter/data_tester.py
 ```
 
 The script connects immediately and streams market data; stop it with Ctrl+C.

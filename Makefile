@@ -49,8 +49,6 @@ endif
 # UV_SYNC_FLAGS controls whether uv keeps packages not managed by this project
 # Set UV_SYNC_FLAGS= to make uv prune packages not in python/uv.lock
 UV_SYNC_FLAGS ?= --inexact
-UV_PROJECT_ENVIRONMENT ?= $(CURDIR)/.venv
-export UV_PROJECT_ENVIRONMENT
 
 # TARGET_DIR controls where Cargo places build artifacts
 TARGET_DIR ?= $(CURDIR)/target
@@ -420,7 +418,7 @@ distclean: clean  #-- Nuclear clean - remove all untracked files (requires FORCE
 		exit 1; \
 	fi
 	@echo "WARNING: removing all untracked files (git clean -fxd)..."
-	git clean -fxd -e test_data/large/ -e test_data/local/ -e .venv/
+	git clean -fxd -e test_data/large/ -e test_data/local/ -e python/.venv/
 
 #== Code Quality
 
@@ -652,25 +650,36 @@ check-markdown:  #-- Lint Markdown with markdownlint-cli2 and check table delimi
 	@python3 -B scripts/check-markdown-tables.py $(MARKDOWN_FILES)
 	@printf "$(GREEN)Markdown check passed$(RESET)\n"
 
+# Rust doc links are collected into Markdown so lychee parses their `[label](url)` form.
+# A dot-directory keeps the file out of the `**/*.md` glob, which would otherwise read it twice.
+DOC_LINKS = .tmp-doc-links/doc-links.md
+
+LYCHEE_FLAGS = \
+	--verbose \
+	--no-progress \
+	--exclude-all-private \
+	--max-retries 3 \
+	--retry-wait-time 5 \
+	--timeout 30 \
+	--max-concurrency 10 \
+	--accept "100..=103,200..=299,429,502..=504"
+
 .PHONY: docs-check-links
 docs-check-links:  #-- Check for broken links in documentation (periodic audit)
 	$(info $(M) Checking documentation links...)
-	@lychee \
-		--verbose \
-		--no-progress \
-		--exclude-all-private \
-		--max-retries 3 \
-		--retry-wait-time 5 \
-		--timeout 30 \
-		--max-concurrency 10 \
-		--accept "100..=103,200..=299,429,502..=504" \
+	@git ls-files -- '*.rs' ':(exclude)patches/**' \
+		| python3 -B scripts/extract-doc-links.py $(DOC_LINKS)
+	@status=0; \
+	lychee $(LYCHEE_FLAGS) \
 		--include-fragments \
 		--fallback-extensions md,py,html \
 		--exclude-path .venv \
 		--exclude-path target \
 		--exclude-path docs/python-api-latest \
 		--exclude "file://.*/python-api-latest/.*" \
-		"**/*.md" "docs/**/*.py"
+		"**/*.md" "docs/**/*.py" || status=1; \
+	lychee $(LYCHEE_FLAGS) $(DOC_LINKS) || status=1; \
+	exit $$status
 	@printf "$(GREEN)Link check passed$(RESET)\n"
 
 #== Rust Development
@@ -904,7 +913,7 @@ cargo-test-postgres-ci:  #-- Run focused PostgreSQL tests with the CI bootstrap 
 
 POSTGRES_BOOTSTRAP_INPUTS := schema/sql \
 	crates/infrastructure/src/sql/pg.rs \
-	crates/infrastructure/tests/test_cache_database_postgres.rs \
+	crates/infrastructure/tests/integration/test_cache_database_postgres.rs \
 	crates/cli/src/database \
 	crates/cli/src/bin/cli.rs \
 	crates/cli/src/lib.rs \

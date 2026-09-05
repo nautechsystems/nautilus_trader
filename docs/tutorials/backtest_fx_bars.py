@@ -69,9 +69,10 @@
 # ## Prerequisites
 #
 # - Python 3.12+
-# - [NautilusTrader](https://pypi.org/project/nautilus_trader/) installed
-#   (`pip install nautilus_trader`). The `visualization` extra is only needed
-#   if you also want to regenerate the panels at the end of the tutorial.
+# - [NautilusTrader](https://pypi.org/project/nautilus_trader/) 2.x installed
+#   (`pip install -U --pre nautilus_trader`). The `visualization` extra is only
+#   needed if you also want to regenerate the panels at the end of the tutorial.
+# - pandas (`pip install pandas`). The wheel declares no runtime dependencies.
 # - The sibling [`ema_cross.py`](./ema_cross.py) file. Keep it next to this
 #   tutorial when downloading or converting it with Jupytext.
 
@@ -268,9 +269,12 @@ engine.generate_positions_report()
 # backtest, pulls bars and fills from the engine cache, and writes PNGs using
 # the shared `nautilus_dark` tearsheet theme.
 #
+# After building NautilusTrader from source, run these commands from the repository root:
+#
 # ```bash
-# uv sync --extra visualization
-# python3 docs/tutorials/assets/backtest_fx_bars/render_panels.py
+# make sync
+# uv run --project python --no-sync \
+#     python docs/tutorials/assets/backtest_fx_bars/render_panels.py
 # ```
 
 # %% [markdown]

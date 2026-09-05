@@ -13,9 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Data types for the trading domain model.
+//! Data types and shared representations for the trading domain model.
+//!
+//! [`Data`] provides an owned, heterogeneous representation of built-in data, while [`DataRef`]
+//! provides borrowed access to the same variants. [`DataBatch`] preserves concrete element types
+//! for homogeneous storage and exposes individual items through the borrowed representation.
 
 pub mod bar;
+pub mod batch;
 pub mod bet;
 pub mod black_scholes;
 pub mod close;
@@ -55,6 +60,7 @@ use crate::defi::DefiData;
 // Re-exports
 #[rustfmt::skip]  // Keep these grouped
 pub use bar::{Bar, BarSpecification, BarType};
+pub use batch::{BatchView, DataBatch};
 pub use black_scholes::Greeks;
 pub use close::InstrumentClose;
 #[cfg(feature = "python")]
@@ -100,12 +106,12 @@ use crate::identifiers::{InstrumentId, Venue};
 /// A built-in Nautilus data type.
 ///
 /// Not recommended for storing large amounts of data, as the largest variant is significantly
-/// larger (10x) than the smallest.
+/// larger (~10x) than the smallest.
 #[derive(Debug)]
 pub enum Data {
-    Delta(OrderBookDelta),
-    Deltas(Box<OrderBookDeltas>),
-    Depth10(Box<OrderBookDepth10>), // This variant is significantly larger
+    BookDelta(OrderBookDelta),
+    BookDeltas(Box<OrderBookDeltas>),
+    BookDepth10(Box<OrderBookDepth10>), // This variant is significantly larger
     Quote(QuoteTick),
     Trade(TradeTick),
     Bar(Bar),
@@ -123,9 +129,9 @@ pub enum Data {
 /// A borrowed view of a built-in Nautilus data type.
 #[derive(Clone, Copy, Debug)]
 pub enum DataRef<'a> {
-    Delta(&'a OrderBookDelta),
-    Deltas(&'a OrderBookDeltas),
-    Depth10(&'a OrderBookDepth10),
+    BookDelta(&'a OrderBookDelta),
+    BookDeltas(&'a OrderBookDeltas),
+    BookDepth10(&'a OrderBookDepth10),
     Quote(&'a QuoteTick),
     Trade(&'a TradeTick),
     Bar(&'a Bar),
@@ -143,9 +149,9 @@ pub enum DataRef<'a> {
 impl<'a> From<&'a Data> for DataRef<'a> {
     fn from(value: &'a Data) -> Self {
         match value {
-            Data::Delta(delta) => Self::Delta(delta),
-            Data::Deltas(deltas) => Self::Deltas(deltas),
-            Data::Depth10(depth) => Self::Depth10(depth),
+            Data::BookDelta(delta) => Self::BookDelta(delta),
+            Data::BookDeltas(deltas) => Self::BookDeltas(deltas),
+            Data::BookDepth10(depth) => Self::BookDepth10(depth),
             Data::Quote(quote) => Self::Quote(quote),
             Data::Trade(trade) => Self::Trade(trade),
             Data::Bar(bar) => Self::Bar(bar),
@@ -176,13 +182,13 @@ impl<'de> Deserialize<'de> for Data {
             .to_string();
 
         match type_name.as_str() {
-            "OrderBookDelta" => Ok(Self::Delta(
+            "OrderBookDelta" => Ok(Self::BookDelta(
                 serde_json::from_value(value).map_err(D::Error::custom)?,
             )),
-            "OrderBookDeltas" => Ok(Self::Deltas(
+            "OrderBookDeltas" => Ok(Self::BookDeltas(
                 serde_json::from_value(value).map_err(D::Error::custom)?,
             )),
-            "OrderBookDepth10" => Ok(Self::Depth10(
+            "OrderBookDepth10" => Ok(Self::BookDepth10(
                 serde_json::from_value(value).map_err(D::Error::custom)?,
             )),
             "QuoteTick" => Ok(Self::Quote(
@@ -228,9 +234,9 @@ impl<'de> Deserialize<'de> for Data {
 impl Clone for Data {
     fn clone(&self) -> Self {
         match self {
-            Self::Delta(x) => Self::Delta(*x),
-            Self::Deltas(x) => Self::Deltas(x.clone()),
-            Self::Depth10(x) => Self::Depth10(x.clone()),
+            Self::BookDelta(x) => Self::BookDelta(*x),
+            Self::BookDeltas(x) => Self::BookDeltas(x.clone()),
+            Self::BookDepth10(x) => Self::BookDepth10(x.clone()),
             Self::Quote(x) => Self::Quote(*x),
             Self::Trade(x) => Self::Trade(*x),
             Self::Bar(x) => Self::Bar(*x),
@@ -250,9 +256,9 @@ impl Clone for Data {
 impl PartialEq for Data {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Delta(a), Self::Delta(b)) => a == b,
-            (Self::Deltas(a), Self::Deltas(b)) => a == b,
-            (Self::Depth10(a), Self::Depth10(b)) => a == b,
+            (Self::BookDelta(a), Self::BookDelta(b)) => a == b,
+            (Self::BookDeltas(a), Self::BookDeltas(b)) => a == b,
+            (Self::BookDepth10(a), Self::BookDepth10(b)) => a == b,
             (Self::Quote(a), Self::Quote(b)) => a == b,
             (Self::Trade(a), Self::Trade(b)) => a == b,
             (Self::Bar(a), Self::Bar(b)) => a == b,
@@ -276,9 +282,9 @@ impl Serialize for Data {
         S: serde::Serializer,
     {
         match self {
-            Self::Delta(x) => x.serialize(serializer),
-            Self::Deltas(x) => x.serialize(serializer),
-            Self::Depth10(x) => x.serialize(serializer),
+            Self::BookDelta(x) => x.serialize(serializer),
+            Self::BookDeltas(x) => x.serialize(serializer),
+            Self::BookDepth10(x) => x.serialize(serializer),
             Self::Quote(x) => x.serialize(serializer),
             Self::Trade(x) => x.serialize(serializer),
             Self::Bar(x) => x.serialize(serializer),
@@ -317,7 +323,7 @@ impl TryFrom<Data> for OrderBookDepth10 {
 
     fn try_from(value: Data) -> Result<Self, Self::Error> {
         match value {
-            Data::Depth10(x) => Ok(*x),
+            Data::BookDepth10(x) => Ok(*x),
             _ => Err(()),
         }
     }
@@ -328,14 +334,14 @@ impl TryFrom<Data> for OrderBookDeltas {
 
     fn try_from(value: Data) -> Result<Self, Self::Error> {
         match value {
-            Data::Deltas(x) => Ok(*x),
+            Data::BookDeltas(x) => Ok(*x),
             _ => Err(()),
         }
     }
 }
 
 impl_try_from_data!(Quote, QuoteTick);
-impl_try_from_data!(Delta, OrderBookDelta);
+impl_try_from_data!(BookDelta, OrderBookDelta);
 impl_try_from_data!(Trade, TradeTick);
 impl_try_from_data!(Bar, Bar);
 impl_try_from_data!(MarkPrice, MarkPriceUpdate);
@@ -375,9 +381,9 @@ impl DataRef<'_> {
     #[must_use]
     pub fn instrument_id(&self) -> InstrumentId {
         match self {
-            Self::Delta(delta) => delta.instrument_id,
-            Self::Deltas(deltas) => deltas.instrument_id,
-            Self::Depth10(depth) => depth.instrument_id,
+            Self::BookDelta(delta) => delta.instrument_id,
+            Self::BookDeltas(deltas) => deltas.instrument_id,
+            Self::BookDepth10(depth) => depth.instrument_id,
             Self::Quote(quote) => quote.instrument_id,
             Self::Trade(trade) => trade.instrument_id,
             Self::Bar(bar) => bar.bar_type.instrument_id(),
@@ -407,7 +413,10 @@ impl DataRef<'_> {
     /// Returns whether the data is a type of order book data.
     #[must_use]
     pub fn is_order_book_data(&self) -> bool {
-        matches!(self, Self::Delta(_) | Self::Deltas(_) | Self::Depth10(_))
+        matches!(
+            self,
+            Self::BookDelta(_) | Self::BookDeltas(_) | Self::BookDepth10(_)
+        )
     }
 }
 
@@ -472,9 +481,9 @@ impl HasTsInit for Data {
 impl HasTsInit for DataRef<'_> {
     fn ts_init(&self) -> UnixNanos {
         match self {
-            Self::Delta(d) => d.ts_init,
-            Self::Deltas(d) => d.ts_init,
-            Self::Depth10(d) => d.ts_init,
+            Self::BookDelta(d) => d.ts_init,
+            Self::BookDeltas(d) => d.ts_init,
+            Self::BookDepth10(d) => d.ts_init,
             Self::Quote(q) => q.ts_init,
             Self::Trade(t) => t.ts_init,
             Self::Bar(b) => b.ts_init,
@@ -501,19 +510,19 @@ pub fn is_monotonically_increasing_by_init<T: HasTsInit>(data: &[T]) -> bool {
 
 impl From<OrderBookDelta> for Data {
     fn from(value: OrderBookDelta) -> Self {
-        Self::Delta(value)
+        Self::BookDelta(value)
     }
 }
 
 impl From<OrderBookDeltas> for Data {
     fn from(value: OrderBookDeltas) -> Self {
-        Self::Deltas(Box::new(value))
+        Self::BookDeltas(Box::new(value))
     }
 }
 
 impl From<OrderBookDepth10> for Data {
     fn from(value: OrderBookDepth10) -> Self {
-        Self::Depth10(Box::new(value))
+        Self::BookDepth10(Box::new(value))
     }
 }
 
@@ -1082,9 +1091,9 @@ mod tests {
     fn test_data_ref_maps_every_data_variant_without_copying_payloads() {
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let data = vec![
-            Data::Delta(stub_delta()),
-            Data::Deltas(Box::new(stub_deltas())),
-            Data::Depth10(Box::new(stub_depth10())),
+            Data::BookDelta(stub_delta()),
+            Data::BookDeltas(Box::new(stub_deltas())),
+            Data::BookDepth10(Box::new(stub_depth10())),
             Data::Quote(QuoteTick::default()),
             Data::Trade(stub_trade_ethusdt_buy()),
             Data::Bar(stub_bar()),
@@ -1132,13 +1141,13 @@ mod tests {
             assert_eq!(data_ref.ts_init(), data.ts_init());
 
             match (data, data_ref) {
-                (Data::Delta(expected), DataRef::Delta(actual)) => {
+                (Data::BookDelta(expected), DataRef::BookDelta(actual)) => {
                     assert!(std::ptr::eq(expected, actual));
                 }
-                (Data::Deltas(expected), DataRef::Deltas(actual)) => {
+                (Data::BookDeltas(expected), DataRef::BookDeltas(actual)) => {
                     assert!(std::ptr::eq(expected.as_ref(), actual));
                 }
-                (Data::Depth10(expected), DataRef::Depth10(actual)) => {
+                (Data::BookDepth10(expected), DataRef::BookDepth10(actual)) => {
                     assert!(std::ptr::eq(expected.as_ref(), actual));
                 }
                 (Data::Quote(expected), DataRef::Quote(actual)) => {

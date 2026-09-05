@@ -13,12 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Per-client WebSocket dispatch state and pure translation helpers.
+//! Per-client WebSocket dispatch state and pure translations.
 //!
 //! Owns the cloid translation tables, the optimistic nonce manager, and the
-//! cached `AccountState` snapshot that backs `query_account` replays. Pure
-//! helpers (cloid translation, terminal-state eviction, tick conversions) live
-//! alongside the state so the execution-client lifecycle code stays focused on
+//! cached `AccountState` snapshot that backs `query_account` replays. Cloid
+//! translation, terminal-state eviction, and tick conversion live alongside
+//! the state so the execution-client lifecycle code stays focused on
 //! `ExecutionClient` trait wiring.
 
 use std::{
@@ -920,7 +920,7 @@ impl WsDispatchState {
         std::mem::take(&mut *self.pending_sendtx.lock()).into()
     }
 
-    /// Returns the current pending-sendTx queue length. Test-only helper.
+    /// Returns the current pending-sendTx queue length for tests.
     #[cfg(test)]
     pub(crate) fn pending_sendtx_len(&self) -> usize {
         self.pending_sendtx.lock().len()
@@ -1673,7 +1673,7 @@ pub(crate) fn evict_terminal_mappings(
 
 /// Process-global instrument cache used by the HTTP report-gen path.
 ///
-/// Avoids threading the live engine cache through every helper; populated by
+/// Avoids threading the live engine cache through every report parser; populated by
 /// the data and execution clients on bootstrap.
 pub(crate) static LIGHTER_INSTRUMENT_CACHE: LazyLock<DashMap<InstrumentId, InstrumentAny>> =
     LazyLock::new(DashMap::new);
@@ -1787,7 +1787,7 @@ pub(crate) async fn lookup_create_order_status_report(
 /// terminal history where Lighter can reuse client indexes.
 #[expect(
     clippy::too_many_arguments,
-    reason = "translation helper that threads context to the parser without a wrapper struct"
+    reason = "order lookup threads context to the parser without a wrapper struct"
 )]
 pub(crate) async fn lookup_order_status_report(
     http_client: &LighterHttpClient,
@@ -3503,7 +3503,7 @@ mod tests {
         assert!(err.to_string().contains("overflows u32"));
     }
 
-    // Pins `decimal_trunc_to_i64` semantics directly so the helper's trunc
+    // Pins `decimal_trunc_to_i64` semantics directly so its truncation
     // (toward zero) and overflow contract is asserted independently of any
     // caller that happens to feed it integer-valued Decimals.
     #[rstest]

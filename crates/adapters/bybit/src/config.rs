@@ -25,7 +25,10 @@ use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
 
 use crate::common::{
-    enums::{BybitEnvironment, BybitMarginMode, BybitPositionMode, BybitProductType},
+    enums::{
+        BybitEnvironment, BybitMarginMode, BybitOrderSmpType, BybitPositionMode, BybitProductType,
+    },
+    parse::deserialize_optional_smp_type,
     urls::{bybit_http_base_url, bybit_ws_private_url, bybit_ws_public_url, bybit_ws_trade_url},
 };
 
@@ -244,6 +247,10 @@ pub struct BybitExecutionClientConfig {
     pub position_mode: Option<HashMap<String, BybitPositionMode>>,
     /// Unified margin mode setting.
     pub margin_mode: Option<BybitMarginMode>,
+    /// Self-match prevention type sent on every submitted order. The `smp_type` order parameter
+    /// overrides it, and leaving both unset omits the field so the venue default applies.
+    #[serde(deserialize_with = "deserialize_optional_smp_type")]
+    pub smp_type: Option<BybitOrderSmpType>,
     /// WebSocket transport backend (defaults to `Tungstenite`).
     #[builder(default)]
     pub transport_backend: TransportBackend,
@@ -348,6 +355,41 @@ mod tests {
         ] {
             assert!(!formatted.contains(secret));
         }
+    }
+
+    #[rstest]
+    #[case("None", BybitOrderSmpType::None)]
+    #[case("CancelMaker", BybitOrderSmpType::CancelMaker)]
+    #[case("CancelTaker", BybitOrderSmpType::CancelTaker)]
+    #[case("CancelBoth", BybitOrderSmpType::CancelBoth)]
+    fn test_exec_config_deserializes_smp_type(
+        #[case] value: &str,
+        #[case] expected: BybitOrderSmpType,
+    ) {
+        let json = format!(r#"{{"smp_type": "{value}"}}"#);
+        let config: BybitExecutionClientConfig = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(config.smp_type, Some(expected));
+    }
+
+    #[rstest]
+    #[case(r#"{"smp_type": "Other"}"#)]
+    #[case(r#"{"smp_type": "cancel-maker"}"#)]
+    #[case(r#"{"smp_type": ""}"#)]
+    fn test_exec_config_rejects_invalid_smp_type(#[case] json: &str) {
+        let err = serde_json::from_str::<BybitExecutionClientConfig>(json).unwrap_err();
+
+        assert!(
+            err.to_string().contains("invalid Bybit smp_type"),
+            "expected an smp_type rejection, was '{err}'"
+        );
+    }
+
+    #[rstest]
+    fn test_exec_config_smp_type_defaults_to_none() {
+        let config: BybitExecutionClientConfig = serde_json::from_str("{}").unwrap();
+
+        assert_eq!(config.smp_type, None);
     }
 
     #[rstest]

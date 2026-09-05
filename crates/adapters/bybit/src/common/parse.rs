@@ -24,7 +24,7 @@ pub use nautilus_core::serialization::{
 };
 use serde::{Deserialize, de::Error};
 
-/// Serde helper for Bybit `ON`/`OFF` string fields that represent booleans.
+/// Serde adapter for Bybit `ON`/`OFF` string fields that represent booleans.
 ///
 /// Use as `#[serde(with = "on_off_bool")]`. Unknown values deserialize as an
 /// error rather than silently coercing, so field renames surface rather than
@@ -48,7 +48,7 @@ pub mod on_off_bool {
     }
 }
 
-/// Serde helper that accepts `readOnly` as either a bool or `0`/`1` integer.
+/// Serde adapter that accepts `readOnly` as either a bool or `0`/`1` integer.
 ///
 /// Bybit returns `readOnly` as a bool on `/v5/user/list-sub-apikeys` and as an
 /// integer on `/v5/user/query-api` and the two update endpoints. Deserializing
@@ -143,7 +143,7 @@ pub mod opt_bool_as_int {
     }
 }
 
-/// Serde helper that treats the masked secret literal (`"******"`) and empty
+/// Serde adapter that treats the masked secret literal (`"******"`) and empty
 /// strings as `None`, preserving real values as `Some`.
 ///
 /// Bybit responses never expose a usable secret: `list-sub-apikeys` returns
@@ -199,9 +199,9 @@ use crate::{
     common::{
         enums::{
             BybitBboSideType, BybitContractType, BybitKlineInterval, BybitMarginTrading,
-            BybitMarketUnit, BybitOptionType, BybitOrderSide, BybitOrderStatus, BybitOrderType,
-            BybitPositionIdx, BybitPositionMode, BybitPositionSide, BybitProductType,
-            BybitStopOrderType, BybitSymbolType, BybitTimeInForce, BybitTpSlMode,
+            BybitMarketUnit, BybitOptionType, BybitOrderSide, BybitOrderSmpType, BybitOrderStatus,
+            BybitOrderType, BybitPositionIdx, BybitPositionMode, BybitPositionSide,
+            BybitProductType, BybitStopOrderType, BybitSymbolType, BybitTimeInForce, BybitTpSlMode,
             BybitTriggerDirection, BybitTriggerType,
         },
         symbol::BybitSymbol,
@@ -1675,6 +1675,7 @@ pub struct BybitTpSlParams {
     pub is_leverage: bool,
     pub order_iv: Option<String>,
     pub mmp: Option<bool>,
+    pub smp_type: Option<BybitOrderSmpType>,
     pub position_idx: Option<BybitPositionIdx>,
     pub bbo_side_type: Option<BybitBboSideType>,
     pub bbo_level: Option<String>,
@@ -1690,8 +1691,8 @@ impl BybitTpSlParams {
     }
 
     /// Projects the native TP/SL and option fields onto the bundle the HTTP `submit_order` entry
-    /// expects. BBO, `position_idx`, and leverage stay separate because they are already
-    /// first-class arguments on the `submit_order` signature.
+    /// expects. BBO, `position_idx`, `smp_type`, and leverage stay separate because they are
+    /// already first-class arguments on the `submit_order` signature.
     #[must_use]
     pub fn to_native_tp_sl(&self) -> BybitNativeTpSlParams {
         BybitNativeTpSlParams {
@@ -1723,6 +1724,41 @@ pub fn get_price_str(params: &Params, key: &str) -> Option<String> {
     } else {
         value.as_u64().map(|n| n.to_string())
     }
+}
+
+/// Parses a Bybit self-match prevention type from an order parameter or configuration value.
+///
+/// # Errors
+///
+/// Returns an error for any value outside the four types Bybit accepts on an order.
+pub fn parse_smp_type(s: &str) -> anyhow::Result<BybitOrderSmpType> {
+    match s.to_ascii_lowercase().as_str() {
+        "none" => Ok(BybitOrderSmpType::None),
+        "cancelmaker" => Ok(BybitOrderSmpType::CancelMaker),
+        "canceltaker" => Ok(BybitOrderSmpType::CancelTaker),
+        "cancelboth" => Ok(BybitOrderSmpType::CancelBoth),
+        _ => anyhow::bail!(
+            "invalid Bybit smp_type: '{s}', expected None, CancelMaker, CancelTaker or CancelBoth"
+        ),
+    }
+}
+
+/// Deserializes an optional self-match prevention type for a client configuration.
+///
+/// Routes the configured text through [`parse_smp_type`] so a serialized config reports an unknown
+/// value instead of carrying it silently.
+///
+/// # Errors
+///
+/// Returns an error for any value outside the four types Bybit accepts on an order.
+pub fn deserialize_optional_smp_type<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<BybitOrderSmpType>, D::Error> {
+    let Some(value) = Option::<String>::deserialize(d)? else {
+        return Ok(None);
+    };
+
+    parse_smp_type(&value).map(Some).map_err(D::Error::custom)
 }
 
 pub fn parse_bbo_side_type(s: &str) -> anyhow::Result<BybitBboSideType> {
@@ -1864,6 +1900,13 @@ pub fn parse_bybit_tp_sl_params(params: Option<&Params>) -> anyhow::Result<Bybit
             Some(b) => result.mmp = Some(b),
             None => anyhow::bail!("invalid type for 'mmp': {value}, expected bool"),
         }
+    }
+
+    if let Some(value) = params.get("smp_type") {
+        let smp_type = value.as_str().ok_or_else(|| {
+            anyhow::anyhow!("invalid type for 'smp_type': {value}, expected string")
+        })?;
+        result.smp_type = Some(parse_smp_type(smp_type)?);
     }
 
     if let Some(value) = params.get("position_idx") {
@@ -2610,6 +2653,48 @@ mod tests {
         let err = parse_bybit_tp_sl_params(Some(&p)).unwrap_err();
 
         assert!(err.to_string().contains("invalid Bybit TP/SL mode"));
+    }
+
+    #[rstest]
+    #[case("None", BybitOrderSmpType::None)]
+    #[case("CancelMaker", BybitOrderSmpType::CancelMaker)]
+    #[case("canceltaker", BybitOrderSmpType::CancelTaker)]
+    #[case("CANCELBOTH", BybitOrderSmpType::CancelBoth)]
+    fn test_parse_tp_sl_params_valid_smp_type(
+        #[case] value: &str,
+        #[case] expected: BybitOrderSmpType,
+    ) {
+        let p = params_from(&[("smp_type", json!(value))]);
+        let result = parse_bybit_tp_sl_params(Some(&p)).unwrap();
+
+        assert_eq!(result.smp_type, Some(expected));
+    }
+
+    #[rstest]
+    fn test_parse_tp_sl_params_smp_type_absent_stays_none() {
+        let p = params_from(&[("mmp", json!(true))]);
+        let result = parse_bybit_tp_sl_params(Some(&p)).unwrap();
+
+        assert_eq!(result.smp_type, None);
+    }
+
+    #[rstest]
+    #[case(json!("Other"), "invalid Bybit smp_type: 'Other'")]
+    #[case(json!("cancel_maker"), "invalid Bybit smp_type: 'cancel_maker'")]
+    #[case(json!(""), "invalid Bybit smp_type: ''")]
+    #[case(json!(1), "invalid type for 'smp_type'")]
+    #[case(json!(true), "invalid type for 'smp_type'")]
+    fn test_parse_tp_sl_params_rejects_invalid_smp_type(
+        #[case] value: serde_json::Value,
+        #[case] expected: &str,
+    ) {
+        let p = params_from(&[("smp_type", value)]);
+        let err = parse_bybit_tp_sl_params(Some(&p)).unwrap_err();
+
+        assert!(
+            err.to_string().contains(expected),
+            "expected '{expected}', was '{err}'"
+        );
     }
 
     #[rstest]

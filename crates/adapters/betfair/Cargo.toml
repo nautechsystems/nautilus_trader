@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-betfair"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -132,8 +131,3 @@ name = "betfair-backtest"
 path = "examples/betfair_backtest.rs"
 required-features = ["examples"]
 doc = false
-
-[[test]]
-name = "python"
-path = "tests/python.rs"
-required-features = ["python"]

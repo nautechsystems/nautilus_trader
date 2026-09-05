@@ -15,7 +15,7 @@
 
 //! DeFi-specific data client functionality.
 //!
-//! This module provides DeFi subscription and request helper methods
+//! This module provides DeFi subscription and request methods
 //! for the `DataClientAdapter`. All code in this module requires the `defi` feature flag.
 
 use nautilus_common::{

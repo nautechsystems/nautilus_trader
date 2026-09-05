@@ -33,7 +33,7 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BettingAccount {
-    /// Creates a new `BettingAccount` instance.
+    /// Represents a betting account that stakes on sports betting markets.
     #[new]
     #[pyo3(signature = (event, calculate_account_state))]
     #[must_use]
@@ -181,7 +181,7 @@ impl BettingAccount {
     #[pyo3(name = "calculate_balance_locked")]
     #[pyo3(signature = (instrument, side, quantity, price, use_quote_for_inverse=None))]
     fn py_calculate_balance_locked(
-        &mut self,
+        &self,
         instrument: Py<PyAny>,
         side: OrderSide,
         quantity: Quantity,

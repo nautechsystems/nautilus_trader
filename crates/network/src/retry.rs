@@ -460,6 +460,36 @@ where
         .await
     }
 
+    /// Executes an operation with an error-provided minimum retry delay and cancellation support.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails after exhausting all retries,
+    /// if the operation times out, if creating the backoff state fails, or if canceled.
+    pub async fn execute_with_retry_with_delay_and_cancel<F, Fut, T>(
+        &self,
+        operation_name: &str,
+        operation: F,
+        should_retry: impl Fn(&E) -> bool,
+        retry_delay: impl Fn(&E) -> Option<Duration>,
+        create_error: impl Fn(RetryError) -> E,
+        cancellation_token: &CancellationToken,
+    ) -> Result<T, E>
+    where
+        F: FnMut() -> Fut,
+        Fut: Future<Output = Result<T, E>>,
+    {
+        self.execute_with_retry_inner_delay(
+            operation_name,
+            operation,
+            should_retry,
+            retry_delay,
+            create_error,
+            Some(cancellation_token),
+        )
+        .await
+    }
+
     /// Executes an operation with retry logic and cancellation support.
     ///
     /// # Errors
@@ -817,6 +847,56 @@ mod tests {
             start.elapsed() >= Duration::from_millis(200)
                 && start.elapsed() < Duration::from_millis(201)
         );
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_error_retry_delay_observes_cancellation() {
+        let config = RetryConfig {
+            max_retries: 1,
+            initial_delay_ms: 10,
+            max_delay_ms: 10,
+            backoff_factor: 1.0,
+            jitter_ms: 0,
+            operation_timeout_ms: Some(50),
+            immediate_first: false,
+            max_elapsed_ms: Some(500),
+        };
+        let manager = RetryManager::new(config);
+        let attempts = Arc::new(AtomicU32::new(0));
+        let attempts_clone = attempts.clone();
+        let token = CancellationToken::new();
+        let cancel = token.clone();
+
+        spawn(async move {
+            time::sleep(Duration::from_millis(100)).await;
+            cancel.cancel();
+        });
+
+        let error = manager
+            .execute_with_retry_with_delay_and_cancel(
+                "test_error_delay_cancellation",
+                move || {
+                    let attempts = attempts_clone.clone();
+                    async move {
+                        attempts.fetch_add(1, Ordering::SeqCst);
+                        Err::<i32, TestError>(TestError::Retryable("rate limit".to_string()))
+                    }
+                },
+                should_retry_test_error,
+                |_| Some(Duration::from_millis(200)),
+                create_test_error,
+                &token,
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, TestError::Timeout(RetryError::Canceled)));
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
     }
 
     #[rstest]

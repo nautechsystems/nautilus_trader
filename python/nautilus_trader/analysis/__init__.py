@@ -46,6 +46,7 @@ from nautilus_trader.analysis.config import (
     TearsheetYearlyReturnsChart as TearsheetYearlyReturnsChart,
 )
 from nautilus_trader.analysis.reporter import ReportProvider as ReportProvider
+from nautilus_trader.analysis.statistic import PortfolioStatistic as PortfolioStatistic
 from nautilus_trader.analysis.tearsheet import create_bars_with_fills as create_bars_with_fills
 from nautilus_trader.analysis.tearsheet import create_drawdown_chart as create_drawdown_chart
 from nautilus_trader.analysis.tearsheet import create_equity_curve as create_equity_curve

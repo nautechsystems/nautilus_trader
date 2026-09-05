@@ -21,7 +21,7 @@
 //! - [`SbeEncodeError`] and [`SbeDecodeError`]: Common SBE codec errors.
 //! - [`market`]: Hand-written Nautilus market-data SBE codecs.
 //! - [`GroupSizeEncoding`] and [`GroupSize16Encoding`]: Group header decoders.
-//! - [`decode_var_string8`]: varString8 decoder helper.
+//! - [`decode_var_string8`]: varString8 decoder.
 
 pub mod cursor;
 pub mod error;

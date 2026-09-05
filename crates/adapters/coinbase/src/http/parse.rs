@@ -1056,7 +1056,7 @@ pub fn parse_cfm_position_status_report(
 // Coinbase history endpoints return a wider set of configuration shapes than
 // `OrderConfiguration` covers (bracket, TWAP, trigger variants). History
 // `Order.order_configuration` is kept as a raw `serde_json::Value`; these
-// helpers dig into the value by key so unknown shapes simply return `None`
+// accessors read the value by key so unknown shapes simply return `None`
 // instead of failing the whole batch.
 fn base_quantity_from_configuration(order: &Order, size_precision: u8) -> Option<Quantity> {
     let config = order.order_configuration.as_ref()?.as_object()?;

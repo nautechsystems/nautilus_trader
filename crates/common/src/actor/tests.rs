@@ -1658,7 +1658,7 @@ fn test_data_actor_cache_api_surface_returns_owned_values(
     );
 }
 
-/// Helper to register a dummy actor and return its Rc.
+/// Registers a dummy actor and returns its `Rc`.
 fn register_dummy(name: &str) -> Rc<UnsafeCell<dyn Actor>> {
     let actor = DummyActor::new(name);
     register_actor(actor)

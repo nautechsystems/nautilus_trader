@@ -795,7 +795,7 @@ pub fn decode_record(
         )?;
 
         match result {
-            (Some(delta), None) => (Some(Data::Delta(delta)), None),
+            (Some(delta), None) => (Some(Data::BookDelta(delta)), None),
             (None, Some(trade)) => (Some(Data::Trade(trade)), None),
             (None, None) => (None, None),
             _ => anyhow::bail!("Invalid `MboMsg` parsing combination"),

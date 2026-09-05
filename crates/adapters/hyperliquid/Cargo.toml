@@ -1,6 +1,5 @@
 [package]
 name = "nautilus-hyperliquid"
-readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -224,8 +223,3 @@ name = "hyperliquid-chained-modify-smoke"
 path = "examples/chained_modify_smoke.rs"
 required-features = ["examples"]
 doc = false
-
-[[test]]
-name = "python"
-path = "tests/python.rs"
-required-features = ["python"]

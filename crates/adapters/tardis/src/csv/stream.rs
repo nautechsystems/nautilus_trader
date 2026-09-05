@@ -561,7 +561,7 @@ impl Iterator for BatchedDeltasStreamIterator {
                     .map(|batch| {
                         let deltas = OrderBookDeltas::new(self.instrument_id, batch);
                         let deltas = Box::new(deltas);
-                        data_to_pyobject(py, Data::Deltas(deltas))
+                        data_to_pyobject(py, Data::BookDeltas(deltas))
                     })
                     .collect::<PyResult<Vec<_>>>()
             })

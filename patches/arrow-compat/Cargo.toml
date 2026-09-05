@@ -23,4 +23,4 @@ pyarrow = ["arrow-upstream/pyarrow"]
 test_utils = ["arrow-upstream/test_utils"]
 
 [dependencies]
-arrow-upstream = { package = "arrow", version = "=59.2.0", default-features = false }
+arrow-upstream = { package = "arrow", version = "=59.3.0", default-features = false }

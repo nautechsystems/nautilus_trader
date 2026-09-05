@@ -389,7 +389,7 @@ def test_request_response_round_trip(bus: object) -> None:
 
         def __init__(self, req_id: object, callback: object) -> None:
             """
-            Initialize the helper.
+            Initialize the instance.
             """
             self.id = req_id
             self.callback = callback
@@ -401,7 +401,7 @@ def test_request_response_round_trip(bus: object) -> None:
 
         def __init__(self, correlation_id: object) -> None:
             """
-            Initialize the helper.
+            Initialize the instance.
             """
             self.correlation_id = correlation_id
 
@@ -434,7 +434,7 @@ def test_duplicate_request_id_rejected(bus: object) -> None:
 
         def __init__(self, req_id: object, callback: object) -> None:
             """
-            Initialize the helper.
+            Initialize the instance.
             """
             self.id = req_id
             self.callback = callback
@@ -522,7 +522,7 @@ def test_request_invalid_endpoint_raises(bus: object, endpoint: object, message:
 
         def __init__(self, req_id: object, callback: object) -> None:
             """
-            Initialize the helper.
+            Initialize the instance.
             """
             self.id = req_id
             self.callback = callback
@@ -785,7 +785,7 @@ def test_add_listener_skips_closed(bus: object) -> None:
 
         def __init__(self, closed: object = False) -> None:
             """
-            Initialize the helper.
+            Initialize the instance.
             """
             self._closed = closed
 
@@ -839,7 +839,7 @@ def test_dispose_clears_correlation_index(bus: object) -> None:
 
         def __init__(self) -> None:
             """
-            Initialize the helper.
+            Initialize the instance.
             """
             self.id = UUID4()
             self.callback = lambda r: None

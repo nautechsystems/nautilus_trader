@@ -723,7 +723,7 @@ pub fn parse_optional_decimal(s: &Option<String>) -> anyhow::Result<Option<Decim
 /// Many exchange APIs represent null string fields as an empty string (`""`).
 /// When such a payload is mapped onto `Option<String>` the default behavior
 /// would yield `Some("")`, which is semantically different from the intended
-/// absence of a value. This helper ensures that empty strings are normalized
+/// absence of a value. This deserializer normalizes empty strings
 /// to `None` during deserialization.
 ///
 /// # Errors

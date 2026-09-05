@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Bybit API credential storage and signing helpers.
+//! Bybit API credential resolution, storage, and request signing.
 
 #![allow(unused_assignments)] // Fields are used in methods, false positive from nightly
 

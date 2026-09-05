@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Self
 
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.indicators import ExponentialMovingAverage
@@ -19,21 +18,9 @@ from nautilus_trader.trading import Strategy
 
 
 class EMACrossConfig(StrategyConfig):
-    _CUSTOM_FIELDS = (
-        "instrument_id",
-        "bar_type",
-        "trade_size",
-        "fast_ema_period",
-        "slow_ema_period",
-    )
-
-    def __new__(cls, *args: object, **kwargs: object) -> Self:
-        for field in cls._CUSTOM_FIELDS:
-            kwargs.pop(field, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_id: InstrumentId,
         bar_type: BarType,
         trade_size: Decimal,

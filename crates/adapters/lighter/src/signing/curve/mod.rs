@@ -18,7 +18,7 @@
 //! - [`Point`] is a curve point on `ECgFp5`, with addition, doubling, scalar
 //!   multiplication, and the canonical `Fp5` encode/decode pair.
 //! - [`Scalar`] is the prime-order scalar field modulo the group order `n`,
-//!   with Montgomery-form multiplication and a signed-window recoding helper
+//!   with Montgomery-form multiplication and signed-window recoding
 //!   used by the variable-time scalar multiplication.
 //!
 //! Both modules sit on top of the field layer and contain no `unsafe`. Vector

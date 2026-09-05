@@ -15,9 +15,8 @@
 
 //! Order and fill reconciliation.
 //!
-//! Event constructors, order state reconciliation, and fill reconciliation. Every
-//! helper turns a venue-sourced report into zero or more `OrderEventAny`s that are
-//! safe to apply to the local order model.
+//! Event construction, order state reconciliation, and fill reconciliation. Venue-sourced
+//! reports become zero or more `OrderEventAny`s that are safe to apply to the local order model.
 
 use nautilus_common::enums::LogColor;
 use nautilus_core::{UUID4, UnixNanos};

@@ -42,11 +42,12 @@ use std::{
         Arc, LazyLock,
         atomic::{AtomicBool, Ordering},
     },
+    time::Duration,
 };
 
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
-use jiff::Timestamp;
+use jiff::{Timestamp, fmt::rfc2822::DateTimeParser};
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     AtomicMap, AtomicTime, UnixNanos, consts::NAUTILUS_USER_AGENT,
@@ -145,6 +146,7 @@ use crate::{
 
 const OKX_SUCCESS_CODE: &str = "0";
 const OKX_PARTIAL_SUCCESS_CODE: &str = "2";
+const RETRY_AFTER_HEADER: &str = "Retry-After";
 
 #[derive(Debug, Error)]
 #[error("Failed to parse instrument {symbol}: {source}")]
@@ -246,7 +248,11 @@ fn resolve_okx_error_message(response_body: &[u8], top_level_msg: &str) -> Strin
 
 fn deserialize_okx_response<T: DeserializeOwned>(
     response_body: &[u8],
-) -> Result<OKXResponse<T>, serde_json::Error> {
+) -> Result<OKXResponse<T>, OKXHttpError> {
+    if response_body.is_empty() {
+        return Err(OKXHttpError::EmptyResponse);
+    }
+
     let contains_legacy_rpi_name = [br#""elp""#.as_slice(), br#""elpMaker""#.as_slice()]
         .iter()
         .any(|name| {
@@ -256,12 +262,45 @@ fn deserialize_okx_response<T: DeserializeOwned>(
         });
 
     if !contains_legacy_rpi_name {
-        return serde_json::from_slice(response_body);
+        return serde_json::from_slice(response_body)
+            .map_err(|e| classify_response_decode_error(&e));
     }
 
-    let mut value: serde_json::Value = serde_json::from_slice(response_body)?;
+    let mut value: serde_json::Value =
+        serde_json::from_slice(response_body).map_err(|e| classify_response_decode_error(&e))?;
     prefer_rpi_response_fields(&mut value);
-    serde_json::from_value(value)
+    serde_json::from_value(value).map_err(|e| classify_response_decode_error(&e))
+}
+
+fn classify_response_decode_error(error: &serde_json::Error) -> OKXHttpError {
+    if error.is_data() {
+        OKXHttpError::ResponseDecoding(error.to_string())
+    } else {
+        OKXHttpError::MalformedResponse(error.to_string())
+    }
+}
+
+fn parse_retry_after(value: &str, now: Timestamp) -> Option<Duration> {
+    if let Ok(seconds) = value.parse::<u64>() {
+        return Some(Duration::from_secs(seconds));
+    }
+
+    let retry_at = DateTimeParser::new().parse_timestamp(value).ok()?;
+    let delay = retry_at.duration_since(now);
+    if delay.is_negative() {
+        Some(Duration::ZERO)
+    } else {
+        Some(delay.unsigned_abs())
+    }
+}
+
+fn retry_after(headers: &HashMap<String, String>) -> Option<Duration> {
+    let value = headers.get(RETRY_AFTER_HEADER)?;
+    let delay = parse_retry_after(value, Timestamp::now());
+    if delay.is_none() {
+        log::warn!("Invalid OKX response header {RETRY_AFTER_HEADER}={value:?}");
+    }
+    delay
 }
 
 #[cfg(test)]
@@ -269,12 +308,25 @@ mod tests {
     use anyhow::Context;
     use rstest::rstest;
     use rust_decimal::Decimal;
+    use serde::{Serialize, Serializer, ser::Error as _};
 
     use super::{
-        OKXInstrumentDefinitionError, deserialize_okx_response, resolve_okx_error_code,
+        Method, OKXEnvironment, OKXHttpError, OKXInstrumentDefinitionError, OKXRawHttpClient,
+        Timestamp, deserialize_okx_response, parse_retry_after, resolve_okx_error_code,
         resolve_okx_error_message,
     };
     use crate::http::models::OKXFeeRate;
+
+    struct UnserializableParams;
+
+    impl Serialize for UnserializableParams {
+        fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            Err(S::Error::custom("intentional serialization failure"))
+        }
+    }
 
     #[rstest]
     fn test_instrument_definition_error_survives_anyhow_context_downcast() {
@@ -347,6 +399,66 @@ mod tests {
 
         assert_eq!(parsed.data.len(), 1);
         assert_eq!(parsed.data[0].rpi_maker, Some(Decimal::new(-15, 5)));
+    }
+
+    #[rstest]
+    fn test_parse_retry_after_supports_delay_seconds_and_http_date() {
+        let now: Timestamp = "1994-11-06T08:49:36Z".parse().unwrap();
+
+        assert_eq!(
+            parse_retry_after("5", now),
+            Some(std::time::Duration::from_secs(5))
+        );
+        assert_eq!(
+            parse_retry_after("Sun, 06 Nov 1994 08:51:36 GMT", now),
+            Some(std::time::Duration::from_secs(120))
+        );
+        assert_eq!(
+            parse_retry_after("Sun, 06 Nov 1994 08:47:36 GMT", now),
+            Some(std::time::Duration::ZERO)
+        );
+        assert_eq!(parse_retry_after("soon", now), None);
+    }
+
+    #[rstest]
+    fn test_empty_response_is_distinct_from_malformed_json() {
+        let empty = deserialize_okx_response::<serde_json::Value>(b"").unwrap_err();
+        let malformed = deserialize_okx_response::<serde_json::Value>(b"{").unwrap_err();
+
+        assert!(matches!(empty, OKXHttpError::EmptyResponse));
+        assert!(matches!(malformed, OKXHttpError::MalformedResponse(_)));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_request_serialization_failure_is_typed_before_transport() {
+        let client = OKXRawHttpClient::new(
+            Some("http://127.0.0.1:1".to_string()),
+            1,
+            0,
+            1,
+            1,
+            OKXEnvironment::Live,
+            None,
+        )
+        .unwrap();
+
+        let error = client
+            .send_request::<serde_json::Value, _>(
+                Method::GET,
+                "/api/v5/test",
+                Some(&UnserializableParams),
+                None,
+                false,
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            OKXHttpError::RequestSerialization(message)
+                if message.contains("intentional serialization failure")
+        ));
     }
 
     #[rstest]
@@ -734,6 +846,7 @@ impl OKXRawHttpClient {
             base_url: base_url.unwrap_or(OKX_HTTP_URL.to_string()),
             client: HttpClient::builder()
                 .headers(Self::default_headers(environment))
+                .header_keys(vec![RETRY_AFTER_HEADER.to_string()])
                 .keyed_quotas(Self::rate_limiter_quotas())
                 .default_quota(*OKX_REST_QUOTA)
                 .timeout_secs(timeout_secs)
@@ -785,6 +898,7 @@ impl OKXRawHttpClient {
             base_url,
             client: HttpClient::builder()
                 .headers(Self::default_headers(environment))
+                .header_keys(vec![RETRY_AFTER_HEADER.to_string()])
                 .keyed_quotas(Self::rate_limiter_quotas())
                 .default_quota(*OKX_REST_QUOTA)
                 .timeout_secs(timeout_secs)
@@ -869,7 +983,19 @@ impl OKXRawHttpClient {
         body: Option<Vec<u8>>,
         authenticate: bool,
     ) -> Result<Vec<T>, OKXHttpError> {
-        let url = format!("{}{path}", self.base_url);
+        let query_string = params
+            .map(serde_urlencoded::to_string)
+            .transpose()
+            .map_err(|e| {
+                OKXHttpError::RequestSerialization(format!("Failed to serialize params: {e}"))
+            })?
+            .unwrap_or_default();
+        let full_path = if query_string.is_empty() {
+            path.to_string()
+        } else {
+            format!("{path}?{query_string}")
+        };
+        let url = format!("{}{full_path}", self.base_url);
         let accepts_partial_success = matches!(
             path,
             "/api/v5/trade/batch-orders"
@@ -888,24 +1014,9 @@ impl OKXRawHttpClient {
             let method = method.clone();
             let body = body.clone();
             let rate_keys = rate_keys.clone();
+            let full_path = full_path.clone();
 
             async move {
-                // Serialize params to query string for signing (if needed)
-                let query_string = if let Some(p) = params {
-                    serde_urlencoded::to_string(p).map_err(|e| {
-                        OKXHttpError::JsonError(format!("Failed to serialize params: {e}"))
-                    })?
-                } else {
-                    String::new()
-                };
-
-                // Build full path with query string for signing
-                let full_path = if query_string.is_empty() {
-                    path.to_string()
-                } else {
-                    format!("{path}?{query_string}")
-                };
-
                 let mut headers = if authenticate {
                     self.sign_request(&method, &full_path, body.as_deref())?
                 } else {
@@ -919,10 +1030,10 @@ impl OKXRawHttpClient {
 
                 let resp = self
                     .client
-                    .request_with_params(
+                    .request_with_params::<()>(
                         method.clone(),
                         url,
-                        params,
+                        None,
                         Some(headers),
                         body,
                         None,
@@ -931,28 +1042,34 @@ impl OKXRawHttpClient {
                     .await?;
 
                 log::trace!("Response: {resp:?}");
+                let retry_after = retry_after(&resp.headers);
 
                 if resp.status.is_success() {
                     let okx_response: OKXResponse<T> = deserialize_okx_response(&resp.body)
                         .map_err(|e| {
-                            log::warn!("Failed to deserialize OKXResponse: {e}");
-                            OKXHttpError::JsonError(e.to_string())
+                            log::warn!("Failed to deserialize OKX response: {e}");
+                            e
                         })?;
 
                     if okx_response.code != OKX_SUCCESS_CODE
                         && !(accepts_partial_success
                             && okx_response.code == OKX_PARTIAL_SUCCESS_CODE)
                     {
-                        return Err(OKXHttpError::OkxError {
-                            error_code: resolve_okx_error_code(&resp.body, &okx_response.code),
-                            message: resolve_okx_error_message(&resp.body, &okx_response.msg),
-                        });
+                        let error_code = resolve_okx_error_code(&resp.body, &okx_response.code);
+                        let message = resolve_okx_error_message(&resp.body, &okx_response.msg);
+                        return Err(OKXHttpError::from_venue_response(
+                            error_code,
+                            message,
+                            retry_after,
+                        ));
                     }
 
                     Ok(okx_response.data)
                 } else {
+                    let status = StatusCode::from_u16(resp.status.as_u16())
+                        .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
                     let error_body = String::from_utf8_lossy(&resp.body);
-                    if resp.status.as_u16() == StatusCode::NOT_FOUND.as_u16() {
+                    if status == StatusCode::NOT_FOUND {
                         log::debug!("HTTP 404 with body: {error_body}");
                     } else {
                         log::warn!(
@@ -962,19 +1079,27 @@ impl OKXRawHttpClient {
                     }
 
                     if let Ok(parsed_error) = deserialize_okx_response::<T>(&resp.body) {
-                        return Err(OKXHttpError::OkxError {
-                            error_code: resolve_okx_error_code(&resp.body, &parsed_error.code),
-                            message: resolve_okx_error_message(&resp.body, &parsed_error.msg),
-                        });
+                        let error_code = resolve_okx_error_code(&resp.body, &parsed_error.code);
+                        let message = resolve_okx_error_message(&resp.body, &parsed_error.msg);
+                        return Err(OKXHttpError::from_venue_response(
+                            error_code,
+                            message,
+                            retry_after,
+                        ));
                     }
 
-                    Err(OKXHttpError::UnexpectedStatus {
-                        // Fall back to 500 if the venue returns a non-standard
-                        // code so we never panic in the error path.
-                        status: StatusCode::from_u16(resp.status.as_u16())
-                            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-                        body: error_body.to_string(),
-                    })
+                    if status.as_u16() >= 500 || status == StatusCode::TOO_MANY_REQUESTS {
+                        Err(OKXHttpError::RetryableStatus {
+                            status,
+                            body: error_body.to_string(),
+                            retry_after,
+                        })
+                    } else {
+                        Err(OKXHttpError::UnexpectedStatus {
+                            status,
+                            body: error_body.to_string(),
+                        })
+                    }
                 }
             }
         };
@@ -982,7 +1107,7 @@ impl OKXRawHttpClient {
         // Retry strategy based on OKX error responses and HTTP status codes:
         //
         // 1. Network errors: always retry (transient connection issues)
-        // 2. HTTP 5xx/429: server errors and rate limiting should be retried
+        // 2. Undecoded HTTP 5xx/429: server errors and rate limiting should be retried
         // 3. OKX specific retryable error codes (defined in common::consts)
         //
         // Note: OKX returns many permanent errors which should NOT be retried
@@ -1022,10 +1147,11 @@ impl OKXRawHttpClient {
 
         let result = self
             .retry_manager
-            .execute_with_retry_with_cancel(
+            .execute_with_retry_with_delay_and_cancel(
                 path,
                 operation,
                 should_retry,
+                OKXHttpError::retry_after,
                 create_error,
                 &self.cancellation_token,
             )
@@ -1169,8 +1295,7 @@ impl OKXRawHttpClient {
         &self,
         request: OKXPlaceSpreadOrderRequest,
     ) -> Result<Vec<OKXPlaceOrderResponse>, OKXHttpError> {
-        let body =
-            serde_json::to_vec(&request).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
+        let body = serde_json::to_vec(&request)?;
 
         self.send_request(
             Method::POST,
@@ -1195,8 +1320,7 @@ impl OKXRawHttpClient {
         &self,
         request: OKXCancelSpreadOrderRequest,
     ) -> Result<Vec<OKXCancelOrderResponse>, OKXHttpError> {
-        let body =
-            serde_json::to_vec(&request).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
+        let body = serde_json::to_vec(&request)?;
 
         self.send_request(
             Method::POST,
@@ -1221,8 +1345,7 @@ impl OKXRawHttpClient {
         &self,
         request: OKXCancelAllSpreadOrdersRequest,
     ) -> Result<Vec<OKXCancelOrderResponse>, OKXHttpError> {
-        let body =
-            serde_json::to_vec(&request).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
+        let body = serde_json::to_vec(&request)?;
 
         self.send_request(
             Method::POST,
@@ -1432,7 +1555,7 @@ impl OKXRawHttpClient {
         response
             .first()
             .map(|t| t.ts)
-            .ok_or_else(|| OKXHttpError::JsonError("Empty server time response".to_string()))
+            .ok_or(OKXHttpError::EmptyResponse)
     }
 
     /// Requests a mark price.
@@ -5518,8 +5641,7 @@ impl OKXHttpClient {
         &self,
         request: OKXPlaceOrderRequest,
     ) -> Result<OKXPlaceOrderResponse, OKXHttpError> {
-        let body =
-            serde_json::to_vec(&request).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
+        let body = serde_json::to_vec(&request)?;
 
         let resp: Vec<OKXPlaceOrderResponse> = self
             .inner
@@ -5542,8 +5664,7 @@ impl OKXHttpClient {
             return Ok(Vec::new());
         }
 
-        let body =
-            serde_json::to_vec(&requests).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
+        let body = serde_json::to_vec(&requests)?;
         self.inner
             .send_request::<_, ()>(
                 Method::POST,
@@ -5564,8 +5685,7 @@ impl OKXHttpClient {
         &self,
         request: OKXAmendOrderRequest,
     ) -> Result<OKXPlaceOrderResponse, OKXHttpError> {
-        let body =
-            serde_json::to_vec(&request).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
+        let body = serde_json::to_vec(&request)?;
         let resp: Vec<OKXPlaceOrderResponse> = self
             .inner
             .send_request::<_, ()>(
@@ -5593,8 +5713,7 @@ impl OKXHttpClient {
             return Ok(Vec::new());
         }
 
-        let body =
-            serde_json::to_vec(&requests).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
+        let body = serde_json::to_vec(&requests)?;
         self.inner
             .send_request::<_, ()>(
                 Method::POST,
@@ -5622,10 +5741,7 @@ impl OKXHttpClient {
             && code != OKX_SUCCESS_CODE
         {
             let msg = item.s_msg.clone().unwrap_or_default();
-            return Err(OKXHttpError::OkxError {
-                error_code: code.clone(),
-                message: msg,
-            });
+            return Err(OKXHttpError::from_venue_response(code.clone(), msg, None));
         }
 
         Ok(item)
@@ -5647,10 +5763,7 @@ impl OKXHttpClient {
             && code != OKX_SUCCESS_CODE
         {
             let msg = item.s_msg.clone().unwrap_or_default();
-            return Err(OKXHttpError::OkxError {
-                error_code: code.clone(),
-                message: msg,
-            });
+            return Err(OKXHttpError::from_venue_response(code.clone(), msg, None));
         }
 
         Ok(item)
@@ -5715,10 +5828,7 @@ impl OKXHttpClient {
             && code != OKX_SUCCESS_CODE
         {
             let msg = item.s_msg.clone().unwrap_or_default();
-            return Err(OKXHttpError::OkxError {
-                error_code: code.clone(),
-                message: msg,
-            });
+            return Err(OKXHttpError::from_venue_response(code.clone(), msg, None));
         }
 
         Ok(item)
@@ -5796,8 +5906,7 @@ impl OKXHttpClient {
             return Ok(Vec::new());
         }
 
-        let body =
-            serde_json::to_vec(&requests).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
+        let body = serde_json::to_vec(&requests)?;
 
         let resp: Vec<OKXCancelOrderResponse> = self
             .inner
@@ -5838,8 +5947,7 @@ impl OKXHttpClient {
         &self,
         request: OKXPlaceAlgoOrderRequest,
     ) -> Result<OKXPlaceAlgoOrderResponse, OKXHttpError> {
-        let body =
-            serde_json::to_vec(&request).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
+        let body = serde_json::to_vec(&request)?;
 
         let resp: Vec<OKXPlaceAlgoOrderResponse> = self
             .inner
@@ -5858,10 +5966,7 @@ impl OKXHttpClient {
             && code != "0"
         {
             let msg = item.s_msg.clone().unwrap_or_default();
-            return Err(OKXHttpError::OkxError {
-                error_code: code.clone(),
-                message: msg,
-            });
+            return Err(OKXHttpError::from_venue_response(code.clone(), msg, None));
         }
 
         Ok(item)
@@ -5882,8 +5987,7 @@ impl OKXHttpClient {
     ) -> Result<OKXCancelAlgoOrderResponse, OKXHttpError> {
         // OKX expects an array for cancel-algos endpoint
         // Serialize once to bytes to keep signing and sending identical
-        let body =
-            serde_json::to_vec(&[request]).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
+        let body = serde_json::to_vec(&[request])?;
 
         let resp: Vec<OKXCancelAlgoOrderResponse> = self
             .inner
@@ -5902,10 +6006,7 @@ impl OKXHttpClient {
             && code != "0"
         {
             let msg = item.s_msg.clone().unwrap_or_default();
-            return Err(OKXHttpError::OkxError {
-                error_code: code.clone(),
-                message: msg,
-            });
+            return Err(OKXHttpError::from_venue_response(code.clone(), msg, None));
         }
 
         Ok(item)
@@ -5931,8 +6032,7 @@ impl OKXHttpClient {
             return Ok(Vec::new());
         }
 
-        let body =
-            serde_json::to_vec(&requests).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
+        let body = serde_json::to_vec(&requests)?;
 
         let resp: Vec<OKXCancelAlgoOrderResponse> = self
             .inner
@@ -5980,8 +6080,7 @@ impl OKXHttpClient {
             return Ok(Vec::new());
         }
 
-        let body =
-            serde_json::to_vec(&requests).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
+        let body = serde_json::to_vec(&requests)?;
 
         let resp: Vec<OKXCancelAlgoOrderResponse> = self
             .inner
@@ -6022,8 +6121,7 @@ impl OKXHttpClient {
         &self,
         request: OKXAmendAlgoOrderRequest,
     ) -> Result<OKXAmendAlgoOrderResponse, OKXHttpError> {
-        let body =
-            serde_json::to_vec(&request).map_err(|e| OKXHttpError::JsonError(e.to_string()))?;
+        let body = serde_json::to_vec(&request)?;
 
         let resp: Vec<OKXAmendAlgoOrderResponse> = self
             .inner

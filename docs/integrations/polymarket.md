@@ -446,7 +446,8 @@ A `delayed` response:
 
 #### Definitive and ambiguous outcomes
 
-Polymarket applies the shared [command outcome policy](../concepts/execution.md#command-outcomes) and
+Polymarket applies the shared
+[command outcome policy](../concepts/execution/policies.md#command-outcomes) and
 the adapter guide's
 [diagnostic and strategy reason boundary](../developer_guide/adapters.md#separate-diagnostics-from-strategy-facing-reasons)
 at its execution boundary.

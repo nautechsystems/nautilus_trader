@@ -13,10 +13,10 @@ This separation provides the performance and safety of a compiled trading engine
 the flexibility of Python for system composition and strategy development.
 Trading systems can also be written entirely in Rust for mission-critical workloads.
 
-The same execution semantics and deterministic time model operate in both research and
-live systems. Strategies deploy from research to production with no code changes,
-providing research-to-live parity and reducing the divergence that typically introduces
-deployment risk.
+The same strategy and execution-algorithm code can run across backtest and live systems, reducing
+deployment divergence. Live execution still introduces venue, transport, timing, persistence,
+external-activity, and reconciliation behavior that a simulation may not reproduce. See
+[Backtest and live differences](live.md#backtest-and-live-differences).
 
 NautilusTrader is asset-class-agnostic. Any venue with a REST API or WebSocket feed can be
 integrated through modular adapters. Integrations span centralized and decentralized crypto
@@ -104,7 +104,7 @@ A `LiveNode` ingests data and events from multiple data and execution clients, s
 demo, paper, and real accounts. The Rust-native node, including its PyO3 interface, runs the kernel
 event loop on the calling thread, while asynchronous I/O and background tasks use a shared
 multi-threaded Tokio runtime. See [Live trading](live.md) for the node lifecycle and risk considerations, and
-[Execution reconciliation](reconciliation.md) for state recovery.
+[Execution reconciliation](execution/reconciliation.md) for state recovery.
 
 ## Domain model
 

@@ -385,6 +385,7 @@ Individual orders can be customized using the `params` dictionary when submittin
 | `position_idx`     | `int`            | Hedge-mode position index. See [Hedge mode](#hedge-mode-bothsides). |
 | `bbo_side_type`    | `str`            | Linear/inverse BBO side: `"Queue"` or `"Counterparty"`.             |
 | `bbo_level`        | `str` or `int`   | Linear/inverse BBO book level: `"1"` through `"5"`.                 |
+| `smp_type`         | `str`            | Self-match prevention. See [SMP](#self-match-prevention).           |
 
 Parameters left unset are omitted from the request, so Bybit's own defaults apply.
 
@@ -403,6 +404,8 @@ The adapter validates these params before emitting `OrderSubmitted` and denies t
 - `tp_order_type="Limit"` requires `tp_limit_price`, and `tp_limit_price` requires
   `tp_order_type="Limit"`. The same pairing applies to `sl_order_type` and `sl_limit_price`.
 - `bbo_side_type` and `bbo_level` must be provided together.
+- `smp_type` must be `"None"`, `"CancelMaker"`, `"CancelTaker"`, or `"CancelBoth"`, matched
+  case-insensitively.
 
 When `take_profit` or `stop_loss` is set without `tpsl_mode`, the adapter sends `Full`. When a TP or
 SL price is set without its own `tp_trigger_by` or `sl_trigger_by`, the adapter derives the trigger
@@ -419,6 +422,46 @@ When `bbo_side_type` and `bbo_level` are set, Nautilus sends Bybit's
 `bboSideType` and `bboLevel` fields and omits the order price from the API
 request. BBO orders are supported for linear and inverse limit, stop-limit, and
 limit-if-touched orders.
+
+#### Self-match prevention
+
+Self-match prevention (SMP) tells Bybit what to do when one of your orders would trade against
+another of your own orders. Bybit accepts four values on an order, shown below in their canonical
+wire spellings. The adapter matches them case-insensitively and always sends the canonical spelling.
+
+| Value         | Behavior                         |
+| ------------- | -------------------------------- |
+| `None`        | No self-match prevention.        |
+| `CancelMaker` | Cancel the resting maker order.  |
+| `CancelTaker` | Cancel the incoming taker order. |
+| `CancelBoth`  | Cancel both orders.              |
+
+Set `smp_type` on the execution client config to send that value on every order the client submits:
+
+```python
+from nautilus_trader.adapters.bybit import BybitExecutionClientConfig
+
+config = BybitExecutionClientConfig(
+    api_key="YOUR_API_KEY",
+    api_secret="YOUR_API_SECRET",
+    smp_type="CancelMaker",
+)
+```
+
+Pass `smp_type` through the order `params` to override the configured default for a single order:
+
+```python
+params = {"smp_type": "CancelBoth"}
+```
+
+The adapter denies an order whose `smp_type` is not one of the four values above, and it rejects a
+client config carrying any other value. With neither the config nor the param set, the adapter omits
+`smpType`, so Bybit's own default applies. Bybit overrides the setting in some regions: derivatives
+accounts in Kazakhstan have SMP force-enabled and cannot opt out, and spot accounts in Turkey,
+Kazakhstan, and Georgia fall back to `CancelMaker` when `smpType` is omitted, `None`, or invalid.
+
+Bybit documents the values and the regional rules in the V5
+[SMP guide](https://bybit-exchange.github.io/docs/v5/smp).
 
 #### Example: Order with native TP/SL
 
@@ -804,6 +847,7 @@ The product types for each client must be specified in the configurations.
 | `use_spot_position_reports` | `False`    | Report Spot wallet balances as positions for scoped requests; bulk reports omit Spot (no pair attribution).     |
 | `auto_repay_spot_borrows`   | `False`    | Automatically repay tracked Spot margin borrows after BUY orders fully fill.                                    |
 | `margin_mode`               | `None`     | Unified margin mode setting for the account.                                                                    |
+| `smp_type`                  | `None`     | Self-match prevention sent on every order. See [SMP](#self-match-prevention).                                   |
 | `transport_backend`         | `Sockudo`  | WebSocket transport backend.                                                                                    |
 
 The compiled default is Sockudo when the `transport-sockudo` Cargo feature is enabled and

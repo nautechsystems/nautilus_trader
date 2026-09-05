@@ -1,15 +1,15 @@
 # nautilus-coinbase
 
 [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
-[![Documentation](https://img.shields.io/docsrs/nautilus-coinbase)](https://docs.rs/nautilus-coinbase/latest/nautilus-coinbase/)
+[![Documentation](https://img.shields.io/docsrs/nautilus-coinbase)](https://docs.rs/nautilus-coinbase/latest/nautilus_coinbase/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-coinbase.svg)](https://crates.io/crates/nautilus-coinbase)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
-[NautilusTrader](https://nautilustrader.io) adapter for the [Coinbase Advanced Trade](https://docs.cdp.coinbase.com/coinbase-app/docs/advanced-trade-apis) API.
+[NautilusTrader](https://nautilustrader.io) adapter for the [Coinbase Advanced Trade](https://docs.cdp.coinbase.com/coinbase-app/advanced-trade-apis/overview) API.
 
-The `nautilus-coinbase` crate provides client bindings (HTTP & WebSocket), data models,
-and helper utilities that wrap the official **Coinbase Advanced Trade API**.
+The `nautilus-coinbase` crate provides client bindings (HTTP & WebSocket) and data models
+for the official **Coinbase Advanced Trade API**.
 
 ## NautilusTrader
 
@@ -26,7 +26,7 @@ This crate provides feature flags to control source code inclusion during compil
 - `examples`: Enables the crate's example binaries.
 - `extension-module`: Builds as a Python extension module.
 - `high-precision` (default): Enables
-  [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode)
+  [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
   to use 128-bit value types.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 

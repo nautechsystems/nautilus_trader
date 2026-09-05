@@ -383,7 +383,7 @@ impl DeriveDataClient {
                         ts_init,
                     ) {
                         Ok(deltas) => {
-                            Self::send_data(ctx, Data::Deltas(Box::new(deltas)));
+                            Self::send_data(ctx, Data::BookDeltas(Box::new(deltas)));
                         }
                         Err(e) => log::warn!("Failed to parse Derive orderbook deltas: {e}"),
                     }
@@ -396,7 +396,7 @@ impl DeriveDataClient {
                         instrument.size_precision(),
                         ts_init,
                     ) {
-                        Ok(depth) => Self::send_data(ctx, Data::Depth10(Box::new(depth))),
+                        Ok(depth) => Self::send_data(ctx, Data::BookDepth10(Box::new(depth))),
                         Err(e) => log::warn!("Failed to parse Derive orderbook depth10: {e}"),
                     }
                 }
@@ -2762,7 +2762,7 @@ mod tests {
         DeriveDataClient::handle_ws_message(DeriveWsMessage::Subscription(payload), &ctx);
 
         match rx.try_recv().unwrap() {
-            DataEvent::Data(Data::Deltas(deltas)) => {
+            DataEvent::Data(Data::BookDeltas(deltas)) => {
                 assert_eq!(deltas.instrument_id, instrument_id);
                 assert_eq!(deltas.deltas.len(), 3);
                 assert_eq!(deltas.deltas[1].order.price, Price::from("3500.00"));
@@ -2786,7 +2786,7 @@ mod tests {
         DeriveDataClient::handle_ws_message(DeriveWsMessage::Subscription(payload), &ctx);
 
         match rx.try_recv().unwrap() {
-            DataEvent::Data(Data::Depth10(depth)) => {
+            DataEvent::Data(Data::BookDepth10(depth)) => {
                 assert_eq!(depth.instrument_id, instrument_id);
                 assert_eq!(depth.bids[0].price, Price::from("3500.00"));
                 assert_eq!(depth.bids[0].size, Quantity::from("1.000"));

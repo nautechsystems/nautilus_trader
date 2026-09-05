@@ -29,7 +29,10 @@ There are two main parts of a Nautilus trading strategy:
 - The *optional* strategy configuration, defined by inheriting the `StrategyConfig` class.
 
 :::tip
-Once a strategy is defined, the same source code can be used for backtesting and live trading.
+The same strategy source can run in backtest and live environments. Live execution still introduces
+venue, transport, timing, persistence, external-activity, and reconciliation behavior that a
+simulation may not reproduce. See
+[Backtest and live differences](live.md#backtest-and-live-differences).
 :::
 
 See the [`Strategy` API Reference](/docs/python-api-latest/trading.html) for all available methods.
@@ -486,7 +489,7 @@ query scope.
 ### Trading commands
 
 The following trading commands are available for order management.
-See also the [Execution](execution.md) guide for the full flow through the system.
+See also the [Execution](execution/) guide for the full flow through the system.
 
 #### Submitting orders
 
@@ -553,6 +556,9 @@ def buy(self) -> None:
     self.submit_order(order)
 ```
 
+See [Execution algorithms](execution/algorithms.md) for TWAP parameter rules and spawned-order
+behavior.
+
 #### Canceling orders
 
 Orders can be canceled individually, as a batch, or all orders for an instrument (with an optional side filter).
@@ -608,7 +614,7 @@ one execution client and account, then routes venue, emulated, and execution-alg
 within that boundary. Matching orders associated with other strategies may be canceled, but orders
 assigned to other execution clients remain untouched. Use broad mode only when that cross-strategy
 scope is intended. See
-[Cancel-all routing](execution.md#cancel-all-routing) for the complete flow and client-selection
+[Cancel-all routing](execution/index.md#cancel-all-routing) for the complete flow and client-selection
 rules.
 :::
 
@@ -735,7 +741,7 @@ Configuration options in `StrategyConfig`:
 
 Use `close_position(...)` and `close_all_positions(...)` to flatten without running the full market
 exit process. Both submit closing market orders and leave the strategy free to submit new orders.
-See the [Execution](execution.md) guide.
+See the [Execution](execution/) guide.
 
 ## Strategy configuration
 
@@ -747,10 +753,19 @@ This is opt-in. You can skip configuration and pass parameters directly to your
 strategy constructor. If you want distributed backtests or remote live trading,
 define a configuration.
 
-`StrategyConfig` is implemented in Rust: `__new__` builds and validates the base fields, and
-`__init__` does nothing. A subclass therefore assigns its own fields in `__init__` and forwards base
-fields such as `strategy_id` and `order_id_tag` through `__new__`. Popping the subclass fields in
-`__new__` keeps a custom field from being matched against a base field of the same name.
+`StrategyConfig` is implemented in Rust. Its `__new__` reads the base fields (`strategy_id`,
+`order_id_tag`, `oms_type`, and the rest) out of the constructor call and validates them, ignoring
+any keyword it does not recognize. There is no base `__init__`.
+
+A subclass therefore needs only three things:
+
+- Declare its own fields as keyword-only arguments, so no positional argument is matched against a
+  base field.
+- Accept `**_kwargs` so the base fields pass through the subclass signature.
+- Call `super().__init__()` with no arguments, then assign its own fields.
+
+Do not give a custom field the same name as a base field: both constructors would read it, and
+`__new__` raises a `TypeError` when the value does not match the base field's type.
 
 Here is an example configuration:
 
@@ -767,21 +782,9 @@ from nautilus_trader.trading import Strategy
 
 # Configuration definition
 class MyStrategyConfig(StrategyConfig):
-    _CUSTOM_FIELDS = (
-        "instrument_id",
-        "bar_type",
-        "fast_ema_period",
-        "slow_ema_period",
-        "trade_size",
-    )
-
-    def __new__(cls, *args, **kwargs):
-        for field in cls._CUSTOM_FIELDS:
-            kwargs.pop(field, None)
-        return super().__new__(cls, *args, **kwargs)
-
     def __init__(
         self,
+        *,
         instrument_id: InstrumentId,
         bar_type: BarType,
         trade_size: Decimal,
@@ -897,7 +900,7 @@ instrument before the new owner claims it. The transfer is not atomic across str
 report processed between those calls has no active claim and is assigned to the `EXTERNAL` strategy.
 :::
 
-See [External order creation](execution.md#external-order-creation) for how execution and
+See [External order creation](execution/reconciliation.md#external-order-creation) for how execution and
 reconciliation use active claims.
 
 ### Managed GTD expiry
@@ -941,8 +944,8 @@ A strategy registered without `strategy_id` takes its base ID from the strategy 
 
 Because the runtime reads the tag back from the final hyphen-separated part of the strategy ID, an
 `order_id_tag` cannot contain a hyphen. `StrategyConfig(order_id_tag="A-B")` raises a `ValueError`,
-and so does a subclass forwarding that tag through `__new__`. A config class that does not inherit
-from `StrategyConfig` carries the tag to registration instead, which raises a `RuntimeError`.
+and so does a subclass constructed with that keyword. A config class that does not inherit from
+`StrategyConfig` carries the tag to registration instead, which raises a `RuntimeError`.
 
 The trader ID carries a tag in the same way, and its final hyphen-separated part reaches the same
 generated IDs. See [Configure a live trading node](../how_to/configure_live_trading.md) for the

@@ -59,7 +59,7 @@ class RecordingActor(DataActor):
 
     def __init__(self, config: object = None) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self.started = 0
@@ -101,7 +101,7 @@ class NonForwardingActor(DataActor):
 
     def __init__(self, _config: object = None) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         # Deliberately does not forward to `super().__init__()`, so the ID and the Python self
         # reference are both established by registration rather than construction
@@ -137,7 +137,7 @@ class RecordingStrategy(Strategy):
 
     def __init__(self, config: object = None) -> None:
         """
-        Initialize the helper.
+        Initialize the instance.
         """
         super().__init__(config)
         self.started = 0

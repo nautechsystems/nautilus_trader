@@ -40,7 +40,7 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DydxHttpClient {
-    /// Provides a higher-level HTTP client for the [dYdX v4](https://dydx.exchange) Indexer REST API.
+    /// Provides a higher-level HTTP client for the [dYdX v4](https://dydx.trade) Indexer REST API.
     ///
     /// This client wraps the underlying `DydxRawHttpClient` to handle conversions
     /// into the Nautilus domain model, following the two-layer pattern established

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Custom data persistence: shared helpers and orchestration.
+//! Custom data persistence codecs and orchestration.
 //!
 //! Centralizes the logic for appending the `data_type` column and metadata to Arrow batches
 //! (Parquet/Feather), and custom-data write preparation, path construction, and decode logic

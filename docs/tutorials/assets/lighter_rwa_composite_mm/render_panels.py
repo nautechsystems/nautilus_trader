@@ -1,10 +1,11 @@
 """
 Render the Lighter NVDA composite market maker tutorial panels.
 
-Usage:
+After building NautilusTrader from source, run these commands from the repository root:
 
-    uv sync --extra visualization
-    python3 docs/tutorials/assets/lighter_rwa_composite_mm/render_panels.py
+    make sync
+    uv run --project python --no-sync \
+        python docs/tutorials/assets/lighter_rwa_composite_mm/render_panels.py
 
 The renderer uses deterministic replay data to show the quoting equations and
 cash-session operating constraint without shipping a Databento capture or a

@@ -125,7 +125,7 @@ localise where time goes when a pipeline bench regresses.
   state is ~7 µs (`dispatch/fill` minus `state_construct_primed` +
   `state_drop_primed`).
 - **simd-json was piloted and reverted.** A `simd-json` feature flag plus
-  decode helper was prototyped, run side-by-side against `serde_json`, and
+  decoder was prototyped, run side-by-side against `serde_json`, and
   found to be 20-50% **slower** on hyperliquid payload sizes. The mutable-
   buffer requirement forces a per-call `to_vec()`, payloads are too small
   to amortise SIMD setup, and owned-`String` deserialization negates the

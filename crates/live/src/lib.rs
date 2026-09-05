@@ -47,7 +47,7 @@
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs) and auto-enables `node` and
 //!   `streaming`.
 //! - `simulation`: Enables deterministic simulation testing with
-//!   [MadSim](https://github.com/madsim-rs/madsim).
+//!   [MadSim](https://crates.io/crates/madsim).
 //! - `streaming`: Enables the `nautilus-persistence` dependency for streaming configuration and
 //!   requires `node`.
 //!

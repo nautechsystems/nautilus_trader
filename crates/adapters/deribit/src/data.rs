@@ -334,7 +334,7 @@ impl DeribitDataClient {
                 }
             }
             NautilusWsMessage::Deltas(deltas) => {
-                Self::send_data(sender, Data::Deltas(Box::new(deltas)));
+                Self::send_data(sender, Data::BookDeltas(Box::new(deltas)));
             }
             NautilusWsMessage::Instrument(instrument) => {
                 let instrument_any = *instrument;

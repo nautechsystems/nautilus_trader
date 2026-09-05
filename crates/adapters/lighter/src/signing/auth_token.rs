@@ -111,8 +111,8 @@ pub const DEFAULT_AUTH_TOKEN_TTL_SECS: i64 = 7 * 60 * 60;
 ///
 /// Returns the underlying [`crate::common::credential::Credential::private_key`]
 /// failure if the secret cannot be decoded, or any [`build_auth_token`]
-/// failure (clock-before-epoch or, hypothetically, a deadline-validation
-/// breach the helper itself sets).
+/// failure (clock-before-epoch or, hypothetically, a breach caused by its own
+/// deadline validation).
 pub fn build_auth_token_for(
     credential: &crate::common::credential::Credential,
 ) -> anyhow::Result<SecretString> {
@@ -674,7 +674,7 @@ mod tests {
     fn build_auth_token_for_round_trips_against_credential() {
         // Mint a token for the credential and verify the embedded signature
         // against the credential's public key. End-to-end check that the
-        // helper threads private_key, account_index, and api_key_index
+        // `build_auth_token_for` threads private_key, account_index, and api_key_index
         // through the message and signature correctly.
         const PRIVATE_KEY_HEX: &str =
             "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001";

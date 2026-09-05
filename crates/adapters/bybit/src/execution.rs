@@ -63,8 +63,8 @@ use crate::{
         consts::BYBIT_VENUE,
         credential::credential_env_vars,
         enums::{
-            BybitAccountType, BybitEnvironment, BybitOrderSide, BybitOrderType, BybitPositionIdx,
-            BybitPositionMode, BybitProductType, BybitTimeInForce, BybitTpSlMode,
+            BybitAccountType, BybitEnvironment, BybitOrderSide, BybitOrderSmpType, BybitOrderType,
+            BybitPositionIdx, BybitPositionMode, BybitProductType, BybitTimeInForce, BybitTpSlMode,
             resolve_trigger_type,
         },
         parse::{
@@ -401,6 +401,13 @@ impl BybitExecutionClient {
         resolve_bybit_position_idx(mode, order_side, is_reduce_only, manual_override)
     }
 
+    fn resolve_smp_type(
+        &self,
+        manual_override: Option<BybitOrderSmpType>,
+    ) -> Option<BybitOrderSmpType> {
+        manual_override.or(self.config.smp_type)
+    }
+
     async fn apply_account_configuration(&self) -> anyhow::Result<()> {
         self.apply_leverages_setting().await;
         self.apply_position_modes_setting().await;
@@ -581,6 +588,7 @@ impl BybitExecutionClient {
         raw_symbol: &str,
         tp_sl: &BybitTpSlParams,
         position_idx: Option<BybitPositionIdx>,
+        smp_type: Option<BybitOrderSmpType>,
     ) -> anyhow::Result<BybitWsPlaceOrderParams> {
         let bybit_side = BybitOrderSide::from(order.order_side());
         let (bybit_order_type, is_conditional) = Self::map_order_type(order.order_type())?;
@@ -642,6 +650,7 @@ impl BybitExecutionClient {
             sl_limit_price: tp_sl.sl_limit_price.clone(),
             tp_limit_price: tp_sl.tp_limit_price.clone(),
             order_iv: tp_sl.order_iv.clone(),
+            smp_type,
             mmp: tp_sl.mmp,
             position_idx,
             bbo_side_type: tp_sl.bbo_side_type,
@@ -1340,6 +1349,8 @@ impl ExecutionClient for BybitExecutionClient {
             },
         );
 
+        let smp_type = self.resolve_smp_type(tp_sl.smp_type);
+
         if self.config.environment == BybitEnvironment::Demo {
             let http_client = self.http_client.clone();
             let account_id = self.core.account_id;
@@ -1379,6 +1390,7 @@ impl ExecutionClient for BybitExecutionClient {
                         position_idx,
                         bbo_side_type,
                         bbo_level,
+                        smp_type,
                         native_tp_sl_ref,
                     )
                     .await;
@@ -1413,8 +1425,14 @@ impl ExecutionClient for BybitExecutionClient {
         }
 
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
-        let params =
-            Self::build_ws_place_params(&order, product_type, raw_symbol, &tp_sl, position_idx)?;
+        let params = Self::build_ws_place_params(
+            &order,
+            product_type,
+            raw_symbol,
+            &tp_sl,
+            position_idx,
+            smp_type,
+        )?;
 
         let ws_trade = self.ws_trade.clone();
         let dispatch_state = Arc::clone(&self.dispatch_state);
@@ -1604,6 +1622,8 @@ impl ExecutionClient for BybitExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
 
+        let smp_type = self.resolve_smp_type(tp_sl.smp_type);
+
         // Demo mode: submit individually via HTTP
         if self.config.environment == BybitEnvironment::Demo {
             let http_client = self.http_client.clone();
@@ -1676,6 +1696,7 @@ impl ExecutionClient for BybitExecutionClient {
                             position_idx,
                             bbo_side_type,
                             bbo_level.clone(),
+                            smp_type,
                             native_tp_sl_ref,
                         )
                         .await
@@ -1721,9 +1742,15 @@ impl ExecutionClient for BybitExecutionClient {
                 order.is_reduce_only(),
                 tp_sl.position_idx,
             );
-            let params =
-                Self::build_ws_place_params(order, product_type, raw_symbol, &tp_sl, position_idx)
-                    .expect("validated above");
+            let params = Self::build_ws_place_params(
+                order,
+                product_type,
+                raw_symbol,
+                &tp_sl,
+                position_idx,
+                smp_type,
+            )
+            .expect("validated above");
             order_params.push(params);
             client_order_ids.push(order.client_order_id());
         }
@@ -2887,6 +2914,7 @@ mod tests {
             sl_limit_price: None,
             tp_limit_price: None,
             order_iv: None,
+            smp_type: None,
             mmp: None,
             position_idx: None,
             bbo_side_type: None,

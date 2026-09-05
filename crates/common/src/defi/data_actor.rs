@@ -15,7 +15,7 @@
 
 //! DeFi-specific actor functionality.
 //!
-//! This module provides DeFi subscription and unsubscription helper methods
+//! This module provides DeFi subscription and unsubscription methods
 //! for the `DataActorCore`. All code in this module requires the `defi` feature flag.
 
 use nautilus_core::{Params, UUID4};
@@ -41,7 +41,7 @@ use crate::{
 };
 
 impl DataActorCore {
-    /// Helper method for registering block subscriptions from the trait.
+    /// Subscribes the actor to block.
     pub fn subscribe_blocks(
         &mut self,
         topic: MStr<Topic>,
@@ -65,7 +65,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::DefiSubscribe(command));
     }
 
-    /// Helper method for registering pool subscriptions from the trait.
+    /// Subscribes the actor to pool.
     pub fn subscribe_pool(
         &mut self,
         topic: MStr<Topic>,
@@ -89,7 +89,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::DefiSubscribe(command));
     }
 
-    /// Helper method for registering pool swap subscriptions from the trait.
+    /// Subscribes the actor to pool swap.
     pub fn subscribe_pool_swaps(
         &mut self,
         topic: MStr<Topic>,
@@ -113,7 +113,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::DefiSubscribe(command));
     }
 
-    /// Helper method for registering pool liquidity update subscriptions from the trait.
+    /// Subscribes the actor to pool liquidity update.
     pub fn subscribe_pool_liquidity_updates(
         &mut self,
         topic: MStr<Topic>,
@@ -137,7 +137,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::DefiSubscribe(command));
     }
 
-    /// Helper method for registering pool fee collect subscriptions from the trait.
+    /// Subscribes the actor to pool fee collect.
     pub fn subscribe_pool_fee_collects(
         &mut self,
         topic: MStr<Topic>,
@@ -161,7 +161,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::DefiSubscribe(command));
     }
 
-    /// Helper method for registering pool flash event subscriptions from the trait.
+    /// Subscribes the actor to pool flash event.
     pub fn subscribe_pool_flash_events(
         &mut self,
         topic: MStr<Topic>,
@@ -185,7 +185,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::DefiSubscribe(command));
     }
 
-    /// Helper method for unsubscribing from blocks.
+    /// Unsubscribes the actor from blocks.
     pub fn unsubscribe_blocks(
         &mut self,
         chain: Blockchain,
@@ -208,7 +208,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::DefiUnsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from pool definition updates.
+    /// Unsubscribes the actor from pool definition updates.
     pub fn unsubscribe_pool(
         &mut self,
         instrument_id: InstrumentId,
@@ -231,7 +231,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::DefiUnsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from pool swaps.
+    /// Unsubscribes the actor from pool swaps.
     pub fn unsubscribe_pool_swaps(
         &mut self,
         instrument_id: InstrumentId,
@@ -254,7 +254,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::DefiUnsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from pool liquidity updates.
+    /// Unsubscribes the actor from pool liquidity updates.
     pub fn unsubscribe_pool_liquidity_updates(
         &mut self,
         instrument_id: InstrumentId,
@@ -278,7 +278,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::DefiUnsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from pool fee collects.
+    /// Unsubscribes the actor from pool fee collects.
     pub fn unsubscribe_pool_fee_collects(
         &mut self,
         instrument_id: InstrumentId,
@@ -301,7 +301,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::DefiUnsubscribe(command));
     }
 
-    /// Helper method for unsubscribing from pool flash events.
+    /// Unsubscribes the actor from pool flash events.
     pub fn unsubscribe_pool_flash_events(
         &mut self,
         instrument_id: InstrumentId,

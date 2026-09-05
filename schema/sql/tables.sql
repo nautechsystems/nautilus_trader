@@ -203,6 +203,13 @@ CREATE TABLE IF NOT EXISTS "order_event" (
     position_id TEXT,
     commission TEXT,
     tags TEXT[],
+    released_price TEXT,
+    protection_price TEXT,
+    due_post_only BOOLEAN DEFAULT FALSE,
+    correction_id TEXT,
+    is_reopened BOOLEAN DEFAULT FALSE,
+    info JSONB,
+    causation_id TEXT,
     ts_event TEXT NOT NULL,
     ts_init TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -210,6 +217,16 @@ CREATE TABLE IF NOT EXISTS "order_event" (
 );
 -- Bring databases created before trailing-stop activation-price persistence forward
 ALTER TABLE "order_event" ADD COLUMN IF NOT EXISTS activation_price TEXT;
+-- Bring databases created before per-event field persistence forward. Without these columns an
+-- order event round trip silently drops the field, so a restored order differs from the one that
+-- was persisted.
+ALTER TABLE "order_event" ADD COLUMN IF NOT EXISTS released_price TEXT;
+ALTER TABLE "order_event" ADD COLUMN IF NOT EXISTS protection_price TEXT;
+ALTER TABLE "order_event" ADD COLUMN IF NOT EXISTS due_post_only BOOLEAN DEFAULT FALSE;
+ALTER TABLE "order_event" ADD COLUMN IF NOT EXISTS correction_id TEXT;
+ALTER TABLE "order_event" ADD COLUMN IF NOT EXISTS is_reopened BOOLEAN DEFAULT FALSE;
+ALTER TABLE "order_event" ADD COLUMN IF NOT EXISTS info JSONB;
+ALTER TABLE "order_event" ADD COLUMN IF NOT EXISTS causation_id TEXT;
 
 CREATE TABLE IF NOT EXISTS "order_position_index" (
     client_order_id TEXT PRIMARY KEY NOT NULL,
@@ -237,11 +254,20 @@ CREATE TABLE IF NOT EXISTS "position_event" (
     liquidity_side TEXT NOT NULL,
     position_id TEXT NOT NULL,
     commission TEXT,
+    reconciliation BOOLEAN DEFAULT FALSE,
+    info JSONB,
+    causation_id TEXT,
     ts_event TEXT NOT NULL,
     ts_init TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+-- Bring databases created before fill field persistence forward. `position_event` stores
+-- `OrderFilled` and is decoded by the same row mapping as `order_event`, so both tables carry
+-- the same fill columns.
+ALTER TABLE "position_event" ADD COLUMN IF NOT EXISTS reconciliation BOOLEAN DEFAULT FALSE;
+ALTER TABLE "position_event" ADD COLUMN IF NOT EXISTS info JSONB;
+ALTER TABLE "position_event" ADD COLUMN IF NOT EXISTS causation_id TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_position_event_position_id
     ON position_event(position_id, event_sequence);

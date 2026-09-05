@@ -298,7 +298,9 @@ impl PostgresCacheDatabase {
 //
 // An absent instrument-close table otherwise fails only when first queried. Both directions of the
 // exact-average type mismatch are silent: `numeric -> double precision` is an implicit cast so
-// writes truncate, and the row readers use `.ok().flatten()` so reads degrade to `None`.
+// writes truncate, and the row readers use `.ok().flatten()` so reads degrade to `None`. Absent
+// order event columns are silent in both directions too: every insert names them so writes fail
+// and drop the event, while every decoder reads them so `load_orders` yields an empty cache.
 async fn check_schema_migrated(pool: &PgPool) -> Result<(), sqlx::Error> {
     let has_instrument_close: bool = sqlx::query_scalar(
         "SELECT EXISTS (
@@ -331,14 +333,50 @@ async fn check_schema_migrated(pool: &PgPool) -> Result<(), sqlx::Error> {
     .fetch_all(pool)
     .await?;
 
-    if stale.is_empty() {
+    if !stale.is_empty() {
+        return Err(sqlx::Error::Configuration(
+            format!(
+                "Postgres schema is out of date, {} should be `numeric`: {SCHEMA_MIGRATION_COMMAND}",
+                stale.join(", "),
+            )
+            .into(),
+        ));
+    }
+
+    let missing: Vec<String> = sqlx::query_scalar(
+        "SELECT required.table_name || '.' || required.column_name
+        FROM (VALUES
+            ('order_event', 'released_price'),
+            ('order_event', 'protection_price'),
+            ('order_event', 'due_post_only'),
+            ('order_event', 'correction_id'),
+            ('order_event', 'is_reopened'),
+            ('order_event', 'info'),
+            ('order_event', 'causation_id'),
+            ('position_event', 'reconciliation'),
+            ('position_event', 'info'),
+            ('position_event', 'causation_id')
+        ) AS required(table_name, column_name)
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = required.table_name
+              AND column_name = required.column_name
+        )
+        ORDER BY 1",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    if missing.is_empty() {
         return Ok(());
     }
 
     Err(sqlx::Error::Configuration(
         format!(
-            "Postgres schema is out of date, {} should be `numeric`: {SCHEMA_MIGRATION_COMMAND}",
-            stale.join(", "),
+            "Postgres schema is out of date, missing order event columns {}: {SCHEMA_MIGRATION_COMMAND}",
+            missing.join(", "),
         )
         .into(),
     ))

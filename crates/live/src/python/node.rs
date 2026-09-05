@@ -1765,7 +1765,7 @@ fn stop_live_node_detached(py: Python<'_>, node: &mut LiveNode) -> PyResult<()> 
 
 /// Creates a Python config instance from a config path and config dictionary.
 ///
-/// This helper is shared between `add_actor_from_config` and `add_strategy_from_config`.
+/// This constructor is shared by `add_actor_from_config` and `add_strategy_from_config`.
 /// It handles:
 /// 1. Importing the config class from the module path
 /// 2. Converting the `HashMap<String, serde_json::Value>` to a Python dict

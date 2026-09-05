@@ -2,8 +2,8 @@
 
 Backtesting simulates trading against historical data using the same core system components used in
 live trading: built-in engines, the `Cache`, the [MessageBus](../message_bus.md), `Portfolio`,
-[Actors](../actors.md), [Strategies](../strategies.md), [Execution Algorithms](../execution.md), and
-user-defined modules.
+[Actors](../actors.md), [Strategies](../strategies.md),
+[Execution Algorithms](../execution/algorithms.md), and user-defined modules.
 
 A `BacktestEngine` processes a stream of historical data. When the stream is exhausted, the engine
 produces results and performance metrics for analysis. NautilusTrader offers two API levels for

@@ -104,6 +104,6 @@ def on_order_fill_voided(self, event: OrderFillVoided) -> None:
 
 ## Related guides
 
-- [Execution](../execution.md) - Correction application and publication order.
+- [Execution](../execution/) - Correction application and publication order.
 - [OrderFilled](order_filled.md) - The original fill event.
 - [Orders](../orders/) - Order status and state flow.

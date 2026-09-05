@@ -133,10 +133,10 @@ that need direct stream backpressure or own a protocol-specific reconnect sequen
 The `WsTransport` abstraction normalizes text, binary, Ping, Pong, and Close frames together with
 transport errors. `WebSocketConfig.backend` selects either backend at runtime:
 
-| Backend                                                              | Availability                                 | Upgrade headers                           | Proxy behavior                   |
-| -------------------------------------------------------------------- | -------------------------------------------- | ----------------------------------------- | -------------------------------- |
-| [`tokio-tungstenite`](https://github.com/snapview/tokio-tungstenite) | Always compiled                              | Passed through the WebSocket handshake    | HTTP and HTTPS `CONNECT` tunnels |
-| [`sockudo-ws`](https://github.com/sockudo/sockudo-ws)                | Default with the `transport-sockudo` feature | Passed through a local HTTP/1.1 handshake | HTTP and HTTPS `CONNECT` tunnels |
+| Backend                                                           | Availability                                 | Upgrade headers                           | Proxy behavior                   |
+| ----------------------------------------------------------------- | -------------------------------------------- | ----------------------------------------- | -------------------------------- |
+| [`tokio-tungstenite`](https://crates.io/crates/tokio-tungstenite) | Always compiled                              | Passed through the WebSocket handshake    | HTTP and HTTPS `CONNECT` tunnels |
+| [`sockudo-ws`](https://crates.io/crates/sockudo-ws)               | Default with the `transport-sockudo` feature | Passed through a local HTTP/1.1 handshake | HTTP and HTTPS `CONNECT` tunnels |
 
 Disabling default Cargo features removes `sockudo-ws` and makes Tungstenite the default. A recognized
 SOCKS proxy URL logs a warning and connects directly because WebSocket SOCKS tunneling is not
@@ -446,7 +446,7 @@ becomes a permanent regression test.
 
 ### Deterministic network simulation
 
-[`turmoil`](https://github.com/tokio-rs/turmoil) tests compile the production raw TCP and WebSocket
+[`turmoil`](https://crates.io/crates/turmoil) tests compile the production raw TCP and WebSocket
 clients against simulated TCP types through the crate's `net` seam. Fixed seeds make failures
 reproducible. Stressed runs vary task order and message latency, while scenarios inject connection
 drops, partitions and repairs, stalled peers, handshake failures, and disconnects during backoff or

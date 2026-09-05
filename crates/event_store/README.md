@@ -1,6 +1,8 @@
 # nautilus-event-store
 
 [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
+[![Documentation](https://img.shields.io/docsrs/nautilus-event-store)](https://docs.rs/nautilus-event-store/latest/nautilus_event_store/)
+[![crates.io version](https://img.shields.io/crates/v/nautilus-event-store.svg)](https://crates.io/crates/nautilus-event-store)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
@@ -123,7 +125,7 @@ implementation.
 
 ## Storage model
 
-The default backend is [`redb`](https://docs.rs/redb/latest/redb/), a pure-Rust ACID key-value
+The default backend is [`redb`](https://crates.io/crates/redb), a pure-Rust ACID key-value
 store. The backend uses one file per run:
 
 ```text

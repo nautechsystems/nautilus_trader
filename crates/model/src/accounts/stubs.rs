@@ -106,7 +106,7 @@ pub fn cash_account_borrowing_million_usd(
     CashAccount::new(cash_account_state_million_usd, true, true)
 }
 
-/// Helper to calculate commission in test fixtures.
+/// Calculates commission in test fixtures.
 ///
 /// # Panics
 ///

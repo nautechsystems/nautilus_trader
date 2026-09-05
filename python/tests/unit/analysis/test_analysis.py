@@ -17,6 +17,7 @@ Test analysis behavior.
 """
 
 import math
+import sys
 
 import pytest
 
@@ -39,6 +40,7 @@ from nautilus_trader.analysis import MinLoser
 from nautilus_trader.analysis import MinWinner
 from nautilus_trader.analysis import OmegaRatio
 from nautilus_trader.analysis import PortfolioAnalyzer
+from nautilus_trader.analysis import PortfolioStatistic
 from nautilus_trader.analysis import ProfitFactor
 from nautilus_trader.analysis import ReturnsAverage
 from nautilus_trader.analysis import ReturnsAverageLoss
@@ -117,11 +119,15 @@ STATISTIC_METHODS = (
     "calculate_from_realized_pnls",
     "calculate_from_returns",
 )
+# `PortfolioStatistic` shares the calculation surface but is the extension point for
+# user-defined statistics, not a built-in, so it stays out of the built-in inventory.
 EXPOSED_STATISTICS = sorted(
     (
         value
         for value in vars(analysis_module).values()
-        if isinstance(value, type) and all(hasattr(value, method) for method in STATISTIC_METHODS)
+        if isinstance(value, type)
+        and value is not PortfolioStatistic
+        and all(hasattr(value, method) for method in STATISTIC_METHODS)
     ),
     key=lambda cls: cls.__name__,
 )
@@ -444,3 +450,425 @@ def test_portfolio_analyzer_realized_pnls_keeps_unrecorded_snapshot_cycle() -> N
     pnls = analyzer.realized_pnls(usd)
 
     assert pnls == [(snapshot_id.value, 1, 10.0), (position_id.value, 2, 25.0)]
+
+
+class TradeCount(PortfolioStatistic):
+    """
+    Counts closed trades from the realized PnLs it is fed.
+    """
+
+    def calculate_from_realized_pnls(self, realized_pnls: list[float]) -> float | None:
+        """
+        Return the number of closed trades.
+        """
+        return float(len(realized_pnls))
+
+
+class ReturnsSum(PortfolioStatistic):
+    """
+    Sums the returns it is fed.
+    """
+
+    def calculate_from_returns(self, returns: dict[int, float]) -> float | None:
+        """
+        Return the sum of the returns.
+        """
+        return sum(returns.values())
+
+
+class PositionCount(PortfolioStatistic):
+    """
+    Counts the positions it is fed.
+    """
+
+    def calculate_from_positions(self, positions: list) -> float | None:
+        """
+        Return the number of positions.
+        """
+        return float(len(positions))
+
+
+def test_custom_statistic_derives_name_from_class_name() -> None:
+    """
+    Test custom statistic derives name from class name.
+    """
+    assert TradeCount().name == "Trade Count"
+    assert ReturnsSum().name == "Returns Sum"
+    assert PositionCount().name == "Position Count"
+
+
+def test_custom_statistic_name_can_be_overridden() -> None:
+    """
+    Test custom statistic name can be overridden.
+    """
+
+    class Renamed(PortfolioStatistic):
+        @property
+        def name(self) -> str:
+            return "My Metric"
+
+    analyzer = PortfolioAnalyzer()
+    analyzer.register_statistic(Renamed())
+
+    assert analyzer.statistic("My Metric") == "My Metric"
+
+
+def test_custom_statistic_calculates_from_returns() -> None:
+    """
+    Test custom statistic calculates from returns.
+    """
+    analyzer = PortfolioAnalyzer()
+    analyzer.register_statistic(ReturnsSum())
+    analyzer.add_return(1, 0.25)
+    analyzer.add_return(2, 0.75)
+
+    assert analyzer.get_performance_stats_returns() == {"Returns Sum": 1.0}
+
+
+def test_custom_statistic_calculates_from_realized_pnls() -> None:
+    """
+    Test custom statistic calculates from realized pnls.
+    """
+    analyzer = PortfolioAnalyzer()
+    usd = Currency.from_str("USD")
+    analyzer.register_statistic(TradeCount())
+    analyzer.add_trade(PositionId("P-1"), 1, Money(10.0, usd))
+    analyzer.add_trade(PositionId("P-2"), 2, Money(-4.0, usd))
+
+    stats = analyzer.get_performance_stats_pnls(usd, None)
+
+    assert stats["Trade Count"] == 2.0
+
+
+def test_custom_statistic_runs_on_pnls_without_any_trades() -> None:
+    """
+    Test custom statistic runs on pnls without any trades.
+    """
+    analyzer = PortfolioAnalyzer()
+    usd = Currency.from_str("USD")
+    analyzer.register_statistic(TradeCount())
+
+    stats = analyzer.get_performance_stats_pnls(usd, None)
+
+    assert stats["Trade Count"] == 0.0
+
+
+def test_pnl_statistics_reject_unresolved_currency() -> None:
+    """
+    Test pnl statistics reject unresolved currency.
+    """
+    analyzer = PortfolioAnalyzer()
+    analyzer.register_statistic(TradeCount())
+    analyzer.add_trade(PositionId("P-USD"), 1, Money(10.0, Currency.from_str("USD")))
+    analyzer.add_trade(PositionId("P-EUR"), 2, Money(5.0, Currency.from_str("EUR")))
+
+    with pytest.raises(ValueError, match="Currency must be specified"):
+        analyzer.get_performance_stats_pnls(None, None)
+
+
+def test_custom_statistic_calculates_from_positions() -> None:
+    """
+    Test custom statistic calculates from positions.
+    """
+    analyzer = PortfolioAnalyzer()
+    instrument = TestInstrumentProvider.audusd_sim()
+    position = Position(instrument=instrument, fill=make_position_fill(instrument))
+    analyzer.register_statistic(PositionCount())
+
+    analyzer.add_positions([position])
+
+    assert analyzer.get_performance_stats_general() == {"Position Count": 1.0}
+
+
+def test_custom_statistic_receives_native_positions() -> None:
+    """
+    Test custom statistic receives native positions.
+    """
+    received: list = []
+
+    class CapturesPositions(PortfolioStatistic):
+        def calculate_from_positions(self, positions: list) -> float | None:
+            received.extend(positions)
+            return float(len(positions))
+
+    analyzer = PortfolioAnalyzer()
+    instrument = TestInstrumentProvider.audusd_sim()
+    position = Position(instrument=instrument, fill=make_position_fill(instrument))
+    analyzer.register_statistic(CapturesPositions())
+    analyzer.add_positions([position])
+
+    analyzer.get_performance_stats_general()
+
+    assert len(received) == 1
+    assert isinstance(received[0], Position)
+    assert received[0].id == position.id
+
+
+def test_custom_statistic_calculates_from_returns_with_benchmark() -> None:
+    """
+    Test custom statistic calculates from returns with benchmark.
+    """
+
+    class ExcessReturn(PortfolioStatistic):
+        def calculate_from_returns_with_benchmark(
+            self,
+            returns: dict[int, float],
+            benchmark: dict[int, float],
+        ) -> float | None:
+            return sum(returns.values()) - sum(benchmark.values())
+
+    analyzer = PortfolioAnalyzer()
+    analyzer.register_statistic(ExcessReturn())
+    analyzer.add_return(1, 0.5)
+
+    stats = analyzer.get_performance_stats_returns_vs_benchmark({1: 0.2})
+
+    assert stats == {"Excess Return": pytest.approx(0.3)}
+
+
+def test_custom_statistic_unsupported_category_contributes_no_value() -> None:
+    """
+    Test custom statistic unsupported category contributes no value.
+    """
+    analyzer = PortfolioAnalyzer()
+    analyzer.register_statistic(PositionCount())
+    analyzer.add_return(1, 0.25)
+
+    assert analyzer.get_performance_stats_returns() == {}
+    assert analyzer.get_performance_stats_returns_vs_benchmark({1: 0.1}) == {}
+
+
+def test_custom_statistic_replaces_statistic_with_matching_name() -> None:
+    """
+    Test custom statistic replaces statistic with matching name.
+    """
+
+    class FirstImpl(PortfolioStatistic):
+        @property
+        def name(self) -> str:
+            return "Shared Name"
+
+        def calculate_from_returns(self, _returns: dict[int, float]) -> float | None:
+            return 1.0
+
+    class SecondImpl(PortfolioStatistic):
+        @property
+        def name(self) -> str:
+            return "Shared Name"
+
+        def calculate_from_returns(self, _returns: dict[int, float]) -> float | None:
+            return 99.0
+
+    analyzer = PortfolioAnalyzer()
+    analyzer.register_statistic(FirstImpl())
+    analyzer.register_statistic(SecondImpl())
+    analyzer.add_return(1, 0.25)
+
+    assert analyzer.get_performance_stats_returns() == {"Shared Name": 99.0}
+
+
+def test_custom_statistic_deregisters_by_name() -> None:
+    """
+    Test custom statistic deregisters by name.
+    """
+    analyzer = PortfolioAnalyzer()
+    analyzer.register_statistic(ReturnsSum())
+    analyzer.add_return(1, 0.25)
+
+    analyzer.deregister_statistic(ReturnsSum())
+
+    assert analyzer.statistic("Returns Sum") is None
+    assert analyzer.get_performance_stats_returns() == {}
+
+
+def test_custom_statistic_deregister_unregistered_is_noop() -> None:
+    """
+    Test custom statistic deregister unregistered is noop.
+    """
+    analyzer = PortfolioAnalyzer()
+    analyzer.register_statistic(ReturnsSum())
+
+    analyzer.deregister_statistic(TradeCount())
+
+    assert analyzer.statistic("Returns Sum") == "Returns Sum"
+
+
+def test_custom_statistic_retained_across_reset() -> None:
+    """
+    Test custom statistic retained across reset.
+    """
+    analyzer = PortfolioAnalyzer()
+    analyzer.register_statistic(ReturnsSum())
+    analyzer.add_return(1, 0.25)
+
+    analyzer.reset()
+    analyzer.add_return(2, 0.75)
+
+    assert analyzer.get_performance_stats_returns() == {"Returns Sum": 0.75}
+
+
+def test_custom_statistic_error_does_not_block_other_statistics() -> None:
+    """
+    Test custom statistic error does not block other statistics.
+    """
+
+    class Raises(PortfolioStatistic):
+        def calculate_from_returns(self, _returns: dict[int, float]) -> float | None:
+            raise RuntimeError("boom")
+
+    analyzer = PortfolioAnalyzer()
+    analyzer.register_statistic(Raises())
+    analyzer.register_statistic(ReturnsSum())
+    analyzer.add_return(1, 0.25)
+
+    assert analyzer.get_performance_stats_returns() == {"Returns Sum": 0.25}
+
+
+def test_custom_statistic_error_is_reported_as_unraisable() -> None:
+    """
+    Test custom statistic error is reported as unraisable.
+    """
+
+    class Raises(PortfolioStatistic):
+        def calculate_from_returns(self, _returns: dict[int, float]) -> float | None:
+            raise RuntimeError("boom")
+
+    captured: list = []
+    original_hook = sys.unraisablehook
+    sys.unraisablehook = captured.append
+    try:
+        analyzer = PortfolioAnalyzer()
+        analyzer.register_statistic(Raises())
+        analyzer.add_return(1, 0.25)
+        analyzer.get_performance_stats_returns()
+    finally:
+        sys.unraisablehook = original_hook
+
+    assert [str(c.exc_value) for c in captured] == ["boom"]
+
+
+def test_custom_statistic_non_numeric_value_is_skipped() -> None:
+    """
+    Test custom statistic non numeric value is skipped.
+    """
+
+    class ReturnsText(PortfolioStatistic):
+        def calculate_from_returns(self, _returns: dict[int, float]) -> float | None:
+            return "not a number"  # type: ignore[return-value]
+
+    analyzer = PortfolioAnalyzer()
+    analyzer.register_statistic(ReturnsText())
+    analyzer.register_statistic(ReturnsSum())
+    analyzer.add_return(1, 0.25)
+
+    assert analyzer.get_performance_stats_returns() == {"Returns Sum": 0.25}
+
+
+def test_custom_statistic_none_value_is_skipped() -> None:
+    """
+    Test custom statistic none value is skipped.
+    """
+
+    class Undefined(PortfolioStatistic):
+        def calculate_from_returns(self, _returns: dict[int, float]) -> float | None:
+            return None
+
+    analyzer = PortfolioAnalyzer()
+    analyzer.register_statistic(Undefined())
+    analyzer.add_return(1, 0.25)
+
+    assert analyzer.get_performance_stats_returns() == {}
+
+
+@pytest.mark.parametrize("name", ["WinRate", "MaxDrawdown", "ProfitFactor", "Alpha", "CAGR"])
+def test_custom_statistic_may_reuse_a_built_in_class_name(name: str) -> None:
+    """
+    Test custom statistic may reuse a built in class name.
+    """
+
+    def calculate_from_returns(self: object, _returns: dict[int, float]) -> float | None:
+        return 7.0
+
+    cls = type(name, (PortfolioStatistic,), {"calculate_from_returns": calculate_from_returns})
+    analyzer = PortfolioAnalyzer()
+    analyzer.register_statistic(cls())
+    analyzer.add_return(1, 0.25)
+
+    assert analyzer.get_performance_stats_returns() == {cls().name: 7.0}
+
+
+def test_built_in_statistic_still_registers_natively() -> None:
+    """
+    Test built in statistic still registers natively.
+    """
+    analyzer = PortfolioAnalyzer()
+    analyzer.register_statistic(WinRate())
+    usd = Currency.from_str("USD")
+    analyzer.add_trade(PositionId("P-1"), 1, Money(10.0, usd))
+    analyzer.add_trade(PositionId("P-2"), 2, Money(-10.0, usd))
+
+    stats = analyzer.get_performance_stats_pnls(usd, None)
+
+    assert stats["Win Rate"] == 0.5
+
+
+def test_duck_typed_statistic_without_base_class() -> None:
+    """
+    Test duck typed statistic without base class.
+    """
+
+    class Standalone:
+        name = "Standalone"
+
+        def calculate_from_returns(self, returns: dict[int, float]) -> float:
+            return sum(returns.values()) * 2.0
+
+    analyzer = PortfolioAnalyzer()
+    analyzer.register_statistic(Standalone())
+    analyzer.add_return(1, 0.25)
+
+    assert analyzer.get_performance_stats_returns() == {"Standalone": 0.5}
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (3, 3.0),
+        (3.5, 3.5),
+        (True, 1.0),
+    ],
+)
+def test_custom_statistic_coerces_numeric_value(value: object, expected: float) -> None:
+    """
+    Test custom statistic coerces numeric value.
+    """
+
+    class ReturnsValue(PortfolioStatistic):
+        def calculate_from_returns(self, _returns: dict[int, float]) -> float | None:
+            return value  # type: ignore[return-value]
+
+    analyzer = PortfolioAnalyzer()
+    analyzer.register_statistic(ReturnsValue())
+    analyzer.add_return(1, 0.25)
+
+    assert analyzer.get_performance_stats_returns() == {"Returns Value": expected}
+
+
+@pytest.mark.parametrize(
+    "statistic",
+    [
+        object(),
+        type("NoName", (), {})(),
+        type("EmptyName", (), {"name": ""})(),
+        type("BlankName", (), {"name": "   "})(),
+        type("NonStringName", (), {"name": 7})(),
+    ],
+)
+def test_register_statistic_rejects_invalid_name(statistic: object) -> None:
+    """
+    Test register statistic rejects invalid name.
+    """
+    analyzer = PortfolioAnalyzer()
+
+    with pytest.raises(ValueError, match="Invalid statistic"):
+        analyzer.register_statistic(statistic)

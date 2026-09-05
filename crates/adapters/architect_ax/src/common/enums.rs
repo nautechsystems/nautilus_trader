@@ -317,7 +317,7 @@ impl From<OrderSide> for AxOrderSide {
 /// How a perpetual symbol's funding accrues over a trading day.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/marketdata/get-funding-slots>
+/// - <https://docs.architect.exchange/api-reference>
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AxFundingVariant {
@@ -330,7 +330,7 @@ pub enum AxFundingVariant {
 /// Status of one funding slot within a `GET /funding-slots` trading day.
 ///
 /// # References
-/// - <https://docs.architect.exchange/api-reference/marketdata/get-funding-slots>
+/// - <https://docs.architect.exchange/api-reference>
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AxFundingSlotStatus {

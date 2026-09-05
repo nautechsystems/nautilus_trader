@@ -7,6 +7,14 @@
 #
 # [View source on GitHub](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/how_to/loading_external_data.py).
 
+# %% [markdown]
+# ## Prerequisites
+#
+# - Python 3.12+
+# - [NautilusTrader](https://pypi.org/project/nautilus_trader/) 2.x installed
+#   (`pip install -U --pre nautilus_trader`)
+# - pandas (`pip install pandas`), needed only for the histdata path below
+
 # %%
 import os
 import shutil
@@ -17,6 +25,9 @@ from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.model import AccountType
+from nautilus_trader.model import Currency
+from nautilus_trader.model import OmsType
 from nautilus_trader.model import Quantity
 from nautilus_trader.persistence import ParquetDataCatalog
 from nautilus_trader.testkit.providers import TestDataProvider
@@ -32,21 +43,38 @@ from nautilus_trader.trading import EmaCrossConfig
 # variable to the parent directory if your data lives elsewhere.
 # `TestDataProvider.quotes_from_histdata_csv` converts the rows into Nautilus
 # `QuoteTick` objects.
+#
+# Without a download, the how-to falls back to 20,000 bundled AUD/USD quote
+# ticks so it still runs end to end.
 
 # %%
 DATA_DIR = Path(os.environ.get("NAUTILUS_DATA_DIR", "~/Downloads/Data")).expanduser() / "HISTDATA"
 
-# %%
-path = DATA_DIR
-raw_files = [
-    f for f in path.iterdir() if f.is_file() and (f.suffix == ".csv" or f.name.endswith(".csv.gz"))
-]
-assert raw_files, f"Unable to find any data files in directory {path}"
+raw_files = (
+    sorted(
+        f
+        for f in DATA_DIR.iterdir()
+        if f.is_file() and (f.suffix == ".csv" or f.name.endswith(".csv.gz"))
+    )
+    if DATA_DIR.is_dir()
+    else []
+)
 raw_files
 
 # %%
-EURUSD = TestInstrumentProvider.default_fx_ccy("EUR/USD")
-ticks = TestDataProvider.quotes_from_histdata_csv(EURUSD, raw_files[0])
+if raw_files:
+    instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD")
+    ticks = TestDataProvider.quotes_from_histdata_csv(instrument, raw_files[0])
+else:
+    instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+    ticks = TestDataProvider.quotes_from_truefx_csv(
+        instrument,
+        "truefx/audusd-ticks.csv",
+        max_rows=20_000,
+    )
+
+# Vendor exports are not always monotonic; the catalog requires ascending timestamps
+ticks.sort(key=lambda tick: tick.ts_init)
 
 # %% [markdown]
 # ## Write to the data catalog
@@ -66,7 +94,7 @@ CATALOG_PATH.mkdir(parents=True)
 catalog = ParquetDataCatalog(str(CATALOG_PATH))
 
 # %%
-catalog.write_instruments([EURUSD])
+catalog.write_instruments([instrument])
 catalog.write_quote_ticks(ticks)
 
 # %%
@@ -77,7 +105,7 @@ catalog.instruments()
 start = ticks[0].ts_event
 end = ticks[-1].ts_event + 1
 
-ticks = catalog.query_quote_ticks(identifiers=[EURUSD.id.value], start=start, end=end)
+ticks = catalog.query_quote_ticks(identifiers=[instrument.id.value], start=start, end=end)
 ticks[:10]
 
 # %% [markdown]
@@ -93,9 +121,9 @@ instrument = catalog.instruments()[0]
 venue_configs = [
     BacktestVenueConfig(
         name="SIM",
-        oms_type="HEDGING",
-        account_type="MARGIN",
-        base_currency="USD",
+        oms_type=OmsType.HEDGING,
+        account_type=AccountType.MARGIN,
+        base_currency=Currency.from_str("USD"),
         starting_balances=["1000000 USD"],
     ),
 ]

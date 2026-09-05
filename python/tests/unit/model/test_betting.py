@@ -78,9 +78,9 @@ def test_bet_position_add_bets_and_reset() -> None:
     assert position.exposure == Decimal(0)
 
 
-def test_betting_helpers_create_expected_bets() -> None:
+def test_betting_conversions_create_expected_bets() -> None:
     """
-    Test betting helpers create expected bets.
+    Test betting conversions create expected bets.
     """
     probability_bet = probability_to_bet(Decimal("0.4"), Decimal(10), OrderSide.BUY)
     inverse_bet = inverse_probability_to_bet(Decimal("0.4"), Decimal(10), OrderSide.SELL)
@@ -106,9 +106,9 @@ def test_calc_bets_pnl() -> None:
     assert calc_bets_pnl(bets) == sum((bet.outcome_win_payoff() for bet in bets), Decimal(0))
 
 
-def test_bet_side_helpers() -> None:
+def test_bet_side_conversions() -> None:
     """
-    Test bet side helpers.
+    Test bet side conversions.
     """
     assert BetSide.from_str("BACK") == BetSide.BACK
     assert BetSide.from_order_side(OrderSide.BUY) == BetSide.BACK

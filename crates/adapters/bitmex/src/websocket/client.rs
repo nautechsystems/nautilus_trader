@@ -13,7 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides the WebSocket client integration for the [BitMEX](https://bitmex.com) WebSocket API.
+//! Provides the WebSocket client integration for the
+//! [BitMEX](https://www.bitmex.com) WebSocket API.
 //!
 //! This module defines and implements a [`BitmexWebSocketClient`] for
 //! connecting to BitMEX WebSocket streams. It handles authentication (when credentials
@@ -68,7 +69,8 @@ use crate::common::{
     enums::BitmexEnvironment,
 };
 
-/// Provides a WebSocket client for connecting to the [BitMEX](https://bitmex.com) real-time API.
+/// Provides a WebSocket client for connecting to the
+/// [BitMEX](https://www.bitmex.com) real-time API.
 ///
 /// Key runtime patterns:
 /// - Authentication handshakes are managed by the internal auth tracker, ensuring resubscriptions

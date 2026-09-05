@@ -711,7 +711,7 @@ pub(crate) fn decode_object_store_segment(segment: &str) -> String {
         .map_or_else(|_| segment.to_string(), String::from)
 }
 
-/// Helper function to create local file system object store
+/// Creates a local filesystem object store.
 fn create_local_store(
     uri: &str,
     is_file_uri: bool,
@@ -726,7 +726,7 @@ fn create_local_store(
     Ok((Arc::new(local_store), String::new(), uri.to_string()))
 }
 
-/// Helper function to create S3 object store with options.
+/// Creates an S3 object store with options.
 #[cfg(feature = "cloud")]
 fn create_s3_store(
     uri: &str,
@@ -772,7 +772,7 @@ fn create_s3_store(
     Ok((Arc::new(s3_store), path, uri.to_string()))
 }
 
-/// Helper function to create GCS object store with options.
+/// Creates a GCS object store with options.
 #[cfg(feature = "cloud")]
 fn create_gcs_store(
     uri: &str,
@@ -821,7 +821,7 @@ fn create_gcs_store(
     Ok((Arc::new(gcs_store), path, uri.to_string()))
 }
 
-/// Helper function to create Azure object store with options.
+/// Creates an Azure object store with options.
 #[cfg(feature = "cloud")]
 fn create_azure_store(
     uri: &str,
@@ -880,7 +880,7 @@ fn create_azure_store(
     Ok((Arc::new(azure_store), path, uri.to_string()))
 }
 
-/// Helper function to create Azure object store from abfs:// URI with options.
+/// Creates an Azure object store from an `abfs://` URI with options.
 #[cfg(feature = "cloud")]
 fn create_abfs_store(
     uri: &str,
@@ -951,7 +951,7 @@ fn create_abfs_store(
     Ok((Arc::new(azure_store), path, uri.to_string()))
 }
 
-/// Helper function to create HTTP object store with options.
+/// Creates an HTTP object store with options.
 #[cfg(feature = "cloud")]
 fn create_http_store(
     uri: &str,
@@ -979,7 +979,7 @@ fn create_http_store(
     Ok((Arc::new(http_store), path, uri.to_string()))
 }
 
-/// Helper function to parse URL and extract path component.
+/// Parses a URL and extracts its path component.
 #[cfg(feature = "cloud")]
 fn parse_url_and_path(uri: &str) -> anyhow::Result<(url::Url, String)> {
     let url = url::Url::parse(uri)?;
@@ -987,7 +987,7 @@ fn parse_url_and_path(uri: &str) -> anyhow::Result<(url::Url, String)> {
     Ok((url, path))
 }
 
-/// Helper function to extract host from URL with error handling.
+/// Extracts the host from a URL.
 #[cfg(feature = "cloud")]
 fn extract_host(url: &url::Url, error_msg: &str) -> anyhow::Result<String> {
     url.host_str()

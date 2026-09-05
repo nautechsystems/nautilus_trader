@@ -15,14 +15,7 @@
 
 //! Live execution client implementation for the Binance Spot adapter.
 
-use std::{
-    future::Future,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::Duration,
-};
+use std::{future::Future, sync::Arc, time::Duration};
 
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
@@ -48,7 +41,7 @@ use nautilus_core::{
 };
 use nautilus_live::{
     ExecutionClientCore, ExecutionEventEmitter, SocketControlFactory,
-    task::{TaskGroup, TaskGroupGuard, TaskSpawner},
+    task::{TaskGroup, TaskGroupGuard, TaskRef, TaskSpawner},
 };
 use nautilus_model::{
     accounts::AccountAny,
@@ -140,9 +133,9 @@ pub struct BinanceSpotExecutionClient {
     http_client: BinanceSpotHttpClient,
     socket_factory: SocketControlFactory,
     ws_trading_client: Option<BinanceSpotWsTradingClient>,
-    ws_trading_dispatch_active: Arc<AtomicBool>,
+    ws_trading_dispatch: Option<TaskRef>,
     ws_user_data_client: Arc<Mutex<Option<BinanceSpotWsTradingClient>>>,
-    ws_user_data_dispatch_active: Arc<AtomicBool>,
+    ws_user_data_dispatch: Option<TaskRef>,
     listen_key: Option<SecretString>,
     us_credentials: Option<(SecretString, SecretString)>,
     ws_authenticated: Arc<tokio::sync::Notify>,
@@ -244,9 +237,9 @@ impl BinanceSpotExecutionClient {
             http_client,
             socket_factory,
             ws_trading_client,
-            ws_trading_dispatch_active: Arc::new(AtomicBool::new(false)),
+            ws_trading_dispatch: None,
             ws_user_data_client: Arc::new(Mutex::new(None)),
-            ws_user_data_dispatch_active: Arc::new(AtomicBool::new(false)),
+            ws_user_data_dispatch: None,
             listen_key: None,
             us_credentials,
             ws_authenticated: Arc::new(tokio::sync::Notify::new()),
@@ -296,9 +289,13 @@ impl BinanceSpotExecutionClient {
 
     fn ws_user_data_active(&self) -> bool {
         let dispatch_running = if self.config.us {
-            self.ws_user_data_dispatch_active.load(Ordering::Acquire)
+            self.ws_user_data_dispatch
+                .as_ref()
+                .is_some_and(TaskRef::is_active)
         } else {
-            self.ws_trading_dispatch_active.load(Ordering::Acquire)
+            self.ws_trading_dispatch
+                .as_ref()
+                .is_some_and(TaskRef::is_active)
         };
         let user_data_active = if self.config.us {
             self.ws_user_data_client
@@ -671,16 +668,12 @@ impl BinanceSpotExecutionClient {
         let ws_user_data_subscribed = self.ws_user_data_subscribed.clone();
         let (setup_error_tx, _setup_error_rx) = tokio::sync::mpsc::unbounded_channel();
         let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
-        let dispatch_active = Arc::clone(&self.ws_user_data_dispatch_active);
         let task_spawner = self
             .session_tasks
             .spawner()
             .context("Binance Spot session task admission is closed")?;
 
-        if let Err(e) = self.session_tasks.spawn(async move {
-            dispatch_active.store(true, Ordering::Release);
-            let _active = DispatchActiveGuard(dispatch_active);
-
+        let future = async move {
             while let Some(message) = ws_clone.recv().await {
                 if matches!(&message, BinanceSpotWsTradingMessage::Reconnected) {
                     ws_clone.mark_user_data_active();
@@ -701,9 +694,11 @@ impl BinanceSpotExecutionClient {
                 );
             }
             log::warn!("Binance US user data dispatch loop ended");
-        }) {
-            return Err(e.into());
-        }
+        };
+        let dispatch = self
+            .session_tasks
+            .spawn_named("binance-spot-user-data-dispatch", future)?;
+        self.ws_user_data_dispatch = Some(dispatch);
 
         let keepalive_http = self.http_client.clone();
         let keepalive_key = listen_key.clone();
@@ -936,15 +931,12 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                     let (ws_setup_error_tx, mut ws_setup_error_rx) =
                         tokio::sync::mpsc::unbounded_channel();
                     let seen_trade_ids = std::sync::Arc::new(Mutex::new(FifoCache::new()));
-                    let dispatch_active = Arc::clone(&self.ws_trading_dispatch_active);
                     let task_spawner = self
                         .session_tasks
                         .spawner()
                         .context("Binance Spot session task admission is closed")?;
 
-                    self.session_tasks.spawn(async move {
-                        dispatch_active.store(true, Ordering::Release);
-                        let _active = DispatchActiveGuard(dispatch_active);
+                    let future = async move {
                         let mut resubscribing = false;
 
                         loop {
@@ -1039,7 +1031,11 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                                 }
                             }
                         }
-                    })?;
+                    };
+                    let dispatch = self
+                        .session_tasks
+                        .spawn_named("binance-spot-trading-dispatch", future)?;
+                    self.ws_trading_dispatch = Some(dispatch);
 
                     if let Err(e) = ws_trading.session_logon().await {
                         let reason = format!("WS session logon failed: {e}");
@@ -2110,14 +2106,6 @@ fn validate_order(order: &impl Order) -> Result<(), OrderDeniedReason> {
     }
 
     Ok(())
-}
-
-struct DispatchActiveGuard(Arc<AtomicBool>);
-
-impl Drop for DispatchActiveGuard {
-    fn drop(&mut self) {
-        self.0.store(false, Ordering::Release);
-    }
 }
 
 fn max_trade_id(reports: &[FillReport]) -> anyhow::Result<i64> {

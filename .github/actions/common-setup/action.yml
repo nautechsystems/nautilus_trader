@@ -273,7 +273,8 @@ runs:
       if: inputs.build-type == 'pre-commit'
       shell: bash
       run: >-
-        VIRTUAL_ENV="" uv sync
+        VIRTUAL_ENV=""
+        uv sync
         --project python
         --group dev
         --extra visualization

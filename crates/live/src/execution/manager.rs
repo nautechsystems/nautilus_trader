@@ -3624,8 +3624,6 @@ impl ExecutionManager {
             .purge_account_events(ts_now, lookback_secs);
     }
 
-    // Private helper methods
-
     fn get_order(&self, client_order_id: ClientOrderId) -> Option<OrderAny> {
         self.cache
             .borrow()

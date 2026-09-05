@@ -1395,12 +1395,12 @@ class FailingStrategy(CommandStrategy):
         let (trader, controller_id) = create_running_controller();
         let controller_actor_id = controller_id.inner();
 
-        let helper_actor_id = {
+        let target_actor_id = {
             let controller = try_get_actor_unchecked::<Controller>(&controller_actor_id).unwrap();
             controller
                 .create_actor(
                     TestDataActor::new(DataActorConfig {
-                        actor_id: Some(ActorId::from("HelperActor-001")),
+                        actor_id: Some(ActorId::from("TargetActor-001")),
                         ..Default::default()
                     }),
                     true,
@@ -1418,7 +1418,7 @@ class FailingStrategy(CommandStrategy):
                             order_id_tag: Some("001".to_string()),
                             ..Default::default()
                         },
-                        helper_actor_id,
+                        target_actor_id,
                     ),
                     false,
                 )
@@ -1428,10 +1428,10 @@ class FailingStrategy(CommandStrategy):
         Controller::send(&start_strategy_command(strategy_id)).unwrap();
         Controller::send(&ControllerCommand::ExitMarket(strategy_id)).unwrap();
 
-        let helper_actor =
-            try_get_actor_unchecked::<TestDataActor>(&helper_actor_id.inner()).unwrap();
-        assert_eq!(helper_actor.state(), ComponentState::Stopped);
-        drop(helper_actor);
+        let target_actor =
+            try_get_actor_unchecked::<TestDataActor>(&target_actor_id.inner()).unwrap();
+        assert_eq!(target_actor.state(), ComponentState::Stopped);
+        drop(target_actor);
         assert!(
             try_get_actor_unchecked::<ReentrantExitStrategy>(&strategy_id.inner())
                 .unwrap()
@@ -1440,7 +1440,7 @@ class FailingStrategy(CommandStrategy):
 
         Controller::send(&stop_strategy_command(strategy_id)).unwrap();
         Controller::send(&remove_strategy_command(strategy_id)).unwrap();
-        Controller::send(&remove_actor_command(helper_actor_id)).unwrap();
+        Controller::send(&remove_actor_command(target_actor_id)).unwrap();
         trader.borrow_mut().stop().unwrap();
         trader.borrow_mut().dispose_components().unwrap();
     }

@@ -36,10 +36,11 @@
 //! or as part of a Rust only build.
 //!
 //! - `extension-module`: Builds as a Python extension module.
-//! - `hypersync`: Enables the [HyperSync](https://envio.dev/#hypersync) client integration.
+//! - `hypersync`: Enables the
+//!   [`hypersync-client`](https://crates.io/crates/hypersync-client) integration.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `turmoil`: Enables deterministic network simulation testing with
-//!   [turmoil](https://github.com/tokio-rs/turmoil).
+//!   [turmoil](https://crates.io/crates/turmoil).
 
 #![warn(rustc::all)]
 #![allow(

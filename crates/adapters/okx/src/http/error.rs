@@ -20,6 +20,8 @@
 //! The types below mirror that structure and are reused across the entire
 //! crate.
 
+use std::time::Duration;
+
 use nautilus_network::http::{HttpClientError, StatusCode};
 use serde::Deserialize;
 use thiserror::Error;
@@ -76,9 +78,22 @@ pub enum OKXHttpError {
     /// Errors returned directly by OKX (non-zero code).
     #[error("OKX error {error_code}: {message}")]
     OkxError { error_code: String, message: String },
-    /// Failure during JSON serialization/deserialization.
-    #[error("JSON error: {0}")]
-    JsonError(String),
+    /// Temporary errors returned by OKX.
+    #[error("Temporary OKX error {error_code}: {message}")]
+    RetryableOkxError {
+        error_code: String,
+        message: String,
+        retry_after: Option<Duration>,
+    },
+    /// Failure while serializing an outbound request.
+    #[error("Request serialization error: {0}")]
+    RequestSerialization(String),
+    /// The response body is not valid JSON.
+    #[error("Malformed response: {0}")]
+    MalformedResponse(String),
+    /// The response JSON does not match the expected schema.
+    #[error("Response decoding error: {0}")]
+    ResponseDecoding(String),
     /// Parameter validation error.
     #[error("Parameter validation error: {0}")]
     ValidationError(String),
@@ -88,7 +103,14 @@ pub enum OKXHttpError {
     /// Wrapping the underlying HttpClientError from the network crate.
     #[error("Network error: {0}")]
     HttpClientError(#[from] HttpClientError),
-    /// Any unknown HTTP status or unexpected response from OKX.
+    /// A temporary HTTP status without a decodable OKX error envelope.
+    #[error("Temporary HTTP status code {status}: {body}")]
+    RetryableStatus {
+        status: StatusCode,
+        body: String,
+        retry_after: Option<Duration>,
+    },
+    /// Any permanent unknown HTTP status or unexpected response from OKX.
     #[error("Unexpected HTTP status code {status}: {body}")]
     UnexpectedStatus { status: StatusCode, body: String },
     /// A single retry attempt exceeded its configured timeout.
@@ -108,15 +130,33 @@ impl From<String> for OKXHttpError {
     }
 }
 
-// Allow use of the `?` operator on `serde_json` results inside the HTTP
-// client implementation by converting them into our typed error.
+// Response decoding is classified explicitly; this conversion handles outbound serialization
 impl From<serde_json::Error> for OKXHttpError {
     fn from(error: serde_json::Error) -> Self {
-        Self::JsonError(error.to_string())
+        Self::RequestSerialization(error.to_string())
     }
 }
 
 impl OKXHttpError {
+    pub(crate) fn from_venue_response(
+        error_code: String,
+        message: String,
+        retry_after: Option<Duration>,
+    ) -> Self {
+        if should_retry_error_code(&error_code) {
+            Self::RetryableOkxError {
+                error_code,
+                message,
+                retry_after,
+            }
+        } else {
+            Self::OkxError {
+                error_code,
+                message,
+            }
+        }
+    }
+
     /// Returns whether OKX reported that the requested order does not exist.
     #[must_use]
     pub fn is_order_not_found(&self) -> bool {
@@ -129,13 +169,26 @@ impl OKXHttpError {
     /// Returns whether this error is retryable.
     #[must_use]
     pub fn is_retryable(&self) -> bool {
+        matches!(
+            self,
+            Self::HttpClientError(
+                HttpClientError::TransportError(_) | HttpClientError::TimeoutError(_)
+            ) | Self::RetryableOkxError { .. }
+                | Self::RetryableStatus { .. }
+                | Self::OperationTimeout { .. }
+        ) || matches!(
+            self,
+            Self::OkxError { error_code, .. } if should_retry_error_code(error_code)
+        )
+    }
+
+    /// Returns the venue or transport-provided minimum retry delay.
+    #[must_use]
+    pub const fn retry_after(&self) -> Option<Duration> {
         match self {
-            Self::HttpClientError(_) | Self::OperationTimeout { .. } => true,
-            Self::UnexpectedStatus { status, .. } => {
-                status.as_u16() >= 500 || status.as_u16() == 429
-            }
-            Self::OkxError { error_code, .. } => should_retry_error_code(error_code),
-            _ => false,
+            Self::RetryableOkxError { retry_after, .. }
+            | Self::RetryableStatus { retry_after, .. } => *retry_after,
+            _ => None,
         }
     }
 }
@@ -147,22 +200,75 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[case(OKXHttpError::HttpClientError(HttpClientError::Error("timeout".to_string())), true)]
-    #[case(OKXHttpError::UnexpectedStatus { status: StatusCode::INTERNAL_SERVER_ERROR, body: String::new() }, true)]
-    #[case(OKXHttpError::UnexpectedStatus { status: StatusCode::TOO_MANY_REQUESTS, body: String::new() }, true)]
+    #[case(OKXHttpError::HttpClientError(HttpClientError::TransportError("reset".to_string())), true)]
+    #[case(OKXHttpError::HttpClientError(HttpClientError::Error("invalid header".to_string())), false)]
+    #[case(OKXHttpError::RetryableStatus { status: StatusCode::INTERNAL_SERVER_ERROR, body: String::new(), retry_after: None }, true)]
+    #[case(OKXHttpError::RetryableStatus { status: StatusCode::TOO_MANY_REQUESTS, body: String::new(), retry_after: None }, true)]
     #[case(OKXHttpError::UnexpectedStatus { status: StatusCode::FORBIDDEN, body: String::new() }, false)]
-    #[case(OKXHttpError::OkxError { error_code: "50001".to_string(), message: String::new() }, true)]
-    #[case(OKXHttpError::OkxError { error_code: "50011".to_string(), message: String::new() }, true)]
+    #[case(OKXHttpError::RetryableOkxError { error_code: "50001".to_string(), message: String::new(), retry_after: None }, true)]
+    #[case(OKXHttpError::RetryableOkxError { error_code: "50011".to_string(), message: String::new(), retry_after: None }, true)]
+    #[case(OKXHttpError::OkxError { error_code: "50013".to_string(), message: String::new() }, true)]
     #[case(OKXHttpError::OkxError { error_code: "51000".to_string(), message: String::new() }, false)]
-    #[case(OKXHttpError::JsonError("bad".to_string()), false)]
+    #[case(OKXHttpError::RequestSerialization("bad".to_string()), false)]
+    #[case(OKXHttpError::MalformedResponse("bad".to_string()), false)]
+    #[case(OKXHttpError::ResponseDecoding("bad".to_string()), false)]
     #[case(OKXHttpError::ValidationError("bad".to_string()), false)]
     #[case(OKXHttpError::MissingCredentials, false)]
     #[case(OKXHttpError::Canceled("shutdown".to_string()), false)]
+    #[case(OKXHttpError::HttpClientError(HttpClientError::InvalidProxy("timeout".to_string())), false)]
+    #[case(OKXHttpError::HttpClientError(HttpClientError::ClientBuildError("timeout".to_string())), false)]
     #[case(OKXHttpError::OperationTimeout { timeout_ms: 1_000 }, true)]
     #[case(OKXHttpError::RetryBudgetExceeded("budget".to_string()), false)]
     #[case(OKXHttpError::EmptyResponse, false)]
     fn test_is_retryable(#[case] error: OKXHttpError, #[case] expected: bool) {
         assert_eq!(error.is_retryable(), expected);
+    }
+
+    #[rstest]
+    fn test_retryability_uses_error_type_not_message() {
+        let message = "connection reset".to_string();
+        let transport =
+            OKXHttpError::HttpClientError(HttpClientError::TransportError(message.clone()));
+        let permanent = OKXHttpError::HttpClientError(HttpClientError::Error(message));
+
+        assert!(transport.is_retryable());
+        assert!(!permanent.is_retryable());
+    }
+
+    #[rstest]
+    fn test_from_venue_response_classifies_retryable_code() {
+        let delay = Duration::from_secs(2);
+
+        let error = OKXHttpError::from_venue_response(
+            "50013".to_string(),
+            "System busy".to_string(),
+            Some(delay),
+        );
+
+        assert!(matches!(
+            error,
+            OKXHttpError::RetryableOkxError {
+                error_code,
+                message,
+                retry_after: Some(actual_delay),
+            } if error_code == "50013" && message == "System busy" && actual_delay == delay
+        ));
+    }
+
+    #[rstest]
+    fn test_retry_after_is_exposed_only_by_retryable_response_errors() {
+        let delay = Duration::from_secs(5);
+        let rate_limit = OKXHttpError::RetryableOkxError {
+            error_code: "50011".to_string(),
+            message: "Request too frequent".to_string(),
+            retry_after: Some(delay),
+        };
+
+        assert_eq!(rate_limit.retry_after(), Some(delay));
+        assert_eq!(
+            OKXHttpError::MalformedResponse(String::new()).retry_after(),
+            None
+        );
     }
 
     #[rstest]

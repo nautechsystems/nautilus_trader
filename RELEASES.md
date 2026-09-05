@@ -4,54 +4,125 @@ Released on TBD (UTC).
 
 ### Enhancements
 
-- Added `Cache` APIs and Redis/PostgreSQL persistence for `InstrumentClose` data, with later values
-  replacing earlier values for the same instrument
+- Added `Cache` APIs and Redis/PostgreSQL persistence for `InstrumentClose` data
 - Added `avg_px` and report window fields to persisted execution reports
-- Added the standard Python enum surface (`from_str`, `name`, `value`, `variants`) to `BarIntervalType`
+- Added a `causation_id` property to every order event, and a `protection_price` property to `OrderUpdated`
+- Added `due_post_only` to the `OrderRejected` constructor, defaulting to `false`
+- Added remote resolution for `TestDataProvider` CSV loaders so they work from an installed wheel
+- Added user-defined portfolio statistics via `Portfolio.register_statistic()` and Python `PortfolioStatistic`
+- Added named task identity and lifecycle observation to live `TaskGroup`
+- Added Python enum surface (`from_str`, `name`, `value`, `variants`) to `BarIntervalType`
+- Added Python `OrderBook.to_deltas(...)` and `OrderBook.get_all_crossed_levels(...)`
+- Added Python `OrderBook` pickle and deep-copy support and `BookLevel` comparisons
+- Added Python `OrderBookDelta.is_add`, `is_update`, `is_delete`, `is_clear`, and `OrderBookDeltas.is_snapshot`
+- Added Python `activation_utc` and `expiration_utc` properties to expiring instruments
+- Added Python `symbol` and `venue` properties to regular and synthetic instruments
+- Added Bybit self-match prevention, set with `smp_type` on the execution client config or per order
 - Added Polymarket collateral-sized limit BUY orders with exact limit price preservation
+- Added `BacktestEngine::add_data_batch` for typed data batches that replay without per-item `Data` values, thanks @faysou
+- Added typed external MessageBus streaming for control, execution, and reconciliation messages
+- Added cache-backed claims that route external orders, fills, and reconciliation activity to the strategy
 
 ### Breaking Changes
 
 - Removed Coinbase `CreateOrderRequest.reduce_only`; reduce-only orders are rejected before submission
+- Removed the dormant `PortfolioStatistic::calculate_from_orders` trait method; no analyzer supplied order data to statistics
+- Replaced `OKXHttpError::JsonError` and generic HTTP errors with typed transport and response failures
+- Changed FFI `orderbook_deltas_is_snapshot` to use `F_SNAPSHOT` instead of the first delta action
+- Changed `PortfolioAnalyzer.realized_pnls()` to return records in ascending event-time order rather than position-derived records followed by recorded ones
+- Changed registered PnL statistics to run on every analyzed currency, including runs that closed no trades, where they receive an empty list; `Win Rate` and its peers now report NaN for such runs rather than being absent
+- Changed OKX response decoding failures in Python from `ValueError` to `RuntimeError`
+- Renamed blockchain log parsing modules to `hypersync::log` and `rpc::log`; update Rust imports
+- Renamed Cargo binary targets to kebab-case, including `to_json` to `to-json`, `to_parquet` to `to-parquet`, and `node_wallet` to `node-wallet`; update any `cargo run --bin` invocation to the new name
 - Changed `TradingState` to `ACTIVE=1`, `REDUCING=2`, and `HALTED=3`; update numeric and Cap'n Proto consumers
 - Changed `REDUCING` to allow only eligible reduce-only submissions, cancellations, and queries
 - Changed execution clients to reject `reduce_only` without an enforcing venue instruction (#4761), thanks @folknor
 - Changed backtest and sandbox venues to reject reduce-only orders when `use_reduce_only=false`
-- Changed v2 PostgreSQL cache startup to require the `instrument_close` table; run `nautilus database init`
+- Changed PostgreSQL cache startup to require the `instrument_close` table; run `nautilus database init`
+- Changed PostgreSQL `order_event` and `position_event` tables to carry the order event fields that were previously dropped; run `nautilus database init` to add the columns, as cache startup now fails fast when they are missing. `OrderReleased` and `OrderFillVoided` rows written before the upgrade cannot be restored, because their `released_price` and `correction_id` were never stored; delete those rows if startup reports them
 - Changed Binance `close_position` orders to require `reduce_only=true` in Nautilus
-- Changed Arrow instrument `asset_class` and `option_kind` columns to the canonical enum labels
-  such as `EQUITY` and `CALL`; existing catalogs still decode, but earlier versions cannot read
-  newly written files
+- Changed Arrow instrument `asset_class` and `option_kind` columns to the canonical enum labels such as `EQUITY` and `CALL`; existing catalogs still decode, but earlier versions cannot read newly written files
+- Renamed Rust `Data::Delta`, `Data::Deltas`, and `Data::Depth10` variants to `Data::BookDelta`, `Data::BookDeltas`, and `Data::BookDepth10`; JSON and SBE wire formats are unchanged
+- Renamed `StrategyConfig.external_order_claims` to `external_order_instrument_ids`; use `Strategy.set_external_order_instrument_ids()` after registration to replace active claims
+- Changed `OrderStatus::is_open()` to exclude the in-flight `SUBMITTED` state; use `OrderStatus::is_inflight()` when a pending venue request must also match
 
 ### Security
 
+- Added zeroizing secret storage and consistent credential redaction across adapter configuration, signing, and transport paths
+
 ### Fixes
 
+- Fixed engine panic on startup when the PostgreSQL cache held an `OrderCanceled`, `OrderDenied`, `OrderEmulated`, `OrderExpired`, `OrderPendingCancel`, `OrderPendingUpdate`, `OrderRejected`, `OrderReleased`, `OrderTriggered`, or `OrderUpdated` event (#4917)
+- Fixed PostgreSQL cache load failing on a persisted `OrderFillVoided` event
+- Fixed `reconciliation` being persisted as `false` for every order event that carries the flag, so reconciled orders no longer restore as though they were not reconciled
+- Fixed `OrderUpdated.to_dict()` dropping `protection_price`, which made the dictionary round trip lossy and lost the calculated protection price of a restored order
+- Fixed `released_price`, `due_post_only`, `protection_price`, `causation_id`, `correction_id`, `is_reopened`, and fill `info` being dropped when an order event was persisted to PostgreSQL
 - Fixed position commissions and realized PnL after fill-void replay
+- Fixed nanosecond precision loss when `TestDataProvider` parses timestamps
+- Fixed Python `OrderBook` aggregation to raise `ValueError` for invalid precision and quantity overflow
+- Fixed `BacktestNode.run_streaming()` loading all records when more than one data config was used (#4897), thanks @abhijeetvichare76
+- Fixed stale or terminal single and list order submissions reaching execution clients
+- Fixed TWD, 1INCH, CAKE, and SHIB currency lookup panics
+- Fixed order-status report windows filtering resting orders instead of closed history
+- Fixed foreign account events panicking and reservation failures leaving balances or margins in an inconsistent state
+- Fixed OKX retries to honor `Retry-After`, preserve request identity, and avoid ambiguous order replay
 
 ### Internal Improvements
 
 - Added Cap'n Proto validation for decoded identifiers, currencies, balances, and decimals
 - Added serde support for `BetSide` and `OtoTriggerMode`
 - Added crate feature documentation checks for README and Rustdoc lists
+- Added Cargo convention checks for redundant README keys, uninherited workspace fields, and binary target naming
+- Added acceptance tests running the documentation guides and resolving their documented imports
 - Improved Betfair execution client test synchronization (#4866), thanks @folknor
 - Pinned docs.rs checks to a compatible nightly toolchain
 - Refined Arrow serialization schemas and column resolution
 - Refined Cap'n Proto serialization conversions and wire contracts
 - Refined bar aggregation internals and shared aggregator state
 - Refined core crate coverage, FFI safety, and collection conversion
+- Refined example and test config subclasses to keyword-only fields without a `__new__` override
+- Standardized crate manifests with inferred README paths and removed unused workspace fields
 - Standardized crate feature documentation across READMEs and Rustdoc
+- Standardized adapter client source layout across the Rust venue implementations
+- Standardized code and documentation terminology with domain-specific names
 - Updated Makefile help output to match the startup log header
 - Optimized pre-commit and CI convention hook runtime
+- Optimized Rust integration test compilation with one test binary per crate, thanks @faysou
+- Optimized DataEngine and backtest dispatch through borrowed data views (#4900), thanks @faysou
+- Standardized repository Python text reads on UTF-8 across supported platforms
+- Standardized uv commands, CI, Docker, and documentation on the default `python/.venv` project environment
+- Upgraded `typos` pre-commit hook to v1.50.1
 - Upgraded `flate2` crate to v1.1.10
 - Upgraded `indexmap` crate to v2.14.1
 - Upgraded `rcgen` crate to v0.14.10
+- Upgraded `arrow`, `arrow-row`, and `parquet` crates to v59.3.0
+- Upgraded `aws-lc-rs` crate to v1.18.1
+- Upgraded `databento` crate to v0.61.0
+- Upgraded `rust_decimal` crate to v1.43.0
+- Upgraded `smallvec` crate to v1.16.0
+- Upgraded `toml` crate to v1.1.5
 - Upgraded `linkify-it-py` package to v2.1.1
+- Upgraded `plotly` package to v7.0.0
+- Upgraded `ruff` package to v0.16.5
+- Upgraded `simplejson` package to v4.1.2
+- Upgraded `ty` package to v0.0.75
 
 ### Documentation Updates
 
-- Corrected documented enum values for instrument classes, wallet accounts, position entry sides,
-  and Polymarket close types
+- Added a troubleshooting section for import errors caused by installing the 1.x line
+- Added the NumPy and pandas prerequisites the wheel does not install
+- Added an environment report snippet to the bug report template
+- Added an explicit statement that the documentation covers v2 only
+- Changed install commands to require `--pre` for the v2 wheel (#4919), thanks for reporting @pcoughlin
+- Changed the getting started and tutorial guides to run on bundled sample data without a download
+- Simplified documented `StrategyConfig` and `DataActorConfig` subclassing to keyword-only fields
+- Updated persistence catalog migration commands to kebab-case binary names
+- Updated migration guidance for order books and instrument inspection
+- Restructured execution documentation around algorithms, policies, reconciliation, and live recovery
+- Standardized Rust documentation links and added offline link coverage
+- Fixed the actor configuration example rejecting a positional argument
+- Fixed option Greeks examples ignoring string `actor_id` overrides
+- Corrected documented enum values for instrument classes, wallet accounts, position entry sides, and Polymarket close types
 
 ### Deprecations
 
@@ -201,6 +272,7 @@ Released on 2nd September 2026 (UTC).
 - Refined Python actor setup across runtime paths
 - Standardized Rust blocking locks on `parking_lot`
 - Optimized `BacktestEngine` processing when simulation modules and liquidation are disabled
+- Optimized `BacktestEngine` replay with shared typed data batches, thanks @faysou
 - Optimized `IdsGenerator` trade ID formatting
 - Optimized `MatchingEngine` L1 pending order queue scans
 - Optimized `OrderMatchingEngine` queue tracking and liquidity consumption

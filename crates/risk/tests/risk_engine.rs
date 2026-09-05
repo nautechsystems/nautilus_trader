@@ -88,7 +88,7 @@ use rust_decimal::{Decimal, prelude::FromPrimitive};
 use rust_decimal_macros::dec;
 use ustr::Ustr;
 
-// Helper that registers message collectors for ExecEngine.process events and
+// Registers message collectors for ExecEngine.process events and
 // returns the shared handler so callers can later retrieve the collected
 // OrderEventAny messages via `get_process_order_event_handler_messages`.
 fn register_process_handler() -> TypedIntoMessageSavingHandler<OrderEventAny> {
@@ -448,7 +448,6 @@ pub fn instrument_xbtusd_with_high_size_precision() -> InstrumentAny {
     )
 }
 
-// Helpers
 fn get_risk_engine(
     cache: Option<Rc<RefCell<Cache>>>,
     config: Option<RiskEngineConfig>,
