@@ -19,7 +19,12 @@ pub mod shutdown;
 pub mod socket;
 pub mod trading;
 
+#[cfg(feature = "live")]
+pub mod claims;
+
 // Re-exports
+#[cfg(feature = "live")]
+pub use claims::SetExternalOrderClaims;
 pub use component::ComponentStateChanged;
 pub use queue::{QueueCondition, QueueState, QueueStateChanged};
 pub use shutdown::ShutdownSystem;

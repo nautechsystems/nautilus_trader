@@ -59,9 +59,11 @@ pub enum DataEvent {
 }
 
 /// System command variants routed to a live node.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
+#[derive(Debug, Clone, PartialEq, Eq, Display)]
 pub enum SystemCommand {
     ReconnectSocket(system::ReconnectSocket),
+    #[cfg(feature = "live")]
+    SetExternalOrderClaims(system::SetExternalOrderClaims),
 }
 
 /// System event variants routed to a live node.

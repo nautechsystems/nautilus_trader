@@ -96,7 +96,10 @@ use nautilus_common::{
             GenerateFillReports, GenerateOrderStatusReports, GeneratePositionStatusReports,
             TradingCommand,
         },
-        system::{QueueStateChanged, ReconnectSocket, SocketStateChange, SocketStateChanged},
+        system::{
+            QueueStateChanged, ReconnectSocket, SetExternalOrderClaims, SocketStateChange,
+            SocketStateChanged,
+        },
     },
     msgbus::{self, BusMessage, MessagingSwitchboard},
     runner::{SystemChannel, TimeEventMessage, TradingCommandMessage},
@@ -636,6 +639,40 @@ impl LiveNode {
         match command {
             SystemCommand::ReconnectSocket(command) => {
                 self.process_socket_reconnect(command);
+            }
+            SystemCommand::SetExternalOrderClaims(command) => {
+                self.process_set_external_order_claims(command);
+            }
+        }
+    }
+
+    fn process_set_external_order_claims(&self, command: SetExternalOrderClaims) {
+        let SetExternalOrderClaims {
+            trader_id,
+            strategy_id,
+            instrument_ids,
+            ..
+        } = command;
+
+        if trader_id != self.config.trader_id {
+            log::warn!(
+                "Rejected external order claims for {strategy_id}: trader {trader_id} does not match node trader {}",
+                self.config.trader_id
+            );
+            return;
+        }
+
+        match self.kernel.cache.try_borrow_mut() {
+            Ok(mut cache) => match cache.set_external_order_claims(strategy_id, &instrument_ids) {
+                Ok(()) => {
+                    log::info!("Set external order claims for {strategy_id}: {instrument_ids:?}");
+                }
+                Err(e) => {
+                    log::error!("Failed to set external order claims for {strategy_id}: {e}");
+                }
+            },
+            Err(e) => {
+                log::error!("Failed to set external order claims for {strategy_id}: {e}");
             }
         }
     }
@@ -3979,12 +4016,16 @@ mod tests {
         cache::Cache,
         clock::{Clock, TestClock},
         enums::SerializationEncoding,
-        live::runner::{get_data_event_sender, get_exec_event_sender, get_system_event_sender},
+        live::runner::{
+            get_data_event_sender, get_exec_event_sender, get_system_command_sender,
+            get_system_event_sender,
+        },
         messages::{
             data::{SubscribeCommand, SubscribeQuotes},
             execution::{QueryAccount, SubmitOrder, TradingCommand},
             system::{
-                QueueCondition, QueueState, ReconnectSocket, SocketState, SocketStateChanged,
+                QueueCondition, QueueState, ReconnectSocket, SetExternalOrderClaims, SocketState,
+                SocketStateChanged,
             },
         },
         msgbus::{
@@ -5850,6 +5891,26 @@ mod tests {
         builder.build().unwrap()
     }
 
+    fn live_node_for_run_loop() -> LiveNode {
+        let config = LiveNodeConfig {
+            trader_id: TraderId::from("CLAIMS-RUN-001"),
+            environment: Environment::Sandbox,
+            exec_engine: crate::config::LiveExecutionEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            timeout_connection: Duration::ZERO,
+            timeout_reconciliation: Duration::ZERO,
+            timeout_portfolio: Duration::ZERO,
+            timeout_disconnection: Duration::ZERO,
+            delay_post_stop: Duration::ZERO,
+            timeout_shutdown: Duration::ZERO,
+            ..Default::default()
+        };
+
+        LiveNode::build("ExternalClaimsRunNode".to_string(), Some(config)).unwrap()
+    }
+
     #[rstest]
     fn test_add_strategy_registers_external_order_claims_with_manager_and_engine() {
         let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
@@ -5932,6 +5993,239 @@ mod tests {
                 .borrow()
                 .get_external_order_claim(&instrument_id),
             Some(strategy_id)
+        );
+    }
+
+    #[rstest]
+    fn test_set_external_order_claims_rejects_mismatched_trader() {
+        let node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .build()
+            .unwrap();
+        let strategy_id = StrategyId::from("CLAIMS-TRADER-001");
+        let instrument_id = InstrumentId::from("AUDUSD.SIM");
+
+        node.process_system_command(SystemCommand::SetExternalOrderClaims(
+            SetExternalOrderClaims::new(
+                TraderId::from("OTHER-001"),
+                strategy_id,
+                vec![instrument_id],
+                UnixNanos::default(),
+            ),
+        ));
+        assert_eq!(
+            node.kernel
+                .cache
+                .borrow()
+                .external_order_claim(&instrument_id),
+            None
+        );
+
+        node.process_system_command(SystemCommand::SetExternalOrderClaims(
+            SetExternalOrderClaims::new(
+                node.trader_id(),
+                strategy_id,
+                vec![instrument_id],
+                UnixNanos::default(),
+            ),
+        ));
+        assert_eq!(
+            node.kernel
+                .cache
+                .borrow()
+                .external_order_claim(&instrument_id),
+            Some(strategy_id)
+        );
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_set_external_order_claims_from_another_thread_while_run_owns_node() {
+        let mut node = live_node_for_run_loop();
+        let handle = node.handle();
+        let cache = node.kernel.cache();
+        node.runner.as_ref().unwrap().bind_senders();
+        let sender = get_system_command_sender();
+        let trader_id = node.trader_id();
+        let strategy_id = StrategyId::from("CLAIMS-THREAD-001");
+        let instrument_id = InstrumentId::from("AUDUSD.SIM");
+
+        {
+            let run = node.run();
+            tokio::pin!(run);
+            let drive = async {
+                wait_until_async(|| async { handle.is_running() }, Duration::from_secs(10)).await;
+
+                std::thread::spawn(move || {
+                    sender
+                        .send(SystemCommand::SetExternalOrderClaims(
+                            SetExternalOrderClaims::new(
+                                trader_id,
+                                strategy_id,
+                                vec![instrument_id],
+                                UnixNanos::default(),
+                            ),
+                        ))
+                        .expect("system command channel should be open");
+                })
+                .join()
+                .expect("claim sender thread should finish");
+
+                wait_until_async(
+                    || async {
+                        cache.borrow().external_order_claim(&instrument_id) == Some(strategy_id)
+                    },
+                    Duration::from_secs(10),
+                )
+                .await;
+                handle.stop();
+            };
+
+            let (run_result, ()) = tokio::join!(run, drive);
+            run_result.expect("node should stop cleanly");
+        }
+        assert_eq!(
+            node.exec_manager.get_external_order_claim(&instrument_id),
+            Some(strategy_id)
+        );
+        assert_eq!(
+            node.kernel
+                .exec_engine
+                .borrow()
+                .get_external_order_claim(&instrument_id),
+            Some(strategy_id)
+        );
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_set_external_order_claims_conflict_is_atomic_while_run_owns_node() {
+        let mut node = live_node_for_run_loop();
+        let handle = node.handle();
+        let cache = node.kernel.cache();
+        let trader_id = node.trader_id();
+        let existing_strategy_id = StrategyId::from("CLAIMS-CONFLICT-001");
+        let new_strategy_id = StrategyId::from("CLAIMS-CONFLICT-002");
+        let conflicting_instrument = InstrumentId::from("AUDUSD.SIM");
+        let retained_instrument = InstrumentId::from("GBPUSD.SIM");
+        let requested_instrument = InstrumentId::from("EURUSD.SIM");
+        let marker_strategy_id = StrategyId::from("CLAIMS-CONFLICT-003");
+        let marker_instrument = InstrumentId::from("USDJPY.SIM");
+        node.register_external_order_claims(existing_strategy_id, &[conflicting_instrument])
+            .unwrap();
+        node.register_external_order_claims(new_strategy_id, &[retained_instrument])
+            .unwrap();
+        node.runner.as_ref().unwrap().bind_senders();
+        let sender = get_system_command_sender();
+
+        {
+            let run = node.run();
+            tokio::pin!(run);
+            let drive = async {
+                wait_until_async(|| async { handle.is_running() }, Duration::from_secs(10)).await;
+                sender
+                    .send(SystemCommand::SetExternalOrderClaims(
+                        SetExternalOrderClaims::new(
+                            trader_id,
+                            new_strategy_id,
+                            vec![requested_instrument, conflicting_instrument],
+                            UnixNanos::default(),
+                        ),
+                    ))
+                    .expect("system command channel should be open");
+                sender
+                    .send(SystemCommand::SetExternalOrderClaims(
+                        SetExternalOrderClaims::new(
+                            trader_id,
+                            marker_strategy_id,
+                            vec![marker_instrument],
+                            UnixNanos::default(),
+                        ),
+                    ))
+                    .expect("system command channel should be open");
+
+                wait_until_async(
+                    || async {
+                        cache.borrow().external_order_claim(&marker_instrument)
+                            == Some(marker_strategy_id)
+                    },
+                    Duration::from_secs(10),
+                )
+                .await;
+                handle.stop();
+            };
+
+            let (run_result, ()) = tokio::join!(run, drive);
+            run_result.expect("node should stop cleanly");
+        }
+        let cache = node.kernel.cache.borrow();
+        assert_eq!(
+            cache.external_order_claim(&conflicting_instrument),
+            Some(existing_strategy_id)
+        );
+        assert_eq!(
+            cache.external_order_claim(&retained_instrument),
+            Some(new_strategy_id)
+        );
+        assert_eq!(cache.external_order_claim(&requested_instrument), None);
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_set_external_order_claims_empty_set_releases_while_run_owns_node() {
+        let mut node = live_node_for_run_loop();
+        let handle = node.handle();
+        let cache = node.kernel.cache();
+        let trader_id = node.trader_id();
+        let strategy_id = StrategyId::from("CLAIMS-RELEASE-001");
+        let instrument_id = InstrumentId::from("AUDUSD.SIM");
+        node.register_external_order_claims(strategy_id, &[instrument_id])
+            .unwrap();
+        node.runner.as_ref().unwrap().bind_senders();
+        let sender = get_system_command_sender();
+
+        {
+            let run = node.run();
+            tokio::pin!(run);
+            let drive = async {
+                wait_until_async(|| async { handle.is_running() }, Duration::from_secs(10)).await;
+                sender
+                    .send(SystemCommand::SetExternalOrderClaims(
+                        SetExternalOrderClaims::new(
+                            trader_id,
+                            strategy_id,
+                            Vec::new(),
+                            UnixNanos::default(),
+                        ),
+                    ))
+                    .expect("system command channel should be open");
+
+                wait_until_async(
+                    || async {
+                        cache
+                            .borrow()
+                            .external_order_claim(&instrument_id)
+                            .is_none()
+                    },
+                    Duration::from_secs(10),
+                )
+                .await;
+                handle.stop();
+            };
+
+            let (run_result, ()) = tokio::join!(run, drive);
+            run_result.expect("node should stop cleanly");
+        }
+        assert_eq!(
+            node.exec_manager.get_external_order_claim(&instrument_id),
+            None
+        );
+        assert_eq!(
+            node.kernel
+                .exec_engine
+                .borrow()
+                .get_external_order_claim(&instrument_id),
+            None
         );
     }
 
@@ -7995,7 +8289,7 @@ mod tests {
         let mut pending = PendingEvents::default();
         let command = stub_system_command();
 
-        pending.system_commands.push(command);
+        pending.system_commands.push(command.clone());
         let system_commands = pending.take_system_commands();
 
         assert_eq!(system_commands, vec![command]);
