@@ -84,6 +84,7 @@ Released on TBD (UTC).
 - Standardized code and documentation terminology with domain-specific names
 - Updated Makefile help output to match the startup log header
 - Optimized pre-commit and CI convention hook runtime
+- Optimized Rust integration test compilation with one test binary per crate, thanks @faysou
 - Optimized DataEngine and backtest dispatch through borrowed data views (#4900), thanks @faysou
 - Standardized repository Python text reads on UTF-8 across supported platforms
 - Standardized uv commands, CI, Docker, and documentation on the default `python/.venv` project environment

@@ -127,13 +127,6 @@ tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 
 [[test]]
-name = "common"
-required-features = ["datasets"]
-
-[[test]]
-name = "large_data"
-required-features = ["datasets"]
-
-[[test]]
-name = "orderbook_integration"
+name = "integration"
+path = "tests/integration/main.rs"
 required-features = ["datasets"]

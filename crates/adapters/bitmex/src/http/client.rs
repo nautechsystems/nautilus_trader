@@ -463,7 +463,7 @@ impl BitmexRawHttpClient {
         // "Account has insufficient Available Balance", "Invalid API Key") which should NOT
         // be retried. We only retry when the message explicitly mentions rate limiting.
         //
-        // See tests in tests/http.rs for retry behavior validation.
+        // See tests in tests/integration/http.rs for retry behavior validation.
         let should_retry = |error: &BitmexHttpError| -> bool {
             match error {
                 BitmexHttpError::NetworkError(_) => true,

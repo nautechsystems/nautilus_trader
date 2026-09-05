@@ -156,7 +156,8 @@ jobs:
         run: |
           cargo nextest run -p nautilus-network \
             --features "turmoil,transport-sockudo" \
-            --test turmoil_sockudo \
+            --test integration \
+            -E 'test(/^turmoil_sockudo::/)' \
             --cargo-profile nextest --status-level fail
 
   cargo-publish-plan:

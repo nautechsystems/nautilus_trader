@@ -576,7 +576,7 @@ The following test modules drive real localhost sockets and are cfg-gated out un
 - `crates/network/src/socket/client.rs::rust_tests`
 - `crates/network/src/websocket/client.rs::tests`
 - `crates/network/src/websocket/client.rs::rust_tests`
-- `crates/network/tests/websocket_proxy.rs`
+- `crates/network/tests/integration/websocket_proxy.rs`
 
 Their production paths reach madsim time primitives through `dst::time::*`, which panic when called
 from a `#[tokio::test]` runtime.

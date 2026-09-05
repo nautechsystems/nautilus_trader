@@ -128,9 +128,3 @@ name = "tardis-option-chain"
 path = "examples/tardis_option_chain.rs"
 required-features = ["examples", "streaming"]
 doc = false
-
-# Run in the normal `--tests` lane; the dev-dependency enables `nautilus-trading/examples`
-[[test]]
-name = "backtest-node-workload"
-path = "tests/backtest_node_workload.rs"
-required-features = ["streaming"]

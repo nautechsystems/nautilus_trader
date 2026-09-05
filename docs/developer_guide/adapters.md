@@ -1742,13 +1742,13 @@ payloads from official venue documentation or captured venue responses; do not h
 them. Synthetic malformed or mutated inputs remain useful for negative, property, and fuzz tests
 when the test marks them as such.
 
-| Boundary                    | Typical location                                      | Required proof                                                                                  |
-| --------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Pure protocol logic         | `src/**` test modules                                 | Symbols, enums, timestamps, decimals, signatures, codecs, parsers, and malformed input.         |
-| Public Rust client boundary | `tests/`                                              | Typed HTTP and WebSocket behavior through mock servers, event dispatch, lifecycle, and retries. |
-| Rust PyO3 boundary          | `tests/python.rs` or another feature-gated crate test | Module registration, conversion, constructors, and representative async calls.                  |
-| Public Python package       | `python/tests/unit/adapters/`                         | Package imports, config, factories, and user-visible behavior not proved by Rust tests.         |
-| Live venue acceptance       | Adapter examples or test nodes                        | Authentication, subscriptions, execution, reports, recovery, and advertised limitations.        |
+| Boundary                    | Typical location                                                  | Required proof                                                                                  |
+| --------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Pure protocol logic         | `src/**` test modules                                             | Symbols, enums, timestamps, decimals, signatures, codecs, parsers, and malformed input.         |
+| Public Rust client boundary | `tests/`                                                          | Typed HTTP and WebSocket behavior through mock servers, event dispatch, lifecycle, and retries. |
+| Rust PyO3 boundary          | `tests/integration/python.rs` or another feature-gated crate test | Module registration, conversion, constructors, and representative async calls.                  |
+| Public Python package       | `python/tests/unit/adapters/`                                     | Package imports, config, factories, and user-visible behavior not proved by Rust tests.         |
+| Live venue acceptance       | Adapter examples or test nodes                                    | Authentication, subscriptions, execution, reports, recovery, and advertised limitations.        |
 
 ### Rust testing
 

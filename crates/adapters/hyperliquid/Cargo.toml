@@ -223,8 +223,3 @@ name = "hyperliquid-chained-modify-smoke"
 path = "examples/chained_modify_smoke.rs"
 required-features = ["examples"]
 doc = false
-
-[[test]]
-name = "python"
-path = "tests/python.rs"
-required-features = ["python"]

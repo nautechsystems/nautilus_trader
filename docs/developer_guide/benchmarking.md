@@ -160,7 +160,7 @@ Run the semantic check first:
 
 ```bash
 CARGO_BUILD_JOBS=16 cargo test --locked -p nautilus-backtest \
-    --test canonical_backtest_workloads
+    --test integration canonical_backtest_workloads::
 ```
 
 Then run Criterion in test mode to confirm that every affected benchmark case executes without

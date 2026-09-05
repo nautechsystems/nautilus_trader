@@ -913,7 +913,7 @@ cargo-test-postgres-ci:  #-- Run focused PostgreSQL tests with the CI bootstrap 
 
 POSTGRES_BOOTSTRAP_INPUTS := schema/sql \
 	crates/infrastructure/src/sql/pg.rs \
-	crates/infrastructure/tests/test_cache_database_postgres.rs \
+	crates/infrastructure/tests/integration/test_cache_database_postgres.rs \
 	crates/cli/src/database \
 	crates/cli/src/bin/cli.rs \
 	crates/cli/src/lib.rs \

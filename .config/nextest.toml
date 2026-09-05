@@ -18,16 +18,16 @@ slow-timeout = { period = "120s", terminate-after = 5 }
 # Blockchain execution client tests use per-test PostgreSQL pools that can exhaust connections.
 # The two gated Anvil fork suites also share the PostgreSQL schema-creation path and the fork
 # evidence directory, so they serialize with each other and with the client tests.
-filter = 'test(serial_tests) | (package(nautilus-blockchain) & (test(execution::client::tests) | binary(execution_fork) | binary(execution_livenode_fork)))'
+filter = 'test(serial_tests) | (package(nautilus-blockchain) & (test(execution::client::tests) | (binary(integration) & (test(/^execution_fork::/) | test(/^execution_livenode_fork::/)))))'
 test-group = 'serial-tests'
 
 [[profile.default.overrides]]
 filter = 'test(test_order_book)'
 slow-timeout = { period = "300s" }
 
-# Tests that download large data files share the same target paths across binaries
+# Tests that download large data files share the same target paths across processes
 [[profile.default.overrides]]
-filter = 'binary(grid_mm_itch) | binary(backtest_node_itch) | binary(orderbook_integration) | binary(large_data) | binary(test_pinned_data_direct_session)'
+filter = '(package(nautilus-backtest) & binary(integration) & (test(/^backtest_node_itch::/) | test(/^grid_mm_itch::/))) | (package(nautilus-testkit) & binary(integration) & (test(/^large_data::/) | test(/^orderbook_integration::/))) | (package(nautilus-persistence) & binary(integration) & test(/^test_pinned_data_direct_session::/))'
 test-group = 'large-data-tests'
 
 # Execution client, websocket, and data client tests spawn order and stream
@@ -35,5 +35,5 @@ test-group = 'large-data-tests'
 # Under heavy parallelism the global runtime's worker threads can be starved,
 # causing internal wait-for-request timeouts (e.g. wait_for_command_requests).
 [[profile.default.overrides]]
-filter = 'binary(websocket) | binary(data_client) | test(exec_client)'
+filter = '(binary(integration) & (test(/^data_client::/) | test(/^websocket::/) | test(/::.*exec_client/))) | (!binary(integration) & test(exec_client))'
 retries = 3

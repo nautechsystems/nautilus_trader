@@ -212,17 +212,17 @@ expected to run in default CI.
 
 ## Test runner serialization
 
-Tests that download large data files share target paths across test binaries.
-Because `nextest` runs each binary in a separate process, concurrent downloads
-to the same path can race. The nextest config at `.config/nextest.toml` defines
-a `large-data-tests` group with `max-threads = 1` to serialize these binaries.
+Tests that download large data files share target paths. Because `nextest` runs
+each test in a separate process, concurrent downloads to the same path can race.
+The nextest config at `.config/nextest.toml` defines a `large-data-tests` group with
+`max-threads = 1` to serialize these tests.
 
-When adding a new test binary that downloads large shared files, add it to the
+When adding a new test module that downloads large shared files, add it to the
 group filter:
 
 ```toml
 [[profile.default.overrides]]
-filter = 'binary(grid_mm_itch) | binary(orderbook_integration) | binary(your_new_binary)'
+filter = 'package(your-package) & binary(integration) & test(/^your_module::/)'
 test-group = 'large-data-tests'
 ```
 
