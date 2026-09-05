@@ -6,11 +6,11 @@ continuous checks that detect runtime discrepancies.
 
 Unresolved live command outcomes are one source of state divergence. For how Nautilus classifies
 local failures, definitive results, and unknown outcomes, see
-[Command outcomes](execution.md#command-outcomes).
+[Command outcomes](policies.md#command-outcomes).
 
-For the complete node lifecycle, see [Live trading](live.md). For the available settings and
+For the complete node lifecycle, see [Live trading](../live.md). For the available settings and
 recommended values, see
-[Configure a live trading node](../how_to/configure_live_trading.md#executionengine-configuration).
+[Configure a live trading node](../../how_to/configure_live_trading.md#executionengine-configuration).
 
 ## Reconciliation model
 
@@ -59,9 +59,90 @@ deprecation warning and reconciles for compatibility. A future release rejects t
 startup error. See the origin rows in
 [Startup reconciliation](#startup-reconciliation).
 
-This is separate from external order claims (see
-[Reconciliation configuration](#reconciliation-configuration)), which attribute venue-sourced
-orders to a *strategy*. The execution-client origin records which *client* an order belongs to.
+This is separate from [external order claims](#external-order-creation), which attribute
+venue-sourced orders to a *strategy*. The execution-client origin records which *client* an order
+belongs to.
+
+### Reconciliation reports
+
+The execution engine consumes four reconciliation report variants from live adapters. Each variant
+has a different normal role when its matching order is absent from the cache. Explicitly bounded
+history can instead use [order-only fill projection](#order-only-fill-projection).
+
+| Variant                | Purpose                  | Missing-order action                                 |
+| ---------------------- | ------------------------ | ---------------------------------------------------- |
+| `OrderStatusReport`    | Order state update.      | Creates an order and infers any reported fill.       |
+| `FillReport`           | Standalone fill.         | Creates a market order, then applies fill metadata.  |
+| `OrderWithFills`       | Order state plus fills.  | Creates an order, applies fills, and infers residue. |
+| `PositionStatusReport` | Venue position snapshot. | Logs the report; positions remain fill-derived.      |
+
+#### When to use each variant
+
+Adapters choose the variant that matches the venue event:
+
+- Use `OrderStatusReport` for order lifecycle updates when fill details arrive on a separate
+  stream.
+- Use `FillReport` for a venue-initiated closure that has a fill but no user-level order.
+  Hyperliquid liquidations follow this pattern.
+- Use `OrderWithFills` when one venue event contains both an order status and its fills. Binance
+  Futures uses this for exchange-generated ADL, liquidation, and settlement orders.
+
+### Order-only fill projection
+
+During startup reconciliation, a bounded historical report can prove an order's status and filled
+quantity without proving that its fill belongs in the current position lifecycle. The engine then
+projects the `OrderFilled` event onto the order only. The order reaches the exact reported state,
+while the fill does not create or change a position and does not update portfolio economics.
+
+This projection applies only to reconciliation recovery. Raw reports remain available, and an
+authoritative position report can reconcile the current venue position separately. See
+[Bounded history safety](#bounded-history-safety) for the required evidence.
+
+### External order creation
+
+When a report references an order that is absent from the cache, the engine creates an *external
+order*. This covers venue-initiated ADL, liquidation, or settlement, orders placed by another
+process, and orders not yet observed locally.
+
+The naming distinguishes configuration intent from live ownership state:
+
+- `external_order_instrument_ids` is the serializable strategy configuration intent. It names the
+  instruments whose external orders should be assigned to the strategy when it is registered.
+- An external order claim is an active cache entry that maps one `InstrumentId` to one `StrategyId`.
+  The code uses `external_order_claims` for the collection of these live entries.
+
+Live strategy registration materializes the configured instrument IDs with
+`register_external_order_claims`. This operation is additive and strict: it rejects a repeated
+instrument or any instrument that already has a claim, including a claim for the same strategy.
+
+The strategy method `set_external_order_instrument_ids(...)` delegates to the cache operation
+`set_external_order_claims`. This operation treats its input as the strategy's complete desired
+active set. It can retain or release that strategy's existing claims and acquire unclaimed
+instruments, but it cannot take a claim from another strategy. Validation covers the complete input
+before changing the cache, so a conflict leaves every existing claim unchanged.
+
+The `ExecutionManager` and `ExecutionEngine` read the same canonical claim map from the cache when
+they process external reports. They assign an external order to:
+
+- The strategy identified by the active claim for the report's instrument.
+- The `EXTERNAL` strategy as a default fallback.
+
+An active-claim update is therefore visible to both components without a coordination message. The
+claim present when an external order is created determines the assignment. Existing cached orders
+keep their assigned `StrategyId`; changing a claim does not reassign them.
+
+Transferring an instrument between strategies requires the current owner to release it before the
+new owner claims it. There is no atomic handoff across strategies. A report processed between the
+release and acquisition has no active claim and is assigned to `EXTERNAL`. Cache resets preserve
+active claims so registered routing remains configured, while retiring a strategy clears its claims.
+
+The external order uses the report's `client_order_id` when present and otherwise derives one from
+the `venue_order_id`. The engine adds the order to the cache, registers its venue order ID, and
+emits the applicable `OrderAccepted`, `OrderFilled`, `OrderCanceled`, or `OrderExpired` events.
+Positions then update through the normal event pipeline.
+
+See [Claiming external orders](../strategies.md#claiming-external-orders) for strategy configuration
+and runtime updates.
 
 ## Reconciliation configuration
 
@@ -247,7 +328,7 @@ do not require NETTING lifecycle inference.
 #### Commission failures
 
 An adapter fill commission that cannot be calculated or represented fails the report request under
-the [adapter contract](../developer_guide/adapters.md#commission-failure-handling). The adapter does
+the [adapter contract](../../developer_guide/adapters.md#commission-failure-handling). The adapter does
 not drop that fill or replace its commission with zero or a generic formula. Startup stops before
 applying that client's mass status.
 
@@ -315,17 +396,13 @@ reconciliation completes, giving the system time to stabilize.
 | **Commission construction failure** | A required fill commission cannot be represented.         | Defers the affected work to a later cycle.      |
 | **Own books audit mismatch**        | Own order books diverge from venue public books.          | Audits and logs inconsistencies.                |
 
-**In-flight order timeout resolution** (venue does not respond after max retries):
+The in-flight checker produces the submit and cancel/update timeout results after exhausting the
+configured retries. [Terminal reconciliation provenance](policies.md#terminal-reconciliation-provenance)
+distinguishes these local policy resolutions from venue-reported outcomes.
 
-| Current status   | Resolved to | Rationale                                                      |
-| ---------------- | ----------- | -------------------------------------------------------------- |
-| `SUBMITTED`      | `REJECTED`  | No acceptance was received before the retry limit.             |
-| `PENDING_UPDATE` | `CANCELED`  | The in-flight checker applies a terminal reconciliation event. |
-| `PENDING_CANCEL` | `CANCELED`  | The in-flight checker applies a terminal reconciliation event. |
-
-These terminal results come from the in-flight timeout checker. A missing open-order report does
-not by itself prove a pending modify or cancel outcome, so the consistency checks below leave those
-states unresolved until another check can determine the venue state.
+A missing open-order report does not by itself prove a pending modify or cancel outcome, so the
+consistency checks below leave those states unresolved until another check can determine the venue
+state.
 
 **Order consistency checks** (when cache state differs from venue state):
 
@@ -412,7 +489,7 @@ flattening an account.
 
 ## Reconciliation invariants
 
-The reconciliation path preserves these guarantees for the reports and positions it processes:
+The reconciliation path preserves these invariants for the reports and positions it processes:
 
 1. **Order state**: authoritative reports recover the exact order status and filled quantity even
    when bounded history cannot support economic replay.
@@ -464,7 +541,9 @@ These scenarios apply when the mass status does not declare a `lookback_start`:
 
 ## Related guides
 
-- [Live trading](live.md) - Node lifecycle, configuration, metrics, and shutdown.
-- [Configure a live trading node](../how_to/configure_live_trading.md) - Node and engine configuration.
-- [Adapters](adapters.md) - Venue connectivity.
-- [Execution](execution.md) - Command outcomes and execution flow.
+- [Live trading](../live.md) - Node lifecycle, configuration, metrics, and shutdown.
+- [Configure a live trading node](../../how_to/configure_live_trading.md) - Node and engine configuration.
+- [Adapters](../adapters.md) - Venue connectivity.
+- [Execution](index.md) - Command outcomes and execution flow.
+- [Execution policies](policies.md) - Command evidence, persistence, and recovery
+  boundaries.

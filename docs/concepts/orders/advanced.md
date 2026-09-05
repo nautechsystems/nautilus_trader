@@ -214,4 +214,4 @@ rejection after the entry fills.
 
 - [Orders](index.md) - Order concepts, execution instructions, and the order factory.
 - [Emulated orders](emulated.md) - Emulating order types on venues without native support.
-- [Execution](../execution.md) - Order execution and fill handling.
+- [Execution](../execution/) - Order execution and fill handling.

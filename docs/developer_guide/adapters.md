@@ -862,7 +862,7 @@ A failed lookup returned as `Ok(None)` can therefore reject or cancel an order t
 venue. The trait default returns `Ok(None)` after logging that the handler is not implemented, so
 implement this method before an open-order check runs in full-history mode.
 
-[Execution reconciliation](../concepts/reconciliation.md) documents what the engine does with these
+[Execution reconciliation](../concepts/execution/reconciliation.md) documents what the engine does with these
 reports, including the startup procedure, the runtime checks that drive the periodic and targeted
 requests, and their retry and throttling rules. Cases TC-E84 to TC-E87 and TC-E101 in the
 [execution testing specification](spec_exec_testing.md) exercise startup reconciliation against a
@@ -951,7 +951,7 @@ report for an absent touched instrument only after that coverage is established.
 Preserve stable venue order and trade identities across live dispatch and mass status. Include
 client order linkage and `venue_position_id` where the venue supplies them so the execution engine
 can distinguish a coherent lifecycle from ambiguous history. See
-[Bounded history safety](../concepts/reconciliation.md#bounded-history-safety) for the engine's
+[Bounded history safety](../concepts/execution/reconciliation.md#bounded-history-safety) for the engine's
 economic application rules.
 
 #### Instrument resolution during reconciliation
@@ -1006,7 +1006,7 @@ Route execution updates according to order ownership, independent of the dispatc
 
 Do not invent strategy or client identity for an untracked order. Preserve available venue
 identity in the report and let the engine apply
-[external order ownership](../concepts/execution.md#external-order-creation). The adapter may use
+[external order ownership](../concepts/execution/reconciliation.md#external-order-creation). The adapter may use
 any state structure that proves this routing decision.
 
 Model tracked ownership with two conceptual layers. Order identity contains the stable fields that
@@ -1109,6 +1109,9 @@ duplicates from overlapping sources, submission or venue-binding races, and stal
 updates. Test active-context retention separately from bounded replay eviction.
 
 #### Order command outcome policy
+
+Use [Execution policies](../concepts/execution/policies.md) as the cross-adapter contract for
+command delivery, event application, persistence, and recovery.
 
 Separate three evidence classes:
 

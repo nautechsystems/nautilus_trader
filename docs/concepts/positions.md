@@ -143,7 +143,7 @@ The position exposes its retained adjustments:
 
 NautilusTrader supports two position management modes. A strategy configured with
 `OmsType.UNSPECIFIED` uses the venue's OMS type. For configuration details and position ID rules,
-see the [Execution guide](execution.md#order-management-system-oms).
+see the [Execution guide](execution/index.md#order-management-system-oms).
 
 ### `NETTING`
 
@@ -214,7 +214,7 @@ totals.
 A fill void that corrects a fill from an earlier cycle is the one exception. The correction moves the
 cycle boundaries the stored snapshots describe, so the engine replaces them with the cycles the
 corrected history actually closes, keeping each counted once. See
-[Position replay across NETTING cycles](execution.md#position-replay-across-netting-cycles).
+[Position replay across NETTING cycles](execution/index.md#position-replay-across-netting-cycles).
 
 :::note
 This closed-cycle archive differs from optional position state snapshots. Setting
@@ -404,7 +404,7 @@ This data supports:
 :::tip
 Use `position.events()` to access the current cycle's retained fills for reconciliation.
 The `position.trade_ids()` result helps match against broker statements.
-See the [Execution guide](execution.md) for reconciliation best practices.
+See the [Execution guide](execution/) for reconciliation best practices.
 :::
 
 ## Numerical precision
@@ -458,5 +458,5 @@ regular positions.
 
 - [Events](events/): How fills produce position events.
 - [Orders](orders/): Orders that create and modify positions.
-- [Execution](execution.md): Fill handling that updates positions.
+- [Execution](execution/): Fill handling that updates positions.
 - [Portfolio](portfolio.md): Portfolio-level position aggregation.

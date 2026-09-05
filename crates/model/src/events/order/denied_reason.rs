@@ -536,7 +536,7 @@ mod tests {
 
     const DOC_PATH: &str = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../docs/concepts/execution.md"
+        "/../../docs/concepts/execution/index.md"
     );
     const BLOCK_BEGIN: &str = "<!-- BEGIN GENERATED: order-denied-reasons -->";
     const BLOCK_END: &str = "<!-- END GENERATED: order-denied-reasons -->";
@@ -1001,22 +1001,22 @@ mod tests {
 
     #[rstest]
     fn generated_table_is_in_sync() {
-        let committed = std::fs::read_to_string(DOC_PATH).expect("execution.md should exist");
+        let committed = std::fs::read_to_string(DOC_PATH).expect("execution/index.md should exist");
         assert!(
             committed.contains(&generated_block()),
-            "the order-denied-reasons table in docs/concepts/execution.md is stale; regenerate \
+            "the order-denied-reasons table in docs/concepts/execution/index.md is stale; regenerate \
              with `cargo test -p nautilus-model regenerate_order_denied_reasons_doc -- --ignored`"
         );
     }
 
     #[rstest]
-    #[ignore = "rewrites the generated table in execution.md; run after changing OrderDeniedReason variants"]
+    #[ignore = "rewrites the generated table in execution/index.md; run after changing OrderDeniedReason variants"]
     fn regenerate_order_denied_reasons_doc() {
-        let doc = std::fs::read_to_string(DOC_PATH).expect("execution.md should exist");
+        let doc = std::fs::read_to_string(DOC_PATH).expect("execution/index.md should exist");
         let start = doc.find(BLOCK_BEGIN).expect("begin marker present");
         let end = doc.find(BLOCK_END).expect("end marker present") + BLOCK_END.len();
         let updated = format!("{}{}{}", &doc[..start], generated_block(), &doc[end..]);
-        std::fs::write(DOC_PATH, updated).expect("should write execution.md");
+        std::fs::write(DOC_PATH, updated).expect("should write execution/index.md");
     }
 
     fn generated_block() -> String {

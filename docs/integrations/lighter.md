@@ -498,7 +498,7 @@ Each bounded mass status captures one cutoff for its inactive orders and fills. 
 the report set complete only when the required order, fill, and position sources succeed and every
 historical fill maps to its order. If a historical source fails, active orders remain available for
 reconciliation while historical fills follow the engine's
-[order-only projection](../concepts/execution.md#order-only-fill-projection) rules.
+[order-only projection](../concepts/execution/reconciliation.md#order-only-fill-projection) rules.
 
 The `trades` endpoint retains only the most recent 3,000 trades per `account_index`, so a bounded
 lookback can request more fill history than the venue serves. Pagination walks back from the newest

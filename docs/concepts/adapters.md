@@ -139,7 +139,7 @@ Subscriptions, order submission, and execution reconciliation do not load instru
 Configure the adapter to load each required instrument at startup, or request it explicitly and wait
 until it reaches the cache before using it. For how reconciliation treats a report whose instrument
 is not loaded, see
-[instrument availability](reconciliation.md#instrument-availability).
+[instrument availability](execution/reconciliation.md#instrument-availability).
 
 ## Data clients
 
@@ -221,7 +221,7 @@ Execution clients can declare the lower time limit applied to historical reconci
 the required order, fill, and position sources completed. When an adapter supplies this contract,
 the engine can recover authoritative order state without applying historical position or portfolio
 economics that the available evidence cannot support. See
-[Bounded history safety](reconciliation.md#bounded-history-safety).
+[Bounded history safety](execution/reconciliation.md#bounded-history-safety).
 
 ### Reduce-only execution contract
 
@@ -246,7 +246,7 @@ assuming a rejection.
 
 For a new order, the `ExecutionEngine` uses an explicitly selected client, venue routing, or the
 configured default. Later commands for an existing order return to its originating client when
-known. See the [Execution](execution.md) guide for order management from a strategy perspective.
+known. See the [Execution](execution/) guide for order management from a strategy perspective.
 
 :::tip
 For building a custom adapter, see the [Adapter Developer Guide](../developer_guide/adapters.md).
@@ -255,5 +255,5 @@ For building a custom adapter, see the [Adapter Developer Guide](../developer_gu
 ## Related guides
 
 - [Live trading](live.md): Configure and run live trading with adapters.
-- [Execution](execution.md): Order execution through adapters.
+- [Execution](execution/): Order execution through adapters.
 - [Data](data/): Market data provided by adapters.

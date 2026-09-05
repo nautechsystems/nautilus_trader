@@ -238,6 +238,6 @@ the raw message bus. Use signals to send derived values from a strategy to a dat
 
 - [Orders](../orders/) - Order types and state machine.
 - [Positions](../positions.md) - Position lifecycle and PnL.
-- [Execution](../execution.md) - Execution flow and risk checks.
+- [Execution](../execution/) - Execution flow and risk checks.
 - [Strategies](../strategies.md) - Handler implementations in strategies.
 - [Architecture](../architecture.md) - Data and execution flow patterns.

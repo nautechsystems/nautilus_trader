@@ -4,6 +4,18 @@ NautilusTrader coordinates order submission, risk checks, venue execution, recon
 position updates across multiple strategies and venues. This page explains the components and
 message flows that support execution.
 
+Use the execution guides according to the question you need to answer:
+
+| Question                                             | Guide                                                              |
+| ---------------------------------------------------- | ------------------------------------------------------------------ |
+| Which components handle an order command?            | This page: [Execution flow](#execution-flow).                      |
+| Which statuses and transitions can an order have?    | [Orders: order state flow](../orders/index.md#order-state-flow).   |
+| Which policies govern venue-boundary execution?      | [Execution policies](policies.md).                                 |
+| How do execution algorithms split and manage orders? | [Execution algorithms](algorithms.md).                             |
+| How does live state recover and remain consistent?   | [Execution reconciliation](reconciliation.md).                     |
+| How do I configure a live node?                      | [Live node configuration](../../how_to/configure_live_trading.md). |
+| How does a live node schedule and monitor execution? | [Live trading](../live.md).                                        |
+
 The main execution-related components include:
 
 - `Strategy`
@@ -110,7 +122,7 @@ OMS type without overriding venue `position_id` values. Configure a backtest ven
 type used by the venue being modeled.
 
 Venue position modes may require adapter-specific configuration. For example, see
-[Binance Futures hedge mode](../integrations/binance.md#futures-hedge-mode).
+[Binance Futures hedge mode](../../integrations/binance.md#futures-hedge-mode).
 
 ### Custom position IDs and NETTING
 
@@ -130,7 +142,7 @@ with `oms_type=HEDGING`.
 For `submit_order_list`, the engine additionally denies any mixed-instrument list when a
 `position_id` is supplied, regardless of OMS. A position belongs to a single instrument,
 so the combination is rejected with an explicit `OrderDenied` reason. See
-[Order lists](orders/advanced.md#order-lists) for the broader set of mixed-instrument caveats.
+[Order lists](../orders/advanced.md#order-lists) for the broader set of mixed-instrument caveats.
 
 ### Position replay across NETTING cycles
 
@@ -145,7 +157,7 @@ reopen:
 | `True`                          | Keeps earlier fills correctable while position state can grow. |
 
 Live trading pins the option `True`: `LiveExecutionEngineConfig` always carries the replay log, so a venue
-[`OrderFillVoided`](events/order_fill_voided.md) referencing an earlier cycle still resolves. The
+[`OrderFillVoided`](../events/order_fill_voided.md) referencing an earlier cycle still resolves. The
 simulated venue never emits fill voids, so backtests take the bounded default. Enable it explicitly
 for a custom or external execution client that can correct a fill from a prior cycle; without the
 carried log the engine finds no matching position fragment and rejects the correction.
@@ -154,7 +166,7 @@ Realized-PnL snapshots follow the correction. A fill void that reaches an earlie
 position across the cycle boundary, moving the boundaries its archived snapshots describe, so the
 engine settles those snapshots into the corrected history's own closed cycles and realized PnL counts
 each cycle once. A void confined to the current cycle leaves the archive intact. See
-[Position snapshotting](positions.md#position-snapshotting).
+[Position snapshotting](../positions.md#position-snapshotting).
 
 ## Risk engine
 
@@ -214,7 +226,7 @@ For a qualifying exit, the risk engine treats checks as follows:
 | Non-qualifying orders                                                 | All ordinary risk checks continue to apply. |
 
 Only allowlist a venue when its downstream execution client enforces whole-position closing. See
-[Binance Futures close-position orders](../integrations/binance.md#close-position) for a supported
+[Binance Futures close-position orders](../../integrations/binance.md#close-position) for a supported
 configuration.
 
 :::warning
@@ -241,17 +253,7 @@ denied.
 
 The risk engine applies these rules before forwarding commands to execution. When
 `RiskEngineConfig.bypass` is enabled, trading state is not enforced. Execution clients still follow
-the [reduce-only send-or-reject contract](adapters.md#reduce-only-execution-contract).
-
-This enum reordering is a breaking change for numeric consumers: `REDUCING` changes from `3` to
-`2`, and `HALTED` changes from `2` to `3`. Name-based serialization remains unchanged. Update any
-stored integers, FFI integrations, or logic that casts `TradingState` to an integer.
-
-This change also removes the caller-facing `emergency_exit` command parameter, the
-`ExecutionClient::enforces_reduce_only` method, and the `REDUCE_ONLY_NOT_ENFORCED` and
-`REDUCE_ONLY_ENFORCEMENT_NOT_ESTABLISHED` denial codes. Submit eligible orders with
-`reduce_only=true` while the state is `REDUCING`; execution clients must follow the documented
-send-or-reject contract.
+the [reduce-only send-or-reject contract](../adapters.md#reduce-only-execution-contract).
 
 See the
 [`RiskEngineConfig` API reference](/docs/python-api-latest/config.html#nautilus_trader.risk.RiskEngineConfig)
@@ -263,114 +265,8 @@ An `ExecutionAlgorithm` receives primary orders selected by `exec_algorithm_id` 
 into smaller spawned orders. NautilusTrader supports custom algorithms and includes a native Rust
 TWAP implementation.
 
-### TWAP (Time-Weighted Average Price)
-
-TWAP spreads a primary order across regular intervals to reduce the market impact of submitting
-the full quantity at once. To register the native algorithm with an initialized `BacktestEngine`:
-
-```python
-from nautilus_trader.model import ExecAlgorithmId
-from nautilus_trader.config import ExecutionAlgorithmConfig
-
-engine.add_native_exec_algorithm(
-    "TwapAlgorithm",
-    ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("TWAP")),
-)
-```
-
-Orders routed to TWAP require these string-valued `exec_algorithm_params`:
-
-| Key             | Meaning                                                 |
-| --------------- | ------------------------------------------------------- |
-| `horizon_secs`  | Horizon used with the interval to determine the slices. |
-| `interval_secs` | Time between slices.                                    |
-
-Both values must parse as positive numbers, and `horizon_secs` must be at least
-`interval_secs`. The algorithm submits the first slice immediately and the remaining slices at
-the configured interval. TWAP denies the primary order before submission when the order type,
-instrument, or schedule is unsupported or invalid.
-
-### Writing execution algorithms
-
-To define a Python execution algorithm, subclass `ExecutionAlgorithm` and implement
-`on_order(...)`:
-
-```python
-from nautilus_trader.model import ExecAlgorithmId
-from nautilus_trader.trading import ExecutionAlgorithm
-from nautilus_trader.config import ExecutionAlgorithmConfig
-
-
-class MyExecutionAlgorithm(ExecutionAlgorithm):
-    def __init__(self) -> None:
-        super().__init__(
-            ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("MY-ALGO")),
-        )
-
-    def on_order(self, order) -> None: ...
-```
-
-Python execution algorithms provide cache and portfolio access, a clock for timers, signals, and
-methods for spawning orders.
-
-After registration, the message bus routes an order to the algorithm whose `ExecAlgorithmId`
-matches the order's `exec_algorithm_id`. The optional `exec_algorithm_params` field is a
-`Mapping[str, str]`. Override `on_order_list(...)` to handle a list as a unit; its default
-implementation passes each order to `on_order(...)`.
-
-:::warning
-Validate required `exec_algorithm_params` keys and parse their string values before executing an
-order. Call `deny_order(...)` with a standardized [reason code](#order-denied-reasons), such as
-`VALIDATION_FAILED: horizon_secs not found in exec_algorithm_params`, when the order cannot be executed.
-:::
-
-An order received by an execution algorithm is the primary order. Use these methods to create
-spawned orders:
-
-- `spawn_market(...)`: Creates a `MARKET` order.
-- `spawn_market_to_limit(...)`: Creates a `MARKET_TO_LIMIT` order.
-- `spawn_limit(...)`: Creates a `LIMIT` order.
-
-Each method takes the primary order as its first argument. By default, the method reduces the
-primary order quantity by the spawned `quantity`. Pass `reduce_primary=False` to keep the primary
-quantity unchanged.
-
-:::warning
-When `reduce_primary=True`, the spawned quantity must not exceed the primary order's `leaves_qty`
-(remaining unfilled quantity).
-:::
-
-If a spawned order is denied or rejected before acceptance, the deducted quantity is automatically
-restored to the primary order. Once accepted by the venue, the reduction is considered committed.
-
-An execution algorithm can keep spawning orders, submit the remaining primary order, or do both.
-The built-in TWAP algorithm submits the remaining primary order on the final interval.
-
-### Spawned orders
-
-Every spawned order sets `exec_spawn_id` to the primary order's `client_order_id`. Its own
-`client_order_id` follows this pattern:
-
-```text
-{exec_spawn_id}-E{spawn_sequence}
-```
-
-For example, the first order spawned from `O-20230404-001-000` has the ID
-`O-20230404-001-000-E1`.
-
-:::note
-The primary and spawned terminology distinguishes execution slicing from parent and child
-contingent-order relationships.
-:::
-
-### Managing execution algorithm orders
-
-The `Cache` provides two primary queries:
-
-- `orders_for_exec_algorithm(...)`: Returns orders for an algorithm, with optional venue,
-  instrument, strategy, account, and side filters.
-- `orders_for_exec_spawn(...)`: Returns the primary order and its spawned orders for a primary
-  `ClientOrderId`.
+See [Execution algorithms](algorithms.md) for TWAP configuration, custom algorithms,
+spawned-order behavior, and cache queries.
 
 ## Cancel-all routing
 
@@ -445,49 +341,13 @@ The external client owns any fan-out needed behind that boundary.
 
 ## Command outcomes
 
-Execution commands resolve according to the evidence available:
+Execution commands distinguish definitive local failures, definitive venue results, and unknown
+live outcomes. An unknown outcome remains in flight for stream updates, polling, queries, or
+reconciliation. Retry exhaustion can later apply a synthetic terminal reconciliation event.
 
-| Evidence                 | Meaning                                                         | Result                                                                                          |
-| ------------------------ | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Definitive local failure | Validation proves that the command was not sent.                | Denies a submit or rejects a modify or cancel when the failure is attributable to that command. |
-| Definitive result        | The matching engine or venue explicitly confirms the outcome.   | Applies the corresponding accepted, updated, canceled, or rejected event.                       |
-| Unknown live outcome     | The command may have reached the venue, but no result is known. | Keeps the command in flight without inventing a rejection.                                      |
-
-The failure event depends on the command and when the failure becomes definitive:
-
-| Command                             | Event                 | Meaning                                                                |
-| ----------------------------------- | --------------------- | ---------------------------------------------------------------------- |
-| Submit or submit order list         | `OrderDenied`         | Local checks prevent submission; no `OrderSubmitted` event is emitted. |
-| Submit or submit order list         | `OrderRejected`       | The submit entered execution and was later proven unsuccessful.        |
-| Modify                              | `OrderModifyRejected` | The requested modification was proven unsuccessful.                    |
-| Cancel, cancel-all, or batch cancel | `OrderCancelRejected` | The requested cancellation was proven unsuccessful.                    |
-
-For modify or cancel preparation, Nautilus emits the matching rejection only when the failure is
-attributable to that command and proves it was not sent. Otherwise, it logs the failure without
-inventing an outcome.
-
-A successful batch response can still contain definitive per-order failures. A whole-request
-failure without per-order evidence does not prove that every child command failed.
-
-:::note[Unknown live outcomes]
-Transport errors, timeouts, disconnects, task cancellation, exhausted adapter request retries,
-missing acknowledgements, and parse failures after transmission usually leave the venue outcome
-unknown. HTTP status codes and rate limits are definitive only when venue-specific semantics prove
-that the command was not accepted.
-
-The live engine initially keeps an unknown outcome in flight while stream updates, polling, queries,
-or reconciliation determine the venue state. A later in-flight check can apply a terminal
-reconciliation event after the configured retry limit.
-:::
-
-An **in-flight order** is awaiting resolution:
-
-- `SUBMITTED`: initial submission awaiting acceptance or rejection.
-- `PENDING_UPDATE`: modification awaiting confirmation.
-- `PENDING_CANCEL`: cancellation awaiting confirmation.
-
-See [Runtime checks](reconciliation.md#runtime-checks) for how live reconciliation monitors and
-resolves these states.
+See [Execution policies](policies.md#command-outcomes) for the evidence classes,
+delivery and retry limits, persistence boundary, and terminal reconciliation provenance. See
+[Runtime checks](reconciliation.md#runtime-checks) for the continuous reconciliation procedure.
 
 ## Order denied reasons
 
@@ -500,10 +360,12 @@ include a diagnostic suffix. Only the leading code is canonical. Messages use th
 - `CODE: value; free text` when one typed value precedes a free-text diagnostic.
 
 The table covers local denials emitted by execution algorithms and clients as well as the risk and
-execution engines. These codes are the source of truth for locally denied orders; venue rejections
-(`OrderRejected`) instead carry the venue-provided meaning. Adapters remove protocol wrappers and
-bound untrusted venue text before emission without replacing it with a standardized local denial
-code.
+execution engines. These codes are the source of truth for locally denied orders. Venue-confirmed
+`OrderRejected` events instead carry the venue-provided meaning, while synthetic reconciliation
+rejections use the reasons documented under
+[Terminal reconciliation provenance](policies.md#terminal-reconciliation-provenance).
+Adapters remove protocol wrappers and bound untrusted venue text before emission without replacing
+it with a standardized local denial code.
 
 Price and quantity checks can also emit these code-led reasons on `OrderModifyRejected`:
 
@@ -577,7 +439,7 @@ cross or immediately match. Other venue rejections leave it `false`.
 
 When `manage_own_order_books` is enabled, the `ExecutionEngine` maintains a market-by-order
 (MBO/L3) view of your working orders for each instrument. Strategies can subtract these orders from
-the public book to estimate net available liquidity. See [Own order book](order_book.md#own-order-book)
+the public book to estimate net available liquidity. See [Own order book](../order_book.md#own-order-book)
 for lifecycle, queries, filtering, and auditing.
 
 ### Safe cancellation queries
@@ -608,7 +470,7 @@ Live fills can arrive through two channels:
 
 Stable `trade_id` values let the engine deduplicate the same fill across both channels. If the
 logical fill arrives with different IDs, the engine treats the reports as distinct. See
-[Continuous reconciliation](../how_to/configure_live_trading.md#continuous-reconciliation) for
+[Continuous reconciliation](../../how_to/configure_live_trading.md#continuous-reconciliation) for
 configuration details.
 
 ### System behavior
@@ -674,7 +536,7 @@ and is not a substitute for duplicate-fill detection. Use
 ## Fill corrections
 
 Some venues can later reduce or invalidate a fill. Nautilus records this as an
-[`OrderFillVoided`](events/order_fill_voided.md) event, never as an opposite-side fill. The event
+[`OrderFillVoided`](../events/order_fill_voided.md) event, never as an opposite-side fill. The event
 identifies the original trade and carries the cumulative voided quantity and fee correction.
 
 The execution engine rebuilds the affected order and positions and refreshes portfolio position and
@@ -685,7 +547,7 @@ Adapters must publish the referenced fill before a reopened correction or a part
 leaves the order executable. Without a local fill, a non-reopened correction makes the whole order
 terminal, even when `voided_qty` is less than the order quantity. A later working status report does
 not reopen `VOIDED`. See the complete
-[`OrderFillVoided` contract](events/order_fill_voided.md#contract).
+[`OrderFillVoided` contract](../events/order_fill_voided.md#contract).
 
 ### How voided fills occur
 
@@ -720,96 +582,18 @@ Each venue publishes the conditions under which it acts:
 | Polymarket       | `FAILED` trade status after an on-chain revert or reorg. | [User channel](https://docs.polymarket.com/developers/CLOB/websocket/user-channel).                                                              |
 
 Nautilus adapters emit `OrderFillVoided` where the venue publishes the void on a stream the adapter
-consumes: [Betfair](../integrations/betfair.md#voided-fills) from the order change message `sv`
+consumes: [Betfair](../../integrations/betfair.md#voided-fills) from the order change message `sv`
 field, and
-[Polymarket](../integrations/polymarket.md#trades) from the user channel trade status.
-
-## Reconciliation reports
-
-The execution engine consumes four reconciliation report variants from live adapters. Each variant
-has a different normal role when its matching order is absent from the cache. Explicitly bounded
-history can instead use [order-only fill projection](#order-only-fill-projection).
-
-| Variant                | Purpose                  | Missing-order action                                 |
-| ---------------------- | ------------------------ | ---------------------------------------------------- |
-| `OrderStatusReport`    | Order state update.      | Creates an order and infers any reported fill.       |
-| `FillReport`           | Standalone fill.         | Creates a market order, then applies fill metadata.  |
-| `OrderWithFills`       | Order state plus fills.  | Creates an order, applies fills, and infers residue. |
-| `PositionStatusReport` | Venue position snapshot. | Logs the report; positions remain fill-derived.      |
-
-### When to use each variant
-
-Adapters choose the variant that matches the venue event:
-
-- Use `OrderStatusReport` for order lifecycle updates when fill details arrive on a separate
-  stream.
-- Use `FillReport` for a venue-initiated closure that has a fill but no user-level order.
-  Hyperliquid liquidations follow this pattern.
-- Use `OrderWithFills` when one venue event contains both an order status and its fills. Binance
-  Futures uses this for exchange-generated ADL, liquidation, and settlement orders.
-
-### Order-only fill projection
-
-During startup reconciliation, a bounded historical report can prove an order's status and filled
-quantity without proving that its fill belongs in the current position lifecycle. The engine then
-projects the `OrderFilled` event onto the order only. The order reaches the exact reported state,
-while the fill does not create or change a position and does not update portfolio economics.
-
-This projection applies only to reconciliation recovery. Raw reports remain available, and an
-authoritative position report can reconcile the current venue position separately. See
-[Bounded history safety](reconciliation.md#bounded-history-safety) for the required evidence.
-
-### External order creation
-
-When a report references an order that is absent from the cache, the engine creates an *external
-order*. This covers venue-initiated ADL, liquidation, or settlement, orders placed by another
-process, and orders not yet observed locally.
-
-The naming distinguishes configuration intent from live ownership state:
-
-- `external_order_instrument_ids` is the serializable strategy configuration intent. It names the
-  instruments whose external orders should be assigned to the strategy when it is registered.
-- An external order claim is an active cache entry that maps one `InstrumentId` to one `StrategyId`.
-  The code uses `external_order_claims` for the collection of these live entries.
-
-Live strategy registration materializes the configured instrument IDs with
-`register_external_order_claims`. This operation is additive and strict: it rejects a repeated
-instrument or any instrument that already has a claim, including a claim for the same strategy.
-
-The strategy method `set_external_order_instrument_ids(...)` delegates to the cache operation
-`set_external_order_claims`. This operation treats its input as the strategy's complete desired
-active set. It can retain or release that strategy's existing claims and acquire unclaimed
-instruments, but it cannot take a claim from another strategy. Validation covers the complete input
-before changing the cache, so a conflict leaves every existing claim unchanged.
-
-The `ExecutionManager` and `ExecutionEngine` read the same canonical claim map from the cache when
-they process external reports. They assign an external order to:
-
-- The strategy identified by the active claim for the report's instrument.
-- The `EXTERNAL` strategy as a default fallback.
-
-An active-claim update is therefore visible to both components without a coordination message. The
-claim present when an external order is created determines the assignment. Existing cached orders
-keep their assigned `StrategyId`; changing a claim does not reassign them.
-
-Transferring an instrument between strategies requires the current owner to release it before the
-new owner claims it. There is no atomic handoff across strategies. A report processed between the
-release and acquisition has no active claim and is assigned to `EXTERNAL`. Cache resets preserve
-active claims so registered routing remains configured, while retiring a strategy clears its claims.
-
-The external order uses the report's `client_order_id` when present and otherwise derives one from
-the `venue_order_id`. The engine adds the order to the cache, registers its venue order ID, and
-emits the applicable `OrderAccepted`, `OrderFilled`, `OrderCanceled`, or `OrderExpired` events.
-Positions then update through the normal event pipeline.
-
-See [Claiming external orders](strategies.md#claiming-external-orders) for strategy configuration
-and runtime updates.
+[Polymarket](../../integrations/polymarket.md#trades) from the user channel trade status.
 
 ## Related guides
 
-- [Events](events/): Order and position event types and dispatch.
+- [Events](../events/): Order and position event types and dispatch.
+- [Execution algorithms](algorithms.md): TWAP, custom algorithms, and spawned orders.
+- [Execution policies](policies.md): Delivery, state, persistence, and recovery
+  boundaries.
 - [Execution reconciliation](reconciliation.md): Live state recovery and runtime consistency checks.
-- [Order book](order_book.md): Public and own order book behavior.
-- [Orders](orders/): Order types and management.
-- [Positions](positions.md): Position tracking from executions.
-- [Strategies](strategies.md): Order submission from strategies.
+- [Order book](../order_book.md): Public and own order book behavior.
+- [Orders](../orders/): Order types and management.
+- [Positions](../positions.md): Position tracking from executions.
+- [Strategies](../strategies.md): Order submission from strategies.

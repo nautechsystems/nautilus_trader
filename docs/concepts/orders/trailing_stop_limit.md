@@ -90,4 +90,4 @@ for further details.
 
 - [Orders](index.md#trailing-offset-type) - Trigger and trailing offset types.
 - [Emulated orders](emulated.md) - Emulating trailing stops on venues without native support.
-- [Execution](../execution.md) - How orders reach the venue and fills are handled.
+- [Execution](../execution/) - How orders reach the venue and fills are handled.
