@@ -182,6 +182,9 @@ pub struct KrakenExecutionClientConfig {
     /// `AUTHENTICATION_TIMEOUT_SECS` when unset (Kraken Futures login).
     pub auth_timeout_secs: Option<u64>,
     pub max_requests_per_second: Option<u32>,
+    /// Maximum retry attempts for retryable REST requests.
+    #[builder(default = 3)]
+    pub max_retries: u32,
     #[builder(default)]
     pub transport_backend: TransportBackend,
 
@@ -251,6 +254,7 @@ nautilus_core::impl_pyo3_config_getters!(KrakenExecutionClientConfig {
     heartbeat_interval_secs: u64,
     auth_timeout_secs: Option<u64>,
     max_requests_per_second: Option<u32>,
+    max_retries: u32,
     spot_account_type: AccountType,
     default_leverage: Option<u16>,
     use_spot_position_reports: bool,
@@ -368,6 +372,20 @@ mod tests {
         let cfg = KrakenExecutionClientConfig::default();
         assert!(cfg.use_ws_trade);
         assert_eq!(cfg.ws_request_timeout_secs, 5);
+        assert_eq!(cfg.max_retries, 3);
+    }
+
+    #[rstest]
+    fn test_exec_config_max_retries_serde_round_trip() {
+        let config = KrakenExecutionClientConfig {
+            max_retries: 0,
+            ..Default::default()
+        };
+
+        let serialized = serde_json::to_string(&config).unwrap();
+        let deserialized: KrakenExecutionClientConfig = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized.max_retries, 0);
     }
 
     #[rstest]
@@ -409,6 +427,7 @@ validate_l3_checksum = false
         assert_eq!(config.product_type, expected.product_type);
         assert_eq!(config.environment, expected.environment);
         assert_eq!(config.timeout_secs, expected.timeout_secs);
+        assert_eq!(config.max_retries, 3);
         assert_eq!(config.spot_account_type, expected.spot_account_type);
         assert_eq!(
             config.use_spot_position_reports,
