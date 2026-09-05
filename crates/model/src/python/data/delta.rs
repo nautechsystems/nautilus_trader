@@ -105,6 +105,34 @@ impl OrderBookDelta {
         self.action
     }
 
+    /// Returns whether the delta adds an order.
+    #[getter]
+    #[pyo3(name = "is_add")]
+    fn py_is_add(&self) -> bool {
+        self.is_add()
+    }
+
+    /// Returns whether the delta updates an order.
+    #[getter]
+    #[pyo3(name = "is_update")]
+    fn py_is_update(&self) -> bool {
+        self.is_update()
+    }
+
+    /// Returns whether the delta deletes an order.
+    #[getter]
+    #[pyo3(name = "is_delete")]
+    fn py_is_delete(&self) -> bool {
+        self.is_delete()
+    }
+
+    /// Returns whether the delta clears the order book.
+    #[getter]
+    #[pyo3(name = "is_clear")]
+    fn py_is_clear(&self) -> bool {
+        self.is_clear()
+    }
+
     #[getter]
     #[pyo3(name = "order")]
     fn py_order(&self) -> BookOrder {

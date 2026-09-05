@@ -251,24 +251,19 @@ precision and increment, and timestamps instead.
 
 Several v1 inspection names have direct v2 replacements:
 
-| v1 name                                              | v2 name                         |
-| ---------------------------------------------------- | ------------------------------- |
-| `instrument.activation_utc`                          | `instrument.activation_ns`      |
-| `instrument.expiration_utc`                          | `instrument.expiration_ns`      |
-| `instrument.tick_scheme_name`                        | `instrument.tick_scheme`        |
-| `AdaptiveMovingAverage.period` or `.period_er`       | `.period_efficiency_ratio`      |
-| `AdaptiveMovingAverage.period_alpha_fast`            | `.period_fast`                  |
-| `AdaptiveMovingAverage.period_alpha_slow`            | `.period_slow`                  |
-| `LinearRegression.R2`                                | `LinearRegression.r2`           |
-| `DirectionalMovement.value`                          | `.pos` and `.neg`               |
-| `DataType.type`                                      | `DataType.type_name`            |
-| `OrderBookDelta.is_add/is_clear/is_delete/is_update` | inspect `OrderBookDelta.action` |
-| `OrderBookDeltas.is_snapshot`                        | inspect `OrderBookDeltas.flags` |
-| `Bar.is_revision`                                    | removed                         |
+| v1 name                                        | v2 name                    |
+| ---------------------------------------------- | -------------------------- |
+| `instrument.tick_scheme_name`                  | `instrument.tick_scheme`   |
+| `AdaptiveMovingAverage.period` or `.period_er` | `.period_efficiency_ratio` |
+| `AdaptiveMovingAverage.period_alpha_fast`      | `.period_fast`             |
+| `AdaptiveMovingAverage.period_alpha_slow`      | `.period_slow`             |
+| `LinearRegression.R2`                          | `LinearRegression.r2`      |
+| `DirectionalMovement.value`                    | `.pos` and `.neg`          |
+| `DataType.type`                                | `DataType.type_name`       |
+| `Bar.is_revision`                              | removed                    |
 
-`activation_ns` and `expiration_ns` contain UNIX nanoseconds; convert them to the datetime type
-used by the application when calendar-time inspection is needed. V1 `DirectionalMovement.value`
-never changed from zero, so v2 exposes the meaningful positive and negative outputs instead.
+V1 `DirectionalMovement.value` never changed from zero, so v2 exposes the meaningful positive and
+negative outputs instead.
 
 `MarginAccount.margin()`, `MarginAccount.margins()`, and `MarginAccount.account_margins()` keep
 their v1 names. Other read-only margin queries move the measure or scope qualifier to the front in
@@ -754,6 +749,11 @@ Account for these differences from v1:
   sides raises `TypeError`. Sort on `level.price` when code needs side-independent price order.
 - V2 `OrderBook` pickle data is not interchangeable with v1 pickle data. Rebuild snapshots from
   source market data when moving between the implementations.
+- `OrderBookDeltas.is_snapshot` tests `F_SNAPSHOT` on the batch flags, which come from the final
+  delta. The old implementation tested whether the first delta had a `CLEAR` action, so a clear
+  without the flag is not a snapshot.
+- Instrument `activation_utc` and `expiration_utc` properties return UTC-aware `datetime.datetime`
+  values. Use `activation_ns` and `expiration_ns` when exact nanosecond precision is required.
 - v2 caches `OptionGreeks` for option fee calculation; this extends v1.
 - `Bar.is_revision` is not exposed on the v2 Python surface. Do not depend on it during migration.
 - A direct `Position.apply` fill that crosses zero resets the open entry price to the flipping fill.

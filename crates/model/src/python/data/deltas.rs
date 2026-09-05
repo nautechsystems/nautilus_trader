@@ -79,6 +79,13 @@ impl OrderBookDeltas {
         self.flags
     }
 
+    /// Returns whether the batch is a snapshot.
+    #[getter]
+    #[pyo3(name = "is_snapshot")]
+    fn py_is_snapshot(&self) -> bool {
+        self.is_snapshot()
+    }
+
     #[getter]
     #[pyo3(name = "sequence")]
     fn py_sequence(&self) -> u64 {

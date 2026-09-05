@@ -267,6 +267,46 @@ def test_order_book_delta_clear(audusd_id: InstrumentId) -> None:
     assert delta.sequence == 5
 
 
+@pytest.mark.parametrize(
+    ("action", "expected"),
+    [
+        pytest.param(BookAction.ADD, (True, False, False, False), id="add"),
+        pytest.param(BookAction.UPDATE, (False, True, False, False), id="update"),
+        pytest.param(BookAction.DELETE, (False, False, True, False), id="delete"),
+        pytest.param(BookAction.CLEAR, (False, False, False, True), id="clear"),
+    ],
+)
+def test_order_book_delta_action_properties(
+    audusd_id: InstrumentId,
+    bid_order: object,
+    action: BookAction,
+    expected: tuple[bool, bool, bool, bool],
+) -> None:
+    """
+    Test order book delta action properties.
+    """
+    delta = OrderBookDelta(audusd_id, action, bid_order, 0, 1, 0, 0)
+    actual = (delta.is_add, delta.is_update, delta.is_delete, delta.is_clear)
+
+    assert actual == expected
+    assert tuple(type(value) for value in actual) == (bool, bool, bool, bool)
+
+
+@pytest.mark.parametrize("property_name", ["is_add", "is_update", "is_delete", "is_clear"])
+def test_order_book_delta_action_properties_are_read_only(
+    delta: object,
+    property_name: str,
+) -> None:
+    """
+    Test order book delta action properties are read-only.
+    """
+    with pytest.raises(
+        AttributeError,
+        match=rf"attribute '{property_name}'.*not writable",
+    ):
+        setattr(delta, property_name, False)
+
+
 def test_order_book_deltas_construction(
     audusd_id: InstrumentId,
     bid_order: object,
@@ -287,6 +327,70 @@ def test_order_book_deltas_construction(
     assert len(deltas.deltas) == 2
     assert deltas.deltas[0].action == BookAction.ADD
     assert deltas.deltas[1].action == BookAction.ADD
+
+
+@pytest.mark.parametrize(
+    ("actions_and_flags", "expected"),
+    [
+        pytest.param(
+            [(BookAction.ADD, RecordFlag.F_SNAPSHOT.value)],
+            True,
+            id="snapshot",
+        ),
+        pytest.param(
+            [
+                (
+                    BookAction.ADD,
+                    RecordFlag.F_SNAPSHOT.value | RecordFlag.F_LAST.value,
+                ),
+            ],
+            True,
+            id="combined-flags",
+        ),
+        pytest.param(
+            [(BookAction.ADD, RecordFlag.F_MBP.value)],
+            False,
+            id="not-snapshot",
+        ),
+        pytest.param(
+            [(BookAction.CLEAR, 0), (BookAction.ADD, 0)],
+            False,
+            id="clear-without-snapshot",
+        ),
+    ],
+)
+def test_order_book_deltas_is_snapshot(
+    audusd_id: InstrumentId,
+    bid_order: object,
+    actions_and_flags: list[tuple[BookAction, int]],
+    expected: bool,
+) -> None:
+    """
+    Test order book deltas snapshot property.
+    """
+    deltas = [
+        OrderBookDelta(audusd_id, action, bid_order, flags, 1, 0, 0)
+        for action, flags in actions_and_flags
+    ]
+
+    assert OrderBookDeltas(audusd_id, deltas).is_snapshot is expected
+
+
+def test_order_book_deltas_is_snapshot_is_read_only(
+    audusd_id: InstrumentId,
+    bid_order: object,
+) -> None:
+    """
+    Test order book deltas snapshot property is read-only.
+    """
+    delta = OrderBookDelta(audusd_id, BookAction.ADD, bid_order, 0, 1, 0, 0)
+    deltas = OrderBookDeltas(audusd_id, [delta])
+
+    with pytest.raises(
+        AttributeError,
+        match=r"attribute 'is_snapshot'.*not writable",
+    ):
+        deltas.is_snapshot = False
 
 
 def test_order_book_deltas_pickle_roundtrip(

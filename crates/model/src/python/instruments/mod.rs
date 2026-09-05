@@ -15,6 +15,7 @@
 
 //! Instrument definitions the trading domain model.
 
+use jiff::Timestamp;
 use nautilus_core::python::{serialization::from_dict_pyo3, to_pyvalue_err};
 use pyo3::{
     IntoPyObjectExt, Py, PyAny, PyResult, Python,
@@ -234,6 +235,28 @@ macro_rules! impl_instrument_isin_getter {
     };
 }
 
+macro_rules! impl_instrument_utc_getters {
+    ($($type:ty),+ $(,)?) => {
+        $(
+            #[pyo3_stub_gen::derive::gen_stub_pymethods]
+            #[pyo3::pymethods]
+            impl $type {
+                #[getter]
+                #[pyo3(name = "activation_utc")]
+                fn py_activation_utc(&self) -> Timestamp {
+                    self.activation_ns.to_datetime_utc()
+                }
+
+                #[getter]
+                #[pyo3(name = "expiration_utc")]
+                fn py_expiration_utc(&self) -> Timestamp {
+                    self.expiration_ns.to_datetime_utc()
+                }
+            }
+        )+
+    };
+}
+
 impl_instrument_common_pymethods!(BettingInstrument);
 impl_instrument_common_pymethods!(BinaryOption);
 impl_instrument_common_pymethods!(Cfd);
@@ -252,6 +275,18 @@ impl_instrument_common_pymethods!(OptionContract);
 impl_instrument_common_pymethods!(OptionSpread);
 impl_instrument_common_pymethods!(PerpetualContract);
 impl_instrument_common_pymethods!(TokenizedAsset);
+
+impl_instrument_utc_getters!(
+    BinaryOption,
+    CryptoFuture,
+    CryptoFuturesSpread,
+    CryptoOption,
+    CryptoOptionSpread,
+    FuturesContract,
+    FuturesSpread,
+    OptionContract,
+    OptionSpread,
+);
 
 impl_instrument_getter!(
     "asset_class",

@@ -14,6 +14,8 @@ Released on TBD (UTC).
 - Added Python enum surface (`from_str`, `name`, `value`, `variants`) to `BarIntervalType`
 - Added Python `OrderBook.to_deltas(...)` and `OrderBook.get_all_crossed_levels(...)`
 - Added Python `OrderBook` pickle and deep-copy support and `BookLevel` comparisons
+- Added Python `OrderBookDelta.is_add`, `is_update`, `is_delete`, `is_clear`, and `OrderBookDeltas.is_snapshot`
+- Added Python `activation_utc` and `expiration_utc` properties to expiring instruments
 - Added Python `symbol` and `venue` properties to regular and synthetic instruments
 - Added Bybit self-match prevention, set with `smp_type` on the execution client config or per order
 - Added Polymarket collateral-sized limit BUY orders with exact limit price preservation
@@ -25,6 +27,7 @@ Released on TBD (UTC).
 
 - Removed Coinbase `CreateOrderRequest.reduce_only`; reduce-only orders are rejected before submission
 - Removed the dormant `PortfolioStatistic::calculate_from_orders` trait method; no analyzer supplied order data to statistics
+- Changed FFI `orderbook_deltas_is_snapshot` to use `F_SNAPSHOT` instead of the first delta action
 - Changed `PortfolioAnalyzer.realized_pnls()` to return records in ascending event-time order rather than position-derived records followed by recorded ones
 - Changed registered PnL statistics to run on every analyzed currency, including runs that closed no trades, where they receive an empty list; `Win Rate` and its peers now report NaN for such runs rather than being absent
 - Renamed blockchain log parsing modules to `hypersync::log` and `rpc::log`; update Rust imports
