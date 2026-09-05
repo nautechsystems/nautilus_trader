@@ -606,6 +606,8 @@ impl PolymarketDataClient {
             && !self.rtds_feed.has_retained_tasks().await;
 
         if drained {
+            self.ws_open_tokens.rcu(|tokens| tokens.clear());
+
             if self.reset_pending {
                 self.ws_client.clear_reconnect_state();
                 self.rtds_feed = crate::rtds::PolymarketRtdsFeed::new_with_proxy_and_socket_control(

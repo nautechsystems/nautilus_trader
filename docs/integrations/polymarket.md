@@ -1158,8 +1158,9 @@ After `resolve_poll_max_wait_secs`, the watch pauses and releases resolution-onl
 ownership, including when polling is disabled. An open market's independent quote, trade, or book
 subscriptions are unaffected by this pause. The client retains settlement metadata and ownership
 for manual recovery; a manual request does not restart the automatic deadline. Disconnect stops
-network work, and reconnect resumes unfinished resolution-subscription loading. Reset discards
-retained ownership and outcomes and requires fresh subscriptions.
+network work, and reconnect resumes unfinished loading and replays cached, active resolution
+WebSocket subscriptions. Reset discards retained ownership and outcomes and requires fresh
+subscriptions.
 
 #### Manual resolution requests
 
@@ -1405,7 +1406,7 @@ Class/struct: `PolymarketDataClientConfig`.
 | `http_timeout_secs`, `ws_timeout_secs` | `60`, `30` | HTTP and WebSocket timeout in seconds.                                                    |
 | `ws_max_subscriptions`                 | `200`      | Per-connection subscription cap; the market pool shards across connections at this bound. |
 | `update_instruments_interval_mins`     | `60`       | Instrument catalogue refresh interval; pass `None` to disable it.                         |
-| `subscribe_new_markets`                | `false`    | Subscribe to new-market discovery events; also enables `best_bid_ask` quote ticks.        |
+| `subscribe_new_markets`                | `false`    | Subscribe to discovery and resolution events; also enables `best_bid_ask` quote ticks.    |
 | `new_market_filter`                    | `None`     | Rust-only filter applied to newly discovered markets before instrument emission.          |
 | `new_market_fetch_max_concurrency`     | `8`        | Bound concurrent market fetches from discovery events.                                    |
 | `drop_quotes_missing_side`             | `true`     | Drop quotes that do not contain both a bid and an ask.                                    |
