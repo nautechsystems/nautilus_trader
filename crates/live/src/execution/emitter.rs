@@ -26,7 +26,7 @@
 //! |-- core: ExecutionClientCore    (identity + connection state)
 //! `-- emitter: ExecutionEventEmitter   (event generation + async dispatch)
 //!     |-- factory: OrderEventFactory
-//!     `-- sender: ArcSwapOption<Sender>   (set in start())
+//!     `-- sender: ArcSwapOption<Sender>   (installed in the factory's create())
 //! ```
 
 use std::sync::Arc;
@@ -58,7 +58,8 @@ use nautilus_model::{
 /// channel sender for async dispatch. It provides `emit_*` convenience methods that
 /// generate and send events in a single call.
 ///
-/// The sender is set during the adapter's `start()` phase via [`set_sender`](Self::set_sender).
+/// The sender is installed via [`set_sender`](Self::set_sender) in the execution client
+/// factory's `create`, resolved there with `try_get_exec_event_sender`.
 /// Clones share the sender slot and observe later sender installations and replacements.
 #[derive(Debug, Clone)]
 pub struct ExecutionEventEmitter {
@@ -70,7 +71,8 @@ pub struct ExecutionEventEmitter {
 impl ExecutionEventEmitter {
     /// Creates a new [`ExecutionEventEmitter`] with no sender.
     ///
-    /// Call [`set_sender`](Self::set_sender) in the adapter's `start()` method.
+    /// Call [`set_sender`](Self::set_sender) in the factory's `create`, before returning the
+    /// client.
     #[must_use]
     pub fn new(
         clock: &'static AtomicTime,
@@ -92,7 +94,11 @@ impl ExecutionEventEmitter {
 
     /// Installs or replaces the sender for this emitter and all its clones.
     ///
-    /// Call in the adapter's `start()` method.
+    /// Call in the execution client factory's `create`. `LiveNodeBuilder` binds the runner's
+    /// senders before it calls any factory, so `try_get_exec_event_sender` resolves there and
+    /// every clone taken during construction carries the result. Installing only in the client's
+    /// `start` is sufficient when `LiveNode` drives the lifecycle, and leaves the emitter
+    /// uninitialized for a client constructed where those senders are not bound.
     pub fn set_sender(&mut self, sender: tokio::sync::mpsc::UnboundedSender<ExecutionEvent>) {
         self.sender.store(Some(Arc::new(sender)));
     }
