@@ -26,7 +26,7 @@
 //! |-- core: ExecutionClientCore    (identity + connection state)
 //! `-- emitter: ExecutionEventEmitter   (event generation + async dispatch)
 //!     |-- factory: OrderEventFactory
-//!     `-- sender: ArcSwapOption<Sender>   (installed in the factory's create())
+//!     `-- sender: ArcSwapOption<Sender>   (shared slot, installed at create() and start())
 //! ```
 
 use std::sync::Arc;
@@ -58,8 +58,8 @@ use nautilus_model::{
 /// channel sender for async dispatch. It provides `emit_*` convenience methods that
 /// generate and send events in a single call.
 ///
-/// The sender is installed via [`set_sender`](Self::set_sender) in the execution client
-/// factory's `create`, resolved there with `try_get_exec_event_sender`.
+/// The sender is installed via [`set_sender`](Self::set_sender) in the client's `start`, and in the
+/// execution client factory's `create` when the calling thread has one.
 /// Clones share the sender slot and observe later sender installations and replacements.
 #[derive(Debug, Clone)]
 pub struct ExecutionEventEmitter {
@@ -71,8 +71,8 @@ pub struct ExecutionEventEmitter {
 impl ExecutionEventEmitter {
     /// Creates a new [`ExecutionEventEmitter`] with no sender.
     ///
-    /// Call [`set_sender`](Self::set_sender) in the factory's `create`, before returning the
-    /// client.
+    /// Call [`set_sender`](Self::set_sender) in the client's `start`, and in the factory's `create`
+    /// when `try_get_exec_event_sender` returns `Some`.
     #[must_use]
     pub fn new(
         clock: &'static AtomicTime,
@@ -94,11 +94,15 @@ impl ExecutionEventEmitter {
 
     /// Installs or replaces the sender for this emitter and all its clones.
     ///
-    /// Call in the execution client factory's `create`. `LiveNodeBuilder` binds the runner's
-    /// senders before it calls any factory, so `try_get_exec_event_sender` resolves there and
-    /// every clone taken during construction carries the result. Installing only in the client's
-    /// `start` is sufficient when `LiveNode` drives the lifecycle, and leaves the emitter
-    /// uninitialized for a client constructed where those senders are not bound.
+    /// The slot is shared, so a clone taken before this call observes the sender it installs.
+    /// Events emitted before any install are dropped with a warning.
+    ///
+    /// Call in the client's `start`, resolved from `get_exec_event_sender`: `LiveNode` rebinds the
+    /// runner's senders on the calling thread before it starts clients, so the `start` install is
+    /// the authoritative one. Call it in the execution client factory's `create` as well when
+    /// `try_get_exec_event_sender` returns `Some`; `None` there means the calling thread has no
+    /// bound senders and is not a construction failure. See the adapter guide for hosts that drive
+    /// a client outside `LiveNode`.
     pub fn set_sender(&mut self, sender: tokio::sync::mpsc::UnboundedSender<ExecutionEvent>) {
         self.sender.store(Some(Arc::new(sender)));
     }
