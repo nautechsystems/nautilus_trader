@@ -176,6 +176,23 @@ The balance-allowance endpoint has two decoding paths:
 Use the strict path whenever a decision depends on allowance evidence so ambiguous wire data cannot
 become approval authority.
 
+### Locked balances
+
+`GET /balance-allowance` reports only the collateral total, so each account state refresh also
+fetches the venue's open orders (`GET /data/orders`) and reports the remaining notional of resting
+BUY orders as `locked`, with `free = total - locked`. Three behaviors follow:
+
+- Only BUY orders reserve pUSD. A SELL reserves conditional tokens, which are not carried as a
+  balance.
+- Collateral spent on matched-but-unsettled fills has already left the open-order set but is not
+  yet reflected in the cached total, so `locked` sits under the venue's real hold while fills
+  settle.
+- `locked` is computed at each refresh (finalized trade, reconnect, mass status) and is stale
+  between refreshes.
+
+If the open-orders request fails, the refresh logs a warning and reports `locked = 0` so the
+balance update itself is not blocked.
+
 ## API keys
 
 The execution client requires CLOB L2 credentials. Create or derive them with Polymarket's

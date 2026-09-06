@@ -37,8 +37,8 @@ use ustr::Ustr;
 use super::{
     PolymarketExecutionClient,
     parse::{
-        parse_balance_allowance, recovered_terminal_order_status, sum_filled_quantity,
-        weighted_average_price,
+        locked_from_open_orders, parse_balance_allowance, recovered_terminal_order_status,
+        sum_filled_quantity, weighted_average_price,
     },
     reconciliation::{
         FillContext, FillReportScope, TargetOrderReportScope, apply_fill_time_filters,
@@ -52,7 +52,7 @@ use crate::{
     common::enums::SignatureType,
     http::{
         clob::PolymarketClobHttpClient,
-        query::{GetBalanceAllowanceParams, GetTradesParams},
+        query::{GetBalanceAllowanceParams, GetOrdersParams, GetTradesParams},
     },
 };
 
@@ -1058,19 +1058,31 @@ pub(super) async fn fetch_and_emit_account_state(
         ..Default::default()
     };
 
-    let balance = http_client
-        .get_balance(params)
-        .await
-        .context("failed to fetch balance")?;
+    // Open orders are fetched alongside the balance: the venue holds the remaining size
+    // of each resting BUY, which `GET /balance-allowance` does not report
+    let (balance_res, orders_res) = tokio::join!(
+        http_client.get_balance(params),
+        http_client.get_orders(GetOrdersParams::default()),
+    );
+    let balance = balance_res.context("failed to fetch balance")?;
+    let locked = match orders_res {
+        Ok(orders) => locked_from_open_orders(&orders),
+        Err(e) => {
+            // Degrade rather than block the balance update: total-only is stale but usable
+            log::warn!("Failed to fetch open orders for locked balance, reporting locked=0: {e}");
+            Decimal::ZERO
+        }
+    };
 
     let pusd = get_pusd_currency();
     let account_balance =
-        parse_balance_allowance(balance, pusd).context("failed to parse balance")?;
+        parse_balance_allowance(balance, locked, pusd).context("failed to parse balance")?;
 
     let ts_event = clock.get_time_ns();
     log::debug!(
-        "Account state updated: balance={} pUSD",
-        account_balance.total
+        "Account state updated: balance={} pUSD, locked={} pUSD",
+        account_balance.total,
+        account_balance.locked,
     );
     emitter.emit_account_state(vec![account_balance], vec![], true, ts_event, None);
     Ok(())
