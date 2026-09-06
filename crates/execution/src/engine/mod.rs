@@ -3241,27 +3241,23 @@ impl ExecutionEngine {
             && let Some(fill_position_id) = fill.position_id
             && cached_position_id != fill_position_id
         {
-            // A flip re-indexes the order to a newly minted virtual position ID while
-            // later fills of that order still carry the ID the order holds.
-            let flip_remainder = order.and_then(OrderAny::position_id) == Some(fill_position_id)
-                && fill_position_id.is_virtual()
-                && cached_position_id.is_virtual();
+            if oms_type == OmsType::Hedging {
+                if !self.is_flip_remainder(fill, cached_position_id, fill_position_id) {
+                    log::error!(
+                        "Cannot apply hedging fill {} for {}: venue position ID {fill_position_id} conflicts with cached position ID {cached_position_id}",
+                        fill.trade_id,
+                        fill.client_order_id(),
+                    );
 
-            if oms_type == OmsType::Hedging && !flip_remainder {
-                log::error!(
-                    "Cannot apply hedging fill {} for {}: venue position ID {fill_position_id} conflicts with cached position ID {cached_position_id}",
-                    fill.trade_id,
-                    fill.client_order_id(),
+                    return None;
+                }
+            } else {
+                log::warn!(
+                    "Incorrect position ID assigned to fill: \
+                     cached={cached_position_id}, assigned={fill_position_id}; \
+                     re-assigning from cache",
                 );
-
-                return None;
             }
-
-            log::warn!(
-                "Incorrect position ID assigned to fill: \
-                 cached={cached_position_id}, assigned={fill_position_id}; \
-                 re-assigning from cache",
-            );
         }
 
         if let Some(position_id) = cached_position_id {
@@ -3363,6 +3359,43 @@ impl ExecutionEngine {
         }
 
         true
+    }
+
+    /// Returns whether `fill` is a later fill of an order this engine already flipped.
+    ///
+    /// Flipping under `Hedging` closes the original virtual position with the reversing order
+    /// and opens a newly minted virtual position from the same order, moving the order's cache
+    /// index onto the new ID. Every later fill of that order still carries the original ID, so
+    /// the venue ID and the cached ID disagree for the rest of the order's life.
+    ///
+    /// The split is recognized from the two positions rather than from the order, because
+    /// applying a fill writes the determined ID onto the order and would erase the evidence for
+    /// the fill after it. Both halves must still name this order: the cached position was opened
+    /// by it, and the position the fill names was closed by it.
+    fn is_flip_remainder(
+        &self,
+        fill: &OrderFilled,
+        cached_position_id: PositionId,
+        fill_position_id: PositionId,
+    ) -> bool {
+        if !cached_position_id.is_virtual() || !fill_position_id.is_virtual() {
+            return false;
+        }
+
+        let cache = self.cache.borrow();
+        let client_order_id = fill.client_order_id();
+
+        let opened_by_order = cache
+            .position_ref(&cached_position_id)
+            .is_some_and(|flipped| flipped.opening_order_id == client_order_id);
+
+        let closed_by_order = cache
+            .position_ref(&fill_position_id)
+            .is_some_and(|original| {
+                original.is_closed() && original.closing_order_id == Some(client_order_id)
+            });
+
+        opened_by_order && closed_by_order
     }
 
     fn determine_hedging_position_id(
@@ -4244,15 +4277,18 @@ impl ExecutionEngine {
                     position.id
                 );
             }
-            // Snapshot closed position if reopening (NETTING mode)
-            self.snapshot_position(position)?;
         } else {
             // HEDGING mode
             log::warn!(
-                "Received fill for closed position {} in HEDGING mode; creating new position and ignoring previous state",
+                "Received fill for closed position {} in HEDGING mode; archiving closed cycle and creating new position",
                 position.id
             );
         }
+
+        // Snapshot the closed cycle before its ID is reused: `add_position` replaces the
+        // cached position, and realized PnL totals read closed cycles from the snapshots
+        self.snapshot_position(position)?;
+
         Ok(())
     }
 
