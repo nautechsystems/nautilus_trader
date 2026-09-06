@@ -439,7 +439,7 @@ command (Rust). The Binance execution clients recognize:
 | ---------------- | ------ | ----------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------- |
 | `price_match`    | `str`  | USDT/COIN Futures | Delegate price selection to Binance.             | `LIMIT` only; not with `post_only`.                                                       |
 | `close_position` | `bool` | USDT/COIN Futures | Close the whole position when the trigger fires. | `StopMarket` and `MarketIfTouched` only; requires `reduce_only=true`; not in order lists. |
-| `rpi`            | `bool` | USDT Futures      | Submit a Retail Price Improvement order.         | `LIMIT` only; requires `post_only=true`.                                                  |
+| `rpi`            | `bool` | USDT Futures      | Submit a Retail Price Improvement order.         | `LIMIT` only; requires `post_only=true`; individual orders only.                           |
 
 See [Price match](#price-match), [RPI](#rpi), and [Close position](#close-position) for the full
 behavior.
@@ -510,8 +510,9 @@ the new price.
 
 Binance RPI (Retail Price Improvement) uses `timeInForce=RPI`. It is post-only and only matches
 eligible retail orders from the Binance App or Web. Nautilus exposes it through the Binance-specific
-`rpi` parameter; use it only with a USD-M LIMIT order whose `post_only=true`. Without `rpi`, regular
-post-only orders continue to use `GTX`. See Binance's [USD-M Futures API definitions](https://developers.binance.com/zh-CN/docs/products/derivatives-trading-usds-futures/common-definition)
+`rpi` parameter; use it only with a USD-M LIMIT order whose `post_only=true`. It is supported only
+for individual `SubmitOrder` commands; `SubmitOrderList` is denied. Without `rpi`, regular post-only
+orders continue to use `GTX`. See Binance's [USD-M Futures API definitions](https://developers.binance.com/zh-CN/docs/products/derivatives-trading-usds-futures/common-definition)
 for venue details.
 
 ```rust tab="Rust"

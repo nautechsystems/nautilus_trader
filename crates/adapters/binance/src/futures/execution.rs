@@ -3178,6 +3178,19 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             return Ok(());
         }
 
+        let rpi = cmd
+            .params
+            .as_ref()
+            .and_then(|params| params.get_bool("rpi"))
+            .unwrap_or(false);
+        if rpi {
+            let reason = "rpi is only supported for individual Binance Futures order submission";
+            for order in &orders {
+                self.emitter.emit_order_denied(order, reason);
+            }
+            return Ok(());
+        }
+
         let close_position = cmd
             .params
             .as_ref()

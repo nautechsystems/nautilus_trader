@@ -2002,6 +2002,53 @@ async fn test_submit_order_list_posts_batch_orders_for_independent_limits() {
 
 #[rstest]
 #[tokio::test]
+async fn test_submit_order_list_denies_rpi_without_batch_submit() {
+    let (addr, captured_queries) = start_exec_test_server_with_query_capture().await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let (mut client, mut rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let orders = vec![
+        add_limit_order_to_cache(&cache, ClientOrderId::new("list-rpi-001")),
+        add_limit_order_to_cache(&cache, ClientOrderId::new("list-rpi-002")),
+    ];
+    let mut command = submit_order_list_command(&orders);
+    command.params = Some(rpi_params());
+
+    client.submit_order_list(command).unwrap();
+
+    let expected_reason = "rpi is only supported for individual Binance Futures order submission";
+    let mut denied_count = 0;
+    wait_until_async(
+        || {
+            while let Ok(event) = rx.try_recv() {
+                if let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event {
+                    assert_eq!(denied.reason.as_str(), expected_reason);
+                    denied_count += 1;
+                }
+            }
+            let done = denied_count == orders.len();
+            async move { done }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert!(
+        captured_queries
+            .lock()
+            .iter()
+            .all(|query| query.path != "batchOrders")
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_submit_hedge_order_rejects_custom_position_id_before_request() {
     let (addr, captured_query) =
         start_exec_test_server_with_order_capture_and_hedge_mode(true).await;
