@@ -1332,11 +1332,11 @@ mod tests {
 
     /// Interval a test waits on while letting an in-flight `finish_*` future make progress.
     ///
-    /// Sleeping rather than yielding is deliberate. A `yield_now` arm keeps the remaining
-    /// worker runnable and can delay it servicing the timer driver, so a zero-duration
-    /// `time::timeout` inside the raced future may not fire promptly and the loop spins
-    /// waiting for it. Sleeping lets the runtime park and service the timer before the
-    /// next poll.
+    /// Sleeping rather than yielding is deliberate. A `yield_now` arm leaves the polling task
+    /// immediately runnable again, so the loop can re-poll without the runtime servicing its
+    /// timer driver, and a zero-duration `time::timeout` inside the raced future may then not
+    /// fire promptly. Sleeping yields to the timer driver before the next poll.
+    #[cfg(not(all(feature = "simulation", madsim)))]
     const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
     #[rstest]
