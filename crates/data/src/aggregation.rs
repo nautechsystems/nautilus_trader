@@ -1628,7 +1628,8 @@ impl TimeBarAggregator {
             if fire_immediately {
                 self.next_close_ns = start_time_ns;
             } else {
-                let interval_duration = SignedDuration::from_nanos(self.interval_ns.as_i64());
+                let interval_duration =
+                    SignedDuration::from_nanos_i128(i128::from(self.interval_ns.as_u64()));
                 self.next_close_ns = UnixNanos::from(start_time + interval_duration);
             }
 
@@ -4744,6 +4745,39 @@ mod tests {
 
         rc.borrow_mut().start_timer(Some(Rc::clone(&rc)));
         assert_eq!(clock.borrow().timer_names(), vec![timer_name.as_str()]);
+    }
+
+    #[rstest]
+    fn test_time_bar_aggregator_accepts_interval_above_i64_nanos(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(106_752, BarAggregation::Day, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let interval_ns = get_bar_interval_ns(&bar_type);
+        let timer_name = format!("TIME_BAR_{bar_type}");
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        clock.borrow_mut().set_time(UnixNanos::from(1));
+        let aggregator = TimeBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            clock.clone(),
+            |_bar: Bar| {},
+            true,
+            false,
+            BarIntervalType::LeftOpen,
+            None,
+            0,
+            false,
+        );
+        let boxed: Box<dyn BarAggregator> = Box::new(aggregator);
+        let rc = Rc::new(RefCell::new(boxed));
+
+        rc.borrow_mut().start_timer(Some(Rc::clone(&rc)));
+
+        assert_eq!(
+            clock.borrow().next_time_ns(&timer_name),
+            interval_ns.checked_add(1_u64)
+        );
     }
 
     #[rstest]

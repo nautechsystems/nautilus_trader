@@ -591,7 +591,7 @@ impl OptionChainAggregator {
         // Cooldown check
         if self.cooldown_ns > 0
             && let Some(last_ts) = self.last_rebalance_ns
-            && now_ns.as_u64().saturating_sub(last_ts.as_u64()) < self.cooldown_ns
+            && now_ns.saturating_duration_since(last_ts) < self.cooldown_ns
         {
             return None;
         }

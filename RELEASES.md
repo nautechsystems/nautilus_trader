@@ -18,6 +18,7 @@ Released on TBD (UTC).
 - Added Python `OrderBookDelta.is_add`, `is_update`, `is_delete`, `is_clear`, and `OrderBookDeltas.is_snapshot`
 - Added Python `activation_utc` and `expiration_utc` properties to expiring instruments
 - Added Python `symbol` and `venue` properties to regular and synthetic instruments
+- Added `UnixNanos::saturating_duration_since` for non-negative time differences
 - Added `BacktestEngine::add_data_batch` for typed data batches that replay without per-item `Data` values, thanks @faysou
 - Added typed external MessageBus streaming for control, execution, and reconciliation messages
 - Added public `ExecutionEventEmitter.try_send_account_state(...)` (#4907), thanks @folknor
@@ -75,6 +76,7 @@ Released on TBD (UTC).
 - Fixed foreign account events panicking and reservation failures leaving balances or margins in an inconsistent state
 - Fixed importable strategy configs ignoring a string `strategy_id` in favor of the class-derived default ID
 - Fixed importable config construction leaving a partial config on attribute failure; now raises `RuntimeError`
+- Fixed `LiveTimer` successor and time bar interval overflows causing runtime panics
 - Fixed Betfair fill report queries ignoring instrument and order filters
 - Fixed Betfair order status queries ignoring instrument filters and time bounds for closed orders
 - Fixed Binance Spot cancel-all decoding and lifecycle handling for OCO order lists

@@ -251,8 +251,7 @@ where
                     .clock
                     .borrow()
                     .timestamp_ns()
-                    .as_u64()
-                    .saturating_sub(ts.as_u64());
+                    .saturating_duration_since(*ts);
                 self.interval_ns.get().saturating_sub(diff)
             }
             None => 0,
@@ -263,7 +262,7 @@ where
     fn delta_next_at(&self, now: UnixNanos) -> u64 {
         match self.timestamps.get(self.limit.get() - 1) {
             Some(ts) => {
-                let diff = now.as_u64().saturating_sub(ts.as_u64());
+                let diff = now.saturating_duration_since(*ts);
                 self.interval_ns.get().saturating_sub(diff)
             }
             None => 0,

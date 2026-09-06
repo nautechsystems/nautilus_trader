@@ -241,6 +241,12 @@ impl UnixNanos {
         self.0.checked_sub(other.0)
     }
 
+    /// Calculates the duration in nanoseconds since `earlier`, saturating at zero.
+    #[must_use]
+    pub const fn saturating_duration_since(&self, earlier: Self) -> DurationNanos {
+        self.0.saturating_sub(earlier.0)
+    }
+
     fn parse_string(s: &str) -> Result<Self, String> {
         // Try parsing as an integer (nanoseconds)
         if let Ok(int_value) = s.parse::<u64>() {
@@ -889,6 +895,22 @@ mod tests {
     }
 
     #[rstest]
+    #[case::later(100, 50, 50)]
+    #[case::same(50, 50, 0)]
+    #[case::earlier(50, 100, 0)]
+    #[case::full_range(u64::MAX, 0, u64::MAX)]
+    fn test_saturating_duration_since(
+        #[case] time: u64,
+        #[case] earlier: u64,
+        #[case] expected: DurationNanos,
+    ) {
+        assert_eq!(
+            UnixNanos::from(time).saturating_duration_since(UnixNanos::from(earlier)),
+            expected
+        );
+    }
+
+    #[rstest]
     fn test_duration_since_chronological() {
         // Create a reference time (Feb 10, 2024)
         let earlier = timestamp("2024-02-10T12:00:00Z");
@@ -1350,6 +1372,7 @@ mod tests {
         ) {
             // duration_since should be consistent with comparison and arithmetic
             let duration = nanos1.duration_since(&nanos2);
+            let saturating_duration = nanos1.saturating_duration_since(nanos2);
 
             if nanos1 >= nanos2 {
                 // If nanos1 >= nanos2, duration should be Some and equal to difference
@@ -1357,12 +1380,16 @@ mod tests {
                 if let Some(dur) = duration {
                     prop_assert_eq!(dur, nanos1.as_u64() - nanos2.as_u64(),
                         "Duration should equal the difference");
+                    prop_assert_eq!(saturating_duration, dur,
+                        "Saturating duration should equal the difference");
                     prop_assert_eq!(nanos2 + dur, nanos1.as_u64(),
                         "second + duration should equal first");
                 }
             } else {
                 // If nanos1 < nanos2, duration should be None
                 prop_assert!(duration.is_none(), "Duration should be None when first < second");
+                prop_assert_eq!(saturating_duration, 0,
+                    "Saturating duration should be zero when first < second");
             }
         }
 
