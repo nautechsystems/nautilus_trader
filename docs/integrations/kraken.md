@@ -714,6 +714,7 @@ The product type for each client is specified via the `product_type` option.
 | `heartbeat_interval_secs`       | `30`      | WebSocket heartbeat interval in seconds.                              |
 | `auth_timeout_secs`             | `None`    | Futures WebSocket auth timeout; `None` uses the client default.       |
 | `max_requests_per_second`       | `None`    | Per-client request throttle; default is 5 req/s.                      |
+| `max_retries`                   | `3`       | Maximum retry attempts for retryable REST requests.                   |
 | `spot_account_type`             | `CASH`    | Account type for spot trading; `MARGIN` enables leverage and reports. |
 | `default_leverage`              | `None`    | Default spot margin leverage sent as `"N:1"` when set.                |
 | `use_spot_position_reports`     | `False`   | Report wallet balances as positions; cash mode only.                  |
