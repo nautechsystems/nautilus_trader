@@ -1557,8 +1557,8 @@ async fn test_rate_limiting_retries_then_succeeds() {
     assert_eq!(response.ret_code, 0);
     assert_eq!(response.ret_msg, "OK");
     assert_eq!(response.result.list.len(), 1);
-    assert_eq!(response.result.list[0].order_id.as_str(), "abcdef123456");
-    assert_eq!(response.result.list[0].order_link_id.as_str(), "client-1");
+    assert_eq!(response.result.list[0].order_id, "abcdef123456");
+    assert_eq!(response.result.list[0].order_link_id, "client-1");
 }
 
 #[rstest]
@@ -3236,11 +3236,7 @@ async fn test_request_tickers_with_symbol_filter() {
 
     // Should only get BTCUSDT ticker
     assert_eq!(tickers.len(), 1, "Should receive exactly one ticker");
-    assert_eq!(
-        tickers[0].symbol.as_str(),
-        "BTCUSDT",
-        "Symbol should be BTCUSDT"
-    );
+    assert_eq!(tickers[0].symbol, "BTCUSDT", "Symbol should be BTCUSDT");
 
     // Verify it has all linear ticker fields
     let ticker = &tickers[0];

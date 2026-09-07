@@ -133,7 +133,7 @@ impl DataActor for OptionChainTester {
         // Find settlement currency for nearest expiry (use BTC-settled by default)
         let settlement_currency = options
             .iter()
-            .find(|(_, _, settlement, exp)| *exp == nearest_expiry && settlement.as_str() == "BTC")
+            .find(|(_, _, settlement, exp)| *exp == nearest_expiry && settlement == "BTC")
             .map_or_else(
                 || {
                     options

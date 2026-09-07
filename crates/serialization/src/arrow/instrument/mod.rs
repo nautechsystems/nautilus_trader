@@ -434,7 +434,7 @@ mod tests {
         #[case] expected_precision: u8,
     ) {
         let currency = decode_currency(code, "currency", "test.currency", 0).unwrap();
-        assert_eq!(currency.code.as_str(), code);
+        assert_eq!(currency.code, code);
         assert_eq!(currency.currency_type, expected_type);
         assert_eq!(currency.precision, expected_precision);
     }
@@ -448,7 +448,7 @@ mod tests {
         );
 
         let currency = decode_currency(code, "base_currency", "test.base_currency", 0).unwrap();
-        assert_eq!(currency.code.as_str(), code);
+        assert_eq!(currency.code, code);
         assert_eq!(currency.currency_type, CurrencyType::Crypto);
         assert_eq!(currency.precision, 8);
         assert_eq!(currency.iso4217, 0);

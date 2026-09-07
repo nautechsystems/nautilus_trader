@@ -3723,7 +3723,7 @@ fn test_reconcile_order_report_generates_rejected(instrument: InstrumentAny) {
     let result = reconcile_order_report(&order, &report, Some(&instrument), UnixNanos::default());
     assert!(result.is_some());
     if let OrderEventAny::Rejected(rejected) = result.unwrap() {
-        assert_eq!(rejected.reason.as_str(), "INSUFFICIENT_MARGIN");
+        assert_eq!(rejected.reason, "INSUFFICIENT_MARGIN");
         assert!(rejected.reconciliation);
     } else {
         panic!("Expected Rejected event");
@@ -3871,7 +3871,7 @@ fn test_create_reconciliation_rejected_with_reason() {
         create_reconciliation_rejected(&order, Some("MARGIN_CALL"), UnixNanos::from(1_000));
     assert!(result.is_some());
     if let OrderEventAny::Rejected(rejected) = result.unwrap() {
-        assert_eq!(rejected.reason.as_str(), "MARGIN_CALL");
+        assert_eq!(rejected.reason, "MARGIN_CALL");
         assert!(rejected.reconciliation);
         assert!(!rejected.due_post_only);
     } else {
@@ -3907,7 +3907,7 @@ fn test_create_reconciliation_rejected_due_post_only() {
     let result = create_reconciliation_rejected(&order, Some("post-only"), UnixNanos::from(1_000));
     assert!(result.is_some());
     if let OrderEventAny::Rejected(rejected) = result.unwrap() {
-        assert_eq!(rejected.reason.as_str(), "post-only");
+        assert_eq!(rejected.reason, "post-only");
         assert!(rejected.reconciliation);
         assert!(rejected.due_post_only);
     } else {
@@ -3943,7 +3943,7 @@ fn test_create_reconciliation_rejected_without_reason() {
     let result = create_reconciliation_rejected(&order, None, UnixNanos::from(1_000));
     assert!(result.is_some());
     if let OrderEventAny::Rejected(rejected) = result.unwrap() {
-        assert_eq!(rejected.reason.as_str(), "UNKNOWN");
+        assert_eq!(rejected.reason, "UNKNOWN");
     } else {
         panic!("Expected Rejected event");
     }

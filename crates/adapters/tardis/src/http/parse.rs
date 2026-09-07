@@ -1034,11 +1034,8 @@ mod tests {
         );
         assert_eq!(instrument.underlying().unwrap().as_str(), "BTC");
         assert_eq!(instrument.base_currency(), Some(Currency::BTC()));
-        assert_eq!(instrument.quote_currency().code.as_str(), "USD_UM_XPERP");
-        assert_eq!(
-            instrument.settlement_currency().code.as_str(),
-            "USD_UM_XPERP"
-        );
+        assert_eq!(instrument.quote_currency().code, "USD_UM_XPERP");
+        assert_eq!(instrument.settlement_currency().code, "USD_UM_XPERP");
         assert!(!instrument.is_inverse());
         assert_eq!(instrument.price_precision(), 1);
         assert_eq!(instrument.size_precision(), 0);

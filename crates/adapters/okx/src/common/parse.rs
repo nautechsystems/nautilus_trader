@@ -875,20 +875,16 @@ pub fn parse_order_status_report(
     }
 
     let venue_order_id = if order.ord_id.is_empty() {
-        if let Some(algo_id) = order
-            .algo_id
-            .as_ref()
-            .filter(|value| !value.as_str().is_empty())
-        {
-            VenueOrderId::new(algo_id.as_str())
+        if let Some(algo_id) = order.algo_id.as_ref().filter(|value| !value.is_empty()) {
+            VenueOrderId::new(algo_id)
         } else if !order.cl_ord_id.is_empty() {
-            VenueOrderId::new(order.cl_ord_id.as_str())
+            VenueOrderId::new(order.cl_ord_id)
         } else {
             let synthetic_id = format!("{}:{}", account_id, order.c_time);
             VenueOrderId::new(&synthetic_id)
         }
     } else {
-        VenueOrderId::new(order.ord_id.as_str())
+        VenueOrderId::new(order.ord_id)
     };
 
     let ts_accepted = parse_millisecond_timestamp(order.c_time);
@@ -1244,12 +1240,12 @@ pub fn parse_spread_order_status_report(
     let client_order_id = if order.cl_ord_id.is_empty() {
         None
     } else {
-        Some(ClientOrderId::new(order.cl_ord_id.as_str()))
+        Some(ClientOrderId::new(order.cl_ord_id))
     };
     let venue_order_id = if order.ord_id.is_empty() {
-        VenueOrderId::new(order.cl_ord_id.as_str())
+        VenueOrderId::new(order.cl_ord_id)
     } else {
-        VenueOrderId::new(order.ord_id.as_str())
+        VenueOrderId::new(order.ord_id)
     };
     let ts_accepted = order.c_time.map_or(ts_init, parse_millisecond_timestamp);
     let ts_last = order
@@ -1310,10 +1306,10 @@ pub fn parse_spread_fill_report(
     let client_order_id = if detail.cl_ord_id.is_empty() {
         None
     } else {
-        Some(ClientOrderId::new(detail.cl_ord_id.as_str()))
+        Some(ClientOrderId::new(detail.cl_ord_id))
     };
-    let venue_order_id = VenueOrderId::new(detail.ord_id.as_str());
-    let trade_id = TradeId::new(detail.trade_id.as_str());
+    let venue_order_id = VenueOrderId::new(detail.ord_id);
+    let trade_id = TradeId::new(detail.trade_id);
     let order_side = OrderSide::from(detail.side);
     let last_px = parse_price(&detail.fill_px, price_precision)?;
     let last_qty = parse_quantity(&detail.fill_sz, size_precision)?;
@@ -2765,7 +2761,7 @@ pub fn parse_account_state(
 
     for b in &okx_account.details {
         // Skip balances with empty or whitespace-only currency codes
-        let ccy_str = b.ccy.as_str().trim();
+        let ccy_str = b.ccy.trim();
         if ccy_str.is_empty() {
             log::debug!("Skipping balance detail with empty currency code | raw_data={b:?}");
             continue;
@@ -2921,7 +2917,7 @@ mod tests {
     fn test_parse_fee_currency_with_unknown_code() {
         // Unknown currency code should create a new Currency (8 decimals, crypto)
         let result = parse_fee_currency("NEWTOKEN", dec!(0.5), || "test context".to_string());
-        assert_eq!(result.code.as_str(), "NEWTOKEN");
+        assert_eq!(result.code, "NEWTOKEN");
         assert_eq!(result.precision, 8);
     }
 
@@ -6275,7 +6271,7 @@ mod tests {
     #[case::spot("BTC-USDT", "BTC-USDT")]
     fn test_extract_inst_family(#[case] symbol: &str, #[case] expected: &str) {
         let family = extract_inst_family(symbol).unwrap();
-        assert_eq!(family.as_str(), expected);
+        assert_eq!(family, expected);
     }
 
     #[rstest]

@@ -743,7 +743,7 @@ mod tests {
             panic!("Expected order response");
         };
 
-        assert_eq!(response.op.as_str(), "order.create");
+        assert_eq!(response.op, "order.create");
         assert_eq!(response.ret_code, -1);
         assert_eq!(response.req_id.as_deref(), Some("not-sent-request"));
         assert_eq!(response.ret_msg, "Client error: No active WebSocket client");
@@ -853,7 +853,7 @@ mod tests {
         let frame = parse_bybit_ws_frame(value);
         match frame {
             BybitWsFrame::OrderResponse(resp) => {
-                assert_eq!(resp.op.as_str(), "order.create");
+                assert_eq!(resp.op, "order.create");
                 assert_eq!(resp.ret_code, 0);
                 assert_eq!(resp.ret_msg, "OK");
             }

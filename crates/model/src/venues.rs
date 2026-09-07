@@ -111,7 +111,7 @@ mod tests {
         let venue_map = VENUE_MAP.lock();
 
         assert_eq!(first, second);
-        assert_eq!(first.inner().as_str(), expected);
+        assert_eq!(first.inner(), expected);
         assert_eq!(first.to_string(), expected);
         assert_eq!(venue_map.get(expected), Some(&first));
     }

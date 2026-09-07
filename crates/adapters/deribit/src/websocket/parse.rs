@@ -1421,7 +1421,7 @@ mod tests {
             .result
             .unwrap()
             .into_iter()
-            .find(|i| i.instrument_name.as_str() == "BTC-CS-19MAY26-70000_75000")
+            .find(|i| i.instrument_name == "BTC-CS-19MAY26-70000_75000")
             .expect("fixture must contain BTC-CS-19MAY26-70000_75000");
         parse_deribit_instrument_any(&combo_raw, UnixNanos::default(), UnixNanos::default())
             .unwrap()
@@ -1616,7 +1616,7 @@ mod tests {
             serde_json::from_value(response["params"]["data"].clone()).unwrap();
 
         // Verify the message was deserialized correctly
-        assert_eq!(msg.instrument_name.as_str(), "BTC-PERPETUAL");
+        assert_eq!(msg.instrument_name, "BTC-PERPETUAL");
         assert_eq!(msg.timestamp, 1_765_541_474_086);
         assert_eq!(msg.best_bid_price, Some(dec!(92283.5)));
         assert_eq!(msg.best_ask_price, Some(dec!(92284.0)));
@@ -1645,7 +1645,7 @@ mod tests {
             serde_json::from_value(response["params"]["data"].clone()).unwrap();
 
         // Verify the message was deserialized correctly
-        assert_eq!(msg.instrument_name.as_str(), "BTC-PERPETUAL");
+        assert_eq!(msg.instrument_name, "BTC-PERPETUAL");
         assert_eq!(msg.timestamp, 1_765_541_767_174);
         assert_eq!(msg.best_bid_price, dec!(92288.0));
         assert_eq!(msg.best_ask_price, dec!(92288.5));

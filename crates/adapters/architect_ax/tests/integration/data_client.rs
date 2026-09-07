@@ -91,7 +91,7 @@ async fn test_handler_emits_l1_md_message() {
 
     match result {
         Ok(Some(AxDataWsMessage::MdMessage(AxMdMessage::BookL1(book)))) => {
-            assert_eq!(book.s.as_str(), "EURUSD-PERP");
+            assert_eq!(book.s, "EURUSD-PERP");
         }
         Ok(Some(other)) => panic!("Expected MdMessage::BookL1, was {other:?}"),
         Ok(None) => panic!("Stream ended unexpectedly"),
@@ -139,7 +139,7 @@ async fn test_handler_emits_trade_md_message() {
     .await
     .expect("Timeout waiting for trade message");
 
-    assert_eq!(trade.s.as_str(), "EURUSD-PERP");
+    assert_eq!(trade.s, "EURUSD-PERP");
     client.close().await.expect("close WebSocket client");
 }
 
@@ -171,7 +171,7 @@ async fn test_handler_emits_l2_md_message() {
 
     match result {
         Ok(Some(AxDataWsMessage::MdMessage(AxMdMessage::BookL2(book)))) => {
-            assert_eq!(book.s.as_str(), "EURUSD-PERP");
+            assert_eq!(book.s, "EURUSD-PERP");
         }
         Ok(Some(other)) => panic!("Expected MdMessage::BookL2, was {other:?}"),
         Ok(None) => panic!("Stream ended unexpectedly"),
@@ -217,7 +217,7 @@ async fn test_handler_emits_candle_md_message() {
     .await
     .expect("Timeout waiting for candle message");
 
-    assert_eq!(candle.symbol.as_str(), "EURUSD-PERP");
+    assert_eq!(candle.symbol, "EURUSD-PERP");
 
     client.close().await.expect("close WebSocket client");
 }
@@ -256,7 +256,7 @@ async fn test_handler_forwards_raw_message_even_when_instrument_missing() {
 
     match msg {
         AxDataWsMessage::MdMessage(AxMdMessage::BookL1(book)) => {
-            assert_eq!(book.s.as_str(), "EURUSD-PERP");
+            assert_eq!(book.s, "EURUSD-PERP");
         }
         other => panic!("expected BookL1, was {other:?}"),
     }

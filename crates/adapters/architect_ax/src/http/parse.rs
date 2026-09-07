@@ -175,9 +175,9 @@ pub fn parse_instrument(
 
     let underlying = match definition.product {
         Some(product) => {
-            let trimmed = product.as_str().trim();
+            let trimmed = product.trim();
             anyhow::ensure!(
-                !trimmed.is_empty() && trimmed == product.as_str(),
+                !trimmed.is_empty() && trimmed == product,
                 "AX instrument product must be non-empty without surrounding whitespace, was '{product}'"
             );
             product
@@ -421,7 +421,7 @@ pub fn parse_account_state(
     let mut balances = Vec::with_capacity(response.balances.len());
 
     for balance in &response.balances {
-        let symbol_str = balance.symbol.as_str().trim();
+        let symbol_str = balance.symbol.trim();
         if symbol_str.is_empty() {
             log::debug!("Skipping balance with empty symbol");
             continue;
@@ -1222,11 +1222,11 @@ mod tests {
             InstrumentAny::PerpetualContract(perp) => {
                 assert_eq!(perp.id.symbol.as_str(), "EURUSD-PERP");
                 assert_eq!(perp.id.venue, *AX_VENUE);
-                assert_eq!(perp.underlying.as_str(), "EURUSD");
+                assert_eq!(perp.underlying, "EURUSD");
                 assert_eq!(perp.asset_class, AssetClass::FX);
-                assert_eq!(perp.base_currency.unwrap().code.as_str(), "EUR");
-                assert_eq!(perp.quote_currency.code.as_str(), "USD");
-                assert_eq!(perp.settlement_currency.code.as_str(), "USD");
+                assert_eq!(perp.base_currency.unwrap().code, "EUR");
+                assert_eq!(perp.quote_currency.code, "USD");
+                assert_eq!(perp.settlement_currency.code, "USD");
                 assert_eq!(perp.price_precision, 4);
                 assert_eq!(perp.size_increment.as_decimal(), Decimal::ONE);
                 assert_eq!(perp.lot_size.as_decimal(), Decimal::ONE);
@@ -1261,10 +1261,10 @@ mod tests {
             InstrumentAny::PerpetualContract(perp) => {
                 assert_eq!(perp.id.symbol.as_str(), "NVDA-PERP");
                 assert_eq!(perp.id.venue, *AX_VENUE);
-                assert_eq!(perp.underlying.as_str(), "NVDA");
+                assert_eq!(perp.underlying, "NVDA");
                 assert_eq!(perp.asset_class, AssetClass::Equity);
-                assert_eq!(perp.quote_currency.code.as_str(), "USD");
-                assert_eq!(perp.settlement_currency.code.as_str(), "USD");
+                assert_eq!(perp.quote_currency.code, "USD");
+                assert_eq!(perp.settlement_currency.code, "USD");
                 assert_eq!(perp.price_precision, 2);
                 assert!(!perp.is_inverse);
             }
@@ -1282,10 +1282,10 @@ mod tests {
         match instrument {
             InstrumentAny::PerpetualContract(perp) => {
                 assert_eq!(perp.id.symbol.as_str(), "XAU-PERP");
-                assert_eq!(perp.underlying.as_str(), "XAU");
+                assert_eq!(perp.underlying, "XAU");
                 assert_eq!(perp.asset_class, AssetClass::Commodity);
                 assert!(perp.base_currency.is_none());
-                assert_eq!(perp.quote_currency.code.as_str(), "USD");
+                assert_eq!(perp.quote_currency.code, "USD");
                 assert_eq!(perp.price_precision, 1);
             }
             _ => panic!("Expected PerpetualContract instrument"),
@@ -1334,7 +1334,7 @@ mod tests {
                 future.expiration_ns,
                 UnixNanos::from(expected_expiration_ns)
             );
-            assert_eq!(future.currency.code.as_str(), "USD");
+            assert_eq!(future.currency.code, "USD");
             assert_eq!(future.price_increment.as_decimal(), dec!(0.1));
             assert_eq!(future.size_increment.as_decimal(), Decimal::ONE);
             assert_eq!(future.lot_size.as_decimal(), Decimal::ONE);
@@ -1472,8 +1472,8 @@ mod tests {
         let instrument = result.unwrap();
         match instrument {
             InstrumentAny::PerpetualContract(perp) => {
-                assert_eq!(perp.quote_currency.code.as_str(), "USD");
-                assert_eq!(perp.settlement_currency.code.as_str(), "EUR");
+                assert_eq!(perp.quote_currency.code, "USD");
+                assert_eq!(perp.settlement_currency.code, "EUR");
             }
             _ => panic!("Expected PerpetualContract instrument"),
         }
@@ -1545,17 +1545,17 @@ mod tests {
         assert_eq!(response.instruments.len(), 3);
 
         let eurusd = &response.instruments[0];
-        assert_eq!(eurusd.symbol.as_str(), "EURUSD-PERP");
+        assert_eq!(eurusd.symbol, "EURUSD-PERP");
         assert_eq!(eurusd.category, AxCategory::Fx);
         assert_eq!(eurusd.tick_size, dec!(0.0001));
         assert_eq!(eurusd.minimum_order_size, dec!(100));
 
         let xau = &response.instruments[1];
-        assert_eq!(xau.symbol.as_str(), "XAU-PERP");
+        assert_eq!(xau.symbol, "XAU-PERP");
         assert_eq!(xau.category, AxCategory::Metals);
 
         let nvda = &response.instruments[2];
-        assert_eq!(nvda.symbol.as_str(), "NVDA-PERP");
+        assert_eq!(nvda.symbol, "NVDA-PERP");
         assert_eq!(nvda.category, AxCategory::Equities);
     }
 
@@ -1678,7 +1678,7 @@ mod tests {
             serde_json::from_str(test_data).expect("Failed to deserialize test data");
 
         assert_eq!(response.funding_rates.len(), 2);
-        assert_eq!(response.funding_rates[0].symbol.as_str(), "JPYUSD-PERP");
+        assert_eq!(response.funding_rates[0].symbol, "JPYUSD-PERP");
         assert_eq!(response.funding_rates[0].funding_rate, dec!(0.001234560000));
 
         let instrument_id = InstrumentId::new(Symbol::new("JPYUSD-PERP"), *AX_VENUE);

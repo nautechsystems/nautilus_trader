@@ -257,7 +257,7 @@ fn validate_instrument_binding(
         .outcome
         .context("Polymarket instrument is missing outcome metadata")?;
     anyhow::ensure!(
-        instrument_outcome.as_str() == outcome.as_str(),
+        instrument_outcome == outcome.as_str(),
         "provider outcome {outcome} does not match instrument outcome {instrument_outcome}",
     );
 

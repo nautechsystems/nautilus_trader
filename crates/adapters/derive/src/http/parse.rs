@@ -70,8 +70,7 @@ pub(crate) fn parse_derive_order_to_report_with_precision(
     size_precision: Option<u8>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
-    let instrument_id =
-        InstrumentId::new(Symbol::new(order.instrument_name.as_str()), *DERIVE_VENUE);
+    let instrument_id = InstrumentId::new(Symbol::new(order.instrument_name), *DERIVE_VENUE);
     let venue_order_id = VenueOrderId::new(order.order_id.as_str());
     let order_side = derive_order_side_to_nautilus(order.direction);
     let order_type = derive_order_type_to_nautilus_for_report(order);
@@ -102,8 +101,8 @@ pub(crate) fn parse_derive_order_to_report_with_precision(
         Some(UUID4::new()),
     );
 
-    if !order.label.as_str().is_empty() {
-        let client_order_id = ClientOrderId::new(order.label.as_str());
+    if !order.label.is_empty() {
+        let client_order_id = ClientOrderId::new(order.label);
         report = report.with_client_order_id(client_order_id);
     }
 
@@ -228,8 +227,7 @@ pub(crate) fn parse_derive_trade_to_fill_report_with_precision(
         return Ok(None);
     }
 
-    let instrument_id =
-        InstrumentId::new(Symbol::new(trade.instrument_name.as_str()), *DERIVE_VENUE);
+    let instrument_id = InstrumentId::new(Symbol::new(trade.instrument_name), *DERIVE_VENUE);
     let venue_order_id = VenueOrderId::new(trade.order_id.as_str());
     let trade_id = TradeId::new(trade.trade_id.as_str());
     let order_side = derive_order_side_to_nautilus(trade.direction);
@@ -242,10 +240,10 @@ pub(crate) fn parse_derive_trade_to_fill_report_with_precision(
         DeriveLiquidityRole::Unknown => LiquiditySide::NoLiquiditySide,
     };
 
-    let client_order_id = if trade.label.as_str().is_empty() {
+    let client_order_id = if trade.label.is_empty() {
         None
     } else {
-        Some(ClientOrderId::new(trade.label.as_str()))
+        Some(ClientOrderId::new(trade.label))
     };
 
     let ts_event = ms_to_nanos(trade.timestamp);
@@ -290,10 +288,7 @@ pub(crate) fn parse_derive_position_to_report_with_precision(
     size_precision: Option<u8>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<PositionStatusReport> {
-    let instrument_id = InstrumentId::new(
-        Symbol::new(position.instrument_name.as_str()),
-        *DERIVE_VENUE,
-    );
+    let instrument_id = InstrumentId::new(Symbol::new(position.instrument_name), *DERIVE_VENUE);
     let signed_amount = position.amount;
     let side = if signed_amount > Decimal::ZERO {
         PositionSide::Long
@@ -343,7 +338,7 @@ pub fn parse_derive_subaccount_to_balances(
 ) -> anyhow::Result<(Vec<AccountBalance>, Vec<MarginBalance>, Params)> {
     let mut balances = Vec::with_capacity(subaccount.collaterals.len());
     for collateral in &subaccount.collaterals {
-        let currency = Currency::get_or_create_crypto(collateral.asset_name.as_str());
+        let currency = Currency::get_or_create_crypto(collateral.asset_name);
         let balance =
             AccountBalance::from_total_and_locked(collateral.amount, Decimal::ZERO, currency)
                 .map_err(|e| {
@@ -356,7 +351,7 @@ pub fn parse_derive_subaccount_to_balances(
         balances.push(balance);
     }
 
-    let currency = Currency::get_or_create_crypto(subaccount.currency.as_str());
+    let currency = Currency::get_or_create_crypto(subaccount.currency);
     let initial_dec = subaccount.positions_initial_margin + subaccount.open_orders_margin;
     let maintenance_dec = subaccount.positions_maintenance_margin;
     let initial = Money::from_decimal(initial_dec, currency).with_context(|| {

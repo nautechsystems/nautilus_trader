@@ -2342,7 +2342,7 @@ mod tests {
             ClientOrderId::from("client-rejected")
         );
         assert_eq!(rejected.account_id, AccountId::from("COINBASE-001"));
-        assert_eq!(rejected.reason.as_str(), reason);
+        assert_eq!(rejected.reason, reason);
         assert_eq!(rejected.ts_event, UnixNanos::from(42_u64));
         assert!(!rejected.reconciliation);
         assert!(!rejected.due_post_only);

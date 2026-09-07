@@ -455,9 +455,9 @@ mod tests {
 
         assert_eq!(pair.id, expected_id);
         assert_eq!(pair.raw_symbol, expected_id.symbol);
-        assert_eq!(pair.base_currency.code.as_str(), "BTC");
+        assert_eq!(pair.base_currency.code, "BTC");
         assert_eq!(pair.base_currency.precision, expected_size_precision);
-        assert_eq!(pair.quote_currency.code.as_str(), "USDC");
+        assert_eq!(pair.quote_currency.code, "USDC");
         assert_eq!(pair.quote_currency.precision, expected_price_precision);
         assert_eq!(pair.price_precision, expected_price_precision);
         assert_eq!(pair.size_precision, expected_size_precision);
@@ -485,15 +485,15 @@ mod tests {
 
         let base = Currency::try_from_str("ENG444BASE").unwrap();
         let quote = Currency::try_from_str("ENG444QUOTE").unwrap();
-        assert_eq!(base.code.as_str(), "ENG444BASE");
+        assert_eq!(base.code, "ENG444BASE");
         assert_eq!(base.precision, 8);
         assert_eq!(base.iso4217, 0);
-        assert_eq!(base.name.as_str(), "ENG-444 Base Token");
+        assert_eq!(base.name, "ENG-444 Base Token");
         assert_eq!(base.currency_type, CurrencyType::Crypto);
-        assert_eq!(quote.code.as_str(), "ENG444QUOTE");
+        assert_eq!(quote.code, "ENG444QUOTE");
         assert_eq!(quote.precision, 6);
         assert_eq!(quote.iso4217, 0);
-        assert_eq!(quote.name.as_str(), "ENG-444 Quote Token");
+        assert_eq!(quote.name, "ENG-444 Quote Token");
         assert_eq!(quote.currency_type, CurrencyType::Crypto);
     }
 

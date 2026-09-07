@@ -2800,12 +2800,7 @@ async fn test_explicit_venue_submit_rejection_emits_order_rejected() {
     {
         ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
-            assert!(
-                event
-                    .reason
-                    .as_str()
-                    .contains("Order would immediately match")
-            );
+            assert!(event.reason.contains("Order would immediately match"));
         }
         other => panic!("Expected Rejected event, was {other:?}"),
     }
@@ -2870,7 +2865,7 @@ async fn test_explicit_venue_cancel_rejection_emits_cancel_rejected() {
     {
         ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
-            assert!(event.reason.as_str().contains("Unknown order sent"));
+            assert!(event.reason.contains("Unknown order sent"));
         }
         other => panic!("Expected CancelRejected event, was {other:?}"),
     }
@@ -2970,12 +2965,7 @@ async fn test_explicit_venue_modify_rejection_emits_modify_rejected() {
     {
         ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
-            assert!(
-                event
-                    .reason
-                    .as_str()
-                    .contains("Price or quantity not changed")
-            );
+            assert!(event.reason.contains("Price or quantity not changed"));
         }
         other => panic!("Expected ModifyRejected event, was {other:?}"),
     }
@@ -3039,8 +3029,8 @@ async fn test_per_order_batch_cancel_rejection_emits_cancel_rejected() {
     {
         ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
-            assert!(event.reason.as_str().contains("code=-2011"));
-            assert!(event.reason.as_str().contains("Unknown order sent"));
+            assert!(event.reason.contains("code=-2011"));
+            assert!(event.reason.contains("Unknown order sent"));
         }
         other => panic!("Expected CancelRejected event, was {other:?}"),
     }
@@ -6575,7 +6565,7 @@ async fn test_cancel_order_ws_rejection_emits_cancel_rejected() {
     {
         ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
-            assert!(event.reason.as_str().contains("code=-2011"));
+            assert!(event.reason.contains("code=-2011"));
         }
         other => panic!("Expected CancelRejected event, was {other:?}"),
     }
@@ -6728,7 +6718,7 @@ async fn test_modify_order_ws_rejection_emits_modify_rejected() {
     {
         ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
-            assert!(event.reason.as_str().contains("code=-4028"));
+            assert!(event.reason.contains("code=-4028"));
         }
         other => panic!("Expected ModifyRejected event, was {other:?}"),
     }

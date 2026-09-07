@@ -8336,7 +8336,7 @@ async fn test_submit_post_only_order_http_rejection_is_clean_and_classified() {
         unreachable!("assert_order_event checked the variant")
     };
 
-    assert_eq!(rejected.reason.as_str(), reason);
+    assert_eq!(rejected.reason, reason);
     assert!(rejected.due_post_only);
 }
 

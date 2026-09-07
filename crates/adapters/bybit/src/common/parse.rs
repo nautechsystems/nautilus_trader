@@ -1074,7 +1074,7 @@ pub fn parse_fill_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
     let instrument_id = instrument.id();
-    let venue_order_id = VenueOrderId::new(execution.order_id.as_str());
+    let venue_order_id = VenueOrderId::new(execution.order_id);
     let trade_id = TradeId::new_checked(execution.exec_id.as_str())
         .context("invalid execId in Bybit execution payload")?;
 
@@ -1117,7 +1117,7 @@ pub fn parse_fill_report(
     let client_order_id = if execution.order_link_id.is_empty() {
         None
     } else {
-        Some(ClientOrderId::new(execution.order_link_id.as_str()))
+        Some(ClientOrderId::new(execution.order_link_id))
     };
 
     Ok(FillReport::new(
@@ -1523,7 +1523,7 @@ pub fn parse_order_status_report(
     );
 
     if !order.order_link_id.is_empty() {
-        report = report.with_client_order_id(ClientOrderId::new(order.order_link_id.as_str()));
+        report = report.with_client_order_id(ClientOrderId::new(order.order_link_id));
     }
 
     if !order.price.is_empty() && order.price != "0" {
@@ -2075,8 +2075,8 @@ mod tests {
                 assert_eq!(pair.id.to_string(), "BTCUSDT-SPOT.BYBIT");
                 assert_eq!(pair.price_increment, Price::from_str("0.1").unwrap());
                 assert_eq!(pair.size_increment, Quantity::from_str("0.0001").unwrap());
-                assert_eq!(pair.base_currency.code.as_str(), "BTC");
-                assert_eq!(pair.quote_currency.code.as_str(), "USDT");
+                assert_eq!(pair.base_currency.code, "BTC");
+                assert_eq!(pair.quote_currency.code, "USDT");
                 assert_eq!(
                     pair.min_notional,
                     Some(Money::from_decimal(Decimal::new(10, 0), Currency::USDT()).unwrap()),
@@ -2269,9 +2269,9 @@ mod tests {
         match parsed {
             InstrumentAny::CryptoOption(option) => {
                 assert_eq!(option.id.to_string(), "ETH-26JUN26-16000-P-OPTION.BYBIT");
-                assert_eq!(option.underlying.code.as_str(), "ETH");
-                assert_eq!(option.quote_currency.code.as_str(), "USDC");
-                assert_eq!(option.settlement_currency.code.as_str(), "USDC");
+                assert_eq!(option.underlying.code, "ETH");
+                assert_eq!(option.quote_currency.code, "USDC");
+                assert_eq!(option.settlement_currency.code, "USDC");
                 assert!(!option.is_inverse);
                 assert_eq!(option.option_kind, OptionKind::Put);
                 assert_eq!(option.price_precision, 1);
@@ -2387,7 +2387,7 @@ mod tests {
 
         // Get the short position (ETHUSDT, side="Sell", size="5.0")
         let short_position = &response.result.list[1];
-        assert_eq!(short_position.symbol.as_str(), "ETHUSDT");
+        assert_eq!(short_position.symbol, "ETHUSDT");
         assert_eq!(short_position.side, BybitPositionSide::Sell);
 
         // Create ETHUSDT instrument for parsing

@@ -981,7 +981,7 @@ async fn test_reconnect_restores_public_session_without_credentials() {
     assert!(!client.is_authenticated());
     assert!(state.login_frames.lock().await.is_empty());
     assert_eq!(state.subscribe_frames.lock().await.len(), 2);
-    assert_eq!(payload.channel.as_str(), "ticker_slim.ETH-PERP.1000");
+    assert_eq!(payload.channel, "ticker_slim.ETH-PERP.1000");
     let data: serde_json::Value = serde_json::from_str(payload.data.get()).unwrap();
     assert_eq!(data["instrument_name"], "ETH-PERP");
     assert_eq!(data["mark_price"], "3500.5");
@@ -1155,7 +1155,7 @@ async fn test_reconnect_retries_complete_session_after_subscription_failure() {
     assert!(client.is_authenticated());
     assert_eq!(state.login_frames.lock().await.len(), 3);
     assert_eq!(state.subscribe_frames.lock().await.len(), 3);
-    assert_eq!(payload.channel.as_str(), "ticker_slim.ETH-PERP.1000");
+    assert_eq!(payload.channel, "ticker_slim.ETH-PERP.1000");
     let data: serde_json::Value = serde_json::from_str(payload.data.get()).unwrap();
     assert_eq!(data["instrument_name"], "ETH-PERP");
     assert_eq!(data["mark_price"], "3500.5");

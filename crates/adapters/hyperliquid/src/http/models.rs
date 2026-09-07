@@ -931,7 +931,7 @@ mod tests {
 
         let entry: HyperliquidFundingHistoryEntry = serde_json::from_str(json).unwrap();
 
-        assert_eq!(entry.coin.as_str(), "BTC");
+        assert_eq!(entry.coin, "BTC");
         assert_eq!(entry.funding_rate, dec!(0.0000125));
         assert_eq!(entry.premium, Some(dec!(0.00029005)));
         assert_eq!(entry.time, 1769908800000);
@@ -969,7 +969,7 @@ mod tests {
 
         let trade: HyperliquidRecentTrade = serde_json::from_str(json).unwrap();
 
-        assert_eq!(trade.coin.as_str(), "BTC");
+        assert_eq!(trade.coin, "BTC");
         assert_eq!(trade.side, HyperliquidSide::Buy);
         assert_eq!(trade.px, dec!(104250.0));
         assert_eq!(trade.sz, dec!(0.0123));
@@ -1026,7 +1026,7 @@ mod tests {
 
         let fill: HyperliquidFill = serde_json::from_str(json).unwrap();
 
-        assert_eq!(fill.coin.as_str(), "BTC");
+        assert_eq!(fill.coin, "BTC");
         assert_eq!(fill.oid, 7001);
         assert_eq!(fill.tid, 9001);
         assert_eq!(fill.builder_fee, Some(dec!(0.001)));
@@ -1142,7 +1142,7 @@ mod tests {
 
         assert_eq!(state.balances.len(), 2);
         let usdc = &state.balances[0];
-        assert_eq!(usdc.coin.as_str(), "USDC");
+        assert_eq!(usdc.coin, "USDC");
         assert_eq!(usdc.token, Some(0));
         assert_eq!(usdc.total.to_string(), "14.625485");
         assert_eq!(usdc.hold, rust_decimal::Decimal::ZERO);
@@ -1150,7 +1150,7 @@ mod tests {
         assert_eq!(usdc.avg_entry_px(), None);
 
         let purr = &state.balances[1];
-        assert_eq!(purr.coin.as_str(), "PURR");
+        assert_eq!(purr.coin, "PURR");
         assert_eq!(purr.token, Some(1));
         assert_eq!(purr.free().to_string(), "1900");
         assert_eq!(
@@ -1164,7 +1164,7 @@ mod tests {
         // HIP-4 outcome side tokens come back without `token` from the venue
         let json = r#"{"coin": "+250", "total": "0.0", "hold": "0.0", "entryNtl": "0.0"}"#;
         let balance: SpotBalance = serde_json::from_str(json).unwrap();
-        assert_eq!(balance.coin.as_str(), "+250");
+        assert_eq!(balance.coin, "+250");
         assert_eq!(balance.token, None);
     }
 

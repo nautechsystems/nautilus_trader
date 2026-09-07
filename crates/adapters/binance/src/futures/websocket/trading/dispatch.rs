@@ -260,7 +260,7 @@ mod tests {
             ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
                 assert_eq!(event.client_order_id, ClientOrderId::from("TEST"));
                 assert_eq!(event.account_id, Some(AccountId::from("BINANCE-001")));
-                assert!(event.reason.as_str().contains("code=-2011"));
+                assert!(event.reason.contains("code=-2011"));
             }
             other => panic!("Expected CancelRejected event, was {other:?}"),
         }
@@ -311,7 +311,7 @@ mod tests {
             ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
                 assert_eq!(event.client_order_id, client_order_id);
                 assert_eq!(event.account_id, AccountId::from("BINANCE-001"));
-                assert!(event.reason.as_str().contains("code=-5022"));
+                assert!(event.reason.contains("code=-5022"));
                 assert!(event.due_post_only);
             }
             other => panic!("Expected OrderRejected event, was {other:?}"),
@@ -407,7 +407,7 @@ mod tests {
             ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
                 assert_eq!(event.client_order_id, ClientOrderId::from("TEST"));
                 assert_eq!(event.account_id, Some(AccountId::from("BINANCE-001")));
-                assert!(event.reason.as_str().contains("code=-4028"));
+                assert!(event.reason.contains("code=-4028"));
             }
             other => panic!("Expected ModifyRejected event, was {other:?}"),
         }

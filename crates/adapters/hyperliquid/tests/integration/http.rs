@@ -532,7 +532,7 @@ async fn test_request_account_state_dedupes_usdc_with_perp_summary() {
     let usdc_balances: Vec<_> = account_state
         .balances
         .iter()
-        .filter(|b| b.currency.code.as_str() == "USDC")
+        .filter(|b| b.currency.code == "USDC")
         .collect();
     assert_eq!(usdc_balances.len(), 1, "USDC must not be duplicated");
     assert_eq!(usdc_balances[0].total.as_f64(), 10000.0);
@@ -540,7 +540,7 @@ async fn test_request_account_state_dedupes_usdc_with_perp_summary() {
     let non_usdc: Vec<_> = account_state
         .balances
         .iter()
-        .filter(|b| b.currency.code.as_str() != "USDC")
+        .filter(|b| b.currency.code != "USDC")
         .map(|b| b.currency.code.as_str())
         .collect();
     assert!(non_usdc.contains(&"PURR"));
@@ -563,14 +563,14 @@ async fn test_request_spot_balances_emits_one_per_non_zero_token() {
 
     let usdc = balances
         .iter()
-        .find(|b| b.currency.code.as_str() == "USDC")
+        .find(|b| b.currency.code == "USDC")
         .expect("USDC balance");
     assert_eq!(usdc.total.as_f64(), 14.625485);
     assert_eq!(usdc.free.as_f64(), 14.625485);
 
     let purr = balances
         .iter()
-        .find(|b| b.currency.code.as_str() == "PURR")
+        .find(|b| b.currency.code == "PURR")
         .expect("PURR balance");
     assert_eq!(purr.total.as_f64(), 2000.0);
     assert_eq!(purr.locked.as_f64(), 100.0);
@@ -1324,7 +1324,7 @@ async fn test_request_account_state_preserves_parsed_margins() {
         margin.instrument_id.is_none(),
         "Hyperliquid emits account-wide (cross margin) entries, not per-instrument",
     );
-    assert_eq!(margin.currency.code.as_str(), "USDC");
+    assert_eq!(margin.currency.code, "USDC");
     assert_eq!(margin.initial.as_f64(), 1250.0);
     assert_eq!(margin.maintenance.as_f64(), 1250.0);
 }

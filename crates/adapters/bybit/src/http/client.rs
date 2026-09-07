@@ -2304,7 +2304,7 @@ impl BybitHttpClient {
             .result
             .list
             .first()
-            .and_then(|wallet| wallet.coin.iter().find(|c| c.coin.as_str() == coin))
+            .and_then(|wallet| wallet.coin.iter().find(|c| c.coin == coin))
             .map_or(Decimal::ZERO, |balance| balance.spot_borrow);
 
         Ok(borrow_amount)

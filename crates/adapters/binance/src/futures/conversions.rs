@@ -241,7 +241,7 @@ mod tests {
     fn test_normalize_futures_asset_registers_unknown_as_crypto() {
         let currency = normalize_futures_asset("XYZ", Currency::USDT());
 
-        assert_eq!(currency.code.as_str(), "XYZ");
+        assert_eq!(currency.code, "XYZ");
         assert_eq!(currency.currency_type, CurrencyType::Crypto);
     }
 }

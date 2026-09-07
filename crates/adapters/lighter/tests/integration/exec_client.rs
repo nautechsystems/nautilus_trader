@@ -1090,7 +1090,7 @@ async fn assert_local_order_denied_once(
     let reason = match event {
         OrderEventAny::Denied(d) => {
             assert!(
-                d.reason.as_str().contains(reason_part),
+                d.reason.contains(reason_part),
                 "expected reason containing `{reason_part}`, was {:?}",
                 d.reason,
             );
@@ -1104,7 +1104,7 @@ async fn assert_local_order_denied_once(
                     "VALIDATION_FAILED:",
                 ]
                 .iter()
-                .any(|prefix| d.reason.as_str().starts_with(prefix)),
+                .any(|prefix| d.reason.starts_with(prefix)),
                 "expected standardized denial code, was {:?}",
                 d.reason,
             );
@@ -2718,15 +2718,12 @@ async fn test_acknowledged_create_failed_by_sequencer_emits_order_rejected() {
         OrderEventAny::Rejected(event) => {
             assert_eq!(event.client_order_id, order.client_order_id());
             assert!(
-                event.reason.as_str().contains("sequencer rejected"),
+                event.reason.contains("sequencer rejected"),
                 "unexpected rejection reason: {}",
                 event.reason,
             );
             assert!(
-                event
-                    .reason
-                    .as_str()
-                    .contains("reduce only increases position"),
+                event.reason.contains("reduce only increases position"),
                 "unexpected rejection reason: {}",
                 event.reason,
             );

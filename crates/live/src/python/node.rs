@@ -1543,8 +1543,7 @@ impl PyLiveNode {
                     }
 
                     py_exec_algorithm_ref.set_python_instance(&python_exec_algorithm)?;
-                    let actor_id =
-                        ActorId::from(py_exec_algorithm_ref.exec_algorithm_id().inner().as_str());
+                    let actor_id = ActorId::new(py_exec_algorithm_ref.exec_algorithm_id().inner());
 
                     return Ok((
                         python_exec_algorithm.unbind(),
@@ -1568,7 +1567,7 @@ impl PyLiveNode {
 
                     if let Some(id_value) = id_attr {
                         let actor_id_val = if let Ok(eaid) = id_value.extract::<ExecAlgorithmId>() {
-                            ActorId::new(eaid.inner().as_str())
+                            ActorId::new(eaid.inner())
                         } else if let Ok(aid) = id_value.extract::<ActorId>() {
                             aid
                         } else if let Ok(aid_str) = id_value.extract::<String>() {

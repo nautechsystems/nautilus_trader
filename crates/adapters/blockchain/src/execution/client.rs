@@ -8939,13 +8939,12 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("not in the `allowed_token_pairs` allowlist"),
             "was: {}",
             denied.reason
         );
         assert!(
-            denied.reason.as_str().contains(&USDC_ADDRESS.to_string()),
+            denied.reason.contains(&USDC_ADDRESS.to_string()),
             "was: {}",
             denied.reason
         );
@@ -8979,7 +8978,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("Quote-denominated"),
+            denied.reason.contains("Quote-denominated"),
             "was: {}",
             denied.reason
         );
@@ -9007,7 +9006,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("exceeds the configured `max_order_amount`"),
             "was: {}",
             denied.reason
@@ -9036,7 +9034,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("No `quote_spend_limits` entry for BUY token pair"),
             "was: {}",
             denied.reason
@@ -9070,7 +9067,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("No `quote_spend_limits` entry for BUY token pair"),
             "was: {}",
             denied.reason
@@ -9112,7 +9108,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("exceeds the configured `quote_spend_limits` maximum 0"),
             "was: {}",
             denied.reason
@@ -9141,7 +9136,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains(&format!(
+            denied.reason.contains(&format!(
                 "BUY quote amount {amount_in} exceeds the configured `quote_spend_limits`"
             )),
             "was: {}",
@@ -9181,7 +9176,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("only Market is supported"),
+            denied.reason.contains("only Market is supported"),
             "was: {}",
             denied.reason
         );
@@ -9215,7 +9210,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("Quote-denominated"),
+            denied.reason.contains("Quote-denominated"),
             "was: {}",
             denied.reason
         );
@@ -9250,7 +9245,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("Unknown pool"),
+            denied.reason.contains("Unknown pool"),
             "was: {}",
             denied.reason
         );
@@ -9274,13 +9269,12 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("not in the `allowed_token_pairs` allowlist"),
             "was: {}",
             denied.reason
         );
         assert!(
-            denied.reason.as_str().contains(&WETH_ADDRESS.to_string()),
+            denied.reason.contains(&WETH_ADDRESS.to_string()),
             "was: {}",
             denied.reason
         );
@@ -9304,7 +9298,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("Blockchain execution client is not connected"),
             "was: {}",
             denied.reason
@@ -9329,7 +9322,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("not in the `allowed_token_pairs` allowlist"),
             "was: {}",
             denied.reason
@@ -9354,7 +9346,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("exceeds the configured `max_order_amount`"),
             "was: {}",
             denied.reason
@@ -9379,7 +9370,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("exceeds the configured `max_slippage_bps`"),
             "was: {}",
             denied.reason
@@ -9420,7 +9410,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("no fee tier"),
+            denied.reason.contains("no fee tier"),
             "was: {}",
             denied.reason
         );
@@ -9459,7 +9449,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("No pool profiler"),
+            denied.reason.contains("No pool profiler"),
             "was: {}",
             denied.reason
         );
@@ -9479,7 +9469,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("is not connected"),
+            denied.reason.contains("is not connected"),
             "was: {}",
             denied.reason
         );
@@ -9500,10 +9490,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied
-                .reason
-                .as_str()
-                .contains("No durable store configured"),
+            denied.reason.contains("No durable store configured"),
             "was: {}",
             denied.reason
         );
@@ -9530,7 +9517,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("still awaiting finality"),
+            denied.reason.contains("still awaiting finality"),
             "was: {}",
             denied.reason
         );
@@ -9556,7 +9543,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("Signer not initialized"),
+            denied.reason.contains("Signer not initialized"),
             "was: {}",
             denied.reason
         );
@@ -9800,7 +9787,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("pre-sign checkpoint reread verification disagreed"),
             "was: {}",
             denied.reason
@@ -9909,7 +9895,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("changed before signing"),
+            denied.reason.contains("changed before signing"),
             "was: {}",
             denied.reason
         );
@@ -9968,7 +9954,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("pre-sign checkpoint reread verification disagreed"),
             "was: {}",
             denied.reason
@@ -10087,7 +10072,7 @@ mod tests {
         assert_eq!(fill.order_side, OrderSide::Sell);
         assert_eq!(fill.last_qty, Quantity::from("0.001"));
         assert_eq!(fill.last_px, Price::from("1000"));
-        assert_eq!(fill.currency.code.as_str(), "USDC");
+        assert_eq!(fill.currency.code, "USDC");
         assert_eq!(fill.commission, Some(expected_commission));
         assert_eq!(fill.liquidity_side, LiquiditySide::Taker);
         assert_eq!(account_states.len(), 1);
@@ -10380,7 +10365,7 @@ mod tests {
         assert_eq!(fill.venue_order_id.as_str(), expected_hash.to_string());
         assert_eq!(fill.order_side, OrderSide::Buy);
         assert_eq!(fill.last_qty, Quantity::from("0.001"));
-        assert_eq!(fill.currency.code.as_str(), "USDC");
+        assert_eq!(fill.currency.code, "USDC");
         assert_eq!(fill.commission, Some(expected_commission));
         assert_eq!(fill.liquidity_side, LiquiditySide::Taker);
         assert_eq!(
@@ -10656,7 +10641,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("is below the swap amount"),
+            denied.reason.contains("is below the swap amount"),
             "was: {}",
             denied.reason
         );
@@ -10782,7 +10767,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("swap deployment manifest verification disagreed"),
             "was: {}",
             denied.reason
@@ -10826,7 +10810,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("swap deployment manifest verification disagreed"),
             "was: {}",
             denied.reason
@@ -10870,7 +10853,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("swap deployment manifest verification disagreed"),
             "was: {}",
             denied.reason
@@ -10916,7 +10898,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("swap deployment manifest verification disagreed"),
             "was: {}",
             denied.reason
@@ -10958,7 +10939,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("below the swap amount"),
+            denied.reason.contains("below the swap amount"),
             "was: {}",
             denied.reason
         );
@@ -11003,7 +10984,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("is below the swap amount"),
+            denied.reason.contains("is below the swap amount"),
             "was: {}",
             denied.reason
         );
@@ -11033,10 +11014,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied
-                .reason
-                .as_str()
-                .contains("below maximum transaction cost"),
+            denied.reason.contains("below maximum transaction cost"),
             "was: {}",
             denied.reason
         );
@@ -11085,7 +11063,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("Stale quote"),
+            denied.reason.contains("Stale quote"),
             "was: {}",
             denied.reason
         );
@@ -11125,10 +11103,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied
-                .reason
-                .as_str()
-                .contains("is ahead of the latest block"),
+            denied.reason.contains("is ahead of the latest block"),
             "was: {}",
             denied.reason
         );
@@ -11166,7 +11141,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("deadline overflow"),
+            denied.reason.contains("deadline overflow"),
             "was: {}",
             denied.reason
         );
@@ -11288,7 +11263,7 @@ mod tests {
             panic!("expected OrderRejected, was {:?}", events[1]);
         };
         assert!(
-            rejected.reason.as_str().contains("reverted on-chain"),
+            rejected.reason.contains("reverted on-chain"),
             "was: {}",
             rejected.reason
         );
@@ -11510,7 +11485,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("Execution intent reservation failed before commit"),
             "was: {}",
             denied.reason
@@ -11523,7 +11497,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", retry_events[0]);
         };
         assert_eq!(
-            retry_denied.reason.as_str(),
+            retry_denied.reason,
             "Execution intent reservation failed before commit"
         );
         let broadcasts = state
@@ -11570,13 +11544,13 @@ mod tests {
         let denied_commit = events
             .iter()
             .filter(|event| {
-                matches!(event, OrderEventAny::Denied(denied) if denied.reason.as_str() == "Execution intent reservation commit outcome is unknown; reconciliation is required")
+                matches!(event, OrderEventAny::Denied(denied) if denied.reason == "Execution intent reservation commit outcome is unknown; reconciliation is required")
             })
             .count();
         let denied_in_flight = events
             .iter()
             .filter(|event| {
-                matches!(event, OrderEventAny::Denied(denied) if denied.reason.as_str().contains("at most one transaction can be in flight"))
+                matches!(event, OrderEventAny::Denied(denied) if denied.reason.contains("at most one transaction can be in flight"))
             })
             .count();
         let requests = state.recorded_requests();
@@ -12666,7 +12640,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("exceeds uint24"),
+            denied.reason.contains("exceeds uint24"),
             "was: {}",
             denied.reason
         );
@@ -12709,7 +12683,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("is not initialized"),
+            denied.reason.contains("is not initialized"),
             "was: {}",
             denied.reason
         );
@@ -12761,7 +12735,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("cannot fill the order"),
+            denied.reason.contains("cannot fill the order"),
             "was: {}",
             denied.reason
         );
@@ -13048,7 +13022,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("pre-sign chain ID verification disagreed"),
             "was: {}",
             denied.reason
@@ -13194,7 +13167,6 @@ mod tests {
         assert!(
             denied
                 .reason
-                .as_str()
                 .contains("at most one transaction can be in flight"),
             "was: {}",
             denied.reason
@@ -14297,20 +14269,20 @@ mod tests {
         let balances = client.wallet_balance.lock().as_account_balances().unwrap();
 
         assert_eq!(balances.len(), 3);
-        assert_eq!(balances[0].currency.code.as_str(), "ETH");
-        assert_eq!(balances[0].currency.name.as_str(), "Ethereum");
+        assert_eq!(balances[0].currency.code, "ETH");
+        assert_eq!(balances[0].currency.name, "Ethereum");
         assert_eq!(balances[0].currency.precision, 18);
         assert_eq!(balances[0].total.raw, 1_000_000_000_000_000_000);
         assert_eq!(balances[0].free, balances[0].total);
         assert_eq!(balances[0].locked, Money::zero(balances[0].currency));
-        assert_eq!(balances[1].currency.code.as_str(), "WETH");
-        assert_eq!(balances[1].currency.name.as_str(), "Wrapped Ether");
+        assert_eq!(balances[1].currency.code, "WETH");
+        assert_eq!(balances[1].currency.name, "Wrapped Ether");
         assert_eq!(balances[1].currency.precision, 18);
         assert_eq!(balances[1].total.raw, 1_234_567_890_123_456_789);
         assert_eq!(balances[1].free, balances[1].total);
         assert_eq!(balances[1].locked, Money::zero(balances[1].currency));
-        assert_eq!(balances[2].currency.code.as_str(), "USDC");
-        assert_eq!(balances[2].currency.name.as_str(), "USD Coin");
+        assert_eq!(balances[2].currency.code, "USDC");
+        assert_eq!(balances[2].currency.name, "USD Coin");
         assert_eq!(balances[2].currency.precision, 6);
         assert_eq!(balances[2].total.raw, 9_876_543_210_000_000_000);
         assert_eq!(balances[2].free, balances[2].total);
@@ -18179,7 +18151,7 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert_eq!(denied.client_order_id, order.client_order_id());
-        assert_eq!(denied.reason.as_str(), "UNSUPPORTED_REDUCE_ONLY");
+        assert_eq!(denied.reason, "UNSUPPORTED_REDUCE_ONLY");
         assert!(state.recorded_requests().is_empty());
         assert!(client.in_flight.lock().is_none());
     }
@@ -18208,7 +18180,7 @@ mod tests {
             let OrderEventAny::Denied(denied) = event else {
                 panic!("expected OrderDenied, was {event:?}");
             };
-            assert_eq!(denied.reason.as_str(), ORDER_LIST_UNSUPPORTED);
+            assert_eq!(denied.reason, ORDER_LIST_UNSUPPORTED);
             denied_ids.push(denied.client_order_id);
         }
         denied_ids.sort();
@@ -18245,7 +18217,7 @@ mod tests {
             panic!("expected OrderModifyRejected, was {:?}", events[0]);
         };
         assert_eq!(rejected.client_order_id, order.client_order_id());
-        assert_eq!(rejected.reason.as_str(), ORDER_MODIFY_UNSUPPORTED);
+        assert_eq!(rejected.reason, ORDER_MODIFY_UNSUPPORTED);
         assert!(state.recorded_requests().is_empty());
         assert!(client.in_flight.lock().is_none());
         let cache_ref = cache.borrow();
@@ -18272,7 +18244,7 @@ mod tests {
             panic!("expected OrderCancelRejected, was {:?}", events[0]);
         };
         assert_eq!(rejected.client_order_id, order.client_order_id());
-        assert_eq!(rejected.reason.as_str(), ORDER_CANCEL_UNSUPPORTED);
+        assert_eq!(rejected.reason, ORDER_CANCEL_UNSUPPORTED);
         assert!(state.recorded_requests().is_empty());
         assert!(client.in_flight.lock().is_none());
         let cache_ref = cache.borrow();
@@ -18308,7 +18280,7 @@ mod tests {
             let OrderEventAny::CancelRejected(rejected) = event else {
                 panic!("expected OrderCancelRejected, was {event:?}");
             };
-            assert_eq!(rejected.reason.as_str(), ORDER_CANCEL_UNSUPPORTED);
+            assert_eq!(rejected.reason, ORDER_CANCEL_UNSUPPORTED);
             rejected_ids.push(rejected.client_order_id);
         }
         rejected_ids.sort();

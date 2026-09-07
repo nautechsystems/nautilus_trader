@@ -5393,7 +5393,7 @@ fn test_subscribe_signal_multi_word_name_matches_published_topic(
 
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     assert_eq!(actor.received_signals.len(), 1);
-    assert_eq!(actor.received_signals[0].name.as_str(), "hello world");
+    assert_eq!(actor.received_signals[0].name, "hello world");
     assert_eq!(actor.received_signals[0].value, "ok");
 }
 
@@ -5422,7 +5422,7 @@ fn test_publish_signal_reaches_subscriber(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     assert_eq!(actor.received_signals.len(), 1);
     let signal = &actor.received_signals[0];
-    assert_eq!(signal.name.as_str(), name);
+    assert_eq!(signal.name, name);
     assert_eq!(signal.value, value);
     if ts_event != 0 {
         assert_eq!(signal.ts_event, UnixNanos::from(ts_event));
@@ -5489,7 +5489,7 @@ fn test_reconnect_socket_enqueues_typed_command(
 
     assert_eq!(command.trader_id, trader_id);
     assert_eq!(command.client_id, ClientId::from("POLYMARKET"));
-    assert_eq!(command.endpoint.as_str(), "polymarket-market-streams");
+    assert_eq!(command.endpoint, "polymarket-market-streams");
     assert_eq!(command.ts_init, UnixNanos::default());
 }
 
@@ -5753,8 +5753,8 @@ fn test_subscribe_signal_wildcard_matches_all_names(
 
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     assert_eq!(actor.received_signals.len(), 2);
-    assert_eq!(actor.received_signals[0].name.as_str(), "alpha");
-    assert_eq!(actor.received_signals[1].name.as_str(), "beta");
+    assert_eq!(actor.received_signals[0].name, "alpha");
+    assert_eq!(actor.received_signals[1].name, "beta");
 }
 
 #[rstest]

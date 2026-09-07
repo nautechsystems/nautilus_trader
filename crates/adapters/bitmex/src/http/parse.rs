@@ -1263,10 +1263,10 @@ mod tests {
                 assert_eq!(spread.id.symbol.as_str(), "XBTM26-XBTU26");
                 assert_eq!(spread.id.venue.as_str(), "BITMEX");
                 assert_eq!(spread.raw_symbol.as_str(), "XBTM26-XBTU26");
-                assert_eq!(spread.underlying.code.as_str(), "XBT");
-                assert_eq!(spread.quote_currency.code.as_str(), "USD");
-                assert_eq!(spread.settlement_currency.code.as_str(), "XBT");
-                assert_eq!(spread.strategy_type.as_str(), "FS");
+                assert_eq!(spread.underlying.code, "XBT");
+                assert_eq!(spread.quote_currency.code, "USD");
+                assert_eq!(spread.settlement_currency.code, "XBT");
+                assert_eq!(spread.strategy_type, "FS");
                 assert!(!spread.is_inverse);
                 assert_eq!(spread.price_precision, 1);
                 assert_eq!(spread.size_precision, 0);
@@ -2054,7 +2054,7 @@ mod tests {
         assert_eq!(report.last_qty.as_f64(), 50.0);
         assert_eq!(report.last_px.as_f64(), 50100.5);
         assert_eq!(report.commission.as_f64(), 0.00075);
-        assert_eq!(report.commission.currency.code.as_str(), "XBT");
+        assert_eq!(report.commission.currency.code, "XBT");
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
     }
 
@@ -2124,7 +2124,7 @@ mod tests {
         );
         assert!(report.client_order_id.is_none());
         assert_eq!(report.commission.as_f64(), 0.0);
-        assert_eq!(report.commission.currency.code.as_str(), "XBT");
+        assert_eq!(report.commission.currency.code, "XBT");
         assert_eq!(report.liquidity_side, LiquiditySide::Maker);
     }
 
@@ -2951,7 +2951,7 @@ mod tests {
                 assert_eq!(instrument.id.symbol.as_str(), "XBTH25");
                 assert_eq!(instrument.id.venue.as_str(), "BITMEX");
                 assert_eq!(instrument.raw_symbol.as_str(), "XBTH25");
-                assert_eq!(instrument.underlying.code.as_str(), "XBT");
+                assert_eq!(instrument.underlying.code, "XBT");
                 assert_eq!(instrument.price_precision, 1);
                 assert_eq!(instrument.size_precision, 0);
                 assert_eq!(instrument.price_increment.as_f64(), 0.5);

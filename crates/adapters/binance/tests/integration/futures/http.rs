@@ -607,10 +607,7 @@ async fn test_request_delivery_instrument_populates_cache_and_status(
         .expect("delivery instrument missing from HTTP cache");
 
     assert_eq!(future.id.to_string(), expected_id);
-    assert_eq!(
-        future.settlement_currency.code.as_str(),
-        settlement_currency
-    );
+    assert_eq!(future.settlement_currency.code, settlement_currency);
     assert_eq!(future.is_inverse, is_inverse);
     assert_eq!(future.multiplier, multiplier);
     assert_eq!(future.maker_fee, dec!(0.0002));
@@ -783,7 +780,7 @@ async fn test_request_instruments_parses_tradifi_perpetual_exchange_info() {
 
     assert_eq!(tradifi.id.to_string(), "XAUUSDT-PERP.BINANCE");
     assert_eq!(tradifi.raw_symbol.as_str(), "XAUUSDT");
-    assert_eq!(tradifi.underlying.as_str(), "XAU");
+    assert_eq!(tradifi.underlying, "XAU");
     assert_eq!(tradifi.asset_class, AssetClass::Commodity);
     assert_eq!(tradifi.base_currency, None);
     assert_eq!(tradifi.maker_fee, dec!(0.0002));

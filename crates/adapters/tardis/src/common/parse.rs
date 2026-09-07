@@ -132,7 +132,7 @@ pub fn derive_trade_id(
     let mut hash: u64 = FNV_OFFSET_BASIS;
 
     for bytes in [
-        symbol.as_str().as_bytes(),
+        symbol.as_bytes(),
         b"\x1f",
         &ts_event_ns.to_le_bytes(),
         b"\x1f",

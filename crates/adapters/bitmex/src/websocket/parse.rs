@@ -1931,7 +1931,7 @@ mod tests {
 
         let margin = &state.margins[0];
         assert!(margin.instrument_id.is_none());
-        assert_eq!(margin.currency.code.as_str(), "USDT");
+        assert_eq!(margin.currency.code, "USDT");
         assert_eq!(margin.initial.as_f64(), 200.0);
         assert_eq!(margin.maintenance.as_f64(), 100.0);
     }

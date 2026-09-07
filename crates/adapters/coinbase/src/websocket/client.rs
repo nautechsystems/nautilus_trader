@@ -1020,7 +1020,7 @@ mod tests {
     fn test_ws_subscription_rate_limit_key_is_stable() {
         assert_eq!(COINBASE_RATE_LIMIT_KEY_SUBSCRIPTION, "subscription");
         assert_eq!(
-            COINBASE_WS_SUBSCRIPTION_KEYS[0].as_str(),
+            COINBASE_WS_SUBSCRIPTION_KEYS[0],
             COINBASE_RATE_LIMIT_KEY_SUBSCRIPTION,
         );
     }

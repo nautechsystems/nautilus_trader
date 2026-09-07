@@ -685,16 +685,12 @@ fn build_signed_order_params(
 ) -> anyhow::Result<DeriveOrderParams> {
     let direction = order_side_to_derive(order.order_side());
 
-    let asset_address: Address = instrument
-        .base_asset_address
-        .as_str()
-        .parse()
-        .with_context(|| {
-            format!(
-                "failed to parse base_asset_address `{}`",
-                instrument.base_asset_address.as_str(),
-            )
-        })?;
+    let asset_address: Address = instrument.base_asset_address.parse().with_context(|| {
+        format!(
+            "failed to parse base_asset_address `{}`",
+            instrument.base_asset_address.as_str(),
+        )
+    })?;
     let sub_id =
         U256::from_str_radix(instrument.base_asset_sub_id.as_str(), 10).with_context(|| {
             format!(

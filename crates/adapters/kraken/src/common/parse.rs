@@ -1313,8 +1313,8 @@ mod tests {
         match instrument {
             InstrumentAny::CurrencyPair(pair) => {
                 assert_eq!(pair.id.venue.as_str(), "KRAKEN");
-                assert_eq!(pair.base_currency.code.as_str(), "XXBT");
-                assert_eq!(pair.quote_currency.code.as_str(), "USDT");
+                assert_eq!(pair.base_currency.code, "XXBT");
+                assert_eq!(pair.quote_currency.code, "USDT");
                 assert_eq!(pair.price_increment.as_decimal(), dec!(0.1));
                 assert_eq!(pair.size_increment.as_decimal(), dec!(0.00000001));
                 assert!(pair.min_quantity.is_some());
@@ -1367,9 +1367,9 @@ mod tests {
                 assert_eq!(perp.id.venue.as_str(), "KRAKEN");
                 assert_eq!(perp.id.symbol.as_str(), "PI_XBTUSD");
                 assert_eq!(perp.raw_symbol.as_str(), "PI_XBTUSD");
-                assert_eq!(perp.base_currency.code.as_str(), "BTC");
-                assert_eq!(perp.quote_currency.code.as_str(), "USD");
-                assert_eq!(perp.settlement_currency.code.as_str(), "BTC");
+                assert_eq!(perp.base_currency.code, "BTC");
+                assert_eq!(perp.quote_currency.code, "USD");
+                assert_eq!(perp.settlement_currency.code, "BTC");
                 assert!(perp.is_inverse);
                 assert_eq!(perp.price_increment.as_decimal(), dec!(0.5));
                 assert_eq!(perp.size_increment.as_decimal(), dec!(1));
@@ -1396,9 +1396,9 @@ mod tests {
                 assert_eq!(perp.id.venue.as_str(), "KRAKEN");
                 assert_eq!(perp.id.symbol.as_str(), "PF_ETHUSD");
                 assert_eq!(perp.raw_symbol.as_str(), "PF_ETHUSD");
-                assert_eq!(perp.base_currency.code.as_str(), "ETH");
-                assert_eq!(perp.quote_currency.code.as_str(), "USD");
-                assert_eq!(perp.settlement_currency.code.as_str(), "USD");
+                assert_eq!(perp.base_currency.code, "ETH");
+                assert_eq!(perp.quote_currency.code, "USD");
+                assert_eq!(perp.settlement_currency.code, "USD");
                 assert!(!perp.is_inverse);
                 assert_eq!(perp.price_increment.as_decimal(), dec!(0.1));
                 assert_eq!(perp.size_increment.as_decimal(), dec!(0.001));
@@ -1445,7 +1445,7 @@ mod tests {
         match instrument {
             InstrumentAny::CryptoPerpetual(perp) => {
                 assert_eq!(perp.id.symbol.as_str(), "PF_PEPEUSD");
-                assert_eq!(perp.base_currency.code.as_str(), "PEPE");
+                assert_eq!(perp.base_currency.code, "PEPE");
                 assert!(!perp.is_inverse);
                 assert_eq!(perp.size_increment.as_decimal(), dec!(1000));
                 assert_eq!(perp.size_precision(), 0);
@@ -1525,9 +1525,9 @@ mod tests {
             InstrumentAny::CryptoPerpetual(perp) => {
                 assert_eq!(perp.id.symbol.as_str(), "PF_AAPLxUSD");
                 assert_eq!(perp.raw_symbol.as_str(), "PF_AAPLxUSD");
-                assert_eq!(perp.base_currency.code.as_str(), "AAPLx");
-                assert_eq!(perp.quote_currency.code.as_str(), "USD");
-                assert_eq!(perp.settlement_currency.code.as_str(), "USD");
+                assert_eq!(perp.base_currency.code, "AAPLx");
+                assert_eq!(perp.quote_currency.code, "USD");
+                assert_eq!(perp.settlement_currency.code, "USD");
                 assert!(!perp.is_inverse);
                 assert_eq!(perp.price_increment.as_decimal(), dec!(0.01));
                 assert_eq!(perp.size_increment.as_decimal(), dec!(0.01));
@@ -2241,8 +2241,8 @@ mod tests {
                 assert_eq!(ta.id.venue.as_str(), "KRAKEN");
                 assert_eq!(ta.raw_symbol.as_str(), "AAPLxUSD");
                 assert_eq!(ta.asset_class, AssetClass::Equity);
-                assert_eq!(ta.base_currency.code.as_str(), "AAPLx");
-                assert_eq!(ta.quote_currency.code.as_str(), "ZUSD");
+                assert_eq!(ta.base_currency.code, "AAPLx");
+                assert_eq!(ta.quote_currency.code, "ZUSD");
                 assert_eq!(ta.price_precision, 2);
                 assert_eq!(ta.size_precision, 8);
                 assert_eq!(ta.price_increment.as_decimal(), dec!(0.01));

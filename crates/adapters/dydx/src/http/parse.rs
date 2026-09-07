@@ -527,8 +527,8 @@ mod tests {
         let instrument = result.unwrap();
         if let InstrumentAny::CryptoPerpetual(perp) = instrument {
             assert_eq!(perp.id.symbol.as_str(), "BTC-USD-PERP");
-            assert_eq!(perp.base_currency.code.as_str(), "BTC");
-            assert_eq!(perp.quote_currency.code.as_str(), "USD");
+            assert_eq!(perp.base_currency.code, "BTC");
+            assert_eq!(perp.quote_currency.code, "USD");
             assert!(!perp.is_inverse);
             assert_eq!(perp.price_increment.to_string(), "1");
             assert_eq!(perp.size_increment.to_string(), "0.001");
@@ -2515,7 +2515,7 @@ mod reconciliation_tests {
 
         assert_eq!(state.balances.len(), 1);
         let balance = &state.balances[0];
-        assert_eq!(balance.currency.code.as_str(), "USDC");
+        assert_eq!(balance.currency.code, "USDC");
         assert_eq!(balance.total.as_decimal(), dec!(15000));
         assert_eq!(balance.free.as_decimal(), dec!(12500));
         assert_eq!(balance.locked.as_decimal(), dec!(2500));
@@ -2557,7 +2557,7 @@ mod reconciliation_tests {
 
         assert_eq!(state.balances.len(), 1);
         let balance = &state.balances[0];
-        assert_eq!(balance.currency.code.as_str(), "USDC");
+        assert_eq!(balance.currency.code, "USDC");
         assert_eq!(balance.total.as_decimal(), dec!(15000));
         assert_eq!(balance.free.as_decimal(), dec!(12500));
         assert_eq!(balance.locked.as_decimal(), dec!(2500));

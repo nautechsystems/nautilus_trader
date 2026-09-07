@@ -2723,7 +2723,7 @@ mod tests {
         let entries: Vec<HyperliquidFundingHistoryEntry> =
             load_test_data("http_funding_history.json");
         assert_eq!(entries.len(), 3);
-        assert_eq!(entries[0].coin.as_str(), "BTC");
+        assert_eq!(entries[0].coin, "BTC");
         assert_eq!(entries[0].funding_rate, dec!(0.0000125));
         assert_eq!(entries[0].premium, Some(dec!(0.00029005)));
         assert!(entries[2].premium.is_none());

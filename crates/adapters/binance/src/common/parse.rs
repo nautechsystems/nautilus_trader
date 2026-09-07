@@ -1793,9 +1793,9 @@ mod tests {
             InstrumentAny::CryptoPerpetual(perp) => {
                 assert_eq!(perp.id.to_string(), "BTCUSDT-PERP.BINANCE");
                 assert_eq!(perp.raw_symbol.to_string(), "BTCUSDT");
-                assert_eq!(perp.base_currency.code.as_str(), "BTC");
-                assert_eq!(perp.quote_currency.code.as_str(), "USDT");
-                assert_eq!(perp.settlement_currency.code.as_str(), "USDT");
+                assert_eq!(perp.base_currency.code, "BTC");
+                assert_eq!(perp.quote_currency.code, "USDT");
+                assert_eq!(perp.settlement_currency.code, "USDT");
                 assert!(!perp.is_inverse);
                 assert_eq!(perp.price_increment, Price::from_str("0.10").unwrap());
                 assert_eq!(perp.size_increment, Quantity::from_str("0.001").unwrap());
@@ -1850,8 +1850,8 @@ mod tests {
                 assert_eq!(perp.underlying, Ustr::from(underlying));
                 assert_eq!(perp.asset_class, expected_asset_class);
                 assert_eq!(perp.base_currency, None);
-                assert_eq!(perp.quote_currency.code.as_str(), "USDT");
-                assert_eq!(perp.settlement_currency.code.as_str(), "USDT");
+                assert_eq!(perp.quote_currency.code, "USDT");
+                assert_eq!(perp.settlement_currency.code, "USDT");
                 assert!(!perp.is_inverse);
                 assert_eq!(perp.price_increment, Price::from_str("0.10").unwrap());
                 assert_eq!(perp.size_increment, Quantity::from_str("0.001").unwrap());
@@ -1904,9 +1904,9 @@ mod tests {
 
         assert_eq!(future.id.to_string(), "BTCUSDT_260925.BINANCE");
         assert_eq!(future.raw_symbol.to_string(), "BTCUSDT_260925");
-        assert_eq!(future.underlying.code.as_str(), "BTC");
-        assert_eq!(future.quote_currency.code.as_str(), "USDT");
-        assert_eq!(future.settlement_currency.code.as_str(), "USDT");
+        assert_eq!(future.underlying.code, "BTC");
+        assert_eq!(future.quote_currency.code, "USDT");
+        assert_eq!(future.settlement_currency.code, "USDT");
         assert!(!future.is_inverse);
         assert_eq!(
             future.activation_ns,
@@ -1982,9 +1982,9 @@ mod tests {
             InstrumentAny::CryptoPerpetual(perp) => {
                 assert_eq!(perp.id.to_string(), "BTCUSD_PERP.BINANCE");
                 assert_eq!(perp.raw_symbol.to_string(), "BTCUSD_PERP");
-                assert_eq!(perp.base_currency.code.as_str(), "BTC");
-                assert_eq!(perp.quote_currency.code.as_str(), "USD");
-                assert_eq!(perp.settlement_currency.code.as_str(), "BTC");
+                assert_eq!(perp.base_currency.code, "BTC");
+                assert_eq!(perp.quote_currency.code, "USD");
+                assert_eq!(perp.settlement_currency.code, "BTC");
                 assert!(perp.is_inverse);
                 assert_eq!(perp.price_increment, Price::from_str("0.10").unwrap());
                 assert_eq!(perp.size_increment, Quantity::from_str("1").unwrap());
@@ -2037,9 +2037,9 @@ mod tests {
 
         assert_eq!(future.id.to_string(), "BTCUSD_260925.BINANCE");
         assert_eq!(future.raw_symbol.to_string(), "BTCUSD_260925");
-        assert_eq!(future.underlying.code.as_str(), "BTC");
-        assert_eq!(future.quote_currency.code.as_str(), "USD");
-        assert_eq!(future.settlement_currency.code.as_str(), "BTC");
+        assert_eq!(future.underlying.code, "BTC");
+        assert_eq!(future.quote_currency.code, "USD");
+        assert_eq!(future.settlement_currency.code, "BTC");
         assert!(future.is_inverse);
         assert_eq!(
             future.activation_ns,
@@ -2087,8 +2087,8 @@ mod tests {
             InstrumentAny::CurrencyPair(pair) => {
                 assert_eq!(pair.id.to_string(), "ETHUSDT.BINANCE");
                 assert_eq!(pair.raw_symbol.to_string(), "ETHUSDT");
-                assert_eq!(pair.base_currency.code.as_str(), "ETH");
-                assert_eq!(pair.quote_currency.code.as_str(), "USDT");
+                assert_eq!(pair.base_currency.code, "ETH");
+                assert_eq!(pair.quote_currency.code, "USDT");
                 assert_eq!(pair.price_increment, Price::from_str("0.01").unwrap());
                 assert_eq!(pair.size_increment, Quantity::from_str("0.0001").unwrap());
             }

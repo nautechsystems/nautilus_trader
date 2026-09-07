@@ -872,7 +872,7 @@ impl DataActor for DeltaNeutralVol {
     }
 
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
-        if event.name.as_str() == REHEDGE_TIMER {
+        if event.name == REHEDGE_TIMER {
             self.check_rehedge()?;
         }
 

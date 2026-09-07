@@ -1389,7 +1389,7 @@ impl HyperliquidHttpClient {
         }
 
         // Spot fills use @{pair_index} format, translate to full symbol and look up
-        if coin.as_str().starts_with('@')
+        if coin.starts_with('@')
             && let Some(symbol) = self.spot_fill_coins.load().get(coin)
         {
             // Look up by full symbol in instruments map (not instruments_by_coin
@@ -1400,7 +1400,7 @@ impl HyperliquidHttpClient {
         }
 
         // Vault tokens aren't in standard API, create synthetic instruments
-        if coin.as_str().starts_with(VAULT_TOKEN_PREFIX) {
+        if coin.starts_with(VAULT_TOKEN_PREFIX) {
             log::debug!("Creating synthetic instrument for vault token: {coin}");
 
             let ts_event = self.clock.get_time_ns();
@@ -2879,7 +2879,7 @@ impl HyperliquidHttpClient {
             // pair and has no `USDC-*-SPOT` instrument. Skip it so the loop
             // does not trigger a misleading cache-miss WARN. Revisit if
             // Hyperliquid ever introduces a USDC-base spot pair.
-            if balance.coin.as_str() == "USDC" {
+            if balance.coin == "USDC" {
                 continue;
             }
 
@@ -3638,7 +3638,7 @@ fn reconciliation_dexes_from_builders(
     builder_dexes: impl IntoIterator<Item = Ustr>,
 ) -> Vec<Option<Ustr>> {
     let mut builder_dexes = builder_dexes.into_iter().collect::<Vec<_>>();
-    builder_dexes.sort_unstable_by(|a, b| a.as_str().cmp(b.as_str()));
+    builder_dexes.sort_unstable();
     builder_dexes.dedup();
 
     let mut dexes = Vec::with_capacity(builder_dexes.len() + 1);

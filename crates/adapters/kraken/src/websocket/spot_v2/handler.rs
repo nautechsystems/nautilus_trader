@@ -622,7 +622,7 @@ mod tests {
             panic!("Expected Ticker message, was {message:?}");
         };
         let ticker = &data[0];
-        assert_eq!(ticker.symbol.as_str(), "BTC/USD");
+        assert_eq!(ticker.symbol, "BTC/USD");
         assert_eq!(ticker.bid, dec!(123456789.123456789));
         assert_eq!(ticker.bid_qty, dec!(0.1234567890123456789012345678));
         assert_eq!(ticker.ask, dec!(123456789.223456789));

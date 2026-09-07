@@ -131,7 +131,7 @@ impl OrderCancelRejected {
     #[getter]
     #[pyo3(name = "reason")]
     fn py_reason(&self) -> String {
-        self.reason.as_str().to_string()
+        self.reason.to_string()
     }
 
     #[getter]

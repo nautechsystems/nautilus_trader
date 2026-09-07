@@ -624,7 +624,7 @@ impl DeriveReplaceResult {
                     ));
                 }
 
-                if order.label.as_str() != expected_replacement_label {
+                if order.label != expected_replacement_label {
                     return Err(format!(
                         "private/replace replacement {} had label {}, expected {expected_replacement_label}",
                         order.order_id, order.label,
@@ -1155,7 +1155,7 @@ mod tests {
     fn test_instrument_decodes_perp_with_perp_details() {
         let body = load_json("perps/instrument_eth.json");
         let instrument: DeriveInstrument = serde_json::from_value(body).unwrap();
-        assert_eq!(instrument.instrument_name.as_str(), "ETH-PERP");
+        assert_eq!(instrument.instrument_name, "ETH-PERP");
         assert_eq!(instrument.instrument_type, DeriveInstrumentType::Perp);
         assert!(instrument.option_details.is_none());
         let perp = instrument.perp_details.expect("perp details present");
@@ -1189,9 +1189,9 @@ mod tests {
         assert_eq!(order.direction, DeriveOrderSide::Buy);
         assert_eq!(order.time_in_force, DeriveTimeInForce::Ioc);
         assert_eq!(order.order_type, DeriveOrderType::Market);
-        assert_eq!(order.instrument_name.as_str(), "ETH-PERP");
-        assert_eq!(order.label.as_str(), "alpha-strategy");
-        assert_eq!(order.signer.as_str(), "0xsigner");
+        assert_eq!(order.instrument_name, "ETH-PERP");
+        assert_eq!(order.label, "alpha-strategy");
+        assert_eq!(order.signer, "0xsigner");
         assert_eq!(order.order_id, "abc-123");
         assert_eq!(order.subaccount_id, 42);
         assert_eq!(order.signature_expiry_sec, 1_700_001_000);
@@ -1281,7 +1281,7 @@ mod tests {
         let body = load_json("perps/http_position_eth.json");
         let position: DerivePosition = serde_json::from_value(body).unwrap();
         assert_eq!(position.instrument_type, DeriveInstrumentType::Perp);
-        assert_eq!(position.instrument_name.as_str(), "ETH-PERP");
+        assert_eq!(position.instrument_name, "ETH-PERP");
         assert_eq!(position.amount.to_string(), "-2");
         assert_eq!(position.delta.to_string(), "-2");
         assert_eq!(position.gamma.to_string(), "0.1");
@@ -1361,7 +1361,7 @@ mod tests {
             DeriveAssetType::Unknown
         );
         assert_eq!(subaccount.open_orders.len(), 1);
-        assert_eq!(subaccount.open_orders[0].label.as_str(), "alpha-strategy");
+        assert_eq!(subaccount.open_orders[0].label, "alpha-strategy");
         assert_eq!(subaccount.positions.len(), 1);
         assert_eq!(
             subaccount.positions[0].instrument_type,
@@ -1437,7 +1437,7 @@ mod tests {
     #[rstest]
     fn test_ticker_decodes_perp_snapshot() {
         let ticker: DeriveTicker = serde_json::from_value(perp_ticker_json()).unwrap();
-        assert_eq!(ticker.instrument_name.as_str(), "ETH-PERP");
+        assert_eq!(ticker.instrument_name, "ETH-PERP");
         assert_eq!(ticker.instrument_type, DeriveInstrumentType::Perp);
         assert_eq!(ticker.mark_price.to_string(), "3500.5");
         assert_eq!(ticker.best_bid_price.to_string(), "3499.5");
@@ -1446,7 +1446,7 @@ mod tests {
         assert!(ticker.option_details.is_none());
         assert!(ticker.option_pricing.is_none());
         let perp = ticker.perp_details.expect("perp details present");
-        assert_eq!(perp.index.as_str(), "ETH-USD");
+        assert_eq!(perp.index, "ETH-USD");
         assert_eq!(perp.funding_rate.to_string(), "0.0002");
         let stats = ticker
             .stats
@@ -1486,8 +1486,8 @@ mod tests {
         assert_eq!(trade.direction, DeriveOrderSide::Buy);
         assert_eq!(trade.liquidity_role, DeriveLiquidityRole::Maker);
         assert_eq!(trade.tx_status, DeriveTxStatus::Settled);
-        assert_eq!(trade.instrument_name.as_str(), "ETH-PERP");
-        assert_eq!(trade.label.as_str(), "alpha-strategy");
+        assert_eq!(trade.instrument_name, "ETH-PERP");
+        assert_eq!(trade.label, "alpha-strategy");
         assert_eq!(trade.wallet.as_ref().map(Ustr::as_str), Some("0xwallet"));
         assert_eq!(trade.order_id, "order-abc");
         assert_eq!(trade.trade_id, "trade-xyz");
@@ -1647,7 +1647,7 @@ mod tests {
         let result: DerivePositionsResult = serde_json::from_value(body).unwrap();
         assert_eq!(result.positions.len(), 1);
         assert_eq!(result.subaccount_id, 42);
-        assert_eq!(result.positions[0].instrument_name.as_str(), "ETH-PERP");
+        assert_eq!(result.positions[0].instrument_name, "ETH-PERP");
         assert!(result.positions[0].leverage.is_none());
         assert!(result.positions[0].liquidation_price.is_none());
     }

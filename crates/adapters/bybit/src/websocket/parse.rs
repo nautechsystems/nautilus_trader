@@ -733,7 +733,7 @@ pub fn parse_ws_order_status_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     let instrument_id = instrument.id();
-    let venue_order_id = VenueOrderId::new(order.order_id.as_str());
+    let venue_order_id = VenueOrderId::new(order.order_id);
     let order_side: Option<OrderSide> = order.side.into();
 
     let order_type = parse_bybit_order_type(
@@ -814,7 +814,7 @@ pub fn parse_ws_order_status_report(
     );
 
     if !order.order_link_id.is_empty() {
-        report = report.with_client_order_id(ClientOrderId::new(order.order_link_id.as_str()));
+        report = report.with_client_order_id(ClientOrderId::new(order.order_link_id));
     }
 
     if !order.price.is_empty() && order.price != "0" {
@@ -875,7 +875,7 @@ pub fn parse_ws_fill_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
     let instrument_id = instrument.id();
-    let venue_order_id = VenueOrderId::new(execution.order_id.as_str());
+    let venue_order_id = VenueOrderId::new(execution.order_id);
     let trade_id = TradeId::new_checked(execution.exec_id.as_str())
         .context("invalid execId in Bybit WebSocket execution payload")?;
 
@@ -914,7 +914,7 @@ pub fn parse_ws_fill_report(
     let client_order_id = if execution.order_link_id.is_empty() {
         None
     } else {
-        Some(ClientOrderId::new(execution.order_link_id.as_str()))
+        Some(ClientOrderId::new(execution.order_link_id))
     };
 
     Ok(FillReport::new(
@@ -957,7 +957,7 @@ pub fn parse_ws_fill_report_fast(
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
     let instrument_id = instrument.id();
-    let venue_order_id = VenueOrderId::new(execution.order_id.as_str());
+    let venue_order_id = VenueOrderId::new(execution.order_id);
     let trade_id = TradeId::new_checked(execution.exec_id.as_str())
         .context("invalid execId in Bybit WebSocket fast-execution payload")?;
 
@@ -988,7 +988,7 @@ pub fn parse_ws_fill_report_fast(
     let client_order_id = if execution.order_link_id.is_empty() {
         None
     } else {
-        Some(ClientOrderId::new(execution.order_link_id.as_str()))
+        Some(ClientOrderId::new(execution.order_link_id))
     };
 
     Ok(FillReport::new(
@@ -1472,7 +1472,7 @@ mod tests {
         assert_eq!(report.last_qty, instrument.make_qty(0.5, None));
         assert_eq!(report.last_px, instrument.make_price(95900.1));
         assert_eq!(report.commission.as_f64(), 26.3725275);
-        assert_eq!(report.commission.currency.code.as_str(), "USDT");
+        assert_eq!(report.commission.currency.code, "USDT");
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
         assert_eq!(
             report.client_order_id.as_ref().unwrap().to_string(),
@@ -1507,7 +1507,7 @@ mod tests {
         assert_eq!(report.last_qty, instrument.make_qty(0.5, None));
         assert_eq!(report.last_px, instrument.make_price(95850.0));
         assert_eq!(report.commission.as_f64(), 0.0);
-        assert_eq!(report.commission.currency.code.as_str(), "USDT");
+        assert_eq!(report.commission.currency.code, "USDT");
     }
 
     #[rstest]
@@ -1537,7 +1537,7 @@ mod tests {
 
         let report = parse_ws_fill_report(&execution, account_id, &instrument, TS).unwrap();
 
-        assert_eq!(report.commission.currency.code.as_str(), "BTC");
+        assert_eq!(report.commission.currency.code, "BTC");
     }
 
     fn fast_execution(is_maker: bool, order_link_id: &str) -> BybitWsAccountExecutionFast {
@@ -1764,14 +1764,14 @@ mod tests {
 
         // Check BTC balance
         let btc_balance = &state.balances[0];
-        assert_eq!(btc_balance.currency.code.as_str(), "BTC");
+        assert_eq!(btc_balance.currency.code, "BTC");
         assert!((btc_balance.total.as_f64() - 0.00102964).abs() < 1e-8);
         assert!((btc_balance.free.as_f64() - 0.00092964).abs() < 1e-8);
         assert!((btc_balance.locked.as_f64() - 0.0001).abs() < 1e-8);
 
         // Check USDT balance
         let usdt_balance = &state.balances[1];
-        assert_eq!(usdt_balance.currency.code.as_str(), "USDT");
+        assert_eq!(usdt_balance.currency.code, "USDT");
         assert!((usdt_balance.total.as_f64() - 9647.75537647).abs() < 1e-6);
         assert!((usdt_balance.free.as_f64() - 9519.89806037).abs() < 1e-6);
         assert!((usdt_balance.locked.as_f64() - 127.8573161).abs() < 1e-6);
@@ -1783,7 +1783,7 @@ mod tests {
         let btc_margin = state
             .margins
             .iter()
-            .find(|m| m.currency.code.as_str() == "BTC")
+            .find(|m| m.currency.code == "BTC")
             .expect("BTC margin missing");
         assert!((btc_margin.initial.as_f64() - 0.0001).abs() < 1e-8);
         assert!(btc_margin.maintenance.as_f64().abs() < 1e-9);
@@ -1791,7 +1791,7 @@ mod tests {
         let usdt_margin = state
             .margins
             .iter()
-            .find(|m| m.currency.code.as_str() == "USDT")
+            .find(|m| m.currency.code == "USDT")
             .expect("USDT margin missing");
         assert!((usdt_margin.initial.as_f64() - 127.8573161).abs() < 1e-6);
         assert!((usdt_margin.maintenance.as_f64() - 12.78573161).abs() < 1e-6);
@@ -1819,7 +1819,7 @@ mod tests {
 
         // Check USDT balance
         let usdt_balance = &state.balances[0];
-        assert_eq!(usdt_balance.currency.code.as_str(), "USDT");
+        assert_eq!(usdt_balance.currency.code, "USDT");
 
         // Wallet has 51,333.82 USDT total
         assert!((usdt_balance.total.as_f64() - 51333.82543837).abs() < 1e-6);
@@ -1838,7 +1838,7 @@ mod tests {
         assert_eq!(state.margins.len(), 1);
         let usdt_margin = &state.margins[0];
         assert!(usdt_margin.instrument_id.is_none());
-        assert_eq!(usdt_margin.currency.code.as_str(), "USDT");
+        assert_eq!(usdt_margin.currency.code, "USDT");
         assert!((usdt_margin.initial.as_f64() - 50.028).abs() < 1e-6);
         assert!(usdt_margin.maintenance.as_f64().abs() < 1e-9);
     }
@@ -2078,7 +2078,7 @@ mod tests {
         let state = parse_ws_account_state(wallet, account_id, ts_event, TS).unwrap();
 
         let usdt_balance = &state.balances[0];
-        assert_eq!(usdt_balance.currency.code.as_str(), "USDT");
+        assert_eq!(usdt_balance.currency.code, "USDT");
         assert!((usdt_balance.total.as_f64() - 100.0).abs() < 1e-6);
         // Locked is capped at total to prevent negative free balance
         assert!((usdt_balance.locked.as_f64() - 100.0).abs() < 1e-6);

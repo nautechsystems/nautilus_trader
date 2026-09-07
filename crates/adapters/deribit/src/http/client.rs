@@ -1198,7 +1198,7 @@ impl DeribitHttpClient {
             .iter()
             .map(|leg| {
                 let instrument_id =
-                    InstrumentId::new(Symbol::new(leg.instrument_name.as_str()), *DERIBIT_VENUE);
+                    InstrumentId::new(Symbol::new(leg.instrument_name), *DERIBIT_VENUE);
 
                 json!({
                     "amount": leg.amount,

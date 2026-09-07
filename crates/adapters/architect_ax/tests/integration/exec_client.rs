@@ -1624,7 +1624,7 @@ async fn test_modify_order_without_venue_order_id_emits_rejection() {
     assert_eq!(rejected.client_order_id, client_order_id);
     assert_eq!(rejected.instrument_id, instrument_id);
     assert_eq!(rejected.venue_order_id, None);
-    assert_eq!(rejected.reason.as_str(), "missing venue_order_id");
+    assert_eq!(rejected.reason, "missing venue_order_id");
 
     client.disconnect().await.expect("Failed to disconnect");
 }
@@ -1680,7 +1680,7 @@ async fn test_modify_order_with_trigger_price_is_rejected_before_http() {
     assert_eq!(rejected.instrument_id, instrument_id);
     assert_eq!(rejected.venue_order_id, Some(venue_order_id));
     assert_eq!(
-        rejected.reason.as_str(),
+        rejected.reason,
         "AX does not support venue-native trigger prices"
     );
     assert!(
@@ -1745,7 +1745,6 @@ async fn test_modify_order_with_fractional_quantity_is_rejected_before_http() {
     assert!(
         rejected
             .reason
-            .as_str()
             .contains("AX requires whole contract quantities")
     );
 
@@ -1800,10 +1799,7 @@ async fn test_modify_order_while_disconnected_emits_local_rejection() {
     );
     assert_eq!(rejected.client_order_id, client_order_id);
     assert_eq!(rejected.venue_order_id, Some(venue_order_id));
-    assert_eq!(
-        rejected.reason.as_str(),
-        "AX execution client is not connected"
-    );
+    assert_eq!(rejected.reason, "AX execution client is not connected");
 }
 
 #[rstest]
@@ -2234,7 +2230,7 @@ async fn test_submit_order_denies_unsupported_order_type(#[case] order_type: Ord
         ExecutionEvent::Order(OrderEventAny::Denied(denied)) => {
             assert_eq!(denied.client_order_id, client_order_id);
             assert!(
-                denied.reason.as_str().contains("Unsupported order type"),
+                denied.reason.contains("Unsupported order type"),
                 "reason was: {}",
                 denied.reason
             );
@@ -2285,7 +2281,7 @@ async fn test_submit_order_denies_gtd_time_in_force() {
         ExecutionEvent::Order(OrderEventAny::Denied(denied)) => {
             assert_eq!(denied.client_order_id, client_order_id);
             assert!(
-                denied.reason.as_str().contains("Unsupported time in force"),
+                denied.reason.contains("Unsupported time in force"),
                 "reason was: {}",
                 denied.reason
             );
@@ -2346,10 +2342,7 @@ async fn test_submit_order_denies_reduce_only(
     };
 
     assert_eq!(denied.client_order_id, client_order_id);
-    assert_eq!(
-        denied.reason.as_str(),
-        "AX does not support reduce-only orders"
-    );
+    assert_eq!(denied.reason, "AX does not support reduce-only orders");
     assert_eq!(
         state
             .preview_count
@@ -2421,7 +2414,7 @@ async fn test_submit_order_denies_unsupported_instruction(
     };
 
     assert_eq!(denied.client_order_id, client_order_id);
-    assert!(denied.reason.as_str().contains(instruction));
+    assert!(denied.reason.contains(instruction));
     assert_eq!(
         state
             .preview_count
@@ -2486,7 +2479,7 @@ async fn test_submit_emulated_market_denies_original_display_quantity() {
     };
 
     assert_eq!(denied.client_order_id, client_order_id);
-    assert!(denied.reason.as_str().contains("display_qty"));
+    assert!(denied.reason.contains("display_qty"));
     assert_eq!(
         state
             .preview_count
@@ -2730,7 +2723,7 @@ async fn test_submit_market_order_rejects_before_placement(
     let messages = state.get_messages().await;
 
     assert_eq!(rejected.client_order_id, client_order_id);
-    assert!(rejected.reason.as_str().contains(expected_reason));
+    assert!(rejected.reason.contains(expected_reason));
     assert!(
         !messages
             .iter()

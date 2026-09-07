@@ -1396,8 +1396,8 @@ mod tests {
 
         let instrument = result.unwrap();
         assert_eq!(instrument.symbol.as_str(), "XBTUSD");
-        assert_eq!(instrument.root_symbol.as_str(), "XBT");
-        assert_eq!(instrument.quote_currency.as_str(), "USD");
+        assert_eq!(instrument.root_symbol, "XBT");
+        assert_eq!(instrument.quote_currency, "USD");
         assert_eq!(instrument.tick_size, 0.1);
     }
 

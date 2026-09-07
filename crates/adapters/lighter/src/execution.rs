@@ -6690,7 +6690,7 @@ mod tests {
         match recv_order_event(rx).await {
             OrderEventAny::ModifyRejected(event) => {
                 assert!(
-                    event.reason.as_str().contains(reason_part),
+                    event.reason.contains(reason_part),
                     "expected modify rejection containing `{reason_part}`, was `{}`",
                     event.reason,
                 );
@@ -7382,10 +7382,9 @@ mod tests {
                 assert!(
                     event
                         .reason
-                        .as_str()
                         .contains("Lighter submit_order dispatch failed"),
                 );
-                assert!(event.reason.as_str().contains("handler unavailable"));
+                assert!(event.reason.contains("handler unavailable"));
             }
             event => panic!("expected rejected event, was {event:?}"),
         }
@@ -7553,7 +7552,6 @@ mod tests {
                 assert!(
                     event
                         .reason
-                        .as_str()
                         .contains("Lighter submit_order dispatch failed"),
                 );
             }
@@ -7606,7 +7604,6 @@ mod tests {
                 assert!(
                     event
                         .reason
-                        .as_str()
                         .contains("Lighter submit_order dispatch failed"),
                 );
             }
@@ -7653,7 +7650,7 @@ mod tests {
         let denied = recv_order_event(&mut rx).await;
         match denied {
             OrderEventAny::Denied(event) => {
-                assert!(event.reason.as_str().contains("at least 5 minutes"));
+                assert!(event.reason.contains("at least 5 minutes"));
             }
             event => panic!("expected denied event, was {event:?}"),
         }
@@ -7699,7 +7696,6 @@ mod tests {
                 assert!(
                     event
                         .reason
-                        .as_str()
                         .contains("Lighter submit_order dispatch failed"),
                 );
             }
@@ -7738,11 +7734,7 @@ mod tests {
             match recv_order_event(&mut rx).await {
                 OrderEventAny::Rejected(e) => {
                     assert_eq!(e.client_order_id, expected);
-                    assert!(
-                        e.reason
-                            .as_str()
-                            .contains("Lighter submit_order dispatch failed"),
-                    );
+                    assert!(e.reason.contains("Lighter submit_order dispatch failed"),);
                 }
                 other => panic!("expected Rejected, was {other:?}"),
             }
@@ -7775,7 +7767,6 @@ mod tests {
                     assert_eq!(e.client_order_id, order.client_order_id());
                     assert!(
                         e.reason
-                            .as_str()
                             .contains("order-list fanout supports at most 15 txs"),
                     );
                 }
@@ -7830,7 +7821,7 @@ mod tests {
         match recv_order_event(&mut rx).await {
             OrderEventAny::Denied(e) => {
                 assert_eq!(e.client_order_id, unsupported.client_order_id());
-                assert!(e.reason.as_str().contains("display_qty"));
+                assert!(e.reason.contains("display_qty"));
             }
             other => panic!("expected Denied, was {other:?}"),
         }
@@ -7843,11 +7834,7 @@ mod tests {
         match recv_order_event(&mut rx).await {
             OrderEventAny::Rejected(e) => {
                 assert_eq!(e.client_order_id, valid.client_order_id());
-                assert!(
-                    e.reason
-                        .as_str()
-                        .contains("Lighter submit_order dispatch failed"),
-                );
+                assert!(e.reason.contains("Lighter submit_order dispatch failed"),);
             }
             other => panic!("expected Rejected, was {other:?}"),
         }
@@ -7874,7 +7861,7 @@ mod tests {
             match recv_order_event(&mut rx).await {
                 OrderEventAny::Denied(e) => {
                     assert_eq!(e.client_order_id, order.client_order_id());
-                    assert!(e.reason.as_str().contains("supports only independent"));
+                    assert!(e.reason.contains("supports only independent"));
                 }
                 other => panic!("expected Denied, was {other:?}"),
             }
@@ -7924,10 +7911,9 @@ mod tests {
                 assert!(
                     event
                         .reason
-                        .as_str()
                         .contains("Lighter cancel_order dispatch failed"),
                 );
-                assert!(event.reason.as_str().contains("handler unavailable"));
+                assert!(event.reason.contains("handler unavailable"));
             }
             event => panic!("expected cancel rejected event, was {event:?}"),
         }
@@ -8016,18 +8002,8 @@ mod tests {
                 assert_eq!(event.client_order_id, client_order_id);
                 assert_eq!(event.instrument_id, instrument_id);
                 assert_eq!(event.venue_order_id, None);
-                assert!(
-                    event
-                        .reason
-                        .as_str()
-                        .contains("Lighter cancel_order failed")
-                );
-                assert!(
-                    event
-                        .reason
-                        .as_str()
-                        .contains("venue order_id not yet known")
-                );
+                assert!(event.reason.contains("Lighter cancel_order failed"));
+                assert!(event.reason.contains("venue order_id not yet known"));
             }
             event => panic!("expected cancel rejected event, was {event:?}"),
         }
@@ -8070,13 +8046,8 @@ mod tests {
                 assert_eq!(event.client_order_id, client_order_id);
                 assert_eq!(event.instrument_id, instrument_id);
                 assert_eq!(event.venue_order_id, Some(venue_order_id));
-                assert!(
-                    event
-                        .reason
-                        .as_str()
-                        .contains("Lighter cancel_order failed")
-                );
-                assert!(event.reason.as_str().contains("order not found in cache"));
+                assert!(event.reason.contains("Lighter cancel_order failed"));
+                assert!(event.reason.contains("order not found in cache"));
             }
             event => panic!("expected cancel rejected event, was {event:?}"),
         }
@@ -8162,13 +8133,8 @@ mod tests {
             OrderEventAny::CancelRejected(event) => {
                 assert_eq!(event.client_order_id, client_order_id);
                 assert_eq!(event.venue_order_id, Some(venue_order_id));
-                assert!(
-                    event
-                        .reason
-                        .as_str()
-                        .contains("failed to allocate Lighter nonce"),
-                );
-                assert!(event.reason.as_str().contains("skip-window exhausted"));
+                assert!(event.reason.contains("failed to allocate Lighter nonce"),);
+                assert!(event.reason.contains("skip-window exhausted"));
             }
             event => panic!("expected cancel rejected event, was {event:?}"),
         }
@@ -8231,11 +8197,7 @@ mod tests {
         let second = recv_order_event(&mut rx).await;
         let rejected_ids = [first, second].map(|event| match event {
             OrderEventAny::CancelRejected(e) => {
-                assert!(
-                    e.reason
-                        .as_str()
-                        .contains("Lighter cancel_order dispatch failed"),
-                );
+                assert!(e.reason.contains("Lighter cancel_order dispatch failed"),);
                 e.client_order_id
             }
             other => panic!("expected CancelRejected, was {other:?}"),
@@ -8298,7 +8260,6 @@ mod tests {
                     assert_eq!(e.client_order_id, cancel.client_order_id);
                     assert!(
                         e.reason
-                            .as_str()
                             .contains("batch-cancel fanout supports at most 15 txs"),
                     );
                 }
@@ -8388,10 +8349,9 @@ mod tests {
                 assert!(
                     event
                         .reason
-                        .as_str()
                         .contains("Lighter modify_order dispatch failed"),
                 );
-                assert!(event.reason.as_str().contains("handler unavailable"));
+                assert!(event.reason.contains("handler unavailable"));
             }
             event => panic!("expected modify rejected event, was {event:?}"),
         }
@@ -8484,13 +8444,8 @@ mod tests {
                 assert_eq!(event.client_order_id, client_order_id);
                 assert_eq!(event.instrument_id, instrument_id);
                 assert_eq!(event.venue_order_id, Some(venue_order_id));
-                assert!(
-                    event
-                        .reason
-                        .as_str()
-                        .contains("Lighter modify_order failed")
-                );
-                assert!(event.reason.as_str().contains("order not found in cache"));
+                assert!(event.reason.contains("Lighter modify_order failed"));
+                assert!(event.reason.contains("order not found in cache"));
             }
             event => panic!("expected modify rejected event, was {event:?}"),
         }
@@ -8542,18 +8497,8 @@ mod tests {
                 assert_eq!(event.client_order_id, client_order_id);
                 assert_eq!(event.instrument_id, instrument_id);
                 assert_eq!(event.venue_order_id, Some(venue_order_id));
-                assert!(
-                    event
-                        .reason
-                        .as_str()
-                        .contains("Lighter modify_order failed")
-                );
-                assert!(
-                    event
-                        .reason
-                        .as_str()
-                        .contains("instrument not found in cache")
-                );
+                assert!(event.reason.contains("Lighter modify_order failed"));
+                assert!(event.reason.contains("instrument not found in cache"));
             }
             event => panic!("expected modify rejected event, was {event:?}"),
         }
@@ -8620,12 +8565,12 @@ mod tests {
         match rejected {
             OrderEventAny::ModifyRejected(event) => {
                 assert!(
-                    !event.reason.as_str().contains("requires a price"),
+                    !event.reason.contains("requires a price"),
                     "trigger-only stop modify must not trip the price guard, was: {}",
                     event.reason,
                 );
                 assert!(
-                    event.reason.as_str().contains("dispatch failed"),
+                    event.reason.contains("dispatch failed"),
                     "expected send-stage failure after a successful prepare, was: {}",
                     event.reason,
                 );
@@ -8788,13 +8733,8 @@ mod tests {
             OrderEventAny::ModifyRejected(event) => {
                 assert_eq!(event.client_order_id, client_order_id);
                 assert_eq!(event.venue_order_id, Some(venue_order_id));
-                assert!(
-                    event
-                        .reason
-                        .as_str()
-                        .contains("failed to allocate Lighter nonce"),
-                );
-                assert!(event.reason.as_str().contains("skip-window exhausted"));
+                assert!(event.reason.contains("failed to allocate Lighter nonce"),);
+                assert!(event.reason.contains("skip-window exhausted"));
             }
             event => panic!("expected modify rejected event, was {event:?}"),
         }
@@ -9103,7 +9043,7 @@ mod tests {
         match event {
             OrderEventAny::Denied(event) => {
                 assert!(
-                    event.reason.as_str().contains("no cached quote"),
+                    event.reason.contains("no cached quote"),
                     "expected no-cached-quote in reason, was {:?}",
                     event.reason,
                 );
@@ -9149,7 +9089,6 @@ mod tests {
                 assert!(
                     event
                         .reason
-                        .as_str()
                         .contains("Lighter submit_order dispatch failed"),
                 );
             }
@@ -9198,7 +9137,7 @@ mod tests {
         match event {
             OrderEventAny::Denied(event) => {
                 assert!(
-                    event.reason.as_str().contains("rounds to 0 ticks"),
+                    event.reason.contains("rounds to 0 ticks"),
                     "expected rounds-to-0 in reason, was {:?}",
                     event.reason,
                 );
@@ -9247,7 +9186,7 @@ mod tests {
         match event {
             OrderEventAny::Denied(event) => {
                 assert!(
-                    event.reason.as_str().contains("min_quote_amount"),
+                    event.reason.contains("min_quote_amount"),
                     "expected min_quote_amount in reason, was {:?}",
                     event.reason,
                 );
@@ -9297,7 +9236,7 @@ mod tests {
         match event {
             OrderEventAny::Denied(event) => {
                 assert!(
-                    event.reason.as_str().contains("rounds to 0 ticks"),
+                    event.reason.contains("rounds to 0 ticks"),
                     "expected rounds-to-0 in reason, was {:?}",
                     event.reason,
                 );
@@ -9436,7 +9375,6 @@ mod tests {
                 assert!(
                     event
                         .reason
-                        .as_str()
                         .contains("Lighter submit_order dispatch failed"),
                 );
             }
@@ -12330,7 +12268,7 @@ mod tests {
         match event {
             OrderEventAny::Rejected(e) => {
                 assert_eq!(e.client_order_id, order.client_order_id());
-                assert_eq!(e.reason.as_str(), "LIGHTER_21702: invalid price");
+                assert_eq!(e.reason, "LIGHTER_21702: invalid price");
                 assert!(!e.due_post_only);
             }
             other => panic!("expected Rejected, was {other:?}"),
@@ -12412,7 +12350,7 @@ mod tests {
                 assert_eq!(e.client_order_id, client_order_id);
                 assert_eq!(e.instrument_id, instrument_id);
                 assert_eq!(e.venue_order_id, Some(venue_order_id));
-                assert_eq!(e.reason.as_str(), "LIGHTER_21727: order is not cancelable",);
+                assert_eq!(e.reason, "LIGHTER_21727: order is not cancelable",);
             }
             other => panic!("expected CancelRejected, was {other:?}"),
         }
@@ -12463,7 +12401,7 @@ mod tests {
                 assert_eq!(e.client_order_id, client_order_id);
                 assert_eq!(e.instrument_id, instrument_id);
                 assert_eq!(e.venue_order_id, Some(venue_order_id));
-                assert_eq!(e.reason.as_str(), "LIGHTER_21702: modify rejected by venue",);
+                assert_eq!(e.reason, "LIGHTER_21702: modify rejected by venue",);
             }
             other => panic!("expected ModifyRejected, was {other:?}"),
         }

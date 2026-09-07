@@ -445,7 +445,7 @@ mod tests {
             values.bind(py).set_item("underlying", "NEWOPT").unwrap();
 
             let new_option = CryptoOption::py_from_dict(py, values).unwrap();
-            assert_eq!(new_option.underlying.code.as_str(), "NEWOPT");
+            assert_eq!(new_option.underlying.code, "NEWOPT");
             assert_eq!(new_option.underlying.precision, 8);
             assert_eq!(new_option.underlying.currency_type, CurrencyType::Crypto);
             assert!(Currency::try_from_str("NEWOPT").is_some());

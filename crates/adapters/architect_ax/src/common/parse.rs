@@ -387,11 +387,11 @@ mod tests {
 
         let recovered = cid_to_client_order_id(cid_a);
         assert!(
-            recovered.inner().as_str().starts_with("CID-"),
+            recovered.inner().starts_with("CID-"),
             "recovered id should have CID prefix: {recovered}",
         );
         assert!(
-            !recovered.inner().as_str().is_empty(),
+            !recovered.inner().is_empty(),
             "recovered id should not be empty",
         );
     }

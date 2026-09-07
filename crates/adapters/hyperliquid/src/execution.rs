@@ -4141,7 +4141,7 @@ mod tests {
         assert!(emitted);
         assert_eq!(events.len(), 1);
         assert_eq!(
-            rejected.reason.as_str(),
+            rejected.reason,
             "Post only order would have immediately matched, bbo was 56729.0.",
         );
         assert!(rejected.due_post_only);
@@ -4183,7 +4183,7 @@ mod tests {
             panic!("expected OrderRejected, received {:?}", events[0]);
         };
         assert_eq!(
-            rejected.reason.as_str(),
+            rejected.reason,
             "Post only order would have immediately matched",
         );
         assert!(rejected.due_post_only);

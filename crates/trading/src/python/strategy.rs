@@ -1450,7 +1450,7 @@ impl PyStrategy {
     /// class-derived ID with the unassigned tag, such as `MyStrategy-None`.
     #[must_use]
     pub fn strategy_id(&self) -> StrategyId {
-        StrategyId::from(self.inner().core.actor.actor_id.inner().as_str())
+        StrategyId::new(self.inner().core.actor.actor_id.inner())
     }
 
     /// Returns the strategy ID once configured or assigned, otherwise `None`.
@@ -4826,7 +4826,7 @@ class IndicatorEventStrategy:
 
             let received_signals = received_signals.borrow();
             assert_eq!(received_signals.len(), 1);
-            assert_eq!(received_signals[0].name.as_str(), "risk");
+            assert_eq!(received_signals[0].name, "risk");
             assert_eq!(received_signals[0].value, "2.0");
             assert_eq!(
                 received_signals[0].ts_event,
@@ -4973,7 +4973,7 @@ class IndicatorEventStrategy:
 
             assert_eq!(command.trader_id, TraderId::from("TRADER-001"));
             assert_eq!(command.client_id, ClientId::from("POLYMARKET"));
-            assert_eq!(command.endpoint.as_str(), "polymarket-market-streams");
+            assert_eq!(command.endpoint, "polymarket-market-streams");
             assert_eq!(command.ts_init, UnixNanos::default());
         });
     }

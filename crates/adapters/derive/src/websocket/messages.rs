@@ -445,7 +445,7 @@ impl DeriveOrderbookData {
     /// Returns the Nautilus instrument ID for this Derive symbol.
     #[must_use]
     pub fn instrument_id(&self) -> InstrumentId {
-        format_instrument_id(self.instrument_name.as_str())
+        format_instrument_id(self.instrument_name)
     }
 }
 
@@ -708,7 +708,7 @@ impl DeriveTickerData {
             return Ok(());
         };
 
-        if !instrument_ticker.instrument_name.as_str().is_empty() {
+        if !instrument_ticker.instrument_name.is_empty() {
             return Ok(());
         }
 
@@ -721,7 +721,7 @@ impl DeriveTickerData {
     /// Returns the Nautilus instrument ID for this Derive symbol.
     #[must_use]
     pub fn instrument_id(&self) -> InstrumentId {
-        format_instrument_id(self.instrument_name().as_str())
+        format_instrument_id(self.instrument_name())
     }
 }
 
@@ -1030,7 +1030,7 @@ mod tests {
                 instrument_name,
                 interval,
             } => {
-                assert_eq!(instrument_name.as_str(), "ETH-PERP");
+                assert_eq!(instrument_name, "ETH-PERP");
                 assert_eq!(interval, DeriveTickerInterval::Ms1000);
             }
             other => panic!("expected TickerSlim, was {other:?}"),
@@ -1042,7 +1042,7 @@ mod tests {
                 group,
                 depth,
             } => {
-                assert_eq!(instrument_name.as_str(), "ETH-PERP");
+                assert_eq!(instrument_name, "ETH-PERP");
                 assert_eq!(group, DeriveOrderbookGroup::G1);
                 assert_eq!(depth, DeriveOrderbookDepth::D10);
             }
@@ -1055,7 +1055,7 @@ mod tests {
                 currency,
             } => {
                 assert_eq!(instrument_type, DeriveInstrumentType::Perp);
-                assert_eq!(currency.as_str(), "ETH");
+                assert_eq!(currency, "ETH");
             }
             other => panic!("expected Trades, was {other:?}"),
         }
@@ -1237,7 +1237,7 @@ mod tests {
         let frame = DeriveWsFrame::parse(&text).unwrap();
         match frame {
             DeriveWsFrame::Subscription(payload) => {
-                assert_eq!(payload.channel.as_str(), "ticker.ETH-PERP.1000");
+                assert_eq!(payload.channel, "ticker.ETH-PERP.1000");
                 let data: Value = serde_json::from_str(payload.data.get()).unwrap();
                 assert_eq!(data["mark_price"], "3500.5");
             }

@@ -548,7 +548,7 @@ pub fn derive_trade_id(
     let mut hash: u64 = FNV_OFFSET_BASIS;
 
     for bytes in [
-        symbol.as_str().as_bytes(),
+        symbol.as_bytes(),
         b"\x1f",
         &ts_event_ns.to_le_bytes(),
         b"\x1f",
@@ -876,7 +876,7 @@ mod tests {
         let account_state = parse_account_state(&margin_msg, account_id, ts_init).unwrap();
 
         let balance = &account_state.balances[0];
-        assert_eq!(balance.currency.code.as_str(), "USYC");
+        assert_eq!(balance.currency.code, "USYC");
         assert_eq!(balance.currency.precision, 6);
         assert_eq!(balance.total.as_f64(), 100.0);
         assert_eq!(balance.free.as_f64(), 99.0);
@@ -884,7 +884,7 @@ mod tests {
 
         assert_eq!(account_state.margins.len(), 1);
         let margin = &account_state.margins[0];
-        assert_eq!(margin.currency.code.as_str(), "USYC");
+        assert_eq!(margin.currency.code, "USYC");
         assert_eq!(margin.initial.as_f64(), 0.5);
         assert_eq!(margin.maintenance.as_f64(), 0.25);
     }

@@ -376,7 +376,7 @@ impl Trader {
         exec_algorithm: &Py<PyAny>,
         actor_id: ActorId,
     ) -> anyhow::Result<ExecAlgorithmId> {
-        let exec_algorithm_id = ExecAlgorithmId::from(actor_id.inner().as_str());
+        let exec_algorithm_id = ExecAlgorithmId::new(actor_id.inner());
 
         if self.exec_algorithm_ids.contains(&exec_algorithm_id) {
             anyhow::bail!("Execution algorithm '{exec_algorithm_id}' is already registered");

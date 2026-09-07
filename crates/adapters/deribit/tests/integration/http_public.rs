@@ -526,10 +526,10 @@ async fn test_get_instrument_success() {
     let response = result.unwrap();
     let instrument = response.result.expect("Response should have result");
 
-    assert_eq!(instrument.instrument_name.as_str(), "BTC-PERPETUAL");
+    assert_eq!(instrument.instrument_name, "BTC-PERPETUAL");
     assert_eq!(instrument.instrument_id, 124972);
-    assert_eq!(instrument.base_currency.as_str(), "BTC");
-    assert_eq!(instrument.quote_currency.as_str(), "USD");
+    assert_eq!(instrument.base_currency, "BTC");
+    assert_eq!(instrument.quote_currency, "USD");
     assert_eq!(instrument.contract_size, dec!(10.0));
     assert_eq!(instrument.tick_size, dec!(0.5));
     assert_eq!(instrument.min_trade_amount, dec!(10.0));
@@ -646,23 +646,23 @@ async fn test_get_instruments_success() {
     assert_eq!(instruments.len(), 4, "Should return 4 instruments");
 
     let perpetual = &instruments[0];
-    assert_eq!(perpetual.instrument_name.as_str(), "BTC-PERPETUAL");
+    assert_eq!(perpetual.instrument_name, "BTC-PERPETUAL");
     assert_eq!(perpetual.kind, DeribitProductType::Future);
-    assert_eq!(perpetual.base_currency.as_str(), "BTC");
+    assert_eq!(perpetual.base_currency, "BTC");
     assert!(perpetual.is_active);
 
     let future = &instruments[1];
-    assert_eq!(future.instrument_name.as_str(), "BTC-27DEC24");
+    assert_eq!(future.instrument_name, "BTC-27DEC24");
     assert_eq!(future.kind, DeribitProductType::Future);
     assert_eq!(future.expiration_timestamp, Some(1735300800000));
 
     let option = &instruments[2];
-    assert_eq!(option.instrument_name.as_str(), "BTC-27DEC24-100000-C");
+    assert_eq!(option.instrument_name, "BTC-27DEC24-100000-C");
     assert_eq!(option.kind, DeribitProductType::Option);
     assert_eq!(option.strike, Some(dec!(100000.0)));
 
     let combo = &instruments[3];
-    assert_eq!(combo.instrument_name.as_str(), "BTC-COMBO-1");
+    assert_eq!(combo.instrument_name, "BTC-COMBO-1");
     assert_eq!(combo.kind, DeribitProductType::FutureCombo);
 
     assert_eq!(
@@ -702,7 +702,7 @@ async fn test_get_instruments_with_kind_filter() {
     assert_eq!(instruments.len(), 1);
 
     let option = &instruments[0];
-    assert_eq!(option.instrument_name.as_str(), "BTC-27DEC24-100000-C");
+    assert_eq!(option.instrument_name, "BTC-27DEC24-100000-C");
     assert_eq!(option.kind, DeribitProductType::Option);
 }
 

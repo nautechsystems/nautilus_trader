@@ -737,8 +737,7 @@ impl Trader {
     {
         self.validate_exec_algorithm_registration()?;
 
-        let exec_algorithm_id =
-            ExecAlgorithmId::from(exec_algorithm.component_id().inner().as_str());
+        let exec_algorithm_id = ExecAlgorithmId::new(exec_algorithm.component_id().inner());
 
         if self.exec_algorithm_ids.contains(&exec_algorithm_id) {
             anyhow::bail!("Execution algorithm '{exec_algorithm_id}' is already registered");
@@ -2086,11 +2085,11 @@ mod tests {
         fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
             self.time_events += 1;
 
-            if event.name.as_str().starts_with("MARKET_EXIT_CHECK:") {
+            if event.name.starts_with("MARKET_EXIT_CHECK:") {
                 self.post_market_exits_on_callback = Some(self.post_market_exits);
             }
 
-            if let Some(client_order_id) = event.name.as_str().strip_prefix("GTD-EXPIRY:") {
+            if let Some(client_order_id) = event.name.strip_prefix("GTD-EXPIRY:") {
                 self.gtd_timer_active_on_callback =
                     Some(self.has_gtd_expiry_timer(&ClientOrderId::from(client_order_id)));
             }

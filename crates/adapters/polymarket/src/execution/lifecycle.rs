@@ -1819,7 +1819,7 @@ mod tests {
         assert_eq!(rejected.client_order_id, abandoned_client_order_id);
         assert_eq!(rejected.venue_order_id, Some(abandoned_venue_order_id));
         assert_eq!(
-            rejected.reason.as_str(),
+            rejected.reason,
             "Polymarket modification was interrupted during shutdown"
         );
 

@@ -2180,9 +2180,9 @@ async fn test_socket_state_events_report_connection_loss_and_recovery() {
     let lost = next_socket_state(&mut system_rx).await;
     let recovered = next_socket_state(&mut system_rx).await;
 
-    assert_eq!(lost.endpoint.as_str(), "lighter-data-streams");
+    assert_eq!(lost.endpoint, "lighter-data-streams");
     assert_eq!(lost.state, SocketState::Disconnected);
-    assert_eq!(recovered.endpoint.as_str(), "lighter-data-streams");
+    assert_eq!(recovered.endpoint, "lighter-data-streams");
     assert_eq!(recovered.state, SocketState::Connected);
 }
 

@@ -444,7 +444,7 @@ impl LiveExecutionLifecycle {
     fn is_requested_user_stream_state(&self, event: &SocketStateChanged) -> bool {
         self.reconnect_requested
             && event.client_id == *BETFAIR_CLIENT_ID
-            && event.endpoint.as_str() == USER_STREAM_ENDPOINT
+            && event.endpoint == USER_STREAM_ENDPOINT
     }
 
     fn should_replace_during_recovery(

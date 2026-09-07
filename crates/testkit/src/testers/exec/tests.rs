@@ -2960,7 +2960,7 @@ fn test_collect_cancellable_orders_dedupes_and_skips_pending_cancel(
     ack_order_in_cache(&cache, sell_id, "V-PENDING");
     apply_pending_cancel_in_cache(&cache, sell_id);
 
-    let strategy_id = StrategyId::from(tester.actor_id().inner().as_str());
+    let strategy_id = StrategyId::new(tester.actor_id().inner());
     let candidates = tester.collect_cancellable_orders(tester.config.instrument_id, strategy_id);
     let candidate_ids: Vec<ClientOrderId> = candidates.iter().map(Order::client_order_id).collect();
 
@@ -3369,7 +3369,7 @@ fn test_collect_cancellable_orders_excludes_contingency_group(
         .add_order(plain, None, None, true)
         .unwrap();
 
-    let strategy_id = StrategyId::from(tester.actor_id().inner().as_str());
+    let strategy_id = StrategyId::new(tester.actor_id().inner());
     let candidates = tester.collect_cancellable_orders(tester.config.instrument_id, strategy_id);
     let candidate_ids: Vec<ClientOrderId> = candidates.iter().map(Order::client_order_id).collect();
 

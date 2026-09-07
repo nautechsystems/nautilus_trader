@@ -309,7 +309,7 @@ impl BinanceSpotWsTradingClient {
 
         // Configure rate limits for order operations
         let keyed_quotas = vec![(
-            BINANCE_WS_RATE_LIMIT_KEY_ORDER[0].as_str().to_string(),
+            BINANCE_WS_RATE_LIMIT_KEY_ORDER[0].to_string(),
             binance_ws_order_quota(),
         )];
 

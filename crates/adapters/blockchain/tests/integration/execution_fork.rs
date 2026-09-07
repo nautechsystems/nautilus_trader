@@ -954,7 +954,7 @@ async fn submit_and_expect_denial(
 
     assert_eq!(denied.client_order_id, client_order_id);
     assert!(
-        denied.reason.as_str().contains(expected_reason),
+        denied.reason.contains(expected_reason),
         "was: {}",
         denied.reason
     );

@@ -1431,7 +1431,7 @@ impl AxHttpClient {
             }
 
             // Skip test instruments (not real tradable products)
-            if inst.symbol.as_str().starts_with("TEST") {
+            if inst.symbol.starts_with("TEST") {
                 log::debug!("Skipping test instrument: {}", inst.symbol);
                 continue;
             }

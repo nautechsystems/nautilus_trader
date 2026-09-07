@@ -1887,7 +1887,7 @@ mod tests {
         assert_eq!(state.margins.len(), 1);
         let margin = &state.margins[0];
         assert!(margin.instrument_id.is_none());
-        assert_eq!(margin.currency.code.as_str(), "USDT");
+        assert_eq!(margin.currency.code, "USDT");
         assert_eq!(margin.initial.as_f64(), 500.25);
         assert_eq!(margin.maintenance.as_f64(), 250.75);
     }
@@ -1928,14 +1928,14 @@ mod tests {
         let btc = state
             .margins
             .iter()
-            .find(|m| m.currency.code.as_str() == "BTC")
+            .find(|m| m.currency.code == "BTC")
             .expect("BTC margin missing");
         assert_eq!(btc.initial.as_f64(), 0.05);
         assert_eq!(btc.maintenance.as_f64(), 0.025);
         let eth = state
             .margins
             .iter()
-            .find(|m| m.currency.code.as_str() == "ETH")
+            .find(|m| m.currency.code == "ETH")
             .expect("ETH margin missing");
         assert_eq!(eth.initial.as_f64(), 0.8);
         assert_eq!(eth.maintenance.as_f64(), 0.4);

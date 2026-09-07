@@ -175,7 +175,7 @@ impl PyExecutionAlgorithm {
 
     /// Updates the runtime execution algorithm ID before registration.
     pub fn set_exec_algorithm_id(&mut self, exec_algorithm_id: ExecAlgorithmId) {
-        let actor_id = ActorId::from(exec_algorithm_id.inner().as_str());
+        let actor_id = ActorId::new(exec_algorithm_id.inner());
         let inner = self.inner_mut();
 
         inner.core.config.exec_algorithm_id = Some(exec_algorithm_id);
@@ -1266,7 +1266,7 @@ impl PyExecutionAlgorithm {
             let exec_algorithm_id = if let Ok(exec_algorithm_id) = id.extract::<ExecAlgorithmId>() {
                 exec_algorithm_id
             } else if let Ok(actor_id) = id.extract::<ActorId>() {
-                ExecAlgorithmId::new_checked(actor_id.inner().as_str())?
+                ExecAlgorithmId::new_checked(actor_id.inner())?
             } else if let Ok(id) = id.extract::<String>() {
                 ExecAlgorithmId::new_checked(&id)?
             } else {

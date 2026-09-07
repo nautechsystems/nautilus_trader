@@ -468,7 +468,7 @@ mod tests {
     fn test_typed_handler_with_custom_id() {
         let handler = TypedHandler::from_with_id("custom-id", |_msg: &i32| {});
 
-        assert_eq!(handler.id().as_str(), "custom-id");
+        assert_eq!(handler.id(), "custom-id");
     }
 
     #[rstest]

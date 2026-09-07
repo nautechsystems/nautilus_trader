@@ -571,9 +571,9 @@ mod tests {
         assert!(!result.is_empty());
 
         let pair = result.get("XBTUSDT").expect("XBTUSDT pair not found");
-        assert_eq!(pair.altname.as_str(), "XBTUSDT");
-        assert_eq!(pair.base.as_str(), "XXBT");
-        assert_eq!(pair.quote.as_str(), "USDT");
+        assert_eq!(pair.altname, "XBTUSDT");
+        assert_eq!(pair.base, "XXBT");
+        assert_eq!(pair.quote, "USDT");
         assert!(pair.wsname.is_some());
     }
 

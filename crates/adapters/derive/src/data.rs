@@ -406,7 +406,7 @@ impl DeriveDataClient {
                 let ts_init = ctx.clock.get_time_ns();
 
                 for trade in &msg.trades {
-                    let instrument_id = format_instrument_id(trade.instrument_name.as_str());
+                    let instrument_id = format_instrument_id(trade.instrument_name);
 
                     if !ctx.active_trade_subs.contains(&instrument_id) {
                         continue;
@@ -3185,7 +3185,7 @@ mod tests {
                 "instrument_ticker": ticker_json(1_700_000_000_000)
             }),
         );
-        assert_eq!(payload.channel.as_str(), channel);
+        assert_eq!(payload.channel, channel);
         let _ = instrument_id;
         payload
     }

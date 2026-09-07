@@ -174,7 +174,7 @@ pub fn parse_deribit_instrument_any(
         DeribitProductType::Spot => parse_spot_instrument(instrument, ts_init, ts_event).map(Some),
         DeribitProductType::Future => {
             // Check if it's a perpetual
-            if instrument.instrument_name.as_str().contains("PERPETUAL") {
+            if instrument.instrument_name.contains("PERPETUAL") {
                 parse_perpetual_instrument(instrument, ts_init, ts_event).map(Some)
             } else {
                 parse_future_instrument(instrument, ts_init, ts_event).map(Some)
@@ -600,7 +600,7 @@ pub fn parse_account_state(
 
     // Parse each currency summary
     for summary in summaries {
-        let ccy_str = summary.currency.as_str().trim();
+        let ccy_str = summary.currency.trim();
 
         // Skip balances with empty currency codes
         if ccy_str.is_empty() {
@@ -1081,7 +1081,7 @@ mod tests {
         let instruments = response.result.expect("Test data must have result");
         let deribit_inst = instruments
             .iter()
-            .find(|i| i.instrument_name.as_str() == "BTC-27DEC24")
+            .find(|i| i.instrument_name == "BTC-27DEC24")
             .expect("Test data must contain BTC-27DEC24");
 
         let instrument_any =
@@ -1126,7 +1126,7 @@ mod tests {
         let instruments = response.result.expect("Test data must have result");
         let deribit_inst = instruments
             .iter()
-            .find(|i| i.instrument_name.as_str() == "BTC-27DEC24-100000-C")
+            .find(|i| i.instrument_name == "BTC-27DEC24-100000-C")
             .expect("Test data must contain BTC-27DEC24-100000-C");
 
         let instrument_any =
@@ -1144,9 +1144,9 @@ mod tests {
             InstrumentId::from("BTC-27DEC24-100000-C.DERIBIT")
         );
         assert_eq!(option.raw_symbol(), Symbol::from("BTC-27DEC24-100000-C"));
-        assert_eq!(option.underlying.code.as_str(), "BTC");
-        assert_eq!(option.quote_currency.code.as_str(), "BTC");
-        assert_eq!(option.settlement_currency.code.as_str(), "BTC");
+        assert_eq!(option.underlying.code, "BTC");
+        assert_eq!(option.quote_currency.code, "BTC");
+        assert_eq!(option.settlement_currency.code, "BTC");
         assert!(option.is_inverse);
         assert_eq!(option.option_kind, OptionKind::Call);
         assert_eq!(option.strike_price, Price::from("100000"));
@@ -1432,7 +1432,7 @@ mod tests {
 
         let option_inst = instruments
             .iter()
-            .find(|i| i.instrument_name.as_str() == "BTC-27DEC24-100000-C")
+            .find(|i| i.instrument_name == "BTC-27DEC24-100000-C")
             .expect("Test data must contain BTC-27DEC24-100000-C");
         let option =
             parse_deribit_instrument_any(option_inst, UnixNanos::default(), UnixNanos::default())
@@ -1447,7 +1447,7 @@ mod tests {
         // Inverse future: same convention as perp - cost (USD)
         let future_inst = instruments
             .iter()
-            .find(|i| i.instrument_name.as_str() == "BTC-27DEC24")
+            .find(|i| i.instrument_name == "BTC-27DEC24")
             .expect("Test data must contain BTC-27DEC24");
         let future =
             parse_deribit_instrument_any(future_inst, UnixNanos::default(), UnixNanos::default())
@@ -1712,7 +1712,7 @@ mod tests {
         let instruments = response.result.expect("Test data must have result");
         let raw = instruments
             .iter()
-            .find(|i| i.instrument_name.as_str() == "BTC-STRG-19MAY26-74000_79000")
+            .find(|i| i.instrument_name == "BTC-STRG-19MAY26-74000_79000")
             .expect("fixture must contain BTC-STRG-19MAY26-74000_79000");
 
         let any = parse_deribit_instrument_any(raw, UnixNanos::default(), UnixNanos::default())
@@ -1726,10 +1726,10 @@ mod tests {
             spread.id,
             InstrumentId::from("BTC-STRG-19MAY26-74000_79000.DERIBIT")
         );
-        assert_eq!(spread.underlying.code.as_str(), "BTC");
-        assert_eq!(spread.strategy_type.as_str(), "STRG");
-        assert_eq!(spread.quote_currency.code.as_str(), "BTC");
-        assert_eq!(spread.settlement_currency.code.as_str(), "BTC");
+        assert_eq!(spread.underlying.code, "BTC");
+        assert_eq!(spread.strategy_type, "STRG");
+        assert_eq!(spread.quote_currency.code, "BTC");
+        assert_eq!(spread.settlement_currency.code, "BTC");
         assert!(spread.is_inverse);
         assert_eq!(spread.price_precision, 4);
         assert_eq!(spread.price_increment, Price::from("0.0001"));
@@ -1890,7 +1890,7 @@ mod tests {
         let mut instruments = response.result.expect("Test data must have result");
         let raw = instruments
             .iter_mut()
-            .find(|i| i.instrument_name.as_str() == "BTC-STRG-19MAY26-74000_79000")
+            .find(|i| i.instrument_name == "BTC-STRG-19MAY26-74000_79000")
             .expect("fixture must contain BTC-STRG-19MAY26-74000_79000");
         raw.expiration_timestamp = None;
 
@@ -1932,7 +1932,7 @@ mod tests {
         let instruments = response.result.expect("Test data must have result");
         let raw = instruments
             .iter()
-            .find(|i| i.instrument_name.as_str() == "BTC-FS-19MAY26_PERP")
+            .find(|i| i.instrument_name == "BTC-FS-19MAY26_PERP")
             .expect("fixture must contain BTC-FS-19MAY26_PERP");
 
         let any = parse_deribit_instrument_any(raw, UnixNanos::default(), UnixNanos::default())
@@ -1943,11 +1943,11 @@ mod tests {
             panic!("Expected CryptoFuturesSpread, was {any:?}");
         };
         assert_eq!(spread.id, InstrumentId::from("BTC-FS-19MAY26_PERP.DERIBIT"));
-        assert_eq!(spread.underlying.code.as_str(), "BTC");
-        assert_eq!(spread.strategy_type.as_str(), "FS");
+        assert_eq!(spread.underlying.code, "BTC");
+        assert_eq!(spread.strategy_type, "FS");
         // Future combo quote_currency on BTC contracts is USD.
-        assert_eq!(spread.quote_currency.code.as_str(), "USD");
-        assert_eq!(spread.settlement_currency.code.as_str(), "BTC");
+        assert_eq!(spread.quote_currency.code, "USD");
+        assert_eq!(spread.settlement_currency.code, "BTC");
         assert!(spread.is_inverse);
         assert_eq!(spread.price_precision, 1);
         assert_eq!(spread.price_increment, Price::from("0.5"));
@@ -2085,7 +2085,7 @@ mod tests {
         assert_eq!(margin.initial.as_f64(), 1.100011);
         assert_eq!(margin.maintenance.as_f64(), 0.0);
         assert!(margin.instrument_id.is_none());
-        assert_eq!(margin.currency.code.as_str(), "USDT");
+        assert_eq!(margin.currency.code, "USDT");
     }
 
     #[rstest]

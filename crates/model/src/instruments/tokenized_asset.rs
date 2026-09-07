@@ -136,7 +136,7 @@ impl TokenizedAsset {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> CorrectnessResult<Self> {
-        check_valid_string_ascii_optional(isin.map(|u| u.as_str()), stringify!(isin))?;
+        check_valid_string_ascii_optional(isin, stringify!(isin))?;
         check_equal_u8(
             price_precision,
             price_increment.precision,

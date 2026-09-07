@@ -136,8 +136,8 @@ impl OptionSpread {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> CorrectnessResult<Self> {
-        check_valid_string_ascii_optional(exchange.map(|u| u.as_str()), stringify!(exchange))?;
-        check_valid_string_ascii(strategy_type.as_str(), stringify!(strategy_type))?;
+        check_valid_string_ascii_optional(exchange, stringify!(exchange))?;
+        check_valid_string_ascii(strategy_type, stringify!(strategy_type))?;
         check_equal_u8(
             price_precision,
             price_increment.precision,

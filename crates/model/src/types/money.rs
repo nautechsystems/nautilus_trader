@@ -1208,7 +1208,7 @@ mod tests {
     #[rstest]
     fn test_money_new_usd() {
         let money = Money::new(1000.0, Currency::USD());
-        assert_eq!(money.currency.code.as_str(), "USD");
+        assert_eq!(money.currency.code, "USD");
         assert_eq!(money.currency.precision, 2);
         assert_eq!(money.to_string(), "1000.00 USD");
         assert_eq!(money.to_formatted_string(), "1_000.00 USD");
@@ -1219,7 +1219,7 @@ mod tests {
     #[rstest]
     fn test_money_new_btc() {
         let money = Money::new(10.3, Currency::BTC());
-        assert_eq!(money.currency.code.as_str(), "BTC");
+        assert_eq!(money.currency.code, "BTC");
         assert_eq!(money.currency.precision, 8);
         assert_eq!(money.to_string(), "10.30000000 BTC");
         assert_eq!(money.to_formatted_string(), "10.30000000 BTC");

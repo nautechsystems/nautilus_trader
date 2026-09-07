@@ -203,11 +203,7 @@ async fn load_market_context(
         );
     }
 
-    Ok((
-        account_currency.code.as_str().to_string(),
-        instruments,
-        http_client,
-    ))
+    Ok((account_currency.code.to_string(), instruments, http_client))
 }
 
 async fn select_exec_instrument(

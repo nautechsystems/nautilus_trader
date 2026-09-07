@@ -2507,7 +2507,7 @@ async fn test_http_get_pending_orders_returns_live_orders() {
 
     assert_eq!(orders.len(), 1);
     assert_eq!(orders[0].state, OKXOrderStatus::Live);
-    assert_eq!(orders[0].inst_id.as_str(), "BTC-USDT-SWAP");
+    assert_eq!(orders[0].inst_id, "BTC-USDT-SWAP");
 
     let query = state
         .last_pending_orders_query
@@ -6471,7 +6471,7 @@ async fn test_rpi_account_instrument_permission_reachable() {
         .await
         .unwrap();
 
-    assert_eq!(instruments[0].inst_id.as_str(), "ADA-USDT");
+    assert_eq!(instruments[0].inst_id, "ADA-USDT");
     assert_eq!(instruments[0].rpi, Some(OKXRpiPermission::Permitted));
 }
 

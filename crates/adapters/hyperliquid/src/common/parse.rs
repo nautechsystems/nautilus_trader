@@ -990,13 +990,13 @@ pub fn parse_combined_account_balances_and_margins(
         });
 
     if perp_state.cross_margin_summary.is_some() && !perp_reflects_usdc {
-        balances.retain(|balance| balance.currency.code.as_str() != "USDC");
+        balances.retain(|balance| balance.currency.code != "USDC");
     }
 
     let spot_balances = parse_spot_account_balances(spot_state)?;
 
     for balance in spot_balances {
-        let is_usdc = balance.currency.code.as_str() == "USDC";
+        let is_usdc = balance.currency.code == "USDC";
         if perp_reflects_usdc && is_usdc {
             continue;
         }
@@ -2154,13 +2154,13 @@ mod tests {
         assert_eq!(balances.len(), 2);
 
         let usdc = &balances[0];
-        assert_eq!(usdc.currency.code.as_str(), "USDC");
+        assert_eq!(usdc.currency.code, "USDC");
         assert_eq!(usdc.total.as_decimal(), dec!(100.25));
         assert_eq!(usdc.free.as_decimal(), dec!(90.25));
         assert_eq!(usdc.locked.as_decimal(), dec!(10));
 
         let purr = &balances[1];
-        assert_eq!(purr.currency.code.as_str(), "PURR");
+        assert_eq!(purr.currency.code, "PURR");
         assert_eq!(purr.total.as_decimal(), dec!(50));
         assert_eq!(purr.free.as_decimal(), dec!(50));
     }
@@ -2218,9 +2218,9 @@ mod tests {
 
         assert!(margins.is_empty());
         assert_eq!(balances.len(), 2);
-        assert_eq!(balances[0].currency.code.as_str(), "USDC");
+        assert_eq!(balances[0].currency.code, "USDC");
         assert_eq!(balances[0].total.as_decimal(), dec!(500));
-        assert_eq!(balances[1].currency.code.as_str(), "PURR");
+        assert_eq!(balances[1].currency.code, "PURR");
         assert_eq!(balances[1].total.as_decimal(), dec!(10));
     }
 
@@ -2252,10 +2252,10 @@ mod tests {
 
         assert!(margins.is_empty());
         assert_eq!(balances.len(), 2);
-        assert_eq!(balances[0].currency.code.as_str(), "USDC");
+        assert_eq!(balances[0].currency.code, "USDC");
         assert_eq!(balances[0].total.as_decimal(), dec!(75));
         assert_eq!(balances[0].free.as_decimal(), dec!(70));
-        assert_eq!(balances[1].currency.code.as_str(), "PURR");
+        assert_eq!(balances[1].currency.code, "PURR");
         assert_eq!(balances[1].total.as_decimal(), dec!(10));
     }
 
@@ -2287,9 +2287,9 @@ mod tests {
 
         assert!(margins.is_empty());
         assert_eq!(balances.len(), 2);
-        assert_eq!(balances[0].currency.code.as_str(), "USDC");
+        assert_eq!(balances[0].currency.code, "USDC");
         assert_eq!(balances[0].total.as_decimal(), dec!(50));
-        assert_eq!(balances[1].currency.code.as_str(), "PURR");
+        assert_eq!(balances[1].currency.code, "PURR");
         assert_eq!(balances[1].total.as_decimal(), dec!(10));
     }
 
@@ -2321,9 +2321,9 @@ mod tests {
 
         assert!(margins.is_empty());
         assert_eq!(balances.len(), 2);
-        assert_eq!(balances[0].currency.code.as_str(), "USDC");
+        assert_eq!(balances[0].currency.code, "USDC");
         assert_eq!(balances[0].total.as_decimal(), dec!(-50));
-        assert_eq!(balances[1].currency.code.as_str(), "PURR");
+        assert_eq!(balances[1].currency.code, "PURR");
         assert_eq!(balances[1].total.as_decimal(), dec!(10));
     }
 
@@ -2355,9 +2355,9 @@ mod tests {
 
         assert_eq!(margins.len(), 1);
         assert_eq!(balances.len(), 2);
-        assert_eq!(balances[0].currency.code.as_str(), "USDC");
+        assert_eq!(balances[0].currency.code, "USDC");
         assert_eq!(balances[0].total.as_decimal(), dec!(0));
-        assert_eq!(balances[1].currency.code.as_str(), "PURR");
+        assert_eq!(balances[1].currency.code, "PURR");
         assert_eq!(balances[1].total.as_decimal(), dec!(10));
     }
 
@@ -2389,10 +2389,10 @@ mod tests {
 
         assert!(margins.is_empty());
         assert_eq!(balances.len(), 2);
-        assert_eq!(balances[0].currency.code.as_str(), "USDC");
+        assert_eq!(balances[0].currency.code, "USDC");
         assert_eq!(balances[0].total.as_decimal(), dec!(50));
         assert_eq!(balances[0].free.as_decimal(), dec!(50));
-        assert_eq!(balances[1].currency.code.as_str(), "PURR");
+        assert_eq!(balances[1].currency.code, "PURR");
         assert_eq!(balances[1].total.as_decimal(), dec!(10));
     }
 
@@ -2412,7 +2412,7 @@ mod tests {
             parse_combined_account_balances_and_margins(&perp_state, &spot_state).unwrap();
 
         assert_eq!(balances.len(), 1);
-        assert_eq!(balances[0].currency.code.as_str(), "USDC");
+        assert_eq!(balances[0].currency.code, "USDC");
         assert_eq!(balances[0].total.as_decimal(), dec!(50));
     }
 }

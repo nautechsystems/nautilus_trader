@@ -4634,7 +4634,7 @@ mod tests {
         let msg = &data[0];
         assert_eq!(msg.category, OKXOrderCategory::FullLiquidation);
         assert_eq!(msg.state, OKXOrderStatus::Filled);
-        assert_eq!(msg.inst_id.as_str(), "BTC-USDT-SWAP");
+        assert_eq!(msg.inst_id, "BTC-USDT-SWAP");
 
         let account_id = AccountId::new("OKX-001");
         let mut instruments = AHashMap::new();
@@ -4697,7 +4697,7 @@ mod tests {
         let msg = &data[0];
         assert_eq!(msg.category, OKXOrderCategory::Adl);
         assert_eq!(msg.state, OKXOrderStatus::Filled);
-        assert_eq!(msg.inst_id.as_str(), "ETH-USDT-SWAP");
+        assert_eq!(msg.inst_id, "ETH-USDT-SWAP");
 
         let account_id = AccountId::new("OKX-001");
         let mut instruments = AHashMap::new();

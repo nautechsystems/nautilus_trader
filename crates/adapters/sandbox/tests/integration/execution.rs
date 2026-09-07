@@ -694,7 +694,7 @@ fn assert_pending_resolution_transition(
                     seen_resting_canceled = true;
                 }
                 OrderEventAny::Rejected(r) if r.client_order_id.as_str() == probe_order_id => {
-                    seen_probe_rejected = r.reason.as_str().contains("pending resolution");
+                    seen_probe_rejected = r.reason.contains("pending resolution");
                 }
                 _ => {}
             }
@@ -2638,7 +2638,7 @@ fn test_local_expiry_removes_resting_order_only_engine_before_cancel_event_appli
             .iter()
             .any(|event| matches!(event, OrderEventAny::Rejected(rejected)
                 if rejected.client_order_id.as_str() == "PROBE-LOCAL-ONLY"
-                    && rejected.reason.as_str().contains("pending resolution"))),
+                    && rejected.reason.contains("pending resolution"))),
         "expected local expiry to reject new orders while pending resolution",
     );
     assert!(!harness.cache.borrow().has_orders_open(

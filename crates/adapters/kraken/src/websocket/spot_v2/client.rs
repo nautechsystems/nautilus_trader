@@ -1765,7 +1765,7 @@ mod tests {
     fn test_to_kraken_ws_v2_symbol(#[case] input: &str, #[case] expected: &str) {
         let symbol = Ustr::from(input);
         let result = to_ws_v2_symbol(symbol);
-        assert_eq!(result.as_str(), expected);
+        assert_eq!(result, expected);
     }
 
     fn test_client_without_credentials() -> KrakenSpotWebSocketClient {

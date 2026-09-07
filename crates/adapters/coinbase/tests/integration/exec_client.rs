@@ -924,7 +924,7 @@ async fn test_exec_client_request_account_state_paginates_and_aggregates() {
     let usd = account
         .balances
         .iter()
-        .find(|b| b.currency.code.as_str() == "USD")
+        .find(|b| b.currency.code == "USD")
         .expect("USD aggregated across pages");
     assert_eq!(usd.free.as_decimal(), dec!(3500.00));
     assert_eq!(usd.locked.as_decimal(), dec!(75.00));
@@ -933,7 +933,7 @@ async fn test_exec_client_request_account_state_paginates_and_aggregates() {
     let btc = account
         .balances
         .iter()
-        .find(|b| b.currency.code.as_str() == "BTC")
+        .find(|b| b.currency.code == "BTC")
         .expect("BTC present");
     assert_eq!(btc.free.as_decimal(), dec!(0.5));
     assert_eq!(btc.locked.as_decimal(), dec!(0.1));
@@ -1809,7 +1809,7 @@ async fn test_exec_submit_order_denies_reduce_only() {
         panic!("Expected OrderDenied, was {event:?}");
     };
     assert_eq!(denied.client_order_id, order.client_order_id());
-    assert_eq!(denied.reason.as_str(), "UNSUPPORTED_REDUCE_ONLY");
+    assert_eq!(denied.reason, "UNSUPPORTED_REDUCE_ONLY");
     assert!(rx.try_recv().is_err());
     assert!(state.requests_for("/orders").is_empty());
 }
@@ -1852,10 +1852,7 @@ async fn test_exec_submit_order_denies_instrument_missing_from_client_cache() {
         panic!("Expected OrderDenied, was {event:?}");
     };
     assert_eq!(denied.client_order_id, order.client_order_id());
-    assert_eq!(
-        denied.reason.as_str(),
-        "INSTRUMENT_NOT_FOUND: BTC-USD.COINBASE"
-    );
+    assert_eq!(denied.reason, "INSTRUMENT_NOT_FOUND: BTC-USD.COINBASE");
     assert!(rx.try_recv().is_err());
     assert!(state.requests_for("/orders").is_empty());
 }
@@ -1924,7 +1921,7 @@ async fn test_exec_submit_order_list_denies_all_orders() {
         };
         assert_eq!(denied.client_order_id, client_order_id);
         assert_eq!(
-            denied.reason.as_str(),
+            denied.reason,
             "UNSUPPORTED_ORDER_LIST: order lists are not supported by Coinbase Advanced Trade"
         );
     }
@@ -2253,10 +2250,7 @@ async fn test_exec_batch_cancel_partial_failure_uses_child_cancel_identity() {
                 Some(VenueOrderId::new("venue-batch-reject")),
             );
             assert!(
-                rejected
-                    .reason
-                    .as_str()
-                    .contains("UNKNOWN_CANCEL_FAILURE_REASON"),
+                rejected.reason.contains("UNKNOWN_CANCEL_FAILURE_REASON"),
                 "reason was: {}",
                 rejected.reason,
             );

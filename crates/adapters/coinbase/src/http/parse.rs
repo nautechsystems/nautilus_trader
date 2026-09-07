@@ -758,7 +758,7 @@ pub fn parse_account_state(
     let mut aggregated: ahash::AHashMap<Currency, (Money, Money)> = ahash::AHashMap::new();
 
     for account in accounts {
-        let currency_code = account.currency.as_str().trim();
+        let currency_code = account.currency.trim();
         if currency_code.is_empty() {
             log::debug!(
                 "Skipping account with empty currency code: uuid={}",
@@ -1264,8 +1264,8 @@ mod tests {
 
         assert_eq!(pair.id().symbol.as_str(), "BTC-USD");
         assert_eq!(pair.id().venue, coinbase_venue());
-        assert_eq!(pair.base_currency().unwrap().code.as_str(), "BTC");
-        assert_eq!(pair.quote_currency().code.as_str(), "USD");
+        assert_eq!(pair.base_currency().unwrap().code, "BTC");
+        assert_eq!(pair.quote_currency().code, "USD");
         assert_eq!(pair.price_precision(), 2);
         assert_eq!(pair.size_precision(), 8);
         assert_eq!(pair.price_increment(), Price::from("0.01"));
@@ -1395,8 +1395,8 @@ mod tests {
             other => panic!("Expected CryptoPerpetual, was{other:?}"),
         };
 
-        assert_eq!(perp.base_currency().unwrap().code.as_str(), "BTC");
-        assert_eq!(perp.quote_currency().code.as_str(), "USD");
+        assert_eq!(perp.base_currency().unwrap().code, "BTC");
+        assert_eq!(perp.quote_currency().code, "USD");
     }
 
     #[rstest]
@@ -1442,8 +1442,8 @@ mod tests {
         let expected_expiry = parse_rfc3339_timestamp("2026-04-24T15:00:00Z").unwrap();
         assert_eq!(future.expiration_ns, expected_expiry);
         assert_eq!(future.multiplier, Quantity::from("0.01"));
-        assert_eq!(future.base_currency().unwrap().code.as_str(), "BTC");
-        assert_eq!(future.quote_currency().code.as_str(), "USD");
+        assert_eq!(future.base_currency().unwrap().code, "BTC");
+        assert_eq!(future.quote_currency().code, "USD");
     }
 
     #[rstest]
@@ -1669,7 +1669,7 @@ mod tests {
             report.commission.as_decimal(),
             Decimal::from_str("1.14").unwrap()
         );
-        assert_eq!(report.commission.currency.code.as_str(), "USD");
+        assert_eq!(report.commission.currency.code, "USD");
     }
 
     #[rstest]
@@ -1692,7 +1692,7 @@ mod tests {
         let btc_balance = state
             .balances
             .iter()
-            .find(|b| b.currency.code.as_str() == "BTC")
+            .find(|b| b.currency.code == "BTC")
             .expect("BTC balance present");
         assert_eq!(
             btc_balance.free.as_decimal(),
@@ -1710,7 +1710,7 @@ mod tests {
         let usd_balance = state
             .balances
             .iter()
-            .find(|b| b.currency.code.as_str() == "USD")
+            .find(|b| b.currency.code == "USD")
             .expect("USD balance present");
         assert_eq!(
             usd_balance.free.as_decimal(),
@@ -1775,7 +1775,7 @@ mod tests {
         let usd = state
             .balances
             .iter()
-            .find(|b| b.currency.code.as_str() == "USD")
+            .find(|b| b.currency.code == "USD")
             .expect("USD balance aggregated");
         assert_eq!(usd.free.as_decimal(), Decimal::from_str("3500.00").unwrap());
         assert_eq!(usd.locked.as_decimal(), Decimal::from_str("75.00").unwrap());
@@ -1787,7 +1787,7 @@ mod tests {
         let btc = state
             .balances
             .iter()
-            .find(|b| b.currency.code.as_str() == "BTC")
+            .find(|b| b.currency.code == "BTC")
             .expect("BTC balance present");
         assert_eq!(btc.free.as_decimal(), Decimal::from_str("0.5").unwrap());
         assert_eq!(btc.locked.as_decimal(), Decimal::from_str("0.1").unwrap());
@@ -1807,7 +1807,7 @@ mod tests {
 
         assert_eq!(state.balances.len(), 1);
         let balance = &state.balances[0];
-        assert_eq!(balance.currency.code.as_str(), "USD");
+        assert_eq!(balance.currency.code, "USD");
         assert_eq!(balance.total.as_decimal(), Decimal::ZERO);
     }
 
@@ -2093,7 +2093,7 @@ mod tests {
 
         // Out-of-range entry was skipped; only the valid USD row survives.
         assert_eq!(state.balances.len(), 1);
-        assert_eq!(state.balances[0].currency.code.as_str(), "USD");
+        assert_eq!(state.balances[0].currency.code, "USD");
         assert_eq!(
             state.balances[0].free.as_decimal(),
             Decimal::from_str("1000.00").unwrap()

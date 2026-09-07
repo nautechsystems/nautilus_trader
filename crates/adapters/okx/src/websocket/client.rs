@@ -657,43 +657,37 @@ impl OKXWebSocketClient {
 
         let keyed_quotas = vec![
             (
-                OKX_RATE_LIMIT_KEY_SUBSCRIPTION[0].as_str().to_string(),
+                OKX_RATE_LIMIT_KEY_SUBSCRIPTION[0].to_string(),
                 *OKX_WS_SUBSCRIPTION_QUOTA,
             ),
+            (OKX_RATE_LIMIT_KEY_ORDER[0].to_string(), *OKX_WS_ORDER_QUOTA),
             (
-                OKX_RATE_LIMIT_KEY_ORDER[0].as_str().to_string(),
-                *OKX_WS_ORDER_QUOTA,
-            ),
-            (
-                OKX_RATE_LIMIT_KEY_BATCH_ORDER[0].as_str().to_string(),
+                OKX_RATE_LIMIT_KEY_BATCH_ORDER[0].to_string(),
                 *OKX_WS_BATCH_ORDER_QUOTA,
             ),
             (
-                OKX_RATE_LIMIT_KEY_CANCEL[0].as_str().to_string(),
+                OKX_RATE_LIMIT_KEY_CANCEL[0].to_string(),
                 *OKX_WS_ORDER_QUOTA,
             ),
             (
-                OKX_RATE_LIMIT_KEY_BATCH_CANCEL[0].as_str().to_string(),
+                OKX_RATE_LIMIT_KEY_BATCH_CANCEL[0].to_string(),
                 *OKX_WS_BATCH_ORDER_QUOTA,
             ),
             (
-                OKX_RATE_LIMIT_KEY_MASS_CANCEL[0].as_str().to_string(),
+                OKX_RATE_LIMIT_KEY_MASS_CANCEL[0].to_string(),
                 *OKX_WS_MASS_CANCEL_QUOTA,
             ),
+            (OKX_RATE_LIMIT_KEY_AMEND[0].to_string(), *OKX_WS_ORDER_QUOTA),
             (
-                OKX_RATE_LIMIT_KEY_AMEND[0].as_str().to_string(),
-                *OKX_WS_ORDER_QUOTA,
-            ),
-            (
-                OKX_RATE_LIMIT_KEY_BATCH_AMEND[0].as_str().to_string(),
+                OKX_RATE_LIMIT_KEY_BATCH_AMEND[0].to_string(),
                 *OKX_WS_BATCH_ORDER_QUOTA,
             ),
             (
-                OKX_RATE_LIMIT_KEY_ALGO_ORDER[0].as_str().to_string(),
+                OKX_RATE_LIMIT_KEY_ALGO_ORDER[0].to_string(),
                 *OKX_WS_ALGO_ORDER_QUOTA,
             ),
             (
-                OKX_RATE_LIMIT_KEY_ALGO_CANCEL[0].as_str().to_string(),
+                OKX_RATE_LIMIT_KEY_ALGO_CANCEL[0].to_string(),
                 *OKX_WS_ALGO_CANCEL_QUOTA,
             ),
         ];

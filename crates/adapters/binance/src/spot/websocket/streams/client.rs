@@ -607,7 +607,7 @@ impl BinanceSpotWebSocketClient {
         };
 
         let keyed_quotas = vec![(
-            BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION[0].as_str().to_string(),
+            BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION[0].to_string(),
             *BINANCE_WS_SUBSCRIPTION_QUOTA,
         )];
 

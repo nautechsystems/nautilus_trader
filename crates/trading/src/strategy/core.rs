@@ -166,9 +166,10 @@ impl StrategyCore {
             .or_else(|| configured_order_id_tag.map(str::to_string));
 
         let actor_config = DataActorConfig {
-            actor_id: Some(strategy_id.map_or_else(unassigned_strategy_actor_id, |id| {
-                ActorId::from(id.inner().as_str())
-            })),
+            actor_id: Some(
+                strategy_id
+                    .map_or_else(unassigned_strategy_actor_id, |id| ActorId::new(id.inner())),
+            ),
             log_events: config.log_events,
             log_commands: config.log_commands,
         };
@@ -250,7 +251,7 @@ impl StrategyCore {
     }
 
     fn set_runtime_strategy_id(&mut self, strategy_id: StrategyId) {
-        let actor_id = ActorId::from(strategy_id.inner().as_str());
+        let actor_id = ActorId::new(strategy_id.inner());
         self.actor.actor_id = actor_id;
         self.actor.config.actor_id = Some(actor_id);
         self.strategy_id = Some(strategy_id);
@@ -290,7 +291,7 @@ impl StrategyCore {
             check_order_id_tag(order_id_tag)?;
         }
 
-        let strategy_id = StrategyId::from(self.actor.actor_id.inner().as_str());
+        let strategy_id = StrategyId::new(self.actor.actor_id.inner());
 
         self.actor
             .register(trader_id, clock.clone(), cache.clone())?;
@@ -471,7 +472,7 @@ mod tests {
         assert_eq!(core.strategy_id(), None);
         assert_eq!(core.order_id_tag(), None);
         assert_eq!(
-            StrategyId::from(core.actor_id().inner().as_str()),
+            StrategyId::new(core.actor_id().inner()),
             StrategyId::from("Strategy-None")
         );
     }

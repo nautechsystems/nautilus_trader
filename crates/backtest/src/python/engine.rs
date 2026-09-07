@@ -971,7 +971,7 @@ impl PyBacktestEngine {
 
                 if let Some(id_value) = id_attr {
                     let actor_id_val = if let Ok(eaid) = id_value.extract::<ExecAlgorithmId>() {
-                        ActorId::new(eaid.inner().as_str())
+                        ActorId::new(eaid.inner())
                     } else if let Ok(aid) = id_value.extract::<ActorId>() {
                         aid
                     } else if let Ok(aid_str) = id_value.extract::<String>() {

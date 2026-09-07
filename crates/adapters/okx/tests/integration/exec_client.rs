@@ -613,7 +613,7 @@ async fn test_local_submit_validation_failure_emits_order_rejected() {
         OrderEventAny::Rejected(rejected) => {
             assert_eq!(rejected.client_order_id, client_order_id);
             assert!(
-                rejected.reason.as_str().contains("No instIdCode cached"),
+                rejected.reason.contains("No instIdCode cached"),
                 "reason was: {}",
                 rejected.reason
             );
@@ -663,7 +663,7 @@ async fn test_local_modify_validation_failure_emits_order_modify_rejected() {
         OrderEventAny::ModifyRejected(rejected) => {
             assert_eq!(rejected.client_order_id, client_order_id);
             assert!(
-                rejected.reason.as_str().contains("No instIdCode cached"),
+                rejected.reason.contains("No instIdCode cached"),
                 "reason was: {}",
                 rejected.reason
             );
@@ -4230,7 +4230,7 @@ async fn test_submit_spread_order_denies_reduce_only() {
         panic!("Expected OrderDenied, was {:?}", events[0]);
     };
     assert_eq!(denied.client_order_id, client_order_id);
-    assert_eq!(denied.reason.as_str(), "UNSUPPORTED_REDUCE_ONLY");
+    assert_eq!(denied.reason, "UNSUPPORTED_REDUCE_ONLY");
 }
 
 #[rstest]
@@ -4275,7 +4275,7 @@ async fn test_submit_cash_order_denies_reduce_only() {
         panic!("Expected OrderDenied, was {:?}", events[0]);
     };
     assert_eq!(denied.client_order_id, client_order_id);
-    assert_eq!(denied.reason.as_str(), "UNSUPPORTED_REDUCE_ONLY");
+    assert_eq!(denied.reason, "UNSUPPORTED_REDUCE_ONLY");
 }
 
 #[rstest]

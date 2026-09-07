@@ -387,7 +387,7 @@ where
         // Register process endpoint
         let process_handler = ThrottlerProcess::<T, F>::new(self.actor_id);
         msgbus::register_any(
-            process_handler.id().as_str().into(),
+            process_handler.id().into(),
             ShareableMessageHandler::from(Rc::new(process_handler) as Rc<dyn Handler<dyn Any>>),
         );
 
@@ -1665,7 +1665,7 @@ mod tests {
         let handler_id: Ustr = process.id();
 
         // Verify it's a valid Ustr with expected format
-        assert!(handler_id.as_str().contains("test_throttler_process"));
+        assert!(handler_id.contains("test_throttler_process"));
         assert!(!handler_id.is_empty());
 
         // Verify type - this wouldn't compile if id() didn't return Ustr

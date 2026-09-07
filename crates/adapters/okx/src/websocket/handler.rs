@@ -1086,7 +1086,7 @@ mod tests {
         match msg {
             OKXWsMessage::Instruments(instruments) => {
                 assert_eq!(instruments.len(), 1);
-                assert_eq!(instruments[0].inst_id.as_str(), "BTC-USDT-SWAP");
+                assert_eq!(instruments[0].inst_id, "BTC-USDT-SWAP");
             }
             other => panic!("Expected Instruments, was {other:?}"),
         }
@@ -1129,7 +1129,7 @@ mod tests {
         match msg {
             OKXWsMessage::LiquidationWarnings(warnings) => {
                 assert_eq!(warnings.len(), 1);
-                assert_eq!(warnings[0].inst_id.as_str(), "BTC-USDT-SWAP");
+                assert_eq!(warnings[0].inst_id, "BTC-USDT-SWAP");
                 assert_eq!(warnings[0].mgn_ratio, "0.62");
             }
             other => panic!("Expected LiquidationWarnings, was {other:?}"),

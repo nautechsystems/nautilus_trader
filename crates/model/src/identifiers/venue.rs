@@ -134,7 +134,7 @@ impl Venue {
     #[cfg(feature = "defi")]
     #[must_use]
     pub fn is_dex(&self) -> bool {
-        self.0.as_str().contains(':')
+        self.0.contains(':')
     }
 
     #[cfg(feature = "defi")]

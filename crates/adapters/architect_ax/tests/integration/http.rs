@@ -403,9 +403,9 @@ async fn test_raw_http_get_instruments_returns_data() {
     let response = client.get_instruments().await.unwrap();
 
     assert_eq!(response.instruments.len(), 3);
-    assert_eq!(response.instruments[0].symbol.as_str(), "EURUSD-PERP");
-    assert_eq!(response.instruments[1].symbol.as_str(), "XAU-PERP");
-    assert_eq!(response.instruments[2].symbol.as_str(), "NVDA-PERP");
+    assert_eq!(response.instruments[0].symbol, "EURUSD-PERP");
+    assert_eq!(response.instruments[1].symbol, "XAU-PERP");
+    assert_eq!(response.instruments[2].symbol, "NVDA-PERP");
 }
 
 #[rstest]
@@ -422,7 +422,7 @@ async fn test_raw_http_get_instrument_returns_data() {
         .await
         .unwrap();
 
-    assert_eq!(instrument.symbol.as_str(), "EURUSD-PERP");
+    assert_eq!(instrument.symbol, "EURUSD-PERP");
     assert_eq!(instrument.tick_size, dec!(0.0001));
 }
 
@@ -449,11 +449,11 @@ async fn test_raw_http_get_balances_returns_data() {
     let response = client.get_balances().await.unwrap();
 
     assert_eq!(response.balances.len(), 3);
-    assert_eq!(response.balances[0].symbol.as_str(), "USD");
+    assert_eq!(response.balances[0].symbol, "USD");
     assert_eq!(response.balances[0].amount, dec!(100000.50));
-    assert_eq!(response.balances[1].symbol.as_str(), "BTC");
+    assert_eq!(response.balances[1].symbol, "BTC");
     assert_eq!(response.balances[1].amount, dec!(1.25));
-    assert_eq!(response.balances[2].symbol.as_str(), "ETH");
+    assert_eq!(response.balances[2].symbol, "ETH");
     assert_eq!(response.balances[2].amount, dec!(15.5));
 }
 
@@ -480,10 +480,10 @@ async fn test_raw_http_get_positions_returns_data() {
     let response = client.get_positions().await.unwrap();
 
     assert_eq!(response.positions.len(), 2);
-    assert_eq!(response.positions[0].symbol.as_str(), "BTC-PERP");
+    assert_eq!(response.positions[0].symbol, "BTC-PERP");
     assert_eq!(response.positions[0].signed_quantity, 2);
     assert_eq!(response.positions[0].signed_notional, dec!(90000.00));
-    assert_eq!(response.positions[1].symbol.as_str(), "ETH-PERP");
+    assert_eq!(response.positions[1].symbol, "ETH-PERP");
     assert_eq!(response.positions[1].signed_quantity, -5);
 }
 
@@ -512,7 +512,7 @@ async fn test_raw_http_get_tickers_returns_data() {
     assert_eq!(response.tickers.len(), 1);
     assert_eq!(response.total_count, 1);
     let ticker = &response.tickers[0];
-    assert_eq!(ticker.symbol.as_str(), "BTC-PERP");
+    assert_eq!(ticker.symbol, "BTC-PERP");
     assert_eq!(ticker.bid, Some(dec!(45000.00)));
     assert_eq!(ticker.ask, Some(dec!(45001.00)));
     assert_eq!(ticker.last, Some(dec!(45000.50)));
@@ -541,7 +541,7 @@ async fn test_raw_http_get_ticker_returns_data() {
 
     let ticker = client.get_ticker(Ustr::from("BTC-PERP")).await.unwrap();
 
-    assert_eq!(ticker.symbol.as_str(), "BTC-PERP");
+    assert_eq!(ticker.symbol, "BTC-PERP");
     assert_eq!(ticker.bid, Some(dec!(45000.00)));
     assert_eq!(ticker.ask, Some(dec!(45001.00)));
 }
@@ -870,7 +870,7 @@ async fn test_domain_http_request_instrument_returns_nautilus_type() {
             assert_eq!(perp.id.venue.as_str(), "AX");
             assert_eq!(perp.price_precision, 4);
             assert_eq!(perp.price_increment.as_decimal(), dec!(0.0001));
-            assert_eq!(perp.quote_currency.code.as_str(), "USD");
+            assert_eq!(perp.quote_currency.code, "USD");
             assert_eq!(perp.margin_init, dec!(0.08));
             assert_eq!(perp.margin_maint, dec!(0.04));
         }

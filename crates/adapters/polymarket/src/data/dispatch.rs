@@ -172,7 +172,7 @@ fn new_market_dedupe_key(nm: &PolymarketNewMarket) -> String {
     if !condition_id.is_empty() {
         return format!("cond:{condition_id}");
     }
-    let market_id = nm.market.as_str().trim();
+    let market_id = nm.market.trim();
     if !market_id.is_empty() {
         return format!("market:{market_id}");
     }
@@ -185,7 +185,7 @@ fn new_market_fetch_condition_id(nm: &PolymarketNewMarket) -> Option<String> {
         return Some(condition_id.to_string());
     }
 
-    let market_id = nm.market.as_str().trim();
+    let market_id = nm.market.trim();
     if !market_id.is_empty() {
         return Some(market_id.to_string());
     }
@@ -855,7 +855,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
         }
 
         MarketWsMessage::MarketResolved(resolved) => {
-            let condition_id = resolved.market.as_str().to_string();
+            let condition_id = resolved.market.to_string();
             let distinct_assets: AHashSet<&str> =
                 resolved.assets_ids.iter().map(String::as_str).collect();
             if distinct_assets.len() != 2

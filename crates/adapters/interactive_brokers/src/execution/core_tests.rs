@@ -478,7 +478,7 @@ fn single_submit_definitive_failure_rejects_and_removes_tracking() {
             assert_eq!(event.client_order_id, client_order_id);
             assert_eq!(event.account_id, account_id);
             assert_eq!(
-                event.reason.as_str(),
+                event.reason,
                 "Failed to submit order: InvalidArgument: quantity must be positive"
             );
             assert_eq!(event.ts_event, UnixNanos::new(19));
@@ -786,7 +786,7 @@ fn submit_order_denies_reduce_only() {
     match next_order_event(&mut rx) {
         OrderEventAny::Denied(event) => {
             assert_eq!(event.client_order_id, order.client_order_id());
-            assert_eq!(event.reason.as_str(), "UNSUPPORTED_REDUCE_ONLY");
+            assert_eq!(event.reason, "UNSUPPORTED_REDUCE_ONLY");
         }
         event => panic!("Expected OrderDenied, was {event:?}"),
     }
@@ -873,7 +873,7 @@ fn submit_order_list_denies_all_orders_when_reduce_only_is_present() {
         match next_order_event(&mut rx) {
             OrderEventAny::Denied(event) => {
                 assert_eq!(event.client_order_id, client_order_id);
-                assert_eq!(event.reason.as_str(), "UNSUPPORTED_REDUCE_ONLY");
+                assert_eq!(event.reason, "UNSUPPORTED_REDUCE_ONLY");
             }
             event => panic!("Expected OrderDenied, was {event:?}"),
         }

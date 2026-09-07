@@ -655,7 +655,7 @@ fn test_process_order_rejects_when_market_not_open_and_accepts_after_reopen(
         event => panic!("Expected OrderRejected event, was {event:?}"),
     };
     assert_eq!(rejected.client_order_id, rejected_client_order_id);
-    assert!(rejected.reason.as_str().contains(expected_status.as_ref()));
+    assert!(rejected.reason.contains(expected_status.as_ref()));
     assert!(!engine.order_exists(rejected_client_order_id));
 
     clear_order_event_handler_messages(&order_event_handler);
@@ -1002,8 +1002,7 @@ fn test_process_bracket_order_list_does_not_double_submit_children(
         .iter()
         .filter(|e| {
             e.event_type() == OrderEventType::Rejected
-                && e.message()
-                    .is_some_and(|m| m.as_str().contains("already exists"))
+                && e.message().is_some_and(|m| m.contains("already exists"))
         })
         .count();
     assert_eq!(
@@ -13094,7 +13093,7 @@ fn settlement_client_order_id(cache: &Rc<RefCell<Cache>>, tag: &str) -> ClientOr
         .find_map(|order| {
             order
                 .tags()
-                .is_some_and(|tags| tags.iter().any(|value| value.as_str() == tag))
+                .is_some_and(|tags| tags.iter().any(|value| value == tag))
                 .then(|| order.client_order_id())
         })
         .unwrap_or_else(|| panic!("Expected settlement order with tag {tag}"))
@@ -14443,11 +14442,7 @@ fn test_process_option_expiry_missing_underlying_price_retries_with_close_preser
         "Expected pending-resolution rejection, received {events:?}",
     );
     assert!(
-        rejected
-            .unwrap()
-            .reason
-            .as_str()
-            .contains("pending resolution"),
+        rejected.unwrap().reason.contains("pending resolution"),
         "Expected pending-resolution rejection reason",
     );
     assert!(
@@ -14990,7 +14985,7 @@ fn test_binary_option_pending_resolution_then_instrument_close_settles_position(
         })
         .expect("expected rejection for probe order submitted after expiry");
     assert!(
-        reject.reason.as_str().contains("pending resolution"),
+        reject.reason.contains("pending resolution"),
         "expected pending resolution rejection, found: {}",
         reject.reason,
     );

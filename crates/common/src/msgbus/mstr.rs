@@ -49,7 +49,7 @@ pub struct MStr<T> {
 impl<T> MStr<T> {
     #[inline(always)]
     fn checked(value: Ustr, key: &str) -> anyhow::Result<Self> {
-        check_valid_string_utf8(value.as_str(), stringify!(value))?;
+        check_valid_string_utf8(value, stringify!(value))?;
 
         if value.as_bytes().iter().any(|&b| b == b'*' || b == b'?') {
             anyhow::bail!("{key} `value` contained invalid characters, was {value}");
@@ -399,7 +399,7 @@ mod tests {
     fn test_deref_to_ustr() {
         let topic: MStr<Topic> = "test.topic".into();
         let ustr: &Ustr = &topic;
-        assert_eq!(ustr.as_str(), "test.topic");
+        assert_eq!(ustr, "test.topic");
     }
 
     fn valid_segment() -> impl Strategy<Value = String> {

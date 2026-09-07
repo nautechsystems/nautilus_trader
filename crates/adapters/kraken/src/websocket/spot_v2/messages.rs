@@ -703,7 +703,7 @@ mod tests {
 
         let ticker: KrakenWsTickerData =
             serde_json::from_str(message.data[0].get()).expect("Failed to parse ticker data");
-        assert_eq!(ticker.symbol.as_str(), "BTC/USD");
+        assert_eq!(ticker.symbol, "BTC/USD");
         assert_eq!(ticker.bid, dec!(105944.20));
         assert_eq!(ticker.ask, dec!(105944.30));
         assert_eq!(ticker.last, dec!(105899.40));
@@ -753,7 +753,7 @@ mod tests {
 
         let trade: KrakenWsTradeData =
             serde_json::from_str(message.data[0].get()).expect("Failed to parse trade data");
-        assert_eq!(trade.symbol.as_str(), "BTC/USD");
+        assert_eq!(trade.symbol, "BTC/USD");
         assert_eq!(trade.price, dec!(105944.20));
         assert_eq!(trade.qty, dec!(0.00027625));
         assert!(trade.trade_id > 0);
@@ -770,7 +770,7 @@ mod tests {
 
         let book: KrakenWsBookData =
             serde_json::from_str(message.data[0].get()).expect("Failed to parse book data");
-        assert_eq!(book.symbol.as_str(), "BTC/USD");
+        assert_eq!(book.symbol, "BTC/USD");
         assert!(book.bids.is_some());
         assert!(book.asks.is_some());
         assert!(book.checksum.is_some());
@@ -808,7 +808,7 @@ mod tests {
 
         let ohlc: KrakenWsOhlcData =
             serde_json::from_str(message.data[0].get()).expect("Failed to parse OHLC data");
-        assert_eq!(ohlc.symbol.as_str(), "BTC/USD");
+        assert_eq!(ohlc.symbol, "BTC/USD");
         assert_eq!(ohlc.open, dec!(106038.2));
         assert_eq!(ohlc.high, dec!(106044.3));
         assert_eq!(ohlc.low, dec!(106038.1));

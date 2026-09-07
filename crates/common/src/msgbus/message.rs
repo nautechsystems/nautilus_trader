@@ -414,7 +414,7 @@ mod tests {
             SerializationEncoding::Json,
         );
 
-        assert_eq!(message.topic.as_str(), topic);
+        assert_eq!(message.topic, topic);
         assert_eq!(message.payload_type, BusPayloadType::QuoteTick);
         assert_eq!(message.encoding, SerializationEncoding::Json);
         assert_eq!(message.payload, payload);
@@ -432,7 +432,7 @@ mod tests {
             SerializationEncoding::MsgPack,
         );
 
-        assert_eq!(message.topic.as_str(), topic_string);
+        assert_eq!(message.topic, topic_string);
         assert_eq!(message.payload_type, BusPayloadType::OrderEvent);
         assert_eq!(message.encoding, SerializationEncoding::MsgPack);
         assert_eq!(message.payload, payload);
@@ -442,7 +442,7 @@ mod tests {
     fn test_new_close() {
         let message = BusMessage::new_close();
 
-        assert_eq!(message.topic.as_str(), "CLOSE");
+        assert_eq!(message.topic, "CLOSE");
         assert!(message.payload.is_empty());
     }
 

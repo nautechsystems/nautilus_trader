@@ -391,7 +391,7 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
         log::info!("Received time event: {event}");
 
-        let primary_id = ClientOrderId::new(event.name.as_str());
+        let primary_id = ClientOrderId::new(event.name);
 
         let primary = {
             let cache = ExecutionAlgorithmNative::exec_algorithm_core(self).cache_ref();
@@ -640,7 +640,7 @@ mod tests {
         assert!(matches!(
             &events[0],
             OrderEventAny::Denied(event)
-                if event.reason.as_str() == expected_reason
+                if event.reason == expected_reason
                     && event.strategy_id == strategy_id
                     && event.client_order_id == order.client_order_id()
         ));

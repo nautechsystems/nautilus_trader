@@ -2113,7 +2113,7 @@ mod tests {
 
         // Check BTC coin
         let btc = &wallet.coin[0];
-        assert_eq!(btc.coin.as_str(), "BTC");
+        assert_eq!(btc.coin, "BTC");
         assert_eq!(btc.available_to_borrow, "3");
         assert_eq!(btc.total_order_im, Some("0".to_string()));
         assert_eq!(btc.total_position_mm, Some("0".to_string()));
@@ -2121,7 +2121,7 @@ mod tests {
 
         // Check USDT coin (without optional IM/MM fields)
         let usdt = &wallet.coin[1];
-        assert_eq!(usdt.coin.as_str(), "USDT");
+        assert_eq!(usdt.coin, "USDT");
         assert_eq!(usdt.wallet_balance, dec!(1000.50));
         assert_eq!(usdt.total_order_im, None);
         assert_eq!(usdt.total_position_mm, None);
@@ -2139,7 +2139,7 @@ mod tests {
         let wallet = &response.result.list[0];
         let usdt = &wallet.coin[0];
 
-        assert_eq!(usdt.coin.as_str(), "USDT");
+        assert_eq!(usdt.coin, "USDT");
         assert_eq!(usdt.wallet_balance, dec!(1200.00));
         assert_eq!(usdt.spot_borrow, dec!(200.00));
         assert_eq!(usdt.borrow_amount, "200.00");
@@ -2165,7 +2165,7 @@ mod tests {
         let wallet = &response.result.list[0];
         let eth = &wallet.coin[0];
 
-        assert_eq!(eth.coin.as_str(), "ETH");
+        assert_eq!(eth.coin, "ETH");
         assert_eq!(eth.wallet_balance, dec!(0));
         assert_eq!(eth.spot_borrow, dec!(0.06142));
         assert_eq!(eth.borrow_amount, "0.06142");
@@ -2180,7 +2180,7 @@ mod tests {
         let eth_balance = account_state
             .balances
             .iter()
-            .find(|b| b.currency.code.as_str() == "ETH")
+            .find(|b| b.currency.code == "ETH")
             .expect("ETH balance not found");
 
         // Negative balance represents SHORT position (borrowed ETH)

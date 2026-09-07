@@ -132,7 +132,7 @@ async fn main() -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("get_instruments ETH erc20 failed: {e}"))?;
     let instrument = instruments
         .into_iter()
-        .find(|i| i.instrument_name.as_str() == "ETH-USDC")
+        .find(|i| i.instrument_name == "ETH-USDC")
         .ok_or_else(|| anyhow::anyhow!("ETH-USDC not in instruments list"))?;
     fs::write(
         format!("{out_dir}/instrument_eth_usdc.json"),
@@ -296,7 +296,7 @@ async fn main() -> anyhow::Result<()> {
             .map_err(|e| anyhow::anyhow!("get_instruments ETH perp failed: {e}"))?;
         let perp = perp_instruments
             .into_iter()
-            .find(|i| i.instrument_name.as_str() == "ETH-PERP")
+            .find(|i| i.instrument_name == "ETH-PERP")
             .ok_or_else(|| anyhow::anyhow!("ETH-PERP not in instruments list"))?;
         let q7c = submit_signed_spot_order(
             &client,
@@ -373,7 +373,6 @@ async fn submit_signed_spot_order(
 ) -> anyhow::Result<Value> {
     let asset_address: Address = instrument
         .base_asset_address
-        .as_str()
         .parse()
         .map_err(|e| anyhow::anyhow!("parse base_asset_address: {e}"))?;
     let sub_id = U256::from_str_radix(instrument.base_asset_sub_id.as_str(), 10)

@@ -2319,7 +2319,7 @@ async fn test_query_account_emits_spot_balances() {
     let purr = account_state
         .balances
         .iter()
-        .find(|b| b.currency.code.as_str() == "PURR")
+        .find(|b| b.currency.code == "PURR")
         .unwrap();
     assert_eq!(purr.total.as_f64(), 2000.0);
     assert_eq!(purr.locked.as_f64(), 100.0);

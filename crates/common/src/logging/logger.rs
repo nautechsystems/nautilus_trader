@@ -558,7 +558,7 @@ fn has_duplicate_json_field(fields: &LogFields) -> bool {
         if fields
             .iter()
             .take(idx)
-            .any(|(prev, _)| !is_reserved_json_key(prev.as_str()) && prev.as_str() == key)
+            .any(|(prev, _)| !is_reserved_json_key(prev.as_str()) && prev == key)
         {
             return true;
         }
@@ -620,7 +620,7 @@ fn intern_repeated(value: &str) -> Ustr {
         // Targets and components are usually repeated static strings; the content check keeps
         // dynamic RecordBuilder targets correct if an allocator reuses the same pointer.
         for entry in cache_state.entries.iter().flatten() {
-            if entry.ptr == ptr && entry.len == len && entry.value.as_str() == value {
+            if entry.ptr == ptr && entry.len == len && entry.value == value {
                 return entry.value;
             }
         }

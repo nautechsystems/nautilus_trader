@@ -141,7 +141,7 @@ async fn load_market_context(market_id: &str) -> anyhow::Result<(String, Vec<Ins
         );
     }
 
-    Ok((account_currency.code.as_str().to_string(), instruments))
+    Ok((account_currency.code.to_string(), instruments))
 }
 
 fn instrument_ids(instruments: &[InstrumentAny]) -> Vec<InstrumentId> {

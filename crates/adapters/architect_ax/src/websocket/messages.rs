@@ -1159,7 +1159,7 @@ mod tests {
     fn test_load_md_ticker_from_file() {
         let json = include_str!("../../test_data/ws_md_ticker.json");
         let msg: AxMdTicker = serde_json::from_str(json).unwrap();
-        assert_eq!(msg.s.as_str(), "EURUSD-PERP");
+        assert_eq!(msg.s, "EURUSD-PERP");
         assert_eq!(msg.m, Some(dec!(50010.50)));
         assert_eq!(msg.i, Some(AxInstrumentState::Open));
     }
@@ -1168,7 +1168,7 @@ mod tests {
     fn test_load_md_ticker_captured_optional_fields_default_to_none() {
         let json = include_str!("../../test_data/ws_md_ticker_captured.json");
         let msg: AxMdTicker = serde_json::from_str(json).unwrap();
-        assert_eq!(msg.s.as_str(), "EURUSD-PERP");
+        assert_eq!(msg.s, "EURUSD-PERP");
         assert_eq!(msg.m, None);
         assert_eq!(msg.i, None);
     }
@@ -1181,7 +1181,7 @@ mod tests {
         let AxMdMessage::Ticker(ticker) = msg else {
             panic!("expected ticker message");
         };
-        assert_eq!(ticker.s.as_str(), "QQQ-PERP");
+        assert_eq!(ticker.s, "QQQ-PERP");
         assert_eq!(ticker.p, Decimal::ZERO);
         assert_eq!(ticker.o, Decimal::ZERO);
         assert_eq!(ticker.l, Decimal::ZERO);

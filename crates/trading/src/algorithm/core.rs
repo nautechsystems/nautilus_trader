@@ -145,7 +145,7 @@ impl ExecutionAlgorithmCore {
             .expect("ExecutionAlgorithmConfig must have exec_algorithm_id set");
 
         let actor_config = DataActorConfig {
-            actor_id: Some(ActorId::from(exec_algorithm_id.inner().as_str())),
+            actor_id: Some(ActorId::new(exec_algorithm_id.inner())),
             log_events: config.log_events,
             log_commands: config.log_commands,
         };

@@ -198,7 +198,7 @@ async fn test_get_account_summaries_success() {
 
     // Verify BTC summary
     let btc = &summaries[0];
-    assert_eq!(btc.currency.as_str(), "BTC");
+    assert_eq!(btc.currency, "BTC");
     assert_eq!(btc.equity, dec!(302.61869214));
     assert_eq!(btc.balance, dec!(302.60065765));
     assert_eq!(btc.available_funds, dec!(301.38059622));
@@ -209,7 +209,7 @@ async fn test_get_account_summaries_success() {
 
     // Verify ETH summary
     let eth = &summaries[1];
-    assert_eq!(eth.currency.as_str(), "ETH");
+    assert_eq!(eth.currency, "ETH");
     assert_eq!(eth.equity, dec!(100.0));
     assert_eq!(eth.balance, dec!(100.0));
 

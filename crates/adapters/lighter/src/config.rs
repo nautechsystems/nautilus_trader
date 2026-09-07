@@ -497,17 +497,14 @@ mod tests {
         assert_eq!(data.http_url(), expected.http_url);
         assert_eq!(data.ws_url(), expected.data_ws_url);
         assert_eq!(data.resolved_venue().as_str(), expected.venue);
-        assert_eq!(data.settlement_currency().code.as_str(), expected.currency);
+        assert_eq!(data.settlement_currency().code, expected.currency);
         assert_eq!(execution.http_url(), expected.http_url);
         assert_eq!(
             execution.ws_url(),
             expected.data_ws_url.replace("?readonly=true", "")
         );
         assert_eq!(execution.resolved_venue().as_str(), expected.venue);
-        assert_eq!(
-            execution.settlement_currency().code.as_str(),
-            expected.currency
-        );
+        assert_eq!(execution.settlement_currency().code, expected.currency);
         assert_eq!(execution.chain_id(), expected.chain_id);
     }
 

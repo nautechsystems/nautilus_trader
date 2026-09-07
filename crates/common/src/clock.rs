@@ -1322,7 +1322,7 @@ mod tests {
             .unwrap();
         let events = test_clock.advance_time(alert_time, true);
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0].name.as_str(), "test_timer");
+        assert_eq!(events[0].name, "test_timer");
     }
 
     #[rstest]
@@ -1457,9 +1457,9 @@ mod tests {
             .unwrap();
         let events = test_clock.advance_time(start_time + DurationNanos::new(2000), true);
         assert_eq!(events.len(), 3);
-        assert_eq!(events[0].name.as_str(), "timer1");
-        assert_eq!(events[1].name.as_str(), "timer1");
-        assert_eq!(events[2].name.as_str(), "timer2");
+        assert_eq!(events[0].name, "timer1");
+        assert_eq!(events[1].name, "timer1");
+        assert_eq!(events[2].name, "timer2");
     }
 
     #[rstest]
@@ -2028,7 +2028,7 @@ mod tests {
 
         let events = test_clock.advance_time(start_time + DurationNanos::new(2000), true);
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0].name.as_str(), "active");
+        assert_eq!(events[0].name, "active");
     }
 
     #[rstest]
@@ -2381,7 +2381,7 @@ mod tests {
 
         // Should fire immediately since alert_time_ns == ts_now
         assert_eq!(events.len(), 1);
-        assert_eq!(events[0].name.as_str(), "alert_at_current_time");
+        assert_eq!(events[0].name, "alert_at_current_time");
         assert_eq!(*events[0].ts_event, *current_time);
     }
 
@@ -2446,9 +2446,9 @@ mod tests {
 
         let events = clock.advance_time(start + DurationNanos::new(400), true);
         assert_eq!(events.len(), 3);
-        assert_eq!(events[0].name.as_str(), "first");
-        assert_eq!(events[1].name.as_str(), "second");
-        assert_eq!(events[2].name.as_str(), "third");
+        assert_eq!(events[0].name, "first");
+        assert_eq!(events[1].name, "second");
+        assert_eq!(events[2].name, "third");
     }
 
     #[rstest]

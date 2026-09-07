@@ -325,7 +325,7 @@ fn test_dispatch_post_only_rejection_sets_due_post_only() {
 
     assert_eq!(events.len(), 1);
     assert_eq!(
-        rejected.reason.as_str(),
+        rejected.reason,
         "Post only order would have immediately matched",
     );
     assert!(rejected.due_post_only);
@@ -355,7 +355,7 @@ fn test_dispatch_passive_ioc_rejection_preserves_venue_reason() {
 
     assert_eq!(events.len(), 1);
     assert_eq!(
-        rejected.reason.as_str(),
+        rejected.reason,
         "Order could not immediately match against any resting orders",
     );
     assert!(!rejected.due_post_only);

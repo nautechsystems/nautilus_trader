@@ -706,7 +706,7 @@ async fn test_get_ticker_uses_get_tickers_and_selects_instrument(
 
     assert_eq!(captured.path, "/public/get_tickers");
     assert_eq!(captured.body, Value::Object(expected_body));
-    assert_eq!(ticker.instrument_name.as_str(), instrument_name);
+    assert_eq!(ticker.instrument_name, instrument_name);
     if expect_option_pricing {
         let pricing = ticker.option_pricing.expect("option ticker has pricing");
         assert_eq!(pricing.forward_price.to_string(), "3505");

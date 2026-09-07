@@ -249,7 +249,7 @@ mod tests {
     #[case("polymarket-market-streams-1")]
     #[case("feed.v2_primary")]
     fn test_socket_endpoint_accepts_identifier_labels(#[case] endpoint: &str) {
-        assert_eq!(socket_endpoint(endpoint).unwrap().as_str(), endpoint);
+        assert_eq!(socket_endpoint(endpoint).unwrap(), endpoint);
     }
 
     #[rstest]
@@ -266,7 +266,7 @@ mod tests {
         let maximum = "a".repeat(ENDPOINT_MAX_LEN);
         let too_long = "a".repeat(ENDPOINT_MAX_LEN + 1);
 
-        assert_eq!(socket_endpoint(&maximum).unwrap().as_str(), maximum);
+        assert_eq!(socket_endpoint(&maximum).unwrap(), maximum);
         assert_eq!(
             socket_endpoint(&too_long).unwrap_err().to_string(),
             "Socket endpoint cannot exceed 128 bytes",

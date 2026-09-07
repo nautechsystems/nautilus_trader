@@ -3012,8 +3012,8 @@ async fn test_futures_domain_request_instruments_includes_tokenized_contract() {
     match tokenized_future {
         InstrumentAny::CryptoPerpetual(perp) => {
             assert_eq!(perp.id.symbol.as_str(), "PF_AAPLxUSD");
-            assert_eq!(perp.base_currency.code.as_str(), "AAPLx");
-            assert_eq!(perp.quote_currency.code.as_str(), "USD");
+            assert_eq!(perp.base_currency.code, "AAPLx");
+            assert_eq!(perp.quote_currency.code, "USD");
             assert_eq!(perp.size_increment.as_decimal(), dec!(0.01));
         }
         _ => panic!("Expected CryptoPerpetual"),
@@ -3614,7 +3614,7 @@ async fn test_spot_request_account_state_margin_does_not_lock_free_margin() {
         Decimal::ZERO,
         "maintenance must stay zero to avoid double-locking TradeBalance `m`"
     );
-    assert_eq!(mb.currency.code.as_str(), "USD");
+    assert_eq!(mb.currency.code, "USD");
 }
 
 #[rstest]
@@ -3654,8 +3654,7 @@ async fn test_spot_request_account_state_margin_with_gbp_asset_tags_currency() {
 
     assert_eq!(state.margins.len(), 1);
     assert_eq!(
-        state.margins[0].currency.code.as_str(),
-        "GBP",
+        state.margins[0].currency.code, "GBP",
         "MarginBalance currency should normalize ZGBP -> GBP"
     );
 
@@ -3670,11 +3669,7 @@ async fn test_spot_request_account_state_margin_with_gbp_asset_tags_currency() {
         "request body should propagate asset=ZGBP, received: {body}"
     );
 
-    if let Some(usd) = state
-        .balances
-        .iter()
-        .find(|b| b.currency.code.as_str() == "USD")
-    {
+    if let Some(usd) = state.balances.iter().find(|b| b.currency.code == "USD") {
         assert_eq!(
             usd.locked.as_decimal().normalize(),
             dec!(1500),
@@ -3721,7 +3716,7 @@ async fn test_spot_request_account_state_margin_locked_from_free_margin() {
     let usd = state
         .balances
         .iter()
-        .find(|b| b.currency.code.as_str() == "USD")
+        .find(|b| b.currency.code == "USD")
         .expect("expected USD balance (equity-based synthetic entry)");
     assert_eq!(usd.total.as_decimal().normalize(), dec!(198499.67));
     assert_eq!(usd.free.as_decimal().normalize(), dec!(185999.67));
@@ -3768,7 +3763,7 @@ async fn test_spot_request_account_state_margin_other_wallets_lock_own_holds() {
         let balance = state
             .balances
             .iter()
-            .find(|b| b.currency.code.as_str() == code)
+            .find(|b| b.currency.code == code)
             .unwrap_or_else(|| panic!("expected {code} wallet balance"));
 
         assert_eq!(
@@ -3829,7 +3824,7 @@ async fn test_spot_request_account_state_cash_locks_held_amounts() {
     let usd = state
         .balances
         .iter()
-        .find(|b| b.currency.code.as_str() == "USD")
+        .find(|b| b.currency.code == "USD")
         .expect("expected USD balance");
     assert_eq!(usd.total.as_decimal().normalize(), dec!(200000));
     assert_eq!(usd.locked.as_decimal().normalize(), dec!(1500));
@@ -3838,7 +3833,7 @@ async fn test_spot_request_account_state_cash_locks_held_amounts() {
     let xbt = state
         .balances
         .iter()
-        .find(|b| b.currency.code.as_str() == "XBT")
+        .find(|b| b.currency.code == "XBT")
         .expect("expected XBT balance");
     assert_eq!(xbt.total.as_decimal().normalize(), dec!(0.5));
     assert_eq!(xbt.locked.as_decimal().normalize(), dec!(0.1));
@@ -3848,7 +3843,7 @@ async fn test_spot_request_account_state_cash_locks_held_amounts() {
     let eth = state
         .balances
         .iter()
-        .find(|b| b.currency.code.as_str() == "ETH")
+        .find(|b| b.currency.code == "ETH")
         .expect("expected ETH balance");
     assert_eq!(eth.locked.as_decimal(), Decimal::ZERO);
     assert_eq!(eth.free, eth.total);
@@ -3908,7 +3903,7 @@ async fn test_spot_request_account_state_cash_includes_net_credit() {
     let usd = state
         .balances
         .iter()
-        .find(|b| b.currency.code.as_str() == "USD")
+        .find(|b| b.currency.code == "USD")
         .expect("expected USD balance");
     assert_eq!(usd.total.as_decimal().normalize(), dec!(4000));
     assert_eq!(usd.locked.as_decimal().normalize(), dec!(250));
@@ -3918,7 +3913,7 @@ async fn test_spot_request_account_state_cash_includes_net_credit() {
     let xbt = state
         .balances
         .iter()
-        .find(|b| b.currency.code.as_str() == "XBT")
+        .find(|b| b.currency.code == "XBT")
         .expect("expected XBT balance from available credit alone");
     assert_eq!(xbt.total.as_decimal().normalize(), dec!(1));
     assert_eq!(xbt.locked.as_decimal(), Decimal::ZERO);
@@ -3928,7 +3923,7 @@ async fn test_spot_request_account_state_cash_includes_net_credit() {
     let eth = state
         .balances
         .iter()
-        .find(|b| b.currency.code.as_str() == "ETH")
+        .find(|b| b.currency.code == "ETH")
         .expect("expected ETH balance");
     assert_eq!(eth.total.as_decimal().normalize(), dec!(3));
     assert_eq!(eth.locked.as_decimal().normalize(), dec!(1));

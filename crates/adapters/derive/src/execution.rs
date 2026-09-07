@@ -484,7 +484,7 @@ impl DeriveExecutionClient {
                                 log::error!("Derive execution WebSocket recovery failed: {reason}");
                             }
                             Some(DeriveWsMessage::Subscription(payload))
-                                if payload.channel.as_str().ends_with(".balances") =>
+                                if payload.channel.ends_with(".balances") =>
                             {
                                 let context = reconciliation.clone();
                                 let task_cancellation = cancellation.clone();
@@ -779,9 +779,7 @@ impl ExecutionClient for DeriveExecutionClient {
                 .get_open_orders(&DeriveGetOpenOrdersParams::new(subaccount_id))
                 .await?
                 .orders;
-            let mut found = open_orders
-                .into_iter()
-                .find(|o| o.label.as_str() == label.as_str());
+            let mut found = open_orders.into_iter().find(|o| o.label == label.as_str());
 
             if found.is_none() {
                 let trigger_orders = self
@@ -791,7 +789,7 @@ impl ExecutionClient for DeriveExecutionClient {
                     .orders;
                 found = trigger_orders
                     .into_iter()
-                    .find(|o| o.label.as_str() == label.as_str());
+                    .find(|o| o.label == label.as_str());
             }
 
             if found.is_none() {
@@ -813,7 +811,7 @@ impl ExecutionClient for DeriveExecutionClient {
                     let total_pages = result.pagination.num_pages;
 
                     for order in result.orders {
-                        if order.label.as_str() == label.as_str() {
+                        if order.label == label.as_str() {
                             found = Some(order);
                             break 'history;
                         }
@@ -833,8 +831,7 @@ impl ExecutionClient for DeriveExecutionClient {
         };
 
         if let Some(instrument_id) = cmd.instrument_id
-            && InstrumentId::new(Symbol::new(order.instrument_name.as_str()), *DERIVE_VENUE)
-                != instrument_id
+            && InstrumentId::new(Symbol::new(order.instrument_name), *DERIVE_VENUE) != instrument_id
         {
             log::warn!(
                 "Derive order {} is for {} but report requested {}",
@@ -1446,8 +1443,8 @@ impl ExecutionClient for DeriveExecutionClient {
                         }
                     };
                     let Some(trigger_order) = trigger_orders.into_iter().find(|order| {
-                        order.label.as_str() == client_order_id.as_str()
-                            && order.instrument_name.as_str() == venue_symbol
+                        order.label == client_order_id.as_str()
+                            && order.instrument_name == venue_symbol
                     }) else {
                         let reason = "trigger order not found for client_order_id";
                         log::warn!("Cannot cancel trigger order {client_order_id}: {reason}");
@@ -2116,7 +2113,7 @@ impl DeriveReconciliationContext {
             .into_iter()
             .filter(|order| {
                 cmd.instrument_id.is_none_or(|instrument_id| {
-                    InstrumentId::new(Symbol::new(order.instrument_name.as_str()), *DERIVE_VENUE)
+                    InstrumentId::new(Symbol::new(order.instrument_name), *DERIVE_VENUE)
                         == instrument_id
                 })
             })
@@ -2246,7 +2243,7 @@ impl DeriveReconciliationContext {
         let mut instruments = AHashSet::with_capacity(positions.len());
 
         for position in positions {
-            let instrument_id = format_instrument_id(position.instrument_name.as_str());
+            let instrument_id = format_instrument_id(position.instrument_name);
             if let Some(target) = cmd.instrument_id
                 && instrument_id != target
             {
@@ -2431,7 +2428,7 @@ fn ambiguous_history_client_order_ids(orders: &[DeriveOrder]) -> AHashSet<Client
             };
 
         if !is_linear_chain {
-            ambiguous_client_order_ids.insert(ClientOrderId::new(label.as_str()));
+            ambiguous_client_order_ids.insert(ClientOrderId::new(label));
         }
     }
 
@@ -2515,8 +2512,8 @@ fn handle_ws_message(
         | DeriveWsMessage::SessionRecoveryFailed(_) => return,
     };
 
-    let is_orders_channel = payload.channel.as_str().ends_with(".orders");
-    let is_trades_channel = payload.channel.as_str().ends_with(".trades");
+    let is_orders_channel = payload.channel.ends_with(".orders");
+    let is_trades_channel = payload.channel.ends_with(".trades");
 
     if is_orders_channel {
         let data = match serde_json::from_str::<DeriveOrdersSubscriptionData>(payload.data.get()) {
@@ -3352,7 +3349,7 @@ mod tests {
         if let ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) = event {
             assert_eq!(rejected.client_order_id, client_order_id);
             assert_eq!(
-                rejected.reason.as_str(),
+                rejected.reason,
                 "nonce allocation failed: system clock is before UNIX epoch",
             );
         } else {
@@ -3386,7 +3383,7 @@ mod tests {
             assert_eq!(rejected.client_order_id, client_order_id);
             assert_eq!(rejected.venue_order_id, Some(venue_order_id));
             assert_eq!(
-                rejected.reason.as_str(),
+                rejected.reason,
                 "nonce allocation failed: system clock is before UNIX epoch",
             );
         } else {
@@ -3482,7 +3479,7 @@ mod tests {
     fn test_cache_instrument_registers_report_precision() {
         let client = DeriveExecutionClient::new(test_core(), test_config()).unwrap();
         let instrument = sample_derive_instrument();
-        let instrument_id = format_instrument_id(instrument.instrument_name.as_str());
+        let instrument_id = format_instrument_id(instrument.instrument_name);
 
         client.cache_instrument(instrument);
 

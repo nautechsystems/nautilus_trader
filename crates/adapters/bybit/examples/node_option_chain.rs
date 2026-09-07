@@ -131,7 +131,7 @@ impl DataActor for OptionChainTester {
         // Prefer USDT-settled (Bybit BTC options default); fall back to any available settlement
         let settlement_currency = options
             .iter()
-            .find(|(_, _, settlement, exp)| *exp == nearest_expiry && settlement.as_str() == "USDT")
+            .find(|(_, _, settlement, exp)| *exp == nearest_expiry && settlement == "USDT")
             .map_or_else(
                 || {
                     options

@@ -2271,7 +2271,6 @@ pub trait Strategy: DataActor {
     {
         let timer_name = event.name;
         let Some(client_order_id) = timer_name
-            .as_str()
             .strip_prefix("GTD-EXPIRY:")
             .and_then(|value| ClientOrderId::new_checked(value).ok())
         else {
@@ -2354,7 +2353,6 @@ where
         let core = StrategyNative::strategy_core(strategy);
         let gtd_order_id = event
             .name
-            .as_str()
             .strip_prefix("GTD-EXPIRY:")
             .and_then(|value| ClientOrderId::new_checked(value).ok())
             .filter(|client_order_id| core.gtd_timers.get(client_order_id) == Some(&event.name));
@@ -5879,7 +5877,7 @@ mod tests {
         let strategy = TestStrategy::new(config);
 
         assert_eq!(
-            strategy.core.market_exit_timer_name.as_str(),
+            strategy.core.market_exit_timer_name,
             "MARKET_EXIT_CHECK:MY-STRATEGY-001"
         );
     }

@@ -6133,7 +6133,7 @@ impl OrderMatchingEngine {
             .account_id()
             .unwrap_or(self.account_ids.get(&order.trader_id()).unwrap().to_owned());
 
-        let due_post_only = reason.as_str().starts_with("POST_ONLY");
+        let due_post_only = reason.starts_with("POST_ONLY");
 
         OrderEventAny::Rejected(OrderRejected::new(
             order.trader_id(),
@@ -6635,7 +6635,7 @@ mod tests {
             panic!("Expected OrderRejected, was {:?}", events[0]);
         };
         assert_eq!(
-            rejected.reason.as_str(),
+            rejected.reason,
             "Reduce-only orders are not supported by this matching engine"
         );
     }

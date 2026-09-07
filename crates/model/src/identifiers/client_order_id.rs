@@ -110,7 +110,7 @@ impl Display for ClientOrderId {
 
 #[must_use]
 pub fn optional_ustr_to_vec_client_order_ids(value: Option<Ustr>) -> Option<Vec<ClientOrderId>> {
-    value.map(|ids| ids.as_str().split(',').map(ClientOrderId::new).collect())
+    value.map(|ids| ids.split(',').map(ClientOrderId::new).collect())
 }
 
 #[must_use]

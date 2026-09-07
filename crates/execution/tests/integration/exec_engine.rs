@@ -1176,12 +1176,12 @@ fn test_submit_order_denied_with_custom_position_id_under_netting(
     assert_eq!(cached_order.status(), OrderStatus::Denied);
     if let OrderEventAny::Denied(denied) = cached_order.last_event() {
         assert!(
-            denied.reason.as_str().starts_with("INVALID_POSITION_ID:"),
+            denied.reason.starts_with("INVALID_POSITION_ID:"),
             "Expected INVALID_POSITION_ID, was {}",
             denied.reason,
         );
         assert!(
-            denied.reason.as_str().contains("not valid for NETTING OMS"),
+            denied.reason.contains("not valid for NETTING OMS"),
             "Expected NETTING OMS detail, was {}",
             denied.reason,
         );
@@ -1298,12 +1298,12 @@ fn test_submit_order_list_denied_with_custom_position_id_under_netting(
         assert_eq!(cached.status(), OrderStatus::Denied);
         if let OrderEventAny::Denied(denied) = cached.last_event() {
             assert!(
-                denied.reason.as_str().starts_with("INVALID_POSITION_ID:"),
+                denied.reason.starts_with("INVALID_POSITION_ID:"),
                 "Expected INVALID_POSITION_ID, was {}",
                 denied.reason,
             );
             assert!(
-                denied.reason.as_str().contains("not valid for NETTING OMS"),
+                denied.reason.contains("not valid for NETTING OMS"),
                 "Expected NETTING OMS detail, was {}",
                 denied.reason,
             );
@@ -1416,15 +1416,12 @@ fn test_submit_order_list_denies_mixed_instruments_with_position_id_regardless_o
 
         if let OrderEventAny::Denied(denied) = cached.last_event() {
             assert!(
-                denied.reason.as_str().starts_with("INVALID_POSITION_ID:"),
+                denied.reason.starts_with("INVALID_POSITION_ID:"),
                 "Expected INVALID_POSITION_ID, was {}",
                 denied.reason,
             );
             assert!(
-                denied
-                    .reason
-                    .as_str()
-                    .contains("mixed-instrument order list"),
+                denied.reason.contains("mixed-instrument order list"),
                 "Expected mixed-instrument detail, was {}",
                 denied.reason,
             );
@@ -1798,12 +1795,12 @@ fn test_submit_order_list_with_terminal_leg_reconstructs_and_denies_missing_elig
     let OrderEventAny::Denied(denied) = eligible.last_event() else {
         panic!("Expected eligible sibling to be denied");
     };
-    assert_eq!(denied.reason.as_str(), "ORDER_LIST_DENIED: L-STALE");
+    assert_eq!(denied.reason, "ORDER_LIST_DENIED: L-STALE");
     assert_eq!(terminal.status(), OrderStatus::Denied);
     let OrderEventAny::Denied(denied) = terminal.last_event() else {
         panic!("Expected terminal order to retain its denial");
     };
-    assert_eq!(denied.reason.as_str(), "ALREADY_TERMINAL");
+    assert_eq!(denied.reason, "ALREADY_TERMINAL");
     assert!(submitted_order_ids.borrow().is_empty());
 }
 
@@ -4425,7 +4422,7 @@ fn test_submit_order_denies_when_client_does_not_handle_instrument_venue(
     assert_eq!(cached_order.status(), OrderStatus::Denied);
     if let OrderEventAny::Denied(denied) = cached_order.last_event() {
         assert_eq!(
-            denied.reason.as_str(),
+            denied.reason,
             "CLIENT_VENUE_MISMATCH: client_id=IB, order_venue=XCME, client_venue=IB",
         );
     } else {
@@ -4526,7 +4523,7 @@ fn test_submit_order_list_denies_when_client_does_not_handle_instrument_venue(
         assert_eq!(cached_order.status(), OrderStatus::Denied);
         if let OrderEventAny::Denied(denied) = cached_order.last_event() {
             assert_eq!(
-                denied.reason.as_str(),
+                denied.reason,
                 "CLIENT_VENUE_MISMATCH: client_id=IB, order_venue=XCME, client_venue=IB",
             );
         } else {
@@ -4746,7 +4743,7 @@ fn test_submit_order_denies_when_client_submit_fails(mut execution_engine: Execu
         .expect("Order should be retrievable from cache");
     assert_eq!(cached_order.status(), OrderStatus::Denied);
     if let OrderEventAny::Denied(denied) = cached_order.last_event() {
-        assert_eq!(denied.reason.as_str(), "SUBMIT_FAILED: transport closed");
+        assert_eq!(denied.reason, "SUBMIT_FAILED: transport closed");
     } else {
         panic!("Expected OrderDenied event");
     }
@@ -15767,7 +15764,7 @@ fn test_submit_order_list_denies_when_client_submit_fails(mut execution_engine: 
             .expect("Order should be retrievable from cache");
         assert_eq!(cached_order.status(), OrderStatus::Denied);
         if let OrderEventAny::Denied(denied) = cached_order.last_event() {
-            assert_eq!(denied.reason.as_str(), "SUBMIT_FAILED: transport closed");
+            assert_eq!(denied.reason, "SUBMIT_FAILED: transport closed");
         } else {
             panic!("Expected OrderDenied event");
         }
@@ -15857,7 +15854,7 @@ fn test_submit_order_list_denies_cached_orders_when_missing_order_has_no_init(
 
     assert_eq!(cached_entry.status(), OrderStatus::Denied);
     if let OrderEventAny::Denied(denied) = cached_entry.last_event() {
-        assert_eq!(denied.reason.as_str(), "ORDER_LIST_INCOMPLETE: 1",);
+        assert_eq!(denied.reason, "ORDER_LIST_INCOMPLETE: 1",);
     } else {
         panic!("Expected OrderDenied event");
     }
@@ -15995,7 +15992,7 @@ fn test_submit_order_with_no_client_denies_order(execution_engine: ExecutionEngi
     assert_eq!(cached_order.status(), OrderStatus::Denied);
     if let OrderEventAny::Denied(denied) = cached_order.last_event() {
         assert_eq!(
-            denied.reason.as_str(),
+            denied.reason,
             "NO_EXECUTION_CLIENT: client_id=NONE, venue=SIM",
         );
     } else {
@@ -16110,7 +16107,7 @@ fn test_submit_order_list_with_no_client_denies_all_orders(execution_engine: Exe
     for cached in [cached_entry, cached_stop] {
         if let OrderEventAny::Denied(denied) = cached.last_event() {
             assert_eq!(
-                denied.reason.as_str(),
+                denied.reason,
                 "NO_EXECUTION_CLIENT: client_id=NONE, venue=SIM",
             );
         } else {

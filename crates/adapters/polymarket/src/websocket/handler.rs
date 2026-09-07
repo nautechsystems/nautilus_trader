@@ -1119,14 +1119,14 @@ mod tests {
             panic!("Expected first message to be a price change");
         };
         assert_eq!(
-            quotes.market.as_str(),
+            quotes.market,
             "0x1111111111111111111111111111111111111111111111111111111111111111"
         );
         assert_eq!(quotes.timestamp, "1700000000001");
         assert_eq!(quotes.price_changes.len(), 1);
 
         let quote = &quotes.price_changes[0];
-        assert_eq!(quote.asset_id.as_str(), "101");
+        assert_eq!(quote.asset_id, "101");
         assert_eq!(quote.price, "0.37");
         assert_eq!(quote.side, PolymarketOrderSide::Buy);
         assert_eq!(quote.size, "12.5");
@@ -1139,10 +1139,10 @@ mod tests {
             panic!("Expected second message to be a last trade price");
         };
         assert_eq!(
-            trade.market.as_str(),
+            trade.market,
             "0x2222222222222222222222222222222222222222222222222222222222222222"
         );
-        assert_eq!(trade.asset_id.as_str(), "202");
+        assert_eq!(trade.asset_id, "202");
         assert_eq!(trade.fee_rate_bps, "17");
         assert_eq!(trade.price, "0.63");
         assert_eq!(trade.side, PolymarketOrderSide::Sell);
@@ -1164,11 +1164,11 @@ mod tests {
             panic!("Expected a last trade price");
         };
         assert_eq!(
-            trade.market.as_str(),
+            trade.market,
             "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917"
         );
         assert_eq!(
-            trade.asset_id.as_str(),
+            trade.asset_id,
             "71321045679252212594626385532706912750332728571942532289631379312455583992563"
         );
         assert_eq!(trade.fee_rate_bps, "0");

@@ -761,7 +761,7 @@ async fn test_cancel_order_instruction_failure_emits_rejected() {
     match event {
         ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) => {
             assert_eq!(rejected.client_order_id, ClientOrderId::from("O-002"));
-            assert_eq!(rejected.reason.as_str(), "ErrorInOrder");
+            assert_eq!(rejected.reason, "ErrorInOrder");
         }
         other => panic!("Expected CancelRejected event, found: {other:?}"),
     }
@@ -811,7 +811,7 @@ async fn test_cancel_order_definitive_result_failure_without_instructions_emits_
     while let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(500), rx.recv()).await {
         if let ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) = event {
             assert_eq!(rejected.client_order_id, ClientOrderId::from("O-003"));
-            assert!(rejected.reason.as_str().contains("MarketSuspended"));
+            assert!(rejected.reason.contains("MarketSuspended"));
             rejected_count += 1;
         }
     }
@@ -1633,7 +1633,7 @@ async fn test_submit_order_error_emits_rejected() {
                 rejected.client_order_id,
                 ClientOrderId::from("O-SUBMIT-002")
             );
-            assert_eq!(rejected.reason.as_str(), "ErrorInOrder");
+            assert_eq!(rejected.reason, "ErrorInOrder");
         }
         other => panic!("Expected OrderRejected event, found: {other:?}"),
     }
@@ -1693,7 +1693,6 @@ async fn test_modify_order_price_and_quantity_rejects() {
             assert!(
                 rejected
                     .reason
-                    .as_str()
                     .contains("cannot modify price and quantity simultaneously"),
                 "Expected simultaneous modify reason, found: {}",
                 rejected.reason,
@@ -1755,7 +1754,7 @@ async fn test_modify_order_no_effective_change_rejects() {
         ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) => {
             assert_eq!(rejected.client_order_id, ClientOrderId::from("O-MOD-002"));
             assert!(
-                rejected.reason.as_str().contains("no effective change"),
+                rejected.reason.contains("no effective change"),
                 "Expected no effective change reason, found: {}",
                 rejected.reason,
             );
@@ -2871,7 +2870,7 @@ async fn test_submit_order_denies_active_customer_order_ref_collision() {
     };
     assert_eq!(denied.client_order_id, ClientOrderId::from(colliding_id));
     assert_eq!(
-        denied.reason.as_str(),
+        denied.reason,
         OrderDeniedReason::ValidationFailed {
             detail: format!("customerOrderRef {suffix} collides with another tracked order"),
         }
@@ -5155,7 +5154,7 @@ async fn test_modify_order_quantity_increase_rejects() {
         ExecutionEvent::Order(OrderEventAny::ModifyRejected(rej)) => {
             assert_eq!(rej.client_order_id, ClientOrderId::from("O-MOD-INC"));
             assert!(
-                rej.reason.as_str().contains("can only reduce quantity"),
+                rej.reason.contains("can only reduce quantity"),
                 "expected reduce-only reason, was: {}",
                 rej.reason,
             );
@@ -5641,7 +5640,7 @@ async fn test_startup_restored_ambiguous_replace_rejects_when_old_bet_stays_acti
         Some(VenueOrderId::from(old_bet_id))
     );
     assert_eq!(
-        rejected.reason.as_str(),
+        rejected.reason,
         "Original bet remained executable after ambiguous replace",
     );
     assert!(rejected.reconciliation);
@@ -6090,7 +6089,7 @@ async fn test_modify_price_instruction_failure_rejects() {
         rejections[0].venue_order_id,
         Some(VenueOrderId::from(venue_order_id))
     );
-    assert_eq!(rejections[0].reason.as_str(), "InvalidOdds");
+    assert_eq!(rejections[0].reason, "InvalidOdds");
     assert_eq!(betting_method_count(&state, METHOD_REPLACE_ORDERS), 1);
 
     client.disconnect().await.unwrap();
@@ -6166,7 +6165,7 @@ async fn test_modify_quantity_instruction_failure_rejects() {
         rejections[0].venue_order_id,
         Some(VenueOrderId::from(venue_order_id))
     );
-    assert_eq!(rejections[0].reason.as_str(), "ErrorInOrder");
+    assert_eq!(rejections[0].reason, "ErrorInOrder");
     assert_eq!(betting_method_count(&state, METHOD_CANCEL_ORDERS), 1);
 
     client.disconnect().await.unwrap();
@@ -7640,7 +7639,7 @@ async fn stream_reconciling_denials(
         if let Ok(Some(ExecutionEvent::Order(OrderEventAny::Denied(event)))) =
             tokio::time::timeout(Duration::from_millis(250), rx.recv()).await
         {
-            assert_eq!(event.reason.as_str(), expected_reason);
+            assert_eq!(event.reason, expected_reason);
             denied.push(event.client_order_id);
         }
     }
@@ -8952,7 +8951,7 @@ async fn test_submit_order_list_denied_during_reconciliation() {
         match tokio::time::timeout(Duration::from_millis(500), rx.recv()).await {
             Ok(Some(ExecutionEvent::Order(OrderEventAny::Denied(denied)))) => {
                 assert!(
-                    denied.reason.as_str().contains("STREAM_RECONCILING"),
+                    denied.reason.contains("STREAM_RECONCILING"),
                     "expected STREAM_RECONCILING reason, found: {}",
                     denied.reason,
                 );
@@ -9146,7 +9145,7 @@ async fn test_cancel_allowed_during_reconciliation() {
     while let Ok(event) = rx.try_recv() {
         if let ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) = event {
             assert!(
-                !rejected.reason.as_str().contains("STREAM_RECONCILING"),
+                !rejected.reason.contains("STREAM_RECONCILING"),
                 "Cancel must not be denied with STREAM_RECONCILING during reconciliation",
             );
         }

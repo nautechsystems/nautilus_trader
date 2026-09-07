@@ -5142,7 +5142,7 @@ async fn test_inflight_order_generates_rejection_after_max_retries() {
 
     if let OrderEventAny::Rejected(rejected) = &result.events[0] {
         assert_eq!(rejected.client_order_id, client_order_id);
-        assert_eq!(rejected.reason.as_str(), "INFLIGHT_TIMEOUT");
+        assert_eq!(rejected.reason, "INFLIGHT_TIMEOUT");
     }
 }
 
@@ -12522,7 +12522,7 @@ async fn test_check_open_orders_submitted_missing_at_venue_generates_rejected() 
     assert_eq!(events.len(), 1);
     if let OrderEventAny::Rejected(rejected) = &events[0] {
         assert_eq!(rejected.client_order_id, ClientOrderId::from("O-001"));
-        assert_eq!(rejected.reason.as_str(), "NOT_FOUND_AT_VENUE");
+        assert_eq!(rejected.reason, "NOT_FOUND_AT_VENUE");
     } else {
         panic!("Expected OrderRejected event, was {:?}", events[0]);
     }

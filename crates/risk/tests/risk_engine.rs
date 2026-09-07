@@ -4508,7 +4508,6 @@ fn test_submit_order_when_notional_is_unrepresentable_then_denies(
         saved[0]
             .message()
             .unwrap()
-            .as_str()
             .starts_with("NOTIONAL_CALCULATION_FAILED:")
     );
 }
@@ -5352,8 +5351,7 @@ fn test_submit_order_list_denies_when_non_representative_instrument_missing(
         assert_eq!(event.event_type(), OrderEventType::Denied);
         let msg = event.message().unwrap();
         assert!(
-            msg.as_str().contains("INSTRUMENT_NOT_FOUND")
-                && msg.as_str().contains(&instrument_b.id().to_string()),
+            msg.contains("INSTRUMENT_NOT_FOUND") && msg.contains(&instrument_b.id().to_string()),
             "unexpected denial reason: {msg}",
         );
     }
@@ -6650,7 +6648,6 @@ fn test_submit_order_when_betting_back_order_liability_exceeds_free_balance_then
             .unwrap()
             .message()
             .unwrap()
-            .as_str()
             .contains("NOTIONAL_EXCEEDS_FREE_BALANCE")
     );
 }
@@ -8193,7 +8190,6 @@ fn test_submit_order_when_initial_margin_is_unrepresentable_then_denies(
         saved[0]
             .message()
             .unwrap()
-            .as_str()
             .starts_with("INITIAL_MARGIN_CALCULATION_FAILED:")
     );
 }
@@ -9197,7 +9193,7 @@ fn test_submit_order_list_when_reducing_denies_every_order(
     let denial_messages: Vec<String> = saved
         .iter()
         .filter(|e| e.event_type() == OrderEventType::Denied)
-        .filter_map(|e| e.message().map(|m| m.as_str().to_string()))
+        .filter_map(|e| e.message().map(|m| m.to_string()))
         .collect();
     assert_eq!(denial_messages.len(), 2);
     assert!(

@@ -2716,7 +2716,7 @@ async fn test_submit_order_list_denies_all_orders_when_reduce_only_is_present() 
             panic!("Expected OrderDenied, was {event:?}");
         };
         assert_eq!(denied.client_order_id, client_order_id);
-        assert_eq!(denied.reason.as_str(), "UNSUPPORTED_REDUCE_ONLY");
+        assert_eq!(denied.reason, "UNSUPPORTED_REDUCE_ONLY");
     }
     assert!(rx.try_recv().is_err());
     assert_eq!(request_count.load(Ordering::Relaxed), 0);
@@ -3119,12 +3119,7 @@ async fn test_explicit_venue_submit_rejection_emits_order_rejected() {
     {
         ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
-            assert!(
-                event
-                    .reason
-                    .as_str()
-                    .contains("Order would immediately match")
-            );
+            assert!(event.reason.contains("Order would immediately match"));
         }
         other => panic!("Expected Rejected event, was {other:?}"),
     }
@@ -3153,7 +3148,7 @@ async fn test_submit_order_denies_reduce_only() {
         panic!("Expected OrderDenied, was {event:?}");
     };
     assert_eq!(denied.client_order_id, client_order_id);
-    assert_eq!(denied.reason.as_str(), "UNSUPPORTED_REDUCE_ONLY");
+    assert_eq!(denied.reason, "UNSUPPORTED_REDUCE_ONLY");
     assert!(rx.try_recv().is_err());
     assert_eq!(request_count.load(Ordering::Relaxed), 0);
 }
@@ -3188,7 +3183,7 @@ async fn test_local_submit_failure_emits_order_rejected() {
         ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
             assert_eq!(
-                event.reason.as_str(),
+                event.reason,
                 "submit-order-error: Validation error: Instrument ETHUSDT not in cache",
             );
         }
@@ -3257,7 +3252,7 @@ async fn test_explicit_venue_cancel_rejection_emits_cancel_rejected() {
     {
         ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
-            assert!(event.reason.as_str().contains("Unknown order sent"));
+            assert!(event.reason.contains("Unknown order sent"));
         }
         other => panic!("Expected CancelRejected event, was {other:?}"),
     }
@@ -3385,12 +3380,7 @@ async fn test_explicit_venue_modify_rejection_emits_modify_rejected() {
     {
         ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
-            assert!(
-                event
-                    .reason
-                    .as_str()
-                    .contains("Cancel replace order failed")
-            );
+            assert!(event.reason.contains("Cancel replace order failed"));
         }
         other => panic!("Expected ModifyRejected event, was {other:?}"),
     }
@@ -3434,7 +3424,7 @@ async fn test_local_modify_failure_emits_modify_rejected() {
     {
         ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
-            assert!(event.reason.as_str().contains("venue_order_id required"));
+            assert!(event.reason.contains("venue_order_id required"));
         }
         other => panic!("Expected ModifyRejected event, was {other:?}"),
     }
@@ -3498,8 +3488,8 @@ async fn test_per_order_batch_cancel_rejection_emits_cancel_rejected() {
     {
         ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
-            assert!(event.reason.as_str().contains("code=-2011"));
-            assert!(event.reason.as_str().contains("Unknown order sent"));
+            assert!(event.reason.contains("code=-2011"));
+            assert!(event.reason.contains("Unknown order sent"));
         }
         other => panic!("Expected CancelRejected event, was {other:?}"),
     }

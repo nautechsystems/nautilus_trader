@@ -1094,7 +1094,7 @@ pub fn parse_ws_position_status_report(
 /// Returns an error if `AccountBalance::from_total_and_locked` rejects
 /// the computed values.
 pub fn account_balance_from_lighter_asset(asset: &LighterAsset) -> anyhow::Result<AccountBalance> {
-    let currency = Currency::get_or_create_crypto(asset.symbol.as_str());
+    let currency = Currency::get_or_create_crypto(asset.symbol);
     let total = asset.balance + asset.margin_balance;
     let locked = asset.locked_balance;
     AccountBalance::from_total_and_locked(total, locked, currency)
@@ -3004,7 +3004,7 @@ mod tests {
         match event {
             ParsedOrderEvent::Rejected(e) => {
                 assert!(e.due_post_only);
-                assert_eq!(e.reason.as_str(), "post-only");
+                assert_eq!(e.reason, "post-only");
             }
             other => panic!("expected Rejected, was {other:?}"),
         }

@@ -2280,10 +2280,7 @@ mod tests {
 
         match receiver.try_recv().expect("expected rejected event") {
             ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
-                assert_eq!(
-                    event.reason.as_str(),
-                    "invalid post-only order: order crosses book"
-                );
+                assert_eq!(event.reason, "invalid post-only order: order crosses book");
                 assert!(event.due_post_only);
             }
             other => panic!("expected rejected event, was {other:?}"),
@@ -2942,7 +2939,7 @@ mod tests {
 
         match receiver.try_recv().expect("expected rejected event") {
             ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
-                assert_eq!(event.reason.as_str(), reason);
+                assert_eq!(event.reason, reason);
                 assert_eq!(event.due_post_only, expected_post_only);
             }
             other => panic!("expected rejected event, was {other:?}"),
@@ -2995,7 +2992,7 @@ mod tests {
 
         match receiver.try_recv().expect("expected rejected event") {
             ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
-                assert_eq!(event.reason.as_str(), reason);
+                assert_eq!(event.reason, reason);
                 assert_eq!(event.due_post_only, expected_post_only);
             }
             other => panic!("expected rejected event, was {other:?}"),
@@ -3032,7 +3029,7 @@ mod tests {
 
         match receiver.try_recv().expect("expected rejected event") {
             ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
-                assert_eq!(event.reason.as_str(), reason);
+                assert_eq!(event.reason, reason);
                 assert_eq!(event.due_post_only, expected_post_only);
             }
             other => panic!("expected rejected event, was {other:?}"),
@@ -3059,10 +3056,7 @@ mod tests {
 
         match receiver.try_recv().expect("expected rejected event") {
             ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
-                assert_eq!(
-                    event.reason.as_str(),
-                    "invalid post-only order: order crosses book"
-                );
+                assert_eq!(event.reason, "invalid post-only order: order crosses book");
                 assert!(event.due_post_only);
             }
             other => panic!("expected rejected event, was {other:?}"),

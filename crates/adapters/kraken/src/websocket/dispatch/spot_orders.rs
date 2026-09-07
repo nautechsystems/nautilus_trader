@@ -1200,7 +1200,7 @@ mod tests {
         match event {
             OrderEventAny::Rejected(e) => {
                 assert_eq!(e.client_order_id, cl_ord_id);
-                assert_eq!(e.reason.as_str(), "Insufficient funds");
+                assert_eq!(e.reason, "Insufficient funds");
             }
             other => panic!("expected Rejected, was {other:?}"),
         }
@@ -1371,7 +1371,7 @@ mod tests {
         match event {
             OrderEventAny::ModifyRejected(e) => {
                 assert_eq!(e.client_order_id, cl_ord_id);
-                assert_eq!(e.reason.as_str(), "Order not found");
+                assert_eq!(e.reason, "Order not found");
             }
             other => panic!("expected ModifyRejected, was {other:?}"),
         }
@@ -1408,7 +1408,7 @@ mod tests {
         match event {
             OrderEventAny::CancelRejected(e) => {
                 assert_eq!(e.client_order_id, cl_ord_id);
-                assert_eq!(e.reason.as_str(), "Unknown order");
+                assert_eq!(e.reason, "Unknown order");
             }
             other => panic!("expected CancelRejected, was {other:?}"),
         }
@@ -1536,7 +1536,7 @@ mod tests {
         match event {
             OrderEventAny::Rejected(e) => {
                 assert_eq!(e.client_order_id, cl_ord_id);
-                assert_eq!(e.reason.as_str(), "Insufficient funds");
+                assert_eq!(e.reason, "Insufficient funds");
             }
             other => panic!("expected Rejected, was {other:?}"),
         }
@@ -1648,7 +1648,7 @@ mod tests {
         match second {
             OrderEventAny::Rejected(e) => {
                 assert_eq!(e.client_order_id, cl_b);
-                assert_eq!(e.reason.as_str(), "Bad price");
+                assert_eq!(e.reason, "Bad price");
             }
             other => panic!("expected Rejected, was {other:?}"),
         }
@@ -1793,7 +1793,7 @@ mod tests {
                         "missing-leg rejection cl_ord_id mismatch",
                     );
                     assert!(
-                        e.reason.as_str().contains("missing per-leg result"),
+                        e.reason.contains("missing per-leg result"),
                         "expected truncation reason, was {}",
                         e.reason,
                     );

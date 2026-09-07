@@ -1531,7 +1531,7 @@ mod tests {
         let usdc = account_state
             .balances
             .iter()
-            .find(|b| b.currency.code.as_str() == "USDC")
+            .find(|b| b.currency.code == "USDC")
             .expect("USDC balance emitted");
         assert_eq!(usdc.total.as_decimal(), dec!(10_000));
         assert_eq!(usdc.free.as_decimal(), dec!(7_500));
@@ -1540,7 +1540,7 @@ mod tests {
         let btc = account_state
             .balances
             .iter()
-            .find(|b| b.currency.code.as_str() == "BTC")
+            .find(|b| b.currency.code == "BTC")
             .expect("BTC balance emitted");
         assert_eq!(btc.total.as_decimal(), dec!(1.25));
         assert_eq!(btc.free.as_decimal(), dec!(1.0));

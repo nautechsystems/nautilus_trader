@@ -645,7 +645,7 @@ mod tests {
         );
         assert_eq!(binary.outcome, Some(Ustr::from("Up")));
         assert_eq!(binary.asset_class, AssetClass::Alternative);
-        assert_eq!(binary.currency.code.as_str(), "pUSD");
+        assert_eq!(binary.currency.code, "pUSD");
         assert_eq!(binary.price_precision, POLYMARKET_PRICE_PRECISION);
         assert_eq!(binary.size_precision, 6);
         assert_eq!(binary.price_increment(), Price::from("0.01"));

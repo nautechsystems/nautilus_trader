@@ -821,7 +821,7 @@ async fn test_explicit_venue_submit_rejection_emits_order_rejected() {
     {
         ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
-            assert!(event.reason.as_str().contains("post_only_reject"));
+            assert!(event.reason.contains("post_only_reject"));
         }
         other => panic!("Expected Rejected event, was {other:?}"),
     }
@@ -851,7 +851,7 @@ async fn test_local_submit_validation_failure_emits_order_rejected() {
     {
         ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
-            assert!(event.reason.as_str().contains("Unsupported time_in_force"));
+            assert!(event.reason.contains("Unsupported time_in_force"));
         }
         other => panic!("Expected Rejected event, was {other:?}"),
     }
@@ -991,7 +991,7 @@ async fn test_explicit_venue_cancel_rejection_emits_cancel_rejected() {
     {
         ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
-            assert!(event.reason.as_str().contains("order_not_found"));
+            assert!(event.reason.contains("order_not_found"));
         }
         other => panic!("Expected CancelRejected event, was {other:?}"),
     }
@@ -1140,7 +1140,7 @@ async fn test_explicit_venue_modify_rejection_emits_modify_rejected() {
     {
         ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
-            assert!(event.reason.as_str().contains("price_not_changed"));
+            assert!(event.reason.contains("price_not_changed"));
         }
         other => panic!("Expected ModifyRejected event, was {other:?}"),
     }
@@ -1169,7 +1169,7 @@ async fn test_local_modify_validation_failure_emits_modify_rejected() {
     {
         ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
-            assert!(event.reason.as_str().contains("venue_order_id required"));
+            assert!(event.reason.contains("venue_order_id required"));
         }
         other => panic!("Expected ModifyRejected event, was {other:?}"),
     }
@@ -1198,7 +1198,7 @@ async fn test_local_modify_missing_price_emits_modify_rejected() {
     {
         ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
-            assert!(event.reason.as_str().contains("price required"));
+            assert!(event.reason.contains("price required"));
         }
         other => panic!("Expected ModifyRejected event, was {other:?}"),
     }
@@ -1226,7 +1226,7 @@ async fn test_local_modify_missing_cached_order_emits_modify_rejected() {
     {
         ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
-            assert!(event.reason.as_str().contains("Order not found"));
+            assert!(event.reason.contains("Order not found"));
         }
         other => panic!("Expected ModifyRejected event, was {other:?}"),
     }

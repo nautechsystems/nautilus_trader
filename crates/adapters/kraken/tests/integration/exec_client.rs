@@ -1057,7 +1057,7 @@ async fn test_spot_local_submit_failure_emits_rejected_without_request() {
     {
         ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
-            assert!(event.reason.as_str().contains("not found"));
+            assert!(event.reason.contains("not found"));
         }
         other => panic!("Expected OrderRejected event, was {other:?}"),
     }
@@ -1111,7 +1111,7 @@ async fn test_spot_structured_submit_rejection_emits_rejected() {
     {
         ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
-            assert!(event.reason.as_str().contains("EOrder:Insufficient funds"));
+            assert!(event.reason.contains("EOrder:Insufficient funds"));
         }
         other => panic!("Expected OrderRejected event, was {other:?}"),
     }
@@ -1205,7 +1205,7 @@ async fn test_futures_structured_submit_rejection_emits_rejected() {
     {
         ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
-            assert!(event.reason.as_str().contains("insufficientAvailableFunds"));
+            assert!(event.reason.contains("insufficientAvailableFunds"));
         }
         other => panic!("Expected OrderRejected event, was {other:?}"),
     }
@@ -1288,7 +1288,7 @@ async fn test_futures_structured_modify_rejection_emits_modify_rejected() {
     {
         ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
-            assert!(event.reason.as_str().contains("notFound"));
+            assert!(event.reason.contains("notFound"));
         }
         other => panic!("Expected ModifyRejected event, was {other:?}"),
     }
@@ -1415,7 +1415,7 @@ async fn test_spot_mixed_batch_submit_rejects_only_affected_child() {
     {
         ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
             assert_eq!(event.client_order_id, rejected_id);
-            assert!(event.reason.as_str().contains("Insufficient funds"));
+            assert!(event.reason.contains("Insufficient funds"));
         }
         other => panic!("Expected OrderRejected event, was {other:?}"),
     }
@@ -1494,12 +1494,7 @@ async fn test_futures_failed_batch_chunk_rejects_only_unsent_tail() {
     {
         ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
             assert_eq!(event.client_order_id, unsent_id);
-            assert!(
-                event
-                    .reason
-                    .as_str()
-                    .contains("not sent after an earlier chunk")
-            );
+            assert!(event.reason.contains("not sent after an earlier chunk"));
         }
         other => panic!("Expected OrderRejected event, was {other:?}"),
     }
@@ -1546,7 +1541,7 @@ async fn test_futures_mixed_batch_submit_correlates_rejection_by_order_tag() {
     {
         ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
             assert_eq!(event.client_order_id, rejected_id);
-            assert!(event.reason.as_str().contains("insufficientAvailableFunds"));
+            assert!(event.reason.contains("insufficientAvailableFunds"));
         }
         other => panic!("Expected OrderRejected event, was {other:?}"),
     }
@@ -1714,7 +1709,7 @@ async fn test_spot_explicit_single_cancel_api_error_emits_cancel_rejected() {
     {
         ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
-            assert!(event.reason.as_str().contains("Unknown order"));
+            assert!(event.reason.contains("Unknown order"));
         }
         other => panic!("Expected CancelRejected event, was {other:?}"),
     }
@@ -1834,7 +1829,7 @@ async fn test_explicit_structured_single_cancel_rejection_emits_cancel_rejected(
     {
         ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
-            assert!(event.reason.as_str().contains("notFound"));
+            assert!(event.reason.contains("notFound"));
         }
         other => panic!("Expected CancelRejected event, was {other:?}"),
     }
@@ -1987,7 +1982,7 @@ async fn test_mixed_per_item_batch_cancel_result_rejects_only_failed_item() {
     {
         ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
             assert_eq!(event.client_order_id, reject_client_order_id);
-            assert!(event.reason.as_str().contains("notFound"));
+            assert!(event.reason.contains("notFound"));
         }
         other => panic!("Expected CancelRejected event, was {other:?}"),
     }

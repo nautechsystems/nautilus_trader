@@ -5194,6 +5194,6 @@ fn test_instrument_roundtrip_with_unregistered_base_currency() {
     let InstrumentAny::CryptoPerpetual(decoded) = &read[0] else {
         panic!("expected CryptoPerpetual");
     };
-    assert_eq!(decoded.base_currency.code.as_str(), unknown_code);
+    assert_eq!(decoded.base_currency.code, unknown_code);
     assert_eq!(decoded.base_currency.currency_type, CurrencyType::Crypto);
 }

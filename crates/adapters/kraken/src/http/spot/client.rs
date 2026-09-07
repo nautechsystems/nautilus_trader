@@ -1702,7 +1702,7 @@ impl KrakenSpotHttpClient {
                 let mut assets = IndexMap::new();
                 let mut fee_keys = AHashMap::with_capacity(pairs.len());
                 for (pair_name, definition) in pairs {
-                    let base = definition.base.as_str().strip_suffix('x').ok_or_else(|| {
+                    let base = definition.base.strip_suffix('x').ok_or_else(|| {
                         KrakenHttpError::ParseError(format!(
                             "Tokenized pair {pair_name} base {} is missing the x suffix",
                             definition.base

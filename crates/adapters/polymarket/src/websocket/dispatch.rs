@@ -1915,10 +1915,7 @@ mod tests {
 
         match receiver.try_recv().expect("expected rejected event") {
             ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
-                assert_eq!(
-                    event.reason.as_str(),
-                    "invalid post-only order: order crosses book"
-                );
+                assert_eq!(event.reason, "invalid post-only order: order crosses book");
                 assert!(event.due_post_only);
             }
             other => panic!("expected rejected event, was {other:?}"),
@@ -3366,7 +3363,7 @@ mod tests {
             ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) => {
                 assert_eq!(rejected.client_order_id, client_order_id);
                 assert_eq!(rejected.venue_order_id, Some(old_venue_order_id));
-                assert_eq!(rejected.reason.as_str(), "replacement rejected");
+                assert_eq!(rejected.reason, "replacement rejected");
             }
             other => panic!("expected modify rejection, was {other:?}"),
         }
@@ -4805,7 +4802,7 @@ mod tests {
 
                 if let OrderEventAny::Rejected(rejected) = order_event {
                     assert_eq!(
-                        rejected.reason.as_str(),
+                        rejected.reason,
                         "invalid post-only order: order crosses book"
                     );
                     assert!(rejected.due_post_only);

@@ -388,7 +388,7 @@ impl BinanceAccountInfo {
 
             match AccountBalance::from_total_and_locked(total, locked, currency) {
                 Ok(balance) => balances.push(balance),
-                Err(e) => log::warn!("Skipping spot balance for {}: {e}", currency.code.as_str()),
+                Err(e) => log::warn!("Skipping spot balance for {}: {e}", currency.code),
             }
         }
 

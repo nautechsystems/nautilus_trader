@@ -2974,7 +2974,7 @@ mod tests {
         assert_eq!(margins.len(), 1);
         let margin = &margins[0];
         assert!(margin.instrument_id.is_none());
-        assert_eq!(margin.currency.code.as_str(), "USD");
+        assert_eq!(margin.currency.code, "USD");
         assert_eq!(margin.initial.as_decimal(), dec!(500));
         assert_eq!(margin.maintenance.as_decimal(), dec!(250));
     }
