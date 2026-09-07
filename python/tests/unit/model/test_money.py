@@ -38,6 +38,13 @@ TST9 = Currency(
     name="Test 9dp",
     currency_type=CurrencyType.CRYPTO,
 )
+TST18 = Currency(
+    code="TST18",
+    precision=18,
+    iso4217=0,
+    name="Test 18dp",
+    currency_type=CurrencyType.CRYPTO,
+)
 
 
 def test_nan_raises() -> None:
@@ -648,6 +655,12 @@ def test_zero() -> None:
     m = Money.zero(USD)
     assert m.is_zero()
     assert str(m) == "0.00 USD"
+
+    m18 = Money.zero(TST18)
+    assert m18.raw == 0
+    assert m18.currency == TST18
+    assert m18.is_zero()
+    assert str(m18) == "0 TST18"
 
 
 def test_is_zero() -> None:

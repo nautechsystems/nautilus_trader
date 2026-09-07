@@ -1279,14 +1279,31 @@ def test_order_book_get_quantity_methods(audusd_id: InstrumentId) -> None:
 
 def test_order_book_get_quantity_at_level_rejects_invalid_precision(
     audusd_id: InstrumentId,
+    ask_order: BookOrder,
 ) -> None:
     """
-    Test order book quantity at level rejects invalid precision.
+    Test order book quantity at level rejects invalid precision when empty or populated.
     """
     book = OrderBook(instrument_id=audusd_id, book_type=BookType.L2_MBP)
+    error = "`precision` exceeded maximum `WEI_PRECISION` (18), was 255"
 
-    with pytest.raises(ValueError, match="precision"):
+    with pytest.raises(
+        ValueError,
+        match=r"`precision` exceeded maximum `WEI_PRECISION` \(18\), was 255",
+    ) as exc_info:
         book.get_quantity_at_level(Price.from_str("100.60"), OrderSide.BUY, 255)
+
+    assert str(exc_info.value) == error
+
+    book.add(ask_order, flags=0, sequence=1, ts_event=1)
+
+    with pytest.raises(
+        ValueError,
+        match=r"`precision` exceeded maximum `WEI_PRECISION` \(18\), was 255",
+    ) as exc_info:
+        book.get_quantity_at_level(Price.from_str("100.60"), OrderSide.BUY, 255)
+
+    assert str(exc_info.value) == error
 
 
 def test_order_book_get_quantity_at_level_rejects_aggregate_overflow(

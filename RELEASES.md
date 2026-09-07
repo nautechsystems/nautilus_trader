@@ -66,6 +66,8 @@ Released on TBD (UTC).
 - Fixed position commissions and realized PnL after fill-void replay
 - Fixed nanosecond precision loss when `TestDataProvider` parses timestamps
 - Fixed Python `OrderBook` aggregation to raise `ValueError` for invalid precision and quantity overflow
+- Fixed Python `Price` and `Quantity` `from_mantissa_exponent` methods to raise `ValueError` on invalid inputs
+- Fixed Python `Money.zero` aborting for valid currencies with 17 or 18 decimal precision
 - Fixed `BacktestNode.run_streaming()` loading all records when more than one data config was used (#4897), thanks @abhijeetvichare76
 - Fixed stale or terminal single and list order submissions reaching execution clients
 - Fixed TWD, 1INCH, CAKE, and SHIB currency lookup panics

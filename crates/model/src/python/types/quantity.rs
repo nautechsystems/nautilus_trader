@@ -495,8 +495,9 @@ impl Quantity {
     /// operations, making it ideal for exchange data that arrives as mantissa/exponent pairs.
     #[staticmethod]
     #[pyo3(name = "from_mantissa_exponent")]
-    fn py_from_mantissa_exponent(mantissa: u64, exponent: i8, precision: u8) -> Self {
-        Self::from_mantissa_exponent(mantissa, exponent, precision)
+    fn py_from_mantissa_exponent(mantissa: u64, exponent: i8, precision: u8) -> PyResult<Self> {
+        Self::from_mantissa_exponent_checked(mantissa, exponent, precision)
+            .map_err(correctness_error_to_pyvalue_err)
     }
 
     /// Returns `true` if the value of this instance is zero.
@@ -610,6 +611,43 @@ mod tests {
             assert_eq!(
                 error.to_string(),
                 format!("ValueError: raw value {raw} exceeds QUANTITY_RAW_MAX={QUANTITY_RAW_MAX}")
+            );
+        });
+    }
+
+    #[rstest]
+    fn test_py_from_mantissa_exponent_handles_precision_and_overflow() {
+        Python::initialize();
+        Python::attach(|_| {
+            #[cfg(feature = "defi")]
+            let max_precision = crate::defi::WEI_PRECISION;
+            #[cfg(not(feature = "defi"))]
+            let max_precision = FIXED_PRECISION;
+
+            let exponent = -i8::try_from(max_precision).unwrap();
+            let quantity = Quantity::py_from_mantissa_exponent(1, exponent, max_precision).unwrap();
+            let invalid_precision = max_precision + 1;
+            let precision_error =
+                Quantity::py_from_mantissa_exponent(1, 0, invalid_precision).unwrap_err();
+            let overflow_error = Quantity::py_from_mantissa_exponent(u64::MAX, 100, 0).unwrap_err();
+            let precision_name = if cfg!(feature = "defi") {
+                "WEI_PRECISION"
+            } else {
+                "FIXED_PRECISION"
+            };
+
+            assert_eq!(quantity.raw, 1);
+            assert_eq!(quantity.precision, max_precision);
+            assert_eq!(
+                precision_error.to_string(),
+                format!(
+                    "ValueError: `precision` exceeded maximum `{precision_name}` ({max_precision}), was {invalid_precision}"
+                )
+            );
+            assert_eq!(
+                overflow_error.to_string(),
+                "ValueError: Overflow in Quantity::from_mantissa_exponent \
+                 (mantissa=18446744073709551615, exponent=100, precision=0)"
             );
         });
     }
