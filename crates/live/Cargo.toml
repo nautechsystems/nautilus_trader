@@ -67,6 +67,12 @@ simulation = [
   "nautilus-common/simulation",
   "nautilus-execution/simulation",
 ]
+test-support = [
+  "dep:nautilus-portfolio",
+  "dep:nautilus-risk",
+  "dep:nautilus-testkit",
+  "dep:nautilus-trading",
+]
 
 [package.metadata.cargo-machete]
 ignored = [

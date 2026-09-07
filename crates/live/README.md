@@ -40,6 +40,7 @@ This crate provides feature flags to control source code inclusion during compil
   [MadSim](https://crates.io/crates/madsim).
 - `streaming`: Enables the `nautilus-persistence` dependency for streaming configuration and
   requires `node`.
+- `test-support`: Enables shared execution harnesses for adapter integration tests.
 
 ## Documentation
 

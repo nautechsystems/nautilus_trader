@@ -31,7 +31,7 @@ use nautilus_common::{actor::DataActor, cache::Cache};
 use nautilus_model::{
     enums::OrderStatus,
     events::OrderEventAny,
-    identifiers::{TradeId, VenueOrderId},
+    identifiers::{StrategyId, TradeId, VenueOrderId},
     orders::{Order, OrderAny},
     types::{Price, Quantity},
 };
@@ -136,15 +136,15 @@ fn event_count(order: &OrderAny, predicate: impl Fn(&OrderEventAny) -> bool) -> 
 async fn harness_builds_and_connects() {
     let h = harness::Harness::build().await;
 
-    assert!(h.exec_engine.borrow().get_client(&h.client_id()).is_some());
-    assert!(h.cache.borrow().instrument(&h.instrument_id).is_some());
+    h.assert_engine_ready();
+    assert!(h.cache().borrow().instrument(&h.instrument_id()).is_some());
 }
 
 #[rstest]
 #[tokio::test]
 async fn submit_routes_to_accepted_in_cache() {
     let mut h = harness::Harness::build().await;
-    let order = harness::limit_order(&h.instrument_id, "O-1");
+    let order = harness::limit_order(&h.instrument_id(), "O-1");
 
     h.submit_via_risk(&order);
     let accepted = h
@@ -154,9 +154,9 @@ async fn submit_routes_to_accepted_in_cache() {
         .await;
 
     assert!(accepted, "order did not reach Accepted via routed events");
-    harness::invariants::assert_tracked_used_events(&h.routed);
+    harness::invariants::assert_tracked_used_events(h.routed());
     harness::invariants::assert_order_status(
-        &h.cache.borrow(),
+        &h.cache().borrow(),
         &order.client_order_id(),
         OrderStatus::Accepted,
     );
@@ -166,7 +166,7 @@ async fn submit_routes_to_accepted_in_cache() {
 #[tokio::test]
 async fn submit_apply_then_lost_response_resolves_from_ocm() {
     let mut h = harness::Harness::build().await;
-    let order = harness::limit_order(&h.instrument_id, "O-1");
+    let order = harness::limit_order(&h.instrument_id(), "O-1");
     h.mock_state
         .betting_apply_then_status_one_shot_overrides
         .lock()
@@ -183,12 +183,12 @@ async fn submit_apply_then_lost_response_resolves_from_ocm() {
     let request_ref = assert_applied_once_with_identical_retry(&h.mock_state, METHOD_PLACE_ORDERS);
     assert!(!request_ref.is_empty());
     harness::invariants::assert_order_status(
-        &h.cache.borrow(),
+        &h.cache().borrow(),
         &order.client_order_id(),
         OrderStatus::Submitted,
     );
     let submitted = h
-        .cache
+        .cache()
         .borrow()
         .order(&order.client_order_id())
         .unwrap()
@@ -225,7 +225,7 @@ async fn submit_apply_then_lost_response_resolves_from_ocm() {
     h.pump_for(Duration::from_millis(300)).await;
 
     let accepted_order = h
-        .cache
+        .cache()
         .borrow()
         .order(&order.client_order_id())
         .unwrap()
@@ -249,8 +249,8 @@ async fn submit_apply_then_lost_response_resolves_from_ocm() {
         Some(VenueOrderId::from("228302937743")),
     );
     harness::invariants::assert_in_own_book(
-        &h.cache.borrow(),
-        &h.instrument_id,
+        &h.cache().borrow(),
+        &h.instrument_id(),
         &order.client_order_id(),
         true,
     );
@@ -260,7 +260,7 @@ async fn submit_apply_then_lost_response_resolves_from_ocm() {
 #[tokio::test]
 async fn cancel_apply_then_lost_response_resolves_from_ocm() {
     let mut h = harness::Harness::build().await;
-    let order = harness::limit_order(&h.instrument_id, "O-1");
+    let order = harness::limit_order(&h.instrument_id(), "O-1");
 
     h.submit_via_risk(&order);
     let accepted = h
@@ -295,12 +295,12 @@ async fn cancel_apply_then_lost_response_resolves_from_ocm() {
     let cancel_ref = assert_applied_once_with_identical_retry(&h.mock_state, METHOD_CANCEL_ORDERS);
     assert_ne!(cancel_ref, setup_ref);
     harness::invariants::assert_order_status(
-        &h.cache.borrow(),
+        &h.cache().borrow(),
         &order.client_order_id(),
         OrderStatus::PendingCancel,
     );
     let pending = h
-        .cache
+        .cache()
         .borrow()
         .order(&order.client_order_id())
         .unwrap()
@@ -330,7 +330,7 @@ async fn cancel_apply_then_lost_response_resolves_from_ocm() {
     h.pump_for(Duration::from_millis(300)).await;
 
     let canceled_order = h
-        .cache
+        .cache()
         .borrow()
         .order(&order.client_order_id())
         .unwrap()
@@ -350,8 +350,8 @@ async fn cancel_apply_then_lost_response_resolves_from_ocm() {
         0,
     );
     harness::invariants::assert_in_own_book(
-        &h.cache.borrow(),
-        &h.instrument_id,
+        &h.cache().borrow(),
+        &h.instrument_id(),
         &order.client_order_id(),
         false,
     );
@@ -363,7 +363,7 @@ async fn cancel_apply_then_lost_response_resolves_from_ocm() {
 #[tokio::test]
 async fn replace_apply_then_lost_response_resolves_from_ocm(#[case] replacement_open_first: bool) {
     let mut h = harness::Harness::build().await;
-    let order = harness::limit_order(&h.instrument_id, "O-1");
+    let order = harness::limit_order(&h.instrument_id(), "O-1");
 
     h.submit_via_risk(&order);
     let accepted = h
@@ -399,7 +399,7 @@ async fn replace_apply_then_lost_response_resolves_from_ocm(#[case] replacement_
         assert_applied_once_with_identical_retry(&h.mock_state, METHOD_REPLACE_ORDERS);
     assert_ne!(replace_ref, setup_ref);
     harness::invariants::assert_order_status(
-        &h.cache.borrow(),
+        &h.cache().borrow(),
         &order.client_order_id(),
         OrderStatus::PendingUpdate,
     );
@@ -410,7 +410,7 @@ async fn replace_apply_then_lost_response_resolves_from_ocm(#[case] replacement_
         h.feeder.feed("stream/ocm_harness_cancel.json");
         h.pump_for(Duration::from_millis(300)).await;
         harness::invariants::assert_order_status(
-            &h.cache.borrow(),
+            &h.cache().borrow(),
             &order.client_order_id(),
             OrderStatus::PendingUpdate,
         );
@@ -434,7 +434,7 @@ async fn replace_apply_then_lost_response_resolves_from_ocm(#[case] replacement_
     }
 
     let updated = h
-        .cache
+        .cache()
         .borrow()
         .order(&order.client_order_id())
         .unwrap()
@@ -462,19 +462,19 @@ async fn replace_apply_then_lost_response_resolves_from_ocm(#[case] replacement_
         0,
     );
     harness::invariants::assert_in_own_book(
-        &h.cache.borrow(),
-        &h.instrument_id,
+        &h.cache().borrow(),
+        &h.instrument_id(),
         &order.client_order_id(),
         true,
     );
-    harness::invariants::assert_tracked_used_events(&h.routed);
+    harness::invariants::assert_tracked_used_events(h.routed());
 }
 
 #[rstest]
 #[tokio::test]
 async fn replace_filled_stream_before_rest_updates_before_fill() {
     let mut h = harness::Harness::build().await;
-    let order = harness::limit_order(&h.instrument_id, "O-1");
+    let order = harness::limit_order(&h.instrument_id(), "O-1");
 
     h.submit_via_risk(&order);
     let accepted = h
@@ -517,11 +517,11 @@ async fn replace_filled_stream_before_rest_updates_before_fill() {
     h.feeder.feed("stream/ocm_harness_replace_filled.json");
     h.pump_for(Duration::from_millis(300)).await;
 
-    harness::invariants::assert_tracked_used_events(&h.routed);
+    harness::invariants::assert_tracked_used_events(h.routed());
     let old_venue_order_id = VenueOrderId::from("228302937743");
     let new_venue_order_id = VenueOrderId::from("240808766933");
     let client_order_id = order.client_order_id();
-    let cache = h.cache.borrow();
+    let cache = h.cache().borrow();
     let updated = cache.order(&client_order_id).unwrap();
     assert_eq!(updated.status(), OrderStatus::Filled);
     assert_eq!(updated.quantity(), Quantity::from("10.0"));
@@ -591,21 +591,20 @@ async fn replace_filled_stream_before_rest_updates_before_fill() {
     drop(cache);
 
     harness::invariants::assert_in_own_book(
-        &h.cache.borrow(),
-        &h.instrument_id,
+        &h.cache().borrow(),
+        &h.instrument_id(),
         &client_order_id,
         false,
     );
-    harness::invariants::assert_own_book_consistent(&h.cache.borrow(), &h.instrument_id);
-    assert!(h.exec_engine.borrow().check_integrity());
-    assert!(h.exec_engine.borrow().check_connected());
+    harness::invariants::assert_own_book_consistent(&h.cache().borrow(), &h.instrument_id());
+    h.assert_engine_ready();
 }
 
 #[rstest]
 #[tokio::test]
 async fn tracked_cancel_emits_event_and_shrinks_own_book() {
     let mut h = harness::Harness::build().await;
-    let order = harness::limit_order(&h.instrument_id, "O-1");
+    let order = harness::limit_order(&h.instrument_id(), "O-1");
 
     h.submit_via_risk(&order);
     let accepted = h
@@ -623,21 +622,22 @@ async fn tracked_cancel_emits_event_and_shrinks_own_book() {
         .await;
     assert!(canceled, "order did not reach Canceled via routed events");
 
-    harness::invariants::assert_tracked_used_events(&h.routed);
+    harness::invariants::assert_tracked_used_events(h.routed());
     harness::invariants::assert_order_status(
-        &h.cache.borrow(),
+        &h.cache().borrow(),
         &order.client_order_id(),
         OrderStatus::Canceled,
     );
-    harness::invariants::assert_own_book_consistent(&h.cache.borrow(), &h.instrument_id);
+    harness::invariants::assert_own_book_consistent(&h.cache().borrow(), &h.instrument_id());
 }
 
 #[rstest]
 #[tokio::test]
 async fn exec_tester_drives_submit_to_accepted() {
     let mut h = harness::Harness::build().await;
-    let instrument_id = h.instrument_id;
-    let mut tester = h.register_exec_tester("10");
+    let instrument_id = h.instrument_id();
+    let mut tester =
+        h.register_exec_tester(StrategyId::from(harness::STRATEGY_ID), Quantity::from("10"));
 
     tester.on_start().unwrap();
     tester
@@ -654,14 +654,14 @@ async fn exec_tester_drives_submit_to_accepted() {
         .await;
 
     assert!(accepted, "ExecTester-driven order did not reach Accepted");
-    harness::invariants::assert_tracked_used_events(&h.routed);
+    harness::invariants::assert_tracked_used_events(h.routed());
 }
 
 #[rstest]
 #[tokio::test]
 async fn tracked_fill_emits_event_and_closes() {
     let mut h = harness::Harness::build().await;
-    let order = harness::limit_order(&h.instrument_id, "O-1");
+    let order = harness::limit_order(&h.instrument_id(), "O-1");
 
     h.submit_via_risk(&order);
     let accepted = h
@@ -679,18 +679,18 @@ async fn tracked_fill_emits_event_and_closes() {
         .await;
     assert!(filled, "order did not reach Filled via routed events");
 
-    harness::invariants::assert_tracked_used_events(&h.routed);
+    harness::invariants::assert_tracked_used_events(h.routed());
     harness::invariants::assert_order_status(
-        &h.cache.borrow(),
+        &h.cache().borrow(),
         &order.client_order_id(),
         OrderStatus::Filled,
     );
     harness::invariants::assert_filled_qty(
-        &h.cache.borrow(),
+        &h.cache().borrow(),
         &order.client_order_id(),
         Decimal::from(10),
     );
-    harness::invariants::assert_own_book_consistent(&h.cache.borrow(), &h.instrument_id);
+    harness::invariants::assert_own_book_consistent(&h.cache().borrow(), &h.instrument_id());
 }
 
 #[rstest]
@@ -710,7 +710,7 @@ async fn external_order_routes_as_report() {
 #[tokio::test]
 async fn tracked_partial_then_full_fill_accounts_correctly() {
     let mut h = harness::Harness::build().await;
-    let order = harness::limit_order(&h.instrument_id, "O-1");
+    let order = harness::limit_order(&h.instrument_id(), "O-1");
 
     h.submit_via_risk(&order);
     let accepted = h
@@ -729,13 +729,13 @@ async fn tracked_partial_then_full_fill_accounts_correctly() {
         .await;
     assert!(partial, "order did not reach PartiallyFilled");
     harness::invariants::assert_filled_qty(
-        &h.cache.borrow(),
+        &h.cache().borrow(),
         &order.client_order_id(),
         Decimal::from(4),
     );
     harness::invariants::assert_in_own_book(
-        &h.cache.borrow(),
-        &h.instrument_id,
+        &h.cache().borrow(),
+        &h.instrument_id(),
         &order.client_order_id(),
         true,
     );
@@ -749,26 +749,26 @@ async fn tracked_partial_then_full_fill_accounts_correctly() {
         .await;
     assert!(filled, "order did not reach Filled");
 
-    harness::invariants::assert_tracked_used_events(&h.routed);
+    harness::invariants::assert_tracked_used_events(h.routed());
     harness::invariants::assert_filled_qty(
-        &h.cache.borrow(),
+        &h.cache().borrow(),
         &order.client_order_id(),
         Decimal::from(10),
     );
     harness::invariants::assert_in_own_book(
-        &h.cache.borrow(),
-        &h.instrument_id,
+        &h.cache().borrow(),
+        &h.instrument_id(),
         &order.client_order_id(),
         false,
     );
-    harness::invariants::assert_own_book_consistent(&h.cache.borrow(), &h.instrument_id);
+    harness::invariants::assert_own_book_consistent(&h.cache().borrow(), &h.instrument_id());
 }
 
 #[rstest]
 #[tokio::test]
 async fn modify_price_replace_stream_duplicates_do_not_change_order() {
     let mut h = harness::Harness::build().await;
-    let order = harness::limit_order(&h.instrument_id, "O-1");
+    let order = harness::limit_order(&h.instrument_id(), "O-1");
 
     h.submit_via_risk(&order);
     let accepted = h
@@ -798,8 +798,8 @@ async fn modify_price_replace_stream_duplicates_do_not_change_order() {
     h.feeder.feed("stream/ocm_harness_replace_open.json");
     h.pump_for(Duration::from_millis(300)).await;
 
-    harness::invariants::assert_tracked_used_events(&h.routed);
-    let cache = h.cache.borrow();
+    harness::invariants::assert_tracked_used_events(h.routed());
+    let cache = h.cache().borrow();
     let updated = cache.order(&order.client_order_id()).unwrap();
     assert_eq!(updated.venue_order_id(), Some(new_venue_order_id));
     assert_eq!(
@@ -840,18 +840,18 @@ async fn modify_price_replace_stream_duplicates_do_not_change_order() {
     );
     harness::invariants::assert_in_own_book(
         &cache,
-        &h.instrument_id,
+        &h.instrument_id(),
         &order.client_order_id(),
         true,
     );
-    harness::invariants::assert_own_book_consistent(&cache, &h.instrument_id);
+    harness::invariants::assert_own_book_consistent(&cache, &h.instrument_id());
 }
 
 #[rstest]
 #[tokio::test]
 async fn replace_cancelled_not_placed_closes_order_once() {
     let mut h = harness::Harness::build().await;
-    let order = harness::limit_order(&h.instrument_id, "O-1");
+    let order = harness::limit_order(&h.instrument_id(), "O-1");
     h.override_betting_result(
         METHOD_REPLACE_ORDERS,
         "rest/betting_replace_orders_cancelled_not_placed_live.json",
@@ -881,7 +881,7 @@ async fn replace_cancelled_not_placed_closes_order_once() {
     h.pump_for(Duration::from_millis(300)).await;
 
     let canceled = h
-        .cache
+        .cache()
         .borrow()
         .order(&order.client_order_id())
         .unwrap()
@@ -915,12 +915,12 @@ async fn replace_cancelled_not_placed_closes_order_once() {
         0,
     );
     harness::invariants::assert_in_own_book(
-        &h.cache.borrow(),
-        &h.instrument_id,
+        &h.cache().borrow(),
+        &h.instrument_id(),
         &order.client_order_id(),
         false,
     );
-    harness::invariants::assert_own_book_consistent(&h.cache.borrow(), &h.instrument_id);
+    harness::invariants::assert_own_book_consistent(&h.cache().borrow(), &h.instrument_id());
 }
 
 #[rstest]
@@ -931,7 +931,7 @@ async fn replace_cancelled_not_placed_stays_closed_after_late_partial_fill(
     #[case] old_terminal_first: bool,
 ) {
     let mut h = harness::Harness::build().await;
-    let order = harness::limit_order(&h.instrument_id, "O-1");
+    let order = harness::limit_order(&h.instrument_id(), "O-1");
     h.override_betting_result(
         METHOD_REPLACE_ORDERS,
         "rest/betting_replace_orders_cancelled_not_placed_live.json",
@@ -957,7 +957,7 @@ async fn replace_cancelled_not_placed_stays_closed_after_late_partial_fill(
         h.feeder.feed("stream/ocm_harness_cancel.json");
         h.pump_for(Duration::from_millis(100)).await;
         harness::invariants::assert_order_status(
-            &h.cache.borrow(),
+            &h.cache().borrow(),
             &order.client_order_id(),
             OrderStatus::PendingUpdate,
         );
@@ -979,7 +979,7 @@ async fn replace_cancelled_not_placed_stays_closed_after_late_partial_fill(
     h.pump_for(Duration::from_millis(300)).await;
 
     let canceled = h
-        .cache
+        .cache()
         .borrow()
         .order(&order.client_order_id())
         .unwrap()
@@ -1017,19 +1017,19 @@ async fn replace_cancelled_not_placed_stays_closed_after_late_partial_fill(
         0,
     );
     harness::invariants::assert_in_own_book(
-        &h.cache.borrow(),
-        &h.instrument_id,
+        &h.cache().borrow(),
+        &h.instrument_id(),
         &order.client_order_id(),
         false,
     );
-    harness::invariants::assert_own_book_consistent(&h.cache.borrow(), &h.instrument_id);
+    harness::invariants::assert_own_book_consistent(&h.cache().borrow(), &h.instrument_id());
 }
 
 #[rstest]
 #[tokio::test]
 async fn old_cancel_before_definitive_replace_error_closes_order_once() {
     let mut h = harness::Harness::build().await;
-    let order = harness::limit_order(&h.instrument_id, "O-1");
+    let order = harness::limit_order(&h.instrument_id(), "O-1");
     let response: Value = serde_json::from_str(&load_fixture(
         "rest/betting_jsonrpc_error_invalid_params_live.json",
     ))
@@ -1068,7 +1068,7 @@ async fn old_cancel_before_definitive_replace_error_closes_order_once() {
     h.pump_for(Duration::from_millis(300)).await;
 
     let canceled = h
-        .cache
+        .cache()
         .borrow()
         .order(&order.client_order_id())
         .unwrap()
@@ -1095,19 +1095,19 @@ async fn old_cancel_before_definitive_replace_error_closes_order_once() {
         0,
     );
     harness::invariants::assert_in_own_book(
-        &h.cache.borrow(),
-        &h.instrument_id,
+        &h.cache().borrow(),
+        &h.instrument_id(),
         &order.client_order_id(),
         false,
     );
-    harness::invariants::assert_own_book_consistent(&h.cache.borrow(), &h.instrument_id);
+    harness::invariants::assert_own_book_consistent(&h.cache().borrow(), &h.instrument_id());
 }
 
 #[rstest]
 #[tokio::test]
 async fn ambiguous_replace_stays_pending_through_old_bet_cancel() {
     let mut h = harness::Harness::build().await;
-    let order = harness::limit_order(&h.instrument_id, "O-1");
+    let order = harness::limit_order(&h.instrument_id(), "O-1");
 
     h.submit_via_risk(&order);
     let accepted = h
@@ -1141,13 +1141,13 @@ async fn ambiguous_replace_stays_pending_through_old_bet_cancel() {
     );
 
     harness::invariants::assert_order_status(
-        &h.cache.borrow(),
+        &h.cache().borrow(),
         &order.client_order_id(),
         OrderStatus::PendingUpdate,
     );
     harness::invariants::assert_in_own_book(
-        &h.cache.borrow(),
-        &h.instrument_id,
+        &h.cache().borrow(),
+        &h.instrument_id(),
         &order.client_order_id(),
         true,
     );
@@ -1163,7 +1163,7 @@ async fn successful_cancel_resolves_ambiguous_replace(
     #[case] bet_taken_or_lapsed: bool,
 ) {
     let mut h = harness::Harness::build().await;
-    let order = harness::limit_order(&h.instrument_id, "O-1");
+    let order = harness::limit_order(&h.instrument_id(), "O-1");
 
     h.submit_via_risk(&order);
     let accepted = h
@@ -1205,7 +1205,7 @@ async fn successful_cancel_resolves_ambiguous_replace(
         h.feeder.feed("stream/ocm_harness_cancel.json");
         h.pump_for(Duration::from_millis(100)).await;
         harness::invariants::assert_order_status(
-            &h.cache.borrow(),
+            &h.cache().borrow(),
             &order.client_order_id(),
             OrderStatus::PendingCancel,
         );
@@ -1225,7 +1225,7 @@ async fn successful_cancel_resolves_ambiguous_replace(
     );
 
     let canceled = h
-        .cache
+        .cache()
         .borrow()
         .order(&order.client_order_id())
         .unwrap()
@@ -1257,12 +1257,12 @@ async fn successful_cancel_resolves_ambiguous_replace(
         0,
     );
     harness::invariants::assert_in_own_book(
-        &h.cache.borrow(),
-        &h.instrument_id,
+        &h.cache().borrow(),
+        &h.instrument_id(),
         &order.client_order_id(),
         false,
     );
-    harness::invariants::assert_own_book_consistent(&h.cache.borrow(), &h.instrument_id);
+    harness::invariants::assert_own_book_consistent(&h.cache().borrow(), &h.instrument_id());
 }
 
 #[rstest]
@@ -1275,7 +1275,7 @@ async fn ambiguous_replace_accounts_old_fill_across_stream_orderings(
     #[case] partial_fill_first: bool,
 ) {
     let mut h = harness::Harness::build().await;
-    let order = harness::limit_order(&h.instrument_id, "O-1");
+    let order = harness::limit_order(&h.instrument_id(), "O-1");
 
     h.submit_via_risk(&order);
     let accepted = h
@@ -1309,7 +1309,7 @@ async fn ambiguous_replace_accounts_old_fill_across_stream_orderings(
             .await;
         assert!(filled, "old-bet partial fill was not applied");
         harness::invariants::assert_order_status(
-            &h.cache.borrow(),
+            &h.cache().borrow(),
             &order.client_order_id(),
             OrderStatus::PendingUpdate,
         );
@@ -1343,7 +1343,7 @@ async fn ambiguous_replace_accounts_old_fill_across_stream_orderings(
     h.pump_for(Duration::from_millis(300)).await;
 
     let updated = h
-        .cache
+        .cache()
         .borrow()
         .order(&order.client_order_id())
         .unwrap()
@@ -1390,19 +1390,19 @@ async fn ambiguous_replace_accounts_old_fill_across_stream_orderings(
         0,
     );
     harness::invariants::assert_in_own_book(
-        &h.cache.borrow(),
-        &h.instrument_id,
+        &h.cache().borrow(),
+        &h.instrument_id(),
         &order.client_order_id(),
         true,
     );
-    harness::invariants::assert_own_book_consistent(&h.cache.borrow(), &h.instrument_id);
+    harness::invariants::assert_own_book_consistent(&h.cache().borrow(), &h.instrument_id());
 }
 
 #[rstest]
 #[tokio::test]
 async fn modify_quantity_reduction_updates_qty() {
     let mut h = harness::Harness::build().await;
-    let order = harness::limit_order(&h.instrument_id, "O-1");
+    let order = harness::limit_order(&h.instrument_id(), "O-1");
 
     h.submit_via_risk(&order);
     let accepted = h
@@ -1433,8 +1433,8 @@ async fn modify_quantity_reduction_updates_qty() {
         "order quantity was not reduced to the size_cancelled-derived 7"
     );
 
-    harness::invariants::assert_tracked_used_events(&h.routed);
-    let cache = h.cache.borrow();
+    harness::invariants::assert_tracked_used_events(h.routed());
+    let cache = h.cache().borrow();
     let updated = cache.order(&order.client_order_id()).unwrap();
     assert_eq!(updated.quantity().as_decimal(), Decimal::from(7));
     assert_eq!(
@@ -1448,7 +1448,7 @@ async fn modify_quantity_reduction_updates_qty() {
 #[tokio::test]
 async fn reduction_that_closes_the_bet_settles_on_the_reduced_size() {
     let mut h = harness::Harness::build().await;
-    let order = harness::limit_order(&h.instrument_id, "O-1");
+    let order = harness::limit_order(&h.instrument_id(), "O-1");
 
     h.submit_via_risk(&order);
     let accepted = h
@@ -1504,7 +1504,7 @@ async fn reduction_that_closes_the_bet_settles_on_the_reduced_size() {
     h.reconcile_from_venue().await;
     h.pump_for(Duration::from_millis(300)).await;
 
-    let cache = h.cache.borrow();
+    let cache = h.cache().borrow();
     let settled = cache.order(&order.client_order_id()).unwrap().clone();
     assert_eq!(
         settled.quantity(),
@@ -1518,14 +1518,14 @@ async fn reduction_that_closes_the_bet_settles_on_the_reduced_size() {
         1,
         "the reduction must resolve exactly once",
     );
-    harness::invariants::assert_own_book_consistent(&cache, &h.instrument_id);
+    harness::invariants::assert_own_book_consistent(&cache, &h.instrument_id());
 }
 
 #[rstest]
 #[tokio::test]
 async fn replace_apply_then_lost_response_resolves_from_reconciliation() {
     let mut h = harness::Harness::build().await;
-    let order = harness::limit_order(&h.instrument_id, "O-1");
+    let order = harness::limit_order(&h.instrument_id(), "O-1");
 
     h.submit_via_risk(&order);
     let accepted = h
@@ -1550,7 +1550,7 @@ async fn replace_apply_then_lost_response_resolves_from_reconciliation() {
     h.pump_for(Duration::from_millis(300)).await;
 
     harness::invariants::assert_order_status(
-        &h.cache.borrow(),
+        &h.cache().borrow(),
         &order.client_order_id(),
         OrderStatus::PendingUpdate,
     );
@@ -1594,7 +1594,7 @@ async fn replace_apply_then_lost_response_resolves_from_reconciliation() {
     h.pump_for(Duration::from_millis(300)).await;
 
     {
-        let cache = h.cache.borrow();
+        let cache = h.cache().borrow();
         let updated = cache.order(&order.client_order_id()).unwrap().clone();
         assert_eq!(updated.status(), OrderStatus::Accepted);
         assert_eq!(updated.quantity(), Quantity::from("10"));
@@ -1624,8 +1624,8 @@ async fn replace_apply_then_lost_response_resolves_from_reconciliation() {
             1,
             "resolution must not re-accept the order",
         );
-        harness::invariants::assert_tracked_used_events(&h.routed);
-        harness::invariants::assert_own_book_consistent(&cache, &h.instrument_id);
+        harness::invariants::assert_tracked_used_events(h.routed());
+        harness::invariants::assert_own_book_consistent(&cache, &h.instrument_id());
     }
 
     let repeated = h.reconcile_from_venue().await;
@@ -1637,7 +1637,7 @@ async fn replace_apply_then_lost_response_resolves_from_reconciliation() {
     assert_eq!(reported_bet_ids, vec![new_bet_id.to_string()]);
     h.pump_for(Duration::from_millis(300)).await;
 
-    let settled = h.cache.borrow();
+    let settled = h.cache().borrow();
     let settled_order = settled.order(&order.client_order_id()).unwrap().clone();
     assert_eq!(
         event_count(&settled_order, |event| matches!(
@@ -1654,7 +1654,7 @@ async fn replace_apply_then_lost_response_resolves_from_reconciliation() {
 #[tokio::test]
 async fn reduction_apply_then_lost_response_resolves_from_reconciliation() {
     let mut h = harness::Harness::build().await;
-    let order = harness::limit_order(&h.instrument_id, "O-1");
+    let order = harness::limit_order(&h.instrument_id(), "O-1");
 
     h.submit_via_risk(&order);
     let accepted = h
@@ -1679,12 +1679,12 @@ async fn reduction_apply_then_lost_response_resolves_from_reconciliation() {
     h.pump_for(Duration::from_millis(300)).await;
 
     harness::invariants::assert_order_status(
-        &h.cache.borrow(),
+        &h.cache().borrow(),
         &order.client_order_id(),
         OrderStatus::PendingUpdate,
     );
     let inflight = h
-        .cache
+        .cache()
         .borrow()
         .order(&order.client_order_id())
         .unwrap()
@@ -1730,7 +1730,7 @@ async fn reduction_apply_then_lost_response_resolves_from_reconciliation() {
     h.pump_for(Duration::from_millis(300)).await;
 
     {
-        let cache = h.cache.borrow();
+        let cache = h.cache().borrow();
         let updated = cache.order(&order.client_order_id()).unwrap().clone();
         assert_eq!(updated.quantity(), Quantity::from("4"));
         assert_eq!(updated.status(), OrderStatus::Accepted);
@@ -1758,8 +1758,8 @@ async fn reduction_apply_then_lost_response_resolves_from_reconciliation() {
             1,
             "resolution must not re-accept the order",
         );
-        harness::invariants::assert_tracked_used_events(&h.routed);
-        harness::invariants::assert_own_book_consistent(&cache, &h.instrument_id);
+        harness::invariants::assert_tracked_used_events(h.routed());
+        harness::invariants::assert_own_book_consistent(&cache, &h.instrument_id());
     }
 
     let repeated = h.reconcile_from_venue().await;
@@ -1772,7 +1772,7 @@ async fn reduction_apply_then_lost_response_resolves_from_reconciliation() {
     );
     h.pump_for(Duration::from_millis(300)).await;
 
-    let settled = h.cache.borrow();
+    let settled = h.cache().borrow();
     let settled_order = settled.order(&order.client_order_id()).unwrap().clone();
     assert_eq!(settled_order.quantity(), Quantity::from("4"));
     assert_eq!(
@@ -1789,7 +1789,7 @@ async fn reduction_apply_then_lost_response_resolves_from_reconciliation() {
 #[tokio::test]
 async fn submit_venue_error_rejects_and_stays_out_of_book() {
     let mut h = harness::Harness::build().await;
-    let order = harness::limit_order(&h.instrument_id, "O-1");
+    let order = harness::limit_order(&h.instrument_id(), "O-1");
 
     // The venue rejects the placement: the instruction report fails, so the adapter emits
     // OrderRejected and the order never enters the own order book.
@@ -1802,15 +1802,15 @@ async fn submit_venue_error_rejects_and_stays_out_of_book() {
         .await;
     assert!(rejected, "order did not reach Rejected via routed events");
 
-    harness::invariants::assert_tracked_used_events(&h.routed);
+    harness::invariants::assert_tracked_used_events(h.routed());
     harness::invariants::assert_order_status(
-        &h.cache.borrow(),
+        &h.cache().borrow(),
         &order.client_order_id(),
         OrderStatus::Rejected,
     );
     harness::invariants::assert_in_own_book(
-        &h.cache.borrow(),
-        &h.instrument_id,
+        &h.cache().borrow(),
+        &h.instrument_id(),
         &order.client_order_id(),
         false,
     );
@@ -1820,7 +1820,7 @@ async fn submit_venue_error_rejects_and_stays_out_of_book() {
 #[tokio::test]
 async fn startup_reconcile_correlates_open_order() {
     let mut h = harness::Harness::build().await;
-    let order = harness::limit_order(&h.instrument_id, "O-1");
+    let order = harness::limit_order(&h.instrument_id(), "O-1");
 
     h.submit_via_risk(&order);
     let accepted = h
@@ -1846,18 +1846,18 @@ async fn startup_reconcile_correlates_open_order() {
     assert_eq!(report.client_order_id, Some(order.client_order_id()));
 
     harness::invariants::assert_order_status(
-        &h.cache.borrow(),
+        &h.cache().borrow(),
         &order.client_order_id(),
         OrderStatus::Accepted,
     );
-    harness::invariants::assert_own_book_consistent(&h.cache.borrow(), &h.instrument_id);
+    harness::invariants::assert_own_book_consistent(&h.cache().borrow(), &h.instrument_id());
 }
 
 #[rstest]
 #[tokio::test]
 async fn reconcile_applies_canceled_while_pending_cancel() {
     let mut h = harness::Harness::build().await;
-    let order = harness::limit_order(&h.instrument_id, "O-1");
+    let order = harness::limit_order(&h.instrument_id(), "O-1");
 
     h.submit_via_risk(&order);
     let accepted = h
@@ -1871,7 +1871,7 @@ async fn reconcile_applies_canceled_while_pending_cancel() {
     // event is withheld (no OCM frame is fed).
     h.mark_pending_cancel(&order);
     harness::invariants::assert_order_status(
-        &h.cache.borrow(),
+        &h.cache().borrow(),
         &order.client_order_id(),
         OrderStatus::PendingCancel,
     );
@@ -1889,9 +1889,9 @@ async fn reconcile_applies_canceled_while_pending_cancel() {
     assert_eq!(report.order_status, OrderStatus::Canceled);
 
     harness::invariants::assert_order_status(
-        &h.cache.borrow(),
+        &h.cache().borrow(),
         &order.client_order_id(),
         OrderStatus::Canceled,
     );
-    harness::invariants::assert_own_book_consistent(&h.cache.borrow(), &h.instrument_id);
+    harness::invariants::assert_own_book_consistent(&h.cache().borrow(), &h.instrument_id());
 }

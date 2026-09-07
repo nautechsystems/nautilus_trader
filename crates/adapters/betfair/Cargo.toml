@@ -89,10 +89,7 @@ pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-backtest = { workspace = true }
-nautilus-execution = { workspace = true }
-nautilus-live = { workspace = true, features = ["node"] }
-nautilus-portfolio = { workspace = true }
-nautilus-risk = { workspace = true }
+nautilus-live = { workspace = true, features = ["node", "test-support"] }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",
 ] }
