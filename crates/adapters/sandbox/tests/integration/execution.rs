@@ -24,7 +24,10 @@ use nautilus_common::{
     live::set_exec_event_sender,
     messages::{
         ExecutionEvent,
-        execution::{CancelAllOrders, SubmitOrder, SubmitOrderList, TradingCommand},
+        execution::{
+            BatchModifyOrders, CancelAllOrders, ModifyOrder, SubmitOrder, SubmitOrderList,
+            TradingCommand,
+        },
     },
     msgbus::{
         self, MessageBus, MessagingSwitchboard, TypedHandler,
@@ -44,13 +47,16 @@ use nautilus_execution::{
     },
 };
 use nautilus_model::{
-    accounts::AccountAny,
+    accounts::{AccountAny, MarginAccount},
     data::{Bar, BarType, Data, InstrumentClose, InstrumentStatus, QuoteTick, TradeTick},
     enums::{
         AccountType, AggressorSide, BookType, InstrumentCloseType, MarketStatusAction, OmsType,
         OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
     },
-    events::{AccountState, OrderEventAny, OrderFilled, PositionClosed, PositionEvent},
+    events::{
+        AccountState, OrderEventAny, OrderFilled, PositionClosed, PositionEvent,
+        account::stubs::margin_account_state,
+    },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
         TradeId, TraderId, Venue,
@@ -3692,4 +3698,161 @@ fn test_submit_order_through_exec_engine_no_reentrant_panic(
         !events.is_empty(),
         "Expected order events through the exec event channel"
     );
+}
+
+#[rstest]
+fn test_batch_reduce_only_modifies_share_pending_position_quantity(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    mut margin_account_state: AccountState,
+    #[values(false, true)] first_reduce_only: bool,
+) {
+    let venue = instrument.id().venue;
+    let account_id = AccountId::from("BINANCE-001");
+    let client_id = ClientId::from("SANDBOX");
+    let TestContext { mut client, cache } = create_test_context(trader_id, account_id, venue);
+    margin_account_state.account_id = account_id;
+    cache
+        .borrow_mut()
+        .add_account(AccountAny::Margin(MarginAccount::new(
+            margin_account_state,
+            true,
+        )))
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_quote(create_quote_tick(instrument.id(), 1000.0, 1001.0))
+        .unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    nautilus_common::live::runner::replace_exec_event_sender(tx);
+    client.start().unwrap();
+    let mut engine =
+        ExecutionEngine::new(Rc::new(RefCell::new(TestClock::new())), cache.clone(), None);
+    engine.register_client(Box::new(client)).unwrap();
+    let opening = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("OPEN-SHORT"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("0.500"))
+        .build();
+    let closing = [("CLOSE-FIRST", "0.400"), ("CLOSE-SECOND", "0.300")].map(|(id, qty)| {
+        OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(trader_id)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from(id))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(qty))
+            .price(Price::from("999.00"))
+            .reduce_only(id != "CLOSE-FIRST" || first_reduce_only)
+            .build()
+    });
+
+    for order in [&opening, &closing[0], &closing[1]] {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(client_id), false)
+            .unwrap();
+        engine.execute(TradingCommand::SubmitOrder(SubmitOrder::from_order(
+            order,
+            trader_id,
+            Some(client_id),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        )));
+
+        while let Ok(event) = rx.try_recv() {
+            if let ExecutionEvent::Order(event) = event {
+                engine.process(&event);
+            }
+        }
+    }
+    {
+        let cache = cache.borrow();
+        let position = cache
+            .position_for_order(&opening.client_order_id())
+            .unwrap();
+        assert_eq!(
+            (position.side, position.quantity),
+            (PositionSide::Short, Quantity::from("0.500"))
+        );
+
+        for order in &closing {
+            assert_eq!(
+                cache.order(&order.client_order_id()).unwrap().status(),
+                OrderStatus::Accepted
+            );
+        }
+    }
+    let modifies = closing
+        .iter()
+        .map(|order| {
+            ModifyOrder::new(
+                trader_id,
+                Some(client_id),
+                order.strategy_id(),
+                instrument.id(),
+                order.client_order_id(),
+                None,
+                None,
+                Some(Price::from("1002.00")),
+                None,
+                UUID4::new(),
+                UnixNanos::from(1),
+                None,
+                None,
+            )
+        })
+        .collect();
+    engine.execute(TradingCommand::ModifyOrders(BatchModifyOrders::new(
+        trader_id,
+        Some(client_id),
+        opening.strategy_id(),
+        instrument.id(),
+        modifies,
+        UUID4::new(),
+        UnixNanos::from(1),
+        None,
+        None,
+    )));
+    let mut fills = Vec::new();
+
+    while let Ok(event) = rx.try_recv() {
+        if let ExecutionEvent::Order(event) = event {
+            if let OrderEventAny::Filled(fill) = &event {
+                fills.push((fill.client_order_id, fill.last_qty));
+            }
+            engine.process(&event);
+        }
+    }
+    let cache = cache.borrow();
+    let position = cache
+        .position_for_order(&opening.client_order_id())
+        .unwrap();
+    assert_eq!(
+        fills,
+        vec![
+            (closing[0].client_order_id(), Quantity::from("0.400")),
+            (closing[1].client_order_id(), Quantity::from("0.100")),
+        ]
+    );
+    assert_eq!(
+        (position.side, position.quantity),
+        (PositionSide::Flat, Quantity::from("0.000"))
+    );
+
+    for order in &closing {
+        assert_eq!(
+            cache.order(&order.client_order_id()).unwrap().status(),
+            OrderStatus::Filled
+        );
+    }
+    drop(position);
+    drop(cache);
+    engine.stop();
 }

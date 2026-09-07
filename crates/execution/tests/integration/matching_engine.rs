@@ -4535,6 +4535,7 @@ fn test_trailing_stop_limit_activates_at_market_and_materializes_prices(
 fn test_updating_of_contingent_orders(
     instrument_eth_usdt: InstrumentAny,
     account_id: AccountId,
+    #[values(false, true)] deferred: bool,
     #[case] contingency_type: ContingencyType,
 ) {
     let cache = Rc::new(RefCell::new(Cache::default()));
@@ -4614,7 +4615,16 @@ fn test_updating_of_contingent_orders(
         None,
         None, // correlation_id
     );
+    let pending = Rc::new(RefCell::new(Vec::new()));
+    if deferred {
+        let events = pending.clone();
+        engine_l2.set_event_handler(Rc::new(move |event| events.borrow_mut().push(event)));
+    }
     engine_l2.process_modify(&modify_order_command, account_id);
+
+    for event in pending.borrow_mut().drain(..) {
+        msgbus::send_order_event(MessagingSwitchboard::exec_engine_process(), event);
+    }
 
     let saved_messages = get_order_event_handler_messages(&order_event_handler);
     assert_eq!(saved_messages.len(), 4);
@@ -6568,6 +6578,7 @@ fn test_ouo_sibling_adjusted_after_resolving_order_fill(
 fn test_ouo_child_cancelled_after_parent_modify(
     instrument_eth_usdt: InstrumentAny,
     account_id: AccountId,
+    #[values(false, true)] deferred: bool,
     #[case] modify_quantity: &str,
     #[case] modify_price: Option<&str>,
     #[case] contingent_filled_qty: Option<&str>,
@@ -6697,7 +6708,16 @@ fn test_ouo_child_cancelled_after_parent_modify(
         None,
         None, // correlation_id
     );
+    let pending = Rc::new(RefCell::new(Vec::new()));
+    if deferred {
+        let events = pending.clone();
+        engine_l2.set_event_handler(Rc::new(move |event| events.borrow_mut().push(event)));
+    }
     engine_l2.process_modify(&modify_order_command, account_id);
+
+    for event in pending.borrow_mut().drain(..) {
+        msgbus::send_order_event(MessagingSwitchboard::exec_engine_process(), event);
+    }
 
     let saved_messages = get_order_event_handler_messages(&order_event_handler);
     let expected_message_count = if expect_primary_cancel { 3 } else { 2 };
@@ -6730,6 +6750,12 @@ fn test_ouo_child_cancelled_after_parent_modify(
         };
         assert_eq!(cancelled_primary.client_order_id, client_order_id_primary);
     }
+
+    assert!(!engine_l2.order_exists(client_order_id_contingent));
+    assert_eq!(
+        engine_l2.order_exists(client_order_id_primary),
+        !expect_primary_cancel
+    );
 }
 
 #[rstest]
@@ -12174,6 +12200,7 @@ fn test_stale_quote_tick_does_not_mutate_book(instrument_eth_usdt: InstrumentAny
 fn test_modify_then_iterate_fills_at_new_limit_price(
     instrument_eth_usdt: InstrumentAny,
     account_id: AccountId,
+    #[values(false, true)] deferred: bool,
 ) {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let order_event_handler = order_event_handler_with_cache(cache.clone());
@@ -12229,7 +12256,32 @@ fn test_modify_then_iterate_fills_at_new_limit_price(
         None,
         None, // correlation_id
     );
+    let pending = Rc::new(RefCell::new(Vec::new()));
+    if deferred {
+        let pending_handler = pending.clone();
+        engine_l2.set_event_handler(Rc::new(move |event| {
+            pending_handler.borrow_mut().push(event);
+        }));
+    }
     engine_l2.process_modify(&modify_order_command, account_id);
+
+    if deferred {
+        assert_eq!(
+            cache.borrow().order(&client_order_id).unwrap().price(),
+            Some(Price::from("99.00"))
+        );
+    }
+
+    for event in pending.borrow_mut().drain(..) {
+        msgbus::send_order_event(MessagingSwitchboard::exec_engine_process(), event);
+    }
+    assert_eq!(
+        cache.borrow().order(&client_order_id).unwrap().price(),
+        Some(modified_limit_price)
+    );
+    engine_l2.set_event_handler(Rc::new(|event| {
+        msgbus::send_order_event(MessagingSwitchboard::exec_engine_process(), event);
+    }));
 
     // Drop ask to 99.50: above the stale 99.00 but below the new 100.00
     let crossing_ask = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
@@ -16056,10 +16108,12 @@ fn test_fixed_fee_model_charges_once_across_multiple_book_levels(
 }
 
 #[rstest]
-fn test_oco_sibling_canceled_in_same_iteration_emits_no_triggered(
+fn test_oco_sibling_canceled_in_same_iteration_is_not_matched(
     instrument_eth_usdt: InstrumentAny,
     account_id: AccountId,
     engine_config: OrderMatchingEngineConfig,
+    #[values(false, true)] defer_events: bool,
+    #[values(OrderType::Limit, OrderType::StopMarket, OrderType::StopLimit)] order_type: OrderType,
 ) {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let order_event_handler = order_event_handler_with_cache(cache.clone());
@@ -16082,24 +16136,29 @@ fn test_oco_sibling_canceled_in_same_iteration_emits_no_triggered(
         .build();
     engine_l2.process_order_book_delta(&bid).unwrap();
 
+    let (price_a, price_b, bid_after) = if order_type == OrderType::Limit {
+        ("1500.00", "1501.00", "1502.00")
+    } else {
+        ("1496.00", "1495.00", "1496.00")
+    };
     let client_order_id_a = ClientOrderId::from("O-19700101-000000-001-001-1");
     let client_order_id_b = ClientOrderId::from("O-19700101-000000-001-001-2");
-    let mut order_a = OrderTestBuilder::new(OrderType::StopLimit)
+    let mut order_a = OrderTestBuilder::new(order_type)
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Sell)
         .trigger_price(Price::from("1498.00"))
-        .price(Price::from("1496.00"))
+        .price(Price::from(price_a))
         .quantity(Quantity::from("1.000"))
         .contingency_type(ContingencyType::Oco)
         .client_order_id(client_order_id_a)
         .linked_order_ids(vec![client_order_id_b])
         .submit(true)
         .build();
-    let mut order_b = OrderTestBuilder::new(OrderType::StopLimit)
+    let mut order_b = OrderTestBuilder::new(order_type)
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Sell)
         .trigger_price(Price::from("1497.00"))
-        .price(Price::from("1495.00"))
+        .price(Price::from(price_b))
         .quantity(Quantity::from("1.000"))
         .contingency_type(ContingencyType::Oco)
         .client_order_id(client_order_id_b)
@@ -16121,9 +16180,13 @@ fn test_oco_sibling_canceled_in_same_iteration_emits_no_triggered(
     engine_l2.process_order(&mut order_b, account_id);
     clear_order_event_handler_messages(&order_event_handler);
 
-    // Bid collapses through both triggers in one iteration: the first leg
-    // triggers and fills, which OCO-cancels the sibling while its trigger
-    // action is still queued from the same snapshot.
+    let pending = Rc::new(RefCell::new(Vec::new()));
+    if defer_events {
+        let events = pending.clone();
+        engine_l2.set_event_handler(Rc::new(move |event| events.borrow_mut().push(event)));
+    }
+
+    // Both legs match in one snapshot; the first fill cancels the queued sibling
     let bid_remove = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
         .book_action(BookAction::Delete)
         .book_order(BookOrder::new(
@@ -16138,19 +16201,23 @@ fn test_oco_sibling_canceled_in_same_iteration_emits_no_triggered(
         .book_action(BookAction::Add)
         .book_order(BookOrder::new(
             OrderSide::Buy,
-            Price::from("1496.00"),
+            Price::from(bid_after),
             Quantity::from("1.000"),
             2,
         ))
         .build();
     engine_l2.process_order_book_delta(&bid_drop).unwrap();
 
-    let events = get_order_event_handler_messages(&order_event_handler);
+    let events = if defer_events {
+        pending.borrow().clone()
+    } else {
+        get_order_event_handler_messages(&order_event_handler)
+    };
     let count = |f: &dyn Fn(&OrderEventAny) -> bool| events.iter().filter(|e| f(e)).count();
     assert_eq!(
         count(&|e| matches!(e, OrderEventAny::Triggered(_))),
-        1,
-        "exactly one leg may emit OrderTriggered: {events:?}"
+        usize::from(order_type == OrderType::StopLimit),
+        "only the first stop-limit leg may emit OrderTriggered: {events:?}"
     );
     assert_eq!(
         count(&|e| matches!(e, OrderEventAny::Filled(_))),
@@ -16162,4 +16229,457 @@ fn test_oco_sibling_canceled_in_same_iteration_emits_no_triggered(
         1,
         "exactly one leg must be canceled: {events:?}"
     );
+    assert_eq!(
+        events.len(),
+        2 + usize::from(order_type == OrderType::StopLimit)
+    );
+
+    for event in &events {
+        match event {
+            OrderEventAny::Filled(fill) => {
+                assert_eq!(fill.client_order_id, client_order_id_a);
+                assert_eq!(fill.last_qty, Quantity::from("1.000"));
+            }
+            OrderEventAny::Canceled(event) => assert_eq!(event.client_order_id, client_order_id_b),
+            _ => {}
+        }
+    }
+}
+
+#[rstest]
+fn test_deferred_marketable_modify_partial_fills(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(false, true)] apply_update_before_refresh: bool,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let _handler = order_event_handler_with_cache(cache.clone());
+    let mut engine = OrderMatchingEngine::new(
+        instrument_eth_usdt.clone(),
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::Fixed(FixedFeeModel::new(Money::from("1 USDT"), None).unwrap()).into(),
+        BookType::L2_MBP,
+        OmsType::Netting,
+        AccountType::Margin,
+        Rc::new(RefCell::new(TestClock::new())),
+        cache.clone(),
+        OrderMatchingEngineConfig {
+            liquidity_consumption: true,
+            ..Default::default()
+        },
+    );
+    let delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("101.00"),
+            Quantity::from("0.400"),
+            1,
+        ))
+        .build();
+    engine.process_order_book_delta(&delta).unwrap();
+    let id = ClientOrderId::from("O-DEFERRED-MARKETABLE");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("99.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut order, account_id);
+    let pending = Rc::new(RefCell::new(Vec::new()));
+    let events = pending.clone();
+    engine.set_event_handler(Rc::new(move |event| events.borrow_mut().push(event)));
+    let command = ModifyOrder::new(
+        order.trader_id(),
+        None,
+        order.strategy_id(),
+        order.instrument_id(),
+        id,
+        None,
+        Some(Quantity::from("0.700")),
+        Some(Price::from("102.00")),
+        None,
+        UUID4::new(),
+        UnixNanos::from(1),
+        None,
+        None,
+    );
+    engine.process_modify(&command, account_id);
+    assert_eq!(pending.borrow().len(), 2);
+    assert_eq!(
+        cache.borrow().order(&id).unwrap().quantity(),
+        Quantity::from("1.000")
+    );
+
+    if apply_update_before_refresh {
+        let event = pending.borrow()[0].clone();
+        cache.borrow_mut().update_order(&event).unwrap();
+    }
+    let refreshed = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("102.00"),
+            Quantity::from("1.000"),
+            2,
+        ))
+        .build();
+    engine.process_order_book_delta(&refreshed).unwrap();
+    engine.iterate(UnixNanos::from(2), AggressorSide::NoAggressor);
+    let events = pending.borrow().clone();
+    assert_eq!(events.len(), 3);
+    let OrderEventAny::Updated(update) = &events[0] else {
+        panic!("Expected update");
+    };
+    assert_eq!(update.quantity, Quantity::from("0.700"));
+    assert_eq!(update.price, Some(Price::from("102.00")));
+    for (event, price, quantity, commission) in [
+        (&events[1], "101.00", "0.400", "1 USDT"),
+        (&events[2], "102.00", "0.300", "0 USDT"),
+    ] {
+        let OrderEventAny::Filled(fill) = event else {
+            panic!("Expected fill");
+        };
+        assert_eq!(fill.client_order_id, id);
+        assert_eq!(fill.last_px, Price::from(price));
+        assert_eq!(fill.last_qty, Quantity::from(quantity));
+        assert_eq!(fill.liquidity_side, LiquiditySide::Taker);
+        assert_eq!(fill.commission, Some(Money::from(commission)));
+    }
+    assert!(!engine.order_exists(id));
+
+    for event in events.iter().skip(usize::from(apply_update_before_refresh)) {
+        cache.borrow_mut().update_order(event).unwrap();
+    }
+    let cache = cache.borrow();
+    let order = cache.order(&id).unwrap();
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.quantity(), Quantity::from("0.700"));
+    assert_eq!(order.filled_qty(), Quantity::from("0.700"));
+    assert_eq!(order.leaves_qty(), Quantity::from("0.000"));
+    assert_eq!(order.price(), Some(Price::from("102.00")));
+    assert_eq!(
+        order.commissions().get(&Currency::USDT()),
+        Some(&Money::from("1 USDT"))
+    );
+}
+
+#[rstest]
+fn test_deferred_stop_limit_modify_preserves_prices_when_triggered(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let handler = order_event_handler_with_cache(cache.clone());
+    let mut engine = OrderMatchingEngine::new(
+        instrument_eth_usdt.clone(),
+        1,
+        FillModelHandle::default(),
+        FeeModelAny::default().into(),
+        BookType::L1_MBP,
+        OmsType::Netting,
+        AccountType::Margin,
+        Rc::new(RefCell::new(TestClock::new())),
+        cache.clone(),
+        Default::default(),
+    );
+    let quote = |ask: &str, ts| {
+        QuoteTick::new(
+            instrument_eth_usdt.id(),
+            Price::from("99.00"),
+            Price::from(ask),
+            Quantity::from("2.000"),
+            Quantity::from("2.000"),
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+    engine.process_quote_tick(&quote("100.00", 1));
+    let mut order = OrderTestBuilder::new(OrderType::StopLimit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .client_order_id(ClientOrderId::from("PENDING-STOP-LIMIT"))
+        .quantity(Quantity::from("1.000"))
+        .trigger_price(Price::from("105.00"))
+        .price(Price::from("106.00"))
+        .post_only(true)
+        .submit(true)
+        .build();
+    let id = order.client_order_id();
+    engine.process_order(&mut order, account_id);
+    let pending = Rc::new(RefCell::new(Vec::new()));
+    let events = pending.clone();
+    engine.set_event_handler(Rc::new(move |event| events.borrow_mut().push(event)));
+    engine.process_modify(
+        &ModifyOrder::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            order.instrument_id(),
+            id,
+            None,
+            None,
+            Some(Price::from("102.00")),
+            Some(Price::from("103.00")),
+            UUID4::new(),
+            UnixNanos::from(2),
+            None,
+            None,
+        ),
+        account_id,
+    );
+    engine.process_quote_tick(&quote("103.00", 3));
+    let events = pending.borrow();
+    assert_eq!(events.len(), 2);
+    assert!(matches!(&events[0], OrderEventAny::Updated(update) if update.client_order_id == id));
+    assert!(
+        matches!(&events[1], OrderEventAny::Triggered(triggered) if triggered.client_order_id == id)
+    );
+    assert!(engine.order_exists(id));
+    cache.borrow_mut().update_order(&events[0]).unwrap();
+    drop(events);
+    engine.set_event_handler(Rc::new(|event| {
+        msgbus::send_order_event(MessagingSwitchboard::exec_engine_process(), event);
+    }));
+    clear_order_event_handler_messages(&handler);
+    engine.process_quote_tick(&quote("102.00", 4));
+    let events = get_order_event_handler_messages(&handler);
+    assert_eq!(events.len(), 1);
+    let OrderEventAny::Filled(fill) = &events[0] else {
+        panic!("Expected fill, was {:?}", events[0]);
+    };
+    assert_eq!(fill.client_order_id, id);
+    assert_eq!(fill.last_px, Price::from("102.00"));
+    assert_eq!(fill.last_qty, Quantity::from("1.000"));
+    assert_eq!(fill.liquidity_side, LiquiditySide::Maker);
+    assert_eq!(
+        cache.borrow().order(&id).unwrap().status(),
+        OrderStatus::Filled
+    );
+}
+
+#[rstest]
+fn test_deferred_oto_children_wait_for_parent_fills(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(false, true)] oto_full_trigger: bool,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let mut engine = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        None,
+        Some(cache.clone()),
+        None,
+        Some(OrderMatchingEngineConfig {
+            oto_full_trigger,
+            liquidity_consumption: true,
+            ..Default::default()
+        }),
+    );
+    let pending = Rc::new(RefCell::new(Vec::new()));
+    let events = pending.clone();
+    engine.set_event_handler(Rc::new(move |event| events.borrow_mut().push(event)));
+    let parent_id = ClientOrderId::from("O-DEFERRED-OTO-PARENT");
+    let child_id = ClientOrderId::from("O-DEFERRED-OTO-CHILD");
+    let mut parent = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1400.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(parent_id)
+        .contingency_type(ContingencyType::Oto)
+        .linked_order_ids(vec![child_id])
+        .submit(true)
+        .build();
+    let mut child = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .price(Price::from("1600.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(child_id)
+        .parent_order_id(parent_id)
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(parent.clone(), None, None, false)
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_order(child.clone(), None, None, false)
+        .unwrap();
+
+    // Submit-list processing runs every child before deferred acceptance is applied
+    engine.process_order(&mut parent, account_id);
+    engine.process_order(&mut child, account_id);
+    assert!(engine.order_exists(parent_id));
+    assert!(!engine.order_exists(child_id));
+    assert_eq!(pending.borrow().len(), 1);
+    for event in pending.borrow_mut().drain(..) {
+        cache.borrow_mut().update_order(&event).unwrap();
+    }
+
+    for (index, price, quantity) in [(1, "1400.00", "0.400"), (2, "1399.00", "0.600")] {
+        let delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+            .book_action(BookAction::Add)
+            .book_order(BookOrder::new(
+                OrderSide::Sell,
+                Price::from(price),
+                Quantity::from(quantity),
+                index,
+            ))
+            .build();
+        engine.process_order_book_delta(&delta).unwrap();
+        assert_eq!(
+            engine.order_exists(child_id),
+            !oto_full_trigger || index == 2
+        );
+    }
+
+    let events = pending.borrow();
+    let fills: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some((fill.client_order_id, fill.last_qty)),
+            _ => None,
+        })
+        .collect();
+    let accepted: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Accepted(event) => Some(event.client_order_id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        fills,
+        vec![
+            (parent_id, Quantity::from("0.400")),
+            (parent_id, Quantity::from("0.600"))
+        ]
+    );
+    assert_eq!(accepted, vec![child_id]);
+    assert_eq!(events.len(), 3);
+    assert!(!engine.order_exists(parent_id));
+}
+
+#[rstest]
+fn test_deferred_market_to_limit_remainder_keeps_fill_price(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    #[values(false, true)] acknowledge_initial_fill: bool,
+    #[values(false, true)] modify_remainder: bool,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let mut engine = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        None,
+        Some(cache.clone()),
+        None,
+        Some(OrderMatchingEngineConfig {
+            liquidity_consumption: true,
+            ..Default::default()
+        }),
+    );
+    let pending = Rc::new(RefCell::new(Vec::new()));
+    let events = pending.clone();
+    engine.set_event_handler(Rc::new(move |event| events.borrow_mut().push(event)));
+    let delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("0.400"),
+            1,
+        ))
+        .build();
+    engine.process_order_book_delta(&delta).unwrap();
+    let id = ClientOrderId::from("O-DEFERRED-MTL");
+    let mut order = OrderTestBuilder::new(OrderType::MarketToLimit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(id)
+        .submit(true)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    engine.process_order(&mut order, account_id);
+
+    assert_eq!(
+        engine.get_core().get_order(id).unwrap().limit_price,
+        Some(Price::from("1500.00"))
+    );
+    let initial_events: Vec<_> = pending.borrow_mut().drain(..).collect();
+    assert_eq!(initial_events.len(), 3);
+    if acknowledge_initial_fill {
+        for event in &initial_events {
+            cache.borrow_mut().update_order(event).unwrap();
+        }
+    }
+    let remainder_price = Price::from(if modify_remainder {
+        "1501.00"
+    } else {
+        "1500.00"
+    });
+    let delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Update)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            remainder_price,
+            Quantity::from("0.600"),
+            1,
+        ))
+        .build();
+    engine.process_order_book_delta(&delta).unwrap();
+
+    if modify_remainder {
+        let command = ModifyOrder::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            order.instrument_id(),
+            id,
+            None,
+            None,
+            Some(remainder_price),
+            None,
+            UUID4::new(),
+            UnixNanos::from(1),
+            None,
+            None,
+        );
+        engine.process_modify(&command, account_id);
+    }
+
+    let events = pending.borrow();
+    assert_eq!(events.len(), 1 + usize::from(modify_remainder));
+    let OrderEventAny::Filled(fill) = &events[usize::from(modify_remainder)] else {
+        panic!("Expected remainder fill");
+    };
+    assert_eq!(fill.client_order_id, id);
+    assert_eq!(fill.last_qty, Quantity::from("0.600"));
+    assert_eq!(fill.last_px, remainder_price);
+    assert_eq!(
+        fill.liquidity_side,
+        if modify_remainder {
+            LiquiditySide::Taker
+        } else {
+            LiquiditySide::Maker
+        }
+    );
+    assert_eq!(
+        fill.commission,
+        Some(Money::from(if modify_remainder {
+            "0.36024000 USDT"
+        } else {
+            "0.18000000 USDT"
+        }))
+    );
+    assert!(!engine.order_exists(id));
 }

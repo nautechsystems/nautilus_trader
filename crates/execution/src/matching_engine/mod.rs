@@ -49,7 +49,7 @@ use nautilus_model::{
     enums::{
         AccountType, AggregationSource, AggressorSide, BookAction, BookType, ContingencyType,
         InstrumentCloseType, LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OrderSide,
-        OrderStatus, OrderType, PriceType, RecordFlag, TimeInForce, TriggerType,
+        OrderStatus, OrderType, PositionSide, PriceType, RecordFlag, TimeInForce, TriggerType,
     },
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderExpired,
@@ -57,18 +57,19 @@ use nautilus_model::{
         OrderUpdated,
     },
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId, Venue,
+        AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId, Venue,
         VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
     orderbook::{BookLevel, OrderBook},
     orders::{MarketOrder, Order, OrderAny, OrderCore},
-    position::Position,
+    position::{Position, PositionReplayEvent},
     types::{
         Currency, Money, Price, Quantity, fixed::FIXED_PRECISION, price::PriceRaw,
         quantity::QuantityRaw,
     },
 };
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use self::{config::OrderMatchingEngineConfig, ids_generator::IdsGenerator};
@@ -117,6 +118,8 @@ pub struct OrderMatchingEngine {
     execution_bar_deltas: IndexMap<BarType, SignedDuration>,
     account_ids: IndexMap<TraderId, AccountId>,
     cached_filled_qty: IndexMap<ClientOrderId, Quantity>,
+    pending_order_updates: RefCell<IndexMap<ClientOrderId, Vec<OrderUpdated>>>,
+    pending_fills: IndexMap<TradeId, PendingFill>,
     post_match_order_ids: IndexSet<ClientOrderId>,
     ids_generator: IdsGenerator,
     last_trade_size: Option<Quantity>,
@@ -210,6 +213,8 @@ impl OrderMatchingEngine {
             execution_bar_deltas: IndexMap::new(),
             account_ids: IndexMap::new(),
             cached_filled_qty: IndexMap::new(),
+            pending_order_updates: RefCell::new(IndexMap::new()),
+            pending_fills: IndexMap::new(),
             post_match_order_ids: IndexSet::new(),
             ids_generator,
             last_trade_size: None,
@@ -272,6 +277,8 @@ impl OrderMatchingEngine {
         self.execution_bar_deltas.clear();
         self.account_ids.clear();
         self.cached_filled_qty.clear();
+        self.pending_order_updates.get_mut().clear();
+        self.pending_fills.clear();
         self.post_match_order_ids.clear();
         self.core.reset();
         self.target_bid = None;
@@ -584,10 +591,24 @@ impl OrderMatchingEngine {
             let cache = self.cache.borrow();
             let order_info = cache.order(&client_order_id).and_then(|order| {
                 if order.is_closed() {
-                    None
-                } else {
-                    Some((order.order_side(), order.leaves_qty().raw))
+                    return None;
                 }
+                let has_pending_updates = self
+                    .pending_order_updates
+                    .borrow()
+                    .contains_key(&client_order_id);
+                let has_pending_fills = self
+                    .cached_filled_qty
+                    .get(&client_order_id)
+                    .is_some_and(|filled_qty| *filled_qty != order.filled_qty());
+                let snapshot;
+                let order = if has_pending_updates || has_pending_fills {
+                    snapshot = self.order_snapshot(client_order_id)?;
+                    &snapshot
+                } else {
+                    &order
+                };
+                Some((order.order_side(), order.leaves_qty().raw))
             });
             drop(cache);
 
@@ -2829,19 +2850,19 @@ impl OrderMatchingEngine {
             // Contingent orders checks
             if self.config.support_contingent_orders {
                 if let Some(parent_order_id) = order.parent_order_id() {
-                    let parent_order = match cache_borrow.order(&parent_order_id) {
+                    let parent_order = match self.order_snapshot(parent_order_id) {
                         Some(o) if o.contingency_type() == Some(ContingencyType::Oto) => o,
                         _ => panic!("OTO parent not found"),
                     };
+                    let parent_filled_qty = parent_order.filled_qty();
 
                     if parent_order.status() == OrderStatus::Rejected && order.is_open() {
                         break 'validate Some(
                             format!("Rejected OTO order from {parent_order_id}").into(),
                         );
-                    } else if parent_order.status() == OrderStatus::Accepted
-                        || parent_order.status() == OrderStatus::Triggered
+                    } else if parent_filled_qty.is_zero()
                         || (self.config.oto_full_trigger
-                            && parent_order.status() == OrderStatus::PartiallyFilled)
+                            && parent_filled_qty < parent_order.quantity())
                     {
                         log::info!(
                             "Pending OTO order {} triggers from {parent_order_id}",
@@ -3105,12 +3126,7 @@ impl OrderMatchingEngine {
             return;
         }
 
-        let order = match self
-            .cache
-            .borrow()
-            .order(&command.client_order_id)
-            .map(|o| o.clone())
-        {
+        let order = match self.order_snapshot(command.client_order_id) {
             Some(order) => order,
             None => {
                 log::error!(
@@ -3133,7 +3149,10 @@ impl OrderMatchingEngine {
             return;
         }
 
-        // Local `order` is pre-event; resync from the cache for fresh state
+        if !self.core.order_exists(command.client_order_id) {
+            return;
+        }
+
         let Some(refreshed) = self.resync_core_entry(command.client_order_id) else {
             return;
         };
@@ -3167,12 +3186,7 @@ impl OrderMatchingEngine {
             return;
         }
 
-        let order = match self
-            .cache
-            .borrow()
-            .order(&command.client_order_id)
-            .map(|o| o.clone())
-        {
+        let order = match self.order_snapshot(command.client_order_id) {
             Some(order) => order,
             None => {
                 log::error!(
@@ -3252,11 +3266,7 @@ impl OrderMatchingEngine {
     }
 
     fn resync_core_entry(&mut self, client_order_id: ClientOrderId) -> Option<OrderAny> {
-        let order = self
-            .cache
-            .borrow()
-            .order(&client_order_id)
-            .map(|o| o.clone())?;
+        let order = self.order_snapshot(client_order_id)?;
 
         // Gate on `is_closed`, not `is_open`: cache may transiently hold the
         // order in `Submitted` (process_limit_order accepts before cache add)
@@ -3283,6 +3293,65 @@ impl OrderMatchingEngine {
         self.track_post_match_order(&order);
         self.core.add_order(new_match_info);
         Some(order)
+    }
+
+    fn order_snapshot(&self, client_order_id: ClientOrderId) -> Option<OrderAny> {
+        let mut order = self.cache.borrow().order(&client_order_id)?.clone();
+        let mut pending = self.pending_order_updates.borrow_mut();
+
+        if order.is_closed() {
+            pending.swap_remove(&client_order_id);
+            return Some(order);
+        }
+
+        if let Some(updates) = pending.get_mut(&client_order_id) {
+            Self::retain_unapplied_order_updates(&order, updates);
+
+            for update in updates.iter() {
+                if let Err(e) = order.apply(OrderEventAny::Updated(*update)) {
+                    log::error!("Cannot apply pending update for {client_order_id}: {e}");
+                    return None;
+                }
+            }
+
+            if updates.is_empty() {
+                pending.swap_remove(&client_order_id);
+            }
+        }
+
+        if let Some(filled_qty) = self.cached_filled_qty.get(&client_order_id) {
+            write_filled_qty(&mut order, *filled_qty);
+            order.set_leaves_qty(order.quantity().saturating_sub(*filled_qty));
+        }
+
+        Some(order)
+    }
+
+    fn purge_applied_order_updates(&self) {
+        let cache = self.cache.borrow();
+        self.pending_order_updates
+            .borrow_mut()
+            .retain(|id, updates| {
+                let Some(order) = cache.order(id) else {
+                    return false;
+                };
+                Self::retain_unapplied_order_updates(&order, updates);
+                !updates.is_empty()
+            });
+    }
+
+    fn retain_unapplied_order_updates(order: &OrderAny, updates: &mut Vec<OrderUpdated>) {
+        if order.is_closed() {
+            updates.clear();
+            return;
+        }
+
+        let events = order.events();
+        updates.retain(|update| {
+            !events.iter().any(|event| {
+                matches!(event, OrderEventAny::Updated(applied) if applied.event_id == update.event_id)
+            })
+        });
     }
 
     /// Processes a batch cancel orders command.
@@ -3476,13 +3545,7 @@ impl OrderMatchingEngine {
             return;
         }
 
-        let updated_order = self
-            .cache
-            .borrow()
-            .order(&client_order_id)
-            .map(|o| o.clone());
-
-        if let Some(mut updated_order) = updated_order {
+        if let Some(mut updated_order) = self.order_snapshot(client_order_id) {
             self.accept_order(&mut updated_order);
         }
     }
@@ -3766,6 +3829,8 @@ impl OrderMatchingEngine {
     ) {
         // TODO implement correct clock fixed time setting self.clock.set_time(ts_now);
         self.purge_closed_cached_filled_qty();
+        self.purge_applied_order_updates();
+        self.purge_applied_fills();
 
         // Only reset bid/ask from book when not processing trade execution
         // (preserves transient trade price override for L2/L3 books). The
@@ -3803,7 +3868,7 @@ impl OrderMatchingEngine {
                 matched_order = true;
 
                 match action {
-                    MatchAction::FillLimit(id) => self.fill_limit_order(id),
+                    MatchAction::FillLimit(id) => self.fill_resting_limit_order(id),
                     MatchAction::TriggerStop(id) => self.trigger_stop_order(id),
                 }
             }
@@ -3816,7 +3881,7 @@ impl OrderMatchingEngine {
                 matched_order = true;
 
                 match action {
-                    MatchAction::FillLimit(id) => self.fill_limit_order(id),
+                    MatchAction::FillLimit(id) => self.fill_resting_limit_order(id),
                     MatchAction::TriggerStop(id) => self.trigger_stop_order(id),
                 }
             }
@@ -3849,7 +3914,8 @@ impl OrderMatchingEngine {
 
                 (
                     post_match_order_action(&order, support_gtd_orders, timestamp_ns, |order| {
-                        order.clone()
+                        self.order_snapshot(client_order_id)
+                            .unwrap_or_else(|| order.clone())
                     }),
                     Self::requires_post_match_maintenance(&order),
                 )
@@ -3928,9 +3994,32 @@ impl OrderMatchingEngine {
         // get a chance to fill before positions are closed.
         self.check_instrument_expiration(timestamp_ns);
         self.purge_closed_cached_filled_qty();
+        self.purge_applied_order_updates();
+        self.purge_applied_fills();
+    }
+
+    fn fill_resting_limit_order(&mut self, client_order_id: ClientOrderId) {
+        // A market-to-limit remainder rests as maker after its initial taker fill
+        if self
+            .core
+            .get_order(client_order_id)
+            .is_some_and(|order| order.order_type == OrderType::MarketToLimit)
+            && let Some(mut order) = self.cache.borrow_mut().order_mut(&client_order_id)
+        {
+            order.set_liquidity_side(LiquiditySide::Maker);
+        }
+        self.fill_limit_order(client_order_id);
     }
 
     fn should_process_match_action(&self, action: MatchAction, match_mode: OrderMatchMode) -> bool {
+        let client_order_id = match action {
+            MatchAction::FillLimit(id) | MatchAction::TriggerStop(id) => id,
+        };
+
+        if !self.core.order_exists(client_order_id) {
+            return false;
+        }
+
         match match_mode {
             OrderMatchMode::All => true,
             OrderMatchMode::LastPriceStopTriggers => match action {
@@ -4134,6 +4223,7 @@ impl OrderMatchingEngine {
                 } else {
                     Vec::new()
                 };
+
                 let book_prices_ref: Option<&[Price]> = if book_prices.is_empty() {
                     None
                 } else {
@@ -4312,12 +4402,7 @@ impl OrderMatchingEngine {
     /// The order is filled as a taker against available liquidity.
     /// Reduce-only orders are canceled if no position exists.
     pub fn fill_market_order(&mut self, client_order_id: ClientOrderId) {
-        let mut order = match self
-            .cache
-            .borrow()
-            .order(&client_order_id)
-            .map(|o| o.clone())
-        {
+        let mut order = match self.order_snapshot(client_order_id) {
             Some(order) => order,
             None => {
                 log::error!("Cannot fill market order: order {client_order_id} not found in cache");
@@ -4465,12 +4550,7 @@ impl OrderMatchingEngine {
     ///
     /// Panics if the order has no price (design error).
     pub fn fill_limit_order(&mut self, client_order_id: ClientOrderId) {
-        let mut order = match self
-            .cache
-            .borrow()
-            .order(&client_order_id)
-            .map(|o| o.clone())
-        {
+        let mut order = match self.order_snapshot(client_order_id) {
             Some(order) => order,
             None => {
                 log::error!("Cannot fill limit order: order {client_order_id} not found in cache");
@@ -4772,7 +4852,12 @@ impl OrderMatchingEngine {
             && order.is_reduce_only()
             && let Some(current_position) = position
         {
-            reduce_only_remaining_raw = Some(current_position.quantity.raw);
+            let remaining = self.position_quantity_remaining(order, current_position)?;
+            if remaining.is_zero() {
+                self.cancel_order(order, None);
+                return Ok(());
+            }
+            reduce_only_remaining_raw = Some(remaining.raw);
             reduce_only_filled_raw = Some(total_filled.raw);
         }
 
@@ -4999,6 +5084,69 @@ impl OrderMatchingEngine {
         normalized
     }
 
+    fn position_quantity_remaining(
+        &mut self,
+        order: &OrderAny,
+        position: &Position,
+    ) -> anyhow::Result<Quantity> {
+        self.purge_applied_fills();
+        let mut quantity = match position.side {
+            PositionSide::Long => position.quantity.as_decimal(),
+            PositionSide::Short => -position.quantity.as_decimal(),
+            PositionSide::Flat => Decimal::ZERO,
+        };
+
+        for fill in self.pending_fills.values() {
+            if fill.position_id == Some(position.id) {
+                quantity = quantity
+                    .checked_add(fill.quantity_change)
+                    .ok_or_else(|| anyhow::anyhow!("Pending position quantity overflow"))?;
+            }
+        }
+
+        if (order.is_buy() && quantity >= Decimal::ZERO)
+            || (order.is_sell() && quantity <= Decimal::ZERO)
+        {
+            return Ok(Quantity::zero(position.quantity.precision));
+        }
+        Ok(Quantity::from_decimal_dp(
+            quantity.abs(),
+            position.quantity.precision,
+        )?)
+    }
+
+    fn purge_applied_fills(&mut self) {
+        let cache = self.cache.borrow();
+        self.pending_fills.retain(|trade_id, fill| {
+            fill.position_id = fill
+                .position_id
+                .or_else(|| cache.position_id(&fill.client_order_id).copied());
+            let Some(position_id) = fill.position_id else {
+                return cache.order_exists(&fill.client_order_id);
+            };
+            let Some(position) = cache.position(&position_id) else {
+                return cache.order_exists(&fill.client_order_id);
+            };
+
+            if position.trade_ids.contains(trade_id) {
+                return false;
+            }
+            let opening_trade_id = position.events.first().map(|event| event.trade_id);
+            if opening_trade_id != fill.opening_trade_id {
+                // NETTING reuses position IDs; acknowledged fills can belong to archived cycles
+                if position.replay_events.iter().any(|event| {
+                    matches!(event, PositionReplayEvent::Filled(event) if event.trade_id == *trade_id)
+                }) || cache.position_snapshots(Some(&position_id), None).iter()
+                    .any(|snapshot| snapshot.trade_ids.contains(trade_id))
+                {
+                    return false;
+                }
+                fill.opening_trade_id = opening_trade_id;
+            }
+            true
+        });
+    }
+
     fn fill_order(
         &mut self,
         order: &OrderAny,
@@ -5092,8 +5240,8 @@ impl OrderMatchingEngine {
                 ContingencyType::Oto => {
                     if let Some(linked_orders_ids) = order.linked_order_ids() {
                         for client_order_id in linked_orders_ids {
-                            let mut child_order = match self.cache.borrow().order(client_order_id) {
-                                Some(child_order) => child_order.clone(),
+                            let mut child_order = match self.order_snapshot(*client_order_id) {
+                                Some(child_order) => child_order,
                                 None => anyhow::bail!("Order {client_order_id} not found in cache"),
                             };
 
@@ -5147,8 +5295,8 @@ impl OrderMatchingEngine {
                 ContingencyType::Oco => {
                     if let Some(linked_orders_ids) = order.linked_order_ids() {
                         for client_order_id in linked_orders_ids {
-                            let child_order = match self.cache.borrow().order(client_order_id) {
-                                Some(child_order) => child_order.clone(),
+                            let child_order = match self.order_snapshot(*client_order_id) {
+                                Some(child_order) => child_order,
                                 None => anyhow::bail!("Order {client_order_id} not found in cache"),
                             };
 
@@ -5156,7 +5304,7 @@ impl OrderMatchingEngine {
                                 continue;
                             }
 
-                            self.cancel_order(&child_order, None);
+                            self.cancel_order(&child_order, Some(false));
                         }
                     } else {
                         log::error!(
@@ -5168,8 +5316,8 @@ impl OrderMatchingEngine {
                 ContingencyType::Ouo => {
                     if let Some(linked_orders_ids) = order.linked_order_ids() {
                         for client_order_id in linked_orders_ids {
-                            let child_order = match self.cache.borrow().order(client_order_id) {
-                                Some(child_order) => child_order.clone(),
+                            let child_order = match self.order_snapshot(*client_order_id) {
+                                Some(child_order) => child_order,
                                 None => anyhow::bail!("Order {client_order_id} not found in cache"),
                             };
 
@@ -5877,12 +6025,7 @@ impl OrderMatchingEngine {
 
     /// Triggers a stop order, converting it to an active market or limit order.
     pub fn trigger_stop_order(&mut self, client_order_id: ClientOrderId) {
-        let order = match self
-            .cache
-            .borrow()
-            .order(&client_order_id)
-            .map(|o| o.clone())
-        {
+        let order = match self.order_snapshot(client_order_id) {
             Some(order) => order,
             None => {
                 log::error!(
@@ -5947,6 +6090,7 @@ impl OrderMatchingEngine {
                 order
             }
         };
+        let order = self.order_snapshot(client_order_id).unwrap_or(order);
         self.dispatch_order_event(event);
 
         let trigger_price = order
@@ -6054,8 +6198,8 @@ impl OrderMatchingEngine {
             let parent_leaves_qty = parent_quantity.saturating_sub(parent_filled_qty);
 
             for client_order_id in linked_order_ids {
-                let child_order = match self.cache.borrow().order(client_order_id) {
-                    Some(order) => order.clone(),
+                let child_order = match self.order_snapshot(*client_order_id) {
+                    Some(order) => order,
                     None => panic!("Order {client_order_id} not found in cache."),
                 };
 
@@ -6095,8 +6239,8 @@ impl OrderMatchingEngine {
     fn cancel_contingent_orders(&mut self, order: &OrderAny) {
         if let Some(linked_order_ids) = order.linked_order_ids() {
             for client_order_id in linked_order_ids {
-                let contingent_order = match self.cache.borrow().order(client_order_id) {
-                    Some(order) => order.clone(),
+                let contingent_order = match self.order_snapshot(*client_order_id) {
+                    Some(order) => order,
                     None => panic!("Cannot find contingent order for {client_order_id}"),
                 };
 
@@ -6256,7 +6400,7 @@ impl OrderMatchingEngine {
         protection_price: Option<Price>,
     ) {
         let ts_now = self.clock.borrow().timestamp_ns();
-        let event = OrderEventAny::Updated(OrderUpdated::new(
+        let event = OrderUpdated::new(
             order.trader_id(),
             order.strategy_id(),
             order.instrument_id(),
@@ -6272,9 +6416,14 @@ impl OrderMatchingEngine {
             trigger_price,
             protection_price,
             order.is_quote_quantity(),
-        ));
+        );
 
-        self.dispatch_order_event(event);
+        self.pending_order_updates
+            .borrow_mut()
+            .entry(order.client_order_id())
+            .or_default()
+            .push(event);
+        self.dispatch_order_event(OrderEventAny::Updated(event));
     }
 
     fn generate_order_canceled(&self, order: &OrderAny, venue_order_id: VenueOrderId) {
@@ -6350,7 +6499,7 @@ impl OrderMatchingEngine {
         let account_id = order
             .account_id()
             .unwrap_or(self.account_ids.get(&order.trader_id()).unwrap().to_owned());
-        let event = OrderEventAny::Filled(OrderFilled::new(
+        let fill = OrderFilled::new(
             order.trader_id(),
             order.strategy_id(),
             order.instrument_id(),
@@ -6371,10 +6520,62 @@ impl OrderMatchingEngine {
             venue_position_id,
             Some(commission),
             None,
-        ));
+        );
 
-        self.dispatch_order_event(event);
+        self.record_pending_fill(&fill);
+        self.dispatch_order_event(OrderEventAny::Filled(fill));
     }
+
+    fn record_pending_fill(&mut self, fill: &OrderFilled) {
+        if !self.config.use_reduce_only || self.instrument.is_spread() {
+            return;
+        }
+        self.purge_applied_fills();
+        let cache = self.cache.borrow();
+        let position_id = cache
+            .position_id(&fill.client_order_id)
+            .copied()
+            .or(fill.position_id)
+            .or_else(|| {
+                (self.oms_type == OmsType::Netting).then(|| {
+                    PositionId::new(format!("{}-{}", fill.instrument_id, fill.strategy_id))
+                })
+            });
+        let opening_trade_id = position_id.and_then(|id| {
+            cache
+                .position(&id)
+                .and_then(|position| position.events.first().map(|event| event.trade_id))
+        });
+        let mut quantity_change = if fill.order_side == OrderSide::Buy {
+            fill.last_qty.as_decimal()
+        } else {
+            -fill.last_qty.as_decimal()
+        };
+
+        if matches!(self.instrument, InstrumentAny::CurrencyPair(_))
+            && let Some(commission) = fill.commission
+            && Some(commission.currency) == self.instrument.base_currency()
+        {
+            quantity_change -= commission.as_decimal();
+        }
+        self.pending_fills.insert(
+            fill.trade_id,
+            PendingFill {
+                client_order_id: fill.client_order_id,
+                position_id,
+                opening_trade_id,
+                quantity_change,
+            },
+        );
+    }
+}
+
+#[derive(Debug)]
+struct PendingFill {
+    client_order_id: ClientOrderId,
+    position_id: Option<PositionId>,
+    opening_trade_id: Option<TradeId>,
+    quantity_change: Decimal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -6547,7 +6748,10 @@ mod tests {
     use rstest::rstest;
     use rust_decimal::Decimal;
 
-    use super::{BarTickSizes, OrderMatchingEngine, PostMatchOrderAction, post_match_order_action};
+    use super::{
+        BarTickSizes, OrderFilled, OrderMatchingEngine, Position, PositionId, PostMatchOrderAction,
+        post_match_order_action,
+    };
     use crate::{
         matching_engine::config::OrderMatchingEngineConfig,
         models::{
@@ -6595,6 +6799,462 @@ mod tests {
 
         assert!(matches!(action, PostMatchOrderAction::NoMaintenance));
         assert_eq!(clone_count.get(), 0);
+    }
+
+    #[rstest]
+    #[case::spread(
+        InstrumentAny::FuturesSpread(nautilus_model::instruments::stubs::futures_spread_es()),
+        0
+    )]
+    #[case::outright(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()), 1)]
+    fn test_pending_fills_exclude_instruments_without_positions(
+        #[case] instrument: InstrumentAny,
+        #[case] expected_pending: usize,
+    ) {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut engine = OrderMatchingEngine::new(
+            instrument.clone(),
+            1,
+            FillModelHandle::default(),
+            FeeModelAny::default().into(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            Rc::new(RefCell::new(TestClock::new())),
+            cache.clone(),
+            Default::default(),
+        );
+        let (order, fill) = pending_position_fill(
+            &instrument,
+            PositionId::from("POSITION-001"),
+            "OPEN",
+            OrderSide::Buy,
+            "1",
+        );
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+        engine.record_pending_fill(&fill);
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::Filled(fill))
+            .unwrap();
+        engine.purge_applied_fills();
+        assert_eq!(engine.pending_fills.len(), expected_pending);
+    }
+
+    #[rstest]
+    fn test_pending_fills_wait_for_position_acknowledgement(
+        #[values(OmsType::Netting, OmsType::Hedging)] oms_type: OmsType,
+        #[values(OrderSide::Buy, OrderSide::Sell)] closing_side: OrderSide,
+    ) {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut engine = OrderMatchingEngine::new(
+            instrument.clone(),
+            1,
+            FillModelHandle::default(),
+            FeeModelAny::default().into(),
+            BookType::L1_MBP,
+            oms_type,
+            AccountType::Margin,
+            Rc::new(RefCell::new(TestClock::new())),
+            cache.clone(),
+            Default::default(),
+        );
+        let position_id = PositionId::from("POSITION-001");
+        let opening_side = if closing_side == OrderSide::Buy {
+            OrderSide::Sell
+        } else {
+            OrderSide::Buy
+        };
+        let (opening, opening_fill) =
+            pending_position_fill(&instrument, position_id, "OPEN", opening_side, "0.500");
+        let (closing, first_fill) = pending_position_fill(
+            &instrument,
+            position_id,
+            "CLOSE-FIRST",
+            closing_side,
+            "0.400",
+        );
+        let (_, second_fill) = pending_position_fill(
+            &instrument,
+            position_id,
+            "CLOSE-SECOND",
+            closing_side,
+            "0.100",
+        );
+        let (unrelated, unrelated_fill) = pending_position_fill(
+            &instrument,
+            PositionId::from("POSITION-002"),
+            "UNRELATED",
+            closing_side,
+            "0.200",
+        );
+        let position = Position::new(&instrument, opening_fill);
+        cache
+            .borrow_mut()
+            .add_order(opening, None, None, false)
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_position(&position, oms_type)
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_order(closing.clone(), Some(position_id), None, false)
+            .unwrap();
+        engine.record_pending_fill(&first_fill);
+        cache
+            .borrow_mut()
+            .add_order(unrelated, None, None, false)
+            .unwrap();
+        engine.record_pending_fill(&unrelated_fill);
+        assert_eq!(
+            engine
+                .position_quantity_remaining(&closing, &position)
+                .unwrap(),
+            Quantity::from("0.100")
+        );
+
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::Filled(first_fill.clone()))
+            .unwrap();
+        assert_eq!(
+            engine
+                .position_quantity_remaining(&closing, &position)
+                .unwrap(),
+            Quantity::from("0.100")
+        );
+        let position = cache
+            .borrow_mut()
+            .update_position_from_fill(position_id, &first_fill)
+            .unwrap();
+        assert_eq!(
+            engine
+                .position_quantity_remaining(&closing, &position)
+                .unwrap(),
+            Quantity::from("0.100")
+        );
+        assert!(!engine.pending_fills.contains_key(&first_fill.trade_id));
+
+        engine.record_pending_fill(&second_fill);
+        assert_eq!(
+            engine
+                .position_quantity_remaining(&closing, &position)
+                .unwrap(),
+            Quantity::from("0.000")
+        );
+        engine.reset();
+        assert!(engine.pending_fills.is_empty());
+        assert_eq!(
+            engine
+                .position_quantity_remaining(&closing, &position)
+                .unwrap(),
+            Quantity::from("0.100")
+        );
+    }
+
+    #[rstest]
+    #[case::base_fee("0.010 ETH", "0.89000")]
+    #[case::quote_fee("0.010 USDT", "0.90000")]
+    fn test_pending_spot_fills_include_base_currency_commission(
+        #[case] commission: &str,
+        #[case] expected: &str,
+    ) {
+        let instrument = InstrumentAny::CurrencyPair(
+            nautilus_model::instruments::stubs::currency_pair_ethusdt(),
+        );
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut engine = OrderMatchingEngine::new(
+            instrument.clone(),
+            1,
+            FillModelHandle::default(),
+            FeeModelAny::default().into(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Cash,
+            Rc::new(RefCell::new(TestClock::new())),
+            cache.clone(),
+            Default::default(),
+        );
+        let position_id = PositionId::from("POSITION-001");
+        let (opening, opening_fill) =
+            pending_position_fill(&instrument, position_id, "OPEN", OrderSide::Buy, "0.50000");
+        let (_, mut increase_fill) = pending_position_fill(
+            &instrument,
+            position_id,
+            "INCREASE",
+            OrderSide::Buy,
+            "0.40000",
+        );
+        let (closing, _) = pending_position_fill(
+            &instrument,
+            position_id,
+            "CLOSE",
+            OrderSide::Sell,
+            "1.00000",
+        );
+        increase_fill.commission = Some(Money::from(commission));
+        let position = Position::new(&instrument, opening_fill);
+        cache
+            .borrow_mut()
+            .add_order(opening, None, None, false)
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_position(&position, OmsType::Netting)
+            .unwrap();
+        engine.record_pending_fill(&increase_fill);
+        assert_eq!(
+            engine
+                .position_quantity_remaining(&closing, &position)
+                .unwrap(),
+            Quantity::from(expected)
+        );
+        let position = cache
+            .borrow_mut()
+            .update_position_from_fill(position_id, &increase_fill)
+            .unwrap();
+        assert_eq!(
+            engine
+                .position_quantity_remaining(&closing, &position)
+                .unwrap(),
+            Quantity::from(expected)
+        );
+        assert!(engine.pending_fills.is_empty());
+    }
+
+    #[rstest]
+    fn test_pending_fills_survive_position_flip_and_archive_acknowledgement() {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut engine = OrderMatchingEngine::new(
+            instrument.clone(),
+            1,
+            FillModelHandle::default(),
+            FeeModelAny::default().into(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            Rc::new(RefCell::new(TestClock::new())),
+            cache.clone(),
+            Default::default(),
+        );
+        let position_id = PositionId::from("POSITION-001");
+        let (opening, opening_fill) =
+            pending_position_fill(&instrument, position_id, "OPEN", OrderSide::Buy, "10.000");
+        let (flipping, flip_fill) =
+            pending_position_fill(&instrument, position_id, "FLIP", OrderSide::Sell, "15.000");
+        let (closing, close_fill) =
+            pending_position_fill(&instrument, position_id, "CLOSE", OrderSide::Buy, "4.000");
+
+        for order in [opening, flipping, closing.clone()] {
+            cache
+                .borrow_mut()
+                .add_order(order, None, None, false)
+                .unwrap();
+        }
+        let mut position = Position::new(&instrument, opening_fill);
+        cache
+            .borrow_mut()
+            .add_position(&position, OmsType::Netting)
+            .unwrap();
+        engine.record_pending_fill(&flip_fill);
+        engine.record_pending_fill(&close_fill);
+        assert_eq!(
+            engine
+                .position_quantity_remaining(&closing, &position)
+                .unwrap(),
+            Quantity::from("1.000")
+        );
+
+        let (closing_flip, opening_flip) = flip_fill
+            .split_for_position_flip(Quantity::from("10.000"), Some(position_id), UUID4::new())
+            .unwrap();
+        position.apply(&closing_flip);
+        cache.borrow_mut().snapshot_position(&position).unwrap();
+        let position = Position::new(&instrument, opening_flip);
+        cache
+            .borrow_mut()
+            .add_position(&position, OmsType::Netting)
+            .unwrap();
+        assert_eq!(
+            engine
+                .position_quantity_remaining(&closing, &position)
+                .unwrap(),
+            Quantity::from("1.000")
+        );
+        assert!(!engine.pending_fills.contains_key(&flip_fill.trade_id));
+        assert!(engine.pending_fills.contains_key(&close_fill.trade_id));
+
+        let position = cache
+            .borrow_mut()
+            .update_position_from_fill(position_id, &close_fill)
+            .unwrap();
+        assert_eq!(
+            engine
+                .position_quantity_remaining(&closing, &position)
+                .unwrap(),
+            Quantity::from("1.000")
+        );
+        assert!(engine.pending_fills.is_empty());
+
+        let (_, flatten_fill) =
+            pending_position_fill(&instrument, position_id, "FLATTEN", OrderSide::Buy, "1.000");
+        let (_, reopen_fill) =
+            pending_position_fill(&instrument, position_id, "REOPEN", OrderSide::Sell, "3.000");
+        engine.record_pending_fill(&flatten_fill);
+        engine.record_pending_fill(&reopen_fill);
+        cache
+            .borrow_mut()
+            .update_position_from_fill(position_id, &flatten_fill)
+            .unwrap();
+        let closed = cache.borrow().position(&position_id).unwrap().clone();
+        cache.borrow_mut().snapshot_position(&closed).unwrap();
+        let position = Position::new(&instrument, reopen_fill);
+        cache
+            .borrow_mut()
+            .add_position_without_order(&position, OmsType::Netting)
+            .unwrap();
+        assert_eq!(
+            engine
+                .position_quantity_remaining(&closing, &position)
+                .unwrap(),
+            Quantity::from("3.000")
+        );
+        assert!(engine.pending_fills.is_empty());
+    }
+
+    fn pending_position_fill(
+        instrument: &InstrumentAny,
+        position_id: PositionId,
+        id: &str,
+        side: OrderSide,
+        quantity: &str,
+    ) -> (OrderAny, OrderFilled) {
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from(id))
+            .side(side)
+            .quantity(Quantity::from(quantity))
+            .submit(true)
+            .build();
+        let OrderEventAny::Filled(fill) = TestOrderEventStubs::filled(
+            &order,
+            instrument,
+            Some(TradeId::from(id)),
+            Some(position_id),
+            Some(Price::from("1000.00")),
+            None,
+            None,
+            Some(Money::zero(instrument.quote_currency())),
+            None,
+            None,
+        ) else {
+            unreachable!()
+        };
+        (order, fill)
+    }
+
+    #[rstest]
+    fn test_pending_modify_updates_acknowledge_individually_and_reset() {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut engine = OrderMatchingEngine::new(
+            instrument.clone(),
+            1,
+            FillModelHandle::default(),
+            FeeModelAny::default().into(),
+            BookType::L2_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            Rc::new(RefCell::new(TestClock::new())),
+            cache.clone(),
+            OrderMatchingEngineConfig::default(),
+        );
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .price(Price::from("99.00"))
+            .submit(true)
+            .build();
+        let id = order.client_order_id();
+        engine.set_event_handler(Rc::new(|_| {}));
+        engine.process_order(&mut order, AccountId::from("ACCOUNT-001"));
+        let pending = Rc::new(RefCell::new(Vec::new()));
+        let events = pending.clone();
+        engine.set_event_handler(Rc::new(move |event| events.borrow_mut().push(event)));
+
+        for (quantity, price) in [
+            (Some(Quantity::from("2.000")), None),
+            (None, Some(Price::from("100.00"))),
+        ] {
+            engine.process_modify(
+                &ModifyOrder::new(
+                    order.trader_id(),
+                    None,
+                    order.strategy_id(),
+                    order.instrument_id(),
+                    id,
+                    None,
+                    quantity,
+                    price,
+                    None,
+                    UUID4::new(),
+                    UnixNanos::from(1),
+                    None,
+                    None,
+                ),
+                AccountId::from("ACCOUNT-001"),
+            );
+        }
+        assert_eq!(pending.borrow().len(), 2);
+        cache
+            .borrow_mut()
+            .update_order(&pending.borrow()[0])
+            .unwrap();
+        let snapshot = engine.order_snapshot(id).unwrap();
+        assert_eq!(snapshot.quantity(), Quantity::from("2.000"));
+        assert_eq!(snapshot.price(), Some(Price::from("100.00")));
+        assert_eq!(engine.pending_order_updates.borrow()[&id].len(), 1);
+        cache
+            .borrow_mut()
+            .update_order(&pending.borrow()[1])
+            .unwrap();
+        engine.iterate(UnixNanos::from(2), AggressorSide::NoAggressor);
+        assert!(engine.pending_order_updates.borrow().is_empty());
+        engine.process_modify(
+            &ModifyOrder::new(
+                order.trader_id(),
+                None,
+                order.strategy_id(),
+                order.instrument_id(),
+                id,
+                None,
+                Some(Quantity::from("3.000")),
+                None,
+                None,
+                UUID4::new(),
+                UnixNanos::from(3),
+                None,
+                None,
+            ),
+            AccountId::from("ACCOUNT-001"),
+        );
+        assert_eq!(
+            engine.order_snapshot(id).unwrap().quantity(),
+            Quantity::from("3.000")
+        );
+        engine.reset();
+        assert!(engine.pending_order_updates.borrow().is_empty());
+        assert_eq!(
+            engine.order_snapshot(id).unwrap().quantity(),
+            Quantity::from("2.000")
+        );
     }
 
     #[rstest]

@@ -2306,7 +2306,7 @@ mod tests {
         enums::Environment,
         messages::{
             data::{DataCommand, UnsubscribeCommand},
-            execution::{ModifyOrder, SubmitOrder, TradingCommand},
+            execution::{BatchModifyOrders, ModifyOrder, SubmitOrder, TradingCommand},
         },
         msgbus::{
             self, MessagingSwitchboard, TypedHandler,
@@ -2317,8 +2317,8 @@ mod tests {
     use nautilus_model::{
         data::{Data, InstrumentStatus, QuoteTick},
         enums::{
-            AccountType, BookType, MarketStatus, MarketStatusAction, OmsType, OrderSide,
-            OrderStatus, OrderType, TriggerType,
+            AccountType, BookType, LiquiditySide, MarketStatus, MarketStatusAction, OmsType,
+            OrderSide, OrderStatus, OrderType, PositionSide, TriggerType,
         },
         events::OrderEventAny,
         identifiers::{AccountId, ActorId, ClientId, ClientOrderId, PositionId, StrategyId, Venue},
@@ -2726,6 +2726,263 @@ mod tests {
             order.events().last(),
             Some(OrderEventAny::Updated(_))
         ));
+    }
+
+    #[rstest]
+    fn test_immediate_modifies_preserve_pending_quantity_and_matching_price(
+        crypto_perpetual_ethusdt: CryptoPerpetual,
+    ) {
+        let engine = create_immediate_engine(&crypto_perpetual_ethusdt);
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(engine.trader_id())
+            .instrument_id(crypto_perpetual_ethusdt.id)
+            .client_order_id(ClientOrderId::from("O-IMMEDIATE-MODIFY-FILL"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .price(Price::from("1000.00"))
+            .build();
+        engine
+            .kernel
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(ClientId::from("BINANCE")), false)
+            .unwrap();
+        send_execution_command(TradingCommand::SubmitOrder(SubmitOrder::new(
+            order.trader_id(),
+            Some(ClientId::from("BINANCE")),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            order.init_event().clone(),
+            order.exec_algorithm_id(),
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        )));
+        engine.drain_command_queues();
+
+        for (quantity, price) in [
+            (Some(Quantity::from("2.000")), None),
+            (None, Some(Price::from("1005.00"))),
+        ] {
+            send_execution_command(TradingCommand::ModifyOrder(ModifyOrder::new(
+                order.trader_id(),
+                Some(ClientId::from("BINANCE")),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                None,
+                quantity,
+                price,
+                None,
+                UUID4::new(),
+                UnixNanos::from(1),
+                None,
+                None,
+            )));
+        }
+        {
+            let cache = engine.kernel.cache.borrow();
+            let cached = cache.order(&order.client_order_id()).unwrap();
+            assert_eq!(cached.quantity(), Quantity::from("1.000"));
+            assert_eq!(cached.price(), Some(Price::from("1000.00")));
+            assert_eq!(cached.event_count(), 3);
+        }
+        engine.drain_command_queues();
+        {
+            let cache = engine.kernel.cache.borrow();
+            let cached = cache.order(&order.client_order_id()).unwrap();
+            assert_eq!(cached.quantity(), Quantity::from("2.000"));
+            assert_eq!(cached.price(), Some(Price::from("1005.00")));
+            assert_eq!(cached.event_count(), 5);
+        }
+
+        let quote = QuoteTick::new(
+            order.instrument_id(),
+            Price::from("1003.00"),
+            Price::from("1004.00"),
+            Quantity::from("3.000"),
+            Quantity::from("4.000"),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        );
+        msgbus::send_quote(
+            format!(
+                "SimulatedExchange.process_new_quote.{}",
+                order.instrument_id().venue
+            )
+            .into(),
+            &quote,
+        );
+        let cache = engine.kernel.cache.borrow();
+        let cached = cache.order(&order.client_order_id()).unwrap();
+        assert_eq!(cached.status(), OrderStatus::Filled);
+        assert_eq!(cached.quantity(), Quantity::from("2.000"));
+        assert_eq!(cached.filled_qty(), Quantity::from("2.000"));
+        assert_eq!(cached.leaves_qty(), Quantity::from("0.000"));
+        assert_eq!(cached.event_count(), 6);
+        let OrderEventAny::Filled(fill) = cached.last_event() else {
+            panic!("Expected final fill");
+        };
+        assert_eq!(fill.last_px, Price::from("1005.00"));
+        assert_eq!(fill.last_qty, Quantity::from("2.000"));
+        assert_eq!(fill.liquidity_side, LiquiditySide::Maker);
+    }
+
+    #[rstest]
+    #[case::immediate(false)]
+    #[case::queued(true)]
+    fn test_batch_reduce_only_modifies_share_position_quantity(
+        crypto_perpetual_ethusdt: CryptoPerpetual,
+        #[case] use_message_queue: bool,
+        #[values(false, true)] first_reduce_only: bool,
+    ) {
+        let instrument = crypto_perpetual_ethusdt;
+        let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+        let venue_config = SimulatedVenueConfig::builder()
+            .venue(instrument.id().venue)
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L1_MBP)
+            .starting_balances(vec![Money::from("1_000_000 USDT")])
+            .use_message_queue(use_message_queue)
+            .build()
+            .unwrap();
+        engine.add_venue(venue_config).unwrap();
+        engine
+            .add_instrument(&InstrumentAny::CryptoPerpetual(instrument.clone()))
+            .unwrap();
+        let exchange = engine.venues.get(&instrument.id().venue).unwrap().clone();
+        exchange.borrow_mut().initialize_account();
+        msgbus::send_quote(
+            format!(
+                "SimulatedExchange.process_new_quote.{}",
+                instrument.id().venue
+            )
+            .into(),
+            &QuoteTick::new(
+                instrument.id(),
+                Price::from("1000.00"),
+                Price::from("1001.00"),
+                Quantity::from("1.000"),
+                Quantity::from("1.000"),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            ),
+        );
+        let opening = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(engine.trader_id())
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-OPEN-SHORT"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("0.500"))
+            .build();
+        let closing =
+            [("O-CLOSE-FIRST", "0.400"), ("O-CLOSE-SECOND", "0.300")].map(|(id, quantity)| {
+                OrderTestBuilder::new(OrderType::Limit)
+                    .trader_id(engine.trader_id())
+                    .instrument_id(instrument.id())
+                    .client_order_id(ClientOrderId::from(id))
+                    .side(OrderSide::Buy)
+                    .quantity(Quantity::from(quantity))
+                    .price(Price::from("999.00"))
+                    .reduce_only(id != "O-CLOSE-FIRST" || first_reduce_only)
+                    .build()
+            });
+
+        for order in [&opening, &closing[0], &closing[1]] {
+            engine
+                .kernel
+                .cache
+                .borrow_mut()
+                .add_order(order.clone(), None, Some(ClientId::from("BINANCE")), false)
+                .unwrap();
+            send_execution_command(TradingCommand::SubmitOrder(SubmitOrder::new(
+                order.trader_id(),
+                Some(ClientId::from("BINANCE")),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                order.init_event().clone(),
+                order.exec_algorithm_id(),
+                None,
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+            )));
+            engine.drain_command_queues();
+            exchange.borrow_mut().process(UnixNanos::default());
+            engine.drain_command_queues();
+        }
+        {
+            let cache = engine.kernel.cache.borrow();
+            let position = cache
+                .position_for_order(&opening.client_order_id())
+                .unwrap();
+            assert!(position.is_short());
+            assert_eq!(position.quantity, Quantity::from("0.500"));
+
+            for order in &closing {
+                let cached = cache.order(&order.client_order_id()).unwrap();
+                assert_eq!(cached.status(), OrderStatus::Accepted);
+                assert_eq!(cached.quantity(), order.quantity());
+                assert_eq!(cached.filled_qty(), Quantity::from("0.000"));
+            }
+        }
+        let modifies = closing
+            .iter()
+            .map(|order| {
+                ModifyOrder::new(
+                    order.trader_id(),
+                    Some(ClientId::from("BINANCE")),
+                    order.strategy_id(),
+                    order.instrument_id(),
+                    order.client_order_id(),
+                    None,
+                    None,
+                    Some(Price::from("1002.00")),
+                    None,
+                    UUID4::new(),
+                    UnixNanos::from(1),
+                    None,
+                    None,
+                )
+            })
+            .collect();
+        exchange.borrow_mut().process(UnixNanos::from(1));
+        send_execution_command(TradingCommand::ModifyOrders(BatchModifyOrders::new(
+            opening.trader_id(),
+            Some(ClientId::from("BINANCE")),
+            opening.strategy_id(),
+            opening.instrument_id(),
+            modifies,
+            UUID4::new(),
+            UnixNanos::from(1),
+            None,
+            None,
+        )));
+        engine.drain_command_queues();
+        exchange.borrow_mut().process(UnixNanos::from(1));
+        engine.drain_command_queues();
+
+        let cache = engine.kernel.cache.borrow();
+        let filled = closing
+            .each_ref()
+            .map(|order| cache.order(&order.client_order_id()).unwrap().filled_qty());
+        let position = cache
+            .position_for_order(&opening.client_order_id())
+            .unwrap();
+        assert_eq!(
+            (filled, position.side, position.quantity),
+            (
+                [Quantity::from("0.400"), Quantity::from("0.100")],
+                PositionSide::Flat,
+                Quantity::from("0.000"),
+            ),
+        );
     }
 
     #[rstest]
