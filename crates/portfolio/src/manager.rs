@@ -418,7 +418,7 @@ impl AccountsManager {
             let mut locked = match account.calculate_balance_locked(
                 instrument,
                 order.order_side(),
-                order.quantity(),
+                order.leaves_qty(),
                 price?,
                 None,
             ) {
@@ -1622,6 +1622,116 @@ mod tests {
         } else {
             panic!("Expected CashAccount");
         }
+    }
+
+    #[rstest]
+    fn test_update_balance_locked_after_partial_fill() {
+        let usd = Currency::USD();
+        let account_state = AccountState::new(
+            AccountId::new("SIM-001"),
+            AccountType::Cash,
+            vec![AccountBalance::new(
+                Money::new(1_000_000.0, usd),
+                Money::zero(usd),
+                Money::new(1_000_000.0, usd),
+            )],
+            Vec::new(),
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            Some(usd),
+        );
+        let account = CashAccount::new(account_state, true, false);
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let manager = AccountsManager::new(clock, cache);
+        let instrument = audusd_sim();
+
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("100000"))
+            .price(Price::from("0.80000"))
+            .build();
+        order
+            .apply(OrderEventAny::Submitted(order_submitted_for(&order)))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Accepted(order_accepted_for(
+                &order,
+                VenueOrderId::new("1"),
+            )))
+            .unwrap();
+
+        let (account, _) = manager
+            .update_orders(
+                &AccountAny::Cash(account),
+                &InstrumentAny::CurrencyPair(instrument.clone()),
+                &[&order],
+                UnixNanos::default(),
+            )
+            .unwrap();
+        let AccountAny::Cash(cash) = &account else {
+            panic!("Expected CashAccount");
+        };
+        assert_eq!(
+            cash.balance_total(Some(usd)),
+            Some(Money::new(1_000_000.0, usd))
+        );
+        assert_eq!(
+            cash.balance_locked(Some(usd)),
+            Some(Money::new(80_000.0, usd))
+        );
+        assert_eq!(
+            cash.balance_free(Some(usd)),
+            Some(Money::new(920_000.0, usd))
+        );
+
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .client_order_id(order.client_order_id())
+            .venue_order_id(VenueOrderId::new("1"))
+            .order_side(OrderSide::Buy)
+            .order_type(OrderType::Limit)
+            .last_qty(Quantity::from("40000"))
+            .last_px(Price::from("0.79000"))
+            .position_id(PositionId::new("P-001"))
+            .commission(Money::new(8.0, usd))
+            .build();
+        order.apply(OrderEventAny::Filled(fill.clone())).unwrap();
+        let (account, _) = manager.update_balances(
+            account,
+            &InstrumentAny::CurrencyPair(instrument.clone()),
+            &fill,
+        );
+
+        let (account, _) = manager
+            .update_orders(
+                &account,
+                &InstrumentAny::CurrencyPair(instrument),
+                &[&order],
+                UnixNanos::default(),
+            )
+            .unwrap();
+
+        let AccountAny::Cash(account) = account else {
+            panic!("Expected CashAccount");
+        };
+        assert_eq!(order.leaves_qty(), Quantity::from("60000"));
+        assert_eq!(
+            account.balance_total(Some(usd)),
+            Some(Money::new(968_392.0, usd))
+        );
+        assert_eq!(
+            account.balance_locked(Some(usd)),
+            Some(Money::new(48_000.0, usd))
+        );
+        assert_eq!(
+            account.balance_free(Some(usd)),
+            Some(Money::new(920_392.0, usd))
+        );
+        assert_eq!(account.commission(&usd), Some(Money::new(8.0, usd)));
     }
 
     #[rstest]
