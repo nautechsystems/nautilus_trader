@@ -95,7 +95,7 @@ contracts against a venue.
 
 ### Shared baseline
 
-Leverage the shared implementation of each piece below, then use any state structure that satisfies
+Use the shared implementation of each piece below, then use any state structure that satisfies
 the contract it implements. The shared type carries that contract with it and keeps behavior
 comparable across venues, so a local structure has to prove the same contract on its own terms.
 
@@ -570,11 +570,25 @@ Model the wire format, not an imagined stable subset:
 - Preserve or explicitly classify unknown values for open venue sets that may expand without a
   protocol version change.
 - Keep raw models separate from Nautilus domain objects. Convert at one auditable boundary.
-- Deserialize prices, quantities, money, fees, and other discrete values as `Decimal`. Construct
-  domain values with `Price::from_decimal`, `Price::from_decimal_dp`, `Quantity::from_decimal`,
-  `Quantity::from_decimal_dp`, `Money::from_decimal`, or `Money::zero`; never route wire values
-  through `f64`. See [domain numeric types](rust.md#domain-numeric-types).
-- Choose domain precision from the field contract, not incidental payload formatting:
+- Pass required parsing context explicitly, including instrument precision, currencies, account
+  identity, and `ts_init`. Keep live client state outside parsers.
+- Treat missing, null, and empty values according to the venue schema. Do not collapse them into one
+  fallback when they carry different meanings.
+- Use the venue timestamp for `ts_event` when the payload supplies one. Assign `ts_init` from the
+  adapter clock when it receives or constructs the event. Use receipt time as event time only when
+  the venue has no authoritative timestamp, and cover that fallback with a test.
+
+Avoid permissive fallbacks that silently turn a new venue value into an existing semantic value.
+Stable error handling is part of the parser contract.
+
+#### Numeric precision
+
+Deserialize prices, quantities, money, fees, and other discrete values as `Decimal`. Construct
+domain values with `Price::from_decimal`, `Price::from_decimal_dp`, `Quantity::from_decimal`,
+`Quantity::from_decimal_dp`, `Money::from_decimal`, or `Money::zero`; never route wire values
+through `f64`. See [domain numeric types](rust.md#domain-numeric-types).
+
+Choose domain precision from the field contract, not incidental payload formatting:
 
 | Field contract                                     | `"25.000"` result       | Conversion                                                          |
 | -------------------------------------------------- | ----------------------- | ------------------------------------------------------------------- |
@@ -589,17 +603,6 @@ constructors apply banker's rounding when a value has excess non-zero digits; va
 equality when the field contract requires exact representation. During reconciliation, follow
 [instrument resolution](#instrument-resolution-during-reconciliation) when precision metadata is
 missing.
-
-- Pass required parsing context explicitly, including instrument precision, currencies, account
-  identity, and `ts_init`. Keep live client state outside parsers.
-- Treat missing, null, and empty values according to the venue schema. Do not collapse them into one
-  fallback when they carry different meanings.
-- Use the venue timestamp for `ts_event` when the payload supplies one. Assign `ts_init` from the
-  adapter clock when it receives or constructs the event. Use receipt time as event time only when
-  the venue has no authoritative timestamp, and cover that fallback with a test.
-
-Avoid permissive fallbacks that silently turn a new venue value into an existing semantic value.
-Stable error handling is part of the parser contract.
 
 #### Venue enum fallbacks
 
@@ -645,6 +648,12 @@ The shared [`DataClient`](../../crates/common/src/clients/data.rs),
 Implement the supported methods and leave unsupported capabilities explicit in the integration
 guide.
 
+The client traits use `#[async_trait(?Send)]`. Client objects are not intended to move across
+threads and may hold non-`Send` Python state. Move owned, `Send` inputs into explicit runtime tasks
+when asynchronous work must outlive a synchronous trait call.
+
+#### Client naming and registration
+
 Name each client family symmetrically: `<Venue>DataClient`, `<Venue>DataClientConfig`, and
 `<Venue>DataClientFactory` for data; `<Venue>ExecutionClient`, `<Venue>ExecutionClientConfig`, and
 `<Venue>ExecutionClientFactory` for execution. Each factory consumes its corresponding client
@@ -667,15 +676,13 @@ protocol terms such as `ExecType`. Name protocol-specific wire models after the 
 as `HyperliquidExchangeAction`. Preserve established public names, and apply this convention to new
 APIs.
 
+#### Factory inputs and cache ownership
+
 Factories receive a downcast `ClientConfig` and a read-only
 [`CacheView`](../../crates/common/src/cache/mod.rs). Data factories also receive the shared clock.
 Use the view to resolve instruments and existing state. Engine cache writes stay in the engines:
 emit domain events and reports instead of mutating the engine cache from an adapter. A private
 protocol cache is valid when parsing, subscription replay, or response correlation needs it.
-
-The client traits use `#[async_trait(?Send)]`. Client objects are not intended to move across
-threads and may hold non-`Send` Python state. Move owned, `Send` inputs into explicit runtime tasks
-when asynchronous work must outlive a synchronous trait call.
 
 ### Adapter-owned state
 
@@ -820,6 +827,15 @@ between cached state and venue state means.
 | `generate_position_status_reports` | [`PositionStatusReport`](../../crates/model/src/reports/position.rs) values.         | Mass status and the periodic position check.                         |
 | `generate_mass_status`             | One optional [`ExecutionMassStatus`](../../crates/model/src/reports/mass_status.rs). | Startup reconciliation, once per execution client.                   |
 
+[Execution reconciliation](../concepts/execution/reconciliation.md) documents what the engine does with these
+reports, including the startup procedure, the runtime checks that drive the periodic and targeted
+requests, and their retry and throttling rules. Cases TC-E84 to TC-E87 and TC-E101 in the
+[execution testing specification](spec_exec_testing.md) exercise startup reconciliation against a
+venue. Cases TC-E88 and TC-E89 use deterministic fixtures to exercise REST and private-stream
+commission failure.
+
+##### Startup mass status
+
 `generate_mass_status` runs once per execution client before trading starts. Its default
 implementation composes the three bulk methods concurrently from one `ts_init`, derives each
 command's `start` from `lookback_mins`, and requests full order history with `open_only=false`.
@@ -829,20 +845,29 @@ client declares a history bound, as described in
 clock. Returning `Ok(None)` logs a warning and leaves that client unreconciled, while an error
 fails startup.
 
+##### Bulk report filters
+
 The bulk methods take a filter command carrying `instrument_id`, `start`, and `end`, plus
 `open_only` for order reports and `venue_order_id` for fill reports. Apply every filter the venue
-endpoint supports and complete the rest locally. `open_only` separates the currently open orders a
-periodic check needs from the history a mass status needs. Retain a report for `open_only` when its
-status is open **or** in-flight, not open alone: a venue holding an order it has not yet
-acknowledged reports it as `SUBMITTED`, which is in-flight rather than open. Apply `start` and `end`
-only to closed reports, since an order working at the venue is authoritative however long it has
-rested without an update. Test a report for a terminal status with `is_closed()`, never
-`!is_open()`, which classifies `SUBMITTED` as terminal. Log report counts at the command's
-`log_receipt_level` so periodic checks stay at debug while mass status logs at info.
+endpoint supports and complete the rest locally:
+
+- `open_only` separates the currently open orders a periodic check needs from the history a mass
+  status needs. Retain a report for `open_only` when its status is open **or** in-flight, not open
+  alone: a venue holding an order it has not yet acknowledged reports it as `SUBMITTED`, which is
+  in-flight rather than open.
+- Apply `start` and `end` only to closed reports, since an order working at the venue is authoritative
+  however long it has rested without an update.
+- Test a report for a terminal status with `is_closed()`, never `!is_open()`, which classifies
+  `SUBMITTED` as terminal.
+
+Log report counts at the command's `log_receipt_level` so periodic checks stay at debug while mass
+status logs at info.
 
 When a periodic check request fails, the engine marks that client failed for the cycle and stops
 inferring absence for the orders and positions it covers. Returning an error is therefore safer
 than returning an empty set.
+
+##### Single-order probes
 
 `generate_order_status_report` resolves a single order. The engine issues it after the open-order
 check retries without confirming a cached order, which requires that check to run in full-history
@@ -861,13 +886,6 @@ Distinguish absence from failure in that probe, because the engine acts on the d
 A failed lookup returned as `Ok(None)` can therefore reject or cancel an order that is live at the
 venue. The trait default returns `Ok(None)` after logging that the handler is not implemented, so
 implement this method before an open-order check runs in full-history mode.
-
-[Execution reconciliation](../concepts/execution/reconciliation.md) documents what the engine does with these
-reports, including the startup procedure, the runtime checks that drive the periodic and targeted
-requests, and their retry and throttling rules. Cases TC-E84 to TC-E87 and TC-E101 in the
-[execution testing specification](spec_exec_testing.md) exercise startup reconciliation against a
-venue. Cases TC-E88 and TC-E89 use deterministic fixtures to exercise REST and private-stream
-commission failure.
 
 #### Commission failure handling
 
@@ -1009,12 +1027,16 @@ identity in the report and let the engine apply
 [external order ownership](../concepts/execution/reconciliation.md#external-order-creation). The adapter may use
 any state structure that proves this routing decision.
 
-Model tracked ownership with two conceptual layers. Order identity contains the stable fields that
-associate an update with the submitted order: client order ID, strategy, instrument, side, and order
-type. Order context combines that identity with the submitted order shape needed to construct later
-events without accessing the engine cache, such as quantity, price and trigger details, time in
-force, and execution flags. Keep venue order bindings, request correlation, cumulative fills, and
-replace state in adapter-owned context around that common surface.
+Model tracked ownership with two conceptual layers:
+
+- **Order identity** contains the stable fields that associate an update with the submitted order:
+  client order ID, strategy, instrument, side, and order type.
+- **Order context** combines that identity with the submitted order shape needed to construct later
+  events without accessing the engine cache, such as quantity, price and trigger details, time in
+  force, and execution flags.
+
+Keep venue order bindings, request correlation, cumulative fills, and replace state in adapter-owned
+context around that common surface.
 
 [`OrderIdentity` and `OrderContext`](../../crates/live/src/execution/context.rs) provide that
 surface. Start from them, and keep an adapter-local structure only where it proves the same routing
@@ -1158,9 +1180,8 @@ Keep this policy independent of the HTTP or WebSocket path used to send a comman
 
 #### Naming the evidence classes
 
-Name the three classes consistently. Adapters that invent their own vocabulary for this cannot be
-compared, and the same wire condition ends up classified differently across venues. Classify every
-state-changing order command failure as one
+Use consistent names so command failure classifications can be compared across adapters and the
+same wire condition is classified consistently. Classify every state-changing order command failure as one
 [`CommandFailure`](../../crates/live/src/execution/failure.rs) variant:
 
 | Evidence class             | `CommandFailure` variant | Terminal event from this evidence |
@@ -1585,12 +1606,16 @@ Reconnection must restore protocol state, not only the socket:
 Support both WebSocket control frames and venue text heartbeats when applicable. Let the shared
 client handle protocol control frames; keep application heartbeat messages in the venue handler.
 
+#### Reconnect ownership
+
 A handler-mode client requests a reconnect through the shared client rather than a private
 reconnect loop. Its `request_reconnect` returns `true` only when the call moves an active client
 into reconnecting. Take the reconnect handle's `request_reconnect` when the adapter must
 distinguish the `ReconnectRequestOutcome` variants, since an already reconnecting, disconnecting,
 closed, or unsupported transport each warrant a different response. Stream-mode clients own their
 reconnect loop, and their handles report `Unsupported`.
+
+#### Shutdown
 
 Shutdown signals tasks, asks the transport to close, and then joins or aborts owned work according
 to a bounded policy. Make repeated shutdown safe. Do not assume a handler `JoinHandle` has one
@@ -1623,6 +1648,8 @@ Classify every production task by its owner before choosing its storage and shut
 Use separate session and command groups even when both groups have the same timeout policy. A
 disconnect ends the session, while an accepted command can still need reconciliation or an
 explicit ambiguous outcome. Do not let transport shutdown silently reclassify that command result.
+
+### Task storage and observation
 
 [`TaskHandles`](../../crates/common/src/live/task.rs) stores unit task handles without setting
 spawn, cancellation, generation, or join policy. Use it inside a component that defines those
@@ -1752,6 +1779,13 @@ when the test marks them as such.
 
 ### Rust testing
 
+Shared repository test policy uses `#[rstest]` for Rust test functions, permits
+`#[tokio::test]` for async tests, and rejects arrange/act/assert comments. The
+[testing conventions hook](../../.pre-commit-hooks/check_testing_conventions.sh) enforces these
+repository-wide rules.
+
+#### Fixtures and parser assertions
+
 Use exact fixture values and assert every stable output field. Distinct inputs should expose field
 swaps, omitted values, wrong precision, and accidental defaults.
 
@@ -1772,6 +1806,8 @@ When HTTP and WebSocket tests share fixture loaders or model builders, place tes
 `common::testing` module rather than copying it into production modules. This pattern is optional
 when no test code is shared.
 
+#### Client synchronization
+
 Client tests should drive public methods through mock HTTP or WebSocket servers. Assert emitted
 events, requests, connection state, subscription state, retry count, and shutdown behavior. Prefer
 a notification owned by the test or mock when the operation exposes one. Subscribe before reading
@@ -1779,11 +1815,6 @@ the authoritative state, then recheck it after every notification so a transitio
 and the await cannot be missed. When no suitable signal exists, use
 [`wait_until_async`](../../crates/common/src/testing.rs). A short sleep is valid when the time window
 itself is under test, but it should not mask a missing synchronization point.
-
-Shared repository test policy uses `#[rstest]` for Rust test functions, permits
-`#[tokio::test]` for async tests, and rejects arrange/act/assert comments. The
-[testing conventions hook](../../.pre-commit-hooks/check_testing_conventions.sh) enforces these
-repository-wide rules.
 
 ### Functional and integration testing
 
