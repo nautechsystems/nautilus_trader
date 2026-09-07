@@ -192,8 +192,16 @@ pub(super) fn encode_instrument_id(
 pub(super) fn decode_instrument_id(
     cursor: &mut SbeCursor<'_>,
 ) -> Result<InstrumentId, SbeDecodeError> {
-    let symbol = Symbol::new(cursor.read_var_string16_ref()?);
-    let venue = Venue::new(cursor.read_var_string16_ref()?);
+    let symbol = Symbol::new_checked(cursor.read_var_string16_ref()?).map_err(|_| {
+        SbeDecodeError::InvalidValue {
+            field: "InstrumentId.symbol",
+        }
+    })?;
+    let venue = Venue::new_checked(cursor.read_var_string16_ref()?).map_err(|_| {
+        SbeDecodeError::InvalidValue {
+            field: "InstrumentId.venue",
+        }
+    })?;
     Ok(InstrumentId::new(symbol, venue))
 }
 
@@ -428,4 +436,27 @@ pub(super) fn decode_non_zero_step(step_raw: u32) -> Result<NonZero<usize>, SbeD
     NonZero::new(step).ok_or(SbeDecodeError::InvalidValue {
         field: "BarSpecification.step",
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(&[0, 0, 1, 0, b'X'], "InstrumentId.symbol")]
+    #[case(&[1, 0, b' ', 1, 0, b'X'], "InstrumentId.symbol")]
+    #[case(&[1, 0, b'A', 0, 0], "InstrumentId.venue")]
+    #[case(&[1, 0, b'A', 2, 0, 0xC3, 0xA9], "InstrumentId.venue")]
+    fn test_decode_instrument_id_rejects_invalid_components(
+        #[case] bytes: &[u8],
+        #[case] field: &'static str,
+    ) {
+        let mut cursor = SbeCursor::new(bytes);
+
+        let result = decode_instrument_id(&mut cursor);
+
+        assert_eq!(result, Err(SbeDecodeError::InvalidValue { field }));
+    }
 }
