@@ -249,11 +249,11 @@ def test_invalid_allocation_sizes_do_not_abort_subprocess() -> None:
     """
     code = """
 import sys
-from tests.providers import TestInstrumentProvider
 from nautilus_trader.adapters.bitmex import BitmexExecutionClientConfig
 from nautilus_trader.adapters.tardis import stream_tardis_quotes
 from nautilus_trader.config import BacktestRunConfig, CacheConfig
 from nautilus_trader.model import BarType, InstrumentId, Quantity
+from nautilus_trader.testkit.providers import TestInstrumentProvider
 from nautilus_trader.trading import HurstVpinDirectionalConfig
 
 calls = (

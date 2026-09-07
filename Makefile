@@ -497,6 +497,7 @@ pre-flight:  #-- Run pre-flight checks (format, tests, build, generated drift, a
 		&& $(MAKE) --no-print-directory check-generated-drift \
 		&& $(MAKE) --no-print-directory pytest \
 		&& $(MAKE) --no-print-directory pytest-doctest ty \
+		&& $(MAKE) --no-print-directory pytest-isolated \
 		&& $(MAKE) --no-print-directory security-audit \
 	$(call timer_end,Pre-flight)
 
@@ -854,6 +855,8 @@ test-scripts:  #-- Run repository script tests
 	$Q bash .pre-commit-hooks/test_check_unicode_typography.sh
 	$Q bash .pre-commit-hooks/test_check_ustr_conventions.sh
 	$Q bash scripts/ci/test-build-artifact-reuse.bash
+	$Q bash scripts/ci/test-wheel-isolation.bash
+	$Q bash scripts/ci/test-python-isolation-setup.bash
 	$Q bash scripts/ci/test-check-docker-toolchain-pins.bash
 	$Q bash scripts/ci/test-check-miri-toolchain.bash
 	$Q bash scripts/ci/test-check-nightly-merge-status.bash
@@ -1327,6 +1330,10 @@ pytest: build-debug  #-- Run Python tests
 	$(info $(M) Running Python tests...)
 	$Q cd python && VIRTUAL_ENV= uv run --no-sync pytest -qq -rfE tests/ --ignore=tests/unit/test_live_node.py
 	$Q cd python && VIRTUAL_ENV= uv run --no-sync pytest -qq -rfE tests/unit/test_live_node.py
+
+.PHONY: pytest-isolated
+pytest-isolated:  #-- Check the existing Python build outside the source checkout
+	$Q bash scripts/test-python-isolation.bash
 
 .PHONY: pytest-doctest
 pytest-doctest: build-debug  #-- Run supported Python doctests

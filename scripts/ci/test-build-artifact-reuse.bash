@@ -112,6 +112,13 @@ grep -Fq "entry: make pytest-collect-fast" "$REPO_ROOT/.pre-commit-config.yaml" 
 pre_flight_recipe=$(sed -n '/^pre-flight:  /,/^\t\$(call timer_end,Pre-flight)/p' "$REPO_ROOT/Makefile")
 [[ "$pre_flight_recipe" == *'check-code-sim'*'cargo-test-sim'*'cargo-test-extras'* ]] ||
   fail "Pre-flight Rust checks do not preserve early DST linting and test order"
+[[ "$pre_flight_recipe" == *'pytest-doctest ty'*'pytest-isolated'*'security-audit'* ]] ||
+  fail "Pre-flight does not check Python import isolation"
+[[ "$pre_flight_recipe" != *'pytest-wheel'* && "$pre_flight_recipe" != *'build-wheel'* ]] ||
+  fail "Pre-flight must not build a wheel for validation"
+isolated_commands=$(make -C "$REPO_ROOT" -n --no-print-directory pytest-isolated)
+[[ "$isolated_commands" == 'bash scripts/test-python-isolation.bash' ]] ||
+  fail "Python isolation must only check the existing build"
 [[ "$pre_flight_recipe" != *'cargo-test-doc'* ]] ||
   fail "Pre-flight still runs Rust doctests"
 
