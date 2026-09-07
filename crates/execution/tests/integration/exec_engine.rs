@@ -22,10 +22,12 @@ use std::{
     pin::pin,
     rc::Rc,
     str::FromStr,
+    sync::Once,
     task::{Context, Poll, Waker},
 };
 
 use ahash::AHashSet;
+use log::{Level, LevelFilter, Log, Metadata, Record};
 use nautilus_common::{
     cache::{Cache, CacheSnapshotRef},
     clients::ExecutionClient,
@@ -87,7 +89,7 @@ use nautilus_model::{
     },
     position::Position,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    stubs::{TestDefault, stub_position_long},
+    stubs::{TestDefault, stub_position_long, stub_position_short},
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use rstest::*;
@@ -14245,11 +14247,16 @@ fn test_reconcile_position_report_netting_mode(mut execution_engine: ExecutionEn
 }
 
 #[rstest]
+#[case::long(PositionSide::Long, "LONG")]
+#[case::short(PositionSide::Short, "SHORT")]
 fn test_reconcile_position_report_hedging_mode_position_not_found(
     mut execution_engine: ExecutionEngine,
+    #[case] side: PositionSide,
+    #[case] suffix: &str,
 ) {
+    capture_reconciliation_logs();
     let instrument = audusd_sim();
-    let venue_position_id = PositionId::from("P-001");
+    let venue_position_id = PositionId::new(format!("{}-{suffix}", instrument.id()));
 
     execution_engine
         .cache()
@@ -14257,15 +14264,156 @@ fn test_reconcile_position_report_hedging_mode_position_not_found(
         .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
         .unwrap();
 
-    // With venue_position_id = hedging mode
     let report = create_position_report(
         instrument.id(),
-        PositionSide::Long,
+        side,
         Quantity::from(100_000),
         Some(venue_position_id),
     );
 
     execution_engine.reconcile_position_report(&report);
+
+    assert_eq!(
+        take_reconciliation_logs(),
+        vec![(
+            Level::Error,
+            format!("Cannot reconcile position: {venue_position_id} not found in cache"),
+        )],
+    );
+    assert_eq!(
+        execution_engine
+            .cache()
+            .borrow()
+            .positions_total_count(None, None, None, None, None),
+        0
+    );
+}
+
+#[rstest]
+#[case::flat_long(PositionSide::Flat, "LONG")]
+#[case::flat_short(PositionSide::Flat, "SHORT")]
+#[case::long_zero(PositionSide::Long, "LONG")]
+#[case::short_zero(PositionSide::Short, "SHORT")]
+fn test_reconcile_position_report_hedging_uncached_zero_quantity(
+    mut execution_engine: ExecutionEngine,
+    #[case] side: PositionSide,
+    #[case] suffix: &str,
+) {
+    capture_reconciliation_logs();
+    let instrument = audusd_sim();
+    let venue_position_id = PositionId::new(format!("{}-{suffix}", instrument.id()));
+    let report = create_position_report(
+        instrument.id(),
+        side,
+        Quantity::from(0),
+        Some(venue_position_id),
+    );
+    let topic = MessagingSwitchboard::reconciliation_raw_position_status_report_topic();
+    let pattern = topic.into();
+    let (handler, saver) = get_any_saving_handler::<PositionStatusReport>(None);
+    msgbus::subscribe_any(pattern, handler.clone(), None);
+
+    execution_engine.reconcile_position_report(&report);
+    execution_engine.reconcile_position_report(&report);
+
+    msgbus::unsubscribe_any(pattern, &handler);
+
+    assert_eq!(take_reconciliation_logs(), Vec::<(Level, String)>::new());
+    assert_eq!(saver.get_messages(), vec![report.clone(), report]);
+    assert_eq!(
+        execution_engine
+            .cache()
+            .borrow()
+            .positions_total_count(None, None, None, None, None),
+        0
+    );
+}
+
+#[rstest]
+#[case::long(PositionSide::Long, "1")]
+#[case::short(PositionSide::Short, "-1")]
+fn test_reconcile_position_report_hedging_cached_open_reported_flat(
+    mut execution_engine: ExecutionEngine,
+    #[case] side: PositionSide,
+    #[case] signed_qty: &str,
+) {
+    let instrument = audusd_sim();
+    let position = if side == PositionSide::Long {
+        stub_position_long(instrument.clone())
+    } else {
+        stub_position_short(instrument.clone())
+    };
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+    let report = create_position_report(
+        instrument.id(),
+        PositionSide::Flat,
+        Quantity::from(0),
+        Some(position.id),
+    );
+    capture_reconciliation_logs();
+
+    execution_engine.reconcile_position_report(&report);
+
+    let cached_position = execution_engine
+        .cache()
+        .borrow()
+        .position_owned(&position.id)
+        .unwrap();
+
+    assert_eq!(
+        take_reconciliation_logs(),
+        vec![(
+            Level::Error,
+            format!(
+                "Position mismatch for {} {}: cached={signed_qty}, venue=0",
+                instrument.id(),
+                position.id
+            ),
+        )],
+    );
+    assert_eq!(
+        serde_json::to_value(&cached_position).unwrap(),
+        serde_json::to_value(&position).unwrap(),
+    );
+}
+
+thread_local! {
+    static RECONCILIATION_LOGS: RefCell<Vec<(Level, String)>> = const { RefCell::new(Vec::new()) };
+}
+
+fn capture_reconciliation_logs() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        log::set_logger(&ReconciliationLogCapture).expect("test logger already installed");
+        log::set_max_level(LevelFilter::Warn);
+    });
+    RECONCILIATION_LOGS.with_borrow_mut(Vec::clear);
+}
+
+fn take_reconciliation_logs() -> Vec<(Level, String)> {
+    RECONCILIATION_LOGS.with_borrow_mut(std::mem::take)
+}
+
+struct ReconciliationLogCapture;
+
+impl Log for ReconciliationLogCapture {
+    fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+        metadata.level() <= Level::Warn && metadata.target() == "nautilus_execution::engine"
+    }
+
+    fn log(&self, record: &Record<'_>) {
+        if self.enabled(record.metadata()) {
+            RECONCILIATION_LOGS.with_borrow_mut(|messages| {
+                messages.push((record.level(), record.args().to_string()));
+            });
+        }
+    }
+
+    fn flush(&self) {}
 }
 
 #[rstest]
