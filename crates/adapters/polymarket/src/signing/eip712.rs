@@ -541,6 +541,20 @@ mod tests {
     }
 
     #[rstest]
+    fn test_sign_clob_auth_matches_polymarket_mainnet_vector() {
+        let private_key = EvmPrivateKey::new(TEST_PRIVATE_KEY).unwrap();
+
+        let (address, signature) = sign_clob_auth(&private_key, "10000000", 23).unwrap();
+
+        // https://github.com/Polymarket/clob-client/blob/7df8257dc95f99edb257b53a7873e273a9b4a9b3/src/signing/eip712.ts
+        assert_eq!(address, "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266");
+        assert_eq!(
+            signature,
+            "0x1a7118db6100dfd8efd102be36f472b59475dcac56eb4c9a2a94748d3655ba7c3c89deb8c19ee79eceb0a531122fbfbe88ed118034f9d8212e2b725e7b296b9d1c",
+        );
+    }
+
+    #[rstest]
     fn test_sign_order_format() {
         let signer = test_signer();
         let order = test_order();
