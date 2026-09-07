@@ -88,6 +88,7 @@ pub struct WsDispatchState {
     replacements: DashMap<ClientOrderId, PendingReplacement>,
     emitted_accepted: Mutex<FifoCache<ClientOrderId, 10_000>>,
     filled_orders: Mutex<FifoCache<ClientOrderId, 10_000>>,
+    cancel_replace_cancel_ids: Mutex<FifoCache<String, 10_000>>,
 }
 
 impl Default for WsDispatchState {
@@ -100,6 +101,7 @@ impl Default for WsDispatchState {
             replacements: DashMap::new(),
             emitted_accepted: Mutex::new(FifoCache::new()),
             filled_orders: Mutex::new(FifoCache::new()),
+            cancel_replace_cancel_ids: Mutex::new(FifoCache::new()),
         }
     }
 }
@@ -121,6 +123,17 @@ impl WsDispatchState {
     /// Marks an order as having received a fill.
     pub fn insert_filled(&self, cid: ClientOrderId) {
         self.filled_orders.lock().add(cid);
+    }
+
+    pub fn is_cancel_replace_cancel_id(&self, id: &str) -> bool {
+        self.cancel_replace_cancel_ids
+            .lock()
+            .contains(&id.to_string())
+    }
+
+    /// Records the `cancelNewClientOrderId` sent with a cancel-replace request.
+    pub fn insert_cancel_replace_cancel_id(&self, id: String) {
+        self.cancel_replace_cancel_ids.lock().add(id);
     }
 
     pub fn insert_algo_order_id(&self, cid: ClientOrderId, venue_order_id: VenueOrderId) {

@@ -110,9 +110,8 @@ use crate::{
                 BinanceCancelOrderResponse,
             },
             query::{
-                BatchCancelItem, CANCEL_REPLACE_CANCEL_ID_PREFIX, CancelOrderParams,
-                CancelReplaceOrderParams, NewOcoOrderListParams, NewOrderParams,
-                cancel_replace_cancel_id,
+                BatchCancelItem, CancelOrderParams, CancelReplaceOrderParams,
+                NewOcoOrderListParams, NewOrderParams,
             },
         },
         sbe::spot::{
@@ -1903,7 +1902,10 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         if self.ws_order_transport_active() {
             let command = cmd;
             let ws_client = self.ws_trading_client.as_ref().unwrap().clone();
-            let params = build_cancel_replace_params(&command, &order, quantity, use_gtd)?;
+            let cancel_id = cancel_replace_cancel_id();
+            dispatch_state.insert_cancel_replace_cancel_id(cancel_id.clone());
+            let params =
+                build_cancel_replace_params(&command, &order, quantity, use_gtd, cancel_id)?;
             if let Some(venue_order_id) = command.venue_order_id {
                 dispatch_state.begin_replace(command.client_order_id, venue_order_id);
             }
@@ -1937,6 +1939,9 @@ impl ExecutionClient for BinanceSpotExecutionClient {
             let command = cmd;
             let http_client = self.http_client.clone();
             log::debug!("WS trading not active, falling back to HTTP for modify_order");
+            let cancel_id = cancel_replace_cancel_id();
+            self.dispatch_state
+                .insert_cancel_replace_cancel_id(cancel_id.clone());
 
             if let Some(venue_order_id) = command.venue_order_id {
                 dispatch_state.begin_replace(command.client_order_id, venue_order_id);
@@ -1957,6 +1962,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                                 time_in_force,
                                 command.price,
                                 use_gtd,
+                                &cancel_id,
                             )
                             .await
                     }
@@ -3213,11 +3219,20 @@ fn build_cancel_order_params(cmd: &CancelOrder, prefer_client_order_id: bool) ->
     }
 }
 
+/// Returns a unique `cancelNewClientOrderId` for a cancel-replace request.
+///
+/// Registered in [`WsDispatchState`] so the cancel half's `CANCELED` report can
+/// be matched to the request that produced it.
+fn cancel_replace_cancel_id() -> String {
+    format!("CR-{}", UUID4::new().as_str().replace('-', ""))
+}
+
 fn build_cancel_replace_params(
     cmd: &ModifyOrder,
     order: &impl Order,
     quantity: Quantity,
     use_gtd: bool,
+    cancel_new_client_order_id: String,
 ) -> anyhow::Result<CancelReplaceOrderParams> {
     let binance_side = BinanceSide::try_from(order.order_side())?;
     let binance_order_type = order_type_to_binance_spot(order.order_type(), false)?;
@@ -3249,7 +3264,7 @@ fn build_cancel_replace_params(
         } else {
             None
         },
-        cancel_new_client_order_id: Some(cancel_replace_cancel_id(cancel_order_id)),
+        cancel_new_client_order_id: Some(cancel_new_client_order_id),
         new_client_order_id: Some(client_id_str),
         stop_price: None,
         trailing_delta: None,
@@ -3286,9 +3301,7 @@ fn dispatch_execution_report(
         (instrument.price_precision(), instrument.size_precision());
 
     if report.execution_type == BinanceSpotExecutionType::Canceled
-        && report
-            .client_order_id
-            .starts_with(CANCEL_REPLACE_CANCEL_ID_PREFIX)
+        && dispatch_state.is_cancel_replace_cancel_id(&report.client_order_id)
     {
         // Cancel half of a cancel-replace: the replacement `NEW` drives `OrderUpdated`
         log::debug!(
@@ -4762,6 +4775,54 @@ mod tests {
     }
 
     #[rstest]
+    fn test_build_cancel_replace_params_sends_cancel_new_client_order_id() {
+        let client_order_id = ClientOrderId::from("O-20200101-000000-000-000-0");
+        let instrument_id = InstrumentId::from("ETHUSDT.BINANCE");
+        let mut builder = OrderTestBuilder::new(OrderType::Limit);
+        let order = builder
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .price(Price::from("2500.00"))
+            .build();
+        let cmd = ModifyOrder::new(
+            TraderId::from("TESTER-001"),
+            None,
+            StrategyId::from("TEST-STRATEGY"),
+            instrument_id,
+            client_order_id,
+            Some(VenueOrderId::from("12345678")),
+            Some(Quantity::from("2")),
+            Some(Price::from("2400.00")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        let cancel_id = cancel_replace_cancel_id();
+
+        let params = build_cancel_replace_params(
+            &cmd,
+            &order,
+            Quantity::from("2"),
+            false,
+            cancel_id.clone(),
+        )
+        .unwrap();
+
+        assert!(cancel_id.len() <= 36);
+        assert_eq!(params.cancel_order_id, Some(12345678));
+        assert_eq!(
+            params.cancel_new_client_order_id.as_deref(),
+            Some(cancel_id.as_str())
+        );
+        let json = serde_json::to_value(&params).unwrap();
+        assert_eq!(json["cancelNewClientOrderId"], cancel_id);
+    }
+
+    #[rstest]
     fn test_dispatch_execution_report_cancel_replace_skips_cancel_then_updates_on_new() {
         let clock = get_atomic_clock_realtime();
         let (emitter, mut rx) = create_test_emitter(clock);
@@ -4790,7 +4851,9 @@ mod tests {
         );
         let mut canceled: BinanceSpotExecutionReport = serde_json::from_str(&json).unwrap();
         canceled.original_client_order_id = Some(canceled.client_order_id.clone());
-        canceled.client_order_id = cancel_replace_cancel_id(Some(canceled.order_id));
+        let cancel_id = cancel_replace_cancel_id();
+        dispatch_state.insert_cancel_replace_cancel_id(cancel_id.clone());
+        canceled.client_order_id = cancel_id;
 
         dispatch_execution_report(
             &canceled,

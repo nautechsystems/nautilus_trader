@@ -662,6 +662,7 @@ fn build_mixed_cancel_open_orders_response(
 struct TestServerState {
     request_count: Arc<parking_lot::Mutex<usize>>,
     rate_limit_after: usize,
+    cancel_replace_params: Arc<parking_lot::Mutex<Option<HashMap<String, String>>>>,
 }
 
 impl TestServerState {
@@ -669,6 +670,7 @@ impl TestServerState {
         Self {
             request_count: Arc::new(parking_lot::Mutex::new(0)),
             rate_limit_after: limit,
+            cancel_replace_params: Arc::default(),
         }
     }
 
@@ -744,6 +746,7 @@ fn create_router(state: Arc<TestServerState>) -> Router {
     let my_trades_state = state.clone();
     let new_order_state = state.clone();
     let cancel_order_state = state.clone();
+    let cancel_replace_state = state.clone();
     let cancel_all_orders_state = state;
 
     Router::new()
@@ -1048,6 +1051,39 @@ fn create_router(state: Arc<TestServerState>) -> Router {
                             ),
                         ];
                         sbe_response(build_orders_response(&orders)).into_response()
+                    }
+                },
+            ),
+        )
+        .route(
+            "/api/v3/order/cancelReplace",
+            post(
+                move |headers: HeaderMap, Query(params): Query<HashMap<String, String>>| {
+                    let state = cancel_replace_state.clone();
+                    async move {
+                        if !has_auth_headers(&headers) {
+                            return unauthorized_response().into_response();
+                        }
+
+                        let symbol = params
+                            .get("symbol")
+                            .cloned()
+                            .unwrap_or_else(|| "BTCUSDT".to_string());
+                        let client_order_id = params
+                            .get("newClientOrderId")
+                            .cloned()
+                            .unwrap_or_else(|| "replace-order".to_string());
+                        *state.cancel_replace_params.lock() = Some(params);
+                        sbe_response(build_new_order_response(
+                            99998,
+                            &symbol,
+                            &client_order_id,
+                            100_000_000_000,
+                            10_000_000,
+                            0,
+                            1,
+                        ))
+                        .into_response()
                     }
                 },
             ),
@@ -2068,6 +2104,56 @@ async fn test_domain_cancel_order() {
         .unwrap();
 
     assert_eq!(venue_order_id, VenueOrderId::from("12345"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_replace_order_sends_cancel_new_client_order_id() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_test_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+
+    let client = BinanceRawSpotHttpClient::new(
+        BinanceEnvironment::Live,
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
+        Some(base_url),
+        None,
+        Some(60),
+        None,
+    )
+    .unwrap();
+
+    let response = client
+        .cancel_replace_order(
+            "BTCUSDT",
+            BinanceSide::Buy,
+            BinanceSpotOrderType::Limit,
+            Some(BinanceTimeInForce::Gtc),
+            Some("0.1"),
+            Some("1000.00"),
+            Some(12345),
+            None,
+            Some("CR-test"),
+            Some("replace-1"),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.client_order_id, "replace-1");
+    let params = state.cancel_replace_params.lock().clone().unwrap();
+    assert_eq!(
+        params.get("cancelOrderId").map(String::as_str),
+        Some("12345")
+    );
+    assert_eq!(
+        params.get("cancelNewClientOrderId").map(String::as_str),
+        Some("CR-test")
+    );
+    assert_eq!(
+        params.get("newClientOrderId").map(String::as_str),
+        Some("replace-1")
+    );
 }
 
 #[rstest]
