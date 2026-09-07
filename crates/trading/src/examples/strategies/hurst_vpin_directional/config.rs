@@ -15,6 +15,7 @@
 
 //! Configuration for the Hurst/VPIN directional strategy.
 
+use nautilus_common::config::{ConfigError, ConfigErrorCollector, ConfigResult};
 use nautilus_model::{
     data::BarType,
     identifiers::{InstrumentId, StrategyId},
@@ -23,11 +24,15 @@ use nautilus_model::{
 
 use crate::strategy::StrategyConfig;
 
+pub(crate) const MAX_HURST_VPIN_WINDOW: usize = 16_384;
+
 /// Configuration for the Hurst/VPIN directional strategy.
 ///
 /// Combines a rescaled-range Hurst regime filter on dollar bars with a
 /// VPIN-derived informed-flow signal, and gates entry timing on the
 /// live quote stream.
+///
+/// The Hurst and VPIN rolling windows must each be in the range `[1, 16_384]`.
 #[derive(Debug, Clone, bon::Builder)]
 #[cfg_attr(
     feature = "python",
@@ -51,7 +56,7 @@ pub struct HurstVpinDirectionalConfig {
     pub bar_type: BarType,
     /// Order quantity for each entry.
     pub trade_size: Quantity,
-    /// Rolling window of dollar bar returns used to estimate the Hurst exponent.
+    /// Rolling window of dollar bar returns used to estimate the Hurst exponent (range `[1, 16_384]`).
     #[builder(default = 128)]
     pub hurst_window: usize,
     /// Lag set used for rescaled range regression.
@@ -63,7 +68,7 @@ pub struct HurstVpinDirectionalConfig {
     /// Hurst threshold for exiting an open position (regime decay).
     #[builder(default = 0.50)]
     pub hurst_exit: f64,
-    /// Number of completed volume buckets averaged for VPIN.
+    /// Number of completed volume buckets averaged for VPIN (range `[1, 16_384]`).
     #[builder(default = 50)]
     pub vpin_window: usize,
     /// Minimum VPIN value required to treat a bucket imbalance as informed flow.
@@ -72,4 +77,30 @@ pub struct HurstVpinDirectionalConfig {
     /// Maximum time (seconds) a position is held before forced flatten.
     #[builder(default = 3600)]
     pub max_holding_secs: u64,
+}
+
+impl HurstVpinDirectionalConfig {
+    /// Validates the rolling window sizes.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ConfigError`] if either rolling window is outside `[1, 16_384]`.
+    pub fn validate(&self) -> ConfigResult<()> {
+        let mut errors = ConfigErrorCollector::new();
+
+        for (field, value) in [
+            ("hurst_window", self.hurst_window),
+            ("vpin_window", self.vpin_window),
+        ] {
+            errors.check(
+                (1..=MAX_HURST_VPIN_WINDOW).contains(&value),
+                ConfigError::range(
+                    field,
+                    format!("must be in range [1, {MAX_HURST_VPIN_WINDOW}], was {value}"),
+                ),
+            );
+        }
+
+        errors.into_result()
+    }
 }

@@ -54,6 +54,7 @@ use tokio::{sync::RwLock, task::JoinHandle, time::interval};
 
 use crate::{
     common::{consts::BITMEX_HTTP_TESTNET_URL, enums::BitmexEnvironment},
+    config::validate_broadcaster_pool_size,
     http::client::BitmexHttpClient,
 };
 
@@ -161,7 +162,7 @@ impl CancelExecutor for BitmexHttpClient {
 /// Configuration for the cancel broadcaster.
 #[derive(Debug, Clone)]
 pub struct CancelBroadcasterConfig {
-    /// Number of HTTP clients in the pool.
+    /// Number of HTTP clients in the pool (range `[1, 16]`).
     pub pool_size: usize,
     /// BitMEX API key (None will source from environment).
     pub api_key: Option<SecretString>,
@@ -341,6 +342,8 @@ impl TransportClient {
 /// This broadcaster fans out cancel requests to multiple pre-warmed HTTP clients
 /// in parallel, short-circuits when the first successful acknowledgement is received,
 /// and handles expected rejection patterns with appropriate log levels.
+///
+/// The client pool must contain `[1, 16]` clients.
 #[cfg_attr(feature = "python", pyo3::pyclass)]
 #[cfg_attr(
     feature = "python",
@@ -364,8 +367,9 @@ impl CancelBroadcaster {
     ///
     /// # Errors
     ///
-    /// Returns an error if any HTTP client fails to initialize.
+    /// Returns an error if `pool_size` is outside `[1, 16]` or any HTTP client fails to initialize.
     pub fn new(config: CancelBroadcasterConfig) -> anyhow::Result<Self> {
+        validate_broadcaster_pool_size(config.pool_size, "pool_size")?;
         let mut transports = Vec::with_capacity(config.pool_size);
 
         let base_url = match config.environment {
@@ -1357,6 +1361,45 @@ mod tests {
         let metrics = broadcaster.get_metrics_async().await;
 
         assert_eq!(metrics.total_clients, expected_pool);
+    }
+
+    #[tokio::test]
+    async fn test_constructor_accepts_maximum_pool_size() {
+        let config = CancelBroadcasterConfig {
+            pool_size: crate::config::MAX_BROADCASTER_POOL_SIZE,
+            api_key: Some("test_key".into()),
+            api_secret: Some("test_secret".into()),
+            base_url: Some("http://127.0.0.1:19999".to_string()),
+            ..Default::default()
+        };
+
+        let broadcaster = CancelBroadcaster::new(config).unwrap();
+        let metrics = broadcaster.get_metrics_async().await;
+
+        assert_eq!(
+            metrics.total_clients,
+            crate::config::MAX_BROADCASTER_POOL_SIZE
+        );
+    }
+
+    #[rstest]
+    fn test_constructor_rejects_oversized_pool_before_allocation() {
+        let config = CancelBroadcasterConfig {
+            pool_size: crate::config::MAX_BROADCASTER_POOL_SIZE + 1,
+            ..Default::default()
+        };
+
+        let result = CancelBroadcaster::new(config);
+        let err = result.expect_err("oversized pool must be rejected");
+
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "invalid usize for 'pool_size' not in range [1, {}], was {}",
+                crate::config::MAX_BROADCASTER_POOL_SIZE,
+                crate::config::MAX_BROADCASTER_POOL_SIZE + 1,
+            ),
+        );
     }
 
     #[tokio::test]

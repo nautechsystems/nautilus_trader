@@ -2265,15 +2265,27 @@ impl Cache {
     ///
     /// # Panics
     ///
-    /// Panics if the cache config has a zero tick or bar capacity.
+    /// Panics if the cache config has a tick or bar capacity outside `[1, 1_000_000]`.
     pub fn new(
         config: Option<CacheConfig>,
         database: Option<Box<dyn CacheDatabaseAdapter>>,
     ) -> Self {
-        let config = config.unwrap_or_default();
-        config.validate().expect("invalid `CacheConfig`");
+        Self::try_new(config, database).expect("invalid `CacheConfig`")
+    }
 
-        Self {
+    /// Creates a new [`Cache`] instance with optional configuration and database adapter.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`crate::config::ConfigError`] if the cache configuration is invalid.
+    pub fn try_new(
+        config: Option<CacheConfig>,
+        database: Option<Box<dyn CacheDatabaseAdapter>>,
+    ) -> crate::config::ConfigResult<Self> {
+        let config = config.unwrap_or_default();
+        config.validate()?;
+
+        Ok(Self {
             config,
             index: CacheIndex::default(),
             database,
@@ -2304,7 +2316,7 @@ impl Cache {
             position_snapshot_revisions: AHashMap::new(),
             #[cfg(feature = "defi")]
             defi: crate::defi::cache::DefiCache::default(),
-        }
+        })
     }
 
     /// Returns the cache instances memory address.

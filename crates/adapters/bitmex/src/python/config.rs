@@ -15,7 +15,7 @@
 
 //! Python bindings for BitMEX configuration.
 
-use nautilus_core::string::secret::SecretString;
+use nautilus_core::{python::to_pyvalue_err, string::secret::SecretString};
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
@@ -111,6 +111,9 @@ impl BitmexDataClientConfig {
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BitmexExecutionClientConfig {
     /// Configuration for the BitMEX live execution client.
+    ///
+    /// The submit and cancel broadcaster pools must each contain `[1, 15]` clients, with a combined
+    /// size in `[2, 16]`.
     #[new]
     #[pyo3(signature = (
         api_key = None,
@@ -162,9 +165,9 @@ impl BitmexExecutionClientConfig {
         canceller_proxy_urls: Option<Vec<String>>,
         deadmans_switch_timeout_secs: Option<u64>,
         transport_backend: Option<TransportBackend>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let defaults = Self::default();
-        Self {
+        let config = Self {
             api_key: api_key.map(SecretString::from),
             api_secret: api_secret.map(SecretString::from),
             base_url_http,
@@ -194,7 +197,11 @@ impl BitmexExecutionClientConfig {
                 .map(|values| values.into_iter().map(SecretString::from).collect()),
             deadmans_switch_timeout_secs,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
-        }
+        };
+        config
+            .validate_broadcaster_pool_sizes()
+            .map_err(to_pyvalue_err)?;
+        Ok(config)
     }
 
     #[getter]

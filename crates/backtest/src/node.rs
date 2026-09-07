@@ -644,6 +644,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::config::MAX_BACKTEST_CHUNK_SIZE;
     #[cfg(feature = "python")]
     use crate::{
         config::BacktestVenueConfig,
@@ -787,6 +788,17 @@ mod tests {
         assert_eq!(chunk.len(), 2);
         assert_eq!(chunk[0].ts_init(), UnixNanos::from(1));
         assert_eq!(chunk[1].ts_init(), UnixNanos::from(1));
+    }
+
+    #[rstest]
+    fn take_aligned_chunk_reserves_maximum_supported_capacity() {
+        let mut iter = vec![Ok(quote(1))].into_iter().peekable();
+
+        let chunk = take_aligned_chunk(&mut iter, MAX_BACKTEST_CHUNK_SIZE).unwrap();
+
+        assert_eq!(chunk.len(), 1);
+        assert!(chunk.capacity() >= MAX_BACKTEST_CHUNK_SIZE);
+        assert_eq!(chunk[0].ts_init(), UnixNanos::from(1));
     }
 
     #[cfg(feature = "python")]

@@ -117,11 +117,14 @@ impl BitmexExecutionClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if either the HTTP or WebSocket client fail to construct.
+    /// Returns an error if the broadcaster pool sizes are invalid, API credentials are unavailable,
+    /// or either the HTTP or WebSocket client fails to construct.
     pub fn new(
         mut core: ExecutionClientCore,
         config: BitmexExecutionClientConfig,
     ) -> anyhow::Result<Self> {
+        config.validate_broadcaster_pool_sizes()?;
+
         if !config.has_api_credentials() {
             anyhow::bail!("BitMEX execution client requires API key and secret");
         }
@@ -1585,6 +1588,31 @@ mod tests {
         let client = BitmexExecutionClient::new(core, config).unwrap();
 
         assert_eq!(client.account_id(), AccountId::from("BITMEX-319111"));
+    }
+
+    #[rstest]
+    fn test_invalid_combined_pool_size_is_rejected_before_credentials() {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let core = ExecutionClientCore::new(
+            TraderId::from("TESTER-001"),
+            *BITMEX_CLIENT_ID,
+            *BITMEX_VENUE,
+            OmsType::Netting,
+            AccountId::from("BITMEX-001"),
+            AccountType::Margin,
+            None,
+            cache,
+        );
+        let config = BitmexExecutionClientConfig {
+            submitter_pool_size: Some(crate::config::MAX_BROADCASTER_POOL_SIZE),
+            canceller_pool_size: Some(1),
+            ..Default::default()
+        };
+
+        let result = BitmexExecutionClient::new(core, config);
+        let err = result.expect_err("combined pool size must be rejected");
+
+        assert!(err.to_string().contains("combined_pool_size"));
     }
 
     #[rstest]

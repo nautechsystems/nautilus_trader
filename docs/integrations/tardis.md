@@ -576,8 +576,8 @@ Rust exposes the equivalent `stream_*` functions.
 
 ### Streaming CSV data in Python
 
-The module-level `stream_tardis_*` functions return iterators of bounded chunks. Each function
-accepts a `chunk_size` parameter that controls how many records are read per chunk:
+The module-level `stream_tardis_*` functions return iterators of bounded chunks. The `chunk_size`
+parameter accepts values in `[1, 1_000_000]` and controls how many records are read per chunk:
 
 ```python
 from pathlib import Path
@@ -653,8 +653,8 @@ Streaming bounds the number of parsed records retained at one time:
 
 - **Controlled memory use**: Only one chunk is loaded in memory at a time.
 - **Large file processing**: The iterator can process files larger than available RAM.
-- **Configurable chunk sizes**: Tune `chunk_size` based on your system's memory and performance
-  requirements (default 100,000).
+- **Configurable chunk sizes**: Tune `chunk_size` within `[1, 1_000_000]` based on your system's
+  memory and performance requirements (default 100,000).
 
 :::warning
 When using streaming with precision inference, the inferred precision may differ from bulk loading

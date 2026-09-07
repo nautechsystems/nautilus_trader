@@ -589,6 +589,9 @@ The submit broadcaster is configured via the execution client configuration:
 | `submitter_pool_size`  | `None`  | Size of the HTTP client pool. `None` resolves to 1 (single client, no redundancy). |
 | `submitter_proxy_urls` | `None`  | Optional list of proxy URLs for submit broadcaster path diversity.                 |
 
+`submitter_pool_size` must be in `[1, 15]`. The submit and cancel pools always count together, and an
+unset pool counts as 1, so their combined size must be in `[2, 16]`.
+
 **Example configuration**:
 
 ```python
@@ -602,8 +605,11 @@ exec_config = BitmexExecutionClientConfig(
 ```
 
 :::tip
-For HFT strategies without higher rate limits, consider the advantages of using the submit broadcaster against potentially hitting rate limits, as each client has an independent rate limit budget.
-The default `submitter_pool_size=None` disables the broadcaster. The recommended setting of `submitter_pool_size=3` broadcasts each submit request to 3 parallel HTTP clients for fault tolerance, which consumes 3× the rate limit quota per submit operation but provides higher assurance against network or exchange issues.
+Each pooled client has an independent local rate limiter, but BitMEX enforces limits at the account
+level; see [Rate limiting](#rate-limiting). The default `submitter_pool_size=None` selects one client
+and provides no redundant fan-out. The recommended setting of `submitter_pool_size=3` allows
+requests with `submit_tries > 1` to fan out to up to three healthy HTTP clients for fault tolerance.
+A broadcast can therefore send three HTTP requests for one submit.
 :::
 
 The broadcaster is automatically started when the execution client connects and stopped when it disconnects. Submit operations are routed through the broadcaster only when `submit_tries > 1`; default submits use a single HTTP client directly.
@@ -657,6 +663,9 @@ The cancel broadcaster is configured via the execution client configuration:
 | `canceller_pool_size`  | `None`  | Size of the HTTP client pool. `None` resolves to 1 (single client, no redundancy). |
 | `canceller_proxy_urls` | `None`  | Optional list of proxy URLs for cancel broadcaster path diversity.                 |
 
+`canceller_pool_size` must be in `[1, 15]`. The submit and cancel pools always count together, and an
+unset pool counts as 1, so their combined size must be in `[2, 16]`.
+
 **Example configuration**:
 
 ```python
@@ -670,8 +679,11 @@ exec_config = BitmexExecutionClientConfig(
 ```
 
 :::tip
-For HFT strategies without higher rate limits, consider the advantages of using the cancel broadcaster against potentially hitting rate limits, as each client has an independent rate limit budget.
-The default `canceller_pool_size=None` disables the broadcaster. The recommended setting of `canceller_pool_size=3` broadcasts each cancel request to 3 parallel HTTP clients for fault tolerance, which consumes 3× the rate limit quota per cancel operation but provides higher assurance against network or exchange issues.
+Each pooled client has an independent local rate limiter, but BitMEX enforces limits at the account
+level; see [Rate limiting](#rate-limiting). The default `canceller_pool_size=None` selects one client
+and provides no redundant fan-out. The recommended setting of `canceller_pool_size=3` broadcasts
+each cancel request to up to three healthy HTTP clients for fault tolerance. A broadcast can
+therefore send three HTTP requests for one cancel.
 :::
 
 The broadcaster is automatically started when the execution client connects and stopped when it disconnects. All cancel operations (`cancel_order`, `cancel_all_orders`, `batch_cancel_orders`) are automatically routed through the broadcaster without requiring any changes to strategy code.
@@ -845,6 +857,9 @@ The BitMEX execution client provides the following configuration options:
 | `submitter_proxy_urls`         | `None`    | Optional list of proxy URLs for submit broadcaster path diversity.                                                          |
 | `canceller_proxy_urls`         | `None`    | Optional list of proxy URLs for cancel broadcaster path diversity.                                                          |
 | `transport_backend`            | `Sockudo` | WebSocket transport backend.                                                                                                |
+
+Each broadcaster pool size must be in `[1, 15]`. An unset pool counts as 1, and the submit and cancel
+pool sizes combined must be in `[2, 16]`.
 
 ### Configuration examples
 

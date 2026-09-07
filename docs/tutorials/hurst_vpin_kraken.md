@@ -323,6 +323,8 @@ when aggressor side was not directly observable.
 | `vpin_threshold`   | `0.30`           | Minimum VPIN for flow to be considered informed.                  |
 | `max_holding_secs` | `1800`           | Seconds a position may be held (default `3600`; overridden here). |
 
+Set `hurst_window` and `vpin_window` to values in `[1, 16_384]`.
+
 :::tip
 Dollar-bar size, Hurst lags, and VPIN window are all coupled. Smaller
 bars give faster reaction but noisier Hurst; larger bars smooth both

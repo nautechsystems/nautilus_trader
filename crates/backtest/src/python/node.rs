@@ -17,6 +17,8 @@
 
 use std::collections::HashMap;
 
+#[cfg(feature = "examples")]
+use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_common::{actor::data_actor::ImportableActorConfig, python::cache::PyCache};
 #[cfg(feature = "examples")]
 use nautilus_core::python::to_pytype_err;
@@ -410,9 +412,9 @@ fn register_hurst_vpin_directional(
     config: &Bound<'_, PyAny>,
 ) -> PyResult<()> {
     let config = config.extract::<HurstVpinDirectionalConfig>()?;
-    engine
-        .add_strategy(HurstVpinDirectional::new(config))
-        .map_err(to_pyruntime_err)
+    let strategy =
+        HurstVpinDirectional::new_checked(config).map_err(config_error_to_pyvalue_err)?;
+    engine.add_strategy(strategy).map_err(to_pyruntime_err)
 }
 
 #[cfg(all(test, feature = "examples"))]

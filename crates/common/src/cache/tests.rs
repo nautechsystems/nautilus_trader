@@ -5021,6 +5021,27 @@ fn test_new_rejects_zero_bar_capacity() {
     let _cache = Cache::new(Some(config), None);
 }
 
+#[rstest]
+#[case(0, 1, "tick_capacity")]
+#[case(1, 0, "bar_capacity")]
+fn test_try_new_returns_invalid_capacity(
+    #[case] tick_capacity: usize,
+    #[case] bar_capacity: usize,
+    #[case] expected_field: &str,
+) {
+    let config = CacheConfig {
+        tick_capacity,
+        bar_capacity,
+        ..Default::default()
+    };
+
+    let result = Cache::try_new(Some(config), None);
+
+    assert!(
+        matches!(result, Err(crate::config::ConfigError::Range { field, .. }) if field == expected_field)
+    );
+}
+
 // -- ACCOUNT ---------------------------------------------------------------------------------
 
 #[rstest]

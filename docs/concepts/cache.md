@@ -88,8 +88,9 @@ node_config = LiveNodeConfig(
 
 :::tip
 By default, the `Cache` keeps up to 10,000 values in each per-instrument tick sequence and 10,000
-bars for each bar type. These are separate limits, not combined totals. Increase them when a
-strategy needs a longer in-memory lookback and the additional memory use is acceptable.
+bars for each bar type. These are separate limits, not combined totals. Set each capacity to a value
+in `[1, 1_000_000]`. Increase them when a strategy needs a longer in-memory lookback and the
+additional memory use is acceptable.
 :::
 
 ### Configuration options

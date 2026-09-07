@@ -13,13 +13,21 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::correctness::{CorrectnessResultExt, FAILED, check_positive_usize};
+use nautilus_core::correctness::{
+    CorrectnessResult, CorrectnessResultExt, FAILED, check_in_range_inclusive_usize,
+};
 use serde::{Deserialize, Deserializer, Serialize, de::Error};
 
 use crate::{
     config::{ConfigError, ConfigErrorCollector, ConfigResult},
     enums::SerializationEncoding,
 };
+
+pub(super) const MAX_CACHE_DATA_CAPACITY: usize = 1_000_000;
+
+pub(super) fn check_cache_data_capacity(capacity: usize, parameter: &str) -> CorrectnessResult<()> {
+    check_in_range_inclusive_usize(capacity, 1, MAX_CACHE_DATA_CAPACITY, parameter)
+}
 
 /// Configuration for `Cache` instances.
 #[cfg_attr(
@@ -57,13 +65,13 @@ pub struct CacheConfig {
     /// If instrument data should be dropped from the cache's memory on reset.
     #[builder(default = true)]
     pub drop_instruments_on_reset: bool,
-    /// The maximum length for internal tick deques.
+    /// The maximum length for internal tick deques (range `[1, 1_000_000]`).
     #[builder(default = 10_000)]
-    #[serde(deserialize_with = "deserialize_positive_usize")]
+    #[serde(deserialize_with = "deserialize_cache_data_capacity")]
     pub tick_capacity: usize,
-    /// The maximum length for internal bar deques.
+    /// The maximum length for internal bar deques (range `[1, 1_000_000]`).
     #[builder(default = 10_000)]
-    #[serde(deserialize_with = "deserialize_positive_usize")]
+    #[serde(deserialize_with = "deserialize_cache_data_capacity")]
     pub bar_capacity: usize,
     /// If account events should be persisted to a backing database.
     #[builder(default = true)]
@@ -100,7 +108,7 @@ impl CacheConfig {
     ///
     /// # Panics
     ///
-    /// Panics if `tick_capacity` or `bar_capacity` is zero.
+    /// Panics if `tick_capacity` or `bar_capacity` is outside `[1, 1_000_000]`.
     #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
@@ -117,8 +125,8 @@ impl CacheConfig {
         persist_account_events: bool,
         save_market_data: bool,
     ) -> Self {
-        check_positive_usize(tick_capacity, stringify!(tick_capacity)).expect_display(FAILED);
-        check_positive_usize(bar_capacity, stringify!(bar_capacity)).expect_display(FAILED);
+        check_cache_data_capacity(tick_capacity, stringify!(tick_capacity)).expect_display(FAILED);
+        check_cache_data_capacity(bar_capacity, stringify!(bar_capacity)).expect_display(FAILED);
 
         Self {
             encoding,
@@ -140,7 +148,7 @@ impl CacheConfig {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`] if a capacity setting is not positive.
+    /// Returns a [`ConfigError`] if a capacity setting is outside `[1, 1_000_000]`.
     pub fn validate(&self) -> ConfigResult<()> {
         let mut errors = ConfigErrorCollector::new();
 
@@ -149,8 +157,11 @@ impl CacheConfig {
             ("bar_capacity", self.bar_capacity),
         ] {
             errors.check(
-                value > 0,
-                ConfigError::range(field, format!("must be positive, was {value}")),
+                check_cache_data_capacity(value, field).is_ok(),
+                ConfigError::range(
+                    field,
+                    format!("must be in range [1, {MAX_CACHE_DATA_CAPACITY}], was {value}"),
+                ),
             );
         }
 
@@ -158,12 +169,12 @@ impl CacheConfig {
     }
 }
 
-fn deserialize_positive_usize<'de, D>(deserializer: D) -> Result<usize, D::Error>
+fn deserialize_cache_data_capacity<'de, D>(deserializer: D) -> Result<usize, D::Error>
 where
     D: Deserializer<'de>,
 {
     let value = usize::deserialize(deserializer)?;
-    check_positive_usize(value, "capacity").map_err(D::Error::custom)?;
+    check_cache_data_capacity(value, "capacity").map_err(D::Error::custom)?;
     Ok(value)
 }
 
@@ -183,8 +194,15 @@ mod tests {
     #[rstest]
     #[case(0, 1)]
     #[case(1, 0)]
+    #[case(MAX_CACHE_DATA_CAPACITY + 1, 1)]
+    #[case(1, MAX_CACHE_DATA_CAPACITY + 1)]
+    #[case(usize::MAX, 1)]
+    #[case(1, usize::MAX)]
     #[should_panic]
-    fn test_new_rejects_zero_capacities(#[case] tick_capacity: usize, #[case] bar_capacity: usize) {
+    fn test_new_rejects_invalid_capacities(
+        #[case] tick_capacity: usize,
+        #[case] bar_capacity: usize,
+    ) {
         let _ = CacheConfig::new(
             SerializationEncoding::MsgPack,
             false,
@@ -202,6 +220,27 @@ mod tests {
     }
 
     #[rstest]
+    fn test_new_accepts_maximum_capacities() {
+        let config = CacheConfig::new(
+            SerializationEncoding::MsgPack,
+            false,
+            None,
+            None,
+            true,
+            false,
+            false,
+            true,
+            MAX_CACHE_DATA_CAPACITY,
+            MAX_CACHE_DATA_CAPACITY,
+            true,
+            false,
+        );
+
+        assert_eq!(config.tick_capacity, MAX_CACHE_DATA_CAPACITY);
+        assert_eq!(config.bar_capacity, MAX_CACHE_DATA_CAPACITY);
+    }
+
+    #[rstest]
     fn test_builder_rejects_zero_tick_capacity() {
         let result = CacheConfig::builder().tick_capacity(0).build();
         assert!(
@@ -213,6 +252,41 @@ mod tests {
     fn test_builder_rejects_zero_bar_capacity() {
         let result = CacheConfig::builder().bar_capacity(0).build();
         assert!(matches!(result, Err(ConfigError::Range { field, .. }) if field == "bar_capacity"));
+    }
+
+    #[rstest]
+    fn test_builder_accepts_maximum_capacities() {
+        let config = CacheConfig::builder()
+            .tick_capacity(MAX_CACHE_DATA_CAPACITY)
+            .bar_capacity(MAX_CACHE_DATA_CAPACITY)
+            .build()
+            .unwrap();
+
+        assert_eq!(config.tick_capacity, MAX_CACHE_DATA_CAPACITY);
+        assert_eq!(config.bar_capacity, MAX_CACHE_DATA_CAPACITY);
+    }
+
+    #[rstest]
+    #[case(MAX_CACHE_DATA_CAPACITY + 1, 1, "tick_capacity")]
+    #[case(1, MAX_CACHE_DATA_CAPACITY + 1, "bar_capacity")]
+    #[case(usize::MAX, 1, "tick_capacity")]
+    #[case(1, usize::MAX, "bar_capacity")]
+    fn test_validate_rejects_oversized_capacities(
+        #[case] tick_capacity: usize,
+        #[case] bar_capacity: usize,
+        #[case] expected_field: &str,
+    ) {
+        let config = CacheConfig {
+            tick_capacity,
+            bar_capacity,
+            ..Default::default()
+        };
+
+        let err = config
+            .validate()
+            .expect_err("oversized capacity is invalid");
+
+        assert!(matches!(err, ConfigError::Range { field, .. } if field == expected_field));
     }
 
     #[rstest]
@@ -235,16 +309,18 @@ mod tests {
     }
 
     #[rstest]
-    #[case(r#"{"tick_capacity":0}"#)]
-    #[case(r#"{"bar_capacity":0}"#)]
-    fn test_deserialize_rejects_zero_capacities(#[case] raw: &str) {
-        let err = serde_json::from_str::<CacheConfig>(raw)
-            .expect_err("zero capacity should fail deserialization");
+    #[case("tick_capacity", 0)]
+    #[case("bar_capacity", 0)]
+    #[case("tick_capacity", MAX_CACHE_DATA_CAPACITY + 1)]
+    #[case("bar_capacity", MAX_CACHE_DATA_CAPACITY + 1)]
+    fn test_deserialize_rejects_invalid_capacities(#[case] field: &str, #[case] capacity: usize) {
+        let raw = format!(r#"{{"{field}":{capacity}}}"#);
+        let err = serde_json::from_str::<CacheConfig>(&raw)
+            .expect_err("invalid capacity should fail deserialization");
 
-        assert!(
-            err.to_string()
-                .contains("invalid usize for 'capacity' not positive")
-        );
+        assert!(err.to_string().contains(&format!(
+            "invalid usize for 'capacity' not in range [1, {MAX_CACHE_DATA_CAPACITY}], was {capacity}"
+        )));
     }
 
     #[rstest]

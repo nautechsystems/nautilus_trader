@@ -33,6 +33,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(feature = "examples")]
+use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_common::{
     actor::data_actor::ImportableActorConfig,
     cache::CacheConfig,
@@ -1988,8 +1990,9 @@ fn register_grid_market_maker(node: &mut LiveNode, config: &Bound<'_, PyAny>) ->
 #[cfg(feature = "examples")]
 fn register_hurst_vpin_directional(node: &mut LiveNode, config: &Bound<'_, PyAny>) -> PyResult<()> {
     let config = config.extract::<HurstVpinDirectionalConfig>()?;
-    node.add_strategy(HurstVpinDirectional::new(config))
-        .map_err(to_pyruntime_err)
+    let strategy =
+        HurstVpinDirectional::new_checked(config).map_err(config_error_to_pyvalue_err)?;
+    node.add_strategy(strategy).map_err(to_pyruntime_err)
 }
 
 #[cfg(feature = "examples")]

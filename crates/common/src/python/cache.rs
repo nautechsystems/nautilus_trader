@@ -97,8 +97,9 @@ impl PyCache {
 impl PyCache {
     #[new]
     #[pyo3(signature = (config=None))]
-    fn py_new(config: Option<CacheConfig>) -> Self {
-        Self(Rc::new(RefCell::new(Cache::new(config, None))))
+    fn py_new(config: Option<CacheConfig>) -> PyResult<Self> {
+        let cache = Cache::try_new(config, None).map_err(config_error_to_pyvalue_err)?;
+        Ok(Self(Rc::new(RefCell::new(cache))))
     }
 
     #[pyo3(name = "reset")]
@@ -1248,6 +1249,7 @@ impl PyCache {
 mod tests {
     use nautilus_core::UnixNanos;
     use nautilus_model::{data::stubs::stub_instrument_close, enums::InstrumentCloseType};
+    use pyo3::exceptions::PyValueError;
     use rstest::rstest;
 
     use super::*;
@@ -1302,6 +1304,32 @@ mod tests {
             py_cache.py_instrument_close(first.instrument_id),
             Some(replacement)
         );
+    }
+
+    #[rstest]
+    fn test_py_cache_constructor_returns_value_error_for_invalid_config() {
+        Python::initialize();
+        let config = CacheConfig {
+            tick_capacity: 0,
+            ..Default::default()
+        };
+
+        let err = PyCache::py_new(Some(config)).expect_err("invalid capacity must be rejected");
+
+        Python::attach(|py| assert!(err.is_instance_of::<PyValueError>(py)));
+    }
+
+    #[rstest]
+    fn test_native_cache_binding_returns_value_error_for_invalid_config() {
+        Python::initialize();
+        let config = CacheConfig {
+            bar_capacity: 0,
+            ..Default::default()
+        };
+
+        let err = Cache::py_new(Some(config)).expect_err("invalid capacity must be rejected");
+
+        Python::attach(|py| assert!(err.is_instance_of::<PyValueError>(py)));
     }
 }
 
@@ -1451,8 +1479,8 @@ impl CacheConfig {
 impl Cache {
     /// A common in-memory `Cache` for market and execution related data.
     #[new]
-    fn py_new(config: Option<CacheConfig>) -> Self {
-        Self::new(config, None)
+    fn py_new(config: Option<CacheConfig>) -> PyResult<Self> {
+        Self::try_new(config, None).map_err(config_error_to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {

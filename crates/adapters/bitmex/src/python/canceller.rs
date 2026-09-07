@@ -36,6 +36,8 @@ impl CancelBroadcaster {
     /// This broadcaster fans out cancel requests to multiple pre-warmed HTTP clients
     /// in parallel, short-circuits when the first successful acknowledgement is received,
     /// and handles expected rejection patterns with appropriate log levels.
+    ///
+    /// The client pool must contain `[1, 16]` clients.
     #[new]
     #[pyo3(signature = (
         pool_size,

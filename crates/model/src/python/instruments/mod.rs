@@ -16,7 +16,10 @@
 //! Instrument definitions the trading domain model.
 
 use jiff::Timestamp;
-use nautilus_core::python::{serialization::from_dict_pyo3, to_pyvalue_err};
+use nautilus_core::{
+    correctness::check_in_range_inclusive_usize,
+    python::{serialization::from_dict_pyo3, to_pyvalue_err},
+};
 use pyo3::{
     IntoPyObjectExt, Py, PyAny, PyResult, Python,
     types::{PyAnyMethods, PyDict, PyDictMethods},
@@ -35,6 +38,8 @@ use crate::{
     },
     types::{Currency, Money, Price, Quantity},
 };
+
+const MAX_PRICE_LIST_TICKS: usize = 100_000;
 
 /// Pre-registers crypto currency codes from a dict prior to strict deserialization.
 ///
@@ -145,31 +150,47 @@ macro_rules! impl_instrument_common_pymethods {
             }
 
             /// Returns prices up to `num_ticks` bid ticks away from value.
+            ///
+            /// `num_ticks` must be in the range `[0, 100_000]`.
+            ///
+            /// # Errors
+            ///
+            /// Returns a Python `ValueError` if `num_ticks` exceeds the supported range.
             #[pyo3(name = "next_bid_prices")]
             #[pyo3(signature = (value, num_ticks=100))]
             fn py_next_bid_prices(
                 &self,
                 value: f64,
                 num_ticks: usize,
-            ) -> Vec<rust_decimal::Decimal> {
-                self.next_bid_prices(value, num_ticks)
+            ) -> PyResult<Vec<rust_decimal::Decimal>> {
+                validate_price_list_ticks(num_ticks)?;
+                Ok(self
+                    .next_bid_prices(value, num_ticks)
                     .into_iter()
                     .map(|price| price.as_decimal())
-                    .collect()
+                    .collect())
             }
 
             /// Returns prices up to `num_ticks` ask ticks away from value.
+            ///
+            /// `num_ticks` must be in the range `[0, 100_000]`.
+            ///
+            /// # Errors
+            ///
+            /// Returns a Python `ValueError` if `num_ticks` exceeds the supported range.
             #[pyo3(name = "next_ask_prices")]
             #[pyo3(signature = (value, num_ticks=100))]
             fn py_next_ask_prices(
                 &self,
                 value: f64,
                 num_ticks: usize,
-            ) -> Vec<rust_decimal::Decimal> {
-                self.next_ask_prices(value, num_ticks)
+            ) -> PyResult<Vec<rust_decimal::Decimal>> {
+                validate_price_list_ticks(num_ticks)?;
+                Ok(self
+                    .next_ask_prices(value, num_ticks)
                     .into_iter()
                     .map(|price| price.as_decimal())
-                    .collect()
+                    .collect())
             }
 
             /// Returns a price rounded to the instruments price precision.
@@ -201,6 +222,11 @@ macro_rules! impl_instrument_common_pymethods {
             }
         }
     };
+}
+
+fn validate_price_list_ticks(num_ticks: usize) -> PyResult<()> {
+    check_in_range_inclusive_usize(num_ticks, 0, MAX_PRICE_LIST_TICKS, stringify!(num_ticks))
+        .map_err(to_pyvalue_err)
 }
 
 macro_rules! impl_instrument_getter {
@@ -618,8 +644,34 @@ mod tests {
     use pyo3::{prelude::*, types::PyDict};
     use rstest::rstest;
 
-    use super::register_crypto_currencies_from_dict;
-    use crate::{enums::CurrencyType, types::Currency};
+    use super::{
+        MAX_PRICE_LIST_TICKS, register_crypto_currencies_from_dict, validate_price_list_ticks,
+    };
+    use crate::{enums::CurrencyType, instruments::stubs::audusd_sim, types::Currency};
+
+    #[rstest]
+    #[case(0)]
+    #[case(100)]
+    #[case(MAX_PRICE_LIST_TICKS)]
+    fn test_validate_price_list_ticks_accepts_supported_values(#[case] num_ticks: usize) {
+        assert!(validate_price_list_ticks(num_ticks).is_ok());
+    }
+
+    #[rstest]
+    #[case(MAX_PRICE_LIST_TICKS + 1)]
+    #[case(usize::MAX)]
+    fn test_validate_price_list_ticks_rejects_oversized_values(#[case] num_ticks: usize) {
+        assert!(validate_price_list_ticks(num_ticks).is_err());
+    }
+
+    #[rstest]
+    fn test_next_bid_prices_materializes_maximum_supported_list() {
+        let prices = audusd_sim()
+            .py_next_bid_prices(1.0, MAX_PRICE_LIST_TICKS)
+            .unwrap();
+
+        assert_eq!(prices.len(), MAX_PRICE_LIST_TICKS);
+    }
 
     #[rstest]
     fn test_register_crypto_currencies_from_dict_unknown_code() {

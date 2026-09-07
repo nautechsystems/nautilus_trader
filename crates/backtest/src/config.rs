@@ -53,6 +53,8 @@ use ustr::Ustr;
 
 use crate::modules::{SimulationModuleAny, SimulationModuleHandle};
 
+pub(crate) const MAX_BACKTEST_CHUNK_SIZE: usize = 1_000_000;
+
 /// Represents a type of market data for catalog queries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum NautilusDataType {
@@ -1056,7 +1058,8 @@ pub struct BacktestRunConfig {
     /// The backtest engine configuration (the core system kernel).
     #[builder(default)]
     engine: BacktestEngineConfig,
-    /// The number of data points to process in each chunk during streaming mode.
+    /// The number of data points to process in each chunk during streaming mode
+    /// (range `[1, 1_000_000]`).
     /// If `None`, the backtest will run without streaming, loading all data at once.
     chunk_size: Option<usize>,
     /// If exceptions during build or run should interrupt processing.
@@ -1112,8 +1115,11 @@ impl BacktestRunConfig {
 
         if let Some(chunk_size) = self.chunk_size {
             errors.check(
-                chunk_size > 0,
-                ConfigError::range("chunk_size", format!("must be positive, was {chunk_size}")),
+                (1..=MAX_BACKTEST_CHUNK_SIZE).contains(&chunk_size),
+                ConfigError::range(
+                    "chunk_size",
+                    format!("must be in range [1, {MAX_BACKTEST_CHUNK_SIZE}], was {chunk_size}"),
+                ),
             );
         }
 
@@ -1535,12 +1541,37 @@ mod tests {
     }
 
     #[rstest]
+    fn test_run_config_accepts_maximum_chunk_size() {
+        let config = BacktestRunConfig::builder()
+            .venues(vec![minimal_venue()])
+            .data(vec![])
+            .chunk_size(MAX_BACKTEST_CHUNK_SIZE)
+            .build()
+            .unwrap();
+
+        assert_eq!(config.chunk_size(), Some(MAX_BACKTEST_CHUNK_SIZE));
+    }
+
+    #[rstest]
     fn test_run_config_zero_chunk_size_rejected() {
         let result = BacktestRunConfig::builder()
             .venues(vec![minimal_venue()])
             .data(vec![])
             .chunk_size(0)
             .build();
+        assert!(matches!(result, Err(ConfigError::Range { field, .. }) if field == "chunk_size"));
+    }
+
+    #[rstest]
+    #[case(MAX_BACKTEST_CHUNK_SIZE + 1)]
+    #[case(usize::MAX)]
+    fn test_run_config_rejects_oversized_chunk_size(#[case] chunk_size: usize) {
+        let result = BacktestRunConfig::builder()
+            .venues(vec![minimal_venue()])
+            .data(vec![])
+            .chunk_size(chunk_size)
+            .build();
+
         assert!(matches!(result, Err(ConfigError::Range { field, .. }) if field == "chunk_size"));
     }
 

@@ -134,6 +134,9 @@ node.add_strategy_from_config(config.id, strategy_config)
 results = node.run()
 ```
 
+Set `chunk_size` to a value in `[1, 1_000_000]` to enable streaming. Leave it as `None` to load all
+data at once.
+
 `BacktestNode` also provides methods for adding actors and built-in strategies to a built run.
 
 ## Shutdown on error

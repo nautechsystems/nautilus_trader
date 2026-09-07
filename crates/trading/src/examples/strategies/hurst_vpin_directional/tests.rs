@@ -19,6 +19,7 @@ use nautilus_common::{
     actor::DataActor,
     cache::Cache,
     clock::{Clock, TestClock},
+    config::ConfigError,
 };
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -33,6 +34,10 @@ use rstest::rstest;
 use rust_decimal_macros::dec;
 
 use super::{HurstVpinDirectional, HurstVpinDirectionalConfig};
+use crate::{
+    examples::strategies::hurst_vpin_directional::config::MAX_HURST_VPIN_WINDOW,
+    strategy::StrategyConfig,
+};
 
 fn pf_xbtusd() -> CryptoPerpetual {
     CryptoPerpetual::builder()
@@ -86,6 +91,109 @@ fn create_strategy_with_windows(
         .hurst_lags(hurst_lags)
         .build();
     HurstVpinDirectional::new(config)
+}
+
+#[rstest]
+#[case(1, 1)]
+#[case(128, 50)]
+#[case(MAX_HURST_VPIN_WINDOW, MAX_HURST_VPIN_WINDOW)]
+fn test_config_accepts_supported_windows(#[case] hurst_window: usize, #[case] vpin_window: usize) {
+    let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
+    let config = HurstVpinDirectionalConfig::builder()
+        .instrument_id(instrument_id)
+        .bar_type(bar_type(instrument_id))
+        .trade_size(Quantity::from("0.01"))
+        .hurst_window(hurst_window)
+        .vpin_window(vpin_window)
+        .build();
+
+    assert!(config.validate().is_ok());
+}
+
+#[rstest]
+#[case(0, 1, "hurst_window")]
+#[case(1, 0, "vpin_window")]
+#[case(MAX_HURST_VPIN_WINDOW + 1, 1, "hurst_window")]
+#[case(1, MAX_HURST_VPIN_WINDOW + 1, "vpin_window")]
+#[case(usize::MAX, 1, "hurst_window")]
+#[case(1, usize::MAX, "vpin_window")]
+fn test_config_rejects_invalid_windows(
+    #[case] hurst_window: usize,
+    #[case] vpin_window: usize,
+    #[case] expected_field: &str,
+) {
+    let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
+    let config = HurstVpinDirectionalConfig::builder()
+        .instrument_id(instrument_id)
+        .bar_type(bar_type(instrument_id))
+        .trade_size(Quantity::from("0.01"))
+        .hurst_window(hurst_window)
+        .vpin_window(vpin_window)
+        .build();
+
+    let err = config
+        .validate()
+        .expect_err("invalid window must be rejected");
+
+    assert!(matches!(err, ConfigError::Range { field, .. } if field == expected_field));
+}
+
+#[rstest]
+fn test_strategy_new_checked_returns_invalid_window() {
+    let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
+    let config = HurstVpinDirectionalConfig::builder()
+        .instrument_id(instrument_id)
+        .bar_type(bar_type(instrument_id))
+        .trade_size(Quantity::from("0.01"))
+        .hurst_window(0)
+        .build();
+
+    let result = HurstVpinDirectional::new_checked(config);
+
+    assert!(matches!(
+        result,
+        Err(ConfigError::Range { field, .. }) if field == "hurst_window"
+    ));
+}
+
+#[rstest]
+fn test_strategy_new_checked_returns_invalid_order_id_tag() {
+    let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
+    let config = HurstVpinDirectionalConfig::builder()
+        .base(StrategyConfig {
+            strategy_id: Some(StrategyId::from("HURST_VPIN-001")),
+            order_id_tag: Some("T01€".to_string()),
+            ..Default::default()
+        })
+        .instrument_id(instrument_id)
+        .bar_type(bar_type(instrument_id))
+        .trade_size(Quantity::from("0.01"))
+        .build();
+
+    let result = HurstVpinDirectional::new_checked(config);
+
+    assert!(matches!(
+        result,
+        Err(ConfigError::InvalidValue { field, .. }) if field == "order_id_tag"
+    ));
+}
+
+#[rstest]
+fn test_strategy_allocates_maximum_supported_windows() {
+    let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
+    let config = HurstVpinDirectionalConfig::builder()
+        .instrument_id(instrument_id)
+        .bar_type(bar_type(instrument_id))
+        .trade_size(Quantity::from("0.01"))
+        .hurst_window(MAX_HURST_VPIN_WINDOW)
+        .vpin_window(MAX_HURST_VPIN_WINDOW)
+        .build();
+
+    let strategy = HurstVpinDirectional::new_checked(config).unwrap();
+
+    assert!(strategy.returns.capacity() >= MAX_HURST_VPIN_WINDOW);
+    assert!(strategy.abs_imbalances.capacity() >= MAX_HURST_VPIN_WINDOW);
+    assert!(strategy.signed_imbalances.capacity() >= MAX_HURST_VPIN_WINDOW);
 }
 
 fn register_strategy(strategy: &mut HurstVpinDirectional) {
