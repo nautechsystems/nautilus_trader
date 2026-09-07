@@ -17,7 +17,8 @@
 
 use std::time::Duration;
 
-use nautilus_network::http::{HttpClientError, ReqwestError, StatusCode};
+use nautilus_network::http::{HttpClientError, HttpResponse, ReqwestError, StatusCode};
+use serde::de::DeserializeOwned;
 use thiserror::Error;
 
 const ORDER_VERSION_MISMATCH: &str = "order_version_mismatch";
@@ -268,6 +269,17 @@ impl Error {
             | Self::Exchange(message) => strategy_rejection_reason(message),
             _ => strategy_rejection_reason(&self.to_string()),
         }
+    }
+}
+
+pub(crate) fn decode_response<T: DeserializeOwned>(response: &HttpResponse) -> Result<T> {
+    if response.status.is_success() {
+        serde_json::from_slice(&response.body).map_err(Error::Serde)
+    } else {
+        Err(Error::from_status_code(
+            response.status.as_u16(),
+            &response.body,
+        ))
     }
 }
 

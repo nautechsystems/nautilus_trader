@@ -24,7 +24,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
     common::{credential::EvmPrivateKey, urls::clob_http_url},
-    http::error::{Error, Result},
+    http::error::{Error, Result, decode_response},
     signing::eip712::sign_clob_auth,
 };
 
@@ -48,21 +48,13 @@ pub async fn create_api_key(
     base_url: Option<&str>,
 ) -> Result<ApiCredentials> {
     let (client, headers, base) = prepare_l1_request(private_key, nonce, base_url)?;
-
     let url = format!("{base}/auth/api-key");
     let response = client
         .request(Method::POST, url, None, Some(headers), None, None, None)
         .await
         .map_err(Error::from_http_client)?;
 
-    if response.status.is_success() {
-        serde_json::from_slice(&response.body).map_err(Error::Serde)
-    } else {
-        Err(Error::from_status_code(
-            response.status.as_u16(),
-            &response.body,
-        ))
-    }
+    decode_response(&response)
 }
 
 /// Derives existing API credentials via `GET /auth/derive-api-key` using L1 authentication.
@@ -76,21 +68,13 @@ pub async fn derive_api_key(
     base_url: Option<&str>,
 ) -> Result<ApiCredentials> {
     let (client, headers, base) = prepare_l1_request(private_key, nonce, base_url)?;
-
     let url = format!("{base}/auth/derive-api-key");
     let response = client
         .request(Method::GET, url, None, Some(headers), None, None, None)
         .await
         .map_err(Error::from_http_client)?;
 
-    if response.status.is_success() {
-        serde_json::from_slice(&response.body).map_err(Error::Serde)
-    } else {
-        Err(Error::from_status_code(
-            response.status.as_u16(),
-            &response.body,
-        ))
-    }
+    decode_response(&response)
 }
 
 /// Creates or derives API credentials using L1 (EIP-712) authentication.

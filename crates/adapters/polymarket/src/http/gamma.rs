@@ -34,7 +34,7 @@ use nautilus_core::{
 };
 use nautilus_model::instruments::InstrumentAny;
 use nautilus_network::{
-    http::{HttpClient, HttpClientError, HttpResponse, Method, USER_AGENT},
+    http::{HttpClient, HttpClientError, Method, USER_AGENT},
     retry::{RetryConfig, RetryManager},
     websocket::proxy::ProxyUrl,
 };
@@ -45,7 +45,7 @@ use crate::{
     common::urls::gamma_api_url,
     filters::set_market_closed,
     http::{
-        error::{Error, Result},
+        error::{Error, Result, decode_response},
         models::{GammaEvent, GammaMarket, GammaTag, SearchResponse},
         pagination::{Completion, CursorProtocol, FetchOutcome, Paginator, WindowedCollect},
         parse::{create_instrument_from_def, parse_gamma_market},
@@ -254,17 +254,6 @@ struct GammaMarketsKeysetResponse {
 struct GammaEventsKeysetResponse {
     events: Vec<GammaEvent>,
     next_cursor: Option<String>,
-}
-
-fn decode_response<T: DeserializeOwned>(response: &HttpResponse) -> Result<T> {
-    if response.status.is_success() {
-        serde_json::from_slice(&response.body).map_err(Error::Serde)
-    } else {
-        Err(Error::from_status_code(
-            response.status.as_u16(),
-            &response.body,
-        ))
-    }
 }
 
 fn gamma_markets_query_params(

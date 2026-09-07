@@ -43,7 +43,7 @@ use crate::{
         urls::clob_http_url,
     },
     http::{
-        error::{Error, Result},
+        error::{Error, Result, decode_response},
         models::{
             ClobBookResponse, ClobMarketResponse, FeeRateResponse, PolymarketOpenOrder,
             PolymarketOrder, PolymarketTradeReport, TickSizeResponse,
@@ -229,14 +229,7 @@ impl PolymarketClobHttpClient {
             .await
             .map_err(Error::from_http_client)?;
 
-        if response.status.is_success() {
-            serde_json::from_slice(&response.body).map_err(Error::Serde)
-        } else {
-            Err(Error::from_status_code(
-                response.status.as_u16(),
-                &response.body,
-            ))
-        }
+        decode_response(&response)
     }
 
     /// Like [`send_get`] but returns `Ok(None)` for empty or `null` response bodies
@@ -717,14 +710,7 @@ impl PolymarketClobPublicClient {
             .await
             .map_err(Error::from_http_client)?;
 
-        if response.status.is_success() {
-            serde_json::from_slice(&response.body).map_err(Error::Serde)
-        } else {
-            Err(Error::from_status_code(
-                response.status.as_u16(),
-                &response.body,
-            ))
-        }
+        decode_response(&response)
     }
 
     /// Fetches a single market by condition ID from the CLOB API.
@@ -736,14 +722,7 @@ impl PolymarketClobPublicClient {
             .await
             .map_err(Error::from_http_client)?;
 
-        if response.status.is_success() {
-            serde_json::from_slice(&response.body).map_err(Error::Serde)
-        } else {
-            Err(Error::from_status_code(
-                response.status.as_u16(),
-                &response.body,
-            ))
-        }
+        decode_response(&response)
     }
 
     /// Requests an order book snapshot and builds an [`OrderBook`].

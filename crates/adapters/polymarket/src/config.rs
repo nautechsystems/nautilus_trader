@@ -443,7 +443,7 @@ impl PolymarketDataClientConfig {
     pub fn data_api_url(&self) -> String {
         self.base_url_data_api
             .clone()
-            .unwrap_or_else(|| "https://data-api.polymarket.com".to_string())
+            .unwrap_or_else(|| urls::data_api_url().to_string())
     }
 }
 
@@ -583,7 +583,7 @@ impl PolymarketExecutionClientConfig {
     pub fn data_api_url(&self) -> String {
         self.base_url_data_api
             .clone()
-            .unwrap_or_else(|| "https://data-api.polymarket.com".to_string())
+            .unwrap_or_else(|| urls::data_api_url().to_string())
     }
 }
 
