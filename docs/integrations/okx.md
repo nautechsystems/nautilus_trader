@@ -377,8 +377,14 @@ for linear perpetual swap products on OKX.
 OKX WebSocket order operations use `instIdCode` (a numeric instrument identifier)
 instead of the string `instId` parameter. The adapter resolves `instIdCode` values
 from the instrument definitions fetched during startup and caches them for the
-session lifetime. If the instrument cache is empty (e.g. because of a failed
-bootstrap), order submissions fail with a clear error.
+session lifetime. Order submissions fail with a clear error if the required
+`instIdCode` is missing from the cache.
+
+The initial execution connection requires usable instruments from every requested
+instrument type or family. A failed request or a scope with no usable instruments
+aborts the connection before WebSockets open, even if another scope succeeds.
+Pre-open instruments and entries that cannot be parsed do not satisfy this
+requirement. Options without configured instrument families remain skipped.
 
 ### Client order ID requirements
 

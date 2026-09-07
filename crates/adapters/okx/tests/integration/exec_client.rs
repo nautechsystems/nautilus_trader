@@ -18,6 +18,7 @@
 use std::{
     cell::RefCell,
     collections::HashMap,
+    future::Future,
     net::SocketAddr,
     rc::Rc,
     sync::{
@@ -58,6 +59,7 @@ use nautilus_live::{
     ExecutionClientCore, ExecutionEventEmitter, execution::context::OrderIdentity,
 };
 use nautilus_model::{
+    accounts::{AccountAny, MarginAccount},
     enums::{
         AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
         TimeInForce, TriggerType,
@@ -2934,6 +2936,7 @@ fn create_exec_test_router() -> Router {
 struct WsTeardownState {
     opened: Arc<AtomicUsize>,
     closed: Arc<AtomicUsize>,
+    messages: Option<tokio::sync::broadcast::Sender<serde_json::Value>>,
 }
 
 async fn handle_exec_ws_upgrade(
@@ -2946,8 +2949,27 @@ async fn handle_exec_ws_upgrade(
 async fn handle_exec_ws_socket(mut socket: WebSocket, state: Arc<WsTeardownState>) {
     state.opened.fetch_add(1, Ordering::Relaxed);
 
-    while let Some(message) = socket.next().await {
-        let Ok(message) = message else { break };
+    let mut messages = state.messages.as_ref().map(|tx| tx.subscribe());
+
+    loop {
+        let message = tokio::select! {
+            message = socket.next() => match message {
+                Some(Ok(message)) => message,
+                _ => break,
+            },
+            message = async {
+                match &mut messages {
+                    Some(rx) => rx.recv().await.unwrap(),
+                    None => std::future::pending().await,
+                }
+            } => {
+                if socket.send(Message::Text(message.to_string().into())).await.is_err() {
+                    break;
+                }
+                continue;
+            }
+        };
+
         if let Message::Text(text) = message
             && text.contains("\"op\":\"login\"")
             && socket
@@ -6150,6 +6172,468 @@ async fn start_stale_pending_order_report_server() -> SocketAddr {
             .unwrap();
     });
     addr
+}
+
+#[rstest]
+#[case::types(false, false)]
+#[case::families(true, false)]
+#[case::option_skip(false, true)]
+#[tokio::test]
+async fn test_bootstrap_waits_for_every_scope(#[case] families: bool, #[case] skip_option: bool) {
+    let mut server = BootstrapServer::start().await;
+    let (mut client, mut rx, cache) = server.client(families, skip_option);
+    assert!(!client.is_connected());
+    let mut connect = Box::pin(client.connect());
+
+    for scope in 0..2 {
+        let request = server.next_request(&mut connect).await;
+        assert_eq!(request.params, bootstrap_scope(families, scope));
+        assert_eq!(server.ws.opened.load(Ordering::Relaxed), 0);
+        assert!(rx.try_recv().is_err());
+        assert!(futures_util::poll!(&mut connect).is_pending());
+        request.respond(bootstrap_response(families, scope));
+    }
+
+    finish_bootstrap_connect(connect, &mut rx, &cache)
+        .await
+        .unwrap();
+    assert!(client.is_connected());
+    assert_eq!(server.ws.opened.load(Ordering::Relaxed), 2);
+    assert!(server.requests.try_recv().is_err());
+    assert_bootstrap_reports(&client, families).await;
+    server.assert_order_events(&mut rx, families).await;
+    client.disconnect().await.unwrap();
+    server.assert_closed().await;
+}
+
+#[rstest]
+#[case::empty_type(false, 0, false)]
+#[case::empty_second_type(false, 1, false)]
+#[case::empty_family(true, 0, false)]
+#[case::empty_second_family(true, 1, false)]
+#[case::request_failure(false, 0, true)]
+#[case::family_request_failure(true, 1, true)]
+#[tokio::test]
+async fn test_bootstrap_failure_retries_all_scopes(
+    #[case] families: bool,
+    #[case] failed_scope: usize,
+    #[case] request_failure: bool,
+) {
+    let mut server = BootstrapServer::start().await;
+    let (mut client, mut rx, cache) = server.client(families, false);
+    let mut connect = Box::pin(client.connect());
+
+    for scope in 0..=failed_scope {
+        let request = server.next_request(&mut connect).await;
+        assert_eq!(request.params, bootstrap_scope(families, scope));
+        if scope == failed_scope {
+            request.respond(if request_failure {
+                StatusCode::BAD_REQUEST.into_response()
+            } else {
+                Json(json!({"code": "0", "msg": "", "data": []})).into_response()
+            });
+        } else {
+            request.respond(bootstrap_response(families, scope));
+        }
+    }
+
+    // Complete unexpected requests so a missing rejection cannot stall the assertion
+    let error = loop {
+        tokio::select! {
+            result = &mut connect => break result.unwrap_err(),
+            request = server.requests.recv() => {
+                request.unwrap().respond(bootstrap_response(families, 1));
+            }
+            event = rx.recv() => {
+                let ExecutionEvent::Account(state) =
+                    event.expect("execution event channel closed during bootstrap")
+                else {
+                    panic!("unexpected bootstrap event");
+                };
+                cache
+                    .borrow_mut()
+                    .add_account(AccountAny::Margin(MarginAccount::new(state, true)))
+                    .unwrap();
+            }
+        }
+    };
+    drop(connect);
+    let scope = bootstrap_scope(families, failed_scope);
+    let instrument_type = if families || failed_scope == 0 {
+        "Swap"
+    } else {
+        "Spot"
+    };
+    let context = scope.get("instFamily").map_or_else(
+        || instrument_type.to_string(),
+        |family| format!("{instrument_type} family {family}"),
+    );
+    let expected = if request_failure {
+        format!("failed to request OKX instruments for {context}")
+    } else {
+        format!("No usable instruments for {context}, cannot initialize execution client")
+    };
+    assert_eq!(error.to_string(), expected);
+    assert!(!client.is_connected());
+    assert_eq!(server.ws.opened.load(Ordering::Relaxed), 0);
+    assert!(rx.try_recv().is_err());
+
+    let mut connect = Box::pin(client.connect());
+    for scope in 0..2 {
+        let request = server.next_request(&mut connect).await;
+        assert_eq!(request.params, bootstrap_scope(families, scope));
+        request.respond(bootstrap_response(families, scope));
+    }
+    finish_bootstrap_connect(connect, &mut rx, &cache)
+        .await
+        .unwrap();
+    assert!(client.is_connected());
+    assert_bootstrap_reports(&client, families).await;
+    server.assert_order_events(&mut rx, families).await;
+    client.disconnect().await.unwrap();
+    server.assert_closed().await;
+}
+
+#[rstest]
+#[case::empty(false)]
+#[case::preopen(true)]
+#[tokio::test]
+async fn test_bootstrap_wholly_empty_scope_stays_disconnected(#[case] preopen: bool) {
+    let mut server = BootstrapServer::start().await;
+    let (mut client, mut rx, _) =
+        create_test_execution_client_configured(&format!("http://{}", server.addr), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+            config.max_retries = 0;
+        });
+    let mut connect = Box::pin(client.connect());
+    let request = server.next_request(&mut connect).await;
+    assert_eq!(request.params, bootstrap_scope(false, 0));
+    let mut response = load_test_data("http_get_instruments_swap.json");
+    if preopen {
+        for instrument in response["data"].as_array_mut().unwrap() {
+            instrument["state"] = json!("preopen");
+        }
+    } else {
+        response["data"] = json!([]);
+    }
+    request.respond(Json(response).into_response());
+    let error = connect.await.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "No usable instruments for Swap, cannot initialize execution client"
+    );
+    assert!(!client.is_connected());
+    assert_eq!(server.ws.opened.load(Ordering::Relaxed), 0);
+    assert!(rx.try_recv().is_err());
+}
+
+#[rstest]
+#[case::cancel(false)]
+#[case::stop_restart(true)]
+#[tokio::test]
+async fn test_bootstrap_cancel_discards_late_response(#[case] restart: bool) {
+    let mut server = BootstrapServer::start().await;
+    let (mut client, mut rx, cache) = server.client(true, false);
+    let mut connect = Box::pin(client.connect());
+    let first = server.next_request(&mut connect).await;
+    first.respond(bootstrap_response(true, 0));
+    let mut stale = server.next_request(&mut connect).await;
+    assert_eq!(stale.params, bootstrap_scope(true, 1));
+    drop(connect);
+    assert!(!client.is_connected());
+
+    if restart {
+        client.stop().unwrap();
+        client.start().unwrap();
+    }
+
+    let mut connect = Box::pin(client.connect());
+    let renewed = server.next_request(&mut connect).await;
+    assert_eq!(renewed.params, bootstrap_scope(true, 0));
+    tokio::time::timeout(Duration::from_secs(5), stale.response.closed())
+        .await
+        .expect("cancelled bootstrap response channel remained open");
+    assert!(stale.response.send(bootstrap_response(true, 1)).is_err());
+    assert!(futures_util::poll!(&mut connect).is_pending());
+    assert_eq!(server.ws.opened.load(Ordering::Relaxed), 0);
+    assert!(rx.try_recv().is_err());
+    renewed.respond(bootstrap_response(true, 0));
+    let last = server.next_request(&mut connect).await;
+    assert_eq!(last.params, bootstrap_scope(true, 1));
+    last.respond(bootstrap_response(true, 1));
+    finish_bootstrap_connect(connect, &mut rx, &cache)
+        .await
+        .unwrap();
+    assert!(client.is_connected());
+    assert_bootstrap_reports(&client, true).await;
+    server.assert_order_events(&mut rx, true).await;
+    client.disconnect().await.unwrap();
+    server.assert_closed().await;
+}
+
+struct BootstrapRequest {
+    params: HashMap<String, String>,
+    response: tokio::sync::oneshot::Sender<Response>,
+}
+
+impl BootstrapRequest {
+    fn respond(self, response: Response) {
+        self.response.send(response).unwrap();
+    }
+}
+
+struct BootstrapServer {
+    addr: SocketAddr,
+    ws: Arc<WsTeardownState>,
+    requests: tokio::sync::mpsc::UnboundedReceiver<BootstrapRequest>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl BootstrapServer {
+    async fn start() -> Self {
+        let (messages, _) = tokio::sync::broadcast::channel(4);
+        let ws = Arc::new(WsTeardownState {
+            messages: Some(messages),
+            ..Default::default()
+        });
+        let (tx, requests) = tokio::sync::mpsc::unbounded_channel();
+        let router = create_exec_test_router()
+            .route(
+                "/ws/v5/private",
+                get(handle_exec_ws_upgrade).with_state(Arc::clone(&ws)),
+            )
+            .route(
+                "/ws/v5/business",
+                get(handle_exec_ws_upgrade).with_state(Arc::clone(&ws)),
+            )
+            .route(
+                "/api/v5/public/instruments",
+                get(move |Query(params): Query<HashMap<String, String>>| {
+                    let tx = tx.clone();
+                    async move {
+                        let (response, rx) = tokio::sync::oneshot::channel();
+                        tx.send(BootstrapRequest { params, response }).unwrap();
+                        rx.await.unwrap()
+                    }
+                }),
+            )
+            .route(
+                "/api/v5/account/trade-fee",
+                get(|| async { Json(json!({"code": "0", "msg": "", "data": []})) }),
+            )
+            .route(
+                "/api/v5/trade/order",
+                get(|Query(params): Query<HashMap<String, String>>| async move {
+                    let mut response = regular_order_detail_response(&params);
+                    response["data"][0]["instId"] = json!(params["instId"]);
+                    Json(response)
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            axum::serve(listener, router.into_make_service())
+                .await
+                .unwrap();
+        });
+        Self {
+            addr,
+            ws,
+            requests,
+            task,
+        }
+    }
+
+    fn client(
+        &self,
+        families: bool,
+        skip_option: bool,
+    ) -> (
+        OKXExecutionClient,
+        tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+        Rc<RefCell<Cache>>,
+    ) {
+        let (mut client, rx, cache) =
+            create_test_execution_client_configured(&format!("http://{}", self.addr), |config| {
+                config.instrument_types = if families {
+                    vec![OKXInstrumentType::Swap]
+                } else {
+                    vec![OKXInstrumentType::Swap, OKXInstrumentType::Spot]
+                };
+
+                if skip_option {
+                    config.instrument_types.push(OKXInstrumentType::Option);
+                }
+                config.instrument_families =
+                    families.then(|| vec!["BTC-USDT".to_string(), "ETH-USDT".to_string()]);
+                config.base_url_ws_private = Some(format!("ws://{}/ws/v5/private", self.addr));
+                config.base_url_ws_business = Some(format!("ws://{}/ws/v5/business", self.addr));
+                config.max_retries = 0;
+            });
+        client.start().unwrap();
+        (client, rx, cache)
+    }
+
+    async fn next_request(
+        &mut self,
+        connect: &mut (impl Future<Output = anyhow::Result<()>> + Unpin),
+    ) -> BootstrapRequest {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::select! {
+                result = connect => panic!("connect completed before bootstrap request: {result:?}"),
+                request = self.requests.recv() => request.unwrap(),
+            }
+        }).await.expect("bootstrap request timed out")
+    }
+
+    async fn assert_order_events(
+        &self,
+        rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+        families: bool,
+    ) {
+        for symbol in [
+            "BTC-USDT-SWAP",
+            if families { "ETH-USDT-SWAP" } else { "BTC-USD" },
+        ] {
+            let mut message = load_test_data("ws_orders.json");
+            let order = &mut message["data"][0];
+            order["instId"] = json!(symbol);
+            order["state"] = json!("live");
+            order["accFillSz"] = json!("0");
+            order["fillSz"] = json!("0");
+            order["tradeId"] = json!("");
+            self.ws.messages.as_ref().unwrap().send(message).unwrap();
+
+            // Both execution streams must parse the order using their bootstrap cache
+            for _ in 0..2 {
+                let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+                    .await
+                    .unwrap()
+                    .unwrap();
+                let ExecutionEvent::Report(CommonExecutionReport::Order(report)) = event else {
+                    panic!("expected order report, received {event:?}");
+                };
+                assert_eq!(
+                    report.instrument_id,
+                    InstrumentId::from(format!("{symbol}.OKX").as_str())
+                );
+                assert_eq!(
+                    report.venue_order_id,
+                    VenueOrderId::from("2497956918703120384")
+                );
+            }
+        }
+    }
+
+    async fn assert_closed(&self) {
+        wait_until_async(
+            || async { self.ws.closed.load(Ordering::Relaxed) == 2 },
+            Duration::from_secs(5),
+        )
+        .await;
+        assert_eq!(self.ws.opened.load(Ordering::Relaxed), 2);
+        assert_eq!(self.ws.closed.load(Ordering::Relaxed), 2);
+    }
+}
+
+impl Drop for BootstrapServer {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+fn bootstrap_scope(families: bool, scope: usize) -> HashMap<String, String> {
+    let mut params = HashMap::from([(
+        "instType".to_string(),
+        if families || scope == 0 {
+            "SWAP"
+        } else {
+            "SPOT"
+        }
+        .to_string(),
+    )]);
+
+    if families {
+        params.insert(
+            "instFamily".to_string(),
+            if scope == 0 { "BTC-USDT" } else { "ETH-USDT" }.to_string(),
+        );
+    }
+    params
+}
+
+fn bootstrap_response(families: bool, scope: usize) -> Response {
+    let mut response = load_test_data(if families || scope == 0 {
+        "http_get_instruments_swap.json"
+    } else {
+        "http_get_instruments_spot.json"
+    });
+
+    if families {
+        response["data"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|instrument| {
+                instrument["instId"]
+                    == if scope == 0 {
+                        "BTC-USDT-SWAP"
+                    } else {
+                        "ETH-USDT-SWAP"
+                    }
+            });
+    }
+    Json(response).into_response()
+}
+
+async fn finish_bootstrap_connect(
+    connect: impl Future<Output = anyhow::Result<()>>,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    cache: &Rc<RefCell<Cache>>,
+) -> anyhow::Result<()> {
+    tokio::pin!(connect);
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            tokio::select! {
+                result = &mut connect => return result,
+                event = rx.recv() => {
+                    let ExecutionEvent::Account(state) =
+                        event.expect("execution event channel closed")
+                    else {
+                        panic!("unexpected bootstrap event");
+                    };
+                    cache
+                        .borrow_mut()
+                        .add_account(AccountAny::Margin(MarginAccount::new(state, true)))
+                        .unwrap();
+                }
+            }
+        }
+    })
+    .await
+    .expect("connect timed out")
+}
+
+async fn assert_bootstrap_reports(client: &OKXExecutionClient, families: bool) {
+    for symbol in [
+        "BTC-USDT-SWAP",
+        if families { "ETH-USDT-SWAP" } else { "BTC-USD" },
+    ] {
+        let instrument_id = InstrumentId::from(format!("{symbol}.OKX").as_str());
+        let report = client
+            .generate_order_status_report(&generate_order_status_report_cmd(
+                Some(instrument_id),
+                None,
+                Some(VenueOrderId::from("regular-venue-id")),
+            ))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(report.instrument_id, instrument_id);
+        assert_eq!(
+            report.venue_order_id,
+            VenueOrderId::from("regular-venue-id")
+        );
+    }
 }
 
 #[tokio::test]

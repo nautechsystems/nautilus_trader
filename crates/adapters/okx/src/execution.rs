@@ -1349,8 +1349,10 @@ impl OKXExecutionClient {
                         })?;
 
                     if instruments.is_empty() {
-                        log::warn!("No instruments returned for {instrument_type:?}");
-                        continue;
+                        anyhow::bail!(
+                            "No usable instruments for {instrument_type:?}, \
+                             cannot initialize execution client"
+                        );
                     }
 
                     log::debug!(
@@ -1374,10 +1376,10 @@ impl OKXExecutionClient {
                             })?;
 
                         if instruments.is_empty() {
-                            log::warn!(
-                                "No instruments returned for {instrument_type:?} family {family}"
+                            anyhow::bail!(
+                                "No usable instruments for {instrument_type:?} family {family}, \
+                                 cannot initialize execution client"
                             );
-                            continue;
                         }
 
                         log::debug!(
