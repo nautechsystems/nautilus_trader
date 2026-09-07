@@ -231,9 +231,6 @@ pub(super) fn decode_optional_ustr(
         return Ok(None);
     }
 
-    if len == 0 {
-        return Ok(Some(Ustr::from("")));
-    }
     let bytes = cursor.read_bytes(usize::from(len))?;
     let s = std::str::from_utf8(bytes).map_err(|_| SbeDecodeError::InvalidUtf8)?;
     Ok(Some(Ustr::from(s)))
