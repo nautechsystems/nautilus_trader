@@ -3183,6 +3183,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             .as_ref()
             .and_then(|params| params.get_bool("rpi"))
             .unwrap_or(false);
+
         if rpi {
             let reason = "rpi is only supported for individual Binance Futures order submission";
             for order in &orders {
@@ -3789,15 +3790,23 @@ fn validate_order(
         .unwrap_or(false);
 
     if rpi {
-        anyhow::ensure!(
-            client.product_type == BinanceProductType::UsdM,
-            "rpi is only supported for Binance USD-M Futures"
-        );
-        anyhow::ensure!(
-            order.order_type() == OrderType::Limit,
-            "rpi is only supported for LIMIT orders"
-        );
-        anyhow::ensure!(order.is_post_only(), "rpi requires post_only=true");
+        if client.product_type != BinanceProductType::UsdM {
+            return Err(OrderDeniedReason::ValidationFailed {
+                detail: "rpi is only supported for Binance USD-M Futures".to_string(),
+            });
+        }
+
+        if order.order_type() != OrderType::Limit {
+            return Err(OrderDeniedReason::ValidationFailed {
+                detail: "rpi is only supported for LIMIT orders".to_string(),
+            });
+        }
+
+        if !order.is_post_only() {
+            return Err(OrderDeniedReason::ValidationFailed {
+                detail: "rpi requires post_only=true".to_string(),
+            });
+        }
     }
 
     if close_position {

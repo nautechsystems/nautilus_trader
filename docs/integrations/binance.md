@@ -439,7 +439,7 @@ command (Rust). The Binance execution clients recognize:
 | ---------------- | ------ | ----------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------- |
 | `price_match`    | `str`  | USDT/COIN Futures | Delegate price selection to Binance.             | `LIMIT` only; not with `post_only`.                                                       |
 | `close_position` | `bool` | USDT/COIN Futures | Close the whole position when the trigger fires. | `StopMarket` and `MarketIfTouched` only; requires `reduce_only=true`; not in order lists. |
-| `rpi`            | `bool` | USDT Futures      | Submit a Retail Price Improvement order.         | `LIMIT` only; requires `post_only=true`; individual orders only.                           |
+| `rpi`            | `bool` | USDT Futures      | Submit a Retail Price Improvement order.         | `LIMIT` only; requires `post_only=true`; individual orders only.                          |
 
 See [Price match](#price-match), [RPI](#rpi), and [Close position](#close-position) for the full
 behavior.

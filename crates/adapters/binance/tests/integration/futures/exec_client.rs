@@ -1940,11 +1940,12 @@ async fn test_submit_rpi_rejects_invalid_order_combinations(
     #[case] post_only: bool,
     #[case] expected_error: &str,
 ) {
-    let (client, _rx, cache) = create_test_execution_client_for_product(
+    let (mut client, mut rx, cache) = create_test_execution_client_for_product(
         "http://127.0.0.1:1".to_string(),
         "ws://127.0.0.1:1/ws".to_string(),
         product_type,
     );
+    client.start().unwrap();
 
     let client_order_id = ClientOrderId::new("rpi-invalid-order-test-001");
     let order = if limit_order {
@@ -1952,11 +1953,23 @@ async fn test_submit_rpi_rejects_invalid_order_combinations(
     } else {
         add_stop_market_order_to_cache(&cache, client_order_id, OrderSide::Buy, false)
     };
-    let error = client
+    client
         .submit_order(submit_order_command_with_params(&order, Some(rpi_params())))
-        .unwrap_err();
+        .unwrap();
 
-    assert_eq!(error.to_string(), expected_error);
+    let event = rx.try_recv().expect("OrderDenied expected");
+    let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+        panic!("Expected OrderDenied, was {event:?}");
+    };
+    assert_eq!(denied.client_order_id, client_order_id);
+    assert_eq!(denied.instrument_id, order.instrument_id());
+    assert_eq!(denied.strategy_id, order.strategy_id());
+    assert_eq!(denied.trader_id, order.trader_id());
+    assert_eq!(
+        denied.reason.as_str(),
+        format!("VALIDATION_FAILED: {expected_error}")
+    );
+    assert!(rx.try_recv().is_err());
 }
 
 #[rstest]
