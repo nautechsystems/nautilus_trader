@@ -29,18 +29,20 @@ use std::{
         Arc, LazyLock,
         atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
-    time::{Duration, SystemTime},
+    time::Duration,
 };
 
 use ahash::{AHashMap, AHashSet};
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use futures_util::Stream;
+use nautilus_common::live::dst::time;
 use nautilus_core::{
-    AtomicMap,
+    AtomicMap, AtomicTime, UnixNanos,
     consts::NAUTILUS_USER_AGENT,
     env::{get_env_var, get_or_env_var},
     string::secret::{REDACTED, SecretString},
+    time::get_atomic_clock_realtime,
 };
 use nautilus_live::{
     SocketControl,
@@ -208,6 +210,7 @@ pub(crate) struct PendingOrderInfo {
 /// Provides a WebSocket client for connecting to [OKX](https://okx.com).
 #[derive(Clone)]
 pub struct OKXWebSocketClient {
+    clock: &'static AtomicTime,
     url: String,
     vip_level: Arc<AtomicU8>,
     credential: Option<Credential>,
@@ -347,6 +350,7 @@ impl OKXWebSocketClient {
         let subscriptions_state = SubscriptionState::new(OKX_WS_TOPIC_DELIMITER);
 
         Ok(Self {
+            clock: get_atomic_clock_realtime(),
             url,
             vip_level: Arc::new(AtomicU8::new(0)),
             credential,
@@ -588,10 +592,6 @@ impl OKXWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if the connection process fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics if subscription arguments fail to serialize to JSON.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
         let connect_lock = Arc::clone(&self.connect_lock);
         let _connect_guard = connect_lock.lock().await;
@@ -721,6 +721,7 @@ impl OKXWebSocketClient {
         let signal = self.signal.clone();
         let auth_tracker = self.auth_tracker.clone();
         let subscriptions_state = self.subscriptions_state.clone();
+        let clock = self.clock;
 
         let handler_task = {
             let auth_tracker = auth_tracker.clone();
@@ -741,82 +742,27 @@ impl OKXWebSocketClient {
                     msg_tx,
                     auth_tracker.clone(),
                     subscriptions_state.clone(),
+                    clock,
                 );
 
                 let resubscribe_all = || {
-                    for entry in subscriptions_inst_id.iter() {
-                        let (channel, inst_ids) = entry.pair();
-                        for inst_id in inst_ids {
-                            let arg = OKXSubscriptionArg {
-                                channel: channel.clone(),
-                                inst_type: None,
-                                inst_family: None,
-                                inst_id: Some(*inst_id),
-                            };
-
-                            if let Err(e) = cmd_tx_for_reconnect
-                                .send(HandlerCommand::Subscribe { args: vec![arg] })
-                            {
-                                log::error!("Failed to send resubscribe command: error={e}");
-                            }
-                        }
-                    }
-
-                    for entry in subscriptions_bare.iter() {
-                        let channel = entry.key();
-                        let arg = OKXSubscriptionArg {
-                            channel: channel.clone(),
-                            inst_type: None,
-                            inst_family: None,
-                            inst_id: None,
-                        };
-
+                    for arg in subscription_args(
+                        &subscriptions_inst_type,
+                        &subscriptions_inst_family,
+                        &subscriptions_inst_id,
+                        &subscriptions_bare,
+                    ) {
                         if let Err(e) =
                             cmd_tx_for_reconnect.send(HandlerCommand::Subscribe { args: vec![arg] })
                         {
                             log::error!("Failed to send resubscribe command: error={e}");
                         }
                     }
-
-                    for entry in subscriptions_inst_type.iter() {
-                        let (channel, inst_types) = entry.pair();
-                        for inst_type in inst_types {
-                            let arg = OKXSubscriptionArg {
-                                channel: channel.clone(),
-                                inst_type: Some(*inst_type),
-                                inst_family: None,
-                                inst_id: None,
-                            };
-
-                            if let Err(e) = cmd_tx_for_reconnect
-                                .send(HandlerCommand::Subscribe { args: vec![arg] })
-                            {
-                                log::error!("Failed to send resubscribe command: error={e}");
-                            }
-                        }
-                    }
-
-                    for entry in subscriptions_inst_family.iter() {
-                        let (channel, inst_families) = entry.pair();
-                        for inst_family in inst_families {
-                            let arg = OKXSubscriptionArg {
-                                channel: channel.clone(),
-                                inst_type: None,
-                                inst_family: Some(*inst_family),
-                                inst_id: None,
-                            };
-
-                            if let Err(e) = cmd_tx_for_reconnect
-                                .send(HandlerCommand::Subscribe { args: vec![arg] })
-                            {
-                                log::error!("Failed to send resubscribe command: error={e}");
-                            }
-                        }
-                    }
                 };
 
                 loop {
                     let message = tokio::select! {
+                        biased;
                         () = handler_abort.cancelled() => {
                             log::debug!("Handler task aborted");
                             break;
@@ -836,11 +782,7 @@ impl OKXWebSocketClient {
 
                             if let Some(cred) = &credential {
                                 log::debug!("Re-authenticating after reconnection");
-                                let timestamp = std::time::SystemTime::now()
-                                    .duration_since(std::time::SystemTime::UNIX_EPOCH)
-                                    .expect("System time should be after UNIX epoch")
-                                    .as_secs()
-                                    .to_string();
+                                let timestamp = authentication_timestamp(clock.get_time_ns());
                                 let signature =
                                     cred.sign(&timestamp, "GET", "/users/self/verify", "");
 
@@ -975,11 +917,7 @@ impl OKXWebSocketClient {
 
         let rx = self.auth_tracker.begin();
 
-        let timestamp = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("System time should be after UNIX epoch")
-            .as_secs()
-            .to_string();
+        let timestamp = authentication_timestamp(self.clock.get_time_ns());
         let signature = credential.sign(&timestamp, "GET", "/users/self/verify", "");
 
         let auth_message = OKXAuthentication {
@@ -1051,11 +989,11 @@ impl OKXWebSocketClient {
     ///
     /// Returns an error if the connection times out.
     pub async fn wait_until_active(&self, timeout_secs: f64) -> Result<(), OKXWsError> {
-        let timeout = tokio::time::Duration::from_secs_f64(timeout_secs);
+        let timeout = time::Duration::from_secs_f64(timeout_secs);
 
-        tokio::time::timeout(timeout, async {
+        time::timeout(timeout, async {
             while !self.is_active() {
-                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                time::sleep(time::Duration::from_millis(10)).await;
             }
         })
         .await
@@ -1292,53 +1230,12 @@ impl OKXWebSocketClient {
     pub async fn unsubscribe_all(&self) -> Result<(), OKXWsError> {
         const BATCH_SIZE: usize = 256;
 
-        let mut all_args = Vec::new();
-
-        for entry in self.subscriptions_inst_type.iter() {
-            let (channel, inst_types) = entry.pair();
-            for inst_type in inst_types {
-                all_args.push(OKXSubscriptionArg {
-                    channel: channel.clone(),
-                    inst_type: Some(*inst_type),
-                    inst_family: None,
-                    inst_id: None,
-                });
-            }
-        }
-
-        for entry in self.subscriptions_inst_family.iter() {
-            let (channel, inst_families) = entry.pair();
-            for inst_family in inst_families {
-                all_args.push(OKXSubscriptionArg {
-                    channel: channel.clone(),
-                    inst_type: None,
-                    inst_family: Some(*inst_family),
-                    inst_id: None,
-                });
-            }
-        }
-
-        for entry in self.subscriptions_inst_id.iter() {
-            let (channel, inst_ids) = entry.pair();
-            for inst_id in inst_ids {
-                all_args.push(OKXSubscriptionArg {
-                    channel: channel.clone(),
-                    inst_type: None,
-                    inst_family: None,
-                    inst_id: Some(*inst_id),
-                });
-            }
-        }
-
-        for entry in self.subscriptions_bare.iter() {
-            let channel = entry.key();
-            all_args.push(OKXSubscriptionArg {
-                channel: channel.clone(),
-                inst_type: None,
-                inst_family: None,
-                inst_id: None,
-            });
-        }
+        let all_args = subscription_args(
+            &self.subscriptions_inst_type,
+            &self.subscriptions_inst_family,
+            &self.subscriptions_inst_id,
+            &self.subscriptions_bare,
+        );
 
         if all_args.is_empty() {
             log::debug!("No active subscriptions to unsubscribe from");
@@ -3570,6 +3467,67 @@ impl OKXWebSocketClient {
     }
 }
 
+fn authentication_timestamp(now: UnixNanos) -> String {
+    now.as_seconds().to_string()
+}
+
+fn subscription_args(
+    subscriptions_inst_type: &DashMap<OKXWsChannel, AHashSet<OKXInstrumentType>>,
+    subscriptions_inst_family: &DashMap<OKXWsChannel, AHashSet<Ustr>>,
+    subscriptions_inst_id: &DashMap<OKXWsChannel, AHashSet<Ustr>>,
+    subscriptions_bare: &DashMap<OKXWsChannel, bool>,
+) -> Vec<OKXSubscriptionArg> {
+    let mut args = Vec::new();
+
+    for entry in subscriptions_inst_type {
+        let (channel, inst_types) = entry.pair();
+        for inst_type in inst_types {
+            args.push(OKXSubscriptionArg {
+                channel: channel.clone(),
+                inst_type: Some(*inst_type),
+                inst_family: None,
+                inst_id: None,
+            });
+        }
+    }
+
+    for entry in subscriptions_inst_family {
+        let (channel, inst_families) = entry.pair();
+        for inst_family in inst_families {
+            args.push(OKXSubscriptionArg {
+                channel: channel.clone(),
+                inst_type: None,
+                inst_family: Some(*inst_family),
+                inst_id: None,
+            });
+        }
+    }
+
+    for entry in subscriptions_inst_id {
+        let (channel, inst_ids) = entry.pair();
+        for inst_id in inst_ids {
+            args.push(OKXSubscriptionArg {
+                channel: channel.clone(),
+                inst_type: None,
+                inst_family: None,
+                inst_id: Some(*inst_id),
+            });
+        }
+    }
+
+    for entry in subscriptions_bare {
+        args.push(OKXSubscriptionArg {
+            channel: entry.key().clone(),
+            inst_type: None,
+            inst_family: None,
+            inst_id: None,
+        });
+    }
+
+    args.sort_unstable_by_key(topic_from_subscription_arg);
+    args
+}
+
 fn ws_channel_for_book(channel: OKXBookChannel) -> OKXWsChannel {
     match channel {
         OKXBookChannel::Book => OKXWsChannel::Books,
@@ -3644,15 +3602,52 @@ mod tests {
 
     #[rstest]
     fn test_timestamp_format_for_websocket_auth() {
-        let timestamp = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("System time should be after UNIX epoch")
-            .as_secs()
-            .to_string();
+        let now = UnixNanos::new(1_700_000_000_999_999_999);
 
-        timestamp.parse::<u64>().unwrap();
-        assert_eq!(timestamp.len(), 10);
-        assert!(timestamp.chars().all(|c| c.is_ascii_digit()));
+        assert_eq!(authentication_timestamp(now), "1700000000");
+    }
+
+    #[rstest]
+    fn test_subscription_args_are_sorted_by_topic() {
+        let client = OKXWebSocketClient::default();
+        client
+            .subscriptions_inst_type
+            .entry(OKXWsChannel::Instruments)
+            .or_default()
+            .extend([OKXInstrumentType::Swap, OKXInstrumentType::Spot]);
+        client
+            .subscriptions_inst_family
+            .entry(OKXWsChannel::OpenInterest)
+            .or_default()
+            .insert(Ustr::from("BTC-USD"));
+        client
+            .subscriptions_inst_id
+            .entry(OKXWsChannel::Tickers)
+            .or_default()
+            .extend([Ustr::from("ETH-USDT"), Ustr::from("BTC-USDT")]);
+        client.subscriptions_bare.insert(OKXWsChannel::Status, true);
+
+        let topics = subscription_args(
+            &client.subscriptions_inst_type,
+            &client.subscriptions_inst_family,
+            &client.subscriptions_inst_id,
+            &client.subscriptions_bare,
+        )
+        .iter()
+        .map(topic_from_subscription_arg)
+        .collect::<Vec<_>>();
+
+        assert_eq!(
+            topics,
+            [
+                "Instruments:Spot",
+                "Instruments:Swap",
+                "OpenInterest:BTC-USD",
+                "Status",
+                "Tickers:BTC-USDT",
+                "Tickers:ETH-USDT",
+            ]
+        );
     }
 
     #[rstest]

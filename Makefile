@@ -208,6 +208,7 @@ CORE_SELECTED_FEATURES := $(subst $(space),$(comma),$(strip $(CORE_SELECTED_FEAT
 STANDARD_PRECISION_ARGS := --workspace --exclude nautilus-blockchain --no-default-features --lib --tests --features "ffi,python"
 SIM_PACKAGES := -p nautilus-common -p nautilus-core -p nautilus-event-store \
 	-p nautilus-network -p nautilus-execution -p nautilus-live
+SIM_ADAPTER_PACKAGES := -p nautilus-okx
 SIM_FILTERSET := package(nautilus-common) + package(nautilus-event-store) + \
 	package(nautilus-network) + \
 	package(nautilus-execution) + \
@@ -450,6 +451,7 @@ check-code-standard-precision:  #-- Run clippy on lib/test targets with standard
 check-code-sim:  #-- Run clippy on DST simulation lib/test targets
 	$(info $(M) Running DST simulation code quality checks...)
 	@cargo clippy $(SIM_CARGO_CONFIG) $(SIM_PACKAGES) --lib --tests --features simulation --profile nextest -- -D warnings
+	@cargo clippy $(SIM_CARGO_CONFIG) $(SIM_ADAPTER_PACKAGES) --lib --tests --no-default-features --features simulation --profile nextest -- -D warnings
 	@printf "$(GREEN)DST simulation checks passed$(RESET)\n"
 
 .PHONY: check-all-targets

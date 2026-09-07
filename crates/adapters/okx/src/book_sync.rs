@@ -15,12 +15,10 @@
 
 //! Adapter-local order book synchronization state for OKX.
 
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::sync::Arc;
 
 use ahash::{AHashMap, AHashSet};
+use nautilus_common::live::dst::time::{Duration, Instant};
 use nautilus_core::AtomicMap;
 use nautilus_model::identifiers::InstrumentId;
 use parking_lot::Mutex;
@@ -331,8 +329,7 @@ fn book_channel_matches_scope(channel: OKXBookChannel, scope: BookChannelScope) 
 
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, Instant};
-
+    use nautilus_common::live::dst::time::{Duration, Instant};
     use nautilus_core::AtomicMap;
     use nautilus_model::identifiers::InstrumentId;
     use rstest::rstest;

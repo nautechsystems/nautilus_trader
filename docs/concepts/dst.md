@@ -211,8 +211,11 @@ The transitive closure of `nautilus-live` contains 16 in-scope crates:
 
 The hook also covers `backtest`, bringing the total to 17 crates.
 
-Adapter crates and infrastructure crates (Redis, Postgres) are out of scope. Their DST
-suitability requires a separate audit before they enter the DST path.
+Adapter crates and infrastructure crates (Redis, Postgres) are out of scope unless an audited
+slice is listed here. The OKX public Spot state slice routes state-affecting clock reads and timers
+through the DST seams and sorts reconnect and bulk-unsubscribe subscription commands. The static
+convention hook does not yet cover adapter crates. OKX execution and its underlying HTTP and
+WebSocket transports remain outside the DST contract.
 
 ## Network seed soaks
 
@@ -666,7 +669,9 @@ The dedicated workflow and local pre-flight use the same DST targets:
 
 `check-code-sim` runs pinned stable Clippy with `--features simulation` and `cfg(madsim)` across
 `nautilus-common`, `nautilus-core`, `nautilus-event-store`, `nautilus-network`,
-`nautilus-execution`, and `nautilus-live`.
+`nautilus-execution`, and `nautilus-live`. A separate `--no-default-features` leg compiles and lints
+the audited OKX public Spot state slice without enabling OKX's default `high-precision` feature in
+the standard-precision core leg.
 
 `cargo-test-sim` uses two feature-coherent nextest invocations:
 

@@ -557,7 +557,7 @@ impl OKXHttpClient {
     /// - History endpoint (`/api/v5/market/history-candles`): ≤ 100 rows/call, ≤ 20 req/2s
     ///   - Used when: start is Some AND age > 100 days
     ///
-    /// Age is calculated as `Timestamp::now() - start` at the time of the first request.
+    /// Age is calculated from the current time and `start` at the time of the first request.
     ///
     /// # Supported Aggregations
     ///

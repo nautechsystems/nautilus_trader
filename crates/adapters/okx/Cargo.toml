@@ -43,6 +43,12 @@ python = [
   "pyo3-stub-gen",
 ]
 high-precision = ["nautilus-model/high-precision"]
+simulation = [
+  "nautilus-common/simulation",
+  "nautilus-core/simulation",
+  "nautilus-live/simulation",
+  "nautilus-network/simulation",
+]
 examples = [
   "nautilus-live/node",
   "nautilus-network/transport-sockudo",

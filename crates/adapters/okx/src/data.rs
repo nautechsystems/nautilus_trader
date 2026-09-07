@@ -15,12 +15,9 @@
 
 //! Live market data client implementation for the OKX adapter.
 
-use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
-    },
-    time::{Duration, Instant},
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
 use ahash::{AHashMap, AHashSet};
@@ -29,7 +26,10 @@ use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     cache::quote::QuoteCache,
     clients::DataClient,
-    live::runner::get_data_event_sender,
+    live::{
+        dst::time::{self, Duration, Instant},
+        runner::get_data_event_sender,
+    },
     messages::{
         DataEvent,
         data::{
@@ -326,7 +326,7 @@ impl OKXDataClient {
         let cancel = tasks.cancellation_token();
 
         tasks.spawn(async move {
-            let mut interval = tokio::time::interval(interval_duration);
+            let mut interval = time::interval(interval_duration);
 
             loop {
                 tokio::select! {
@@ -1073,7 +1073,7 @@ impl OKXDataClient {
 
         tasks.spawn(async move {
             loop {
-                let sleep = tokio::time::sleep(interval);
+                let sleep = time::sleep(interval);
                 tokio::pin!(sleep);
 
                 tokio::select! {
@@ -1325,7 +1325,7 @@ fn spawn_snapshot_health_monitor(
         tokio::select! {
             biased;
             () = task_cancel.cancelled() => {}
-            () = tokio::time::sleep(timeout) => {
+            () = time::sleep(timeout) => {
                 handle_book_sync_signals(book_sync.expired_pending_snapshots(Instant::now()));
             }
         }
@@ -1787,7 +1787,7 @@ impl DataClient for OKXDataClient {
             }
 
             // Allow time for unsubscribe confirmations
-            tokio::time::sleep(Duration::from_millis(500)).await;
+            time::sleep(Duration::from_millis(500)).await;
         }
 
         self.begin_generation_shutdown();

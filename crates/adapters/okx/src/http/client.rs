@@ -48,7 +48,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use jiff::{Timestamp, fmt::rfc2822::DateTimeParser};
-use nautilus_common::cache::InstrumentLookupError;
+use nautilus_common::{cache::InstrumentLookupError, live::dst::time};
 use nautilus_core::{
     AtomicMap, AtomicTime, UnixNanos, consts::NAUTILUS_USER_AGENT,
     datetime::NANOSECONDS_IN_MILLISECOND, env::get_or_env_var, string::secret::REDACTED,
@@ -293,9 +293,9 @@ fn parse_retry_after(value: &str, now: Timestamp) -> Option<Duration> {
     }
 }
 
-fn retry_after(headers: &HashMap<String, String>) -> Option<Duration> {
+fn retry_after(headers: &HashMap<String, String>, now: Timestamp) -> Option<Duration> {
     let value = headers.get(RETRY_AFTER_HEADER)?;
-    let delay = parse_retry_after(value, Timestamp::now());
+    let delay = parse_retry_after(value, now);
     if delay.is_none() {
         log::warn!("Invalid OKX response header {RETRY_AFTER_HEADER}={value:?}");
     }
@@ -564,6 +564,7 @@ pub struct OKXResponse<T> {
 /// specific to OKX, such as request signing (for authenticated endpoints),
 /// forming request URLs, and deserializing responses into OKX specific data models.
 pub struct OKXRawHttpClient {
+    clock: &'static AtomicTime,
     base_url: String,
     client: HttpClient,
     credential: Option<Credential>,
@@ -821,6 +822,7 @@ impl OKXRawHttpClient {
         let retry_manager = RetryManager::new(retry_config);
 
         Ok(Self {
+            clock: get_atomic_clock_realtime(),
             base_url: base_url.unwrap_or(OKX_HTTP_URL.to_string()),
             client: HttpClient::builder()
                 .headers(Self::default_headers(environment))
@@ -873,6 +875,7 @@ impl OKXRawHttpClient {
         let retry_manager = RetryManager::new(retry_config);
 
         Ok(Self {
+            clock: get_atomic_clock_realtime(),
             base_url,
             client: HttpClient::builder()
                 .headers(Self::default_headers(environment))
@@ -915,6 +918,7 @@ impl OKXRawHttpClient {
         method: &Method,
         path: &str,
         body: Option<&[u8]>,
+        now: Timestamp,
     ) -> Result<HashMap<String, String>, OKXHttpError> {
         let credential = match self.credential.as_ref() {
             Some(c) => c,
@@ -925,7 +929,6 @@ impl OKXRawHttpClient {
         let api_passphrase = credential.api_passphrase().to_string();
 
         // OKX requires milliseconds in the timestamp (ISO 8601 with milliseconds)
-        let now = Timestamp::now();
         let timestamp = format!("{now:.3}");
         let signature = credential.sign_bytes(&timestamp, method.as_str(), path, body);
 
@@ -996,7 +999,8 @@ impl OKXRawHttpClient {
 
             async move {
                 let mut headers = if authenticate {
-                    self.sign_request(&method, &full_path, body.as_deref())?
+                    let now = self.clock.get_time_ns().to_datetime_utc();
+                    self.sign_request(&method, &full_path, body.as_deref(), now)?
                 } else {
                     HashMap::new()
                 };
@@ -1020,7 +1024,8 @@ impl OKXRawHttpClient {
                     .await?;
 
                 log::trace!("Response: {resp:?}");
-                let retry_after = retry_after(&resp.headers);
+                let now = self.clock.get_time_ns().to_datetime_utc();
+                let retry_after = retry_after(&resp.headers, now);
 
                 if resp.status.is_success() {
                     let okx_response: OKXResponse<T> = deserialize_okx_response(&resp.body)
@@ -2026,7 +2031,6 @@ impl OKXRawHttpClient {
 pub struct OKXHttpClient {
     pub(crate) inner: Arc<OKXRawHttpClient>,
     pub(crate) instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
-    clock: &'static AtomicTime,
     cache_initialized: AtomicBool,
 }
 
@@ -2043,7 +2047,6 @@ impl Clone for OKXHttpClient {
             inner: self.inner.clone(),
             instruments_cache: self.instruments_cache.clone(),
             cache_initialized,
-            clock: self.clock,
         }
     }
 }
@@ -2086,13 +2089,12 @@ impl OKXHttpClient {
             )?),
             instruments_cache: Arc::new(AtomicMap::new()),
             cache_initialized: AtomicBool::new(false),
-            clock: get_atomic_clock_realtime(),
         })
     }
 
     /// Generates a timestamp for initialization.
     fn generate_ts_init(&self) -> UnixNanos {
-        self.clock.get_time_ns()
+        self.inner.clock.get_time_ns()
     }
 
     /// Creates a new authenticated [`OKXHttpClient`] using environment variables and
@@ -2155,7 +2157,6 @@ impl OKXHttpClient {
             )?),
             instruments_cache: Arc::new(AtomicMap::new()),
             cache_initialized: AtomicBool::new(false),
-            clock: get_atomic_clock_realtime(),
         })
     }
 
@@ -3184,7 +3185,7 @@ impl OKXHttpClient {
             anyhow::ensure!(s < e, "Invalid time range: start={s:?} end={e:?}");
         }
 
-        let now = Timestamp::now();
+        let now = self.inner.clock.get_time_ns().to_datetime_utc();
 
         if let Some(s) = start
             && s > now
@@ -3398,7 +3399,7 @@ impl OKXHttpClient {
                     break;
                 }
 
-                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                time::sleep(time::Duration::from_millis(50)).await;
             }
 
             log::debug!(
@@ -3498,7 +3499,7 @@ impl OKXHttpClient {
     /// - History endpoint (`/api/v5/market/history-candles`): ≤ 100 rows/call, ≤ 20 req/2s
     ///   - Used when: start is Some AND age > 100 days
     ///
-    /// Age is calculated as `Timestamp::now() - start` at the time of the first request.
+    /// Age is calculated from the current time and `start` at the time of the first request.
     ///
     /// # Supported Aggregations
     ///
@@ -3549,7 +3550,7 @@ impl OKXHttpClient {
             anyhow::ensure!(s < e, "Invalid time range: start={s:?} end={e:?}");
         }
 
-        let now = Timestamp::now();
+        let now = self.inner.clock.get_time_ns().to_datetime_utc();
 
         if let Some(s) = start
             && s > now
@@ -4045,7 +4046,7 @@ impl OKXHttpClient {
                 break;
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+            time::sleep(time::Duration::from_millis(50)).await;
         }
 
         // Final rescue for FORWARD/RANGE when nothing gathered

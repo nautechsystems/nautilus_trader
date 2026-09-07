@@ -32,7 +32,11 @@ use std::{
     },
 };
 
-use nautilus_core::string::secret::{REDACTED, SecretString};
+use nautilus_common::live::dst::time;
+use nautilus_core::{
+    AtomicTime,
+    string::secret::{REDACTED, SecretString},
+};
 use nautilus_model::identifiers::ClientOrderId;
 use nautilus_network::{
     RECONNECTED,
@@ -120,6 +124,7 @@ impl Debug for HandlerCommand {
 }
 
 pub(super) struct OKXWsFeedHandler {
+    clock: &'static AtomicTime,
     signal: Arc<AtomicBool>,
     inner: Option<WebSocketClient>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
@@ -140,8 +145,10 @@ impl OKXWsFeedHandler {
         out_tx: tokio::sync::mpsc::UnboundedSender<OKXWsMessage>,
         auth_tracker: AuthTracker,
         subscriptions_state: SubscriptionState,
+        clock: &'static AtomicTime,
     ) -> Self {
         Self {
+            clock,
             signal,
             inner: None,
             cmd_rx,
@@ -232,9 +239,17 @@ impl OKXWsFeedHandler {
             return Some(message);
         }
 
+        let mut poll_raw_next = false;
+
         loop {
+            if self.signal.load(Ordering::Acquire) {
+                log::debug!("Stop signal received");
+                return None;
+            }
+
             tokio::select! {
-                Some(cmd) = self.cmd_rx.recv() => {
+                biased;
+                Some(cmd) = self.cmd_rx.recv(), if !poll_raw_next => {
                     match cmd {
                         HandlerCommand::SetClient(client) => {
                             log::debug!("Handler received WebSocket client");
@@ -289,13 +304,12 @@ impl OKXWsFeedHandler {
                             }
                         }
                     }
+
+                    poll_raw_next = true;
                 }
 
-                () = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
-                    if self.signal.load(Ordering::Acquire) {
-                        log::debug!("Stop signal received during idle period");
-                        return None;
-                    }
+                () = time::sleep(time::Duration::from_millis(100)) => {
+                    // Wake the loop to poll the stop signal while both channels are idle
                 }
 
                 msg = self.raw_rx.recv() => {
@@ -331,9 +345,7 @@ impl OKXWsFeedHandler {
                                 code,
                                 message: msg,
                                 conn_id: Some(conn_id),
-                                timestamp: nautilus_core::time::get_atomic_clock_realtime()
-                                    .get_time_ns()
-                                    .as_u64(),
+                                timestamp: self.clock.get_time_ns().as_u64(),
                             };
                             self.pending_messages.push_back(OKXWsMessage::Error(error));
                         }
@@ -372,9 +384,7 @@ impl OKXWsFeedHandler {
                                 code,
                                 message: msg,
                                 conn_id: None,
-                                timestamp: nautilus_core::time::get_atomic_clock_realtime()
-                                    .get_time_ns()
-                                    .as_u64(),
+                                timestamp: self.clock.get_time_ns().as_u64(),
                             };
                             return Some(OKXWsMessage::Error(error));
                         }
@@ -400,6 +410,10 @@ impl OKXWsFeedHandler {
                         }
                         OKXWsFrame::ChannelConnCount { .. } => {}
                     }
+                }
+
+                () = std::future::ready(()), if poll_raw_next => {
+                    poll_raw_next = false;
                 }
 
                 else => {
@@ -822,6 +836,7 @@ fn create_okx_retry_error(error: RetryError) -> OKXWsError {
 mod tests {
     use std::sync::{Arc, atomic::AtomicBool};
 
+    use nautilus_core::time::get_atomic_clock_realtime;
     use nautilus_network::websocket::{AuthTracker, SubscriptionState};
     use rstest::rstest;
     use serde_json::json;
@@ -844,6 +859,7 @@ mod tests {
             out_tx,
             AuthTracker::new(),
             SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
+            get_atomic_clock_realtime(),
         )
     }
 
@@ -865,6 +881,37 @@ mod tests {
 
         assert!(debug.contains(REDACTED));
         assert!(!debug.contains(payload));
+    }
+
+    #[tokio::test]
+    async fn test_next_polls_raw_after_one_ready_command() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut handler = OKXWsFeedHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            AuthTracker::new(),
+            SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
+            get_atomic_clock_realtime(),
+        );
+
+        for _ in 0..3 {
+            cmd_tx
+                .send(HandlerCommand::Subscribe { args: Vec::new() })
+                .unwrap();
+        }
+        raw_tx
+            .send(Message::Text(RECONNECTED.to_string().into()))
+            .unwrap();
+
+        let message = handler.next().await;
+
+        assert!(matches!(message, Some(OKXWsMessage::Reconnected)));
+        assert_eq!(handler.cmd_rx.len(), 2);
     }
 
     #[rstest]
