@@ -2145,10 +2145,14 @@ impl OrderMatchingEngine {
 
     /// Processes a trade tick to update the market state.
     ///
-    /// For L1 books, always updates the order book with the trade tick to maintain
-    /// market state. When `trade_execution` is disabled, order matching and maintenance
-    /// operations (GTD order expiry, trailing stop activation, instrument expiration)
-    /// are skipped. These maintenance operations will run on the next quote tick or bar.
+    /// For accepted L1 ticks, updates the order book to maintain market state. When
+    /// `trade_execution` is disabled, the L1 path syncs matching prices from the book and
+    /// returns; a later quote tick or executable bar drives matching and maintenance.
+    /// Accepted L2/L3 ticks still advance `LastPrice` and run trailing-stop maintenance
+    /// for all trigger types, enabled GTD expiry, and instrument-expiration checks. They
+    /// can trigger `LastPrice` stop orders, which fill against book liquidity. The trade
+    /// tick does not match resting limit orders or trigger stops that use other trigger
+    /// types.
     pub fn process_trade_tick(&mut self, trade: &TradeTick) {
         log::debug!("Processing {trade}");
 
@@ -2187,7 +2191,6 @@ impl OrderMatchingEngine {
         self.core.set_last_raw(trade.price);
 
         if !self.config.trade_execution {
-            // Sync core to L1 book, skip order matching
             if self.book_type == BookType::L1_MBP {
                 if let Some(bid) = self.book.best_bid_price() {
                     self.core.set_bid_raw(bid);
@@ -2196,6 +2199,12 @@ impl OrderMatchingEngine {
                 if let Some(ask) = self.book.best_ask_price() {
                     self.core.set_ask_raw(ask);
                 }
+            } else {
+                self.iterate_with_mode(
+                    trade.ts_init,
+                    AggressorSide::NoAggressor,
+                    OrderMatchMode::LastPriceStopTriggers,
+                );
             }
             return;
         }
@@ -3746,6 +3755,15 @@ impl OrderMatchingEngine {
     /// When not `NoAggressor`, the book-based bid/ask reset is skipped to preserve
     /// transient trade price overrides.
     pub fn iterate(&mut self, timestamp_ns: UnixNanos, aggressor_side: AggressorSide) {
+        self.iterate_with_mode(timestamp_ns, aggressor_side, OrderMatchMode::All);
+    }
+
+    fn iterate_with_mode(
+        &mut self,
+        timestamp_ns: UnixNanos,
+        aggressor_side: AggressorSide,
+        match_mode: OrderMatchMode,
+    ) {
         // TODO implement correct clock fixed time setting self.clock.set_time(ts_now);
         self.purge_closed_cached_filled_qty();
 
@@ -3778,6 +3796,10 @@ impl OrderMatchingEngine {
             // Process bid actions before snapshotting asks so cross-side
             // contingencies (OCO/OUO) mutate state between sides
             for action in self.core.iterate_bids() {
+                if !self.should_process_match_action(action, match_mode) {
+                    continue;
+                }
+
                 matched_order = true;
 
                 match action {
@@ -3787,6 +3809,10 @@ impl OrderMatchingEngine {
             }
 
             for action in self.core.iterate_asks() {
+                if !self.should_process_match_action(action, match_mode) {
+                    continue;
+                }
+
                 matched_order = true;
 
                 match action {
@@ -3810,6 +3836,7 @@ impl OrderMatchingEngine {
                 })
                 .collect()
         };
+
         let support_gtd_orders = self.config.support_gtd_orders;
 
         for client_order_id in order_ids {
@@ -3901,6 +3928,19 @@ impl OrderMatchingEngine {
         // get a chance to fill before positions are closed.
         self.check_instrument_expiration(timestamp_ns);
         self.purge_closed_cached_filled_qty();
+    }
+
+    fn should_process_match_action(&self, action: MatchAction, match_mode: OrderMatchMode) -> bool {
+        match match_mode {
+            OrderMatchMode::All => true,
+            OrderMatchMode::LastPriceStopTriggers => match action {
+                MatchAction::TriggerStop(client_order_id) => self
+                    .core
+                    .get_order(client_order_id)
+                    .is_some_and(|order| order.trigger_type == Some(TriggerType::LastPrice)),
+                MatchAction::FillLimit(_) => false,
+            },
+        }
     }
 
     fn get_trailing_activation_price(
@@ -6341,6 +6381,12 @@ impl OrderMatchingEngine {
 enum ModifyOutcome {
     Applied,
     Rejected,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OrderMatchMode {
+    All,
+    LastPriceStopTriggers,
 }
 
 #[derive(Debug)]

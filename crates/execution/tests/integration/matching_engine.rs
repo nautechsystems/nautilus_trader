@@ -8994,18 +8994,25 @@ fn test_reset_clears_cached_quote_bars(
     assert_eq!(engine.best_bid_price(), None);
 }
 
-// L2 engine with trade_execution=false does not iterate on trade ticks
-#[ignore]
 #[rstest]
-fn test_trailing_stop_market_updated_then_triggered(
+fn test_trade_tick_without_trade_execution_maintains_trailing_stop_without_filling_limit(
     instrument_eth_usdt: InstrumentAny,
-    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     account_id: AccountId,
 ) {
-    let mut engine_l2 =
-        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+    let config = OrderMatchingEngineConfig {
+        trade_execution: false,
+        ..Default::default()
+    };
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+    let mut engine_l2 = get_order_matching_engine_l2(
+        instrument_eth_usdt.clone(),
+        None,
+        Some(cache),
+        None,
+        Some(config),
+    );
 
-    // Add sell-side liquidity
     let delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
         .book_action(BookAction::Add)
         .book_order(BookOrder::new(
@@ -9017,8 +9024,18 @@ fn test_trailing_stop_market_updated_then_triggered(
         .build();
     engine_l2.process_order_book_delta(&delta).unwrap();
 
-    // Submit trailing stop market BUY at trigger 1510 with offset 5
-    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let limit_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1480.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(limit_order_id)
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut limit_order, account_id);
+
+    let trailing_stop_id = ClientOrderId::from("O-19700101-000000-001-001-2");
     let mut trailing_stop = OrderTestBuilder::new(OrderType::TrailingStopMarket)
         .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Buy)
@@ -9027,13 +9044,48 @@ fn test_trailing_stop_market_updated_then_triggered(
         .trigger_type(TriggerType::LastPrice)
         .trailing_offset(dec!(5))
         .trailing_offset_type(TrailingOffsetType::Price)
-        .client_order_id(client_order_id)
+        .client_order_id(trailing_stop_id)
         .submit(true)
         .build();
     engine_l2.process_order(&mut trailing_stop, account_id);
 
-    // Market drops to 1480 → trailing trigger updates to 1485 (1480 + 5)
-    let tick1 = TradeTick::new(
+    let bid_ask_stop_id = ClientOrderId::from("O-19700101-000000-001-001-3");
+    let mut bid_ask_stop = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .trigger_price(Price::from("1480.00"))
+        .trigger_type(TriggerType::BidAsk)
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(bid_ask_stop_id)
+        .submit(true)
+        .build();
+    engine_l2.process_order(&mut bid_ask_stop, account_id);
+
+    engine_l2.process_status(MarketStatusAction::Pause);
+    let triggering_bid = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Buy,
+            Price::from("1460.00"),
+            Quantity::from("10.000"),
+            3,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&triggering_bid).unwrap();
+    let crossing_delta = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1470.00"),
+            Quantity::from("10.000"),
+            2,
+        ))
+        .build();
+    engine_l2.process_order_book_delta(&crossing_delta).unwrap();
+    engine_l2.process_status(MarketStatusAction::Trading);
+    clear_order_event_handler_messages(&order_event_handler);
+
+    let favorable_trade = TradeTick::new(
         instrument_eth_usdt.id(),
         Price::from("1480.00"),
         Quantity::from("1.000"),
@@ -9042,10 +9094,34 @@ fn test_trailing_stop_market_updated_then_triggered(
         UnixNanos::from(1u64),
         UnixNanos::from(1u64),
     );
-    engine_l2.process_trade_tick(&tick1);
+    engine_l2.process_trade_tick(&favorable_trade);
 
-    // Market recovers to 1490 → ask(1500) >= trigger(1485) → stop triggers
-    let tick2 = TradeTick::new(
+    let favorable_trade_events = get_order_event_handler_messages(&order_event_handler);
+    let updated = favorable_trade_events
+        .iter()
+        .find_map(|event| match event {
+            OrderEventAny::Updated(updated) => Some(updated),
+            _ => None,
+        })
+        .expect("Expected favorable trade to update trailing stop");
+
+    assert_eq!(favorable_trade_events.len(), 1);
+    assert_eq!(updated.client_order_id, trailing_stop_id);
+    assert_eq!(updated.trigger_price, Some(Price::from("1485.00")));
+    assert!(engine_l2.order_exists(limit_order_id));
+    assert!(engine_l2.order_exists(trailing_stop_id));
+    assert!(engine_l2.order_exists(bid_ask_stop_id));
+    assert_eq!(
+        engine_l2
+            .get_core()
+            .get_order(trailing_stop_id)
+            .and_then(|order| order.trigger_price),
+        Some(Price::from("1485.00")),
+    );
+
+    clear_order_event_handler_messages(&order_event_handler);
+
+    let triggering_trade = TradeTick::new(
         instrument_eth_usdt.id(),
         Price::from("1490.00"),
         Quantity::from("1.000"),
@@ -9054,31 +9130,24 @@ fn test_trailing_stop_market_updated_then_triggered(
         UnixNanos::from(2u64),
         UnixNanos::from(2u64),
     );
-    engine_l2.process_trade_tick(&tick2);
+    engine_l2.process_trade_tick(&triggering_trade);
 
-    let saved_messages = get_order_event_handler_messages(&order_event_handler);
-
-    // Verify the full lifecycle: Accepted → Updated → Filled
-    let accepted_count = saved_messages
+    let triggering_trade_events = get_order_event_handler_messages(&order_event_handler);
+    let fill = triggering_trade_events
         .iter()
-        .filter(|e| matches!(e, OrderEventAny::Accepted(_)))
-        .count();
-    let updated_count = saved_messages
-        .iter()
-        .filter(|e| matches!(e, OrderEventAny::Updated(_)))
-        .count();
-    let fill = saved_messages.iter().find_map(|e| match e {
-        OrderEventAny::Filled(f) => Some(f),
-        _ => None,
-    });
+        .find_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .expect("Expected triggering trade to fill trailing stop from book liquidity");
 
-    assert_eq!(accepted_count, 1, "Should have 1 accepted event");
-    assert!(updated_count >= 1, "Should have at least 1 trailing update");
-    assert!(
-        fill.is_some(),
-        "Trailing stop should have triggered and filled"
-    );
-    assert_eq!(fill.unwrap().client_order_id, client_order_id);
+    assert_eq!(triggering_trade_events.len(), 1);
+    assert_eq!(fill.client_order_id, trailing_stop_id);
+    assert_eq!(fill.last_px, Price::from("1470.00"));
+    assert_eq!(fill.last_qty, Quantity::from("1.000"));
+    assert!(engine_l2.order_exists(limit_order_id));
+    assert!(!engine_l2.order_exists(trailing_stop_id));
+    assert!(engine_l2.order_exists(bid_ask_stop_id));
 }
 
 #[rstest]

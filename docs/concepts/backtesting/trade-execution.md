@@ -3,7 +3,8 @@
 Trade ticks trigger matching by default when a venue has `trade_execution=True`. A trade provides
 evidence that liquidity traded at its price, so it can fill resting orders on the passive side.
 
-Set `trade_execution=False` to use trades as strategy data without letting them trigger matching:
+Set `trade_execution=False` to use trades as strategy data without treating them as execution
+liquidity for ordinary resting orders:
 
 ```python
 from nautilus_trader.config import BacktestVenueConfig
@@ -21,9 +22,14 @@ venue = BacktestVenueConfig(
 )
 ```
 
-When trade execution is disabled, trade ticks do not run order matching or matching-engine
-maintenance such as GTD expiry, trailing-stop activation, and instrument-expiration checks. A
-later quote or executable bar can run that maintenance.
+When trade execution is disabled, behavior depends on the venue's book type:
+
+- With L1 data, accepted trade ticks update the L1 book but skip matching and maintenance. Later
+  quote ticks or executable bars drive that work.
+- With L2 or L3 data, accepted trade ticks advance `LastPrice` and run trailing-stop maintenance
+  for all trigger types. They can trigger `LastPrice` stop orders, which fill against existing book
+  liquidity. The tick does not match resting limits or trigger stop orders that use other trigger
+  types. It also runs enabled GTD expiry and instrument-expiration checks.
 
 ## Trade-driven matching
 
