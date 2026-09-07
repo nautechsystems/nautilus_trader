@@ -2,6 +2,8 @@
 set -euo pipefail
 
 pkg_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../python" && pwd -P)"
+# shellcheck source=scripts/native-path.bash
+source "$pkg_dir/../scripts/native-path.bash"
 neutral_dir="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/nautilus-python-isolation.XXXXXX")"
 trap 'rm -rf "$neutral_dir"' EXIT
 unset PYTHONPATH
@@ -12,7 +14,8 @@ project_dir="$neutral_dir/python"
 mkdir "$project_dir"
 cp pyproject.toml uv.lock "$project_dir/"
 
-uv run --no-sync python - "$project_dir" << 'PY'
+project_dir_native="$(native_path "$project_dir")"
+uv run --no-sync python - "$project_dir_native" << 'PY'
 import importlib.machinery
 import importlib.metadata
 from pathlib import Path

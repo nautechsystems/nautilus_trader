@@ -2,6 +2,8 @@
 set -euo pipefail
 
 pkg_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../python" && pwd -P)"
+# shellcheck source=scripts/native-path.bash
+source "$pkg_dir/../scripts/native-path.bash"
 wheel_dir="${1:-$pkg_dir/../dist}"
 wheel_dir="$(cd "$wheel_dir" && pwd -P)"
 temp_root="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
@@ -25,9 +27,11 @@ wheel_project="$neutral_dir/python"
 mkdir "$wheel_project"
 cp "$pkg_dir/pyproject.toml" "$pkg_dir/uv.lock" "$wheel_project/"
 
-uv sync --project "$wheel_project" --python "$project_python" --frozen --group test --no-install-package nautilus-trader
-wheel_python="$(uv run --project "$wheel_project" --no-sync python -c 'import sys; print(sys.executable)')"
-uv pip install --python "$wheel_python" --reinstall "$1[visualization]"
+wheel_project_native="$(native_path "$wheel_project")"
+wheel_path="$(native_path "$1")"
+uv sync --project "$wheel_project_native" --python "$project_python" --frozen --group test --no-install-package nautilus-trader
+wheel_python="$(uv run --project "$wheel_project_native" --no-sync python -c 'import sys; print(sys.executable)')"
+uv pip install --python "$wheel_python" --reinstall "${wheel_path}[visualization]"
 
 # Pin pandas test dependencies until runtime dependencies are settled
 platform="$(uname -s)"

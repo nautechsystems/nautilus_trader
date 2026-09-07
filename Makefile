@@ -855,6 +855,7 @@ test-scripts:  #-- Run repository script tests
 	$Q bash .pre-commit-hooks/test_check_unicode_typography.sh
 	$Q bash .pre-commit-hooks/test_check_ustr_conventions.sh
 	$Q bash scripts/ci/test-build-artifact-reuse.bash
+	$Q bash scripts/test-native-path.bash
 	$Q bash scripts/ci/test-wheel-isolation.bash
 	$Q bash scripts/ci/test-python-isolation-setup.bash
 	$Q bash scripts/ci/test-check-docker-toolchain-pins.bash

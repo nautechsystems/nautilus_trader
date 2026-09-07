@@ -13,6 +13,7 @@ main() {
     "$repo_root/scripts/ci/test-python-doctests.bash" \
     "$repo_root/scripts/ci/check-python-isolation.bash" \
     "$repo_root/scripts/ci/check-python-types.bash" "$case_root/source/scripts/ci/"
+  cp "$repo_root/scripts/native-path.bash" "$case_root/source/scripts/"
   printf '%s\n' 'development environment' > "$case_root/source/python/.venv/sentinel"
   touch "$case_root/source/dist/package.whl" "$case_root/source/python/pyproject.toml" \
     "$case_root/source/python/uv.lock"
@@ -21,38 +22,46 @@ main() {
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=scripts/native-path.bash
+source "$CASE_ROOT/source/scripts/native-path.bash"
+case_root_native="$(native_path "$CASE_ROOT")"
+
 [[ -z "${PYTHONPATH:-}" && -z "${VIRTUAL_ENV:-}" ]] || exit 80
 if [[ "$*" == 'python find' ]]; then
   [[ -z "${UV_PROJECT_ENVIRONMENT:-}" ]] || exit 87
-  echo "$CASE_ROOT/source/python/.venv/bin/python"
+  echo "$case_root_native/source/python/.venv/bin/python"
   exit 0
 fi
 [[ -z "${UV_PROJECT_ENVIRONMENT:-}" ]] || exit 81
 printf '%s|%s\n' "$PWD" "$*" >> "$CASE_ROOT/uv.log"
 if [[ "$1" != pip ]]; then
-  [[ "$2" == --project && "$3" == "$CASE_ROOT"/temp/nautilus-wheel.*/python ]] || exit 88
-  environment="$3/.venv"
+  [[ "$2" == --project && "$3" == "$case_root_native"/temp/nautilus-wheel.*/python ]] || exit 88
+  environment="$CASE_ROOT${3#"$case_root_native"}/.venv"
+  environment_native="$3/.venv"
 fi
 
 case "$1" in
   sync)
-    [[ "$*" == "sync --project $3 --python $CASE_ROOT/source/python/.venv/bin/python --frozen --group test --no-install-package nautilus-trader" ]] || exit 82
+    [[ "$*" == "sync --project $3 --python $case_root_native/source/python/.venv/bin/python --frozen --group test --no-install-package nautilus-trader" ]] || exit 82
     mkdir -p "$environment"
     ;;
   pip)
-    [[ "$3" == '--python' && "$4" == "$CASE_ROOT"/temp/nautilus-wheel.*/python/.venv/bin/python ]] || exit 83
+    [[ "$3" == '--python' && "$4" == "$case_root_native"/temp/nautilus-wheel.*/python/.venv/bin/python ]] || exit 83
+    if [[ "$5" == --reinstall ]]; then
+      [[ "$6" == "$case_root_native/source/dist/package.whl[visualization]" ]] || exit 89
+    fi
     ;;
   run)
     case "$*" in
       *'print(sys.executable)'*)
-        echo "$environment/bin/python"
+        echo "$environment_native/bin/python"
         ;;
       *'print(Path.cwd().resolve().parent)'*)
-        echo "$CASE_ROOT/source"
+        echo "$case_root_native/source"
         ;;
       *)
         [[ "$PWD" == "$CASE_ROOT"/temp/nautilus-* ]] || exit 84
-        [[ "$TEST_DATA_ROOT_PATH" == "$CASE_ROOT/source" ]] || exit 85
+        [[ "$TEST_DATA_ROOT_PATH" == "$case_root_native/source" ]] || exit 85
         if [[ "$*" == *'package_dir.is_relative_to(environment_dir)'* ]]; then
           [[ "${FAIL_STAGE:-}" != origin ]] || exit 42
         elif [[ "$*" == *'--import-mode=importlib'* ]]; then
@@ -66,6 +75,34 @@ esac
 MOCK
   chmod +x "$case_root/bin/uv"
 
+  run_checks
+  case "$(uname -s)" in
+    Linux | Darwin)
+      cat > "$case_root/bin/uname" << 'MOCK'
+#!/usr/bin/env bash
+echo MINGW64_NT-10.0
+MOCK
+      cat > "$case_root/bin/cygpath" << 'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$#" -eq 3 && "$1" == -m && "$2" == -- ]] || exit 90
+printf 'C:%s\n' "${3#C:}"
+MOCK
+      chmod +x "$case_root/bin/uname" "$case_root/bin/cygpath"
+      run_checks
+      ;;
+  esac
+  rm "$case_root/source/dist/package.whl"
+  run_case missing 1
+  [[ ! -s "$case_root/uv.log" ]] || fail 'Missing wheel still created an environment'
+  touch "$case_root/source/dist/first.whl" "$case_root/source/dist/second.whl"
+  run_case ambiguous 1
+  [[ ! -s "$case_root/uv.log" ]] || fail 'Ambiguous wheels still created an environment'
+
+  echo 'Wheel isolation script tests passed'
+}
+
+run_checks() {
   run_case success 0
   grep -Fq -- '--import-mode=importlib' "$case_root/uv.log" || fail 'Missing isolated pytest run'
   grep -Fq -- '--doctest-modules' "$case_root/uv.log" || fail 'Missing wheel doctests'
@@ -78,14 +115,6 @@ MOCK
   if grep -Fq -- '--doctest-modules' "$case_root/uv.log"; then
     fail 'Doctests ran after pytest failed'
   fi
-  rm "$case_root/source/dist/package.whl"
-  run_case missing 1
-  [[ ! -s "$case_root/uv.log" ]] || fail 'Missing wheel still created an environment'
-  touch "$case_root/source/dist/first.whl" "$case_root/source/dist/second.whl"
-  run_case ambiguous 1
-  [[ ! -s "$case_root/uv.log" ]] || fail 'Ambiguous wheels still created an environment'
-
-  echo 'Wheel isolation script tests passed'
 }
 
 run_case() {

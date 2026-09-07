@@ -144,6 +144,17 @@ jobs:
         with:
           python-version: "3.14"
 
+      - name: Get uv version
+        id: uv-version
+        run: echo "uv_version=$(bash scripts/uv-version.sh)" >> "$GITHUB_OUTPUT"
+
+      - name: Install uv
+        # https://github.com/astral-sh/setup-uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: ${{ steps.uv-version.outputs.uv_version }}
+          enable-cache: false
+
       - name: Install ripgrep
         run: |
           sudo apt-get update -o Acquire::Retries=5
@@ -727,6 +738,9 @@ jobs:
           rust-cache-key: build-windows
           rust-cache-workspaces: . -> target/build-windows
           rust-cache-save-if: ${{ github.event_name == 'push' }}
+
+      - name: Check native paths
+        run: bash scripts/test-native-path.bash
 
       - name: Update version in pyproject.toml
         if: ${{ github.ref != 'refs/heads/master' }}

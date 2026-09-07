@@ -10,6 +10,7 @@ case_root=$(mktemp -d "${TMPDIR:-/tmp}/nautilus-isolation-setup.XXXXXX")
 trap 'rm -rf "$case_root"' EXIT
 mkdir -p "$case_root/source/scripts/ci" "$case_root/source/python" "$case_root/bin" "$case_root/temp"
 cp "$repo_root/scripts/test-python-isolation.bash" "$case_root/source/scripts/"
+cp "$repo_root/scripts/native-path.bash" "$case_root/source/scripts/"
 
 python3 - "$case_root/source/python" << 'PY'
 from pathlib import Path

@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=scripts/native-path.bash
+source "$(dirname "${BASH_SOURCE[0]}")/../native-path.bash"
+
 project_dir="${1:?Expected project directory}"
 project_dir="$(cd "$project_dir" && pwd -P)"
+project_dir="$(native_path "$project_dir")"
 
 temp_root="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
 neutral_dir="$(mktemp -d "$temp_root/nautilus-python-doctests.XXXXXX")"
