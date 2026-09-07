@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::UnixNanos;
+use nautilus_core::{DurationNanos, UnixNanos};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -77,7 +77,7 @@ pub struct PositionSnapshot {
     /// The commissions for the position.
     pub commissions: Vec<Money>,
     /// The open duration for the position (nanoseconds).
-    pub duration_ns: Option<u64>,
+    pub duration_ns: Option<DurationNanos>,
     /// UNIX timestamp (nanoseconds) when the position opened.
     pub ts_opened: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the position closed.
@@ -175,7 +175,7 @@ mod tests {
             realized_pnl: Some(Money::new(100.0, Currency::USD())),
             unrealized_pnl: Some(Money::new(50.0, Currency::USD())),
             commissions: vec![Money::new(2.0, Currency::USD())],
-            duration_ns: Some(3_600_000_000_000), // 1 hour in nanoseconds
+            duration_ns: Some(DurationNanos::from_hours(1)),
             ts_opened: UnixNanos::from(1_000_000_000),
             ts_closed: Some(UnixNanos::from(4_600_000_000)),
             ts_init: UnixNanos::from(2_000_000_000),

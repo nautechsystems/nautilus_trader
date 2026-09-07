@@ -37,10 +37,7 @@ use nautilus_common::{
     msgbus::{self, MessagingSwitchboard, TypedHandler, TypedIntoHandler},
     timer::{TimeEvent, TimeEventCallback},
 };
-use nautilus_core::{
-    UUID4, UnixNanos, WeakCell,
-    datetime::{NANOSECONDS_IN_DAY, NANOSECONDS_IN_MILLISECOND},
-};
+use nautilus_core::{DurationNanos, UUID4, UnixNanos, WeakCell};
 use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{Bar, MarkPriceUpdate, QuoteTick},
@@ -82,8 +79,8 @@ struct PortfolioState {
     stale_prices: AHashSet<(InstrumentId, PositionSide)>,
     stale_xrates: AHashSet<(Venue, Currency, Currency)>,
     initialized: bool,
-    last_account_state_log_ts: AHashMap<AccountId, u64>,
-    min_account_state_logging_interval_ns: u64,
+    last_account_state_log_ts: AHashMap<AccountId, UnixNanos>,
+    min_account_state_logging_interval_ns: DurationNanos,
     venues_missing_price: AHashMap<Venue, AHashMap<Option<AccountId>, AHashSet<InstrumentId>>>,
     account_open_positions: AHashMap<AccountId, usize>,
     equity_curve_accounts: AHashSet<AccountId>,
@@ -118,7 +115,8 @@ impl PortfolioState {
     ) -> Self {
         let min_account_state_logging_interval_ns = config
             .min_account_state_logging_interval_ms
-            .map_or(0, |ms| ms * NANOSECONDS_IN_MILLISECOND);
+            .map(DurationNanos::from_millis)
+            .unwrap_or_default();
 
         Self {
             accounts: AccountsManager::new(clock, cache),
@@ -4032,18 +4030,21 @@ fn update_account(
 
     // Throttled logging logic
     let mut inner_ref = inner.borrow_mut();
-    let should_log = if inner_ref.min_account_state_logging_interval_ns > 0 {
-        let current_ts = event.ts_init.as_u64();
+    let should_log = if inner_ref.min_account_state_logging_interval_ns.is_zero() {
+        true
+    } else {
+        let current_ts = event.ts_init;
         let last_ts = inner_ref
             .last_account_state_log_ts
             .get(&event.account_id)
             .copied()
-            .unwrap_or(0);
+            .unwrap_or_default();
 
         // Saturating: an out-of-order event carrying an earlier `ts_init` keeps the throttle
         // engaged rather than wrapping into an interval that always logs.
-        if last_ts == 0
-            || current_ts.saturating_sub(last_ts) >= inner_ref.min_account_state_logging_interval_ns
+        if last_ts.is_zero()
+            || current_ts.saturating_duration_since(last_ts)
+                >= inner_ref.min_account_state_logging_interval_ns
         {
             inner_ref
                 .last_account_state_log_ts
@@ -4052,8 +4053,6 @@ fn update_account(
         } else {
             false
         }
-    } else {
-        true // Throttling disabled, always log
     };
 
     if should_log {
@@ -4103,11 +4102,8 @@ fn arm_equity_curve_timer(
     config: PortfolioConfig,
     account_id: AccountId,
 ) {
-    let ts_now = clock.borrow().timestamp_ns().as_u64();
-    let Some(next_day) = (ts_now / NANOSECONDS_IN_DAY)
-        .checked_add(1)
-        .and_then(|day| day.checked_mul(NANOSECONDS_IN_DAY))
-    else {
+    let day = DurationNanos::from_days(1);
+    let Some(next_day) = clock.borrow().timestamp_ns().floor(day).checked_add(day) else {
         log::error!("Failed to calculate next equity curve sample for {account_id}");
         return;
     };
@@ -4131,8 +4127,8 @@ fn arm_equity_curve_timer(
 
     if let Err(e) = clock.borrow_mut().set_timer_ns(
         &timer_name,
-        NANOSECONDS_IN_DAY,
-        Some(UnixNanos::from(next_day)),
+        day,
+        Some(next_day),
         None,
         Some(TimeEventCallback::from(callback)),
         Some(false),
@@ -4194,7 +4190,10 @@ fn arm_snapshot_timer(
         Some(ms) if ms > 0 => ms,
         _ => return,
     };
-    let interval_ns = interval_ms * NANOSECONDS_IN_MILLISECOND;
+    let Ok(interval_ns) = DurationNanos::try_from_millis(interval_ms) else {
+        log::error!("Failed to calculate portfolio snapshot interval for {account_id}");
+        return;
+    };
     let timer_name = snapshot_timer_name(account_id);
 
     let cache_weak = Rc::downgrade(cache);

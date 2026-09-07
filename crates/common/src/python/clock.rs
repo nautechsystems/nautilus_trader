@@ -18,7 +18,9 @@
 use std::{cell::RefCell, rc::Rc};
 
 use jiff::{SignedDuration, Timestamp};
-use nautilus_core::{UnixNanos, datetime::try_datetime_to_unix_nanos, python::to_pyvalue_err};
+use nautilus_core::{
+    DurationNanos, UnixNanos, datetime::try_datetime_to_unix_nanos, python::to_pyvalue_err,
+};
 use pyo3::prelude::*;
 
 use crate::{
@@ -190,13 +192,11 @@ impl PyClock {
         allow_past: Option<bool>,
         fire_immediately: Option<bool>,
     ) -> PyResult<()> {
-        let interval_ns = interval.as_nanos();
-
-        if interval_ns <= 0 {
+        if interval <= SignedDuration::ZERO {
             return Err(to_pyvalue_err("Interval must be positive"));
         }
         let interval_ns =
-            u64::try_from(interval_ns).map_err(|_| to_pyvalue_err("Interval too large"))?;
+            DurationNanos::try_from(interval).map_err(|_| to_pyvalue_err("Interval too large"))?;
 
         let start_time_ns = start_time
             .map(try_datetime_to_unix_nanos)
@@ -240,7 +240,7 @@ impl PyClock {
             .borrow_mut()
             .set_timer_ns(
                 name,
-                interval_ns,
+                DurationNanos::new(interval_ns),
                 start_time_ns.map(UnixNanos::from),
                 stop_time_ns.map(UnixNanos::from),
                 callback.map(TimeEventCallback::from),
@@ -309,7 +309,7 @@ mod tests {
     use std::sync::Arc;
 
     use jiff::{SignedDuration, Timestamp};
-    use nautilus_core::{UnixNanos, python::IntoPyObjectNautilusExt};
+    use nautilus_core::{DurationNanos, UnixNanos, python::IntoPyObjectNautilusExt};
     use pyo3::{prelude::*, types::PyList};
     use rstest::*;
 
@@ -485,7 +485,15 @@ mod tests {
 
             let timer_name = "TEST_TIME1";
             test_clock
-                .set_timer_ns(timer_name, 10, None, None, None, None, None)
+                .set_timer_ns(
+                    timer_name,
+                    DurationNanos::new(10),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
                 .unwrap();
 
             assert_eq!(test_clock.timer_names(), [timer_name]);
@@ -502,7 +510,15 @@ mod tests {
 
             let timer_name = "TEST_TIME1";
             test_clock
-                .set_timer_ns(timer_name, 10, None, None, None, None, None)
+                .set_timer_ns(
+                    timer_name,
+                    DurationNanos::new(10),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
                 .unwrap();
             test_clock.cancel_timer(timer_name);
 
@@ -520,7 +536,15 @@ mod tests {
 
             let timer_name = "TEST_TIME1";
             test_clock
-                .set_timer_ns(timer_name, 10, None, None, None, None, None)
+                .set_timer_ns(
+                    timer_name,
+                    DurationNanos::new(10),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
                 .unwrap();
             test_clock.cancel_timers();
 
@@ -540,7 +564,7 @@ mod tests {
             test_clock
                 .set_timer_ns(
                     timer_name,
-                    1,
+                    DurationNanos::new(1),
                     Some(UnixNanos::from(1)),
                     Some(UnixNanos::from(3)),
                     None,
@@ -565,7 +589,7 @@ mod tests {
             test_clock
                 .set_timer_ns(
                     "TEST_TIME1",
-                    2,
+                    DurationNanos::new(2),
                     None,
                     Some(UnixNanos::from(3)),
                     None,
@@ -591,7 +615,7 @@ mod tests {
             test_clock
                 .set_timer_ns(
                     "TEST_TIME1",
-                    2,
+                    DurationNanos::new(2),
                     None,
                     Some(UnixNanos::from(3)),
                     None,

@@ -19,7 +19,7 @@ use std::{collections::HashMap, str::FromStr};
 
 use ahash::AHashMap;
 use nautilus_common::throttler::RateLimit;
-use nautilus_core::{datetime::NANOSECONDS_IN_SECOND, python::to_pyvalue_err};
+use nautilus_core::{DurationNanos, python::to_pyvalue_err};
 use nautilus_model::identifiers::{InstrumentId, Venue};
 use pyo3::{Py, PyAny, PyResult, Python, prelude::PyAnyMethods, pymethods};
 use rust_decimal::Decimal;
@@ -27,7 +27,7 @@ use rust_decimal::Decimal;
 use crate::engine::config::RiskEngineConfig;
 
 fn format_rate_limit(rate: &RateLimit) -> String {
-    let total_secs = rate.interval_ns() / NANOSECONDS_IN_SECOND;
+    let total_secs = rate.interval_ns().as_secs();
     let hours = total_secs / 3_600;
     let minutes = (total_secs % 3_600) / 60;
     let seconds = total_secs % 60;
@@ -65,7 +65,9 @@ fn parse_rate_limit(name: &str, value: &str) -> PyResult<RateLimit> {
         )));
     }
 
-    RateLimit::new_checked(limit, total_secs.saturating_mul(NANOSECONDS_IN_SECOND))
+    let interval_ns = DurationNanos::try_from_secs(total_secs)
+        .map_err(|e| to_pyvalue_err(format!("invalid `{name}`: {e}")))?;
+    RateLimit::new_checked(limit, interval_ns)
         .map_err(|e| to_pyvalue_err(format!("invalid `{name}`: {e}")))
 }
 

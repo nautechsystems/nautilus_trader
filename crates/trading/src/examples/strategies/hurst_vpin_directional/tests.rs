@@ -20,6 +20,7 @@ use nautilus_common::{
     cache::Cache,
     clock::{Clock, TestClock},
 };
+use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{Bar, BarSpecification, BarType, TradeTick},
     enums::{AggregationSource, AggressorSide, BarAggregation, PriceType},
@@ -423,7 +424,7 @@ fn test_on_reset_clears_all_state() {
     strategy.hurst = Some(0.6);
     strategy.vpin = Some(0.4);
     strategy.signed_vpin = Some(0.4);
-    strategy.position_opened_ns = Some(12_345);
+    strategy.position_opened_ns = Some(UnixNanos::new(12_345));
     strategy.exit_cooldown = true;
     strategy.entry_order_id = Some(ClientOrderId::from("O-1"));
     strategy.exit_order_ids.insert(ClientOrderId::from("O-2"));

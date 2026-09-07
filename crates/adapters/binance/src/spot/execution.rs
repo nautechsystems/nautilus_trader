@@ -34,8 +34,8 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    Params, UUID4, UnixNanos,
-    datetime::{NANOSECONDS_IN_MILLISECOND, checked_mins_to_nanos},
+    DurationNanos, Params, UUID4, UnixNanos,
+    datetime::NANOSECONDS_IN_MILLISECOND,
     string::secret::SecretString,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -1558,13 +1558,10 @@ impl ExecutionClient for BinanceSpotExecutionClient {
 
         let ts_now = self.clock.get_time_ns();
 
-        let start = if let Some(mins) = lookback_mins {
-            let lookback_ns = checked_mins_to_nanos(mins)
-                .context("lookback minutes exceed the nanosecond range")?;
-            Some(UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns)))
-        } else {
-            None
-        };
+        let start = lookback_mins
+            .map(DurationNanos::try_from_mins)
+            .transpose()?
+            .map(|lookback| ts_now.saturating_sub(lookback));
 
         // Binance requires instrument_id for historical orders (open_only=false).
         // Use open_only=true for mass status to get all open orders across instruments.

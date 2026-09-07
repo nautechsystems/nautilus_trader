@@ -722,6 +722,7 @@ fn write_parquet_local(
 mod tests {
     use std::sync::Arc;
 
+    use nautilus_core::DurationNanos;
     use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     use rstest::rstest;
 
@@ -818,8 +819,8 @@ mod tests {
         };
 
         let mut greeks_2 = greeks_1;
-        greeks_2.ts_event = greeks_1.ts_event + 1_000_000_000;
-        greeks_2.ts_init = greeks_1.ts_init + 1_000_000_000;
+        greeks_2.ts_event = greeks_1.ts_event + DurationNanos::from_secs(1);
+        greeks_2.ts_init = greeks_1.ts_init + DurationNanos::from_secs(1);
         greeks_2.greeks.delta = 0.26;
 
         let option_quote: BookSnapshotMsg =
@@ -833,8 +834,8 @@ mod tests {
         };
 
         let mut quote_2 = quote_1;
-        quote_2.ts_event = quote_1.ts_event + 1_000_000_000;
-        quote_2.ts_init = quote_1.ts_init + 1_000_000_000;
+        quote_2.ts_event = quote_1.ts_event + DurationNanos::from_secs(1);
+        quote_2.ts_init = quote_1.ts_init + DurationNanos::from_secs(1);
 
         let temp_dir = tempfile::tempdir().unwrap();
         let data_path = temp_dir.path().join("data");
@@ -915,8 +916,8 @@ mod tests {
         };
 
         let mut trade_2 = trade_1;
-        trade_2.ts_event = trade_1.ts_event + 1_000_000_000;
-        trade_2.ts_init = trade_1.ts_init + 1_000_000_000;
+        trade_2.ts_event = trade_1.ts_event + DurationNanos::from_secs(1);
+        trade_2.ts_init = trade_1.ts_init + DurationNanos::from_secs(1);
 
         let temp_dir = tempfile::tempdir().unwrap();
         let data_path = temp_dir.path().join("data");
@@ -961,7 +962,7 @@ mod tests {
         let bar_type = BarType::from("BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL");
 
         let ts_1 = UnixNanos::from(utc_nanos(2024, 1, 1, 0, 0, 0, 0));
-        let ts_2 = ts_1 + 1_000_000_000;
+        let ts_2 = ts_1 + DurationNanos::from_secs(1);
 
         let bar_1 = Bar::new(
             bar_type,

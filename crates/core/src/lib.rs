@@ -105,7 +105,7 @@ compile_error!("Unsupported platform: Nautilus supports only Linux, macOS, Windo
 pub use crate::params::from_pydict;
 pub use crate::{
     collections::{AtomicMap, AtomicSet},
-    nanos::UnixNanos,
+    nanos::{DurationNanos, DurationNanosOutOfRangeError, UnixNanos},
     params::Params,
     shared::{SharedCell, WeakCell},
     string::stack_str::{STACKSTR_CAPACITY, StackStr},

@@ -60,7 +60,7 @@ use nautilus_backtest::{
     engine::BacktestEngine,
 };
 use nautilus_common::{actor::DataActor, logging::logger::LoggerConfig, throttler::RateLimit};
-use nautilus_core::UnixNanos;
+use nautilus_core::{DurationNanos, UnixNanos};
 use nautilus_model::{
     data::{
         Bar, BarSpecification, BarType, BookOrder, Data, FundingRateUpdate, IndexPriceUpdate,
@@ -577,7 +577,7 @@ fn build_accumulating_market_orders(data: Vec<Data>, order_count: usize) -> Back
             order_count,
         ))),
         EngineBuildConfig {
-            max_order_submit: Some(RateLimit::new(1_000_000, 1_000_000_000)),
+            max_order_submit: Some(RateLimit::new(1_000_000, DurationNanos::from_secs(1))),
             ..Default::default()
         },
     )
@@ -1290,7 +1290,7 @@ impl DataActor for GtdLimitExpiry {
         if self.quote_count.is_multiple_of(GTD_ORDER_INTERVAL)
             && self.orders_submitted < self.max_orders
         {
-            self.submit_gtd_limit_order(quote.ts_event + GTD_EXPIRY_OFFSET_NS)?;
+            self.submit_gtd_limit_order(quote.ts_event + DurationNanos::new(GTD_EXPIRY_OFFSET_NS))?;
         }
         Ok(())
     }

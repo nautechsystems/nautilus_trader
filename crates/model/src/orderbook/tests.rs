@@ -21,7 +21,7 @@ use std::{
 use ahash::AHashSet;
 use indexmap::IndexMap;
 use log::{Level, LevelFilter, Log, Metadata, Record};
-use nautilus_core::{UnixNanos, correctness::CorrectnessError};
+use nautilus_core::{DurationNanos, UnixNanos, correctness::CorrectnessError};
 use parking_lot::{Mutex, MutexGuard};
 use rstest::{fixture, rstest};
 use rust_decimal::Decimal;
@@ -7636,7 +7636,7 @@ fn own_order_passes_filter(
         && ts_now.is_none_or(|ts_now| {
             order
                 .ts_accepted
-                .checked_add(accepted_buffer_ns)
+                .checked_add(DurationNanos::new(accepted_buffer_ns))
                 .is_some_and(|eligible_at| eligible_at.as_u64() <= ts_now)
         })
 }

@@ -23,8 +23,7 @@ use nautilus_model::{
 };
 use serde::{Deserialize, Serialize};
 
-// Upper bound for `market_exit_interval_ms` so the nanosecond conversion on the market exit
-// timer path (`interval_ms * 1_000_000`) cannot overflow a `u64`.
+// Upper bound for `market_exit_interval_ms` so its `DurationNanos` conversion cannot overflow.
 const MAX_MARKET_EXIT_INTERVAL_MS: u64 = u64::MAX / 1_000_000;
 
 /// The base model for all trading strategy configurations.

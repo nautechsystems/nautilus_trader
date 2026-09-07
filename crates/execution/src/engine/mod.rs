@@ -62,8 +62,8 @@ use nautilus_common::{
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
-    UUID4, UnixNanos, WeakCell,
-    datetime::{checked_mins_to_nanos, mins_to_secs, secs_to_nanos},
+    DurationNanos, UUID4, UnixNanos, WeakCell,
+    datetime::{mins_to_secs, secs_to_nanos},
 };
 use nautilus_model::{
     accounts::Account,
@@ -715,7 +715,7 @@ impl ExecutionEngine {
                 .borrow_mut()
                 .set_timer_ns(
                     TIMER_SNAPSHOT_POSITIONS,
-                    interval_ns,
+                    DurationNanos::new(interval_ns),
                     None,
                     None,
                     Some(callback),
@@ -755,7 +755,7 @@ impl ExecutionEngine {
                 .contains(&TIMER_PURGE_CLOSED_ORDERS)
         {
             'purge_closed_orders: {
-                let Some(interval_ns) = checked_mins_to_nanos(u64::from(interval_mins)) else {
+                let Ok(interval_ns) = DurationNanos::try_from_mins(u64::from(interval_mins)) else {
                     log::error!(
                         "Invalid purge_closed_orders_interval_mins {interval_mins}: minutes to nanoseconds conversion overflow"
                     );
@@ -801,7 +801,7 @@ impl ExecutionEngine {
                 .contains(&TIMER_PURGE_CLOSED_POSITIONS)
         {
             'purge_closed_positions: {
-                let Some(interval_ns) = checked_mins_to_nanos(u64::from(interval_mins)) else {
+                let Ok(interval_ns) = DurationNanos::try_from_mins(u64::from(interval_mins)) else {
                     log::error!(
                         "Invalid purge_closed_positions_interval_mins {interval_mins}: minutes to nanoseconds conversion overflow"
                     );
@@ -849,7 +849,7 @@ impl ExecutionEngine {
                 .contains(&TIMER_PURGE_ACCOUNT_EVENTS)
         {
             'purge_account_events: {
-                let Some(interval_ns) = checked_mins_to_nanos(u64::from(interval_mins)) else {
+                let Ok(interval_ns) = DurationNanos::try_from_mins(u64::from(interval_mins)) else {
                     log::error!(
                         "Invalid purge_account_events_interval_mins {interval_mins}: minutes to nanoseconds conversion overflow"
                     );

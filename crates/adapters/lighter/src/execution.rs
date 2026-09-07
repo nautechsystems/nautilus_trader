@@ -52,7 +52,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    UUID4, UnixNanos,
+    DurationNanos, UUID4, UnixNanos,
     datetime::unix_nanos_to_iso8601,
     params::Params,
     string::secret::SecretString,
@@ -4886,12 +4886,10 @@ impl ExecutionClient for LighterExecutionClient {
 
         // Scope inactive orders at the venue and stop descending trade
         // pagination once it crosses this local lookback boundary.
-        let lookback_start: Option<UnixNanos> = lookback_mins.map(|mins| {
-            let cutoff_ns = ts_init
-                .as_u64()
-                .saturating_sub(mins.saturating_mul(60).saturating_mul(1_000_000_000));
-            UnixNanos::from(cutoff_ns)
-        });
+        let lookback_start = lookback_mins
+            .map(DurationNanos::try_from_mins)
+            .transpose()?
+            .map(|lookback| ts_init.saturating_sub(lookback));
 
         // open_only = false so the inactive-orders fan-out runs and surfaces
         // canceled / rejected / expired / filled orders that the engine
@@ -7575,13 +7573,7 @@ mod tests {
         let (client, cache, mut rx) = create_execution_client();
         let instrument_id = register_test_instrument(&client, &cache);
         let mut factory = test_order_factory();
-        let expiry = UnixNanos::from(
-            client
-                .clock
-                .get_time_ns()
-                .as_u64()
-                .saturating_add(10 * 60 * 1_000_000_000),
-        );
+        let expiry = client.clock.get_time_ns() + DurationNanos::from_mins(10);
         let order = test_limit_order_with(
             &mut factory,
             instrument_id,

@@ -41,7 +41,7 @@ use nautilus_common::{
     },
     throttler::RateLimit,
 };
-use nautilus_core::{Params, UUID4, UnixNanos};
+use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos};
 use nautilus_execution::engine::{ExecutionEngine, config::ExecutionEngineConfig};
 use nautilus_model::{
     accounts::{
@@ -191,8 +191,8 @@ fn test_deny_order_exceeding_max_notional(
     let risk_config = RiskEngineConfig {
         debug: true,
         bypass: false,
-        max_order_submit: RateLimit::new(10, 1000),
-        max_order_modify: RateLimit::new(5, 1000),
+        max_order_submit: RateLimit::new(10, DurationNanos::new(1000)),
+        max_order_modify: RateLimit::new(5, DurationNanos::new(1000)),
         max_notional_per_order: AHashMap::new(),
         full_position_exit_venues: AHashSet::new(),
     };
@@ -277,12 +277,12 @@ fn clock() -> TestClock {
 
 #[fixture]
 fn max_order_submit() -> RateLimit {
-    RateLimit::new(10, 1)
+    RateLimit::new(10, DurationNanos::new(1))
 }
 
 #[fixture]
 fn max_order_modify() -> RateLimit {
-    RateLimit::new(5, 1)
+    RateLimit::new(5, DurationNanos::new(1))
 }
 
 #[fixture]
@@ -458,8 +458,8 @@ fn get_risk_engine(
     let config = config.unwrap_or(RiskEngineConfig {
         debug: true,
         bypass,
-        max_order_submit: RateLimit::new(10, 1000),
-        max_order_modify: RateLimit::new(5, 1000),
+        max_order_submit: RateLimit::new(10, DurationNanos::new(1000)),
+        max_order_modify: RateLimit::new(5, DurationNanos::new(1000)),
         max_notional_per_order: AHashMap::new(),
         full_position_exit_venues: AHashSet::new(),
     });
@@ -475,8 +475,8 @@ fn get_risk_engine_for_full_position_exit(
     let config = RiskEngineConfig {
         debug: true,
         bypass: false,
-        max_order_submit: RateLimit::new(10, 1000),
-        max_order_modify: RateLimit::new(5, 1000),
+        max_order_submit: RateLimit::new(10, DurationNanos::new(1000)),
+        max_order_modify: RateLimit::new(5, DurationNanos::new(1000)),
         max_notional_per_order: AHashMap::new(),
         full_position_exit_venues: [venue].into_iter().collect(),
     };
@@ -996,7 +996,10 @@ fn test_max_order_submit_rate_when_no_risk_config_returns_10_per_second() {
     let risk_engine = get_risk_engine(None, None, None, false);
 
     assert_eq!(risk_engine.config().max_order_submit.limit(), 10);
-    assert_eq!(risk_engine.config().max_order_submit.interval_ns(), 1000);
+    assert_eq!(
+        risk_engine.config().max_order_submit.interval_ns(),
+        DurationNanos::new(1000)
+    );
 }
 
 #[rstest]
@@ -1004,7 +1007,10 @@ fn test_max_order_modify_rate_when_no_risk_config_returns_5_per_second() {
     let risk_engine = get_risk_engine(None, None, None, false);
 
     assert_eq!(risk_engine.config().max_order_modify.limit(), 5);
-    assert_eq!(risk_engine.config().max_order_modify.interval_ns(), 1000);
+    assert_eq!(
+        risk_engine.config().max_order_modify.interval_ns(),
+        DurationNanos::new(1000)
+    );
 }
 
 #[rstest]
@@ -7648,8 +7654,8 @@ fn test_set_trading_state_publishes_trading_state_changed_event() {
     let config = RiskEngineConfig {
         debug: true,
         bypass: false,
-        max_order_submit: RateLimit::new(100, 1_000_000_000),
-        max_order_modify: RateLimit::new(50, 1_000_000_000),
+        max_order_submit: RateLimit::new(100, DurationNanos::from_secs(1)),
+        max_order_modify: RateLimit::new(50, DurationNanos::from_secs(1)),
         max_notional_per_order: AHashMap::new(),
         full_position_exit_venues: [Venue::from("BINANCE")].into_iter().collect(),
     };
@@ -7715,8 +7721,8 @@ fn test_reset_restores_trading_state_and_config_notionals() {
     let config = RiskEngineConfig {
         debug: true,
         bypass: false,
-        max_order_submit: RateLimit::new(10, 1000),
-        max_order_modify: RateLimit::new(5, 1000),
+        max_order_submit: RateLimit::new(10, DurationNanos::new(1000)),
+        max_order_modify: RateLimit::new(5, DurationNanos::new(1000)),
         max_notional_per_order: config_notionals,
         full_position_exit_venues: AHashSet::new(),
     };

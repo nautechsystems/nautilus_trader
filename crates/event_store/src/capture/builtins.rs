@@ -1525,7 +1525,7 @@ mod tests {
         DefiRequestCommand, DefiSubscribeCommand, DefiUnsubscribeCommand, RequestPoolSnapshot,
         SubscribeBlocks, UnsubscribeBlocks,
     };
-    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_core::{DurationNanos, UUID4, UnixNanos};
     #[cfg(feature = "defi")]
     use nautilus_model::defi::Blockchain;
     use nautilus_model::{
@@ -2869,7 +2869,7 @@ mod tests {
             realized_return: 0.015,
             realized_pnl: Some(Money::new(3.0, Currency::USDT())),
             unrealized_pnl: Money::new(0.0, Currency::USDT()),
-            duration: 3_600_000_000_000,
+            duration: DurationNanos::from_hours(1),
             event_id: UUID4::new(),
             ts_opened: UnixNanos::from(70),
             ts_closed: Some(UnixNanos::from(90)),

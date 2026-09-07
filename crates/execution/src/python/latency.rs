@@ -15,7 +15,7 @@
 
 //! Python bindings for latency model types.
 
-use nautilus_core::UnixNanos;
+use nautilus_core::DurationNanos;
 use pyo3::prelude::*;
 
 use crate::models::latency::StaticLatencyModel;
@@ -45,10 +45,10 @@ impl StaticLatencyModel {
         cancel_latency_nanos: u64,
     ) -> Self {
         Self::new(
-            UnixNanos::from(base_latency_nanos),
-            UnixNanos::from(insert_latency_nanos),
-            UnixNanos::from(update_latency_nanos),
-            UnixNanos::from(cancel_latency_nanos),
+            DurationNanos::new(base_latency_nanos),
+            DurationNanos::new(insert_latency_nanos),
+            DurationNanos::new(update_latency_nanos),
+            DurationNanos::new(cancel_latency_nanos),
         )
     }
 

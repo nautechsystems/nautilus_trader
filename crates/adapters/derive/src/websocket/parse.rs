@@ -17,7 +17,7 @@
 
 use anyhow::Context;
 use nautilus_core::{
-    UnixNanos,
+    DurationNanos, UnixNanos,
     datetime::{NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND},
 };
 use nautilus_model::{
@@ -627,8 +627,7 @@ pub fn parse_candle_record(
     let timestamp =
         u64::try_from(record.timestamp_bucket).context("negative Derive candle timestamp")?;
     let bucket_start = timestamp_seconds_to_nanos(timestamp, "candle timestamp_bucket")?;
-    let interval_ns = bar_type.spec().timedelta().as_nanos();
-    let interval_ns = u64::try_from(interval_ns)
+    let interval_ns = DurationNanos::try_from(bar_type.spec().timedelta())
         .context("bar interval overflowed the u64 range for nanoseconds")?;
     let ts_event = bucket_start
         .checked_add(interval_ns)

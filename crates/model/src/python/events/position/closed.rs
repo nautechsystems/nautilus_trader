@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{UUID4, nanos::DurationNanos, python::IntoPyObjectNautilusExt};
+use nautilus_core::{UUID4, python::IntoPyObjectNautilusExt};
 use pyo3::{basic::CompareOp, prelude::*};
 
 use crate::{
@@ -173,8 +173,8 @@ impl PositionClosed {
 
     #[getter]
     #[pyo3(name = "duration")]
-    fn py_duration(&self) -> DurationNanos {
-        self.duration
+    fn py_duration(&self) -> u64 {
+        self.duration.as_u64()
     }
 
     #[getter]

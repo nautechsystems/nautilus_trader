@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::{
-    UnixNanos,
+    DurationNanos, UnixNanos,
     python::{enums::parse_enum, to_pyruntime_err},
 };
 use nautilus_model::python::instruments::instrument_any_to_pyobject;
@@ -112,7 +112,7 @@ impl TardisHttpClient {
                     Some(&filter),
                     start.map(UnixNanos::from),
                     end.map(UnixNanos::from),
-                    available_offset.map(UnixNanos::from),
+                    available_offset.map(DurationNanos::new),
                     effective.map(UnixNanos::from),
                     ts_init.map(UnixNanos::from),
                 )

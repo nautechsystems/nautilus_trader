@@ -30,12 +30,7 @@ use nautilus_common::{
     msgbus::MessageBusConfig,
     throttler::RateLimit,
 };
-use nautilus_core::{
-    UUID4,
-    datetime::{
-        NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND, checked_mins_to_nanos, secs_to_nanos,
-    },
-};
+use nautilus_core::{DurationNanos, UUID4, datetime::secs_to_nanos};
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::{
     engine::config::ExecutionEngineConfig, order_emulator::config::OrderEmulatorConfig,
@@ -280,11 +275,17 @@ pub(crate) fn parse_rate_limit(field: impl Into<String>, input: &str) -> ConfigR
 
     check_valid_format(field.clone(), parts.next().is_none(), RATE_LIMIT_FORMAT)?;
 
-    let interval_ns = hours
-        .saturating_mul(3_600)
-        .saturating_add(minutes.saturating_mul(60))
-        .saturating_add(seconds)
-        .saturating_mul(NANOSECONDS_IN_SECOND);
+    let interval_secs = hours
+        .checked_mul(3_600)
+        .and_then(|total| {
+            minutes
+                .checked_mul(60)
+                .and_then(|mins| total.checked_add(mins))
+        })
+        .and_then(|total| total.checked_add(seconds))
+        .ok_or_else(|| ConfigError::range(field.clone(), "interval exceeds the supported range"))?;
+    let interval_ns = DurationNanos::try_from_secs(interval_secs)
+        .map_err(|e| ConfigError::range(field.clone(), e.to_string()))?;
 
     RateLimit::new_checked(limit, interval_ns).map_err(|e| ConfigError::range(field, e.to_string()))
 }
@@ -570,9 +571,9 @@ impl From<&LiveExecutionEngineConfig> for ExecutionManagerConfig {
             .collect();
 
         let open_check_threshold_ns =
-            u64::from(config.open_check_threshold_ms) * NANOSECONDS_IN_MILLISECOND;
+            DurationNanos::from_millis(u64::from(config.open_check_threshold_ms));
         let position_check_threshold_ns =
-            u64::from(config.position_check_threshold_ms) * NANOSECONDS_IN_MILLISECOND;
+            DurationNanos::from_millis(u64::from(config.position_check_threshold_ms));
 
         Self {
             trader_id: TraderId::default(),
@@ -1039,7 +1040,7 @@ impl LiveExecutionEngineConfig {
             if let Some(mins) = value {
                 collector.collect(check_range(
                     field,
-                    checked_mins_to_nanos(u64::from(mins)).is_some(),
+                    DurationNanos::try_from_mins(u64::from(mins)).is_ok(),
                     format!("{mins} minutes (must fit in `u64` nanoseconds)"),
                 ));
             }
@@ -1542,7 +1543,7 @@ mean_dispatch_ns_clear = 700
         assert_eq!(converted.open_check_lookback_mins, Some(9));
         assert_eq!(
             converted.open_check_threshold_ns,
-            234 * NANOSECONDS_IN_MILLISECOND
+            DurationNanos::from_millis(234)
         );
         assert_eq!(converted.open_check_missing_retries, 4);
         assert!(!converted.open_check_open_only);
@@ -1552,7 +1553,7 @@ mean_dispatch_ns_clear = 700
         assert_eq!(converted.position_check_lookback_mins, 11);
         assert_eq!(
             converted.position_check_threshold_ns,
-            345 * NANOSECONDS_IN_MILLISECOND
+            DurationNanos::from_millis(345)
         );
         assert_eq!(converted.position_check_retries, 6);
         assert_eq!(converted.purge_closed_orders_buffer_mins, Some(12));
@@ -1581,9 +1582,12 @@ mean_dispatch_ns_clear = 700
         assert!(converted.bypass);
         assert_eq!(
             converted.max_order_submit,
-            RateLimit::new(12, 3_000_000_000)
+            RateLimit::new(12, DurationNanos::from_secs(3))
         );
-        assert_eq!(converted.max_order_modify, RateLimit::new(7, 5_000_000_000));
+        assert_eq!(
+            converted.max_order_modify,
+            RateLimit::new(7, DurationNanos::from_secs(5))
+        );
         assert_eq!(
             converted.max_notional_per_order[&"ETHUSDT.BINANCE".parse::<InstrumentId>().unwrap()],
             Decimal::from_str("1000.5").unwrap(),
@@ -1889,7 +1893,15 @@ mean_dispatch_ns_clear = 700
     #[rstest]
     fn test_parse_rate_limit_happy_path() {
         let limit = parse_rate_limit("test.rate_limit", "150/00:00:02").unwrap();
-        assert_eq!(limit, RateLimit::new(150, 2_000_000_000));
+        assert_eq!(limit, RateLimit::new(150, DurationNanos::from_secs(2)));
+    }
+
+    #[rstest]
+    fn test_parse_rate_limit_rejects_interval_overflow() {
+        let err = parse_rate_limit("test.rate_limit", &format!("10/{:02}:00:00", u64::MAX))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("interval exceeds the supported range"));
     }
 
     #[rstest]

@@ -33,7 +33,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, Params, UUID4, UnixNanos,
+    AtomicMap, DurationNanos, Params, UUID4, UnixNanos,
     string::secret::SecretString,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -1140,10 +1140,10 @@ impl ExecutionClient for AxExecutionClient {
 
         let ts_now = self.clock.get_time_ns();
 
-        let start = lookback_mins.map(|mins| {
-            let lookback_ns = mins * 60 * 1_000_000_000;
-            UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns))
-        });
+        let start = lookback_mins
+            .map(DurationNanos::try_from_mins)
+            .transpose()?
+            .map(|lookback| ts_now.saturating_sub(lookback));
 
         let order_cmd = GenerateOrderStatusReports::new(
             UUID4::new(),

@@ -32,7 +32,7 @@ use nautilus_common::{
     msgbus::{self, MessagingSwitchboard, TypedHandler, switchboard},
 };
 use nautilus_core::{
-    UUID4, UnixNanos,
+    DurationNanos, UUID4, UnixNanos,
     correctness::{CorrectnessResultExt, FAILED, check_equal},
 };
 use nautilus_execution::{
@@ -1551,8 +1551,11 @@ impl SimulatedExchange {
         let Some(interval_mins) = funding_rate.interval else {
             return false;
         };
-        let interval_ns = u64::from(interval_mins) * 60 * 1_000_000_000;
-        interval_ns > 0 && funding_rate.ts_event.as_u64().is_multiple_of(interval_ns)
+        let Ok(interval) = DurationNanos::try_from_mins(u64::from(interval_mins)) else {
+            return false;
+        };
+
+        !interval.is_zero() && funding_rate.ts_event.floor(interval) == funding_rate.ts_event
     }
 
     fn funding_boundary(funding_rate: &FundingRateUpdate) -> Option<UnixNanos> {
@@ -2073,6 +2076,7 @@ impl Drop for DeferEventsGuard {
 #[cfg(test)]
 mod tests {
     use nautilus_common::messages::execution::{QueryAccount, QueryOrder, SubmitOrder};
+    use nautilus_core::DurationNanos;
     use nautilus_execution::models::latency::{LatencyModelHandle, StaticLatencyModel};
     use nautilus_model::{
         accounts::MarginAccount,
@@ -2114,10 +2118,10 @@ mod tests {
         match dispatch {
             Dispatch::Latency => {
                 config.latency_model = Some(LatencyModelHandle::new(StaticLatencyModel::new(
-                    UnixNanos::default(),
-                    UnixNanos::default(),
-                    UnixNanos::default(),
-                    UnixNanos::default(),
+                    DurationNanos::default(),
+                    DurationNanos::default(),
+                    DurationNanos::default(),
+                    DurationNanos::default(),
                 )));
             }
             Dispatch::Queued => {} // Defaults: use_message_queue = true, no latency

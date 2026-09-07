@@ -1104,7 +1104,10 @@ fn test_decode_ohlcv_msg() {
     assert_eq!(bar.low, Price::from("372025.00"));
     assert_eq!(bar.close, Price::from("372050.00"));
     assert_eq!(bar.volume, quantity_from_str("57"));
-    assert_eq!(bar.ts_event, msg.hd.ts_event + BAR_CLOSE_ADJUSTMENT_1S); // timestamp_on_close=true
+    assert_eq!(
+        bar.ts_event,
+        UnixNanos::from(msg.hd.ts_event) + BAR_CLOSE_ADJUSTMENT_1S
+    ); // timestamp_on_close=true
     assert_eq!(bar.ts_init, 0); // ts_init was Some(0)
 }
 

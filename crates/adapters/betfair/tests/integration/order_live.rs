@@ -60,7 +60,7 @@ use nautilus_common::{
     providers::InstrumentProvider,
     timer::TimeEvent,
 };
-use nautilus_core::UUID4;
+use nautilus_core::{DurationNanos, UUID4};
 use nautilus_live::{
     config::{LiveExecutionEngineConfig, LiveRiskEngineConfig},
     node::LiveNode,
@@ -505,7 +505,7 @@ nautilus_strategy!(LiveExecutionLifecycle, {
             let result = match self.scenario {
                 LiveExecutionScenario::ReconnectReplaceCancel => {
                     self.request_reconnect().and_then(|()| {
-                        let replace_at = self.clock().timestamp_ns() + 5_000_000_000;
+                        let replace_at = self.clock().timestamp_ns() + DurationNanos::from_secs(5);
                         self.clock().set_time_alert_ns(
                             RECONNECT_REPLACE_TIMER,
                             replace_at,

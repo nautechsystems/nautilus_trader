@@ -55,12 +55,11 @@ pub use error::{
 use index::CacheIndex;
 use indexmap::IndexMap;
 use nautilus_core::{
-    SharedCell, UnixNanos,
+    DurationNanos, SharedCell, UnixNanos,
     correctness::{
         check_key_not_in_map, check_predicate_false, check_slice_not_empty,
         check_valid_string_ascii,
     },
-    datetime::secs_to_nanos,
 };
 #[cfg(feature = "defi")]
 use nautilus_model::defi::{Pool, PoolProfiler};
@@ -3407,7 +3406,7 @@ impl Cache {
             }
         );
 
-        let Ok(buffer_ns) = secs_to_nanos(buffer_secs as f64) else {
+        let Ok(buffer_ns) = DurationNanos::try_from_secs(buffer_secs) else {
             log::warn!(
                 "Cannot purge closed orders: buffer_secs {buffer_secs} is not representable in `u64` nanoseconds"
             );
@@ -3490,7 +3489,7 @@ impl Cache {
             }
         );
 
-        let Ok(buffer_ns) = secs_to_nanos(buffer_secs as f64) else {
+        let Ok(buffer_ns) = DurationNanos::try_from_secs(buffer_secs) else {
             log::warn!(
                 "Cannot purge closed positions: buffer_secs {buffer_secs} is not representable in `u64` nanoseconds"
             );

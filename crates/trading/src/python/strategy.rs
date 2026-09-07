@@ -3584,7 +3584,7 @@ mod tests {
         signal::Signal,
         timer::TimeEvent,
     };
-    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_core::{DurationNanos, UUID4, UnixNanos};
     use nautilus_model::{
         data::{
             Bar, BarType, CustomData, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
@@ -4131,7 +4131,7 @@ class IndicatorEventStrategy:
             realized_return: 0.1,
             realized_pnl: Some(Money::new(0.1, Currency::USD())),
             unrealized_pnl: Money::new(0.0, Currency::USD()),
-            duration: 1,
+            duration: DurationNanos::new(1),
             event_id: UUID4::new(),
             ts_opened: UnixNanos::default(),
             ts_closed: Some(UnixNanos::default()),

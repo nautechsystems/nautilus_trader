@@ -40,11 +40,8 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicSet, Params, UUID4, UnixNanos,
-    datetime::{
-        NANOSECONDS_IN_DAY, NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND,
-        checked_mins_to_nanos,
-    },
+    AtomicSet, DurationNanos, Params, UUID4, UnixNanos,
+    datetime::{NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND},
     string::secret::SecretString,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -149,10 +146,10 @@ const USER_TRADES_PAGE_LIMIT: u32 = 1_000;
 // Binance does not define whether its three-month retention is calendar-based or fixed-duration
 // An 88-day interval leaves at least one day inside either interpretation
 // https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/change-log
-const USER_TRADES_COMPLETE_INTERVAL_NS: u64 = 88 * NANOSECONDS_IN_DAY;
+const USER_TRADES_COMPLETE_INTERVAL: DurationNanos = DurationNanos::from_days(88);
 
 // Keep half the one-day retention safety margin when a command waits before execution
-const USER_TRADES_MAX_TS_INIT_AGE_NS: u64 = NANOSECONDS_IN_DAY / 2;
+const USER_TRADES_MAX_TS_INIT_AGE: DurationNanos = DurationNanos::from_hours(12);
 
 const BINANCE_GTD_MIN_LEAD_SECS: u64 = 600;
 
@@ -2722,13 +2719,10 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
         let ts_now = self.clock.get_time_ns();
 
-        let requested_start = if let Some(mins) = lookback_mins {
-            let lookback_ns = checked_mins_to_nanos(mins)
-                .context("lookback minutes exceed the nanosecond range")?;
-            Some(UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns)))
-        } else {
-            None
-        };
+        let requested_start = lookback_mins
+            .map(DurationNanos::try_from_mins)
+            .transpose()?
+            .map(|lookback| ts_now.saturating_sub(lookback));
         let complete_start = user_trades_complete_start(ts_now, ts_now);
         let (report_start, fill_start, mut reports_complete) = match requested_start {
             Some(start) if start < complete_start => (complete_start, Some(complete_start), false),
@@ -3789,10 +3783,10 @@ fn create_algo_order_status_report(
 }
 
 fn user_trades_complete_start(ts_init: UnixNanos, ts_now: UnixNanos) -> UnixNanos {
-    let oldest_reference = ts_now.saturating_sub_ns(USER_TRADES_MAX_TS_INIT_AGE_NS);
+    let oldest_reference = ts_now.saturating_sub(USER_TRADES_MAX_TS_INIT_AGE);
     ts_init
         .max(oldest_reference)
-        .saturating_sub_ns(USER_TRADES_COMPLETE_INTERVAL_NS)
+        .saturating_sub(USER_TRADES_COMPLETE_INTERVAL)
 }
 
 fn should_use_algo_cancel(is_algo: bool, is_triggered: bool, has_promoted_id: bool) -> bool {

@@ -31,7 +31,7 @@ use nautilus_common::{
         stubs::get_typed_into_message_saving_handler, typed_handler::TypedIntoHandler,
     },
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{DurationNanos, UUID4, UnixNanos};
 use nautilus_data::engine::DataEngine;
 #[cfg(feature = "python")]
 use nautilus_execution::python::fee::PythonFeeModel;
@@ -331,7 +331,7 @@ fn position_closed_event(position: &Position, account_id: AccountId) -> Position
         realized_return: position.realized_return,
         realized_pnl: position.realized_pnl,
         unrealized_pnl: Money::zero(position.quote_currency),
-        duration: 1,
+        duration: DurationNanos::new(1),
         event_id: UUID4::new(),
         ts_opened: position.ts_opened,
         ts_closed: position.ts_closed.or(Some(position.ts_last)),
@@ -1745,7 +1745,7 @@ fn test_periodic_sweep_retires_expired_quote_only_engine(
     );
 
     // Advance past one sweep interval and fire the timer (60s matches
-    // EXPIRED_ENGINE_SWEEP_INTERVAL_NS in `execution.rs`).
+    // EXPIRED_ENGINE_SWEEP_INTERVAL in `execution.rs`).
     let events = harness
         .test_clock
         .borrow_mut()

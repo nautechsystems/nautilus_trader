@@ -15,7 +15,7 @@
 
 use std::str::FromStr;
 
-use nautilus_core::UnixNanos;
+use nautilus_core::{DurationNanos, UnixNanos};
 use nautilus_model::{
     enums::{OrderSide, PositionSide},
     events::PositionSnapshot,
@@ -81,11 +81,12 @@ impl<'r> FromRow<'r, PgRow> for PositionSnapshotRow {
             .map_or_else(Vec::new, |c| {
                 c.into_iter().map(|s| Money::from(&s)).collect()
             });
-        let duration_ns: Option<u64> = row
+        let duration_ns = row
             .try_get::<Option<&str>, _>("duration_ns")?
             .map(|value| {
                 value
-                    .parse()
+                    .parse::<u64>()
+                    .map(DurationNanos::new)
                     .map_err(|e| decode_error("duration_ns", value, e))
             })
             .transpose()?;

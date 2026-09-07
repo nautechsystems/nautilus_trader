@@ -518,7 +518,7 @@ mod tests {
         messages::execution::{ModifyOrder, SubmitOrder, TradingCommand},
         msgbus::{self, MessagingSwitchboard, TypedHandler},
     };
-    use nautilus_core::{Params, UUID4, UnixNanos};
+    use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos};
     use nautilus_model::{
         enums::{OrderSide, OrderStatus, TimeInForce},
         events::{OrderDeniedReason, OrderEventAny, order::spec::OrderCanceledSpec},
@@ -1360,7 +1360,7 @@ mod tests {
         assert_eq!(algo.clock().timer_count(), 1);
         assert_eq!(
             algo.clock().next_time_ns(primary_id.as_str()),
-            Some(resume_time + 20_000_000_000)
+            Some(resume_time + DurationNanos::from_secs(20))
         );
         assert_eq!(algo.scheduled_orders[&primary_id].remaining_sizes.len(), 3);
         assert_eq!(

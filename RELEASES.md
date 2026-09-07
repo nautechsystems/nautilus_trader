@@ -33,6 +33,7 @@ Released on TBD (UTC).
 - Removed Coinbase `CreateOrderRequest.reduce_only`; reduce-only orders are rejected before submission
 - Removed the dormant `PortfolioStatistic::calculate_from_orders` trait method; no analyzer supplied order data to statistics
 - Removed public Rust and Python `ForwardPrice` APIs; option chains now fetch reference prices internally
+- Replaced the Rust `DurationNanos` `u64` alias with a newtype; use constructors and accessors
 - Replaced `OKXHttpError::JsonError` and generic HTTP errors with typed transport and response failures
 - Changed FFI `orderbook_deltas_is_snapshot` to use `F_SNAPSHOT` instead of the first delta action
 - Changed `PortfolioAnalyzer.realized_pnls()` to return records in ascending event-time order rather than position-derived records followed by recorded ones

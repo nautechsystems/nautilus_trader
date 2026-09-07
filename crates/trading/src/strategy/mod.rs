@@ -35,7 +35,7 @@ use nautilus_common::{
     msgbus::{self, MessagingSwitchboard},
     timer::TimeEvent,
 };
-use nautilus_core::{Params, UUID4};
+use nautilus_core::{DurationNanos, Params, UUID4};
 use nautilus_execution::order_manager::OrderManagerAction;
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, PositionSide, TimeInForce},
@@ -1837,7 +1837,11 @@ pub trait Strategy: DataActor {
 
         log::info!("{strategy_id} Setting market exit timer at {interval_ms}ms intervals");
 
-        let interval_ns = interval_ms * 1_000_000;
+        let Ok(interval_ns) = DurationNanos::try_from_millis(interval_ms) else {
+            core.is_exiting = false;
+            core.market_exit_attempts = 0;
+            anyhow::bail!("Market exit timer interval exceeds the nanosecond range");
+        };
         let result = core.clock_mut().set_timer_ns(
             timer_name.as_str(),
             interval_ns,
@@ -2456,7 +2460,7 @@ mod tests {
         },
         timer::{TimeEvent, TimeEventCallback},
     };
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{DurationNanos, UnixNanos};
     use nautilus_model::{
         enums::{
             ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType,
@@ -2993,7 +2997,7 @@ mod tests {
             realized_return: 0.0,
             realized_pnl: None,
             unrealized_pnl: Money::zero(currency),
-            duration: 0,
+            duration: DurationNanos::default(),
             event_id: UUID4::default(),
             ts_opened: UnixNanos::default(),
             ts_closed: None,

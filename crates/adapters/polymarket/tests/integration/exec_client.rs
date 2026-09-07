@@ -34,7 +34,7 @@ use nautilus_common::{
     },
     testing::wait_until_async,
 };
-use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     accounts::{AccountAny, cash::CashAccount},
@@ -9360,7 +9360,7 @@ async fn test_submit_gtd_order_denied_below_expiry_buffer_before_post() {
     add_instrument_to_cache(&cache, instrument_id);
     let expire_time = get_atomic_clock_realtime()
         .get_time_ns()
-        .saturating_add_ns(179_000_000_000u64);
+        .saturating_add(DurationNanos::from_secs(179));
     let order = make_gtd_limit_order_expiring_at(
         "O-GTD-BELOW-BUFFER",
         instrument_id,
@@ -9401,7 +9401,7 @@ async fn test_submit_gtd_order_list_denies_invalid_legs_before_batch_post() {
     add_instrument_to_cache(&cache, instrument_id);
     let expire_time = get_atomic_clock_realtime()
         .get_time_ns()
-        .saturating_add_ns(179_000_000_000u64);
+        .saturating_add(DurationNanos::from_secs(179));
     let orders = [
         make_gtd_limit_order_expiring_at(
             "O-GTD-LIST-INVALID-1",
@@ -9459,8 +9459,8 @@ async fn test_submit_gtd_order_list_preserves_valid_legs() {
     let instrument_id = InstrumentId::from("TEST-TOKEN-GTD-LIST-MIXED.POLYMARKET");
     add_instrument_to_cache(&cache, instrument_id);
     let ts_now = get_atomic_clock_realtime().get_time_ns();
-    let invalid_expire_time = ts_now.saturating_add_ns(179_000_000_000u64);
-    let valid_expire_time = ts_now.saturating_add_ns(181_000_000_000u64);
+    let invalid_expire_time = ts_now.saturating_add(DurationNanos::from_secs(179));
+    let valid_expire_time = ts_now.saturating_add(DurationNanos::from_secs(181));
     let orders = [
         make_gtd_limit_order_expiring_at(
             "O-GTD-LIST-BELOW-BUFFER",

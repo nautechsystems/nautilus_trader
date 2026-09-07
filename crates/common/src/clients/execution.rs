@@ -17,9 +17,7 @@
 
 use anyhow::Context;
 use async_trait::async_trait;
-use nautilus_core::{
-    Params, UnixNanos, datetime::checked_mins_to_nanos, time::get_atomic_clock_realtime,
-};
+use nautilus_core::{DurationNanos, Params, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{LiquiditySide, OmsType},
@@ -321,14 +319,9 @@ pub trait ExecutionClient {
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         let ts_init = get_atomic_clock_realtime().get_time_ns();
         let start = lookback_mins
-            .map(|mins| {
-                checked_mins_to_nanos(mins)
-                    .map(|lookback_ns| {
-                        UnixNanos::from(ts_init.as_u64().saturating_sub(lookback_ns))
-                    })
-                    .ok_or_else(|| anyhow::anyhow!("lookback minutes overflow nanoseconds: {mins}"))
-            })
-            .transpose()?;
+            .map(DurationNanos::try_from_mins)
+            .transpose()?
+            .map(|lookback| ts_init.saturating_sub(lookback));
 
         let order_cmd = GenerateOrderStatusReportsBuilder::default()
             .ts_init(ts_init)
@@ -758,12 +751,9 @@ mod tests {
         assert_ne!(test_fill_report().ts_init, mass_status.ts_init);
         assert_ne!(test_position_report().ts_init, mass_status.ts_init);
 
-        let expected_start = UnixNanos::from(
-            mass_status
-                .ts_init
-                .as_u64()
-                .saturating_sub(checked_mins_to_nanos(5).unwrap()),
-        );
+        let expected_start = mass_status
+            .ts_init
+            .saturating_sub(DurationNanos::from_mins(5));
         assert_eq!(order_cmd.start, Some(expected_start));
         assert_eq!(fill_cmd.start, Some(expected_start));
         assert_eq!(position_cmd.start, Some(expected_start));

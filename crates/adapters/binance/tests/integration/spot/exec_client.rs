@@ -1887,7 +1887,7 @@ async fn test_generate_mass_status_rejects_overflowing_lookback() {
 
     assert_eq!(
         error.to_string(),
-        "lookback minutes exceed the nanosecond range"
+        "duration 307445735 minutes exceeds the nanosecond range"
     );
 }
 

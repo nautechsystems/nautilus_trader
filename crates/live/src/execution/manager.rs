@@ -42,8 +42,8 @@ use nautilus_common::{
     msgbus::{self, MessagingSwitchboard, switchboard},
 };
 use nautilus_core::{
-    UUID4, UnixNanos,
-    datetime::{checked_mins_to_nanos, checked_mins_to_secs, mins_to_nanos, mins_to_secs},
+    DurationNanos, UUID4, UnixNanos,
+    datetime::{checked_mins_to_secs, mins_to_secs},
 };
 #[cfg(feature = "node")]
 use nautilus_execution::reconciliation::create_inferred_reconciliation_trade_id;
@@ -365,8 +365,8 @@ pub struct ExecutionManagerConfig {
     pub open_check_interval_secs: Option<f64>,
     /// The lookback minutes for open order checks.
     pub open_check_lookback_mins: Option<u64>,
-    /// Threshold in nanoseconds before acting on venue discrepancies for open orders.
-    pub open_check_threshold_ns: u64,
+    /// Threshold before acting on venue discrepancies for open orders.
+    pub open_check_threshold_ns: DurationNanos,
     /// Maximum retries before resolving an open order missing at the venue.
     pub open_check_missing_retries: u32,
     /// Whether open-order polling should only request open orders from the venue.
@@ -379,8 +379,8 @@ pub struct ExecutionManagerConfig {
     pub position_check_interval_secs: Option<f64>,
     /// The lookback minutes for position consistency checks.
     pub position_check_lookback_mins: u64,
-    /// Threshold in nanoseconds before acting on venue discrepancies for positions.
-    pub position_check_threshold_ns: u64,
+    /// Threshold before acting on venue discrepancies for positions.
+    pub position_check_threshold_ns: DurationNanos,
     /// Maximum retries before stopping position discrepancy reconciliation.
     pub position_check_retries: u32,
     /// The time buffer (minutes) before closed orders can be purged.
@@ -409,14 +409,14 @@ impl Default for ExecutionManagerConfig {
             inflight_max_retries: 5,
             open_check_interval_secs: None,
             open_check_lookback_mins: Some(60),
-            open_check_threshold_ns: 5_000_000_000,
+            open_check_threshold_ns: DurationNanos::from_secs(5),
             open_check_missing_retries: 5,
             open_check_open_only: true,
             max_single_order_queries_per_cycle: 5,
             single_order_query_delay_ms: 100,
             position_check_interval_secs: None,
             position_check_lookback_mins: 60,
-            position_check_threshold_ns: 60_000_000_000,
+            position_check_threshold_ns: DurationNanos::from_mins(1),
             position_check_retries: 3,
             purge_closed_orders_buffer_mins: None,
             purge_closed_positions_buffer_mins: None,
@@ -448,7 +448,7 @@ impl ExecutionManagerConfig {
 
         if let Some(mins) = self.open_check_lookback_mins {
             errors.check(
-                checked_mins_to_nanos(mins).is_some(),
+                DurationNanos::try_from_mins(mins).is_ok(),
                 ConfigError::range(
                     "ExecutionManagerConfig.open_check_lookback_mins",
                     format!("{mins} minutes (must fit in `u64` nanoseconds)"),
@@ -457,7 +457,7 @@ impl ExecutionManagerConfig {
         }
 
         errors.check(
-            checked_mins_to_nanos(self.position_check_lookback_mins).is_some(),
+            DurationNanos::try_from_mins(self.position_check_lookback_mins).is_ok(),
             ConfigError::range(
                 "ExecutionManagerConfig.position_check_lookback_mins",
                 format!(
@@ -2079,10 +2079,11 @@ impl ExecutionManager {
         );
 
         let ts_now = self.clock.borrow().timestamp_ns();
-        let start = self.config.open_check_lookback_mins.map(|mins| {
-            let lookback_ns = mins_to_nanos(mins);
-            ts_now.saturating_sub_ns(lookback_ns)
-        });
+        let start = self
+            .config
+            .open_check_lookback_mins
+            .map(DurationNanos::from_mins)
+            .map(|lookback| ts_now.saturating_sub(lookback));
 
         let mut command = GenerateOrderStatusReports::new(
             command_id,
@@ -2180,7 +2181,7 @@ impl ExecutionManager {
                 continue;
             }
 
-            let threshold = Duration::from_nanos(self.config.open_check_threshold_ns);
+            let threshold = Duration::from(self.config.open_check_threshold_ns);
             if let Some(elapsed) = self.order_local_activity.elapsed_at(&client_order_id, now)
                 && elapsed < threshold
             {
@@ -2343,7 +2344,7 @@ impl ExecutionManager {
             let client_order_id = order.client_order_id();
 
             // Check for recent local activity to avoid race conditions with in-flight fills
-            let threshold = Duration::from_nanos(self.config.open_check_threshold_ns);
+            let threshold = Duration::from(self.config.open_check_threshold_ns);
             if let Some(elapsed) = self.order_local_activity.elapsed(&client_order_id)
                 && elapsed < threshold
             {
@@ -2703,9 +2704,9 @@ impl ExecutionManager {
             .collect::<IndexSet<_>>();
         let active_keys = keys.clone();
         let query_end = self.clock.borrow().timestamp_ns();
-        let lookback_ns = checked_mins_to_nanos(self.config.position_check_lookback_mins)
+        let lookback = DurationNanos::try_from_mins(self.config.position_check_lookback_mins)
             .expect("position lookback validated at construction");
-        let query_start = query_end.saturating_sub_ns(lookback_ns);
+        let query_start = query_end.saturating_sub(lookback);
         let mut discrepancy_keys = IndexSet::new();
         let mut queries = Vec::new();
 
@@ -2731,7 +2732,7 @@ impl ExecutionManager {
             if self.position_activity_revision(&key) > prepared_revision
                 || self.position_local_activity.within(
                     &key,
-                    Duration::from_nanos(self.config.position_check_threshold_ns),
+                    Duration::from(self.config.position_check_threshold_ns),
                 )
             {
                 continue;
@@ -3597,7 +3598,7 @@ impl ExecutionManager {
     /// Prunes order activity outside the continuous reconciliation settling window.
     pub fn prune_order_local_activity(&mut self) {
         self.order_local_activity
-            .prune_older_than(Duration::from_nanos(self.config.open_check_threshold_ns));
+            .prune_older_than(Duration::from(self.config.open_check_threshold_ns));
     }
 
     /// Purges closed orders from the cache that are older than the configured buffer.
@@ -3719,7 +3720,7 @@ impl ExecutionManager {
         // must not stall reconciliation.
         if self.order_local_activity.within(
             &client_order_id,
-            Duration::from_nanos(self.config.open_check_threshold_ns),
+            Duration::from(self.config.open_check_threshold_ns),
         ) {
             return None;
         }
@@ -3758,7 +3759,7 @@ impl ExecutionManager {
 
         if self.order_local_activity.within(
             &client_order_id,
-            Duration::from_nanos(self.config.open_check_threshold_ns),
+            Duration::from(self.config.open_check_threshold_ns),
         ) {
             log::debug!(
                 "Deferring missing-order resolution for {client_order_id}: recent local activity"
@@ -3919,7 +3920,7 @@ impl ExecutionManager {
         // Grace window measured on the monotonic `dst::time` clock; see `record_position_activity`.
         if self.position_local_activity.within(
             &key,
-            Duration::from_nanos(self.config.position_check_threshold_ns),
+            Duration::from(self.config.position_check_threshold_ns),
         ) {
             log::debug!(
                 "Skipping position reconciliation for {instrument_id}: recent activity within threshold"
@@ -5644,7 +5645,7 @@ fn terminal_report_has_missing_fills(report: &OrderStatusReport, filled_qty: Qua
 #[cfg(test)]
 mod tests {
     use nautilus_common::clock::TestClock;
-    use nautilus_core::{Params, datetime::NANOSECONDS_IN_SECOND};
+    use nautilus_core::{DurationNanos, Params};
     use nautilus_execution::reconciliation::generate_reconciliation_order_events;
     use nautilus_model::{
         accounts::AccountAny,
@@ -6768,7 +6769,7 @@ mod tests {
             client_id,
         );
         let order = cache.borrow().order_owned(&client_order_id).unwrap();
-        let cutoff = UnixNanos::from(order.ts_last().as_u64().saturating_add(1));
+        let cutoff = order.ts_last().saturating_add(DurationNanos::new(1));
         let check = OpenOrderReportCheck {
             command: GenerateOrderStatusReports::new(
                 UUID4::new(),
@@ -6837,7 +6838,7 @@ mod tests {
             client_id,
         );
         let order = cache.borrow().order_owned(&client_order_id).unwrap();
-        let old_cutoff = UnixNanos::from(order.ts_last().as_u64().saturating_add(1));
+        let old_cutoff = order.ts_last().saturating_add(DurationNanos::new(1));
         let make_check = |start| OpenOrderReportCheck {
             command: GenerateOrderStatusReports::new(
                 UUID4::new(),
@@ -6928,7 +6929,7 @@ mod tests {
             client_id,
         );
         let order = cache.borrow().order_owned(&client_order_id).unwrap();
-        let cutoff = UnixNanos::from(order.ts_last().as_u64().saturating_add(1));
+        let cutoff = order.ts_last().saturating_add(DurationNanos::new(1));
         let check = OpenOrderReportCheck {
             command: GenerateOrderStatusReports::new(
                 UUID4::new(),
@@ -7008,7 +7009,7 @@ mod tests {
             client_id,
         );
         let order = cache.borrow().order_owned(&client_order_id).unwrap();
-        let cutoff = UnixNanos::from(order.ts_last().as_u64().saturating_add(1));
+        let cutoff = order.ts_last().saturating_add(DurationNanos::new(1));
         let check = OpenOrderReportCheck {
             command: GenerateOrderStatusReports::new(
                 UUID4::new(),
@@ -7476,7 +7477,7 @@ mod tests {
             clock,
             cache,
             ExecutionManagerConfig {
-                open_check_threshold_ns: 100_000_000,
+                open_check_threshold_ns: DurationNanos::from_millis(100),
                 ..Default::default()
             },
         )
@@ -7494,7 +7495,7 @@ mod tests {
     #[rstest]
     fn test_prepare_open_order_report_check_builds_bulk_command_with_config() {
         let lookback_mins = 5_u64;
-        let lookback_ns = lookback_mins * 60 * NANOSECONDS_IN_SECOND;
+        let lookback = DurationNanos::from_mins(lookback_mins);
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let mut manager = ExecutionManager::new(
@@ -7537,7 +7538,7 @@ mod tests {
         );
         clock
             .borrow_mut()
-            .advance_time(UnixNanos::from(lookback_ns * 2), true);
+            .advance_time(UnixNanos::default().saturating_add(lookback * 2), true);
 
         let ts_now = clock.borrow().timestamp_ns();
         let command_id = UUID4::new();
@@ -7547,10 +7548,7 @@ mod tests {
         assert_eq!(check.command.ts_init, ts_now);
         assert!(!check.command.open_only);
         assert_eq!(check.command.instrument_id, None);
-        assert_eq!(
-            check.command.start,
-            Some(ts_now.saturating_sub_ns(lookback_ns))
-        );
+        assert_eq!(check.command.start, Some(ts_now.saturating_sub(lookback)));
         assert_eq!(check.command.end, None);
         assert_eq!(check.command.log_receipt_level, LogLevel::Debug);
         assert_eq!(check.start, check.command.start);
@@ -7625,7 +7623,7 @@ mod tests {
     #[cfg(feature = "node")]
     fn test_prepare_position_fill_report_plan_uses_configured_lookback() {
         let lookback_mins = 7_u64;
-        let lookback_ns = lookback_mins * 60 * NANOSECONDS_IN_SECOND;
+        let lookback = DurationNanos::from_mins(lookback_mins);
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let mut manager = ExecutionManager::new(
@@ -7633,7 +7631,7 @@ mod tests {
             cache.clone(),
             ExecutionManagerConfig {
                 position_check_lookback_mins: lookback_mins,
-                position_check_threshold_ns: 0,
+                position_check_threshold_ns: DurationNanos::ZERO,
                 ..Default::default()
             },
         )
@@ -7653,7 +7651,7 @@ mod tests {
         );
         clock
             .borrow_mut()
-            .advance_time(UnixNanos::from(lookback_ns * 2), true);
+            .advance_time(UnixNanos::default().saturating_add(lookback * 2), true);
         let client = PositionCoverageStubClient;
         let clients: [&dyn ExecutionClient; 1] = [&client];
         let mut check = manager.prepare_position_report_check(UUID4::new(), &clients);
@@ -7696,7 +7694,7 @@ mod tests {
         assert_eq!(query.command.venue_order_id, None);
         assert_eq!(
             query.command.start,
-            Some(query_end.saturating_sub_ns(lookback_ns))
+            Some(query_end.saturating_sub(lookback))
         );
         assert_eq!(query.command.end, Some(query_end));
         assert_eq!(query.command.correlation_id, Some(check.command.command_id));
@@ -7712,7 +7710,7 @@ mod tests {
             clock,
             cache.clone(),
             ExecutionManagerConfig {
-                position_check_threshold_ns: 0,
+                position_check_threshold_ns: DurationNanos::ZERO,
                 ..Default::default()
             },
         )
@@ -7931,7 +7929,7 @@ mod tests {
             clock,
             cache.clone(),
             ExecutionManagerConfig {
-                position_check_threshold_ns: 5_000_000_000,
+                position_check_threshold_ns: DurationNanos::from_secs(5),
                 ..Default::default()
             },
         )
@@ -8006,7 +8004,7 @@ mod tests {
             clock,
             cache.clone(),
             ExecutionManagerConfig {
-                position_check_threshold_ns: 0,
+                position_check_threshold_ns: DurationNanos::ZERO,
                 ..Default::default()
             },
         )

@@ -45,8 +45,8 @@ use nautilus_common::{
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
-    UUID4, UnixNanos, datetime::unix_nanos_to_iso8601, string::formatting::Separable,
-    time::nanos_since_unix_epoch,
+    DurationNanos, UUID4, UnixNanos, datetime::unix_nanos_to_iso8601,
+    string::formatting::Separable, time::nanos_since_unix_epoch,
 };
 use nautilus_data::client::DataClientAdapter;
 use nautilus_execution::models::fill::FillModelHandle;
@@ -832,11 +832,7 @@ impl BacktestEngine {
         // Initialize last_ns before first data point
         if let Some(d) = self.data_iterator.peek() {
             let ts = d.ts_init();
-            self.last_ns = if ts.as_u64() > 0 {
-                UnixNanos::from(ts.as_u64() - 1)
-            } else {
-                UnixNanos::default()
-            };
+            self.last_ns = ts.saturating_sub(DurationNanos::new(1));
         } else {
             self.last_ns = start_ns;
         }
@@ -1223,7 +1219,7 @@ impl BacktestEngine {
     #[must_use]
     pub fn get_result(&self) -> BacktestResult {
         let elapsed_time_secs = match (self.backtest_start, self.backtest_end) {
-            (Some(start), Some(end)) => (end.as_f64() - start.as_f64()) / 1_000_000_000.0,
+            (Some(start), Some(end)) => end.saturating_duration_since(start).as_secs_f64(),
             _ => 0.0,
         };
 
@@ -1568,11 +1564,7 @@ impl BacktestEngine {
         }
 
         // Process events with ts_event < ts_now
-        let ts_before = if ts_now.as_u64() > 0 {
-            UnixNanos::from(ts_now.as_u64() - 1)
-        } else {
-            UnixNanos::default()
-        };
+        let ts_before = ts_now.saturating_sub(DurationNanos::new(1));
 
         let mut shutdown_at: Option<UnixNanos> = None;
 
@@ -2814,7 +2806,7 @@ mod tests {
             .borrow_mut()
             .set_timer_ns(
                 "ROLL",
-                1,
+                DurationNanos::new(1),
                 Some(UnixNanos::from(20)),
                 None,
                 Some(callback),
@@ -2868,7 +2860,7 @@ mod tests {
             .borrow_mut()
             .set_timer_ns(
                 "ROLL",
-                100,
+                DurationNanos::new(100),
                 Some(UnixNanos::from(20)),
                 None,
                 Some(callback),

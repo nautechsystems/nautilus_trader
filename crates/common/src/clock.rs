@@ -31,7 +31,7 @@ use std::{
 use ahash::AHashMap;
 use jiff::Timestamp;
 use nautilus_core::{
-    AtomicTime, UUID4, UnixNanos,
+    AtomicTime, DurationNanos, UUID4, UnixNanos,
     correctness::{check_positive_u64, check_predicate_true, check_valid_string_utf8},
     datetime::{NANOSECONDS_IN_SECOND, try_datetime_to_unix_nanos},
     string::formatting::Separable,
@@ -238,7 +238,7 @@ pub trait Clock: Debug + Any {
     fn set_timer_ns(
         &mut self,
         name: &str,
-        interval_ns: u64,
+        interval_ns: DurationNanos,
         start_time_ns: Option<UnixNanos>,
         stop_time_ns: Option<UnixNanos>,
         callback: Option<TimeEventCallback>,
@@ -329,7 +329,7 @@ impl<'a> ClockApi<'a> {
             Fn(&str, UnixNanos, Option<TimeEventCallback>, Option<bool>) -> anyhow::Result<()> + 'a,
         SetTimerNs: Fn(
                 &str,
-                u64,
+                DurationNanos,
                 Option<UnixNanos>,
                 Option<UnixNanos>,
                 Option<TimeEventCallback>,
@@ -552,7 +552,7 @@ impl<'a> ClockApi<'a> {
     pub fn set_timer_ns(
         &self,
         name: &str,
-        interval_ns: u64,
+        interval_ns: DurationNanos,
         start_time_ns: Option<UnixNanos>,
         stop_time_ns: Option<UnixNanos>,
         callback: Option<TimeEventCallback>,
@@ -696,7 +696,7 @@ type SetTimeAlertNsHandler<'a> =
 type NextTimeNsHandler<'a> = dyn Fn(&str) -> Option<UnixNanos> + 'a;
 type SetTimerNsHandler<'a> = dyn Fn(
         &str,
-        u64,
+        DurationNanos,
         Option<UnixNanos>,
         Option<UnixNanos>,
         Option<TimeEventCallback>,
@@ -705,8 +705,8 @@ type SetTimerNsHandler<'a> = dyn Fn(
     ) -> anyhow::Result<()>
     + 'a;
 
-fn duration_to_nanos(duration: Duration) -> anyhow::Result<u64> {
-    u64::try_from(duration.as_nanos())
+fn duration_to_nanos(duration: Duration) -> anyhow::Result<DurationNanos> {
+    DurationNanos::try_from(duration)
         .map_err(|_| anyhow::anyhow!("Interval exceeds u64 nanoseconds"))
 }
 
@@ -832,7 +832,7 @@ pub fn validate_and_prepare_time_alert(
 /// - The stop time is not after `ts_now` when past times are disallowed.
 pub fn validate_and_prepare_timer(
     name: &str,
-    interval_ns: u64,
+    interval_ns: DurationNanos,
     start_time_ns: Option<UnixNanos>,
     stop_time_ns: Option<UnixNanos>,
     allow_past: Option<bool>,
@@ -840,7 +840,7 @@ pub fn validate_and_prepare_timer(
     ts_now: UnixNanos,
 ) -> anyhow::Result<(Ustr, UnixNanos, Option<UnixNanos>, bool, bool)> {
     check_valid_string_utf8(name, stringify!(name))?;
-    check_positive_u64(interval_ns, stringify!(interval_ns))?;
+    check_positive_u64(interval_ns.as_u64(), stringify!(interval_ns))?;
 
     let name = Ustr::from(name);
     let allow_past = allow_past.unwrap_or(true);
@@ -1146,7 +1146,7 @@ impl Clock for TestClock {
         }
 
         // Safe to calculate interval now that we've ensured alert_time_ns >= ts_now
-        let interval_ns = create_valid_interval((alert_time_ns - ts_now).into());
+        let interval_ns = create_valid_interval(alert_time_ns - ts_now);
         let fire_immediately = alert_time_ns == ts_now;
 
         let timer = TestTimer::new(
@@ -1164,7 +1164,7 @@ impl Clock for TestClock {
     fn set_timer_ns(
         &mut self,
         name: &str,
-        interval_ns: u64,
+        interval_ns: DurationNanos,
         start_time_ns: Option<UnixNanos>,
         stop_time_ns: Option<UnixNanos>,
         callback: Option<TimeEventCallback>,
@@ -1257,7 +1257,7 @@ pub(crate) fn replace_existing_timer<T: Timer>(timers: &mut BTreeMap<Ustr, T>, n
 mod tests {
     use std::{cell::RefCell, collections::BTreeMap, sync::Arc, time::Duration};
 
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{DurationNanos, UnixNanos};
     use parking_lot::Mutex;
     use proptest::{prelude::*, test_runner::TestCaseResult};
     use rstest::{fixture, rstest};
@@ -1296,7 +1296,7 @@ mod tests {
     #[rstest]
     fn test_time_monotonicity(mut test_clock: TestClock) {
         let initial_time = test_clock.timestamp_ns();
-        test_clock.advance_time(UnixNanos::from(*initial_time + 1000), true);
+        test_clock.advance_time(initial_time + DurationNanos::new(1000), true);
         assert!(test_clock.timestamp_ns() > initial_time);
     }
 
@@ -1305,7 +1305,7 @@ mod tests {
         test_clock
             .set_time_alert_ns(
                 "test_timer",
-                (*test_clock.timestamp_ns() + 1000).into(),
+                test_clock.timestamp_ns() + DurationNanos::new(1000),
                 None,
                 None,
             )
@@ -1316,7 +1316,7 @@ mod tests {
 
     #[rstest]
     fn test_timer_expiration(mut test_clock: TestClock) {
-        let alert_time = (*test_clock.timestamp_ns() + 1000).into();
+        let alert_time = test_clock.timestamp_ns() + DurationNanos::new(1000);
         test_clock
             .set_time_alert_ns("test_timer", alert_time, None, None)
             .unwrap();
@@ -1330,7 +1330,7 @@ mod tests {
         test_clock
             .set_time_alert_ns(
                 "test_timer",
-                (*test_clock.timestamp_ns() + 1000).into(),
+                test_clock.timestamp_ns() + DurationNanos::new(1000),
                 None,
                 None,
             )
@@ -1344,12 +1344,20 @@ mod tests {
     fn test_time_advancement(mut test_clock: TestClock) {
         let start_time = test_clock.timestamp_ns();
         test_clock
-            .set_timer_ns("test_timer", 1000, Some(start_time), None, None, None, None)
+            .set_timer_ns(
+                "test_timer",
+                DurationNanos::new(1000),
+                Some(start_time),
+                None,
+                None,
+                None,
+                None,
+            )
             .unwrap();
-        let events = test_clock.advance_time(UnixNanos::from(*start_time + 2500), true);
+        let events = test_clock.advance_time(start_time + DurationNanos::new(2500), true);
         assert_eq!(events.len(), 2);
-        assert_eq!(*events[0].ts_event, *start_time + 1000);
-        assert_eq!(*events[1].ts_event, *start_time + 2000);
+        assert_eq!(events[0].ts_event, start_time + DurationNanos::new(1000));
+        assert_eq!(events[1].ts_event, start_time + DurationNanos::new(2000));
     }
 
     #[rstest]
@@ -1365,7 +1373,7 @@ mod tests {
         clock
             .set_time_alert_ns(
                 "default_timer",
-                (*clock.timestamp_ns() + 1000).into(),
+                clock.timestamp_ns() + DurationNanos::new(1000),
                 None,
                 None,
             )
@@ -1373,13 +1381,13 @@ mod tests {
         clock
             .set_time_alert_ns(
                 "custom_timer",
-                (*clock.timestamp_ns() + 1000).into(),
+                clock.timestamp_ns() + DurationNanos::new(1000),
                 Some(TimeEventCallback::from(custom_callback)),
                 None,
             )
             .unwrap();
 
-        let events = clock.advance_time(UnixNanos::from(*clock.timestamp_ns() + 1000), true);
+        let events = clock.advance_time(clock.timestamp_ns() + DurationNanos::new(1000), true);
         let handlers = clock.match_handlers(events);
 
         for handler in handlers {
@@ -1406,13 +1414,13 @@ mod tests {
         clock
             .set_time_alert_ns(
                 "local_timer",
-                (*clock.timestamp_ns() + 1000).into(),
+                clock.timestamp_ns() + DurationNanos::new(1000),
                 Some(TimeEventCallback::from(callback)),
                 None,
             )
             .unwrap();
 
-        let events = clock.advance_time(UnixNanos::from(*clock.timestamp_ns() + 1000), true);
+        let events = clock.advance_time(clock.timestamp_ns() + DurationNanos::new(1000), true);
         let handlers = clock.match_handlers(events);
 
         for handler in handlers {
@@ -1426,12 +1434,28 @@ mod tests {
     fn test_multiple_timers(mut test_clock: TestClock) {
         let start_time = test_clock.timestamp_ns();
         test_clock
-            .set_timer_ns("timer1", 1000, Some(start_time), None, None, None, None)
+            .set_timer_ns(
+                "timer1",
+                DurationNanos::new(1000),
+                Some(start_time),
+                None,
+                None,
+                None,
+                None,
+            )
             .unwrap();
         test_clock
-            .set_timer_ns("timer2", 2000, Some(start_time), None, None, None, None)
+            .set_timer_ns(
+                "timer2",
+                DurationNanos::new(2000),
+                Some(start_time),
+                None,
+                None,
+                None,
+                None,
+            )
             .unwrap();
-        let events = test_clock.advance_time(UnixNanos::from(*start_time + 2000), true);
+        let events = test_clock.advance_time(start_time + DurationNanos::new(2000), true);
         assert_eq!(events.len(), 3);
         assert_eq!(events[0].name.as_str(), "timer1");
         assert_eq!(events[1].name.as_str(), "timer1");
@@ -1442,7 +1466,7 @@ mod tests {
     fn test_allow_past_parameter_true(mut test_clock: TestClock) {
         test_clock.set_time(UnixNanos::from(2000));
         let current_time = test_clock.timestamp_ns();
-        let past_time = UnixNanos::from(current_time.as_u64() - 1000);
+        let past_time = current_time - DurationNanos::new(1000);
 
         // With allow_past=true (default), should adjust to current time and succeed
         test_clock
@@ -1462,7 +1486,7 @@ mod tests {
     fn test_allow_past_parameter_false(mut test_clock: TestClock) {
         test_clock.set_time(UnixNanos::from(2000));
         let current_time = test_clock.timestamp_ns();
-        let past_time = current_time - 1000;
+        let past_time = current_time - DurationNanos::new(1000);
 
         // With allow_past=false, should fail for past times
         let result = test_clock.set_time_alert_ns("past_timer", past_time, None, Some(false));
@@ -1480,13 +1504,13 @@ mod tests {
     fn test_invalid_stop_time_validation(mut test_clock: TestClock) {
         test_clock.set_time(UnixNanos::from(2000));
         let current_time = test_clock.timestamp_ns();
-        let start_time = current_time + 1000;
-        let stop_time = current_time + 500; // Stop time before start time
+        let start_time = current_time + DurationNanos::new(1000);
+        let stop_time = current_time + DurationNanos::new(500); // Stop time before start time
 
         // Should fail because stop_time < start_time
         let result = test_clock.set_timer_ns(
             "invalid_timer",
-            100,
+            DurationNanos::new(100),
             Some(start_time),
             Some(stop_time),
             None,
@@ -1505,7 +1529,7 @@ mod tests {
     #[rstest]
     fn test_set_timer_ns_fire_immediately_true(mut test_clock: TestClock) {
         let start_time = test_clock.timestamp_ns();
-        let interval_ns = 1000;
+        let interval_ns = DurationNanos::new(1000);
 
         test_clock
             .set_timer_ns(
@@ -1520,19 +1544,19 @@ mod tests {
             .unwrap();
 
         // Advance time to check immediate firing and subsequent intervals
-        let events = test_clock.advance_time(start_time + 2500, true);
+        let events = test_clock.advance_time(start_time + DurationNanos::new(2500), true);
 
         // Should fire immediately at start_time (0), then at start_time+1000, then at start_time+2000
         assert_eq!(events.len(), 3);
         assert_eq!(*events[0].ts_event, *start_time); // Fires immediately
-        assert_eq!(*events[1].ts_event, *start_time + 1000); // Then after interval
-        assert_eq!(*events[2].ts_event, *start_time + 2000); // Then after second interval
+        assert_eq!(events[1].ts_event, start_time + DurationNanos::new(1000)); // Then after interval
+        assert_eq!(events[2].ts_event, start_time + DurationNanos::new(2000)); // Then after second interval
     }
 
     #[rstest]
     fn test_set_timer_ns_fire_immediately_false(mut test_clock: TestClock) {
         let start_time = test_clock.timestamp_ns();
-        let interval_ns = 1000;
+        let interval_ns = DurationNanos::new(1000);
 
         test_clock
             .set_timer_ns(
@@ -1547,18 +1571,18 @@ mod tests {
             .unwrap();
 
         // Advance time to check normal behavior
-        let events = test_clock.advance_time(start_time + 2500, true);
+        let events = test_clock.advance_time(start_time + DurationNanos::new(2500), true);
 
         // Should fire after first interval, not immediately
         assert_eq!(events.len(), 2);
-        assert_eq!(*events[0].ts_event, *start_time + 1000); // Fires after first interval
-        assert_eq!(*events[1].ts_event, *start_time + 2000); // Then after second interval
+        assert_eq!(events[0].ts_event, start_time + DurationNanos::new(1000)); // Fires after first interval
+        assert_eq!(events[1].ts_event, start_time + DurationNanos::new(2000)); // Then after second interval
     }
 
     #[rstest]
     fn test_set_timer_ns_fire_immediately_default_is_false(mut test_clock: TestClock) {
         let start_time = test_clock.timestamp_ns();
-        let interval_ns = 1000;
+        let interval_ns = DurationNanos::new(1000);
 
         // Don't specify fire_immediately (should default to false)
         test_clock
@@ -1573,17 +1597,17 @@ mod tests {
             )
             .unwrap();
 
-        let events = test_clock.advance_time(start_time + 1500, true);
+        let events = test_clock.advance_time(start_time + DurationNanos::new(1500), true);
 
         // Should behave the same as fire_immediately=false
         assert_eq!(events.len(), 1);
-        assert_eq!(*events[0].ts_event, *start_time + 1000); // Fires after first interval
+        assert_eq!(events[0].ts_event, start_time + DurationNanos::new(1000)); // Fires after first interval
     }
 
     #[rstest]
     fn test_set_timer_ns_fire_immediately_with_zero_start_time(mut test_clock: TestClock) {
         test_clock.set_time(5000.into());
-        let interval_ns = 1000;
+        let interval_ns = DurationNanos::new(1000);
 
         test_clock
             .set_timer_ns(
@@ -1610,7 +1634,7 @@ mod tests {
     #[rstest]
     fn test_multiple_timers_different_fire_immediately_settings(mut test_clock: TestClock) {
         let start_time = test_clock.timestamp_ns();
-        let interval_ns = 1000;
+        let interval_ns = DurationNanos::new(1000);
 
         // One timer with fire_immediately=true
         test_clock
@@ -1638,7 +1662,7 @@ mod tests {
             )
             .unwrap();
 
-        let events = test_clock.advance_time(start_time + 1500, true);
+        let events = test_clock.advance_time(start_time + DurationNanos::new(1500), true);
 
         // Should have 3 events total: immediate_timer fires at start & 1000, normal_timer fires at 1000
         assert_eq!(events.len(), 3);
@@ -1660,7 +1684,7 @@ mod tests {
         test_clock
             .set_timer_ns(
                 "collision_timer",
-                1000,
+                DurationNanos::new(1000),
                 Some(start_time),
                 None,
                 None,
@@ -1672,7 +1696,7 @@ mod tests {
         // Setting timer with same name should overwrite the existing one
         let result = test_clock.set_timer_ns(
             "collision_timer",
-            2000,
+            DurationNanos::new(2000),
             Some(start_time),
             None,
             None,
@@ -1687,7 +1711,7 @@ mod tests {
         // The timer should have the new interval
         let next_time = test_clock.next_time_ns("collision_timer").unwrap();
         // With interval 2000 and start at start_time, next time should be start_time + 2000
-        assert_eq!(next_time, start_time + 2000);
+        assert_eq!(next_time, start_time + DurationNanos::new(2000));
     }
 
     #[rstest]
@@ -1695,8 +1719,15 @@ mod tests {
         let start_time = test_clock.timestamp_ns();
 
         // Attempt to set timer with zero interval should fail
-        let result =
-            test_clock.set_timer_ns("zero_interval", 0, Some(start_time), None, None, None, None);
+        let result = test_clock.set_timer_ns(
+            "zero_interval",
+            DurationNanos::default(),
+            Some(start_time),
+            None,
+            None,
+            None,
+            None,
+        );
 
         assert!(result.is_err());
         assert_eq!(test_clock.timer_count(), 0);
@@ -1707,7 +1738,15 @@ mod tests {
         let start_time = test_clock.timestamp_ns();
 
         // Attempt to set timer with empty name should fail
-        let result = test_clock.set_timer_ns("", 1000, Some(start_time), None, None, None, None);
+        let result = test_clock.set_timer_ns(
+            "",
+            DurationNanos::new(1000),
+            Some(start_time),
+            None,
+            None,
+            None,
+            None,
+        );
 
         assert!(result.is_err());
         assert_eq!(test_clock.timer_count(), 0);
@@ -1721,7 +1760,7 @@ mod tests {
         test_clock
             .set_time_alert_ns(
                 name.as_str(),
-                (*test_clock.timestamp_ns() + 1_000).into(),
+                test_clock.timestamp_ns() + DurationNanos::new(1_000),
                 None,
                 None,
             )
@@ -1738,9 +1777,9 @@ mod tests {
         test_clock
             .set_timer_ns(
                 name.as_str(),
-                1_000,
+                DurationNanos::new(1_000),
                 Some(start_time),
-                Some(start_time + 2_500),
+                Some(start_time + DurationNanos::new(2_500)),
                 None,
                 None,
                 None,
@@ -1750,7 +1789,7 @@ mod tests {
         assert!(test_clock.timer_exists(&name));
         assert_eq!(test_clock.timer_count(), 1);
 
-        test_clock.advance_time(start_time + 10_000, true);
+        test_clock.advance_time(start_time + DurationNanos::new(10_000), true);
 
         // All three introspection surfaces must agree the timer is gone
         assert!(!test_clock.timer_exists(&name));
@@ -1765,9 +1804,9 @@ mod tests {
 
         let result = test_clock.set_timer_ns(
             "past_stop",
-            10_000,
-            Some(current - 500),
-            Some(current - 100),
+            DurationNanos::new(10_000),
+            Some(current - DurationNanos::new(500)),
+            Some(current - DurationNanos::new(100)),
             None,
             Some(false),
             None,
@@ -1785,9 +1824,9 @@ mod tests {
 
         let result = test_clock.set_timer_ns(
             "future_stop",
-            1_000,
+            DurationNanos::new(1_000),
             Some(current),
-            Some(current + 10_000),
+            Some(current + DurationNanos::new(10_000)),
             None,
             Some(false),
             None,
@@ -1799,7 +1838,7 @@ mod tests {
     #[rstest]
     fn test_timer_fire_immediately_at_exact_stop_time(mut test_clock: TestClock) {
         let start_time = test_clock.timestamp_ns();
-        let interval_ns = 1000;
+        let interval_ns = DurationNanos::new(1000);
         let stop_time = start_time + interval_ns; // Stop exactly at first interval
 
         test_clock
@@ -1825,7 +1864,7 @@ mod tests {
     #[rstest]
     fn test_timer_advance_to_exact_next_time(mut test_clock: TestClock) {
         let start_time = test_clock.timestamp_ns();
-        let interval_ns = 1000;
+        let interval_ns = DurationNanos::new(1000);
 
         test_clock
             .set_timer_ns(
@@ -1853,7 +1892,7 @@ mod tests {
         test_clock.set_time(UnixNanos::from(100_500)); // 100.5 seconds
 
         let bar_start_time = UnixNanos::from(100_000); // 100 seconds (0.5 sec ago)
-        let interval_ns = 1000; // 1 second bars
+        let interval_ns = DurationNanos::new(1000); // 1 second bars
 
         // With allow_past=false and fire_immediately=false:
         // start_time is in past (100 sec) but next event (101 sec) is in future
@@ -1882,7 +1921,7 @@ mod tests {
         test_clock.set_time(UnixNanos::from(102_000)); // 102 seconds
 
         let past_start_time = UnixNanos::from(100_000); // 100 seconds (2 sec ago)
-        let interval_ns = 1000; // 1 second interval
+        let interval_ns = DurationNanos::new(1000); // 1 second interval
 
         // With allow_past=false and fire_immediately=false:
         // Next event would be 100_000 + 1000 = 101_000, which is < current time (102_000)
@@ -1912,7 +1951,7 @@ mod tests {
         test_clock.set_time(UnixNanos::from(100_500)); // 100.5 seconds
 
         let past_start_time = UnixNanos::from(100_000); // 100 seconds (0.5 sec ago)
-        let interval_ns = 1000;
+        let interval_ns = DurationNanos::new(1000);
 
         // With fire_immediately=true, next event = start_time (which is in past)
         // This should be REJECTED with allow_past=false
@@ -1943,7 +1982,7 @@ mod tests {
         test_clock
             .set_timer_ns(
                 "cancel_test",
-                1000,
+                DurationNanos::new(1000),
                 Some(start_time),
                 None,
                 None,
@@ -1960,7 +1999,7 @@ mod tests {
         assert_eq!(test_clock.timer_count(), 0);
 
         // Advance time - should get no events from cancelled timer
-        let events = test_clock.advance_time(start_time + 2000, true);
+        let events = test_clock.advance_time(start_time + DurationNanos::new(2000), true);
         assert_eq!(events.len(), 0);
     }
 
@@ -1968,21 +2007,26 @@ mod tests {
     fn test_cancelled_timer_queue_entry_is_skipped(mut test_clock: TestClock) {
         let start_time = test_clock.timestamp_ns();
         test_clock
-            .set_time_alert_ns("cancelled", start_time + 1000, None, None)
+            .set_time_alert_ns(
+                "cancelled",
+                start_time + DurationNanos::new(1000),
+                None,
+                None,
+            )
             .unwrap();
         test_clock
-            .set_time_alert_ns("active", start_time + 2000, None, None)
+            .set_time_alert_ns("active", start_time + DurationNanos::new(2000), None, None)
             .unwrap();
 
         test_clock.cancel_timer("cancelled");
         assert_eq!(test_clock.timer_count(), 1);
         assert_eq!(test_clock.timer_queue.len(), 2);
 
-        let events = test_clock.advance_time(start_time + 1000, true);
+        let events = test_clock.advance_time(start_time + DurationNanos::new(1000), true);
         assert!(events.is_empty());
         assert_eq!(test_clock.timer_names(), vec!["active"]);
 
-        let events = test_clock.advance_time(start_time + 2000, true);
+        let events = test_clock.advance_time(start_time + DurationNanos::new(2000), true);
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].name.as_str(), "active");
     }
@@ -1991,13 +2035,23 @@ mod tests {
     fn test_timer_queue_compacts_stale_entries(mut test_clock: TestClock) {
         let start_time = test_clock.timestamp_ns();
         test_clock
-            .set_time_alert_ns("active", start_time + 1000, None, None)
+            .set_time_alert_ns("active", start_time + DurationNanos::new(1000), None, None)
             .unwrap();
         test_clock
-            .set_time_alert_ns("cancelled-1", start_time + 2000, None, None)
+            .set_time_alert_ns(
+                "cancelled-1",
+                start_time + DurationNanos::new(2000),
+                None,
+                None,
+            )
             .unwrap();
         test_clock
-            .set_time_alert_ns("cancelled-2", start_time + 3000, None, None)
+            .set_time_alert_ns(
+                "cancelled-2",
+                start_time + DurationNanos::new(3000),
+                None,
+                None,
+            )
             .unwrap();
 
         test_clock.cancel_timer("cancelled-1");
@@ -2012,13 +2066,37 @@ mod tests {
     fn test_cancel_all_timers(mut test_clock: TestClock) {
         // Create multiple timers
         test_clock
-            .set_timer_ns("timer1", 1000, None, None, None, None, None)
+            .set_timer_ns(
+                "timer1",
+                DurationNanos::new(1000),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
             .unwrap();
         test_clock
-            .set_timer_ns("timer2", 1500, None, None, None, None, None)
+            .set_timer_ns(
+                "timer2",
+                DurationNanos::new(1500),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
             .unwrap();
         test_clock
-            .set_timer_ns("timer3", 2000, None, None, None, None, None)
+            .set_timer_ns(
+                "timer3",
+                DurationNanos::new(2000),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
             .unwrap();
 
         assert_eq!(test_clock.timer_count(), 3);
@@ -2036,7 +2114,15 @@ mod tests {
     #[rstest]
     fn test_clock_reset_clears_timers(mut test_clock: TestClock) {
         test_clock
-            .set_timer_ns("reset_test", 1000, None, None, None, None, None)
+            .set_timer_ns(
+                "reset_test",
+                DurationNanos::new(1000),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
             .unwrap();
 
         assert_eq!(test_clock.timer_count(), 1);
@@ -2054,7 +2140,7 @@ mod tests {
         test_clock.cancel_default_handler();
 
         // Without a default and without an explicit callback, scheduling fails
-        let alert_time: UnixNanos = (*test_clock.timestamp_ns() + 1000).into();
+        let alert_time: UnixNanos = test_clock.timestamp_ns() + DurationNanos::new(1000);
         let err = test_clock
             .set_time_alert_ns("alert", alert_time, None, None)
             .unwrap_err();
@@ -2074,7 +2160,7 @@ mod tests {
 
     #[rstest]
     fn test_cancel_callbacks_clears_named(mut test_clock: TestClock) {
-        let alert_time: UnixNanos = (*test_clock.timestamp_ns() + 1000).into();
+        let alert_time: UnixNanos = test_clock.timestamp_ns() + DurationNanos::new(1000);
         let callback = TimeEventCallback::from(TestCallback::default());
         test_clock
             .set_time_alert_ns("named_alert", alert_time, Some(callback), None)
@@ -2098,7 +2184,7 @@ mod tests {
     fn test_failed_set_time_alert_ns_preserves_existing_timer() {
         // Fresh clock with no default handler
         let mut clock = TestClock::new();
-        let alert_time: UnixNanos = (*clock.timestamp_ns() + 1000).into();
+        let alert_time: UnixNanos = clock.timestamp_ns() + DurationNanos::new(1000);
         let callback = TimeEventCallback::from(TestCallback::default());
         clock
             .set_time_alert_ns("alert", alert_time, Some(callback), None)
@@ -2111,7 +2197,7 @@ mod tests {
         // Rescheduling without a callback fails the predicate check; the error
         // return must not have destroyed the previously scheduled alert
         let err = clock
-            .set_time_alert_ns("alert", (*alert_time + 1000).into(), None, None)
+            .set_time_alert_ns("alert", alert_time + DurationNanos::new(1000), None, None)
             .unwrap_err();
         assert!(
             err.to_string().contains("No callbacks provided"),
@@ -2123,7 +2209,7 @@ mod tests {
 
     #[rstest]
     fn test_cancel_default_handler_preserves_named_callbacks(mut test_clock: TestClock) {
-        let alert_time: UnixNanos = (*test_clock.timestamp_ns() + 1000).into();
+        let alert_time: UnixNanos = test_clock.timestamp_ns() + DurationNanos::new(1000);
         let callback = TimeEventCallback::from(TestCallback::default());
         test_clock
             .set_time_alert_ns("alert", alert_time, Some(callback), None)
@@ -2143,7 +2229,7 @@ mod tests {
         // Default handler from fixture remains available
         test_clock.cancel_callbacks();
 
-        let alert_time: UnixNanos = (*test_clock.timestamp_ns() + 1000).into();
+        let alert_time: UnixNanos = test_clock.timestamp_ns() + DurationNanos::new(1000);
         test_clock
             .set_time_alert_ns("alert", alert_time, None, None)
             .unwrap();
@@ -2204,7 +2290,7 @@ mod tests {
         let start_ns = UnixNanos::from(start_time);
         let interval_ns = interval.as_nanos() as u64;
 
-        let events = test_clock.advance_time(start_ns + interval_ns * 3, true);
+        let events = test_clock.advance_time(start_ns + DurationNanos::new(interval_ns) * 3, true);
         assert_eq!(events.len(), 3); // Should fire 3 times
 
         // Verify timing
@@ -2237,7 +2323,7 @@ mod tests {
 
         // Advance beyond stop time
         let stop_ns = UnixNanos::from(stop_time);
-        let events = test_clock.advance_time(stop_ns + 1000, true);
+        let events = test_clock.advance_time(stop_ns + DurationNanos::new(1000), true);
 
         // Should fire twice: at start_time + 1s and start_time + 2s, but not at start_time + 3s since that would be at stop_time
         assert_eq!(events.len(), 2);
@@ -2271,7 +2357,7 @@ mod tests {
         let interval_ns = interval.as_nanos() as u64;
 
         // Advance to start time + 1 interval
-        let events = test_clock.advance_time(start_ns + interval_ns, true);
+        let events = test_clock.advance_time(start_ns + DurationNanos::new(interval_ns), true);
 
         // Should fire immediately at start_time, then again at start_time + interval
         assert_eq!(events.len(), 2);
@@ -2304,7 +2390,7 @@ mod tests {
         let start = test_clock.timestamp_ns();
 
         test_clock
-            .set_time_alert_ns("timer", UnixNanos::from(*start + 1000), None, None)
+            .set_time_alert_ns("timer", start + DurationNanos::new(1000), None, None)
             .unwrap();
         assert_eq!(test_clock.timer_count(), 1);
 
@@ -2312,21 +2398,21 @@ mod tests {
         assert_eq!(test_clock.timer_count(), 0);
 
         test_clock
-            .set_time_alert_ns("timer", UnixNanos::from(*start + 2000), None, None)
+            .set_time_alert_ns("timer", start + DurationNanos::new(2000), None, None)
             .unwrap();
         assert_eq!(test_clock.timer_count(), 1);
 
-        let events = test_clock.advance_time(UnixNanos::from(*start + 1500), true);
+        let events = test_clock.advance_time(start + DurationNanos::new(1500), true);
         assert!(events.is_empty());
 
-        let events = test_clock.advance_time(UnixNanos::from(*start + 2000), true);
+        let events = test_clock.advance_time(start + DurationNanos::new(2000), true);
         assert_eq!(events.len(), 1);
-        assert_eq!(*events[0].ts_event, *start + 2000);
+        assert_eq!(events[0].ts_event, start + DurationNanos::new(2000));
     }
 
     #[rstest]
     fn test_multiple_timers_same_timestamp_all_fire(mut test_clock: TestClock) {
-        let fire_time = UnixNanos::from(*test_clock.timestamp_ns() + 1000);
+        let fire_time = test_clock.timestamp_ns() + DurationNanos::new(1000);
 
         for i in 0..5 {
             test_clock
@@ -2349,16 +2435,16 @@ mod tests {
         let start = clock.timestamp_ns();
 
         clock
-            .set_time_alert_ns("third", UnixNanos::from(*start + 300), None, None)
+            .set_time_alert_ns("third", start + DurationNanos::new(300), None, None)
             .unwrap();
         clock
-            .set_time_alert_ns("first", UnixNanos::from(*start + 100), None, None)
+            .set_time_alert_ns("first", start + DurationNanos::new(100), None, None)
             .unwrap();
         clock
-            .set_time_alert_ns("second", UnixNanos::from(*start + 200), None, None)
+            .set_time_alert_ns("second", start + DurationNanos::new(200), None, None)
             .unwrap();
 
-        let events = clock.advance_time(UnixNanos::from(*start + 400), true);
+        let events = clock.advance_time(start + DurationNanos::new(400), true);
         assert_eq!(events.len(), 3);
         assert_eq!(events[0].name.as_str(), "first");
         assert_eq!(events[1].name.as_str(), "second");
@@ -2368,7 +2454,7 @@ mod tests {
     #[rstest]
     fn test_large_interval_does_not_overflow(mut test_clock: TestClock) {
         let start = test_clock.timestamp_ns();
-        let large_interval: u64 = 1_000_000_000 * 60 * 60 * 24 * 365; // ~1 year in ns
+        let large_interval = DurationNanos::from_days(365);
 
         test_clock
             .set_timer_ns(
@@ -2382,9 +2468,9 @@ mod tests {
             )
             .unwrap();
 
-        let events = test_clock.advance_time(UnixNanos::from(*start + large_interval), true);
+        let events = test_clock.advance_time(start + large_interval, true);
         assert_eq!(events.len(), 1);
-        assert_eq!(*events[0].ts_event, *start + large_interval);
+        assert_eq!(events[0].ts_event, start + large_interval);
     }
 
     #[rstest]
@@ -2392,10 +2478,18 @@ mod tests {
         let start = test_clock.timestamp_ns();
 
         test_clock
-            .set_timer_ns("tiny", 1, Some(start), None, None, None, None)
+            .set_timer_ns(
+                "tiny",
+                DurationNanos::new(1),
+                Some(start),
+                None,
+                None,
+                None,
+                None,
+            )
             .unwrap();
 
-        let events = test_clock.advance_time(UnixNanos::from(*start + 10), true);
+        let events = test_clock.advance_time(start + DurationNanos::new(10), true);
         assert_eq!(events.len(), 10);
 
         for i in 1..events.len() {
@@ -2405,7 +2499,7 @@ mod tests {
 
     #[rstest]
     fn test_repeated_advance_to_same_time_no_double_fire(mut test_clock: TestClock) {
-        let fire_time = UnixNanos::from(*test_clock.timestamp_ns() + 1000);
+        let fire_time = test_clock.timestamp_ns() + DurationNanos::new(1000);
 
         test_clock
             .set_time_alert_ns("once", fire_time, None, None)
@@ -2422,9 +2516,9 @@ mod tests {
     fn test_advance_with_no_timers(mut test_clock: TestClock) {
         let start = test_clock.timestamp_ns();
 
-        let events = test_clock.advance_time(UnixNanos::from(*start + 1000), true);
+        let events = test_clock.advance_time(start + DurationNanos::new(1000), true);
         assert!(events.is_empty());
-        assert_eq!(*test_clock.timestamp_ns(), *start + 1000);
+        assert_eq!(test_clock.timestamp_ns(), start + DurationNanos::new(1000));
     }
 
     #[rstest]
@@ -2508,11 +2602,19 @@ mod tests {
     ) {
         test_clock.set_time(UnixNanos::from(1));
         test_clock
-            .set_timer_ns("overflow", 1, None, None, None, None, None)
+            .set_timer_ns(
+                "overflow",
+                DurationNanos::new(1),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
             .unwrap();
 
         let err = test_clock
-            .set_timer_ns("overflow", u64::MAX, None, None, None, None, None)
+            .set_timer_ns("overflow", DurationNanos::MAX, None, None, None, None, None)
             .unwrap_err();
 
         assert_eq!(
@@ -2581,7 +2683,7 @@ mod tests {
 
         api.set_timer_ns(
             "native-timer",
-            1_000,
+            DurationNanos::new(1_000),
             None,
             None,
             None,
@@ -2675,7 +2777,7 @@ mod tests {
         clock
             .set_timer_ns(
                 "timer-ns",
-                500_000_000,
+                DurationNanos::from_millis(500),
                 Some(UnixNanos::from(1_700_000_000_666_000_000)),
                 Some(UnixNanos::from(1_700_000_001_666_000_000)),
                 None,
@@ -2725,7 +2827,7 @@ mod tests {
             &[
                 (
                     "timer".to_string(),
-                    250_000_000,
+                    DurationNanos::from_millis(250),
                     Some(UnixNanos::from(1_700_000_000_444_000_000)),
                     Some(UnixNanos::from(1_700_000_001_444_000_000)),
                     Some(true),
@@ -2733,7 +2835,7 @@ mod tests {
                 ),
                 (
                     "timer-ns".to_string(),
-                    500_000_000,
+                    DurationNanos::from_millis(500),
                     Some(UnixNanos::from(1_700_000_000_666_000_000)),
                     Some(UnixNanos::from(1_700_000_001_666_000_000)),
                     Some(false),
@@ -2839,7 +2941,7 @@ mod tests {
                     clock
                         .set_timer_ns(
                             name.as_str(),
-                            interval_ns,
+                            DurationNanos::new(interval_ns),
                             Some(UnixNanos::from(time_ns)),
                             stop_time_ns.map(UnixNanos::from),
                             None,

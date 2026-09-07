@@ -74,7 +74,7 @@ use nautilus_common::{
     },
     testing::wait_until_async,
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{DurationNanos, UUID4, UnixNanos};
 use nautilus_lighter::{
     common::{
         consts::{LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX, LIGHTER_VENUE},
@@ -4213,12 +4213,9 @@ async fn test_generate_bounded_mass_status_reports_snapshot_contract(
         .await
         .expect("mass status")
         .expect("mass status available");
-    let expected_start = UnixNanos::from(
-        mass_status
-            .ts_init
-            .as_u64()
-            .saturating_sub(60 * 60 * 1_000_000_000),
-    );
+    let expected_start = mass_status
+        .ts_init
+        .saturating_sub(DurationNanos::from_mins(60));
     let order_reports = mass_status.order_reports();
     let fill_reports = mass_status.fill_reports();
     let position_reports = mass_status.position_reports();

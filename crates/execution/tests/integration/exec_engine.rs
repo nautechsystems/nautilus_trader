@@ -48,7 +48,7 @@ use nautilus_common::{
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
-    Params, UUID4, UnixNanos,
+    DurationNanos, Params, UUID4, UnixNanos,
     datetime::{NANOSECONDS_IN_MINUTE, NANOSECONDS_IN_SECOND},
 };
 use nautilus_execution::engine::{
@@ -18120,7 +18120,7 @@ fn test_reset_leaves_unrelated_clock_timers_intact() {
         .borrow_mut()
         .set_timer_ns(
             "EXT_UNRELATED",
-            NANOSECONDS_IN_MINUTE,
+            DurationNanos::from_mins(1),
             None,
             None,
             Some(callback),
@@ -18160,7 +18160,7 @@ fn test_dispose_leaves_unrelated_clock_timers_intact() {
         .borrow_mut()
         .set_timer_ns(
             "EXT_UNRELATED",
-            NANOSECONDS_IN_MINUTE,
+            DurationNanos::from_mins(1),
             None,
             None,
             Some(callback),

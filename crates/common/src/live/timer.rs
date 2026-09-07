@@ -47,7 +47,7 @@ use std::{
 };
 
 use nautilus_core::{
-    UUID4, UnixNanos,
+    DurationNanos, UUID4, UnixNanos,
     correctness::{FAILED, check_valid_string_utf8},
     datetime::floor_to_nearest_microsecond,
     time::get_atomic_clock_realtime,
@@ -126,7 +126,7 @@ impl LiveTimer {
         let next_time_ns = if fire_immediately {
             start_time_ns.as_u64()
         } else {
-            (start_time_ns + interval_ns.get()).as_u64()
+            (start_time_ns + DurationNanos::new(interval_ns.get())).as_u64()
         };
 
         log::trace!("Creating timer '{name}'");
@@ -211,7 +211,7 @@ impl LiveTimer {
 
         let event_name = self.name;
         let stop_time_ns = self.stop_time_ns;
-        let interval_ns = self.interval_ns.get();
+        let interval_ns = DurationNanos::new(self.interval_ns.get());
 
         let retired_task = self.retire_task();
 
@@ -286,7 +286,7 @@ impl LiveTimer {
         let task = async move {
             let clock = get_atomic_clock_realtime();
 
-            let mut timer = dst::time::interval_at(start, Duration::from_nanos(interval_ns));
+            let mut timer = dst::time::interval_at(start, Duration::from(interval_ns));
 
             loop {
                 // Never fire an event scheduled past the stop time. The event's
@@ -482,7 +482,7 @@ fn normalize_start_time_ns(
 }
 
 fn timer_start_delay(next_time_ns: UnixNanos, now_ns: UnixNanos) -> Duration {
-    Duration::from_nanos(next_time_ns.saturating_duration_since(now_ns))
+    Duration::from(next_time_ns.saturating_duration_since(now_ns))
 }
 
 #[derive(Debug)]

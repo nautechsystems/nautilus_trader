@@ -38,7 +38,7 @@ use nautilus_common::{
     msgbus, nautilus_actor,
     timer::TimeEvent,
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{DurationNanos, UUID4, UnixNanos};
 use nautilus_execution::models::latency::{LatencyModelHandle, StaticLatencyModel};
 use nautilus_indicators::{
     average::ema::ExponentialMovingAverage,
@@ -237,8 +237,15 @@ impl Debug for RecurringTimerShutdownActor {
 
 impl DataActor for RecurringTimerShutdownActor {
     fn on_start(&mut self) -> anyhow::Result<()> {
-        self.clock()
-            .set_timer_ns("recurring", 1_000_000_000, None, None, None, None, None)
+        self.clock().set_timer_ns(
+            "recurring",
+            DurationNanos::from_secs(1),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
     }
 
     fn on_time_event(&mut self, _event: &TimeEvent) -> anyhow::Result<()> {
@@ -5696,10 +5703,10 @@ fn test_streaming_end_settles_due_open_before_on_stop(crypto_perpetual_ethusdt: 
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USDT")])
                 .latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
-                    UnixNanos::default(),
-                    UnixNanos::from(1),
-                    UnixNanos::default(),
-                    UnixNanos::default(),
+                    DurationNanos::default(),
+                    DurationNanos::new(1),
+                    DurationNanos::default(),
+                    DurationNanos::default(),
                 )))
                 .build()
                 .unwrap(),
@@ -5767,10 +5774,10 @@ fn test_close_all_positions_in_on_stop_is_processed_with_latency(
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
         .latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
-            UnixNanos::from(1_000_000_000),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            UnixNanos::default(),
+            DurationNanos::from_secs(1),
+            DurationNanos::default(),
+            DurationNanos::default(),
+            DurationNanos::default(),
         )))
         .build()
         .unwrap();
@@ -6059,10 +6066,10 @@ fn test_latency_order_settles_on_instrument_data_or_timer(
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USDT")])
                 .latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
-                    UnixNanos::default(),
-                    UnixNanos::from(1),
-                    UnixNanos::default(),
-                    UnixNanos::default(),
+                    DurationNanos::default(),
+                    DurationNanos::new(1),
+                    DurationNanos::default(),
+                    DurationNanos::default(),
                 )))
                 .build()
                 .unwrap(),
@@ -6155,10 +6162,10 @@ fn test_trailing_final_tick_order_settles_with_latency(crypto_perpetual_ethusdt:
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
         .latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
-            UnixNanos::from(1_000_000_000),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            UnixNanos::default(),
+            DurationNanos::from_secs(1),
+            DurationNanos::default(),
+            DurationNanos::default(),
+            DurationNanos::default(),
         )))
         .build()
         .unwrap();
@@ -6227,10 +6234,10 @@ fn test_cancel_all_orders_in_on_stop_is_processed_with_latency(
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
         .latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
-            UnixNanos::default(),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            UnixNanos::from(1_500_000_000),
+            DurationNanos::default(),
+            DurationNanos::default(),
+            DurationNanos::default(),
+            DurationNanos::from_millis(1_500),
         )))
         .build()
         .unwrap();
@@ -6390,10 +6397,10 @@ fn test_close_all_positions_on_stop_multi_venue_latency_aggregates(
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USDT")])
                 .latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
-                    UnixNanos::from(2_000_000_000),
-                    UnixNanos::default(),
-                    UnixNanos::default(),
-                    UnixNanos::default(),
+                    DurationNanos::from_secs(2),
+                    DurationNanos::default(),
+                    DurationNanos::default(),
+                    DurationNanos::default(),
                 )))
                 .build()
                 .unwrap(),
@@ -6408,10 +6415,10 @@ fn test_close_all_positions_on_stop_multi_venue_latency_aggregates(
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USDT")])
                 .latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
-                    UnixNanos::from(1_000_000_000),
-                    UnixNanos::default(),
-                    UnixNanos::default(),
-                    UnixNanos::default(),
+                    DurationNanos::from_secs(1),
+                    DurationNanos::default(),
+                    DurationNanos::default(),
+                    DurationNanos::default(),
                 )))
                 .build()
                 .unwrap(),

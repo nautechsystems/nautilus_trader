@@ -19,6 +19,7 @@ use std::{collections::VecDeque, fmt::Debug};
 
 use ahash::AHashSet;
 use nautilus_common::actor::DataActor;
+use nautilus_core::{DurationNanos, UnixNanos};
 use nautilus_model::{
     data::{Bar, QuoteTick, TradeTick},
     enums::{AggressorSide, OrderSide, PositionSide, TimeInForce},
@@ -59,7 +60,7 @@ pub struct HurstVpinDirectional {
     pub(super) hurst: Option<f64>,
     pub(super) vpin: Option<f64>,
     pub(super) signed_vpin: Option<f64>,
-    pub(super) position_opened_ns: Option<u64>,
+    pub(super) position_opened_ns: Option<UnixNanos>,
     pub(super) exit_cooldown: bool,
     pub(super) entry_order_id: Option<ClientOrderId>,
     pub(super) exit_order_ids: AHashSet<ClientOrderId>,
@@ -232,8 +233,8 @@ impl HurstVpinDirectional {
             Some(ns) => ns,
             None => return Ok(()),
         };
-        let held_ns = tick.ts_event.as_u64().saturating_sub(opened_ns);
-        if held_ns < self.config.max_holding_secs * 1_000_000_000 {
+        let held = tick.ts_event.saturating_duration_since(opened_ns);
+        if held < DurationNanos::try_from_secs(self.config.max_holding_secs)? {
             return Ok(());
         }
 
@@ -320,7 +321,7 @@ impl HurstVpinDirectional {
 nautilus_strategy!(HurstVpinDirectional, {
     fn on_position_opened(&mut self, event: PositionOpened) {
         if event.instrument_id == self.config.instrument_id {
-            self.position_opened_ns = Some(event.ts_event.as_u64());
+            self.position_opened_ns = Some(event.ts_event);
         }
     }
 

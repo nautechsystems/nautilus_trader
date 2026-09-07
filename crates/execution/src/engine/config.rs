@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_common::config::{ConfigError, ConfigErrorCollector, ConfigResult};
-use nautilus_core::{datetime::checked_mins_to_nanos, serialization::default_true};
+use nautilus_core::{DurationNanos, serialization::default_true};
 use nautilus_model::identifiers::ClientId;
 use serde::{Deserialize, Serialize};
 
@@ -157,7 +157,7 @@ impl ExecutionEngineConfig {
                     format!("must be positive and fit in `u64` nanoseconds, was {mins} minutes")
                 };
                 errors.check(
-                    mins > 0 && checked_mins_to_nanos(u64::from(mins)).is_some(),
+                    mins > 0 && DurationNanos::try_from_mins(u64::from(mins)).is_ok(),
                     ConfigError::range(field, reason),
                 );
             }
@@ -179,7 +179,7 @@ impl ExecutionEngineConfig {
         ] {
             if let Some(mins) = value {
                 errors.check(
-                    checked_mins_to_nanos(u64::from(mins)).is_some(),
+                    DurationNanos::try_from_mins(u64::from(mins)).is_ok(),
                     ConfigError::range(
                         field,
                         format!("must fit in `u64` nanoseconds, was {mins} minutes"),

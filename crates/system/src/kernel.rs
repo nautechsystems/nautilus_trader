@@ -1239,6 +1239,7 @@ mod streaming_tests {
         messages::data::{DataCommand, QuotesResponse, RequestCommand, RequestQuotes},
         msgbus::{self, MStr, ShareableMessageHandler},
     };
+    use nautilus_core::DurationNanos;
     use nautilus_model::{
         data::{CustomData, DataType, QuoteTick},
         identifiers::InstrumentId,
@@ -1261,16 +1262,20 @@ mod streaming_tests {
         WriterRotationConfig::Size { max_size: 17 }
     )]
     #[case(
-        RotationConfig::Interval { interval_ns: 23 },
-        WriterRotationConfig::Interval { interval_ns: 23 }
+        RotationConfig::Interval {
+            interval_ns: DurationNanos::new(23),
+        },
+        WriterRotationConfig::Interval {
+            interval_ns: DurationNanos::new(23),
+        }
     )]
     #[case(
         RotationConfig::ScheduledDates {
-            interval_ns: 31,
+            interval_ns: DurationNanos::new(31),
             schedule_ns: UnixNanos::from(37),
         },
         WriterRotationConfig::ScheduledDates {
-            interval_ns: 31,
+            interval_ns: DurationNanos::new(31),
             rotation_time: UnixNanos::from(37),
             rotation_timezone: TimeZone::UTC,
         }
@@ -1286,8 +1291,8 @@ mod streaming_tests {
             (
                 WriterRotationConfig::Size { max_size: actual },
                 WriterRotationConfig::Size { max_size: expected },
-            )
-            | (
+            ) => assert_eq!(actual, expected),
+            (
                 WriterRotationConfig::Interval {
                     interval_ns: actual,
                 },

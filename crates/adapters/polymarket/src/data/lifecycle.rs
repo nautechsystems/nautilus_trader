@@ -1772,7 +1772,7 @@ mod tests {
         assert!(!client.token_meta.contains_key(&token_id));
     }
 
-    // Matches EXPIRED_ENGINE_SWEEP_INTERVAL_NS in crates/adapters/sandbox/src/execution.rs.
+    // Matches EXPIRED_ENGINE_SWEEP_INTERVAL in crates/adapters/sandbox/src/execution.rs.
     const SANDBOX_SWEEP_INTERVAL_NS: u64 = 60 * NANOSECONDS_IN_SECOND;
     const CHURN_CYCLES: u64 = 5;
     const CHURN_INSTRUMENTS_PER_CYCLE: usize = 4;

@@ -77,8 +77,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    Params, UUID4, UnixNanos,
-    datetime::NANOSECONDS_IN_SECOND,
+    DurationNanos, Params, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -1964,12 +1963,10 @@ impl ExecutionClient for BetfairExecutionClient {
         log::info!("Generating ExecutionMassStatus (lookback_mins={lookback_mins:?})");
 
         let ts_now = self.clock.get_time_ns();
-        let start = lookback_mins.map(|mins| {
-            let lookback_ns = mins
-                .saturating_mul(60)
-                .saturating_mul(NANOSECONDS_IN_SECOND);
-            UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns))
-        });
+        let start = lookback_mins
+            .map(DurationNanos::try_from_mins)
+            .transpose()?
+            .map(|lookback| ts_now.saturating_sub(lookback));
 
         let date_range = start.map(|start| TimeRange {
             from: Some(start.to_rfc3339()),
@@ -4440,10 +4437,7 @@ async fn fetch_post_reconnect_mass_status(
     session_refresh: &mut SessionRefresh,
 ) -> anyhow::Result<PostReconnectRecovery> {
     let ts_now = clock.get_time_ns();
-    let lookback_ns = lookback_mins
-        .saturating_mul(60)
-        .saturating_mul(NANOSECONDS_IN_SECOND);
-    let start = UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns));
+    let start = ts_now.saturating_sub(DurationNanos::try_from_mins(lookback_mins)?);
 
     let date_range = TimeRange {
         from: Some(start.to_rfc3339()),

@@ -15,7 +15,7 @@
 
 //! Python bindings for system configuration types.
 
-use nautilus_core::{UnixNanos, python::to_pyvalue_err};
+use nautilus_core::{DurationNanos, UnixNanos, python::to_pyvalue_err};
 use pyo3::prelude::*;
 
 use crate::config::{RotationConfig, StreamingConfig};
@@ -122,7 +122,7 @@ impl StreamingConfig {
     fn rotation_interval_ns(&self) -> Option<u64> {
         match self.rotation_config {
             RotationConfig::Interval { interval_ns }
-            | RotationConfig::ScheduledDates { interval_ns, .. } => Some(interval_ns),
+            | RotationConfig::ScheduledDates { interval_ns, .. } => Some(interval_ns.as_u64()),
             _ => None,
         }
     }
@@ -140,10 +140,10 @@ impl StreamingConfig {
     }
 }
 
-fn positive_interval(interval_ns: Option<u64>) -> PyResult<u64> {
+fn positive_interval(interval_ns: Option<u64>) -> PyResult<DurationNanos> {
     let interval_ns = interval_ns.unwrap_or(NANOSECONDS_PER_DAY);
     if interval_ns == 0 {
         return Err(to_pyvalue_err("rotation_interval_ns must be positive"));
     }
-    Ok(interval_ns)
+    Ok(DurationNanos::new(interval_ns))
 }

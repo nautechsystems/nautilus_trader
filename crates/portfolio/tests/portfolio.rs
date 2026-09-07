@@ -21,7 +21,7 @@ use nautilus_common::{
     clock::{Clock, TestClock},
     msgbus::{self, MessageBus, MessagingSwitchboard, TypedHandler},
 };
-use nautilus_core::{UUID4, UnixNanos, approx_eq, datetime::NANOSECONDS_IN_DAY};
+use nautilus_core::{DurationNanos, UUID4, UnixNanos, approx_eq, datetime::NANOSECONDS_IN_DAY};
 use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{Bar, BarType, MarkPriceUpdate, QuoteTick},
@@ -398,7 +398,7 @@ fn get_closed_position(position: &Position) -> PositionClosed {
         realized_return: 0.0,
         realized_pnl: Some(Money::zero(position.settlement_currency)),
         unrealized_pnl: Money::zero(position.settlement_currency),
-        duration: 0,
+        duration: DurationNanos::default(),
         event_id: UUID4::new(),
         ts_opened: 0.into(),
         ts_closed: Some(0.into()),
@@ -459,7 +459,7 @@ fn get_close_position(position: &Position) -> PositionClosed {
         realized_pnl: Some(Money::new(10.0, Currency::USD())),
         unrealized_pnl: Money::new(10.0, Currency::USD()),
         closing_order_id: Some(ClientOrderId::new("SSD")),
-        duration: 0,
+        duration: DurationNanos::default(),
         event_id: UUID4::new(),
         ts_opened: 0.into(),
         ts_closed: None,

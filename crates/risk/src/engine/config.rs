@@ -20,7 +20,7 @@ use nautilus_common::{
     config::{ConfigError, ConfigErrorCollector, ConfigResult},
     throttler::RateLimit,
 };
-use nautilus_core::datetime::NANOSECONDS_IN_SECOND;
+use nautilus_core::DurationNanos;
 use nautilus_model::identifiers::{InstrumentId, Venue};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -47,9 +47,9 @@ use serde::{Deserialize, Serialize};
 pub struct RiskEngineConfig {
     #[builder(default)]
     pub bypass: bool,
-    #[builder(default = RateLimit::new(100, NANOSECONDS_IN_SECOND))]
+    #[builder(default = RateLimit::new(100, DurationNanos::from_secs(1)))]
     pub max_order_submit: RateLimit,
-    #[builder(default = RateLimit::new(100, NANOSECONDS_IN_SECOND))]
+    #[builder(default = RateLimit::new(100, DurationNanos::from_secs(1)))]
     pub max_order_modify: RateLimit,
     #[builder(default)]
     pub max_notional_per_order: AHashMap<InstrumentId, Decimal>,

@@ -37,7 +37,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    UnixNanos,
+    DurationNanos, UnixNanos,
     params::Params,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -2172,8 +2172,8 @@ impl ExecutionClient for OKXExecutionClient {
         } else {
             FillHistory::Extended
         };
-        let lookback_ns = lookback_mins * 60 * 1_000_000_000;
-        let start = Some(UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns)));
+        let lookback = DurationNanos::try_from_mins(lookback_mins)?;
+        let start = Some(ts_now.saturating_sub(lookback));
 
         let order_cmd = GenerateOrderStatusReportsBuilder::default()
             .ts_init(ts_now)

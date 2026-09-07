@@ -1208,7 +1208,7 @@ mod tests {
         closed.signed_qty = 0.0;
         closed.quantity = Quantity::zero(position.size_precision);
         closed.ts_closed = Some(position.ts_last);
-        closed.duration_ns = 1;
+        closed.duration_ns = DurationNanos::new(1);
         closed
     }
 
@@ -1234,7 +1234,7 @@ mod tests {
             realized_return: position.realized_return,
             realized_pnl: position.realized_pnl,
             unrealized_pnl: Money::zero(position.quote_currency),
-            duration: DurationNanos::from(1_u64),
+            duration: DurationNanos::new(1),
             event_id: UUID4::new(),
             ts_opened: position.ts_opened,
             ts_closed: position.ts_closed.or(Some(position.ts_last)),

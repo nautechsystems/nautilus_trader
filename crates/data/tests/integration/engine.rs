@@ -61,7 +61,7 @@ use nautilus_common::{
     },
     testing::wait_until,
 };
-use nautilus_core::{Params, UUID4, UnixNanos, datetime::NANOSECONDS_IN_SECOND};
+use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos, datetime::NANOSECONDS_IN_SECOND};
 use nautilus_data::{
     client::DataClientAdapter,
     engine::{DataEngine, config::DataEngineConfig},
@@ -14792,7 +14792,7 @@ fn test_option_chain_reference_price_timeout_tracks_concurrent_requests(
     );
 
     let first_series = make_series_id();
-    let second_expiration = first_series.expiration_ns + 5 * NANOSECONDS_IN_SECOND;
+    let second_expiration = first_series.expiration_ns + DurationNanos::from_secs(5);
     let second_series = OptionSeriesId::new(
         venue,
         Ustr::from("BTC"),

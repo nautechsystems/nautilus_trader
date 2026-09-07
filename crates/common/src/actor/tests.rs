@@ -27,7 +27,7 @@ use ahash::AHashSet;
 use bytes::Bytes;
 use indexmap::IndexMap;
 use log::LevelFilter;
-use nautilus_core::{Params, UUID4, UnixNanos};
+use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
     data::{
@@ -795,7 +795,7 @@ fn test_data_actor_clock_api(
         .clock()
         .set_timer_ns(
             "TEST-TIMER-NS",
-            2_000_000_000,
+            DurationNanos::from_secs(2),
             None,
             None,
             None,

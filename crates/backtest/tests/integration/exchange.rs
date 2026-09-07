@@ -48,7 +48,7 @@ use nautilus_common::{
         typed_handler::TypedHandler,
     },
 };
-use nautilus_core::{UUID4, UnixNanos, datetime::get_timezone};
+use nautilus_core::{DurationNanos, UUID4, UnixNanos, datetime::get_timezone};
 use nautilus_execution::models::{
     fee::{FeeModelAny, MakerTakerFeeModel},
     latency::{LatencyModelHandle, StaticLatencyModel},
@@ -2589,10 +2589,10 @@ fn test_inflight_commands_process_fifo_for_same_timestamp(
     msgbus::register_order_event_endpoint(MessagingSwitchboard::exec_engine_process(), handler);
 
     let latency_model = StaticLatencyModel::new(
-        UnixNanos::from(0),
-        UnixNanos::from(0),
-        UnixNanos::from(0),
-        UnixNanos::from(0),
+        DurationNanos::default(),
+        DurationNanos::default(),
+        DurationNanos::default(),
+        DurationNanos::default(),
     );
     let exchange = get_exchange(
         Venue::new("BINANCE"),
@@ -2706,10 +2706,10 @@ fn test_due_inflight_commands_drain_after_queued_commands(
     exchange
         .borrow_mut()
         .set_latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
-            UnixNanos::from(0),
-            UnixNanos::from(0),
-            UnixNanos::from(0),
-            UnixNanos::from(0),
+            DurationNanos::default(),
+            DurationNanos::default(),
+            DurationNanos::default(),
+            DurationNanos::default(),
         )));
     exchange.borrow_mut().send(inflight_cmd);
     exchange.borrow_mut().process(UnixNanos::from(100));
@@ -2758,10 +2758,10 @@ fn test_max_inflight_command_ts_empty() {
 #[rstest]
 fn test_max_inflight_command_ts_single_entry() {
     let latency_model = StaticLatencyModel::new(
-        UnixNanos::from(0),
-        UnixNanos::from(50),
-        UnixNanos::from(0),
-        UnixNanos::from(0),
+        DurationNanos::default(),
+        DurationNanos::new(50),
+        DurationNanos::default(),
+        DurationNanos::default(),
     );
     let exchange = get_exchange(
         Venue::new("BINANCE"),
@@ -2784,10 +2784,10 @@ fn test_max_inflight_command_ts_single_entry() {
 #[rstest]
 fn test_max_inflight_command_ts_returns_global_max_across_entries() {
     let latency_model = StaticLatencyModel::new(
-        UnixNanos::from(0),
-        UnixNanos::from(0),
-        UnixNanos::from(0),
-        UnixNanos::from(0),
+        DurationNanos::default(),
+        DurationNanos::default(),
+        DurationNanos::default(),
+        DurationNanos::default(),
     );
     let exchange = get_exchange(
         Venue::new("BINANCE"),
@@ -2815,10 +2815,10 @@ fn test_max_inflight_command_ts_returns_global_max_across_entries() {
 #[rstest]
 fn test_max_inflight_command_ts_ignores_counter_for_same_timestamp() {
     let latency_model = StaticLatencyModel::new(
-        UnixNanos::from(0),
-        UnixNanos::from(0),
-        UnixNanos::from(0),
-        UnixNanos::from(0),
+        DurationNanos::default(),
+        DurationNanos::default(),
+        DurationNanos::default(),
+        DurationNanos::default(),
     );
     let exchange = get_exchange(
         Venue::new("BINANCE"),
@@ -3278,10 +3278,10 @@ fn test_process_with_latency_model(crypto_perpetual_ethusdt: CryptoPerpetual) {
     // StaticLatencyModel adds base_latency to each operation latency
     // base=100, insert=200 -> effective insert latency = 300
     let latency_model = StaticLatencyModel::new(
-        UnixNanos::from(100),
-        UnixNanos::from(200),
-        UnixNanos::from(300),
-        UnixNanos::from(100),
+        DurationNanos::new(100),
+        DurationNanos::new(200),
+        DurationNanos::new(300),
+        DurationNanos::new(100),
     );
     let exchange = get_exchange(
         Venue::new("BINANCE"),
@@ -4343,10 +4343,26 @@ fn test_fx_rollover_retries_after_quote_arrives(audusd_sim: CurrencyPair) {
 
     add_fx_quote(&exchange, &cache, instrument.id(), "0.99990", "1.00010");
     assert_eq!(
-        process_rollover(&module, &exchange, &cache, &instruments, rollover + 1).len(),
+        process_rollover(
+            &module,
+            &exchange,
+            &cache,
+            &instruments,
+            rollover + DurationNanos::new(1),
+        )
+        .len(),
         1
     );
-    assert!(process_rollover(&module, &exchange, &cache, &instruments, rollover + 2).is_empty());
+    assert!(
+        process_rollover(
+            &module,
+            &exchange,
+            &cache,
+            &instruments,
+            rollover + DurationNanos::new(2),
+        )
+        .is_empty()
+    );
 }
 
 #[rstest]
@@ -4424,7 +4440,7 @@ fn test_fx_rollover_catches_up_each_economic_day_in_order(audusd_sim: CurrencyPa
             &exchange,
             &cache,
             &instruments,
-            rollover_timestamp(2024, 2, 2) + 1,
+            rollover_timestamp(2024, 2, 2) + DurationNanos::new(1),
         )
         .is_empty()
     );
@@ -4471,7 +4487,16 @@ fn test_fx_rollover_friday_to_monday_gap_books_monday_once(audusd_sim: CurrencyP
         process_rollover(&module, &exchange, &cache, &instruments, monday),
         vec![Money::from("-2.05 USD")]
     );
-    assert!(process_rollover(&module, &exchange, &cache, &instruments, monday + 1).is_empty());
+    assert!(
+        process_rollover(
+            &module,
+            &exchange,
+            &cache,
+            &instruments,
+            monday + DurationNanos::new(1),
+        )
+        .is_empty()
+    );
 }
 
 #[rstest]
@@ -4730,7 +4755,13 @@ fn test_unrepresentable_money_warns_once_without_error_across_recalculation(
     assert!(process_rollover(&module, &exchange, &cache, &instruments, rollover).is_empty());
     add_fx_quote(&exchange, &cache, transient.id(), "1.19990", "1.20010");
     assert_eq!(
-        process_rollover(&module, &exchange, &cache, &instruments, rollover + 1),
+        process_rollover(
+            &module,
+            &exchange,
+            &cache,
+            &instruments,
+            rollover + DurationNanos::new(1),
+        ),
         vec![Money::from("-9.86 USD")]
     );
 
@@ -4796,7 +4827,14 @@ fn test_fx_rollover_is_atomic_across_instruments(
 
     add_fx_quote(&exchange, &cache, second.id(), "1.19990", "1.20010");
     assert_eq!(
-        process_rollover(&module, &exchange, &cache, &instruments, rollover + 1).len(),
+        process_rollover(
+            &module,
+            &exchange,
+            &cache,
+            &instruments,
+            rollover + DurationNanos::new(1),
+        )
+        .len(),
         2
     );
 }

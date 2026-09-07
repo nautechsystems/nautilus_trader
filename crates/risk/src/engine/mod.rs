@@ -72,10 +72,10 @@ fn cash_or_wallet_account(account: &AccountAny) -> Option<&dyn Account> {
 }
 
 fn format_rate_limit(rate_limit: &RateLimit) -> String {
-    let interval_ns = rate_limit.interval_ns();
+    let interval = rate_limit.interval_ns();
     let limit = rate_limit.limit();
-    let total_secs = interval_ns / 1_000_000_000;
-    let remainder_ns = interval_ns % 1_000_000_000;
+    let total_secs = interval.as_secs();
+    let remainder_ns = interval.subsec_nanos();
     let hours = total_secs / 3600;
     let minutes = (total_secs % 3600) / 60;
     let seconds = total_secs % 60;

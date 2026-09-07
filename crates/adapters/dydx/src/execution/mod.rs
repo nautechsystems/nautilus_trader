@@ -61,7 +61,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    Params, UUID4, UnixNanos,
+    DurationNanos, Params, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -2882,8 +2882,7 @@ impl ExecutionClient for DydxExecutionClient {
 
         if let Some(mins) = lookback_mins {
             let now_ns = self.clock.get_time_ns();
-            let cutoff_ns = now_ns.as_u64().saturating_sub(mins * 60 * 1_000_000_000);
-            let cutoff = UnixNanos::from(cutoff_ns);
+            let cutoff = now_ns.saturating_sub(DurationNanos::try_from_mins(mins)?);
 
             let orders_before = order_reports.len();
             order_reports.retain(|r| r.ts_last >= cutoff);

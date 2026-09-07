@@ -47,8 +47,8 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, Params, UnixNanos,
-    datetime::{NANOSECONDS_IN_DAY, datetime_to_unix_nanos},
+    AtomicMap, DurationNanos, Params, UnixNanos,
+    datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::task::TaskGroup;
@@ -1311,10 +1311,10 @@ fn resolve_request_time_range(
     }
 
     if start == end {
-        if end.as_u64() > 0 {
-            start = UnixNanos::from(end.as_u64() - 1);
+        if end.is_zero() {
+            end += DurationNanos::new(1);
         } else {
-            end = UnixNanos::from(1);
+            start -= DurationNanos::new(1);
         }
     }
 
@@ -1322,7 +1322,7 @@ fn resolve_request_time_range(
 }
 
 fn start_of_utc_day(timestamp: UnixNanos) -> UnixNanos {
-    UnixNanos::from((timestamp.as_u64() / NANOSECONDS_IN_DAY) * NANOSECONDS_IN_DAY)
+    timestamp.floor(DurationNanos::from_days(1))
 }
 
 async fn seed_price_precision_if_needed(
@@ -1648,7 +1648,7 @@ mod tests {
 
         let (start, resolved_end) = resolve_request_time_range(Some(end), Some(end));
 
-        assert_eq!(start, UnixNanos::from(end.as_u64() - 1));
+        assert_eq!(start, end - DurationNanos::new(1));
         assert_eq!(resolved_end, Some(end));
     }
 

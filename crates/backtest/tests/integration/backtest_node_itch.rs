@@ -30,6 +30,7 @@ use nautilus_backtest::{
     node::BacktestNode,
 };
 use nautilus_common::{actor::DataActor, throttler::RateLimit};
+use nautilus_core::DurationNanos;
 use nautilus_model::{
     data::QuoteTick,
     enums::{AccountType, BookType, OmsType, OrderSide},
@@ -241,7 +242,7 @@ fn test_itch_node_grid_market_maker() {
 
     // Use an unrestricted throttle so the grid MM can place all orders without
     // hitting the default 100/sec limit on high-frequency ITCH data.
-    let unlimited = RateLimit::new(1_000_000, 1_000_000_000);
+    let unlimited = RateLimit::new(1_000_000, DurationNanos::from_secs(1));
     let engine_config = BacktestEngineConfig {
         risk_engine: Some(RiskEngineConfig {
             max_order_submit: unlimited,
@@ -299,7 +300,7 @@ fn test_itch_node_streaming_grid_market_maker() {
 
     // Use an unrestricted throttle so the grid MM can place all orders without
     // hitting the default 100/sec limit on high-frequency ITCH data.
-    let unlimited = RateLimit::new(1_000_000, 1_000_000_000);
+    let unlimited = RateLimit::new(1_000_000, DurationNanos::from_secs(1));
     let engine_config = BacktestEngineConfig {
         risk_engine: Some(RiskEngineConfig {
             max_order_submit: unlimited,

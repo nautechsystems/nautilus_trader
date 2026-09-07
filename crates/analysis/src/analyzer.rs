@@ -17,7 +17,7 @@ use std::{collections::BTreeMap, fmt::Debug, sync::Arc};
 
 use ahash::AHashMap;
 use indexmap::{IndexMap, IndexSet};
-use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_DAY};
+use nautilus_core::{DurationNanos, UUID4, UnixNanos};
 use nautilus_model::{
     accounts::{Account, AccountAny},
     events::PortfolioSnapshot,
@@ -405,9 +405,7 @@ impl PortfolioAnalyzer {
                 currency = Some(balance.currency);
             }
 
-            let day_start = UnixNanos::from(
-                event.ts_event.as_u64() - (event.ts_event.as_u64() % NANOSECONDS_IN_DAY),
-            );
+            let day_start = event.ts_event.floor(DurationNanos::from_days(1));
             daily_balances.insert(day_start, balance.total.as_f64());
         }
 
@@ -497,20 +495,19 @@ impl PortfolioAnalyzer {
                 break;
             }
 
-            current_day += UnixNanos::from(NANOSECONDS_IN_DAY);
+            current_day += DurationNanos::from_days(1);
         }
 
         Self::calculate_daily_returns(&daily_equity)
     }
 
     fn snapshot_day_start(ts_event: UnixNanos, is_registration: bool) -> UnixNanos {
-        let timestamp = ts_event.as_u64();
-        let offset = timestamp % NANOSECONDS_IN_DAY;
-        let day_start = timestamp - offset;
-        if is_registration || (offset == 0 && timestamp > 0) {
-            UnixNanos::from(day_start.saturating_sub(NANOSECONDS_IN_DAY))
+        let day = DurationNanos::from_days(1);
+        let day_start = ts_event.floor(day);
+        if is_registration || (ts_event == day_start && !ts_event.is_zero()) {
+            day_start.saturating_sub(day)
         } else {
-            UnixNanos::from(day_start)
+            day_start
         }
     }
 
@@ -547,7 +544,7 @@ impl PortfolioAnalyzer {
                 break;
             }
 
-            current_day += UnixNanos::from(NANOSECONDS_IN_DAY);
+            current_day += DurationNanos::from_days(1);
         }
 
         (!returns.is_empty()).then_some(returns)
@@ -1000,7 +997,7 @@ mod tests {
 
     use ahash::{AHashMap, AHashSet};
     use indexmap::IndexMap;
-    use nautilus_core::{UUID4, approx_eq};
+    use nautilus_core::{DurationNanos, UUID4, approx_eq, datetime::NANOSECONDS_IN_DAY};
     use nautilus_model::{
         accounts::{AccountAny, CashAccount},
         enums::{AccountType, InstrumentClass, LiquiditySide, OrderSide, PositionSide},
@@ -1127,7 +1124,7 @@ mod tests {
             ts_opened: UnixNanos::default(),
             ts_last: UnixNanos::default(),
             ts_closed: Some(UnixNanos::from(1_706_659_200_000_000_000)),
-            duration_ns: 2,
+            duration_ns: DurationNanos::new(2),
             avg_px_open: 0.0,
             avg_px_close: None,
             realized_return,

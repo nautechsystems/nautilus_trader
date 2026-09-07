@@ -34,7 +34,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    Params, UnixNanos,
+    DurationNanos, Params, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -1973,10 +1973,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         // Apply lookback filter to fills only (positions are current state,
         // and open orders must always be included for correct reconciliation)
         if let Some(mins) = lookback_mins {
-            let cutoff_ns = ts_init
-                .as_u64()
-                .saturating_sub(mins.saturating_mul(60).saturating_mul(1_000_000_000));
-            let cutoff = UnixNanos::from(cutoff_ns);
+            let cutoff = ts_init.saturating_sub(DurationNanos::try_from_mins(mins)?);
 
             fill_reports.retain(|r| r.ts_event >= cutoff);
         }

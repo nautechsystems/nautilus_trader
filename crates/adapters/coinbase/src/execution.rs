@@ -38,7 +38,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    Params, UnixNanos,
+    DurationNanos, Params, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -819,10 +819,10 @@ impl ExecutionClient for CoinbaseExecutionClient {
         log::info!("Generating ExecutionMassStatus (lookback_mins={lookback_mins:?})");
 
         let ts_now = self.clock.get_time_ns();
-        let start = lookback_mins.map(|mins| {
-            let lookback_ns = mins * 60 * 1_000_000_000;
-            UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns))
-        });
+        let start = lookback_mins
+            .map(DurationNanos::try_from_mins)
+            .transpose()?
+            .map(|lookback| ts_now.saturating_sub(lookback));
 
         let order_cmd = GenerateOrderStatusReportsBuilder::default()
             .ts_init(ts_now)

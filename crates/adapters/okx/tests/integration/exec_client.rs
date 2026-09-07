@@ -53,7 +53,7 @@ use nautilus_common::{
     },
     testing::wait_until_async,
 };
-use nautilus_core::{AtomicMap, UUID4, UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_core::{AtomicMap, DurationNanos, UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_live::{
     ExecutionClientCore, ExecutionEventEmitter, execution::context::OrderIdentity,
 };
@@ -4663,12 +4663,9 @@ async fn test_generate_mass_status_sets_report_window(
         .await
         .unwrap()
         .unwrap();
-    let expected_start = UnixNanos::from(
-        mass_status
-            .ts_init
-            .as_u64()
-            .saturating_sub(expected_mins * 60 * 1_000_000_000),
-    );
+    let expected_start = mass_status
+        .ts_init
+        .saturating_sub(DurationNanos::from_mins(expected_mins));
     let recent_fill_queries = state.regular_fill_queries.lock().await.clone();
     let extended_fill_queries = state.regular_fill_history_queries.lock().await.clone();
     let expected_begin = (expected_start.as_u64() / 1_000_000).to_string();

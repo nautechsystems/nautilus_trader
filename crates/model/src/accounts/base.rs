@@ -21,12 +21,11 @@
 use ahash::AHashMap;
 use indexmap::IndexMap;
 use nautilus_core::{
-    UnixNanos,
+    DurationNanos, UnixNanos,
     correctness::{
         CorrectnessError, CorrectnessResult, FAILED, check_equal, check_predicate_false,
         check_predicate_true,
     },
-    datetime::secs_to_nanos,
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -269,7 +268,7 @@ impl BaseAccount {
     ///
     /// Panics if the purging implementation is changed and all events are purged.
     pub fn base_purge_account_events(&mut self, ts_now: UnixNanos, lookback_secs: u64) {
-        let Ok(lookback_ns) = secs_to_nanos(lookback_secs as f64) else {
+        let Ok(lookback_ns) = DurationNanos::try_from_secs(lookback_secs) else {
             log::warn!(
                 "Cannot purge account events: lookback_secs {lookback_secs} is not representable in `u64` nanoseconds"
             );

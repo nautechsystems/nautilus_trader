@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{Params, UnixNanos};
+use nautilus_core::{DurationNanos, Params, UnixNanos};
 use nautilus_model::{
     identifiers::{InstrumentId, Symbol},
     instruments::{CryptoFuture, CryptoOption, CryptoPerpetual, CurrencyPair, InstrumentAny},
@@ -283,7 +283,7 @@ pub fn is_available(
     info: &TardisInstrumentInfo,
     start: Option<UnixNanos>,
     end: Option<UnixNanos>,
-    available_offset: Option<UnixNanos>,
+    available_offset: Option<DurationNanos>,
     effective: Option<UnixNanos>,
 ) -> bool {
     let available_since =
@@ -356,7 +356,7 @@ mod tests {
         // Convert all u64 values to UnixNanos
         let start_nanos = start.map(UnixNanos::from);
         let end_nanos = end.map(UnixNanos::from);
-        let offset_nanos = available_offset.map(UnixNanos::from);
+        let offset_nanos = available_offset.map(DurationNanos::new);
         let effective_nanos = effective.map(UnixNanos::from);
 
         // Run the test
@@ -427,7 +427,7 @@ mod tests {
             &info,
             None,
             None,
-            Some(UnixNanos::from(10)),
+            Some(DurationNanos::new(10)),
             Some(UnixNanos::from(100))
         ));
 
@@ -436,14 +436,14 @@ mod tests {
             &info,
             None,
             None,
-            Some(UnixNanos::from(20)),
+            Some(DurationNanos::new(20)),
             Some(UnixNanos::from(119))
         ));
         assert!(is_available(
             &info,
             None,
             None,
-            Some(UnixNanos::from(20)),
+            Some(DurationNanos::new(20)),
             Some(UnixNanos::from(121))
         ));
     }
@@ -471,17 +471,15 @@ mod tests {
             Some(mid_date)
         ));
 
-        // Test with offset (1 day = 86400000 ms)
-        let offset = UnixNanos::from(86400000); // 1 day
+        let offset = DurationNanos::new(86_400_000);
 
-        // Now the instrument is available 1 day later
-        let day_after_start = UnixNanos::from(1682294400000 + 86400000);
+        let offset_boundary = UnixNanos::from(1_682_294_400_000 + 86_400_000);
         assert!(!is_available(
             &info,
             None,
             None,
             Some(offset),
-            Some(day_after_start)
+            Some(offset_boundary)
         ));
 
         // Effective date at exactly the start should fail
@@ -586,7 +584,7 @@ mod tests {
         let info = create_test_instrument(100, Some(200));
 
         // Adding offset of 50 to available_since (100) makes it 150
-        let offset = UnixNanos::from(50);
+        let offset = DurationNanos::new(50);
         assert!(!is_available(
             &info,
             None,
@@ -603,7 +601,7 @@ mod tests {
         ));
 
         // Test with offset equal to zero (no effect)
-        let zero_offset = UnixNanos::from(0);
+        let zero_offset = DurationNanos::ZERO;
         assert!(!is_available(
             &info,
             None,

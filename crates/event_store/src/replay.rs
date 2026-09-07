@@ -33,7 +33,7 @@ use nautilus_common::{
         execution::SubmitOrderList,
     },
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{DurationNanos, UUID4, UnixNanos};
 use nautilus_model::{
     data::{Bar, QuoteTick, TradeTick},
     enums::{OmsType, OrderSide, PositionSide},
@@ -1849,7 +1849,7 @@ fn apply_position_opened(
     position.ts_opened = opened.ts_event;
     position.ts_last = opened.ts_event;
     position.ts_closed = None;
-    position.duration_ns = 0;
+    position.duration_ns = DurationNanos::default();
     position.avg_px_open = opened.avg_px_open;
     position.avg_px_close = None;
     position.realized_return = 0.0;

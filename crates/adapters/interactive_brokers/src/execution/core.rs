@@ -67,7 +67,7 @@ use nautilus_common::{
     msgbus::{send_account_state, switchboard::MessagingSwitchboard},
 };
 use nautilus_core::{
-    Params, UUID4, UnixNanos,
+    DurationNanos, Params, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -1292,10 +1292,10 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         let ts_now = get_atomic_clock_realtime().get_time_ns();
-        let start = lookback_mins.map(|mins| {
-            let lookback_ns = mins * 60 * 1_000_000_000;
-            UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns))
-        });
+        let start = lookback_mins
+            .map(DurationNanos::try_from_mins)
+            .transpose()?
+            .map(|lookback| ts_now.saturating_sub(lookback));
 
         let order_cmd = GenerateOrderStatusReportsBuilder::default()
             .ts_init(ts_now)

@@ -22,7 +22,7 @@ use nautilus_common::{
     logging::logger::LoggerConfig,
     msgbus::MessageBusConfig,
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{DurationNanos, UUID4, UnixNanos};
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::engine::config::ExecutionEngineConfig;
 use nautilus_model::identifiers::TraderId;
@@ -251,12 +251,12 @@ pub enum RotationConfig {
     /// Rotate based on a time interval.
     Interval {
         /// Interval in nanoseconds.
-        interval_ns: u64,
+        interval_ns: DurationNanos,
     },
     /// Rotate based on scheduled dates.
     ScheduledDates {
         /// Interval in nanoseconds.
-        interval_ns: u64,
+        interval_ns: DurationNanos,
         /// Start of the scheduled rotation period.
         schedule_ns: UnixNanos,
     },

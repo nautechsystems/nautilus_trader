@@ -33,7 +33,7 @@ use nautilus_common::{
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
-    UnixNanos,
+    DurationNanos, UnixNanos,
     correctness::{self, FAILED},
     datetime::{
         add_n_months, add_n_months_nanos, add_n_years, add_n_years_nanos, subtract_n_months_nanos,
@@ -1487,7 +1487,7 @@ pub struct TimeBarAggregator {
     is_left_open: bool,
     stored_open_ns: UnixNanos,
     timer_name: String,
-    interval_ns: UnixNanos,
+    interval_ns: DurationNanos,
     next_close_ns: UnixNanos,
     first_close_ns: UnixNanos,
     bar_build_delay: u64,
@@ -1616,7 +1616,7 @@ impl TimeBarAggregator {
                 .borrow_mut()
                 .set_timer_ns(
                     &self.timer_name,
-                    self.interval_ns.as_u64(),
+                    self.interval_ns,
                     Some(start_time_ns),
                     None,
                     Some(callback),
@@ -1628,12 +1628,11 @@ impl TimeBarAggregator {
             if fire_immediately {
                 self.next_close_ns = start_time_ns;
             } else {
-                let interval_duration =
-                    SignedDuration::from_nanos_i128(i128::from(self.interval_ns.as_u64()));
+                let interval_duration = SignedDuration::from(self.interval_ns);
                 self.next_close_ns = UnixNanos::from(start_time + interval_duration);
             }
 
-            self.stored_open_ns = self.next_close_ns.saturating_sub_ns(self.interval_ns);
+            self.stored_open_ns = self.next_close_ns.saturating_sub(self.interval_ns);
         } else {
             // The monthly/yearly alert time is defined iteratively at each alert time as there is no regular interval
             let alert_time = if fire_immediately {
@@ -2173,10 +2172,9 @@ impl SpreadQuoteAggregator {
         }));
 
         let now_ns = self.clock.borrow().timestamp_ns();
-        let interval_ns = interval_secs * 1_000_000_000;
-        let start_ns = (now_ns.as_u64() / interval_ns) * interval_ns;
-        let start_ns = start_ns + self.quote_build_delay * 1_000; // quote_build_delay in microseconds
-        let start_time = UnixNanos::from(start_ns);
+        let interval_ns = DurationNanos::from_secs(interval_secs);
+        let start_time =
+            now_ns.floor(interval_ns) + DurationNanos::from_micros(self.quote_build_delay);
         let fire_immediately = now_ns == start_time;
         self.clock
             .borrow_mut()
@@ -2419,8 +2417,9 @@ impl SpreadQuoteAggregator {
                 agg.borrow_mut().clear_vega_pricing_timeout();
             }
         }));
-        let alert_time =
-            self.clock.borrow().timestamp_ns() + self.vega_pricing_timeout_seconds * 1_000_000_000;
+        let timeout = DurationNanos::try_from_secs(self.vega_pricing_timeout_seconds)
+            .expect("vega pricing timeout exceeds the nanosecond range");
+        let alert_time = self.clock.borrow().timestamp_ns() + timeout;
 
         self.clock
             .borrow_mut()
@@ -4776,7 +4775,7 @@ mod tests {
 
         assert_eq!(
             clock.borrow().next_time_ns(&timer_name),
-            interval_ns.checked_add(1_u64)
+            UnixNanos::from(1).checked_add(interval_ns)
         );
     }
 
@@ -7790,15 +7789,15 @@ mod property_tests {
             let instrument = InstrumentAny::Equity(equity_aapl());
             let bar_spec = BarSpecification::new(step, aggregation, PriceType::Last);
             let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
-            let interval_ns = get_bar_interval_ns(&bar_type).as_u64();
+            let interval_ns = get_bar_interval_ns(&bar_type);
 
             // Anchor the clock one full interval past epoch plus a half-interval offset
             // so start_time lands mid-interval and fire_immediately is false.
-            let now_ns = interval_ns + interval_ns / 2;
+            let now_ns = UnixNanos::default() + interval_ns + interval_ns / 2;
 
             let (handler, record) = recording_handler();
             let clock = Rc::new(RefCell::new(TestClock::new()));
-            clock.borrow_mut().set_time(UnixNanos::from(now_ns));
+            clock.borrow_mut().set_time(now_ns);
             let event_name = Ustr::from(&format!("TIME_BAR_{bar_type}"));
 
             let aggregator = TimeBarAggregator::new(
@@ -7824,28 +7823,28 @@ mod property_tests {
             rc.borrow_mut().update(
                 Price::from("100.00"),
                 Quantity::from(1),
-                UnixNanos::from(now_ns),
+                now_ns,
             );
-            let first_close = 2 * interval_ns;
+            let first_close = UnixNanos::default() + interval_ns * 2;
             rc.borrow_mut().build_bar(&TimeEvent::new(
                 event_name,
                 UUID4::new(),
-                UnixNanos::from(first_close),
-                UnixNanos::from(first_close),
+                first_close,
+                first_close,
             ));
 
             // Second tick + later close; emits unconditionally.
             rc.borrow_mut().update(
                 Price::from("101.00"),
                 Quantity::from(1),
-                UnixNanos::from(first_close + interval_ns / 2),
+                first_close + interval_ns / 2,
             );
             let second_close = first_close + interval_ns;
             rc.borrow_mut().build_bar(&TimeEvent::new(
                 event_name,
                 UUID4::new(),
-                UnixNanos::from(second_close),
-                UnixNanos::from(second_close),
+                second_close,
+                second_close,
             ));
 
             let bars = handler.lock();
@@ -7868,14 +7867,14 @@ mod property_tests {
             let instrument = InstrumentAny::Equity(equity_aapl());
             let bar_spec = BarSpecification::new(step, aggregation, PriceType::Last);
             let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
-            let interval_ns = get_bar_interval_ns(&bar_type).as_u64();
+            let interval_ns = get_bar_interval_ns(&bar_type);
 
             // Clock exactly on a bar boundary: fire_immediately=true, so the first
             // bar that reaches build_and_send must emit regardless of skip_first.
-            let now_ns = interval_ns;
+            let now_ns = UnixNanos::default() + interval_ns;
             let (handler, record) = recording_handler();
             let clock = Rc::new(RefCell::new(TestClock::new()));
-            clock.borrow_mut().set_time(UnixNanos::from(now_ns));
+            clock.borrow_mut().set_time(now_ns);
             let event_name = Ustr::from(&format!("TIME_BAR_{bar_type}"));
 
             let aggregator = TimeBarAggregator::new(
@@ -7899,14 +7898,14 @@ mod property_tests {
             rc.borrow_mut().update(
                 Price::from("100.00"),
                 Quantity::from(1),
-                UnixNanos::from(now_ns),
+                now_ns,
             );
             let next_close = now_ns + interval_ns;
             rc.borrow_mut().build_bar(&TimeEvent::new(
                 event_name,
                 UUID4::new(),
-                UnixNanos::from(next_close),
-                UnixNanos::from(next_close),
+                next_close,
+                next_close,
             ));
 
             let bars = handler.lock();

@@ -33,7 +33,7 @@ use nautilus_common::{
     msgbus::{self, MStr, Topic, TypedHandler, switchboard},
     timer::{TimeEvent, TimeEventCallback},
 };
-use nautilus_core::{UUID4, correctness::FAILED, datetime::millis_to_nanos_unchecked};
+use nautilus_core::{DurationNanos, UUID4, correctness::FAILED};
 use nautilus_model::{
     data::{QuoteTick, option_chain::OptionGreeks},
     enums::OptionKind,
@@ -293,12 +293,15 @@ impl OptionChainManager {
         interval_ms: u64,
         clock: &Rc<RefCell<dyn Clock>>,
     ) -> Ustr {
-        let interval_ns = millis_to_nanos_unchecked(interval_ms as f64);
+        let interval_ns = DurationNanos::from_millis(interval_ms);
         let publisher = OptionChainSlicePublisher::new(manager_rc);
         let timer_name = Ustr::from(&format!("OptionChain|{series_id}|{interval_ms}"));
 
-        let now_ns = clock.borrow().timestamp_ns().as_u64();
-        let start_time_ns = now_ns - (now_ns % interval_ns) + interval_ns;
+        let now_ns = clock.borrow().timestamp_ns();
+        let start_time_ns = now_ns
+            .floor(interval_ns)
+            .checked_add(interval_ns)
+            .expect("Option chain timer start exceeds UnixNanos range");
 
         let callback_fn: Rc<dyn Fn(TimeEvent)> = Rc::new(move |event| publisher.publish(&event));
         let callback = TimeEventCallback::from(callback_fn);
@@ -308,7 +311,7 @@ impl OptionChainManager {
             .set_timer_ns(
                 &timer_name,
                 interval_ns,
-                Some(start_time_ns.into()),
+                Some(start_time_ns),
                 None,
                 Some(callback),
                 None,

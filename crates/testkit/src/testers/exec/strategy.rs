@@ -22,7 +22,7 @@ use nautilus_common::{
     enums::LogColor,
     log_info, log_warn,
 };
-use nautilus_core::UnixNanos;
+use nautilus_core::{DurationNanos, UnixNanos};
 use nautilus_model::{
     data::{Bar, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick},
     enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce},
@@ -457,8 +457,8 @@ impl ExecTester {
 
     fn expire_time_from_delta(&self, mins: u64) -> UnixNanos {
         let current_ns = DataActorNative::core(&self.core).timestamp_ns();
-        let delta_ns = mins.saturating_mul(60).saturating_mul(1_000_000_000);
-        UnixNanos::from(current_ns.as_u64() + delta_ns)
+        let delta = DurationNanos::try_from_mins(mins).unwrap_or(DurationNanos::MAX);
+        current_ns.saturating_add(delta)
     }
 
     fn resolve_time_in_force(

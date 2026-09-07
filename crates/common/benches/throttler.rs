@@ -22,6 +22,7 @@ use nautilus_common::{
     clock::TestClock,
     throttler::{RateLimit, Throttler},
 };
+use nautilus_core::DurationNanos;
 use ustr::Ustr;
 
 const INTERVAL_NS: u64 = 1_000_000_000;
@@ -49,7 +50,7 @@ fn make_throttler_with_clock(
     let output_drop = (!buffered).then_some(consume_message as fn(u64));
 
     Throttler::new(
-        RateLimit::new(limit, INTERVAL_NS),
+        RateLimit::new(limit, DurationNanos::new(INTERVAL_NS)),
         clock,
         "throttler_bench",
         consume_message as fn(u64),

@@ -40,7 +40,7 @@ use nautilus_common::{
     },
     timer::{TimeEvent, TimeEventCallback},
 };
-use nautilus_core::{Params, UnixNanos, WeakCell, datetime::NANOSECONDS_IN_SECOND};
+use nautilus_core::{DurationNanos, Params, UnixNanos, WeakCell};
 use nautilus_execution::{
     client::core::ExecutionClientCore,
     matching_engine::OrderMatchingEngine,
@@ -61,7 +61,7 @@ use nautilus_model::{
 use crate::config::SandboxExecutionClientConfig;
 
 // Bounds retained state for quote-only instruments that expire without event-driven cleanup
-const EXPIRED_ENGINE_SWEEP_INTERVAL_NS: u64 = 60 * NANOSECONDS_IN_SECOND;
+const EXPIRED_ENGINE_SWEEP_INTERVAL: DurationNanos = DurationNanos::from_mins(1);
 
 /// A sandbox execution client for paper trading against live market data.
 ///
@@ -362,7 +362,7 @@ impl SandboxExecutionClient {
 
         if let Err(e) = self.clock.borrow_mut().set_timer_ns(
             &name,
-            EXPIRED_ENGINE_SWEEP_INTERVAL_NS,
+            EXPIRED_ENGINE_SWEEP_INTERVAL,
             None,
             None,
             Some(TimeEventCallback::from(callback)),

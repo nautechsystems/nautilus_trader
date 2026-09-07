@@ -50,7 +50,7 @@ use nautilus_common::{
         switchboard,
     },
 };
-use nautilus_core::{Params, UUID4, UnixNanos};
+use nautilus_core::{DurationNanos, Params, UUID4, UnixNanos};
 use nautilus_execution::{
     engine::ExecutionEngine,
     reconciliation::{
@@ -5767,7 +5767,7 @@ fn test_observe_fill_report_without_client_order_id_uses_cache_fallback() {
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 5,
-        open_check_threshold_ns: 1_000_000_000,
+        open_check_threshold_ns: DurationNanos::from_secs(1),
         max_single_order_queries_per_cycle: 5,
         ..Default::default()
     };
@@ -8885,7 +8885,7 @@ async fn test_closed_reconciliation_orders_skipped_on_restart() {
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 async fn test_cross_zero_unbuildable_open_leg_has_no_side_effects() {
     let config = ExecutionManagerConfig {
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -8977,7 +8977,7 @@ async fn test_cross_zero_unbuildable_open_leg_has_no_side_effects() {
 async fn test_cross_zero_unbuildable_open_leg_retries_without_poisoning_order_id() {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -11544,7 +11544,7 @@ fn test_check_open_order_queries_rotates_after_open_report_response() {
 
     let mut ctx = TestContext::with_config(ExecutionManagerConfig {
         max_single_order_queries_per_cycle: 1,
-        open_check_threshold_ns: 0,
+        open_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     });
     ctx.add_instrument(test_instrument());
@@ -11655,7 +11655,7 @@ async fn test_check_open_order_queries_respects_query_delay() {
 async fn test_check_open_order_queries_defers_with_recent_local_activity() {
     let mut ctx = TestContext::with_config(ExecutionManagerConfig {
         max_single_order_queries_per_cycle: 5,
-        open_check_threshold_ns: 5_000_000_000,
+        open_check_threshold_ns: DurationNanos::from_secs(5),
         ..Default::default()
     });
     ctx.add_instrument(test_instrument());
@@ -11787,7 +11787,7 @@ async fn test_check_open_orders_defers_with_recent_local_activity(#[case] has_cl
     // Test that reconciliation is deferred when there's recent local activity
     // within the threshold, to avoid race conditions with in-flight fills.
     let config = ExecutionManagerConfig {
-        open_check_threshold_ns: 200_000_000, // 200ms threshold
+        open_check_threshold_ns: DurationNanos::from_millis(200), // 200ms threshold
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -11834,7 +11834,7 @@ async fn test_check_open_orders_proceeds_after_threshold_exceeded() {
     // Test that reconciliation proceeds when the local activity is older than
     // the configured threshold.
     let config = ExecutionManagerConfig {
-        open_check_threshold_ns: 200_000_000, // 200ms threshold
+        open_check_threshold_ns: DurationNanos::from_millis(200), // 200ms threshold
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -11896,7 +11896,7 @@ async fn test_check_open_orders_proceeds_without_local_activity(#[case] has_clie
     // Test that reconciliation proceeds normally when there's no recorded
     // local activity for the order.
     let config = ExecutionManagerConfig {
-        open_check_threshold_ns: 200_000_000, // 200ms threshold
+        open_check_threshold_ns: DurationNanos::from_millis(200), // 200ms threshold
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -11957,7 +11957,7 @@ async fn test_terminal_reconciliation_and_stream_fill_apply_once(
     let mut ctx = TestContext::with_config(ExecutionManagerConfig {
         open_check_open_only: false,
         open_check_missing_retries: 1,
-        open_check_threshold_ns: 0,
+        open_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     });
     let instrument = test_instrument();
@@ -12125,7 +12125,7 @@ async fn test_terminal_reconciliation_defers_unexplained_fill_gap(
     let mut ctx = TestContext::with_config(ExecutionManagerConfig {
         open_check_open_only: false,
         open_check_missing_retries: 1,
-        open_check_threshold_ns: 0,
+        open_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     });
     ctx.add_instrument(test_instrument());
@@ -12494,7 +12494,7 @@ async fn test_check_open_orders_submitted_missing_at_venue_generates_rejected() 
     // A SUBMITTED order with no venue_order_id that the venue doesn't know
     // about should eventually be rejected after retries are exhausted.
     let config = ExecutionManagerConfig {
-        open_check_threshold_ns: 0,
+        open_check_threshold_ns: DurationNanos::ZERO,
         open_check_missing_retries: 1,
         open_check_open_only: false,
         ..Default::default()
@@ -12532,7 +12532,7 @@ async fn test_check_open_orders_submitted_missing_at_venue_generates_rejected() 
 #[tokio::test]
 async fn test_check_open_orders_targeted_query_prevents_false_rejection() {
     let config = ExecutionManagerConfig {
-        open_check_threshold_ns: 0,
+        open_check_threshold_ns: DurationNanos::ZERO,
         open_check_missing_retries: 1,
         open_check_open_only: false,
         single_order_query_delay_ms: 0,
@@ -12568,7 +12568,7 @@ async fn test_check_open_orders_targeted_query_prevents_false_rejection() {
 #[tokio::test]
 async fn test_check_open_orders_targeted_query_error_defers_resolution() {
     let config = ExecutionManagerConfig {
-        open_check_threshold_ns: 0,
+        open_check_threshold_ns: DurationNanos::ZERO,
         open_check_missing_retries: 1,
         open_check_open_only: false,
         single_order_query_delay_ms: 0,
@@ -12595,7 +12595,7 @@ async fn test_check_open_orders_targeted_query_error_defers_resolution() {
 #[tokio::test]
 async fn test_check_open_orders_mismatched_targeted_report_defers_resolution() {
     let config = ExecutionManagerConfig {
-        open_check_threshold_ns: 0,
+        open_check_threshold_ns: DurationNanos::ZERO,
         open_check_missing_retries: 1,
         open_check_open_only: false,
         single_order_query_delay_ms: 0,
@@ -12631,7 +12631,7 @@ async fn test_check_open_orders_mismatched_targeted_report_defers_resolution() {
 #[tokio::test]
 async fn test_check_open_orders_caps_targeted_queries_per_cycle() {
     let config = ExecutionManagerConfig {
-        open_check_threshold_ns: 0,
+        open_check_threshold_ns: DurationNanos::ZERO,
         open_check_missing_retries: 1,
         open_check_open_only: false,
         max_single_order_queries_per_cycle: 1,
@@ -12671,7 +12671,7 @@ async fn test_check_open_orders_caps_targeted_queries_per_cycle() {
 #[tokio::test]
 async fn test_check_open_orders_queries_oversized_responsible_client_group() {
     let config = ExecutionManagerConfig {
-        open_check_threshold_ns: 0,
+        open_check_threshold_ns: DurationNanos::ZERO,
         open_check_missing_retries: 1,
         open_check_open_only: false,
         max_single_order_queries_per_cycle: 1,
@@ -12734,7 +12734,7 @@ async fn test_check_open_orders_queries_oversized_responsible_client_group() {
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 async fn test_check_open_orders_spaces_targeted_queries() {
     let config = ExecutionManagerConfig {
-        open_check_threshold_ns: 0,
+        open_check_threshold_ns: DurationNanos::ZERO,
         open_check_missing_retries: 1,
         open_check_open_only: false,
         max_single_order_queries_per_cycle: 2,
@@ -12787,7 +12787,7 @@ async fn test_check_open_orders_spaces_targeted_queries() {
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 async fn test_check_open_orders_partially_filled_missing_at_venue_generates_canceled() {
     let config = ExecutionManagerConfig {
-        open_check_threshold_ns: 0,
+        open_check_threshold_ns: DurationNanos::ZERO,
         open_check_missing_retries: 1,
         open_check_open_only: false,
         ..Default::default()
@@ -12831,7 +12831,7 @@ async fn test_check_open_orders_partially_filled_missing_at_venue_generates_canc
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 async fn test_check_open_orders_failed_client_does_not_advance_missing_retries() {
     let config = ExecutionManagerConfig {
-        open_check_threshold_ns: 0,
+        open_check_threshold_ns: DurationNanos::ZERO,
         open_check_missing_retries: 2,
         open_check_open_only: false,
         ..Default::default()
@@ -12892,7 +12892,7 @@ async fn test_check_open_orders_failed_client_does_not_advance_missing_retries()
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 async fn test_check_open_orders_failed_routing_client_does_not_resolve_exchange_order() {
     let config = ExecutionManagerConfig {
-        open_check_threshold_ns: 0,
+        open_check_threshold_ns: DurationNanos::ZERO,
         open_check_missing_retries: 1,
         open_check_open_only: false,
         ..Default::default()
@@ -12931,7 +12931,7 @@ async fn test_check_open_orders_failed_routing_client_does_not_resolve_exchange_
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 async fn test_check_open_orders_failed_client_does_not_suppress_healthy_client_same_venue() {
     let config = ExecutionManagerConfig {
-        open_check_threshold_ns: 0,
+        open_check_threshold_ns: DurationNanos::ZERO,
         open_check_missing_retries: 1,
         open_check_open_only: false,
         ..Default::default()
@@ -12980,7 +12980,7 @@ async fn test_check_open_orders_failed_client_does_not_suppress_healthy_client_s
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 async fn test_check_open_orders_failed_routing_client_fallback_coverage_does_not_advance() {
     let config = ExecutionManagerConfig {
-        open_check_threshold_ns: 0,
+        open_check_threshold_ns: DurationNanos::ZERO,
         open_check_missing_retries: 1,
         open_check_open_only: false,
         ..Default::default()
@@ -13028,7 +13028,7 @@ async fn test_check_open_orders_failed_routing_client_fallback_coverage_does_not
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 async fn test_check_open_orders_positive_report_resets_missing_retry_ladder() {
     let config = ExecutionManagerConfig {
-        open_check_threshold_ns: 0,
+        open_check_threshold_ns: DurationNanos::ZERO,
         open_check_missing_retries: 2,
         open_check_open_only: false,
         ..Default::default()
@@ -13093,7 +13093,7 @@ async fn test_check_open_orders_positive_report_resets_missing_retry_ladder() {
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 async fn test_check_open_orders_venue_id_only_report_resets_missing_retry_ladder() {
     let config = ExecutionManagerConfig {
-        open_check_threshold_ns: 0,
+        open_check_threshold_ns: DurationNanos::ZERO,
         open_check_missing_retries: 2,
         open_check_open_only: false,
         ..Default::default()
@@ -13161,7 +13161,7 @@ async fn test_check_open_orders_venue_id_only_report_resets_missing_retry_ladder
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 async fn test_check_open_orders_order_closed_during_query_leaves_no_retry_state() {
     let config = ExecutionManagerConfig {
-        open_check_threshold_ns: 0,
+        open_check_threshold_ns: DurationNanos::ZERO,
         open_check_missing_retries: 2,
         open_check_open_only: false,
         ..Default::default()
@@ -13206,7 +13206,7 @@ async fn test_check_open_orders_order_closed_during_query_leaves_no_retry_state(
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 async fn test_check_open_orders_deferred_pending_order_keeps_inflight_registration() {
     let config = ExecutionManagerConfig {
-        open_check_threshold_ns: 0,
+        open_check_threshold_ns: DurationNanos::ZERO,
         open_check_missing_retries: 1,
         open_check_open_only: false,
         inflight_threshold_ms: 100,
@@ -13273,7 +13273,7 @@ async fn test_check_open_orders_deferred_pending_order_keeps_inflight_registrati
 #[tokio::test]
 async fn test_check_open_orders_open_only_missing_venue_order_does_not_reject() {
     let config = ExecutionManagerConfig {
-        open_check_threshold_ns: 0,
+        open_check_threshold_ns: DurationNanos::ZERO,
         open_check_missing_retries: 1,
         open_check_open_only: true,
         ..Default::default()
@@ -13311,7 +13311,7 @@ async fn test_check_open_orders_missing_gate_uses_local_activity_not_venue_ts_la
     // A corrupted far-future ts_last must not stall missing-order reconciliation
     // after the local activity grace expires.
     let config = ExecutionManagerConfig {
-        open_check_threshold_ns: 200_000_000,
+        open_check_threshold_ns: DurationNanos::from_millis(200),
         open_check_missing_retries: 1,
         open_check_open_only: false,
         ..Default::default()
@@ -13334,7 +13334,7 @@ async fn test_check_open_orders_missing_gate_uses_local_activity_not_venue_ts_la
         .clock
         .borrow()
         .timestamp_ns()
-        .saturating_add_ns(10_000_000_000_u64);
+        .saturating_add(DurationNanos::from_secs(10));
     let accepted = OrderEventAny::Accepted(
         OrderAcceptedSpec::builder()
             .trader_id(order.trader_id())
@@ -13386,7 +13386,7 @@ async fn test_check_open_orders_defers_for_just_accepted_order() {
     // lagging venue report omits defers until the grace expires, rather than
     // being rejected as missing.
     let config = ExecutionManagerConfig {
-        open_check_threshold_ns: 200_000_000,
+        open_check_threshold_ns: DurationNanos::from_millis(200),
         open_check_missing_retries: 1,
         open_check_open_only: false,
         ..Default::default()
@@ -13437,7 +13437,7 @@ async fn test_check_open_orders_defers_for_just_accepted_order() {
 async fn test_position_check_reconciles_venue_only_nonflat_report() {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -13481,7 +13481,7 @@ async fn test_position_check_respects_disabled_order_generation(
 ) {
     let mut ctx = TestContext::with_config(ExecutionManagerConfig {
         generate_missing_orders: false,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     });
     let instrument = test_instrument();
@@ -13523,7 +13523,7 @@ async fn test_position_check_respects_disabled_order_generation(
 #[tokio::test]
 async fn test_position_check_updates_reported_hedge_position() {
     let config = ExecutionManagerConfig {
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -13577,7 +13577,7 @@ async fn test_position_check_updates_reported_hedge_position() {
 #[tokio::test]
 async fn test_position_check_cross_zero_preserves_both_hedge_position_ids() {
     let config = ExecutionManagerConfig {
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -13649,7 +13649,7 @@ async fn test_position_check_cross_zero_preserves_both_hedge_position_ids() {
 async fn test_position_check_rereads_position_closed_during_request() {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -13703,7 +13703,7 @@ async fn test_position_check_rereads_position_closed_during_request() {
 async fn test_position_check_rereads_position_opened_during_request() {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -13753,7 +13753,7 @@ async fn test_position_check_rereads_position_opened_during_request() {
 async fn test_position_check_uses_current_avg_px_after_request() {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -13807,7 +13807,7 @@ async fn test_position_check_uses_current_avg_px_after_request() {
 async fn test_position_check_preserves_retry_for_uncovered_position_opened_during_request() {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -13886,7 +13886,7 @@ async fn test_position_check_retries_stops_after_max() {
     // (can't generate fills), so retries should increment until exhausted
     let config = ExecutionManagerConfig {
         position_check_retries: 2,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -13920,7 +13920,7 @@ async fn test_position_check_retries_clears_when_discrepancy_resolves() {
     // When reconciliation succeeds (generates events), the retry counter resets
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -13953,7 +13953,7 @@ async fn test_position_check_stale_retries_pruned_when_position_closed() {
     // retry counter should be pruned so future discrepancies aren't suppressed
     let config = ExecutionManagerConfig {
         position_check_retries: 1,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -14237,7 +14237,7 @@ impl ExecutionClient for MockPositionExecutionClient {
 async fn test_position_check_uses_client_tolerance_for_missing_dust_report() {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -14265,7 +14265,7 @@ async fn test_position_check_uses_client_tolerance_for_missing_dust_report() {
 async fn test_position_check_uses_client_tolerance_for_observed_smoke_difference() {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -14310,7 +14310,7 @@ async fn test_position_check_uses_client_tolerance_for_observed_smoke_difference
 async fn test_position_check_uses_routing_client_tolerance() {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -14364,7 +14364,7 @@ async fn test_position_check_uses_routing_client_tolerance() {
 async fn test_mass_status_netting_uses_routing_client_tolerance() {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -14445,7 +14445,7 @@ async fn test_mass_status_netting_uses_routing_client_tolerance() {
 async fn test_routing_clients_on_same_venue_use_account_tolerances_independently() {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -14533,7 +14533,7 @@ async fn test_routing_clients_on_same_venue_use_account_tolerances_independently
 async fn test_position_check_reconciles_at_client_tolerance_boundary() {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -14575,7 +14575,7 @@ async fn test_position_check_reconciles_at_client_tolerance_boundary() {
 async fn test_position_check_failed_client_query_skips_cached_position() {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -14627,7 +14627,7 @@ async fn test_position_check_failed_client_query_skips_cached_position() {
 async fn test_position_check_failed_routing_client_leaves_exchange_retry_untouched() {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -14672,7 +14672,7 @@ async fn test_position_check_failed_routing_client_leaves_exchange_retry_untouch
 async fn test_position_check_failed_client_does_not_suppress_healthy_account_same_venue() {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -14736,7 +14736,7 @@ async fn test_position_check_failed_client_does_not_suppress_healthy_account_sam
 async fn test_position_check_aggregates_hedge_positions_before_comparing_report() {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -14799,7 +14799,7 @@ async fn test_position_check_matching_hedge_reports_is_order_invariant(
 ) {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -14861,7 +14861,7 @@ async fn test_position_check_matching_hedge_reports_is_order_invariant(
 async fn test_position_check_equal_net_with_mismatched_hedge_legs_is_discrepant() {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -14918,7 +14918,7 @@ async fn test_position_check_equal_net_with_mismatched_hedge_legs_is_discrepant(
 async fn test_position_check_venue_only_offset_hedge_legs_are_discrepant() {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -14959,7 +14959,7 @@ async fn test_position_check_venue_only_offset_hedge_legs_are_discrepant() {
 async fn test_position_check_flat_and_nonflat_reports_use_nonflat_report() {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -15011,7 +15011,7 @@ async fn test_position_check_flat_and_nonflat_reports_use_nonflat_report() {
 async fn test_position_check_multi_leg_discrepancy_defers_reconciliation() {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -15068,7 +15068,7 @@ async fn test_position_check_multi_leg_discrepancy_defers_reconciliation() {
 async fn test_position_check_single_leg_gets_fresh_budget_after_multi_leg_exhaustion() {
     let config = ExecutionManagerConfig {
         position_check_retries: 1,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -15156,7 +15156,7 @@ async fn test_position_check_single_leg_gets_fresh_budget_after_multi_leg_exhaus
 async fn test_position_check_multi_leg_reports_remain_isolated_by_account() {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -15256,7 +15256,7 @@ async fn test_position_check_multi_leg_reports_remain_isolated_by_account() {
 async fn test_position_check_single_report_reconciliation_is_unchanged() {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -15325,7 +15325,7 @@ async fn test_position_check_dedup_skips_second_hedge_position_same_instrument()
     // Two hedge positions should only consume one retry per cycle, not two
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -15376,7 +15376,7 @@ async fn test_position_check_flat_venue_report_does_not_protect_stale_counter() 
     // retry counters
     let config = ExecutionManagerConfig {
         position_check_retries: 1,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -15459,7 +15459,7 @@ async fn test_position_check_nonflat_venue_report_protects_counter() {
     // Non-flat venue report should protect the retry counter from pruning
     let config = ExecutionManagerConfig {
         position_check_retries: 1,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -15544,7 +15544,7 @@ async fn test_position_check_retries_independent_per_account() {
     // increment would suppress account B's first attempt entirely.
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -15603,7 +15603,7 @@ async fn test_position_check_activity_throttle_independent_per_account() {
     // throttle reconciliation for another account on the same instrument.
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 60_000_000_000, // 60s
+        position_check_threshold_ns: DurationNanos::from_mins(1), // 60s
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -15662,7 +15662,7 @@ async fn test_position_check_grace_survives_accelerated_trading_clock() {
     // elapsed, and assert the grace still suppresses the discrepancy.
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 60_000_000_000, // 60s of real cover
+        position_check_threshold_ns: DurationNanos::from_mins(1), // 60s of real cover
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -15741,7 +15741,7 @@ async fn test_position_check_grace_survives_accelerated_trading_clock() {
 async fn test_position_check_grace_expires_on_monotonic_clock() {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 60_000_000_000,
+        position_check_threshold_ns: DurationNanos::from_mins(1),
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -15804,7 +15804,7 @@ async fn test_check_positions_consistency_processes_only_discrepant_account() {
     // only B should be reconciled. A must remain untouched.
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);
@@ -15879,7 +15879,7 @@ async fn test_position_check_stale_retries_pruned_per_account() {
     // must be retained.
     let config = ExecutionManagerConfig {
         position_check_retries: 5,
-        position_check_threshold_ns: 0,
+        position_check_threshold_ns: DurationNanos::ZERO,
         ..Default::default()
     };
     let mut ctx = TestContext::with_config(config);

@@ -103,7 +103,7 @@ use nautilus_common::{
 };
 use nautilus_core::{
     UUID4,
-    datetime::{NANOSECONDS_IN_MILLISECOND, mins_to_secs, secs_to_nanos_unchecked},
+    datetime::{mins_to_secs, secs_to_nanos_unchecked},
 };
 #[cfg(test)]
 use nautilus_model::reports::OrderStatusReport;
@@ -1332,16 +1332,20 @@ impl LiveNode {
         }
 
         let exec_config = &self.config.exec_engine;
-        let inflight_interval_ns =
-            u64::from(exec_config.inflight_check_interval_ms) * NANOSECONDS_IN_MILLISECOND;
-        let open_interval_ns = exec_config
+        let inflight_interval =
+            Duration::from_millis(u64::from(exec_config.inflight_check_interval_ms));
+        let open_interval = exec_config
             .open_check_interval_secs
             .filter(|&s| s > 0.0)
-            .map_or(0, secs_to_nanos_unchecked);
-        let position_interval_ns = exec_config
+            .map_or(Duration::ZERO, |secs| {
+                Duration::from_nanos(secs_to_nanos_unchecked(secs))
+            });
+        let position_interval = exec_config
             .position_check_interval_secs
             .filter(|&s| s > 0.0)
-            .map_or(0, secs_to_nanos_unchecked);
+            .map_or(Duration::ZERO, |secs| {
+                Duration::from_nanos(secs_to_nanos_unchecked(secs))
+            });
         let has_clients = !self
             .kernel
             .exec_engine
@@ -1349,26 +1353,23 @@ impl LiveNode {
             .get_all_clients()
             .is_empty();
         let recon_enabled = has_clients
-            && (inflight_interval_ns > 0 || open_interval_ns > 0 || position_interval_ns > 0);
+            && (!inflight_interval.is_zero()
+                || !open_interval.is_zero()
+                || !position_interval.is_zero());
 
         let recon_min_interval = if recon_enabled {
             let mut intervals = Vec::new();
 
-            if exec_config.inflight_check_interval_ms > 0 {
-                intervals.push(Duration::from_millis(u64::from(
-                    exec_config.inflight_check_interval_ms,
-                )));
+            if !inflight_interval.is_zero() {
+                intervals.push(inflight_interval);
             }
 
-            if let Some(s) = exec_config.open_check_interval_secs.filter(|&s| s > 0.0) {
-                intervals.push(Duration::from_secs_f64(s));
+            if !open_interval.is_zero() {
+                intervals.push(open_interval);
             }
 
-            if let Some(s) = exec_config
-                .position_check_interval_secs
-                .filter(|&s| s > 0.0)
-            {
-                intervals.push(Duration::from_secs_f64(s));
+            if !position_interval.is_zero() {
+                intervals.push(position_interval);
             }
 
             intervals
@@ -1662,9 +1663,9 @@ impl LiveNode {
 
                     if recon_enabled && now >= recon_next {
                         let recon_intervals = ReconciliationCheckIntervals {
-                            inflight: Duration::from_nanos(inflight_interval_ns),
-                            open: Duration::from_nanos(open_interval_ns),
-                            position: Duration::from_nanos(position_interval_ns),
+                            inflight: inflight_interval,
+                            open: open_interval,
+                            position: position_interval,
                         };
                         let mut recon_state = ReconciliationCheckState {
                             last_inflight_check: &mut last_inflight_check,

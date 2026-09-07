@@ -18,7 +18,7 @@
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use nautilus_core::{
-    UnixNanos, collections::AtomicMap, correctness::check_valid_string_ascii,
+    DurationNanos, UnixNanos, collections::AtomicMap, correctness::check_valid_string_ascii,
     datetime::NANOSECONDS_IN_SECOND, time::AtomicTime,
 };
 use nautilus_model::{
@@ -1516,14 +1516,10 @@ pub(crate) async fn generate_mass_status(
     load_ids: Option<&[InstrumentId]>,
 ) -> anyhow::Result<Option<ExecutionMassStatus>> {
     let ts_init = ctx.clock.get_time_ns();
-    let lookback_start = lookback_mins.map(|mins| {
-        UnixNanos::from(
-            ts_init.as_u64().saturating_sub(
-                mins.saturating_mul(60)
-                    .saturating_mul(NANOSECONDS_IN_SECOND),
-            ),
-        )
-    });
+    let lookback_start = lookback_mins
+        .map(DurationNanos::try_from_mins)
+        .transpose()?
+        .map(|lookback| ts_init.saturating_sub(lookback));
 
     let orders = http_client
         .get_orders(GetOrdersParams::default())

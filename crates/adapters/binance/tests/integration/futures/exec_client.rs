@@ -70,7 +70,7 @@ use nautilus_common::{
     },
     testing::wait_until_async,
 };
-use nautilus_core::{Params, UnixNanos};
+use nautilus_core::{DurationNanos, Params, UnixNanos};
 use nautilus_execution::engine::ExecutionEngine;
 use nautilus_live::{
     ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome,
@@ -4654,7 +4654,7 @@ async fn test_generate_mass_status_rejects_overflowing_lookback() {
 
     assert_eq!(
         error.to_string(),
-        "lookback minutes exceed the nanosecond range"
+        "duration 307445735 minutes exceeds the nanosecond range"
     );
 }
 
@@ -4698,14 +4698,14 @@ async fn test_generate_fill_reports_enforces_complete_history_boundary(
         .unwrap()
         .unwrap();
     let complete_start = mass_status.lookback_start().unwrap();
-    let one_millisecond = 1_000_000;
+    let one_millisecond = DurationNanos::from_millis(1);
     let (start, end) = match coverage {
         FillRangeCoverage::WhollyBefore => (
-            complete_start.saturating_sub_ns(2 * one_millisecond),
-            complete_start.saturating_sub_ns(one_millisecond),
+            complete_start.saturating_sub(one_millisecond * 2),
+            complete_start.saturating_sub(one_millisecond),
         ),
         FillRangeCoverage::Crossing => (
-            complete_start.saturating_sub_ns(one_millisecond),
+            complete_start.saturating_sub(one_millisecond),
             complete_start + one_millisecond,
         ),
         FillRangeCoverage::ExactBoundary => (complete_start, complete_start + one_millisecond),
@@ -4819,8 +4819,9 @@ async fn test_generate_fill_reports_rejects_stale_command_boundary() {
             .unwrap()
             .as_millis() as u64,
     );
-    let ts_init = ts_now.saturating_sub_ns(24_u64 * 60 * 60 * 1_000_000_000);
-    let start = ts_init.saturating_sub_ns(USER_TRADES_COMPLETE_LOOKBACK_MINS * 60 * 1_000_000_000);
+    let ts_init = ts_now.saturating_sub(DurationNanos::from_days(1));
+    let start =
+        ts_init.saturating_sub(DurationNanos::from_mins(USER_TRADES_COMPLETE_LOOKBACK_MINS));
     let result = client
         .generate_fill_reports(GenerateFillReports::new(
             nautilus_core::UUID4::new(),
@@ -4828,7 +4829,7 @@ async fn test_generate_fill_reports_rejects_stale_command_boundary() {
             Some(test_instrument_id()),
             None,
             Some(start),
-            Some(start + 1_000_000),
+            Some(start + DurationNanos::from_millis(1)),
             None,
             None,
         ))
@@ -4967,14 +4968,11 @@ async fn test_generate_mass_status_exposes_fill_history_coverage(
         .unwrap();
     let complete_start = mass_status
         .ts_init
-        .saturating_sub_ns(USER_TRADES_COMPLETE_LOOKBACK_MINS * 60 * 1_000_000_000);
+        .saturating_sub(DurationNanos::from_mins(USER_TRADES_COMPLETE_LOOKBACK_MINS));
     let expected_start = if expected_complete {
-        UnixNanos::from(
-            mass_status
-                .ts_init
-                .as_u64()
-                .saturating_sub(lookback_mins * 60 * 1_000_000_000),
-        )
+        mass_status
+            .ts_init
+            .saturating_sub(DurationNanos::from_mins(lookback_mins))
     } else {
         complete_start
     };

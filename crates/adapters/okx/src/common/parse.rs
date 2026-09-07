@@ -568,7 +568,7 @@ pub fn parse_funding_rate_msg(
             .ok_or(anyhow::anyhow!(
                 "Invalid funding_interval, cannot be negative"
             ))?;
-    let funding_interval = u16::try_from(funding_interval_nanos / 60_000_000_000)
+    let funding_interval = u16::try_from(funding_interval_nanos.as_mins())
         .context("funding_interval out of bounds")?;
     let ts_event = parse_millisecond_timestamp(msg.ts);
 

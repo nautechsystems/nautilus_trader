@@ -92,9 +92,9 @@ use nautilus_common::{
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
-    Params, UUID4, UnixNanos, WeakCell,
+    DurationNanos, Params, UUID4, UnixNanos, WeakCell,
     correctness::{FAILED, check_key_in_map, check_key_not_in_map, check_predicate_true},
-    datetime::{NANOSECONDS_IN_DAY, NANOSECONDS_IN_SECOND, millis_to_nanos_unchecked},
+    datetime::NANOSECONDS_IN_DAY,
 };
 #[cfg(feature = "defi")]
 use nautilus_model::defi::DefiData;
@@ -146,7 +146,7 @@ use crate::{
     option_chains::OptionChainManager,
 };
 
-const OPTION_CHAIN_REFERENCE_PRICE_TIMEOUT_NS: u64 = 30 * NANOSECONDS_IN_SECOND;
+const OPTION_CHAIN_REFERENCE_PRICE_TIMEOUT: DurationNanos = DurationNanos::from_secs(30);
 const OPTION_CHAIN_REFERENCE_PRICE_TIMEOUT_TIMER: &str = "option-chain-reference-price-timeout";
 
 /// Provides a high-performance `DataEngine` for all environments.
@@ -3586,11 +3586,7 @@ impl DataEngine {
                         ts_init,
                         None,
                     );
-                    let deadline_ns = UnixNanos::from(
-                        ts_init
-                            .as_u64()
-                            .saturating_add(OPTION_CHAIN_REFERENCE_PRICE_TIMEOUT_NS),
-                    );
+                    let deadline_ns = ts_init.saturating_add(OPTION_CHAIN_REFERENCE_PRICE_TIMEOUT);
                     self.pending_option_chain_requests.insert(
                         request_id,
                         PendingOptionChainRequest {
@@ -4193,9 +4189,14 @@ impl DataEngine {
         interval_ms: NonZeroUsize,
         snapshot_infos: BookSnapshotInfos,
     ) {
-        let interval_ns = millis_to_nanos_unchecked(interval_ms.get() as f64);
-        let now_ns = self.clock.borrow().timestamp_ns().as_u64();
-        let start_time_ns = now_ns - (now_ns % interval_ns) + interval_ns;
+        let interval_ms_u64 =
+            u64::try_from(interval_ms.get()).expect("Snapshot interval exceeds u64");
+        let interval_ns = DurationNanos::from_millis(interval_ms_u64);
+        let now_ns = self.clock.borrow().timestamp_ns();
+        let start_time_ns = now_ns
+            .floor(interval_ns)
+            .checked_add(interval_ns)
+            .expect("Book snapshot timer start exceeds UnixNanos range");
 
         let snapshotter = Rc::new(BookSnapshotter::new(
             interval_ms,
@@ -4213,7 +4214,7 @@ impl DataEngine {
             .set_timer_ns(
                 &timer_name,
                 interval_ns,
-                Some(start_time_ns.into()),
+                Some(start_time_ns),
                 None,
                 Some(callback),
                 None,

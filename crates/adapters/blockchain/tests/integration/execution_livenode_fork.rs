@@ -56,6 +56,7 @@ use nautilus_common::{
     msgbus::{self, TypedHandler},
     timer::TimeEvent,
 };
+use nautilus_core::DurationNanos;
 use nautilus_infrastructure::sql::pg::{PostgresConnectOptions, get_postgres_connect_options};
 use nautilus_live::{
     ExecutionClientCore,
@@ -241,8 +242,15 @@ impl SwapStrategy {
 impl DataActor for SwapStrategy {
     fn on_start(&mut self) -> anyhow::Result<()> {
         self.subscribe_pool(self.instrument_id, None, None);
-        self.clock()
-            .set_timer_ns(SUBMIT_TIMER, 10_000_000, None, None, None, None, None)?;
+        self.clock().set_timer_ns(
+            SUBMIT_TIMER,
+            DurationNanos::from_millis(10),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )?;
         Ok(())
     }
 
@@ -304,8 +312,15 @@ impl ReconnectProbeStrategy {
 
 impl DataActor for ReconnectProbeStrategy {
     fn on_start(&mut self) -> anyhow::Result<()> {
-        self.clock()
-            .set_timer_ns(PROBE_TIMER, 2_000_000_000, None, None, None, None, None)?;
+        self.clock().set_timer_ns(
+            PROBE_TIMER,
+            DurationNanos::from_secs(2),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )?;
         Ok(())
     }
 

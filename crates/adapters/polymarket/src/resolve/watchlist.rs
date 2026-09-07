@@ -16,7 +16,7 @@
 use std::sync::Arc;
 
 use ahash::AHashSet;
-use nautilus_core::{AtomicMap, UnixNanos};
+use nautilus_core::{AtomicMap, DurationNanos, UnixNanos};
 use nautilus_model::{
     events::PositionEvent,
     identifiers::{InstrumentId, PositionId},
@@ -298,18 +298,18 @@ pub(crate) fn collect_resolve_watch_selection(
     mode: ResolveWatchSelectionMode,
 ) -> ResolveWatchSelection {
     let mut selection = ResolveWatchSelection::default();
-    let grace_ns = grace_secs.saturating_mul(1_000_000_000);
-    let max_wait_ns = max_wait_secs.saturating_mul(1_000_000_000);
+    let grace = DurationNanos::try_from_secs(grace_secs).unwrap_or(DurationNanos::MAX);
+    let max_wait = DurationNanos::try_from_secs(max_wait_secs).unwrap_or(DurationNanos::MAX);
 
     for (condition_id, entry) in watchlist {
         if entry.tracked.is_empty() {
             continue;
         }
 
-        let ready_at_ns = entry.expiration_ns.as_u64().saturating_add(grace_ns);
-        if now_ns.as_u64() < ready_at_ns {
+        let ready_at = entry.expiration_ns.saturating_add(grace);
+        if now_ns < ready_at {
             selection.skipped_not_expired += 1;
-            let ready_in_secs = (ready_at_ns - now_ns.as_u64()) / 1_000_000_000;
+            let ready_in_secs = ready_at.saturating_duration_since(now_ns).as_secs();
             selection.min_ready_in_secs = Some(
                 selection
                     .min_ready_in_secs
@@ -318,7 +318,7 @@ pub(crate) fn collect_resolve_watch_selection(
             continue;
         }
 
-        let timed_out = now_ns.as_u64() >= entry.expiration_ns.as_u64().saturating_add(max_wait_ns);
+        let timed_out = now_ns >= entry.expiration_ns.saturating_add(max_wait);
 
         if timed_out {
             selection.timed_out_watchlist += 1;
@@ -367,7 +367,7 @@ pub(crate) fn pause_resolve_watch_entries(
 #[cfg(test)]
 mod tests {
     use ahash::AHashSet;
-    use nautilus_core::{Params, UUID4};
+    use nautilus_core::{DurationNanos, Params, UUID4};
     use nautilus_model::{
         enums::{OrderSide, PositionSide},
         events::{PositionClosed, PositionEvent, PositionOpened},
@@ -525,7 +525,7 @@ mod tests {
             realized_return: 0.3333333333,
             realized_pnl: Some(Money::new(0.25, Currency::pUSD())),
             unrealized_pnl: Money::new(0.0, Currency::pUSD()),
-            duration: 1u64,
+            duration: DurationNanos::new(1),
             event_id: UUID4::new(),
             ts_opened: UnixNanos::from(1),
             ts_closed: Some(UnixNanos::from(2)),

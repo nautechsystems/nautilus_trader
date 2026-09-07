@@ -57,7 +57,7 @@ impl PositionEvent {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_core::{DurationNanos, UUID4, UnixNanos};
     use rstest::*;
 
     use super::*;
@@ -141,7 +141,7 @@ mod tests {
             realized_return: 0.0071,
             realized_pnl: Some(Money::new(112.50, Currency::USD())),
             unrealized_pnl: Money::new(0.0, Currency::USD()),
-            duration: 3_600_000_000_000, // 1 hour in nanoseconds
+            duration: DurationNanos::from_hours(1),
             event_id: UUID4::default(),
             ts_opened: UnixNanos::from(1_000_000_000),
             ts_closed: Some(UnixNanos::from(4_600_000_000)),

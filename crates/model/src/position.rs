@@ -26,7 +26,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use indexmap::IndexMap;
 use nautilus_core::{
-    UUID4, UnixNanos,
+    DurationNanos, UUID4, UnixNanos,
     correctness::{
         CorrectnessError, CorrectnessResult, CorrectnessResultExt, FAILED, check_equal,
         check_predicate_true,
@@ -94,7 +94,7 @@ pub struct Position {
     pub ts_opened: UnixNanos,
     pub ts_last: UnixNanos,
     pub ts_closed: Option<UnixNanos>,
-    pub duration_ns: u64,
+    pub duration_ns: DurationNanos,
     pub avg_px_open: f64,
     pub avg_px_close: Option<f64>,
     pub realized_return: f64,
@@ -183,7 +183,7 @@ impl Position {
             ts_opened: fill.ts_event,
             ts_last: fill.ts_event,
             ts_closed: None,
-            duration_ns: 0,
+            duration_ns: DurationNanos::default(),
             avg_px_open: fill.last_px.as_f64(),
             avg_px_close: None,
             realized_return: 0.0,
@@ -302,7 +302,7 @@ impl Position {
             self.ts_opened = UnixNanos::default();
             self.ts_last = UnixNanos::default();
             self.ts_closed = Some(UnixNanos::default());
-            self.duration_ns = 0;
+            self.duration_ns = DurationNanos::default();
             return;
         }
 
@@ -318,7 +318,7 @@ impl Position {
         self.ts_init = first_event.ts_init;
         self.closing_order_id = None;
         self.ts_closed = None;
-        self.duration_ns = 0;
+        self.duration_ns = DurationNanos::default();
 
         // Reapply all remaining fills to reconstruct state
         for event in filtered_events {
@@ -459,10 +459,7 @@ impl Position {
             self.signed_qty = 0.0; // Normalize
             self.closing_order_id = Some(fill.client_order_id);
             self.ts_closed = Some(fill.ts_event);
-            self.duration_ns = fill
-                .ts_event
-                .as_u64()
-                .saturating_sub(self.ts_opened.as_u64());
+            self.duration_ns = fill.ts_event.saturating_duration_since(self.ts_opened);
         } else if self.signed_qty > 0.0 {
             self.entry = OrderSide::Buy;
             self.side = PositionSide::Long;
@@ -491,7 +488,7 @@ impl Position {
         self.ts_init = fill.ts_init;
         self.ts_opened = fill.ts_event;
         self.ts_closed = None;
-        self.duration_ns = 0;
+        self.duration_ns = DurationNanos::default();
         self.avg_px_open = fill.last_px.as_f64();
         self.avg_px_close = None;
         self.realized_return = 0.0;
@@ -947,10 +944,7 @@ impl Position {
             if previous_side != PositionSide::Flat {
                 self.closing_order_id = Some(fill.client_order_id);
                 self.ts_closed = Some(fill.ts_event);
-                self.duration_ns = fill
-                    .ts_event
-                    .as_u64()
-                    .saturating_sub(self.ts_opened.as_u64());
+                self.duration_ns = fill.ts_event.saturating_duration_since(self.ts_opened);
             }
         } else {
             self.entry = match self.side {
@@ -1013,7 +1007,7 @@ impl Position {
         self.ts_opened = UnixNanos::default();
         self.ts_last = UnixNanos::default();
         self.ts_closed = Some(UnixNanos::default());
-        self.duration_ns = 0;
+        self.duration_ns = DurationNanos::default();
         self.avg_px_open = 0.0;
         self.avg_px_close = None;
         self.realized_pnl = None;
@@ -1527,7 +1521,7 @@ mod tests {
     use std::str::FromStr;
 
     use ahash::AHashSet;
-    use nautilus_core::{UnixNanos, correctness::CorrectnessError};
+    use nautilus_core::{DurationNanos, UnixNanos, correctness::CorrectnessError};
     use proptest::prelude::*;
     use rstest::rstest;
     use rust_decimal::{Decimal, prelude::ToPrimitive};
@@ -1987,7 +1981,7 @@ mod tests {
         assert_eq!(position.entry, OrderSide::Buy);
         assert_eq!(position.side, PositionSide::Long);
         assert_eq!(position.ts_opened.as_u64(), 0);
-        assert_eq!(position.duration_ns, 0);
+        assert_eq!(position.duration_ns, DurationNanos::default());
         assert_eq!(position.avg_px_open, 1.00001);
         assert_eq!(position.event_count(), 1);
         assert_eq!(position.id, PositionId::new("1"));
@@ -2215,7 +2209,7 @@ mod tests {
         assert_eq!(position.side, PositionSide::Flat);
         assert_eq!(position.ts_opened, 1_000_000_000);
         assert_eq!(position.ts_closed, Some(UnixNanos::from(2_000_000_000)));
-        assert_eq!(position.duration_ns, 1_000_000_000);
+        assert_eq!(position.duration_ns, DurationNanos::from_secs(1));
         assert_eq!(position.avg_px_open, 1.00001);
         assert_eq!(position.avg_px_close, Some(1.00011));
         assert!(!position.is_long());
@@ -2659,7 +2653,7 @@ mod tests {
         assert_eq!(position.opening_order_id, fill3.client_order_id);
         assert_eq!(position.closing_order_id, None);
         assert_eq!(position.ts_opened, 3_000_000_000);
-        assert_eq!(position.duration_ns, 0);
+        assert_eq!(position.duration_ns, DurationNanos::default());
         assert_eq!(position.avg_px_open, 1.00012);
         assert_eq!(position.event_count(), 1);
         assert_eq!(position.ts_closed, None);
@@ -3052,7 +3046,7 @@ mod tests {
         assert_eq!(position.ts_opened, UnixNanos::from(2_000));
         assert_eq!(position.ts_last, UnixNanos::from(2_000));
         assert_eq!(position.ts_closed, None);
-        assert_eq!(position.duration_ns, 0);
+        assert_eq!(position.duration_ns, DurationNanos::default());
         assert_eq!(position.avg_px_open, 50_000.0);
         assert_eq!(position.avg_px_close, None);
         assert_eq!(position.realized_pnl, None);
@@ -3120,7 +3114,7 @@ mod tests {
         assert_eq!(position.ts_opened, UnixNanos::from(1_000));
         assert_eq!(position.ts_last, UnixNanos::from(2_000));
         assert_eq!(position.ts_closed, Some(UnixNanos::from(2_000)));
-        assert_eq!(position.duration_ns, 1_000);
+        assert_eq!(position.duration_ns, DurationNanos::new(1_000));
         assert_eq!(position.avg_px_open, 50_000.0);
         assert_eq!(position.avg_px_close, None);
         assert_eq!(position.realized_pnl, Some(Money::from("0.00 USDT")));
@@ -3192,7 +3186,7 @@ mod tests {
         assert_eq!(position.ts_opened, UnixNanos::from(3_000));
         assert_eq!(position.ts_last, UnixNanos::from(3_000));
         assert_eq!(position.ts_closed, None);
-        assert_eq!(position.duration_ns, 0);
+        assert_eq!(position.duration_ns, DurationNanos::default());
         assert_eq!(position.avg_px_open, 52_000.0);
         assert_eq!(position.avg_px_close, None);
         assert_eq!(position.realized_pnl, None);
@@ -3256,7 +3250,7 @@ mod tests {
         assert_eq!(position.ts_opened, UnixNanos::from(1_000));
         assert_eq!(position.ts_last, UnixNanos::from(2_000));
         assert_eq!(position.ts_closed, None);
-        assert_eq!(position.duration_ns, 0);
+        assert_eq!(position.duration_ns, DurationNanos::default());
         assert_eq!(position.avg_px_open, 52_000.0);
         assert_eq!(position.avg_px_close, None);
         assert_eq!(position.realized_pnl, Some(Money::from("0.00 USDT")));
@@ -4171,7 +4165,7 @@ mod tests {
         assert_eq!(position.ts_opened, UnixNanos::default());
         assert_eq!(position.ts_last, UnixNanos::default());
         assert_eq!(position.ts_closed, Some(UnixNanos::default()));
-        assert_eq!(position.duration_ns, 0);
+        assert_eq!(position.duration_ns, DurationNanos::default());
 
         // Verify empty shell reports as closed (this was the bug we fixed!)
         // is_closed() must return true so cache purge logic recognizes empty shells
@@ -4320,7 +4314,8 @@ mod tests {
             "INV4: Empty shell ts_last must be 0"
         );
         assert_eq!(
-            position.duration_ns, 0,
+            position.duration_ns,
+            DurationNanos::default(),
             "INV4: Empty shell duration_ns must be 0"
         );
 
@@ -5419,7 +5414,7 @@ mod tests {
         assert_eq!(position.ts_opened, UnixNanos::from(1_000));
         assert_eq!(position.ts_last, UnixNanos::from(1_250));
         assert_eq!(position.ts_closed, Some(UnixNanos::from(1_250)));
-        assert_eq!(position.duration_ns, 250);
+        assert_eq!(position.duration_ns, DurationNanos::new(250));
         assert_eq!(position.event_count(), 3);
         assert!(position.is_closed());
     }
@@ -5530,7 +5525,7 @@ mod tests {
         assert_eq!(position.ts_opened, UnixNanos::from(2_000));
         assert_eq!(position.ts_last, UnixNanos::from(2_100));
         assert_eq!(position.ts_closed, None);
-        assert_eq!(position.duration_ns, 0);
+        assert_eq!(position.duration_ns, DurationNanos::default());
         assert_eq!(position.event_count(), 3);
         assert!(position.is_open());
     }
@@ -5974,7 +5969,7 @@ mod tests {
         assert_eq!(position.side, PositionSide::Flat);
         assert_eq!(position.ts_opened, UnixNanos::from(2_000u64));
         assert_eq!(position.ts_closed, Some(UnixNanos::from(1_000u64)));
-        assert_eq!(position.duration_ns, 0);
+        assert_eq!(position.duration_ns, DurationNanos::default());
         assert_eq!(
             position.closing_order_id,
             Some(closing_order.client_order_id())

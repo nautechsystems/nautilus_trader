@@ -25,6 +25,7 @@ use nautilus_backtest::{
     engine::BacktestEngine,
 };
 use nautilus_common::throttler::RateLimit;
+use nautilus_core::DurationNanos;
 use nautilus_model::{
     data::{Data, OrderBookDelta},
     enums::{AccountType, BookType, OmsType},
@@ -46,7 +47,7 @@ const CI_DELTA_LIMIT: usize = 10_000;
 fn create_engine(instrument: &InstrumentAny) -> BacktestEngine {
     // Use an unrestricted throttle rate so the grid MM can place orders freely
     // without hitting the default 100/sec limit on high-frequency ITCH data.
-    let unlimited = RateLimit::new(1_000_000, 1_000_000_000);
+    let unlimited = RateLimit::new(1_000_000, DurationNanos::from_secs(1));
     let config = BacktestEngineConfig {
         risk_engine: Some(RiskEngineConfig {
             max_order_submit: unlimited,

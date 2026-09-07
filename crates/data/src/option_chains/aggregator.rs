@@ -20,7 +20,7 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
 };
 
-use nautilus_core::UnixNanos;
+use nautilus_core::{DurationNanos, UnixNanos};
 use nautilus_model::{
     data::{
         QuoteTick,
@@ -34,7 +34,7 @@ use rust_decimal::prelude::ToPrimitive;
 
 use super::{
     AtmTracker,
-    constants::{DEFAULT_REBALANCE_COOLDOWN_NS, DEFAULT_REBALANCE_HYSTERESIS},
+    constants::{DEFAULT_REBALANCE_COOLDOWN, DEFAULT_REBALANCE_HYSTERESIS},
 };
 
 /// Per-series aggregator that accumulates quotes and greeks between snapshots.
@@ -59,7 +59,7 @@ pub struct OptionChainAggregator {
     /// Hysteresis band for ATM rebalancing.
     hysteresis: f64,
     /// Minimum nanoseconds between rebalances.
-    cooldown_ns: u64,
+    cooldown_ns: DurationNanos,
     /// Timestamp of the last rebalance.
     last_rebalance_ns: Option<UnixNanos>,
     /// Maximum `ts_event` seen across all quote updates.
@@ -93,7 +93,7 @@ impl OptionChainAggregator {
             active_ids: HashSet::new(),
             last_atm_strike: None,
             hysteresis: DEFAULT_REBALANCE_HYSTERESIS,
-            cooldown_ns: DEFAULT_REBALANCE_COOLDOWN_NS,
+            cooldown_ns: DEFAULT_REBALANCE_COOLDOWN,
             last_rebalance_ns: None,
             max_ts_event: UnixNanos::default(),
             pending_greeks: HashMap::new(),
@@ -589,7 +589,7 @@ impl OptionChainAggregator {
         }
 
         // Cooldown check
-        if self.cooldown_ns > 0
+        if !self.cooldown_ns.is_zero()
             && let Some(last_ts) = self.last_rebalance_ns
             && now_ns.saturating_duration_since(last_ts) < self.cooldown_ns
         {
@@ -685,7 +685,7 @@ impl OptionChainAggregator {
         self.hysteresis = h;
     }
 
-    fn set_cooldown_ns(&mut self, ns: u64) {
+    fn set_cooldown_ns(&mut self, ns: DurationNanos) {
         self.cooldown_ns = ns;
     }
 
@@ -875,7 +875,7 @@ mod tests {
         );
         // Disable guards so existing tests exercise pure rebalance logic
         agg.set_hysteresis(0.0);
-        agg.set_cooldown_ns(0);
+        agg.set_cooldown_ns(DurationNanos::default());
         agg
     }
 
@@ -1082,7 +1082,7 @@ mod tests {
             instruments,
         );
         agg.set_hysteresis(0.6);
-        agg.set_cooldown_ns(0);
+        agg.set_cooldown_ns(DurationNanos::default());
 
         // Set ATM to 50000
         set_atm_via_greeks(&mut agg, 50000.0);
@@ -1117,7 +1117,7 @@ mod tests {
             instruments,
         );
         agg.set_hysteresis(0.6);
-        agg.set_cooldown_ns(0);
+        agg.set_cooldown_ns(DurationNanos::default());
 
         // Set ATM to 50000
         set_atm_via_greeks(&mut agg, 50000.0);
@@ -1156,7 +1156,7 @@ mod tests {
             instruments,
         );
         agg.set_hysteresis(0.6);
-        agg.set_cooldown_ns(0);
+        agg.set_cooldown_ns(DurationNanos::default());
 
         agg.atm_tracker_mut().set_initial_price(blocked);
         assert!(agg.check_rebalance(now()).is_none());
@@ -1169,7 +1169,7 @@ mod tests {
     fn test_zero_hysteresis_disables_guard() {
         let mut agg = make_multi_strike_aggregator();
         agg.set_hysteresis(0.0);
-        agg.set_cooldown_ns(0);
+        agg.set_cooldown_ns(DurationNanos::default());
 
         set_atm_via_greeks(&mut agg, 50000.0);
         let action = agg.check_rebalance(now()).unwrap();
@@ -1186,7 +1186,7 @@ mod tests {
     fn test_cooldown_blocks_rapid_rebalance() {
         let mut agg = make_multi_strike_aggregator();
         agg.set_hysteresis(0.0);
-        agg.set_cooldown_ns(5_000_000_000); // 5s
+        agg.set_cooldown_ns(DurationNanos::from_secs(5));
 
         set_atm_via_greeks(&mut agg, 50000.0);
         let t0 = now();
@@ -1203,7 +1203,7 @@ mod tests {
     fn test_cooldown_allows_after_elapsed() {
         let mut agg = make_multi_strike_aggregator();
         agg.set_hysteresis(0.0);
-        agg.set_cooldown_ns(5_000_000_000); // 5s
+        agg.set_cooldown_ns(DurationNanos::from_secs(5));
 
         set_atm_via_greeks(&mut agg, 50000.0);
         let t0 = now();
@@ -1220,7 +1220,7 @@ mod tests {
     fn test_zero_cooldown_disables_guard() {
         let mut agg = make_multi_strike_aggregator();
         agg.set_hysteresis(0.0);
-        agg.set_cooldown_ns(0);
+        agg.set_cooldown_ns(DurationNanos::default());
 
         set_atm_via_greeks(&mut agg, 50000.0);
         let t0 = now();
@@ -1325,7 +1325,7 @@ mod tests {
             instruments,
         );
         agg.set_hysteresis(0.6);
-        agg.set_cooldown_ns(0);
+        agg.set_cooldown_ns(DurationNanos::default());
 
         // Set ATM to 50000, rebalance -> active: {47500, 50000, 52500}
         set_atm_via_greeks(&mut agg, 50000.0);
@@ -1511,7 +1511,7 @@ mod tests {
             instruments,
         );
         agg.set_hysteresis(0.0);
-        agg.set_cooldown_ns(0);
+        agg.set_cooldown_ns(DurationNanos::default());
         agg
     }
 

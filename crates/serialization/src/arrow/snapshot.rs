@@ -106,7 +106,7 @@ mod tests {
     use std::str::FromStr;
 
     use arrow::datatypes::DataType;
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{DurationNanos, UnixNanos};
     use nautilus_model::{
         enums::{OrderSide, OrderType, PositionSide, TrailingOffsetType},
         identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
@@ -268,7 +268,7 @@ mod tests {
             realized_pnl: Some(Money::new(100.0, Currency::USD())),
             unrealized_pnl: Some(Money::new(50.0, Currency::USD())),
             commissions: vec![Money::new(2.0, Currency::USD())],
-            duration_ns: Some(3_600_000_000_000),
+            duration_ns: Some(DurationNanos::from_hours(1)),
             ts_opened: UnixNanos::from(1_000_000_000),
             ts_closed: Some(UnixNanos::from(4_600_000_000)),
             ts_init: UnixNanos::from(2_000_000_000),

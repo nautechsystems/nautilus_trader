@@ -42,7 +42,7 @@ use nautilus_common::{
         typed_handler::{ShareableMessageHandler, TypedHandler},
     },
 };
-use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_SECOND};
+use nautilus_core::{DurationNanos, UUID4, UnixNanos, datetime::NANOSECONDS_IN_SECOND};
 use nautilus_model::{
     data::{
         Bar, CatalogPathPrefix, CustomData, CustomDataTrait, Data, FundingRateUpdate,
@@ -170,12 +170,12 @@ pub enum RotationConfig {
     /// Rotate based on a time interval.
     Interval {
         /// Interval in nanoseconds.
-        interval_ns: u64,
+        interval_ns: DurationNanos,
     },
     /// Rotate based on scheduled dates.
     ScheduledDates {
         /// Interval in nanoseconds.
-        interval_ns: u64,
+        interval_ns: DurationNanos,
         /// Time of day for rotation (nanoseconds since midnight).
         rotation_time: UnixNanos,
         /// Timezone for rotation calculations.
@@ -444,9 +444,12 @@ impl FeatherWriter {
         }
 
         let now_ns = self.clock.borrow().timestamp_ns();
-        let elapsed_ms = (now_ns.as_u64() - self.last_flush_ns.as_u64()) / 1_000_000;
+        let Some(elapsed) = now_ns.duration_since(&self.last_flush_ns) else {
+            self.last_flush_ns = now_ns;
+            return Ok(());
+        };
 
-        if elapsed_ms >= self.flush_interval_ms {
+        if elapsed.as_millis() >= self.flush_interval_ms {
             self.flush().await?;
             self.last_flush_ns = now_ns;
         }
@@ -508,7 +511,7 @@ impl FeatherWriter {
         &self,
         rotation_time: UnixNanos,
         rotation_timezone: &TimeZone,
-        interval_ns: u64,
+        interval_ns: DurationNanos,
     ) -> UnixNanos {
         let now_utc = self.clock.borrow().utc_now();
         let now_local = rotation_timezone.to_datetime(now_utc);
@@ -539,7 +542,7 @@ impl FeatherWriter {
             // If the time has already passed today, we would usually add the interval
             // But let's align exactly with how Python does it:
             while next_rotation <= now_utc {
-                next_rotation += SignedDuration::from_nanos_i128(i128::from(interval_ns));
+                next_rotation += SignedDuration::from(interval_ns);
             }
         }
 
@@ -1652,7 +1655,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_auto_flush() {
+    async fn test_auto_flush_reanchors_after_clock_rollback() {
         let temp_dir = TempDir::new().unwrap();
         let base_path = temp_dir.path().to_str().unwrap().to_string();
         let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
@@ -1666,8 +1669,10 @@ mod tests {
             RotationConfig::NoRotation,
             None,
             None,
-            Some(100), // 100ms flush interval
+            Some(100),
         );
+        let future_flush = UnixNanos::from(1_000_000);
+        writer.last_flush_ns = future_flush;
 
         let quote = QuoteTick::new(
             InstrumentId::from("AUD/USD.SIM"),
@@ -1678,28 +1683,20 @@ mod tests {
             UnixNanos::from(1000),
             UnixNanos::from(1000),
         );
-
-        // Write first quote
         writer.write(quote).await.unwrap();
 
-        // Note: TestClock doesn't have set_time_ns, so we can't easily test auto-flush
-        // with time advancement. Instead, we test that check_flush is called during write.
-        // For a proper test, we'd need a mock clock or use LiveClock with time advancement.
+        assert_eq!(writer.last_flush_ns, UnixNanos::default());
 
-        // Write second quote - check_flush will be called but won't flush if time hasn't advanced
-        let quote2 = QuoteTick::new(
-            InstrumentId::from("AUD/USD.SIM"),
-            Price::from("1.1"),
-            Price::from("1.1"),
-            Quantity::from("1000"),
-            Quantity::from("1000"),
-            UnixNanos::from(2000),
-            UnixNanos::from(2000),
-        );
-        writer.write(quote2).await.unwrap();
+        let interval_end = UnixNanos::default().saturating_add(DurationNanos::from_millis(100));
+        clock
+            .borrow_mut()
+            .as_any_mut()
+            .downcast_mut::<TestClock>()
+            .unwrap()
+            .advance_time(interval_end, true);
+        writer.check_flush().await.unwrap();
 
-        // Verify that writes succeeded (check_flush was called, even if it didn't flush)
-        // The flush_interval_ms is set, so check_flush runs but won't flush without time advancement
+        assert_eq!(writer.last_flush_ns, interval_end);
     }
 
     #[tokio::test]
