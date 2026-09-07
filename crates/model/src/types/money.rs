@@ -35,6 +35,13 @@
 //! | `Money / f64`     | `f64`     |                                   |
 //! | `-Money`          | `Money`   |                                   |
 //!
+//! # Ordering behavior
+//!
+//! Rust ordering compares currency codes lexicographically, then raw amounts. This structural
+//! order supports sorting and ordered collections across currencies, but it does not convert
+//! amounts to a common currency. Values with the same currency code retain raw numeric ordering.
+//! Python comparisons reject values with different currency codes.
+//!
 //! # Currency constraints
 //!
 //! When performing arithmetic between two `Money` values, both must have the same currency.
@@ -543,32 +550,14 @@ impl PartialOrd for Money {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
-
-    fn lt(&self, other: &Self) -> bool {
-        assert_eq!(self.currency, other.currency);
-        self.raw.lt(&other.raw)
-    }
-
-    fn le(&self, other: &Self) -> bool {
-        assert_eq!(self.currency, other.currency);
-        self.raw.le(&other.raw)
-    }
-
-    fn gt(&self, other: &Self) -> bool {
-        assert_eq!(self.currency, other.currency);
-        self.raw.gt(&other.raw)
-    }
-
-    fn ge(&self, other: &Self) -> bool {
-        assert_eq!(self.currency, other.currency);
-        self.raw.ge(&other.raw)
-    }
 }
 
 impl Ord for Money {
     fn cmp(&self, other: &Self) -> Ordering {
-        assert_eq!(self.currency, other.currency);
-        self.raw.cmp(&other.raw)
+        self.currency
+            .code
+            .cmp(&other.currency.code)
+            .then_with(|| self.raw.cmp(&other.raw))
     }
 }
 
@@ -1000,10 +989,66 @@ mod tests {
         assert!(m2 > m1);
         assert!(m1 <= m2);
         assert!(m2 >= m1);
+        assert_eq!(m1.cmp(&m2), Ordering::Less);
+        assert_eq!(m2.cmp(&m1), Ordering::Greater);
 
         // Equality
         let m3 = Money::new(100.0, usd);
         assert_eq!(m1, m3);
+    }
+
+    #[rstest]
+    fn test_money_ordering_is_structural_across_currencies() {
+        use std::collections::BTreeSet;
+
+        let aud_low = Money::new(-1.0, Currency::AUD());
+        let aud_high = Money::new(100.0, Currency::AUD());
+        let usd_low = Money::new(-100.0, Currency::USD());
+        let usd_high = Money::new(1.0, Currency::USD());
+
+        assert_eq!(aud_high.cmp(&usd_low), Ordering::Less);
+        assert_eq!(aud_high.partial_cmp(&usd_low), Some(Ordering::Less));
+        assert_eq!(
+            (
+                aud_high < usd_low,
+                aud_high <= usd_low,
+                aud_high > usd_low,
+                aud_high >= usd_low,
+                usd_low < aud_high,
+                usd_low <= aud_high,
+                usd_low > aud_high,
+                usd_low >= aud_high,
+            ),
+            (true, true, false, false, false, false, true, true),
+        );
+
+        let expected = vec![aud_low, aud_high, usd_low, usd_high];
+        let mut sorted = vec![usd_high, aud_high, usd_low, aud_low];
+        sorted.sort();
+        let ordered = BTreeSet::from([usd_high, aud_high, usd_low, aud_low]);
+
+        assert_eq!(sorted, expected);
+        assert_eq!(ordered.into_iter().collect::<Vec<_>>(), expected);
+    }
+
+    #[rstest]
+    fn test_money_cmp_equal_matches_equality() {
+        use crate::enums::CurrencyType;
+
+        let currency = Currency::new("TST", 2, 1, "Test fiat", CurrencyType::Fiat);
+        let same_code = Currency::new("TST", 8, 2, "Test crypto", CurrencyType::Crypto);
+        let other_code = Currency::new("TSU", 2, 1, "Other fiat", CurrencyType::Fiat);
+        let money = Money::from_raw(1, currency);
+        let cases = [
+            (Money::from_raw(1, same_code), true),
+            (Money::from_raw(2, same_code), false),
+            (Money::from_raw(1, other_code), false),
+        ];
+
+        for (other, expected_equal) in cases {
+            assert_eq!(money == other, expected_equal);
+            assert_eq!(money.cmp(&other) == Ordering::Equal, expected_equal);
+        }
     }
 
     #[rstest]
@@ -1686,21 +1731,19 @@ mod property_tests {
             money1 in money_strategy(),
             money2 in money_strategy(),
         ) {
-            if money1.currency == money2.currency {
-                let eq = money1 == money2;
-                let lt = money1 < money2;
-                let gt = money1 > money2;
-                let le = money1 <= money2;
-                let ge = money1 >= money2;
+            let eq = money1 == money2;
+            let lt = money1 < money2;
+            let gt = money1 > money2;
+            let le = money1 <= money2;
+            let ge = money1 >= money2;
 
-                let exclusive_count = [eq, lt, gt].iter().filter(|&&x| x).count();
-                prop_assert_eq!(exclusive_count, 1, "Exactly one of ==, <, > should be true");
+            let exclusive_count = [eq, lt, gt].iter().filter(|&&x| x).count();
+            prop_assert_eq!(exclusive_count, 1, "Exactly one of ==, <, > should be true");
 
-                prop_assert_eq!(le, eq || lt, "<= should equal == || <");
-                prop_assert_eq!(ge, eq || gt, ">= should equal == || >");
-                prop_assert_eq!(lt, money2 > money1, "< should be symmetric with >");
-                prop_assert_eq!(le, money2 >= money1, "<= should be symmetric with >=");
-            }
+            prop_assert_eq!(le, eq || lt, "<= should equal == || <");
+            prop_assert_eq!(ge, eq || gt, ">= should equal == || >");
+            prop_assert_eq!(lt, money2 > money1, "< should be symmetric with >");
+            prop_assert_eq!(le, money2 >= money1, "<= should be symmetric with >=");
         }
 
         #[rstest]

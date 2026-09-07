@@ -59,6 +59,8 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed `Money` ordering panics for mixed currencies, thanks for reporting @folknor
+- Fixed `LiveTimer` successor and time bar interval overflows causing runtime panics
 - Fixed `AroonOscillator` oldest-low scans and tied extremes (#4914), thanks @haeganm
 - Fixed engine panic on startup when the PostgreSQL cache held an `OrderCanceled`, `OrderDenied`, `OrderEmulated`, `OrderExpired`, `OrderPendingCancel`, `OrderPendingUpdate`, `OrderRejected`, `OrderReleased`, `OrderTriggered`, or `OrderUpdated` event (#4917)
 - Fixed PostgreSQL cache load failing on a persisted `OrderFillVoided` event
@@ -79,7 +81,6 @@ Released on TBD (UTC).
 - Fixed foreign account events panicking and reservation failures leaving balances or margins in an inconsistent state
 - Fixed importable strategy configs ignoring a string `strategy_id` in favor of the class-derived default ID
 - Fixed importable config construction leaving a partial config on attribute failure; now raises `RuntimeError`
-- Fixed `LiveTimer` successor and time bar interval overflows causing runtime panics
 - Fixed Betfair fill report queries ignoring instrument and order filters
 - Fixed Betfair order status queries ignoring instrument filters and time bounds for closed orders
 - Fixed Binance Spot cancel-all decoding and lifecycle handling for OCO order lists
