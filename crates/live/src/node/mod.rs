@@ -1739,14 +1739,14 @@ impl LiveNode {
                 }
                 Some(event) = system_evt_rx.recv() => {
                     if is_shutting_down {
-                        log::debug!("Residual system event: {event:?}");
+                        log::debug!("Residual system event: {event}");
                         residual_events += 1;
                     }
                     self.process_system_event(event);
                 }
                 Some(command) = system_cmd_rx.recv() => {
                     if is_shutting_down {
-                        log::debug!("Residual system command: {command:?}");
+                        log::debug!("Residual system command: {command}");
                         residual_events += 1;
                     }
                     self.process_system_command(command);
@@ -1755,7 +1755,7 @@ impl LiveNode {
                     let dispatch_start = dst::time::Instant::now();
 
                     if is_shutting_down {
-                        log::debug!("Residual exec event: {evt:?}");
+                        log::debug!("Residual exec event: {evt}");
                         residual_events += 1;
                     }
 
@@ -1771,7 +1771,7 @@ impl LiveNode {
                     let dispatch_start = dst::time::Instant::now();
 
                     if is_shutting_down {
-                        log::debug!("Residual exec command: {cmd:?}");
+                        log::debug!("Residual exec command: {cmd}");
                         residual_events += 1;
                     }
 

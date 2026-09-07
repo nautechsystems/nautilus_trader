@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 
 use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
@@ -161,16 +161,56 @@ impl Display for ExecutionMassStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "ExecutionMassStatus(client_id={}, account_id={}, venue={}, order_reports={:?}, fill_reports={:?}, position_reports={:?}, report_id={}, ts_init={})",
+            "ExecutionMassStatus(client_id={}, account_id={}, venue={}, order_reports={}, fill_reports={}, position_reports={}, report_id={}, ts_init={})",
             self.client_id,
             self.account_id,
             self.venue,
-            self.order_reports,
-            self.fill_reports,
-            self.position_reports,
+            ReportMapDisplay(&self.order_reports),
+            ReportListMapDisplay(&self.fill_reports),
+            ReportListMapDisplay(&self.position_reports),
             self.report_id,
             self.ts_init,
         )
+    }
+}
+
+struct ReportMapDisplay<'a, K, V>(&'a IndexMap<K, V>);
+
+impl<K: Debug, V: Display> Display for ReportMapDisplay<'_, K, V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("{")?;
+
+        for (index, (key, value)) in self.0.iter().enumerate() {
+            if index > 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "{key:?}: {value}")?;
+        }
+        f.write_str("}")
+    }
+}
+
+struct ReportListMapDisplay<'a, K, V>(&'a IndexMap<K, Vec<V>>);
+
+impl<K: Debug, V: Display> Display for ReportListMapDisplay<'_, K, V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("{")?;
+
+        for (map_index, (key, values)) in self.0.iter().enumerate() {
+            if map_index > 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "{key:?}: [")?;
+
+            for (value_index, value) in values.iter().enumerate() {
+                if value_index > 0 {
+                    f.write_str(", ")?;
+                }
+                write!(f, "{value}")?;
+            }
+            f.write_str("]")?;
+        }
+        f.write_str("}")
     }
 }
 
@@ -490,12 +530,54 @@ mod tests {
     #[rstest]
     fn test_display() {
         let mass_status = test_execution_mass_status();
-        let display_str = format!("{mass_status}");
 
-        assert!(display_str.contains("ExecutionMassStatus"));
-        assert!(display_str.contains("IB"));
-        assert!(display_str.contains("IB-DU123456"));
-        assert!(display_str.contains("NASDAQ"));
+        assert_eq!(
+            mass_status.to_string(),
+            format!(
+                "ExecutionMassStatus(client_id=IB, account_id=IB-DU123456, venue=NASDAQ, order_reports={{}}, fill_reports={{}}, position_reports={{}}, report_id={}, ts_init=1000000000)",
+                mass_status.report_id,
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_display_with_reports_uses_report_display() {
+        let mut mass_status = test_execution_mass_status();
+        let order_report = create_test_order_report();
+        let fill_report = create_test_fill_report();
+        let position_report = create_test_position_report();
+        let expected_order_report = order_report.to_string();
+        let expected_fill_report = fill_report.to_string();
+        let expected_position_report = position_report.to_string();
+
+        mass_status.add_order_reports(vec![order_report]);
+        mass_status.add_fill_reports(vec![fill_report]);
+        mass_status.add_position_reports(vec![position_report]);
+
+        assert_eq!(
+            mass_status.to_string(),
+            format!(
+                "ExecutionMassStatus(client_id=IB, account_id=IB-DU123456, venue=NASDAQ, order_reports={{\"1\": {expected_order_report}}}, fill_reports={{\"1\": [{expected_fill_report}]}}, position_reports={{\"AAPL.NASDAQ\": [{expected_position_report}]}}, report_id={}, ts_init=1000000000)",
+                mass_status.report_id,
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_report_map_display_uses_value_display() {
+        let reports = IndexMap::from([("key", "value")]);
+
+        assert_eq!(ReportMapDisplay(&reports).to_string(), "{\"key\": value}");
+    }
+
+    #[rstest]
+    fn test_report_list_map_display_uses_value_display() {
+        let reports = IndexMap::from([("key", vec!["one", "two"])]);
+
+        assert_eq!(
+            ReportListMapDisplay(&reports).to_string(),
+            "{\"key\": [one, two]}"
+        );
     }
 
     #[rstest]

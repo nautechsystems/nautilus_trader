@@ -893,7 +893,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
     }
 
     fn query_account(&self, cmd: QueryAccount) -> anyhow::Result<()> {
-        log::debug!("Querying account: {cmd:?}");
+        log::debug!("Querying account: {cmd}");
 
         let account_id = self.core.account_id;
         let http = self.http.clone();
@@ -915,7 +915,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
     }
 
     fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
-        log::debug!("Querying order: {cmd:?}");
+        log::debug!("Querying order: {cmd}");
 
         let venue_order_id = cmd
             .venue_order_id

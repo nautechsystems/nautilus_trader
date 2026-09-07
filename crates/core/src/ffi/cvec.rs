@@ -189,7 +189,7 @@ impl Display for CVec {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "CVec {{ ptr: {:?}, len: {}, cap: {} }}",
+            "CVec(ptr={:?}, len={}, cap={})",
             self.ptr, self.len, self.cap,
         )
     }
@@ -246,6 +246,16 @@ mod tests {
         assert!(!cvec.ptr.is_null());
         assert_eq!(cvec.len, 0);
         assert_eq!(cvec.cap, 0);
+    }
+
+    #[rstest]
+    fn display_uses_key_value_fields() {
+        let cvec = CVec::empty();
+
+        assert_eq!(
+            cvec.to_string(),
+            format!("CVec(ptr={:?}, len=0, cap=0)", cvec.ptr)
+        );
     }
 
     #[repr(align(64))]

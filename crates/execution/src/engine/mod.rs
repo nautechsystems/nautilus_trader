@@ -1905,7 +1905,7 @@ impl ExecutionEngine {
         self.command_count.set(self.command_count.get() + 1);
 
         if self.config.debug {
-            log::debug!("{RECV}{CMD} {command:?}");
+            log::debug!("{RECV}{CMD} {command}");
         }
 
         match self.validate_submission(&command) {
@@ -1932,7 +1932,7 @@ impl ExecutionEngine {
             msgbus::publish_any(topic.into(), &command);
 
             if self.config.debug {
-                log::debug!("Skipping execution command for external client {cid}: {command:?}");
+                log::debug!("Skipping execution command for external client {cid}: {command}");
             }
             return;
         }
@@ -1943,7 +1943,7 @@ impl ExecutionEngine {
             let routing_context = Self::routing_context_for_command(&command);
 
             log::error!(
-                "No execution client found for command: client_id={:?}, {routing_context}, command={command:?}",
+                "No execution client found for command: client_id={:?}, {routing_context}, command={command}",
                 command.client_id(),
             );
 
@@ -2771,7 +2771,7 @@ impl ExecutionEngine {
         self.event_count += 1;
 
         if self.config.debug {
-            log::debug!("{RECV}{EVT} {event:?}");
+            log::debug!("{RECV}{EVT} {event}");
         }
 
         let event_client_order_id = event.client_order_id();
@@ -4418,8 +4418,8 @@ impl ExecutionEngine {
             && let Some(position_id) = fill.position_id
             && position_id.is_virtual()
         {
-            log::warn!("Closing position {fill_split1:?}");
-            log::warn!("Flipping position {fill_split2:?}");
+            log::warn!("Closing position {fill_split1}");
+            log::warn!("Flipping position {fill_split2}");
         }
 
         // Open flipped position

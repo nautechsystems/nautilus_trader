@@ -4894,7 +4894,7 @@ impl Cache {
             stringify!(order_lists),
         )?;
 
-        log::debug!("Adding {order_list:?}");
+        log::debug!("Adding {order_list}");
         self.order_lists.insert(order_list_id, order_list);
         Ok(())
     }

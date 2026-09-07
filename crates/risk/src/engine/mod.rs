@@ -573,7 +573,7 @@ impl RiskEngine {
 
     fn handle_command(&mut self, command: TradingCommand) {
         if self.config.debug {
-            log::debug!("{CMD}{RECV} {command:?}");
+            log::debug!("{CMD}{RECV} {command}");
         }
 
         match command {
@@ -2354,7 +2354,7 @@ impl RiskEngine {
         // We intend to extend the risk engine to be able to handle additional events.
         // For now we just log.
         if self.config.debug {
-            log::debug!("{RECV}{EVT} {event:?}");
+            log::debug!("{RECV}{EVT} {event}");
         }
     }
 

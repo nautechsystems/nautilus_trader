@@ -384,10 +384,10 @@ impl AsyncRunner {
                     let _ = Self::handle_time_event(handler);
                 },
                 Some(event) = self.channels.system_evt_rx.recv() => {
-                    log::error!("System event {event:?} requires the LiveNode runner");
+                    log::error!("System event {event} requires the LiveNode runner");
                 },
                 Some(command) = self.channels.system_cmd_rx.recv() => {
-                    log::error!("System command {command:?} requires the LiveNode runner");
+                    log::error!("System command {command} requires the LiveNode runner");
                 },
                 Some(evt) = self.channels.exec_evt_rx.recv() => {
                     Self::handle_exec_event(evt);

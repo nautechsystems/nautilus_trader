@@ -657,7 +657,7 @@ impl Display for BetPosition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "BetPosition(price: {:.2}, exposure: {:.2}, realized_pnl: {:.2})",
+            "BetPosition(price={:.2}, exposure={:.2}, realized_pnl={:.2})",
             self.price, self.exposure, self.realized_pnl
         )
     }
@@ -920,11 +920,11 @@ mod tests {
         let mut position = BetPosition::default();
         let bet = Bet::new(dec!(2.0), dec!(100.0), BetSide::Back);
         position.add_bet(bet);
-        let formatted = format!("{position}");
 
-        assert!(formatted.contains("price"));
-        assert!(formatted.contains("exposure"));
-        assert!(formatted.contains("realized_pnl"));
+        assert_eq!(
+            format!("{position}"),
+            "BetPosition(price=2.00, exposure=200.00, realized_pnl=0.00)"
+        );
     }
 
     #[rstest]

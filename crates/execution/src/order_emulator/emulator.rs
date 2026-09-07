@@ -492,7 +492,7 @@ impl OrderEmulator {
             TradingCommand::ModifyOrders(ref command) => self.handle_batch_modify_orders(command),
             TradingCommand::CancelOrder(command) => self.handle_cancel_order(command),
             TradingCommand::CancelAllOrders(ref command) => self.handle_cancel_all_orders(command),
-            _ => log::error!("Cannot handle command: unrecognized {command:?}"),
+            _ => log::error!("Cannot handle command: unrecognized {command}"),
         }
 
         self.drain_pending_messages();

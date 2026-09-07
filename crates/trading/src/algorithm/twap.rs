@@ -389,7 +389,7 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
     }
 
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
-        log::info!("Received time event: {event:?}");
+        log::info!("Received time event: {event}");
 
         let primary_id = ClientOrderId::new(event.name.as_str());
 

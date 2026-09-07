@@ -152,7 +152,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(reports) => {
             log::info!("Received {} open order report(s)", reports.len());
             for report in reports.iter().take(5) {
-                log::debug!("{report:?}");
+                log::debug!("{report}");
             }
         }
         Err(e) => log::error!("{e:?}"),
@@ -167,7 +167,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(reports) => {
             log::info!("Received {} BTC-USD order report(s)", reports.len());
             for report in reports.iter().take(5) {
-                log::debug!("{report:?}");
+                log::debug!("{report}");
             }
         }
         Err(e) => log::error!("{e:?}"),
@@ -212,7 +212,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(reports) => {
             log::info!("Received {} fill report(s)", reports.len());
             for report in reports.iter().take(5) {
-                log::debug!("{report:?}");
+                log::debug!("{report}");
             }
         }
         Err(e) => log::error!("{e:?}"),

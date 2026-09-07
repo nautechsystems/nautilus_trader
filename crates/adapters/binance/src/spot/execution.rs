@@ -1272,7 +1272,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
         let Some(instrument_id) = cmd.instrument_id else {
-            log::warn!("generate_order_status_report requires instrument_id: {cmd:?}");
+            log::warn!("generate_order_status_report requires instrument_id: {cmd}");
             return Ok(None);
         };
 

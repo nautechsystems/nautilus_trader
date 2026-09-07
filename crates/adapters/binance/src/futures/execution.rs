@@ -2186,7 +2186,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
         let Some(instrument_id) = cmd.instrument_id else {
-            log::warn!("generate_order_status_report requires instrument_id: {cmd:?}");
+            log::warn!("generate_order_status_report requires instrument_id: {cmd}");
             return Ok(None);
         };
         let Some(instrument) = self.http_client.instrument_reconciliation(&instrument_id) else {

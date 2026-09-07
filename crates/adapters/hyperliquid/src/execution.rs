@@ -1036,7 +1036,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
     }
 
     fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
-        log::debug!("Modifying order: {cmd:?}");
+        log::debug!("Modifying order: {cmd}");
 
         let client_order_id = cmd.client_order_id;
         let venue_order_id = cmd
@@ -1296,7 +1296,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
     }
 
     fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
-        log::debug!("Cancelling order: {cmd:?}");
+        log::debug!("Cancelling order: {cmd}");
 
         if let Some(order) = self
             .staged_brackets
@@ -1407,7 +1407,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
     }
 
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
-        log::debug!("Cancelling all orders: {cmd:?}");
+        log::debug!("Cancelling all orders: {cmd}");
 
         let cache = self.core.cache();
         let open_orders = cache.orders_open(
@@ -1481,7 +1481,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
     }
 
     fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {
-        log::debug!("Batch cancelling orders: {cmd:?}");
+        log::debug!("Batch cancelling orders: {cmd}");
 
         if cmd.cancels.is_empty() {
             log::debug!("No orders to cancel in batch");
@@ -1587,7 +1587,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
     }
 
     fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
-        log::debug!("Querying order: {cmd:?}");
+        log::debug!("Querying order: {cmd}");
 
         let client_order_id = cmd.client_order_id;
         let venue_order_id = match cmd.venue_order_id {

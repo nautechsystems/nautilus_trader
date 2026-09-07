@@ -124,7 +124,7 @@ pub trait ExecutionAlgorithm: DataActor {
         let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
         if core.config.log_commands {
             let id = &core.actor.actor_id;
-            log::info!("{id} {RECV}{CMD} {command:?}");
+            log::info!("{id} {RECV}{CMD} {command}");
         }
 
         if DataActorNative::core(core).state() != ComponentState::Running {
@@ -151,7 +151,7 @@ pub trait ExecutionAlgorithm: DataActor {
             TradingCommand::ModifyOrder(cmd) => self.handle_modify_order(cmd),
             TradingCommand::CancelOrder(cmd) => self.handle_cancel_order(cmd),
             _ => {
-                log::warn!("Unhandled command type: {command:?}");
+                log::warn!("Unhandled command type: {command}");
                 Ok(())
             }
         }
@@ -284,7 +284,7 @@ pub trait ExecutionAlgorithm: DataActor {
         }
 
         if order.is_closed() {
-            log::warn!("Order already closed for {command:?}");
+            log::warn!("Order already closed for {command}");
             return Ok(());
         }
 
@@ -344,7 +344,7 @@ pub trait ExecutionAlgorithm: DataActor {
         };
 
         if is_closed {
-            log::warn!("Order already closed for {command:?}");
+            log::warn!("Order already closed for {command}");
             return Ok(());
         }
 
@@ -860,7 +860,7 @@ pub trait ExecutionAlgorithm: DataActor {
 
         if core.config.log_commands {
             let id = &core.actor.actor_id;
-            log::info!("{id} {SEND}{CMD} {command:?}");
+            log::info!("{id} {SEND}{CMD} {command}");
         }
 
         msgbus::send_trading_command(
@@ -969,7 +969,7 @@ pub trait ExecutionAlgorithm: DataActor {
             let id = &ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
                 .actor
                 .actor_id;
-            log::info!("{id} {SEND}{CMD} {command:?}");
+            log::info!("{id} {SEND}{CMD} {command}");
         }
 
         let has_emulation_trigger = order.emulation_trigger().is_some();
@@ -1155,7 +1155,7 @@ pub trait ExecutionAlgorithm: DataActor {
             let id = &ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
                 .actor
                 .actor_id;
-            log::info!("{id} {SEND}{CMD} {command:?}");
+            log::info!("{id} {SEND}{CMD} {command}");
         }
 
         let has_emulation_trigger = order.emulation_trigger().is_some();

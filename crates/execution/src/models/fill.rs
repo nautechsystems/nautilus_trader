@@ -299,7 +299,7 @@ impl Display for DefaultFillModel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "DefaultFillModel(prob_fill_on_limit: {}, prob_slippage: {})",
+            "DefaultFillModel(prob_fill_on_limit={}, prob_slippage={})",
             self.state.prob_fill_on_limit, self.state.prob_slippage
         )
     }
@@ -1440,6 +1440,14 @@ mod tests {
     fn fill_model() -> DefaultFillModel {
         let seed = 42;
         DefaultFillModel::new(0.5, 0.1, Some(seed)).unwrap()
+    }
+
+    #[rstest]
+    fn test_fill_model_display(fill_model: DefaultFillModel) {
+        assert_eq!(
+            format!("{fill_model}"),
+            "DefaultFillModel(prob_fill_on_limit=0.5, prob_slippage=0.1)"
+        );
     }
 
     #[rstest]

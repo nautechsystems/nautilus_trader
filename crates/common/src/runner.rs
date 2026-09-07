@@ -21,7 +21,7 @@
 
 use std::{
     cell::RefCell,
-    fmt::Debug,
+    fmt::{Debug, Display},
     num::NonZeroU64,
     sync::{
         Arc, Weak,
@@ -555,6 +555,16 @@ impl TradingCommandMessage {
     }
 }
 
+impl Display for TradingCommandMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "TradingCommandMessage(endpoint={}, command={})",
+            self.endpoint, self.command
+        )
+    }
+}
+
 struct TradingCommandDispatchGuard {
     active: bool,
 }
@@ -722,10 +732,12 @@ mod tests {
     };
 
     use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_model::identifiers::{AccountId, TraderId};
     use rstest::rstest;
     use ustr::Ustr;
 
     use super::*;
+    use crate::messages::execution::QueryAccount;
 
     #[derive(Debug)]
     struct NoopTimeEventSender;
@@ -752,6 +764,26 @@ mod tests {
         fn assert_send_sync<T: Send + Sync>() {}
 
         assert_send_sync::<TimeEventMessage>();
+    }
+
+    #[rstest]
+    fn test_trading_command_message_display() {
+        let command = TradingCommand::QueryAccount(QueryAccount::new(
+            TraderId::from("TRADER-001"),
+            None,
+            AccountId::from("SIM-001"),
+            UUID4::from("00000000-0000-4000-8000-000000000001"),
+            UnixNanos::from(1),
+            None,
+            None,
+        ));
+        let message =
+            TradingCommandMessage::new(MessagingSwitchboard::exec_engine_execute(), command);
+
+        assert_eq!(
+            message.to_string(),
+            "TradingCommandMessage(endpoint=ExecEngine.execute, command=QueryAccount(client_id=None, account_id=SIM-001))"
+        );
     }
 
     #[rstest]

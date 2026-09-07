@@ -199,8 +199,9 @@ impl Display for BatchCancelOrders {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "BatchCancelOrders(instrument_id={}, cancels=TBD)",
+            "BatchCancelOrders(instrument_id={}, cancels={})",
             self.instrument_id,
+            self.cancels.len(),
         )
     }
 }
@@ -233,6 +234,38 @@ mod tests {
         assert_eq!(
             command.to_string(),
             format!("CancelAllOrders(instrument_id=AUD/USD.SIM, order_side={expected_order_side})")
+        );
+    }
+
+    #[rstest]
+    fn test_batch_cancel_orders_display() {
+        let cancel = CancelOrder::new(
+            TraderId::from("TRADER-001"),
+            None,
+            StrategyId::from("S-001"),
+            InstrumentId::from("AUD/USD.SIM"),
+            ClientOrderId::from("O-001"),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        let command = BatchCancelOrders::new(
+            TraderId::from("TRADER-001"),
+            None,
+            StrategyId::from("S-001"),
+            InstrumentId::from("AUD/USD.SIM"),
+            vec![cancel.clone(), cancel],
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+
+        assert_eq!(
+            command.to_string(),
+            "BatchCancelOrders(instrument_id=AUD/USD.SIM, cancels=2)"
         );
     }
 }

@@ -581,15 +581,15 @@ impl Display for MarketIfTouchedOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "MarketIfTouchedOrder {{ \
-                side: {}, \
-                qty: {}, \
-                instrument: {}, \
-                tif: {}, \
-                trigger_price: {}, \
-                trigger_type: {}, \
-                status: {} \
-            }}",
+            "MarketIfTouchedOrder(\
+                side={}, \
+                qty={}, \
+                instrument={}, \
+                tif={}, \
+                trigger_price={}, \
+                trigger_type={}, \
+                status={}\
+            )",
             self.side,
             self.quantity,
             self.instrument_id,
@@ -651,15 +651,15 @@ mod tests {
 
         assert_eq!(
             order.to_string(),
-            "MarketIfTouchedOrder { \
-                side: BUY, \
-                qty: 1, \
-                instrument: AUD/USD.SIM, \
-                tif: GTC, \
-                trigger_price: 30000, \
-                trigger_type: LAST_PRICE, \
-                status: INITIALIZED \
-            }"
+            "MarketIfTouchedOrder(\
+                side=BUY, \
+                qty=1, \
+                instrument=AUD/USD.SIM, \
+                tif=GTC, \
+                trigger_price=30000, \
+                trigger_type=LAST_PRICE, \
+                status=INITIALIZED\
+            )"
         );
     }
 

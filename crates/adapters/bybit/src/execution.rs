@@ -1039,7 +1039,7 @@ impl ExecutionClient for BybitExecutionClient {
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
         let Some(instrument_id) = cmd.instrument_id else {
-            log::warn!("generate_order_status_report requires instrument_id: {cmd:?}");
+            log::warn!("generate_order_status_report requires instrument_id: {cmd}");
             return Ok(None);
         };
 
@@ -2058,7 +2058,7 @@ impl ExecutionClient for BybitExecutionClient {
             {
                 Ok(reports) => {
                     for report in reports {
-                        log::debug!("Cancelled order: {report:?}");
+                        log::debug!("Cancelled order: {report}");
                     }
                 }
                 Err(e) => {

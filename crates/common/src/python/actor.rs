@@ -250,7 +250,7 @@ impl PyDataActorInner {
     fn execute_exec_algorithm_command(&mut self, command: &TradingCommand) -> anyhow::Result<()> {
         if self.core.config.log_commands {
             let id = self.core.actor_id;
-            log::info!("{id} {RECV}{CMD} {command:?}");
+            log::info!("{id} {RECV}{CMD} {command}");
         }
 
         if self.core.state() != ComponentState::Running {
@@ -269,7 +269,7 @@ impl PyDataActorInner {
                     .map_err(|e| anyhow::anyhow!("Python on_order_list failed: {e}"))
             }
             _ => {
-                log::warn!("Unhandled command type: {command:?}");
+                log::warn!("Unhandled command type: {command}");
                 Ok(())
             }
         }
