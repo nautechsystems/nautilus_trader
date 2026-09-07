@@ -67,6 +67,7 @@ Released on TBD (UTC).
 - Fixed `released_price`, `due_post_only`, `protection_price`, `causation_id`, `correction_id`, `is_reopened`, and fill `info` being dropped when an order event was persisted to PostgreSQL
 - Fixed position commissions and realized PnL after fill-void replay
 - Fixed cash account locked balances after partial order fills
+- Fixed cash account backtests accepting futures contracts, thanks for reporting @folknor
 - Fixed nanosecond precision loss when `TestDataProvider` parses timestamps
 - Fixed Python `OrderBook` aggregation to raise `ValueError` for invalid precision and quantity overflow
 - Fixed Python `Price` and `Quantity` `from_mantissa_exponent` methods to raise `ValueError` on invalid inputs

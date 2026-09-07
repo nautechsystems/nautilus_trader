@@ -74,7 +74,10 @@ use nautilus_model::{
     },
     instruments::{
         CryptoOption, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny, OptionContract,
-        stubs::{audusd_sim, cfd_gold, crypto_perpetual_ethusdt, gbpusd_sim, xbtusd_bitmex},
+        stubs::{
+            audusd_sim, cfd_gold, crypto_perpetual_ethusdt, futures_contract_es, gbpusd_sim,
+            xbtusd_bitmex,
+        },
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
@@ -184,15 +187,16 @@ fn test_venue_mismatch_between_exchange_and_instrument(crypto_perpetual_ethusdt:
 }
 
 #[rstest]
+#[case::crypto_perpetual(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()))]
+#[case::futures_contract(InstrumentAny::FuturesContract(futures_contract_es(None, None)))]
 #[should_panic(expected = "Cash account cannot trade futures or perpetuals")]
-fn test_cash_account_trading_futures_or_perpetuals(crypto_perpetual_ethusdt: CryptoPerpetual) {
+fn test_cash_account_trading_futures_or_perpetuals(#[case] instrument: InstrumentAny) {
     let exchange = get_exchange(
-        Venue::new("BINANCE"),
+        instrument.id().venue,
         AccountType::Cash,
         BookType::L1_MBP,
         None,
     );
-    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
     exchange.borrow_mut().add_instrument(instrument).unwrap();
 }
 

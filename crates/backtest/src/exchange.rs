@@ -434,7 +434,8 @@ impl SimulatedExchange {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The exchange account type is `Cash` and the instrument is a `CryptoPerpetual` or `CryptoFuture`.
+    /// - The exchange account type is `Cash` and the instrument is a `CryptoPerpetual`,
+    ///   `CryptoFuture`, `FuturesContract`, or `PerpetualContract`.
     /// - The matching engine raw ID is exhausted.
     ///
     /// # Panics
@@ -452,6 +453,7 @@ impl SimulatedExchange {
         if self.account_type == AccountType::Cash
             && (matches!(instrument, InstrumentAny::CryptoPerpetual(_))
                 || matches!(instrument, InstrumentAny::CryptoFuture(_))
+                || matches!(instrument, InstrumentAny::FuturesContract(_))
                 || matches!(instrument, InstrumentAny::PerpetualContract(_)))
         {
             anyhow::bail!("Cash account cannot trade futures or perpetuals")
