@@ -778,7 +778,7 @@ async fn mock_spot_trade_volume(req: Request, state: Arc<TestServerState>) -> Re
 
     if state
         .trade_volume_failures_remaining
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
             remaining.checked_sub(1)
         })
         .is_ok()

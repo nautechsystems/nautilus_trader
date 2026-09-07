@@ -107,7 +107,7 @@ pub struct TaskId(u64);
 impl TaskId {
     fn next() -> Self {
         let id = NEXT_TASK_ID
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
             .expect("task ID space exhausted");
         Self(id)
     }
