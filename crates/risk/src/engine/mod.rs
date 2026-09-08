@@ -52,7 +52,7 @@ use nautilus_model::{
         OrderDenied, OrderDeniedReason, OrderEventAny, OrderModifyRejected, OrderPriceField,
         PositionEvent,
     },
-    identifiers::{AccountId, InstrumentId},
+    identifiers::{AccountId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     types::{Currency, Money, Price, Quantity, money::MoneyRaw, quantity::QuantityRaw},
@@ -69,6 +69,58 @@ fn cash_or_wallet_account(account: &AccountAny) -> Option<&dyn Account> {
         AccountAny::Wallet(wallet) => Some(wallet),
         AccountAny::Margin(_) | AccountAny::Betting(_) => None,
     }
+}
+
+/// Resolves the account to use for account-scoped pre-trade risk checks.
+///
+/// A plain `account_for_venue` lookup on the instrument's venue is not sufficient for
+/// broker-routed instruments: the account is registered under the broker venue (e.g. `IB`)
+/// while the instrument carries the routing venue or exchange MIC (e.g. `SMART`, `IBIS`).
+/// When the lookup misses, every account-scoped check is skipped, so the resolution is
+/// attempted in the following order:
+///
+/// 1. Exact venue match (the common case; unchanged behaviour).
+/// 2. The account of the execution client routing the order, when the order carries an
+///    explicit `client_id`.
+/// 3. The account owning an existing position for the instrument (mirrors the portfolio
+///    resolution added for broker-routed instruments).
+/// 4. The sole registered account, when the cache holds exactly one.
+///
+/// Steps 2 to 4 matter specifically for *pre-trade* checks. A new order usually has no
+/// `account_id` and no position yet, so for a broker-routed instrument steps 1 and 3 both
+/// miss on the first order of a session, which is precisely when the limits should apply.
+///
+/// Returns `None` when no account can be resolved, in which case the caller keeps the
+/// existing fail-open behaviour.
+fn resolve_account_for_instrument(
+    cache: &Cache,
+    instrument_id: &InstrumentId,
+    orders: &[&OrderAny],
+) -> Option<AccountAny> {
+    if let Some(account) = cache.account_for_venue(&instrument_id.venue) {
+        return Some(account.clone_without_events());
+    }
+
+    for order in orders {
+        if let Some(client_id) = cache.client_id(&order.client_order_id())
+            && let Some(account) = cache.account_for_venue(&Venue::new(client_id.as_str()))
+        {
+            return Some(account.clone_without_events());
+        }
+    }
+
+    if let Some(account) = cache
+        .positions(None, Some(instrument_id), None, None, None)
+        .into_iter()
+        .next()
+        .and_then(|position| cache.account(&position.account_id))
+    {
+        return Some(account.clone_without_events());
+    }
+
+    cache
+        .account_sole()
+        .map(|account| account.clone_without_events())
 }
 
 fn format_rate_limit(rate_limit: &RateLimit) -> String {
@@ -1200,7 +1252,8 @@ impl RiskEngine {
             market_prices.push(price);
         }
 
-        // Get account for risk checks: use explicit account_id if provided, otherwise venue lookup
+        // Get account for risk checks: use explicit account_id if provided, otherwise resolve
+        // from the instrument (see `resolve_account_for_instrument` for the fallback order).
         let resolved_account = {
             let cache = self.cache.borrow();
 
@@ -1209,15 +1262,18 @@ impl RiskEngine {
                     .account(&account_id)
                     .map(|account| account.clone_without_events())
             } else {
-                cache
-                    .account_for_venue(&instrument.id().venue)
-                    .map(|account| account.clone_without_events())
+                resolve_account_for_instrument(&cache, &instrument.id(), orders)
             }
         };
 
         let Some(mut account) = resolved_account else {
-            log::debug!(
-                "Cannot find account for venue {} (account_id={account_id:?})",
+            // Fail-open: every account-scoped check below is skipped. Logged at WARN because
+            // the configured risk limits silently stop applying, which is not observable at
+            // the default log level otherwise.
+            log::warn!(
+                "Cannot find account for instrument {} (venue={}, account_id={account_id:?}): \
+                 skipping account-scoped risk checks",
+                instrument.id(),
                 instrument.id().venue
             );
 

@@ -8338,6 +8338,23 @@ impl Cache {
             .map(|account_cell| account_cell.borrow().clone())
     }
 
+    /// Returns a borrow of the sole account in the cache, when exactly one is registered.
+    ///
+    /// Useful as a last-resort resolution for broker-routed instruments, where the account is
+    /// registered under the broker venue while the instrument carries a routing venue or
+    /// exchange MIC, so a venue lookup misses. Returns `None` when zero or multiple accounts
+    /// are registered, since the choice would then be ambiguous.
+    #[must_use]
+    pub fn account_sole(&self) -> Option<AccountRef<'_>> {
+        if self.accounts.len() != 1 {
+            return None;
+        }
+        self.accounts
+            .values()
+            .next()
+            .map(|account_cell| AccountRef::new(account_cell.borrow()))
+    }
+
     /// Returns a reference to the account ID for the `venue` (if found).
     #[must_use]
     pub fn account_id(&self, venue: &Venue) -> Option<&AccountId> {
