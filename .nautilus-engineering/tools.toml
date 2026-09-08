@@ -107,3 +107,10 @@ releases = "github:google/osv-scanner"
 [capnp]
 version = "1.5.0"
 releases = "github-tags:capnproto/capnproto"
+
+[zizmor]
+version = "1.30.0"
+releases = "pypi:zizmor"
+pre-commit-repository = "https://github.com/zizmorcore/zizmor-pre-commit"
+pre-commit-revision = "v{version}"
+pre-commit-fragment = "pre-commit/zizmor.yaml"

@@ -1,0 +1,9 @@
+- repo: https://github.com/zizmorcore/zizmor-pre-commit
+  rev: v1.30.0
+  hooks:
+    - id: zizmor
+      name: zizmor (security)
+      description: Scans GitHub Actions workflows for security misconfigurations
+      args: ["--no-online-audits", "--strict-collection", "--min-severity", "informational", ".github/"]
+      files: ^\.github/(workflows/[^/]+|(?:.*/)?action|dependabot)\.ya?ml$
+      pass_filenames: false

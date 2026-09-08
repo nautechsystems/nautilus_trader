@@ -39,7 +39,7 @@ jobs:
           persist-credentials: false
 
       - name: Common setup
-        uses: ./.github/actions/common-setup
+        uses: $/.github/actions/common-setup
         with:
           python-version: "3.13"
           # free-disk-space auto-skips on the nautilus-ci-runner-* pool.
@@ -82,7 +82,7 @@ jobs:
           persist-credentials: false
 
       - name: Common setup
-        uses: ./.github/actions/common-setup
+        uses: $/.github/actions/common-setup
         with:
           python-version: "3.13"
           # free-disk-space auto-skips on the nautilus-ci-runner-* pool.
@@ -122,7 +122,7 @@ jobs:
           persist-credentials: false
 
       - name: Common setup
-        uses: ./.github/actions/common-setup
+        uses: $/.github/actions/common-setup
         with:
           python-version: "3.13"
           # free-disk-space auto-skips on the nautilus-ci-runner-* pool.

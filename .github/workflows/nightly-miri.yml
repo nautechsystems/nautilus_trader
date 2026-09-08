@@ -56,7 +56,7 @@ jobs:
         run: echo "MIRI_TOOLCHAIN=$(bash scripts/tool-version.sh miri)" >> "$GITHUB_ENV"
 
       - name: Common setup
-        uses: ./.github/actions/common-setup
+        uses: $/.github/actions/common-setup
         with:
           python-version: "3.13"
           # free-disk-space auto-skips on the nautilus-ci-runner-* pool.

@@ -89,7 +89,7 @@ jobs:
         run: bash scripts/ci/verify-ci-inputs.sh post-checkout
 
       - name: Common setup
-        uses: ./.github/actions/common-setup
+        uses: $/.github/actions/common-setup
         with:
           python-version: "3.14"
           free-disk-space: "true"
@@ -160,7 +160,7 @@ jobs:
         run: bash scripts/ci/verify-ci-inputs.sh post-checkout
 
       - name: Common setup
-        uses: ./.github/actions/common-setup
+        uses: $/.github/actions/common-setup
         with:
           python-version: "3.14"
           free-disk-space: "true"
@@ -231,7 +231,7 @@ jobs:
         run: bash scripts/ci/verify-ci-inputs.sh post-checkout
 
       - name: Common setup
-        uses: ./.github/actions/common-setup
+        uses: $/.github/actions/common-setup
         with:
           python-version: "3.14"
           free-disk-space: "true"
@@ -252,7 +252,7 @@ jobs:
           POSTGRES_DATABASE: nautilus
 
       - name: Cached test data
-        uses: ./.github/actions/common-test-data
+        uses: $/.github/actions/common-test-data
 
       - name: Report disk space before Rust tests
         run: bash scripts/ci/report-disk-space.bash "before Rust tests"

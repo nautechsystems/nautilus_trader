@@ -121,6 +121,7 @@ Released on TBD (UTC).
 - Upgraded `prek` tool to v0.5.2
 - Upgraded `uv` tool to v0.12.9
 - Upgraded `typos` pre-commit hook to v1.50.1
+- Upgraded `zizmor` pre-commit hook to v1.30.0
 - Upgraded `flate2` crate to v1.1.10
 - Upgraded `indexmap` crate to v2.14.1
 - Upgraded `rcgen` crate to v0.14.10

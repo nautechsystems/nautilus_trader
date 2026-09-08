@@ -168,7 +168,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          uv run --no-project --with zizmor==1.29.0 -- \
+          uv run --no-project --with "zizmor==$(bash scripts/tool-version.sh zizmor)" -- \
             zizmor --strict-collection --format sarif --min-severity informational .github/ \
             > zizmor.sarif
 

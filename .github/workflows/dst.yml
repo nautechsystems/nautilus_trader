@@ -58,7 +58,7 @@ jobs:
           persist-credentials: false
 
       - name: Common setup
-        uses: ./.github/actions/common-setup
+        uses: $/.github/actions/common-setup
         with:
           python-version: "3.13"
           free-disk-space: "true"

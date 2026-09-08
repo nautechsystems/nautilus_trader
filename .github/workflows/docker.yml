@@ -171,8 +171,7 @@ jobs:
             tuf-repo-cdn.sigstore.dev:443
 
       - name: Checkout repository
-        # Required so local ./.github/actions composites resolve at runtime;
-        # merge jobs only download digests otherwise.
+        # Required for the manifest creation and signing scripts
         # https://github.com/actions/checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -239,13 +238,13 @@ jobs:
         run: bash ./scripts/ci/cosign-sign-retry.bash "$IMAGE"
 
       - name: Generate SBOM
-        uses: ./.github/actions/generate-sbom-retry
+        uses: $/.github/actions/generate-sbom-retry
         with:
           image: ghcr.io/${{ github.repository_owner }}/nautilus_trader@${{ steps.push.outputs.digest }}
           output-file: sbom.spdx.json
 
       - name: Attest SBOM
-        uses: ./.github/actions/attest-sbom-retry
+        uses: $/.github/actions/attest-sbom-retry
         with:
           subject-name: ghcr.io/${{ github.repository_owner }}/nautilus_trader
           subject-digest: ${{ steps.push.outputs.digest }}
@@ -416,8 +415,7 @@ jobs:
             tuf-repo-cdn.sigstore.dev:443
 
       - name: Checkout repository
-        # Required so local ./.github/actions composites resolve at runtime;
-        # merge jobs only download digests otherwise.
+        # Required for the manifest creation and signing scripts
         # https://github.com/actions/checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -484,13 +482,13 @@ jobs:
         run: bash ./scripts/ci/cosign-sign-retry.bash "$IMAGE"
 
       - name: Generate SBOM
-        uses: ./.github/actions/generate-sbom-retry
+        uses: $/.github/actions/generate-sbom-retry
         with:
           image: ghcr.io/${{ github.repository_owner }}/jupyterlab@${{ steps.push.outputs.digest }}
           output-file: sbom.spdx.json
 
       - name: Attest SBOM
-        uses: ./.github/actions/attest-sbom-retry
+        uses: $/.github/actions/attest-sbom-retry
         with:
           subject-name: ghcr.io/${{ github.repository_owner }}/jupyterlab
           subject-digest: ${{ steps.push.outputs.digest }}

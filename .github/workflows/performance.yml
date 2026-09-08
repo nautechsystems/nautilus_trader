@@ -89,7 +89,7 @@ jobs:
           df -h
 
       - name: Common setup
-        uses: ./.github/actions/common-setup
+        uses: $/.github/actions/common-setup
         with:
           python-version: "3.14"
           # free-disk-space auto-skips on the nautilus-ci-runner-* pool.
@@ -172,7 +172,7 @@ jobs:
         run: bash scripts/ci/verify-ci-inputs.sh post-checkout
 
       - name: Common setup
-        uses: ./.github/actions/common-setup
+        uses: $/.github/actions/common-setup
         with:
           python-version: "3.14"
           free-disk-space: "true"
@@ -184,7 +184,7 @@ jobs:
         run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
 
       - name: Install cargo-codspeed
-        uses: ./.github/actions/cargo-tool-install
+        uses: $/.github/actions/cargo-tool-install
         with:
           tool-name: cargo-codspeed
 

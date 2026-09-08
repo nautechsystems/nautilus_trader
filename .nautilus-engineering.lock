@@ -1,7 +1,7 @@
 version = 1
 repository = "https://github.com/nautechsystems/nautilus_engineering"
-revision = "55b07926107169d87d613ffb941b4e075aeeaa7b"
-manifest_sha256 = "9c13fc0ece7cc0179fc74a454ec1f9d171195aab4d0b285228261e679209c633"
+revision = "f47207a7c6a1906c01bbd0844b3092b133e15ae1"
+manifest_sha256 = "591f89f0394dfd8a02a4c3bda884dbdc02298d2da3a1cb4861ed8d4c6d67e97e"
 marker_file = ".nautilus-engineering.syncing"
 profiles = ["sync"]
 
@@ -36,9 +36,15 @@ sha256 = "f9d1883fdafe45d8b8e70f706f06360a342c106caddc679a3f53a9fe70e6bec0"
 executable = false
 
 [[file]]
+artifact = "pre-commit-zizmor"
+path = ".nautilus-engineering/pre-commit/zizmor.yaml"
+sha256 = "8b7bc448021f124aceb7ee61f774904efd89429bee2af7a8f605c1972e9d2e60"
+executable = false
+
+[[file]]
 artifact = "shared-tool-catalog"
 path = ".nautilus-engineering/tools.toml"
-sha256 = "bd04a34a6adada8a16e7fcefd111c5e774c0209e6f8d8d3b054220dc68729fe3"
+sha256 = "d947d4a3ba1a2af495fbbe5682ef6cfee63775ad947a693b8521cf54cb1a1974"
 executable = false
 
 [[file]]
@@ -98,7 +104,7 @@ executable = true
 [[file]]
 artifact = "github-action-pin-check"
 path = "scripts/ci/check-github-action-shas.sh"
-sha256 = "d6ac7d779303ecc3b2c11c6cc26408a7c1ec7f2cc421991231af402281654333"
+sha256 = "96d69ba4c985fb7e19b9274d40c2bfdd5f54f607735af73f8f21f7a0c81d7191"
 executable = true
 
 [[file]]
