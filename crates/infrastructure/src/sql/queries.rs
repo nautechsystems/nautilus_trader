@@ -67,13 +67,16 @@ impl DatabaseQueries {
     ///
     /// Returns an error if the INSERT operation fails.
     pub async fn add(pool: &PgPool, key: String, value: Vec<u8>) -> anyhow::Result<()> {
-        sqlx::query("INSERT INTO general (id, value) VALUES ($1, $2)")
-            .bind(key)
-            .bind(value)
-            .execute(pool)
-            .await
-            .map(|_| ())
-            .map_err(|e| anyhow::anyhow!("Failed to insert into general table: {e}"))
+        sqlx::query(
+            "INSERT INTO general (id, value) VALUES ($1, $2) \
+             ON CONFLICT (id) DO UPDATE SET value = EXCLUDED.value",
+        )
+        .bind(key)
+        .bind(value)
+        .execute(pool)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to insert into general table: {e}"))
     }
 
     /// Loads all entries from the `general` table via the provided `pool`.

@@ -104,6 +104,32 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn test_add_general_object_twice_updates_value() {
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
+
+        let key = String::from("test_upsert_id");
+        let first = Bytes::from("first_value");
+        let second = Bytes::from("second_value");
+
+        pg_cache.add(key.clone(), first.clone()).unwrap();
+        wait_until(
+            || pg_cache.load().unwrap().get(&key) == Some(&first),
+            Duration::from_secs(5),
+        );
+
+        // Re-adding an existing key must update the stored value, matching the
+        // in-memory cache's insert semantics, rather than fail on the primary key
+        pg_cache.add(key.clone(), second.clone()).unwrap();
+        wait_until(
+            || pg_cache.load().unwrap().get(&key) == Some(&second),
+            Duration::from_secs(5),
+        );
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_add_general_object_adds_to_cache() {
         let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
