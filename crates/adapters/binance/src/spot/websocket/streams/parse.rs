@@ -436,6 +436,7 @@ mod tests {
             is_spot_trading_allowed: true,
             is_margin_trading_allowed: false,
             filters: BinanceSymbolFiltersSbe {
+                notional_filters: Vec::new(),
                 price_filter: Some(BinancePriceFilterSbe {
                     price_exponent: -8,
                     min_price: 1_000_000,

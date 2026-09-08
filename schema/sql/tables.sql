@@ -65,11 +65,14 @@ CREATE TABLE IF NOT EXISTS "instrument" (
     margin_maint TEXT NOT NULL,
     maker_fee TEXT NULL,
     taker_fee TEXT NULL,
+    info JSON,
     ts_event TEXT NOT NULL,
     ts_init TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE "instrument" ADD COLUMN IF NOT EXISTS info JSON;
 
 -- Instrument closes are stored independently of instrument metadata.
 CREATE TABLE IF NOT EXISTS "instrument_close" (

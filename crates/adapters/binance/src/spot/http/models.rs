@@ -443,6 +443,21 @@ pub struct BinanceLotSizeFilterSbe {
     pub step_size: i64,
 }
 
+/// Decoded Binance Spot notional filter.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BinanceNotionalFilter {
+    /// Minimum quote-currency amount.
+    pub min: Decimal,
+    /// Maximum quote-currency amount, when specified.
+    pub max: Option<Decimal>,
+    /// Whether the minimum applies to market orders.
+    pub apply_min_to_market: bool,
+    /// Whether the maximum applies to market orders.
+    pub apply_max_to_market: bool,
+    /// Venue average-price window in minutes.
+    pub avg_price_mins: u32,
+}
+
 /// Symbol filters from SBE response.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct BinanceSymbolFiltersSbe {
@@ -450,6 +465,8 @@ pub struct BinanceSymbolFiltersSbe {
     pub price_filter: Option<BinancePriceFilterSbe>,
     /// Lot size filter (required for trading).
     pub lot_size_filter: Option<BinanceLotSizeFilterSbe>,
+    /// Exact notional rules and their market applicability.
+    pub notional_filters: Vec<BinanceNotionalFilter>,
 }
 
 /// Symbol information from SBE exchange info response.
@@ -545,6 +562,18 @@ pub struct BinanceSymbolFilterJson {
     pub max_qty: Option<String>,
     /// Quantity step size.
     pub step_size: Option<String>,
+    /// Minimum quote notional.
+    pub min_notional: Option<String>,
+    /// Maximum quote notional.
+    pub max_notional: Option<String>,
+    /// Legacy minimum market applicability.
+    pub apply_to_market: Option<bool>,
+    /// Range minimum market applicability.
+    pub apply_min_to_market: Option<bool>,
+    /// Range maximum market applicability.
+    pub apply_max_to_market: Option<bool>,
+    /// Venue average-price window in minutes.
+    pub avg_price_mins: Option<u32>,
 }
 
 /// Account-specific Spot commission response.

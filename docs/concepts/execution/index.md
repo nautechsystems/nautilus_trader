@@ -183,7 +183,7 @@ Unless bypassed in `RiskEngineConfig`, the engine validates:
 - Quantity precision and base-quantity minimum and maximum bounds.
 - GTD orders have not already expired.
 - `reduce_only` orders do not increase the referenced position.
-- Engine-level `max_notional_per_order` limits and instrument `max_notional` limits.
+- Engine-level `max_notional_per_order` limits and the instrument's `min_notional` and `max_notional` fields.
 - Cash-account balance impact for non-margin accounts.
 - Submit and modify rate limits.
 - Trading-state restrictions (`ACTIVE`, `HALTED`, `REDUCING`).

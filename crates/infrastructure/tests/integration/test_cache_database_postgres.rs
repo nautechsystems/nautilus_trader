@@ -53,8 +53,11 @@ mod serial_tests {
         instruments::{
             Instrument, InstrumentAny,
             stubs::{
-                audusd_sim, binary_option, crypto_future_btcusdt, crypto_perpetual_ethusdt,
-                currency_pair_ethusdt, equity_aapl, futures_contract_es, option_contract_appl,
+                audusd_sim, binary_option, cfd_gold, commodity_gold, crypto_future_btcusdt,
+                crypto_futures_spread_btc_deribit, crypto_option_btc_deribit,
+                crypto_option_spread_btc_deribit, crypto_perpetual_ethusdt, currency_pair_ethusdt,
+                equity_aapl, futures_contract_es, index_instrument_spx, option_contract_appl,
+                perpetual_contract_eurusd,
             },
         },
         orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -63,6 +66,7 @@ mod serial_tests {
     };
     use nautilus_persistence::test_data::RustTestCustomData;
     use nautilus_serialization::ensure_custom_data_registered;
+    use rstest::rstest;
     use rust_decimal::Decimal;
     use serde::Serialize;
     use sqlx::{AssertSqlSafe, PgPool, postgres::PgConnectOptions};
@@ -346,6 +350,109 @@ mod serial_tests {
 
         pg_cache.flush().unwrap();
         pg_cache.close().unwrap();
+    }
+
+    #[rstest]
+    #[case(binary_option().into_any())]
+    #[case(cfd_gold().into_any())]
+    #[case(commodity_gold().into_any())]
+    #[case(crypto_future_btcusdt(2, 6, Price::from("0.01"), Quantity::from("0.000001")).into_any())]
+    #[case(crypto_futures_spread_btc_deribit().into_any())]
+    #[case(crypto_option_btc_deribit(3, 1, Price::from("0.001"), Quantity::from("0.1")).into_any())]
+    #[case(crypto_option_spread_btc_deribit().into_any())]
+    #[case(crypto_perpetual_ethusdt().into_any())]
+    #[case(currency_pair_ethusdt().into_any())]
+    #[case(equity_aapl().into_any())]
+    #[case(futures_contract_es(None, None).into_any())]
+    #[case(index_instrument_spx().into_any())]
+    #[case(option_contract_appl().into_any())]
+    #[case(perpetual_contract_eurusd().into_any())]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_instrument_info_round_trip(#[case] instrument: InstrumentAny) {
+        let mut database = get_test_pg_cache_database().await.unwrap();
+
+        for currency in [
+            instrument.base_currency(),
+            Some(instrument.quote_currency()),
+            Some(instrument.settlement_currency()),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            database.add_currency(&currency).unwrap();
+        }
+        let id = instrument.id();
+        let mut encoded = serde_json::to_value(instrument).unwrap();
+        for info in [
+            serde_json::json!({"symbol": id.to_string(), "filters": [{"min": "10.005", "applyToMarket": false}], "active": true}),
+            serde_json::json!({"replacement": ["98.76543219", false, null]}),
+            serde_json::json!({}),
+            serde_json::Value::Null,
+        ] {
+            encoded
+                .as_object_mut()
+                .unwrap()
+                .values_mut()
+                .next()
+                .unwrap()["info"] = info.clone();
+            let instrument: InstrumentAny = serde_json::from_value(encoded.clone()).unwrap();
+            database.add_instrument(&instrument).unwrap();
+            wait_until_async(
+                || async {
+                    database
+                        .load_instrument(&id)
+                        .await
+                        .unwrap()
+                        .is_some_and(|loaded| serde_json::to_value(loaded.info()).unwrap() == info)
+                },
+                Duration::from_secs(5),
+            )
+            .await;
+
+            let loaded = database.load_instrument(&id).await.unwrap().unwrap();
+            let all = database.load_instruments().await.unwrap();
+            assert_eq!(serde_json::to_value(loaded.info()).unwrap(), info);
+            assert_eq!(serde_json::to_value(all[&id].info()).unwrap(), info);
+        }
+        database.flush().unwrap();
+        database.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_currency_pair_info_survives_cache_restore() {
+        let mut database = get_test_pg_cache_database().await.unwrap();
+        let mut pair = currency_pair_ethusdt();
+        let mut info = Params::new();
+        info.insert("raw_symbol".to_owned(), serde_json::Value::from("ETHUSDT"));
+        info.insert("z".to_owned(), serde_json::Value::from(1e16));
+        info.insert("a".to_owned(), serde_json::Value::from(2));
+        pair.info = Some(info.clone());
+        let instrument = pair.into_any();
+        database
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        database.add_currency(&instrument.quote_currency()).unwrap();
+        database.add_instrument(&instrument).unwrap();
+        database.close().unwrap();
+
+        let restored_database = get_test_pg_cache_database().await.unwrap();
+        let mut cache = Cache::new(None, Some(Box::new(restored_database)));
+        cache.cache_instruments().await.unwrap();
+        let restored = cache.instrument(&instrument.id()).unwrap();
+        assert_eq!(
+            serde_json::to_value(restored).unwrap(),
+            serde_json::to_value(&instrument).unwrap()
+        );
+        assert_eq!(restored.info(), Some(&info));
+        assert_eq!(restored.info().unwrap().get_u64("z"), None);
+        assert_eq!(restored.info().unwrap().get_u64("a"), Some(2));
+        assert_eq!(
+            serde_json::to_string(&restored.info()).unwrap(),
+            serde_json::to_string(&Some(info)).unwrap()
+        );
+        let mut cleanup_database = get_test_pg_cache_database().await.unwrap();
+        cleanup_database.flush().unwrap();
+        cleanup_database.close().unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -1609,6 +1716,56 @@ mod serial_tests {
             result.is_ok(),
             "re-running init must succeed, was {result:?}"
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_instrument_info_migration_preserves_legacy_rows() {
+        let mut database = get_test_pg_cache_database().await.unwrap();
+        let instrument = currency_pair_ethusdt().into_any();
+        database
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        database.add_currency(&instrument.quote_currency()).unwrap();
+        database.add_instrument(&instrument).unwrap();
+        database.close().unwrap();
+        let options = get_postgres_connect_options(None, None, None, None, None);
+        let pg = connect_test_pg(options.clone().into()).await.unwrap();
+        sqlx::query("ALTER TABLE instrument DROP COLUMN info")
+            .execute(&pg)
+            .await
+            .unwrap();
+
+        let connection_result = get_test_pg_cache_database().await;
+        let schema_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../schema/sql").to_string();
+
+        for _ in 0..2 {
+            init_postgres(
+                &pg,
+                options.database.clone(),
+                options.password.clone(),
+                Some(schema_dir.clone()),
+            )
+            .await
+            .unwrap();
+        }
+        let error = connection_result.unwrap_err().to_string();
+        assert!(
+            error.contains("missing cache columns instrument.info"),
+            "{error}"
+        );
+        let mut restored_database = get_test_pg_cache_database().await.unwrap();
+        let restored = restored_database
+            .load_instrument(&instrument.id())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(&restored).unwrap(),
+            serde_json::to_value(instrument).unwrap()
+        );
+        assert_eq!(restored.info(), None);
+        restored_database.flush().unwrap();
+        restored_database.close().unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]

@@ -217,9 +217,6 @@ impl Hash for Equity {
 }
 
 impl Instrument for Equity {
-    fn tick_scheme(&self) -> Option<Ustr> {
-        self.tick_scheme
-    }
     fn into_any(self) -> InstrumentAny {
         InstrumentAny::Equity(self)
     }
@@ -329,6 +326,14 @@ impl Instrument for Equity {
 
     fn min_price(&self) -> Option<Price> {
         self.min_price
+    }
+
+    fn tick_scheme(&self) -> Option<Ustr> {
+        self.tick_scheme
+    }
+
+    fn info(&self) -> Option<&Params> {
+        self.info.as_ref()
     }
 
     fn ts_event(&self) -> UnixNanos {

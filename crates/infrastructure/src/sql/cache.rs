@@ -301,6 +301,7 @@ impl PostgresCacheDatabase {
 // writes truncate, and the row readers use `.ok().flatten()` so reads degrade to `None`. Absent
 // order event columns are silent in both directions too: every insert names them so writes fail
 // and drop the event, while every decoder reads them so `load_orders` yields an empty cache.
+// Missing instrument metadata also breaks inserts and panics in the existing row dispatch on load.
 async fn check_schema_migrated(pool: &PgPool) -> Result<(), sqlx::Error> {
     let has_instrument_close: bool = sqlx::query_scalar(
         "SELECT EXISTS (
@@ -346,6 +347,7 @@ async fn check_schema_migrated(pool: &PgPool) -> Result<(), sqlx::Error> {
     let missing: Vec<String> = sqlx::query_scalar(
         "SELECT required.table_name || '.' || required.column_name
         FROM (VALUES
+            ('instrument', 'info'),
             ('order_event', 'released_price'),
             ('order_event', 'protection_price'),
             ('order_event', 'due_post_only'),
@@ -375,7 +377,7 @@ async fn check_schema_migrated(pool: &PgPool) -> Result<(), sqlx::Error> {
 
     Err(sqlx::Error::Configuration(
         format!(
-            "Postgres schema is out of date, missing order event columns {}: {SCHEMA_MIGRATION_COMMAND}",
+            "Postgres schema is out of date, missing cache columns {}: {SCHEMA_MIGRATION_COMMAND}",
             missing.join(", "),
         )
         .into(),

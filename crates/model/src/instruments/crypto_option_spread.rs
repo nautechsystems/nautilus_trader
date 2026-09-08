@@ -289,9 +289,6 @@ impl Hash for CryptoOptionSpread {
 }
 
 impl Instrument for CryptoOptionSpread {
-    fn tick_scheme(&self) -> Option<Ustr> {
-        self.tick_scheme
-    }
     fn into_any(self) -> InstrumentAny {
         InstrumentAny::CryptoOptionSpread(self)
     }
@@ -406,6 +403,14 @@ impl Instrument for CryptoOptionSpread {
 
     fn min_price(&self) -> Option<Price> {
         self.min_price
+    }
+
+    fn tick_scheme(&self) -> Option<Ustr> {
+        self.tick_scheme
+    }
+
+    fn info(&self) -> Option<&Params> {
+        self.info.as_ref()
     }
 
     fn ts_event(&self) -> UnixNanos {

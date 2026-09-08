@@ -261,9 +261,6 @@ impl Hash for FuturesSpread {
 }
 
 impl Instrument for FuturesSpread {
-    fn tick_scheme(&self) -> Option<Ustr> {
-        self.tick_scheme
-    }
     fn into_any(self) -> InstrumentAny {
         InstrumentAny::FuturesSpread(self)
     }
@@ -377,6 +374,14 @@ impl Instrument for FuturesSpread {
 
     fn min_price(&self) -> Option<Price> {
         self.min_price
+    }
+
+    fn tick_scheme(&self) -> Option<Ustr> {
+        self.tick_scheme
+    }
+
+    fn info(&self) -> Option<&Params> {
+        self.info.as_ref()
     }
 
     fn ts_event(&self) -> UnixNanos {

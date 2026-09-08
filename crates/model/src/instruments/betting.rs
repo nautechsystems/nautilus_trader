@@ -336,13 +336,6 @@ impl Hash for BettingInstrument {
 }
 
 impl Instrument for BettingInstrument {
-    fn tick_scheme(&self) -> Option<Ustr> {
-        self.tick_scheme.or_else(|| {
-            self.uses_betfair_tick_scheme()
-                .then(|| Ustr::from(BETFAIR_TICK_SCHEME_NAME))
-        })
-    }
-
     fn into_any(self) -> InstrumentAny {
         InstrumentAny::Betting(self)
     }
@@ -439,6 +432,17 @@ impl Instrument for BettingInstrument {
             self.uses_betfair_tick_scheme()
                 .then(|| BETFAIR_TICK_SCHEME.min_price())
         })
+    }
+
+    fn tick_scheme(&self) -> Option<Ustr> {
+        self.tick_scheme.or_else(|| {
+            self.uses_betfair_tick_scheme()
+                .then(|| Ustr::from(BETFAIR_TICK_SCHEME_NAME))
+        })
+    }
+
+    fn info(&self) -> Option<&Params> {
+        self.info.as_ref()
     }
 
     fn ts_event(&self) -> UnixNanos {

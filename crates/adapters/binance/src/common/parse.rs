@@ -56,8 +56,8 @@ use crate::{
     spot::{
         http::models::{
             BinanceAccountTrade, BinanceKlines, BinanceLotSizeFilterSbe, BinanceNewOrderResponse,
-            BinanceOrderResponse, BinancePriceFilterSbe, BinanceSymbolJson, BinanceSymbolSbe,
-            BinanceTrades,
+            BinanceNotionalFilter, BinanceOrderResponse, BinancePriceFilterSbe, BinanceSymbolJson,
+            BinanceSymbolSbe, BinanceTrades,
         },
         sbe::spot::{
             order_side::OrderSide as SbeOrderSide, order_status::OrderStatus as SbeOrderStatus,
@@ -67,6 +67,8 @@ use crate::{
 };
 const CONTRACT_TYPE_PERPETUAL: &str = "PERPETUAL";
 const CONTRACT_TYPE_TRADIFI_PERPETUAL: &str = "TRADIFI_PERPETUAL";
+const CONTRACT_TYPE_CURRENT_WEEK: &str = "CURRENT_WEEK";
+const CONTRACT_TYPE_NEXT_WEEK: &str = "NEXT_WEEK";
 const CONTRACT_TYPE_CURRENT_MONTH: &str = "CURRENT_MONTH";
 const CONTRACT_TYPE_NEXT_MONTH: &str = "NEXT_MONTH";
 const CONTRACT_TYPE_CURRENT_QUARTER: &str = "CURRENT_QUARTER";
@@ -281,7 +283,9 @@ pub(crate) fn parse_usdm_instrument_with_fees(
     let contract_kind = match symbol.contract_type.as_str() {
         CONTRACT_TYPE_PERPETUAL => ContractKind::CryptoPerpetual,
         CONTRACT_TYPE_TRADIFI_PERPETUAL => ContractKind::TradFi(parse_tradifi_asset_class(symbol)?),
-        CONTRACT_TYPE_CURRENT_MONTH
+        CONTRACT_TYPE_CURRENT_WEEK
+        | CONTRACT_TYPE_NEXT_WEEK
+        | CONTRACT_TYPE_CURRENT_MONTH
         | CONTRACT_TYPE_NEXT_MONTH
         | CONTRACT_TYPE_CURRENT_QUARTER
         | CONTRACT_TYPE_NEXT_QUARTER => ContractKind::Delivery,
@@ -723,6 +727,9 @@ pub(crate) fn parse_spot_instrument_sbe_with_fees(
 
     let (step_size, max_quantity, min_quantity) = parse_sbe_lot_size_filter(lot_filter)?;
 
+    let (min_notional, max_notional) =
+        parse_spot_notional_rules(&symbol.filters.notional_filters, quote_currency)?;
+
     // Spot has no leverage, use 1.0 margin
     let default_margin = Decimal::new(1, 0);
 
@@ -738,6 +745,8 @@ pub(crate) fn parse_spot_instrument_sbe_with_fees(
         .lot_size(step_size)
         .maybe_max_quantity(max_quantity)
         .maybe_min_quantity(min_quantity)
+        .maybe_min_notional(min_notional)
+        .maybe_max_notional(max_notional)
         .maybe_max_price(max_price)
         .maybe_min_price(min_price)
         .margin_init(default_margin)
@@ -792,6 +801,56 @@ pub(crate) fn parse_spot_instrument_json_with_fees(
     )?;
     anyhow::ensure!(!step_size.is_zero(), "Invalid stepSize of 0");
 
+    let quote_currency = get_currency(&symbol.quote_asset);
+    let mut rules = Vec::new();
+
+    for filter in &symbol.filters {
+        if !matches!(filter.filter_type.as_str(), "MIN_NOTIONAL" | "NOTIONAL") {
+            continue;
+        }
+
+        let range = filter.filter_type == "NOTIONAL";
+
+        rules.push(BinanceNotionalFilter {
+            min: Decimal::from_str_exact(
+                filter
+                    .min_notional
+                    .as_deref()
+                    .context("missing minNotional")?,
+            )?,
+
+            max: if range {
+                Some(Decimal::from_str_exact(
+                    filter
+                        .max_notional
+                        .as_deref()
+                        .context("missing maxNotional")?,
+                )?)
+            } else {
+                None
+            },
+
+            apply_min_to_market: if range {
+                filter.apply_min_to_market
+            } else {
+                filter.apply_to_market
+            }
+            .context("missing minimum notional market flag")?,
+
+            apply_max_to_market: if range {
+                filter
+                    .apply_max_to_market
+                    .context("missing applyMaxToMarket")?
+            } else {
+                false
+            },
+
+            avg_price_mins: filter.avg_price_mins.context("missing avgPriceMins")?,
+        });
+    }
+
+    let (min_notional, max_notional) = parse_spot_notional_rules(&rules, quote_currency)?;
+
     let instrument = CurrencyPair::builder()
         .instrument_id(InstrumentId::new(
             Symbol::from_str_unchecked(&symbol.symbol),
@@ -799,7 +858,9 @@ pub(crate) fn parse_spot_instrument_json_with_fees(
         ))
         .raw_symbol(Symbol::new(&symbol.symbol))
         .base_currency(get_currency(&symbol.base_asset))
-        .quote_currency(get_currency(&symbol.quote_asset))
+        .quote_currency(quote_currency)
+        .maybe_min_notional(min_notional)
+        .maybe_max_notional(max_notional)
         .price_precision(tick_size.precision)
         .size_precision(step_size.precision)
         .price_increment(tick_size)
@@ -831,6 +892,35 @@ pub(crate) fn parse_spot_instrument_json_with_fees(
         .unwrap();
 
     Ok(InstrumentAny::CurrencyPair(instrument))
+}
+
+fn parse_spot_notional_rules(
+    rules: &[BinanceNotionalFilter],
+    currency: Currency,
+) -> anyhow::Result<(Option<Money>, Option<Money>)> {
+    let mut minimum: Option<Decimal> = None;
+    let mut maximum: Option<Decimal> = None;
+    for rule in rules {
+        anyhow::ensure!(rule.min >= Decimal::ZERO, "negative minimum notional");
+        minimum = Some(minimum.map_or(rule.min, |min| min.max(rule.min)));
+
+        if let Some(max) = rule.max {
+            anyhow::ensure!(max >= rule.min, "maximum notional is below minimum");
+            maximum = Some(maximum.map_or(max, |current| current.min(max)));
+        }
+    }
+
+    if let (Some(min), Some(max)) = (minimum, maximum) {
+        anyhow::ensure!(min <= max, "conflicting notional bounds");
+    }
+    Ok((
+        minimum
+            .map(|value| Money::from_decimal(value, currency))
+            .transpose()?,
+        maximum
+            .map(|value| Money::from_decimal(value, currency))
+            .transpose()?,
+    ))
 }
 
 fn decimal_price(value: &str) -> anyhow::Result<Price> {
@@ -1754,6 +1844,7 @@ mod tests {
             is_spot_trading_allowed: true,
             is_margin_trading_allowed: false,
             filters: crate::spot::http::models::BinanceSymbolFiltersSbe {
+                notional_filters: Vec::new(),
                 price_filter: Some(BinancePriceFilterSbe {
                     price_exponent: -8,
                     min_price: 1_000_000,
@@ -1769,6 +1860,146 @@ mod tests {
             },
             permissions: vec![vec!["SPOT".to_string()]],
         }
+    }
+
+    #[rstest]
+    #[case::min(
+        include_bytes!("../../test_data/spot/http_sbe/notional_min.sbe").as_slice(),
+        include_str!("../../test_data/spot/http_json/notional_min.json"),
+        dec!(12.34567891), None,
+    )]
+    #[case::range(
+        include_bytes!("../../test_data/spot/http_sbe/notional_range.sbe").as_slice(),
+        include_str!("../../test_data/spot/http_json/notional_range.json"),
+        dec!(23.45678912), Some(dec!(98.76543219)),
+    )]
+    #[case::both(
+        include_bytes!("../../test_data/spot/http_sbe/notional_both.sbe").as_slice(),
+        include_str!("../../test_data/spot/http_json/notional_both.json"),
+        dec!(23.45678912), Some(dec!(98.76543219)),
+    )]
+    fn test_spot_notional_fixtures(
+        #[case] wire: &[u8],
+        #[case] json: &str,
+        #[case] minimum: Decimal,
+        #[case] maximum: Option<Decimal>,
+    ) {
+        let decoded = crate::spot::http::parse::decode_exchange_info(wire).unwrap();
+        let symbol: BinanceSymbolJson = serde_json::from_str(json).unwrap();
+        let ts_event = UnixNanos::from(123u64);
+        let ts_init = UnixNanos::from(456u64);
+        let maker = Some(dec!(0.00013));
+        let taker = Some(dec!(0.00027));
+        let sbe = parse_spot_instrument_sbe_with_fees(
+            &decoded.symbols[0],
+            maker,
+            taker,
+            ts_event,
+            ts_init,
+        )
+        .unwrap();
+        let json =
+            parse_spot_instrument_json_with_fees(&symbol, maker, taker, ts_event, ts_init).unwrap();
+        let InstrumentAny::CurrencyPair(mut expected) = parse_spot_instrument_sbe_with_fees(
+            &sample_spot_symbol_sbe(),
+            maker,
+            taker,
+            ts_event,
+            ts_init,
+        )
+        .unwrap() else {
+            panic!("Expected CurrencyPair")
+        };
+        let rules = decoded.symbols[0].filters.notional_filters.clone();
+        expected.min_notional =
+            Some(Money::from_decimal(minimum, expected.quote_currency).unwrap());
+        expected.max_notional =
+            maximum.map(|value| Money::from_decimal(value, expected.quote_currency).unwrap());
+        let expected = serde_json::to_value(InstrumentAny::CurrencyPair(expected)).unwrap();
+
+        assert_eq!(serde_json::to_value(sbe).unwrap(), expected);
+        assert_eq!(serde_json::to_value(json).unwrap(), expected);
+        assert_eq!(
+            rules[0].min,
+            if rules.len() == 2 || maximum.is_none() {
+                dec!(12.34567891)
+            } else {
+                minimum
+            }
+        );
+
+        for rule in &rules {
+            if rule.max.is_none() {
+                assert_eq!(
+                    rule,
+                    &BinanceNotionalFilter {
+                        min: dec!(12.34567891),
+                        max: None,
+                        apply_min_to_market: true,
+                        apply_max_to_market: false,
+                        avg_price_mins: 7
+                    }
+                );
+            } else {
+                assert_eq!(
+                    rule,
+                    &BinanceNotionalFilter {
+                        min: dec!(23.45678912),
+                        max: Some(dec!(98.76543219)),
+                        apply_min_to_market: false,
+                        apply_max_to_market: true,
+                        avg_price_mins: 3
+                    }
+                );
+            }
+        }
+    }
+
+    #[rstest]
+    #[case("minNotional", "missing minNotional")]
+    #[case("maxNotional", "missing maxNotional")]
+    #[case("applyMinToMarket", "missing minimum notional market flag")]
+    #[case("applyMaxToMarket", "missing applyMaxToMarket")]
+    #[case("avgPriceMins", "missing avgPriceMins")]
+    fn test_spot_notional_json_missing_fields(#[case] field: &str, #[case] error: &str) {
+        let mut value: Value = serde_json::from_str(include_str!(
+            "../../test_data/spot/http_json/notional_range.json"
+        ))
+        .unwrap();
+        value["filters"][2].as_object_mut().unwrap().remove(field);
+        let symbol = serde_json::from_value(value).unwrap();
+        let result = parse_spot_instrument_json_with_fees(
+            &symbol,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        assert_eq!(result.unwrap_err().to_string(), error);
+    }
+
+    #[rstest]
+    #[case(vec![(dec!(-1), None)], "negative minimum notional")]
+    #[case(vec![(dec!(2), Some(dec!(1)))], "maximum notional is below minimum")]
+    #[case(vec![(dec!(2), None), (dec!(0), Some(dec!(1)))], "conflicting notional bounds")]
+    fn test_spot_notional_invalid_bounds(
+        #[case] bounds: Vec<(Decimal, Option<Decimal>)>,
+        #[case] error: &str,
+    ) {
+        let rules = bounds
+            .into_iter()
+            .map(|(min, max)| BinanceNotionalFilter {
+                min,
+                max,
+                apply_min_to_market: false,
+                apply_max_to_market: true,
+                avg_price_mins: 7,
+            })
+            .collect::<Vec<_>>();
+
+        let result = parse_spot_notional_rules(&rules, Currency::USD());
+
+        assert_eq!(result.unwrap_err().to_string(), error);
     }
 
     fn sample_spot_instrument() -> InstrumentAny {
@@ -1885,6 +2116,8 @@ mod tests {
     }
 
     #[rstest]
+    #[case::current_week(CONTRACT_TYPE_CURRENT_WEEK)]
+    #[case::next_week(CONTRACT_TYPE_NEXT_WEEK)]
     #[case::current_month(CONTRACT_TYPE_CURRENT_MONTH)]
     #[case::next_month(CONTRACT_TYPE_NEXT_MONTH)]
     #[case::current_quarter(CONTRACT_TYPE_CURRENT_QUARTER)]

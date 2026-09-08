@@ -31,6 +31,7 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 
+- Added the required Rust `Instrument::info` method; custom implementations must return their metadata or `None`
 - Removed Coinbase `CreateOrderRequest.reduce_only`; reduce-only orders are rejected before submission
 - Removed the dormant `PortfolioStatistic::calculate_from_orders` trait method; no analyzer supplied order data to statistics
 - Removed public Rust and Python `ForwardPrice` APIs; option chains now fetch reference prices internally
@@ -46,6 +47,7 @@ Released on TBD (UTC).
 - Changed `REDUCING` to allow only eligible reduce-only submissions, cancellations, and queries
 - Changed execution clients to reject `reduce_only` without an enforcing venue instruction (#4761), thanks @folknor
 - Changed backtest and sandbox venues to reject reduce-only orders when `use_reduce_only=false`
+- Changed PostgreSQL instrument storage to preserve `info`; run `nautilus database init` to add the column before starting the cache
 - Changed PostgreSQL cache startup to require the `instrument_close` table; run `nautilus database init`
 - Changed PostgreSQL `order_event` and `position_event` tables to carry the order event fields that were previously dropped; run `nautilus database init` to add the columns, as cache startup now fails fast when they are missing. `OrderReleased` and `OrderFillVoided` rows written before the upgrade cannot be restored, because their `released_price` and `correction_id` were never stored; delete those rows if startup reports them
 - Changed Binance `close_position` orders to require `reduce_only=true` in Nautilus
@@ -96,6 +98,7 @@ Released on TBD (UTC).
 - Fixed Betfair fill report queries ignoring instrument and order filters
 - Fixed Betfair order status queries ignoring instrument filters and time bounds for closed orders
 - Fixed Binance Spot cancel-all decoding and lifecycle handling for OCO order lists
+- Fixed Binance Spot `MIN_NOTIONAL` and `NOTIONAL` filters being omitted from instrument constraints
 - Fixed Bybit funding settlements being treated as fills (#4937), thanks for reporting @luk911
 - Fixed Kraken Spot available balances excluding funds held by the venue (#4922), thanks @zhaow-de
 - Fixed Kraken Spot instrument fees to use account rates when credentials are configured (#4890), thanks @matvt-cell

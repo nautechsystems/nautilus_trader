@@ -160,6 +160,21 @@ BINANCE_FUTURES_INSTRUMENT_ID=BTCUSDT_260925.BINANCE \
   cargo run -p nautilus-binance --example binance-futures-data-tester --features examples
 ```
 
+## Spot notional constraints
+
+Spot instruments loaded through SBE or JSON populate the dedicated `min_notional` and
+`max_notional` fields from `MIN_NOTIONAL` and `NOTIONAL` filters. When both filters are present,
+the parser uses the strictest bounds. These fields hold quote-currency `Money` values at the
+currency's precision.
+
+The risk engine checks these instrument fields using its price estimates. Instrument `info` is
+metadata for downstream actors and strategies and does not affect risk decisions. Binance applies
+its market-order flags and reference-price rules when validating orders at the venue.
+
+PostgreSQL preserves instrument metadata when restoring instruments. After upgrading an existing
+database, run `nautilus database init --schema "$PWD/schema/sql"` from the repository root to add
+metadata storage. Previously discarded metadata requires reloading instrument definitions.
+
 ## Order capability
 
 The following tables detail order types, execution instructions, and

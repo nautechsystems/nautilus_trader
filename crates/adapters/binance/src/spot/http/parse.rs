@@ -18,6 +18,8 @@
 //! Each function decodes raw SBE bytes into domain types, validating the
 //! message header (schema ID and template ID) before extracting fields.
 
+use rust_decimal::Decimal;
+
 use super::{
     error::SbeDecodeError,
     models::{
@@ -25,8 +27,9 @@ use super::{
         BinanceCancelOpenOrdersResponse, BinanceCancelOrderListOrder,
         BinanceCancelOrderListResponse, BinanceCancelOrderResponse, BinanceDepth,
         BinanceExchangeInfoSbe, BinanceKline, BinanceKlines, BinanceLotSizeFilterSbe,
-        BinanceNewOrderResponse, BinanceOrderFill, BinanceOrderResponse, BinancePriceFilterSbe,
-        BinancePriceLevel, BinanceSymbolFiltersSbe, BinanceSymbolSbe, BinanceTrade, BinanceTrades,
+        BinanceNewOrderResponse, BinanceNotionalFilter, BinanceOrderFill, BinanceOrderResponse,
+        BinancePriceFilterSbe, BinancePriceLevel, BinanceSymbolFiltersSbe, BinanceSymbolSbe,
+        BinanceTrade, BinanceTrades,
     },
 };
 use crate::spot::sbe::{
@@ -44,7 +47,9 @@ use crate::spot::sbe::{
         klines_response_codec::SBE_TEMPLATE_ID as KLINES_TEMPLATE_ID,
         lot_size_filter_codec::SBE_TEMPLATE_ID as LOT_SIZE_FILTER_TEMPLATE_ID,
         message_header_codec::ENCODED_LENGTH as HEADER_LENGTH,
+        min_notional_filter_codec::SBE_TEMPLATE_ID as MIN_NOTIONAL_FILTER_TEMPLATE_ID,
         new_order_full_response_codec::SBE_TEMPLATE_ID as NEW_ORDER_FULL_TEMPLATE_ID,
+        notional_filter_codec::SBE_TEMPLATE_ID as NOTIONAL_FILTER_TEMPLATE_ID,
         order_response_codec::SBE_TEMPLATE_ID as ORDER_TEMPLATE_ID,
         orders_response_codec::SBE_TEMPLATE_ID as ORDERS_TEMPLATE_ID,
         ping_response_codec::SBE_TEMPLATE_ID as PING_TEMPLATE_ID,
@@ -1203,6 +1208,8 @@ pub fn decode_exchange_info(buf: &[u8]) -> Result<BinanceExchangeInfoSbe, SbeDec
                 let potential_template = u16::from_le_bytes([filter_bytes[2], filter_bytes[3]]);
                 if potential_template == PRICE_FILTER_TEMPLATE_ID
                     || potential_template == LOT_SIZE_FILTER_TEMPLATE_ID
+                    || potential_template == MIN_NOTIONAL_FILTER_TEMPLATE_ID
+                    || potential_template == NOTIONAL_FILTER_TEMPLATE_ID
                 {
                     (potential_template, HEADER_LENGTH)
                 } else {
@@ -1218,6 +1225,34 @@ pub fn decode_exchange_info(buf: &[u8]) -> Result<BinanceExchangeInfoSbe, SbeDec
 
             // Filter body layout: exponent(1) + min(8) + max(8) + size(8) = 25 bytes
             match template_id {
+                MIN_NOTIONAL_FILTER_TEMPLATE_ID | NOTIONAL_FILTER_TEMPLATE_ID => {
+                    let mut filter = SbeCursor::new(&filter_bytes[offset..]);
+                    let exponent = filter.read_i8()?;
+                    let min = decode_notional_amount(&mut filter, exponent)?;
+                    let apply_min_to_market = decode_notional_market_flag(&mut filter)?;
+                    let (max, apply_max_to_market) = if template_id == NOTIONAL_FILTER_TEMPLATE_ID {
+                        (
+                            Some(decode_notional_amount(&mut filter, exponent)?),
+                            decode_notional_market_flag(&mut filter)?,
+                        )
+                    } else {
+                        (None, false)
+                    };
+
+                    let avg_price_mins = u32::try_from(filter.read_i32_le()?).map_err(|_| {
+                        SbeDecodeError::InvalidValue {
+                            field: "avgPriceMins",
+                        }
+                    })?;
+
+                    filters.notional_filters.push(BinanceNotionalFilter {
+                        min,
+                        max,
+                        apply_min_to_market,
+                        apply_max_to_market,
+                        avg_price_mins,
+                    });
+                }
                 PRICE_FILTER_TEMPLATE_ID if filter_bytes.len() >= offset + 25 => {
                     let price_exp = filter_bytes[offset] as i8;
                     let min_price = i64::from_le_bytes(
@@ -1302,6 +1337,28 @@ pub fn decode_exchange_info(buf: &[u8]) -> Result<BinanceExchangeInfoSbe, SbeDec
     // Skip SOR group (we don't need it)
 
     Ok(BinanceExchangeInfoSbe { symbols })
+}
+
+fn decode_notional_amount(
+    cursor: &mut SbeCursor<'_>,
+    exponent: i8,
+) -> Result<Decimal, SbeDecodeError> {
+    let mantissa = cursor.read_i64_le()?;
+    if exponent == i8::MIN || mantissa < 0 {
+        return Err(SbeDecodeError::InvalidValue { field: "notional" });
+    }
+    Decimal::from_scientific(&format!("{mantissa}e{exponent}"))
+        .map_err(|_| SbeDecodeError::InvalidValue { field: "notional" })
+}
+
+fn decode_notional_market_flag(cursor: &mut SbeCursor<'_>) -> Result<bool, SbeDecodeError> {
+    match cursor.read_u8()? {
+        value if value == BoolEnum::False as u8 => Ok(false),
+        value if value == BoolEnum::True as u8 => Ok(true),
+        _ => Err(SbeDecodeError::InvalidValue {
+            field: "notional market flag",
+        }),
+    }
 }
 
 #[cfg(test)]
@@ -2342,6 +2399,50 @@ mod tests {
         assert!(symbol.filters.lot_size_filter.is_none());
         assert_eq!(symbol.permissions.len(), 1);
         assert_eq!(symbol.permissions[0], vec!["SPOT"]);
+    }
+
+    #[rstest]
+    #[case::exponent(0, 128, "notional")]
+    #[case::minimum(8, 255, "notional")]
+    #[case::min_flag(9, 255, "notional market flag")]
+    #[case::maximum(17, 255, "notional")]
+    #[case::max_flag(18, 255, "notional market flag")]
+    #[case::average(22, 255, "avgPriceMins")]
+    fn test_spot_notional_sbe_invalid_fields(
+        #[case] offset: usize,
+        #[case] value: u8,
+        #[case] field: &'static str,
+    ) {
+        let mut wire =
+            include_bytes!("../../../test_data/spot/http_sbe/notional_range.sbe").to_vec();
+        let header = [23, 0, 6, 0, 3, 0, 5, 0];
+        let start = wire
+            .windows(header.len())
+            .position(|bytes| bytes == header)
+            .unwrap();
+        wire[start + header.len() + offset] = value;
+        assert!(
+            matches!(decode_exchange_info(&wire), Err(SbeDecodeError::InvalidValue { field: actual }) if actual == field)
+        );
+    }
+
+    #[rstest]
+    fn test_spot_notional_sbe_truncated_filter() {
+        let mut wire =
+            include_bytes!("../../../test_data/spot/http_sbe/notional_range.sbe").to_vec();
+        let header = [23, 0, 6, 0, 3, 0, 5, 0];
+        let start = wire
+            .windows(header.len())
+            .position(|bytes| bytes == header)
+            .unwrap();
+        wire[start - 1] -= 1;
+        assert!(matches!(
+            decode_exchange_info(&wire),
+            Err(SbeDecodeError::BufferTooShort {
+                expected: 23,
+                actual: 22
+            })
+        ));
     }
 
     #[rstest]

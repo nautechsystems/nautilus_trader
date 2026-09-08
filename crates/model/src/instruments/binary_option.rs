@@ -261,9 +261,6 @@ impl Hash for BinaryOption {
 }
 
 impl Instrument for BinaryOption {
-    fn tick_scheme(&self) -> Option<Ustr> {
-        self.tick_scheme
-    }
     fn into_any(self) -> InstrumentAny {
         InstrumentAny::BinaryOption(self)
     }
@@ -354,6 +351,14 @@ impl Instrument for BinaryOption {
 
     fn min_price(&self) -> Option<Price> {
         self.min_price
+    }
+
+    fn tick_scheme(&self) -> Option<Ustr> {
+        self.tick_scheme
+    }
+
+    fn info(&self) -> Option<&Params> {
+        self.info.as_ref()
     }
 
     fn ts_event(&self) -> UnixNanos {

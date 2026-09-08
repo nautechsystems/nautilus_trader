@@ -9791,3 +9791,139 @@ fn test_submit_sell_cash_account_with_long_position_reduces_then_passes(
         get_execute_order_event_handler_messages(&execute_order_event_handler);
     assert_eq!(saved_execute_messages.len(), 1);
 }
+
+#[rstest]
+#[case(OrderType::Market)]
+#[case(OrderType::MarketToLimit)]
+#[case(OrderType::StopMarket)]
+#[case(OrderType::MarketIfTouched)]
+#[case(OrderType::TrailingStopMarket)]
+#[case(OrderType::Limit)]
+#[case(OrderType::StopLimit)]
+#[case(OrderType::LimitIfTouched)]
+#[case(OrderType::TrailingStopLimit)]
+fn test_spot_notional_fields_ignore_metadata(
+    #[case] order_type: OrderType,
+    #[values(false, true)] range: bool,
+    #[values("absent", "null", "conflicting")] metadata: &str,
+    #[values(false, true)] quote_quantity: bool,
+    #[values("9.99", "10.00", "15.00", "20.00", "20.01")] amount: &str,
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_audusd: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    cash_account_state_million_usd: AccountState,
+    mut simple_cache: Cache,
+) {
+    let InstrumentAny::CurrencyPair(mut pair) = instrument_audusd else {
+        panic!("Expected CurrencyPair")
+    };
+    pair.price_precision = 2;
+    pair.price_increment = Price::from("0.01");
+    pair.size_precision = 6;
+    pair.size_increment = Quantity::from("0.000001");
+    pair.min_quantity = None;
+    pair.max_quantity = None;
+    pair.lot_size = None;
+    pair.min_notional = Some(Money::from_decimal(dec!(10), pair.quote_currency).unwrap());
+    pair.max_notional = range.then(|| Money::from_decimal(dec!(20), pair.quote_currency).unwrap());
+    pair.info = match metadata {
+        "absent" => None,
+        "null" => {
+            let mut info = Params::new();
+            info.insert("notional_rules".to_owned(), Default::default());
+            Some(info)
+        }
+        "conflicting" => {
+            let mut info = Params::new();
+            info.insert("min_notional".to_owned(), "1000".into());
+            info.insert("max_notional".to_owned(), "1".into());
+            Some(info)
+        }
+        _ => unreachable!(),
+    };
+    let id = pair.id;
+    simple_cache
+        .add_instrument(InstrumentAny::CurrencyPair(pair))
+        .unwrap();
+    simple_cache
+        .add_account(AccountAny::Cash(cash_account(
+            cash_account_state_million_usd,
+        )))
+        .unwrap();
+    simple_cache
+        .add_quote(QuoteTick::new(
+            id,
+            Price::from("10.00"),
+            Price::from("10.00"),
+            Quantity::from(1000),
+            Quantity::from(1000),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ))
+        .unwrap();
+    let mut risk_engine =
+        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
+    let amount = Decimal::from_str_exact(amount).unwrap();
+    let quantity = if quote_quantity {
+        amount
+    } else {
+        amount / dec!(10)
+    };
+    let order = OrderTestBuilder::new(order_type)
+        .instrument_id(id)
+        .side(OrderSide::Buy)
+        .price(Price::from("10.00"))
+        .trigger_price(Price::from("10.00"))
+        .trailing_offset(dec!(1))
+        .trailing_offset_type(TrailingOffsetType::Price)
+        .limit_offset(dec!(1))
+        .quantity(Quantity::from_decimal_dp(quantity, 6).unwrap())
+        .quote_quantity(quote_quantity)
+        .build();
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id_binance), false)
+        .unwrap();
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        id,
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+    let denied = get_process_order_event_handler_messages(&process_order_event_handler);
+    let sent = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    let below = amount < dec!(10);
+    let above = range && amount > dec!(20);
+
+    assert_eq!(denied.len(), usize::from(below || above));
+    assert_eq!(sent.len(), usize::from(!below && !above));
+    if below || above {
+        let reason = if below {
+            format!("NOTIONAL_BELOW_MINIMUM: min=10.00 USD, notional={amount:.2} USD")
+        } else {
+            format!("NOTIONAL_EXCEEDS_MAXIMUM: max=20.00 USD, notional={amount:.2} USD")
+        };
+        assert_eq!(denied[0].event_type(), OrderEventType::Denied);
+        assert_eq!(denied[0].message(), Some(Ustr::from(&reason)));
+    } else {
+        assert_eq!(sent[0].instrument_id(), id);
+        let TradingCommand::SubmitOrder(command) = &sent[0] else {
+            panic!("Expected SubmitOrder")
+        };
+        assert_eq!(command.client_order_id, order.client_order_id());
+    }
+}

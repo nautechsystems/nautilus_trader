@@ -44,7 +44,7 @@ use std::{fmt::Display, str::FromStr};
 
 use enum_dispatch::enum_dispatch;
 use nautilus_core::{
-    UnixNanos,
+    Params, UnixNanos,
     correctness::{
         CorrectnessError, CorrectnessResult, check_equal_u8, check_positive_decimal,
         check_predicate_true,
@@ -298,6 +298,9 @@ pub trait Instrument: 'static + Send {
     fn taker_fee(&self) -> Decimal {
         dec!(0)
     }
+
+    /// Returns additional instrument metadata, when provided.
+    fn info(&self) -> Option<&Params>;
 
     fn ts_event(&self) -> UnixNanos;
     fn ts_init(&self) -> UnixNanos;
