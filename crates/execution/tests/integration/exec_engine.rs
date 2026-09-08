@@ -13122,7 +13122,17 @@ fn test_own_book_status_integrity_during_transitions() {
 }
 
 #[rstest]
-fn test_hedging_flip_applies_remainders_to_flipped_position(mut execution_engine: ExecutionEngine) {
+#[case::matching_orders("O-FLIP", "O-FLIP", 200_000, 100_000, OrderStatus::Filled)]
+#[case::unrelated_opening_order("O-OTHER", "O-FLIP", 150_000, 50_000, OrderStatus::PartiallyFilled)]
+#[case::unrelated_closing_order("O-FLIP", "O-OTHER", 150_000, 50_000, OrderStatus::PartiallyFilled)]
+fn test_hedging_flip_remainders_require_matching_orders(
+    mut execution_engine: ExecutionEngine,
+    #[case] opening_order_id: &str,
+    #[case] closing_order_id: &str,
+    #[case] expected_filled_qty: u64,
+    #[case] expected_position_qty: u64,
+    #[case] expected_status: OrderStatus,
+) {
     let trader_id = TraderId::test_default();
     let strategy_id = StrategyId::test_default();
     let instrument = audusd_sim();
@@ -13233,6 +13243,27 @@ fn test_hedging_flip_applies_remainders_to_flipped_position(mut execution_engine
         Some(AccountId::test_default()),
     ));
 
+    // Isolate each relationship check while keeping both position IDs virtual
+    let flipped_position_id = {
+        let mut cache = execution_engine.cache().borrow_mut();
+        let flipped_position_id = *cache
+            .position_id(&reversal_order.client_order_id())
+            .unwrap();
+
+        if ClientOrderId::from(opening_order_id) != reversal_order.client_order_id() {
+            cache
+                .position_mut(&flipped_position_id)
+                .unwrap()
+                .opening_order_id = ClientOrderId::from(opening_order_id);
+        }
+
+        if ClientOrderId::from(closing_order_id) != reversal_order.client_order_id() {
+            cache.position_mut(&position_id).unwrap().closing_order_id =
+                Some(ClientOrderId::from(closing_order_id));
+        }
+        flipped_position_id
+    };
+
     // Two remainders, not one: applying the first writes the cached flipped ID onto the
     // order, so a predicate reading the order's own position ID accepts this one and
     // rejects the next.
@@ -13257,18 +13288,42 @@ fn test_hedging_flip_applies_remainders_to_flipped_position(mut execution_engine
 
     let cache = execution_engine.cache().borrow();
     let filled_order = cache.order(&reversal_order.client_order_id()).unwrap();
-    assert_eq!(filled_order.filled_qty(), Quantity::from(200_000));
+    assert_eq!(filled_order.status(), expected_status);
+    assert_eq!(
+        filled_order.filled_qty(),
+        Quantity::from(expected_filled_qty)
+    );
+    assert_eq!(
+        cache.position_id(&reversal_order.client_order_id()),
+        Some(&flipped_position_id)
+    );
 
     let original = cache.position(&position_id).unwrap();
     assert!(original.is_closed());
+    assert_eq!(original.quantity, Quantity::from(0));
+    assert_eq!(
+        original.closing_order_id,
+        Some(ClientOrderId::from(closing_order_id))
+    );
 
     let positions = cache.positions_open(None, None, None, None, None);
     assert_eq!(positions.len(), 1);
-    assert_ne!(positions[0].id, position_id);
+    assert_eq!(positions[0].id, flipped_position_id);
+    assert_ne!(flipped_position_id, position_id);
+    assert_eq!(
+        positions[0].opening_order_id,
+        ClientOrderId::from(opening_order_id)
+    );
     assert_eq!(positions[0].side, PositionSide::Short);
-    assert_eq!(positions[0].quantity, Quantity::from(100_000));
-    assert!(positions[0].trade_ids.contains(&first_remainder_trade_id));
-    assert!(positions[0].trade_ids.contains(&second_remainder_trade_id));
+    assert_eq!(positions[0].quantity, Quantity::from(expected_position_qty));
+    assert_eq!(
+        positions[0].trade_ids.contains(&first_remainder_trade_id),
+        expected_status == OrderStatus::Filled
+    );
+    assert_eq!(
+        positions[0].trade_ids.contains(&second_remainder_trade_id),
+        expected_status == OrderStatus::Filled
+    );
 }
 
 #[rstest]

@@ -53,8 +53,8 @@ A position closes when the net quantity becomes zero (`FLAT`). At closure:
 - The closing order ID is recorded.
 - Duration is calculated from open to close.
 - Final realized PnL is computed.
-- In `NETTING` OMS, when the position later reopens, the engine snapshots the closed state to
-  preserve historical PnL (see [Position snapshotting](#position-snapshotting)).
+- In either OMS type, when the position later reopens under the same ID, the engine snapshots
+  the closed state to preserve historical PnL (see [Position snapshotting](#position-snapshotting)).
 
 ## Order fill aggregation
 
@@ -163,7 +163,9 @@ In `HEDGING` mode, multiple positions can exist for the same instrument:
 - Positions are tracked independently.
 - No automatic netting across positions.
 - A fill with a new position ID creates a separate position. If a later fill reuses a closed
-  position ID, it replaces the cached state without creating a closed-cycle snapshot.
+  position ID, the engine archives the closed cycle before replacing the cached state.
+- A virtual position flip creates a new ID and keeps the original closed position in the cache,
+  so that path does not need a closed-cycle snapshot.
 
 :::warning
 `HEDGING` can increase margin requirements when a venue maintains long and short positions
@@ -189,18 +191,23 @@ integration guide for the venue's position-mode configuration.
 
 ## Position snapshotting
 
-Position snapshotting preserves closed `NETTING` cycles for PnL tracking and reporting.
+Position snapshotting preserves closed cycles for PnL tracking and reporting when a later fill
+reopens a closed position.
 
 ### Why snapshotting matters
 
-In a `NETTING` system, when a position closes (becomes `FLAT`) and then reopens with a new trade,
+When a position closes (becomes `FLAT`) and then reopens under the same ID with a new trade,
 the position object is reset to track the new exposure. Without snapshotting, the historical
 realized PnL from the previous position cycle would be lost.
 
 ### How it works
 
-When a closed `NETTING` position receives another fill for the same instrument and strategy, the
-execution engine archives the closed state before opening the next cycle. The snapshot preserves:
+When a fill reopens a closed position under the same ID, the execution engine archives the closed
+state before opening the next cycle. This applies to both `NETTING` and `HEDGING` OMS.
+A `HEDGING` flip using a non-virtual ID follows a separate path: it reuses the ID without
+archiving the closed cycle.
+
+The snapshot preserves:
 
 - Final quantities and prices.
 - Realized PnL.
