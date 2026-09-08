@@ -58,7 +58,7 @@
 //! [`Price`]: crate::types::Price
 //! [`Quantity`]: crate::types::Quantity
 
-use std::fmt::Display;
+use std::{cmp::Ordering, fmt::Display};
 
 use nautilus_core::correctness::{
     CorrectnessError, CorrectnessResult, CorrectnessResultExt, FAILED,
@@ -241,6 +241,78 @@ pub(crate) fn raw_scale(precision: u8) -> u128 {
     10_u128.pow(u32::from(precision.max(FIXED_PRECISION)))
 }
 
+// Removing only native-scale trailing zeros gives equal values identical hash inputs
+#[must_use]
+pub(crate) fn canonical_raw(raw: impl Into<u128>, precision: u8) -> (u128, u8) {
+    let mut raw = raw.into();
+    let mut precision = if raw == 0 {
+        FIXED_PRECISION
+    } else {
+        precision.max(FIXED_PRECISION)
+    };
+
+    while precision > FIXED_PRECISION && raw % 10 == 0 {
+        raw /= 10;
+        precision -= 1;
+    }
+
+    (raw, precision)
+}
+
+#[must_use]
+pub(crate) fn compare_raw_signed(
+    lhs: PriceRaw,
+    lhs_precision: u8,
+    rhs: PriceRaw,
+    rhs_precision: u8,
+) -> Ordering {
+    if raw_scales_match(lhs_precision, rhs_precision) {
+        return lhs.cmp(&rhs);
+    }
+
+    lhs.signum().cmp(&rhs.signum()).then_with(|| {
+        let ordering = compare_raw(
+            lhs.unsigned_abs(),
+            lhs_precision,
+            rhs.unsigned_abs(),
+            rhs_precision,
+        );
+
+        if lhs < 0 {
+            ordering.reverse()
+        } else {
+            ordering
+        }
+    })
+}
+
+#[must_use]
+pub(crate) fn compare_raw(
+    lhs: impl Into<u128>,
+    lhs_precision: u8,
+    rhs: impl Into<u128>,
+    rhs_precision: u8,
+) -> Ordering {
+    let lhs = lhs.into();
+    let rhs = rhs.into();
+
+    // The zero-valued ERROR_PRICE sentinel has precision 255, which is not a numeric scale
+    if (lhs == 0 && rhs == 0) || raw_scales_match(lhs_precision, rhs_precision) {
+        return lhs.cmp(&rhs);
+    }
+
+    let lhs_scale = raw_scale(lhs_precision);
+    let rhs_scale = raw_scale(rhs_precision);
+    let scale = lhs_scale.max(rhs_scale);
+
+    // Compare whole parts first so aligning fractional parts cannot overflow
+    (lhs / lhs_scale).cmp(&(rhs / rhs_scale)).then_with(|| {
+        let lhs_fraction = (lhs % lhs_scale) * (scale / lhs_scale);
+        let rhs_fraction = (rhs % rhs_scale) * (scale / rhs_scale);
+        lhs_fraction.cmp(&rhs_fraction)
+    })
+}
+
 /// Converts a raw value already rescaled to `10^precision` into a `Decimal`.
 ///
 /// `Decimal` stores a 96-bit mantissa, so `Decimal::from_i128_with_scale` panics once the raw
@@ -266,10 +338,21 @@ pub(crate) fn scaled_raw_to_decimal(scaled_raw: i128, precision: u8) -> Decimal 
 /// Returns `None` only when the scaled result exceeds [`QuantityRaw::MAX`].
 #[must_use]
 pub(crate) fn checked_mul_div_fixed(lhs: QuantityRaw, rhs: QuantityRaw) -> Option<QuantityRaw> {
-    let lhs_whole = lhs / FIXED_SCALAR_RAW;
-    let lhs_remainder = lhs % FIXED_SCALAR_RAW;
-    let rhs_whole = rhs / FIXED_SCALAR_RAW;
-    let rhs_remainder = rhs % FIXED_SCALAR_RAW;
+    checked_mul_div_raw(lhs, rhs, FIXED_SCALAR_RAW)
+}
+
+// Splitting both operands avoids intermediate overflow, the remainder product fits
+// QuantityRaw for every supported fixed-point scale (up to 10^18 with defi).
+#[must_use]
+pub(crate) fn checked_mul_div_raw(
+    lhs: QuantityRaw,
+    rhs: QuantityRaw,
+    scalar: QuantityRaw,
+) -> Option<QuantityRaw> {
+    let lhs_whole = lhs / scalar;
+    let lhs_remainder = lhs % scalar;
+    let rhs_whole = rhs / scalar;
+    let rhs_remainder = rhs % scalar;
 
     lhs_whole
         .checked_mul(rhs)
@@ -281,7 +364,7 @@ pub(crate) fn checked_mul_div_fixed(lhs: QuantityRaw, rhs: QuantityRaw) -> Optio
         .and_then(|whole_and_mixed| {
             lhs_remainder
                 .checked_mul(rhs_remainder)
-                .map(|fractional| fractional / FIXED_SCALAR_RAW)
+                .map(|fractional| fractional / scalar)
                 .and_then(|fractional| whole_and_mixed.checked_add(fractional))
         })
 }
@@ -2042,6 +2125,18 @@ mod checked_mul_div_tests {
     #[cfg(feature = "defi")]
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(4_096))]
+
+        #[rstest]
+        fn prop_checked_mul_div_raw_matches_u256_full_range(
+            lhs in any::<QuantityRaw>(),
+            rhs in any::<QuantityRaw>(),
+            precision in 16_u32..=18,
+        ) {
+            let scalar = 10_u128.pow(precision);
+            let expected = U256::from(lhs) * U256::from(rhs) / U256::from(scalar);
+            let expected = QuantityRaw::try_from(expected).ok();
+            prop_assert_eq!(super::checked_mul_div_raw(lhs, rhs, scalar), expected);
+        }
 
         #[rstest]
         fn prop_checked_mul_div_fixed_matches_u256_full_range(

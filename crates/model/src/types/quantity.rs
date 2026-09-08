@@ -21,11 +21,15 @@
 //!
 //! # Arithmetic behavior
 //!
+//! Adding or subtracting two `Quantity` values requires matching effective fixed-point scales.
+//! These operations panic on a scale mismatch.
+//! Comparisons and hashes account for scale differences without rounding.
+//!
 //! | Operation               | Result     | Notes                               |
 //! |-------------------------|------------|-------------------------------------|
 //! | `Quantity + Quantity`   | `Quantity` | Precision is max of both operands.  |
 //! | `Quantity - Quantity`   | `Quantity` | Panics if result would be negative. |
-//! | `Quantity * Quantity`   | `Quantity` | Scales back by `FIXED_SCALAR`.      |
+//! | `Quantity * Quantity`   | `Quantity` | Precision is max of both operands.  |
 //! | `Quantity + Decimal`    | `Decimal`  |                                     |
 //! | `Quantity - Decimal`    | `Decimal`  |                                     |
 //! | `Quantity * Decimal`    | `Decimal`  |                                     |
@@ -34,6 +38,8 @@
 //! | `Quantity - f64`        | `f64`      |                                     |
 //! | `Quantity * f64`        | `f64`      |                                     |
 //! | `Quantity / f64`        | `f64`      |                                     |
+//!
+//! Multiplication accepts mixed scales and truncates the result toward zero at the result scale.
 //!
 //! # Immutability
 //!
@@ -61,9 +67,10 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use super::fixed::{
-    FIXED_PRECISION, FIXED_SCALAR, FIXED_SCALAR_RAW, MAX_FLOAT_PRECISION, check_fixed_precision,
-    checked_mul_div_fixed, mantissa_exponent_to_fixed_i128, mantissa_exponent_to_raw_checked,
-    raw_scales_match, scaled_raw_to_decimal,
+    FIXED_PRECISION, FIXED_SCALAR, FIXED_SCALAR_RAW, MAX_FLOAT_PRECISION, canonical_raw,
+    check_fixed_precision, checked_mul_div_fixed, checked_mul_div_raw, compare_raw,
+    mantissa_exponent_to_fixed_i128, mantissa_exponent_to_raw_checked, raw_scale, raw_scales_match,
+    scaled_raw_to_decimal,
 };
 #[cfg(not(feature = "high-precision"))]
 use super::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
@@ -328,10 +335,21 @@ impl Quantity {
 
     /// Computes a saturating subtraction between two quantities, logging when clamped.
     ///
+    /// Operands must use the same effective fixed-point scale. The Python binding raises
+    /// `ValueError` for mismatched scales.
+    ///
     /// When `rhs` is greater than `self`, the result is clamped to zero and a warning is logged.
     /// Precision follows the `Sub` implementation: uses the maximum precision of both operands.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the operands have mismatched effective fixed-point scales.
     #[must_use]
     pub fn saturating_sub(self, rhs: Self) -> Self {
+        assert!(
+            raw_scales_match(self.precision, rhs.precision),
+            "Cannot subtract `Quantity` values with mismatched decimal scales"
+        );
         let precision = self.precision.max(rhs.precision);
         let raw = self.raw.saturating_sub(rhs.raw);
         if raw == 0 && self.raw < rhs.raw {
@@ -640,13 +658,13 @@ impl From<u64> for Quantity {
 
 impl Hash for Quantity {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.raw.hash(state);
+        canonical_raw(self.raw, self.precision).hash(state);
     }
 }
 
 impl PartialEq for Quantity {
     fn eq(&self, other: &Self) -> bool {
-        self.raw == other.raw
+        self.cmp(other) == Ordering::Equal
     }
 }
 
@@ -654,27 +672,11 @@ impl PartialOrd for Quantity {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
-
-    fn lt(&self, other: &Self) -> bool {
-        self.raw.lt(&other.raw)
-    }
-
-    fn le(&self, other: &Self) -> bool {
-        self.raw.le(&other.raw)
-    }
-
-    fn gt(&self, other: &Self) -> bool {
-        self.raw.gt(&other.raw)
-    }
-
-    fn ge(&self, other: &Self) -> bool {
-        self.raw.ge(&other.raw)
-    }
 }
 
 impl Ord for Quantity {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.raw.cmp(&other.raw)
+        compare_raw(self.raw, self.precision, other.raw, other.precision)
     }
 }
 
@@ -689,6 +691,10 @@ impl Deref for Quantity {
 impl Add for Quantity {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
+        assert!(
+            raw_scales_match(self.precision, rhs.precision),
+            "Cannot add `Quantity` values with mismatched decimal scales"
+        );
         Self {
             raw: self
                 .raw
@@ -701,19 +707,24 @@ impl Add for Quantity {
 
 impl Sum for Quantity {
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-        iter.fold(Self::from(0), |acc, x| acc + x)
+        iter.reduce(|acc, x| acc + x)
+            .unwrap_or_else(|| Self::zero(0))
     }
 }
 
 impl<'a> Sum<&'a Self> for Quantity {
     fn sum<I: Iterator<Item = &'a Self>>(iter: I) -> Self {
-        iter.fold(Self::from(0), |acc, x| acc + *x)
+        iter.copied().sum()
     }
 }
 
 impl Sub for Quantity {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
+        assert!(
+            raw_scales_match(self.precision, rhs.precision),
+            "Cannot subtract `Quantity` values with mismatched decimal scales"
+        );
         Self {
             raw: self
                 .raw
@@ -732,12 +743,13 @@ impl Mul for Quantity {
             && self.precision <= FIXED_PRECISION
             && rhs.precision <= FIXED_PRECISION
         {
-            checked_mul_div_fixed(self.raw, rhs.raw).filter(|raw| *raw <= QUANTITY_RAW_MAX)
+            checked_mul_div_fixed(self.raw, rhs.raw)
         } else {
-            self.raw
-                .checked_mul(rhs.raw)
-                .map(|raw| raw / FIXED_SCALAR_RAW)
+            let scalar = QuantityRaw::try_from(raw_scale(self.precision.min(rhs.precision)))
+                .expect("Fixed-point scale fits QuantityRaw");
+            checked_mul_div_raw(self.raw, rhs.raw, scalar)
         }
+        .filter(|raw| *raw <= QUANTITY_RAW_MAX)
         .expect("Overflow occurred when multiplying `Quantity`");
 
         Self {

@@ -21,6 +21,10 @@
 //!
 //! # Arithmetic behavior
 //!
+//! Adding or subtracting two `Price` values requires matching effective fixed-point scales.
+//! These operations panic on a scale mismatch.
+//! Comparisons and hashes account for scale differences without rounding.
+//!
 //! | Operation         | Result    | Notes                              |
 //! |-------------------|-----------|------------------------------------|
 //! | `Price + Price`   | `Price`   | Precision is max of both operands. |
@@ -58,8 +62,9 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use super::fixed::{
-    FIXED_PRECISION, FIXED_SCALAR, check_fixed_precision, mantissa_exponent_to_fixed_i128,
-    mantissa_exponent_to_raw_checked, raw_scales_match, scaled_raw_to_decimal,
+    FIXED_PRECISION, FIXED_SCALAR, canonical_raw, check_fixed_precision, compare_raw_signed,
+    mantissa_exponent_to_fixed_i128, mantissa_exponent_to_raw_checked, raw_scales_match,
+    scaled_raw_to_decimal,
 };
 #[cfg(feature = "high-precision")]
 use super::fixed::{PRECISION_DIFF_SCALAR, f64_to_fixed_i128, fixed_i128_to_f64};
@@ -611,13 +616,18 @@ impl From<&Price> for Decimal {
 
 impl Hash for Price {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.raw.hash(state);
+        self.raw.signum().hash(state);
+        if self.raw == PRICE_ERROR {
+            self.raw.hash(state);
+        } else {
+            canonical_raw(self.raw.unsigned_abs(), self.precision).hash(state);
+        }
     }
 }
 
 impl PartialEq for Price {
     fn eq(&self, other: &Self) -> bool {
-        self.raw == other.raw
+        self.cmp(other) == Ordering::Equal
     }
 }
 
@@ -625,27 +635,15 @@ impl PartialOrd for Price {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
-
-    fn lt(&self, other: &Self) -> bool {
-        self.raw.lt(&other.raw)
-    }
-
-    fn le(&self, other: &Self) -> bool {
-        self.raw.le(&other.raw)
-    }
-
-    fn gt(&self, other: &Self) -> bool {
-        self.raw.gt(&other.raw)
-    }
-
-    fn ge(&self, other: &Self) -> bool {
-        self.raw.ge(&other.raw)
-    }
 }
 
 impl Ord for Price {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.raw.cmp(&other.raw)
+        // PRICE_ERROR is a precision-independent sentinel below every valid price.
+        if self.raw == PRICE_ERROR || other.raw == PRICE_ERROR {
+            return self.raw.cmp(&other.raw);
+        }
+        compare_raw_signed(self.raw, self.precision, other.raw, other.precision)
     }
 }
 
@@ -674,6 +672,10 @@ impl Neg for Price {
 impl Add for Price {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
+        assert!(
+            raw_scales_match(self.precision, rhs.precision),
+            "Cannot add `Price` values with mismatched decimal scales"
+        );
         Self {
             raw: self
                 .raw
@@ -687,6 +689,10 @@ impl Add for Price {
 impl Sub for Price {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
+        assert!(
+            raw_scales_match(self.precision, rhs.precision),
+            "Cannot subtract `Price` values with mismatched decimal scales"
+        );
         Self {
             raw: self
                 .raw
@@ -837,6 +843,18 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+
+    #[rstest]
+    fn test_error_sentinel_comparisons_preserve_raw_zero_semantics() {
+        let zero = Price::zero(FIXED_PRECISION);
+        let positive = Price::from_mantissa_exponent(1, 0, FIXED_PRECISION);
+        let negative = -positive;
+
+        assert_eq!(ERROR_PRICE, zero);
+        assert_eq!(ERROR_PRICE.cmp(&zero), Ordering::Equal);
+        assert_eq!(ERROR_PRICE.cmp(&positive), Ordering::Less);
+        assert_eq!(negative.cmp(&ERROR_PRICE), Ordering::Less);
+    }
 
     #[rstest]
     fn test_extreme_prices_round_trip_through_raw() {

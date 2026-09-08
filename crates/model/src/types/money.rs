@@ -21,6 +21,10 @@
 //!
 //! # Arithmetic behavior
 //!
+//! Adding or subtracting two `Money` values requires matching effective fixed-point scales.
+//! These operations panic on a scale mismatch.
+//! Comparisons and hashes account for scale differences without rounding.
+//!
 //! | Operation         | Result    | Notes                             |
 //! |-------------------|-----------|-----------------------------------|
 //! | `Money + Money`   | `Money`   | Panics if currencies don't match. |
@@ -37,9 +41,9 @@
 //!
 //! # Ordering behavior
 //!
-//! Rust ordering compares currency codes lexicographically, then raw amounts. This structural
-//! order supports sorting and ordered collections across currencies, but it does not convert
-//! amounts to a common currency. Values with the same currency code retain raw numeric ordering.
+//! Rust ordering compares currency codes lexicographically, then scale-adjusted amounts.
+//! This order supports sorting and ordered collections across currencies, but it does not convert
+//! amounts to a common currency. Values with the same currency code compare by numeric value.
 //! Python comparisons reject values with different currency codes.
 //!
 //! # Currency constraints
@@ -78,8 +82,8 @@ use crate::types::fixed::MAX_FLOAT_PRECISION;
 use crate::types::{
     Currency,
     fixed::{
-        FIXED_PRECISION, FIXED_SCALAR, check_fixed_precision, mantissa_exponent_to_fixed_i128,
-        raw_scale, raw_scales_match, scaled_raw_to_decimal,
+        FIXED_PRECISION, FIXED_SCALAR, canonical_raw, check_fixed_precision, compare_raw_signed,
+        mantissa_exponent_to_fixed_i128, raw_scale, raw_scales_match, scaled_raw_to_decimal,
     },
 };
 
@@ -535,14 +539,15 @@ impl From<&Money> for f64 {
 
 impl Hash for Money {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.raw.hash(state);
+        self.raw.signum().hash(state);
+        canonical_raw(self.raw.unsigned_abs(), self.currency.precision).hash(state);
         self.currency.hash(state);
     }
 }
 
 impl PartialEq for Money {
     fn eq(&self, other: &Self) -> bool {
-        self.raw == other.raw && self.currency == other.currency
+        self.cmp(other) == Ordering::Equal
     }
 }
 
@@ -554,10 +559,14 @@ impl PartialOrd for Money {
 
 impl Ord for Money {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.currency
-            .code
-            .cmp(&other.currency.code)
-            .then_with(|| self.raw.cmp(&other.raw))
+        self.currency.code.cmp(&other.currency.code).then_with(|| {
+            compare_raw_signed(
+                self.raw,
+                self.currency.precision,
+                other.raw,
+                other.currency.precision,
+            )
+        })
     }
 }
 
@@ -579,6 +588,10 @@ impl Add for Money {
             "Currency mismatch: cannot add {} to {}",
             rhs.currency.code, self.currency.code
         );
+        assert!(
+            raw_scales_match(self.currency.precision, rhs.currency.precision),
+            "Cannot add `Money` values with mismatched decimal scales"
+        );
         Self {
             raw: self
                 .raw
@@ -596,6 +609,10 @@ impl Sub for Money {
             self.currency, rhs.currency,
             "Currency mismatch: cannot subtract {} from {}",
             rhs.currency.code, self.currency.code
+        );
+        assert!(
+            raw_scales_match(self.currency.precision, rhs.currency.precision),
+            "Cannot subtract `Money` values with mismatched decimal scales"
         );
         Self {
             raw: self

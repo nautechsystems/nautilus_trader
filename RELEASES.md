@@ -53,10 +53,12 @@ Released on TBD (UTC).
 - Renamed `StrategyConfig.external_order_claims` to `external_order_instrument_ids`; use `Strategy.set_external_order_instrument_ids()` after registration to replace active claims
 - Changed `OrderStatus::is_open()` to exclude the in-flight `SUBMITTED` state; use `OrderStatus::is_inflight()` when a pending venue request must also match
 - Changed Python-controlled allocation sizes to reject values above documented limits; reduce existing oversized configurations before upgrading
+- Changed Rust mixed-scale addition/subtraction to panic; use `checked_add`/`checked_sub` for fallible handling
 
 ### Security
 
 - Added zeroizing secret storage and consistent credential redaction across adapter configuration, signing, and transport paths
+- Fixed DeFi fixed-point arithmetic and comparison errors in model types, thanks for reporting @uziii2208
 
 ### Fixes
 

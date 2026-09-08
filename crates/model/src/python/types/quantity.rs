@@ -530,11 +530,15 @@ impl Quantity {
 
     /// Computes a saturating subtraction between two quantities, logging when clamped.
     ///
+    /// Operands must use the same effective fixed-point scale. The Python binding raises
+    /// `ValueError` for mismatched scales.
+    ///
     /// When `rhs` is greater than `self`, the result is clamped to zero and a warning is logged.
     /// Precision follows the `Sub` implementation: uses the maximum precision of both operands.
     #[pyo3(name = "saturating_sub")]
-    fn py_saturating_sub(&self, other: Self) -> Self {
-        self.saturating_sub(other)
+    fn py_saturating_sub(&self, other: Self) -> PyResult<Self> {
+        check_raw_scales(self.precision, other.precision)?;
+        Ok(self.saturating_sub(other))
     }
 
     /// Performs a checked addition, returning `None` on raw integer overflow, when the
@@ -566,6 +570,18 @@ mod tests {
 
     use super::*;
     use crate::types::{fixed::FIXED_PRECISION, quantity::QUANTITY_RAW_MAX};
+
+    #[rstest]
+    #[cfg(feature = "defi")]
+    fn test_saturating_sub_rejects_mixed_scales_without_panicking() {
+        Python::initialize();
+        Python::attach(|py| {
+            let lhs = Quantity::from_raw(10_u128.pow(18), 18);
+            let rhs = Quantity::from_raw(10_u128.pow(16), 16);
+            let error = lhs.py_saturating_sub(rhs).unwrap_err();
+            assert!(error.is_instance_of::<pyo3::exceptions::PyValueError>(py));
+        });
+    }
 
     #[rstest]
     #[case("0", 0)]
