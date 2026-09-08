@@ -216,29 +216,3 @@ impl HasTsInit for PortfolioSnapshot {
         self.ts_init
     }
 }
-
-crate::impl_catalog_path_prefix!(AccountState, "account_state");
-crate::impl_catalog_path_prefix!(OrderInitialized, "order_initialized");
-crate::impl_catalog_path_prefix!(OrderDenied, "order_denied");
-crate::impl_catalog_path_prefix!(OrderEmulated, "order_emulated");
-crate::impl_catalog_path_prefix!(OrderSubmitted, "order_submitted");
-crate::impl_catalog_path_prefix!(OrderAccepted, "order_accepted");
-crate::impl_catalog_path_prefix!(OrderRejected, "order_rejected");
-crate::impl_catalog_path_prefix!(OrderPendingCancel, "order_pending_cancel");
-crate::impl_catalog_path_prefix!(OrderCanceled, "order_canceled");
-crate::impl_catalog_path_prefix!(OrderCancelRejected, "order_cancel_rejected");
-crate::impl_catalog_path_prefix!(OrderExpired, "order_expired");
-crate::impl_catalog_path_prefix!(OrderTriggered, "order_triggered");
-crate::impl_catalog_path_prefix!(OrderPendingUpdate, "order_pending_update");
-crate::impl_catalog_path_prefix!(OrderReleased, "order_released");
-crate::impl_catalog_path_prefix!(OrderModifyRejected, "order_modify_rejected");
-crate::impl_catalog_path_prefix!(OrderUpdated, "order_updated");
-crate::impl_catalog_path_prefix!(OrderFilled, "order_filled");
-crate::impl_catalog_path_prefix!(OrderFillVoided, "order_fill_voided");
-crate::impl_catalog_path_prefix!(PositionOpened, "position_opened");
-crate::impl_catalog_path_prefix!(PositionChanged, "position_changed");
-crate::impl_catalog_path_prefix!(PositionClosed, "position_closed");
-crate::impl_catalog_path_prefix!(PositionAdjusted, "position_adjusted");
-crate::impl_catalog_path_prefix!(OrderSnapshot, "order_snapshot");
-crate::impl_catalog_path_prefix!(PositionSnapshot, "position_snapshot");
-crate::impl_catalog_path_prefix!(PortfolioSnapshot, "portfolio_snapshot");

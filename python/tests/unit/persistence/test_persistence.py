@@ -451,7 +451,7 @@ def test_catalog_write_and_read_order_book_depths(tmp_path: Path) -> None:
                 assert actual_order.price == expected_order.price
                 assert actual_order.size == expected_order.size
                 assert expected_order.order_id != 0
-                assert actual_order.order_id == 0
+                assert actual_order.order_id == expected_order.order_id
 
 
 def test_catalog_append_data(tmp_path: Path) -> None:
@@ -520,7 +520,7 @@ def test_catalog_query_filters_and_timestamp_metadata(tmp_path: Path) -> None:
         ["AUD/USD.SIM"],
         start=1,
         end=6,
-        where_clause="ts_init >= 5",
+        where_clause="ts_init >= arrow_cast(5, 'Timestamp(Nanosecond, Some(\"UTC\"))')",
     )
 
     assert loaded == [_make_bar(5), _make_bar(6)]
@@ -729,7 +729,7 @@ def test_streaming_feather_writer_write_trade(tmp_path: Path) -> None:
             ),
         ),
         (
-            "funding_rate_update",
+            "funding_rates",
             lambda instrument_id: FundingRateUpdate(
                 instrument_id,
                 Decimal("0.0001"),

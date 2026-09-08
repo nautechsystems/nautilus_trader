@@ -45,10 +45,10 @@ impl From<OrderBookDepth10Ffi> for OrderBookDepth10 {
     fn from(value: OrderBookDepth10Ffi) -> Self {
         Self {
             instrument_id: value.instrument_id,
-            bids: value.bids.map(Into::into),
-            asks: value.asks.map(Into::into),
-            bid_counts: value.bid_counts,
-            ask_counts: value.ask_counts,
+            bids: value.bids.map(Into::into).into(),
+            asks: value.asks.map(Into::into).into(),
+            bid_counts: value.bid_counts.into(),
+            ask_counts: value.ask_counts.into(),
             flags: value.flags,
             sequence: value.sequence,
             ts_event: value.ts_event,
@@ -57,19 +57,32 @@ impl From<OrderBookDepth10Ffi> for OrderBookDepth10 {
     }
 }
 
-impl From<OrderBookDepth10> for OrderBookDepth10Ffi {
-    fn from(value: OrderBookDepth10) -> Self {
-        Self {
+impl TryFrom<OrderBookDepth10> for OrderBookDepth10Ffi {
+    type Error = anyhow::Error;
+
+    fn try_from(value: OrderBookDepth10) -> Result<Self, Self::Error> {
+        anyhow::ensure!(
+            [
+                value.bids.len(),
+                value.asks.len(),
+                value.bid_counts.len(),
+                value.ask_counts.len()
+            ]
+            .into_iter()
+            .all(|len| len == DEPTH10_LEN),
+            "The legacy depth FFI requires exactly ten levels per side"
+        );
+        Ok(Self {
             instrument_id: value.instrument_id,
-            bids: value.bids.map(Into::into),
-            asks: value.asks.map(Into::into),
-            bid_counts: value.bid_counts,
-            ask_counts: value.ask_counts,
+            bids: std::array::from_fn(|i| value.bids[i].into()),
+            asks: std::array::from_fn(|i| value.asks[i].into()),
+            bid_counts: std::array::from_fn(|i| value.bid_counts[i]),
+            ask_counts: std::array::from_fn(|i| value.ask_counts[i]),
             flags: value.flags,
             sequence: value.sequence,
             ts_event: value.ts_event,
             ts_init: value.ts_init,
-        }
+        })
     }
 }
 
@@ -126,7 +139,8 @@ pub unsafe extern "C" fn orderbook_depth10_new(
             ts_event,
             ts_init,
         )
-        .into()
+        .try_into()
+        .expect("Ten-level depth fits the legacy FFI")
     })
 }
 
@@ -166,4 +180,55 @@ pub extern "C" fn orderbook_depth10_bid_counts_array(depth: &OrderBookDepth10Ffi
 #[unsafe(no_mangle)]
 pub extern "C" fn orderbook_depth10_ask_counts_array(depth: &OrderBookDepth10Ffi) -> *const u32 {
     depth.ask_counts.as_ptr()
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+    use crate::data::{BookOrder, stubs::stub_depth10};
+
+    #[rstest]
+    fn legacy_depth_conversion_preserves_all_fields() {
+        let mut depth = stub_depth10();
+        depth.flags = 31;
+        depth.sequence = 23;
+        depth.ts_event = UnixNanos::from(41);
+        depth.ts_init = UnixNanos::from(43);
+        depth.bid_counts = (1..=10).collect();
+        depth.ask_counts = (11..=20).collect();
+        let ffi = OrderBookDepth10Ffi::try_from(depth.clone()).unwrap();
+        assert_eq!(ffi.instrument_id, depth.instrument_id);
+        assert_eq!(
+            ffi.bids.map(BookOrder::from).as_slice(),
+            depth.bids.as_slice()
+        );
+        assert_eq!(
+            ffi.asks.map(BookOrder::from).as_slice(),
+            depth.asks.as_slice()
+        );
+        assert_eq!(ffi.bid_counts.as_slice(), depth.bid_counts.as_slice());
+        assert_eq!(ffi.ask_counts.as_slice(), depth.ask_counts.as_slice());
+        assert_eq!(
+            (ffi.flags, ffi.sequence, ffi.ts_event, ffi.ts_init),
+            (31, 23, UnixNanos::from(41), UnixNanos::from(43))
+        );
+        assert_eq!(OrderBookDepth10::from(ffi), depth);
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(9)]
+    #[case(11)]
+    fn legacy_depth_conversion_rejects_other_depths(#[case] levels: usize) {
+        let mut depth = stub_depth10();
+        depth.bids.resize(levels, depth.bids[0]);
+        depth.bid_counts.resize(levels, 1);
+        let error = OrderBookDepth10Ffi::try_from(depth).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "The legacy depth FFI requires exactly ten levels per side"
+        );
+    }
 }

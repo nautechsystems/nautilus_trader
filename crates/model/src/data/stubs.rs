@@ -208,49 +208,53 @@ pub fn stub_deltas() -> OrderBookDeltas {
 
 #[fixture]
 pub fn stub_depth10() -> OrderBookDepth10 {
+    stub_depth(DEPTH10_LEN)
+}
+
+/// Creates a depth snapshot with the requested number of levels per side.
+#[must_use]
+pub fn stub_depth(levels: usize) -> OrderBookDepth10 {
     let instrument_id = InstrumentId::from("AAPL.XNAS");
     let flags = 0;
     let sequence = 0;
     let ts_event = 1;
     let ts_init = 2;
 
-    let mut bids: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
-    let mut asks: [BookOrder; DEPTH10_LEN] = [BookOrder::default(); DEPTH10_LEN];
+    let mut bids = Vec::with_capacity(levels);
+    let mut asks = Vec::with_capacity(levels);
 
-    // Create bids
     let mut price = 99.00;
     let mut quantity = 100.0;
 
-    for (i, bid) in bids.iter_mut().enumerate() {
-        *bid = BookOrder::new(
+    for i in 0..levels {
+        bids.push(BookOrder::new(
             OrderSide::Buy,
             Price::new(price, 2),
             Quantity::new(quantity, 0),
             (i + 1) as u64,
-        );
+        ));
 
         price -= 1.0;
         quantity += 100.0;
     }
 
-    // Create asks
     let mut price = 100.00;
     let mut quantity = 100.0;
 
-    for (i, ask) in asks.iter_mut().enumerate() {
-        *ask = BookOrder::new(
+    for i in 0..levels {
+        asks.push(BookOrder::new(
             OrderSide::Sell,
             Price::new(price, 2),
             Quantity::new(quantity, 0),
-            (i + 11) as u64,
-        );
+            (i + levels + 1) as u64,
+        ));
 
         price += 1.0;
         quantity += 100.0;
     }
 
-    let bid_counts: [u32; DEPTH10_LEN] = [1; DEPTH10_LEN];
-    let ask_counts: [u32; DEPTH10_LEN] = [1; DEPTH10_LEN];
+    let bid_counts = vec![1; levels];
+    let ask_counts = vec![1; levels];
 
     OrderBookDepth10::new(
         instrument_id,

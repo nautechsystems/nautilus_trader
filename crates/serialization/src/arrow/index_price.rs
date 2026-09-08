@@ -13,28 +13,30 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use arrow::{
-    array::{FixedSizeBinaryArray, FixedSizeBinaryBuilder, UInt64Array},
+    array::{Decimal128Array, UInt64Array},
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
     record_batch::RecordBatch,
 };
-use nautilus_model::{data::prices::IndexPriceUpdate, types::fixed::PRECISION_BYTES};
+use nautilus_model::{data::prices::IndexPriceUpdate, identifiers::InstrumentId};
 
 use super::{
-    DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION, decode_price,
-    extract_column, parse_price_metadata, validate_precision_bytes,
+    DecodeDataFromRecordBatch, EncodingError, KEY_IDENTIFIER, KEY_INSTRUMENT_ID,
+    KEY_PRICE_PRECISION, decode_decimal_price, decode_required_timestamp, extract_column,
+    fixed_decimal_data_type, identifier_array_from_display, price_decimal_array,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 impl ArrowSchemaProvider for IndexPriceUpdate {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
         let fields = vec![
-            Field::new("value", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("ts_event", DataType::UInt64, false),
-            Field::new("ts_init", DataType::UInt64, false),
+            Field::new("value", fixed_decimal_data_type(), true),
+            Field::new("ts_event", crate::arrow::timestamp_data_type(), false),
+            Field::new("ts_init", crate::arrow::timestamp_data_type(), false),
+            Field::new(KEY_IDENTIFIER, DataType::Utf8, true),
         ];
 
         match metadata {
@@ -44,29 +46,54 @@ impl ArrowSchemaProvider for IndexPriceUpdate {
     }
 }
 
+fn parse_metadata(metadata: &HashMap<String, String>) -> Result<(InstrumentId, u8), EncodingError> {
+    let instrument_id_str = metadata
+        .get(KEY_INSTRUMENT_ID)
+        .ok_or_else(|| EncodingError::MissingMetadata(KEY_INSTRUMENT_ID))?;
+    let instrument_id = InstrumentId::from_str(instrument_id_str)
+        .map_err(|e| EncodingError::ParseError(KEY_INSTRUMENT_ID, e.to_string()))?;
+
+    let price_precision = metadata
+        .get(KEY_PRICE_PRECISION)
+        .ok_or_else(|| EncodingError::MissingMetadata(KEY_PRICE_PRECISION))?
+        .parse::<u8>()
+        .map_err(|e| EncodingError::ParseError(KEY_PRICE_PRECISION, e.to_string()))?;
+
+    Ok((instrument_id, price_precision))
+}
+
 impl EncodeToRecordBatch for IndexPriceUpdate {
-    fn encode_batch(
+    fn encode_batch<T>(
         metadata: &HashMap<String, String>,
-        data: &[Self],
-    ) -> Result<RecordBatch, ArrowError> {
-        let mut value_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), PRECISION_BYTES);
+        data: &[T],
+    ) -> Result<RecordBatch, ArrowError>
+    where
+        T: std::borrow::Borrow<Self>,
+    {
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
 
-        for update in data {
-            value_builder
-                .append_value(update.value.raw().to_le_bytes())
-                .unwrap();
+        for update in data.iter().map(std::borrow::Borrow::borrow) {
             ts_event_builder.append_value(update.ts_event.as_u64());
             ts_init_builder.append_value(update.ts_init.as_u64());
         }
 
-        RecordBatch::try_new(
+        crate::arrow::record_batch_with_timestamps(
             Self::get_schema(Some(metadata.clone())).into(),
             vec![
-                Arc::new(value_builder.finish()),
+                Arc::new(price_decimal_array(
+                    data.iter()
+                        .map(std::borrow::Borrow::borrow)
+                        .map(|update| update.value.raw),
+                    "value",
+                )?),
                 Arc::new(ts_event_builder.finish()),
                 Arc::new(ts_init_builder.finish()),
+                Arc::new(identifier_array_from_display(
+                    data.iter()
+                        .map(std::borrow::Borrow::borrow)
+                        .map(|update| update.instrument_id),
+                )),
             ],
         )
     }
@@ -90,28 +117,24 @@ impl DecodeFromRecordBatch for IndexPriceUpdate {
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Result<Vec<Self>, EncodingError> {
-        let (instrument_id, price_precision) = parse_price_metadata(metadata)?;
+        let (instrument_id, price_precision) = parse_metadata(metadata)?;
+        let record_batch = crate::arrow::record_batch_with_u64_timestamps(&record_batch)?;
+        let record_batch = &record_batch;
         let cols = record_batch.columns();
 
-        let value_values = extract_column::<FixedSizeBinaryArray>(
-            cols,
-            "value",
-            0,
-            DataType::FixedSizeBinary(PRECISION_BYTES),
-        )?;
+        let value_values =
+            extract_column::<Decimal128Array>(cols, "value", 0, fixed_decimal_data_type())?;
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 1, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 2, DataType::UInt64)?;
 
-        validate_precision_bytes(value_values, "value")?;
-
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|row| {
-                let value = decode_price(value_values.value(row), price_precision, "value", row)?;
+                let value = decode_decimal_price(value_values, price_precision, "value", row)?;
                 Ok(Self {
                     instrument_id,
                     value,
-                    ts_event: ts_event_values.value(row).into(),
-                    ts_init: ts_init_values.value(row).into(),
+                    ts_event: decode_required_timestamp(ts_event_values, "ts_event", row)?,
+                    ts_init: decode_required_timestamp(ts_init_values, "ts_init", row)?,
                 })
             })
             .collect();
@@ -134,16 +157,13 @@ impl DecodeDataFromRecordBatch for IndexPriceUpdate {
 mod tests {
     use std::sync::Arc;
 
-    use arrow::{array::Array, record_batch::RecordBatch};
-    use nautilus_model::{
-        identifiers::InstrumentId,
-        types::{Price, fixed::FIXED_SCALAR, price::PriceRaw},
-    };
+    use arrow::array::{Array, TimestampNanosecondArray};
+    use nautilus_model::types::{Price, fixed::FIXED_SCALAR, price::PriceRaw};
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
     use super::*;
-    use crate::arrow::{fixed_size_binary, get_raw_price};
+    use crate::arrow::get_raw_price;
 
     #[rstest]
     fn test_get_schema() {
@@ -155,9 +175,10 @@ mod tests {
         let schema = IndexPriceUpdate::get_schema(Some(metadata.clone()));
 
         let expected_fields = vec![
-            Field::new("value", DataType::FixedSizeBinary(PRECISION_BYTES), false),
-            Field::new("ts_event", DataType::UInt64, false),
-            Field::new("ts_init", DataType::UInt64, false),
+            Field::new("value", fixed_decimal_data_type(), true),
+            Field::new("ts_event", crate::arrow::timestamp_data_type(), false),
+            Field::new("ts_init", crate::arrow::timestamp_data_type(), false),
+            Field::new(KEY_IDENTIFIER, DataType::Utf8, true),
         ];
 
         let expected_schema = Schema::new_with_metadata(expected_fields, metadata);
@@ -169,10 +190,17 @@ mod tests {
         let schema_map = IndexPriceUpdate::get_schema_map();
         let mut expected_map = HashMap::new();
 
-        let fixed_size_binary = format!("FixedSizeBinary({PRECISION_BYTES})");
+        let fixed_size_binary = "Decimal128(38, 16)".to_string();
         expected_map.insert("value".to_string(), fixed_size_binary);
-        expected_map.insert("ts_event".to_string(), "UInt64".to_string());
-        expected_map.insert("ts_init".to_string(), "UInt64".to_string());
+        expected_map.insert(
+            "ts_event".to_string(),
+            "Timestamp(Nanosecond, Some(\"UTC\"))".to_string(),
+        );
+        expected_map.insert(
+            "ts_init".to_string(),
+            "Timestamp(Nanosecond, Some(\"UTC\"))".to_string(),
+        );
+        expected_map.insert(KEY_IDENTIFIER.to_string(), "Utf8".to_string());
         assert_eq!(schema_map, expected_map);
     }
 
@@ -204,20 +232,26 @@ mod tests {
         let columns = record_batch.columns();
         let value_values = columns[0]
             .as_any()
-            .downcast_ref::<FixedSizeBinaryArray>()
+            .downcast_ref::<Decimal128Array>()
             .unwrap();
-        let ts_event_values = columns[1].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ts_init_values = columns[2].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let ts_event_values = columns[1]
+            .as_any()
+            .downcast_ref::<TimestampNanosecondArray>()
+            .unwrap();
+        let ts_init_values = columns[2]
+            .as_any()
+            .downcast_ref::<TimestampNanosecondArray>()
+            .unwrap();
 
-        assert_eq!(columns.len(), 3);
+        assert_eq!(columns.len(), 4);
         assert_eq!(value_values.len(), 2);
         assert_eq!(
             get_raw_price(value_values.value(0)),
-            Price::from(dec!(50000.00).to_string()).raw()
+            Price::from(dec!(50000.00).to_string()).raw
         );
         assert_eq!(
             get_raw_price(value_values.value(1)),
-            Price::from(dec!(51000.00).to_string()).raw()
+            Price::from(dec!(51000.00).to_string()).raw
         );
         assert_eq!(ts_event_values.len(), 2);
         assert_eq!(ts_event_values.value(0), 1);
@@ -237,12 +271,18 @@ mod tests {
 
         let raw_price1 = (50.00 * FIXED_SCALAR) as PriceRaw;
         let raw_price2 = (51.00 * FIXED_SCALAR) as PriceRaw;
-        let value = fixed_size_binary(vec![&raw_price1.to_le_bytes(), &raw_price2.to_le_bytes()]);
+        let value = crate::arrow::test_support::decimal_array_from_bytes(vec![
+            &raw_price1.to_le_bytes(),
+            &raw_price2.to_le_bytes(),
+        ]);
         let ts_event = UInt64Array::from(vec![1, 2]);
         let ts_init = UInt64Array::from(vec![3, 4]);
 
-        let record_batch = RecordBatch::try_new(
-            IndexPriceUpdate::get_schema(Some(metadata.clone())).into(),
+        let record_batch = crate::arrow::record_batch_with_timestamps(
+            crate::arrow::schema_without_identifier_column(&IndexPriceUpdate::get_schema(Some(
+                metadata.clone(),
+            )))
+            .into(),
             vec![Arc::new(value), Arc::new(ts_event), Arc::new(ts_init)],
         )
         .unwrap();
@@ -262,6 +302,43 @@ mod tests {
     }
 
     #[rstest]
+    fn test_decode_batch_rejects_null_timestamp_with_field_and_row() {
+        let instrument_id = InstrumentId::from("BTC-USDT.BINANCE");
+        let metadata = HashMap::from([
+            (KEY_INSTRUMENT_ID.to_string(), instrument_id.to_string()),
+            (KEY_PRICE_PRECISION.to_string(), "2".to_string()),
+        ]);
+        let update = IndexPriceUpdate {
+            instrument_id,
+            value: Price::from("50000.00"),
+            ts_event: 1.into(),
+            ts_init: 2.into(),
+        };
+        let encoded = IndexPriceUpdate::encode_batch(&metadata, &[update]).unwrap();
+        let mut columns = encoded.columns().to_vec();
+        columns[2] = Arc::new(TimestampNanosecondArray::from(vec![None]).with_timezone("UTC"));
+        let fields = encoded
+            .schema()
+            .fields()
+            .iter()
+            .map(|field| {
+                if field.name() == "ts_init" {
+                    Arc::new(field.as_ref().clone().with_nullable(true))
+                } else {
+                    field.clone()
+                }
+            })
+            .collect::<Vec<_>>();
+        let schema = Arc::new(Schema::new_with_metadata(fields, metadata.clone()));
+        let batch = RecordBatch::try_new(schema, columns).unwrap();
+
+        let error = IndexPriceUpdate::decode_batch(&metadata, batch).unwrap_err();
+
+        assert!(error.to_string().contains("ts_init"));
+        assert!(error.to_string().contains("row 0"));
+    }
+
+    #[rstest]
     fn test_decode_batch_invalid_value_returns_error() {
         let instrument_id = InstrumentId::from("BTC-USDT.BINANCE");
         let metadata = HashMap::from([
@@ -270,12 +347,17 @@ mod tests {
         ]);
 
         let invalid_price: PriceRaw = PriceRaw::MAX - 1000;
-        let value = fixed_size_binary(vec![&invalid_price.to_le_bytes()]);
+        let value = crate::arrow::test_support::decimal_array_from_bytes(vec![
+            &invalid_price.to_le_bytes(),
+        ]);
         let ts_event = UInt64Array::from(vec![1]);
         let ts_init = UInt64Array::from(vec![2]);
 
-        let record_batch = RecordBatch::try_new(
-            IndexPriceUpdate::get_schema(Some(metadata.clone())).into(),
+        let record_batch = crate::arrow::record_batch_with_timestamps(
+            crate::arrow::schema_without_identifier_column(&IndexPriceUpdate::get_schema(Some(
+                metadata.clone(),
+            )))
+            .into(),
             vec![Arc::new(value), Arc::new(ts_event), Arc::new(ts_init)],
         )
         .unwrap();
@@ -300,12 +382,16 @@ mod tests {
         ]);
 
         let raw_price = (50.00 * FIXED_SCALAR) as PriceRaw;
-        let value = fixed_size_binary(vec![&raw_price.to_le_bytes()]);
+        let value =
+            crate::arrow::test_support::decimal_array_from_bytes(vec![&raw_price.to_le_bytes()]);
         let ts_event = UInt64Array::from(vec![1]);
         let ts_init = UInt64Array::from(vec![2]);
 
-        let record_batch = RecordBatch::try_new(
-            IndexPriceUpdate::get_schema(Some(metadata.clone())).into(),
+        let record_batch = crate::arrow::record_batch_with_timestamps(
+            crate::arrow::schema_without_identifier_column(&IndexPriceUpdate::get_schema(Some(
+                metadata.clone(),
+            )))
+            .into(),
             vec![Arc::new(value), Arc::new(ts_event), Arc::new(ts_init)],
         )
         .unwrap();

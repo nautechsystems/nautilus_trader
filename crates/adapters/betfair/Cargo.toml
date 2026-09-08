@@ -58,7 +58,6 @@ nautilus-core = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
-nautilus-persistence-macros = { workspace = true }
 nautilus-serialization = { workspace = true, features = ["arrow"] }
 nautilus-system = { workspace = true, optional = true }
 

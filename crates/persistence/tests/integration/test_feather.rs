@@ -26,7 +26,7 @@ use nautilus_model::{
     identifiers::{InstrumentId, TradeId},
     types::{Price, Quantity},
 };
-use nautilus_persistence::backend::feather::{FeatherWriter, RotationConfig};
+use nautilus_persistence::backend::feather::{FeatherWriter, RotationConfig, WriterClock};
 use object_store::{ObjectStore, local::LocalFileSystem};
 use rstest::rstest;
 use tempfile::TempDir;
@@ -43,7 +43,7 @@ async fn test_write_data_enum_quote() {
     let mut writer = FeatherWriter::new(
         base_path,
         store,
-        clock,
+        WriterClock::from_shared_clock(&clock).0,
         RotationConfig::NoRotation,
         None,
         None,
@@ -60,7 +60,7 @@ async fn test_write_data_enum_quote() {
         UnixNanos::from(1000),
     );
 
-    writer.write_data(Data::Quote(quote)).await.unwrap();
+    writer.write_data(Data::Quote(quote)).unwrap();
     writer.flush().await.unwrap();
 }
 
@@ -76,7 +76,7 @@ async fn test_write_data_enum_all_types() {
     let mut writer = FeatherWriter::new(
         base_path,
         store,
-        clock,
+        WriterClock::from_shared_clock(&clock).0,
         RotationConfig::NoRotation,
         None,
         None,
@@ -95,7 +95,7 @@ async fn test_write_data_enum_all_types() {
         UnixNanos::from(1000),
         UnixNanos::from(1000),
     );
-    writer.write_data(Data::Quote(quote)).await.unwrap();
+    writer.write_data(Data::Quote(quote)).unwrap();
 
     let trade = TradeTick::new(
         instrument_id,
@@ -106,7 +106,7 @@ async fn test_write_data_enum_all_types() {
         UnixNanos::from(2000),
         UnixNanos::from(2000),
     );
-    writer.write_data(Data::Trade(trade)).await.unwrap();
+    writer.write_data(Data::Trade(trade)).unwrap();
 
     let delta = OrderBookDelta::clear(
         instrument_id,
@@ -114,7 +114,7 @@ async fn test_write_data_enum_all_types() {
         UnixNanos::from(3000),
         UnixNanos::from(3000),
     );
-    writer.write_data(Data::BookDelta(delta)).await.unwrap();
+    writer.write_data(Data::BookDelta(delta)).unwrap();
 
     let funding_rate = FundingRateUpdate::new(
         instrument_id,
@@ -124,10 +124,7 @@ async fn test_write_data_enum_all_types() {
         UnixNanos::from(4_000),
         UnixNanos::from(4_000),
     );
-    writer
-        .write_data(Data::FundingRate(funding_rate))
-        .await
-        .unwrap();
+    writer.write_data(Data::FundingRate(funding_rate)).unwrap();
 
     writer.flush().await.unwrap();
 }
@@ -144,7 +141,7 @@ async fn test_write_data_orderbook_deltas() {
     let mut writer = FeatherWriter::new(
         base_path,
         store,
-        clock,
+        WriterClock::from_shared_clock(&clock).0,
         RotationConfig::NoRotation,
         None,
         None,
@@ -170,7 +167,6 @@ async fn test_write_data_orderbook_deltas() {
     // Test writing OrderBookDeltas via write_data
     writer
         .write_data(Data::BookDeltas(Box::new(deltas)))
-        .await
         .unwrap();
     writer.flush().await.unwrap();
 }
@@ -187,7 +183,7 @@ async fn test_auto_flush() {
     let mut writer = FeatherWriter::new(
         base_path,
         store,
-        clock.clone(),
+        WriterClock::from_shared_clock(&clock).0,
         RotationConfig::NoRotation,
         None,
         None,
@@ -205,7 +201,7 @@ async fn test_auto_flush() {
     );
 
     // Write first quote
-    writer.write(quote).await.unwrap();
+    writer.write(quote).unwrap();
 
     // Note: TestClock doesn't have set_time_ns, so we can't easily test auto-flush
     // with time advancement. Instead, we test that check_flush is called during write.
@@ -221,7 +217,7 @@ async fn test_auto_flush() {
         UnixNanos::from(2000),
         UnixNanos::from(2000),
     );
-    writer.write(quote2).await.unwrap();
+    writer.write(quote2).unwrap();
 
     // Verify that writes succeeded (check_flush was called, even if it didn't flush)
     // The flush_interval_ms is set, so check_flush runs but won't flush without time advancement
@@ -239,7 +235,7 @@ async fn test_close() {
     let mut writer = FeatherWriter::new(
         base_path,
         store,
-        clock,
+        WriterClock::from_shared_clock(&clock).0,
         RotationConfig::NoRotation,
         None,
         None,
@@ -256,7 +252,7 @@ async fn test_close() {
         UnixNanos::from(1000),
     );
 
-    writer.write(quote).await.unwrap();
+    writer.write(quote).unwrap();
 
     // Close should flush and clear writers
     writer.close().await.unwrap();
@@ -284,7 +280,7 @@ async fn test_write_orderbook_deltas_clear_first_preserves_precision() {
     let mut writer = FeatherWriter::new(
         base_path,
         store,
-        clock,
+        WriterClock::from_shared_clock(&clock).0,
         RotationConfig::NoRotation,
         None,
         Some(per_instrument),
@@ -317,7 +313,6 @@ async fn test_write_orderbook_deltas_clear_first_preserves_precision() {
 
     writer
         .write_data(Data::BookDeltas(Box::new(deltas)))
-        .await
         .unwrap();
     writer.flush().await.unwrap();
 
@@ -356,7 +351,7 @@ async fn test_write_orderbook_deltas_all_sentinel_metadata_fallback() {
     let mut writer = FeatherWriter::new(
         base_path,
         store,
-        clock,
+        WriterClock::from_shared_clock(&clock).0,
         RotationConfig::NoRotation,
         None,
         Some(per_instrument),
@@ -381,7 +376,6 @@ async fn test_write_orderbook_deltas_all_sentinel_metadata_fallback() {
 
     writer
         .write_data(Data::BookDeltas(Box::new(deltas)))
-        .await
         .unwrap();
     writer.flush().await.unwrap();
 
@@ -412,7 +406,7 @@ async fn test_write_batch_partitions_by_instrument() {
     let mut writer = FeatherWriter::new(
         base_path,
         store,
-        clock,
+        WriterClock::from_shared_clock(&clock).0,
         RotationConfig::NoRotation,
         None,
         Some(per_instrument),
@@ -446,7 +440,7 @@ async fn test_write_batch_partitions_by_instrument() {
         make_add(instrument_b, 20_100.0, 4, 0.25, 8, 4000),
     ];
 
-    writer.write_batch(deltas).await.unwrap();
+    writer.write_batch(deltas).unwrap();
     writer.flush().await.unwrap();
 
     let files = collect_feather_files(temp_dir.path());

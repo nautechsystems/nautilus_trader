@@ -25,7 +25,7 @@ use nautilus_model::{
     instruments::{InstrumentAny, stubs::equity_aapl_itch},
     types::fixed::PRECISION_BYTES,
 };
-use nautilus_serialization::arrow::DecodeFromRecordBatch;
+use nautilus_serialization::arrow::{DecodeFromRecordBatch, normalize_legacy_fixed_columns};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
 /// Returns the full path to the test data file at the specified relative `path` within the standard test data directory.
@@ -199,7 +199,7 @@ fn load_deltas_from_parquet(filepath: &Path, limit: Option<usize>) -> Vec<OrderB
     let mut deltas = Vec::new();
 
     for batch_result in reader {
-        let batch = batch_result.unwrap();
+        let batch = normalize_legacy_fixed_columns(&batch_result.unwrap()).unwrap();
         let batch_deltas = OrderBookDelta::decode_batch(&metadata, batch).unwrap();
         deltas.extend(batch_deltas);
     }

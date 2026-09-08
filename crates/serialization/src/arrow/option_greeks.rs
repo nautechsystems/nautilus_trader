@@ -29,7 +29,8 @@ use nautilus_model::{
 
 use super::{
     ArrowSchemaProvider, DecodeDataFromRecordBatch, DecodeFromRecordBatch, EncodeToRecordBatch,
-    EncodingError, KEY_INSTRUMENT_ID, extract_column, extract_column_string,
+    EncodingError, KEY_IDENTIFIER, KEY_INSTRUMENT_ID, decode_required_timestamp, extract_column,
+    extract_column_string, identifier_array_from_display,
 };
 
 const TYPE_NAME: &str = "OptionGreeks";
@@ -48,9 +49,10 @@ impl ArrowSchemaProvider for OptionGreeks {
             Field::new("ask_iv", DataType::Float64, true),
             Field::new("underlying_price", DataType::Float64, true),
             Field::new("open_interest", DataType::Float64, true),
-            Field::new("ts_event", DataType::UInt64, false),
-            Field::new("ts_init", DataType::UInt64, false),
+            Field::new("ts_event", crate::arrow::timestamp_data_type(), false),
+            Field::new("ts_init", crate::arrow::timestamp_data_type(), false),
             Field::new("convention", DataType::Utf8, false),
+            Field::new(KEY_IDENTIFIER, DataType::Utf8, true),
         ];
 
         let mut metadata = metadata.unwrap_or_default();
@@ -75,10 +77,13 @@ fn optional_f64(values: &Float64Array, row: usize) -> Option<f64> {
 }
 
 impl EncodeToRecordBatch for OptionGreeks {
-    fn encode_batch(
+    fn encode_batch<T>(
         metadata: &HashMap<String, String>,
-        data: &[Self],
-    ) -> Result<RecordBatch, ArrowError> {
+        data: &[T],
+    ) -> Result<RecordBatch, ArrowError>
+    where
+        T: std::borrow::Borrow<Self>,
+    {
         let mut instrument_id_builder = StringBuilder::new();
         let mut delta_builder = Float64Builder::new();
         let mut gamma_builder = Float64Builder::new();
@@ -94,7 +99,7 @@ impl EncodeToRecordBatch for OptionGreeks {
         let mut ts_init_builder = UInt64Array::builder(data.len());
         let mut convention_builder = StringBuilder::new();
 
-        for greeks in data {
+        for greeks in data.iter().map(std::borrow::Borrow::borrow) {
             instrument_id_builder.append_value(greeks.instrument_id.to_string());
             delta_builder.append_value(greeks.delta);
             gamma_builder.append_value(greeks.gamma);
@@ -111,7 +116,7 @@ impl EncodeToRecordBatch for OptionGreeks {
             convention_builder.append_value(greeks.convention);
         }
 
-        RecordBatch::try_new(
+        crate::arrow::record_batch_with_timestamps(
             Arc::new(Self::get_schema(Some(metadata.clone()))),
             vec![
                 Arc::new(instrument_id_builder.finish()),
@@ -128,6 +133,11 @@ impl EncodeToRecordBatch for OptionGreeks {
                 Arc::new(ts_event_builder.finish()),
                 Arc::new(ts_init_builder.finish()),
                 Arc::new(convention_builder.finish()),
+                Arc::new(identifier_array_from_display(
+                    data.iter()
+                        .map(std::borrow::Borrow::borrow)
+                        .map(|greeks| greeks.instrument_id),
+                )),
             ],
         )
     }
@@ -148,6 +158,8 @@ impl DecodeFromRecordBatch for OptionGreeks {
         _metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Result<Vec<Self>, EncodingError> {
+        let record_batch = crate::arrow::record_batch_with_u64_timestamps(&record_batch)?;
+        let record_batch = &record_batch;
         let cols = record_batch.columns();
 
         let instrument_id_values = extract_column_string(cols, "instrument_id", 0)?;
@@ -190,8 +202,8 @@ impl DecodeFromRecordBatch for OptionGreeks {
                     ask_iv: optional_f64(ask_iv_values, row),
                     underlying_price: optional_f64(underlying_price_values, row),
                     open_interest: optional_f64(open_interest_values, row),
-                    ts_event: ts_event_values.value(row).into(),
-                    ts_init: ts_init_values.value(row).into(),
+                    ts_event: decode_required_timestamp(ts_event_values, "ts_event", row)?,
+                    ts_init: decode_required_timestamp(ts_init_values, "ts_init", row)?,
                 })
             })
             .collect();

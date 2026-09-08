@@ -22,6 +22,7 @@
 
 pub mod backend;
 pub mod catalog;
+pub mod config;
 pub mod feather;
 pub mod wranglers;
 
@@ -54,6 +55,11 @@ pub fn persistence(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::backend::session::DataBackendSession>()?;
     m.add_class::<crate::backend::session::DataQueryResult>()?;
     m.add_class::<backend::session::NautilusDataType>()?;
+    m.add_class::<config::PyCatalogBackend>()?;
+    m.add_class::<config::PyStreamingConfig>()?;
+    m.add_class::<config::PyRotationConfig>()?;
+    m.add_class::<crate::test_data::RustTestFixedCustomData>()?;
+    m.add_class::<backend::writer::PyStreamingWriter>()?;
     m.add_class::<crate::config::DataCatalogConfig>()?;
     m.add_class::<catalog::PyParquetDataCatalog>()?;
     m.add_class::<feather::PyStreamingFeatherWriter>()?;

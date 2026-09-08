@@ -30,6 +30,7 @@ use nautilus_model::{
     enums::BarIntervalType,
     identifiers::{ClientId, TraderId, Venue},
 };
+use nautilus_persistence::{config::DataCatalogConfig, python::config::PyStreamingConfig};
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_trading::ImportableControllerConfig;
 use pyo3::{
@@ -1111,7 +1112,7 @@ impl LiveNodeConfig {
     /// Configuration for live Nautilus system nodes.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (environment=None, trader_id=None, load_state=None, save_state=None, shutdown_on_error=None, logging=None, instance_id=None, timeout_connection_secs=None, timeout_reconciliation_secs=None, timeout_portfolio_secs=None, timeout_disconnection_secs=None, delay_post_stop_secs=None, timeout_shutdown_secs=None, cache=None, msgbus=None, portfolio=None, queue_monitor=None, loop_debug=None, data_engine=None, risk_engine=None, exec_engine=None, controller=None, plugins=None, *, data_clients=None, exec_clients=None))]
+    #[pyo3(signature = (environment=None, trader_id=None, load_state=None, save_state=None, shutdown_on_error=None, logging=None, instance_id=None, timeout_connection_secs=None, timeout_reconciliation_secs=None, timeout_portfolio_secs=None, timeout_disconnection_secs=None, delay_post_stop_secs=None, timeout_shutdown_secs=None, cache=None, msgbus=None, portfolio=None, queue_monitor=None, loop_debug=None, data_engine=None, risk_engine=None, exec_engine=None, controller=None, plugins=None, streaming=None, catalogs=None, *, data_clients=None, exec_clients=None))]
     fn py_new(
         environment: Option<Environment>,
         trader_id: Option<TraderId>,
@@ -1136,6 +1137,8 @@ impl LiveNodeConfig {
         exec_engine: Option<LiveExecutionEngineConfig>,
         controller: Option<ImportableControllerConfig>,
         plugins: Option<Vec<PluginConfig>>,
+        streaming: Option<PyStreamingConfig>,
+        catalogs: Option<Vec<DataCatalogConfig>>,
         data_clients: Option<Bound<'_, PyDict>>,
         exec_clients: Option<Bound<'_, PyDict>>,
     ) -> PyResult<Self> {
@@ -1182,7 +1185,8 @@ impl LiveNodeConfig {
             msgbus,
             portfolio,
             emulator: None,
-            streaming: None,
+            streaming: streaming.map(Into::into),
+            catalogs: catalogs.unwrap_or_default(),
             queue_monitor,
             event_store: None,
             loop_debug: loop_debug.unwrap_or(false),
@@ -1256,6 +1260,18 @@ impl LiveNodeConfig {
 
     fn __str__(&self) -> String {
         format!("{self:?}")
+    }
+
+    #[getter]
+    #[pyo3(name = "streaming")]
+    fn py_streaming(&self) -> Option<PyStreamingConfig> {
+        self.streaming.clone().map(Into::into)
+    }
+
+    #[getter]
+    #[pyo3(name = "catalogs")]
+    fn py_catalogs(&self) -> Vec<DataCatalogConfig> {
+        self.catalogs.clone()
     }
 
     #[getter]

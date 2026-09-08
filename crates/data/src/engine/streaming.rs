@@ -28,13 +28,15 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{
-        Bar, CustomData, Data, FundingRateUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick,
-        TradeTick,
+        Bar, CustomData, DataBatch, FromDataBatch, FundingRateUpdate, NautilusDataType,
+        OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
     },
     identifiers::{ClientId, Venue},
     instruments::{Instrument, InstrumentAny},
 };
-use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+use nautilus_persistence::catalog::traits::{
+    CatalogInstrumentQuery, CatalogQuery, DataCatalog, DataCatalogBox,
+};
 use serde_json::Value;
 use ustr::Ustr;
 
@@ -47,7 +49,7 @@ const PARAM_SUBSCRIPTION_NAME: &str = "subscription_name";
 const PARAM_FROM_DAY_START: &str = "from_day_start";
 const CATALOG_CLIENT_ID: &str = "CATALOG";
 
-pub(crate) type CatalogMap = AHashMap<Ustr, ParquetDataCatalog>;
+pub(crate) type CatalogMap = AHashMap<Ustr, DataCatalogBox>;
 
 impl DataEngine {
     /// Registers the `catalog` with the engine with an optional specific `name`.
@@ -55,7 +57,19 @@ impl DataEngine {
     /// # Panics
     ///
     /// Panics if a catalog with the same `name` has already been registered.
-    pub fn register_catalog(&mut self, catalog: ParquetDataCatalog, name: Option<&str>) {
+    pub fn register_catalog<T>(&mut self, catalog: T, name: Option<&str>)
+    where
+        T: DataCatalog + 'static,
+    {
+        self.register_catalog_box(Box::new(catalog), name);
+    }
+
+    /// Registers the boxed `catalog` with the engine with an optional specific `name`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a catalog with the same `name` has already been registered.
+    pub fn register_catalog_box(&mut self, catalog: DataCatalogBox, name: Option<&str>) {
         let name = Ustr::from(name.unwrap_or("catalog_0"));
 
         check_key_not_in_map(&name, &self.catalogs, "name", "catalogs").expect(FAILED);
@@ -65,7 +79,7 @@ impl DataEngine {
     }
 
     pub(super) fn subscribe_command_with_prefilled_start_ns(
-        &self,
+        &mut self,
         cmd: SubscribeCommand,
     ) -> anyhow::Result<SubscribeCommand> {
         match cmd {
@@ -73,7 +87,7 @@ impl DataEngine {
                 let identifier = cmd.instrument_id.to_string();
                 let params = self.params_with_prefilled_start_ns(
                     cmd.params.as_ref(),
-                    "quotes",
+                    &NautilusDataType::QuoteTick,
                     &identifier,
                 )?;
                 Ok(SubscribeCommand::Quotes(SubscribeQuotes { params, ..cmd }))
@@ -82,7 +96,7 @@ impl DataEngine {
                 let identifier = cmd.instrument_id.to_string();
                 let params = self.params_with_prefilled_start_ns(
                     cmd.params.as_ref(),
-                    "trades",
+                    &NautilusDataType::TradeTick,
                     &identifier,
                 )?;
                 Ok(SubscribeCommand::Trades(SubscribeTrades { params, ..cmd }))
@@ -92,8 +106,11 @@ impl DataEngine {
                     && Self::is_start_ns_missing(cmd.params.as_ref()) =>
             {
                 let identifier = cmd.bar_type.to_string();
-                let params =
-                    self.params_with_prefilled_start_ns(cmd.params.as_ref(), "bars", &identifier)?;
+                let params = self.params_with_prefilled_start_ns(
+                    cmd.params.as_ref(),
+                    &NautilusDataType::Bar,
+                    &identifier,
+                )?;
                 Ok(SubscribeCommand::Bars(SubscribeBars { params, ..cmd }))
             }
             SubscribeCommand::Data(cmd) if Self::is_start_ns_missing(cmd.params.as_ref()) => {
@@ -118,18 +135,18 @@ impl DataEngine {
     }
 
     fn params_with_prefilled_start_ns(
-        &self,
+        &mut self,
         params: Option<&Params>,
-        data_cls: &str,
+        data_type: &NautilusDataType,
         identifier: &str,
     ) -> anyhow::Result<Option<Params>> {
-        let last_timestamp = self.catalog_last_timestamp(data_cls, identifier)?;
+        let last_timestamp = self.catalog_last_timestamp(data_type, identifier)?;
 
         Ok(Some(Self::params_with_start_ns(params, last_timestamp)))
     }
 
     fn params_with_custom_data_prefilled_start_ns(
-        &self,
+        &mut self,
         params: Option<&Params>,
         type_name: &str,
         identifier: Option<&str>,
@@ -151,13 +168,13 @@ impl DataEngine {
     }
 
     fn catalog_last_timestamp(
-        &self,
-        data_cls: &str,
+        &mut self,
+        data_type: &NautilusDataType,
         identifier: &str,
     ) -> anyhow::Result<Option<u64>> {
-        for catalog in self.catalogs.values() {
+        for catalog in self.catalogs.values_mut() {
             if let Some(last_timestamp) =
-                catalog.query_last_timestamp(data_cls, Some(identifier))?
+                catalog.query_last_timestamp(data_type.clone(), Some(identifier))?
             {
                 return Ok(Some(last_timestamp));
             }
@@ -167,21 +184,22 @@ impl DataEngine {
     }
 
     fn catalog_custom_data_last_timestamp(
-        &self,
+        &mut self,
         type_name: &str,
         identifier: Option<&str>,
     ) -> anyhow::Result<Option<u64>> {
-        for catalog in self.catalogs.values() {
-            let last_timestamp = if let Some(identifier) = identifier {
-                let directory = catalog.make_path_custom_data(type_name, Some(identifier))?;
-                let intervals = catalog.get_directory_intervals(&directory)?;
-                intervals.last().map(|(_, last_timestamp)| *last_timestamp)
-            } else {
-                let data_cls = format!("custom/{type_name}");
-                catalog.query_last_timestamp(&data_cls, None)?
-            };
+        // `make_path_custom_data` / `get_directory_intervals` are inherent on
+        // `ParquetDataCatalog` and not exposed through `DataCatalog`. Use the
+        // trait-level `query_last_timestamp` with `NautilusDataType::Custom` so the
+        // path works for any backend that implements the trait.
+        let data_type = NautilusDataType::Custom {
+            type_name: type_name.to_string(),
+        };
 
-            if let Some(last_timestamp) = last_timestamp {
+        for catalog in self.catalogs.values_mut() {
+            if let Some(last_timestamp) =
+                catalog.query_last_timestamp(data_type.clone(), identifier)?
+            {
                 return Ok(Some(last_timestamp));
             }
         }
@@ -260,7 +278,7 @@ impl DataEngine {
         let mut has_catalog_data = false;
         let mut winning_catalog: Option<Ustr> = None;
 
-        for (name, catalog) in &self.catalogs {
+        for (name, catalog) in &mut self.catalogs {
             let catalog_intervals = catalog_missing_intervals(
                 catalog,
                 catalog_start_ns.as_u64(),
@@ -393,10 +411,12 @@ impl DataEngine {
 
         match leg {
             RequestCommand::Quotes(cmd) => {
-                let data: Vec<QuoteTick> = catalog.quote_ticks(
-                    Some(vec![cmd.instrument_id.to_string()]),
-                    Some(start_ns),
-                    Some(end_ns),
+                let data = quote_ticks_from_query_result(
+                    catalog.query_batch(
+                        &CatalogQuery::new(NautilusDataType::QuoteTick)
+                            .with_identifiers(Some(vec![cmd.instrument_id.to_string()]))
+                            .with_range(Some(start_ns), Some(end_ns)),
+                    )?,
                 )?;
                 Ok(build_quotes_catalog_response(
                     cmd,
@@ -408,10 +428,12 @@ impl DataEngine {
                 ))
             }
             RequestCommand::Trades(cmd) => {
-                let data: Vec<TradeTick> = catalog.trade_ticks(
-                    Some(vec![cmd.instrument_id.to_string()]),
-                    Some(start_ns),
-                    Some(end_ns),
+                let data = trade_ticks_from_query_result(
+                    catalog.query_batch(
+                        &CatalogQuery::new(NautilusDataType::TradeTick)
+                            .with_identifiers(Some(vec![cmd.instrument_id.to_string()]))
+                            .with_range(Some(start_ns), Some(end_ns)),
+                    )?,
                 )?;
                 Ok(build_trades_catalog_response(
                     cmd,
@@ -423,10 +445,12 @@ impl DataEngine {
                 ))
             }
             RequestCommand::FundingRates(cmd) => {
-                let data: Vec<FundingRateUpdate> = catalog.funding_rates(
-                    Some(vec![cmd.instrument_id.to_string()]),
-                    Some(start_ns),
-                    Some(end_ns),
+                let data = funding_rates_from_query_result(
+                    catalog.query_batch(
+                        &CatalogQuery::new(NautilusDataType::FundingRateUpdate)
+                            .with_identifiers(Some(vec![cmd.instrument_id.to_string()]))
+                            .with_range(Some(start_ns), Some(end_ns)),
+                    )?,
                 )?;
                 Ok(build_funding_rates_catalog_response(
                     cmd,
@@ -438,10 +462,12 @@ impl DataEngine {
                 ))
             }
             RequestCommand::Bars(cmd) => {
-                let data: Vec<Bar> = catalog.bars(
-                    Some(vec![cmd.bar_type.to_string()]),
-                    Some(start_ns),
-                    Some(end_ns),
+                let data = bars_from_query_result(
+                    catalog.query_batch(
+                        &CatalogQuery::new(NautilusDataType::Bar)
+                            .with_identifiers(Some(vec![cmd.bar_type.to_string()]))
+                            .with_range(Some(start_ns), Some(end_ns)),
+                    )?,
                 )?;
                 Ok(build_bars_catalog_response(
                     cmd,
@@ -457,32 +483,30 @@ impl DataEngine {
                     .data_type
                     .identifier()
                     .map(|identifier| vec![identifier.to_string()]);
-                let where_clause = cmd
-                    .params
-                    .as_ref()
-                    .and_then(|params| params.get_str("filter_expr"));
-                let data = catalog.query_custom_data_dynamic(
-                    cmd.data_type.type_name(),
-                    identifiers.as_deref(),
-                    Some(start_ns),
-                    Some(end_ns),
-                    where_clause,
-                    None,
-                    true,
+                let where_clause = request_filter_expr(cmd.params.as_ref());
+                let data = catalog.query_batch(
+                    &CatalogQuery::new(NautilusDataType::Custom {
+                        type_name: cmd.data_type.type_name().to_string(),
+                    })
+                    .with_identifiers(identifiers)
+                    .with_range(Some(start_ns), Some(end_ns))
+                    .with_where_clause(where_clause),
                 )?;
                 Ok(build_custom_data_catalog_response(
                     cmd,
-                    custom_data_from_dynamic(data),
+                    custom_data_from_query_result(data)?,
                     start_ns,
                     end_ns,
                     ts_init,
                 ))
             }
             RequestCommand::BookDeltas(cmd) => {
-                let data: Vec<OrderBookDelta> = catalog.order_book_deltas(
-                    Some(vec![cmd.instrument_id.to_string()]),
-                    Some(start_ns),
-                    Some(end_ns),
+                let data = order_book_deltas_from_query_result(
+                    catalog.query_batch(
+                        &CatalogQuery::new(NautilusDataType::OrderBookDelta)
+                            .with_identifiers(Some(vec![cmd.instrument_id.to_string()]))
+                            .with_range(Some(start_ns), Some(end_ns)),
+                    )?,
                 )?;
                 Ok(build_book_deltas_catalog_response(
                     cmd,
@@ -494,10 +518,12 @@ impl DataEngine {
                 ))
             }
             RequestCommand::BookDepth(cmd) => {
-                let data: Vec<OrderBookDepth10> = catalog.order_book_depth10(
-                    Some(vec![cmd.instrument_id.to_string()]),
-                    Some(start_ns),
-                    Some(end_ns),
+                let data = order_book_depths_from_query_result(
+                    catalog.query_batch(
+                        &CatalogQuery::new(NautilusDataType::OrderBookDepth)
+                            .with_identifiers(Some(vec![cmd.instrument_id.to_string()]))
+                            .with_range(Some(start_ns), Some(end_ns)),
+                    )?,
                 )?;
                 Ok(build_book_depth_catalog_response(
                     cmd,
@@ -536,13 +562,6 @@ impl DataEngine {
         }
 
         let identifier = cmd.instrument_id.to_string();
-        let Some(catalog_name) = self.catalog_with_last_timestamp("instruments", &identifier)?
-        else {
-            return self
-                .dispatch_request_to_client(RequestCommand::Instrument(cmd))
-                .map(|_| ());
-        };
-
         let now_ns = self.clock.borrow().timestamp_ns();
         let used_client_id = self
             .get_client(cmd.client_id.as_ref(), Some(&cmd.instrument_id.venue))
@@ -551,30 +570,32 @@ impl DataEngine {
             bound_request_dates(cmd.start, cmd.end, now_ns.to_datetime_utc(), true);
         let start_ns = datetime_to_unix_nanos_or_zero(start_dt);
         let end_ns = datetime_to_unix_nanos_or_zero(end_dt);
-        let query_end = cmd.end.map(datetime_to_unix_nanos_or_zero);
-        let catalog = self.catalogs.get(&catalog_name).ok_or_else(|| {
-            anyhow::anyhow!("Catalog {catalog_name} disappeared between timestamp query and read")
-        })?;
-        let mut data = catalog.instruments(
-            Some(std::slice::from_ref(&identifier)),
-            Some(start_ns),
-            query_end,
-        )?;
-        data = latest_instruments(data);
+        let start = Some(start_ns);
+        let end = cmd.end.map(datetime_to_unix_nanos_or_zero);
 
-        if let Some(instrument) = data.into_iter().next() {
-            let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
-                cmd.request_id,
-                resolve_response_client_id(cmd.client_id, used_client_id),
-                cmd.instrument_id,
-                instrument,
-                Some(start_ns),
-                Some(end_ns),
-                now_ns,
-                Some(catalog_response_params(cmd.params.as_ref())),
-            )));
-            self.response(response);
-            return Ok(());
+        for catalog in self.catalogs.values_mut() {
+            let data = latest_instruments(
+                catalog.instruments(
+                    &CatalogInstrumentQuery::new()
+                        .with_instrument_ids(Some(vec![identifier.clone()]))
+                        .with_range(start, end),
+                )?,
+            );
+
+            if let Some(instrument) = data.into_iter().next() {
+                let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
+                    cmd.request_id,
+                    resolve_response_client_id(cmd.client_id, used_client_id),
+                    cmd.instrument_id,
+                    instrument,
+                    Some(start_ns),
+                    Some(end_ns),
+                    now_ns,
+                    Some(catalog_response_params(cmd.params.as_ref())),
+                )));
+                self.response(response);
+                return Ok(());
+            }
         }
 
         self.dispatch_request_to_client(RequestCommand::Instrument(cmd))
@@ -607,11 +628,18 @@ impl DataEngine {
             bound_request_dates(cmd.start, cmd.end, now_ns.to_datetime_utc(), true);
         let start_ns = datetime_to_unix_nanos_or_zero(start_dt);
         let end_ns = datetime_to_unix_nanos_or_zero(end_dt);
-        let query_end = cmd.end.map(datetime_to_unix_nanos_or_zero);
+        let start = Some(start_ns);
+        let end = cmd.end.map(datetime_to_unix_nanos_or_zero);
         let mut data = Vec::new();
 
-        for catalog in self.catalogs.values() {
-            data.extend(catalog.instruments(None, Some(start_ns), query_end)?);
+        for catalog in self.catalogs.values_mut() {
+            data.extend(
+                catalog.instruments(
+                    &CatalogInstrumentQuery::new()
+                        .with_range(start, end)
+                        .with_where_clause(request_filter_expr(cmd.params.as_ref())),
+                )?,
+            );
         }
 
         if let Some(venue) = cmd.venue {
@@ -635,28 +663,10 @@ impl DataEngine {
         self.response(response);
         Ok(())
     }
-
-    fn catalog_with_last_timestamp(
-        &self,
-        data_cls: &str,
-        identifier: &str,
-    ) -> anyhow::Result<Option<Ustr>> {
-        for (name, catalog) in &self.catalogs {
-            if catalog
-                .query_last_timestamp(data_cls, Some(identifier))?
-                .is_some()
-            {
-                return Ok(Some(*name));
-            }
-        }
-
-        Ok(None)
-    }
 }
 
 struct RequestCatalogKey {
-    data_cls: String,
-    type_name: Option<String>,
+    data_type: NautilusDataType,
     identifier: Option<String>,
 }
 
@@ -678,32 +688,33 @@ pub(super) fn is_date_range_variant(req: &RequestCommand) -> bool {
 fn request_identifier(req: &RequestCommand) -> Option<RequestCatalogKey> {
     match req {
         RequestCommand::Data(cmd) => Some(RequestCatalogKey {
-            data_cls: format!("custom/{}", cmd.data_type.type_name()),
-            type_name: Some(cmd.data_type.type_name().to_string()),
+            data_type: NautilusDataType::Custom {
+                type_name: cmd.data_type.type_name().to_string(),
+            },
             identifier: cmd.data_type.identifier().map(String::from),
         }),
         RequestCommand::Quotes(cmd) => Some(RequestCatalogKey::new(
-            "quotes",
+            NautilusDataType::QuoteTick,
             Some(cmd.instrument_id.to_string()),
         )),
         RequestCommand::Trades(cmd) => Some(RequestCatalogKey::new(
-            "trades",
+            NautilusDataType::TradeTick,
             Some(cmd.instrument_id.to_string()),
         )),
         RequestCommand::FundingRates(cmd) => Some(RequestCatalogKey::new(
-            "funding_rate_update",
+            NautilusDataType::FundingRateUpdate,
             Some(cmd.instrument_id.to_string()),
         )),
         RequestCommand::Bars(cmd) => Some(RequestCatalogKey::new(
-            "bars",
+            NautilusDataType::Bar,
             Some(cmd.bar_type.to_string()),
         )),
         RequestCommand::BookDeltas(cmd) => Some(RequestCatalogKey::new(
-            "order_book_deltas",
+            NautilusDataType::OrderBookDelta,
             Some(cmd.instrument_id.to_string()),
         )),
         RequestCommand::BookDepth(cmd) => Some(RequestCatalogKey::new(
-            "order_book_depths",
+            NautilusDataType::OrderBookDepth,
             Some(cmd.instrument_id.to_string()),
         )),
         _ => None,
@@ -711,30 +722,54 @@ fn request_identifier(req: &RequestCommand) -> Option<RequestCatalogKey> {
 }
 
 impl RequestCatalogKey {
-    fn new(data_cls: &str, identifier: Option<String>) -> Self {
+    fn new(data_type: NautilusDataType, identifier: Option<String>) -> Self {
         Self {
-            data_cls: data_cls.to_string(),
-            type_name: None,
+            data_type,
             identifier,
         }
+    }
+
+    fn catalog_data_type(&self) -> NautilusDataType {
+        self.data_type.clone()
     }
 }
 
 fn catalog_missing_intervals(
-    catalog: &ParquetDataCatalog,
+    catalog: &mut DataCatalogBox,
     start: u64,
     end: u64,
     key: &RequestCatalogKey,
 ) -> anyhow::Result<Vec<(u64, u64)>> {
-    if let Some(type_name) = key.type_name.as_deref()
-        && let Some(identifier) = key.identifier.as_deref()
-    {
-        let directory = catalog.make_path_custom_data(type_name, Some(identifier))?;
-        let intervals = catalog.get_directory_intervals(&directory)?;
-        return Ok(missing_interval_diff(start, end, &intervals));
-    }
+    catalog.get_missing_intervals_for_request(
+        UnixNanos::from(start),
+        UnixNanos::from(end),
+        key.catalog_data_type(),
+        key.identifier.as_deref(),
+    )
+}
 
-    catalog.get_missing_intervals_for_request(start, end, &key.data_cls, key.identifier.as_deref())
+fn quote_ticks_from_query_result(data: DataBatch) -> anyhow::Result<Vec<QuoteTick>> {
+    QuoteTick::from_batch(data)
+}
+
+fn trade_ticks_from_query_result(data: DataBatch) -> anyhow::Result<Vec<TradeTick>> {
+    TradeTick::from_batch(data)
+}
+
+fn funding_rates_from_query_result(data: DataBatch) -> anyhow::Result<Vec<FundingRateUpdate>> {
+    FundingRateUpdate::from_batch(data)
+}
+
+fn bars_from_query_result(data: DataBatch) -> anyhow::Result<Vec<Bar>> {
+    Bar::from_batch(data)
+}
+
+fn order_book_deltas_from_query_result(data: DataBatch) -> anyhow::Result<Vec<OrderBookDelta>> {
+    OrderBookDelta::from_batch(data)
+}
+
+fn order_book_depths_from_query_result(data: DataBatch) -> anyhow::Result<Vec<OrderBookDepth10>> {
+    OrderBookDepth10::from_batch(data)
 }
 
 fn request_start(req: &RequestCommand) -> Option<Timestamp> {
@@ -765,6 +800,13 @@ fn request_end(req: &RequestCommand) -> Option<Timestamp> {
         RequestCommand::BookDepth(cmd) => cmd.end,
         _ => None,
     }
+}
+
+fn request_filter_expr(params: Option<&Params>) -> Option<String> {
+    params
+        .and_then(|params| params.get_str("filter_expr"))
+        .filter(|filter_expr| !filter_expr.is_empty())
+        .map(ToString::to_string)
 }
 
 fn bound_request_dates(
@@ -1128,16 +1170,8 @@ fn catalog_response_params(existing: Option<&Params>) -> Params {
     params
 }
 
-fn custom_data_from_dynamic(data: Vec<Data>) -> Vec<CustomData> {
-    data.into_iter()
-        .filter_map(|item| match item {
-            Data::Custom(custom) => Some(custom),
-            other => {
-                log::error!("Custom catalog query returned non-custom data {other:?}");
-                None
-            }
-        })
-        .collect()
+fn custom_data_from_query_result(data: DataBatch) -> anyhow::Result<Vec<CustomData>> {
+    CustomData::from_batch(data)
 }
 
 fn instrument_only_last(params: Option<&Params>) -> bool {
@@ -1171,41 +1205,6 @@ fn instrument_response_venue(request_venue: Option<Venue>, data: &[InstrumentAny
             .min_by_key(std::string::ToString::to_string)
             .unwrap_or_else(|| Venue::from(CATALOG_CLIENT_ID))
     })
-}
-
-fn missing_interval_diff(start: u64, end: u64, closed_intervals: &[(u64, u64)]) -> Vec<(u64, u64)> {
-    if closed_intervals.is_empty() {
-        return vec![(start, end)];
-    }
-
-    let mut missing = Vec::new();
-    let mut cursor = start;
-
-    for &(closed_start, closed_end) in closed_intervals {
-        if closed_end < cursor {
-            continue;
-        }
-
-        if closed_start > end {
-            break;
-        }
-
-        if closed_start > cursor {
-            missing.push((cursor, closed_start.saturating_sub(1)));
-        }
-
-        cursor = cursor.max(closed_end.saturating_add(1));
-
-        if cursor > end {
-            break;
-        }
-    }
-
-    if cursor <= end {
-        missing.push((cursor, end));
-    }
-
-    missing
 }
 
 fn resolve_response_client_id(

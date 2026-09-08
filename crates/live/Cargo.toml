@@ -42,6 +42,7 @@ extension-module = [
   "streaming",
 ]
 python = [
+  "streaming",
   "node",
   "nautilus-common/python",
   "nautilus-core/python",
