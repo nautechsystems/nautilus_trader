@@ -14,6 +14,8 @@
 // -------------------------------------------------------------------------------------------------
 
 pub mod api;
+#[doc(hidden)]
+pub mod binding;
 pub mod config;
 pub mod core;
 
@@ -22,6 +24,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use ahash::AHashSet;
 pub use api::{OrderApi, PortfolioApi};
+use binding::StrategyBinding;
 pub use config::{ImportableStrategyConfig, StrategyConfig};
 use nautilus_common::{
     actor::DataActor,
@@ -177,74 +180,9 @@ pub trait Strategy: DataActor {
         params: Option<Params>,
     ) -> anyhow::Result<()>
     where
-        Self: StrategyNative,
+        Self: StrategyBinding,
     {
-        let core = StrategyNative::strategy_core_mut(self);
-
-        let trader_id = registered_trader_id(core)?;
-        let strategy_id = registered_strategy_id(core)?;
-        let ts_init = core.clock_mut().timestamp_ns();
-
-        if order.status() != OrderStatus::Initialized {
-            anyhow::bail!(
-                "Order denied: invalid status for {}, expected INITIALIZED",
-                order.client_order_id()
-            );
-        }
-
-        let market_exit_tag = core.market_exit_tag;
-        let is_market_exit_order = order
-            .tags()
-            .is_some_and(|tags| tags.contains(&market_exit_tag));
-        let should_deny_for_market_exit =
-            core.is_exiting && !order.is_reduce_only() && !is_market_exit_order;
-
-        if should_deny_for_market_exit {
-            self.deny_order(&order, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
-            return Ok(());
-        }
-
-        let core = StrategyNative::strategy_core_mut(self);
-        let params = params.filter(|params| !params.is_empty());
-
-        {
-            let cache_rc = core.cache_rc();
-            let mut cache = cache_rc.try_borrow_mut().map_err(|_| {
-                anyhow::anyhow!(
-                    "Cannot submit order {}: cache is currently borrowed",
-                    order.client_order_id()
-                )
-            })?;
-            cache.add_order(order.clone(), position_id, client_id, true)?;
-        }
-
-        publish_order_initialized(&order);
-
-        let command = SubmitOrder::new(
-            trader_id,
-            client_id,
-            strategy_id,
-            order.instrument_id(),
-            order.client_order_id(),
-            order.init_event().clone(),
-            order.exec_algorithm_id(),
-            position_id,
-            params,
-            UUID4::new(),
-            ts_init,
-            None, // correlation_id
-        );
-
-        if order.emulation_trigger().is_some() {
-            send_emulator_command(TradingCommand::SubmitOrder(command));
-        } else if let Some(exec_algorithm_id) = order.exec_algorithm_id() {
-            send_algo_command(command, exec_algorithm_id);
-        } else {
-            send_risk_command(TradingCommand::SubmitOrder(command));
-        }
-
-        self.set_gtd_expiry(&order)?;
-        Ok(())
+        self.binding_submit_order(order, position_id, client_id, params)
     }
 
     /// Submits an order list.
@@ -2375,6 +2313,84 @@ where
     } else {
         strategy.check_market_exit(event.clone());
     }
+}
+
+pub(super) fn submit_order_native<T>(
+    strategy: &mut T,
+    order: &OrderAny,
+    position_id: Option<PositionId>,
+    client_id: Option<ClientId>,
+    params: Option<Params>,
+) -> anyhow::Result<()>
+where
+    T: Strategy + StrategyNative + ?Sized,
+{
+    let core = StrategyNative::strategy_core_mut(strategy);
+
+    let trader_id = registered_trader_id(core)?;
+    let strategy_id = registered_strategy_id(core)?;
+    let ts_init = core.clock_mut().timestamp_ns();
+
+    if order.status() != OrderStatus::Initialized {
+        anyhow::bail!(
+            "Order denied: invalid status for {}, expected INITIALIZED",
+            order.client_order_id()
+        );
+    }
+
+    let market_exit_tag = core.market_exit_tag;
+    let is_market_exit_order = order
+        .tags()
+        .is_some_and(|tags| tags.contains(&market_exit_tag));
+    let should_deny_for_market_exit =
+        core.is_exiting && !order.is_reduce_only() && !is_market_exit_order;
+
+    if should_deny_for_market_exit {
+        strategy.deny_order(order, Ustr::from("MARKET_EXIT_IN_PROGRESS"));
+        return Ok(());
+    }
+
+    let core = StrategyNative::strategy_core_mut(strategy);
+    let params = params.filter(|params| !params.is_empty());
+
+    {
+        let cache_rc = core.cache_rc();
+        let mut cache = cache_rc.try_borrow_mut().map_err(|_| {
+            anyhow::anyhow!(
+                "Cannot submit order {}: cache is currently borrowed",
+                order.client_order_id()
+            )
+        })?;
+        cache.add_order(order.clone(), position_id, client_id, true)?;
+    }
+
+    publish_order_initialized(order);
+
+    let command = SubmitOrder::new(
+        trader_id,
+        client_id,
+        strategy_id,
+        order.instrument_id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        order.exec_algorithm_id(),
+        position_id,
+        params,
+        UUID4::new(),
+        ts_init,
+        None, // correlation_id
+    );
+
+    if order.emulation_trigger().is_some() {
+        send_emulator_command(TradingCommand::SubmitOrder(command));
+    } else if let Some(exec_algorithm_id) = order.exec_algorithm_id() {
+        send_algo_command(command, exec_algorithm_id);
+    } else {
+        send_risk_command(TradingCommand::SubmitOrder(command));
+    }
+
+    strategy.set_gtd_expiry(order)?;
+    Ok(())
 }
 
 fn publish_order_initialized(order: &OrderAny) {

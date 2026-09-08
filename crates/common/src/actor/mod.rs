@@ -25,6 +25,8 @@ use std::{any::Any, fmt::Debug};
 
 use ustr::Ustr;
 
+#[doc(hidden)]
+pub mod binding;
 pub mod data_actor;
 pub mod indicators;
 pub mod registry;

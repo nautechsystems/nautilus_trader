@@ -28,6 +28,7 @@ event-driven architecture, providing research-to-live semantic parity.
 
 This crate provides feature flags to control source code inclusion during compilation:
 
+- `component-binding`: Enables the experimental executable component contract.
 - `host`: Optional plug-in manifest compatibility flag.
 
 ## Documentation

@@ -48,6 +48,7 @@ use ustr::Ustr;
 
 use super::{
     Actor,
+    binding::DataActorBinding,
     indicators::{Indicators, SharedActorIndicator},
     registry::try_get_actor_unchecked,
 };
@@ -236,16 +237,20 @@ pub trait DataActorNative {
 /// Defines lifecycle callbacks, data handlers, and subscription/request
 /// methods for data actors.
 ///
-/// Default methods that read or mutate native runtime state carry explicit
-/// [`DataActorNative`] and [`Component`] bounds. Implementations that only need
-/// behavioral callbacks do not own or implement native runtime state.
+/// Default methods backed only by the native runtime carry explicit
+/// [`DataActorNative`] and [`Component`] bounds. The actor ID and clock facades
+/// use [`DataActorBinding`] to access component state.
 pub trait DataActor {
     /// Returns the actor ID.
+    ///
+    /// # Panics
+    ///
+    /// Panics when a callback-scoped binding is used outside an active callback.
     fn actor_id(&self) -> ActorId
     where
-        Self: DataActorNative,
+        Self: DataActorBinding,
     {
-        self.core().actor_id()
+        self.binding_actor_id()
     }
 
     /// Returns the trader ID this actor is registered to.
@@ -730,11 +735,16 @@ pub trait DataActor {
     }
 
     /// Returns the user-facing clock API.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the native actor is unregistered or a callback-scoped binding is
+    /// used outside an active callback.
     fn clock(&self) -> ClockApi<'_>
     where
-        Self: DataActorNative,
+        Self: DataActorBinding,
     {
-        self.core().clock_api()
+        self.binding_clock()
     }
 
     /// Returns the user-facing cache API.
@@ -3810,7 +3820,7 @@ impl DataActorCore {
         self.clock_ref().timestamp_ns()
     }
 
-    fn clock_api(&self) -> ClockApi<'_> {
+    pub(super) fn clock_api(&self) -> ClockApi<'_> {
         let clock = self.clock.as_ref().unwrap_or_else(|| {
             panic!(
                 "DataActor {} must be registered before calling `clock()` - trader_id: {:?}",

@@ -6597,6 +6597,7 @@ name = "nautilus-plugin"
 version = "0.64.0"
 dependencies = [
  "log",
+ "nautilus-core",
  "nautilus-model",
  "rstest",
 ]
