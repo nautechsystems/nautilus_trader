@@ -144,7 +144,7 @@ impl IdsGenerator {
     ///
     /// # Panics
     ///
-    /// Panics if `generate` is `Some(true)` but no cached position ID is available.
+    /// Panics in hedging mode if `generate` is `Some(false)` and no cached position ID is available.
     pub fn get_position_id(
         &mut self,
         order: &OrderAny,
